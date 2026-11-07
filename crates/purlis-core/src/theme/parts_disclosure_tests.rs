@@ -35,7 +35,7 @@ fn the_disclosure_comes_in_the_next_release_s_manifest() {
         .find(|one| one["name"] == "disclosure")
         .expect("the disclosure is in the manifest")
         .clone();
-    assert_eq!(family["since"], parts::NEXT);
+    assert_eq!(family["since"], 13);
     let parts: Vec<&str> = family["parts"]
         .as_array()
         .unwrap()
@@ -44,7 +44,7 @@ fn the_disclosure_comes_in_the_next_release_s_manifest() {
         .collect();
     assert_eq!(parts, ["root", "trigger", "twist", "panel"]);
     for part in family["parts"].as_array().unwrap() {
-        assert_eq!(part["since"], parts::NEXT, "{part}");
+        assert_eq!(part["since"], 13, "{part}");
     }
     // Opening it is no state: the twist turns, and nothing in it changes size or colour.
     assert_eq!(family["states"], json!([]));

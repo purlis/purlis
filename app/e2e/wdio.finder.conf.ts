@@ -84,7 +84,7 @@ export const config: WebdriverIO.Config = {
     [
       "@wdio/tauri-service",
       {
-        appBinaryPath: built(process.platform === "win32" ? "charter-app.exe" : "charter-app"),
+        appBinaryPath: built(process.platform === "win32" ? "purlis-app.exe" : "purlis-app"),
         captureBackendLogs: true,
         captureFrontendLogs: true,
         // The service spreads `process.env` and then this, so naming `PATH` and `HOME` here

@@ -126,6 +126,9 @@ async function raise(
         "[data-scope=notice-row][data-part=root] > [data-scope=notice-row][data-part=stack]",
       );
       if (!stack) return false;
+      // The band open (#5215): folded, what it holds is one line, however it is marked.
+      const bell = frames[at]?.querySelector('[aria-label^="Pane notices:"]');
+      if (bell?.getAttribute("aria-expanded") === "false") (bell as HTMLElement).click();
       // Held in a list, not bound by name: the spec's bundler wraps a named function in a
       // `__name` call the page does not have (`gauge.e2e.ts`, `view-tabs.e2e.ts`).
       const el = [
@@ -257,10 +260,43 @@ async function raise(
   return true;
 }
 
+/**
+ * **Pane `pane` `height` tall, or as tall as the window leaves it where that is less**, whatever
+ * the runner's window will do. A pane's height is the frame's own (`container-type: size`), so
+ * what it holds is capped by this. `lower` undoes it. Answers the height the pane was given.
+ *
+ * **Never taller than its room** (#5495): a frame set taller than the panel that holds it runs
+ * past it, the panel's box (`overflow: auto`) scrolls, and where its scrollbar takes room (the
+ * macOS runner's) the pane is narrower, so its Notices wrap as in a narrower pane.
+ */
+async function paneIs(pane: number, height: number): Promise<number> {
+  return browser.execute(
+    (at: number, tall: number) => {
+      const frames = [...document.querySelectorAll<HTMLElement>(".pane-frame")].filter((frame) =>
+        frame.querySelector('[data-testid="pane"]'),
+      );
+      const frame = frames[at];
+      frame.style.removeProperty("block-size");
+      const made = Math.min(tall, frame.getBoundingClientRect().height);
+      frame.style.blockSize = `${made}px`;
+      frame.dataset.madeShort = "pane-notices.e2e";
+      return made;
+    },
+    pane,
+    height,
+  );
+}
+
 /** Takes away everything this file drew. */
 async function lower(): Promise<void> {
   await browser.execute(() => {
     for (const one of document.querySelectorAll('[data-raised="pane-notices.e2e"]')) one.remove();
+    for (const one of document.querySelectorAll<HTMLElement>(
+      '[data-made-short="pane-notices.e2e"]',
+    )) {
+      one.style.removeProperty("block-size");
+      delete one.dataset.madeShort;
+    }
   });
 }
 
@@ -309,6 +345,9 @@ async function measured(pane: number) {
             };
           }),
           under: box(raised.querySelector("[data-scope=notice][data-part=under]")),
+          // Its ways pinned at its foot, and whether it is opened whole (#5215).
+          ways: box(raised.querySelector("[data-part=ways]")),
+          whole: raised.querySelector("[data-whole]") !== null || raised.hasAttribute("data-whole"),
           also: box(raised.querySelector(".dispatch-also")),
           options: [
             ...raised.querySelectorAll('.dispatch-also [data-scope="checkbox"][data-part="root"]'),
@@ -334,6 +373,12 @@ async function measured(pane: number) {
       neighbours: frames.filter((one) => one !== frame).map((one) => box(one)),
       row: box(frame?.querySelector("[data-scope=notice-row][data-part=root]")),
       terminal: box(frame?.querySelector('[data-testid="pane"]')),
+      // How tall the terminal's line is, as it says for the pane's three-line floor (#5215).
+      terminalRow: Number.parseFloat(
+        getComputedStyle(frame?.querySelector(".pane-body") ?? document.body).getPropertyValue(
+          "--terminal-row",
+        ),
+      ),
       head: box(frame?.querySelector(".pane-head")),
       // The cap's "+N more", which is gone (#4754): measured to say it is not drawn.
       more: box(frame?.querySelector("[data-scope=notice-row][data-part=root] > [data-way=more]")),
@@ -341,6 +386,12 @@ async function measured(pane: number) {
       // The stack's width inside its scrollbar, which a card takes whole.
       stackInside: stack ? stack.clientWidth : 0,
       stackScrolls: stack ? stack.scrollHeight > stack.clientHeight + 1 : false,
+      stackScrollTop: stack ? stack.scrollTop : 0,
+      // Whether the box the window's panel holds the pane in scrolls (react-resizable-panels'
+      // inner box, `overflow: auto`): only a pane taller than its room makes it (#5495).
+      panelScrolls: [frame?.closest("[data-panel]")?.firstElementChild].some(
+        (inner) => inner instanceof HTMLElement && inner.scrollHeight > inner.clientHeight + 1,
+      ),
       notices,
     };
   }, pane);
@@ -871,7 +922,8 @@ describe("a Notice in a pane", () => {
     for (const [index, one] of seen.notices.entries()) {
       const next = seen.notices[index + 1];
       if (next === undefined) continue;
-      expect((next.box as Box).top).toBeGreaterThan((one.box as Box).bottom);
+      // Rows of one band touch, a line between them (#5215).
+      expect((next.box as Box).top).toBeGreaterThanOrEqual((one.box as Box).bottom);
       expect((next.box as Box).left).toBeCloseTo((one.box as Box).left, 0);
     }
     const reached = await browser.execute(() => {
@@ -971,6 +1023,143 @@ describe("a Notice in a pane", () => {
     offTheTerminal(seen);
   });
 
+  // **On every runner, not only the one with a short window** (#5215): the macOS scenarios run in
+  // the merge queue alone, and only there did the window leave a pane this short (425px or so of
+  // the 768 asked for; Linux's window will not go that low). So the pane itself is made short.
+  it("keeps a Notice at its tallest inside a short pane, under the band's head", async () => {
+    await windowIs(1024, 768);
+    expect(await raise(0, { sentence: ASKS, ways: FIVE_WAYS, opened: BRIEF })).toBe(true);
+    // Short enough that the Notice is at its cap, however its words wrap on this runner.
+    await paneIs(0, 300);
+    const seen = await measured(0);
+    const [notice, frame] = [seen.notices[0].box as Box, seen.frame as Box];
+    check("the pane was not made short", frame.height, "atMost", 301);
+    inside(
+      notice,
+      frame,
+      `the Notice ${notice.height}px tall, ${notice.top - frame.top}px down its ${frame.height}px pane,`,
+    );
+  });
+
+  it("keeps a long Notice under another inside a pane as short for it as the macOS runner's", async () => {
+    await windowIs(1024, 768);
+    expect(await raise(0, { sentence: "Restarting this chat…", ways: ["Dismiss"] })).toBe(true);
+    expect(await raise(0, { sentence: SENTENCE, ways: WAYS, opened: BRIEF })).toBe(true);
+    // What the macOS runner's pane did to this Notice, whatever its words wrap to here: the height
+    // at which it ran 22.75px past the pane with what it opened at a third of the pane
+    // (run 42004185262), its head and its line being what they are on this runner.
+    const tall = await measured(0);
+    const [box, under] = [tall.notices[1].box as Box, tall.notices[1].under as Box];
+    const above = box.top - (tall.frame as Box).top + box.height - under.height;
+    // Never past the room the window gives it (#5495): on the macOS runner that room is already
+    // this short, and the pane stays the window's.
+    await paneIs(0, (above - 22.75) / 0.67);
+    const seen = await measured(0);
+    const [notice, frame] = [seen.notices[1].box as Box, seen.frame as Box];
+    // What moved between the two heights, should it run past (#5350's macOS queue drop).
+    const parts = (at: typeof seen) => {
+      const top = (at.frame as Box).top;
+      const of = (b: Box | null) =>
+        b ? `${Math.round(b.top - top)}+${Math.round(b.height)}` : "-";
+      const [one, two] = at.notices;
+      return `pane ${Math.round((at.frame as Box).height)}, head ${of(at.head)}, row ${of(at.row)}, stack ${of(at.stack)} scrolls ${at.stackScrolls} at ${Math.round(at.stackScrollTop)}, first ${of(one?.box ?? null)}, notice ${of(two.box)} whole ${two.whole}, line ${of(two.line)}, under ${of(two.under)}, ways ${of(two.ways)}`;
+    };
+    const said = `(tall: ${parts(tall)}; short: ${parts(seen)})`;
+    // The band stays inside its pane, whatever it holds: past its room its stack scrolls.
+    inside(seen.row, frame, `the band in its ${frame.height}px pane ${said}`);
+    inside(seen.stack, frame, `the band's stack in its ${frame.height}px pane ${said}`);
+    // A Notice is never taller than its pane, so scrolling the stack always shows it whole.
+    check(
+      `the long Notice in its ${frame.height}px pane ${said}`,
+      notice.height,
+      "atMost",
+      frame.height,
+    );
+    // While the stack doesn't scroll, the whole Notice is drawn inside the pane. Once it does,
+    // the Notice's own box runs on under the stack's edge, out of sight, and that is the scroll,
+    // not an overflow: on the macOS runner the window's pane is already this short (run
+    // 42198113537), so both heights here scroll.
+    if (!seen.stackScrolls)
+      inside(
+        notice,
+        frame,
+        `the long Notice ${notice.height}px tall, ${notice.top - frame.top}px down its ${frame.height}px pane ${said},`,
+      );
+  });
+
+  // **A pane made short is never made taller** (#5495): on the macOS queue's runner the window's
+  // pane was 353px, and the case above asked for 379px of it. The frame ran past the panel that
+  // holds it, the panel's box scrolled, and its scrollbar took 15px of the pane's width: the
+  // Notice's ways wrapped onto one more row, so its line was 30px taller at the "same" width.
+  it("never makes a pane taller than the room its panel gives it (#5495)", async () => {
+    await windowIs(1024, 768);
+    expect(await raise(0, { sentence: SENTENCE, ways: WAYS })).toBe(true);
+    const room = (await measured(0)).frame as Box;
+    await paneIs(0, room.height + 26);
+    const seen = await measured(0);
+    const frame = seen.frame as Box;
+    check(`the ${room.height}px pane was made taller`, frame.height, "atMost", room.height + 1);
+    check("the pane's panel scrolls", seen.panelScrolls, "is", false);
+    check("the pane lost width to its panel", frame.width, "atLeast", room.width - 1);
+  });
+
+  it("keeps a Notice's line as tall in a 350px pane as in a 400px one of the same width (#5495)", async () => {
+    // Tall enough for 400px of pane on every runner that will give it; where one gives less, the
+    // two heights are its room and 50px under it.
+    await windowIs(1600, 1000);
+    expect(await raise(0, { sentence: SENTENCE, ways: WAYS, opened: BRIEF })).toBe(true);
+    const at = async (height: number) => {
+      const made = await paneIs(0, height);
+      const seen = await measured(0);
+      const line = seen.notices[0].line as Box;
+      return {
+        made,
+        pane: seen.frame as Box,
+        line,
+        panelScrolls: seen.panelScrolls,
+        stackScrolls: seen.stackScrolls,
+      };
+    };
+    const tall = await at(400);
+    const short = await at(Math.min(350, tall.made - 50));
+    const said = `(${Math.round(tall.pane.height)}px pane: line ${Math.round(tall.line.width)}×${Math.round(tall.line.height)}; ${Math.round(short.pane.height)}px pane: line ${Math.round(short.line.width)}×${Math.round(short.line.height)})`;
+    check(
+      `the two panes are not 50px apart ${said}`,
+      tall.pane.height - short.pane.height,
+      "atLeast",
+      49,
+    );
+    check(
+      `the panes are not the same width ${said}`,
+      Math.abs(tall.pane.width - short.pane.width),
+      "atMost",
+      1,
+    );
+    check(`a panel scrolls ${said}`, tall.panelScrolls || short.panelScrolls, "is", false);
+    // **The band scrolls at both heights**, so a scrollbar that takes room (macOS's) narrows the
+    // line at both or neither: what the brief opened is a third of the pane, and the band's room
+    // at most a third, so the Notice is always taller than its band.
+    check(
+      `the band scrolls at one height only ${said}`,
+      tall.stackScrolls,
+      "is",
+      short.stackScrolls,
+    );
+    check(`the band does not scroll ${said}`, tall.stackScrolls, "is", true);
+    check(
+      `the line's width moved with the pane's height ${said}`,
+      Math.abs(tall.line.width - short.line.width),
+      "atMost",
+      1,
+    );
+    check(
+      `the line's height moved with the pane's height ${said}`,
+      Math.abs(tall.line.height - short.line.height),
+      "atMost",
+      1,
+    );
+  });
+
   it("keeps each Notice's drawn box inside a pane a standing result squeezes (#3344)", async () => {
     await windowIs(1600, 1000);
     // What an action answered stands at the top of the content until it is closed, and takes the
@@ -995,12 +1184,14 @@ describe("a Notice in a pane", () => {
 
     const seen = await measured(0);
     const [frame, stack] = [seen.frame as Box, seen.stack as Box];
-    // The band keeps to its share of the pane, and scrolls what it cannot show.
+    // The band gives way before the terminal goes under its three lines, and scrolls what it cannot
+    // show (#5215).
+    expect(Number.isFinite(seen.terminalRow)).toBe(true);
     check(
-      "the band runs past its share of the pane",
-      stack.height,
-      "atMost",
-      frame.height * 0.46 + 1,
+      "the terminal gave way past its three lines",
+      (seen.terminal as Box).height,
+      "atLeast",
+      3 * seen.terminalRow,
     );
     // What each Notice draws, its box clipped to the stack, stays inside the pane and off the
     // terminal, however short the pane is.

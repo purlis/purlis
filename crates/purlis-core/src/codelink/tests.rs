@@ -469,6 +469,33 @@ fn a_repositorys_folder_is_the_projects_own_or_a_workspaces_repo_reached_through
     ));
 }
 
+#[test]
+fn a_workspaces_repo_is_answered_where_this_machine_holds_it_in_either_layout() {
+    let world = World::new();
+    let workspace = world.project.join("workspaces/app");
+    let in_repos = workspace.join("repos/web");
+    std::fs::create_dir_all(&in_repos).unwrap();
+    git(&in_repos, &["init", "-q", "-b", "main", "."]);
+    let at_the_root = workspace.join("api");
+    std::fs::create_dir_all(&at_the_root).unwrap();
+    git(&at_the_root, &["init", "-q", "-b", "main", "."]);
+
+    // The transfer names the repo; this machine says which of its places holds it.
+    assert_eq!(
+        repo_in(&world.project, "workspaces/app/web").unwrap(),
+        in_repos
+    );
+    assert_eq!(
+        repo_in(&world.project, "workspaces/app/api").unwrap(),
+        at_the_root
+    );
+    // A repo not here yet is answered where an old one would be, as it always was.
+    assert_eq!(
+        repo_in(&world.project, "workspaces/app/new").unwrap(),
+        workspace.join("new")
+    );
+}
+
 /// **Where each clone a runner holds came from** (1.54, #3985): its own `origin`, as its git
 /// keeps it, only where that is a forge's HTTPS or SSH address with no sign-in in it. Never a
 /// local path, another transport or a token, nothing an included file names, and nothing for a

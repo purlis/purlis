@@ -2,8 +2,10 @@
 
 Every git operation purlis performs — from any persona, any sub-agent, any repo clone —
 authenticates with **that repo's own forge's CLI token, over HTTPS**: `glab` for GitLab,
-`gh` for GitHub. Never an SSH key, never commit or tag signing. The one exception is a clone
+`gh` for GitHub. Never an SSH key, and no signer program. The one exception is a clone
 the person starts and watches from the window ([The person's own clone](#the-persons-own-clone)).
+The commits the app makes for a chat are signed by the app itself, in its own process
+([Commits the app makes for a chat are signed](#commits-the-app-makes-for-a-chat-are-signed)).
 
 ```bash
 purlis git-policy            # check every clone against the rule
@@ -373,6 +375,30 @@ repo and sees them run.
   `.git` file names something purlis will not follow is refused, as for every runner. Past the
   check they are not handed the git directory it read, so git finds the repository as the
   session's own git does, and a hook's `GIT_DIR` still names it.
+
+## Commits the app makes for a chat are signed
+
+A repository that requires signed commits refuses a pull request whose commits are unsigned, and
+the commits a sandboxed chat makes are made by the app (#5480,
+[ADR 0115](../../../docs/adr/0115-the-app-signs-the-commits-it-makes-for-a-chat-with-a-key-it-holds.md)).
+So the app signs them, and nothing in the rule above is lifted to do it:
+
+- **git still signs nothing.** The brokered commit, `purlis worktree update`'s rebase and its
+  `--merge` tell git outright to sign nothing, as before, and a repository whose own config asks
+  for a signature or names a signer is still refused.
+- **The app signs what git made, in its own process.** It writes a signed copy of each commit
+  the call made, in git's own SSH signature format (an `SSHSIG` in the namespace `git`, in the
+  commit's `gpgsig` header, as git's SSH signing writes it), and moves the branch to it only
+  from where git left it. No program is started, so nothing can ask for a passphrase.
+- **The key is in the Keyring tier**, `purlis/@commit-signing/<device>`, set up once by the
+  person with `purlis signing setup` in their own terminal. No chat reads it: it is never in a
+  file, an environment or an answer. With none set up, the commit is made unsigned and the
+  answer says how to set one up.
+- **From a terminal, or a chat with no sandbox,** the person's own git and its signing settings
+  are in charge, as they always were.
+
+`purlis signing status` shows the key's public half and whether GitHub has it, and
+`purlis signing check <owner/repo> <commit>` asks GitHub whether a pushed commit is Verified.
 
 ## A clone a chat did not ask for
 

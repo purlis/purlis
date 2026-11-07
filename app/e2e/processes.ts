@@ -333,14 +333,14 @@ export function collectEvidence(app: string, why: string): string {
   );
 
   if (process.platform === "darwin") {
-    // A crash leaves `charter-app-*.ips`; a kill for memory leaves `JetsamEvent-*.ips`, which
+    // A crash leaves `purlis-app-*.ips`; a kill for memory leaves `JetsamEvent-*.ips`, which
     // names the processes it killed only inside it — look for the app's name by file name
     // alone and a memory kill is missed.
     const reports = [
       join(homedir(), "Library", "Logs", "DiagnosticReports"),
       "/Library/Logs/DiagnosticReports",
     ].flatMap((dir) =>
-      leftBehind(dir, (name) => name.startsWith("charter-app") || name.startsWith("JetsamEvent")),
+      leftBehind(dir, (name) => name.startsWith("purlis-app") || name.startsWith("JetsamEvent")),
     );
     for (const found of reports) {
       const kept = join(LOGS, found.split("/").pop() ?? "report.ips");

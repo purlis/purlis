@@ -26,11 +26,11 @@ pub(super) const PANE_FOOT: Family = Family {
     name: "pane-foot",
     description: "The quiet line under a chat's terminal: the harness and the workspace it runs \
                   in, and its context and cache gauge.",
-    since: super::NEXT,
+    since: 13,
     parts: &[
         Part {
             name: "root",
-            since: super::NEXT,
+            since: 13,
             description: "The line: its fill, any line a theme draws on it, its words, the room \
                           around and between its groups.",
             properties: &[
@@ -45,50 +45,50 @@ pub(super) const PANE_FOOT: Family = Family {
         },
         Part {
             name: "start",
-            since: super::NEXT,
+            since: 13,
             description: "Where the chat runs, at the line's start: the room between its parts.",
             properties: &[Prop::Gap],
         },
         Part {
             name: "end",
-            since: super::NEXT,
+            since: 13,
             description: "The gauge, at the line's end: the room between its parts.",
             properties: &[Prop::Gap],
         },
         Part {
             name: "separator",
-            since: super::NEXT,
+            since: 13,
             description: "The `·` between two parts of the line.",
             properties: &[Prop::Text],
         },
         Part {
             name: "gauge",
-            since: super::NEXT,
+            since: 13,
             description: "One gauge: its label and its value, and for `ctx` the bar under them: \
                           the room between them.",
             properties: &[Prop::Gap],
         },
         Part {
             name: "label",
-            since: super::NEXT,
+            since: 13,
             description: "A gauge's name: `ctx`, `cache`.",
             properties: WORDS,
         },
         Part {
             name: "value",
-            since: super::NEXT,
+            since: 13,
             description: "A gauge's value in figures of one width.",
             properties: WORDS,
         },
         Part {
             name: "track",
-            since: super::NEXT,
+            since: 13,
             description: "The thin bar under `ctx`'s number: its fill and its corners.",
             properties: &[Prop::Fill, Prop::CornerRadius],
         },
         Part {
             name: "fill",
-            since: super::NEXT,
+            since: 13,
             description: "How full the context is, on the track, in the core's tone for it.",
             properties: &[Prop::Fill],
         },

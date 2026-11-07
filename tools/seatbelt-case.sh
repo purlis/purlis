@@ -149,6 +149,22 @@ $exchange" "$s/swap" "$s/.git" || :
   rm -f "$p/config-link" 2>/dev/null || :
 }
 
+# The later-code names in the chat's own folder, which Claude Code's sandbox on Linux holds by
+# path: new ones not made, by a write or a rename, and git and a project's own folders still work.
+names_by_path_in() {
+  p=$1
+  what=$2
+  expect "$(here "touch '$p/.envrc'")" no "$what: a new .envrc in the chat's folder"
+  expect "$(here "echo x > '$p/name-probe' && mv -f '$p/name-probe' '$p/.envrc'")" no "$what: a file renamed onto .envrc"
+  rm -f "$p/name-probe" 2>/dev/null || :
+  expect "$(here "mkdir -p '$p/.githooks' && touch '$p/.githooks/pre-commit'")" no "$what: a new .githooks in the chat's folder"
+  expect "$(here "mkdir -p '$p/.husky' && touch '$p/.husky/pre-commit'")" no "$what: a new .husky in the chat's folder"
+  expect "$(here "touch '$p/opencode.json'")" no "$what: a new opencode.json in the chat's folder"
+  expect "$(here "git -C '$p/repo' status --short")" yes "$what: git reads a clone"
+  expect "$(here "mkdir -p '$p/.config/probe' && touch '$p/.config/probe/x' && rm -rf '$p/.config/probe'")" yes "$what: a project's own .config is made"
+  rm -rf "$p/.config" 2>/dev/null || :
+}
+
 # The default sign-ins of the other harnesses, for a Claude Code chat: not read, and their folders
 # not moved. Each is written to as well, and the test holds the file unchanged after the run: a
 # sandbox may mask a denied path, so that a write here succeeds and reaches nothing. The test puts
@@ -206,6 +222,7 @@ if [ "${1-}" = --repositories-here ]; then
     exit 2
   fi
   git_held_in "$2" "$3" here
+  names_by_path_in "$2" "$3"
   others_held "$3"
   temp_and_folder_in "$2" "$3" temp-only
   echo "seatbelt-case: $3: $checks checks, $wrong wrong"

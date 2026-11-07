@@ -6,22 +6,34 @@ use std::path::PathBuf;
 
 /// A plane with one workspace holding one clone, and nothing fetched for it.
 fn plane_with_a_clone() -> (tempfile::TempDir, PathBuf) {
+    plane_with_a_clone_at("svc")
+}
+
+/// [`plane_with_a_clone`], with the clone `svc` at `below` the workspace's folder: `svc` at its
+/// root, or `repos/svc` (ADR 0114).
+fn plane_with_a_clone_at(below: &str) -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir().expect("a plane");
     let root = std::fs::canonicalize(dir.path()).expect("a resolved plane");
     std::fs::write(root.join("charter.toml"), "").expect("a manifest");
-    std::fs::create_dir_all(root.join("workspaces/alpha/svc/.git")).expect("a clone");
-    std::fs::write(
-        root.join("workspaces/alpha/svc/.git/HEAD"),
-        "ref: refs/heads/main\n",
-    )
-    .expect("a HEAD");
+    let clone = root.join("workspaces/alpha").join(below);
+    std::fs::create_dir_all(clone.join(".git")).expect("a clone");
+    std::fs::write(clone.join(".git/HEAD"), "ref: refs/heads/main\n").expect("a HEAD");
     (dir, root)
 }
 
+/// The two places the clone `svc` may be, below the workspace's folder.
+const LAYOUTS: [&str; 2] = ["svc", "repos/svc"];
+
 #[test]
 fn what_came_back_from_a_pool_stays_in_changes_once_the_workspace_has_left_it() {
-    let (_plane, root) = plane_with_a_clone();
-    let clone = root.join("workspaces/alpha/svc");
+    for below in LAYOUTS {
+        what_came_back_from_a_pool_stays_in_changes_at(below);
+    }
+}
+
+fn what_came_back_from_a_pool_stays_in_changes_at(below: &str) {
+    let (_plane, root) = plane_with_a_clone_at(below);
+    let clone = root.join("workspaces/alpha").join(below);
     std::fs::remove_dir_all(clone.join(".git")).expect("the stand-in goes");
     let git = |args: &[&str]| {
         let ran = purlis_core::forklock::output(
@@ -58,7 +70,7 @@ fn what_came_back_from_a_pool_stays_in_changes_once_the_workspace_has_left_it() 
         .iter()
         .map(|on| (on.pool.as_str(), on.branch.as_str()))
         .collect();
-    assert_eq!(shown, vec![("old-pool", "fix")]);
+    assert_eq!(shown, vec![("old-pool", "fix")], "{below}");
 }
 
 // ---- served from the plane's model (FD-10c) ---------------------------------------------
@@ -176,9 +188,24 @@ fn a_first_ask_reads_the_workspace_with_the_models_lock_let_go() {
     );
 }
 
+/// Asks `answer` again until `done` holds of it, for as long as a loaded runner can take; a
+/// passing run returns the moment it does.
+fn until<T: std::fmt::Debug>(mut answer: impl FnMut() -> T, done: impl Fn(&T) -> bool) -> T {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    loop {
+        let got = answer();
+        if done(&got) {
+            return got;
+        }
+        assert!(std::time::Instant::now() < deadline, "never came: {got:?}");
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+}
+
 #[test]
-fn a_store_the_watch_could_not_watch_is_read_from_the_disk_on_every_ask() {
-    // A failed registration must never leave the panels serving what the model held.
+fn a_store_the_watch_could_not_watch_reaches_the_panels_by_its_own_look() {
+    // #5499: a refused registration falls back to a timed look of that folder, never to a
+    // read of the whole plane on every ask.
     let dir = tempfile::tempdir().expect("a plane");
     let root = std::fs::canonicalize(dir.path()).expect("a resolved plane");
     let memory = root.join("workspaces/alpha/memory");
@@ -189,14 +216,16 @@ fn a_store_the_watch_could_not_watch_is_read_from_the_disk_on_every_ask() {
     served(&held, "alpha").expect("served once");
     std::fs::write(memory.join("m2.md"), "# Memory two\n").expect("a memory");
 
-    assert_eq!(
-        rows_of(&served(&held, "alpha").expect("served"), "memory"),
-        ["Memory two", "Memory one"]
+    until(
+        || rows_of(&served(&held, "alpha").expect("served"), "memory"),
+        |rows| rows == &["Memory two", "Memory one"],
     );
 }
 
 #[test]
-fn a_todo_store_the_watch_could_not_watch_reaches_the_sidebar_on_the_next_ask() {
+fn the_sidebar_is_not_read_again_on_every_ask_while_a_folder_is_not_watched() {
+    // #5499: at a thousand workspaces a whole read per ask is the window sticking. What the
+    // refused folder holds reaches the sidebar by its own look, a few seconds later.
     let dir = tempfile::tempdir().expect("a plane");
     let root = std::fs::canonicalize(dir.path()).expect("a resolved plane");
     let todos = root.join("workspaces/alpha/todos");
@@ -205,14 +234,23 @@ fn a_todo_store_the_watch_could_not_watch_reaches_the_sidebar_on_the_next_ask() 
     let (_dir, _planes, held) = held_plane_at(dir);
     held.sidebar_model();
     std::fs::write(todos.join("a2.md"), "# Alpha two\n").expect("a todo");
+    let todos_of = |model: &purlis_core::planemodel::Model| -> Vec<String> {
+        model
+            .rows()
+            .expect("listed")
+            .flat_map(|row| row.todos.clone())
+            .collect()
+    };
 
-    let model = held.sidebar_model();
-    let todos: Vec<String> = model
-        .rows()
-        .expect("listed")
-        .flat_map(|row| row.todos.clone())
-        .collect();
-    assert!(todos.contains(&"Alpha two".to_owned()), "{todos:?}");
+    let asked_at_once = todos_of(&held.sidebar_model());
+    assert!(
+        !asked_at_once.contains(&"Alpha two".to_owned()),
+        "the sidebar was read from the disk on the ask: {asked_at_once:?}"
+    );
+    until(
+        || todos_of(&held.sidebar_model()),
+        |todos| todos.contains(&"Alpha two".to_owned()),
+    );
 }
 
 #[test]
@@ -788,6 +826,26 @@ fn a_clone_comes_with_the_path_the_core_checked_so_the_window_never_joins_one() 
         drawn.paths.get("svc").map(String::as_str),
         Some(
             root.join("workspaces/alpha/svc")
+                .display()
+                .to_string()
+                .as_str()
+        ),
+    );
+}
+
+#[test]
+fn a_clone_in_repos_comes_with_its_path_there() {
+    // ADR 0114: a clone made from structure version 6 on is in `repos/`, and the window starts a
+    // chat in it only from the path the core checked.
+    let (_plane, root) = plane_with_a_clone_at("repos/svc");
+
+    let drawn = of(&root, "alpha").expect("the panels draw");
+
+    assert_eq!(drawn.repos, vec!["svc".to_string()]);
+    assert_eq!(
+        drawn.paths.get("svc").map(String::as_str),
+        Some(
+            root.join("workspaces/alpha/repos/svc")
                 .display()
                 .to_string()
                 .as_str()

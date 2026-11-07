@@ -28,7 +28,7 @@ export const SAID = {
   end: "End…",
   keepOpen: "Keep open",
   tileAll: "Tile all",
-  place: "Place…",
+  place: "Move…",
   closeOtherTabs: "Close other tabs",
   thisMachine: "This machine",
   brief: "Brief",
@@ -78,8 +78,14 @@ export const SAID = {
   copyAbsolutePath: "Copy absolute path",
   shellHere: "Open a shell tab here",
   openInEditor: "Open in your editor",
+  // The person's own workspace files' writes (#5376): each asks first, so each has its ellipsis.
+  newFile: "New file…",
+  newFolder: "New folder…",
+  importFiles: "Import files…",
   startAChatHere: "Start a chat here",
   addToChat: "Add to a chat's context",
+  // A LIVE workspace's own file or folder (#5377).
+  saveWithTheProject: "Save with the project",
   removeFolder: "Remove folder",
   discardAnyway: "Discard that work and remove anyway",
   // A chat's Branch ▸ (#4851): the words of `command-table.md` rows 24 and 25.

@@ -135,6 +135,80 @@ describe("a foot, for each kind of pane (#5205)", () => {
     expect(head.querySelector('[data-scope="separator"]')).toBeNull();
   });
 
+  it("draws a view alone in its tab with no splits or close, and one in a split with all three (#5318)", () => {
+    render(
+      <LayoutPanes
+        {...propsOf(view(1), { alone: true, offerFor: SPLITS, closeOf: () => CLOSE })}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /^Split |^Close / })).toBeNull();
+    expect(document.querySelector(".pane-actions")).toBeNull();
+    cleanup();
+
+    render(
+      <LayoutPanes
+        {...propsOf(row(view(1), chat(2)), {
+          alone: false,
+          offerFor: SPLITS,
+          closeOf: () => CLOSE,
+          room: { width: 1600, height: 900 },
+        })}
+      />,
+    );
+    const frame = screen.getByText("a view").closest(".pane-frame") as HTMLElement;
+    expect(
+      [...frame.querySelectorAll(".pane-actions button")].map((one) =>
+        one.getAttribute("aria-label"),
+      ),
+    ).toEqual(["Split right", "Split down", "Close this pane"]);
+  });
+
+  it("draws an empty pane or a chat alone with its two splits and no Close, nothing to Tab through (#5318)", () => {
+    for (const lone of [empty(1), chat(1)]) {
+      render(
+        <LayoutPanes {...propsOf(lone, { alone: true, offerFor: SPLITS, closeOf: () => CLOSE })} />,
+      );
+      const buttons = [...document.querySelectorAll(".pane-doing button")].map((one) =>
+        one.getAttribute("aria-label"),
+      );
+      expect(buttons).toEqual(["Split right", "Split down"]);
+      cleanup();
+    }
+  });
+
+  it("draws a shell's Close in a split, and none alone (#5318)", () => {
+    const close = () => screen.queryByRole("button", { name: "Close this pane" });
+    const shells = new Set([1]);
+    const more = { offerFor: SPLITS, closeOf: () => CLOSE, shells };
+    render(<LayoutPanes {...propsOf(chat(1), { ...more, alone: true })} />);
+    expect(close()).toBeNull();
+    cleanup();
+
+    render(<LayoutPanes {...propsOf(chat(1), { ...more, alone: false })} />);
+    expect(close()).toBeInTheDocument();
+  });
+
+  it("draws no Close on a one-job program's pane beside a chat, as it goes when its program exits (#5318)", () => {
+    const oneJob = {
+      kind: "pane",
+      pane: 1,
+      content: { kind: "session", session: 1, chat: "job", oneJob: { title: "Log in" } },
+    } as unknown as Layout;
+    render(
+      <LayoutPanes
+        {...propsOf(row(oneJob, chat(2)), {
+          offerFor: SPLITS,
+          closeOf: () => CLOSE,
+          room: { width: 1600, height: 900 },
+        })}
+      />,
+    );
+    const frameOf = (words: string) =>
+      screen.getByText(words).closest(".pane-frame") as HTMLElement;
+    expect(frameOf("session 1").querySelectorAll('[aria-label="Close this pane"]')).toHaveLength(0);
+    expect(frameOf("session 2").querySelectorAll('[aria-label="Close this pane"]')).toHaveLength(1);
+  });
+
   it("is not drawn on a one-job program's pane", () => {
     const oneJob: Layout = {
       kind: "pane",

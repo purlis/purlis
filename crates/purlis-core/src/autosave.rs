@@ -192,6 +192,7 @@ pub fn at_quit(root: &std::path::Path, bound: Duration) -> AtQuit {
                 no_push: true,
                 cwd: root,
                 provenance: None,
+                for_a_chat: false,
             },
             crate::planegit::Trigger::Quit,
             &claim,

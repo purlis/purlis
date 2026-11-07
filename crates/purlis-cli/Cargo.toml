@@ -30,6 +30,9 @@ purlis-host.workspace = true
 purlis-linux-sandbox.workspace = true
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 clap.workspace = true
+# `purlis signing setup --key` reads the passphrase of the person's own key without echoing it
+# (#5480). Already in this workspace's lockfile through `minisign`, so it adds no crate.
+rpassword = "7"
 # charter's MCP server (HP-7): the official Rust SDK, Apache-2.0, serving stdio only. No HTTP
 # transport and no auth features, so it pulls no HTTP client and no TLS. Its `build.rs` runs
 # `git config core.hooksPath .githooks` only when `$CARGO_MANIFEST_DIR/../../.githooks` and

@@ -6,7 +6,8 @@
 //!
 //! It writes its output (a recorded corpus, or synthetic harness-shaped output), then an
 //! optional sentinel line a benchmark can wait for, then runs its hooks in order, the way a
-//! harness fires `Notification` and `Stop`. With `--interactive` it then answers each typed
+//! harness fires `Notification` and `Stop`. Its tick hooks fire at a set rate while the output
+//! plays, the way a busy chat's tool calls fire `PreToolUse` while it writes (#4883). With `--interactive` it then answers each typed
 //! line until `/quit`.
 //!
 //! With `--wait-for-input` it holds the output back until a line is typed, so a benchmark can
@@ -67,6 +68,17 @@ struct Args {
     /// A shell command run after the output, in order; repeat for several.
     #[arg(long = "hook")]
     hooks: Vec<String>,
+
+    /// A shell command run every `--tick-ms` while the output plays, in order; repeat for
+    /// several. Each firing has `FAKE_HARNESS_TICK` set to its number, from 1: what a busy chat's
+    /// tool calls do to its hooks while it writes, for the load bench (#4883).
+    #[arg(long = "tick-hook", value_name = "COMMAND")]
+    tick_hooks: Vec<String>,
+
+    /// How often the tick hooks fire, in milliseconds. A firing that overruns its tick skips
+    /// the ticks it overran, so the rate is at most this.
+    #[arg(long, default_value_t = 100, value_name = "MS")]
+    tick_ms: u64,
 
     /// After the hooks, answer each typed line until `/quit`.
     #[arg(long)]
@@ -280,8 +292,17 @@ fn run(args: &Args) -> Result<(), String> {
     Ok(())
 }
 
-/// The output, `loops` times, then the sentinel, then the hooks in order.
+/// The output, `loops` times, with the tick hooks firing while it plays, then the sentinel,
+/// then the hooks in order.
 fn play(args: &Args, output: &[u8], stdout: &mut impl Write) -> Result<(), String> {
+    let ticking = Ticking::start(&args.tick_hooks, Duration::from_millis(args.tick_ms.max(1)));
+    let played = write_output(args, output, stdout);
+    ticking.stop()?;
+    played?;
+    run_hooks(args, stdout)
+}
+
+fn write_output(args: &Args, output: &[u8], stdout: &mut impl Write) -> Result<(), String> {
     let write_err = |err: io::Error| format!("cannot write output: {err}");
     for _ in 0..args.loops {
         for chunk in output.chunks(args.chunk.max(1)) {
@@ -292,6 +313,12 @@ fn play(args: &Args, output: &[u8], stdout: &mut impl Write) -> Result<(), Strin
             }
         }
     }
+    Ok(())
+}
+
+/// The sentinel, then the hooks in order.
+fn run_hooks(args: &Args, stdout: &mut impl Write) -> Result<(), String> {
+    let write_err = |err: io::Error| format!("cannot write output: {err}");
     if let Some(sentinel) = &args.sentinel {
         write!(stdout, "\r\n{sentinel}\r\n")
             .and_then(|()| stdout.flush())
@@ -307,6 +334,65 @@ fn play(args: &Args, output: &[u8], stdout: &mut impl Write) -> Result<(), Strin
         }
     }
     Ok(())
+}
+
+/// The tick hooks firing on a thread of their own while the output plays.
+struct Ticking {
+    stop: Option<std::sync::mpsc::Sender<()>>,
+    thread: Option<thread::JoinHandle<Result<(), String>>>,
+}
+
+impl Ticking {
+    /// Fires `hooks` every `tick`, the first one tick from now, until [`Ticking::stop`].
+    fn start(hooks: &[String], tick: Duration) -> Self {
+        if hooks.is_empty() {
+            return Self {
+                stop: None,
+                thread: None,
+            };
+        }
+        let hooks = hooks.to_vec();
+        let (stop, stopped) = std::sync::mpsc::channel::<()>();
+        let thread = thread::spawn(move || {
+            let started = std::time::Instant::now();
+            let mut tick_number: u32 = 0;
+            loop {
+                // The next tick that has not passed yet, so a slow firing skips what it overran.
+                let since = started.elapsed().as_nanos() / tick.as_nanos().max(1);
+                let next = tick * u32::try_from(since + 1).unwrap_or(u32::MAX);
+                let wait = next.saturating_sub(started.elapsed());
+                match stopped.recv_timeout(wait) {
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                    _ => return Ok(()),
+                }
+                tick_number += 1;
+                for hook in &hooks {
+                    let status = Command::new("/bin/sh")
+                        .args(["-c", hook])
+                        .env("FAKE_HARNESS_TICK", tick_number.to_string())
+                        .status()
+                        .map_err(|err| format!("cannot run tick hook {hook:?}: {err}"))?;
+                    if !status.success() {
+                        return Err(format!("tick hook {hook:?} failed: {status}"));
+                    }
+                }
+            }
+        });
+        Self {
+            stop: Some(stop),
+            thread: Some(thread),
+        }
+    }
+
+    /// Stops the firing, once the one under way has finished, and says whether one failed.
+    fn stop(mut self) -> Result<(), String> {
+        drop(self.stop.take());
+        match self.thread.take().map(thread::JoinHandle::join) {
+            None => Ok(()),
+            Some(Ok(fired)) => fired,
+            Some(Err(_)) => Err("the tick hooks' thread panicked".to_owned()),
+        }
+    }
 }
 
 /// `--interactive --raw`: the terminal raw, each byte echoed as it is typed, and a line answered

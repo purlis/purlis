@@ -2,7 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { bandHeadSays, bellCount, bellSays, dismissAllSays } from "./paneNotices";
+import {
+  bandHeadSays,
+  bandRegionSays,
+  bellCount,
+  bellSays,
+  dismissAllSays,
+  foldedSays,
+} from "./paneNotices";
 import { loadPaneNotices, PANE_NOTICES } from "./paneNoticesPref";
 
 describe("a pane's notices, minimised or expanded (#4754)", () => {
@@ -42,9 +49,23 @@ describe("what a pane's bell says", () => {
     expect(bellSays({ notes: 0, trouble: 0, asks: 1 })).toBe("No notices, 1 asking");
   });
 
-  it("heads the expanded band with everything it holds and what waits on you", () => {
-    expect(bandHeadSays({ notes: 5, trouble: 1, asks: 2 })).toBe("7 notices, 2 waiting on you");
+  it("heads the open band with what waits on you, then its notes", () => {
+    expect(bandHeadSays({ notes: 5, trouble: 1, asks: 2 })).toBe("2 waiting on you · 5 notices");
+    expect(bandHeadSays({ notes: 0, trouble: 0, asks: 3 })).toBe("3 waiting on you");
     expect(bandHeadSays({ notes: 1, trouble: 0, asks: 0 })).toBe("1 notice");
+  });
+
+  it("names the band's region with its count", () => {
+    expect(bandRegionSays({ notes: 0, trouble: 0, asks: 3 })).toBe(
+      "Pane notices: 3 waiting on you",
+    );
+  });
+
+  it("folds to how many wait and on what, each once", () => {
+    expect(foldedSays(3, ["Remove workspace", "Remove workspace", "Terminal prompt"])).toBe(
+      "3 waiting · Remove workspace, Terminal prompt",
+    );
+    expect(foldedSays(1, [])).toBe("1 waiting");
   });
 
   it("counts what Dismiss all clears", () => {

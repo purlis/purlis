@@ -52,6 +52,7 @@ export function ChatText({
   id,
   className,
   foldStop = (button) => button,
+  whole = false,
 }: {
   /** The chat's words, as it wrote them. */
   text: string;
@@ -62,13 +63,15 @@ export function ChatText({
   /** Its fold's button as a stop of the roving focus it stands in (the Inbox's list), where
    *  it stands in one. */
   foldStop?: (button: ReactElement) => ReactElement;
+  /** **It never folds** (#5215): a pane's band opened it to show it whole. */
+  whole?: boolean;
 }) {
   const own = useId();
   const box = id ?? `${own}-text`;
   const body = useRef<HTMLDivElement>(null);
   const lines = useDrawnLines(body, text);
   const [open, setOpen] = useState(false);
-  const folds = lines > FOLD_LINES;
+  const folds = !whole && lines > FOLD_LINES;
   return (
     <div className={className === undefined ? "chat-text" : `chat-text ${className}`}>
       <div

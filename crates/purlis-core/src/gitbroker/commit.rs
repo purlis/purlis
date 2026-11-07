@@ -640,18 +640,54 @@ fn made(
         .into());
     }
     here.forget();
-    let id = said(top, &["rev-parse", "HEAD"])?.unwrap_or_default();
+    let made = said(top, &["rev-parse", "HEAD"])?.unwrap_or_default();
+    let (id, signed) = signed(top, &branch, made, identity.signer(), &mut lines);
     lines.insert(
         0,
         Say::Done(
             format!(
-                "committed {id} on {branch}: {}",
+                "committed {id} on {branch}: {}{signed}",
                 counted(staged.len(), "file", "files")
             )
             .into(),
         ),
     );
     Ok(lines)
+}
+
+/// What a commit made where no signing key is set up says, after it (#5480).
+pub const UNSIGNED: &str = "this commit is not signed: the app has no signing key on this \
+     machine yet, so a repository that requires signed commits will refuse a pull request with \
+     it. Ask the person to run `purlis signing setup` once in their own terminal; it says each \
+     step in plain words, and later commits are signed";
+
+/// The commit git made, `made` on `branch`, signed with `signer` and the branch moved to the
+/// signed copy (#5480), and what the line naming it adds. Where there is no signer, or signing
+/// fails, the commit stays as git made it, and `lines` says why.
+pub(crate) fn signed(
+    top: &Path,
+    branch: &str,
+    made: String,
+    signer: Option<&crate::commitsign::Signer>,
+    lines: &mut Vec<Say>,
+) -> (String, &'static str) {
+    let Some(signer) = signer else {
+        lines.push(Say::Warn(UNSIGNED.into()));
+        return (made, "");
+    };
+    match crate::commitsign::sign_one(top, &worktree::name::as_ref(branch), &made, signer) {
+        Ok(id) => (id, ", signed"),
+        Err(why) => {
+            lines.push(Say::Warn(
+                format!(
+                    "this commit is made and not signed: {why}. A repository that requires \
+                     signed commits will refuse a pull request with it"
+                )
+                .into(),
+            ));
+            (made, "")
+        }
+    }
 }
 
 /// What a commit refused by `planegit::ondisk` says: a named file is not the one file on disk.
@@ -809,10 +845,8 @@ impl Here {
             Ok(_) => return Err(not_a_branch_folder()),
             Err(why) => return Err(why.to_owned()),
         };
-        let recorded = root
-            .join("workspaces")
-            .join(&piece.workspace)
-            .join(&piece.repo);
+        let recorded = crate::repofolder::folder(root, &piece.workspace, &piece.repo)
+            .map_err(|_| not_a_branch_folder())?;
         let (Some(common), Some(clone)) = (link::worktree_of(&git_dir), link::cut_from(&top))
         else {
             return Err(not_a_branch_folder());

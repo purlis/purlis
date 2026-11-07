@@ -584,6 +584,16 @@ pub const BUNDLE_ID: Name = name(
 /// The product's own program. `charter` is an alias during the window; `edm` predates charter
 /// and is recognised forever, as the guards always have.
 pub const BINARY: Name = name("binary", Kind::Binary, "purlis", &["charter"], &["edm"]);
+/// The desktop app's own program, beside [`BINARY`] in the bundle (#1309, D-RN9-1). Its old
+/// name is read only as a running program's: the update from an app built before the rename is
+/// restarted by `charter-app`. Nothing looks for a file by the old name.
+pub const APP_BINARY: Name = name(
+    "app-binary",
+    Kind::Binary,
+    "purlis-app",
+    &["charter-app"],
+    &[],
+);
 
 /// What `purlis handoff`'s own lines start with (#1421): the program as [`BINARY`] writes it,
 /// then the command. Visible text, which nothing reads back, so it has no old spelling to
@@ -690,6 +700,7 @@ pub const ALL: &[Name] = &[
     MCP_TOOL_PREFIX,
     BUNDLE_ID,
     BINARY,
+    APP_BINARY,
     THEME_DARK,
     THEME_LIGHT,
     ICON_THEME,

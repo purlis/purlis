@@ -15,12 +15,14 @@ import { describe, expect, it } from "vitest";
 const SRC = join(process.cwd(), "src");
 
 /** Every secret's box in the window, by file: the vault's token and a secret's value, the vault
- *  sign-in's token, the forge sign-in's token and a Secret ask's value (#5068). */
+ *  sign-in's token, the forge sign-in's token, a Secret ask's value (#5068), and each value a
+ *  run's one notice asks for, drawn once per key (#5242). */
 const SECRET_BOXES: Record<string, number> = {
   "VaultTab.tsx": 2,
   "VaultSignIn.tsx": 1,
   "ForgeTokenSignIn.tsx": 1,
   "SecretFill.tsx": 1,
+  "RunFills.tsx": 1,
 };
 
 function views(dir = SRC): string[] {

@@ -493,6 +493,7 @@ fn grade_after(
                     grader: None,
                     follower: None,
                     draft: None,
+                    batch: None,
                 },
                 planned,
             );

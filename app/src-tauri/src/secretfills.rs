@@ -20,6 +20,12 @@
 //!   ([`crate::loginasks::written`]); `sandbox.proposed-changes = "off"` holds it back.
 //! - **A card's key is offered Allow once alone** (SF-4): a secret-fill line of any persona's
 //!   with `card = true` marks it, on every origin, and no grant of it fills without a notice.
+//! - **A field the page marks for payment is offered Allow once alone** (the steward's decision of
+//!   2026-11-06): an `autocomplete` token that begins `cc-` asks each time, as a card's key does,
+//!   whatever its key is marked.
+//! - **A grant fills no field whose form sends it by GET** (the person's ruling of 2026-11-06):
+//!   in the page's address, which the site's logs and the browser's history keep. Under Allow for
+//!   this chat or Always, such a fill is refused; asked about, Allow once fills it.
 //! - **A key the vault doesn't hold goes to the Secret ask** (#5054, ADR 0109) once the person
 //!   allowed the fill: the call waits on that too, and fills what they add.
 //! - **What's filled is what the person pressed on.** A press names the notice and carries its
@@ -71,10 +77,15 @@ pub struct FillWait {
     /// A 2FA code the seed under `key` makes, not the value itself (#5118).
     pub code: bool,
     pub since: u64,
-    /// The persona the chat was started as: whose tools Always writes in.
+    /// The persona whose grants the chat fills under: whose tools Always writes in. A narrowed
+    /// chat's is the persona it was narrowed to ([`crate::chats::Chats::secret_grants_of`]).
     pub persona: Option<String>,
     /// **A card's or payment value's key** (SF-4): Allow once and Keep blocked alone.
     pub card: bool,
+    /// **A field the page marks a card's or payment one** (`autocomplete="cc-…"`, the steward's
+    /// decision of 2026-11-06), or whose read doesn't say: asked each time, with Allow once and
+    /// Keep blocked alone, whatever the key is marked.
+    pub payment: bool,
     /// **A multi-line text box or an editable area** (#5120, SF-5): asked each time, whatever
     /// was allowed, with Allow once and Keep blocked alone.
     pub multi_line: bool,
@@ -90,7 +101,7 @@ impl FillWait {
     /// Whether only Allow once and Keep blocked are offered: a card's key, or a field that asks
     /// each time.
     pub fn once_only(&self) -> bool {
-        self.card || self.multi_line || !held_open(&self.origin)
+        self.card || self.payment || self.multi_line || !held_open(&self.origin)
     }
 
     /// **The digest of what the notice draws**: a press names it, so a notice drawn of anything
@@ -123,6 +134,7 @@ impl FillWait {
         }
         hash.update([
             u8::from(self.card),
+            u8::from(self.payment),
             u8::from(self.vault_too),
             u8::from(self.multi_line),
             // A press on the notice of a value never allows a code, nor one on a code a value.
@@ -357,6 +369,7 @@ fn judged(held: &Held, session: u32, asked: &FillAsked) -> Result<(String, Vec<S
              editable area takes a secret"
         ));
     }
+    // Whose vaults it reads: the persona it was started as, narrowed or not (#2599, #2691).
     let persona = held
         .chats()
         .persona_of(session)
@@ -448,13 +461,12 @@ pub fn asked(held: &Held, session: u32, asked: &FillAsked, now: u64) -> Result<A
     if fills.kept(session, &asked.vault, &asked.key, &origin) {
         return Err(kept_said(&asked.key, &origin, None));
     }
-    let persona = held
-        .chats()
-        .persona_of(session)
-        .and_then(|persona| persona.started_as);
+    // Whose grants it fills under, and whose tools Always writes in: a narrowed chat's are the
+    // persona it was narrowed to (the decision of 2026-11-06).
+    let persona = held.chats().secret_grants_of(session);
     // A browser on a runner is asked about each time: a grant here holds this machine's
     // browsers (#5122).
-    if runner.is_some()
+    let asks_the_person = runner.is_some()
         || asks(
             held.root(),
             fills,
@@ -462,8 +474,13 @@ pub fn asked(held: &Held, session: u32, asked: &FillAsked, now: u64) -> Result<A
             persona.as_deref(),
             asked,
             &origin,
-        )
-    {
+        );
+    // A grant fills no field whose form sends it in the page's address (the person's ruling of
+    // 2026-11-06).
+    if !asks_the_person && asked.field.by_get == Some(true) {
+        return Err(by_get_said(&asked.target, &origin));
+    }
+    if asks_the_person {
         let wait = offered(
             held.root(),
             FillWait {
@@ -480,6 +497,7 @@ pub fn asked(held: &Held, session: u32, asked: &FillAsked, now: u64) -> Result<A
                 since: now,
                 persona,
                 card: false,
+                payment: asked.field.payment != Some(false),
                 multi_line,
                 line: None,
                 no_always: None,
@@ -519,14 +537,24 @@ pub fn asked(held: &Held, session: u32, asked: &FillAsked, now: u64) -> Result<A
         value,
         multi_line,
         also,
+        under_a_grant: !asks_the_person,
     })
 }
 
-/// The persona chat `session` was started as.
+/// **What a chat is told where a grant would fill a field whose form sends it by GET** (the
+/// person's ruling of 2026-11-06): in the page's address, which the site's logs and the browser's
+/// history keep.
+fn by_get_said(target: &str, origin: &str) -> String {
+    format!(
+        "{target} on {origin} is in a form that sends what it holds in the page's address (by \
+         GET), so purlis fills nothing there under the person's standing Allow: tell them what \
+         needs it"
+    )
+}
+
+/// The persona whose fill grants chat `session` reads ([`crate::chats::Chats::secret_grants_of`]).
 fn persona_of_fill(held: &Held, session: u32) -> Option<String> {
-    held.chats()
-        .persona_of(session)
-        .and_then(|persona| persona.started_as)
+    held.chats().secret_grants_of(session)
 }
 
 /// **The other origins this key is approved for** (#5230, SF-15): a line of the persona's, or the
@@ -558,10 +586,15 @@ pub struct Allowed {
     pub multi_line: bool,
     /// The other origins the key is approved for (#5230, SF-15).
     pub also: Vec<String>,
+    /// **It goes in under a grant, with no notice for this fill**: the engine judges the field
+    /// again as it writes (the rulings of 2026-11-06).
+    pub under_a_grant: bool,
 }
 
 /// **Whether the person is asked about this fill**: a multi-line text box or an editable area
-/// each time, whatever was allowed (SF-5, #5120); any other field unless it is [`granted`].
+/// each time, whatever was allowed (SF-5, #5120); a field the page marks a card's or payment one
+/// (the steward's decision of 2026-11-06); a field whose read doesn't say either of those (a
+/// host that doesn't read them); any other field unless it is [`granted`].
 fn asks(
     root: &std::path::Path,
     fills: &Fills,
@@ -570,7 +603,10 @@ fn asks(
     asked: &FillAsked,
     origin: &str,
 ) -> bool {
-    asked.field.kind != FieldKind::OneLine || !granted(root, fills, session, persona, asked, origin)
+    asked.field.kind != FieldKind::OneLine
+        || asked.field.payment != Some(false)
+        || asked.field.by_get.is_none()
+        || !granted(root, fills, session, persona, asked, origin)
 }
 
 /// **Whether a fill goes in without a notice** (#5116): a line Always wrote, allowed here, or the
@@ -730,6 +766,7 @@ fn read(
         names_no_vault: false,
         // Asked for a key the vault doesn't hold (#5075's reasons are for keys it has).
         reason: None,
+        no_allow: None,
     };
     let within = purlis_core::loginask::THE_PERSON_IS_WAITED_FOR
         .saturating_sub(started.elapsed())

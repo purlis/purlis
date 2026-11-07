@@ -44,7 +44,7 @@ fn the_meter_is_in_the_manifest_since_next() {
         .iter()
         .find(|one| one["name"] == "meter")
         .expect("the meter family is in the manifest");
-    assert_eq!(meter["since"], parts::NEXT);
+    assert_eq!(meter["since"], 13);
     let names = |key: &str| -> Vec<String> {
         meter[key]
             .as_array()

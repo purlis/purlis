@@ -1023,10 +1023,14 @@ fn a_frames_origin_follows_the_webs_rules_for_its_address() {
             None,
             web("https://shop.test/pay"),
         ),
+        // A document sandboxed without its origin allowed has none, whatever its address
+        // says: its own context says so.
+        ("https://shop.test/pay", "null", Some("://"), Origin::Opaque),
+        ("https://shop.test/pay", "", Some("null"), Origin::Opaque),
         (
             "https://shop.test/pay",
-            "null",
-            Some("://"),
+            "https://shop.test",
+            Some("https://shop.test"),
             web("https://shop.test/pay"),
         ),
         (
@@ -1094,6 +1098,17 @@ fn a_frames_origin_follows_the_webs_rules_for_its_address() {
             "{url} at {origin:?}, its document at {document:?}"
         );
     }
+    // Nor has one whose frame element's sandbox leaves it none, with no word of its context.
+    let sandboxed = Frame {
+        sandboxed: Some(true),
+        ..frame("https://shop.test/pay", "")
+    };
+    assert_eq!(sandboxed.origin(None), Origin::Opaque);
+    let allowed = Frame {
+        sandboxed: Some(false),
+        ..frame("https://shop.test/pay", "")
+    };
+    assert_eq!(allowed.origin(None), web("https://shop.test/pay"));
 }
 
 #[test]
@@ -1441,8 +1456,7 @@ fn a_srcdoc_frame_in_the_pages_session_whose_document_has_ended_is_not_judged_un
 
 /// A blank frame in the page's session whose document is of `http://third.test`, not the
 /// page's, read for its sandbox.
-fn a_blank_frame_of_another_origin_in_the_pages_session()
--> (crate::drive::Browser, Arc<super::Engine>) {
+fn a_blank_frame_of_another_origin_in_the_pages_session() -> (super::StandIn, Arc<super::Engine>) {
     let (judge, _) = judge(&[]);
     let (browser, engine) = browser_judged(judge);
     the_page_shows_a_frame(&engine, &browser, "BLANK", "PAGE-1", "about:blank");
@@ -1811,7 +1825,7 @@ const WEB_FRAME: &str = "http://other.test/inner.html";
 
 /// A frame in the page's session at [`WEB_FRAME`], whose document's context says so, that
 /// starts another document.
-fn a_web_frame_that_starts_another_document() -> (crate::drive::Browser, Arc<super::Engine>) {
+fn a_web_frame_that_starts_another_document() -> (super::StandIn, Arc<super::Engine>) {
     let (judge, _) = judge(&[]);
     let (browser, engine) = browser_judged(judge);
     the_page_shows_a_frame(&engine, &browser, "WEB", "PAGE-1", WEB_FRAME);
@@ -1890,7 +1904,8 @@ fn a_new_document_of_the_same_origin_told_before_its_address_is_judged_by_that_o
 }
 
 #[test]
-fn a_frame_at_a_web_address_whose_context_follows_with_no_web_origin_is_judged_by_its_address() {
+fn a_frame_at_a_web_address_whose_context_follows_with_no_web_origin_has_none() {
+    // A document sandboxed without its origin allowed: its address says a site it is not on.
     let (browser, engine) = a_web_frame_that_starts_another_document();
     the_page_shows_a_frame(
         &engine,
@@ -1900,10 +1915,7 @@ fn a_frame_at_a_web_address_whose_context_follows_with_no_web_origin_is_judged_b
         "http://third.test/add.html",
     );
     the_pages_frame_has(&engine, &browser, "WEB", 96, "://");
-    assert_eq!(
-        documents_of(&browser, "WEB").unwrap(),
-        ["http://third.test/add.html"]
-    );
+    assert_eq!(documents_of(&browser, "WEB"), Err(Unjudged::Opaque));
 }
 
 #[test]
@@ -2254,6 +2266,49 @@ fn a_sandboxed_srcdoc_frame_with_no_word_of_its_own_context_is_opaque() {
 }
 
 #[test]
+fn a_sandboxed_frame_at_a_web_address_with_no_word_of_its_own_context_is_opaque() {
+    let (judge, _) = judge(&[]);
+    let (browser, engine) = browser_judged(judge);
+    frame_elements_have(
+        &engine,
+        json!(["src", "https://shop.test/pay", "sandbox", ""]),
+    );
+    the_page_shows_a_frame(&engine, &browser, "SHOP", "PAGE-1", "https://shop.test/pay");
+    browser.read_sandboxes("PAGE-1");
+    let state = super::super::lock(&browser.inner.state);
+    assert_eq!(state.documents_of("PAGE-1", "SHOP"), Err(Unjudged::Opaque));
+    drop(state);
+    let owners = engine.sent("DOM.getFrameOwner");
+    assert!(
+        owners
+            .iter()
+            .any(|s| s.params["frameId"] == "SHOP" && s.session.as_deref() == Some("S-PAGE-1")),
+        "{owners:?}"
+    );
+}
+
+#[test]
+fn a_frames_element_is_read_in_the_session_of_the_document_around_it() {
+    let (judge, _) = judge(&[]);
+    let (browser, engine) = browser_judged(judge);
+    frame_elements_have(&engine, json!(["sandbox", ""]));
+    the_frame_shows(&engine, &browser, "https://shop.test/pay", None);
+    browser.read_sandboxes("PAGE-1");
+    let owners = engine.sent("DOM.getFrameOwner");
+    assert!(
+        owners
+            .iter()
+            .any(|s| s.params["frameId"] == "PAYMENT-FRAME"
+                && s.session.as_deref() == Some("S-PAGE-1")),
+        "the frame's own session holds no element of it: {owners:?}"
+    );
+    assert_eq!(
+        super::super::lock(&browser.inner.state).documents_of("PAGE-1", "PAYMENT-FRAME"),
+        Err(Unjudged::Opaque)
+    );
+}
+
+#[test]
 fn a_srcdoc_frame_sandboxed_with_its_origin_allowed_takes_the_page_origin() {
     let (judge, _) = judge(&[]);
     let (browser, engine) = browser_judged(judge);
@@ -2496,7 +2551,11 @@ fn keys_with_no_known_focus_read_at_most_one_chains_worth_of_frames_per_act() {
         n += 1;
     }
     assert!(!engine.sent("Input.dispatchKeyEvent").is_empty());
-    assert_eq!(sandboxes_read(&engine), 50, "each frame is read once");
+    assert_eq!(
+        sandboxes_read(&engine),
+        51,
+        "each frame is read once, the payment frame at its web address among them"
+    );
 }
 
 /// A fresh tab: its own document is blank, and its own context has no web origin.
@@ -2741,4 +2800,40 @@ fn a_secret_is_filled_into_no_frame_whose_document_ended() {
     let (browser, engine) = a_web_frame_that_starts_another_document();
     the_pages_context_ends(&engine, &browser, 92);
     assert_eq!(fill_origin(&browser, "WEB"), None);
+}
+
+/// The steward's decision on the person's rulings of 2026-11-06: a `data:` download a blank frame
+/// began is from the origin its document has, the nearest one around it, not from nowhere.
+#[test]
+fn a_download_a_blank_frame_began_is_from_the_origin_its_document_has() {
+    let (judge, _) = judge(&["http://third.test/"]);
+    let (browser, engine) = browser_judged(judge);
+    the_frame_shows(&engine, &browser, "about:blank", Some("://"));
+    the_document_has(&engine, &browser, "http://third.test");
+    engine.emit(
+        "Browser.downloadWillBegin",
+        json!({ "frameId": "PAYMENT-FRAME", "guid": "GUID-B", "url": "data:text/plain,hi", "suggestedFilename": "hi.txt" }),
+        None,
+    );
+    events_taken_in(&browser, &engine);
+    let listed = browser.downloads();
+    assert_eq!(listed.len(), 1, "{listed:?}");
+    assert_eq!(listed[0].origin.as_deref(), Some("http://third.test"));
+}
+
+/// And one a sandboxed frame began is from nowhere known: its document has no origin.
+#[test]
+fn a_download_a_sandboxed_srcdoc_frame_began_is_from_nowhere_known() {
+    let (judge, _) = judge(&[]);
+    let (browser, engine) = browser_judged(judge);
+    chrome_shows_a_srcdoc_frame(&engine, &browser, "://");
+    engine.emit(
+        "Browser.downloadWillBegin",
+        json!({ "frameId": "PAYMENT-FRAME", "guid": "GUID-S", "url": "data:text/plain,hi", "suggestedFilename": "hi.txt" }),
+        None,
+    );
+    events_taken_in(&browser, &engine);
+    let listed = browser.downloads();
+    assert_eq!(listed.len(), 1, "{listed:?}");
+    assert_eq!(listed[0].origin, None);
 }

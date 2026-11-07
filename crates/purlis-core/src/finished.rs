@@ -17,6 +17,7 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::hookwire::alive;
 use crate::worktree::{self, git, standing};
 
 /// How a finished folder's commits stand against its base.
@@ -235,8 +236,10 @@ pub fn links(plane: &Path, ws: &str) -> Vec<Link> {
         })
         .collect();
     let mut found = Vec::new();
-    for (from, at) in &folders {
-        for target in link_targets(at) {
+    // Each folder's `git status`, read several at once and said alive after each (#5439).
+    let targets = each_at_once(&folders, |(_, at)| link_targets(at));
+    for ((from, _), targets) in folders.iter().zip(targets) {
+        for target in targets {
             if let Some((into, _)) = folders
                 .iter()
                 .filter(|(other, _)| other != from)
@@ -323,4 +326,66 @@ pub fn as_it_stands(
     } else {
         Err(NotFinished::LinkedInto(by))
     }
+}
+
+/// The most folders read at once: each reading is a handful of git processes, and a reading
+/// waits on the disk as much as on a core.
+const AT_ONCE: usize = 8;
+
+/// `judge` of each of `items`, in their order, read on as many threads as the machine has
+/// cores, at most [`AT_ONCE`] (#5439): each folder's reading is its own and only reads, and a
+/// workspace of about 290 folders took 21 minutes read one by one. A thread that panics
+/// panics this one, once the others have read what is left.
+///
+/// Each thread runs its git as this one does ([`git::within`]) and says the work is alive
+/// after each item it read ([`crate::hookwire::alive`]): a chat's wait on the app bounds a
+/// silence, and a workspace may hold any number of folders.
+pub(crate) fn each_at_once<T: Sync, R: Send>(
+    items: &[T],
+    judge: impl Fn(&T) -> R + Sync,
+) -> Vec<R> {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let isolation = git::isolation();
+    let pulse = alive::held();
+    let threads = std::thread::available_parallelism()
+        .map_or(1, std::num::NonZeroUsize::get)
+        .clamp(1, AT_ONCE)
+        .min(items.len());
+    let next = AtomicUsize::new(0);
+    let read: Vec<(usize, R)> = std::thread::scope(|scope| {
+        let reading: Vec<_> = (0..threads)
+            .map(|_| {
+                scope.spawn(|| {
+                    git::within(isolation.as_ref(), || {
+                        alive::within(pulse.as_ref(), || {
+                            let mut read = Vec::new();
+                            loop {
+                                let at = next.fetch_add(1, Ordering::Relaxed);
+                                let Some(item) = items.get(at) else {
+                                    return read;
+                                };
+                                read.push((at, judge(item)));
+                                alive::beat();
+                            }
+                        })
+                    })
+                })
+            })
+            .collect();
+        reading
+            .into_iter()
+            .flat_map(|thread| {
+                thread
+                    .join()
+                    .unwrap_or_else(|panicked| std::panic::resume_unwind(panicked))
+            })
+            .collect()
+    });
+    let mut out: Vec<Option<R>> = items.iter().map(|_| None).collect();
+    for (at, judged) in read {
+        out[at] = Some(judged);
+    }
+    out.into_iter()
+        .map(|judged| judged.expect("every item is taken by one thread and read"))
+        .collect()
 }

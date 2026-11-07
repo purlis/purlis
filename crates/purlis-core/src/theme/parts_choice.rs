@@ -83,35 +83,35 @@ fn row_look(states: &[State]) -> Look {
 pub(super) const CHECKBOX: Family = Family {
     name: "checkbox",
     description: "A checkbox: its row, the box ticked, its words, its count and the line under them.",
-    since: super::NEXT,
+    since: 13,
     parts: &[
         Part {
             name: "root",
-            since: super::NEXT,
+            since: 13,
             description: "The row pressed: its words' colour, its ground and corners as a chip.",
             properties: &[Prop::Fill, Prop::Text, Prop::CornerRadius, Prop::Gap],
         },
         Part {
             name: "box",
-            since: super::NEXT,
+            since: 13,
             description: "The box ticked: its fill, its edge and its corners.",
             properties: MARK,
         },
         Part {
             name: "label",
-            since: super::NEXT,
+            since: 13,
             description: "Its words.",
             properties: WORDS,
         },
         Part {
             name: "count",
-            since: super::NEXT,
+            since: 13,
             description: "How many things it stands for, after its words, on a box or a chip.",
             properties: &[Prop::Text],
         },
         Part {
             name: "description",
-            since: super::NEXT,
+            since: 13,
             description: "The line under its words on what it does.",
             properties: LINE,
         },
@@ -119,13 +119,13 @@ pub(super) const CHECKBOX: Family = Family {
     variants: &[
         Variant {
             name: "box",
-            since: super::NEXT,
+            since: 13,
             description: "A box ticked beside its words.",
             consent: None,
         },
         Variant {
             name: "chip",
-            since: super::NEXT,
+            since: 13,
             description: "One of a few, small and side by side over the list they narrow.",
             consent: None,
         },
@@ -180,29 +180,29 @@ pub(super) fn checkbox_look(variant: &str, states: &[State]) -> Look {
 pub(super) const RADIO: Family = Family {
     name: "radio",
     description: "One option of a radio group: its row, the mark picked, its words and its line.",
-    since: super::NEXT,
+    since: 13,
     parts: &[
         Part {
             name: "root",
-            since: super::NEXT,
+            since: 13,
             description: "The row pressed: its words' colour and the room beside its mark.",
             properties: ROW,
         },
         Part {
             name: "mark",
-            since: super::NEXT,
+            since: 13,
             description: "The circle picked: its fill and its edge.",
             properties: &[Prop::Fill, Prop::BorderColour, Prop::BorderWidth],
         },
         Part {
             name: "label",
-            since: super::NEXT,
+            since: 13,
             description: "Its words.",
             properties: WORDS,
         },
         Part {
             name: "description",
-            since: super::NEXT,
+            since: 13,
             description: "The line under its words on what it does.",
             properties: LINE,
         },
@@ -234,29 +234,29 @@ pub(super) fn radio_look(_variant: &str, states: &[State]) -> Look {
 pub(super) const SWITCH: Family = Family {
     name: "switch",
     description: "A switch: its row, the track, the thumb that slides and its words.",
-    since: super::NEXT,
+    since: 13,
     parts: &[
         Part {
             name: "root",
-            since: super::NEXT,
+            since: 13,
             description: "The row pressed: its words' colour and the room beside its track.",
             properties: ROW,
         },
         Part {
             name: "track",
-            since: super::NEXT,
+            since: 13,
             description: "The pill the thumb slides along: its fill and its corners.",
             properties: SHAPE,
         },
         Part {
             name: "thumb",
-            since: super::NEXT,
+            since: 13,
             description: "The thumb, on the side it is switched to: its fill and its corners.",
             properties: SHAPE,
         },
         Part {
             name: "label",
-            since: super::NEXT,
+            since: 13,
             description: "Its words.",
             properties: WORDS,
         },
@@ -288,10 +288,10 @@ pub(super) fn switch_look(_variant: &str, states: &[State]) -> Look {
 pub(super) const SEGMENTED_CONTROL: Family = Family {
     name: "segmented-control",
     description: "A segmented control: the ground its segments stand on, side by side.",
-    since: super::NEXT,
+    since: 13,
     parts: &[Part {
         name: "root",
-        since: super::NEXT,
+        since: 13,
         description: "Its ground: its fill, its corners, its lift and the room around its segments.",
         properties: &[
             Prop::Fill,
@@ -332,23 +332,23 @@ pub(super) fn segmented_control_look(_variant: &str, _states: &[State]) -> Look 
 pub(super) const SEGMENT: Family = Family {
     name: "segment",
     description: "One segment of a segmented control: its ground, its words and its count.",
-    since: super::NEXT,
+    since: 13,
     parts: &[
         Part {
             name: "root",
-            since: super::NEXT,
+            since: 13,
             description: "The segment: its fill, its words' colour, its lift and its corners.",
             properties: &[Prop::Fill, Prop::Text, Prop::Shadow, Prop::CornerRadius],
         },
         Part {
             name: "label",
-            since: super::NEXT,
+            since: 13,
             description: "Its words.",
             properties: &[Prop::Text],
         },
         Part {
             name: "count",
-            since: super::NEXT,
+            since: 13,
             description: "How many things it stands for, after its words.",
             properties: &[Prop::Text],
         },
@@ -396,35 +396,35 @@ pub(super) fn segment_look(_variant: &str, states: &[State]) -> Look {
 pub(super) const SLIDER: Family = Family {
     name: "slider",
     description: "A slider: its track, the fill up to its value, its thumb and its value.",
-    since: super::NEXT,
+    since: 13,
     parts: &[
         Part {
             name: "root",
-            since: super::NEXT,
+            since: 13,
             description: "The slider's row: its words' colour and the room beside its track.",
             properties: ROW,
         },
         Part {
             name: "track",
-            since: super::NEXT,
+            since: 13,
             description: "The line it moves along: its fill and its corners.",
             properties: SHAPE,
         },
         Part {
             name: "fill",
-            since: super::NEXT,
+            since: 13,
             description: "The track up to its value.",
             properties: SHAPE,
         },
         Part {
             name: "thumb",
-            since: super::NEXT,
+            since: 13,
             description: "The thumb: its fill, its edge and its corners.",
             properties: &[Prop::Fill, Prop::BorderColour, Prop::CornerRadius],
         },
         Part {
             name: "output",
-            since: super::NEXT,
+            since: 13,
             description: "Its value, beside the track.",
             properties: &[Prop::Text],
         },
@@ -467,11 +467,11 @@ pub(super) fn slider_look(_variant: &str, states: &[State]) -> Look {
 pub(super) const OPTION_CARD: Family = Family {
     name: "option-card",
     description: "An option card: its ground and edge, its icon, title, detail and check.",
-    since: super::NEXT,
+    since: 13,
     parts: &[
         Part {
             name: "root",
-            since: super::NEXT,
+            since: 13,
             description: "The card: its fill, its edge, its corners, its lift and its room.",
             properties: &[
                 Prop::Fill,
@@ -485,25 +485,25 @@ pub(super) const OPTION_CARD: Family = Family {
         },
         Part {
             name: "icon",
-            since: super::NEXT,
+            since: 13,
             description: "Its mark, before its title; a tile is only this.",
             properties: &[Prop::Text],
         },
         Part {
             name: "title",
-            since: super::NEXT,
+            since: 13,
             description: "Its name.",
             properties: WORDS,
         },
         Part {
             name: "detail",
-            since: super::NEXT,
+            since: 13,
             description: "What it means, under its title.",
             properties: LINE,
         },
         Part {
             name: "check",
-            since: super::NEXT,
+            since: 13,
             description: "The check the chosen card shows.",
             properties: &[Prop::Text],
         },
@@ -511,13 +511,13 @@ pub(super) const OPTION_CARD: Family = Family {
     variants: &[
         Variant {
             name: "card",
-            since: super::NEXT,
+            since: 13,
             description: "A card: its icon and title, its detail under them, its check.",
             consent: None,
         },
         Variant {
             name: "tile",
-            since: super::NEXT,
+            since: 13,
             description: "A square tile that is only its icon: a persona's mark, a colour.",
             consent: None,
         },

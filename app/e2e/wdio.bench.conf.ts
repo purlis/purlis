@@ -14,7 +14,7 @@ import { writeBenchShell } from "./load.js";
  * One app serves every spec file in a run, so `tools/bench.mjs` runs each spec file on its
  * own: what one measures is never left over from another.
  */
-const app = built(process.platform === "win32" ? "charter-app.exe" : "charter-app");
+const app = built(process.platform === "win32" ? "purlis-app.exe" : "purlis-app");
 
 /**
  * A plane of the benchmark's own — **and this config used to pin none at all.**

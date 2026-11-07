@@ -222,14 +222,23 @@ describe("a list a field aims at", () => {
   it("is named, says the aimed row, and runs a row on a press", async () => {
     const ran = vi.fn();
     render(
-      <AimedList id="rows" aria-label="Actions">
-        <AimedOption id="a" aimed onPress={() => ran("a")}>
-          <RowLabel>Open a chat</RowLabel>
-        </AimedOption>
-        <AimedOption id="b" aimed={false} unavailable onPress={() => ran("b")}>
-          <RowLabel>End it</RowLabel>
-        </AimedOption>
-      </AimedList>,
+      <AimedList
+        id="rows"
+        aria-label="Actions"
+        count={2}
+        aimed={0}
+        option={(at) =>
+          at === 0 ? (
+            <AimedOption id="a" aimed onPress={() => ran("a")}>
+              <RowLabel>Open a chat</RowLabel>
+            </AimedOption>
+          ) : (
+            <AimedOption id="b" aimed={false} unavailable onPress={() => ran("b")}>
+              <RowLabel>End it</RowLabel>
+            </AimedOption>
+          )
+        }
+      />,
     );
     const list = screen.getByRole("listbox", { name: "Actions" });
     expect(list).toHaveAttribute("data-scope", "list");

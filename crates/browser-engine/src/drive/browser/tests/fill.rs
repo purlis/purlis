@@ -9,11 +9,11 @@
 
 use std::sync::{Arc, Mutex};
 
-use serde_json::json;
+use serde_json::{Value, json};
 
 use super::super::fill::{FIELD_KIND, WRITE_FIELD};
 use super::{Engine, browser, id, ref_of, snapshot, wait_for};
-use crate::drive::{Call, Content, FillHold, Ref, Refusal, SecretFill};
+use crate::drive::{Call, Content, DownloadHolds, FillHold, Ref, Refusal, SecretFill};
 
 const VALUE: &str = "open sesame";
 
@@ -28,6 +28,10 @@ enum Twist {
     /// The field is a multi-line one by the time the value is written (#5120): it takes it only
     /// where the write is told the person was asked about one.
     TurnsMultiLine,
+    /// The field is in a form sent by GET, or is a payment field, by the time the value is
+    /// written (the rulings of 2026-11-06): it takes it only where the write is told the fill is
+    /// under no grant.
+    Grantless(&'static str),
 }
 
 /// The stand-in's fields, each read as `kind`, and what each write into them answers.
@@ -36,7 +40,7 @@ fn as_fields(engine: &Arc<Engine>, kind: &'static str, twist: Twist) {
         let p = &sent.params;
         match sent.method.as_str() {
             "Runtime.callFunctionOn" if p["functionDeclaration"] == FIELD_KIND => Some(Ok(
-                json!({ "result": { "type": "object", "value": { "kind": kind, "label": "Secret word" } } }),
+                json!({ "result": { "type": "object", "value": { "kind": kind, "label": "Secret word", "by_get": false, "payment": false } } }),
             )),
             "Runtime.callFunctionOn" if p["functionDeclaration"] == WRITE_FIELD => {
                 let value = p["arguments"][1]["value"].as_str().unwrap_or_default();
@@ -49,6 +53,12 @@ fn as_fields(engine: &Arc<Engine>, kind: &'static str, twist: Twist) {
                         json!({ "result": { "type": "string", "value": "kind" } })
                     }
                     Twist::TurnsMultiLine => {
+                        json!({ "result": { "type": "number", "value": held } })
+                    }
+                    Twist::Grantless(said) if p["arguments"][4]["value"] == true => {
+                        json!({ "result": { "type": "string", "value": said } })
+                    }
+                    Twist::Grantless(_) => {
                         json!({ "result": { "type": "number", "value": held } })
                     }
                 }))
@@ -65,6 +75,7 @@ fn fill_of(target: Ref, origin: &str) -> SecretFill {
         key: "dash-api-key".to_owned(),
         value: VALUE.to_owned().into(),
         multi_line: false,
+        under_a_grant: false,
     }
 }
 
@@ -239,6 +250,42 @@ fn a_field_in_a_frame_whose_document_is_not_known_yet_is_refused_in_words_that_s
 }
 
 #[test]
+fn a_field_in_a_frame_the_agent_is_kept_off_is_neither_read_nor_filled() {
+    let (browser, engine) = browser();
+    as_fields(&engine, "one_line", Twist::None);
+    let pay = ref_of(&snapshot(&browser, 1), "- button \"Pay now\"");
+    browser.keep_off(Arc::new(|address: &str| {
+        address
+            .starts_with("http://other.test")
+            .then(|| "other.test:80".to_owned())
+    }));
+    let reads = engine.sent("Runtime.callFunctionOn").len();
+
+    let read = browser.call(
+        &id(2),
+        Call::DescribeField {
+            target: pay.clone(),
+        },
+    );
+    assert!(
+        matches!(&read, Err(Refusal::KeptOff { site, .. }) if site == "other.test:80"),
+        "{read:?}"
+    );
+    assert_eq!(
+        engine.sent("Runtime.callFunctionOn").len(),
+        reads,
+        "its field was not read"
+    );
+
+    let filled = filling(&browser, &fill_of(pay, "http://other.test"));
+    assert!(
+        matches!(&filled, Err(Refusal::KeptOff { site, .. }) if site == "other.test:80"),
+        "{filled:?}"
+    );
+    assert_eq!(inserted(&engine), 0);
+}
+
+#[test]
 fn a_field_that_is_not_one_line_is_refused_before_anything_is_typed_where_nobody_was_asked() {
     for kind in ["multi_line", "editable", "other"] {
         let (browser, engine) = browser();
@@ -359,6 +406,92 @@ fn a_fill_under_a_lease_the_agent_no_longer_holds_types_nothing() {
     assert_eq!(inserted(&engine), 0);
 }
 
+/// A download is brought into a chat's folder only where its file holds no value purlis filled
+/// into the browser, in any of the forms a read has it taken out in.
+#[test]
+fn a_file_is_said_to_hold_a_filled_value_once_that_value_is_filled() {
+    let (browser, engine) = browser();
+    as_fields(&engine, "one_line", Twist::None);
+    let secret = ref_of(&snapshot(&browser, 1), "- textbox \"Secret word\"");
+    let held = tempfile::tempdir().unwrap();
+    let folder = held.path();
+    let holding = folder.join("export.txt");
+    std::fs::write(&holding, format!("key = {}\n", VALUE.to_uppercase())).unwrap();
+    let other = folder.join("other.txt");
+    std::fs::write(&other, "open and sesame, apart").unwrap();
+    assert_eq!(
+        browser.holds_kept_out(&holding).unwrap(),
+        DownloadHolds::Nothing,
+        "nothing filled yet"
+    );
+
+    filling(&browser, &fill_of(secret, "http://fixture.test"))
+        .unwrap_or_else(|why| panic!("{}", ended_as(&Err::<(), _>(why))));
+
+    assert_eq!(
+        browser.holds_kept_out(&holding).unwrap(),
+        DownloadHolds::Filled
+    );
+    assert_eq!(
+        browser.holds_kept_out(&other).unwrap(),
+        DownloadHolds::Nothing
+    );
+    assert!(browser.holds_kept_out(&folder.join("gone.txt")).is_err());
+}
+
+/// The person takes the browser over the moment the value is in its field, before the fill
+/// answers: the fill says it went in, so the person's view marks the field, and the answer
+/// reads nothing of the page the person now drives.
+#[test]
+fn a_fill_cut_by_a_take_over_after_its_write_says_the_value_went_in() {
+    let (browser, engine) = browser();
+    let browser = Arc::new(browser);
+    let secret = ref_of(&snapshot(&browser, 1), "- textbox \"Secret word\"");
+    let taker: Arc<Mutex<Option<Arc<super::StandIn>>>> =
+        Arc::new(Mutex::new(Some(Arc::clone(&browser))));
+    let takes = Arc::clone(&taker);
+    let mut wrote = false;
+    engine.on(move |sent, _engine| {
+        let p = &sent.params;
+        match sent.method.as_str() {
+            "Runtime.callFunctionOn" if p["functionDeclaration"] == FIELD_KIND => Some(Ok(
+                json!({ "result": { "type": "object", "value": { "kind": "one_line", "label": "Secret word", "by_get": false, "payment": false } } }),
+            )),
+            "Runtime.callFunctionOn" if p["functionDeclaration"] == WRITE_FIELD => {
+                wrote = true;
+                let held = VALUE.encode_utf16().count();
+                Some(Ok(json!({ "result": { "type": "number", "value": held } })))
+            }
+            // The first thing sent once the value is in: the person takes over here.
+            "Runtime.releaseObject" if wrote => {
+                if let Some(browser) = super::super::super::lock(&takes).take() {
+                    browser.take_over();
+                }
+                None
+            }
+            _ => None,
+        }
+    });
+
+    let filled = browser.fill_secret(
+        browser.epoch(),
+        &fill_of(secret, "http://fixture.test"),
+        Arc::new(Holding::default()),
+    );
+
+    assert!(super::super::super::lock(&taker).is_none(), "taken over");
+    assert_eq!(written(&engine), [VALUE]);
+    let answer = filled.unwrap_or_else(|why| panic!("{why}"));
+    let note = answer.note.unwrap_or_default();
+    assert!(note.contains("dash-api-key"), "{note}");
+    assert!(note.contains("took this browser over"), "{note}");
+    assert_eq!(
+        answer.page, None,
+        "nothing of the person's page is answered"
+    );
+    assert_eq!(answer.content, Content::Nothing);
+}
+
 /// The value itself is kept out for the browser's life, not only what its field holds: a page
 /// that echoes it elsewhere, while its field reads otherwise, shows the agent nothing of it.
 #[test]
@@ -396,7 +529,7 @@ fn main_frame_loads(engine: &Engine, url: &str) {
 }
 
 /// The stand-in's page, filled under `holding`, which holds.
-fn filled_under(holding: &Arc<Holding>) -> (crate::drive::Browser, Arc<Engine>) {
+fn filled_under(holding: &Arc<Holding>) -> (super::StandIn, Arc<Engine>) {
     let (browser, engine) = browser();
     as_fields(&engine, "one_line", Twist::None);
     *super::super::super::lock(&holding.engine) = Some(Arc::clone(&engine));
@@ -865,6 +998,7 @@ fn a_multi_line_box_or_an_editable_area_takes_it_where_the_person_was_asked_abou
         let secret = ref_of(&snapshot(&browser, 1), "- textbox \"Secret word\"");
         let fill = SecretFill {
             multi_line: true,
+            under_a_grant: false,
             ..fill_of(secret, "http://fixture.test")
         };
 
@@ -879,6 +1013,38 @@ fn a_multi_line_box_or_an_editable_area_takes_it_where_the_person_was_asked_abou
             .expect("written");
         assert_eq!(write.params["arguments"][3]["value"], true, "{kind}");
     }
+}
+
+/// The rulings of 2026-11-06: the write is told whether the fill goes in under a grant, and a
+/// field it then finds sent by GET takes nothing, in words that say why; asked about, it goes in.
+/// One browser for both, as each stand-in browser here costs threads.
+#[test]
+fn under_a_grant_a_field_the_write_finds_sent_by_get_takes_nothing() {
+    let (browser, engine) = browser();
+    as_fields(&engine, "one_line", Twist::Grantless("get"));
+    let secret = ref_of(&snapshot(&browser, 1), "- textbox \"Secret word\"");
+
+    let granted = filling(
+        &browser,
+        &SecretFill {
+            under_a_grant: true,
+            ..fill_of(secret.clone(), "http://fixture.test")
+        },
+    );
+    let asked = filling(&browser, &fill_of(secret, "http://fixture.test"));
+
+    let grants: Vec<Value> = engine
+        .sent("Runtime.callFunctionOn")
+        .into_iter()
+        .filter(|sent| sent.params["functionDeclaration"] == WRITE_FIELD)
+        .map(|sent| sent.params["arguments"][4]["value"].clone())
+        .collect();
+    assert_eq!(grants, [json!(true), json!(false)]);
+    match granted {
+        Err(Refusal::NotFilled(told)) => assert!(told.contains("by GET"), "{told}"),
+        other => panic!("refused otherwise: {}", ended_as(&other)),
+    }
+    asked.unwrap_or_else(|why| panic!("{}", ended_as(&Err::<(), _>(why))));
 }
 
 /// A one-line fill tells the write so: a field that is a multi-line one when the value is
@@ -988,4 +1154,71 @@ fn once_the_filled_page_loads_another_document_its_keys_go_again() {
         },
     );
     assert!(pressed.is_ok(), "{}", ended_as(&pressed));
+}
+
+#[test]
+fn what_a_fill_goes_in_with_is_what_a_fields_origin_is_held_to() {
+    let holding = Arc::new(Holding::default());
+    let (browser, _engine) = filled_under(&holding);
+    let state = super::super::super::lock(&browser.inner.state);
+    assert!(crate::drive::scrub::Scrub::of(&state.filled).holds(VALUE));
+}
+
+#[test]
+fn a_window_takes_on_what_its_opener_keeps_and_what_a_page_kept_outlives_it() {
+    let (browser, engine) = browser();
+    let _ = snapshot(&browser, 1);
+    super::super::super::lock(&browser.inner.state)
+        .page_mut("PAGE-1")
+        .expect("the page")
+        .scrubbed
+        .run(&["token-5310"]);
+
+    a_window_opens(&browser, &engine, "W-1", "about:blank", "PAGE-1", true);
+    let holds = {
+        let state = super::super::super::lock(&browser.inner.state);
+        let window = state.page("W-1").expect("the window");
+        crate::drive::scrub::Scrub::of(&window.scrubbed).holds("token-5310")
+    };
+    assert!(holds, "it may carry what opened it wrote");
+
+    a_window_ends(&engine, "W-1");
+    a_window_ends(&engine, "PAGE-1");
+    wait_for("the page is gone", || {
+        super::super::super::lock(&browser.inner.state)
+            .page("PAGE-1")
+            .is_none()
+    });
+    let named = browser.names_kept_out(vec![crate::drive::DownloadInfo {
+        id: "d1".to_owned(),
+        name: "token-5310.txt".to_owned(),
+        origin: None,
+        received: 0,
+        total: None,
+        state: crate::drive::DownloadState::Done,
+        file: "guid".to_owned(),
+    }]);
+    assert_eq!(named[0].name, "(blanked).txt");
+}
+
+#[test]
+fn a_page_kept_off_is_said_by_its_origin_alone_though_its_address_holds_a_value_kept_out() {
+    let (browser, _engine) = browser();
+    let _ = snapshot(&browser, 1);
+    let mut held = crate::drive::kept::Kept::default();
+    held.run(&["fixture"]);
+    super::super::super::lock(&browser.inner.state).keep_out_everywhere(&held);
+    browser.keep_off(Arc::new(|address: &str| {
+        address
+            .starts_with("http://fixture.test")
+            .then(|| "fixture.test:80".to_owned())
+    }));
+
+    let answer = browser.call(&id(2), Call::Pages).expect("listed");
+
+    let Content::Pages(pages) = answer.content else {
+        panic!("pages");
+    };
+    assert_eq!(pages[0].address, "http://(blanked).test");
+    assert!(pages[0].title.is_empty());
 }

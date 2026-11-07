@@ -56,9 +56,7 @@ impl Project {
             .env_remove("VISUAL")
             .env_remove("EDITOR");
         // Run from a terminal, even where this test runs inside a chat.
-        for spelling in purlis_core::envvar::spellings("PURLIS_SESSION_ID") {
-            command.env_remove(spelling);
-        }
+        crate::support::at_a_terminal(&mut command);
         for (key, value) in env {
             command.env(key, value);
         }

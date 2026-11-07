@@ -33,44 +33,13 @@ function ask(source: Shown["source"], more: Partial<Shown> = {}): Shown {
 const strip = () => screen.getByRole("group", { name: STRIP.waitingOn });
 
 describe("the waiting strip", () => {
-  it("shows a real ask in its own words, and where to answer it", () => {
-    render(<WaitingStrip session={CHAT} waiting={[ask("permission")]} />);
-    expect(within(strip()).getByText("Run npm publish --tag next")).toBeVisible();
-    expect(within(strip()).getByText(STRIP.waitingOn, { exact: false })).toBeVisible();
-    expect(within(strip()).getByText(STRIP.answerBelow, { exact: false })).toBeVisible();
-  });
-
-  it("shows a question purlis's server asks in a form in its own words, whole once opened", async () => {
-    // #4710: `ask_operator`'s question, held with the form it asks through.
-    const user = userEvent.setup();
-    const asked = "Which host do I deploy to?\nThe blue one or the green one?";
-    render(
-      <WaitingStrip
-        session={CHAT}
-        waiting={[
-          ask("terminal", {
-            says: "Which host do I deploy to? The blue one or the green one?",
-            last_message: asked,
-          }),
-        ]}
-      />,
+  it("draws nothing for a real ask or a prompt: each is a row of the band (#5215)", () => {
+    const { container, rerender } = render(
+      <WaitingStrip session={CHAT} waiting={[ask("permission")]} />,
     );
-    expect(within(strip()).getByText(STRIP.answerBelow, { exact: false })).toBeVisible();
-    await user.click(screen.getByRole("button", { name: STRIP.showAll }));
-    expect(
-      within(strip()).getByText((_, node) => node?.textContent === asked && node.tagName === "P"),
-    ).toBeVisible();
-  });
-
-  it("keeps a real ask's words whatever a later turn ended saying", () => {
-    render(
-      <WaitingStrip
-        session={CHAT}
-        waiting={[ask("question", { last_message: "Three tasks are at work." }), ask("permission")]}
-      />,
-    );
-    expect(within(strip()).getByText("Run npm publish --tag next")).toBeVisible();
-    expect(screen.queryByText("Three tasks are at work.")).toBeNull();
+    expect(container).toBeEmptyDOMElement();
+    rerender(<WaitingStrip session={CHAT} waiting={[ask("terminal")]} />);
+    expect(container).toBeEmptyDOMElement();
   });
 
   it("shows a prose wait's last message, and walks back through the few before it", async () => {
@@ -146,7 +115,7 @@ describe("the waiting strip", () => {
       <WaitingStrip session={CHAT} waiting={[ask("permission", { session: CHAT + 1 })]} />,
     );
     expect(container).toBeEmptyDOMElement();
-    rerender(<WaitingStrip session={CHAT} waiting={[ask("permission")]} />);
+    rerender(<WaitingStrip session={CHAT} waiting={[ask("question")]} />);
     expect(strip()).toBeVisible();
     rerender(<WaitingStrip session={CHAT} waiting={[]} />);
     expect(container).toBeEmptyDOMElement();

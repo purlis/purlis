@@ -286,3 +286,24 @@ fn a_flag_in_a_yaml_file_is_read_only_where_the_file_says_it_plainly() {
         assert_eq!(flag_at(yaml, &keys), None, "{why}");
     }
 }
+
+#[test]
+fn a_frontmatter_widens_beyond_another_by_each_widening_key_it_adds_or_changes() {
+    let read = |yaml: &str| parse(&format!("---\nname: x\n{yaml}---\n")).unwrap();
+    let plain = read("");
+    let tools = read("allowed-tools: Bash\n");
+    let more_tools = read("allowed-tools: Bash, Write\n");
+    let hooks = read("hooks:\n  Stop:\n    - command: ./x.sh\n");
+    assert_eq!(plain.widens_beyond(Some(&plain)), Vec::<Field>::new());
+    assert_eq!(tools.widens_beyond(Some(&plain)), [Field::AllowedTools]);
+    assert_eq!(
+        more_tools.widens_beyond(Some(&tools)),
+        [Field::AllowedTools]
+    );
+    assert_eq!(tools.widens_beyond(Some(&tools)), Vec::<Field>::new());
+    assert_eq!(hooks.widens_beyond(Some(&plain)), [Field::Hooks]);
+    // Taking one away widens nothing.
+    assert_eq!(plain.widens_beyond(Some(&hooks)), Vec::<Field>::new());
+    // Against nothing, every widening key it sets is new.
+    assert_eq!(tools.widens_beyond(None), [Field::AllowedTools]);
+}

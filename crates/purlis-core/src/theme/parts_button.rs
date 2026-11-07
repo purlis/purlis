@@ -32,7 +32,7 @@ pub(super) const BUTTON: Family = Family {
         },
         Part {
             name: "shortcut",
-            since: super::NEXT,
+            since: 13,
             description: "The key that presses it, after its words.",
             properties: &[Prop::Text, Prop::FontSize],
         },
@@ -88,13 +88,13 @@ pub(super) const BUTTON: Family = Family {
         },
         Variant {
             name: "quiet",
-            since: super::NEXT,
+            since: 13,
             description: "A ghost with quiet words: a strip's end mark, a crumb, a pane's corner.",
             consent: None,
         },
         Variant {
             name: "quiet-link",
-            since: super::NEXT,
+            since: 13,
             description: "A link in quiet words: a card's way on beside its one answer.",
             consent: None,
         },

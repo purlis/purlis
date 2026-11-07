@@ -3,9 +3,9 @@
 
 /**
  * **A chat's persona with its state on it, one row per state** (#3342): the persona's mark leads
- * each row of the Chats view, and a chat that asks for the person or is at work wears its state's
- * own mark on the mark's corner, about 10px, its shape as well as its colour (`shownState.ts`). A
- * chat at rest wears none. A chat with no persona wears the terminal's mark.
+ * each row of the Chats view, and a chat wears its state's own mark on the mark's corner, about
+ * 10px, its shape as well as its colour (`ui/chat-mark`). A
+ * chat with no persona wears the terminal's mark.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect } from "storybook/test";
@@ -94,35 +94,35 @@ const meta = { component: OneRowPerState } satisfies Meta<typeof OneRowPerState>
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** The badge is drawn for the states that ask or are at work, its mark whole; none at rest. */
+/** Every state wears its badge, its glyph whole, and a chat nothing is known of wears none. */
 export const OneRowPerStateOfAChat: Story = {
   play: async ({ canvasElement }) => {
-    const badgeOf = (name: string) => {
-      const row = [...canvasElement.querySelectorAll<HTMLElement>('[role="treeitem"]')].find(
-        (one) => one.querySelector(".session")?.textContent === name,
-      );
-      return row?.querySelector<HTMLElement>(".chat-persona > .shown-state") ?? null;
-    };
+    const rootOf = (name: string) =>
+      [...canvasElement.querySelectorAll<HTMLElement>('[role="treeitem"]')]
+        .find((one) => one.querySelector(".session")?.textContent === name)
+        ?.querySelector<HTMLElement>('[data-scope="chat-mark"][data-part="root"]') ?? null;
     // About 10px: two steps of the theme's space, measured as the theme in force draws them.
     const probe = document.createElement("div");
     probe.style.inlineSize = "calc(var(--space-4) + var(--space-1))";
     canvasElement.append(probe);
     const ten = Math.round(probe.getBoundingClientRect().width);
     probe.remove();
-    for (const name of ["working", "needs you", "asking", "failed", "unreported", "terminal"]) {
-      const badge = badgeOf(name);
-      await expect(badge, name).not.toBeNull();
-      await expect(getComputedStyle(badge as HTMLElement).display, name).not.toBe("none");
+    for (const [name, state] of [
+      ["working", "working"],
+      ["needs you", "needs"],
+      ["asking", "waiting"],
+      ["failed", "ended"],
+      ["unreported", "ended"],
+      ["done", "ended"],
+      ["idle", "idle"],
+      ["terminal", "working"],
+    ] as const) {
+      const root = rootOf(name);
+      await expect(root, name).toHaveAttribute("data-variant", state);
       // Its shape is drawn: a state is told without its colour.
-      const glyph = (badge as HTMLElement).querySelector("svg");
+      const glyph = root?.querySelector('[data-part="badge"] svg') ?? null;
       await expect(glyph, name).not.toBeNull();
       await expect(Math.round((glyph as SVGElement).getBoundingClientRect().width), name).toBe(ten);
-    }
-    // The asking row wears the asking mark, read from the registry, not the working one.
-    await expect(badgeOf("asking")).toHaveAttribute("data-state", "asking");
-    for (const name of ["done", "idle"]) {
-      const badge = badgeOf(name);
-      await expect(getComputedStyle(badge as HTMLElement).display, name).toBe("none");
     }
   },
 };

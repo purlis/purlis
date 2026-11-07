@@ -467,7 +467,7 @@ describe("SavingView", () => {
     expect(screen.getByRole("button", { name: "Open terminal here" })).toBeTruthy();
   });
 
-  it("offers a chat for a merge stopped on a conflict, which a chat may finish", async () => {
+  it("offers the window's way through a merge stopped on a conflict", async () => {
     core([
       standing({
         stage: "blocked",
@@ -479,22 +479,25 @@ describe("SavingView", () => {
     ]);
     render(<SavingView plane={PLANE} />);
 
-    const ways = await screen.findByRole("group", { name: "Ways out" });
-    expect(within(ways).getByRole("button", { name: "Resolve in a chat" })).toBeTruthy();
-    expect(within(ways).getByRole("list", { name: "Where it conflicts" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "Continue" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Abort" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Resolve in a chat" })).toBeTruthy();
+    expect(screen.getByText(/The merge is stopped on a conflict/)).toBeTruthy();
+    expect(screen.queryByRole("group", { name: "Ways out" })).toBeNull();
   });
 
   it("offers a chat only where a chat may finish what git stopped", () => {
     const blocked = (stoppedBy: string | null) =>
       chatMaySettle(standing({ stage: "blocked", stoppedBy }));
-    expect(["rebase", "am", "cherry-pick", "revert", "bisect"].map(blocked)).toEqual([
+    expect(["rebase", "merge", "am", "cherry-pick", "revert", "bisect"].map(blocked)).toEqual([
+      false,
       false,
       false,
       false,
       false,
       false,
     ]);
-    expect([null, "merge", "conflicts"].map(blocked)).toEqual([true, true, true]);
+    expect([null, "conflicts"].map(blocked)).toEqual([true, true]);
     expect(chatMaySettle(standing({ stage: "blocked", byHand: "run git" }))).toBe(false);
   });
 

@@ -16,7 +16,7 @@ const WORDS: &[Prop] = &[Prop::Text, Prop::FontSize, Prop::FontWeight];
 const fn verdict(name: &'static str, description: &'static str) -> Variant {
     Variant {
         name,
-        since: super::NEXT,
+        since: 13,
         description,
         consent: None,
     }
@@ -26,35 +26,35 @@ const fn verdict(name: &'static str, description: &'static str) -> Variant {
 pub(super) const CHECKS: Family = Family {
     name: "checks",
     description: "A list of things checked, each with its verdict.",
-    since: super::NEXT,
+    since: 13,
     parts: &[
         Part {
             name: "root",
-            since: super::NEXT,
+            since: 13,
             description: "The list.",
             properties: &[Prop::Text],
         },
         Part {
             name: "mark",
-            since: super::NEXT,
+            since: 13,
             description: "A line's mark: its verdict's icon.",
             properties: &[Prop::Text],
         },
         Part {
             name: "title",
-            since: super::NEXT,
+            since: 13,
             description: "What was checked.",
             properties: WORDS,
         },
         Part {
             name: "more",
-            since: super::NEXT,
+            since: 13,
             description: "What is said under it.",
             properties: WORDS,
         },
         Part {
             name: "trail",
-            since: super::NEXT,
+            since: 13,
             description: "Something at the line's end: how long it took.",
             properties: WORDS,
         },

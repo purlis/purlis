@@ -1013,6 +1013,7 @@ const PieceTab = lazy(() =>
           cut={files.cut}
           path={path}
           onOpenView={files.onOpenView}
+          onPress={files.onPress}
         />
       );
     },

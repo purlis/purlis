@@ -53,6 +53,7 @@ const ALLOWS: Record<SandboxGrant["what"], (one: SandboxGrant) => string> = {
   "browser-site": (one) =>
     `Browsers open, send and type on ${one.target} (browsers only; chats' commands still ask)`,
   write: (one) => `Write ${one.target} and everything in it`,
+  "run-grant": (one) => `Run ${one.target}, in the chat's own sandbox`,
 };
 
 /** One Allow, as a sentence: what it allows, at which scope, who allowed it and when. */
@@ -80,6 +81,7 @@ function removed(one: SandboxGrant): string {
   if (one.what === "listen") return `a server on port ${one.target}`;
   if (one.what === "browser") return `Always for ${one.persona ?? "a persona"}'s browser`;
   if (one.what === "browser-site") return `browsers reaching ${one.target}`;
+  if (one.what === "run-grant") return `running ${one.target}`;
   return `writing ${one.target}`;
 }
 
@@ -109,7 +111,7 @@ function Trouble({ said, onDismiss }: { said: string; onDismiss: () => void }) {
  * folder where it forbids writing) is kept and not in force: it says so, with the policy and
  * who set it, and is drawn locked, with Remove still there to take it away (#1431).
  */
-function AllowedRows({ plane, file, ids }: { plane: PlaneId; file: string; ids: RowIds }) {
+export function AllowedRows({ plane, file, ids }: { plane: PlaneId; file: string; ids: RowIds }) {
   const [grants, setGrants] = useState<readonly SandboxGrant[]>();
   const [said, setSaid] = useState<string>();
   /** Why a project host's Remove is off: the project is read-only (#1759). */

@@ -499,9 +499,11 @@ impl Held {
 
     /// What the sidebar draws, as the model holds it (FD-10b).
     ///
-    /// **A plane that is not watched — or not wholly: a folder the platform would not watch —
-    /// reads it fresh on every ask**, as the sidebar did before there was a model: nothing
-    /// would ever tell the model that part of the plane moved.
+    /// **A plane that is not watched reads it fresh on every ask**, as the sidebar did before
+    /// there was a model: nothing would ever tell the model the plane moved. A watch that is
+    /// partial — a folder the platform would not watch — is still trusted: it looks at that
+    /// folder itself and tells what moved there (#5499), where a read of the whole plane on
+    /// every ask made a thousand-workspace window stick.
     pub fn sidebar_model(&self) -> Model {
         let mut model = self.model.lock().unwrap_or_else(PoisonError::into_inner);
         if !self.trusted(&mut model) {
@@ -510,9 +512,10 @@ impl Held {
         model.clone()
     }
 
-    /// Whether `model` (held under its lock) can be served as it is: the plane is watched,
-    /// and every folder it reads is (the FD-10 review). A watch that was partial and is whole
-    /// again has `model` read again whole first, since a change in the gap was told to nobody.
+    /// Whether `model` (held under its lock) can be served as it is: the plane is watched
+    /// (the FD-10 review), each folder by the platform or by the watch's own look (#5499). A
+    /// watch that was partial and is whole again has `model` read again whole first, since a
+    /// change between the folder's last look and its watch was told to nobody.
     fn trusted(&self, model: &mut Model) -> bool {
         let standing = self
             .watch
@@ -521,7 +524,7 @@ impl Held {
             .as_ref()
             .map(crate::planewatch::Watch::standing);
         match standing {
-            None | Some(crate::planewatch::Standing::Partial) => false,
+            None => false,
             Some(crate::planewatch::Standing::WholeAgain) => {
                 model.apply(&self.root, None);
                 // A change in the gap was told to nobody: the chats' skill stamps too (#4738).
@@ -529,12 +532,12 @@ impl Held {
                 self.start_answers.moved();
                 true
             }
-            Some(crate::planewatch::Standing::Whole) => true,
+            Some(crate::planewatch::Standing::Whole | crate::planewatch::Standing::Partial) => true,
         }
     }
 
     /// The model, for the workspace panels to be served from (FD-10c) — or `None` for a plane
-    /// that is not watched, or not wholly ([`Self::sidebar_model`]), whose panels are read
+    /// that is not watched ([`Self::sidebar_model`]), whose panels are read
     /// fresh from the disk on every ask, as they were before there was a model.
     ///
     /// Held for as long as the guard lives, and the window's own commands wait on it
@@ -5003,7 +5006,18 @@ impl Planes {
         // Never fatal, as the socket above is not: a plane that cannot be watched still opens,
         // and its panels read it when a workspace is focused.
         let watch = caught_up(&model, &root, || {
+            let setting_up = std::time::Instant::now();
             crate::planewatch::Watch::start(id.clone(), &root, changes)
+                // How long the watch took to set up, in the diagnostic log: on macOS it grows
+                // with the project's folders (#5486), and the nightly scale run reads it here
+                // (#5497, `app/e2e/specs/scale.scale.e2e.ts`).
+                .inspect(|_| {
+                    tracing::info!(
+                        "purlis: {} is watched, set up in {} ms",
+                        root.display(),
+                        setting_up.elapsed().as_millis()
+                    );
+                })
                 .map_err(|why| {
                     tracing::warn!(
                         "purlis: {} is not watched ({why}); its panels will not follow changes \
@@ -5223,6 +5237,15 @@ impl Planes {
             .get(plane)
             .map(Arc::clone)
             .ok_or_else(|| no_such(plane, "act on"))
+    }
+
+    /// The folder of every plane this process holds: a project open in a window, which fetches
+    /// what its pools owe it (#5461).
+    pub fn roots_open(&self) -> Vec<PathBuf> {
+        self.map()
+            .values()
+            .map(|held| held.root().to_path_buf())
+            .collect()
     }
 
     /// Every plane this process holds, in no particular order.

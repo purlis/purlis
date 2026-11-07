@@ -81,6 +81,7 @@ import { RelaunchAsk } from "../RelaunchAsk";
 import { RemoveFromWorkspace } from "../RemoveFromWorkspace";
 import { RemovePersona } from "../RemovePersona";
 import { RenameChat } from "../RenameChat";
+import { WorkspaceWriteDialog } from "../WorkspaceWrites";
 import { RenameWorkspace } from "../RenameWorkspace";
 import { AddVision } from "../AddVision";
 import { DeprecateDialog, OwnersDialog } from "../SkillPage";
@@ -105,6 +106,7 @@ import { RouterChange } from "../SkillStudioRouting";
 import { KeepAsk } from "../ThemeDraftStrip";
 import { forgetThisLaunch } from "../regions";
 import { complaints } from "./complaints.testkit";
+import { MoveIntoReposConfirm } from "../MoveIntoReposConfirm";
 import { BUILT_IN, DEFAULT_THEME, drawIn, drawTint, inForce, tinted } from "./theme";
 import { themeInForce } from "./inForce.testkit";
 import { aTabForEachChat } from "../laidOut.testkit";
@@ -435,6 +437,7 @@ const SKILL: StudioSkill = {
   lint: [],
   hidden: [],
   pinned: false,
+  archived: false,
   pinned_by: [],
 };
 
@@ -800,6 +803,21 @@ const DIALOGS: Opened[] = [
     file: "ChangeActions.tsx",
     open: async () =>
       render(<PushAsk plane={P} workspace="alpha" change="tokens" onClose={nothing} />),
+  },
+  {
+    name: "Move into repos/",
+    file: "MoveIntoReposConfirm.tsx",
+    open: async () =>
+      render(
+        <MoveIntoReposConfirm
+          plans={[
+            { workspace: "alpha", repos: ["api"], unresumable: ["In the clone"], open: [] },
+            { workspace: "beta", repos: ["web"], unresumable: [], open: ["steward 2"] },
+          ]}
+          onCancel={nothing}
+          onMove={nothing}
+        />,
+      ),
   },
   {
     name: "Land",
@@ -1302,6 +1320,30 @@ const DIALOGS: Opened[] = [
           renaming={false}
           onRename={nothing}
           onCancel={nothing}
+        />,
+      ),
+  },
+  {
+    name: "deleting the person's own workspace file, which a chat is writing (#5376)",
+    file: "WorkspaceWrites.tsx",
+    open: async () =>
+      render(
+        <WorkspaceWriteDialog
+          asking={{
+            does: {
+              verb: "trashWorkspaceEntry",
+              at: { workspace: "alpha", repo: "", piece: null, path: "notes/plan.md" },
+              folder: false,
+              touchedBy: ["steward 3"],
+            },
+            busy: false,
+            trouble:
+              "purlis did not delete 'notes/plan.md': the system would not put it in the Trash.",
+          }}
+          onName={nothing}
+          onGoOn={nothing}
+          onTrash={nothing}
+          onClose={nothing}
         />,
       ),
   },

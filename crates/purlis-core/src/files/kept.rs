@@ -266,10 +266,19 @@ impl Kept {
         let named = self.workspaces.iter().find(|one| {
             folded(Component::Normal(one.as_ref())) == folded(Component::Normal(ws.as_ref()))
         })?;
+        let held = |folder: &Path| std::fs::symlink_metadata(folder.join(".git")).is_ok();
         let clone = self.base.join("workspaces").join(ws).join(repo);
-        std::fs::symlink_metadata(clone.join(".git"))
-            .is_ok()
-            .then_some(named.as_str())
+        if held(&clone) {
+            return Some(named.as_str());
+        }
+        // A clone in the workspace's `repos/` folder (ADR 0114) is the workspace's as one at its
+        // root is. `repos/` itself is a folder of the plane's, with a row for each clone in it.
+        // Any `.git` there, whatever the name: what keeps a clone's files out is what it holds.
+        if folded(Component::Normal(repo.as_ref())) != crate::repofolder::REPOS {
+            return None;
+        }
+        let inner = steps.next()?.as_os_str().to_str()?;
+        (!inner.starts_with('.') && held(&clone.join(inner))).then_some(named.as_str())
     }
 
     /// `relative`, said as `said`, refused when the plane root does not read it: something
@@ -583,6 +592,32 @@ mod tests {
             "workspaces/alpha/.worktrees",
             "workspaces/beta/svc",
             "README.md",
+        ] {
+            assert_eq!(kept.clone_of(Path::new(path)), None, "{path}");
+        }
+    }
+
+    #[test]
+    fn a_clone_in_the_workspaces_repos_folder_and_everything_in_it_is_that_workspaces() {
+        let (_dir, base, kept) = project();
+        std::fs::create_dir_all(base.join("workspaces/alpha/repos/api/.git")).unwrap();
+        // Kept by what it holds, not by its name: a name the workspace keeps is no repo's in
+        // `repos/`, and its files are still not the plane root's.
+        std::fs::create_dir_all(base.join("workspaces/alpha/repos/memory/.git")).unwrap();
+        std::fs::create_dir_all(base.join("workspaces/alpha/repos/notes")).unwrap();
+        for path in [
+            "workspaces/alpha/repos/api",
+            "workspaces/alpha/repos/api/src/main.rs",
+            "workspaces/alpha/repos/api/.git/config",
+            "workspaces/alpha/repos/memory/notes.md",
+        ] {
+            assert_eq!(kept.clone_of(Path::new(path)), Some("alpha"), "{path}");
+        }
+        // The folder itself is the plane's, with a row for each clone in it.
+        for path in [
+            "workspaces/alpha/repos",
+            "workspaces/alpha/repos/notes",
+            "workspaces/alpha/repos/.hidden",
         ] {
             assert_eq!(kept.clone_of(Path::new(path)), None, "{path}");
         }

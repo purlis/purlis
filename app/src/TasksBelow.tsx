@@ -1,7 +1,14 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { createContext, useContext, useLayoutEffect, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useLayoutEffect,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 import { useSyncExternalStoreWithSelector } from "use-sync-external-store/with-selector";
 import { useChatsHere, useChatsSelect } from "./chatState";
 import { sameBuckets, taskCountsSaid, type TaskCounts } from "./taskBuckets";
@@ -67,6 +74,13 @@ export function TasksBelowLent({
   // changed is drawn again in the same frame.
   useLayoutEffect(() => held.set(below), [held, below]);
   return <TasksBelowHere.Provider value={held}>{children}</TasksBelowHere.Provider>;
+}
+
+/** **Every session's tasks**, by its number: for a reader of several sessions at once, as a split
+ *  tab's mark is (#5342). Drawn again whenever any session's rows change. */
+export function useEveryTasksBelow(): ReadonlyMap<number, TasksBelow> {
+  const held = useContext(TasksBelowHere);
+  return useSyncExternalStore(held.subscribe, held.get, held.get);
 }
 
 /** Session `session`'s tasks: the same value until its own rows change. */

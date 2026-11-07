@@ -68,12 +68,21 @@ impl World {
         self.root.join("workspaces/alpha")
     }
 
+    /// Where a new clone lands, and its landing folder beside it (ADR 0114).
     fn dest(&self, name: &str) -> PathBuf {
-        self.ws().join(name)
+        self.ws().join("repos").join(name)
     }
 
     fn hidden(&self, name: &str) -> PathBuf {
-        self.ws().join(format!(".cloning-{name}"))
+        self.ws().join("repos").join(format!(".cloning-{name}"))
+    }
+
+    /// The workspace's `repos/`, made as a clone would make it, for a test that puts something
+    /// there first.
+    fn repos(&self) -> PathBuf {
+        let repos = self.ws().join("repos");
+        std::fs::create_dir_all(&repos).unwrap();
+        repos
     }
 
     fn bare(&self, name: &str) -> PathBuf {
@@ -93,7 +102,7 @@ impl World {
         let mut said = Vec::new();
         let code = as_the_window(
             &HostScope::for_a_test(),
-            Path::new("/Applications/purlis.app/Contents/MacOS/charter-app"),
+            Path::new("/Applications/purlis.app/Contents/MacOS/purlis-app"),
             self.home.path(),
             || {
                 clone(
@@ -286,6 +295,27 @@ fn a_clone_lands_at_its_destination_with_one_percent_that_never_goes_back() {
 }
 
 #[test]
+fn a_window_clone_lands_in_repos_which_it_makes_only_then() {
+    // ADR 0114, decision 1: `repos/` is made by the first clone that needs it, and the clone
+    // and its landing folder are in it.
+    let world = World::holding(&["widget"]);
+    assert!(!world.ws().join("repos").exists());
+
+    let (code, said) = world.clone_plainly(&["widget"]);
+
+    assert_eq!(code, 0, "{said:?}");
+    let dest = world.ws().join("repos/widget");
+    assert!(dest.join(".git").is_dir(), "{said:?}");
+    assert!(!world.ws().join("widget").exists(), "{said:?}");
+    assert!(!world.ws().join(".cloning-widget").exists(), "{said:?}");
+    assert!(
+        words(&said).contains("widget → workspaces/alpha/repos/widget"),
+        "{said:?}"
+    );
+    assert_eq!(world.members(), ["widget"]);
+}
+
+#[test]
 fn a_window_clone_records_its_remote_though_a_worker_thread_runs_it() {
     let world = World::holding(&["widget"]);
     let (code, said) = world.clone_plainly(&["widget"]);
@@ -387,6 +417,7 @@ fn a_silent_clone_is_stopped_at_the_stall_limit_says_so_and_leaves_nothing() {
 fn a_leftover_hidden_folder_is_ours_by_name_and_replaced() {
     let world = World::holding(&["widget"]);
     let left = world.hidden("widget");
+    world.repos();
     std::fs::create_dir_all(left.join(".git/objects")).unwrap();
     std::fs::write(left.join("half-a-file"), "x").unwrap();
     let (code, said) = world.clone_plainly(&["widget"]);
@@ -401,6 +432,7 @@ fn a_link_at_the_hidden_name_is_taken_away_and_never_followed() {
     let world = World::holding(&["widget"]);
     let outside = tempfile::tempdir().unwrap();
     std::fs::write(outside.path().join("keep"), "x").unwrap();
+    world.repos();
     std::os::unix::fs::symlink(outside.path(), world.hidden("widget")).unwrap();
     let (code, said) = world.clone_plainly(&["widget"]);
     assert_eq!(code, 0, "{said:?}");
@@ -413,6 +445,7 @@ fn a_link_at_the_hidden_name_is_taken_away_and_never_followed() {
 fn a_clone_another_run_holds_is_left_to_it_and_said() {
     let world = World::holding(&["widget"]);
     let running = world.hidden("widget");
+    world.repos();
     std::fs::create_dir(&running).unwrap();
     std::fs::write(running.join("its-own"), "x").unwrap();
     let _held = crate::rewrite::Lock::try_on(&running).unwrap();
@@ -477,7 +510,7 @@ fn anything_else_at_the_destination_stays_and_is_never_deleted() {
     // A repository with a commit.
     let committed = world.dest("gadget");
     let run = testgit::run(
-        &world.ws(),
+        &world.repos(),
         &[
             "clone",
             "--",
@@ -724,18 +757,16 @@ fn a_chats_clone_never_gets_the_persons_sign_in() {
     let url = format!("https://{HOST}/acme/widget.git");
     let forge = Forge::for_clone(&json!({"forge": "gitlab"}), &url);
     let dest = world.dest("widget");
-    let ws = world.ws();
     let route = landing::Route {
         root: &world.root,
         ws: "alpha",
-        ws_dir: &ws,
         name: "widget",
         dest: &dest,
         url: &url,
         forge: &forge,
         watch: None,
     };
-    let exe = Path::new("/Applications/purlis.app/Contents/MacOS/charter-app");
+    let exe = Path::new("/Applications/purlis.app/Contents/MacOS/purlis-app");
     let (window, chat) = as_the_window(&HostScope::for_a_test(), exe, home.path(), || {
         let window = route.helper().is_some_and(|h| h.contains(HELPER_ARG));
         let chat = git::isolated(&git::Isolated::default(), || route.helper())

@@ -331,6 +331,7 @@ async fn a_browser_opened_from_a_kept_login_is_answered_with_it() {
     client
         .start_program(StartProgram {
             kept: Some(purlis_session_protocol::browsing::KeptLogin {
+                form: None,
                 profile: "claude".into(),
                 persona: "steward".into(),
                 login: "shop-login".into(),

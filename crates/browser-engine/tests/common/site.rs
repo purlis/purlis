@@ -158,6 +158,19 @@ impl Site {
     pub fn was_sent(&self, request: &str) -> bool {
         self.sent.lock().unwrap().iter().any(|one| one == request)
     }
+
+    /// Every request it was sent for `host`, as `METHOD host/path`, in order: what a failed
+    /// test says reached a site.
+    pub fn sent_to(&self, host: &str) -> Vec<String> {
+        let prefix = format!(" {host}/");
+        self.sent
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|one| one.contains(&prefix))
+            .cloned()
+            .collect()
+    }
 }
 
 /// Serves the fixture site on a loopback port of its own.

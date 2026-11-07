@@ -130,6 +130,22 @@ fn opencode_folder(env: &[(String, String)]) -> PathBuf {
 }
 
 #[test]
+fn a_claude_code_chat_names_the_folder_its_harness_holds_the_plane_s_skills_in() {
+    purlis_core::unsteered!();
+    // #4510: `skill_load` sends a chat to `skills:<name>` only for a skill this folder holds.
+    let here = here();
+    let (args, env) = host_armed(Harness::ClaudeCode, &here);
+    let folder = claude_folder(&args);
+    assert_eq!(
+        var(&env, purlis_core::skills::HANDED_ENV),
+        Some(folder.to_str().unwrap())
+    );
+    assert!(purlis_core::skills::handed_in(&folder, "review"));
+    assert!(!purlis_core::skills::handed_in(&folder, "made-since"));
+    assert!(!purlis_core::skills::handed_in(&folder, "../review"));
+}
+
+#[test]
 fn a_claude_code_chat_is_never_handed_what_would_widen_it_and_keeps_what_narrows_it() {
     purlis_core::unsteered!();
     let here = here();

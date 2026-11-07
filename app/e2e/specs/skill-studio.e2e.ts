@@ -5,12 +5,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { $, expect } from "@wdio/globals";
 import { projectRoot } from "../acting.js";
-import {
-  closeTheViewTabsOpenedSince,
-  focusWorkspace,
-  runFromThePalette,
-  tabNames,
-} from "../reach.js";
+import { closesTheTabsItOpens, focusWorkspace, runFromThePalette, tabNames } from "../reach.js";
 import { studioSkill } from "../studio.js";
 
 /**
@@ -32,7 +27,6 @@ describe("the Skill studio", function () {
   this.timeout(120_000);
 
   let folder = "";
-  let wereOpen: string[] = [];
 
   before(async () => {
     folder = join(await projectRoot(), "skills", SKILL);
@@ -42,11 +36,13 @@ describe("the Skill studio", function () {
       `---\nname: ${SKILL}\ndescription: Probes the Skill studio.\n---\n\nSay hello.\n`,
     );
     await focusWorkspace("alpha");
-    wereOpen = await tabNames();
   });
 
-  after(async () => {
-    await closeTheViewTabsOpenedSince(wereOpen);
+  // Between the two: the strip is read once alpha is focused, and its view tabs are closed
+  // before the files are tidied.
+  closesTheTabsItOpens();
+
+  after(() => {
     rmSync(folder, { recursive: true, force: true });
   });
 

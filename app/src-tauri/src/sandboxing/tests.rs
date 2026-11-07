@@ -3471,3 +3471,33 @@ fn every_name_of_the_macs_lookup_socket_is_refused_and_listed_as_reaching_no_cha
         );
     }
 }
+
+#[test]
+fn a_run_grant_reads_as_its_program_keys_and_vault_and_never_its_arguments() {
+    let bound = purlis_core::secrets::ask::run::Bound {
+        chat: 2,
+        name: "curl".to_owned(),
+        program: "/usr/bin/curl".into(),
+        vault: "team".to_owned(),
+        env: vec!["T=TOKEN".to_owned()],
+        file: vec!["F=config".to_owned(), "G=TOKEN".to_owned()],
+        cwd: "/work".into(),
+        args: vec!["--secret-looking-argument".to_owned()],
+    };
+    assert_eq!(
+        run_grant_target(&bound),
+        "/usr/bin/curl with TOKEN, config from vault team"
+    );
+}
+
+#[test]
+fn a_run_grants_id_names_its_number_and_no_other_grants_does() {
+    assert_eq!(
+        run_grant_of(&format!("chat{SEP}run-grant{SEP}12")),
+        Some(12)
+    );
+    assert_eq!(run_grant_of(&format!("once{SEP}run-grant{SEP}3")), Some(3));
+    assert_eq!(run_grant_of(&format!("you{SEP}run-grant{SEP}3")), None);
+    assert_eq!(run_grant_of(&format!("chat{SEP}host{SEP}3")), None);
+    assert_eq!(run_grant_of(&format!("chat{SEP}run-grant{SEP}x")), None);
+}

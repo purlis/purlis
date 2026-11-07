@@ -5,7 +5,7 @@ import { rmSync, writeFileSync } from "node:fs";
 import { $, browser, expect } from "@wdio/globals";
 import { endEveryChat, pressAndStart } from "../opening.js";
 import { USED_SKILL, USES_A_SKILL } from "../harness.js";
-import { closeTheViewTabsOpenedSince, tabNames } from "../reach.js";
+import { closesTheTabsItOpens, tabNames } from "../reach.js";
 
 /**
  * **A chat uses a skill, and its tab shows the run** (SK-3, #2766), in the built app against the
@@ -25,18 +25,22 @@ const CHIP = '[data-testid="tab-skill-run"]';
 describe("a skill run on a chat's tab", function () {
   this.timeout(120_000);
 
-  let wereOpen: string[] = [];
-
+  // Hooks of a kind run in the order they are registered: the strip is read once every chat is
+  // ended, before the skill is put in use, and its view tabs are closed once the chats are ended
+  // again.
   before(async () => {
     await endEveryChat();
-    wereOpen = await tabNames();
-    writeFileSync(USES_A_SKILL, "");
   });
 
   after(async () => {
     rmSync(USES_A_SKILL, { force: true });
     await endEveryChat();
-    await closeTheViewTabsOpenedSince(wereOpen);
+  });
+
+  closesTheTabsItOpens();
+
+  before(() => {
+    writeFileSync(USES_A_SKILL, "");
   });
 
   it("shows the skill in use, opens its Runs in the studio on the run, and goes with the chat", async () => {

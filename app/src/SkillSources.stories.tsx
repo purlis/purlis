@@ -16,6 +16,7 @@ import { AT_THE_ROOT, sourceKey, type SourcesAt } from "./skillStudio";
 import { PROJECT } from "./skillChanges";
 import { memberKey } from "./SkillSetReview";
 import { studio } from "./skillsListing.testkit";
+import { updateOffer, updateReview } from "./skillUpdates.testkit";
 import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
 import { expectFocusInSight, tabInto, untilFocusWithin } from "./stories.testkit";
 
@@ -188,7 +189,16 @@ const secondsAgo = (ago: number) => Math.floor(Date.now() / 1000) - ago;
 
 /** The faked core: two sources, one update waiting, one source not confirmed here; the one
  *  review of Install all… is more than one read where `tooMuch` says so (#4024). */
-function core({ tooMuch = false }: { tooMuch?: boolean } = {}) {
+function core({
+  tooMuch = false,
+  twoUpdates = false,
+  overBudget = false,
+}: {
+  tooMuch?: boolean;
+  /** A second update waiting from Superpowers, for Review updates… (#5354). */
+  twoUpdates?: boolean;
+  overBudget?: boolean;
+} = {}) {
   mockIPC((cmd, args) => {
     switch (cmd) {
       case "skill_sources_checked":
@@ -197,7 +207,46 @@ function core({ tooMuch = false }: { tooMuch?: boolean } = {}) {
           { remote: PLATFORM.remote, at: null, skills: null, installed: 1 },
         ];
       case "skill_studio":
-        return studio([], {});
+        return studio(
+          [],
+          overBudget
+            ? {
+                router: {
+                  said: "Chats here are routed by the built-in router.",
+                  problem: false,
+                  extension: null,
+                  chats: [],
+                  grade: null,
+                  graded: null,
+                  written: null,
+                  budget: [
+                    {
+                      program: "Claude Code",
+                      key: "claude",
+                      skills: 60,
+                      chars: 15000,
+                      skills_said: "60, Claude Code's default",
+                      chars_said: "15,000, Claude Code's default",
+                      skills_here: null,
+                      chars_here: null,
+                    },
+                  ],
+                  past_limits: [],
+                  preview: "",
+                },
+              }
+            : {},
+        );
+      case "skill_budget_preview":
+        return {
+          listed: 59,
+          hidden: 0,
+          now_listed: [],
+          now_hidden: [],
+          more_tokens: 0,
+          past_limit: null,
+          over: null,
+        };
       case "skill_sources":
         return [SUPERPOWERS, PLATFORM];
       case "skill_sources_offered":
@@ -223,7 +272,7 @@ function core({ tooMuch = false }: { tooMuch?: boolean } = {}) {
         ];
       case "skill_updates":
         return {
-          offers: [OFFER],
+          offers: twoUpdates ? [OFFER, updateOffer("writing-plans", SUPERPOWERS.remote)] : [OFFER],
           unasked: [],
           unconfirmed: [{ remote: PLATFORM.remote, skills: ["deploy-checks"] }],
         };
@@ -310,6 +359,9 @@ function core({ tooMuch = false }: { tooMuch?: boolean } = {}) {
         };
       }
       case "skill_update_review":
+        // Review updates… (#5354): writing-plans' update newly reaches the network.
+        if ((args as { name: string }).name === "writing-plans")
+          return updateReview("writing-plans", ["script", "network"]);
         return {
           name: "brainstorming",
           pinned: commit("3"),
@@ -342,6 +394,7 @@ function core({ tooMuch = false }: { tooMuch?: boolean } = {}) {
           grant: null,
           widenings: [],
           accepted: { commit: "8".repeat(40), skills: [] },
+          gained: [],
         };
       case "skill_source_installed":
         return COPIES;
@@ -366,7 +419,7 @@ const meta = {
   component: Tab,
   args: { width: 1000 },
   beforeEach: ({ args }) => {
-    core();
+    core({ twoUpdates: args.at?.at === "set-update" });
     openViewAt(HISTORY, {
       page: "sources",
       scope: AT_THE_ROOT,
@@ -511,6 +564,35 @@ export const UpdateReview: Story = {
     const review = await canvas.findByTestId("update-review");
     await within(review).findByTestId("update-edited");
     await expect(within(review).getByRole("button", { name: "Accept update" })).toBeVisible();
+  },
+};
+
+/** **Review updates…, from a source's page** (#5354): every update waiting from it on one page,
+ *  the one that adds a script and network access first and unticked, the plain edit ticked. */
+export const ReviewUpdates: Story = {
+  args: { at: { at: "set-update", source: SOURCE, label: SUPERPOWERS.label } },
+  play: async ({ canvas }) => {
+    const review = await canvas.findByTestId("update-set-review");
+    const plans = await within(review).findByRole("checkbox", {
+      name: "Update writing-plans (project)",
+    });
+    await expect(plans).not.toBeChecked();
+    await expect(
+      within(review).getByRole("checkbox", { name: "Update brainstorming (project)" }),
+    ).toBeChecked();
+    await expect(within(review).getByTestId("update-set-lead")).toHaveTextContent(
+      "2 updates waiting.",
+    );
+    await tabInto(() =>
+      within(review).getByRole("button", { name: "What changes in writing-plans" }),
+    );
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(plans).toBeEnabled());
+    await tabInto(() => plans);
+    await userEvent.keyboard(" ");
+    expectFocusInSight();
+    await waitFor(() => expect(plans).toBeChecked());
+    await expect(within(review).getByRole("button", { name: "Accept 2 updates" })).toBeVisible();
   },
 };
 
@@ -706,5 +788,23 @@ export const InstallAllTooMuch: Story = {
     await expect(
       within(said).getByRole("button", { name: "Review the first skill" }),
     ).toBeVisible();
+  },
+};
+
+/** **Install all…, past the skill budget** (#5355): the program it takes past the most skills a
+ *  chat lists, and Make room…, reached by the keyboard. */
+export const InstallAllOverBudget: Story = {
+  args: InstallAllReview.args,
+  beforeEach: () => {
+    core({ overBudget: true });
+  },
+  play: async ({ canvas }) => {
+    const review = await canvas.findByTestId("install-all-review");
+    const over = await within(review).findByTestId("install-all-over");
+    await expect(over).toHaveTextContent(
+      "Installing these puts 61 skills in a chat's list on Claude Code, past its budget of 60.",
+    );
+    await tabInto(() => within(over).getByRole("button", { name: "Make room…" }));
+    expectFocusInSight();
   },
 };

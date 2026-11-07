@@ -500,7 +500,7 @@ describe("a tab showing a chat's browser", () => {
       ),
     );
 
-    await fromThePalette("Close this view");
+    await fromThePalette("Close Browser b1 of steward 1");
 
     await waitFor(() => expect(tabNames()).not.toContain("Browser b1 of steward 1"));
     expect(host.asked("close_browser")).toEqual([]);
@@ -611,7 +611,7 @@ describe("a pinned browser whose chat closed (#2022)", () => {
     const pinned = within(await chatsTree()).getByRole("group", { name: "Pinned browsers" });
     await userEvent.click(within(pinned).getByRole("button", { name: /Browser b1/ }));
     await waitFor(() => expect(tabNames()).toContain("Browser b1 of Fix the login"));
-    await fromThePalette("Close this view");
+    await fromThePalette("Close Browser b1 of Fix the login");
     await waitFor(() => expect(tabNames()).not.toContain("Browser b1 of Fix the login"));
     expect(host.asked("close_browser")).toEqual([]);
 
@@ -866,7 +866,7 @@ describe("a browser's view tab, told to the core (#2025)", () => {
       }),
     );
     await waitFor(() => expect(tabNames()).toContain("Browser b1 of steward 1"));
-    await fromThePalette("Close this view");
+    await fromThePalette("Close Browser b1 of steward 1");
     await waitFor(() =>
       expect(host.asked("browser_viewed")).toContainEqual({
         plane: PLANE,

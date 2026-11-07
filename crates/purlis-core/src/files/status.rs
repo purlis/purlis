@@ -217,7 +217,7 @@ pub(super) fn open(plane: &Path, branch: Branch<'_>) -> Result<Opened, Refused> 
     if !crate::contain::repo_name_ok(repo) {
         return Err(worktree::Refusal::BadRepo(repo.to_string()).into());
     }
-    let clone = plane.join("workspaces").join(ws).join(repo);
+    let clone = worktree::clone_folder(plane, ws, repo)?;
     let clone = confine::within_workspace(plane, ws, &clone).map_err(worktree::Refusal::from)?;
     let folder = match piece {
         Some(piece) => {

@@ -206,6 +206,56 @@ describe("a narrow pane's two lines (#5206, spec #5191 stories 28 to 32)", () =>
     expect(paneLinesOf("chat", 900, {}).actions).toContain("close");
   });
 
+  describe("a pane alone in its tab has no Close, the tab's own × doing the same (#5318)", () => {
+    const SPLITS = ["splitRight", "splitDown"];
+
+    it.each(["chat", "task", "ended", "endedTask", "shell"] as const)(
+      "draws a %s's Close in a split and none alone",
+      (kind) => {
+        expect(paneLinesOf(kind, 900, {}).actions).toContain("close");
+        expect(paneLinesOf(kind, 900, { alone: false }).actions).toContain("close");
+        const alone = paneLinesOf(kind, 900, { alone: true }).actions;
+        expect(alone).not.toContain("close");
+        expect(alone.slice(-2)).toEqual(SPLITS);
+      },
+    );
+
+    it("draws an empty pane's two splits alone, and its Close only in a split", () => {
+      expect(paneLinesOf("empty", undefined, { alone: true }).actions).toEqual(SPLITS);
+      expect(paneLinesOf("empty", undefined, {}).actions).toEqual([...SPLITS, "close"]);
+    });
+
+    it("draws nothing on a view alone, and all three in a split", () => {
+      expect(paneLinesOf("view", undefined, { alone: true }).actions).toEqual([]);
+      expect(paneLinesOf("view", undefined, {}).actions).toEqual([...SPLITS, "close"]);
+    });
+
+    it("keeps a one-job program's pane with no Close whether it is alone or not", () => {
+      for (const alone of [true, false])
+        expect(paneLinesOf("oneJob", 900, { alone }).actions).not.toContain("close");
+    });
+
+    it("leaves a folded pane its rail, which has no controls to take away", () => {
+      expect(paneLinesOf("folded", 40, { alone: true }).actions).toEqual(["bell"]);
+    });
+
+    it("gives a narrow pane's drops the same answer: Split down goes under 300, alone or not", () => {
+      expect(paneLinesOf("chat", 299, { alone: true }).actions).toEqual([
+        "state",
+        "bell",
+        "menu",
+        "splitRight",
+      ]);
+      expect(paneLinesOf("chat", 299, {}).actions).toEqual([
+        "state",
+        "bell",
+        "menu",
+        "splitRight",
+        "close",
+      ]);
+    });
+  });
+
   it("keeps a folded pane's bell", () => {
     expect(paneLinesOf("folded", 40, {}).actions).toEqual(["bell"]);
   });

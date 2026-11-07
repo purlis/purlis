@@ -55,8 +55,8 @@ async function untilTheHandSays(want: RegExp): Promise<WebdriverIO.Element> {
 
 /** What a tab says its chat is doing, by the accessible name on its state mark. */
 async function doing(tab: WebdriverIO.Element): Promise<string> {
-  const mark = await tab.$(".state");
-  return (await mark.getAttribute("aria-label")) ?? "";
+  const said = await tab.$(".tab-said");
+  return (await said.getAttribute("aria-label")) ?? "";
 }
 
 /** The tab whose pane shows the chat, once there is one: the tab that wears a chat's state
@@ -67,7 +67,7 @@ async function theTab(): Promise<WebdriverIO.Element> {
     async () => {
       found = undefined;
       for (const tab of await $$('[data-strip="Tabs"] [role="tab"]').getElements())
-        if (await tab.$(".state").isExisting()) {
+        if (await tab.$(".tab-said").isExisting()) {
           found = tab;
           break;
         }
