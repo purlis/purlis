@@ -23,6 +23,7 @@ import {
   type Tabs,
   without,
   workspaceOf,
+  viewTitleOf,
 } from "./tabs";
 
 /**
@@ -257,7 +258,7 @@ export function firstPaneNameOf(content: Content, tabs: Tabs, ctx: DropContext):
       return { name, defaultName };
     }
     // **Its own title** (#5577), where it was opened with one: never its view's word.
-    const title = content.title ?? content.view.view;
+    const title = viewTitleOf(content);
     return { name: title, defaultName: title };
   }
   const named = ctx.tabName?.(content);

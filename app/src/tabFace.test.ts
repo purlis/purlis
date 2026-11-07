@@ -10,6 +10,7 @@ import {
   openTab,
   openView,
   openViewBesidePane,
+  showInstead,
   splitFocusedPane,
   type Tabs,
   type ViewRef,
@@ -206,6 +207,19 @@ describe("a tab's face", () => {
     const id = front(tabs);
     const content = contentsOf(tabs, id)[1].content;
     expect(content.kind === "view" && content.title).toBe("notes.md");
+  });
+
+  it("keeps a view's own title current when the view is shown anew in its pane (#5577)", () => {
+    const file: ViewRef = { from: null, view: "file", key: "/repo/notes.md" };
+    const moved: ViewRef = { from: null, view: "file", key: "/repo/later.md" };
+    const tabs = showInstead(
+      openViewBesidePane(openTab(noTabs(), 1, "steward 1"), 1, file, "notes.md", "alpha", "row"),
+      file,
+      moved,
+      "later.md",
+    );
+    const untitled: Naming = { ...naming, view: () => undefined };
+    expect(faceOf(tabs, front(tabs), untitled).panes).toEqual(["steward 1", "later.md"]);
   });
 
   it("says New chat for a tab that is not there to read", () => {

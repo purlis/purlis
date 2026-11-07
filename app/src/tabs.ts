@@ -265,6 +265,12 @@ export function viewNamedNow(view: ViewRef, title: string): { view: ViewRef; tit
   return { view, title };
 }
 
+/** **What a view is called by itself** (#5577): its own title, or its view's word where it was
+ *  opened with none. */
+export function viewTitleOf(content: { view: ViewRef; title?: string }): string {
+  return content.title ?? content.view.view;
+}
+
 /** What a pane shows. */
 export type Content =
   /**
@@ -751,7 +757,10 @@ export function showInstead(tabs: Tabs, from: ViewRef, to: ViewRef, name: string
     return openView(tabs, to, name, "");
   const tab = tabs.byId[open.tab];
   const layout = replace(tab.layout, open.pane, (found) =>
-    found.content.kind === "view" ? { ...found, content: { ...found.content, view: to } } : found,
+    // Its own title goes with it (#5577): the pane is called what it shows now.
+    found.content.kind === "view"
+      ? { ...found, content: { ...found.content, view: to, title: name } }
+      : found,
   );
   // The tab's name is its lead view's: a view on the far side of a split names nothing.
   const leads = contents(tab.layout)[0]?.pane === open.pane;
@@ -939,12 +948,18 @@ export function followRename(tabs: Tabs, from: string, to: string, root?: string
     const view = renamedView(content.view, from, to, root);
     if (!strip && !view) return layout;
     moved = true;
+    // A title that says the workspace's name says its new one (#5577), as its tab's does below.
+    const titled =
+      view && content.view.from === null ? TITLED_BY_WORKSPACE[content.view.view] : undefined;
+    const title =
+      titled !== undefined && content.title === titled(from) ? titled(to) : content.title;
     return {
       ...layout,
       content: {
         ...content,
         workspace: strip ? to : content.workspace,
         view: view ?? content.view,
+        ...(title === undefined ? {} : { title }),
       },
     };
   };

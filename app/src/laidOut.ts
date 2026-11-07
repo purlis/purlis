@@ -13,6 +13,7 @@ import {
   type ViewRef,
   setSplit,
   splitOf,
+  viewTitleOf,
 } from "./tabs";
 
 /**
@@ -112,7 +113,7 @@ function nodeOf(tabs: Tabs, tab: Tab, layout: Layout, say: Saying): LaidNode {
       view: content.view.view,
       key: content.view.key,
       // **A view beside another keeps its own title** (#5577), never its view's word.
-      title: lead ? tab.name : (content.title ?? content.view.view),
+      title: lead ? tab.name : viewTitleOf(content),
       workspace: stripName(content.workspace),
       at: 0,
       active: false,

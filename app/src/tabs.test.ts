@@ -12,6 +12,7 @@ import {
   focusPane,
   noTabs,
   openTab,
+  openViewBesidePane,
   panesOf,
   selectTab,
   showWorkspace,
@@ -922,6 +923,22 @@ describe("a workspace's rename, in the keys of its views (#1248)", () => {
       "Deploys",
       "Changes · beta",
     ]);
+  });
+
+  it("retitles a view keyed by the workspace's name in its pane too, where it is not first (#5577)", () => {
+    const tabs = openViewBesidePane(
+      openTab(noTabs(), 1, "steward 1"),
+      1,
+      charter("changes", "alpha"),
+      "Changes · alpha",
+      "alpha",
+      "row",
+    );
+
+    const moved = followRename(tabs, "alpha", "beta");
+
+    const second = contentsOf(moved, moved.order[0])[1].content;
+    expect(second.kind === "view" && second.title).toBe("Changes · beta");
   });
 });
 
