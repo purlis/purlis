@@ -120,6 +120,12 @@ jobs:
           git -C "$PURLIS_SCALE_PLANE" -c user.name="scale run" -c user.email=scale@purlis.invalid \
             commit -q -m "The generated project"
           echo "PURLIS_SCALE_WORKSPACES=$(node -p 'require("./generated.json").workspaces')" >> "$GITHUB_ENV"
+      # [DEBUG-5672] temporary: what else runs, every 10 s, to the job's end.
+      - name: "[DEBUG-5672] sample the busiest processes"
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = macOS ]; then mdutil -s / "$RUNNER_TEMP" || true; fi
+          nohup bash -c 'while true; do echo "@ $(date -u +%T)"; ps -Ao pcpu,rss,comm -r | sed -n 2,7p; sleep 10; done' > "$RUNNER_TEMP/dbg-5672-top.log" 2>&1 &
       - name: The hook, recall and one git standing look
         run: node tools/scale-run.mjs --project "$PURLIS_SCALE_PLANE" --os "$OS_WORD" --out scale-rows.jsonl
       # Each window run is its own app launch: WebdriverIO keeps one app for a run, and the two
@@ -180,6 +186,7 @@ jobs:
           run PURLIS_DEBUG_5672_JOURNAL=MEMORY
           if [ "$RUNNER_OS" = macOS ]; then sync; sudo purge; echo purged; run X=cold; fi
           du -sh "$PURLIS_HOME" || true
+          cat "$RUNNER_TEMP/dbg-5672-top.log" || true
       - name: This system's numbers, in the job summary
         if: always()
         run: |

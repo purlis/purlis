@@ -32,6 +32,8 @@ pub mod dbg5672 {
     pub static COMMIT: AtomicU64 = AtomicU64::new(0);
     pub static CLOSE: AtomicU64 = AtomicU64::new(0);
     pub static WS: AtomicU64 = AtomicU64::new(0);
+    pub static WHOLE: AtomicU64 = AtomicU64::new(0);
+    pub static LINES: AtomicU64 = AtomicU64::new(0);
     pub fn add(at: &AtomicU64, since: std::time::Instant) {
         at.fetch_add(since.elapsed().as_nanos() as u64, Ordering::Relaxed);
     }
@@ -44,8 +46,8 @@ pub mod dbg5672 {
     pub fn report() -> String {
         let ms = |a: &AtomicU64| a.load(Ordering::Relaxed) as f64 / 1e6;
         format!(
-            "[DEBUG-5672] threads={} every={:.0} recorded={:.0} list_wall={:.0} change_wall={:.0} stat_sum={:.0} read_sum={:.0} scan_sum={:.0} apply={:.0} wait_plan={:.0} ws_rows={:.0} commit={:.0} close={:.0}",
-            threads(), ms(&EVERY), ms(&RECORDED), ms(&LIST), ms(&CHANGE_WALL), ms(&STAT), ms(&READ), ms(&SCAN), ms(&APPLY), ms(&WAIT), ms(&WS), ms(&COMMIT), ms(&CLOSE)
+            "[DEBUG-5672] threads={} every={:.0} recorded={:.0} list_wall={:.0} change_wall={:.0} stat_sum={:.0} read_sum={:.0} scan_sum={:.0} apply={:.0} wait_plan={:.0} ws_rows={:.0} commit={:.0} close={:.0} scan_whole={:.0} scan_lines={:.0}",
+            threads(), ms(&EVERY), ms(&RECORDED), ms(&LIST), ms(&CHANGE_WALL), ms(&STAT), ms(&READ), ms(&SCAN), ms(&APPLY), ms(&WAIT), ms(&WS), ms(&COMMIT), ms(&CLOSE), ms(&WHOLE), ms(&LINES)
         )
     }
 }
