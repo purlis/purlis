@@ -7336,9 +7336,11 @@ export type DiscardAgainst =
 export type DiscardAnswer = 
 /**
  *  It is written. `now` is the file's diff without the hunk, or `null` when nothing of its
- *  change is left to draw; `unrecorded` says why the log did not take it, if it did not.
+ *  change is left to draw; `unrecorded` says why the log did not take it, if it did not;
+ *  `untold` names each chat in the folder whose agent is not told of it
+ *  ([`crate::staleclones::untold_in`]).
  */
-{ kind: "discarded"; now: WhatChanged | null; unrecorded: string | null } | 
+{ kind: "discarded"; now: WhatChanged | null; unrecorded: string | null; untold: string[] } | 
 /**  Nothing was written: these chats are not idle, and the choice is the operator's. */
 { kind: "busy"; chats: BusyChat[] } | 
 /**  Nothing was written: the file changed on disk since the diff was drawn. */
@@ -17499,9 +17501,10 @@ export type TurnPick = {
 export type UndoAnswer = 
 /**
  *  Every file is back. `unrecorded` says why the log did not take it, `unmarked` why the turn
- *  is not marked undone, if either.
+ *  is not marked undone, if either; `untold` names each chat in the folder whose agent is not
+ *  told of it ([`crate::staleclones::untold_in`]).
  */
-{ kind: "undone"; unrecorded: string | null; unmarked: string | null } | 
+{ kind: "undone"; unrecorded: string | null; unmarked: string | null; untold: string[] } | 
 /**  Nothing was written: these chats are not idle, and an undo waits until they are. */
 { kind: "busy"; chats: BusyChat[] };
 

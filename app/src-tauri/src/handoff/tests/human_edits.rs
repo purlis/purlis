@@ -325,7 +325,8 @@ fn an_undo_is_refused_by_name_while_the_folders_chat_works_and_once_idle_is_told
         answer,
         UndoAnswer::Undone {
             unrecorded: None,
-            unmarked: None
+            unmarked: None,
+            untold: Vec::new(),
         }
     );
     assert_eq!(
@@ -498,7 +499,8 @@ fn a_whole_chat_has_its_turns_hunk_discarded_and_its_next_turn_undone_and_is_tol
         answer,
         UndoAnswer::Undone {
             unrecorded: None,
-            unmarked: None
+            unmarked: None,
+            untold: Vec::new(),
         }
     );
     assert_eq!(
@@ -519,4 +521,70 @@ fn a_whole_chat_has_its_turns_hunk_discarded_and_its_next_turn_undone_and_is_tol
     let briefed = std::fs::read_to_string(&told).unwrap_or_default();
     assert!(briefed.contains("`src/lib.rs` in `svc`"), "{briefed}");
     assert!(!briefed.contains("turn 2"), "{briefed}");
+}
+
+/// **A chat its agent can't be told in is named with the edit** (#5477): a chat on a harness
+/// the project declares runs at level 1, its terminal alone, so no prompt hook carries the line,
+/// and the window is told so with the discard. A chat on a harness purlis arms a prompt hook on
+/// is told at its next turn, and a shell has no agent to tell, so neither is named.
+#[test]
+fn a_discard_names_the_folders_chat_whose_harness_has_no_prompt_hook_as_not_told() {
+    let plane = Plane::new();
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let folder = a_folder_with_the_agents_change(&plane.root);
+    let declared = purlis_core::harness_declaration::parse(
+        "name = \"shelly\"\nprogram = \"shelly\"\n",
+        purlis_core::harness_declaration::Origin::Project,
+        "harnesses/shelly.toml",
+    )
+    .expect("a declaration");
+    let start = |name: &str, ready: purlis_core::start::Ready| {
+        let chat = Chat {
+            program: ready.program.clone(),
+            name: name.to_owned(),
+            cwd: Some(folder.clone()),
+            ..Default::default()
+        };
+        held.chats()
+            .start_ready(&chat, &ready, STARTING)
+            .expect("it runs")
+    };
+    let shell = crate::chats::tests::a_shell_ready;
+    start(
+        "on shelly",
+        purlis_core::start::Ready {
+            declared: Some(declared),
+            ..shell()
+        },
+    );
+    start(
+        "on codex",
+        purlis_core::start::Ready {
+            harness: Some(purlis_core::harness::Harness::Codex),
+            ..shell()
+        },
+    );
+    start("a shell", shell());
+
+    let at = Branch::piece("alpha", "svc", "piece");
+    let shown =
+        files::what_changed(&crate::reader(), held.root(), at, FILE).expect("the file's diff");
+    let FileDiff::Text { hunks, .. } = shown.diff else {
+        panic!("a text file's diff");
+    };
+    let ask = Discard {
+        path: FILE.to_owned(),
+        target: Target::Hunk(hunks[0]),
+        against: Against::Opened(shown.stamp.expect("a stamp")),
+        turn: None,
+    };
+    let DiscardAnswer::Discarded { untold, .. } =
+        discard_in(&held, at, &ask, true).expect("the discard")
+    else {
+        panic!("the hunk is discarded");
+    };
+    assert_eq!(untold, ["on shelly"]);
 }

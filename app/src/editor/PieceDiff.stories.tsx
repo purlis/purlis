@@ -143,3 +143,29 @@ export const TheFileChangedOnDisk: Story = {
     await waitFor(() => expect(page.queryByRole("alertdialog")).toBeNull());
   },
 };
+
+/** A chat in the folder its agent can't be told in (#5477): named after the discard, and the
+ *  line's Dismiss is reached and pressed from the keyboard. */
+export const AChatIsNotToldOfIt: Story = {
+  beforeEach: () =>
+    core({
+      kind: "discarded",
+      now: DRAWN,
+      unrecorded: null,
+      untold: ["Fix the parser"],
+    }),
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    const control = await canvas.findByRole("button", { name: "Discard the change at line 1" });
+    control.focus();
+    await userEvent.keyboard("{Enter}");
+    await canvas.findByText(/Fix the parser is not told of this change at its next turn/);
+    const dismiss = canvas.getByRole("button", { name: "Dismiss" });
+    dismiss.focus();
+    await untilFocused(() => dismiss, "the line's Dismiss takes the keyboard");
+    expectFocusInSight();
+    await pictureNow();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(canvas.queryByText(/is not told of this change/)).toBeNull());
+  },
+};

@@ -131,6 +131,8 @@ export function PieceDiffTab({ plane, cut, path }: { plane: PlaneId; cut: Place;
   const [warning, setWarning] = useState<Warning>();
   /** What the last discard could not do, or could not record. */
   const [trouble, setTrouble] = useState<string>();
+  /** The chats the last edit made here is not told to, as a sentence ([`notTold`]). */
+  const [untold, setUntold] = useState<string>();
   // The pick by its parts, so picking the turn already shown asks nothing again.
   const pickedChat = pick?.chat ?? null;
   const pickedNumber = pick?.number ?? null;
@@ -210,6 +212,7 @@ export function PieceDiffTab({ plane, cut, path }: { plane: PlaneId; cut: Place;
   const discard = (ask: Asked) => {
     setWarning(undefined);
     setTrouble(undefined);
+    setUntold(undefined);
     setDiscarding(true);
     void commands
       .discardHunk(
@@ -237,6 +240,7 @@ export function PieceDiffTab({ plane, cut, path }: { plane: PlaneId; cut: Place;
           else setAsked((n) => n + 1);
           if (told.unrecorded !== null)
             setTrouble(`Discarded, but it is not in the chat's history: ${told.unrecorded}`);
+          setUntold(notTold(told.untold));
         }
       })
       .catch((err: unknown) => setTrouble(String(err)))
@@ -244,6 +248,7 @@ export function PieceDiffTab({ plane, cut, path }: { plane: PlaneId; cut: Place;
   };
   const undo = (turn: TurnPick) => {
     setTrouble(undefined);
+    setUntold(undefined);
     setDiscarding(true);
     void commands
       .undoTurn(plane, cut.workspace, cut.repo, cut.piece, turn)
@@ -260,6 +265,7 @@ export function PieceDiffTab({ plane, cut, path }: { plane: PlaneId; cut: Place;
           return;
         }
         setAsked((n) => n + 1);
+        setUntold(notTold(told.untold));
         const unsaid = [told.unrecorded, told.unmarked].filter((why) => why !== null);
         if (unsaid.length > 0)
           setTrouble(`Turn ${turn.number} is undone, but ${unsaid.join(", and ")}`);
@@ -321,6 +327,15 @@ export function PieceDiffTab({ plane, cut, path }: { plane: PlaneId; cut: Place;
           {trouble}
         </Notice>
       )}
+      {untold !== undefined && (
+        <Notice
+          cause={`human-edit-untold:${path}`}
+          tone="attention"
+          onDismiss={() => setUntold(undefined)}
+        >
+          {untold}
+        </Notice>
+      )}
       <ChangedLines
         plane={plane}
         cut={cut}
@@ -374,6 +389,25 @@ export function PieceDiffTab({ plane, cut, path }: { plane: PlaneId; cut: Place;
         />
       )}
     </div>
+  );
+}
+
+/**
+ * **What the window says of the chats an edit is not told to** (#5477): a chat in the folder on a
+ * harness purlis has no prompt hook into is never told of a Human edit at its next turn (ADR 0084
+ * §8, as amended 2026-11-07), so the operator is, by the chat's name. `undefined` for none.
+ */
+export function notTold(chats: readonly string[]): string | undefined {
+  if (chats.length === 0) return undefined;
+  if (chats.length === 1)
+    return (
+      `${chats[0]} is not told of this change at its next turn, because purlis cannot add to ` +
+      "its prompts. Tell it in its chat if it should know."
+    );
+  const names = `${chats.slice(0, -1).join(", ")} and ${chats[chats.length - 1]}`;
+  return (
+    `${names} are not told of this change at their next turn, because purlis cannot add to ` +
+    "their prompts. Tell them in their chats if they should know."
   );
 }
 
