@@ -243,6 +243,8 @@ fn run(
     mid_turn: &dyn Fn(&str) -> Vec<String>,
     told: &dyn Fn(Looked),
 ) {
+    // Before the first look: what makes every look after it read only what moved (#5486).
+    purlis_core::planegit::prime(root);
     let mut state = State::default();
     let mut poke = None;
     loop {
