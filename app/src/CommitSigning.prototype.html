@@ -1,0 +1,477 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Signed commits</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<!--
+  PROTOTYPE for the commit-signing guided UI (grill 2026-11-07, Q1-Q27): throwaway, fake data, never merged.
+  Question: what does "Set up signing" look like for someone who never opens a terminal, from each way in
+  (the forge's refusal on a lane or in a chat, the grouped notice, the Signed commits card), on GitHub and GitLab?
+  Three variants (?variant=A|B|C) x moments (?moment=...). ?theme=light|dark forces a theme.
+    A  Three-step dialog   the ruled shape (Q16): a dialog with a step rail - Make your key, Add it to <forge>,
+                           Check - opened from every way in, ending on "Verified on <forge> ✓".
+    B  In place            no dialog: the prompt or the card itself grows into the steps, right where the
+                           person clicked; the refusal card turns into the setup and then into Sign and retry.
+    C  One button, it runs a dialog with a checklist that runs by itself and stops only where the person
+                           must act (the Keychain, the forge's permission, the email choice).
+  Everything is stubbed: no key is made, nothing is sent anywhere.
+  VERDICT 2026-11-07 (the person: "choose what you think is better"; steward chose): A, with one part of C.
+    The three-step dialog with its step rail (A, as ruled in Q16), opened the same way from every way in, and
+    a step that needs nothing from the person runs on by itself (C): GitLab's add and the Verified check.
+    B lost: the setup would look different in each of the three places it opens from, and lane cards are too
+    narrow for the steps.
+  Left and right arrows (or the bar at the bottom) switch variant; the Moment buttons step through.
+-->
+<style>
+:root{
+  --bg:#f4f5f7; --panel:#ffffff; --panel2:#eef0f3; --line:#dde1e7; --fg:#1d2330; --muted:#5d6676;
+  --accent:#5b4fd6; --accent-soft:#e9e6fb; --warn:#a15c00; --warn-soft:#fbefdc; --danger:#b3261e; --danger-soft:#fbe4e2;
+  --ok:#21724a; --ok-soft:#e2f3ea; --tag:#e7eaf0; --shadow:0 10px 30px rgba(20,24,40,.18); --scrim:rgba(20,24,40,.35);
+  --sans:"IBM Plex Sans",-apple-system,"Segoe UI",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#121318; --panel:#191a21; --panel2:#23252e; --line:#2e313b; --fg:#e4e7ee; --muted:#98a0b0;
+  --accent:#a69cff; --accent-soft:#2e2a52; --warn:#f0b25c; --warn-soft:#3a2d17; --danger:#ff8f86; --danger-soft:#42201d;
+  --ok:#6fd19c; --ok-soft:#173326; --tag:#2b303b; --shadow:0 10px 30px rgba(0,0,0,.5); --scrim:rgba(0,0,0,.5); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#121318; --panel:#191a21; --panel2:#23252e; --line:#2e313b; --fg:#e4e7ee; --muted:#98a0b0;
+  --accent:#a69cff; --accent-soft:#2e2a52; --warn:#f0b25c; --warn-soft:#3a2d17; --danger:#ff8f86; --danger-soft:#42201d;
+  --ok:#6fd19c; --ok-soft:#173326; --tag:#2b303b; --shadow:0 10px 30px rgba(0,0,0,.5); --scrim:rgba(0,0,0,.5); color-scheme:dark}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:13px;line-height:1.45;padding:12px 16px 76px}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;padding:0}
+button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:5px}
+a{color:var(--accent);cursor:pointer}
+code,.mono{font-family:var(--mono);font-size:12px}
+.top{max-width:1240px;margin:0 auto 10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.top .q{color:var(--muted);flex:1 1 100%}.top .q b{color:var(--fg)}
+.moments{display:flex;flex-wrap:wrap;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+.moments button{padding:3px 9px;border-right:1px solid var(--line);font-size:12px}
+.moments button.on{background:var(--accent);color:var(--panel)}
+.forgepick{display:flex;gap:4px;align-items:center;color:var(--muted)}
+.forgepick button{padding:2px 9px;border-radius:7px;border:1px solid var(--line);font-size:12px}
+.forgepick button.on{background:var(--accent-soft);border-color:var(--accent);color:var(--fg)}
+.state{max-width:1240px;margin:8px auto 0;color:var(--muted);font-size:12px;font-family:var(--mono)}
+/* the window */
+.win{position:relative;max-width:1240px;margin:0 auto;height:720px;display:flex;flex-direction:column;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--panel)}
+.tbar{display:flex;align-items:center;gap:10px;padding:6px 12px;border-bottom:1px solid var(--line);background:var(--panel2);min-height:38px}
+.dots{display:flex;gap:6px}.dots i{width:11px;height:11px;border-radius:50%;background:var(--line);display:block}
+.tabs{display:flex;gap:2px;margin-left:10px}
+.tabs span{padding:4px 12px;border-radius:6px;color:var(--muted)}.tabs span.on{background:var(--panel);color:var(--fg);box-shadow:0 0 0 1px var(--line)}
+.sp{flex:1}
+.needs{display:flex;align-items:center;gap:6px;padding:2px 10px;border-radius:12px;background:var(--warn-soft);color:var(--warn);font-size:12px;font-weight:500}
+.needs.quiet{background:none;color:var(--muted);font-weight:400}
+.bell{position:relative;padding:3px 8px;border-radius:6px}.bell:hover{background:var(--panel)}
+.bell b{position:absolute;top:-2px;right:-2px;background:var(--warn);color:var(--panel);font-size:10px;border-radius:8px;padding:0 5px}
+.body{flex:1;min-height:0;display:grid;grid-template-columns:190px minmax(0,1fr)}
+.snav{border-right:1px solid var(--line);padding:10px 8px;display:flex;flex-direction:column;gap:1px;overflow:auto}
+.snav h4{margin:8px 9px 3px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:500}
+.snav span{padding:4px 9px;border-radius:6px;color:var(--muted)}
+.snav span.on{background:var(--accent-soft);color:var(--fg);box-shadow:inset 3px 0 0 var(--accent);font-weight:500}
+.main{overflow:auto;padding:18px 26px 30px;position:relative}
+.main h1{margin:0 0 4px;font-size:16px;font-weight:600}
+.main > p.lead{margin:0 0 16px;color:var(--muted);max-width:70ch}
+.card{border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:14px;max-width:760px;background:var(--panel)}
+.card h2{margin:0;font-size:14px;font-weight:600;display:flex;align-items:center;gap:8px}
+.card p{margin:6px 0 0;color:var(--muted);max-width:66ch}
+.card.hl{box-shadow:0 0 0 2px var(--accent)}
+.row{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:2px 10px;align-items:center;padding:9px 0;border-top:1px solid var(--line)}
+.row:first-of-type{border-top:0}
+.row .sub{grid-column:2/3;color:var(--muted);font-size:12px}
+.rows{margin-top:10px;border-top:1px solid var(--line)}
+.fi{width:20px;height:20px;border-radius:5px;display:grid;place-items:center;font-size:11px;font-weight:600;color:#fff}
+.fi.gh{background:#24292f}.fi.gl{background:#e24329}.fi.mac{background:var(--muted)}
+.pill{font-size:11.5px;padding:1px 8px;border-radius:9px;white-space:nowrap}
+.pill.ok{background:var(--ok-soft);color:var(--ok)}.pill.warn{background:var(--warn-soft);color:var(--warn)}.pill.mute{background:var(--tag);color:var(--muted)}
+.btn{border:1px solid var(--line);border-radius:6px;padding:4px 12px;background:var(--panel2);white-space:nowrap;font-size:12.5px}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--panel)}
+.btn.danger{color:var(--danger);border-color:var(--danger);background:none}
+.btn.dangerous{background:var(--danger);border-color:var(--danger);color:var(--panel)}
+.btn.quiet{background:none;border-color:transparent;color:var(--accent);padding-left:4px;padding-right:4px}
+.btn[disabled]{opacity:.5;cursor:default}
+.acts{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px}
+details{margin-top:12px;color:var(--muted)}
+details summary{cursor:pointer;font-size:12px}
+details dl{display:grid;grid-template-columns:120px minmax(0,1fr);gap:4px 12px;margin:8px 0 0;font-size:12px}
+details dd{margin:0;color:var(--fg);word-break:break-all}
+/* chat + lanes */
+.pane{display:grid;grid-template-columns:minmax(0,1fr) 330px;height:100%}
+.chat{padding:16px 22px;overflow:auto;border-right:1px solid var(--line)}
+.msg{max-width:640px;margin-bottom:14px}
+.msg .who{font-size:11.5px;color:var(--muted);margin-bottom:2px}
+.msg .txt{background:var(--panel2);border-radius:8px;padding:8px 12px}
+.msg.me .txt{background:var(--accent-soft)}
+.quietline{font-size:12px;color:var(--muted);display:flex;gap:6px;align-items:center;margin:-6px 0 14px}
+.lanes{padding:12px;overflow:auto;background:var(--bg)}
+.lanes h3{margin:0 0 8px;font-size:12px;color:var(--muted);font-weight:500;text-transform:uppercase;letter-spacing:.04em}
+.lane{border:1px solid var(--line);border-radius:8px;padding:9px 11px;margin-bottom:8px;background:var(--panel)}
+.lane .t{font-weight:500}.lane .s{color:var(--muted);font-size:12px}
+.lane.stuck{border-color:var(--warn)}
+.prompt{margin-top:8px;border-radius:7px;background:var(--warn-soft);padding:8px 10px}
+.prompt.okk{background:var(--ok-soft)}
+.prompt b{display:block;color:var(--fg);font-weight:600;margin-bottom:2px}
+.prompt .s{color:var(--fg);opacity:.85}
+.prompt .acts{margin-top:8px}
+/* notices */
+.drawer{position:absolute;right:12px;top:6px;width:380px;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);padding:10px;z-index:4}
+.drawer h3{margin:2px 4px 8px;font-size:13px}
+.notice{border-radius:8px;border:1px solid var(--line);padding:10px 12px;margin-bottom:8px}
+.notice.warn{border-color:var(--warn);background:var(--warn-soft)}
+.notice ul{margin:6px 0 0;padding-left:18px;color:var(--fg)}
+.notice .s{color:var(--muted);font-size:12px}
+/* dialog */
+.scrim{position:absolute;inset:0;background:var(--scrim);display:grid;place-items:center;z-index:5}
+.dlg{width:560px;max-width:calc(100% - 32px);background:var(--panel);border-radius:12px;box-shadow:var(--shadow);border:1px solid var(--line);display:flex;flex-direction:column;max-height:calc(100% - 40px)}
+.dlg header{padding:16px 20px 10px;display:flex;align-items:flex-start;gap:10px}
+.dlg header h2{margin:0;font-size:15px;font-weight:600}
+.dlg header p{margin:3px 0 0;color:var(--muted)}
+.dlg .x{margin-left:auto;color:var(--muted);font-size:16px;padding:0 4px}
+.dlg .content{padding:4px 20px 16px;overflow:auto}
+.dlg footer{padding:12px 20px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end;align-items:center}
+.dlg footer .l{margin-right:auto;color:var(--muted);font-size:12px}
+.rail{display:flex;gap:6px;padding:0 20px 12px}
+.rail span{flex:1;font-size:12px;color:var(--muted);border-top:3px solid var(--line);padding-top:5px}
+.rail span.on{color:var(--fg);border-color:var(--accent);font-weight:500}
+.rail span.done{color:var(--ok);border-color:var(--ok)}
+.tip{display:flex;gap:10px;padding:10px 12px;border-radius:8px;background:var(--panel2);margin:10px 0}
+.tip .ic{font-size:16px}
+.keychain{border:1px solid var(--line);border-radius:10px;padding:14px;margin:10px 0;background:var(--panel2);font-size:12.5px}
+.keychain .acts{justify-content:flex-end}
+.choice{display:flex;gap:10px;align-items:flex-start;padding:9px 10px;border:1px solid var(--line);border-radius:8px;margin-bottom:6px;cursor:pointer}
+.choice.on{border-color:var(--accent);background:var(--accent-soft)}
+.radio{width:15px;height:15px;border-radius:50%;border:1.5px solid var(--muted);flex:none;margin-top:2px}
+.choice.on .radio{border:5px solid var(--accent)}
+.choice .s{color:var(--muted);font-size:12px}
+.keybox{font-family:var(--mono);font-size:11.5px;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:8px 10px;word-break:break-all;margin:8px 0}
+ol.how{margin:6px 0;padding-left:20px}ol.how li{margin:3px 0}
+.check{display:grid;grid-template-columns:22px minmax(0,1fr);gap:2px 8px;padding:8px 0;border-top:1px solid var(--line)}
+.check:first-child{border-top:0}
+.check .st{font-size:14px;line-height:20px}
+.check .s{grid-column:2;color:var(--muted);font-size:12px}
+.check.run .t{font-weight:500}
+.check.todo{opacity:.55}
+.spin{display:inline-block;width:12px;height:12px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:sp 1s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion: reduce){.spin{animation:none}}
+.big{font-size:30px;text-align:center;margin:8px 0 2px;color:var(--ok)}
+.center{text-align:center}
+/* B in place */
+.inplace{margin-top:10px;border-top:1px solid var(--line);padding-top:10px}
+.inplace .rail{padding:0 0 10px}
+/* the prototype's bar */
+.bar{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);display:flex;gap:12px;align-items:center;background:#111;color:#fff;border-radius:22px;padding:7px 14px;box-shadow:0 6px 24px rgba(0,0,0,.35);z-index:99;font-size:12.5px}
+.bar button{color:#fff;font-size:13px;padding:0 4px}
+</style>
+
+<div class="top">
+  <div class="q"><b>PROTOTYPE · Signed commits.</b> What does "Set up signing" look like for someone who never opens a terminal? Fake data; nothing is made or sent.</div>
+  <div class="moments" id="moments"></div>
+  <div class="forgepick">Forge <button data-forge="github">GitHub</button><button data-forge="gitlab">GitLab (self-managed)</button></div>
+</div>
+<div class="win" id="win"></div>
+<div class="state" id="state"></div>
+<div class="bar" role="group" aria-label="Variant">
+  <button id="prev" aria-label="Previous variant">◀</button><b id="label"></b><button id="next" aria-label="Next variant">▶</button>
+</div>
+
+<script>
+const VARIANTS = { A: "Three-step dialog", B: "In place", C: "One button, it runs" };
+const MOMENTS = {
+  "card-off": "Card: not set up",
+  "lane-refused": "Lane refused",
+  "chat-refused": "Chat refused",
+  "notice": "Notice (3 lanes)",
+  "setup": "Setup: start",
+  "perm-declined": "Forge permission declined",
+  "email": "Email doesn't match",
+  "done": "Verified ✓",
+  "retry": "Sign and retry",
+  "card-on": "Card: on",
+  "remove": "Remove signing",
+  "quiet": "Before any refusal",
+};
+const MAC = "Sam's MacBook Pro";
+const ACCOUNTS = {
+  github: { forge: "GitHub", host: "github.com", user: "sam-r", ic: "gh", cls: "gh", repo: "purlis/purlis", keysUrl: "github.com/settings/ssh/new" },
+  gitlab: { forge: "GitLab", host: "gitlab.example.org", user: "sam", ic: "gl", cls: "gl", repo: "platform/billing", keysUrl: "gitlab.example.org/-/user_settings/ssh_keys" },
+};
+const p = new URLSearchParams(location.search);
+let v = VARIANTS[p.get("variant")] ? p.get("variant") : "A";
+let m = MOMENTS[p.get("moment")] ? p.get("moment") : "card-off";
+let forge = p.get("forge") === "gitlab" ? "gitlab" : "github";
+if (p.get("theme")) document.documentElement.dataset.theme = p.get("theme");
+
+// setup state machine (stub)
+let S;
+function reset() {
+  S = { open: false, from: "card", step: 1, keychainAsked: false, keychainOk: false, perm: "ask", added: false,
+        emailOk: true, emailPick: 0, verified: false, retried: false, signed: false, drawer: false, removing: false,
+        otherAdded: false };
+}
+function applyMoment() {
+  reset();
+  if (m === "lane-refused") S.from = "lane";
+  if (m === "chat-refused") S.from = "chat";
+  if (m === "notice") { S.from = "notice"; S.drawer = true; }
+  if (m === "setup") { S.open = true; S.from = "lane"; }
+  if (m === "perm-declined") { S.open = true; S.from = "lane"; S.step = 2; S.keychainOk = true; S.perm = "declined"; if (forge === "gitlab") S.perm = "declined"; }
+  if (m === "email") { S.open = true; S.from = "lane"; S.step = 3; S.keychainOk = true; S.perm = "granted"; S.added = true; S.emailOk = false; }
+  if (m === "done") { S.open = true; S.from = "lane"; S.step = 4; S.keychainOk = true; S.perm = "granted"; S.added = true; S.verified = true; S.signed = true; }
+  if (m === "retry") { S.from = "lane"; S.signed = true; S.verified = true; S.added = true; }
+  if (m === "card-on") { S.signed = true; S.verified = true; S.added = true; }
+  if (m === "remove") { S.signed = true; S.verified = true; S.added = true; S.removing = true; }
+  if (m === "quiet") { S.from = "chat"; }
+}
+
+const A = () => ACCOUNTS[forge];
+const fi = (a) => `<span class="fi ${a.cls}">${a.ic === "gh" ? "GH" : "GL"}</span>`;
+
+/* ---------------- frames ---------------- */
+function titlebar(tab) {
+  const stuck = !S.signed && ["lane-refused", "notice", "chat-refused"].includes(m);
+  return `<div class="tbar"><div class="dots"><i></i><i></i><i></i></div>
+    <div class="tabs"><span class="${tab === "chat" ? "on" : ""}">steward 1</span><span class="${tab === "settings" ? "on" : ""}">Settings</span></div>
+    <div class="sp"></div>
+    ${stuck ? `<button class="needs" data-act="drawer">● Needs you · 1</button>` : `<span class="needs quiet">Nothing needs you</span>`}
+    <button class="bell" data-act="drawer" aria-label="Notices">🔔${stuck ? "<b>1</b>" : ""}</button></div>`;
+}
+function settingsNav() {
+  return `<nav class="snav"><h4>You</h4><span>Text</span><span>Theme</span><span>Editor</span><span>Notifications</span><span>This machine</span><span class="on">Accounts</span><span>Profiles</span>
+    <h4>Project</h4><span>General</span><span>Saving</span><span>Sandbox</span><span>Forges</span></nav>`;
+}
+
+/* ---------------- the card ---------------- */
+function card() {
+  const a = A(), other = forge === "github" ? ACCOUNTS.gitlab : ACCOUNTS.github;
+  const hl = m === "card-off" || m === "card-on";
+  if (!S.signed) {
+    const inl = v === "B" && S.open && S.from === "card";
+    return `<section class="card ${hl ? "hl" : ""}"><h2>Signed commits <span class="pill mute">Not set up</span></h2>
+      <p>When it's on, the commits purlis makes for your chats carry a signature, and GitHub and GitLab show them as <b>Verified</b>. Some repos only accept signed commits.</p>
+      <p>Your signing key is made on this Mac and stays in its Keychain. No chat can reach it.</p>
+      ${inl ? inplaceSteps() : `<div class="acts"><button class="btn primary" data-act="setup" data-from="card">Set up signing</button><span class="s" style="color:var(--muted)">About a minute</span></div>`}
+    </section>`;
+  }
+  return `<section class="card ${hl ? "hl" : ""}"><h2>Signed commits <span class="pill ok">On</span></h2>
+    <p>Chat commits on this Mac are signed with its signing key. Each account below has the key, so the forge can verify it.</p>
+    <div class="rows">
+      <div class="row">${fi(a)}<div><b>${a.user}</b> · ${a.host}</div><span class="pill ok">Verified on ${a.forge} ✓</span><div class="sub">Commits as sam@example.com</div></div>
+      <div class="row">${fi(other)}<div><b>${other.user}</b> · ${other.host}</div>${S.otherAdded ? `<span class="pill ok">Verified on ${other.forge} ✓</span>` : `<button class="btn" data-act="addother">Add to this account</button>`}<div class="sub">${S.otherAdded ? "Commits as sam@example.org" : `Repos on this account aren't signed with a verified key yet`}</div></div>
+    </div>
+    <h2 style="margin-top:16px;font-size:13px">Your other Macs</h2>
+    <div class="rows">
+      <div class="row"><span class="fi mac">⌘</span><div>Studio Mac mini</div><button class="btn danger" data-act="noop">Remove</button><div class="sub">Added to ${a.user} on ${a.forge} · 12 Sep 2026. Remove it if that Mac is lost or wiped.</div></div>
+    </div>
+    <div class="acts"><button class="btn" data-act="setup" data-from="card">Replace key</button><button class="btn danger" data-act="remove">Remove signing</button></div>
+    <details><summary>Details</summary><dl><dt>Key</dt><dd>Ed25519 · SHA256:q3Vb…T1sM</dd><dt>Kept in</dt><dd>macOS Keychain, item purlis/@commit-signing/${MAC}</dd><dt>Signs</dt><dd>Commits purlis makes for sandboxed chats and lanes</dd><dt>Own key</dt><dd>To use a key you already have, run <code>purlis signing setup --key</code> in Terminal.</dd></dl></details>
+  </section>`;
+}
+function settingsPage() {
+  return `<div class="body">${settingsNav()}<div class="main">
+    <h1>Accounts</h1><p class="lead">The forge accounts purlis signs in with, and how its commits prove they're yours.</p>
+    <section class="card"><h2>Forge accounts</h2><div class="rows">
+      <div class="row">${fi(ACCOUNTS.github)}<div><b>sam-r</b> · github.com</div><span class="pill mute">3 repos</span></div>
+      <div class="row">${fi(ACCOUNTS.gitlab)}<div><b>sam</b> · gitlab.example.org</div><span class="pill mute">1 repo</span></div></div></section>
+    ${card()}
+    ${S.removing ? removeDlg() : ""}
+  </div></div>`;
+}
+function removeDlg() {
+  return `<div class="scrim"><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="rmh"><header><div><h2 id="rmh">Remove signing from this Mac?</h2>
+    <p>purlis deletes the signing key from this Mac's Keychain and from every account it was added to:</p></div></header>
+    <div class="content"><div class="rows">
+      <div class="row">${fi(ACCOUNTS.github)}<div>sam-r · github.com</div><span class="pill mute">Removed there too</span></div>
+      <div class="row">${fi(ACCOUNTS.gitlab)}<div>sam · gitlab.example.org</div><span class="pill mute">Not added</span></div></div>
+      <div class="tip"><span class="ic">ℹ︎</span><div>Commits already signed stay as they are. New chat commits won't be signed, and repos that only accept signed commits will refuse them until you set signing up again.</div></div></div>
+    <footer><button class="btn" data-act="rmcancel">Cancel</button><button class="btn dangerous" data-act="rmgo">Remove signing</button></footer></div></div>`;
+}
+
+/* ---------------- lanes and chat ---------------- */
+function refusalPrompt(where) {
+  const a = A();
+  if (S.retried) return `<div class="prompt okk"><b>Signed and sent ✓</b><span class="s">2 commits re-signed. It's in the merge queue.</span></div>`;
+  if (S.signed) return `<div class="prompt okk"><b>Signing is set up</b><span class="s">Re-sign this branch's commits and send it again.</span><div class="acts"><button class="btn primary" data-act="retry">Sign and retry</button></div></div>`;
+  if (v === "B" && S.open && S.from === where) return `<div class="prompt">${inplaceSteps()}</div>`;
+  return `<div class="prompt"><b>${a.forge} only accepts signed commits here</b><span class="s">${a.repo} requires signed commits. Set up signing on this Mac, then purlis signs this lane's commits and sends them again.</span>
+    <div class="acts"><button class="btn primary" data-act="setup" data-from="${where}">Set up signing</button><span style="color:var(--muted);font-size:12px">About a minute</span></div></div>`;
+}
+function chatPage() {
+  const a = A();
+  const laneStuck = ["lane-refused", "notice", "setup", "perm-declined", "email", "done", "retry"].includes(m) || (S.from === "lane");
+  const multi = m === "notice";
+  const lanes = `<aside class="lanes"><h3>Lanes</h3>
+    <div class="lane ${laneStuck && !S.retried ? "stuck" : ""}"><div class="t">#5501 tab names keep their case</div><div class="s">${laneStuck && !S.retried ? `Can't merge · ${a.repo}` : "Merging…"}</div>${laneStuck || S.retried ? refusalPrompt("lane") : ""}</div>
+    ${multi ? `<div class="lane stuck"><div class="t">#5503 empty tab on +</div><div class="s">Can't merge · same reason</div></div><div class="lane stuck"><div class="t">#5507 pane foot spacing</div><div class="s">Can't merge · same reason</div></div>` : ""}
+    <div class="lane"><div class="t">#5498 notices centre cards</div><div class="s">Running · 14 min</div></div></aside>`;
+  const chatRefused = m === "chat-refused" || (S.from === "chat" && m !== "quiet");
+  const quiet = m === "quiet";
+  return `<div class="pane"><div class="chat">
+    <div class="msg me"><div class="who">You</div><div class="txt">Rename the empty-state copy and push it.</div></div>
+    <div class="msg"><div class="who">steward 1</div><div class="txt">Done: 1 file changed, committed as <code>a41c9e2</code>${quiet ? "" : `, and I asked to push it to <code>${a.repo}</code>`}.</div></div>
+    ${quiet ? `<div class="quietline">○ Not signed: signing isn't set up on this Mac. <a data-act="gocard">Signed commits</a></div>
+      <div class="msg"><div class="who">steward 1</div><div class="txt">Pushed. Nothing refused it, so there's nothing for you to do.</div></div>` : ""}
+    ${chatRefused ? `<div class="msg"><div class="who">steward 1</div><div class="txt">${a.forge} refused the push: this repo only accepts signed commits. I can't set signing up from a chat; it's yours to do in the window.</div></div><div style="max-width:640px">${refusalPrompt("chat")}</div>` : ""}
+  </div>${lanes}${S.drawer ? drawer() : ""}</div>`;
+}
+function drawer() {
+  const a = A();
+  return `<div class="drawer" role="dialog" aria-label="Notices"><h3>Notices</h3>
+    <div class="notice ${S.retried ? "" : "warn"}"><b>${S.retried ? "3 lanes signed and sent ✓" : `3 lanes can't merge: ${a.repo} only accepts signed commits`}</b>
+      ${S.retried ? `<div class="s">All three are in the merge queue.</div>` : `<ul><li>#5501 tab names keep their case</li><li>#5503 empty tab on +</li><li>#5507 pane foot spacing</li></ul>
+      <div class="acts">${S.signed ? `<button class="btn primary" data-act="retry">Sign and retry all 3</button>` : `<button class="btn primary" data-act="setup" data-from="notice">Set up signing</button><span class="s">Then sign and retry all 3</span>`}</div>`}</div>
+    <div class="notice"><b>Theme draft saved</b><div class="s">2 min ago</div></div></div>`;
+}
+
+/* ---------------- setup: steps content (shared) ---------------- */
+function railHtml() {
+  const a = A(); const names = ["Make your key", `Add it to ${a.forge}`, "Check"];
+  return `<div class="rail">${names.map((n, i) => `<span class="${S.step > i + 1 ? "done" : S.step === i + 1 ? "on" : ""}">${S.step > i + 1 ? "✓ " : `${i + 1} · `}${n}</span>`).join("")}</div>`;
+}
+function step1() {
+  return `<p>purlis makes a signing key on this Mac and keeps it in the macOS Keychain. It never leaves this Mac, and no chat can reach it.</p>
+    <div class="tip"><span class="ic">🔑</span><div><b>macOS will ask next.</b> It asks to let purlis use your Keychain. Choose <b>Always Allow</b> so it doesn't ask again for every commit.</div></div>
+    ${S.keychainAsked && !S.keychainOk ? `<div class="keychain" role="alertdialog"><b>purlis wants to use your confidential information stored in "purlis/@commit-signing" in your keychain.</b>
+      <div class="acts"><button class="btn" data-act="kcdeny">Deny</button><button class="btn" data-act="kcok">Allow</button><button class="btn primary" data-act="kcok">Always Allow</button></div><div style="color:var(--muted);font-size:11px;margin-top:4px">(stand-in for the macOS prompt)</div></div>` : ""}
+    ${S.kcDenied ? `<div class="tip" style="background:var(--warn-soft)"><span class="ic">⚠︎</span><div>macOS said no, so purlis couldn't keep the key. Try again and choose <b>Always Allow</b>.</div></div>` : ""}`;
+}
+function step2() {
+  const a = A();
+  if (S.added) return `<p>Added to <b>${a.user}</b> on ${a.host} as "purlis · ${MAC}". ✓</p>`;
+  if (forge === "gitlab" && S.perm !== "declined") return `<p>purlis adds the key to <b>${a.user}</b> on ${a.host} as a <b>signing</b> key, using the sign-in it already has. You don't need to do anything there.</p>`;
+  if (S.perm === "declined") return `<p>No problem. Add it on ${a.forge} yourself; purlis watches and carries on when it's there.</p>
+    <ol class="how"><li>The key is copied. <button class="btn quiet" data-act="noop">Copy again</button></li><li><a data-act="noop">Open ${a.keysUrl}</a>${forge === "github" ? ", choose Key type <b>Signing Key</b>" : ", choose Usage type <b>Signing</b>"}.</li><li>Paste it, give it a name like "purlis · ${MAC}", and save.</li></ol>
+    <div class="keybox">ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK2Vb9…pQ1 purlis · ${MAC}</div>
+    <div style="color:var(--muted);font-size:12px"><span class="spin"></span> Waiting for it to appear on ${a.user}…</div>`;
+  return `<p>${a.forge} needs to know this key is yours. purlis can add it to <b>${a.user}</b> for you.</p>
+    <div class="tip"><span class="ic">↗</span><div>${a.forge} will ask you to allow purlis to <b>manage your signing keys</b> and <b>read your email addresses</b>. That's all it's for: adding this key, checking it, and removing it if you ask.</div></div>`;
+}
+function step3() {
+  const a = A();
+  if (S.verified) return "";
+  if (!S.emailOk) return `<p>The key is on ${a.forge}, but your chat commits use <code>sam@Sams-MacBook-Pro.local</code>, which isn't an email on ${a.user}. ${a.forge} only verifies a commit whose email is one of yours.</p>
+    <p style="margin-top:8px">Sign chat commits as:</p>
+    ${["sam@example.com", "sam-r@users.noreply.github.com"].map((e, i) => `<div class="choice ${S.emailPick === i ? "on" : ""}" data-act="pick" data-i="${i}"><span class="radio"></span><div><div>${forge === "gitlab" && i === 1 ? "sam@example.org" : e}</div><div class="s">${i === 0 ? "Verified · primary" : forge === "gitlab" ? "Verified" : "Verified · keeps your address private"}</div></div></div>`).join("")}`;
+  return `<p>purlis makes a small signed test and asks ${a.forge} whether it shows as Verified.</p><p><span class="spin"></span> Asking ${a.forge}…</p>`;
+}
+function doneHtml() {
+  const a = A();
+  const back = { lane: "the lane", chat: "the chat", notice: "the notice", card: "Settings" }[S.from];
+  return `<div class="big">✓</div><h2 class="center" style="margin:0;font-size:15px">Verified on ${a.forge}</h2>
+    <p class="center" style="color:var(--muted)">Chat commits on this Mac are now signed, in every repo. ${S.from !== "card" ? `Back in ${back}, purlis can sign and send the waiting work.` : ""}</p>`;
+}
+function primaryFor() {
+  const a = A();
+  if (S.step === 1) return S.keychainAsked && !S.keychainOk ? ["", ""] : ["Make my key", "make"];
+  if (S.step === 2) { if (S.added) return ["Next", "next"]; if (S.perm === "declined") return ["I've added it", "manualdone"]; return forge === "gitlab" ? [`Add it to ${a.forge}`, "add"] : [`Continue to ${a.forge}`, "perm"]; }
+  if (S.step === 3) return S.emailOk ? ["", ""] : ["Use this email", "email"];
+  return [S.from === "card" ? "Done" : S.from === "notice" ? "Sign and retry all 3" : "Sign and retry", S.from === "card" ? "close" : "doneRetry"];
+}
+function secondaryFor() {
+  if (S.step === 2 && !S.added && S.perm !== "declined" && forge === "github") return `<button class="btn" data-act="decline">I'll add it myself</button>`;
+  return "";
+}
+
+/* A: dialog with rail */
+function dialogA() {
+  const a = A(); const [lbl, act] = primaryFor();
+  const body = S.step === 1 ? step1() : S.step === 2 ? step2() : S.step === 3 ? step3() : doneHtml();
+  return `<div class="scrim"><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="dh">
+    <header><div><h2 id="dh">Set up signing</h2><p>So ${a.forge} shows the commits purlis makes for you as Verified.</p></div><button class="x" data-act="close" aria-label="Close">✕</button></header>
+    ${S.step <= 3 ? railHtml() : ""}<div class="content">${body}</div>
+    <footer><span class="l">${S.step <= 3 ? `Step ${S.step} of 3` : ""}</span>${S.step <= 3 ? `<button class="btn" data-act="close">Cancel</button>` : ""}${secondaryFor()}${lbl ? `<button class="btn primary" data-act="${act}">${lbl}</button>` : ""}</footer></div></div>`;
+}
+/* B: in place, same content inside the prompt / card */
+function inplaceSteps() {
+  const [lbl, act] = primaryFor();
+  const body = S.step === 1 ? step1() : S.step === 2 ? step2() : S.step === 3 ? step3() : doneHtml();
+  return `<div class="inplace"><b style="display:block;margin-bottom:6px">Set up signing</b>${S.step <= 3 ? railHtml() : ""}${body}
+    <div class="acts">${secondaryFor()}${lbl ? `<button class="btn primary" data-act="${act}">${lbl}</button>` : ""}${S.step <= 3 ? `<button class="btn quiet" data-act="close">Cancel</button>` : ""}</div></div>`;
+}
+/* C: checklist that runs */
+function dialogC() {
+  const a = A(); const [lbl, act] = primaryFor();
+  const st = (n) => S.step > n ? "✓" : S.step === n ? `<span class="spin"></span>` : "○";
+  const cls = (n) => S.step > n ? "" : S.step === n ? "run" : "todo";
+  const needs = S.step === 1 && S.keychainAsked && !S.keychainOk ? step1()
+    : S.step === 2 && !S.added && (S.perm === "declined" || forge === "github") ? step2()
+    : S.step === 3 && !S.emailOk ? step3() : "";
+  const started = S.started || S.step > 1;
+  return `<div class="scrim"><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="ch">
+    <header><div><h2 id="ch">${S.step > 3 ? "" : "Set up signing"}</h2>${S.step > 3 ? "" : `<p>purlis does these for you and stops only where you need to choose.</p>`}</div><button class="x" data-act="close" aria-label="Close">✕</button></header>
+    <div class="content">${S.step > 3 ? doneHtml() : `
+      <div class="check ${cls(1)}"><span class="st">${started ? st(1) : "○"}</span><span class="t">Make a signing key on this Mac</span><span class="s">Kept in the Keychain. macOS will ask once: choose Always Allow.</span></div>
+      <div class="check ${cls(2)}"><span class="st">${started ? st(2) : "○"}</span><span class="t">Add it to ${a.user} on ${a.forge}</span><span class="s">${forge === "github" ? "GitHub asks you to allow it once." : "Uses the sign-in purlis already has."}</span></div>
+      <div class="check ${cls(3)}"><span class="st">${started ? st(3) : "○"}</span><span class="t">Check ${a.forge} shows it as Verified</span><span class="s">And that your commits use one of your emails.</span></div>
+      ${needs ? `<div style="margin-top:10px;border-top:1px solid var(--line);padding-top:6px">${needs}</div>` : ""}`}
+    </div>
+    <footer>${!started ? `<button class="btn" data-act="close">Cancel</button><button class="btn primary" data-act="start">Set up signing</button>`
+      : `${secondaryFor()}${lbl && (needs || S.step > 3) ? `<button class="btn primary" data-act="${act}">${lbl}</button>` : ""}`}</footer></div></div>`;
+}
+
+/* ---------------- render ---------------- */
+const win = document.getElementById("win");
+function render() {
+  const settings = ["card-off", "card-on", "remove"].includes(m) || S.from === "card";
+  let html = titlebar(settings ? "settings" : "chat") + (settings ? settingsPage() : chatPage());
+  if (S.open && v === "A") html += dialogA();
+  if (S.open && v === "C") html += dialogC();
+  win.innerHTML = html;
+  document.getElementById("label").textContent = `${v} · ${VARIANTS[v]}`;
+  document.querySelectorAll("#moments button").forEach((b) => b.classList.toggle("on", b.dataset.m === m));
+  document.querySelectorAll(".forgepick button").forEach((b) => b.classList.toggle("on", b.dataset.forge === forge));
+  const { kcDenied, ...shown } = S;
+  document.getElementById("state").textContent = `variant=${v} moment=${m} forge=${forge} · ${JSON.stringify(shown)}`;
+  const q = new URLSearchParams(location.search); q.set("variant", v); q.set("moment", m); q.set("forge", forge);
+  history.replaceState(null, "", "?" + q);
+}
+document.getElementById("moments").innerHTML = Object.entries(MOMENTS).map(([k, t]) => `<button data-m="${k}">${t}</button>`).join("");
+document.getElementById("moments").addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return; m = b.dataset.m; applyMoment(); render(); });
+document.querySelector(".forgepick").addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return; forge = b.dataset.forge; applyMoment(); render(); });
+
+let timer;
+function later(fn, ms = 900) { clearTimeout(timer); timer = setTimeout(() => { fn(); render(); }, ms); }
+function afterAdded() { S.added = true; if (v === "C") { S.step = 3; checkRun(); } }
+function checkRun() { later(() => { if (S.emailOk === true && m !== "email") { S.verified = true; S.step = 4; S.signed = true; } }, 1200); }
+
+win.addEventListener("click", (e) => {
+  const t = e.target.closest("[data-act]"); if (!t) return;
+  const act = t.dataset.act;
+  switch (act) {
+    case "setup": S.open = true; S.from = t.dataset.from || S.from; S.step = 1; S.drawer = false; S.signed = false; S.added = false; S.verified = false; break;
+    case "start": S.started = true; S.keychainAsked = true; break;
+    case "make": S.keychainAsked = true; break;
+    case "kcok": S.keychainOk = true; S.kcDenied = false; S.step = 2; if (v === "C" && forge === "gitlab") later(() => { afterAdded(); }); break;
+    case "kcdeny": S.keychainAsked = false; S.kcDenied = true; if (v === "C") S.started = false; break;
+    case "perm": S.perm = "granted"; later(() => { afterAdded(); }); S.permWaiting = true; break;
+    case "add": later(() => { afterAdded(); }, 700); break;
+    case "decline": S.perm = "declined"; break;
+    case "manualdone": afterAdded(); break;
+    case "next": S.step = 3; checkRun(); break;
+    case "pick": S.emailPick = +t.dataset.i; break;
+    case "email": S.emailOk = true; S.verified = true; S.step = 4; S.signed = true; break;
+    case "close": S.open = false; if (S.step < 4) { S.signed = S.signed && S.verified; } break;
+    case "doneRetry": S.open = false; S.retried = true; if (S.from === "notice") S.drawer = true; break;
+    case "retry": S.retried = true; break;
+    case "drawer": S.drawer = !S.drawer; break;
+    case "remove": S.removing = true; break;
+    case "rmcancel": S.removing = false; break;
+    case "rmgo": S.removing = false; S.signed = false; S.verified = false; S.added = false; break;
+    case "addother": S.otherAdded = true; break;
+    case "gocard": m = "card-off"; applyMoment(); break;
+  }
+  render();
+});
+
+const keys = Object.keys(VARIANTS);
+function step(d) { v = keys[(keys.indexOf(v) + d + keys.length) % keys.length]; applyMoment(); render(); }
+document.getElementById("prev").onclick = () => step(-1);
+document.getElementById("next").onclick = () => step(1);
+addEventListener("keydown", (e) => {
+  if (e.target.closest("input,textarea,[contenteditable]")) return;
+  if (e.key === "ArrowLeft") step(-1); if (e.key === "ArrowRight") step(1);
+  if (e.key === "Escape" && (S.open || S.removing || S.drawer)) { S.open = false; S.removing = false; S.drawer = false; render(); }
+});
+applyMoment(); render();
+</script>
