@@ -1003,9 +1003,16 @@ fn the_command_s_remove_is_kept_off_a_task_s_folder_as_the_explorer_s_is() {
     let (_dir, root) = project();
     let piece = "check-b5rc0def";
     let refused = |delete_branch: bool, no_discard: bool| {
-        kept_from_removal(&root, "alpha", "api", piece, false, delete_branch, || {
-            no_discard
-        })
+        kept_from_removal(
+            &root,
+            "alpha",
+            "api",
+            piece,
+            false,
+            delete_branch,
+            || no_discard,
+            crate::finished::Forge::none(),
+        )
     };
     // No record names it: the person's own folder, removed as ever.
     a_folder(&root, piece);
@@ -1049,16 +1056,27 @@ fn the_command_s_remove_is_kept_off_a_task_s_folder_as_the_explorer_s_is() {
         ("Alpha", "API", "check-b5rc0def"),
     ] {
         assert!(
-            kept_from_removal(&root, ws, repo, typed, false, true, || true).is_some(),
+            kept_from_removal(
+                &root,
+                ws,
+                repo,
+                typed,
+                false,
+                true,
+                || true,
+                crate::finished::Forge::none()
+            )
+            .is_some(),
             "{ws} {repo} {typed}"
         );
     }
 
-    // Its folder already gone: only git's stale registration is left, and nothing to lose,
-    // but the branch is still kept.
+    // Its folder already gone: only git's stale registration is left, and nothing to lose.
+    // `--delete-branch` is let through too (#5439): the removal reads the branch alone and
+    // deletes it only where that loses nothing (`piececmd::remove`).
     std::fs::remove_dir_all(root.join("workspaces/alpha/.worktrees/api").join(piece)).unwrap();
     assert_eq!(refused(false, false), None);
-    assert_eq!(refused(true, false), Some(branch));
+    assert_eq!(refused(true, false), None);
 }
 
 #[test]
@@ -1074,8 +1092,17 @@ fn a_record_that_does_not_read_keeps_the_command_off_the_folder_its_text_names()
          \"piece\": \"check-b5rc0def\"",
     )
     .unwrap();
-    let said = kept_from_removal(&root, "alpha", "api", piece, false, false, || true)
-        .expect("an unread record that names the folder keeps it");
+    let said = kept_from_removal(
+        &root,
+        "alpha",
+        "api",
+        piece,
+        false,
+        false,
+        || true,
+        crate::finished::Forge::none(),
+    )
+    .expect("an unread record that names the folder keeps it");
     assert!(
         said.starts_with("'check-b5rc0def' is named by a dispatch record purlis cannot read ("),
         "{said}"
@@ -1085,9 +1112,16 @@ fn a_record_that_does_not_read_keeps_the_command_off_the_folder_its_text_names()
     // Typed in another case, it is the same folder where the file system folds case, and its
     // branch is kept whatever the file system.
     assert!(
-        kept_from_removal(&root, "ALPHA", "Api", "Check-B5RC0DEF", false, true, || {
-            true
-        })
+        kept_from_removal(
+            &root,
+            "ALPHA",
+            "Api",
+            "Check-B5RC0DEF",
+            false,
+            true,
+            || true,
+            crate::finished::Forge::none(),
+        )
         .is_some()
     );
     #[cfg(target_os = "macos")]
@@ -1099,17 +1133,39 @@ fn a_record_that_does_not_read_keeps_the_command_off_the_folder_its_text_names()
             "Check-B5RC0DEF",
             false,
             false,
-            || true
+            || true,
+            crate::finished::Forge::none(),
         )
         .is_some()
     );
     // Gone already, it goes, without its branch.
     std::fs::remove_dir_all(root.join("workspaces/alpha/.worktrees/api").join(piece)).unwrap();
     assert_eq!(
-        kept_from_removal(&root, "alpha", "api", piece, false, false, || true),
+        kept_from_removal(
+            &root,
+            "alpha",
+            "api",
+            piece,
+            false,
+            false,
+            || true,
+            crate::finished::Forge::none()
+        ),
         None
     );
-    assert!(kept_from_removal(&root, "alpha", "api", piece, false, true, || true).is_some());
+    assert!(
+        kept_from_removal(
+            &root,
+            "alpha",
+            "api",
+            piece,
+            false,
+            true,
+            || true,
+            crate::finished::Forge::none()
+        )
+        .is_some()
+    );
 }
 
 /// Writes `text` as record [`ID`]'s file in the store of the project at `root`.
@@ -1186,7 +1242,16 @@ fn the_explorer_s_merge_and_remove_read_the_store_as_the_command_does() {
     let piece = "check-b5rc0def";
     a_folder(&root, piece);
     let kept = |ws: &str, repo: &str, typed: &str, merging: bool| {
-        kept_from_the_explorer(&root, ws, repo, typed, merging, false, || true)
+        kept_from_the_explorer(
+            &root,
+            ws,
+            repo,
+            typed,
+            merging,
+            false,
+            || true,
+            crate::finished::Forge::none(),
+        )
     };
     assert_eq!(
         kept("alpha", "api", piece, true),
@@ -1227,7 +1292,17 @@ fn the_explorer_s_merge_and_remove_read_the_store_as_the_command_does() {
     stored(&root, &a_record(Some(a_tree(piece, None)), Some("alpha")));
     assert_eq!(kept("alpha", "api", piece, false), None);
     assert!(
-        kept_from_the_explorer(&root, "alpha", "api", piece, false, false, || false).is_some(),
+        kept_from_the_explorer(
+            &root,
+            "alpha",
+            "api",
+            piece,
+            false,
+            false,
+            || false,
+            crate::finished::Forge::none()
+        )
+        .is_some(),
         "where Discard works, the folder is left to it"
     );
     assert!(kept("alpha", "api", piece, true).is_some());
