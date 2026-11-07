@@ -168,3 +168,54 @@ fn a_key_a_mint_line_marks_is_a_minters_through_a_link_and_in_any_case() {
     }
     assert!(!a_mints(&ctx, "qa", "other"));
 }
+
+/// #5582: the run picker judges every key it lists, so the project's file and the links index
+/// are read once for all of them, and each key is judged from what was read: a line that comes
+/// or goes after the read is not seen until the next one, and the next one sees it.
+#[test]
+fn what_no_program_is_handed_is_read_once_and_judges_every_key_from_that_read() {
+    use crate::secrets::brokered::{NoProgram, no_program_is_handed};
+    let dir = project(
+        "[sandbox]\nmode = \"on\"\n[sandbox.personas.qa.tools.gh]\nvault = \"app\"\nkey = \"priv\"\nmint = { app = \"Iv1.abc\" }\n[sandbox.personas.ops.tools.shop]\nvault = \"qa\"\nbrowser = \"https://shop.example.test/login\"\nkey = \"shop-pw\"\n",
+    );
+    let ctx = Ctx::new(dir.path(), Env::of(&[]));
+    std::fs::create_dir_all(&ctx.state).expect("a state folder");
+    std::fs::write(
+        crate::secrets::links::path(&ctx),
+        r#"{"links": {"prod": {"pw": {"vault": "qa", "key": "SHOP-PW"}}}}"#,
+    )
+    .expect("a links index");
+    let judge = NoProgram::read(&ctx);
+    let keys = [
+        ("app", "priv"),
+        ("APP", "Priv"),
+        ("qa", "shop-pw"),
+        ("prod", "pw"),
+        ("qa", "other"),
+    ];
+    for (vault, key) in keys {
+        assert_eq!(
+            judge.refuses(vault, &[key]),
+            no_program_is_handed(&ctx, vault, &[key]),
+            "{vault}/{key}"
+        );
+    }
+    assert!(judge.refuses("app", &["priv"]).is_some_and(|why| why.contains("priv")));
+    assert!(judge.refuses("prod", &["pw"]).is_some_and(|why| why.contains("browser")));
+    assert_eq!(judge.refuses("qa", &["other"]), None);
+
+    // Every line gone, and the index with them: the judge answers from its read.
+    std::fs::write(crate::names::manifest(dir.path()), "").expect("no lines");
+    std::fs::remove_file(crate::secrets::links::path(&ctx)).expect("no links");
+    assert!(judge.refuses("app", &["priv"]).is_some(), "read once");
+    assert!(judge.refuses("prod", &["pw"]).is_some(), "read once");
+    assert_eq!(NoProgram::read(&ctx).refuses("app", &["priv"]), None, "read again");
+
+    // A file that can't be read refuses every key, as the one-key judge does.
+    std::fs::write(crate::names::manifest(dir.path()), "[sandbox\n").expect("a broken file");
+    let judge = NoProgram::read(&ctx);
+    assert_eq!(
+        judge.refuses("qa", &["other"]),
+        Some(crate::sandbox::tools::mint::unreadable_said())
+    );
+}

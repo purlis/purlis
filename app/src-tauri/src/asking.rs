@@ -718,16 +718,27 @@ pub fn pending_asks(planes: tauri::State<'_, Planes>, plane: PlaneId) -> Result<
     Ok(planes.held(&plane)?.asks())
 }
 
+/// What [`asks_waiting`]'s reads are named off the window's thread (#5582).
+pub(crate) const READING_ASKS: &str = "reading the asks waiting";
+
 /// **Every ask a project has waiting now** (#1690), from every source ([`every_ask`]): what
 /// the window lists and the title bar counts. Read again whenever a source may have moved:
 /// [`EVENT`], a chat moving, a dispatch held, a block heard, an answer.
 ///
 /// The window's alone: what waits on the person, dispatches and refused hosts included, is
 /// never a link's to read, as `dispatch_grants_needed` is not.
+///
+/// Read off the window's thread (#5582): it reads the project's files (its locks, sign-ins and
+/// removals, and each waiting persona's tools), and the window asks it on every burst of moves.
+/// Two reads may answer out of order, and the window draws only the newest (`asks.ts`).
 #[tauri::command]
 #[specta::specta]
-pub fn asks_waiting(planes: tauri::State<'_, Planes>, plane: PlaneId) -> Result<Asking, String> {
-    Ok(every_ask(&*planes.held(&plane)?))
+pub async fn asks_waiting(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+) -> Result<Asking, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window(READING_ASKS, move || Ok(every_ask(&held))).await
 }
 
 /// Answers chat `session`'s ask `ask` with its option `option`, as the operator in this window.

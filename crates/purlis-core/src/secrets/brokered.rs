@@ -1048,22 +1048,40 @@ fn grantable(
 /// answer and once they have, since a line may come in with a pull while they read, and after a
 /// Fill, which may link the key to an entry the person keeps.
 pub fn no_program_is_handed(ctx: &Ctx, vault: &str, keys: &[&str]) -> Option<String> {
-    use crate::sandbox::tools::mint;
-    if mint::marked(&ctx.root).is_none() {
-        return Some(mint::unreadable_said());
+    NoProgram::read(ctx).refuses(vault, keys)
+}
+
+/// **[`no_program_is_handed`] for many keys, the project's file and the links index read once**
+/// (#5582): what a picker of many entries judges each with. Each key is judged from what was
+/// read, failing closed as the one-off judge does; a line that comes after the read is seen by
+/// the next one, so a judge is read again for each judgement that gives anything.
+pub struct NoProgram(crate::secretfill::HeldByLines);
+
+impl NoProgram {
+    /// Reads what judges every key.
+    pub fn read(ctx: &Ctx) -> Self {
+        NoProgram(crate::secretfill::HeldByLines::read(ctx))
     }
-    for &key in keys {
-        if crate::secretfill::a_mints(ctx, vault, key) {
-            return Some(mint::refused_said(vault, key));
+
+    /// Why no program may be handed one of `keys` of `vault`, judged from what was read.
+    pub fn refuses(&self, vault: &str, keys: &[&str]) -> Option<String> {
+        use crate::sandbox::tools::mint;
+        if self.0.unreadable() {
+            return Some(mint::unreadable_said());
         }
-        if crate::secretfill::a_browsers(ctx, vault, key) {
-            return Some(format!(
-                "{key} in vault {vault} is one purlis fills in a browser itself, on the one site a \
-                 persona declares, so no program is handed it"
-            ));
+        for &key in keys {
+            if self.0.mints(vault, key) {
+                return Some(mint::refused_said(vault, key));
+            }
+            if self.0.browsers(vault, key) {
+                return Some(format!(
+                    "{key} in vault {vault} is one purlis fills in a browser itself, on the one \
+                     site a persona declares, so no program is handed it"
+                ));
+            }
         }
+        None
     }
-    None
 }
 
 /// **Whether `wanted`'s command runs under a Run grant** (ADR 0112, #5239): the program its words

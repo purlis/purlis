@@ -137,14 +137,25 @@ function listReader(
   const timers = new Map<string, ReturnType<typeof setTimeout>>();
   /** The read due when the first hold a project's list names runs out (#1709). */
   const holds = new Map<string, ReturnType<typeof setTimeout>>();
+  /**
+   * **The newest read a project's list was drawn from** (#5582): the core reads the list off the
+   * window's thread, so two reads may answer out of the order they were asked in, and an older
+   * answer is never drawn over a newer one.
+   */
+  const asked = new Map<string, number>();
+  const drawn = new Map<string, number>();
   const read = (plane: string) => {
     if (!live || !watched.has(plane)) return;
+    const thisRead = (asked.get(plane) ?? 0) + 1;
+    asked.set(plane, thisRead);
     void commands.asksWaiting(plane).then(
       (answer) => {
         // A core that answers nothing for it (an older build, a test's mock) holds none.
         const listed = answer.status === "ok" ? (answer.data as Asking | null) : undefined;
         const asks = listed?.asks;
         if (!(live && watched.has(plane) && asks)) return;
+        if (thisRead < (drawn.get(plane) ?? 0)) return;
+        drawn.set(plane, thisRead);
         // An older core lists no task question with its asking chat: none is.
         const with_asking_chat = listed?.with_asking_chat ?? [];
         const next = { asks, with_asking_chat };
