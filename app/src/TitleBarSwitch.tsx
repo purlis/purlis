@@ -22,6 +22,7 @@ import { HeldPopover, PopoverFooter, PopoverRule, type KeyHint } from "./ui/popo
 import { monogramOf } from "./ui/rail/Rail";
 import { useProjectTints } from "./ui/rail/projectColour";
 import {
+  PinSpace,
   PinToggle,
   SwitcherColumns,
   SwitcherFilter,
@@ -604,7 +605,7 @@ function WorkspacePopover({
   const rows = [...names, NEW];
   const [at, setAt] = useState(() => Math.max(0, names.indexOf(listed?.focused ?? "")));
   const chosen = Math.min(at, rows.length - 1);
-  const rowId = (row: string) => `${id}-${rows.indexOf(row)}`;
+  const rowId = (place: number) => `${id}-${place}`;
   const go = (row: string) => (row === NEW ? onCreate() : onGo(row));
   const key = (event: ReactKeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Escape") {
@@ -635,7 +636,7 @@ function WorkspacePopover({
           setAt(0);
         }}
         listbox={id}
-        active={rows[chosen] === undefined ? undefined : rowId(rows[chosen])}
+        active={rows[chosen] === undefined ? undefined : rowId(chosen)}
         keys={keys}
         onKeyDown={key}
       />
@@ -644,24 +645,25 @@ function WorkspacePopover({
         label={`Workspaces in ${project.name}`}
         empty="No workspace matches."
         nothing={names.length === 0}
-        pins={rows.map((row) =>
-          row === OUTSIDE || row === NEW ? (
-            <span key={row} aria-hidden="true" />
+        count={rows.length}
+        aimed={chosen}
+        pin={(place) => {
+          const row = rows[place];
+          return row === OUTSIDE || row === NEW ? (
+            <PinSpace />
           ) : (
             <PinToggle
-              key={row}
               name={row}
               pinned={listed?.pins.includes(row) ?? false}
               onChange={(pinned) => onPin(row, pinned)}
             />
-          ),
-        )}
-      >
-        {rows.map((row, place) =>
-          row === NEW ? (
+          );
+        }}
+        row={(place) => {
+          const row = rows[place];
+          return row === NEW ? (
             <SwitcherRow
-              key={row}
-              id={rowId(row)}
+              id={rowId(place)}
               name="New workspace…"
               unavailable={project.cannotCreate}
               mark={
@@ -674,17 +676,16 @@ function WorkspacePopover({
             />
           ) : (
             <SwitcherRow
-              key={row}
-              id={rowId(row)}
+              id={rowId(place)}
               name={row === OUTSIDE ? OUTSIDE_TITLE : row}
               mark={row === OUTSIDE ? rootMark : undefined}
               waiting={listed?.waiting[row] ?? 0}
               active={place === chosen}
               onPress={() => onGo(row)}
             />
-          ),
-        )}
-      </SwitcherList>
+          );
+        }}
+      />
       <PopoverRule />
       <PopoverFooter />
     </>
@@ -822,12 +823,17 @@ function ProjectSwitcher({
         onKeyDown={key}
       />
       <SwitcherColumns>
-        <SwitcherList id={`${id}-p`} label="Projects" header="Projects" empty="No project matches.">
-          {found.map((index, place) => {
-            const one = projects[index];
+        <SwitcherList
+          id={`${id}-p`}
+          label="Projects"
+          header="Projects"
+          empty="No project matches."
+          count={found.length}
+          aimed={projectAt}
+          row={(place) => {
+            const one = projects[found[place]];
             return (
               <SwitcherRow
-                key={one.plane}
                 id={projectRowId(place)}
                 name={one.name}
                 waiting={one.waiting}
@@ -837,46 +843,47 @@ function ProjectSwitcher({
                 onPress={() => show(one.plane)}
               />
             );
-          })}
-        </SwitcherList>
+          }}
+        />
         <SwitcherList
           id={`${id}-w`}
           label={project === undefined ? "Workspaces" : `Workspaces in ${project.name}`}
           header={project === undefined ? "Workspaces" : `Workspaces in ${project.name}`}
           empty="No workspace matches."
-          pins={
+          count={project === undefined ? 0 : wsRows.length}
+          aimed={column === "workspaces" ? wsChosen : undefined}
+          pin={
             project === undefined
               ? undefined
-              : wsRows.map((row) =>
-                  row === OUTSIDE ? (
-                    <span key={row} aria-hidden="true" />
+              : (place) => {
+                  const row = wsRows[place];
+                  return row === OUTSIDE ? (
+                    <PinSpace />
                   ) : (
                     <PinToggle
-                      key={row}
                       name={row}
                       pinned={project.workspaces?.pins.includes(row) ?? false}
                       onChange={(pinned) => onPin(project.plane, row, pinned)}
                     />
-                  ),
-                )
+                  );
+                }
           }
-        >
-          {project === undefined
-            ? []
-            : wsRows.map((row, place) => (
-                <SwitcherRow
-                  key={row}
-                  id={wsRowId(place)}
-                  name={row === OUTSIDE ? OUTSIDE_TITLE : row}
-                  mark={row === OUTSIDE ? rootMark : undefined}
-                  waiting={project.workspaces?.waiting[row] ?? 0}
-                  // The workspace Enter would go to, while the keyboard is in this column, or
-                  // the one the project is on while it is in the other.
-                  active={place === wsChosen && column === "workspaces"}
-                  onPress={() => onGo(project.plane, row)}
-                />
-              ))}
-        </SwitcherList>
+          row={(place) => {
+            const row = wsRows[place];
+            return (
+              <SwitcherRow
+                id={wsRowId(place)}
+                name={row === OUTSIDE ? OUTSIDE_TITLE : row}
+                mark={row === OUTSIDE ? rootMark : undefined}
+                waiting={project?.workspaces?.waiting[row] ?? 0}
+                // The workspace Enter would go to, while the keyboard is in this column, or
+                // the one the project is on while it is in the other.
+                active={place === wsChosen && column === "workspaces"}
+                onPress={() => project !== undefined && onGo(project.plane, row)}
+              />
+            );
+          }}
+        />
       </SwitcherColumns>
       <PopoverRule />
       <PopoverFooter hints={PROJECT_KEYS} />

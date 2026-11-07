@@ -303,7 +303,16 @@ function Body({ shown }: { shown: Shown }): ReactNode {
 
 /** **The strip, docked on the content panel, a chat's tab and the chosen view's tab, and the
  *  view's pane under it**, as `LayoutPanes` and `ViewPane` draw it. */
-function ViewTab({ shown, width = 760 }: { shown: Shown; width?: number }) {
+function ViewTab({
+  shown,
+  width = 760,
+  alone = false,
+}: {
+  shown: Shown;
+  width?: number;
+  /** Alone in its tab (#5318): no controls over it. Otherwise it is one side of a split. */
+  alone?: boolean;
+}) {
   const idOf = useTabIds();
   const { title, mark: Mark } = TABS[shown];
   const tabs = [
@@ -366,12 +375,14 @@ function ViewTab({ shown, width = 760 }: { shown: Shown; width?: number }) {
             <div className="pane-frame pane-viewed" data-focused="" data-testid="view frame">
               <PaneHead
                 doing={
-                  <PaneActions
-                    pane={0}
-                    offerFor={(id) => PANE_OFFERS[id]}
-                    closeOf={() => PANE_OFFERS["pane.close"]}
-                    onPaneDoes={() => undefined}
-                  />
+                  alone ? null : (
+                    <PaneActions
+                      pane={0}
+                      offerFor={(id) => PANE_OFFERS[id]}
+                      closeOf={() => PANE_OFFERS["pane.close"]}
+                      onPaneDoes={() => undefined}
+                    />
+                  )
                 }
               />
               <div className="pane view focused">
@@ -528,6 +539,13 @@ async function nothingScrollsUnderTheActions(canvasElement: HTMLElement) {
   (scroller as HTMLElement).scrollTop = 0;
 }
 
+/** **The room the view's first row keeps at its start and at its end** (#5442), in pixels. */
+function firstRowRoom(canvasElement: HTMLElement): { start: number; end: number } {
+  const first = canvasElement.querySelector(".view-head") as HTMLElement;
+  const { paddingInlineStart, paddingInlineEnd } = getComputedStyle(first);
+  return { start: parseFloat(paddingInlineStart), end: parseFloat(paddingInlineEnd) };
+}
+
 /** Puts the keyboard down, so the picture shows the view at rest. */
 const atRest = () => (document.activeElement as HTMLElement | null)?.blur();
 
@@ -555,16 +573,34 @@ export const Settings: Story = {
 };
 
 /**
- * **Settings with the pane's actions drawn**, as the keyboard on them brings them: the
- * chat pane's cluster at the top right, at the end of the levels' row and over nothing.
+ * **A view alone in its tab** (#5318): no splits and no close over its content. Its splits are in
+ * the palette and on its tab's menu, and its tab's × closes it. Its first row takes the whole
+ * width (#5442): in the narrow pane `Narrow` draws with its controls, it needs no second line.
+ */
+export const AloneInItsTab: Story = {
+  args: { shown: "persona", alone: true, width: 400 },
+  play: async ({ canvas, canvasElement }) => {
+    await canvas.findByRole("tabpanel");
+    expect(canvasElement.querySelector(".pane-actions")).toBeNull();
+    expect(canvas.queryByRole("button", { name: /^Split |^Close this view$/ })).toBeNull();
+    // **Its first row takes the pane's whole width** (#5442): it keeps no room for controls it
+    // does not draw, so it ends as far in from the pane's end as it starts from its start.
+    const { start, end } = firstRowRoom(canvasElement);
+    expect(end).toBe(start);
+  },
+};
+
+/**
+ * **Settings with the pane's actions drawn**, the chat pane's cluster at the top right, at the end
+ * of the levels' row and over nothing.
  */
 export const SettingsActionsShown: Story = {
   args: { shown: "settings" },
   play: async ({ canvas, canvasElement, userEvent }) => {
     await oneWithItsTab(canvasElement, "Settings");
     expect(pressableUnderTheActions(canvasElement)).toEqual([]);
-    // The keyboard on the first of them draws the cluster; Esc puts its tooltip away, so the
-    // picture shows the actions in place and nothing over them.
+    // The keyboard on the first of them; Esc puts its tooltip away, so the picture shows the
+    // actions in place and nothing over them.
     const split = canvas.getByRole("button", { name: "Split right" });
     split.focus();
     await waitFor(() => expect(split).toBeVisible());
@@ -601,6 +637,10 @@ export const Persona: Story = {
   play: async ({ canvas, canvasElement, userEvent }) => {
     await oneWithItsTab(canvasElement, "steward");
     await nothingScrollsUnderTheActions(canvasElement);
+    // Not alone, its first row keeps the room its pane's controls take at its end (#5442).
+    const { start, end } = firstRowRoom(canvasElement);
+    const actions = boxOf(canvasElement.querySelector(".pane-head > .pane-actions"));
+    expect(end).toBeGreaterThanOrEqual(actions.width + start);
     canvas.getByRole("button", { name: "Close this view" }).focus();
     for (const name of ["Edit persona.md", "Profile…", "Delete persona…"]) {
       await userEvent.tab();

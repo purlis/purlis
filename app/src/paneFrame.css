@@ -7,9 +7,8 @@
 
    1. **the header** (`PaneHead`): the chat at a glance at its start, the chat's actions and the
       pane's own controls at its end, the bell in a fixed slot before ⋯ (`PaneBell`);
-   2. **the band** (`NoticePaneRow`): the pane's notices as washed cards, the words above their
-      ways out: its asks, and, expanded, its notes too under a head row with Dismiss all. Under
-      the header, so a notice arriving never moves it;
+   2. **the band** (`NoticePaneRow`): the pane's notices as compact rows under a head that folds
+      them to one line (#5215). Under the header, so a notice arriving never moves it;
    3. **the terminal**, which has the room the two leave and is pinned to its bottom.
 
    **Nothing sits between a tab and its pane, and nothing draws over the terminal.** The band was
@@ -33,17 +32,26 @@
 .pane-frame.pane-headed {
   /* Its size is the layout's, never its content's, so what it holds can be capped by it. */
   container-type: size;
+  /* What the band's own box takes of the pane above and below its Notices (#5215): its head row,
+     that row's line and the box's two, and the step under it. A Notice's caps give this back. */
+  --pane-band-box: calc(var(--size-control) + 3 * var(--separator-width) + var(--space-3));
   background-color: var(--terminal-background);
 }
 
-/* **The band and the header together never take more than about half the pane** (rule 6): past
-   that the band gives way and its warnings scroll inside it, and the header never does. */
+/* **The terminal never gives way past three lines** (#5215): the top gives way first, the header
+   never, and past that the band scrolls as one. Set by the flex of the frame, so a foot under the
+   terminal is taken off too (#5191). */
 .pane-top {
   display: flex;
-  flex: none;
+  flex: 0 1 auto;
   flex-direction: column;
   min-block-size: 0;
-  max-block-size: 46%;
+}
+
+.pane-frame.pane-headed > .pane-body {
+  /* Three of the terminal's own lines, as it measures them (`SessionPane`, `--terminal-row`), and
+     its strip under the last. Before a terminal says, three lines of the base text. */
+  min-block-size: calc(3 * var(--terminal-row, 1.25rem) + var(--space-4));
 }
 
 /* ---------------------------------------------------------------------------------------------
@@ -60,9 +68,35 @@
   gap: var(--space-2);
   min-block-size: 0;
   max-block-size: none;
-  padding: 0 var(--space-4) var(--space-2);
+  padding: 0;
+  margin: 0 var(--space-4) var(--space-3);
   border: 0;
   background-color: transparent;
+}
+
+/* **The band's own box** (#5215, the approved prototype): the raised ground and a hairline, with
+   its rows one under another inside it. Its folded line is the same box, one line high. */
+.pane-frame.pane-headed > .pane-top > [data-scope="notice-row"][data-part="root"] {
+  gap: 0;
+  overflow: hidden;
+  border: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
+  border-radius: var(--radius-lg);
+  background-color: var(--surface-raised);
+}
+
+/* Its rows touch, a line between them: the stack's fades give back no gap (`notice.css`). */
+.pane-top
+  > [data-scope="notice-row"][data-part="root"]
+  > [data-scope="notice-row"][data-part="stack"] {
+  --notice-row-gap: 0px;
+}
+
+/* Folded, its rows are all `hidden`: a stack with nothing to show takes no room and scrolls nothing
+   (its fades are boxes of their own). */
+.pane-top
+  > [data-scope="notice-row"][data-part="root"]
+  > [data-scope="notice-row"][data-part="stack"]:not(:has(> :not([hidden]))) {
+  display: none;
 }
 
 /* The warnings, one under another and each the band's width; past the band's room they scroll
@@ -72,15 +106,23 @@
   > :is(.pane-notices, [data-scope="notice-row"][data-part="stack"]) {
   flex: 0 1 auto;
   align-items: stretch;
-  gap: var(--space-2);
+  gap: 0;
   max-inline-size: none;
   min-block-size: 0;
   overflow-y: auto;
 }
 
-/* The band's fade goes to what the warnings stand on here: the terminal's fill (#3168). */
+/* **Its rows at rest take a few lines' room** (the prototype's 196px of its 560px pane), so a pile of
+   notices leaves the terminal its height; a message opened, or what a way out opened, takes what it needs. */
+.pane-top
+  > [data-scope="notice-row"][data-part="root"]
+  > [data-scope="notice-row"][data-part="stack"]:not(:has([data-whole], [aria-expanded="true"])) {
+  max-block-size: min(calc(var(--size-control) * 7), 33cqb);
+}
+
+/* The band's fade goes to what the rows stand on here: the band's own ground (#3168, #5215). */
 .pane-frame.pane-headed [data-scope="notice-row"][data-part="stack"] {
-  --notice-row-ground: var(--terminal-background);
+  --notice-row-ground: var(--surface-raised);
 }
 
 /* **An expanded band's head row** (#4754): what it holds at its start, quiet, and Dismiss all
@@ -93,8 +135,9 @@
   align-items: center;
   gap: var(--space-2);
   min-block-size: var(--size-control);
-  padding-inline: var(--space-1);
-  color: var(--text-quiet);
+  padding-inline: var(--space-5) var(--space-2);
+  border-block-end: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
+  color: var(--text-muted);
   font-size: var(--font-size-sm);
 }
 
@@ -138,9 +181,17 @@
   flex: none;
   min-block-size: auto;
   /* Never taller than its pane: what a way out opened gives way first, inside the card. The
-     header above the band (#4754) and the band's runway are taken off: a chrome row and its
-     steps. */
-  max-block-size: calc(100cqb - var(--size-chrome) - var(--space-8));
+     header above the band (#4754), the band's runway and the band's own box are taken off. */
+  max-block-size: calc(100cqb - var(--size-chrome) - var(--space-8) - var(--pane-band-box));
+}
+
+/* **A row is as tall as what it says** (#5215): the band scrolls as one, so a row has no cap, and
+   what an opened one says never runs over the row after it. */
+.pane-top
+  > :is(.pane-notice-row, [data-scope="notice-row"][data-part="root"])
+  > :is(.pane-notices, [data-scope="notice-row"][data-part="stack"])
+  > [data-scope="notice"][data-part="root"][data-layout="row"] {
+  max-block-size: none;
 }
 
 .pane-top
@@ -202,7 +253,12 @@
 /* **The words above their ways out** (variant A): the sentence takes the line's whole first
    row, and the ways out wrap under it, side by side while they fit and under one another when
    they do not (rule 13). */
-.pane-top :is(.notice-pane-box, [data-scope="notice"][data-placement="pane"]) > [role="status"] {
+/* A box's line only: a band's row lays its line out itself (below). Matching a row too, this
+   rule's padding of 0 and its gaps outranked the row's own, so a row's ways stood on its bottom
+   edge, cut, and its words and mark on its top and start edges (#5443). */
+.pane-top
+  :is(.notice-pane-box, [data-scope="notice"][data-placement="pane"]):not([data-layout="row"])
+  > [role="status"] {
   gap: var(--space-3) var(--space-2);
   margin: 0;
   padding: 0;
@@ -225,7 +281,7 @@
   opacity: 1;
 }
 
-/* What a way out opened stays under the line, at the warning's width, and never more than a
+/* What a way out opened stays under the line, at the warning's width, and never more than about a
    third of the pane's height: past that it scrolls in its own box, so a warning with a long
    brief under it is never taller than the band can scroll to, and its line and ways out are
    always whole. */
@@ -233,7 +289,8 @@
   :is(.notice-pane-box, [data-scope="notice"][data-placement="pane"])
   > :is(.notice-under-pane, [data-scope="notice"][data-part="under"]) {
   padding-inline: 0;
-  max-block-size: 33cqb;
+  /* The room the band's own box took comes off here first, in a short pane above all. */
+  max-block-size: max(var(--size-control), calc(33cqb - var(--pane-band-box)));
   overflow-y: auto;
 }
 
@@ -268,6 +325,160 @@
 }
 
 /* ---------------------------------------------------------------------------------------------
+   A row of the band (#5215, the approved prototype's live pane): its icon, its words on one line
+   with its sub-line beneath, its ways out, and a separator to the next. No wash of its own: the
+   icon says what it is, and a consent keeps its full waiting-coloured edge (ADR 0097 §6).
+   --------------------------------------------------------------------------------------------- */
+
+.pane-top [data-scope="notice"][data-part="root"][data-placement="pane"][data-layout="row"] {
+  padding: 0;
+  border-radius: 0;
+  background-color: transparent;
+}
+
+/* **A note about a setting is an information line** (#5215, the prototype): quieter, and shorter. */
+.pane-top [data-layout="row"]:not(:has([data-part="sub"])) > [role="status"] {
+  min-block-size: var(--size-control);
+}
+
+.pane-top
+  [data-layout="row"]:not(:has([data-part="sub"]))
+  [data-part="words"]
+  > [data-part="message"] {
+  color: var(--text-secondary);
+  font-weight: var(--font-weight-regular);
+}
+
+.pane-top
+  [data-scope="notice"][data-part="root"][data-placement="pane"][data-layout="row"]::before {
+  content: none;
+}
+
+.pane-top [data-scope="notice"][data-part="root"][data-layout="row"] + *,
+.pane-top .quiz-band-quiz + * {
+  border-block-start: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
+}
+
+.pane-top
+  [data-scope="notice"][data-part="root"][data-placement="pane"][data-layout="row"][data-consent] {
+  border: 1px solid var(--state-waiting);
+  border-radius: var(--radius-md);
+  background-color: transparent;
+}
+
+.pane-top [data-layout="row"] > [role="status"] {
+  display: grid;
+  grid-template-columns: auto minmax(8rem, 1fr) fit-content(70%);
+  gap: var(--space-2) var(--space-4);
+  align-items: center;
+  min-block-size: calc(var(--size-control) + var(--space-4));
+  padding: var(--space-1) var(--space-3) var(--space-1) var(--space-5);
+}
+
+.pane-top [data-layout="row"] > [role="status"] > [data-part="mark"] {
+  /* On its first line, whatever the row holds (#5215's review of #5216). */
+  align-self: start;
+  margin-block-start: var(--space-2);
+  color: var(--state-waiting);
+}
+
+.pane-top [data-layout="row"][data-variant="trouble"] > [role="status"] > [data-part="mark"] {
+  color: var(--danger-base);
+}
+
+.pane-top [data-layout="row"][data-variant="news"] > [role="status"] > [data-part="mark"] {
+  color: var(--text-muted);
+}
+
+.pane-top [data-layout="row"][data-consent] > [role="status"] > [data-part="mark"] {
+  color: var(--accent-base);
+}
+
+/* **Its first line, and a toggle where that cuts it** (`useCut`). */
+.pane-top [data-layout="row"]:not([data-whole]) [data-part="words"] > [data-part="message"] {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+}
+
+.pane-top [data-layout="row"] [data-part="words"] > [data-part="message"] {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
+}
+
+/* **A consent's Allow stands apart from Keep blocked** (rule 9), and a plain way out has no edge. */
+.pane-top [data-part="ways"] > [data-variant="grants"] + :not([data-variant="grants"]) {
+  margin-inline-start: var(--space-6);
+}
+
+.pane-top [data-part="ways"] > [data-variant="secondary"] {
+  border-color: transparent;
+}
+
+/* Its sub-line stays on its one line in the row, whatever it says. */
+.pane-top [data-layout="row"] [data-part="sub"] {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* **Opened, whole, with its ways pinned at its foot** (#5215): the band grows, the terminal gives
+   way down to three lines, and only past that does the band scroll, as one. */
+.pane-top [data-layout="row"][data-whole] > [role="status"] {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+}
+
+.pane-top [data-layout="row"][data-whole] [data-part="ways"] {
+  grid-column: 1 / -1;
+}
+
+.pane-top [data-layout="row"][data-whole] [data-part="ways"],
+.task-quiz-pinned {
+  position: sticky;
+  z-index: 2;
+  inset-block-end: 0;
+  padding-block: var(--space-2);
+}
+
+.pane-top [data-layout="row"][data-whole] [data-part="ways"] {
+  background-color: var(--surface-raised);
+}
+
+/* On the question's own card, whatever its ground. */
+.task-quiz-whole,
+.task-quiz-pinned {
+  background-color: inherit;
+}
+
+/* Folded, a prompt's text keeps to the row's one line: nothing in it takes a line of its own. */
+.pane-top [data-layout="row"]:not([data-whole]) .terminal-prompt-says * {
+  display: inline;
+  margin: 0;
+  padding: 0;
+}
+
+/* A row's words keep their room in a narrow pane, and its ways go under them. */
+@container (max-width: 34rem) {
+  .pane-top [data-layout="row"] > [role="status"] {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .pane-top [data-layout="row"] [data-part="ways"] {
+    grid-column: 1 / -1;
+  }
+}
+
+/* What a way out opened stays in the row and has no box of its own to scroll: the band is the one
+   thing that scrolls (#5215). */
+.pane-top [data-layout="row"] > :is(.notice-under-pane, [data-scope="notice"][data-part="under"]) {
+  max-block-size: none;
+  overflow-y: visible;
+  padding-inline: var(--space-5) var(--space-3);
+}
+
+/* ---------------------------------------------------------------------------------------------
    The header.
    --------------------------------------------------------------------------------------------- */
 
@@ -296,13 +507,6 @@
   .pane-head {
     padding-inline: var(--space-5) var(--space-3);
   }
-
-  /* **And a task's line keeps the grip's room too** (#4764): with a breadcrumb on it, the grip
-     is not drawn in a narrow pane, so the state word stays whole (it needs about 17px more in a
-     pane of two in the narrowest window). ⌘⇧M and a drag of the head still pick the pane up. */
-  .pane-head:has(> .pane-chips > .pane-crumbs) > [data-pane-grip-handle] {
-    display: none;
-  }
 }
 
 /* **The header is the top of the pane** (#4754): it keeps the runway, band or none. */
@@ -324,6 +528,14 @@
   font-weight: var(--font-weight-strong);
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+/* **A pane's grip** (#5290, `ui/grip`): the mark in its head, the tab's size, and a 24px target
+   (WCAG 2.5.8) that reaches past the mark and moves nothing around it. */
+.pane-chips > .pane-persona,
+.pane-frame.pane-viewed > .pane-head > .pane-view-grip {
+  --grip-mark: var(--space-6);
+  --grip-reach: var(--space-7);
 }
 
 /* The chat's persona and state icon (`ChatPersonaState`, #4762): the tab's size, its badge
@@ -463,8 +675,10 @@
 
 /* **The harness's name keeps the foot's tier** (#2914, the operator's ruling of 2026-10-22;
    on the foot since #5202): muted, primary on the pane of a split that has the keyboard, and
-   under the pointer or the keyboard. **Interim, until the quiet ghost variant (#3214)**: the
-   family's ghost draws primary words, so these rules out-rank its variant (0,3,0) by
+   under the pointer or the keyboard. **So do the foot's other presses** (#5204): the workspace,
+   `↳ from`, the studio chip and `ctx` (`HarnessCard.tier.test.ts`). The family's ghost draws
+   primary words and its quiet variant (#3214) the quiet tier, a step under the foot's muted words
+   in Purlis, so neither is the foot's (#5366): these rules out-rank the ghost (0,3,0) by
    specificity, naming the button's own attributes, never by where they are written. */
 :is(.pane-foot, .pane-head) .pane-harness[data-scope="button"][data-variant="ghost"],
 .pane-foot .pane-foot-press[data-scope="button"][data-variant="ghost"] {
@@ -489,8 +703,7 @@
 /* **A pane's actions** (`PaneActions`, shared with a view's pane, #3147, #5203): the chat's
    actions, then split side by side, split stacked and close, one cluster in its own place at the
    pane's top right. Plain marks in
-   the quiet tier with no box around them. When they are drawn is the window's rule (`App.css`,
-   `.pane-doing`). */
+   the quiet tier with no box around them, always drawn (#5318). */
 .pane-actions {
   display: flex;
   flex: none;
@@ -539,6 +752,12 @@
   --pane-actions-room: calc(var(--size-control) * 3 + var(--space-1) * 2 + var(--space-5) * 2);
 }
 
+/* **A view alone in its tab draws no controls** (#5318), so its first row keeps no room for them
+   (#5442): it ends as far in as it starts, the header's own inline padding. */
+.pane-frame.pane-viewed:not(:has(> .pane-head .pane-actions)) {
+  --pane-actions-room: var(--space-5);
+}
+
 /* Where a chat's header is: at the pane's top, a step down (`.pane-head:first-child`), end to
    end. It takes no pointer itself, so the view's first row under it
    stays pressable; only its actions do. */
@@ -554,6 +773,21 @@
   pointer-events: auto;
 }
 
+/* **A view's grip, in a split** (#5290): its mark at the head's start, the tab's size, pressable
+   over the view's first row, which keeps its room at its start as it keeps the actions' at its
+   end. Alone in its tab a view has none, and its first row starts where it always did. */
+.pane-frame.pane-viewed > .pane-head > .pane-view-grip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  pointer-events: auto;
+}
+
+.pane-frame.pane-viewed:has(> .pane-head > .pane-view-grip) {
+  /* The grip's reach (`--grip-reach`, above) and the gap after it. */
+  --pane-grip-room: calc(var(--space-7) + var(--space-3));
+}
+
 /* **The view's first row is the header's row**: the same step from the top, the same height and
    the same start, and it keeps the actions' room at its end, so nothing in it is ever under
    them. */
@@ -566,7 +800,7 @@
   min-block-size: var(--size-chrome);
   margin-block-start: var(--space-2);
   padding-block: var(--space-2);
-  padding-inline: var(--space-5) var(--pane-actions-room);
+  padding-inline: calc(var(--space-5) + var(--pane-grip-room, 0px)) var(--pane-actions-room);
 }
 
 /* **A view that draws its own first row** (Settings' levels, its words beside them) keeps the
@@ -583,7 +817,7 @@
   inset-block-start: 0;
   z-index: 1;
   padding-block-start: var(--space-4);
-  padding-inline-end: var(--pane-actions-room);
+  padding-inline: var(--pane-grip-room, 0px) var(--pane-actions-room);
   background-color: var(--surface-raised);
 }
 
@@ -592,7 +826,7 @@
 .pane-frame.pane-viewed .view-body > .piece-file > .piece-files-head:first-child {
   box-sizing: content-box;
   min-block-size: var(--size-chrome);
-  padding-inline-end: var(--pane-actions-room);
+  padding-inline: calc(var(--space-5) + var(--pane-grip-room, 0px)) var(--pane-actions-room);
 }
 
 /* ---------------------------------------------------------------------------------------------
@@ -624,12 +858,12 @@
   margin: var(--space-4) var(--space-4) 0;
 }
 
-/* **Opened, it stays inside the top's cap** (#4843): in a short pane the top is 46% of it, and
-   the strip gives way to it like the band does, its text scrolling inside it, so the terminal
-   below keeps its room whatever the message holds. */
+/* **Opened, it stays inside its cap** (#4843): with the header, no more than 46% of a short pane,
+   its text scrolling inside it, so the terminal below keeps its room whatever the message holds. */
 .pane-top > .waiting-strip[data-open] {
   flex: 0 1 auto;
   min-block-size: 0;
+  max-block-size: calc(46cqb - var(--size-chrome));
 }
 
 /* ---------------------------------------------------------------------------------------------
@@ -641,8 +875,9 @@
   cursor: grab;
 }
 
-:root[data-pane-dragging],
-:root[data-pane-dragging] * {
+/* A pointer holding something; placement mode's keys and presses hold no cursor (#5293). */
+:root[data-pane-dragging="pointer"],
+:root[data-pane-dragging="pointer"] * {
   cursor: grabbing;
 }
 
@@ -697,27 +932,9 @@
   visibility: hidden;
 }
 
-:root[data-pane-refused],
-:root[data-pane-refused] * {
+:root[data-pane-dragging="pointer"][data-pane-refused],
+:root[data-pane-dragging="pointer"][data-pane-refused] * {
   cursor: no-drop;
-}
-
-/* **In placement mode, what the place the keyboard is on would take** (#4583), until it draws what
-   a drag draws (#5293): the half of the pane the source would take, or the whole pane for a swap,
-   over the terminal. A refused place is dashed, in the danger colour. */
-.pane-drop-preview {
-  position: fixed;
-  z-index: 4;
-  pointer-events: none;
-  border: var(--focus-ring-width) solid var(--accent-base);
-  border-radius: var(--radius-sm);
-  background-color: var(--accent-wash);
-}
-
-.pane-drop-preview[data-refused] {
-  border-style: dashed;
-  border-color: var(--danger-base);
-  background-color: var(--danger-wash);
 }
 
 /* ---------------------------------------------------------------------------------------------
@@ -845,7 +1062,73 @@
 
 .task-quiz.inbox-ask {
   margin: 0;
-  padding: var(--space-3) var(--space-4);
+  padding: var(--space-1) var(--space-3) var(--space-1) var(--space-5);
+}
+
+/* **A question's row** (#5215): as every row of the band, its kind mark on its first line. */
+.task-quiz-row {
+  display: grid;
+  grid-template-columns: auto minmax(8rem, 1fr) auto;
+  gap: var(--space-2) var(--space-4);
+  align-items: center;
+  min-block-size: calc(var(--size-control) + var(--space-4));
+}
+
+.task-quiz-row > .inbox-kind {
+  align-self: start;
+  margin-block-start: var(--space-2);
+}
+
+.task-quiz-words {
+  display: grid;
+  min-inline-size: 0;
+}
+
+.task-quiz-title {
+  overflow: hidden;
+  font-size: var(--font-size-md);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The first line is the task's words, inline after who asks: nothing in it takes a line of its own. */
+.task-quiz-first,
+.task-quiz-first * {
+  display: inline;
+  margin: 0;
+  padding: 0;
+}
+
+.task-quiz-sub {
+  overflow: hidden;
+  color: var(--text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Opened, it shows whole under its row, its answer pinned at its foot (`.task-quiz-pinned`). */
+.task-quiz-whole {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-block: var(--space-2) 0;
+}
+
+.task-quiz-pinned {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+@container (max-width: 34rem) {
+  .task-quiz-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .task-quiz-row > .task-quiz-top-end {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+  }
 }
 
 /* **The pause before the next quiz** (#4566): the quiz's own height, held by the slot it stood
@@ -926,8 +1209,9 @@
 }
 
 /* **Placement mode** (#4764): every other pane shows its five targets in a cross in its middle,
-   as real buttons over the terminal, and the strip a New tab at its end. Over the drop's preview,
-   which draws the result of the target the keyboard is on. Only the buttons take the pointer: a
+   as real buttons over the terminal, and the strip a New tab at its end. Over the drag's preview
+   (#5293), which draws the result of the target the keyboard is on, and on the zones the drag
+   measured, so the cross stays put as the panes make room. Only the buttons take the pointer: a
    press anywhere else puts what is held back. */
 .pane-placing {
   position: fixed;
@@ -975,13 +1259,4 @@
   align-items: center;
   padding-inline: var(--space-1);
   transform: translateX(-100%);
-}
-
-/* What is held, where it is: dashed, as a place it leaves. */
-.pane-placing-held {
-  position: fixed;
-  z-index: 4;
-  pointer-events: none;
-  border: var(--focus-ring-width) dashed var(--border-strong);
-  border-radius: var(--radius-sm);
 }

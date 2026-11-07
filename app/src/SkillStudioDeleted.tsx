@@ -5,8 +5,7 @@ import { useState } from "react";
 import { RotateCw } from "lucide-react";
 import { commands, type DeletedSkill } from "./bindings";
 import { counted } from "./dispatches";
-import { Field, SettingRow } from "./settings/components";
-import { NAME_RESERVED, copyNameOf, isReservedName } from "./SkillCopy";
+import { NewNameField, newNameProblem } from "./SkillNameTaken";
 import { BUSY } from "./SkillRead";
 import { Badge } from "./ui/badge/Badge";
 import { Button, ButtonRow } from "./ui/button/Button";
@@ -68,10 +67,6 @@ export function groupSaid(group: DeletedGroup): string {
   const count = counted(group.skills.length, "skill", "skills");
   return group.from === null ? `${count}, ${groupFrom(group)}` : `${count} ${groupFrom(group)}`;
 }
-
-/** What a group's Bring all back says of a skill that does not come with it (#3729). */
-export const NAME_TAKEN_STAYS =
-  "stayed in Deleted: its name belongs to purlis now, so bring it back on its own, under a new name.";
 
 /** A group's own row in the list: never chosen, as it holds only Bring all back. While Select is
  *  on (#5332) it is ticked with every skill of it. */
@@ -185,7 +180,6 @@ export function DeletedList({
       {drawn.map((one) => {
         if (!("skills" in one)) return row(one);
         const said = groupSaid(one);
-        const none = one.skills.every((skill) => skill.reserved);
         return (
           <ListRowSection key={one.id} id={one.id} aria-label={said} className="skill-deleted-set">
             <ListRow
@@ -203,14 +197,8 @@ export function DeletedList({
                 <Button
                   size="sm"
                   aria-label={`Bring all back: ${said}`}
-                  isDisabled={busy || none}
-                  tooltip={
-                    none
-                      ? "Their names belong to purlis now: bring each back on its own."
-                      : busy
-                        ? BUSY
-                        : undefined
-                  }
+                  isDisabled={busy}
+                  tooltip={busy ? BUSY : undefined}
                   onPress={() => onBringAllBack?.(one)}
                 >
                   Bring all back
@@ -240,8 +228,9 @@ export const NAME_TAKEN = "Its name belongs to purlis now, so it comes back unde
  * days left, **Bring back**, and **its last text**, read only when the person opens it.
  *
  * **One whose name a built-in skill took** (#3729: a newer purlis ships one of that name) comes
- * back only under a new name: the page asks for it, starting as the built-in copy's would, and
- * refuses a name of purlis's own as it is typed, in the core's words; the core checks it again.
+ * back only under a new name the person confirms: the page asks for it as an install asks one of
+ * a skill whose name is taken (#5457), filled in as the core offers it (`<source>-<name>`), and
+ * refuses a name it cannot take as it is typed; the core checks it again.
  */
 export function DeletedPage({
   plane,
@@ -257,11 +246,10 @@ export function DeletedPage({
 }) {
   const [read, setRead] = useState<Read>();
   const [asked, setAsked] = useState(false);
-  const [under, setUnder] = useState(() => copyNameOf(deleted.name));
+  const taken = deleted.clash !== null;
+  const [under, setUnder] = useState(() => deleted.clash?.offered ?? "");
   const wanted = under.trim();
-  const reserved = deleted.reserved && isReservedName(wanted);
-  const ready =
-    !busy && (!deleted.reserved || (wanted !== "" && wanted !== deleted.name && !reserved));
+  const ready = !busy && (!taken || newNameProblem(deleted, under, []) === undefined);
   const readIt = () => {
     setAsked(true);
     setRead(undefined);
@@ -286,14 +274,12 @@ export function DeletedPage({
           <Button
             variant="primary"
             aria-label={
-              deleted.reserved
-                ? `Bring back ${deleted.name} as ${wanted}`
-                : `Bring back ${deleted.name}`
+              taken ? `Bring back ${deleted.name} as ${wanted}` : `Bring back ${deleted.name}`
             }
             isDisabled={!ready}
             onPress={() => {
               if (!ready) return;
-              if (deleted.reserved) onBringBack(deleted, wanted);
+              if (taken) onBringBack(deleted, wanted);
               else onBringBack(deleted);
             }}
           >
@@ -302,21 +288,12 @@ export function DeletedPage({
         }
       />
       <div>
-        {deleted.reserved && (
+        {taken && (
           <>
             <p className="honest" data-testid="deleted-name-taken">
               {NAME_TAKEN}
             </p>
-            <SettingRow
-              label="New name"
-              help="Lowercase letters, digits and hyphens, not starting with purlis-."
-              control={(ids) => <Field kind="text" ids={ids} value={under} onChange={setUnder} />}
-            />
-            {reserved && (
-              <p className="trouble" role="alert" data-testid="deleted-name-reserved">
-                {NAME_RESERVED}
-              </p>
-            )}
+            <NewNameField one={deleted} value={under} others={[]} busy={busy} onChange={setUnder} />
           </>
         )}
         <p>Chats started after it is brought back get it again.</p>

@@ -36,6 +36,7 @@ use crate::harness::{Harness, SessionId};
 mod arrival;
 pub use arrival::{Arrival, CloneSeat, arrive};
 mod studio;
+pub mod studio_chats;
 pub use studio::{StudioJob, StudioWork};
 pub mod layout;
 pub use layout::Layout;

@@ -401,6 +401,7 @@ fn the_manifest_names_the_tabs_and_the_editor_toolbar() {
             "label",
             "closer",
             "count",
+            "picture",
             "indicator",
             "strip",
             "layout"
@@ -449,6 +450,7 @@ fn the_schema_completes_the_tab_keys_and_none_that_would_move_a_tab() {
         "tabs.indicator.position",
         "tabs.indicator.height",
         "tabs.count.corner-radius",
+        "tabs.picture.text",
         "tabs.closer.corner-radius",
         "tabs.strip.border-width",
         "editor.toolbar.fill",

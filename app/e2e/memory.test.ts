@@ -15,7 +15,7 @@ import {
 // numbers, an elapsed time of `[[dd-]hh:]mm:ss`, and a command that may hold spaces.
 const PS = [
   "  501     1 812345 01-21:22:06 /System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
-  "  700   600 210000    05:10 /Users/me/My Apps/charter-app --flag value",
+  "  700   600 210000    05:10 /Users/me/My Apps/purlis-app --flag value",
   "  701   700  12000       00:07 /tmp/target/debug/fake-harness --name one",
   "",
 ].join("\n");
@@ -24,7 +24,7 @@ const PS = [
 // path, spaces and all; Linux prints the name, cut to fifteen characters.
 const COMM = [
   "  501 /System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
-  "  700 /Users/me/My Apps/charter-app",
+  "  700 /Users/me/My Apps/purlis-app",
   "  701 fake-harness",
   "",
 ].join("\n");
@@ -46,8 +46,8 @@ describe("parseProcesses", () => {
         ppid: 600,
         rssKb: 210000,
         seconds: 310,
-        command: "/Users/me/My Apps/charter-app --flag value",
-        program: "charter-app",
+        command: "/Users/me/My Apps/purlis-app --flag value",
+        program: "purlis-app",
       },
       {
         pid: 701,
@@ -77,8 +77,8 @@ const APP = {
   ppid: 600,
   rssKb: 210_000,
   seconds: 300,
-  command: "/t/charter-app",
-  program: "charter-app",
+  command: "/t/purlis-app",
+  program: "purlis-app",
 };
 
 describe("webContent", () => {

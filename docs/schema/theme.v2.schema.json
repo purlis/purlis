@@ -412,7 +412,7 @@
       }
     },
     "parts": {
-      "description": "Component parts (manifest version 12, plus unreleased additions marked since 13): keys <family>.<part>[.<variant>][.<state>].<property>, the state at rest implied. A property not named is the family default. Inside a state only fill, text, border-colour and shadow may be set, and a tab's flare and hover inset: a state never changes a part's size. `purlis theme parts` lists every family, part, state and property with its bounds.",
+      "description": "Component parts (manifest version 13, plus unreleased additions marked since 14): keys <family>.<part>[.<variant>][.<state>].<property>, the state at rest implied. A property not named is the family default. Inside a state only fill, text, border-colour and shadow may be set, and a tab's flare and hover inset: a state never changes a part's size. `purlis theme parts` lists every family, part, state and property with its bounds.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -4937,6 +4937,15 @@
         "field.error.disabled.text": {
           "$ref": "#/$defs/part-text"
         },
+        "grip.dot.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "grip.dot.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "grip.dot.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
         "list.root.fill": {
           "$ref": "#/$defs/part-fill"
         },
@@ -6404,30 +6413,6 @@
         "notice.sub.attention.font-size": {
           "$ref": "#/$defs/part-font-size"
         },
-        "notice.chat-words.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "notice.chat-words.font-size": {
-          "$ref": "#/$defs/part-font-size"
-        },
-        "notice.chat-words.news.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "notice.chat-words.news.font-size": {
-          "$ref": "#/$defs/part-font-size"
-        },
-        "notice.chat-words.trouble.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "notice.chat-words.trouble.font-size": {
-          "$ref": "#/$defs/part-font-size"
-        },
-        "notice.chat-words.attention.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "notice.chat-words.attention.font-size": {
-          "$ref": "#/$defs/part-font-size"
-        },
         "option-card.root.fill": {
           "$ref": "#/$defs/part-fill"
         },
@@ -6999,6 +6984,9 @@
           "$ref": "#/$defs/part-padding"
         },
         "pane-preview.line.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "pane-preview.opening.fill": {
           "$ref": "#/$defs/part-fill"
         },
         "pane-preview.size.fill": {
@@ -9843,6 +9831,51 @@
           "$ref": "#/$defs/part-fill"
         },
         "tabs.count.background.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "tabs.picture.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "tabs.picture.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "tabs.picture.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "tabs.picture.chat.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "tabs.picture.chat.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "tabs.picture.chat.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "tabs.picture.view.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "tabs.picture.view.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "tabs.picture.view.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "tabs.picture.file.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "tabs.picture.file.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "tabs.picture.file.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "tabs.picture.background.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "tabs.picture.background.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "tabs.picture.background.selected.text": {
           "$ref": "#/$defs/part-text"
         },
         "tabs.indicator.fill": {

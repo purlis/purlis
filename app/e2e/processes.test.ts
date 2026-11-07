@@ -28,7 +28,7 @@ describe("the descriptors lsof lists", () => {
  * by the binary's name alone found two apps and the stress run stopped before measuring.
  */
 describe("the app's processes in a ps listing", () => {
-  const app = "/runner/target/debug/charter-app";
+  const app = "/runner/target/debug/purlis-app";
 
   it("are one window and its session host, told apart by the host's argument", () => {
     const listing = [

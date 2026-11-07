@@ -5,9 +5,8 @@
  * **The chosen chat tab's pane: the header, the band, then the terminal** (#3142, the operator's
  * variant A of 2026-10-24; #4754): the session tabs docked on the content panel, the chosen tab
  * joined to its pane, and in the pane a slim header with the chips at its start and the pane's
- * controls at its end, the bell among them, then the band of washed notice cards (words above
- * their ways out), minimised to its asks or expanded to every notice, then the terminal, pinned
- * to its bottom.
+ * controls at its end, the bell among them, then the band of compact rows (#5215), folded to one
+ * line or open under its head, then the terminal, pinned to its bottom.
  *
  * The warnings are the window's own `Notice`s in its own `NoticePaneRow`, and the header is
  * `PaneHead`; the strip, the panel and the pane's frame wear the classes and parts the window
@@ -18,7 +17,9 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { Fragment, useRef, useState, type ReactNode } from "react";
 import { expect, waitFor, within } from "storybook/test";
 import { X } from "lucide-react";
+import type { Shown } from "../../bindings";
 import { Notice, NoticePaneRow } from "../../Notice";
+import { TerminalPromptNotice } from "../../TerminalPromptNotice";
 import { NOTICE_MOVED_JUST_NOW, SETTLE_MS, paneBand } from "../../noticeSettle";
 import { PaneActions, PaneBellAt, PaneBellOf, PaneHead } from "../../LayoutPanes";
 import { HOLDS_NOTHING, type BandHolds, type PaneNoticesShown } from "../../paneNotices";
@@ -37,7 +38,8 @@ type Warning =
   | "stale-clone"
   | "vault-refused"
   | "sandbox-long"
-  | "sandbox-ask";
+  | "sandbox-ask"
+  | "terminal-prompt";
 
 /** The pane's own rows of the catalogue, as the window's catalogue offers them for a chat. */
 const OFFERS: Record<string, Offer> = {
@@ -83,12 +85,25 @@ const LAST_LINES = [
   "  ⏵⏵ auto mode on (shift+tab to cycle)",
 ].join("\n");
 
+/** The chat on screen stopped on a prompt in its own terminal. */
+const PROMPT: Shown = {
+  session: 2,
+  ask: "terminal:2:1",
+  says: "Waiting in its terminal: a permission prompt",
+  options: [],
+  source: "terminal",
+  chain: ["steward 2"],
+  answer: { via: "in-its-pane" },
+  since: null,
+};
+
 /** The warnings of one pane, each put away by its Dismiss as the window's are. */
 function Warnings({ shown }: { shown: readonly Warning[] }) {
   const [away, setAway] = useState<readonly Warning[]>([]);
   const off = (one: Warning) => () => setAway((was) => [...was, one]);
   // Drawn in the order given: the band's order is the pane's.
   const drawn: Record<Warning, ReactNode> = {
+    "terminal-prompt": <TerminalPromptNotice session={2} waiting={[PROMPT]} />,
     "vault-refused": (
       <Notice
         cause="vault-refused:2:forge"
@@ -237,6 +252,7 @@ function Pane({
           bell={{
             minimised,
             minimise: () => PANE_NOTICES.set("minimised"),
+            expand: () => PANE_NOTICES.set("expanded"),
             onHolds: setHolds,
             focus: () => bellAt.current?.focus(),
           }}
@@ -274,12 +290,14 @@ const TABS = ["steward 11", "steward 2"];
 function PaneBand({
   warnings,
   width = 760,
+  height = 460,
   split = false,
 }: {
   warnings: readonly Warning[];
   /** Minimised or expanded, for every pane (#4754): set before the story is drawn. */
   shown?: PaneNoticesShown;
   width?: number;
+  height?: number;
   /** The chosen tab split in two, the warnings in its first pane, the keyboard in its second. */
   split?: boolean;
 }) {
@@ -292,7 +310,11 @@ function PaneBand({
       ]
     : [{ name: "steward 2", warnings, focused: true }];
   return (
-    <div className="editor" {...tabsPart("layout")} style={{ inlineSize: width, blockSize: 460 }}>
+    <div
+      className="editor"
+      {...tabsPart("layout")}
+      style={{ inlineSize: width, blockSize: height }}
+    >
       <header className="bar" {...tabsPart("strip")}>
         <div className="tabs" data-strip="Chats">
           <StripTablist name="Chats" ids={TABS.map((_, at) => idOf(at))} />
@@ -413,7 +435,7 @@ const atRest = () => (document.activeElement as HTMLElement | null)?.blur();
 
 /**
  * **One warning**: the operator's case, the skills a chat started without. The tab stays joined
- * to the pane; the warning is a wash inside it, its words above its ways out; the header holds
+ * to the pane; the warning is one row inside it, its ways out beside its words; the header holds
  * the chips and the controls; the terminal is under them. The keyboard reaches the warning's
  * ways out with its ring in sight.
  */
@@ -423,9 +445,11 @@ export const AWarning: Story = {
     const open = await canvas.findByRole("button", { name: "Open in Skill studio" });
     await heldInThePane(canvasElement);
     const says = within(canvas.getByRole("status", { name: "Skills missing" }));
-    // The words above their ways out (variant A).
-    const words = boxOf(canvas.getByRole("status", { name: "Skills missing" }).firstElementChild);
-    expect(boxOf(open).top).toBeGreaterThanOrEqual(words.bottom - 1);
+    // One row: its ways out beside its words (#5215).
+    const words = boxOf(
+      canvas.getByRole("status", { name: "Skills missing" }).querySelector('[data-part="words"]'),
+    );
+    expect(boxOf(open).left).toBeGreaterThanOrEqual(words.right - 1);
     expect(says.getByRole("button", { name: "Dismiss" })).toBeVisible();
     open.focus();
     expectFocusInSight();
@@ -468,20 +492,23 @@ const countOf = (bell: HTMLElement) =>
   bell.parentElement?.querySelector('[data-scope="count"]') ?? null;
 
 /**
- * **Minimised, the window's default** (#4754): the notes fold into the bell's count, in the
- * trouble colour while one is trouble, and the consent stands as a full card under the header.
- * The bell holds its slot before split and close.
+ * **Folded, the window's default** (#4754, #5215): the notes fold into the bell's count, in the
+ * trouble colour while one is trouble, and the band is one line naming how many wait and on what.
+ * The bell holds its slot before split and close. Show opens it, and the keyboard goes to the
+ * fold; the fold closes it, and the keyboard goes back to the line.
  */
 export const Minimised: Story = {
   args: {
     shown: "minimised",
     warnings: ["vault-refused", "mcp-failed", "stale-clone", "skills-missing"],
   },
-  play: async ({ canvas, canvasElement }) => {
-    const vault = await canvas.findByRole("status", { name: "Vault" });
-    await waitFor(() => expect(rowsOf(canvasElement).warnings).toHaveLength(1));
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    const line = await canvas.findByRole("button", { name: /^1 waiting · Vault\s*·\s*Show$/ });
+    await waitFor(() => expect(rowsOf(canvasElement).warnings).toHaveLength(0));
     await heldInThePane(canvasElement);
-    expect(rowsOf(canvasElement).warnings[0]).toContainElement(vault);
+    expect(canvas.getByRole("region", { name: /^Pane notices/ })).toHaveAccessibleName(
+      "Pane notices: 1 waiting on you · 3 notices",
+    );
     const bell = bellOf(canvas);
     expect(bell).toHaveAccessibleName("Pane notices: 3 notices, 1 in trouble, 1 asking");
     expect(countOf(bell)).toHaveTextContent(/^3$/);
@@ -490,6 +517,109 @@ export const Minimised: Story = {
     const split = canvas.getByRole("button", { name: "Split right" });
     expect(boxOf(bell).right).toBeLessThanOrEqual(boxOf(split).left + 1);
     expect(boxOf(bell).top).toBeCloseTo(boxOf(split).top, 0);
+
+    line.focus();
+    await userEvent.keyboard("{Enter}");
+    const fold = await canvas.findByRole("button", { name: "Fold the band" });
+    await untilFocused(() => fold, "Show gives the keyboard to the fold");
+    expectFocusInSight();
+    await userEvent.keyboard("{Enter}");
+    await untilFocused(
+      () => canvas.getByRole("button", { name: /^1 waiting · Vault\s*·\s*Show$/ }),
+      "the fold gives the keyboard back to the line",
+    );
+    expectFocusInSight();
+    atRest();
+  },
+};
+
+/**
+ * **Each kind keeps its own actions on its row** (#5215): a prompt in the terminal with Go to prompt,
+ * a consent with its full waiting edge and its Allow apart from Keep blocked, and a note with its
+ * ×. The keyboard takes each row's buttons in order, and the × last.
+ */
+export const EachKindOfRow: Story = {
+  args: { warnings: ["terminal-prompt", "sandbox-ask", "mcp-failed"] },
+  play: async ({ canvas, userEvent }) => {
+    const prompt = await canvas.findByRole("status", { name: "Terminal prompt" });
+    const go = within(prompt).getByRole("button", { name: "Go to prompt" });
+    go.focus();
+    await untilFocused(() => go, "on Go to prompt");
+    await userEvent.tab();
+    await untilFocused(
+      () => within(prompt).getByRole("button", { name: "Close" }),
+      "on the prompt's ×",
+    );
+    expectFocusInSight();
+    const block = canvas.getByRole("status", { name: "Sandbox block" })
+      .parentElement as HTMLElement;
+    expect(getComputedStyle(block).borderTopWidth).toBe("1px");
+    expect(getComputedStyle(block).borderLeftWidth).toBe("1px");
+    atRest();
+  },
+};
+
+/**
+ * **A long message opened** (#5215): one row until its toggle is pressed; opened, it shows whole, the
+ * band grows, the terminal keeps its three lines, and past that the band scrolls as one, with the
+ * ways out pinned at the message's foot, above the band's fade. Esc folds it, and the keyboard lands
+ * on the toggle.
+ */
+export const ALongMessageOpened: Story = {
+  args: { warnings: ["sandbox-long", "vault-refused"], width: 420 },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    const row = await canvas.findByRole("status", { name: "Sandbox block" });
+    const toggle = await within(row).findByRole("button", { name: "Show the whole message" });
+    toggle.focus();
+    await userEvent.keyboard("{Enter}");
+    const box = row.parentElement as HTMLElement;
+    await waitFor(() => expect(box).toHaveAttribute("data-whole"));
+    // Whole, in no box of its own, and its toggle in sight at its foot.
+    const message = row.querySelector('[data-part="message"]') as HTMLElement;
+    expect(message.scrollHeight).toBeLessThanOrEqual(message.clientHeight + 1);
+    expectFocusInSight();
+    // The terminal keeps at least its three lines.
+    const { terminal } = rowsOf(canvasElement);
+    const size = parseFloat(getComputedStyle(terminal as Element).fontSize);
+    expect(boxOf(terminal).height).toBeGreaterThanOrEqual(3 * size);
+    // A tooltip that is up takes the first Esc (`ui/tooltip`), and the row the next.
+    await userEvent.keyboard("{Escape}");
+    if (box.hasAttribute("data-whole")) await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(box).not.toHaveAttribute("data-whole"));
+    await untilFocused(
+      () => within(row).getByRole("button", { name: "Show the whole message" }),
+      "Esc lands on the toggle",
+    );
+    // Opened again for the picture, the keyboard put down, so no ring or tip is in it.
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(box).toHaveAttribute("data-whole"));
+    atRest();
+  },
+};
+
+/**
+ * **Opened in a short pane, the row is as tall as what it says** (#5215): the band scrolls as one,
+ * so nothing caps a row, and what it says never runs over the row after it.
+ */
+export const ALongMessageOpenedInAShortPane: Story = {
+  args: { warnings: ["sandbox-long", "vault-refused"], width: 420, height: 260 },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    const row = await canvas.findByRole("status", { name: "Sandbox block" });
+    const toggle = await within(row).findByRole("button", { name: "Show the whole message" });
+    toggle.focus();
+    await userEvent.keyboard("{Enter}");
+    const box = row.parentElement as HTMLElement;
+    await waitFor(() => expect(box).toHaveAttribute("data-whole"));
+    expect(boxOf(row).bottom).toBeLessThanOrEqual(boxOf(box).bottom + 1);
+    const { terminal, warnings } = rowsOf(canvasElement);
+    expect(boxOf(warnings[1]).top).toBeGreaterThanOrEqual(boxOf(row).bottom - 1);
+    // Scrolling as one: the stack scrolls, and the message has no box of its own.
+    const stack = box.parentElement as HTMLElement;
+    expect(stack.scrollHeight).toBeGreaterThan(stack.clientHeight);
+    const message = row.querySelector('[data-part="message"]') as HTMLElement;
+    expect(message.scrollHeight).toBeLessThanOrEqual(message.clientHeight + 1);
+    const size = parseFloat(getComputedStyle(terminal as Element).fontSize);
+    expect(boxOf(terminal).height).toBeGreaterThanOrEqual(3 * size);
     atRest();
   },
 };
@@ -572,7 +702,7 @@ export const BellBesideItsNeighbours: Story = {
 /**
  * **Expanded** (#4754): every notice stands, the consent first as the pane wrote it, under a head
  * row that says how many and how many wait on you, with Dismiss all, which counts the notes it
- * clears and leaves the consent, and Minimise. The bell's count is the same as minimised.
+ * clears and leaves the consent, and its fold. The bell's count is the same as minimised.
  */
 export const Expanded: Story = {
   args: { warnings: ["vault-refused", "mcp-failed", "stale-clone", "skills-missing"] },
@@ -580,8 +710,8 @@ export const Expanded: Story = {
     await canvas.findByRole("status", { name: "Vault" });
     await waitFor(() => expect(rowsOf(canvasElement).warnings).toHaveLength(4));
     await heldInThePane(canvasElement);
-    const band = within(canvas.getByRole("region", { name: "Pane notices" }));
-    expect(band.getByText("4 notices, 1 waiting on you")).toBeVisible();
+    const band = within(canvas.getByRole("region", { name: /^Pane notices/ }));
+    expect(band.getByText("1 waiting on you · 3 notices")).toBeVisible();
     expect(countOf(bellOf(canvas))).toHaveTextContent(/^3$/);
     expect(bellOf(canvas)).toHaveAttribute("aria-expanded", "true");
     const all = band.getByRole("button", { name: "Dismiss all 3" });
@@ -607,7 +737,7 @@ export const DismissAll: Story = {
       expect(bellOf(canvas)).toHaveAccessibleName("Pane notices: No notices, 1 asking"),
     );
     await untilFocused(
-      () => canvas.getByRole("button", { name: "Minimise" }),
+      () => canvas.getByRole("button", { name: "Fold the band" }),
       "the keyboard stays on the band's head",
     );
     atRest();
@@ -807,7 +937,7 @@ export const ConsentPressedByThePointer: Story = {
  * yourself is no move: the Allow pressed just after that scroll allows.
  */
 export const ConsentClamped: Story = {
-  args: { warnings: ["vault-refused", "sandbox-long"], width: 400 },
+  args: { warnings: ["vault-refused", "mcp-failed", "skills-missing", "sandbox-long"], width: 400 },
   play: async ({ canvas, userEvent }) => {
     allowed.length = 0;
     const vault = await canvas.findByRole("status", { name: "Vault" });
@@ -860,17 +990,18 @@ export const ConsentClamped: Story = {
 /**
  * **A narrow pane's band says it has more** (#3168): two warnings are taller than the band's
  * room, so it scrolls. At rest a fade at its bottom says more is below; scrolled to its end, the
- * fade is at its top alone; partway, at both. The warnings fade into the terminal's fill they
+ * fade is at its top alone; partway, at both. The rows fade into the band's ground they
  * stand on, and the fade is never in the way of a press. The picture is the band partway, with
  * both.
  */
 export const NarrowScrolled: Story = {
-  args: { warnings: ["vault-refused", "sandbox-long"], width: 400 },
+  args: { warnings: ["vault-refused", "mcp-failed", "skills-missing", "sandbox-long"], width: 400 },
   play: async ({ canvas, canvasElement }) => {
     const vault = await canvas.findByRole("status", { name: "Vault" });
     const stack = vault.closest('[data-scope="notice-row"][data-part="stack"]') as HTMLElement;
     await waitFor(() => expect(stack.scrollHeight).toBeGreaterThan(stack.clientHeight + 24));
-    const ground = getComputedStyle(rowsOf(canvasElement).frame).backgroundColor;
+    // The band's own ground, which the rows stand on (#5215).
+    const ground = getComputedStyle(rowsOf(canvasElement).band as Element).backgroundColor;
     const fade = (edge: "::before" | "::after") => getComputedStyle(stack, edge);
     const shows = async (above: boolean, below: boolean) => {
       await waitFor(() => {
@@ -966,7 +1097,7 @@ export const NarrowScrolled: Story = {
 /**
  * **The pane's actions** (`PaneActions`, shared with a view's pane, #3147): split side by side,
  * split stacked and close, after a divider from the chat's actions, at the pane's top right, drawn by the catalogue's own
- * rows. Hidden at rest in the pane with the keyboard, drawn once the keyboard is on them.
+ * rows, and always drawn (#5318).
  */
 export const Actions: Story = {
   args: { warnings: [] },
@@ -984,6 +1115,10 @@ export const Actions: Story = {
     const actions = boxOf(head?.querySelector(".pane-actions"));
     expect(boxOf(frame).right - actions.right).toBeLessThanOrEqual(16);
     expect(actions.top - boxOf(frame).top).toBeLessThanOrEqual(16);
+    // Taken off them, so the picture is the head at rest: drawn with no keyboard and no tooltip.
+    (document.activeElement as HTMLElement | null)?.blur();
+    await waitFor(() => expect(document.querySelector('[role="tooltip"]')).toBeNull());
+    expect(canvas.getByRole("button", { name: "Split right" })).toBeVisible();
   },
 };
 
@@ -1014,7 +1149,7 @@ export const Narrow: Story = {
     const block = await canvas.findByRole("status", { name: "Sandbox block" });
     await heldInThePane(canvasElement);
     const pane = boxOf(rowsOf(canvasElement).frame);
-    const words = boxOf(block.firstElementChild);
+    const words = boxOf(block.querySelector('[data-part="words"]'));
     const stack = block.parentElement?.parentElement as HTMLElement;
     const ways = within(block).getAllByRole("button");
     for (const way of ways) {
@@ -1029,8 +1164,30 @@ export const Narrow: Story = {
     }
     stack.scrollTop = 0;
     expect(boxOf(block.parentElement).right).toBeLessThanOrEqual(pane.right + 1);
+    // **Its last row whole** (#5443): what the row says and its ways out stand inside its own
+    // edge, with the row's room around them, its ways never on its bottom edge.
+    roomInsideTheRow(block);
   },
 };
+
+/**
+ * **A band row keeps its room inside its edge** (#5443): its mark, its words and its ways out
+ * each stand at least 1px inside the row's border on every side, so the row's last line is never
+ * drawn on its edge, cut (it stood at 0px when the row's own padding was lost). Measured inside the row, so no runner's fonts or window decide it.
+ */
+function roomInsideTheRow(line: HTMLElement) {
+  const row = line.closest('[data-scope="notice"][data-part="root"]') as HTMLElement;
+  const edge = boxOf(row);
+  const border = parseFloat(getComputedStyle(row).borderTopWidth) || 0;
+  for (const part of ["mark", "words", "ways"]) {
+    const at = boxOf(line.querySelector(`:scope > [data-part="${part}"]`));
+    const said = `the row's ${part} at ${JSON.stringify(at)} in its edge at ${JSON.stringify(edge)}`;
+    expect(at.top - (edge.top + border), said).toBeGreaterThanOrEqual(1);
+    expect(edge.bottom - border - at.bottom, said).toBeGreaterThanOrEqual(1);
+    expect(at.left - (edge.left + border), said).toBeGreaterThanOrEqual(1);
+    expect(edge.right - border - at.right, said).toBeGreaterThanOrEqual(1);
+  }
+}
 
 /** The panes the stories below draw: each a pane never drawn before. */
 let drawnPanes = 0;

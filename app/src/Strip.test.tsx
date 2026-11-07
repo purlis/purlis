@@ -458,7 +458,7 @@ describe("the strip's tabs (#4762)", () => {
     expect(within(strip()).getByRole("button", { name: "New tab" })).toBeInTheDocument();
   });
 
-  it("wears a split's focused pane, ⊟+N, and lists every pane on hover", async () => {
+  it("wears a split's first pane's name whatever is focused, its picture, and says its panes on hover (#5342)", async () => {
     // One tab, two panes side by side, the second focused, as the record put it back.
     core([chat(1), chat(2)], {
       strip: null,
@@ -481,10 +481,12 @@ describe("the strip's tabs (#4762)", () => {
     });
     render(<App />);
 
-    await waitFor(() => expect(tabNames()).toEqual(["ide.2"]));
-    const tab = tabNamed("ide.2");
-    expect(tab?.querySelector(".tab-split-more")?.textContent).toBe("+1, split, 2 panes");
-    expect(await hoverTipOf(tab)).toBe("ide.1 · ide.2");
+    await waitFor(() => expect(tabNames()).toEqual(["ide.1"]));
+    const tab = tabNamed("ide.1");
+    // Its picture of the layout in place of `+1`, which a screen reader hears as words.
+    expect(tab?.querySelector('.tab-split-more [data-part="picture"]')).not.toBeNull();
+    expect(tab?.querySelector(".tab-split-more")?.textContent).toBe(", split, 2 panes");
+    expect(await hoverTipOf(tab)).toBe("2 panes: ide.1 · ide.2");
   });
 
   it("draws Tile all at its right end only while the tab in front is split (#4765)", async () => {
@@ -609,18 +611,25 @@ describe("the strip's tabs (#4762)", () => {
     expect(ended).toEqual([]);
   });
 
-  it("marks its tabs narrow under 140px each, and not while they are wider", async () => {
-    // jsdom draws no CSS: the × of a narrow tab shows only in front or hovered by the
-    // stylesheet (`tabs.css`), and the mark it keys on is what a test can read.
+  it("puts the front tab's × next in the keyboard's order, no other tab's, and Enter on it closes the tab (#5341)", async () => {
+    // jsdom draws no CSS: that the × is seen at rest on the front tab alone, and takes no room
+    // from the name, is the stylesheet's (`tabs.css`) and the tab's story's to measure.
     core([chat(1), chat(2)]);
     render(<App />);
     await waitFor(() => expect(tabNames()).toHaveLength(2));
+    const tabs = within(strip()).getAllByRole("tab");
+    const front = tabs.find((one) => one.getAttribute("aria-selected") === "true") as HTMLElement;
+    const back = tabs.find((one) => one !== front) as HTMLElement;
+    const closerOf = (tab: HTMLElement) =>
+      tab.closest('[data-part="tab"]')?.querySelector<HTMLElement>('[data-part="closer"]');
 
-    room.roomFor(2);
-    await waitFor(() => expect(strip().querySelectorAll("[data-narrow]")).toHaveLength(2));
+    expect(closerOf(back)?.tabIndex).toBe(-1);
+    front.focus();
+    await userEvent.tab();
 
-    room.roomFor(4);
-    await waitFor(() => expect(strip().querySelector("[data-narrow]")).toBeNull());
+    expect(document.activeElement).toBe(closerOf(front));
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(tabNames()).toHaveLength(1));
   });
 });
 

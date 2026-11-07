@@ -27,6 +27,7 @@ pub const INDEX: &str = "MEMORY.md";
 
 #[cfg(unix)]
 mod holding;
+mod near;
 #[cfg(unix)]
 pub(crate) use holding::{NoGates, rewrite_index, write_in};
 
@@ -1157,7 +1158,7 @@ pub fn is_word(c: char) -> bool {
 }
 
 /// `re.split(r"\W+", text.lower())` without the empty strings at either end.
-fn tokens(text: &str) -> Vec<String> {
+pub(crate) fn tokens(text: &str) -> Vec<String> {
     text.to_lowercase()
         .split(|c: char| !is_word(c))
         .filter(|t| !t.is_empty())
@@ -1366,26 +1367,13 @@ pub(crate) fn is_stamp_line(line: &str) -> bool {
 /// Near-duplicate pairs among the memories of `dirs`, by Jaccard word overlap at or above
 /// `threshold` — `memstore.duplicates`. Strongest first; pairs in listing order within a
 /// score. Each pair is `(score, first, second)` as indexes into the returned entries.
+///
+/// Each entry is scored only against its candidates, never every other entry ([`near`]), and the
+/// answer is still the full comparison's.
 pub fn duplicates(entries: &[Found], threshold: f64) -> Vec<(f64, usize, usize)> {
     let sets: Vec<std::collections::BTreeSet<String>> =
         entries.iter().map(|e| wordset(&e.text)).collect();
-    let mut out = Vec::new();
-    for (i, a) in sets.iter().enumerate() {
-        for (j, b) in sets.iter().enumerate().skip(i + 1) {
-            if a.is_empty() || b.is_empty() {
-                continue;
-            }
-            let shared = a.intersection(b).count() as f64;
-            let union = a.union(b).count() as f64;
-            let jaccard = shared / union;
-            if jaccard >= threshold {
-                out.push((jaccard, i, j));
-            }
-        }
-    }
-    // Stable, as Python's sort is: equal scores keep their listing order.
-    out.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
-    out
+    near::pairs(&sets, threshold)
 }
 
 /// The filenames the index links to — `memstore._listed`. Empty when charter may not

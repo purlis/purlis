@@ -1,13 +1,18 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { contentsOf, type Tabs, type ViewRef } from "./tabs";
+import { pictureOf, type Picture } from "./layoutPicture";
+import { contentsOf, tabNameOf, type Tabs, type ViewRef } from "./tabs";
 import { zoomedOf } from "./tiling";
 
 /**
  * **What a tab wears on the strip** (#4762; `prototype/one-tab-strip` variant A, accepted on
- * #4582): its focused pane's combined persona and state icon and its name, `⊟+N` where N other
- * panes share the tab, and every pane's name, in reading order, on hover.
+ * #4582; amended by #5342, spec #5339): **its name is its first pane's** ({@link tabNameOf}),
+ * whichever pane has the keyboard, so a split or a move between panes never renames it; **its
+ * mark is its most urgent pane's**, chosen from {@link TabFace.chats} by the one state order
+ * (`shownState.urgentOf`), so a pane that needs the person can't hide behind the focused one;
+ * a small picture of its layout where it is split (`layoutPicture.ts`); and, on hover, how many
+ * panes it holds and every pane's name, in reading order.
  *
  * - A chat's pane: the chat's icon (`ChatPersonaState`) and the name its row has; the first
  *   pane, the tab's own name, which a rename sets and which says the task a pane shows in its
@@ -18,12 +23,19 @@ import { zoomedOf } from "./tiling";
  * Pure, so what a tab says is one thing to test; the strip draws it.
  */
 export type TabFace = {
-  /** What the focused pane holds, which the tab's icon is. */
+  /** What the first pane holds: the tab's icon where no pane's chat has a state to show. */
   lead: { kind: "chat"; session: number } | { kind: "view"; view: ViewRef } | { kind: "empty" };
-  /** The focused pane's name. */
+  /** The tab's name: its own, or its first pane's. */
   name: string;
-  /** How many other panes share the tab: `⊟+N`, none for a tab of one pane. */
-  more: number;
+  /**
+   * **Every chat its panes hold, in reading order**, for its mark to choose the most urgent of:
+   * each pane's own chat, then a task it shows in that chat's place (#1486), so a task on screen
+   * reaches the tab's mark (#5342). No view and no empty pane: neither has a state.
+   */
+  chats: number[];
+  /** **A split tab's small picture of its layout** (#5342), drawn in place of `+N`; none for a
+   *  tab of one pane. */
+  picture?: Picture;
   /** Every pane's name, in reading order (each split's first child first): the tooltip. */
   panes: string[];
   /** One pane is zoomed to fill the tab for now (#4765): the tab wears the zoom mark. */
@@ -64,14 +76,21 @@ export function faceOf(tabs: Tabs, id: number, naming: Naming): TabFace {
         : lead.kind === "view"
           ? (naming.view(lead.view, pane) ?? tab?.name ?? lead.view.view)
           : NEW_CHAT;
-  const focused = panes.find((one) => one.pane === tab?.focused) ?? panes[0];
-  if (focused === undefined)
-    return { lead: { kind: "empty" }, name: NEW_CHAT, more: 0, panes: [NEW_CHAT] };
+  const lead = panes[0];
+  if (lead === undefined)
+    return { lead: { kind: "empty" }, name: NEW_CHAT, chats: [], panes: [NEW_CHAT] };
+  const chats = panes.flatMap(({ pane, lead }) => {
+    if (lead.kind !== "chat") return [];
+    const shown = tab?.shows?.[pane];
+    return shown === undefined || shown === lead.session ? [lead.session] : [lead.session, shown];
+  });
+  const picture = tab === undefined ? undefined : pictureOf(tab.layout);
   return {
-    lead: focused.lead,
-    name: nameOf(focused),
-    more: panes.length - 1,
+    lead: lead.lead,
+    name: tab === undefined ? NEW_CHAT : tabNameOf(tab),
+    chats,
     panes: panes.map(nameOf),
+    ...(picture === undefined ? {} : { picture }),
     ...(zoomedOf(tabs, id) === undefined ? {} : { zoomed: true }),
   };
 }

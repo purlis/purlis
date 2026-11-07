@@ -87,8 +87,17 @@ function Window({
     [heard],
   );
   const hold = useCallback((id: number) => change((t) => selectTab(t, id)), [change]);
+  // What a hold brought forward was told as it came: there is nothing more to tell.
+  const told = useCallback(() => undefined, []);
   const own = useCallback((session: number) => String(session), []);
-  const drag = usePaneDrag({ tabs, change, ctx, onHoldTab: hold, chatNameOf: own });
+  const drag = usePaneDrag({
+    tabs,
+    change,
+    ctx,
+    onHoldTab: hold,
+    onHoldOver: told,
+    chatNameOf: own,
+  });
   const front = tabs.inFront ?? tabs.order[0];
   const panes = contentsOf(tabs, front);
   return (
@@ -113,7 +122,9 @@ function Window({
         ) : (
           <div key={pane} {...dropPane(front, pane)} data-box={`${at * width},40,${width},600`}>
             <div {...{ [GRIP]: "" }} data-box={`${at * width},40,${width},20`}>
-              <PaneGrip tab={front} pane={pane} />
+              <PaneGrip tab={front} pane={pane}>
+                <span>chat {pane}</span>
+              </PaneGrip>
               {`head ${pane}`}
             </div>
             <textarea aria-label={`terminal ${pane}`} />

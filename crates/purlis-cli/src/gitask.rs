@@ -126,6 +126,16 @@ fn asked(of: impl FnOnce(u32) -> hookwire::Ask, within: Duration) -> Forwarded {
 pub const A_PIECE_UPDATE_TAKES_AT_MOST: Duration =
     Duration::from_secs(3 * git::NETWORK.as_secs() + 8 * git::READ.as_secs());
 
+/// How long the app may take to save the project for this chat: a pull's fetch, the push and a
+/// retry's fetch and push, each held to git's network limit, the commit, and a rebase and a
+/// handful of local calls.
+pub const A_SAVE_TAKES_AT_MOST: Duration = Duration::from_secs(
+    4 * git::NETWORK.as_secs()
+        + broker::STAGING.as_secs()
+        + broker::COMMITTING.as_secs()
+        + 12 * git::READ.as_secs(),
+);
+
 /// How long the app may take to commit: staging and the commit by their own deadlines, and a
 /// handful of local git calls and the scan, each held to [`git::READ`]. Above what the app's
 /// git may take, so the asker never gives up on a commit git is still allowed to finish.
@@ -376,7 +386,11 @@ fn answered(answer: std::io::Result<hookwire::Answer>) -> Forwarded {
     use std::io::ErrorKind;
     match answer {
         Ok(hookwire::Answer::Said { lines, code }) => Forwarded::Said { lines, code },
-        Ok(hookwire::Answer::No { why }) if why == hookwire::NOTHING_ANSWERS => Forwarded::NotTaken,
+        Ok(hookwire::Answer::No { why })
+            if why == hookwire::NOTHING_ANSWERS || why == hookwire::LEFT_TO_THE_CHAT =>
+        {
+            Forwarded::NotTaken
+        }
         Ok(hookwire::Answer::No { why }) => Forwarded::Refused(why),
         Ok(_) => Forwarded::NotTaken,
         Err(e)

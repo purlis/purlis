@@ -278,7 +278,14 @@ const gone = (name: string, over: Record<string, unknown> = {}) => ({
   in_history: true,
   reserved: false,
   set: null,
+  clash: null,
   ...over,
+});
+
+/** What the core says of a deleted skill whose name belongs to purlis now (#5457). */
+const held = (name: string, offered: string) => ({
+  reserved: true,
+  clash: { held_by: `the name ${name} belongs to purlis`, offered, taken: ["tdd"] },
 });
 
 describe("the Deleted page's Select mode", () => {
@@ -287,7 +294,7 @@ describe("the Deleted page's Select mode", () => {
     gone("grilling", { set }),
     gone("tdd", { set }),
     gone("scratch", { in_history: false, label: "local" }),
-    gone("purlis-notes", { reserved: true }),
+    gone("purlis-notes", held("purlis-notes", "my-notes")),
   ];
 
   it("ticks every skill of a group with its row, and Delete now asks first and says what is gone for good", async () => {
@@ -315,7 +322,8 @@ describe("the Deleted page's Select mode", () => {
     expect(screen.queryByRole("button", { name: "Undo" })).toBeNull();
   });
 
-  it("brings back all but one whose name belongs to purlis now, which stays and says so", async () => {
+  it("brings one whose name belongs to purlis now back under the name the person confirms, and the rest as named", async () => {
+    // #5457: filled in as an install fills a taken name, and nothing comes back until it is confirmed.
     const asked = core([], { deleted });
     renderStudio(AT_THE_ROOT, "deleted");
     const user = userEvent.setup();
@@ -324,10 +332,47 @@ describe("the Deleted page's Select mode", () => {
     await user.click(screen.getByTestId("deleted-purlis-notes"));
     await user.click(await within(page()).findByRole("button", { name: "Bring back…" }));
     const review = await screen.findByTestId("set-review");
-    expect(within(review).getByTestId("set-stays-purlis-notes")).toBeTruthy();
+    expect(within(review).getByTestId("clash-purlis-notes").textContent).toContain(
+      "The name purlis-notes belongs to purlis.",
+    );
+    const main = within(review).getByRole("button", { name: "Bring back 2 skills" });
+    expect(main).toHaveAttribute("aria-disabled", "true");
+    await user.click(within(review).getByRole("radio", { name: "Bring it back under a new name" }));
+    const box = within(review).getByRole("textbox", { name: "New name for purlis-notes" });
+    expect(box).toHaveValue("my-notes");
+    await user.clear(box);
+    await user.type(box, "tdd");
+    await waitFor(() =>
+      expect(review.textContent).toContain("There is already a skill named tdd here."),
+    );
+    expect(main).toHaveAttribute("aria-disabled", "true");
+    await user.clear(box);
+    await user.type(box, "notes");
+    await waitFor(() => expect(main).not.toHaveAttribute("aria-disabled"));
+    await user.click(main);
+    await vi.waitFor(() => expect(asks(asked, "skill_set_restore")).toHaveLength(1));
+    expect(asks(asked, "skill_set_restore")[0]?.args).toMatchObject({
+      ids: ["scratch-id", "purlis-notes-id"],
+      under: [{ id: "purlis-notes-id", to: "notes" }],
+    });
+    expect(await screen.findByRole("button", { name: "Undo" })).toBeTruthy();
+  });
+
+  it("leaves one whose name belongs to purlis now in Deleted where the person says so", async () => {
+    const asked = core([], { deleted });
+    renderStudio(AT_THE_ROOT, "deleted");
+    const user = userEvent.setup();
+    await select(user, "skill-deleted-select");
+    await user.click(screen.getByTestId("deleted-scratch"));
+    await user.click(screen.getByTestId("deleted-purlis-notes"));
+    await user.click(await within(page()).findByRole("button", { name: "Bring back…" }));
+    const review = await screen.findByTestId("set-review");
+    await user.click(within(review).getByRole("radio", { name: "Leave it in Deleted" }));
     await user.click(within(review).getByRole("button", { name: "Bring back 1 skill" }));
     await vi.waitFor(() => expect(asks(asked, "skill_set_restore")).toHaveLength(1));
-    expect(asks(asked, "skill_set_restore")[0]?.args.ids).toEqual(["scratch-id"]);
-    expect(await screen.findByRole("button", { name: "Undo" })).toBeTruthy();
+    expect(asks(asked, "skill_set_restore")[0]?.args).toMatchObject({
+      ids: ["scratch-id"],
+      under: [],
+    });
   });
 });

@@ -457,15 +457,22 @@ impl Frame {
     }
 
     /// **The origin this frame's document has**, by the web's rules for its address. A web
-    /// address is its own; the engine's own page for a load that failed has none of its own.
-    /// `about:blank` and `about:srcdoc` (or no address yet) take the origin of the document
-    /// around them, unless the document is sandboxed: `document`, the origin the engine gave
-    /// the document's own context where it gave one, says which, and short of it the frame is
-    /// [`Origin::Inherited`]. Otherwise the engine's word of the address's origin, where it
-    /// gave one. Short of that, a `blob:` address carries the origin of the document that made
-    /// it. Any other address (`data:` among them) has no web origin: it is opaque.
+    /// address is its own, unless the document is sandboxed: where its own context says it has
+    /// no web origin, or its frame element's `sandbox` leaves it none ([`Frame::sandboxed`]), it
+    /// is opaque, whatever its address says. The engine's own page for a load that failed has
+    /// none of its own. `about:blank` and `about:srcdoc` (or no address yet) take the origin of
+    /// the document around them, unless the document is sandboxed: `document`, the origin the
+    /// engine gave the document's own context where it gave one, says which, and short of it
+    /// the frame is [`Origin::Inherited`]. Otherwise the engine's word of the address's origin,
+    /// where it gave one. Short of that, a `blob:` address carries the origin of the document
+    /// that made it. Any other address (`data:` among them) has no web origin: it is opaque.
     fn origin(&self, document: Option<&str>) -> Origin {
         if at_web_address(&self.url) {
+            // Chrome's `securityOrigin` is read off the address alone, so only the document's
+            // own context, or its element's sandbox, says it has none.
+            if self.sandboxed == Some(true) || document.is_some_and(|own| !at_web_address(own)) {
+                return Origin::Opaque;
+            }
             return Origin::Web(self.url.clone());
         }
         if scheme_rest(&self.url, "chrome-error").is_some() {
@@ -1382,7 +1389,8 @@ impl State {
     /// **The frames of `target`'s page on a site the agent is kept off** (#5152), each by its
     /// id, with that site: every frame whose address, or whose document's origin
     /// ([`judged_at`]), `kept_off` names, and every frame inside one. The page's own document is
-    /// judged by its frame's address and the page's both.
+    /// judged by its frame's address and the page's both, and, while it is not known, by the page
+    /// that opened it ([`State::opened_on_kept_off`]).
     fn kept_off_frames(&self, target: &str, kept_off: &KeptOff) -> HashMap<String, String> {
         let Some(page) = self.page(target) else {
             return HashMap::new();
@@ -1400,6 +1408,17 @@ impl State {
             .collect();
         if let Some(site) = kept_off(&page.url).or_else(|| own(target, &page.url)) {
             on.entry(target.to_owned()).or_insert(site);
+        }
+        // A blank page takes the origin of the page that opened it: until its own document is
+        // known, one opened by a page on the site is on it.
+        if !on.contains_key(target)
+            && matches!(
+                judged_at(page, target, &self.document_origins),
+                Err(Unjudged::Unread)
+            )
+            && let Some(site) = self.opened_on_kept_off(page, kept_off)
+        {
+            on.insert(target.to_owned(), site);
         }
         let mut every = on.clone();
         for id in page.frames.keys() {
@@ -1424,6 +1443,29 @@ impl State {
         every
     }
 
+    /// **The site the agent is kept off that the page which opened `page` is on** (#5152): that
+    /// page's own document's, by its address or its origin; where that is not known either, the
+    /// one of the page that opened it, and so on up.
+    fn opened_on_kept_off(&self, page: &Page, kept_off: &KeptOff) -> Option<String> {
+        let mut at = page;
+        for _ in 0..=self.pages.len() {
+            let by = self.page(at.opener.as_deref()?)?;
+            let address = by
+                .frames
+                .get(&by.target)
+                .map_or(by.url.as_str(), |top| top.url.as_str());
+            if let Some(site) = kept_off(&by.url).or_else(|| kept_off(address)) {
+                return Some(site);
+            }
+            match judged_at(by, &by.target, &self.document_origins) {
+                Ok(Judged::At(origin)) => return kept_off(&origin),
+                Err(Unjudged::Unread) => at = by,
+                _ => return None,
+            }
+        }
+        None
+    }
+
     /// Page `target` goes from the list: what it kept stays kept from what is said beside the pages.
     fn page_closes(&mut self, target: &str) {
         if let Some(page) = self.page(target) {
@@ -1431,6 +1473,17 @@ impl State {
             self.closed_kept.take_in(&kept);
         }
         self.pages.retain(|p| p.target != target);
+    }
+
+    /// **Every text kept out now**: of the whole browser, of each page, and of each page that
+    /// has closed.
+    fn every_kept(&self) -> Kept {
+        let mut every = self.kept.clone();
+        every.take_in(&self.closed_kept);
+        for page in &self.pages {
+            every.take_in(&page.scrubbed);
+        }
+        every
     }
 
     /// Keeps `held` out of every later answer about every page, and every page opened later.
@@ -1953,6 +2006,9 @@ pub(crate) struct Inner {
     /// **The pages holding a secret purlis filled** (#5117), each with what holds the browser to
     /// its site while it lives.
     fill_holds: Mutex<Vec<PageHeld>>,
+    /// **The pages a login filled, each with the windows related to it** (the person's ruling of
+    /// 2026-11-05): those close once the page is done with what was filled, as a fill's do.
+    login_families: Mutex<Vec<leaving::LoginFamily>>,
     /// Who is told once a page leaving for another site holds nothing any more (#5230), by page.
     departing: Mutex<HashMap<String, std::sync::mpsc::Sender<()>>>,
     /// The address each page holding a secret waits to leave for, on the person (#5230), by page.
@@ -1965,6 +2021,12 @@ pub(crate) struct Inner {
     leaves: Mutex<Option<std::sync::mpsc::Sender<leaving::Leave>>>,
     /// What says which site's documents the agent is kept off (#5152), once it was told.
     kept_off: Mutex<Option<KeptOff>>,
+    /// What says the site a sign-in is open on now, once it was told
+    /// ([`Browser::keep_sign_in_to_its_page`]).
+    signing: Mutex<Option<KeptOff>>,
+    /// The page the last login was performed on: it and the windows related to it alone act on the
+    /// site a sign-in is open on.
+    sign_in_page: Mutex<Option<String>>,
     /// Why the caller refused a load, where it says ([`Browser::say_why_refused`], #5150).
     refused_load: Mutex<Option<RefusedLoad>>,
     /// How many of the agent's calls are being carried out now (#5152).
@@ -2133,12 +2195,15 @@ impl Browser {
             held_in: Mutex::new(None),
             back: Mutex::new(None),
             fill_holds: Mutex::new(Vec::new()),
+            login_families: Mutex::new(Vec::new()),
             departing: Mutex::new(HashMap::new()),
             leaving_asked: Mutex::new(HashMap::new()),
             own_page: Mutex::new(None),
             ending: Arc::new(Mutex::new(Vec::new())),
             leaves: Mutex::new(None),
             kept_off: Mutex::new(None),
+            signing: Mutex::new(None),
+            sign_in_page: Mutex::new(None),
             refused_load: Mutex::new(None),
             agent_calls: AtomicUsize::new(0),
         });
@@ -2405,6 +2470,34 @@ impl Browser {
         self.names_kept_out(all)
     }
 
+    /// **The site the agent is kept off that download `id` is of, now** (#5152, the person's
+    /// ruling of 2026-11-06): its origin, judged on the page it began on as a call on that page
+    /// is ([`Browser::keep_off`], [`Browser::keep_sign_in_to_its_page`]), so that during a
+    /// sign-in one of its site is the agent's only where the sign-in's own page or a window
+    /// related to it began it. One begun on no page the browser knew is judged as on a page not
+    /// opened yet. `None` where nothing keeps it off, or the browser has no such download, or it
+    /// came from no origin (its caller judges that).
+    pub fn download_kept_off(&self, id: &str) -> Option<String> {
+        let state = lock(&self.inner.state);
+        let (origin, page) = state.downloads.whence(id)?;
+        let kept_off = self.inner.kept_off_on(&state, page.as_deref())?;
+        drop(state);
+        kept_off(&origin?)
+    }
+
+    /// **Whether download `id` began on the page the last login was performed on, or a window
+    /// related to it** (the person's ruling of 2026-11-06): what, during a sign-in, a download
+    /// from no origin is judged by. Not where either page is not known.
+    pub fn download_began_on_the_sign_ins_page(&self, id: &str) -> bool {
+        let state = lock(&self.inner.state);
+        let Some((_, Some(page))) = state.downloads.whence(id) else {
+            return false;
+        };
+        lock(&self.inner.sign_in_page)
+            .as_deref()
+            .is_some_and(|sign_in| state.family_of(sign_in).contains(&page))
+    }
+
     /// **Holds every download of the browser's in `folder`** (#2020), each under the engine's
     /// own name for it, and has the engine tell of each as it goes. Browser-wide: every page's,
     /// one opened later included. Refused where the engine will not, so a browser never runs
@@ -2433,6 +2526,15 @@ impl Browser {
     /// The browser itself loads them as it would any other. In place of anything told before.
     pub fn keep_off(&self, kept_off: KeptOff) {
         *lock(&self.inner.kept_off) = Some(kept_off);
+    }
+
+    /// **Keeps a sign-in to its own page** (the person's ruling of 2026-11-06): `during` says the
+    /// site a sign-in is open on now, as [`KeptOff`] says a site the agent is kept off. While one
+    /// is, the agent acts on that site's documents only on the page the last login was performed
+    /// on and the windows related to it; on every other page it is kept off them, as
+    /// [`Self::keep_off`] keeps it. In place of anything told before.
+    pub fn keep_sign_in_to_its_page(&self, during: KeptOff) {
+        *lock(&self.inner.signing) = Some(during);
     }
 
     /// **Has each of the agent's calls say why a load was refused** (#5150): an answer whose page
@@ -2465,15 +2567,23 @@ impl Browser {
 
     /// The frames of `target`'s page the agent is kept off now, with their site (#5152).
     fn kept_off_frames(&self, target: &str) -> HashMap<String, String> {
-        let Some(kept_off) = lock(&self.inner.kept_off).clone() else {
+        let state = lock(&self.inner.state);
+        let Some(kept_off) = self.inner.kept_off_on(&state, Some(target)) else {
             return HashMap::new();
         };
-        lock(&self.inner.state).kept_off_frames(target, &kept_off)
+        state.kept_off_frames(target, &kept_off)
     }
 
-    /// **Refuses the agent's address on a site it is kept off** (#5152): nothing is opened.
-    fn not_kept_off_address(&self, address: &WebAddress) -> Result<(), Refusal> {
-        let kept_off = lock(&self.inner.kept_off).clone();
+    /// What the agent is kept off on `on`'s page now ([`Inner::kept_off_on`]).
+    fn kept_off_for(&self, on: Option<&str>) -> Option<KeptOff> {
+        let state = lock(&self.inner.state);
+        self.inner.kept_off_on(&state, on)
+    }
+
+    /// **Refuses the agent's address on a site it is kept off** (#5152) on `on`'s page, or on a
+    /// new one where it names none: nothing is opened.
+    fn not_kept_off_address(&self, address: &WebAddress, on: Option<&str>) -> Result<(), Refusal> {
+        let kept_off = self.kept_off_for(on);
         match kept_off.and_then(|kept_off| kept_off(address.as_str())) {
             Some(site) => Err(Refusal::KeptOff {
                 site,
@@ -2608,18 +2718,30 @@ impl Browser {
         self.read_sandboxes_of(target, |_| true);
     }
 
-    /// **Reads the `sandbox` of the frame element of each blank or srcdoc frame of `target`'s
-    /// page that `wanted` names, with no word of its own context** ([`Frame::sandboxed`]),
-    /// where a judge is to say where what is in it goes: such a frame is judged by it. At most
-    /// [`FRAME_READS_PER_ACT`] frames are read. A read that fails leaves the frame not known.
+    /// **Reads the `sandbox` of the frame element of each blank, srcdoc or web frame of
+    /// `target`'s page that `wanted` names, with no word of its own context**
+    /// ([`Frame::sandboxed`]), where a judge is to say where what is in it goes: such a frame is
+    /// judged by it. The element is read in the document around the frame, whose session holds
+    /// it. At most [`FRAME_READS_PER_ACT`] frames are read. A read that fails leaves the frame
+    /// not known.
     fn read_sandboxes_of(&self, target: &str, wanted: impl Fn(&str) -> bool) {
         if self.inner.judge.is_none() {
             return;
         }
-        let wanted: Vec<(String, String, String, u64)> = {
+        let wanted: Vec<(String, String, String, String, u64)> = {
             let state = lock(&self.inner.state);
             let Some(page) = state.page(target) else {
                 return;
+            };
+            let around = |frame: &Frame| {
+                frame
+                    .parent
+                    .as_deref()
+                    .and_then(|parent| match page.frames.get(parent) {
+                        Some(up) => Some(up.session.clone()),
+                        None => page.session.clone().filter(|_| parent == page.target),
+                    })
+                    .unwrap_or_else(|| frame.session.clone())
             };
             let mut unread: Vec<_> = page
                 .frames
@@ -2628,13 +2750,14 @@ impl Browser {
                     **id != page.target
                         && wanted(id)
                         && frame.sandboxed.is_none()
-                        && takes_the_origin_around(&frame.url)
+                        && (takes_the_origin_around(&frame.url) || at_web_address(&frame.url))
                         && state.document_origins.origin(&frame.session, id).is_none()
                 })
                 .map(|(id, frame)| {
                     (
                         id.clone(),
                         frame.session.clone(),
+                        around(frame),
                         frame.url.clone(),
                         frame.told,
                     )
@@ -2644,8 +2767,8 @@ impl Browser {
             unread.truncate(FRAME_READS_PER_ACT);
             unread
         };
-        for (id, session, url, told) in wanted {
-            let on = Some(session.as_str());
+        for (id, session, around, url, told) in wanted {
+            let on = Some(around.as_str());
             let Some(owner) = self
                 .devtools()
                 .call("DOM.getFrameOwner", json!({ "frameId": id }), on)
@@ -2942,18 +3065,18 @@ impl Browser {
     fn run(&self, call: Call) -> Result<Answer, Refusal> {
         match call {
             Call::Open { address } => {
-                self.not_kept_off_address(&address)?;
+                self.not_kept_off_address(&address, None)?;
                 self.open(&address)
             }
             Call::FindLoginForm { address } => {
-                self.not_kept_off_address(&address)?;
+                self.not_kept_off_address(&address, None)?;
                 self.find_login_form(&address)
             }
             Call::DescribeField { target } => self.describe_field(&target),
             Call::AsksToSignIn => self.asks_to_sign_in(),
             Call::Navigate { page, address } => {
-                self.not_kept_off_address(&address)?;
                 let target = self.target(page.as_ref())?;
+                self.not_kept_off_address(&address, Some(&target))?;
                 let session = self.page_session(&target)?;
                 let _addressing = self.addressing(&target, Why::Addressed);
                 self.acting_on(&target, || self.navigate(&session, &address))
@@ -3610,7 +3733,7 @@ impl Browser {
         // one that was as it was read, is left out, and a page whose own document is on one is
         // refused (#5152).
         let kept = self.kept_off_frames(target);
-        let kept_off = lock(&self.inner.kept_off).clone();
+        let kept_off = self.kept_off_for(Some(target));
         let was_kept_off =
             |tree: &FrameAx| kept_off.as_ref().and_then(|kept_off| kept_off(&tree.url));
         if let Some(site) = kept.get(target).cloned().or_else(|| {
@@ -3842,12 +3965,12 @@ impl Browser {
 
     /// Where `target` is, for acting on it.
     fn locate(&self, target: &Ref) -> Result<Located, Refusal> {
-        let kept_off = lock(&self.inner.kept_off).clone();
         let state = lock(&self.inner.state);
         if state.ended {
             return Err(Refusal::Ended);
         }
         let (page_target, key) = live_ref(&state, target)?;
+        let kept_off = self.inner.kept_off_on(&state, Some(&page_target));
         // An element in a frame of a site the agent is kept off, or inside one (#5152).
         if let Some(kept_off) = &kept_off
             && let Some(site) = state
@@ -3969,8 +4092,10 @@ impl Browser {
 
     /// **Refuses the agent's input at `point` of `target`'s page, on `session`, where what is
     /// drawn there is a frame of a site the agent is kept off** (#5152): an element of one, or the
-    /// element holding one, as a frame drawn over what was aimed at takes the input. Where the
-    /// page holds such a frame and what is drawn there cannot be told, refused too.
+    /// element holding one, as a frame drawn over what was aimed at takes the input. Where what is
+    /// drawn there is a frame with a document in a process of its own that holds such a frame,
+    /// the point is followed into that document, through as many such frames as there are. Where
+    /// the page holds such a frame and what is drawn there cannot be told, refused too.
     fn not_kept_off_at(
         &self,
         target: &str,
@@ -3985,42 +4110,119 @@ impl Browser {
             site: site.clone(),
             asks_to_sign_in: false,
         };
-        let hit = self
-            .devtools()
-            .call(
-                "DOM.getNodeForLocation",
-                json!({
-                    "x": x.floor() as i64,
-                    "y": y.floor() as i64,
-                    "includeUserAgentShadowDOM": true,
-                    "ignorePointerEventsNone": true,
-                }),
-                Some(session),
-            )
-            .map_err(|_| refused())?;
-        let frame = hit.get("frameId").and_then(Value::as_str);
-        if frame.is_some_and(|frame| kept.contains_key(frame)) {
-            return Err(refused());
+        let (mut session, mut x, mut y) = (session.to_owned(), x, y);
+        // Each step goes one frame deeper, and no page holds more frames than it has.
+        for _ in 0..=self.frame_count(target) {
+            let hit = self
+                .devtools()
+                .call(
+                    "DOM.getNodeForLocation",
+                    json!({
+                        "x": x.floor() as i64,
+                        "y": y.floor() as i64,
+                        "includeUserAgentShadowDOM": true,
+                        "ignorePointerEventsNone": true,
+                    }),
+                    Some(&session),
+                )
+                .map_err(|_| refused())?;
+            let frame = hit.get("frameId").and_then(Value::as_str);
+            if frame.is_some_and(|frame| kept.contains_key(frame)) {
+                return Err(refused());
+            }
+            // The element holding a frame says which frame it holds.
+            let backend = hit
+                .get("backendNodeId")
+                .and_then(Value::as_i64)
+                .ok_or_else(refused)?;
+            let described = self
+                .devtools()
+                .call(
+                    "DOM.describeNode",
+                    json!({ "backendNodeId": backend }),
+                    Some(&session),
+                )
+                .map_err(|_| refused())?;
+            let Some(held) = described.pointer("/node/frameId").and_then(Value::as_str) else {
+                return Ok(());
+            };
+            if kept.contains_key(held) {
+                return Err(refused());
+            }
+            let Some(inner) = self.holds_kept_off_apart(target, &session, held, &kept) else {
+                return Ok(());
+            };
+            // Into the frame's own document, through its element's content box: only one drawn
+            // upright at its own size is followed, and any other refused.
+            let model = self
+                .devtools()
+                .call(
+                    "DOM.getBoxModel",
+                    json!({ "backendNodeId": backend }),
+                    Some(&session),
+                )
+                .map_err(|_| refused())?;
+            let quad = |name: &str| -> Option<[f64; 8]> {
+                let numbers: Vec<f64> = model
+                    .pointer(&format!("/model/{name}"))?
+                    .as_array()?
+                    .iter()
+                    .map(Value::as_f64)
+                    .collect::<Option<_>>()?;
+                numbers.try_into().ok()
+            };
+            let size = |name: &str| model.pointer(&format!("/model/{name}"))?.as_f64();
+            let (Some(content), Some(border), Some(width), Some(height)) = (
+                quad("content"),
+                quad("border"),
+                size("width"),
+                size("height"),
+            ) else {
+                return Err(refused());
+            };
+            if !upright(&border, width, height) {
+                return Err(refused());
+            }
+            (session, x, y) = (inner, x - content[0], y - content[1]);
         }
-        // The element holding a frame says which frame it holds.
-        let backend = hit
-            .get("backendNodeId")
-            .and_then(Value::as_i64)
-            .ok_or_else(refused)?;
-        let described = self
-            .devtools()
-            .call(
-                "DOM.describeNode",
-                json!({ "backendNodeId": backend }),
-                Some(session),
-            )
-            .map_err(|_| refused())?;
-        let holds = described.pointer("/node/frameId").and_then(Value::as_str);
-        if holds.is_some_and(|held| kept.contains_key(held)) {
-            Err(refused())
-        } else {
-            Ok(())
+        Err(refused())
+    }
+
+    /// How many frames `target`'s page holds, as the driver knows them.
+    fn frame_count(&self, target: &str) -> usize {
+        lock(&self.inner.state)
+            .page(target)
+            .map_or(0, |page| page.frames.len())
+    }
+
+    /// **The session of `held`'s own document**, a frame of `target`'s page drawn in the document
+    /// on `session`, where that document is in another session and a frame of `kept` is inside
+    /// it: what is drawn there is then told only by that document.
+    fn holds_kept_off_apart(
+        &self,
+        target: &str,
+        session: &str,
+        held: &str,
+        kept: &HashMap<String, String>,
+    ) -> Option<String> {
+        let state = lock(&self.inner.state);
+        let page = state.page(target)?;
+        let inner = page.frames.get(held)?.session.clone();
+        if inner == session {
+            return None;
         }
+        let inside = |frame: &str| {
+            let mut at = page.frames.get(frame).and_then(|f| f.parent.as_deref());
+            for _ in 0..=page.frames.len() {
+                match at {
+                    Some(here) if here == held => return true,
+                    Some(here) => at = page.frames.get(here).and_then(|f| f.parent.as_deref()),
+                    None => return false,
+                }
+            }
+            false
+        };
+        kept.keys().any(|frame| inside(frame)).then_some(inner)
     }
 
     /// Whether `point`, in CSS pixels of the page on `session`, lies inside what the page's own
@@ -4791,7 +4993,7 @@ impl Browser {
         let url = earlier.get("url").and_then(Value::as_str).unwrap_or("");
         let earlier_address = WebAddress::parse(url).map_err(|_| Refusal::EarlierNotWeb)?;
         // An earlier page of a site the agent is kept off is not gone back to (#5152).
-        self.not_kept_off_address(&earlier_address)?;
+        self.not_kept_off_address(&earlier_address, Some(&target))?;
         // An address that carries a value kept out, as a form sent from a filled page may have
         // left it (#5117), is never sent again.
         if lock(&self.inner.state).address_holds_kept(url) {
@@ -5445,6 +5647,30 @@ impl Inner {
     }
 
     /// Holds `engine` as the browser's.
+    /// **What the agent is kept off on `target`'s page now** (#5152), or on a page not opened yet
+    /// where it names none: what [`Browser::keep_off`] names, and, unless it is the page the last
+    /// login was performed on or a window related to it, the site a sign-in is open on (the
+    /// person's ruling of 2026-11-06, [`Browser::keep_sign_in_to_its_page`]). `None` where
+    /// nothing is.
+    fn kept_off_on(&self, state: &State, target: Option<&str>) -> Option<KeptOff> {
+        let base = lock(&self.kept_off).clone();
+        let Some(signing) = lock(&self.signing).clone() else {
+            return base;
+        };
+        let page = lock(&self.sign_in_page).clone();
+        if let (Some(target), Some(page)) = (target, page.as_deref())
+            && state.family_of(page).contains(target)
+        {
+            return base;
+        }
+        let scoped: KeptOff = Arc::new(move |address: &str| {
+            base.as_ref()
+                .and_then(|base| base(address))
+                .or_else(|| signing(address))
+        });
+        Some(scoped)
+    }
+
     fn hold(&self, engine: Box<dyn EngineHold>) {
         *lock(&self.engine) = Some(engine);
         self.held_one.store(true, Ordering::SeqCst);
@@ -5593,16 +5819,29 @@ impl Inner {
             match event.method.as_str() {
                 "Browser.downloadWillBegin" => {
                     let frame = text("/frameId").unwrap_or_default();
-                    let page_address = state
-                        .pages
-                        .iter()
-                        .find_map(|page| page.frames.get(&frame))
-                        .map(|frame| frame.url.clone());
+                    // A download at no web address is from its frame's document: at the frame's
+                    // own web address, or, for a blank or srcdoc one, the nearest document around
+                    // it that has an origin (the steward's decision on the person's rulings of
+                    // 2026-11-06). A sandboxed one, or one not known yet, is from nowhere known.
+                    // It is judged by the page it began on (a sign-in's own page, say).
+                    let page = state.page_holding(&frame);
+                    let began_on = page.as_deref().and_then(|page| state.page(page));
+                    let page_address = began_on.and_then(|page| {
+                        let url = &page.frames.get(&frame)?.url;
+                        if at_web_address(url) {
+                            return Some(url.clone());
+                        }
+                        match judged_at(page, &frame, &state.document_origins) {
+                            Ok(Judged::At(address)) => Some(address),
+                            _ => None,
+                        }
+                    });
                     if let Some(guid) = text("/guid")
                         && let Some(cancel) = state.downloads.began(
                             &guid,
                             &text("/url").unwrap_or_default(),
                             &text("/suggestedFilename").unwrap_or_default(),
+                            page.as_deref(),
                             page_address.as_deref(),
                             &self.limits,
                         )
@@ -6047,7 +6286,8 @@ impl Inner {
                         // site it is kept off by an address it wrote, however written, nor by
                         // a document of that site (#5152): a key or a click that reached such a
                         // page as it came submits nothing there.
-                        let kept_off = lock(&self.kept_off).clone();
+                        let on = frame.as_deref().and_then(|frame| state.page_holding(frame));
+                        let kept_off = self.kept_off_on(&state, on.as_deref());
                         let agent_calls =
                             by == Driver::Agent && self.agent_calls.load(Ordering::SeqCst) > 0;
                         let addressed_to_kept_off = agent_calls

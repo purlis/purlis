@@ -225,12 +225,12 @@ fn a_name_that_is_a_path_or_an_option_or_hidden_gets_no_destination() {
         "",
         "a\0b",
     ] {
-        let refused = destination(&root, "alpha", &ws, hostile);
+        let refused = destination(&root, "alpha", hostile);
         assert!(refused.is_err(), "{hostile:?} was given {refused:?}");
     }
     assert_eq!(
-        destination(&root, "alpha", &ws, "widget").unwrap(),
-        ws.join("widget")
+        destination(&root, "alpha", "widget").unwrap(),
+        ws.join("repos/widget")
     );
 }
 
@@ -239,12 +239,11 @@ fn a_name_that_is_a_path_or_an_option_or_hidden_gets_no_destination() {
 #[test]
 fn a_clone_is_never_named_as_a_workspaces_skills_folder() {
     let (_dir, root) = plane();
-    let ws = root.join("workspaces/alpha");
     for taken in ["skills", "skills.local", "Skills"] {
-        let refused = destination(&root, "alpha", &ws, taken).unwrap_err();
+        let refused = destination(&root, "alpha", taken).unwrap_err();
         assert!(refused.contains("keeps its skills"), "{taken}: {refused}");
     }
-    assert!(destination(&root, "alpha", &ws, "skills-repo").is_ok());
+    assert!(destination(&root, "alpha", "skills-repo").is_ok());
 }
 
 #[test]
@@ -258,8 +257,8 @@ fn a_repo_name_the_next_machine_reads_as_something_else_gets_no_destination() {
     let (_dir, root) = plane();
     let ws = root.join("workspaces/alpha");
     for hostile in ["nul", "NUL", "con", "aux", "lpt9", "com1.txt", "alpha."] {
-        let refused = destination(&root, "alpha", &ws, hostile)
-            .expect_err("{hostile} must get no destination");
+        let refused =
+            destination(&root, "alpha", hostile).expect_err("{hostile} must get no destination");
         assert!(
             refused.contains("purlis will not clone"),
             "{hostile}: {refused}"
@@ -267,14 +266,11 @@ fn a_repo_name_the_next_machine_reads_as_something_else_gets_no_destination() {
     }
     // And the ones the alphabet was already catching keep being caught, by it.
     for hostile in ["alpha:evil", "PROGRA~1"] {
-        assert!(
-            destination(&root, "alpha", &ws, hostile).is_err(),
-            "{hostile}"
-        );
+        assert!(destination(&root, "alpha", hostile).is_err(), "{hostile}");
     }
     assert_eq!(
-        destination(&root, "alpha", &ws, "nul-notes").unwrap(),
-        ws.join("nul-notes"),
+        destination(&root, "alpha", "nul-notes").unwrap(),
+        ws.join("repos/nul-notes"),
         "a name that merely starts like a device is an ordinary name"
     );
 }
@@ -284,20 +280,97 @@ fn a_link_at_the_destination_or_at_the_workspace_is_not_cloned_through() {
     let (_dir, root) = plane();
     let outside = tempfile::tempdir().unwrap();
     let ws = root.join("workspaces/alpha");
+    let repos = ws.join("repos");
+    std::fs::create_dir(&repos).unwrap();
     // A link at the destination that lands INSIDE the plane — another workspace's clone —
     // is the case only `within_workspace` sees: the data-directory gate is satisfied by
     // where it lands, and a clone would be written into the other workspace.
     std::fs::create_dir_all(root.join("workspaces/beta/stolen")).unwrap();
-    std::os::unix::fs::symlink(root.join("workspaces/beta/stolen"), ws.join("widget")).unwrap();
-    assert!(destination(&root, "alpha", &ws, "widget").is_err());
+    std::os::unix::fs::symlink(root.join("workspaces/beta/stolen"), repos.join("widget")).unwrap();
+    assert!(destination(&root, "alpha", "widget").is_err());
     // And one that leaves the plane.
-    std::os::unix::fs::symlink(outside.path(), ws.join("gadget")).unwrap();
-    assert!(destination(&root, "alpha", &ws, "gadget").is_err());
+    std::os::unix::fs::symlink(outside.path(), repos.join("gadget")).unwrap();
+    assert!(destination(&root, "alpha", "gadget").is_err());
 
     std::fs::create_dir_all(root.join("workspaces")).unwrap();
     std::os::unix::fs::symlink(outside.path(), root.join("workspaces/evil")).unwrap();
-    let evil = root.join("workspaces/evil");
-    assert!(destination(&root, "evil", &evil, "widget").is_err());
+    assert!(destination(&root, "evil", "widget").is_err());
+}
+
+#[test]
+fn a_repos_that_is_a_link_is_not_cloned_into() {
+    let (_dir, root) = plane();
+    let outside = tempfile::tempdir().unwrap();
+    std::os::unix::fs::symlink(outside.path(), root.join("workspaces/alpha/repos")).unwrap();
+
+    let refused = destination(&root, "alpha", "widget").unwrap_err();
+
+    assert!(
+        refused.contains("'repos' that is not a folder"),
+        "{refused}"
+    );
+}
+
+/// A folder holding a repository, as `git init` leaves one.
+fn a_repo_at(at: &Path) {
+    std::fs::create_dir_all(at).unwrap();
+    assert!(crate::testgit::run(at, &["init", "-q"]).ok());
+}
+
+#[test]
+fn a_new_clone_goes_to_repos_beside_old_clones_at_the_root_and_an_old_one_is_still_its_own() {
+    // ADR 0114, decisions 1 and 3.
+    let (_dir, root) = plane();
+    let ws = root.join("workspaces/alpha");
+    a_repo_at(&ws.join("gadget"));
+    // Notes of the person's that happen to share a repo's name are not a clone.
+    std::fs::create_dir_all(ws.join("widget")).unwrap();
+
+    assert_eq!(
+        destination(&root, "alpha", "gadget").unwrap(),
+        ws.join("gadget"),
+        "the old clone is the repo still, so it is not cloned again"
+    );
+    assert_eq!(
+        destination(&root, "alpha", "widget").unwrap(),
+        ws.join("repos/widget")
+    );
+    assert!(!ws.join("repos").exists(), "an answer makes nothing");
+}
+
+#[test]
+fn a_clone_named_repos_is_refused_and_so_is_any_while_an_old_clone_named_repos_stands() {
+    let (_dir, root) = plane();
+    let ws = root.join("workspaces/alpha");
+    for named in ["repos", "Repos"] {
+        let refused = destination(&root, "alpha", named).unwrap_err();
+        assert!(
+            refused.contains("folder a workspace's repos go in"),
+            "{named}: {refused}"
+        );
+    }
+
+    a_repo_at(&ws.join("repos"));
+    let refused = destination(&root, "alpha", "widget").unwrap_err();
+    assert!(refused.contains("has a repo named 'repos'"), "{refused}");
+    assert!(refused.contains("rename"), "{refused}");
+    let refused = destination(&root, "alpha", "repos").unwrap_err();
+    assert!(
+        refused.contains("folder a workspace's repos go in"),
+        "{refused}"
+    );
+}
+
+#[test]
+fn a_name_the_workspace_keeps_for_its_own_gets_no_destination() {
+    let (_dir, root) = plane();
+    for kept in ["memory", "todos", "work", "Sessions"] {
+        let refused = destination(&root, "alpha", kept).unwrap_err();
+        assert!(
+            refused.contains("keeps a folder of that name"),
+            "{kept}: {refused}"
+        );
+    }
 }
 
 #[test]
@@ -429,7 +502,7 @@ fn the_account_on_that_server_signs_the_clone_and_one_on_another_port_never_does
     let (_dir, root, record) = plane_on_a_port();
     let url = https_url(&record, &root).unwrap();
     let forge = Forge::for_clone(&record, &url);
-    let exe = Path::new("/Applications/purlis.app/Contents/MacOS/charter-app");
+    let exe = Path::new("/Applications/purlis.app/Contents/MacOS/purlis-app");
 
     let on_it = account_on("gitlab.corp.example:8443");
     // Only whether purlis's helper is named leaves the closure: the helper line itself is never

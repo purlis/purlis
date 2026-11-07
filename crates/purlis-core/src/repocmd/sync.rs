@@ -165,6 +165,9 @@ pub fn fetch_remote(
     hosts: Option<&[String]>,
 ) -> Result<(), String> {
     let (_, helper) = reach(root, clone, remote, hosts, false)?;
+    // A chat may write the clone's git folder: no ref is moved through a link it left there,
+    // and no garbage is collected for objects it put there.
+    crate::worktree::ref_records_refused(&clone.join(".git"))?;
     let fetched = git::run_network(
         clone,
         helper.as_deref(),
@@ -174,6 +177,7 @@ pub fn fetch_remote(
             "--prune",
             "--no-recurse-submodules",
             "--no-write-fetch-head",
+            "--no-auto-maintenance",
             remote,
         ],
     )
@@ -333,6 +337,10 @@ fn sync_one(root: &Path, ws: &str, repo: &repos::Repo, say: Sink) {
             return;
         }
     };
+    if let Err(why) = crate::worktree::ref_records_refused(&d.join(".git")) {
+        say(Say::Fail(format!("{label}: {why} — skipping.").into()));
+        return;
+    }
     let fetched = git::run_network(
         d,
         helper.as_deref(),
@@ -341,6 +349,7 @@ fn sync_one(root: &Path, ws: &str, repo: &repos::Repo, say: Sink) {
             "--prune",
             "--no-recurse-submodules",
             "--no-write-fetch-head",
+            "--no-auto-maintenance",
         ],
     );
     let fetched = match fetched {
@@ -413,3 +422,6 @@ mod tests {
         assert!(!is_ssh("/srv/x.git"));
     }
 }
+
+#[cfg(test)]
+mod fetch_tests;

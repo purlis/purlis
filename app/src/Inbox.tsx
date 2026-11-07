@@ -76,6 +76,7 @@ import { capMarks } from "./combiningMarks";
 import { blankOf, marksIn, markOf } from "./invisible";
 import { AskWrites } from "./AskWrites";
 import { LoginSite, useTypedSite } from "./LoginSite";
+import { RunFills, valuesOf } from "./RunFills";
 import { RunGrantFacts } from "./RunGrantFacts";
 import { SecretFill, type FillWith } from "./SecretFill";
 import { SecretFillSite } from "./SecretFillNotice";
@@ -894,6 +895,8 @@ function Ask({
   const [secretFillWith, setSecretFillWith] = useState<FillWith>("value");
   /** The purpose of the line Fill writes, while Remember is ticked (#5240). */
   const [secretRemember, setSecretRemember] = useState<string>();
+  /** A run's notice's value boxes, by key (#5242): each holds its own words, read on a press. */
+  const runBoxes = useRef(new Map<string, HTMLInputElement>());
   const who = chainSaid(ask.chain);
   const key = askKey(ask);
   const openAnswer = useOpenAnswer();
@@ -947,6 +950,9 @@ function Ask({
     const given = ask.secret != null && option.allows ? (secretBox.current?.value ?? "") : typed;
     if (ask.secret != null && secretBox.current) secretBox.current.value = "";
     const linked = ask.secret != null && option.allows ? secretPick : undefined;
+    // A run's notice's values go with whatever is pressed, read from their boxes and emptied:
+    // the core keeps what Don't allow may store and drops the rest (#5242).
+    const runValues = ask.run != null ? valuesOf(runBoxes) : undefined;
     void answerTaken(
       plane,
       ask,
@@ -955,6 +961,7 @@ function Ask({
       given,
       linked,
       ask.secret != null && option.allows ? secretRemember : undefined,
+      runValues,
     )
       .then(({ refused, live, opened }) => {
         if (refused !== undefined) {
@@ -1026,6 +1033,12 @@ function Ask({
         )}
         {/* What a program would receive, and from whom each word comes (ADR 0112). */}
         {ask.run != null && <RunGrantFacts run={ask.run} />}
+        {/* The keys the run lacks, one masked box each, in the same notice (#5242). */}
+        {ask.run != null && ask.run.fills.length + (ask.run.no_allow == null ? 0 : 1) > 0 && (
+          <Stop id={`${key}:fills`}>
+            <RunFills run={ask.run} boxes={runBoxes} />
+          </Stop>
+        )}
         {/* What a secret fill puts where (#5115): words to read, nothing to reach. */}
         {ask.fill != null && <SecretFillSite fill={ask.fill} />}
         {shape.reason && (
@@ -1842,11 +1855,16 @@ function UpdateItem({ row, above }: { row: UpdateRow; above: string }) {
  * on as from any ask. Answers whether the chat has a group to land on: its asks may have been
  * answered elsewhere since.
  */
-export function landOnGroup(session: number): boolean {
+export function landOnGroup(session: number, source?: Shown["source"]): boolean {
   const group = document.querySelector<HTMLElement>(
     `section.inbox .inbox-chat[data-session="${session}"]`,
   );
-  const first = group?.querySelector<HTMLElement>("li");
+  // At the ask it came for, where it names one (#5215), else the group's first.
+  const first =
+    (source === undefined
+      ? null
+      : group?.querySelector<HTMLElement>(`li[data-source="${source}"]`)) ??
+    group?.querySelector<HTMLElement>("li");
   if (!group || !first) return false;
   group.scrollIntoView?.({ block: "nearest" });
   first.focus();
@@ -1859,8 +1877,8 @@ export function landOnGroup(session: number): boolean {
  * the scope is the workspace's, the scope widens to the project's, as revealing a row a filter
  * hides clears the filter, and the landing is tried again once that is drawn.
  */
-export function landOnGroupIn(plane: PlaneId, session: number): void {
-  if (landOnGroup(session) || keptInboxScope(plane) !== "workspace") return;
+export function landOnGroupIn(plane: PlaneId, session: number, source?: Shown["source"]): void {
+  if (landOnGroup(session, source) || keptInboxScope(plane) !== "workspace") return;
   keepInboxScope(plane, "project");
-  requestAnimationFrame(() => landOnGroup(session));
+  requestAnimationFrame(() => landOnGroup(session, source));
 }

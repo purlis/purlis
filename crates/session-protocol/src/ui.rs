@@ -198,6 +198,8 @@ pub struct Server {
 /// project's own files, of no workspace's repo, which the person browses in their window. A
 /// link is served a branch's files and never these, so no chat gains a second way to read the
 /// project through one.
+///
+/// `workspace_tree` and `workspace_file` do the same for a workspace's own files (#5375).
 pub const WINDOW_ONLY: &[&str] = &[
     "answer_ask",
     // The person's word that a key's value is no 2FA seed (#5237): theirs alone, so no chat lets
@@ -221,6 +223,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // names the commands this machine's window ran, so no link writes or reads it.
     "record_slow",
     "slow_log_recent",
+    // [DEBUG-5478] The freeze watchdog's line goes to this machine's diagnostic log: a window's
+    // own, as the slow-answer log is, so no link writes it (#5488 removes it).
+    "debug_5478_log",
     // The theme in force for the window that asks, which also points that window's theme watch
     // at the project it answers for (#2324). A link has no window here to watch for: it is
     // served `theme_in_force_at`, the same answer, which watches nothing (#2697).
@@ -652,6 +657,21 @@ pub const WINDOW_ONLY: &[&str] = &[
     // person's window alone.
     "plane_tree",
     "plane_file",
+    // A workspace's own files (#5375), as the plane root's are: the person's notes and what
+    // purlis keeps there, listed and opened in the person's window alone.
+    "workspace_tree",
+    "workspace_file",
+    // Writing a workspace's own files (#5376): new file, new folder, rename, delete to the
+    // Trash and import, each the person's own press in their window. An import's picker is the
+    // system's, opened by the command itself.
+    "workspace_files_new_file",
+    "workspace_files_new_folder",
+    "workspace_files_rename",
+    "workspace_files_trash",
+    "workspace_files_import",
+    // Save with the project (#5377): it shares one of the person's workspace files with the
+    // project, which a script holding a token would make a leak, so only their press asks it.
+    "workspace_save_with_the_project",
     // A skill's folder, for its page's Files tab (#5183): listed, a file of it opened, and the
     // folder opened in the file manager. A built-in or third-party skill's folder is outside
     // the project, so only the person's own window reads it.
@@ -719,6 +739,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     "skill_set_lifecycle",
     "skill_set_move",
     "skill_set_delete_now",
+    // Several updates accepted as one commit, and their Undo (#5354): the person's own press,
+    // each new capability ticked on its own.
+    "skill_set_update",
+    "skill_set_update_undo",
     "skill_set_export_review",
     "skill_set_export",
     "skill_grant",
@@ -753,6 +777,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // "Ask the chat to redo it" on an out-of-date draft (S9, #3690): the redo typed into the
     // chat that drafted it as the person, or a chat started with it typed, as a draft chat is.
     "skill_draft_redo",
+    // The chats the studio started that have closed here (#5248): the person's own chats, read
+    // in their window for a skill's Runs, as its drafts are.
+    "studio_chats_closed",
     "skill_draft_redo_in",
     // A skill's trigger tests started from a template, or a chat opened to write them (#3925):
     // the start is one commit to the project, and the chat starts a program as the person, as
@@ -767,6 +794,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     // The person's own press in their window, after the plan showed what it costs.
     "skill_grade_start",
     "skill_grade_stop",
+    // Several skills graded under one limit (#5356): as a skill's grade, a few at a time, on the
+    // person's press in their window after the estimate showed what they may spend.
+    "skill_grades_start",
+    "skill_grades_stop",
     // A grade of a router started (SK-15e, #3233): as a skill's grade, it runs chats on the
     // person's profile and records the grade in the project. Stopped by `skill_grade_stop`.
     "router_grade_start",
@@ -1115,6 +1146,34 @@ pub fn names_the_plane_root(method: &str, args: &Value) -> bool {
 pub const THE_PLANE_ROOT_IS_THE_WINDOWS: &str =
     "The project's own files are listed and watched in purlis's window only.";
 
+/// **Whether a call names a workspace's own files** (#5375): a branch's path, find or watch
+/// with a workspace and no repo, which is how the window names the files in the workspace's
+/// folder that are no repo's. They are the person's window's alone, as `workspace_tree` and
+/// `workspace_file` are ([`WINDOW_ONLY`]), so such a call is refused to a link before its
+/// handler is asked ([`A_WORKSPACES_OWN_FILES_ARE_THE_WINDOWS`]). A call that leaves the repo
+/// out is counted as naming them.
+pub fn names_a_workspaces_own_files(method: &str, args: &Value) -> bool {
+    let no_repo = |of: &Value| !of["repo"].as_str().is_some_and(|repo| !repo.is_empty());
+    match method {
+        "copy_branch_path" | "reveal_branch_path" => no_repo(args),
+        "find_files" => match args["scope"]["kind"].as_str() {
+            Some("workspace-folder") => true,
+            Some("branch") => no_repo(&args["scope"]),
+            _ => false,
+        },
+        "files_watch" => args["folders"].as_array().is_some_and(|folders| {
+            folders.iter().any(|one| {
+                one["workspace"].as_str().is_some_and(|ws| !ws.is_empty()) && no_repo(one)
+            })
+        }),
+        _ => false,
+    }
+}
+
+/// What a link is told when its call names a workspace's own files.
+pub const A_WORKSPACES_OWN_FILES_ARE_THE_WINDOWS: &str = "A workspace's own files are listed, \
+    found and watched in purlis's window only. Open them there, or name one of its repos.";
+
 /// What a link is served for an edit's change: not shown, and why.
 pub fn an_edit_drawn_in_the_window_only() -> Value {
     serde_json::json!({
@@ -1280,6 +1339,7 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "plane_at_launch",
     "plane_doctor",
     "plane_doctor_identity",
+    "plane_doctor_move_into_repos_plan",
     "plane_fetch",
     "plane_pin",
     "plane_pins",
@@ -1346,6 +1406,10 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "skill_grade_plan",
     "skill_grade_running",
     "skill_grade_scorecard",
+    // What grading several skills would spend, and how far the batch running is (#5356): read
+    // only.
+    "skill_grades_plan",
+    "skill_grades_running",
     // A skill's grades, for its Grades tab (S6, #3688), and a draft's (#2780): read only.
     "skill_grades",
     "skill_draft_grade",
@@ -1367,6 +1431,8 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "skill_templates",
     "skill_text",
     "skill_users",
+    // Each skill's runs of the last 30 days, which Make room sorts by (#5355): read only.
+    "skill_uses",
     "skills_deleted",
     "smart_close_offer",
     "smart_closing",
@@ -1543,6 +1609,14 @@ impl Serving {
                     {
                         Answered::Now(Some(reply(Outcome::Err(Value::String(
                             THE_PLANE_ROOT_IS_THE_WINDOWS.into(),
+                        )))))
+                    }
+                    (Some(server), true)
+                        if server.methods.contains(&method)
+                            && names_a_workspaces_own_files(&method, &args) =>
+                    {
+                        Answered::Now(Some(reply(Outcome::Err(Value::String(
+                            A_WORKSPACES_OWN_FILES_ARE_THE_WINDOWS.into(),
                         )))))
                     }
                     (Some(server), true) if server.methods.contains(&method) => {

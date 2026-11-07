@@ -189,15 +189,14 @@ describe("a chat's pane head", () => {
     expect(within(row).getByRole("img", { name: "floor" })).toBeInTheDocument();
   });
 
-  it("ends with the bell and ⋯, a divider, then Split right, Split down and Close (#5203)", async () => {
+  it("ends with the bell and ⋯, a divider, then Split right and Split down, its tab's only pane having no Close (#5203, #5318)", async () => {
     await aPane();
 
     await waitFor(() => expect(controls()[1]).toMatch(/^More for /));
-    const [bell, more, right, down, close, ...rest] = controls();
+    const [bell, more, right, down, ...rest] = controls();
     expect(bell).toMatch(/^Pane notices:/);
     expect(more).toBe(`More for ${NAME}`);
     expect([right, down]).toEqual(["Split right", "Split down"]);
-    expect(close).toBeTruthy();
     expect(rest).toEqual([]);
     // The thin divider parts the chat's actions from the pane's controls, unheard and untabbed.
     const actions = [
@@ -384,14 +383,13 @@ describe("a narrow pane's head", () => {
     expect(foot().querySelector(".pane-where")).toHaveTextContent(/^claude\s*·\s*alpha$/);
   });
 
-  it("drops Split down last, and still keeps the bell, ⋯, Split right and Close", async () => {
+  it("drops Split down last, and still keeps the bell, ⋯ and Split right", async () => {
     await aPaneOf(280);
 
-    const [bell, more, right, close, ...rest] = controls();
+    const [bell, more, right, ...rest] = controls();
     expect(bell).toMatch(/^Pane notices:/);
     expect(more).toBe(`More for ${NAME}`);
     expect(right).toBe("Split right");
-    expect(close).toBeTruthy();
     expect(rest).toEqual([]);
   });
 });

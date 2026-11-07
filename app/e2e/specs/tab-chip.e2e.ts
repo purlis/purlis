@@ -11,6 +11,7 @@ import {
   endChatsStartedHere,
   startAChat,
   type Started,
+  HEAD_TASKS,
 } from "../started.js";
 import { KEPT_EMPTY, untilTheStripIsBare } from "../reach.js";
 
@@ -166,7 +167,9 @@ async function pretendLimits(of: number, past: boolean): Promise<void> {
   );
 }
 
-/** Every drawn tab's cell, by its name: its box, and whether it wears a chip. */
+const TASKS = HEAD_TASKS;
+
+/** Every drawn tab's cell, by its name: its box, and whether it wears a count (never, #5341). */
 async function cells(): Promise<Record<string, { box: Box; chip: boolean }>> {
   return browser.execute((strip: string) => {
     const out: Record<string, { box: Box; chip: boolean }> = {};
@@ -176,7 +179,7 @@ async function cells(): Promise<Record<string, { box: Box; chip: boolean }>> {
       const { left, right, top, bottom, width } = cell.getBoundingClientRect();
       out[name] = {
         box: { left, right, top, bottom, width },
-        chip: cell.querySelector(".tab-tasks") !== null,
+        chip: cell.querySelector("[data-count], .tab-tasks, .pane-tasks") !== null,
       };
     }
     return out;
@@ -186,7 +189,7 @@ async function cells(): Promise<Record<string, { box: Box; chip: boolean }>> {
 /** What the cell of the tab called `name` holds, measured. */
 async function measured(name: string) {
   return browser.execute(
-    (strip: string, called: string) => {
+    (strip: string, called: string, tasks: string) => {
       const box = (el: Element | null | undefined): Box | null => {
         if (!el) return null;
         const { left, right, top, bottom, width } = el.getBoundingClientRect();
@@ -195,35 +198,26 @@ async function measured(name: string) {
       const cell = [...document.querySelectorAll<HTMLElement>(`${strip} > .tab`)].find(
         (one) => one.querySelector(".tab-name")?.textContent === called,
       );
-      const chip = cell?.querySelector<HTMLElement>(".tab-tasks");
-      const counts = chip?.querySelector<HTMLElement>(".tab-tasks-counts");
+      const counts = document.querySelector<HTMLElement>(tasks);
       const label = cell?.querySelector<HTMLElement>(".tab-name");
       const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize);
-      const chipBox = box(chip);
       return {
         rem,
         cell: box(cell),
         tab: box(cell?.querySelector('[role="tab"]')),
-        chip: chipBox,
         closer: box(cell?.querySelector(".closer")),
-        // The counts the chip shows, which are the ones on its one line.
-        shown: [...(counts?.querySelectorAll<HTMLElement>(".count") ?? [])]
-          .filter((count) => {
-            const at = count.getBoundingClientRect();
-            return chipBox !== null && at.top < chipBox.bottom - 1 && at.right <= chipBox.right + 1;
-          })
-          .map((count) => count.getAttribute("data-count")),
-        all: [...(counts?.querySelectorAll<HTMLElement>(".count") ?? [])].map((count) =>
-          count.getAttribute("data-count"),
-        ),
         nameCut: label ? label.scrollWidth > label.clientWidth + 1 : false,
         // How wide the title is drawn: a tab gives up its counts before its whole title (#1867).
         nameWidth: label ? label.getBoundingClientRect().width : 0,
-        said: counts?.getAttribute("aria-label") ?? null,
+        said: counts
+          ? (document.getElementById(counts.getAttribute("aria-describedby") ?? "")?.textContent ??
+            null)
+          : null,
       };
     },
     STRIP,
     name,
+    TASKS,
   );
 }
 
@@ -357,15 +351,15 @@ async function restTook(): Promise<number | string> {
 
 /**
  * Takes the pointer along the strip, onto each thing in it in turn and off the end: every
- * tab, every chip's hand and counts, every close. `dwell` is how long it stays on each, in
+ * tab and every close, and then the tasks button on the head in front. `dwell` is how long it stays on each, in
  * milliseconds. Answers how many things it went over, and how many of them were chips.
  */
 async function cross(dwell: number): Promise<{ over: number; chips: number }> {
   return browser.execute(
-    async (strip: string, stay: number) => {
+    async (strip: string, stay: number, tasks: string) => {
       const stops = [
         ...document.querySelectorAll<HTMLElement>(
-          `${strip} [role="tab"], ${strip} .tab-tasks button, ${strip} .closer`,
+          `${strip} [role="tab"], ${strip} .closer, ${tasks}`,
         ),
       ].sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left);
       const wait = (ms: number) => new Promise((done) => setTimeout(done, ms));
@@ -397,22 +391,21 @@ async function cross(dwell: number): Promise<{ over: number; chips: number }> {
       if (last !== null) send(last, "pointerout", null);
       return {
         over: stops.length,
-        chips: stops.filter((stop) => stop.classList.contains("tab-tasks-counts")).length,
+        chips: stops.filter((stop) => stop.matches(tasks)).length,
       };
     },
     STRIP,
     dwell,
+    TASKS,
   );
 }
 
-/** Puts the pointer on the counts of the chip on the tab called `name`, or takes it off. */
+/** Puts the pointer on the tasks button of the head in front, which the chat of the tab called
+ *  `name` is in, or takes it off. */
 async function pointer(name: string, what: "on" | "off"): Promise<boolean> {
   return browser.execute(
-    (strip: string, called: string, how: string, rested: string) => {
-      const cell = [...document.querySelectorAll<HTMLElement>(`${strip} > .tab`)].find(
-        (one) => one.querySelector(".tab-name")?.textContent === called,
-      );
-      const counts = cell?.querySelector<HTMLElement>(".tab-tasks-counts");
+    (tasks: string, _called: string, how: string, rested: string) => {
+      const counts = document.querySelector<HTMLElement>(tasks);
       if (!counts) return false;
       const at = counts.getBoundingClientRect();
       const send = (type: string, dx = 0) =>
@@ -441,7 +434,7 @@ async function pointer(name: string, what: "on" | "off"): Promise<boolean> {
       } else send("pointerout");
       return true;
     },
-    STRIP,
+    TASKS,
     name,
     what,
     RESTED,
@@ -458,18 +451,7 @@ function check(
   if (!holds) throw new Error(`${what}: ${String(value)} is not ${is} ${String(other)}`);
 }
 
-/** Whether the theme in force shares the chat strip equally between its tabs (`tabs.layout.sizing:
- *  equal`, Purlis Classic) rather than sizing each to its words (Purlis, #2914). */
-async function equalShare(): Promise<boolean> {
-  return browser.execute(() => {
-    const layout = document.querySelector('[data-scope="tabs"][data-part="layout"]');
-    return (
-      layout !== null && getComputedStyle(layout).getPropertyValue("--tabs-grow").trim() === "1"
-    );
-  });
-}
-
-describe("the chip a session's tab wears for its tasks", () => {
+describe("a session's tasks, from its pane head and not its tab (#5341)", () => {
   let was = { width: 1280, height: 800 };
   /** This file's own tabs, in the order they were opened, and the first one's chat. */
   let mine: string[] = [];
@@ -491,12 +473,20 @@ describe("the chip a session's tab wears for its tasks", () => {
     );
   }
 
+  /** Until the head in front, `name`'s chat's, draws its tasks button, or no longer does. */
   async function untilChip(name: string, worn: boolean) {
-    await browser.waitUntil(async () => ((await cells())[name]?.chip ?? false) === worn, {
-      timeout: 10_000,
-      interval: 100,
-      timeoutMsg: `${name}'s tab ${worn ? "never wore" : "kept"} a chip`,
-    });
+    await browser.waitUntil(
+      async () =>
+        (await browser.execute(
+          (tasks: string) => document.querySelector(tasks) !== null,
+          TASKS,
+        )) === worn,
+      {
+        timeout: 10_000,
+        interval: 100,
+        timeoutMsg: `${name}'s pane head ${worn ? "never drew" : "kept"} its tasks button`,
+      },
+    );
   }
 
   before(async () => {
@@ -612,45 +602,25 @@ describe("the chip a session's tab wears for its tasks", () => {
     await untilTheStripIsBare("tab-chip");
   });
 
-  it("leaves every tab the width it was, the one with tasks and the ones without", async () => {
+  it("leaves every tab as it was, with no count, and says the tasks on the pane head", async () => {
     expect(mine.length).toBeGreaterThanOrEqual(3);
-    // As the strip was before any tab had a task: what it is without this change.
     const before = await cells();
-    for (const name of mine)
-      check(`${name} wore a chip with no tasks`, before[name].chip, "is", false);
 
     await pretend(asker, ["working", "working", "failed", "done", "done", "done"]);
     await untilChip(mine[0], true);
     const after = await cells();
 
-    // Shared equally (Purlis Classic), no tab changes width or moves for a chip. Sized to their
-    // words (Purlis, #2914), the tab that wears it grows by it, and a strip at its room shares
-    // the difference out among its tabs, which shrink as their words allow: none is lost.
-    const equal = await equalShare();
+    // No tab wears a count, so no tab changes width or moves for tasks, whatever the theme's
+    // sizing.
     for (const [name, { box }] of Object.entries(before)) {
       const now = after[name];
       check(`${name} is gone from the strip`, now !== undefined, "is", true);
-      if (!equal) continue;
+      check(`${name} wears a count`, now.chip, "is", false);
       check(`${name} changed width`, Math.abs(now.box.width - box.width), "atMost", 0.5);
       check(`${name} moved`, Math.abs(now.box.left - box.left), "atMost", 0.5);
     }
-    // Only the session that has tasks wears one.
-    for (const name of mine.slice(1)) check(`${name} wears a chip`, after[name].chip, "is", false);
-
     const seen = await measured(mine[0]);
-    if (seen.shown.length !== 3)
-      console.log(`tab-chip.e2e: the chip with room was ${JSON.stringify(seen)}`);
     expect(seen.said).toContain("2 working, 1 failed, 3 done");
-    // The chip shows every count the tab has room for beside its drawn title, from the start
-    // and whole (#1867: the title is never squeezed out for a count), and sits inside its
-    // tab's own cell, between the tab's button and its close.
-    check("the tab's title is not drawn", seen.nameWidth, "atLeast", 1);
-    expect(["working", "failed", "done"].slice(0, seen.shown.length)).toEqual(seen.shown);
-    check("the chip shows no count", seen.shown.length, "atLeast", 1);
-    const [cell, tab, chip, closer] = [seen.cell, seen.tab, seen.chip, seen.closer] as Box[];
-    check("the chip starts over the tab's button", chip.left, "atLeast", tab.right - 1);
-    check("the chip runs under the close", chip.right, "atMost", closer.left + 1);
-    check("the close left its cell", closer.right, "atMost", cell.right + 1);
   });
 
   it("opens no menu for a pointer that crosses the strip", async () => {
@@ -677,8 +647,8 @@ describe("the chip a session's tab wears for its tasks", () => {
     // What the fence stopped before this case is the cases' before it.
     await fenceRealPointer(true);
     const parked = await browser.execute(
-      (strip: string, key: string, kept: number) => {
-        const counts = document.querySelector<HTMLElement>(`${strip} .tab-tasks-counts`);
+      (tasks: string, key: string, kept: number) => {
+        const counts = document.querySelector<HTMLElement>(tasks);
         if (!counts) return false;
         const at = counts.getBoundingClientRect();
         const here = {
@@ -712,7 +682,7 @@ describe("the chip a session's tab wears for its tasks", () => {
         counts.dispatchEvent(new PointerEvent("pointermove", here));
         return true;
       },
-      STRIP,
+      TASKS,
       HEARD,
       KEPT,
     );
@@ -760,9 +730,9 @@ describe("the chip a session's tab wears for its tasks", () => {
       await unwatch();
     }
 
-    const seen = await browser.execute(() => {
+    const seen = await browser.execute((tasks: string) => {
       const menu = document.querySelector<HTMLElement>('.tasks-menu[data-part="root"]');
-      const chip = document.querySelector<HTMLElement>(".tab-tasks-counts");
+      const chip = document.querySelector<HTMLElement>(tasks);
       if (!menu || !chip) return null;
       const at = menu.getBoundingClientRect();
       return {
@@ -776,7 +746,7 @@ describe("the chip a session's tab wears for its tasks", () => {
         // It took no keyboard: the pointer opened it, and whoever was typing still is.
         keyboardInIt: menu.contains(document.activeElement),
       };
-    });
+    }, TASKS);
     expect(seen).not.toBeNull();
     // The session's own chat first, then the tasks; the finished one is in the fold.
     expect(seen?.rows.slice(0, 1)).toEqual([mine[0]]);
@@ -810,8 +780,8 @@ describe("the chip a session's tab wears for its tasks", () => {
     });
 
     // Off the chip and onto the line that opens the ways to end a task, as a hand moves.
-    const onTheLine = await browser.execute(() => {
-      const counts = document.querySelector<HTMLElement>(".tab-tasks-counts");
+    const onTheLine = await browser.execute((tasks: string) => {
+      const counts = document.querySelector<HTMLElement>(tasks);
       const line = document.querySelector<HTMLElement>(".tasks-menu .tasks-menu-end");
       if (!counts || !line) return false;
       const at = line.getBoundingClientRect();
@@ -830,7 +800,7 @@ describe("the chip a session's tab wears for its tasks", () => {
       line.dispatchEvent(new PointerEvent("pointermove", here));
       line.dispatchEvent(new PointerEvent("pointermove", { ...here, clientX: here.clientX + 2 }));
       return true;
-    });
+    }, TASKS);
     expect(onTheLine).toBe(true);
     await browser
       .waitUntil(
@@ -898,14 +868,10 @@ describe("the chip a session's tab wears for its tasks", () => {
     await browser.keys("Escape");
   });
 
-  it("gives up the name before a count on a crowded strip, and overflows nothing", async () => {
-    await pretend(asker, ["working", "working", "failed", "done", "done", "done"]);
-    await untilChip(mine[0], true);
-
+  it("keeps the × out of the name's room on a crowded strip, at its floor or wider", async () => {
     // The chat strip is the editor's tab bar since DS-6 (#1836), as wide as the centre column
     // and not the window: both sidebars are put away for this, so narrowing the window narrows
-    // the strip as it did, and they are brought back after. Below the 1024px minimum (ADR 0054)
-    // with both open, the centre is not a strip's room for a tab with a chip.
+    // the strip, and they are brought back after.
     const putAway = await sidesAway();
     try {
       await narrowerAndNarrower();
@@ -933,48 +899,21 @@ describe("the chip a session's tab wears for its tasks", () => {
   }
 
   async function narrowerAndNarrower() {
-    // Narrower and narrower: the tabs go down to the least a tab is drawn at.
     for (const width of [900, 700, 560]) {
       await windowIs(width, 800);
-      // The tab in front is always drawn, whatever the strip hides.
+      // The tab in front is always drawn, whatever the strip hides, and wears its ×.
       await bringChatForward(asker);
-      await untilChip(mine[0], true);
       const seen = await measured(mine[0]);
-      const [cell, tab, chip, closer] = [seen.cell, seen.tab, seen.chip, seen.closer] as Box[];
+      const [cell, tab, closer] = [seen.cell, seen.tab, seen.closer] as Box[];
       const at = `at ${width}px`;
-      // A red run says the cell it measured.
-      console.log(`tab-chip.e2e: ${at} the tab with a chip was ${JSON.stringify(seen)}`);
-
-      // Its share of the strip is the share of every other tab drawn, where the theme shares
-      // the strip equally (Purlis Classic); sized to their words (Purlis), each is its own.
-      for (const [name, other] of (await equalShare()) ? Object.entries(await cells()) : [])
-        check(
-          `${at}: ${name} is not as wide as the tab with a chip`,
-          Math.abs(other.box.width - cell.width),
-          "atMost",
-          1,
-        );
-      // Nothing in the cell is on top of anything else in it, or outside it.
-      check(`${at}: the chip is over the tab's button`, chip.left, "atLeast", tab.right - 1);
-      check(`${at}: the chip is under the close`, chip.right, "atMost", closer.left + 1);
-      check(`${at}: the close left its cell`, closer.right, "atMost", cell.right + 1);
-      check(`${at}: the tab's button starts before its cell`, tab.left, "atLeast", cell.left - 1);
-      // The count of what is still working is the last to go, and it never goes.
-      check(`${at}: the chip shows no count`, seen.shown.length, "atLeast", 1);
-      expect(seen.shown[0]).toBe("working");
-      // **The rule**: a count is given up only once the name has given up all it can. While
-      // the tab's button is wider than its floor, every count is drawn.
-      if (seen.shown.length < seen.all.length) {
-        check(
-          `${at}: a count went while the name had room to give`,
-          tab.width,
-          "atMost",
-          2 * seen.rem + 1,
-        );
-        check(`${at}: a count went and the name is whole`, seen.nameCut, "is", true);
-      }
-      // And the name is never squeezed out: the button keeps its floor.
-      check(`${at}: the tab's button is under its floor`, tab.width, "atLeast", 2 * seen.rem - 1);
+      console.log(`tab-chip.e2e: ${at} the front tab was ${JSON.stringify(seen)}`);
+      // **The × takes no room** (#5341): the tab's button runs under it to the cell's end, so
+      // the name has the room the × would take, and the × stands inside the cell.
+      check(`${at}: the × took room from the button`, tab.right, "atLeast", closer.left);
+      check(`${at}: the × left its cell`, closer.right, "atMost", cell.right + 1);
+      check(`${at}: the button starts before its cell`, tab.left, "atLeast", cell.left - 1);
+      // **The floor**: 160px at the default text, scaled with it (`fits.ts`).
+      check(`${at}: the tab is under its floor`, cell.width, "atLeast", (160 * seen.rem) / 14 - 1);
     }
   }
 
@@ -1066,11 +1005,10 @@ describe("the chip a session's tab wears for its tasks", () => {
   });
 
   // **The narrowest centre column: 900 px with both sidebars open** (#1867). The chat strip is
-  // the centre column's (DS-6), so its tabs are drawn at their floor, where a tab and its chip
-  // do not both fit: the tab gives up its chip before its title, and "N more" reaches every
-  // tab the strip does not draw. The extra tabs are this file's own, ended in `after`. Ranges,
+  // the centre column's (DS-6), so its tabs are drawn at their floor: each keeps its title, and
+  // "N more" reaches every tab the strip does not draw. The extra tabs are this file's own, ended in `after`. Ranges,
   // never pixels.
-  it("at 900 px with both sidebars open, keeps a tab's title over its chip, and N more reaches the rest", async () => {
+  it("at 900 px with both sidebars open, keeps a tab's title, and N more reaches the rest", async () => {
     await pretend(asker, ["working", "working", "failed", "done", "done", "done"]);
     await untilChip(mine[0], true);
     const opened = await sidesOpen();
@@ -1083,8 +1021,7 @@ describe("the chip a session's tab wears for its tasks", () => {
       await bringChatForward(asker);
       await untilChip(mine[0], true);
 
-      // The chip is fitted a frame after its cell changes size (`wholeWays.refitOn`): waited
-      // for, and on a timeout the checks below say what was measured.
+      // Waited for its cell to settle, and on a timeout the checks below say what was measured.
       let at = await narrowest(mine[0]);
       await browser
         .waitUntil(
@@ -1106,10 +1043,9 @@ describe("the chip a session's tab wears for its tasks", () => {
       check("the tab's title is not drawn", name.width, "atLeast", 1);
       check("the title starts before its cell", name.left, "atLeast", cell.left - 1);
       check("the title runs past its cell", name.right, "atMost", cell.right + 1);
-      // Nothing in the cell runs out of it: the close, and the chip where it is still drawn.
+      // Nothing in the cell runs out of it, and it wears no count (#5341).
       check("the close left its cell", (at.closer as Box).right, "atMost", cell.right + 1);
-      if (at.chip !== null)
-        check("the chip left its cell", at.chip.right, "atMost", (at.closer as Box).left + 1);
+      check("the tab wears a count", at.chip, "is", false);
       // The strip is inside the centre column, collapses rather than scrolls, and says so.
       check("the strip scrolls", at.scrolls, "atMost", 1);
       check("the strip runs past the centre", at.bar.right, "atMost", at.centre.right + 1);
@@ -1221,7 +1157,7 @@ describe("the chip a session's tab wears for its tasks", () => {
         const cell = [...document.querySelectorAll<HTMLElement>(`${strip} > .tab`)].find(
           (one) => one.querySelector(".tab-name")?.textContent === called,
         );
-        const chip = cell?.querySelector<HTMLElement>(".tab-tasks");
+
         return {
           window: window.innerWidth,
           left: widthOf('[data-panel][id="region-left"]'),
@@ -1231,7 +1167,7 @@ describe("the chip a session's tab wears for its tasks", () => {
           cell: box(cell),
           name: box(cell?.querySelector(".tab-name")),
           closer: box(cell?.querySelector(".closer")),
-          chip: chip && chip.getBoundingClientRect().width > 0 ? box(chip) : null,
+          chip: cell?.querySelector("[data-count], .tab-tasks, .pane-tasks") != null,
           drawn: [...document.querySelectorAll(`${strip} [role="tab"]`)].map(
             (tab) => tab.querySelector(".tab-name")?.textContent ?? "",
           ),

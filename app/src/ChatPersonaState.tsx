@@ -11,12 +11,14 @@ import {
   ownWorkOf,
   useChatsHere,
   useChatsSelect,
+  type ChatStates,
 } from "./chatState";
 import { PersonaMark } from "./PersonaMark";
-import { shownState, type RowFacts, type Shown } from "./shownState";
-import { useQuestionStanding } from "./QuestionsHere";
-import { tasksAtWorkOf } from "./sessionTasks";
-import { useTasksBelow } from "./TasksBelow";
+import { shownState, urgentOf, type RowFacts, type Shown } from "./shownState";
+import { useQuestionStanding, useQuestionsHere } from "./QuestionsHere";
+import { NONE_BELOW, tasksAtWorkOf, type TasksBelow } from "./sessionTasks";
+import { standingOf, type QuestionStanding } from "./taskQuestions";
+import { useEveryTasksBelow, useTasksBelow } from "./TasksBelow";
 import { ChatMark } from "./ui/chat-mark/ChatMark";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 
@@ -60,21 +62,56 @@ export function useShownState({
   const question = useQuestionStanding(session);
   return useChatsSelect(
     useChatsHere(),
-    (states) =>
-      shownState({
-        board: markOf(states, session, shell),
-        needsYou: asksThePerson(states, session) || question?.level === "needs-you",
-        failuresUnseen: failuresUnseenOf(states, session),
-        failedUnseen: failedUnseen(states, session),
-        task:
-          report === null
-            ? null
-            : { report, outcome, asking: question?.level === "with-asker" ? question.asker : null },
-        harness,
-        tasksAtWork: tasksAtWorkOf(states, below),
-        ownWork: ownWorkOf(states, session),
-      }),
+    (states) => shownFrom(states, below, question, { session, shell, report, outcome, harness }),
     sameShown,
+  );
+}
+
+/** A chat's shown state from the chats' states, its tasks below and its question: the one
+ *  reading {@link useShownState} and {@link useUrgentChat} both make. */
+function shownFrom(
+  states: ChatStates,
+  below: TasksBelow,
+  question: QuestionStanding | undefined,
+  { session, shell, report = null, outcome = null, harness }: ShownOf,
+): Shown | undefined {
+  return shownState({
+    board: markOf(states, session, shell),
+    needsYou: asksThePerson(states, session) || question?.level === "needs-you",
+    failuresUnseen: failuresUnseenOf(states, session),
+    failedUnseen: failedUnseen(states, session),
+    task:
+      report === null
+        ? null
+        : { report, outcome, asking: question?.level === "with-asker" ? question.asker : null },
+    harness,
+    tasksAtWork: tasksAtWorkOf(states, below),
+    ownWork: ownWorkOf(states, session),
+  });
+}
+
+/**
+ * **The most urgent of `chats`** (#5342, spec #5339): the one whose state comes first in the one
+ * order (`shownState.urgentOf`), each read as its own mark reads it, so a split tab wears the
+ * mark of the pane that needs the person, never only the focused one's. Nothing where none of
+ * them has a state. Drawn again only when which chat it is changes.
+ */
+export function useUrgentChat(chats: readonly ShownOf[]): number | undefined {
+  const below = useEveryTasksBelow();
+  const questions = useQuestionsHere();
+  return useChatsSelect(
+    useChatsHere(),
+    (states) =>
+      urgentOf(
+        chats,
+        (one) =>
+          shownFrom(
+            states,
+            below.get(one.session) ?? NONE_BELOW,
+            standingOf(questions, one.session),
+            one,
+          )?.mark,
+      )?.session,
   );
 }
 
@@ -100,11 +137,15 @@ export const ChatPersonaState = memo(function ChatPersonaState({
   changed = false,
   who: standIn,
   heard = true,
+  grip,
 }: ShownOf & {
   persona: string | null;
   changed?: boolean;
   who?: ReactNode;
   heard?: boolean;
+  /** **The grip that stands in its `who`** (#5290, `ui/grip`): what its row or its pane is picked
+   *  up by, handed the mark it turns into dots in place of. The badge stays beside it. */
+  grip?: (mark: ReactNode) => ReactNode;
 }) {
   const shown = useShownState({ session, shell, report, outcome, harness });
   const who = persona ?? "terminal";
@@ -128,7 +169,7 @@ export const ChatPersonaState = memo(function ChatPersonaState({
       changed={changed}
       who={
         <>
-          {drawn}
+          {grip === undefined ? drawn : grip(drawn)}
           {/* Heard after the chat's name, as the persona and then the state. */}
           {heard && <span className="hidden-words">{shown === undefined ? who : `${who},`}</span>}
         </>

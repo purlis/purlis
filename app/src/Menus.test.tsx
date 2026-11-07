@@ -26,7 +26,7 @@ import {
 } from "./actions";
 import { Menued, useNoBrowserMenu } from "./Menus";
 import { TIP_AFTER_MS } from "./ui/menu/MenuTip";
-import { noTabs, openTab, selectTab } from "./tabs";
+import { noTabs, openTab, openView, selectTab, splitFocusedPane } from "./tabs";
 import { TOOLTIP_CLOSE_DELAY } from "./ui/tooltip/Tooltip";
 import { chipName, workspaceChips } from "./test-strips";
 
@@ -126,7 +126,7 @@ describe("what a menu lists", () => {
       "Pin tab 3 steward",
       "Tile all in 3 steward",
       // Placement mode, the keyboard's drag (#4764).
-      "Place tab 3 steward…",
+      "Move tab 3 steward…",
       // Into a tab window of the project (#4768).
       "Move tab 3 steward to new window",
     ]);
@@ -135,7 +135,7 @@ describe("what a menu lists", () => {
     const chat = titles({ on: "chat", session: 7 }, { tabs });
     expect(chat.above).toEqual([
       "Rename chat 3 steward…",
-      "Place chat 3 steward…",
+      "Move chat 3 steward…",
       "Activity of 3 steward",
       "Network of 3 steward",
     ]);
@@ -220,7 +220,10 @@ describe("what a menu lists", () => {
   });
 
   it("offers the pane's own verbs in the centre of the window", () => {
-    const pane = titles({ on: "pane", tab: 1 }, { tabs: openTab(noTabs(), 7, "one") });
+    const pane = titles(
+      { on: "pane", tab: 1 },
+      { tabs: splitFocusedPane(openTab(noTabs(), 7, "one"), "row", 8) },
+    );
 
     // New tab and New shell are the window's, not a pane's (#4760); Tile all is the tab's own
     // row, its right-click's (#4765).
@@ -233,6 +236,12 @@ describe("what a menu lists", () => {
       "Send F2 to the chat in front",
     ]);
     expect(pane.below).toEqual(["Close this pane"]);
+  });
+
+  it("lists a lone view's two splits on its tab's menu, drawn nowhere on the view (#5318)", () => {
+    const tabs = openView(noTabs(), { from: null, view: "saving", key: "" }, "Saving", "alpha");
+    const { above } = titles({ on: "tab", tab: tabs.order[0] }, { tabs });
+    expect(above).toEqual(expect.arrayContaining(["Split right", "Split down"]));
   });
 
   it("keeps a row that cannot run, with the catalogue's reason on it", () => {
@@ -342,7 +351,7 @@ describe("a menu on screen", () => {
       "Rename…",
       "Ask",
       // Where it is drawn, by the keys (#4764).
-      "Place…",
+      "Move…",
       "Open",
       "Restart",
       "Stop",

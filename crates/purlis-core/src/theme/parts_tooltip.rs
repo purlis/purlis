@@ -27,7 +27,7 @@ pub(super) const TOOLTIP: Family = Family {
         },
         Part {
             name: "shortcut",
-            since: super::NEXT,
+            since: 13,
             description: "The key that does what its target does, after its words.",
             properties: &[Prop::Text, Prop::FontSize],
         },

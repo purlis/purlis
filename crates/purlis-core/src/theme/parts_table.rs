@@ -20,17 +20,17 @@ const WORDS: &[Prop] = &[Prop::Text, Prop::FontSize, Prop::FontWeight];
 pub(super) const TABLE: Family = Family {
     name: "table",
     description: "A table: its rows, the card that holds them, a column's name and a cell.",
-    since: super::NEXT,
+    since: 13,
     parts: &[
         Part {
             name: "root",
-            since: super::NEXT,
+            since: 13,
             description: "A row: its fill and its words, at rest and in each state.",
             properties: &[Prop::Fill, Prop::Text],
         },
         Part {
             name: "frame",
-            since: super::NEXT,
+            since: 13,
             description: "The card that holds the table and scrolls it sideways: its fill, edge, \
                           corners and lift.",
             properties: &[
@@ -43,26 +43,26 @@ pub(super) const TABLE: Family = Family {
         },
         Part {
             name: "head",
-            since: super::NEXT,
+            since: 13,
             description: "A column's name, over its cells.",
             properties: WORDS,
         },
         Part {
             name: "cell",
-            since: super::NEXT,
+            since: 13,
             description: "A cell: the room around what it holds.",
             properties: &[Prop::Padding],
         },
         Part {
             name: "rule",
-            since: super::NEXT,
+            since: 13,
             description: "The rule between rows and under the columns' names: none unless a \
                           theme fills it.",
             properties: &[Prop::Fill],
         },
         Part {
             name: "bar",
-            since: super::NEXT,
+            since: 13,
             description: "The bar over a table that chooses: its filter, and what the chosen rows \
                           can be done to.",
             properties: &[Prop::Gap],

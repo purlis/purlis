@@ -218,6 +218,11 @@ export type LineFacts = {
   sandbox?: boolean;
   /** False where the pane draws no close: a pane showing a task of its session (#1486). */
   closes?: boolean;
+  /**
+   * **The only pane of its tab** (#5318), which draws no Close, the tab's own × doing the same. A
+   * pane zoomed to fill its tab is not alone: its tab still has the others.
+   */
+  alone?: boolean;
 };
 
 /** **Both lines of a pane**: the head's chips and its actions, and the foot's parts, or `null` for a pane that
@@ -244,17 +249,23 @@ export function paneKindOf(shows: {
  * the chat's facts are the foot's, never the head's, at any width. A shell and a one-job program
  * draw no foot and keep their heads as they were (spec #5191), `where` among them, as does a
  * view's pane, an empty pane and a folded one. What has ended keeps its foot, marked `ended`, its
- * gauge frozen (#5205). A narrow pane drops parts of both lines in their orders (#5206).
+ * gauge frozen (#5205). A narrow pane drops parts of both lines in their orders (#5206). A tab's
+ * only pane draws no Close, and a view alone in its tab draws neither split either (#5318).
  */
 export function paneLinesOf(
   kind: PaneKind,
   width: number | undefined,
   facts: LineFacts,
 ): PaneLines {
-  // A view's and an empty pane's head is its controls alone, which never drop; a folded pane is a
-  // rail, which says who it runs as, its name and its bell.
-  const controls: ActionPart[] = ["splitRight", "splitDown", "close"];
-  if (kind === "view" || kind === "empty") return { head: [], actions: controls, foot: null };
+  // A view's and an empty pane's head is its controls alone, which never drop, and a view alone in
+  // its tab has none; a folded pane is a rail, which says who it runs as, its name and its bell.
+  const alone = facts.alone === true;
+  if (kind === "view" && alone) return { head: [], actions: [], foot: null };
+  if (kind === "view" || kind === "empty") {
+    const controls: ActionPart[] = ["splitRight", "splitDown"];
+    if (!alone) controls.push("close");
+    return { head: [], actions: controls, foot: null };
+  }
   if (kind === "folded") return { head: ["persona", "name"], actions: ["bell"], foot: null };
   const drops = droppedAt(width);
   const pathed = kind === "task" || kind === "endedTask";
@@ -279,7 +290,7 @@ export function paneLinesOf(
   if (!drops.has("buttonWord")) actions.push("stateWord");
   actions.push("bell", "menu", "splitRight");
   if (!drops.has("splitDown")) actions.push("splitDown");
-  if (kind !== "oneJob" && facts.closes !== false) actions.push("close");
+  if (kind !== "oneJob" && facts.closes !== false && !alone) actions.push("close");
 
   if (!footed) return { head, actions, foot: null };
   return { head, actions, foot: footOf(ended, width, facts) };

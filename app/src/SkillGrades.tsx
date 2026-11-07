@@ -315,7 +315,9 @@ function ChecksDraft({
               })
             }
           >
-            {draft.chat_open ? "Ask the chat to redo them" : askAChat(draft.level, "redo them")}
+            {draft.chat_open
+              ? "Ask the chat to redo them"
+              : askAChat(draft.level, "redo them", plane)}
           </Button>
         )}
         <Button
@@ -499,7 +501,7 @@ export function GradesTab({
           <>
             <p className="honest">{`None yet. ${CHECK_KINDS[kind].what(name)}`}</p>
             {job !== undefined ? (
-              <RunningJob chat={job} />
+              <RunningJob plane={plane} chat={job} />
             ) : (
               <ButtonRow>
                 <Button
@@ -515,7 +517,7 @@ export function GradesTab({
                     })
                   }
                 >
-                  {askAChat(level, "write these")}
+                  {askAChat(level, "write these", plane)}
                 </Button>
               </ButtonRow>
             )}
@@ -618,7 +620,7 @@ export function GradesTab({
             testid="skill-checks-none"
             action={
               writingChecks !== undefined ? (
-                <RunningJob chat={writingChecks} />
+                <RunningJob plane={plane} chat={writingChecks} />
               ) : (
                 <ButtonRow>
                   {/* One chat on the project's default profile, the core's prompt typed and not
@@ -629,7 +631,7 @@ export function GradesTab({
                     tooltip={held}
                     onPress={() => askSkillChat({ plane, kind: "checks", level, name })}
                   >
-                    {askAChat(level, "write checks")}
+                    {askAChat(level, "write checks", plane)}
                   </Button>
                   <Button
                     variant="link"

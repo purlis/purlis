@@ -25,6 +25,7 @@ fn draft_grade_running(
     running().insert(
         grade.to_owned(),
         Running {
+            batch: None,
             plane: plane.clone(),
             stop: Arc::clone(&stop),
             after_edit: None,

@@ -99,7 +99,7 @@ const PROGRESS_EVERY = 10;
  */
 const THREAD_SLACK = 40;
 
-const app = built(process.platform === "win32" ? "charter-app.exe" : "charter-app");
+const app = built(process.platform === "win32" ? "purlis-app.exe" : "purlis-app");
 
 /** The app's window and its session host, by pid. */
 interface TheApp {

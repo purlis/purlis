@@ -3757,6 +3757,12 @@ The complete list of what [0.5.0](../CHANGELOG.md) brought, from v0.4.1. The cha
 
 ## Changed
 
+- **Projects come back side by side when purlis starts.** Every project you had open gets its row
+  in the projects sidebar at once, in its usual order, with a loading mark until it is ready. The
+  project in front opens first, up to 3 others open alongside it, and the rest wait their turn.
+  Choose a waiting project and it opens next. One slow project no longer holds up the others. A
+  row says "Still loading…" after 15 seconds without an answer, and "2 of 3 chats back" when only
+  some of a project's chats came back. A screen reader hears how many projects are still loading.
 - **One rule says where a chat opens.** A new chat fills an empty pane in the front tab, or else
   gets a new tab, and never replaces anything. Pressing a chat that's off screen fills an empty
   pane, shows it in a one-pane tab, and gets a new tab in a split, so your layout survives
@@ -7451,6 +7457,8 @@ The complete list of what [0.5.0](../CHANGELOG.md) brought, from v0.4.1. The cha
 
 ## Fixed
 
+- **See what this does no longer offers a command that would be refused.** On a pool that names no profiles yet, unticking the profile it keeps showed `purlis pool remove-profile`, which refuses that pool. The step now says what does take it off: tick another profile first, or use Remove on the pool in Settings (#5349).
+- **A fresh runner's check of a very large image has a time limit, and says when it runs out.** A check looks through the runner's files for at most 5 minutes. Past that the runner stays, and the window says why and what helps. Discard now counts while a check is running: the runner goes when that check ends, and the window says so. It used to fail after the pool's longest wait for an answer, 30 seconds by default, while the look ran on and the next try started another beside it (#5312).
 - A login's read of whether a page asks to sign in no longer loses a site it asked about, and keeps the sites the person allowed.
 - **A moved pane names the chat it shows.** After a chat is dragged into a split, each pane head and sidebar row says its own chat. Stored names were never changed, so nothing needs repairing (#5283).
 - **A drag's preview is drawn over the pane.** Dragging to a pane's edge draws over that half of the pane, not as a line across the top of the window. A pane or tab dragged over itself draws no warning, since letting go there moves nothing (#5284).

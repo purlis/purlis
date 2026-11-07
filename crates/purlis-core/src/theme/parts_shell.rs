@@ -45,7 +45,7 @@ pub(super) const PANEL: Family = Family {
         },
         Part {
             name: "title",
-            since: super::NEXT,
+            since: 13,
             description: "The title of the view it shows, on its head: the view's one heading.",
             properties: WORDS,
         },
@@ -126,7 +126,7 @@ pub(super) const PANEL_SECTION: Family = Family {
         },
         Part {
             name: "top",
-            since: super::NEXT,
+            since: 13,
             description: "A view's top, held in place while its rows scroll: its heading line \
                           where it draws one, then its field, then its tabs and chips, on the \
                           panel's fill. A section with a top is a view.",
@@ -278,7 +278,7 @@ pub(super) const STATUS_ITEM: Family = Family {
         },
         Part {
             name: "dot",
-            since: super::NEXT,
+            since: 13,
             description: "The dot a project's or the app's result leaves on the Notices item's \
                           corner while its card is hidden, where the most urgent is news: its \
                           disc and its fill, ringed in the bar's ground.",
@@ -286,7 +286,7 @@ pub(super) const STATUS_ITEM: Family = Family {
         },
         Part {
             name: "dot-warning",
-            since: super::NEXT,
+            since: 13,
             description: "The dot on the Notices item's corner where the most urgent of its \
                           hidden results is a warning: its triangle and its fill, ringed in the \
                           bar's ground.",
@@ -530,7 +530,7 @@ pub(super) const TITLEBAR: Family = Family {
         },
         Part {
             name: "dot",
-            since: super::NEXT,
+            since: 13,
             description: "The dot a notice about the workspace leaves on its chip's corner while \
                           its card is hidden, where the most urgent is news: its disc and its \
                           fill, ringed in the bar's ground.",
@@ -538,14 +538,14 @@ pub(super) const TITLEBAR: Family = Family {
         },
         Part {
             name: "dot-warning",
-            since: super::NEXT,
+            since: 13,
             description: "The dot on a chip's corner where the most urgent of its hidden notices \
                           is a warning: its triangle and its fill, ringed in the bar's ground.",
             properties: &[Prop::Fill, Prop::Text],
         },
         Part {
             name: "dot-needs",
-            since: super::NEXT,
+            since: 13,
             description: "The dot on a chip's corner while a chat asks the person to remove the \
                           workspace, the most urgent kind: its raised hand and its fill, ringed \
                           in the bar's ground.",
@@ -553,7 +553,7 @@ pub(super) const TITLEBAR: Family = Family {
         },
         Part {
             name: "row-count",
-            since: super::NEXT,
+            since: 13,
             description: "How many things wait on the person in a switcher's row, after its \
                           name: its wash and its digits (#3947).",
             properties: &[Prop::Fill, Prop::Text],
@@ -574,14 +574,14 @@ pub(super) const TITLEBAR: Family = Family {
         },
         Variant {
             name: "root",
-            since: super::NEXT,
+            since: 13,
             description: "The plane root's house after the project's name, outside the strip: \
                           always there, never unpinned, the accent's wash while the root is in front.",
             consent: None,
         },
         Variant {
             name: "dormant",
-            since: super::NEXT,
+            since: 13,
             description: "A pin whose workspace is gone, kept dormant, after the live pins: muted \
                           slanted words and a dotted edge; a press shows its notice.",
             consent: None,

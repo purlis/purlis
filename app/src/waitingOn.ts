@@ -31,6 +31,9 @@ export const STRIP = {
   backToLast: "Back to the last",
   /** Where a permission or a prompt is answered on a chat on screen: its harness's own prompt. */
   answerBelow: "Answer it in the terminal below",
+  /** A terminal prompt's row in the band (#5215): what it is, and its way there. */
+  prompt: "Terminal prompt",
+  goToPrompt: "Go to prompt",
   /** The app heard no message from it: its harness gave none, or purlis started since. */
   noMessage: "No message to show. Scroll up in the terminal below to read what it said.",
 } as const;

@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, type RefObject } from "react";
 import { X } from "lucide-react";
 import {
   commands,
+  type DeletedRename,
   type DeletedSkill,
   type SkillGrant,
   type SkillLevel,
@@ -18,9 +19,10 @@ import { counted } from "./dispatches";
 import { Choice, SettingRow } from "./settings/components";
 import { whoGets } from "./SkillChangeDialogs";
 import { GrantPicker } from "./SkillLevelPickers";
-import { useRead } from "./SkillRead";
+import { BUSY, useRead } from "./SkillRead";
 import { SetReviewPage, memberKey, setVerb, type Stays } from "./SkillSetReview";
-import { NAME_TAKEN_STAYS } from "./SkillStudioDeleted";
+import { BRING_BACK_WORDS, useNameTaken, type Taking } from "./SkillNameTaken";
+import { MAKE_ROOM_ACTS } from "./makeRoom";
 import { levelKey, levelOf, sameLevel } from "./skillChanges";
 import type { StudioScope } from "./skillStudio";
 import { Badge } from "./ui/badge/Badge";
@@ -47,13 +49,19 @@ import { ViewPageHeader } from "./ui/panel/ViewFrame";
  * - **Off, it costs nothing**: the Library draws exactly what it drew before, and nothing here
  *   is read until Select is pressed.
  *
- * {@link SELECT_ACTS} is the one list of what can be done, in its order: Bulk Grade (#5356),
- * Review updates (#5354) and Make room (#5355) join it as rows of their own.
+ * {@link SELECT_ACTS} is the one list of what can be done, in its order: Grade's review and its
+ * grades running (#5356) are `SkillLibraryGrade.tsx`'s, and Review updates' review (#5354) is
+ * `SetUpdateReviewPage`. **Make room** (#5355) is this mode opened least used first, offering
+ * only `MAKE_ROOM_ACTS` of it (`makeRoom.ts`).
  */
+
+/** **What Select can do**: a change to the set (#5331's), Grade (#5356), which changes no
+ *  skill, or Review updates (#5354), whose review is its own page. */
+export type SelectAct = SkillSetAct | "grade" | "update";
 
 /** **What Select can do to the skills chosen**, in the page's order, each with the line under
  *  it. */
-export const SELECT_ACTS: readonly { act: SkillSetAct; label: string; says: string }[] = [
+export const SELECT_ACTS: readonly { act: SelectAct; label: string; says: string }[] = [
   { act: "turn-off", label: "Turn off", says: "Chats started after this don't get them." },
   { act: "turn-on", label: "Turn on", says: "Chats started after this get them again." },
   { act: "pin", label: "Pin", says: "Always in the chat's list, whatever the budget." },
@@ -61,7 +69,13 @@ export const SELECT_ACTS: readonly { act: SkillSetAct; label: string; says: stri
   { act: "archive", label: "Archive", says: "They never load until they are restored." },
   { act: "unarchive", label: "Unarchive", says: "They load again." },
   { act: "move", label: "Move to another level", says: "Skills keep their history and grades." },
+  { act: "grade", label: "Grade", says: "A few at a time, under a limit you set." },
   { act: "export", label: "Export", says: "A zip or a folder." },
+  {
+    act: "update",
+    label: "Review updates",
+    says: "Anything that adds a script, hook, tool or network access starts unticked.",
+  },
   { act: "delete", label: "Delete", says: "They stay in Deleted for 30 days." },
 ];
 
@@ -72,7 +86,10 @@ export type Selecting = {
   /** The list shows only what is chosen: "3 not shown" was pressed. */
   only: boolean;
   /** The action whose review is open in the selection page's place. */
-  acting?: SkillSetAct;
+  acting?: SelectAct;
+  /** **Make room** (#5355): opened from an over budget, least used first, with only
+   *  {@link MAKE_ROOM_ACTS}. */
+  room?: boolean;
 };
 
 /** **What an action reaches of those chosen**: the skills it changes, as a set's members, and
@@ -95,13 +112,17 @@ function pinnedBy(skill: StudioSkill, by: SkillPinner): boolean {
 }
 
 /** Why `skill` stays as it is under `act`, or `null` where `act` changes it. */
-function staysWhy(act: SkillSetAct, skill: StudioSkill, at: SelectFor): string | null {
+function staysWhy(act: SelectAct, skill: StudioSkill, at: SelectFor): string | null {
   if (skill.level === "built-in")
     return act === "export"
       ? "Built-in skills come with purlis, so there is nothing to export."
-      : "Built-in skills can't be changed.";
+      : act === "grade"
+        ? "Built-in skills come with purlis, so they are not graded here."
+        : "Built-in skills can't be changed.";
   if (levelOf(skill, at.scope) === null)
-    return "It comes from outside the project, so its program changes it.";
+    return act === "grade"
+      ? "It comes from outside the project, so it is not graded here."
+      : "It comes from outside the project, so its program changes it.";
   switch (act) {
     case "turn-off":
     case "turn-on":
@@ -118,13 +139,15 @@ function staysWhy(act: SkillSetAct, skill: StudioSkill, at: SelectFor): string |
       return skill.archived ? "Archived already." : null;
     case "unarchive":
       return skill.archived ? null : "Not archived.";
+    case "update":
+      return skill.source_label === null ? "It wasn't installed from a source." : null;
     default:
       return null;
   }
 }
 
 /** **What `act` reaches of `chosen`**: those it changes, and those it leaves, with why. */
-export function reachOf(act: SkillSetAct, chosen: readonly StudioSkill[], at: SelectFor): Reach {
+export function reachOf(act: SelectAct, chosen: readonly StudioSkill[], at: SelectFor): Reach {
   const will: SkillSetMember[] = [];
   const stays: Stays[] = [];
   for (const skill of chosen) {
@@ -138,7 +161,7 @@ export function reachOf(act: SkillSetAct, chosen: readonly StudioSkill[], at: Se
 
 /** Whether `act` can be asked at all from where the studio is: a turn needs a workspace, a pin a
  *  workspace or a persona. */
-function askable(act: SkillSetAct, at: SelectFor): boolean {
+function askable(act: SelectAct, at: SelectFor): boolean {
   if (act === "turn-off" || act === "turn-on") return at.workspace !== null;
   if (act === "pin" || act === "unpin") return at.pinner !== null;
   return true;
@@ -319,7 +342,10 @@ export function SelectionPage({
   onOut,
   onClear,
   onOnly,
+  room = false,
 }: {
+  /** Make room (#5355): only its actions are offered. */
+  room?: boolean;
   /** Every skill chosen, the list's order. */
   chosen: readonly { key: string; skill: StudioSkill }[];
   /** Those of them the list does not draw now: filtered out, or a built-in folded away. */
@@ -327,7 +353,7 @@ export function SelectionPage({
   only: boolean;
   at: SelectFor;
   busy: boolean;
-  onAct: (act: SkillSetAct) => void;
+  onAct: (act: SelectAct) => void;
   onOut: (key: string) => void;
   onClear: () => void;
   onOnly: () => void;
@@ -336,12 +362,17 @@ export function SelectionPage({
     return (
       <EmptyState
         headline="Nothing selected"
-        body="Click a row, or press Space on it; Shift-click takes a range. ⌘A takes everything the search and filters match, and Esc leaves Select."
+        body={
+          room
+            ? "The skills least used in the last 30 days are listed first. Tick what goes, to turn it off or archive it, or what stays, to pin it. Esc leaves Make room."
+            : "Click a row, or press Space on it; Shift-click takes a range. ⌘A takes everything the search and filters match, and Esc leaves Select."
+        }
         testid="select-none"
       />
     );
   const skills = chosen.map((one) => one.skill);
   const acts = SELECT_ACTS.filter((one) => askable(one.act, at))
+    .filter((one) => !room || MAKE_ROOM_ACTS.includes(one.act))
     .map((one) => ({ ...one, reach: reachOf(one.act, skills, at).will.length }))
     .filter((one) => one.reach > 0)
     .map((one) => ({
@@ -622,7 +653,7 @@ export function DeletedSelectionPage({
         testid="select-none"
       />
     );
-  const back = chosen.filter((one) => !one.reserved).length;
+  const back = chosen.length;
   const count = (n: number) => `${n} of ${chosen.length}`;
   return (
     <div className="skill-studio-item" data-testid="select-page">
@@ -669,11 +700,17 @@ export function DeletedSelectionPage({
   );
 }
 
+/** A deleted skill, as the name-taken step asks of it (#5457): by its id, each one named. */
+function taking(one: DeletedSkill): Taking {
+  return { key: one.id, name: one.name, clash: one.clash, named: true };
+}
+
 /**
- * **The review of Bring back or Delete now**, in the selection page's place. Bring back leaves
- * out a skill whose name belongs to purlis now, which comes back only on its own (#5331's D-7);
- * Delete now says which leave only this list and which leave this machine for good, and is the
- * one change on the page with no undo.
+ * **The review of Bring back or Delete now**, in the selection page's place. Bring back asks a
+ * new name of each skill whose name belongs to purlis now, as an install asks one of a skill
+ * whose name is taken (#5457): filled in as the core offers it, confirmed or left in Deleted,
+ * the rest coming back as named in the same change. Delete now says which leave only this list
+ * and which leave this machine for good, and is the one change on the page with no undo.
  */
 export function DeletedSetReview({
   act,
@@ -686,11 +723,14 @@ export function DeletedSetReview({
   chosen: readonly DeletedSkill[];
   busy: boolean;
   onCancel: () => void;
-  onApply: (going: DeletedSkill[]) => void;
+  /** Apply it to `going`, each of `under` coming back under its new name. */
+  onApply: (going: DeletedSkill[], under: DeletedRename[]) => void;
 }) {
   const now = act === "delete-now";
-  const going = now ? [...chosen] : chosen.filter((one) => !one.reserved);
-  const stay = now ? [] : chosen.filter((one) => one.reserved);
+  const taken = useNameTaken(now ? [] : chosen.map(taking), BRING_BACK_WORDS);
+  const going = now ? [...chosen] : chosen.filter((one) => !taken.skipped.has(one.id));
+  const asking = now ? [] : going.filter((one) => one.clash !== null);
+  const why = busy ? BUSY : now ? undefined : taken.why;
   const skills = counted(going.length, "skill", "skills");
   const kept = going.filter((one) => one.in_history).length;
   const gone = going.length - kept;
@@ -704,8 +744,13 @@ export function DeletedSetReview({
       main={{
         children: now ? `Delete ${skills} now` : `Bring back ${skills}`,
         ...(now ? { variant: "danger" as const } : { byReturn: false }),
-        isDisabled: busy || going.length === 0,
-        onPress: () => onApply(going),
+        isDisabled: why !== undefined || going.length === 0,
+        tooltip: why,
+        onPress: () =>
+          onApply(
+            going,
+            taken.renames.map(({ key, to }) => ({ id: key, to })),
+          ),
       }}
     >
       <h2 className="ui-text-strong">{title}</h2>
@@ -724,22 +769,29 @@ export function DeletedSetReview({
         <h3 id="set-going" className="ui-text-small ui-text-strong">
           {now ? "Will be deleted now" : "Will come back"}
         </h3>
-        {going.map((one) => (
-          <p key={one.id} className="honest">
-            <code>{one.name}</code> ({one.label})
-          </p>
-        ))}
-      </section>
-      {stay.length > 0 && (
-        <section aria-labelledby="set-stays" className="skill-review" data-testid="set-stays">
-          <h3 id="set-stays" className="ui-text-small ui-text-strong">
-            Stay as they are
-          </h3>
-          {stay.map((one) => (
-            <p key={one.id} className="honest" data-testid={`set-stays-${one.name}`}>
-              <code>{one.name}</code> {NAME_TAKEN_STAYS}
+        {going
+          .filter((one) => !asking.includes(one))
+          .map((one) => (
+            <p key={one.id} className="honest">
+              <code>{one.name}</code> ({one.label})
             </p>
           ))}
+      </section>
+      {!now && chosen.some((one) => one.clash !== null) && (
+        <section aria-labelledby="set-taken" className="skill-review" data-testid="set-taken">
+          <h3 id="set-taken" className="ui-text-small ui-text-strong">
+            Names that belong to purlis now
+          </h3>
+          {chosen
+            .filter((one) => one.clash !== null)
+            .map((one) => (
+              <div key={one.id}>
+                <p className="honest">
+                  <code>{one.name}</code> ({one.label})
+                </p>
+                {taken.choice(taking(one), busy)}
+              </div>
+            ))}
         </section>
       )}
     </ReviewPage>

@@ -3,7 +3,8 @@
 
 //! **A secret purlis fills** (#5115, spec #5100): one vault value into one field of a browser
 //! the agent is using, under the agent's own lease, so the person's take-over cuts it as it cuts
-//! any call of the agent's.
+//! any call of the agent's. A take-over that comes once the value is in its field answers that it
+//! went in, with nothing of the page the person now drives, so their view marks the field.
 //!
 //! **The engine is the one judge at the moment of filling** (SF-2, SF-13). The field is the one
 //! the agent's reference names now; the origin it is judged by is that of the document of the
@@ -59,12 +60,46 @@ use crate::drive::{
     SecretFill, lock,
 };
 
-/// The function that says what kind of field it runs on, and what the page labels it: a
-/// constant, run in purlis's own world on the field, so the page's own redefinitions of what it
-/// reads are never the ones it calls.
-pub(crate) const FIELD_KIND: &str = r"function () {
-  if (!(this instanceof Element)) return { kind: 'other', label: '' };
-  const oneLine = ['password', 'text', 'email', 'number', 'tel', 'url'];
+/// **What a field says of where its value goes, and what it is for**, as script run in purlis's
+/// own world (the person's rulings of 2026-11-06): whether the form it is in sends it by GET,
+/// in the page's address (its own `method`, or a submit button's `formmethod`, that isn't
+/// `post`), and whether the page marks it a card's or payment field (an `autocomplete` token
+/// that begins `cc-`). The attributes are read, as a control named `method` stands in for the
+/// form's own property.
+macro_rules! field_facts {
+    () => {
+        r#"  const attribute = (element, name) => Element.prototype.getAttribute.call(element, name);
+  const formOf = (element) =>
+    element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement
+      ? element.form
+      : null;
+  const sentByGet = (form) => {
+    if (!form) return false;
+    if ((attribute(form, 'method') || 'get').toLowerCase() !== 'post') return true;
+    const controls = Object.getOwnPropertyDescriptor(HTMLFormElement.prototype, 'elements').get.call(form);
+    return Array.prototype.some.call(controls, (control) => {
+      const how = attribute(control, 'formmethod');
+      return how !== null && how.toLowerCase() !== 'post';
+    });
+  };
+  const forPayment = (element) =>
+    (attribute(element, 'autocomplete') || '')
+      .toLowerCase()
+      .split(/\s+/)
+      .some((token) => token.startsWith('cc-'));
+"#
+    };
+}
+
+/// The function that says what kind of field it runs on, what the page labels it, and its
+/// [`field_facts`]: a constant, run in purlis's own world on the field, so the page's own
+/// redefinitions of what it reads are never the ones it calls.
+pub(crate) const FIELD_KIND: &str = concat!(
+    r"function () {
+  if (!(this instanceof Element)) return { kind: 'other', label: '', by_get: false, payment: false };
+",
+    field_facts!(),
+    r"  const oneLine = ['password', 'text', 'email', 'number', 'tel', 'url'];
   let kind = 'other';
   if (this instanceof HTMLInputElement) {
     if (oneLine.includes(this.type) && !this.disabled && !this.readOnly) kind = 'one_line';
@@ -79,8 +114,9 @@ pub(crate) const FIELD_KIND: &str = r"function () {
   if (!label.trim()) label = said(this.getAttribute('aria-label'));
   if (!label.trim()) label = said(this.getAttribute('placeholder'));
   if (!label.trim()) label = said(this.getAttribute('name'));
-  return { kind, label };
-}";
+  return { kind, label, by_get: sentByGet(formOf(this)), payment: forPayment(this) };
+}"
+);
 
 /// Where the form this element is in sends it. A control named `action` or `method` stands in for
 /// the form's own property, so the attributes are read.
@@ -127,7 +163,8 @@ macro_rules! takes_nothing_from_a_filled_field {
 
 /// The function that writes a value into the field it is given, run in purlis's own world in
 /// the field's frame: a constant. In the same step it checks that the field is still in its
-/// document and that the document is on `origin`, answering `moved` where not and writing
+/// document and that the document is on `origin`, by its address and by the origin the document
+/// itself has (a sandboxed one has none), answering `moved` where not and writing
 /// nothing, so no focus and no moment between a check and a write decides where the value goes.
 /// Before the value goes in, a copy, a cut and a drag started on the field are stopped for as
 /// long as the field lives, and so is one anywhere in its document of a field or a selection that
@@ -139,10 +176,15 @@ macro_rules! takes_nothing_from_a_filled_field {
 ///
 /// A multi-line text box or an editable area is written only where `manyLines` says the person
 /// was asked about this fill (#5120), and answers `kind` otherwise, in the same step, before
-/// anything of the field is touched.
+/// anything of the field is touched. Under a grant (`granted`, no notice for this fill), a field
+/// whose form sends it by GET answers `get`, and a card's or payment field `payment`, in that
+/// same step ([`field_facts`], the person's rulings of 2026-11-06).
 pub(crate) const WRITE_FIELD: &str = concat!(
-    r#"function (field, value, origin, manyLines) {
+    r#"function (field, value, origin, manyLines, granted) {
   if (!field.isConnected || field.ownerDocument.location.origin !== origin) return 'moved';
+  // A sandboxed document's address says an origin its document does not have.
+  const view = field.ownerDocument.defaultView;
+  if (!view || view.origin !== origin) return 'moved';
   let own = null;
   const oneLine = ['password', 'text', 'email', 'number', 'tel', 'url'];
   if (field instanceof HTMLInputElement) {
@@ -154,6 +196,10 @@ pub(crate) const WRITE_FIELD: &str = concat!(
     own = Object.getOwnPropertyDescriptor(Node.prototype, 'textContent');
   }
   if (own === null) return 'kind';
+"#,
+    field_facts!(),
+    r#"  if (granted === true && sentByGet(formOf(field))) return 'get';
+  if (granted === true && forPayment(field)) return 'payment';
 "#,
     takes_nothing_from_a_filled_field!(),
     r#"  own.set.call(field, value);
@@ -187,19 +233,42 @@ struct Resolved {
     key: NodeKey,
 }
 
+/// **What a fill the person took the browser over from, once its value was in, answers**: that
+/// it went in and the browser changed hands, with nothing of the page they now drive.
+fn taken_over_once_filled(fill: &SecretFill) -> Answer {
+    Answer {
+        page: None,
+        settled: crate::drive::Settled::Yes,
+        opened: Vec::new(),
+        content: Content::Nothing,
+        note: Some(format!(
+            "purlis filled {} into {} on {}, and then the person took this browser over: the \
+             value is kept out of everything you read, and while the page holding it is open \
+             you press no key and type or choose nothing in it. Once they hand the browser \
+             back, take a new snapshot",
+            fill.key, fill.target, fill.origin
+        )),
+        repeated: false,
+        asked: Vec::new(),
+        downloads: Vec::new(),
+    }
+}
+
 impl Browser {
     /// **What the field `target` names is** (#5115): the origin of its frame's document as the
     /// engine records it, its label and its kind. Nothing is typed.
     pub(super) fn describe_field(&self, target: &Ref) -> Result<Answer, Refusal> {
         let at = self.resolved(target)?;
         let (_, origin) = self.frame_now(&at).ok_or_else(|| stale(target))?;
-        let (kind, label) = self.kind_of(&at, target)?;
+        let read = self.kind_of(&at, target)?;
         Ok(self.answer_now(
             &at.page,
             Content::Field(FieldInfo {
                 origin,
-                label: plain_label(&label),
-                kind,
+                label: plain_label(&read.label),
+                kind: read.kind,
+                by_get: read.by_get,
+                payment: read.payment,
             }),
         ))
     }
@@ -223,10 +292,12 @@ impl Browser {
             // to a site the agent is kept off (#5152).
             let _call = super::AgentCall::begins(&self.inner.agent_calls);
             let filled = self.filling(fill, hold);
-            if self.cut() {
-                Err(Refusal::Interrupted)
-            } else {
-                filled
+            match filled {
+                // Taken over once the value was in its field: it went in, so the person's view
+                // marks it, and nothing of the page they now drive is answered.
+                Ok(_) if self.cut() => Ok(taken_over_once_filled(fill)),
+                Err(_) if self.cut() => Err(Refusal::Interrupted),
+                filled => filled,
             }
         };
         self.kept_out(answer.map(|answer| self.with_asked(answer)))
@@ -267,8 +338,7 @@ impl Browser {
             }
         }
         // SF-5: read again as it fills, so a field that became multi-line since is caught.
-        let (kind, _) = self.kind_of(&at, target)?;
-        takes(kind, fill, target)?;
+        takes(self.kind_of(&at, target)?.kind, fill, target)?;
         self.blank_node(&at.page, at.key.clone())?;
         if self.frame_now(&at) != Some((document, Some(origin.to_owned()))) {
             return Err(changed(target, origin));
@@ -351,6 +421,7 @@ impl Browser {
                             { "value": fill.value.as_str() },
                             { "value": origin },
                             { "value": fill.multi_line },
+                            { "value": fill.under_a_grant },
                         ],
                         "returnByValue": true,
                     }),
@@ -379,6 +450,10 @@ impl Browser {
             Some(Value::String(cut)) if cut == "cut" => Err(Refusal::Interrupted),
             Some(Value::String(moved)) if moved == "moved" => Err(changed(target, origin)),
             Some(Value::String(kind)) if kind == "kind" => Err(asks_each_time(target)),
+            Some(Value::String(by)) if by == "get" => Err(sent_by_get(target, origin)),
+            Some(Value::String(paying)) if paying == "payment" => {
+                Err(payment_field(target, origin))
+            }
             _ => Err(not_filled(format!(
                 "purlis could not reach {target} on {origin}, so nothing was filled: take a new \
                  snapshot"
@@ -455,9 +530,9 @@ impl Browser {
             .map(str::to_owned)
     }
 
-    /// What kind of field `at`'s element is, and what the page labels it, read in purlis's own
-    /// world.
-    fn kind_of(&self, at: &Resolved, target: &Ref) -> Result<(FieldKind, String), Refusal> {
+    /// What kind of field `at`'s element is, what the page labels it, and its [`field_facts`],
+    /// read in purlis's own world.
+    fn kind_of(&self, at: &Resolved, target: &Ref) -> Result<FieldRead, Refusal> {
         let object = self.field_object(at).ok_or_else(|| stale(target))?;
         let on = Some(at.node_session.as_str());
         let read = self.devtools().call(
@@ -475,22 +550,68 @@ impl Browser {
         let read = read.map_err(|_| Refusal::Unknown)?;
         // What the function could not read is no field a secret goes into.
         if read.get("exceptionDetails").is_some() {
-            return Ok((FieldKind::Other, String::new()));
+            return Ok(FieldRead {
+                kind: FieldKind::Other,
+                label: String::new(),
+                by_get: false,
+                payment: false,
+            });
         }
         let value = read.pointer("/result/value").ok_or(Refusal::Unknown)?;
-        let kind = match value.get("kind").and_then(Value::as_str) {
-            Some("one_line") => FieldKind::OneLine,
-            Some("multi_line") => FieldKind::MultiLine,
-            Some("editable") => FieldKind::Editable,
-            _ => FieldKind::Other,
-        };
-        let label = value
-            .get("label")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_owned();
-        Ok((kind, label))
+        Ok(field_read_of(value))
     }
+}
+
+/// **What [`FIELD_KIND`] answered, read**: what it can't say of the field's form or its mark is
+/// said as the stricter, so a grant fills neither.
+fn field_read_of(value: &Value) -> FieldRead {
+    let kind = match value.get("kind").and_then(Value::as_str) {
+        Some("one_line") => FieldKind::OneLine,
+        Some("multi_line") => FieldKind::MultiLine,
+        Some("editable") => FieldKind::Editable,
+        _ => FieldKind::Other,
+    };
+    let label = value
+        .get("label")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_owned();
+    let fact = |name: &str| value.get(name).and_then(Value::as_bool).unwrap_or(true);
+    FieldRead {
+        kind,
+        label,
+        by_get: fact("by_get"),
+        payment: fact("payment"),
+    }
+}
+
+/// A field as [`FIELD_KIND`] reads it.
+#[derive(Debug)]
+struct FieldRead {
+    kind: FieldKind,
+    label: String,
+    by_get: bool,
+    payment: bool,
+}
+
+/// What a fill under a grant is refused with where the field's form sends it by GET (the
+/// person's ruling of 2026-11-06): in the page's address, which the site's logs and the
+/// browser's history keep.
+fn sent_by_get(target: &Ref, origin: &str) -> Refusal {
+    not_filled(format!(
+        "{target} on {origin} is in a form that sends what it holds in the page's address (by \
+         GET), so purlis fills nothing there under the person's standing Allow: tell them what \
+         needs it"
+    ))
+}
+
+/// What a fill under a grant is refused with where the page marks the field a card's or payment
+/// one (the person's ruling of 2026-11-06): such a field is asked about each time.
+fn payment_field(target: &Ref, origin: &str) -> Refusal {
+    not_filled(format!(
+        "{target} on {origin} is a card or payment field, which the person is asked about each \
+         time, so nothing was filled: take a new snapshot and fill it again"
+    ))
 }
 
 /// The page's label made plain: one line, no characters a person doesn't see, at most
@@ -572,5 +693,35 @@ mod tests {
         assert_eq!(plain_label("  API\n key\u{200b} "), "API key");
         let long = "k".repeat(MOST_LABEL_CHARS + 20);
         assert_eq!(plain_label(&long).chars().count(), MOST_LABEL_CHARS);
+    }
+}
+
+#[cfg(test)]
+mod facts_tests {
+    use super::*;
+
+    /// What the field's read can't say of its form or its mark is said as the stricter: a grant
+    /// then fills nothing without the person (the rulings of 2026-11-06).
+    #[test]
+    fn a_field_read_that_says_nothing_of_its_form_or_mark_is_said_sent_by_get_and_for_payment() {
+        let silent = field_read_of(&json!({ "kind": "one_line", "label": "Secret word" }));
+        assert!(silent.by_get && silent.payment, "{silent:?}");
+        let said = field_read_of(
+            &json!({ "kind": "one_line", "label": "Secret word", "by_get": false, "payment": false }),
+        );
+        assert!(!said.by_get && !said.payment, "{said:?}");
+    }
+
+    /// A card or payment field refused under a grant says why, in words of its own.
+    #[test]
+    fn a_payment_field_refused_under_a_grant_says_it_is_asked_about_each_time() {
+        let Refusal::NotFilled(told) = payment_field(&Ref::new("e4"), "https://shop.test") else {
+            panic!("not filled");
+        };
+        assert!(told.contains("card or payment"), "{told}");
+        let Refusal::NotFilled(told) = sent_by_get(&Ref::new("e4"), "https://shop.test") else {
+            panic!("not filled");
+        };
+        assert!(told.contains("by GET"), "{told}");
     }
 }

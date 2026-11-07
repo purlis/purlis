@@ -103,13 +103,16 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "words, under the form it refused; the form, kept as it was typed, and Add pool or Check " +
       "its key are the way on",
   },
+  "WorkspaceWrites.tsx": {
+    count: 3,
+    why: ACTION,
+  },
   "ui/notice/Notice.tsx": {
-    count: 4,
+    count: 3,
     why:
       "the notice family's message part, the live region of a card Notice (#3344), its said " +
-      "part, the live region of a Notices centre card, and its sub and chat-words parts, the " +
-      "two places in that region it is switched off, for an age's and a fold's own words " +
-      "(#5217): drawn live only by " +
+      "part, the live region of a Notices centre card, and its sub part, the place in that " +
+      "region it is switched off, for an age's own words (#5217): drawn live only by " +
       "`Notice.tsx`, which this guard holds as the one way to draw a standing line",
   },
   "AddVision.tsx": {
@@ -544,13 +547,6 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
   "SkillSources.tsx": {
     count: 2,
     why: "the Sources page's updates still being read (#3687), and Install all's review that is more than one read, with its first part to review in place (#4024)",
-  },
-  "SkillStudioDeleted.tsx": {
-    count: 1,
-    why:
-      "Bring back's refusal of a built-in skill's name for a deleted skill whose own a built-in " +
-      "took (#3729), said as it is typed beside the New name field, in the core's sentence. " +
-      "Bring back is the retry",
   },
   "SessionPane.tsx": {
     count: 1,

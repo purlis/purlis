@@ -510,14 +510,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn repos_is_an_old_repos_name_however_it_is_cased_even_once_the_workspace_keeps_it() {
-        // #5373 adds `repos` to the names a workspace keeps, which are matched in any case. Asked
-        // of that rule here, because the list does not hold `repos` yet.
-        let keeps = |name: &str| {
-            ["memory", "repos"]
-                .iter()
-                .any(|own| own.eq_ignore_ascii_case(name))
-        };
+    fn repos_is_an_old_repos_name_however_it_is_cased_though_the_workspace_keeps_it() {
+        let keeps = contain::workspace_keeps;
+        assert!(keeps("repos"), "#5373 reserves it");
 
         assert!(!kept("repos", keeps));
         assert!(

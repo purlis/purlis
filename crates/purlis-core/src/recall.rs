@@ -74,6 +74,9 @@ pub struct Recalled {
     /// Each base, or entry, that could not be looked at — named by the caller, because a
     /// search that did not look is not a search that found nothing (#1084).
     pub unread: Unread,
+    /// How far behind the files the answer may be, when the project index gave it; `None` when
+    /// the files were scanned.
+    pub index: Option<crate::projectindex::Freshness>,
 }
 
 /// `items[:n]`, with Python's meaning for a negative `n`.
@@ -308,7 +311,7 @@ pub fn ephemeral_dir(root: &Path, session: &str, persona: &str) -> PathBuf {
 /// (#336). A link to a directory is offered and not walked — one back up the tree would
 /// never end. A directory it can tell is one and cannot list is still offered, and the
 /// listing names it; an entry whose kind cannot be told is unread.
-fn ref_dirs(root: &Path, base: &Path, unread: &mut Unread) -> Vec<PathBuf> {
+pub(crate) fn ref_dirs(root: &Path, base: &Path, unread: &mut Unread) -> Vec<PathBuf> {
     match directory(base) {
         Err(code) => {
             unread.push((base.to_path_buf(), code));
@@ -367,11 +370,142 @@ fn label_of(path: &Path, sources: &[(String, PathBuf)]) -> String {
     "?".to_string()
 }
 
-/// THE memory fetch — `recall.recall`.
+/// THE memory fetch: from the project index where there is one this build can read, and by
+/// scanning the files where there is not (ADR 0079, #5498).
+///
+/// Both find the same memories for the same ask. With a query, the index ranks them by BM25,
+/// the title weighing three times the body, and the scan by its keyword count; without one,
+/// both list every memory in scope newest first. The ephemeral base is never indexed, so an ask
+/// that names it is scanned.
+pub fn recall(root: &Path, ask: &Ask) -> Recalled {
+    if ask.scopes.iter().any(|s| s == "ephemeral") {
+        return scan(root, ask);
+    }
+    match crate::projectindex::Reader::open(root)
+        .and_then(|index| from_index(root, ask, &index).ok())
+    {
+        Some(got) => got,
+        None => scan(root, ask),
+    }
+}
+
+/// The index's reach for `ask`: the bases [`sources`] would list, by kind and owner.
+pub fn reach(ask: &Ask) -> crate::projectindex::Reach {
+    use crate::projectindex::{Kind, Reach};
+    let has = |scope: &str| ask.scopes.iter().any(|s| s == scope);
+    let mut reach = Reach::none();
+    if has("workspace") {
+        match &ask.workspaces {
+            Some(Workspaces::All) => reach = reach.with(Kind::Workspace, None),
+            Some(Workspaces::One(name)) => reach = reach.with(Kind::Workspace, Some(name)),
+            None => {}
+        }
+    }
+    if has("persona")
+        && let Some(name) = &ask.persona
+    {
+        reach = reach.with(Kind::Persona, Some(name));
+    }
+    if has("shared") {
+        reach = reach.with(Kind::Shared, Some(crate::contain::SHARED_PERSONA));
+    }
+    if has("refs") {
+        if let Some(name) = &ask.persona {
+            reach = reach.with(Kind::Refs, Some(name));
+        }
+        reach = reach.with(Kind::Refs, Some(crate::contain::SHARED_PERSONA));
+    }
+    reach
+}
+
+/// [`recall`] answered from the index.
+fn from_index(
+    root: &Path,
+    ask: &Ask,
+    index: &crate::projectindex::Reader,
+) -> crate::projectindex::Result<Recalled> {
+    use crate::projectindex::Kind;
+    let reach = reach(ask);
+    // `since` and a negative limit cut after the index answers, so the index is asked for all.
+    let cap = if ask.limit > 0 && ask.since.is_none() {
+        ask.limit
+    } else {
+        -1
+    };
+    let rows = match ask.query.as_deref().filter(|q| !q.is_empty()) {
+        Some(query) => index.search(&reach, &memstore::terms(query), cap)?,
+        None => index.newest(&reach, cap)?,
+    };
+    let mut srcs: Option<Vec<(String, PathBuf)>> = None;
+    let mut undated = 0;
+    let mut undated_refs = 0;
+    let mut hits = Vec::new();
+    for row in rows {
+        if let Some(since) = ask.since
+            && row.date.is_none_or(|d| d < since)
+        {
+            if row.kind == Kind::Refs {
+                undated_refs += 1;
+            } else if row.date.is_none() {
+                undated += 1;
+            }
+            continue;
+        }
+        let label = indexed_label(&row).unwrap_or_else(|| {
+            label_of(&row.path, srcs.get_or_insert_with(|| sources(root, ask).0))
+        });
+        hits.push(Hit {
+            label,
+            title: row.title,
+            path: row.path,
+            // BM25 is lower for a better match; shown as a positive number, ten times it.
+            score: if row.score < 0.0 {
+                ((-row.score) * 10.0).round().max(1.0) as usize
+            } else {
+                0
+            },
+            date: row.date,
+        });
+    }
+    let hits = if ask.limit != 0 {
+        py_head(hits, ask.limit)
+    } else {
+        hits
+    };
+    Ok(Recalled {
+        hits,
+        undated,
+        undated_refs,
+        unread: index.unread(&reach)?,
+        index: Some(index.freshness()),
+    })
+}
+
+/// The label a row's own source gives it, where its file is a plain file in a folder that is
+/// not a link: there the file lands in its own source, which is what [`label_of`] would find.
+/// `None` sends the caller to [`label_of`].
+fn indexed_label(row: &crate::projectindex::Row) -> Option<String> {
+    use crate::projectindex::Kind;
+    let plain = |p: &Path| std::fs::symlink_metadata(p).is_ok_and(|m| !m.file_type().is_symlink());
+    if !plain(&row.path) || !plain(&row.base) {
+        return None;
+    }
+    Some(match row.kind {
+        Kind::Workspace => format!("workspace:{}", row.owner),
+        Kind::Persona => format!("persona:{}", row.owner),
+        Kind::Shared => "shared".to_string(),
+        Kind::Refs if row.owner == crate::contain::SHARED_PERSONA => "refs:shared".to_string(),
+        Kind::Refs => format!("refs:{}", row.owner),
+        Kind::Sessions | Kind::Todos => return None,
+    })
+}
+
+/// The memory fetch by reading every file in scope — `recall.recall`, and what [`recall`] does
+/// with no index.
 ///
 /// With a query, keyword-ranked hits across every base in scope. Without, every memory in
 /// scope, newest first by recorded date, undated last. `since` narrows and never re-ranks.
-pub fn recall(root: &Path, ask: &Ask) -> Recalled {
+pub fn scan(root: &Path, ask: &Ask) -> Recalled {
     let (srcs, mut unread) = sources(root, ask);
     let dirs: Vec<PathBuf> = srcs.iter().map(|(_, d)| d.clone()).collect();
     let mut undated = 0;
@@ -463,6 +597,7 @@ pub fn recall(root: &Path, ask: &Ask) -> Recalled {
         undated,
         undated_refs,
         unread,
+        index: None,
     }
 }
 

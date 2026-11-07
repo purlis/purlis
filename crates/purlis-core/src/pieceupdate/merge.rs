@@ -377,8 +377,28 @@ fn committed(here: &Here, note: &Note) -> Result<(), String> {
     ))
 }
 
+/// **The merge commit signed** where the app runs this for a chat and holds a key (#5480): the
+/// commits made since the branch's head and the base merged, which is the merge commit alone, or
+/// none for a fast-forward. The branch is moved to the signed copy only from where git left it.
+fn signed(here: &Here, note: &Note, say: &mut dyn FnMut(Say)) {
+    let Some(head) = commit_of(&here.folder, "HEAD") else {
+        return;
+    };
+    let signed = super::signed_since(&here.folder, head.clone(), &[&note.head, &note.onto], say);
+    if signed == head {
+        return;
+    }
+    let branch = crate::worktree::name::as_ref(&note.branch);
+    if let Err(why) = crate::commitsign::moved(&here.folder, &branch, &signed, &head) {
+        say(Say::Warn(
+            format!("the merge commit is made and not signed: {why}").into(),
+        ));
+    }
+}
+
 /// The merge is done: its notes spent, a new base recorded, and said what follows.
 fn finished(here: &Here, note: &Note, brought: &Brought, say: &mut dyn FnMut(Say)) -> u8 {
+    signed(here, note, say);
     Note::remove(&here.notes);
     NewBase::recorded(here, &note.branch, say);
     say(Say::Done(
@@ -407,6 +427,7 @@ pub(super) fn go_on(here: &Here, say: &mut dyn FnMut(Say)) -> Result<u8, String>
         stage_resolved(here, &files)?;
     }
     committed(here, &note)?;
+    signed(here, &note, say);
     Note::remove(&here.notes);
     NewBase::recorded(here, &note.branch, say);
     say(Say::Done(

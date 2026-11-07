@@ -1426,6 +1426,24 @@ fn clones_git_held(root: &Path, cwd: Option<&Path>) -> Option<Denial> {
     })
 }
 
+/// The project root's git folder, for a chat wherever it stands: written by the app alone, which
+/// saves the project for a chat (`purlis save`) and updates it (`purlis worktree update` at the
+/// root), as the window's Save and Update do. Read-only git works. A project root whose `.git` is
+/// a file (a worktree of another repository) or a link keeps it as it was: that git is not the
+/// app's, and the app saves and updates nothing there for a chat ([`Confines::roots_git`]).
+fn roots_git_held(root: &Path) -> Option<Denial> {
+    let dot_git = root.join(".git");
+    crate::worktree::is_own_git_dir(&dot_git).then_some(())?;
+    Some(Denial {
+        class: Class::LaterCode,
+        path: dot_git,
+        access: Access::Write,
+        named: None,
+        reach: Reach::AndBelow,
+        any_case: false,
+    })
+}
+
 /// The folders searched for repositories as a chat of the plane at `root` starts: the plane, and
 /// each folder you listed as one chats may be granted.
 pub fn git_folders_searched(root: &Path) -> Vec<PathBuf> {
@@ -3909,6 +3927,8 @@ impl Uncompilable {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Applied {
     harness: Harness,
+    /// The system it was compiled for.
+    os: Os,
     /// How much it holds ([`Level`]).
     level: Level,
     /// Boxed: a wrap carries its grants and widenings, and [`Decided`] carries this beside a
@@ -4321,16 +4341,9 @@ impl Applied {
     /// project's folder and `machine`'s home's own names too. Never a temp folder or a cache.
     pub fn arrived_watch(&self, cwd: Option<&Path>, machine: &Machine) -> arrived::Watched {
         let floor = self.level() == Level::Floor;
-        let mut folders: Vec<PathBuf> = vec![cwd.unwrap_or(&self.root).to_path_buf()];
-        if floor {
-            folders.push(self.root.clone());
-        }
-        folders.extend(self.confines.writable.iter().cloned());
-        // Each once, and none inside another, which would be walked twice over.
-        folders.sort();
-        folders.dedup();
+        // None inside another, which would be walked twice over.
         let mut outer: Vec<PathBuf> = Vec::new();
-        for folder in folders {
+        for folder in self.folders_of_a_chat(cwd) {
             if !outer.iter().any(|kept| folder.starts_with(kept)) {
                 outer.push(folder);
             }
@@ -4338,6 +4351,7 @@ impl Applied {
         arrived::Watched {
             folders: outer,
             home: machine.home.clone().filter(|_| floor),
+            contents: machine.os == Os::Linux && matches!(*self.form, Form::ClaudeCode(_)),
             lifted: self
                 .confines
                 .widened
@@ -4349,6 +4363,20 @@ impl Applied {
                         .find(|name| folder.ends_with(name))
                         .map(|name| (*name).to_owned())
                 })
+                .collect(),
+            // The one git folder in a chat's folders its sandbox holds whole ([`chain`]).
+            held_git: matches!(*self.form, Form::ClaudeCode(_))
+                .then(|| clones_git_held(&self.root, cwd))
+                .flatten()
+                .map(|denial| denial.path)
+                .into_iter()
+                .collect(),
+            // What isn't there now gets a placeholder while each command runs.
+            placeholders: self
+                .later_code_by_path(cwd)
+                .into_iter()
+                .map(|denial| denial.path)
+                .filter(|path| std::fs::symlink_metadata(path).is_err())
                 .collect(),
         }
     }
@@ -4483,14 +4511,54 @@ impl Applied {
 
     /// The manifests a chat in `cwd` is denied that the compiled form does not already deny.
     fn chain(&self, cwd: Option<&Path>) -> Vec<Denial> {
-        let clones_git = matches!(*self.form, Form::ClaudeCode(_))
-            .then(|| clones_git_held(&self.root, cwd))
-            .flatten();
+        let claude = matches!(*self.form, Form::ClaudeCode(_));
+        let clones_git = claude.then(|| clones_git_held(&self.root, cwd)).flatten();
+        let roots_git = claude.then(|| roots_git_held(&self.root)).flatten();
         manifests_held(&self.root, cwd)
             .into_iter()
             .chain(clones_git)
+            .chain(roots_git)
+            .chain(self.later_code_by_path(cwd))
             .filter(|denial| !self.denied.contains(denial))
             .collect()
+    }
+
+    /// The later-code names in each folder of a chat in `cwd`, by path, where the sandbox holds a
+    /// path and not a rule for any depth: Claude Code's own on Linux. Below those folders,
+    /// [`arrived`] tells what arrives. A chat purlis wraps holds them by its own rules.
+    fn later_code_by_path(&self, cwd: Option<&Path>) -> Vec<Denial> {
+        if self.os != Os::Linux || !matches!(*self.form, Form::ClaudeCode(_)) {
+            return Vec::new();
+        }
+        let here = cwd.unwrap_or(&self.root);
+        let real_here = real(here);
+        self.folders_of_a_chat(cwd)
+            .iter()
+            .flat_map(|folder| planted::held_by_path_in(folder, &self.confines.widened.lifted))
+            // The chat's own folder, inside such a name or reached by a link there, stays its own.
+            .filter(|path| !here.starts_with(path) && !real_here.starts_with(real(path)))
+            .map(|path| Denial {
+                class: Class::LaterCode,
+                path,
+                access: Access::Write,
+                named: None,
+                reach: Reach::AndBelow,
+                any_case: false,
+            })
+            .collect()
+    }
+
+    /// The folders a chat in `cwd` writes by name: its own and what a person granted it, and at
+    /// the floor the project's. Each once.
+    fn folders_of_a_chat(&self, cwd: Option<&Path>) -> Vec<PathBuf> {
+        let mut folders: Vec<PathBuf> = vec![cwd.unwrap_or(&self.root).to_path_buf()];
+        if self.level() == Level::Floor {
+            folders.push(self.root.clone());
+        }
+        folders.extend(self.confines.writable.iter().cloned());
+        folders.sort();
+        folders.dedup();
+        folders
     }
 
     /// The compiled form with `more` denied too.
@@ -6652,8 +6720,14 @@ pub(crate) fn applied_of(
     {
         held.push(keychains);
     }
+    // Held for a Claude Code chat wherever it stands ([`Applied::chain`]).
+    let roots_git = matches!(form, Form::ClaudeCode(_))
+        .then(|| roots_git_held(root))
+        .flatten()
+        .map(|denial| denial.path);
     Ok(Applied {
         harness,
+        os: machine.os,
         level: compiled.level,
         form: Box::new(form),
         root: root.to_path_buf(),
@@ -6670,6 +6744,7 @@ pub(crate) fn applied_of(
             tools: Vec::new(),
             wrap: None,
             clones: crate::forge::apptoken::clones_now(root),
+            roots_git,
         }),
         reach: Box::new(compiled.reach.clone()),
         // Claude Code on its own sandbox waits for its program's answer ([`Applied::answered`]).
@@ -6787,6 +6862,12 @@ pub struct Confines {
     /// `.git` as it was then. Only these name the chat's repos for a GitHub App's token
     /// ([`crate::forge::apptoken`]).
     pub clones: Vec<crate::forge::apptoken::Started>,
+    /// **The project root's `.git`, where the chat's sandbox keeps it from writing anything in
+    /// it** ([`roots_git_held`]): a Claude Code chat on its own sandbox, in a project whose
+    /// `.git` is a folder. `None` for every other chat, whose harness holds that folder by its
+    /// name alone, and for a project whose `.git` is a file or a link, which is not held. Only
+    /// where it is set does the app save or update the project for the chat.
+    pub roots_git: Option<PathBuf>,
 }
 
 impl Confines {

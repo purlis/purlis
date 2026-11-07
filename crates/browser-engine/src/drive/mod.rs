@@ -581,6 +581,12 @@ pub struct FieldInfo {
     /// What the page labels it, made plain and at most [`MOST_LABEL_CHARS`] characters.
     pub label: String,
     pub kind: FieldKind,
+    /// **The form it is in sends it by GET** (the person's ruling of 2026-11-06): in the page's
+    /// address, by the form's own `method` or a submit button's `formmethod`.
+    pub by_get: bool,
+    /// **The page marks it a card's or payment field**, by an `autocomplete` token that begins
+    /// `cc-` (the steward's decision of 2026-11-06).
+    pub payment: bool,
 }
 
 /// The longest label a [`FieldInfo`] gives, in characters.
@@ -610,6 +616,10 @@ pub struct SecretFill {
     /// **The person answered a notice for this fill that named a multi-line text box or an
     /// editable area** (#5120, SF-5): only then does one take it. False, a one-line field alone.
     pub multi_line: bool,
+    /// **It goes in under a grant, with no notice for this fill** (the rulings of 2026-11-06):
+    /// a field whose form sends it by GET, or a card's or payment field, then takes nothing,
+    /// judged in the same step as the write.
+    pub under_a_grant: bool,
 }
 
 impl fmt::Debug for SecretFill {
@@ -619,6 +629,7 @@ impl fmt::Debug for SecretFill {
             .field("origin", &self.origin)
             .field("key", &self.key)
             .field("multi_line", &self.multi_line)
+            .field("under_a_grant", &self.under_a_grant)
             .finish_non_exhaustive()
     }
 }
@@ -642,6 +653,19 @@ pub struct Answer {
     /// The downloads that began or moved on since the last answer (#2020), or for
     /// [`Call::Downloads`], every one.
     pub downloads: Vec<DownloadInfo>,
+}
+
+/// **What a download's file holds of what the browser keeps out of a chat's reads**
+/// ([`Browser::holds_kept_out`]): what is found first, a value purlis filled before a text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DownloadHolds {
+    /// Nothing it keeps out.
+    Nothing,
+    /// A value purlis filled into the browser or logged in with (#5115).
+    Filled,
+    /// A text kept out of 8 characters or more, that the person typed into the browser (the
+    /// person's ruling of 2026-11-06): a shorter one is often an ordinary word of a file.
+    Typed,
 }
 
 /// **One download of a browser's** (#2020): held in the folder the browser was given

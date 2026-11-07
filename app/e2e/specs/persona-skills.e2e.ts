@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
 import { press, projectRoot, typeInto, untilSays } from "../acting.js";
 import { showView } from "../opening.js";
-import { closeTheViewTabsOpenedSince, tabNames } from "../reach.js";
+import { closesTheTabsItOpens, tabNames } from "../reach.js";
 import { studioSkill } from "../studio.js";
 
 /**
@@ -44,8 +44,10 @@ describe("a persona's skills", function () {
   const written: string[] = [];
   let file = "";
   let was = "";
-  let wereOpen: string[] = [];
 
+  // Hooks of a kind run in the order they are registered: the strip is read once the skills are
+  // written and before the persona's page is opened, and its view tabs are closed once the files
+  // are put back and before the Inbox is shown again.
   before(async () => {
     const root = await projectRoot();
     file = join(root, "personas", PERSONA, "persona.md");
@@ -58,7 +60,16 @@ describe("a persona's skills", function () {
       file,
       was.replace(/^skills:.*\n/m, "").replace(/^---\n/, `---\nskills: ${NAMED}\n`),
     );
-    wereOpen = await tabNames();
+  });
+
+  after(() => {
+    writeFileSync(file, was);
+    for (const path of written) rmSync(path, { recursive: true, force: true });
+  });
+
+  closesTheTabsItOpens();
+
+  before(async () => {
     await showView("Personas");
     await untilSays('[data-testid="panel-personas"]', PERSONA);
     await press('[data-testid="panel-personas"]', PERSONA, "containing");
@@ -66,9 +77,6 @@ describe("a persona's skills", function () {
   });
 
   after(async () => {
-    writeFileSync(file, was);
-    for (const path of written) rmSync(path, { recursive: true, force: true });
-    await closeTheViewTabsOpenedSince(wereOpen);
     await showView("Inbox");
   });
 

@@ -654,6 +654,166 @@ fn a_starts_ask_is_recorded_under_no_chat() {
     });
 }
 
+/// What chat `chat`'s trace says of the ask for `key`, in the order it was written.
+fn traced_of(root: &Path, chat: u32, key: &str) -> Vec<String> {
+    let file = crate::trace::file(root, &chat.to_string());
+    std::fs::read_to_string(&file)
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .filter(|line| line["event"] == TRACED_AS && line["key"] == key)
+        .map(|line| line["what"].as_str().unwrap_or_default().to_owned())
+        .collect()
+}
+
+/// #5220, ADR 0109: an ask is told raised (or joined) before any answer to it, in the event log
+/// and in each chat's trace alike, however soon the person answers. One thread raises and
+/// another joins while a third answers the moment the ask is listed, many times over.
+#[test]
+fn an_answer_the_moment_an_ask_is_listed_is_never_recorded_before_its_raise_or_join() {
+    use crate::eventlog::secretasks::Step;
+    let project = project();
+    let root = project.path();
+    let asks = Asks::new(root);
+    let told = steps_told(&asks);
+    for round in 0..200 {
+        let key = format!("MISSING_{round}");
+        told.lock().unwrap().clear();
+        std::thread::scope(|scope| {
+            let chats = [7, 8].map(|chat| {
+                let (asks, key) = (&asks, &key);
+                scope
+                    .spawn(move || asks.hold(need(chat, key), Duration::from_secs(60), &mut |_| {}))
+            });
+            // Whichever chat comes first raises and the other joins, unless it comes once the
+            // ask is answered and raises one of its own: each is answered the moment it is
+            // listed, until both chats have heard.
+            while !chats.iter().all(std::thread::ScopedJoinHandle::is_finished) {
+                if let Some(open) = asks.open().into_iter().find(|open| open.key == key) {
+                    // Refused only where it was answered already.
+                    let _ = asks.answer(&ctx(root), open.id, Answer::Decline, window());
+                }
+                std::thread::yield_now();
+            }
+        });
+        // Each ask's first step is its raise, and nothing joins it once it is answered.
+        let steps = told.lock().unwrap().clone();
+        let ask_of = |step: &Step| match *step {
+            Step::Raised { ask, .. }
+            | Step::Joined { ask, .. }
+            | Step::Filled { ask, .. }
+            | Step::Declined { ask, .. } => Some(ask),
+            Step::Refused { .. } => None,
+        };
+        let mut asked = std::collections::BTreeMap::<u32, Vec<Step>>::new();
+        for (_, step) in &steps {
+            if let Some(ask) = ask_of(step) {
+                asked.entry(ask).or_default().push(*step);
+            }
+        }
+        assert!(
+            asked
+                .values()
+                .flatten()
+                .any(|step| matches!(step, Step::Declined { .. })),
+            "round {round}: the decline is told: {steps:?}"
+        );
+        for (ask, its) in &asked {
+            assert!(
+                matches!(its.first(), Some(Step::Raised { .. })),
+                "round {round}: ask {ask} is told before its raise: {steps:?}"
+            );
+            if let Some(answered) = its
+                .iter()
+                .position(|step| matches!(step, Step::Declined { .. }))
+            {
+                assert_eq!(
+                    answered,
+                    its.len() - 1,
+                    "round {round}: ask {ask} is told after its answer: {steps:?}"
+                );
+            }
+        }
+        for chat in [7, 8] {
+            let trace = traced_of(root, chat, &key);
+            let declined = trace
+                .iter()
+                .position(|what| what == "declined")
+                .unwrap_or_else(|| {
+                    panic!("round {round}: chat {chat} heard its decline: {trace:?}")
+                });
+            {
+                assert!(
+                    trace[..declined]
+                        .iter()
+                        .any(|what| what == "raised" || what == "joined"),
+                    "round {round}: chat {chat}'s trace has the answer first: {trace:?}"
+                );
+            }
+        }
+    }
+}
+
+/// #5220: a chat that cannot receive a value raises its ask, as any ask is raised (#5077), the
+/// person declines it at once, and the chat raises it again the moment it is gone: its trace,
+/// which names no ask, reads raise, decline, raise, so the second ask is never read as
+/// declined; and the event log tells the first ask's answer before the second's raise.
+#[test]
+fn a_decline_is_recorded_before_an_ask_raised_again_the_moment_it_is_answered() {
+    use crate::eventlog::secretasks::Step;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let project = project();
+    let root = project.path();
+    let asks = Asks::new(root);
+    let told = steps_told(&asks);
+    for round in 0..200 {
+        let key = format!("MISSING_{round}");
+        told.lock().unwrap().clear();
+        let listed = AtomicBool::new(false);
+        std::thread::scope(|scope| {
+            scope.spawn(|| asks.cannot_receive(need(9, &key)));
+            let again = scope.spawn(|| {
+                while !listed.load(Ordering::SeqCst) {
+                    std::thread::yield_now();
+                }
+                while asks.open().iter().any(|open| open.key == key) {
+                    std::thread::yield_now();
+                }
+                asks.cannot_receive(need(9, &key))
+            });
+            let id = loop {
+                if let Some(open) = asks.open().into_iter().find(|open| open.key == key) {
+                    break open.id;
+                }
+                std::thread::yield_now();
+            };
+            listed.store(true, Ordering::SeqCst);
+            asks.answer(&ctx(root), id, Answer::Decline, window())
+                .expect("declined");
+            again.join().unwrap();
+        });
+        assert_eq!(
+            traced_of(root, 9, &key),
+            [
+                "raised, cannot receive",
+                "declined",
+                "raised, cannot receive"
+            ],
+            "round {round}"
+        );
+        let steps: Vec<Step> = told.lock().unwrap().iter().map(|(_, step)| *step).collect();
+        assert!(
+            matches!(
+                steps.as_slice(),
+                [Step::Raised { ask: first, .. }, Step::Declined { ask: answered, .. }, Step::Raised { ask: second, .. }]
+                    if first == answered && second != first
+            ),
+            "round {round}: {steps:?}"
+        );
+        asks.forget(9);
+    }
+}
+
 // ----------------------------------------------------------------------------------------
 // A chat asks: the `secret_ask` line (#5072)
 
@@ -690,6 +850,7 @@ fn devops(chat: u32) -> Chat<'static> {
         chat,
         persona: Some("devops"),
         harness: None,
+        asker: None,
     }
 }
 
@@ -700,6 +861,7 @@ fn line(chat: u32, key: &str, vault: Option<&str>) -> SecretAsk {
         purpose: "  charge test cards\nin the checkout e2e ".into(),
         vault: vault.map(str::to_owned),
         replace: None,
+        program: None,
     }
 }
 
@@ -922,6 +1084,7 @@ fn a_line_that_is_not_one_is_refused_before_anything_is_asked() {
             chat: 7,
             persona: None,
             harness: None,
+            asker: None,
         },
         &line(7, "KEY", None),
         Duration::ZERO,
@@ -1077,6 +1240,7 @@ fn a_persona_that_names_no_vault_is_asked_into_one_named_after_it_made_at_the_fi
         chat,
         persona: Some("shop"),
         harness: None,
+        asker: None,
     };
     let (waits, waiting) = std::sync::mpsc::channel();
     let answered = std::thread::scope(|scope| {

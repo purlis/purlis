@@ -1061,6 +1061,7 @@ function AllowNotice({
       tone="trouble"
       label="Sandbox block"
       consent
+      since={asks[0]?.since}
       fixes={fixes}
       under={under}
     >

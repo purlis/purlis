@@ -107,6 +107,11 @@ enum Twist {
     WontHoldStill,
     /// A page opens as the clean load begins (#5272).
     PopupOnCleanLoad,
+    /// The login's page opens a window it can reach, on the login's site, as it loads.
+    OpensOnItsSite,
+    /// The login's page opens a window it can reach, on another site, as it loads, and loads
+    /// another document once its form is sent.
+    OpensElsewhere,
 }
 
 /// [`as_a_login_form`], with `twist`.
@@ -148,6 +153,21 @@ fn as_a_login_form_that(engine: &Arc<Engine>, goes: bool, twist: Twist) -> Arc<A
                     engine.emit(
                         "Target.targetCreated",
                         json!({"targetInfo":{"targetId":"PAGE-7","type":"page","title":"A popup","url":ADDRESS,"attached":false,"openerId":"PAGE-1"}}),
+                        None,
+                    );
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+                let opens = match twist {
+                    Twist::OpensOnItsSite => Some("http://fixture.test/more.html"),
+                    Twist::OpensElsewhere => Some("http://other.test/more.html"),
+                    _ => None,
+                };
+                if let Some(url) = opens
+                    && on == "S-PAGE-2"
+                {
+                    engine.emit(
+                        "Target.targetCreated",
+                        json!({"targetInfo":{"targetId":"PAGE-8","type":"page","title":"A window","url":url,"attached":false,"openerId":"PAGE-2","canAccessOpener":true}}),
                         None,
                     );
                     std::thread::sleep(Duration::from_millis(100));
@@ -297,6 +317,9 @@ fn as_a_login_form_that(engine: &Arc<Engine>, goes: bool, twist: Twist) -> Arc<A
                 seen.store(true, Ordering::SeqCst);
                 if twist == Twist::GoesBack {
                     navigated(engine, on, "LOADER-BACK", BACK);
+                }
+                if twist == Twist::OpensElsewhere {
+                    navigated(engine, on, "LOADER-SENT", "http://fixture.test/account.html");
                 }
                 Some(Ok(json!({})))
             }
@@ -1636,4 +1659,51 @@ fn a_host_is_read_from_an_origin_as_a_cookie_spells_it() {
     assert_eq!(host_of("http://localhost:8080"), Some("localhost"));
     assert_eq!(host_of("no-scheme"), None);
     assert_eq!(host_of("https://"), None);
+}
+
+/// The person's ruling of 2026-11-05: a login's page is held as a fill's is. A window related to it
+/// on its site could read the field, so nothing goes in beside one.
+#[test]
+fn a_login_fills_nothing_beside_a_window_its_page_opened_on_its_site() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, true, Twist::OpensOnItsSite);
+    let ended = browser.log_in(&login_at(ORIGIN), holds()).unwrap();
+    match &ended.outcome {
+        Err(Refusal::NotLoggedIn(why)) => {
+            assert!(why.contains("related to the login's page"), "{why}");
+            assert!(why.contains("nothing was filled"), "{why}");
+        }
+        other => panic!("refused otherwise: {}", ended_as(other)),
+    }
+    assert!(inserted(&engine).is_empty(), "nothing filled");
+}
+
+/// The person's ruling of 2026-11-05: a window related to a login's page on another site stays while
+/// the page holds what was filled, and closes once the page loads another document, the chat told.
+#[test]
+fn a_window_a_logins_page_opened_elsewhere_closes_once_the_page_is_done() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, true, Twist::OpensElsewhere);
+    let ended = browser.log_in(&login_at(ORIGIN), holds()).unwrap();
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    assert_eq!(inserted(&engine), [FILLED]);
+    let closed = || {
+        engine
+            .sent("Target.closeTarget")
+            .iter()
+            .any(|sent| sent.params["targetId"] == "PAGE-8")
+    };
+    let start = std::time::Instant::now();
+    while !closed() {
+        assert!(start.elapsed() < Duration::from_secs(5), "the window stays");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(
+        crate::drive::lock(&browser.inner.state)
+            .leaving_said
+            .iter()
+            .any(|said| said
+                .contains("purlis closed 1 other window related to the page purlis logged in on")),
+        "the chat is told"
+    );
 }

@@ -212,6 +212,8 @@ describe("a chat's one list (#4753)", () => {
                 level: { at: "project", local: false },
                 job: "draft",
                 done: false,
+                started: null,
+                finished: null,
               }
             : undefined,
         ...over,
@@ -244,6 +246,30 @@ describe("a chat's one list (#4753)", () => {
       const pressed = new Set(Object.keys(FOOT_ROWS));
       const facts = new Set<string>(FOOT_FACTS);
       for (const part of parts) expect(pressed.has(part) !== facts.has(part), part).toBe(true);
+    });
+
+    it("goes to the chat that asked an ended task its pane still shows, while that chat is listed (#5366)", () => {
+      // Task 7 of chat 1 has ended: the core lists it no more, and its pane keeps its last
+      // screen with the path it last had, whose last but one is the chat that asked.
+      const shown = splitFocusedPane(world().now.tabs, "column", 7, "fix-7");
+      const { offers, palette } = footed({ tabs: shown, endedAskedBy: new Map([[7, 1]]) });
+      expect(offers.get(FOOT_ROWS.from(7))?.does).toEqual({ verb: "showChat", session: 1 });
+      expect(listOf(7, offers)).toContain(FOOT_ROWS.from(7));
+      expect(palette.map((offer) => offer.id)).toContain(FOOT_ROWS.from(7));
+      // Asked nothing of now, as a chat the core lists no more: the row is had all the same.
+      const unasked = footed({
+        tabs: shown,
+        endedAskedBy: new Map([[7, 1]]),
+        askable: (session) => session !== 6 && session !== 7,
+      });
+      expect(unasked.offers.get(FOOT_ROWS.from(7))?.does).toEqual({ verb: "showChat", session: 1 });
+      // A chat the core lists again (a Resume) says its own lineage: listed with no asker, it
+      // came from none, whatever the pane's last path said.
+      const again = footed({ tabs: shown, endedAskedBy: new Map([[3, 1]]) });
+      expect(again.offers.get(FOOT_ROWS.from(3))).toBeUndefined();
+      // An asker that has closed has no row to go to: the foot says it in words.
+      const closed = footed({ tabs: shown, endedAskedBy: new Map([[7, 9]]) });
+      expect(closed.offers.get(FOOT_ROWS.from(7))).toBeUndefined();
     });
 
     it("goes where each part says", () => {

@@ -659,7 +659,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
   },
   {
     id: "pane.place",
-    does: "Pick up the focused pane, chat or tab to place it with the keys",
+    does: "Pick up the focused pane, chat or tab to move it with the keys",
     group: "Tabs and chats",
     where: "window",
     kind: "key",

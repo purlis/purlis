@@ -18,7 +18,7 @@ const docs = fileURLToPath(new URL("../docs", import.meta.url));
 
 // The sidebar is read from `docs/` itself, so a page added there is in it without an edit here.
 // Each directory is a group; the pages at the top of `docs/` are "Reference".
-const LABELS = { "getting-started": "Getting started", adr: "Decisions (ADRs)", agents: "For agents" };
+const LABELS = { "getting-started": "Getting started", adr: "Decisions (ADRs)", agents: "For agents", research: "Research" };
 const ORDER = ["getting-started", "", "adr", "agents"];
 const entries = readdirSync(docs, { withFileTypes: true });
 const groups = [

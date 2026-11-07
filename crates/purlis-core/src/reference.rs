@@ -59,6 +59,8 @@ pub struct Reference {
 pub enum NotReferable {
     #[error(transparent)]
     Refused(#[from] files::Refused),
+    #[error(transparent)]
+    NotHere(#[from] files::workspace::NotHere),
     #[error(
         "'{0}' has a control or invisible character in its name, so purlis cannot type it into \
          a chat as what it shows"
@@ -84,7 +86,15 @@ pub fn of(
     lines: Option<Lines>,
     from: Option<&Path>,
 ) -> Result<Reference, NotReferable> {
-    let placed = files::place(plane, branch, path)?;
+    // A workspace's own file is placed by its own reader (#5375), which no branch's read is.
+    let placed = if branch.is_workspace_files() {
+        if path.is_empty() {
+            return Err(files::Refused::NotInPiece(path.to_string()).into());
+        }
+        files::workspace::Files::of(plane, branch.ws)?.place(path)?
+    } else {
+        files::place(plane, branch, path)?
+    };
     if let Some(Lines { first, last }) = lines {
         if placed.folder {
             return Err(NotReferable::LinesOfAFolder(placed.relative));

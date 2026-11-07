@@ -98,3 +98,61 @@ fn a_root_update_left_for_the_person_raises_its_item_on_the_chat() {
         Some(vec![crate::hooks::Need::RootUpdateRefused])
     );
 }
+
+/// The app saves and updates the project for a chat only where the chat's sandbox, as this
+/// window compiled it, kept it from writing the project's git, and the chat runs in it.
+#[test]
+fn the_project_is_the_apps_to_save_only_for_a_chat_whose_sandbox_held_its_git() {
+    let (_dir, held, session) = a_held_chat();
+    let roots_git = held.root().join(".git");
+    let holding = || purlis_core::sandbox::Confines {
+        roots_git: Some(roots_git.clone()),
+        ..Default::default()
+    };
+    let in_a_sandbox = || Some(RunSandbox::By("seatbelt".to_owned()));
+    let held_by = |confines: Option<purlis_core::sandbox::Confines>, ran: Option<RunSandbox>| {
+        held.chats().runs_as_recorded(session, confines, ran);
+        asker(&held, session).expect("open").roots_git_held
+    };
+    assert!(held_by(Some(holding()), in_a_sandbox()));
+    assert!(!held_by(Some(holding()), Some(RunSandbox::Off)), "run off");
+    assert!(!held_by(None, in_a_sandbox()), "no compile in this window");
+    assert!(
+        !held_by(
+            Some(purlis_core::sandbox::Confines::default()),
+            in_a_sandbox()
+        ),
+        "held by its name alone"
+    );
+}
+
+/// What a chat's sandbox keeps it from reading reaches the core, and nothing it only keeps it
+/// from writing.
+#[test]
+fn a_save_for_a_chat_is_told_what_the_chat_cannot_read() {
+    let (_dir, held, session) = a_held_chat();
+    let denial = |path: &str, access| purlis_core::sandbox::Denial {
+        class: purlis_core::sandbox::Class::Vaults,
+        path: held.root().join(path),
+        access,
+        named: None,
+        reach: purlis_core::sandbox::Reach::AndBelow,
+        any_case: false,
+    };
+    let unread = denial("closed", purlis_core::sandbox::Access::ReadWrite);
+    held.chats().runs_as_recorded(
+        session,
+        Some(purlis_core::sandbox::Confines {
+            denied: vec![
+                unread.clone(),
+                denial("written", purlis_core::sandbox::Access::Write),
+            ],
+            ..Default::default()
+        }),
+        Some(RunSandbox::By("seatbelt".to_owned())),
+    );
+    assert_eq!(
+        asker(&held, session).expect("open").unreadable,
+        vec![unread]
+    );
+}

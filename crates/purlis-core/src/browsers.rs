@@ -390,6 +390,13 @@ impl Browsers for EngineBrowsers {
                 site_of_login(&kept.address)
             })
             .transpose()?;
+        // And its form's, where that is another (#5167): reached from its start, as a browser
+        // logged in afresh does.
+        let kept_form = kept
+            .and_then(|kept| kept.form.as_deref())
+            .map(site_of_login)
+            .transpose()?
+            .filter(|form| Some(form) != kept_site.as_ref());
         let platform = Platform::current()
             .ok_or_else(|| "no browser engine is made for this platform".to_owned())?;
         // Which engine (#2835): this machine's own Chrome where the person chose it, else the
@@ -431,10 +438,14 @@ impl Browsers for EngineBrowsers {
             .map_err(|why| format!("the browser's reach proxy did not start: {why}"))?;
         let mut keeping = Keeping::new(&home, data);
         if let (Some(kept), Some(site), Some(sites)) = (kept, &kept_site, &sites) {
-            // Its page's site alone: its form's site, where that is another, is reached once a
-            // login performed in it signs in there (#4995, #5152).
-            proxy.bind(&LoginSites::page(site.clone()))?;
-            sites.bound_to(site);
+            // Its page's site, and its form's where that is another (#5167), with no sign-in open:
+            // the agent is kept off the form's pages until a login performed in it signs in there
+            // (#4995, #5152).
+            let at = LoginSites {
+                page: site.clone(),
+                form: kept_form.clone(),
+            };
+            opened_from_kept(&proxy, sites, &at)?;
             keeping.open(kept)?;
         }
         // Its engine's log beside its folder, kept past its end (#2745).
@@ -469,6 +480,15 @@ impl Browsers for EngineBrowsers {
         if let Some(sites) = &sites {
             let bound = sites.bound().clone();
             browser.keep_off(Arc::new(move |address: &str| kept_off_at(&bound, address)));
+            // During a sign-in, on every page but its own and the windows related to it (the
+            // person's ruling of 2026-11-06).
+            let bound = sites.bound().clone();
+            browser.keep_sign_in_to_its_page(Arc::new(move |address: &str| {
+                let (host, port) = judge::site_of(address)?;
+                bound
+                    .signing_in_at(&host, port)
+                    .map(|site| site.to_string())
+            }));
         }
         // A click or Back the proxy refused under a fill's hold answers why (#5150).
         let bound = proxy.bound().clone();
@@ -947,6 +967,8 @@ fn field_said(field: drive::FieldInfo) -> wire::FieldSaid {
             drive::FieldKind::Editable => wire::FieldKind::Editable,
             drive::FieldKind::Other => wire::FieldKind::Other,
         },
+        by_get: Some(field.by_get),
+        payment: Some(field.payment),
     }
 }
 
@@ -1308,9 +1330,15 @@ impl FillHolder {
     pub fn of(proxy: &Arc<ReachProxy>, origin: &str) -> Result<Self, String> {
         let (host, port) = judge::site_of(origin)
             .ok_or_else(|| format!("{origin} is not a site purlis can hold a browser to"))?;
+        let site = Site::of(&host, port);
+        // A browser bound to a login takes no secret for another site: refused before anything
+        // is looked for or filled.
+        if let Some(why) = proxy.bound().takes_no_fill_for(&site) {
+            return Err(why);
+        }
         Ok(Self {
             proxy: Arc::downgrade(proxy),
-            site: Site::of(&host, port),
+            site,
             also: Vec::new(),
             sites: None,
             number: Mutex::new(None),
@@ -1373,7 +1401,7 @@ impl drive::FillHold for FillHolder {
 
     fn may_leave_for(&self, address: &str, chain_began: bool) -> drive::Leaving {
         match self.sites.as_ref().and_then(std::sync::Weak::upgrade) {
-            Some(sites) => sites.may_leave_for(address, chain_began),
+            Some(sites) => sites.may_leave_from(&self.site, address, chain_began),
             None => drive::Leaving::No {
                 why: format!(
                     "purlis stopped this page leaving {}: this browser was started with no \
@@ -1448,6 +1476,23 @@ fn made_private_and_unbacked(folders: &Path) -> Result<(), String> {
 }
 
 /// The site a kept login's page is on, as a login's is ([`login_of`]).
+/// **A browser opened from a kept login is held to `at`, its sites, from its start** (#2021,
+/// #5167): its page's, and its form's where that is another, as a browser logged in afresh is
+/// once its sign-in is over, so no sign-in is open and the agent is kept off the form's pages.
+fn opened_from_kept(
+    proxy: &ReachProxy,
+    sites: &judge::SiteJudge,
+    at: &LoginSites,
+) -> Result<(), String> {
+    if let Some(sign_in) = proxy.bind(at)? {
+        proxy.sign_in_over(sign_in);
+    }
+    for one in at.all() {
+        sites.bound_to(&one);
+    }
+    Ok(())
+}
+
 fn site_of_login(address: &str) -> Result<Site, String> {
     let origin = crate::sandbox::tools::login::origin_of(address)?;
     let (host, port) = judge::site_of(&origin)
@@ -1756,7 +1801,8 @@ pub fn kept_off_said(site: &str, asks_to_sign_in: bool) -> String {
     };
     format!(
         "nothing was read or sent: this is a page of {site}, the site this browser signs in on, \
-         and you may read or act on its pages only while browser_login signs in. {then}"
+         and you may read or act on its pages only while browser_login signs in, on the page it \
+         signs in on and the windows that page opened. {then}"
     )
 }
 
@@ -1856,18 +1902,72 @@ impl EngineScreen {
                 state_said(one.state)
             )));
         }
-        // One from the site the browser signs in on is that site's to read (#5152).
-        if let Some(site) = one.origin.as_deref().and_then(|origin| {
-            self.sites
-                .as_ref()
-                .and_then(|sites| kept_off_at(sites.bound(), origin))
-        }) {
+        // One from the site the browser signs in on is that site's to read (#5152), and during
+        // a sign-in, only the sign-in's own page's (the person's ruling of 2026-11-06): it is
+        // judged on the page it began on.
+        if let Some(site) = browser.download_kept_off(download) {
             return Err(NotActed::Refused(format!(
                 "download {download} came from {site}, the site this browser signs in on, so it \
-                 is brought in only while browser_login signs in"
+                 is brought in only while browser_login signs in, and only where the page it signs \
+                 in on, or a window related to it, began it"
+            )));
+        }
+        // One from no site purlis can tell (a sandboxed frame's, say) may be that site's too
+        // (the steward's decision on the person's rulings of 2026-11-06).
+        if one.origin.is_none()
+            && let Some(site) = self
+                .sites
+                .as_ref()
+                .and_then(|sites| sites.bound().keeps_off())
+        {
+            return Err(NotActed::Refused(format!(
+                "download {download} came from no site purlis can tell, and this browser signs in \
+                 on {site}, so it may be that site's: it is brought in only while browser_login \
+                 signs in"
+            )));
+        }
+        // And during a sign-in, one begun anywhere but the sign-in's own page may be its site's,
+        // which only that page reads (the person's ruling of 2026-11-06).
+        if one.origin.is_none()
+            && !browser.download_began_on_the_sign_ins_page(download)
+            && let Some(site) = self
+                .sites
+                .as_ref()
+                .and_then(|sites| sites.bound().signing_on())
+        {
+            return Err(NotActed::Refused(format!(
+                "download {download} came from no site purlis can tell, and browser_login signs in \
+                 on {site} now, so it may be that site's: it is brought in only where the page it \
+                 signs in on, or a window related to it, began it"
             )));
         }
         let from = self.data.join(DOWNLOADS).join(&one.file);
+        // What purlis filled into the browser is kept out of what the chat reads, a file it
+        // brings in among it (#5115), and so is a long text the person typed in it (the
+        // person's ruling of 2026-11-06).
+        match browser.holds_kept_out(&from) {
+            Ok(drive::DownloadHolds::Nothing) => {}
+            Ok(drive::DownloadHolds::Filled) => {
+                return Err(NotActed::Refused(format!(
+                    "download {download} holds a secret purlis filled into this browser, which is \
+                     kept out of what you read, so it is not brought in: ask the person to save \
+                     it if it is needed"
+                )));
+            }
+            Ok(drive::DownloadHolds::Typed) => {
+                return Err(NotActed::Refused(format!(
+                    "download {download} holds something the person typed into this browser, \
+                     which is kept out of what you read, so it is not brought in: ask the person \
+                     to save it if it is needed"
+                )));
+            }
+            Err(why) => {
+                return Err(NotActed::Refused(format!(
+                    "purlis could not read download {download} to check it holds nothing kept \
+                     out of what you read ({why}), so it is not brought in"
+                )));
+            }
+        }
         let bytes = saved_file(project, &from, Path::new(into), to).map_err(NotActed::Refused)?;
         let id = CallId::new(format!("kept:{download}"))
             .map_err(|why| NotActed::Refused(why.to_string()))?;
@@ -2071,7 +2171,9 @@ impl Screen for EngineScreen {
                 holder.answered(&ended);
                 (ended, holder.signing_in())
             })
-            .map_err(NotActed::Refused)?;
+            .map_err(NotActed::LoginNotRun)?;
+        // A refusal by its lease is not one before it ran: what the browser keeps was told of
+        // this login already.
         let ended = ended.map_err(not_acted)?;
         if matches!(ended.outcome, Err(drive::Refusal::NoFormOnCleanLoad(_))) {
             self.keeping
@@ -2144,6 +2246,7 @@ impl Screen for EngineScreen {
             key: fill.key.clone(),
             value: zeroize::Zeroizing::new(fill.value.expose().to_owned()),
             multi_line: fill.multi_line,
+            under_a_grant: fill.under_a_grant,
         };
         // It waits on the engine: made outside the lock, as an act is.
         let held = {

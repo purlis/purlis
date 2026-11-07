@@ -119,6 +119,7 @@ fn neither_a_fill_nor_the_read_of_a_field_for_one_goes_to_a_runner_too_old_for_i
             value: Secret::new("fixture-word".to_owned()),
             multi_line: false,
             also: Vec::new(),
+            under_a_grant: false,
         }),
     };
     let before = purlis_session_protocol::version::Version {

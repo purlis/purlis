@@ -145,10 +145,12 @@ export const READ_BY_RUST = [
   "app/src/ui/disclosure/disclosure.css",
   "app/src/ui/empty-state/empty-state.css",
   "app/src/ui/field/field.css",
+  "app/src/ui/grip/grip.css",
   "app/src/ui/list/list.css",
   "app/src/ui/menu/menu.css",
   "app/src/ui/meter/meter.css",
   "app/src/ui/notice/notice.css",
+  "app/src/ui/pane-foot/pane-foot.css",
   "app/src/ui/panel/panel.css",
   "app/src/ui/popover/popover.css",
   "app/src/ui/rail/rail.css",
@@ -239,6 +241,7 @@ export const GATES = {
 export const WINDOW_SOURCE_GUARDS = [
   { crate: "purlis-core", test: "no_old_name_is_spelled_in_the_window_or_its_assets" },
   { crate: "purlis-core", test: "every_deferral_names_its_ticket" },
+  { crate: "purlis-core", test: "every_repo_path_comes_from_the_resolver" },
 ];
 
 // The Rust tests that read every file of the repository: `ci.yml`'s `recorded` job runs each one

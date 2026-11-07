@@ -63,6 +63,27 @@ export type ShownShape =
 export const MARK_STATES = ["needs", "failed", "working", "waiting", "idle", "ended"] as const;
 export type MarkState = (typeof MARK_STATES)[number];
 
+/**
+ * **A split tab's mark is its most urgent pane's** (#5342, spec #5339), so a pane that needs the
+ * person can't hide behind the focused one: of `panes`, in reading order, the one whose state
+ * comes first in {@link MARK_STATES}. Of two in one state the first in reading order wins, and a
+ * pane with no state (a view, an empty pane, a harness that has said nothing) is never chosen:
+ * nothing, where no pane has one.
+ */
+export function urgentOf<T>(
+  panes: readonly T[],
+  markOf: (pane: T) => MarkState | null | undefined,
+): T | undefined {
+  let best: { pane: T; rank: number } | undefined;
+  for (const pane of panes) {
+    const mark = markOf(pane);
+    if (mark === null || mark === undefined) continue;
+    const rank = MARK_STATES.indexOf(mark);
+    if (best === undefined || rank < best.rank) best = { pane, rank };
+  }
+  return best?.pane;
+}
+
 /** A state in words and a shape, as a line that says it beside its word draws it. */
 export type Said = {
   kind: ShownKind;

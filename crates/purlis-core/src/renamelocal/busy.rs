@@ -298,11 +298,13 @@ pub fn older_app_at_launch(places: &Places, own: &str, parent: Option<&str>) -> 
 }
 
 /// Whether `parent`, a program as `ps` names it (a path or a bare name), is the app's own
-/// binary ([`crate::secrets::keyhold::APP_BINARY`]).
+/// binary under any name it has had ([`crate::names::APP_BINARY`]): an app built before #1309
+/// restarts its update as `charter-app`.
 pub fn started_by_the_app(parent: Option<&str>) -> bool {
     parent
         .and_then(|program| Path::new(program.trim()).file_name())
-        .is_some_and(|name| name == crate::secrets::keyhold::APP_BINARY)
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| crate::names::APP_BINARY.recognises(name))
 }
 
 /// The program of the process that started this one, as `ps` names it, or `None` when it

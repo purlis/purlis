@@ -29,6 +29,10 @@ const TABS = '[data-strip="Tabs"]';
 /** The tab in front on the strip: the chat's own once its pane is in front. */
 export const SELECTED_TAB = `${TABS} [role="tab"][aria-selected="true"]`;
 
+/** **A chat's tasks button** (#5341): the popup button its pane head's state is, on the pane with
+ *  the keyboard. It opens the menu a tab's chip opened; a tab wears no count. One copy here. */
+export const HEAD_TASKS = '.pane-frame[data-focused] .pane-state-mark [aria-haspopup="menu"]';
+
 /**
  * **Starts a chat by pressing `press` and answering the picker, and answers with its number.**
  * The number is the one session `running_sessions` lists after the start and did not before:

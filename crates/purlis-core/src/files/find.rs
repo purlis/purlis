@@ -58,6 +58,9 @@ impl Named {
     pub fn branch(&self) -> Branch<'_> {
         match &self.piece {
             Some(piece) => Branch::piece(&self.ws, &self.repo, piece),
+            // No repo and no piece is the workspace's own files (#5375), as the window names
+            // them: no repo has an empty name.
+            None if self.repo.is_empty() => Branch::workspace_files(&self.ws),
             None => Branch::repo(&self.ws, &self.repo),
         }
     }
@@ -331,6 +334,11 @@ fn listing(
         if branch.is_plane_root() {
             return Err(Refused::NotAtTheRoot("find files by name"));
         }
+        // A workspace's own files are listed as its tree shows them (#5375): by no git, and
+        // without what Show hidden alone draws.
+        if branch.is_workspace_files() {
+            return workspace_listing(plane, branch.ws, cap);
+        }
         // With a reader, its child finds the folder and lists it, cut at the cap there, so this
         // process starts no git (#1189); with none, both are done here.
         // A branch whose index the child could not read is listed here (#1130).
@@ -373,6 +381,26 @@ fn listing(
         })
     };
     read().map_err(|refused| refused.to_string())
+}
+
+/// Workspace `ws`'s own files, as [`super::workspace::Files::list`] finds them, at most `cap`.
+fn workspace_listing(plane: &Path, ws: &str, cap: usize) -> Result<Listing, Refused> {
+    let files = super::workspace::Files::of(plane, ws).map_err(|why| match why {
+        super::workspace::NotHere::Files(refused) => refused,
+        other => Refused::Read(other.to_string()),
+    })?;
+    let (paths, more) = files.list(cap);
+    let partial = (more > 0).then(|| {
+        format!(
+            "{ws}'s own files are more than {cap}, and only the first {cap} of them are \
+             searched by name"
+        )
+    });
+    Ok(Listing {
+        base: files.path().to_path_buf(),
+        paths,
+        partial,
+    })
 }
 
 /// Whether an offered path is a file that opens: a plain file, or a link to another offered

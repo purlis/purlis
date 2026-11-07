@@ -9,7 +9,9 @@ import {
   doneByDrafts,
   isDone,
   jobSaid,
+  finishedSaid,
   linkOfAsk,
+  runningSaid,
   scopeOfLevel,
   studioPlaceOf,
   type StudioChat,
@@ -21,7 +23,10 @@ const EVALS: StudioLink = {
   level: DEMO,
   job: "outcome-evals",
   done: false,
+  started: null,
+  finished: null,
 };
+const UNTIMED = { started: null, finished: null } as const;
 
 const chat = (session: number, link: StudioLink): StudioChat => ({
   session,
@@ -53,9 +58,9 @@ describe("what a studio chat says of its job (#5185)", () => {
 
   it("names the skill and the job on the chat's chip", () => {
     expect(chipSaid(EVALS, false)).toBe("test-design · writing outcome evals");
-    expect(chipSaid({ skill: null, level: DEMO, job: "draft", done: false }, true)).toBe(
-      "New skill · drafted a skill",
-    );
+    expect(
+      chipSaid({ skill: null, level: DEMO, job: "draft", done: false, ...UNTIMED }, true),
+    ).toBe("New skill · drafted a skill");
   });
 });
 
@@ -65,7 +70,7 @@ describe("which chats are a skill's (#5185)", () => {
       chat(3, EVALS),
       chat(4, { ...EVALS, level: { at: "project", local: false } }),
       chat(5, { ...EVALS, skill: "deploy" }),
-      chat(6, { skill: null, level: DEMO, job: "draft", done: false }),
+      chat(6, { skill: null, level: DEMO, job: "draft", done: false, ...UNTIMED }),
     ];
 
     expect(chatsOfSkill(chats, "test-design", DEMO).map((one) => one.session)).toEqual([3]);
@@ -89,27 +94,35 @@ describe("where a studio chat's link opens (#5185)", () => {
       skill: "test-design",
       tab: "runs",
     });
-    expect(studioPlaceOf({ skill: null, level: DEMO, job: "draft", done: false })).toEqual({
+    expect(
+      studioPlaceOf({ skill: null, level: DEMO, job: "draft", done: false, ...UNTIMED }),
+    ).toEqual({
       page: "drafts",
     });
   });
 });
 
 describe("the link a studio start leaves on its chat (#5185)", () => {
-  it("is the ask's skill, level and job; a Try it leaves none", () => {
-    expect(linkOfAsk({ plane: "p", kind: "evals", level: DEMO, name: "test-design" })).toEqual(
-      EVALS,
+  it("is the ask's skill, level and job, started now; a Try it leaves none", () => {
+    const now = new Date("2026-11-04T17:31:00.250Z");
+    const started = { started: "2026-11-04T17:31:00Z", finished: null };
+    expect(linkOfAsk({ plane: "p", kind: "evals", level: DEMO, name: "test-design" }, now)).toEqual(
+      { ...EVALS, ...started },
     );
-    expect(linkOfAsk({ plane: "p", kind: "draft", level: DEMO, what: "" })).toEqual({
+    expect(linkOfAsk({ plane: "p", kind: "draft", level: DEMO, what: "" }, now)).toEqual({
       skill: null,
       level: DEMO,
       job: "draft",
       done: false,
+      ...started,
     });
     expect(
-      linkOfAsk({ plane: "p", kind: "redo", id: "d1", name: "test-design", level: DEMO, chat: 3 }),
-    ).toEqual({ skill: "test-design", level: DEMO, job: "redo", done: false });
-    expect(linkOfAsk({ plane: "p", kind: "try", id: "d1", profile: null })).toBeUndefined();
+      linkOfAsk(
+        { plane: "p", kind: "redo", id: "d1", name: "test-design", level: DEMO, chat: 3 },
+        now,
+      ),
+    ).toEqual({ skill: "test-design", level: DEMO, job: "redo", done: false, ...started });
+    expect(linkOfAsk({ plane: "p", kind: "try", id: "d1", profile: null }, now)).toBeUndefined();
   });
 
   it("is done once a draft its chat wrote waits, or once its program has ended", () => {
@@ -121,12 +134,34 @@ describe("the link a studio start leaves on its chat (#5185)", () => {
   it("stays done once its draft came, after the draft is accepted or discarded", () => {
     const links = { 3: EVALS, 4: { ...EVALS, job: "trigger-tests" as const } };
 
-    const read = doneByDrafts(links, [draft(3)]);
+    const read = doneByDrafts(links, [draft(3)], new Date("2026-11-04T17:42:00Z"));
     expect(read[3].done).toBe(true);
+    expect(read[3].finished).toBe("2026-11-04T17:42:00Z");
     expect(read[4].done).toBe(false);
     // The draft is gone (accepted, or discarded): the chat is still done.
     expect(isDone(chat(3, read[3]), [], false)).toBe(true);
     // A read that changes nothing is the same value, so nothing is drawn anew.
     expect(doneByDrafts(read, [draft(3)])).toBe(read);
+  });
+});
+
+describe("how a studio chat's times are said (#5248)", () => {
+  const now = new Date(2026, 10, 5, 9, 30);
+
+  it("says when it finished: its clock time today, and its day before", () => {
+    expect(finishedSaid(new Date(2026, 10, 5, 9, 4).toISOString(), now)).toBe("finished 09:04");
+    expect(finishedSaid(new Date(2026, 10, 4, 17, 42).toISOString(), now)).toBe(
+      "finished 11-04 17:42",
+    );
+    expect(finishedSaid(null, now)).toBeUndefined();
+    expect(finishedSaid("soon", now)).toBeUndefined();
+  });
+
+  it("says how long it has run, in whole minutes", () => {
+    const at = (ms: number) => new Date(now.getTime() - ms).toISOString();
+    expect(runningSaid(at(20_000), now.getTime())).toBe("running under a minute");
+    expect(runningSaid(at(2 * 60_000 + 59_000), now.getTime())).toBe("running 2 min");
+    expect(runningSaid(at(65 * 60_000), now.getTime())).toBe("running 1 h 5 min");
+    expect(runningSaid(null, now.getTime())).toBe("running");
   });
 });
