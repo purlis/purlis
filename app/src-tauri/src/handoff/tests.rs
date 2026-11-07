@@ -12934,6 +12934,291 @@ fn dont_allow_on_a_runs_notice_still_stores_the_values_typed() {
     );
 }
 
+/// Three vaults for #5080's picked entries: `team`, the persona's own, which lacks `TOKEN`;
+/// `keep`, which it may use too and holds `SHARED` and `SHOP_PW`; and `finance`, another
+/// persona's, which holds `STRIPE`.
+fn team_and_a_kept_entry(plane: &Plane) {
+    std::fs::write(
+        plane.root.join("vaults.json"),
+        r#"{"vaults": {"team": {"provider": "plain-file", "config": {"file": "t.json"}, "persona": "ops"}, "keep": {"provider": "plain-file", "config": {"file": "k.json"}, "persona": "ops"}, "finance": {"provider": "plain-file", "config": {"file": "f.json"}, "persona": "billing"}}}"#,
+    )
+    .expect("a registry");
+    std::fs::write(
+        plane.root.join("k.json"),
+        r#"{"SHARED": "sh4red-v4lue", "SHOP_PW": "sh0p-v4lue"}"#,
+    )
+    .expect("the kept entries");
+    std::fs::write(plane.root.join("f.json"), r#"{"STRIPE": "str1pe-v4lue"}"#)
+        .expect("another persona's entry");
+}
+
+/// A run of `curl` in chat 3 as `ops`, handing `TOKEN` from vault `team`, which lacks it: its one
+/// notice, offering the program's Allow (#5242).
+fn curl_lacking_token(plane: &Plane) -> purlis_core::secrets::ask::run::RunNeed {
+    use purlis_core::secrets::ask::run::{Bound, Fill, Hosts, Offer, RunNeed};
+    RunNeed {
+        ahead: false,
+        fills: vec![Fill {
+            key: "TOKEN".to_owned(),
+            declared: None,
+            reason: None,
+        }],
+        offer: Offer::Program,
+        not_its_vault: false,
+        bound: Bound {
+            chat: 3,
+            name: "curl".to_owned(),
+            program: "/usr/bin/curl".into(),
+            vault: "team".to_owned(),
+            env: vec!["TOKEN=TOKEN".to_owned()],
+            file: Vec::new(),
+            cwd: plane.root.clone(),
+            args: vec!["--version".to_owned()],
+        },
+        persona: "ops".to_owned(),
+        hosts: Hosts::Listed(Vec::new()),
+        caution: None,
+        command: "curl --version".to_owned(),
+    }
+}
+
+/// Holds `need`'s run on its notice while `answer` answers it, and what the run came to.
+fn held_while(
+    held: &Held,
+    need: purlis_core::secrets::ask::run::RunNeed,
+    answer: impl FnOnce(&purlis_core::secrets::ask::run::OpenRun),
+) -> purlis_core::secrets::ask::run::RunHeld {
+    std::thread::scope(|scope| {
+        let asks = held.secret_asks();
+        let waits = scope.spawn(move || {
+            asks.allowed_or_held(need, std::time::Duration::from_secs(30), &mut |_| {})
+        });
+        let open = loop {
+            if let Some(open) = held.secret_asks().open_runs().into_iter().next() {
+                break open;
+            }
+            assert!(!waits.is_finished(), "the run ended without asking");
+            std::thread::yield_now();
+        };
+        answer(&open);
+        waits.join().expect("it settles")
+    })
+}
+
+/// A link of `field` to `key` in vault `keep`.
+fn picked(field: &str, key: &str) -> crate::secretasks::RunGiven {
+    picked_in(field, "keep", key)
+}
+
+/// A link of `field` to `key` in `vault`.
+fn picked_in(field: &str, vault: &str, key: &str) -> crate::secretasks::RunGiven {
+    crate::secretasks::RunGiven {
+        links: vec![crate::secretasks::RunLink {
+            field: field.to_owned(),
+            vault: vault.to_owned(),
+            key: key.to_owned(),
+        }],
+        ..crate::secretasks::RunGiven::default()
+    }
+}
+
+/// #5080: a run's field filled with an entry the person keeps makes the key a Linked entry, never
+/// a copy, and Allow once lets the run go on reading it.
+#[test]
+fn a_runs_field_filled_with_a_picked_entry_is_a_link_and_allow_once_runs() {
+    let plane = Plane::new().a_persona("ops", "");
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    team_and_a_kept_entry(&plane);
+    // Every run grant is audited before it is given.
+    let logs = tempfile::tempdir().expect("a folder for the log");
+    {
+        use purlis_core::eventlog::{ArgsKey, Log, Recorder};
+        held.hooks()
+            .record_into(crate::hooks::Events::here(Recorder::new(
+                Log::open(logs.path(), "DEVICE").expect("a log"),
+                ArgsKey::open(logs.path()).expect("a key"),
+            )));
+    }
+
+    let ran = held_while(&held, curl_lacking_token(&plane), |open| {
+        crate::secretasks::run_grant_given(
+            &held,
+            None,
+            open.id,
+            crate::secretasks::RunGrantPress::Once,
+            picked("TOKEN", "SHARED"),
+        )
+        .expect("allowed");
+    });
+    assert_eq!(ran, purlis_core::secrets::ask::run::RunHeld::Allowed);
+    let ctx =
+        purlis_core::secrets::Ctx::new(&plane.root, purlis_core::secrets::Env::from_process());
+    assert_eq!(
+        purlis_core::secrets::links::of(&ctx, "team", "TOKEN").expect("read"),
+        Some(purlis_core::secrets::links::Target {
+            vault: "keep".to_owned(),
+            key: "SHARED".to_owned(),
+        }),
+        "the key reads the entry"
+    );
+    let team = std::fs::read_to_string(plane.root.join("t.json")).unwrap_or_default();
+    assert!(!team.contains("sh4red-v4lue"), "never a copy: {team}");
+}
+
+/// #5080: a picked entry is held to the checks a typed value is, and to the entry's own: one a
+/// browser login of any persona fills is never linked, whatever is pressed (a link is for good,
+/// and a declared tool reads through it too), nor is an entry of a vault the persona may not use.
+/// Refused before anything is linked, stored or given.
+#[test]
+fn a_runs_field_linked_to_a_browser_logins_key_is_refused_with_nothing_linked_or_given() {
+    let plane = Plane::new().a_persona("ops", "");
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    team_and_a_kept_entry(&plane);
+    let manifest = plane.root.join(purlis_core::plane::MANIFEST);
+    let mut file = std::fs::read_to_string(&manifest).unwrap_or_default();
+    file.push_str(
+        "\n[sandbox.personas.qa.tools.shop]\nvault = \"keep\"\nbrowser = \
+         \"https://shop.example.test/login\"\nkey = \"SHOP_PW\"\n",
+    );
+    std::fs::write(&manifest, &file).expect("a teammate's login line");
+
+    let ran = held_while(&held, curl_lacking_token(&plane), |open| {
+        for press in [
+            crate::secretasks::RunGrantPress::Once,
+            crate::secretasks::RunGrantPress::Chat,
+            crate::secretasks::RunGrantPress::Refuse,
+        ] {
+            let pressed = crate::secretasks::run_grant_given(
+                &held,
+                None,
+                open.id,
+                press,
+                picked("TOKEN", "SHOP_PW"),
+            );
+            assert!(
+                pressed.as_ref().is_err_and(|why| why.contains("browser")),
+                "{press:?}: {pressed:?}"
+            );
+        }
+        let elsewhere = crate::secretasks::run_grant_given(
+            &held,
+            None,
+            open.id,
+            crate::secretasks::RunGrantPress::Refuse,
+            picked_in("TOKEN", "finance", "STRIPE"),
+        );
+        assert!(
+            elsewhere
+                .as_ref()
+                .is_err_and(|why| why.contains("can't use vault finance")),
+            "{elsewhere:?}"
+        );
+        let listed = crate::secretasks::run_entries_for(&held, open.id).expect("listed");
+        let names: Vec<_> = listed
+            .iter()
+            .map(|one| (one.vault.as_str(), one.keys.clone()))
+            .collect();
+        assert!(
+            names
+                .iter()
+                .all(|(vault, keys)| *vault != "finance" && !keys.contains(&"SHOP_PW".to_owned())),
+            "the picker offers neither: {names:?}"
+        );
+        let ctx =
+            purlis_core::secrets::Ctx::new(&plane.root, purlis_core::secrets::Env::from_process());
+        assert_eq!(
+            purlis_core::secrets::links::of(&ctx, "team", "TOKEN").expect("read"),
+            None,
+            "nothing linked"
+        );
+        assert!(held.secret_asks().given_runs().is_empty(), "nothing given");
+        crate::secretasks::run_grant_filled(
+            &held,
+            None,
+            open.id,
+            crate::secretasks::RunGrantPress::Refuse,
+            Vec::new(),
+        )
+        .expect("kept off");
+    });
+    assert!(
+        matches!(ran, purlis_core::secrets::ask::run::RunHeld::Refused { .. }),
+        "{ran:?}"
+    );
+}
+
+/// #5080, #5240: Remember ticked on a run's notice writes the need line the person read into the
+/// persona's definition, once the value is stored; a field typed and picked at once is refused.
+#[test]
+fn remember_on_a_runs_notice_writes_the_need_line_once_its_value_is_stored() {
+    let plane = Plane::new().a_persona("ops", "");
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    team_and_a_kept_entry(&plane);
+    // A write of purlis's own is audited before it is made.
+    let logs = tempfile::tempdir().expect("a folder for the log");
+    {
+        use purlis_core::eventlog::{ArgsKey, Log, Recorder};
+        held.hooks()
+            .record_into(crate::hooks::Events::here(Recorder::new(
+                Log::open(logs.path(), "DEVICE").expect("a log"),
+                ArgsKey::open(logs.path()).expect("a key"),
+            )));
+    }
+
+    held_while(&held, curl_lacking_token(&plane), |open| {
+        let mut both = picked("TOKEN", "SHARED");
+        both.values = vec![("TOKEN".to_owned(), "t0ken-v4lue".to_owned().into())];
+        let both = crate::secretasks::run_grant_given(
+            &held,
+            None,
+            open.id,
+            crate::secretasks::RunGrantPress::Refuse,
+            both,
+        );
+        assert!(
+            both.as_ref().is_err_and(|why| why.contains("keep one")),
+            "{both:?}"
+        );
+        crate::secretasks::run_grant_given(
+            &held,
+            None,
+            open.id,
+            crate::secretasks::RunGrantPress::Refuse,
+            crate::secretasks::RunGiven {
+                values: vec![("TOKEN".to_owned(), "t0ken-v4lue".to_owned().into())],
+                remember: vec![crate::secretasks::RunNeedLine {
+                    key: "TOKEN".to_owned(),
+                    purpose: "the staging API".to_owned(),
+                }],
+                ..crate::secretasks::RunGiven::default()
+            },
+        )
+        .expect("answered");
+    });
+    let stored = std::fs::read_to_string(plane.root.join("t.json")).expect("stored");
+    assert!(stored.contains("t0ken-v4lue"), "{stored}");
+    let definition =
+        std::fs::read_to_string(plane.root.join("personas/ops/persona.md")).expect("its file");
+    assert!(
+        definition.contains("secret-need.TOKEN: the staging API"),
+        "{definition}"
+    );
+    assert!(
+        definition.contains("vault: none") && !definition.contains("vault: team"),
+        "a run names its vault, so the persona's is left as it was: {definition}"
+    );
+    assert!(held.proposals().every().is_empty(), "written, not held");
+}
+
 /// A program no Run grant may be keeps the vault's own ask, and Keep blocked ends it for that chat:
 /// its next try can't bring the persona-wide Allow back, and another chat's is its own.
 #[cfg(unix)]

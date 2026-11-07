@@ -1810,6 +1810,10 @@ const PAINTED: ReadonlyMap<string, Painted> = new Map<string, Painted>([
     { own: "the same, under the pointer" },
   ],
   [
+    'wash.warning [data-scope="secret-ask"][data-part="control"]',
+    { own: "a control character's name in a chat's words (#5080); its words are its own" },
+  ],
+  [
     'wash.warning [data-part="count"][data-scope="titlebar"]',
     { own: "a chip's waiting count, on the bar's own ground (PART_LAID_ON)" },
   ],

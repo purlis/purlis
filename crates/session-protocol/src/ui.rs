@@ -387,6 +387,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     // client's: a chat must not learn where a value lives.
     "link_secret_ask",
     "secret_ask_entries",
+    // And a run's notice's fields (#5080): the same entries, and the same reason.
+    "run_ask_entries",
     // A chat's browser sites (#2018): the person's answer alone. No chat allows its own
     // browser a site.
     "allow_browser_sites",

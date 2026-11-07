@@ -76,11 +76,8 @@ import { capMarks } from "./combiningMarks";
 import { blankOf, marksIn, markOf } from "./invisible";
 import { AskWrites } from "./AskWrites";
 import { LoginSite, useTypedSite } from "./LoginSite";
-import { RunFills, valuesOf } from "./RunFills";
-import { RunGrantFacts } from "./RunGrantFacts";
-import { SecretFill, type FillWith } from "./SecretFill";
+import { SecretAskNotice, type SecretAskGiven } from "./SecretAskNotice";
 import { SecretFillSite } from "./SecretFillNotice";
-import type { VaultEntry } from "./VaultEntryPicker";
 import { ScopeSwitch } from "./ScopeSwitch";
 import { Button, ButtonRow, IconButton } from "./ui/button/Button";
 import { Card } from "./ui/card/Card";
@@ -887,17 +884,9 @@ function Ask({
   const [reason, setReason] = useState("");
   /** The site as the person changed it, on a login's ask (#4595). */
   const [typed, setTyped] = useTypedSite(ask);
-  /** The box a Secret ask's value is typed in (#5068): it holds its own words, read on Fill. */
-  const secretBox = useRef<HTMLInputElement>(null);
-  /** The entry a Secret ask is filled with, where the person uses one they keep (#5073). */
-  const [secretPick, setSecretPick] = useState<VaultEntry>();
-  /** Which way the person fills a Secret ask: Fill with nothing picked says so (#5073). */
-  const [secretFillWith, setSecretFillWith] = useState<FillWith>("value");
-  /** The purpose of the line Fill writes, while Remember is ticked (#5240). */
-  const [secretRemember, setSecretRemember] = useState<string>();
-  /** A run's notice's value boxes, by key (#5242): each holds its own words, read on a press. */
-  const runBoxes = useRef(new Map<string, HTMLInputElement>());
   const who = chainSaid(ask.chain);
+  /** A secret's one notice draws its own answers (#5080). */
+  const secretNotice = ask.secret != null || ask.run != null;
   const key = askKey(ask);
   const openAnswer = useOpenAnswer();
   /** Its words are drawn whole: it is a dispatch's own Notice, or an answer here allows. */
@@ -922,7 +911,8 @@ function Ask({
   const { drawn, tooSoon } = useSettledPlace<HTMLLIElement>(here);
   /** Whether `option` is an Allow on an ask of Allow and Keep blocked (ADR 0097 §6). */
   const grants = (option: Offered) => option.allows && ALLOW_OR_KEEP.has(ask.source);
-  const answer = (option: Offered) => {
+  /** A press of `option`; on a secret's one notice (#5080), with what it gave, read once. */
+  const answer = (option: Offered, given?: () => SecretAskGiven) => {
     if (busy) return;
     // **An Allow waits for the row to settle** (#1695), as an update's does: with the hand's
     // list retired, the Inbox is where a permission or a host is allowed from outside its
@@ -931,37 +921,21 @@ function Ask({
       setSaid(MOVED_JUST_NOW);
       return;
     }
-    if (ask.secret != null && option.allows && secretFillWith === "entry" && !secretPick) {
-      setSaid("Pick an entry first, or choose New value.");
-      return;
-    }
-    if (
-      ask.secret?.remember?.need === true &&
-      option.allows &&
-      secretRemember !== undefined &&
-      secretRemember.trim() === ""
-    ) {
-      setSaid(`Say what ${ask.secret.key} is for, or untick Remember.`);
-      return;
-    }
     setBusy(true);
     setSaid(undefined);
-    // A Secret ask's value is read from its box as Fill is pressed, and the box emptied.
-    const given = ask.secret != null && option.allows ? (secretBox.current?.value ?? "") : typed;
-    if (ask.secret != null && secretBox.current) secretBox.current.value = "";
-    const linked = ask.secret != null && option.allows ? secretPick : undefined;
-    // A run's notice's values go with whatever is pressed, read from their boxes and emptied:
-    // the core keeps what Don't allow may store and drops the rest (#5242).
-    const runValues = ask.run != null ? valuesOf(runBoxes) : undefined;
+    // A secret's values are read from their boxes as the answer is pressed, and the boxes
+    // emptied: only now, once the row has settled (#5080).
+    const got = given?.();
     void answerTaken(
       plane,
       ask,
       option.id,
       option.id === "keep" ? reason : undefined,
-      given,
-      linked,
-      ask.secret != null && option.allows ? secretRemember : undefined,
-      runValues,
+      got === undefined ? typed : got.typed,
+      got?.picked,
+      got?.remember,
+      got?.run,
+      got?.named,
     )
       .then(({ refused, live, opened }) => {
         if (refused !== undefined) {
@@ -1017,26 +991,18 @@ function Ask({
             <LoginSite login={ask.login} typed={typed} onTyped={setTyped} />
           </Stop>
         )}
-        {ask.secret != null && (
+        {/* A secret's one notice (#5080): its facts, the chat's words, its fields, its Allow
+            and its own answers, from the secret-ask family. */}
+        {secretNotice && (
           <Stop id={`${key}:secret`}>
-            <SecretFill
-              secret={ask.secret}
-              box={secretBox}
+            <SecretAskNotice
+              ask={ask}
+              chat={who === "" ? "The chat" : who}
               entries={() => secretAskEntries(plane, ask)}
-              picked={secretPick}
-              onPicked={setSecretPick}
-              onFillWith={setSecretFillWith}
-              remember={secretRemember}
-              onRemember={setSecretRemember}
+              busy={busy}
+              onAnswer={answer}
+              onSaid={setSaid}
             />
-          </Stop>
-        )}
-        {/* What a program would receive, and from whom each word comes (ADR 0112). */}
-        {ask.run != null && <RunGrantFacts run={ask.run} />}
-        {/* The keys the run lacks, one masked box each, in the same notice (#5242). */}
-        {ask.run != null && ask.run.fills.length + (ask.run.no_allow == null ? 0 : 1) > 0 && (
-          <Stop id={`${key}:fills`}>
-            <RunFills run={ask.run} boxes={runBoxes} />
           </Stop>
         )}
         {/* What a secret fill puts where (#5115): words to read, nothing to reach. */}
@@ -1055,30 +1021,36 @@ function Ask({
             />
           </Stop>
         )}
-        <ButtonRow className="inbox-answers" role="group" aria-label={`Answers to ${who}`}>
-          {shape.offers.map((option) => (
-            // Never `disabled` while busy: a disabled button drops the keyboard to the page
-            // (#1700). It says it is busy, and `answer` sends nothing a second time.
-            <Stop key={option.id} id={`${key}:${option.id}`}>
-              <Button
-                // The answer the source suggests is the primary one, in its place (#2241): a
-                // persona's declared browser. Still only the person's press answers. On an ask
-                // of Allow and Keep blocked, each Allow is the grants variant, as plain as Keep
-                // blocked and told apart by its edge and its lock, and never the primary look
-                // (ADR 0097 §6).
-                variant={
-                  grants(option) ? "grants" : option.preselected === true ? "primary" : "secondary"
-                }
-                className={option.allows ? "inbox-answer allows" : "inbox-answer"}
-                aria-disabled={busy || undefined}
-                aria-busy={busy || undefined}
-                onPress={() => answer(option)}
-              >
-                {option.label}
-              </Button>
-            </Stop>
-          ))}
-        </ButtonRow>
+        {!secretNotice && (
+          <ButtonRow className="inbox-answers" role="group" aria-label={`Answers to ${who}`}>
+            {shape.offers.map((option) => (
+              // Never `disabled` while busy: a disabled button drops the keyboard to the page
+              // (#1700). It says it is busy, and `answer` sends nothing a second time.
+              <Stop key={option.id} id={`${key}:${option.id}`}>
+                <Button
+                  // The answer the source suggests is the primary one, in its place (#2241): a
+                  // persona's declared browser. Still only the person's press answers. On an ask
+                  // of Allow and Keep blocked, each Allow is the grants variant, as plain as Keep
+                  // blocked and told apart by its edge and its lock, and never the primary look
+                  // (ADR 0097 §6).
+                  variant={
+                    grants(option)
+                      ? "grants"
+                      : option.preselected === true
+                        ? "primary"
+                        : "secondary"
+                  }
+                  className={option.allows ? "inbox-answer allows" : "inbox-answer"}
+                  aria-disabled={busy || undefined}
+                  aria-busy={busy || undefined}
+                  onPress={() => answer(option)}
+                >
+                  {option.label}
+                </Button>
+              </Stop>
+            ))}
+          </ButtonRow>
+        )}
       </WithWrites>
     ) : null;
 
