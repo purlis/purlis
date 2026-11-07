@@ -131,11 +131,6 @@ fn every_answer() -> Vec<(Answer, &'static str)> {
             Answer::KeptBlocked { reason: None },
             "Kept blocked by the person — don't retry or work around it; no reason given.",
         ),
-        (
-            Answer::NotAnswered,
-            "Nobody answered in time, so nothing was allowed and the ask went — tell the person \
-             what needs it, or ask again when they're back.",
-        ),
     ]
 }
 

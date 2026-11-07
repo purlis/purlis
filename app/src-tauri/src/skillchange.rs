@@ -317,19 +317,11 @@ pub struct SkillLintFinding {
     pub level: SkillLintLevel,
     /// What it says, the core's sentence.
     pub says: String,
-    /// The extension's lint that said it, by the title it is said under; `None` for purlis's
-    /// own. The editor asks the extensions only as an edit opens (#3093) and keeps theirs apart.
-    pub by: Option<String>,
 }
 
 /// **The live lint** of `text`, a `SKILL.md` being edited for the skill `name` at `level` of
 /// `plane` (SK-7; SK-8, #2771): each line the editor shows, checked against the project's skills
 /// and this machine's programs. Save waits only on one that blocks.
-///
-/// **The extensions' lints only where `extensions`** (#3093): each starts its extension's
-/// program confined, its own proxy and folder with it, which took 345 to 449 ms a question on
-/// macOS where the editor asks 200 ms after a keystroke. The editor asks them as an edit opens,
-/// and purlis's own as it is typed; what an extension says only warns, so Save never waits on it.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_lint(
@@ -339,7 +331,6 @@ pub(crate) async fn skill_lint(
     level: SkillLevel,
     name: String,
     text: String,
-    extensions: bool,
 ) -> Result<Vec<SkillLintFinding>, String> {
     let held = planes.held(&plane)?;
     let executor = views.executor();
@@ -350,10 +341,7 @@ pub(crate) async fn skill_lint(
             &executor,
             held.root(),
             |studio| {
-                let lints = studio
-                    .filter(|_| extensions)
-                    .map(|studio| studio.lints())
-                    .unwrap_or_default();
+                let lints = studio.map(|studio| studio.lints()).unwrap_or_default();
                 let more: Vec<&dyn purlis_core::skills::SkillLint> = lints
                     .iter()
                     .map(|lint| lint as &dyn purlis_core::skills::SkillLint)
@@ -381,10 +369,6 @@ fn findings(
                 purlis_core::skills::Severity::Warns => SkillLintLevel::Warns,
             },
             says: finding.to_string(),
-            by: match &finding.lint {
-                purlis_core::skills::Lint::Said { by, .. } => Some(by.clone()),
-                _ => None,
-            },
         })
         .collect()
 }

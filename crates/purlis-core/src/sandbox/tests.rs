@@ -5832,25 +5832,6 @@ fn a_missing_folder_the_disk_takes_for_the_grounds_own_name_covers_it_where_case
     }
 }
 
-#[cfg(unix)]
-#[test]
-fn a_denial_written_in_another_normal_form_covers_the_ground_whether_or_not_case_folds() {
-    // APFS takes a name written whole and written as a letter and its accent for one name on a
-    // volume that keeps case too. Folders with no letter to swap, so whether the volume folds
-    // case cannot be read, and only the normal form is left to tell the two apart.
-    let whole = "/0042\u{e9}1/7";
-    let apart = "/0042e\u{301}1/7";
-    for (denial, ground) in [(whole, apart), (apart, whole)] {
-        let denied = [later_code(denial, "/f", "x")];
-        assert!(
-            covering(&denied, &[std::path::PathBuf::from(ground).join("ws")]).is_some(),
-            "{} over {}",
-            denial.escape_default(),
-            ground.escape_default()
-        );
-    }
-}
-
 #[cfg(target_os = "macos")]
 #[test]
 fn a_denial_in_the_data_volume_spelling_is_held_to_the_ground_and_both_ways() {

@@ -1489,7 +1489,7 @@ struct StartOptions {
     /// The doctor's fix id for that state (`local-ignore`), where one ignore line cures it, so
     /// the picker offers the fix the doctor row does (NO-8). Null for a file git already
     /// tracks: that needs the operator's `git rm --cached`, which charter never runs.
-    ignore_fix_id: Option<doctor::DoctorFix>,
+    ignore_fix_id: Option<String>,
     /// Whether this plane declares no profiles of its own. The built-ins still start, and
     /// the picker says so rather than looking empty or broken.
     declares_none: bool,
@@ -1794,7 +1794,7 @@ fn start_first_of(
         ignore_fix: (!check.passes()).then(|| check.fix.clone()),
         ignore_fix_id: check
             .one_line_cures(root)
-            .then_some(doctor::DoctorFix::LocalIgnore),
+            .then(|| purlis_core::doctor::fix::FixId::LocalIgnore.id().to_owned()),
         declares_none: set
             .profiles()
             .iter()

@@ -14,13 +14,7 @@ import {
   useDoctor,
   type DoctorState,
 } from "./Doctor";
-import {
-  commands,
-  type DoctorFix,
-  type DoctorReport,
-  type DoctorRow,
-  type MoveIntoReposPlan,
-} from "./bindings";
+import type { DoctorReport, DoctorRow, MoveIntoReposPlan } from "./bindings";
 import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
@@ -359,16 +353,6 @@ describe("the Fix button", () => {
   });
   const clean = row("schema", "ok", { detail: "up to date (schema 1)" });
 
-  it("can send only a fix the doctor has: an unknown id is a type error (#3138)", () => {
-    const known: DoctorFix = "rename-plane";
-    // @ts-expect-error -- no fix has this id, so the window cannot ask for it.
-    const unknown: DoctorFix = "no-such-fix";
-    const send = (fix: string) =>
-      // @ts-expect-error -- nor can it pass on a string it was handed.
-      commands.planeDoctorFix(PLANE, fix);
-    expect([known, unknown, send]).toHaveLength(3);
-  });
-
   it("applies the row's fix by its id, says what changed and checks again", async () => {
     const asked: Array<[string, unknown]> = [];
     let fixed = false;
@@ -422,7 +406,7 @@ describe("the Fix button", () => {
 
   it("draws Fix on each row the first wave of fixes covers", async () => {
     // FX-2: the rows and the ids the core gives them.
-    const fixable: Array<[string, DoctorFix]> = [
+    const fixable: Array<[string, string]> = [
       ["plugin install", "plugin-install"],
       ["plugin", "plugin-install"],
       ["plugin files", "plugin-install"],

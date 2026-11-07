@@ -234,10 +234,6 @@ pub enum Answer {
     /// The person filled what a run lacked and did not allow its program (#5242): the values
     /// are stored, and the chat may not retry.
     FilledNotAllowed,
-    /// **Nobody answered in time** (the person's ruling of 2026-11-07): an Ask no call waited on
-    /// went after as long as a waiting call waits. Nothing was allowed, and the chat may ask
-    /// again.
-    NotAnswered,
 }
 
 /// One Ask's answer, as the chat it was the Ask of is told it.
@@ -288,10 +284,6 @@ impl Outcome {
             }
             Answer::FilledNotAllowed => "Filled by the person, but the program was not allowed \
                                          — don't retry or work around it."
-                .to_owned(),
-            Answer::NotAnswered => "Nobody answered in time, so nothing was allowed and the ask \
-                                    went — tell the person what needs it, or ask again when \
-                                    they're back."
                 .to_owned(),
         };
         format!("⬢ purlis: {} — {answered}", self.about.named())

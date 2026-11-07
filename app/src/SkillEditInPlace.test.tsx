@@ -122,18 +122,12 @@ describe("Edit, in place", () => {
     const user = userEvent.setup();
     const text = await startEditing(user);
 
-    lint = [{ level: "blocks", says: "its frontmatter names no description:", by: null }];
+    lint = [{ level: "blocks", says: "its frontmatter names no description:" }];
     typeIn(text, "x");
     expect(await screen.findByText("its frontmatter names no description:")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
 
-    lint = [
-      {
-        level: "warns",
-        says: "its ! command calls jq, which this machine does not have",
-        by: null,
-      },
-    ];
+    lint = [{ level: "warns", says: "its ! command calls jq, which this machine does not have" }];
     typeIn(text, "y");
     expect(
       await screen.findByText(
@@ -141,38 +135,6 @@ describe("Edit, in place", () => {
       ),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
-  });
-
-  it("asks the lint extensions when the edit opens, and only purlis's own lints as it is typed (#3093)", async () => {
-    const theirs: SkillLintFinding = {
-      level: "warns",
-      says: "Probe lint: deploy has no review",
-      by: "Probe lint",
-    };
-    const ours: SkillLintFinding = { level: "warns", says: "its description is short", by: null };
-    const asked = core(() => [], {
-      skill_lint: (args) =>
-        args.extensions === true ? [ours, theirs] : args.text === TEXT ? [] : [ours],
-    });
-    const user = userEvent.setup();
-    const text = await startEditing(user);
-    expect(await screen.findByText(`Worth knowing: ${theirs.says}`)).toBeInTheDocument();
-
-    typeIn(text, "x");
-    typeIn(text, "y");
-    await waitFor(() =>
-      expect(
-        asked.filter((one) => one.cmd === "skill_lint" && one.args.text === `${TEXT}xy`),
-      ).not.toHaveLength(0),
-    );
-    const lints = asked.filter((one) => one.cmd === "skill_lint").map((one) => one.args);
-    // Each extension's lint starts a confined program: asked once, for the text as it opened.
-    expect(lints.filter((one) => one.extensions === true)).toEqual([
-      expect.objectContaining({ text: TEXT }),
-    ]);
-    // What the extensions said is still drawn, beside purlis's own lints of the text now.
-    expect(await screen.findByText(`Worth knowing: ${ours.says}`)).toBeInTheDocument();
-    expect(screen.getByText(`Worth knowing: ${theirs.says}`)).toBeInTheDocument();
   });
 
   it("saves what was typed and says chats started from now get it", async () => {
@@ -295,7 +257,7 @@ describe("leaving with unsaved changes", () => {
     core(() => lint);
     const user = userEvent.setup();
     const text = await startEditing(user);
-    lint = [{ level: "blocks", says: "its frontmatter names no description:", by: null }];
+    lint = [{ level: "blocks", says: "its frontmatter names no description:" }];
     typeIn(text, "x");
     await screen.findByText("its frontmatter names no description:");
 

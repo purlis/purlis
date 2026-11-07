@@ -9,7 +9,6 @@ import {
   type DeletedRename,
   type DeletedSkill,
   type NeedsYou,
-  type DoctorFix,
   type SkillGrant,
   type SkillLevel,
   type SkillTemplateId,
@@ -944,7 +943,7 @@ export function SkillStudioTab({
   };
 
   /** Moves the project's skills into the studio's: the doctor's fix, said as it said it. */
-  const moveSkills = (fix: DoctorFix) => {
+  const moveSkills = (fix: string) => {
     setBusy(true);
     void commands
       .planeDoctorFix(plane, fix)

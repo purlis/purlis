@@ -5208,12 +5208,9 @@ impl Chats {
             _ => all,
         };
         let mut env = env;
-        env.extend(armed);
         // What the wrap sets wins over a profile's or the arming's value of the same name: its
-        // proxy, its temp directory. Sorting cannot decide it, since the session applies the
-        // pairs in order and two of one name would leave the later one standing.
-        env.retain(|(key, _)| !wrapped.iter().any(|(set, _)| set == key));
-        env.extend(wrapped);
+        // proxy, its temp directory, but an outcome eval shell's own temp folder (#4476).
+        purlis_core::hoststart::wrapped_over(&mut env, armed, wrapped);
         // A cluster on this Mac the person pointed this chat's kubectl at (qw384b): its own
         // copy, in its own folder, named for it alone and ahead of any kubeconfig of theirs.
         if let (false, Some(config), Some(confinement)) = (

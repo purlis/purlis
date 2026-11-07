@@ -59,72 +59,6 @@ impl From<Status> for DoctorStatus {
     }
 }
 
-/// **A fix the doctor can make, by its id** (FX-1, #3138): the core's
-/// [`purlis_core::doctor::fix::FixId`] as the window names it, spelled as `charter doctor --fix
-/// <id>` takes it. Every way the window asks for a fix carries this, so it can only ask for one
-/// the core has, and an id that names none is refused as the command's argument is read.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, specta::Type)]
-#[serde(rename_all = "kebab-case")]
-pub enum DoctorFix {
-    RenameLocal,
-    PluginInstall,
-    Reinit,
-    LocalIgnore,
-    MemoryOptimize,
-    Discover,
-    GitIdentity,
-    RenamePlane,
-    PersonaAgents,
-    WorkspaceReinit,
-    HandoffRule,
-    ProjectSkills,
-    LiveSkills,
-    MoveIntoRepos,
-}
-
-impl From<purlis_core::doctor::fix::FixId> for DoctorFix {
-    fn from(id: purlis_core::doctor::fix::FixId) -> Self {
-        use purlis_core::doctor::fix::FixId;
-        match id {
-            FixId::RenameLocal => Self::RenameLocal,
-            FixId::PluginInstall => Self::PluginInstall,
-            FixId::Reinit => Self::Reinit,
-            FixId::LocalIgnore => Self::LocalIgnore,
-            FixId::MemoryOptimize => Self::MemoryOptimize,
-            FixId::Discover => Self::Discover,
-            FixId::GitIdentity => Self::GitIdentity,
-            FixId::RenamePlane => Self::RenamePlane,
-            FixId::PersonaAgents => Self::PersonaAgents,
-            FixId::WorkspaceReinit => Self::WorkspaceReinit,
-            FixId::HandoffRule => Self::HandoffRule,
-            FixId::ProjectSkills => Self::ProjectSkills,
-            FixId::LiveSkills => Self::LiveSkills,
-            FixId::MoveIntoRepos => Self::MoveIntoRepos,
-        }
-    }
-}
-
-impl From<DoctorFix> for purlis_core::doctor::fix::FixId {
-    fn from(fix: DoctorFix) -> Self {
-        match fix {
-            DoctorFix::RenameLocal => Self::RenameLocal,
-            DoctorFix::PluginInstall => Self::PluginInstall,
-            DoctorFix::Reinit => Self::Reinit,
-            DoctorFix::LocalIgnore => Self::LocalIgnore,
-            DoctorFix::MemoryOptimize => Self::MemoryOptimize,
-            DoctorFix::Discover => Self::Discover,
-            DoctorFix::GitIdentity => Self::GitIdentity,
-            DoctorFix::RenamePlane => Self::RenamePlane,
-            DoctorFix::PersonaAgents => Self::PersonaAgents,
-            DoctorFix::WorkspaceReinit => Self::WorkspaceReinit,
-            DoctorFix::HandoffRule => Self::HandoffRule,
-            DoctorFix::ProjectSkills => Self::ProjectSkills,
-            DoctorFix::LiveSkills => Self::LiveSkills,
-            DoctorFix::MoveIntoRepos => Self::MoveIntoRepos,
-        }
-    }
-}
-
 /// One doctor row: the fields `charter doctor --json` prints, and two it does not (`checked`,
 /// `settings`).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
@@ -148,14 +82,14 @@ pub struct DoctorRow {
     /// The fix charter can make for this finding itself (FX-1, `purlis_core::doctor::fix`),
     /// by the id `charter doctor --fix <id>` takes: the dialog draws a Fix button for it, which
     /// calls [`plane_doctor_fix`]. `None` for a row charter cannot fix, and for the app's own.
-    pub fix: Option<DoctorFix>,
+    pub fix: Option<String>,
 }
 
 impl From<Row> for DoctorRow {
     fn from(row: Row) -> Self {
         Self {
             checked: !row.deferred(),
-            fix: row.fix.map(DoctorFix::from),
+            fix: row.fix.map(|id| id.id().to_owned()),
             status: row.status.into(),
             name: row.name,
             detail: row.detail,
@@ -211,7 +145,7 @@ pub async fn plane_doctor(
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct DoctorFixed {
     /// The fix that was asked for, by its id.
-    pub fix: DoctorFix,
+    pub fix: String,
     /// Why it was refused, before anything was written. `None` when it ran.
     pub refused: Option<String>,
     /// What it changed, line by line, in the words and marks `charter doctor --fix` prints.
@@ -231,16 +165,16 @@ pub struct DoctorFixed {
 pub async fn plane_doctor_fix(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
-    fix: DoctorFix,
+    fix: String,
 ) -> Result<DoctorFixed, String> {
     let held = planes.held(&plane)?;
     let root = held.root().to_path_buf();
     let shipped = planes.shipped().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        fixed(&root, fix, &shipped, &|| open_by_workspace(&held))
+        fixed(&root, &fix, &shipped, &|| open_by_workspace(&held))
     })
     .await
-    .map_err(|err| format!("the fix did not finish: {err}"))
+    .map_err(|err| format!("the fix did not finish: {err}"))?
 }
 
 /// **Move into repos/, as its confirmation showed it** (#5569): `move-into-repos` in the plane
@@ -384,13 +318,19 @@ fn open_in(open: &[(Option<String>, String)], ws: &str) -> Vec<String> {
 /// [`open_by_workspace`]), where the terminal reads the app's record.
 fn fixed(
     root: &std::path::Path,
-    fix: DoctorFix,
+    fix: &str,
     shipped: &crate::Shipped,
     open: &dyn Fn() -> Vec<(Option<String>, String)>,
-) -> DoctorFixed {
+) -> Result<DoctorFixed, String> {
     use purlis_core::doctor::fix::{self as registry, FixId, Fixed};
     use purlis_core::plugin_install::Machine;
-    let id = FixId::from(fix);
+    let id = FixId::parse(fix).ok_or_else(|| {
+        format!(
+            "purlis has no fix '{}'; the fixes are {}",
+            purlis_core::shown::short(fix),
+            FixId::ALL.map(FixId::id).join(", ")
+        )
+    })?;
     let applied = match id {
         FixId::PluginInstall => match machine(shipped, Machine::from_env) {
             Ok(machine) => registry::apply_for(root, id, &machine),
@@ -401,7 +341,7 @@ fn fixed(
         }
         _ => registry::apply_in_the_window(root, id),
     };
-    answered(id, applied)
+    Ok(answered(id, applied))
 }
 
 /// A fix's outcome, as the dialog draws it.
@@ -412,13 +352,13 @@ fn answered(
     use purlis_core::doctor::fix::Fixed;
     match outcome {
         Fixed::Ran { said, complete } => DoctorFixed {
-            fix: id.into(),
+            fix: id.id().to_owned(),
             refused: None,
             said,
             complete,
         },
         Fixed::Refused(why) => DoctorFixed {
-            fix: id.into(),
+            fix: id.id().to_owned(),
             refused: Some(why),
             said: Vec::new(),
             complete: false,
@@ -1077,14 +1017,10 @@ mod tests {
         };
         let before = schema(&report(&root, false));
         assert_eq!(before.status, DoctorStatus::Warn, "{before:?}");
-        assert_eq!(before.fix, Some(DoctorFix::Reinit));
+        assert_eq!(before.fix.as_deref(), Some("reinit"));
 
-        let done = fixed(
-            &root,
-            DoctorFix::Reinit,
-            &crate::Shipped::default(),
-            &Vec::new,
-        );
+        let done = fixed(&root, "reinit", &crate::Shipped::default(), &Vec::new)
+            .expect("a fix the registry has");
         assert_eq!(done.refused, None, "{done:?}");
         assert!(done.complete, "{done:?}");
         assert!(done.said.iter().any(|l| l.contains("personas")), "{done:?}");
@@ -1121,7 +1057,7 @@ mod tests {
             .find(|r| r.name == "plugin install")
             .expect("a plugin install row");
         assert_eq!(install.status, DoctorStatus::Warn, "{install:?}");
-        assert_eq!(install.fix, Some(DoctorFix::PluginInstall));
+        assert_eq!(install.fix.as_deref(), Some("plugin-install"));
     }
 
     #[test]
@@ -1129,10 +1065,11 @@ mod tests {
         let (_dir, root) = plane();
         let done = fixed(
             &root,
-            DoctorFix::PluginInstall,
+            "plugin-install",
             &crate::Shipped::nothing(),
             &Vec::new,
-        );
+        )
+        .expect("a fix the registry has");
         assert!(!done.complete, "{done:?}");
         assert!(
             done.refused
@@ -1162,7 +1099,7 @@ mod tests {
             identity_answer(Ok(Fixed::Refused("already set".to_owned()))),
             DoctorIdentityFixed::Fixed {
                 fixed: DoctorFixed {
-                    fix: DoctorFix::GitIdentity,
+                    fix: "git-identity".to_owned(),
                     refused: Some("already set".to_owned()),
                     said: vec![],
                     complete: false,
@@ -1172,45 +1109,14 @@ mod tests {
     }
 
     #[test]
-    fn a_fix_the_registry_does_not_have_cannot_be_asked_for() {
-        // #3138: the fix crosses the seam as a type, so an id that names no fix is refused as
-        // the command's argument is read, before anything is applied.
-        for unknown in ["index-lock", "Reinit", ""] {
-            let read = serde_json::from_value::<DoctorFix>(serde_json::json!(unknown));
-            assert!(read.is_err(), "{unknown:?} read as {read:?}");
-        }
-    }
-
-    #[test]
-    fn every_fix_crosses_the_seam_under_the_id_the_terminal_names_it_by() {
-        let spelled: Vec<serde_json::Value> = purlis_core::doctor::fix::FixId::ALL
-            .into_iter()
-            .map(|id| serde_json::to_value(DoctorFix::from(id)).expect("it serializes"))
-            .collect();
-        assert_eq!(
-            spelled,
-            [
-                "rename-local",
-                "plugin-install",
-                "reinit",
-                "local-ignore",
-                "memory-optimize",
-                "discover",
-                "git-identity",
-                "rename-plane",
-                "persona-agents",
-                "workspace-reinit",
-                "handoff-rule",
-                "project-skills",
-                "live-skills",
-                "move-into-repos",
-            ]
+    fn a_fix_the_registry_does_not_have_is_refused_by_name() {
+        let (_dir, root) = plane();
+        let refused = fixed(&root, "index-lock", &crate::Shipped::default(), &Vec::new)
+            .expect_err("no such fix");
+        assert!(
+            refused.contains("index-lock") && refused.contains("reinit"),
+            "{refused}"
         );
-        for id in purlis_core::doctor::fix::FixId::ALL {
-            let read: DoctorFix =
-                serde_json::from_value(serde_json::json!(id.id())).expect("a fix the core has");
-            assert_eq!(purlis_core::doctor::fix::FixId::from(read), id);
-        }
     }
 
     #[test]

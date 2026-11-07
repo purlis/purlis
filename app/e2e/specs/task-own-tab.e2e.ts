@@ -295,7 +295,7 @@ describe("a task in a tab of its own, and beside its session", () => {
     await browser.waitUntil(async () => (await onScreen()).length === 2, {
       timeout: 10_000,
       interval: 100,
-      timeoutMsg: "the task never opened beside the chat that asked for it",
+      timeoutMsg: "the task never opened beside its session",
     });
     // No tab was added for it: it is a pane of its session's tab.
     expect(await taskTab()).toBeNull();

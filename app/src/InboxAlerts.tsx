@@ -4,14 +4,7 @@
 import { useState, type ReactNode } from "react";
 import { OctagonAlert, TriangleAlert } from "lucide-react";
 import { ApprovePlane } from "./ApprovePlane";
-import {
-  commands,
-  type AlertRow,
-  type AlertWay,
-  type DoctorFix,
-  type FontReview,
-  type PlaneId,
-} from "./bindings";
+import { commands, type AlertRow, type AlertWay, type FontReview, type PlaneId } from "./bindings";
 import type { AlertsReading } from "./alerts";
 import { useAlertFix } from "./alertFix";
 import { identityNowOf, sendIdentity, useFixForm, type Fixer } from "./Doctor";
@@ -219,7 +212,7 @@ function ThisProject({
  * acts on (`docs/ui-copy.md`, #1719), never "Fix" alone. A fix that opens a form says so with
  * its ellipsis.
  */
-const FIX_LABELS: Readonly<Partial<Record<DoctorFix, string>>> = {
+const FIX_LABELS: Readonly<Record<string, string>> = {
   "workspace-reinit": "Update workspace layout",
   "git-identity": "Set git identity…",
   "memory-optimize": "Optimize memory indexes",
@@ -264,7 +257,7 @@ function Words({
 }
 
 /** The words on the layout fix's button (`workspace-reinit`), as the Inbox's row says them. */
-export const LAYOUT_FIX: DoctorFix = "workspace-reinit";
+export const LAYOUT_FIX = "workspace-reinit";
 export const LAYOUT_FIX_LABEL = FIX_LABELS[LAYOUT_FIX] ?? ANY_FIX;
 
 /**
@@ -390,7 +383,7 @@ function ProjectRow({
     },
     identityNow: () => identityNowOf(plane),
   };
-  const fix = useFixForm(way.kind === "fix" ? way.id : undefined, fixer);
+  const fix = useFixForm(way.kind === "fix" ? way.id : "", fixer);
   let action: NoticeAction;
   switch (way.kind) {
     case "settings":

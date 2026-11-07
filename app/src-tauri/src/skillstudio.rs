@@ -1009,7 +1009,7 @@ pub struct StudioFirst {
 pub struct StudioUnmoved {
     pub skills: u32,
     /// The doctor's fix that moves them, by its id (`planeDoctorFix`).
-    pub fix: crate::doctor::DoctorFix,
+    pub fix: String,
 }
 
 impl From<purlis_core::skills::first_open::FirstOpen> for StudioFirst {
@@ -1018,7 +1018,7 @@ impl From<purlis_core::skills::first_open::FirstOpen> for StudioFirst {
             starts: first.starts,
             unmoved: first.unmoved.map(|unmoved| StudioUnmoved {
                 skills: u32::try_from(unmoved.skills).unwrap_or(u32::MAX),
-                fix: unmoved.fix.into(),
+                fix: unmoved.fix.id().to_owned(),
             }),
         }
     }

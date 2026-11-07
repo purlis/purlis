@@ -296,9 +296,10 @@ fn a_claude_code_chat_through_purlis_s_proxy_is_given_its_own_pair_of_ports() {
     // Claude Code runs outside its sandbox, with its hooks: no file in the chat's temp
     // directory is on its PATH or its git's ssh (#1667).
     assert!(applied.ssh_route(Some(&one)).is_none());
-    // Proxy-only (#1699): a Claude Code chat's harness keeps its own temp folder, so purlis
-    // makes none it would never use.
-    assert_eq!(one.tmp(), None);
+    // Proxy-only (#1699) beside a temp folder of the chat's own, which Claude Code is named
+    // in `CLAUDE_CODE_TMPDIR` (#5675), with no ssh route written in it.
+    assert!(one.tmp().is_some_and(std::path::Path::is_dir));
+    assert_ne!(one.tmp(), two.tmp());
     assert!(
         two.proxy_ports()
             .iter()
@@ -597,6 +598,67 @@ fn a_claude_code_chats_bare_ssh_takes_its_route_through_the_file_read_before_eac
     let folder = route.config();
     drop(confinement);
     assert!(!folder.exists());
+}
+
+/// **Each Claude Code chat gets a temporary folder of its own** (#5675): two chats in one
+/// project are started with `CLAUDE_CODE_TMPDIR` naming two different folders, each its
+/// confinement's own, so Claude Code roots its own temporary files and its sandbox's `$TMPDIR`
+/// there and not in the one `/tmp/claude-<uid>` every chat shared. The folder goes as the chat
+/// ends. Binds the chats' ports, so it first runs on CI.
+#[test]
+fn two_claude_code_chats_are_each_given_a_temporary_folder_of_their_own() {
+    let dir = tempfile::tempdir().expect("a project");
+    let root = dir.path().canonicalize().expect("real");
+    let cwd = root.join("w");
+    std::fs::create_dir_all(&cwd).expect("a folder");
+    let mut applied = applied_at(&root);
+    applied.answered("2.1.296 (Claude Code)");
+    let super::Form::ClaudeCode(settings) = applied.form_in(Some(&cwd)) else {
+        panic!("compiled for Claude Code");
+    };
+    let started = |confinement: &super::Confinement| {
+        applied
+            .line(
+                super::Words {
+                    program: "claude".to_owned(),
+                    command: Vec::new(),
+                    armed: armed_with(&settings),
+                    charters: Vec::new(),
+                },
+                &super::At {
+                    cwd: Some(&cwd),
+                    hook_socket: None,
+                    confinement: Some(confinement),
+                    no_opt_out: false,
+                    purlis: None,
+                },
+            )
+            .expect("a line")
+    };
+    let temp_of = |line: &super::Line| {
+        line.env
+            .iter()
+            .find(|(key, _)| key == super::claude_wrap::TMP_ENV)
+            .map(|(_, at)| std::path::PathBuf::from(at))
+            .expect("Claude Code's temporary folder named")
+    };
+    let first = applied.confine().expect("started").expect("a proxy");
+    let second = applied.confine().expect("started").expect("a proxy");
+    let (one, other) = (temp_of(&started(&first)), temp_of(&started(&second)));
+    assert_ne!(one, other, "each chat its own temporary folder");
+    assert_eq!(Some(one.as_path()), first.tmp());
+    assert_eq!(Some(other.as_path()), second.tmp());
+    for folder in [&one, &other] {
+        assert!(folder.is_dir(), "{folder:?} is there as the chat starts");
+        assert!(
+            !folder.starts_with(&root),
+            "{folder:?} is not in the project"
+        );
+    }
+    // As a chat ends, its folder goes, and the other chat's stays.
+    drop(first);
+    assert!(!one.exists(), "{one:?} stayed once its chat ended");
+    assert!(other.is_dir());
 }
 
 /// #1699: where an administrator's managed Claude Code settings turn `allowLocalBinding` on,

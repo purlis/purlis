@@ -449,19 +449,14 @@ fn a_vault_the_project_doesnt_have_is_never_asked_about() {
     assert!(judged(dir.path(), "qa", "shop-login", &unknown, &[]).is_err());
 }
 
-/// The person's ruling of 2026-11-07: Keep blocked counts for the persona until purlis restarts,
-/// so a new chat of the same persona starts no fresh tries.
 #[test]
-fn two_keep_blocked_end_a_personas_login_notices_for_this_run() {
+fn two_keep_blocked_end_a_chats_login_notices() {
     let grants = Grants::default();
-    grants.keep("qa", "one", "https://a.example.test");
-    assert!(!grants.kept("qa", "two", "https://b.example.test"));
-    grants.keep("qa", "two", "https://b.example.test");
-    assert!(grants.kept("qa", "three", "https://c.example.test"));
-    assert!(!grants.kept("ops", "three", "https://c.example.test"));
-    // A chat closing takes none of it with it.
-    grants.forget(7);
-    assert!(grants.kept("qa", "three", "https://c.example.test"));
+    grants.keep(7, "one", "https://a.example.test");
+    assert!(!grants.kept(7, "two", "https://b.example.test"));
+    grants.keep(7, "two", "https://b.example.test");
+    assert!(grants.kept(7, "three", "https://c.example.test"));
+    assert!(!grants.kept(8, "three", "https://c.example.test"));
 }
 
 #[test]
@@ -501,7 +496,7 @@ fn always_on_a_typed_site_shows_its_line_first() {
 }
 
 #[test]
-fn keep_blocked_is_not_asked_again_of_that_persona_in_any_chat() {
+fn keep_blocked_is_not_asked_again_in_that_chat() {
     let dir = project("");
     let grants = Grants::default();
     let (id, proposal, heard) = raised(dir.path(), &grants, "https://shop.example.test/");
@@ -516,9 +511,8 @@ fn keep_blocked_is_not_asked_again_of_that_persona_in_any_chat() {
         heard.try_recv(),
         Ok(Heard::Kept(Some("not that site".to_owned())))
     );
-    grants.forget(7);
-    assert!(grants.kept("qa", "shop-login", "https://shop.example.test"));
-    assert!(!grants.kept("ops", "shop-login", "https://shop.example.test"));
+    assert!(grants.kept(7, "shop-login", "https://shop.example.test"));
+    assert!(!grants.kept(8, "shop-login", "https://shop.example.test"));
     assert!(audited.borrow().is_empty());
 }
 
@@ -1087,73 +1081,4 @@ fn allow_once_is_given_back_only_to_a_login_that_never_ran() {
     assert!(tool_of(&grants, "shop-login").is_none(), "spent");
     grants.answered(7, CHAT_7, Some("qa"), "shop-login", false);
     assert!(tool_of(&grants, "shop-login").is_none(), "answered once");
-}
-
-/// A call cancelled while its notice waits is noticed: the notice goes, and nothing is held for
-/// the chat's next call.
-#[test]
-fn a_call_whose_asker_hung_up_ends_its_wait_and_its_notice() {
-    let dir = project("");
-    let grants = Grants::default();
-    let (id, _, heard) = raised(dir.path(), &grants, "https://shop.example.test/");
-    let looked = std::cell::Cell::new(0);
-    let gone = || {
-        looked.set(looked.get() + 1);
-        looked.get() >= 2
-    };
-    let started = Instant::now();
-
-    let waited = waited_for_the_person(&grants, id, &heard, Duration::from_secs(600), &gone);
-
-    assert_eq!(waited, Waited::AskerGone);
-    assert!(
-        started.elapsed() < Duration::from_secs(60),
-        "it looked again, and stopped"
-    );
-    assert!(grants.waiting().is_empty(), "the notice went");
-    assert!(tool_of(&grants, "shop-login").is_none());
-}
-
-#[test]
-fn a_wait_nobody_answers_ends_its_notice_and_a_press_in_time_is_heard() {
-    let dir = project("");
-    let grants = Grants::default();
-    let (id, _, heard) = raised(dir.path(), &grants, "https://shop.example.test/");
-    let here = || false;
-    assert_eq!(
-        waited_for_the_person(&grants, id, &heard, Duration::from_millis(20), &here),
-        Waited::NotAnswered
-    );
-    assert!(grants.waiting().is_empty(), "the notice went");
-
-    let (id, _, heard) = raised(dir.path(), &grants, "https://shop.example.test/");
-    grants.end(id, Heard::Kept(None));
-    assert_eq!(
-        waited_for_the_person(&grants, id, &heard, Duration::from_secs(600), &here),
-        Waited::Heard(Heard::Kept(None))
-    );
-}
-
-/// The person's ruling of 2026-11-07: a runner chat's notice, which no call waits on, goes after
-/// as long as a waiting call waits, unless it was answered or its chat closed by then.
-#[test]
-fn a_notice_nobody_waits_on_goes_unanswered_after_its_time_unless_answered() {
-    let dir = project("");
-    let grants = Grants::default();
-    let (id, _, heard) = raised(dir.path(), &grants, "https://shop.example.test/");
-    let went = went_unanswered(&heard, Duration::from_millis(20), || {
-        Some(&grants).filter(|grants| grants.end(id, Heard::Gone))
-    });
-    assert!(went.is_some(), "nobody answered, so it went");
-    assert!(grants.waiting().is_empty());
-
-    let (id, _, heard) = raised(dir.path(), &grants, "https://shop.example.test/");
-    grants.end(id, Heard::Allowed);
-    let went = went_unanswered(&heard, Duration::from_millis(20), || Some(()));
-    assert!(went.is_none(), "an answer ends the watch");
-
-    let (_, _, heard) = raised(dir.path(), &grants, "https://shop.example.test/");
-    grants.forget(7);
-    let went = went_unanswered(&heard, Duration::from_millis(20), || Some(()));
-    assert!(went.is_none(), "a close ends the watch");
 }

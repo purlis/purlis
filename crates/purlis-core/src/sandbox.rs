@@ -4711,9 +4711,9 @@ impl Applied {
             // A host listed without a port on every port for Claude Code on its own sandbox, as
             // its own proxy carried it (#1665); a wrapped one is carried as Codex is (#4083).
             any_port: claude,
-            // Claude Code's harness runs outside its sandbox and keeps its own temp folder, so
-            // its chat needs the proxy alone (#1699), and its ssh route where no chat writes
-            // (#1667).
+            // Claude Code's harness runs outside its sandbox, so its chat needs the proxy and a
+            // temp folder of its own, which it is named in `CLAUDE_CODE_TMPDIR` (#1699,
+            // #5675), and its ssh route where no chat writes (#1667).
             beside: if claude {
                 plan::Beside::ProxyOnly {
                     routes: plan::routes(&self.root),
@@ -4785,8 +4785,8 @@ pub struct Line {
 }
 
 /// What runs beside a chat charter wraps, for as long as it lives: the loopback proxy its
-/// traffic leaves through ([`egress`]) and a temp directory of its own, which a Claude Code
-/// chat's is without ([`Self::proxy_only`]). Both end when this is dropped.
+/// traffic leaves through ([`egress`]) and a temp directory of its own, a Claude Code chat's
+/// too ([`Self::proxy_only`], #5675). Both end when this is dropped.
 ///
 /// **Here, or held elsewhere** (#1999): the proxy runs in this process, or in the session host,
 /// which started it from this chat's [`plan::Plan`] and holds it for as long as the chat runs
@@ -5075,14 +5075,21 @@ impl Confinement {
         })
     }
 
-    /// A proxy serving `serving`, and nothing beside it (#1699): for a Claude Code chat, whose
-    /// harness keeps its own temp folder and whose git sets its own ssh through the proxy's
-    /// SOCKS port, so a temp directory and an ssh route would never be used.
+    /// A proxy serving `serving`, and a new temp directory with no ssh route in it (#1699): for
+    /// a Claude Code chat, whose git sets its own ssh through the proxy's SOCKS port. The temp
+    /// directory is the chat's own (#5675): Claude Code is started with
+    /// `CLAUDE_CODE_TMPDIR` naming it, and roots its own temporary files and its sandbox's
+    /// `$TMPDIR` there, where before every chat on the machine shared `/tmp/claude-<uid>`.
+    /// Claude Code's sandbox lets the chat write the folder it roots there and no other chat's.
+    /// It is made where that path stays short enough for Claude Code to take it, in `/tmp` on
+    /// macOS ([`claude_wrap::own_tmp`]).
     pub fn proxy_only(serving: egress::Serving) -> std::io::Result<Self> {
         let asks = serving.asks.clone();
+        let proxy = egress::Proxy::serving(serving)?;
+        let tmp = claude_wrap::own_tmp()?;
         Ok(Self {
-            proxy: Proxied::Here(Box::new(egress::Proxy::serving(serving)?)),
-            tmp: None,
+            proxy: Proxied::Here(Box::new(proxy)),
+            tmp: Some(Folder::Own(tmp)),
             asks: asks.map(|asks| asks as std::sync::Arc<dyn Board>),
             ssh: None,
             routed: None,
@@ -5256,7 +5263,7 @@ impl Confinement {
         self.asks.as_ref()
     }
 
-    /// The chat's own temp directory, which a proxy-only one has none of.
+    /// The chat's own temp directory.
     pub fn tmp(&self) -> Option<&Path> {
         self.tmp.as_ref().map(Folder::path)
     }
@@ -5785,20 +5792,18 @@ fn ground(root: &Path, home: Option<&Path>) -> Vec<PathBuf> {
 pub fn covering(denied: &[Denial], ground: &[PathBuf]) -> Option<NotStarted> {
     // Each name is folded once, before any pair is compared: the list is read against the ground
     // several times for every start, and folding inside the pairs made a start on a volume that
-    // folds case take time in proportion to the two lists multiplied. Every name is decomposed
-    // too, whether its volume folds case or not: APFS keeps case on a volume that asks it to,
-    // but never the form a name's accents are written in.
-    let ground: Vec<(PathBuf, PathBuf, Option<PathBuf>)> = ground
+    // folds case take time in proportion to the two lists multiplied.
+    let ground: Vec<(PathBuf, Option<PathBuf>)> = ground
         .iter()
         .flat_map(|folder| {
             let folds = folds_case(folder);
             spellings(folder).into_iter().map(move |name| {
                 let as_folded = folds.then(|| folded(&name));
-                (decomposed(&name), name, as_folded)
+                (name, as_folded)
             })
         })
         .collect();
-    let any_folds = ground.iter().any(|(_, _, as_folded)| as_folded.is_some());
+    let any_folds = ground.iter().any(|(_, as_folded)| as_folded.is_some());
     // An entry held alone holds nothing below it (#2752), so no ground is under it.
     denied
         .iter()
@@ -5806,10 +5811,8 @@ pub fn covering(denied: &[Denial], ground: &[PathBuf]) -> Option<NotStarted> {
         .find_map(|denial| {
             let covers = spellings(&denial.path).iter().any(|name| {
                 let name_folded = any_folds.then(|| folded(name));
-                let name_decomposed = decomposed(name);
-                ground.iter().any(|(folder_decomposed, folder, as_folded)| {
+                ground.iter().any(|(folder, as_folded)| {
                     folder.starts_with(name)
-                        || folder_decomposed.starts_with(&name_decomposed)
                         || as_folded
                             .as_ref()
                             .zip(name_folded.as_ref())
@@ -5834,17 +5837,6 @@ fn spellings(path: &Path) -> Vec<PathBuf> {
     let twins: Vec<PathBuf> = out.iter().filter_map(|it| firmlink_twin(it)).collect();
     out.extend(twins);
     out
-}
-
-/// `path` with every accented letter written as a letter and its accent (NFD), as APFS compares
-/// a name whether or not its volume folds case. A path of plain ASCII is as it is.
-fn decomposed(path: &Path) -> PathBuf {
-    use unicode_normalization::UnicodeNormalization as _;
-    let name = path.to_string_lossy();
-    if name.is_ascii() {
-        return path.to_path_buf();
-    }
-    PathBuf::from(name.nfd().collect::<String>())
 }
 
 /// `path` as a volume that folds case compares it ([`crate::casefold::folded`]).

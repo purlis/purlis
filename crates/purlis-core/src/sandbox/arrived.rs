@@ -1276,7 +1276,7 @@ fn small_file(path: &Path) -> Option<String> {
 /// At most `limit` bytes of the regular file at `path`, or `None` for anything else. Asked of the
 /// file once it is open, with no link followed and no wait, so swapping a name for a link or a pipe
 /// after a look at it reaches nothing and holds no look up.
-pub(crate) fn read_regular(path: &Path, limit: u64) -> Option<Vec<u8>> {
+pub(super) fn read_regular(path: &Path, limit: u64) -> Option<Vec<u8>> {
     let mut options = std::fs::OpenOptions::new();
     options.read(true);
     #[cfg(unix)]

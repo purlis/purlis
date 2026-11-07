@@ -977,7 +977,7 @@ fn a_browser_call_from_a_chat_the_window_does_not_have_open_is_refused_and_asks_
     let held = planes.held(&id).expect("held");
     assert!(held.chats().open_now().is_empty(), "no chat is open");
 
-    let why = refusal(super::answered(&held, &ask(7, click()), 0));
+    let why = refusal(super::answered(&held, &ask(7, click())));
 
     assert!(why.contains("not one this purlis window has open"), "{why}");
     assert_eq!(held.browsers().posture(7), Posture::Unasked);

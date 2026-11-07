@@ -149,9 +149,8 @@ fn a_long_line_of_moves_that_leave_few_folders_is_read_whole() {
     use crate::piececlaim::Act;
     let l = Layout::new();
     let chain = format!(
-        "cd {} && cd ./workspaces && cd ./ide && cd ./.worktrees && cd ./purlis && \
-         cd ./guard-port && cd ./src && cd .. && cd ./src && cd .. && cd ./src && cd .. && \
-         git commit -m x",
+        "cd {} && cd workspaces && cd ide && cd .worktrees && cd purlis && cd guard-port && \
+         cd src && cd .. && cd src && cd .. && cd src && cd .. && git commit -m x",
         l.root.display()
     );
     assert_eq!(
@@ -233,8 +232,7 @@ fn pushd_with_a_place_in_the_stack_is_never_a_move_to_a_folder_of_that_name() {
 
 /// A relative `cd` is looked for along `CDPATH` first, so where the line sets one, the folder
 /// it names may be another: only a `cd` that names a folder from where the shell is (`./`,
-/// `../`) or a whole path is followed. Where the line sets none, a sandboxed chat's bare `cd`
-/// is followed.
+/// `../`) or a whole path is followed.
 #[test]
 fn a_relative_cd_that_cdpath_may_send_elsewhere_is_not_followed() {
     use crate::piececlaim::Act;
@@ -243,17 +241,13 @@ fn a_relative_cd_that_cdpath_may_send_elsewhere_is_not_followed() {
     let along = "export CDPATH=/elsewhere; cd guard-port && git commit -m x";
     assert_eq!(l.writes(along, &ide), []);
     assert_eq!(l.unplaced(along, &ide).as_deref(), Some("commit"));
-    assert_eq!(l.ask(&along.replace("commit -m x", "add -A"), &ide), None);
-    assert!(
-        l.ask("cd guard-port && git add -A", &ide).is_some(),
-        "a sandboxed chat's bare cd"
-    );
     for placed in [
         "export CDPATH=/elsewhere; cd ./guard-port && git commit -m x".to_owned(),
         format!(
             "export CDPATH=/elsewhere; cd {} && git commit -m x",
             l.folder.display()
         ),
+        "cd guard-port && git commit -m x".to_owned(),
     ] {
         assert_eq!(
             l.writes(&placed, &ide),
@@ -530,128 +524,4 @@ fn git_that_writes_no_branch_or_runs_outside_a_branch_folder_is_not_named() {
     }
     assert_eq!(l.write("git commit -m x", &l.clone), None);
     assert_eq!(l.write("git push", &l.theirs), None);
-}
-
-/// A line the reader cannot tokenize may still hold a git that writes a branch: an unsandboxed
-/// chat's guard names it rather than let it through.
-#[test]
-fn a_line_that_cannot_be_read_and_names_git_is_named_unplaced() {
-    let l = Layout::new();
-    let cmd = "git commit -m \"never closed";
-    assert_eq!(l.writes(cmd, &l.folder), []);
-    assert!(
-        l.unplaced(cmd, &l.folder).is_some(),
-        "{cmd} was let through"
-    );
-    assert_eq!(l.unplaced("ls \"never closed", &l.folder), None);
-}
-
-/// git handed to a shell as a string, fed to one on its standard input, or reached through a
-/// wrapper, may run anywhere and with any words: one that may write a branch is named.
-#[test]
-fn git_in_a_nested_shell_or_behind_a_wrapper_is_named_unplaced() {
-    let l = Layout::new();
-    let folder = l.folder.display();
-    for cmd in [
-        "bash -c \"git commit -m x\"".to_owned(),
-        "sh -c 'cd src && git push'".to_owned(),
-        "zsh -lc 'git rebase main'".to_owned(),
-        "eval git commit -m x".to_owned(),
-        "eval 'git push'".to_owned(),
-        "echo 'git commit -m x' | sh".to_owned(),
-        "echo commit | xargs git".to_owned(),
-        "timeout 60 git push".to_owned(),
-        "nice git commit -m x".to_owned(),
-        "env -u HOME git commit -m x".to_owned(),
-        format!("builtin cd {folder} && git commit -m x"),
-        format!("command cd {folder} && git push"),
-    ] {
-        assert_eq!(l.writes(&cmd, &l.clone), [], "{cmd}");
-        assert!(
-            l.unplaced(&cmd, &l.clone).is_some(),
-            "{cmd} was let through"
-        );
-    }
-    for cmd in [
-        "bash -c 'git status'",
-        "sh -c 'git log --oneline'",
-        "timeout 5 cat .gitignore",
-        "bash ./build.sh && git status",
-    ] {
-        assert_eq!(l.unplaced(cmd, &l.clone), None, "{cmd}");
-    }
-}
-
-/// An unsandboxed chat's shell may have a `CDPATH` its own start files set, which no line
-/// shows: a bare relative `cd` may go elsewhere, and only one named from where the shell is
-/// (`./`, `../`) or a whole path is followed.
-#[test]
-fn an_unsandboxed_chats_bare_relative_cd_is_named_unplaced() {
-    use crate::piececlaim::Act;
-    let l = Layout::new();
-    let ide = l.root.join("workspaces/ide/.worktrees/purlis");
-    let bare = "cd guard-port && git commit -m x";
-    assert_eq!(l.writes(bare, &ide), []);
-    assert_eq!(l.unplaced(bare, &ide).as_deref(), Some("commit"));
-    assert_eq!(
-        l.writes("cd ./guard-port && git commit -m x", &ide),
-        [("commit".to_owned(), Act::Commit, l.folder.clone())]
-    );
-}
-
-/// An alias is read as the line's git reads it: where the line moves where git finds its
-/// configuration, or defines or includes configuration itself in any spelling, the alias
-/// cannot be read and is named.
-#[test]
-fn an_alias_the_lines_own_configuration_may_change_is_named_unplaced() {
-    let (_dir, root, folder) = a_real_branch_folder();
-    crate::testgit::run(&folder, &["config", "alias.ci", "commit"]);
-    let (cwd, root) = (folder.display().to_string(), root.display().to_string());
-    for cmd in [
-        "HOME=/elsewhere git ci -m x",
-        "XDG_CONFIG_HOME=/elsewhere git ci -m x",
-        "GIT_CONFIG_GLOBAL=/elsewhere git ci -m x",
-        "GIT_CONFIG_NOSYSTEM=1 git ci -m x",
-        "export HOME=/elsewhere; git ci -m x",
-        "git -c include.path=/elsewhere ci -m x",
-        "git -c includeIf.onbranch:p1.path=/elsewhere ci -m x",
-        "git --config-env=alias.ci=WHAT ci -m x",
-        "git -c ALIAS.zz=commit zz -m x",
-        "git -c Alias.Zz=commit zz -m x",
-    ] {
-        let read = branch_write(cmd, &cwd, &root);
-        assert!(read.found.is_empty(), "{cmd}: {:?}", read.found);
-        assert!(read.unplaced.is_some(), "{cmd} was let through");
-    }
-}
-
-/// An alias whose words begin with a global option, or that stands for another alias, is not
-/// read further: it is named.
-#[test]
-fn an_alias_with_a_global_option_or_standing_for_another_alias_is_named_unplaced() {
-    let (_dir, root, folder) = a_real_branch_folder();
-    crate::testgit::run(&folder, &["config", "alias.pc", "-p commit"]);
-    crate::testgit::run(&folder, &["config", "alias.ci", "commit"]);
-    crate::testgit::run(&folder, &["config", "alias.c2", "ci"]);
-    let (cwd, root) = (folder.display().to_string(), root.display().to_string());
-    for cmd in ["git pc -m x", "git c2 -m x"] {
-        let read = branch_write(cmd, &cwd, &root);
-        assert!(read.found.is_empty(), "{cmd}: {:?}", read.found);
-        assert!(read.unplaced.is_some(), "{cmd} was let through");
-    }
-}
-
-/// A line of many shells fed on their standard input is read in a moment: the line's own words
-/// are read for them once, not once for each.
-#[test]
-fn a_line_of_many_shells_fed_on_standard_input_is_read_in_a_moment() {
-    let l = Layout::new();
-    let line = "echo git status | sh; ".repeat(4000);
-    let started = std::time::Instant::now();
-    assert_eq!(l.unplaced(&line, &l.clone), None);
-    assert!(
-        started.elapsed() < std::time::Duration::from_secs(5),
-        "{:?}",
-        started.elapsed()
-    );
 }

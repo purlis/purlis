@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useCallback, useSyncExternalStore } from "react";
-import { commands, type DoctorFix, type DoctorFixed, type PlaneId } from "./bindings";
+import { commands, type DoctorFixed, type PlaneId } from "./bindings";
 
 /**
  * **An alert's fix, applied from where it is pressed** (#1301, #3650): the doctor's registry by
@@ -62,7 +62,7 @@ export function useAlertFix(plane: PlaneId, id: string, label: string, reread: (
     [key, act, reread],
   );
   const apply = useCallback(
-    (fix: DoctorFix) => {
+    (fix: string) => {
       if ((held.get(key) ?? IDLE).busy) return;
       set(key, { busy: true, said: undefined });
       void commands

@@ -16,8 +16,6 @@ const login = {
   domain: "shop.example.test",
   path: "/login",
   form: "shop.example.test",
-  registrable: "example.test",
-  form_registrable: "example.test",
   vault: "qa",
   user_key: "username",
   key: "password",
@@ -96,27 +94,6 @@ export const ReplacesTheRecordedSite: Story = {
         "The password goes to auth.example.test, not app.example.test: app.example.test sent the browser there to sign in. Allow only if you know auth.example.test as this site's sign-in.",
       ],
       line: 'shop-login = { vault = "qa", browser = "https://app.example.test/", form = "https://auth.example.test", user = "username", key = "password" }',
-    },
-    typed: undefined,
-    onTyped: () => {},
-  },
-};
-
-/** The person's ruling of 2026-11-07: the part of each host its owner registered is marked, so a
- * known name borrowed on its left, or a swapped letter, stands out. */
-export const ABorrowedName: Story = {
-  args: {
-    login: {
-      ...login,
-      domain: "paypal.com.evil.example",
-      registrable: "evil.example",
-      path: "/",
-      form: "login.paypa1.com",
-      form_registrable: "paypa1.com",
-      warnings: [
-        "The password goes to login.paypa1.com, not paypal.com.evil.example: paypal.com.evil.example sent the browser there to sign in. Allow only if you know login.paypa1.com as this site's sign-in.",
-      ],
-      line: 'shop-login = { vault = "qa", browser = "https://paypal.com.evil.example/", form = "https://login.paypa1.com", user = "username", key = "password" }',
     },
     typed: undefined,
     onTyped: () => {},

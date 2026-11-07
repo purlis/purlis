@@ -295,7 +295,7 @@ fn skills_only_some_programs_read_are_a_tidy_up_that_moves_them() {
     assert_eq!(
         studio.needs[0].fix,
         NeedFix::MoveSkills {
-            fix: crate::doctor::DoctorFix::ProjectSkills
+            fix: "project-skills".to_owned()
         }
     );
     assert_eq!(studio.needs[0].fix_label, "Move it");

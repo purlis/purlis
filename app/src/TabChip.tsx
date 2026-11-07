@@ -30,7 +30,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { Offer } from "./actions";
-import { backId, besideId, ownTabId } from "./actions";
+import { backId, backTitle, besideId, ownTabId } from "./actions";
 import { onAMac } from "./tabKeys";
 import { briefTitle, useOpenBrief, type BriefAsk } from "./Brief";
 import { answerTitle, useOpenAnswer, type AnswerAsk } from "./AnswerPanel";
@@ -117,13 +117,9 @@ type Props = {
   dragging: () => boolean;
   /** Goes to a chat: the tab is switched to it, and its terminal takes the keyboard. */
   onShow: (session: number) => void;
-  /** Moves a task (#1489): to a tab of its own, beside the chat that asked for it, or back out
-   *  of either. Left out, a task's line offers none of them. */
+  /** Moves a task (#1489): to a tab of its own, beside its session, or back out of either.
+   *  Left out, a task's line offers none of them. */
   onPlace?: (session: number, where: Place) => void;
-  /** The catalogue's row for moving task `session` to `where` ({@link placeRowId}), read as a
-   *  line is drawn: its title is what that line's button says, so the button and the palette
-   *  say one act in the same words (#5679). Left out, a task's line draws no buttons. */
-  placeOf?: (session: number, where: Place) => Offer | undefined;
   /** The menu's footer, for what later says it: the limits that bind (#1498). Nothing is
    *  drawn for a slot nobody fills. */
   limits?: ReactNode;
@@ -247,7 +243,6 @@ function sameTasks(was: Props, now: Props): boolean {
     was.dragging === now.dragging &&
     was.onShow === now.onShow &&
     was.onPlace === now.onPlace &&
-    was.placeOf === now.placeOf &&
     was.limits === now.limits &&
     was.used === now.used &&
     was.ends === now.ends &&
@@ -350,7 +345,6 @@ function TasksButton({
   dragging,
   onShow,
   onPlace,
-  placeOf,
   limits,
   used,
   ends,
@@ -565,7 +559,6 @@ function TasksButton({
               openAnswer(ask);
             }
       }
-      placeOf={placeOf}
       onPlace={
         onPlace === undefined
           ? undefined
@@ -892,7 +885,6 @@ function TaskLine({
   onBrief,
   onAnswer,
   onPlace,
-  placeOf,
 }: {
   line: Line;
   clock: StateClock;
@@ -907,8 +899,6 @@ function TaskLine({
   onAnswer?: (ask: AnswerAsk) => void;
   /** Moves the line's task, where it is an open task and the menu was handed the way. */
   onPlace?: (session: number, where: Place) => void;
-  /** The catalogue's row each of the line's buttons presses, whose title the button says. */
-  placeOf?: (session: number, where: Place) => Offer | undefined;
 }) {
   const { row } = line;
   // Its question, where the asks registry says it stands (#4564).
@@ -928,12 +918,6 @@ function TaskLine({
   // **Where a task is drawn, from its own line** (#1489, V100-38): an open task only. The
   // session's own chat is its tab, and an ended task is nowhere.
   const moves = onPlace !== undefined && row !== undefined && row.mode === "task" ? row : undefined;
-  // Each button's words are its catalogue row's (#5679), read only for a line that moves.
-  const rowTo = (where: Place) =>
-    moves === undefined ? undefined : placeOf?.(moves.session, where);
-  const ownRow = rowTo("own");
-  const besideRow = rowTo("beside");
-  const backRow = rowTo("back");
   // **Its question, to answer** (#1551): an open task paused on a question to its asking chat.
   const answer: AnswerAsk | undefined =
     onAnswer !== undefined && row !== undefined && row.mode === "task" && question !== undefined
@@ -967,7 +951,7 @@ function TaskLine({
         }
         // **The keyboard's way to move a task from its line** (#1489): Enter goes to it, and
         // Enter with a modifier opens it elsewhere, as a link is opened in a new tab. ⌘ or
-        // Ctrl is a tab of its own; Alt is beside the chat that asked. Before the menu's own Enter.
+        // Ctrl is a tab of its own; Alt is beside its session. Before the menu's own Enter.
         aria-keyshortcuts={moves === undefined ? undefined : "Control+Enter Meta+Enter Alt+Enter"}
         onKeyDown={(event) => {
           const where: Place | undefined =
@@ -1044,33 +1028,35 @@ function TaskLine({
         )}
         {moves !== undefined && onPlace !== undefined && (
           /* **The pointer's way to move a task from its line** (#1489), drawn at the line's
-             end while the pointer is on it: to a tab of its own and beside the chat that
-             asked for it, or back for one that has a pane of its own. Each says its
-             catalogue row's title (#5679). **Not in the accessibility tree**, as a
+             end while the pointer is on it: to a tab of its own and beside its session, or
+             back for one that has a pane of its own. **Not in the accessibility tree**, as a
              list row's fold is not: a button inside a menu's item is reached by no arrow, so
              the keyboard's way is the line's own keys above, and the task's menu in the Chats
              list. */
           <span className="tasks-menu-places" aria-hidden="true">
-            {line.placed !== "tab" && ownRow !== undefined && (
+            {line.placed !== "tab" && (
               <PlaceButton
-                says={ownRow.title}
+                says={`Move ${line.name} to its own tab`}
                 keys={onAMac() ? "⌘Enter" : "Ctrl+Enter"}
                 onPress={() => onPlace(moves.session, "own")}
               >
                 <SquareArrowOutUpRight />
               </PlaceButton>
             )}
-            {line.placed !== "beside" && besideRow !== undefined && (
+            {line.placed !== "beside" && (
               <PlaceButton
-                says={besideRow.title}
+                says={`Open ${line.name} beside its session`}
                 keys={onAMac() ? "⌥Enter" : "Alt+Enter"}
                 onPress={() => onPlace(moves.session, "beside")}
               >
                 <PanelRight />
               </PlaceButton>
             )}
-            {line.placed !== undefined && backRow !== undefined && (
-              <PlaceButton says={backRow.title} onPress={() => onPlace(moves.session, "back")}>
+            {line.placed !== undefined && (
+              <PlaceButton
+                says={backTitle(line.name)}
+                onPress={() => onPlace(moves.session, "back")}
+              >
                 <Minus />
               </PlaceButton>
             )}

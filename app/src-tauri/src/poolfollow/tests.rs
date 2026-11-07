@@ -530,13 +530,11 @@ fn a_machine_whose_runners_are_suspended(config: &std::path::Path) -> Machine {
     machine
 }
 
-/// **A runner that had stopped before its drain began stays, unchecked** (ruled 2026-11-07: a
-/// runner goes only once it is checked for work no fetch brings): it ran no chat then and starts
-/// none since, but what it holds cannot be listed without waking it (#2051), so it is neither
-/// woken nor removed, and the Pools group and Devices say why it stays. Seen red: before, it was
-/// removed with its home unchecked.
+/// A runner that had stopped before its drain began ran no chat then, and starts none since
+/// (#2051): it is removed without being woken to ask. Seen red: with the look at its container
+/// taken out, the runner is asked.
 #[test]
-fn a_runner_that_stopped_before_its_drain_began_stays_unchecked_and_is_not_woken() {
+fn a_runner_that_stopped_before_its_drain_began_is_removed_without_being_asked() {
     let config = tempfile::tempdir().unwrap();
     let machine = a_machine_whose_runners_are_suspended(config.path());
     a_pool_draining(&machine);
@@ -549,109 +547,9 @@ fn a_runner_that_stopped_before_its_drain_began_stays_unchecked_and_is_not_woken
         &|_| panic!("it is not asked what it holds"),
     );
 
-    assert_eq!(names(&machine), ["first", "first-fedcba98"], "{said:?}");
-    assert!(said[0].contains("not checked"), "{said:?}");
-    assert_eq!(
-        left_by(&machine.config, "first", "first"),
-        [NOT_CHECKED_STOPPED]
-    );
-    assert_eq!(left_on(&machine.config, "first"), [NOT_CHECKED_STOPPED]);
-    assert!(
-        !purlis_core::runners::named(config.path(), "first")
-            .unwrap()
-            .unwrap()
-            .held,
-        "it is not held: no conversation keeps it"
-    );
+    assert_eq!(names(&machine), ["first-fedcba98"], "{said:?}");
     let log = std::fs::read_to_string(config.path().join("log")).unwrap();
     assert!(!log.contains("start "), "{log}");
-    assert!(!log.contains("container rm"), "{log}");
-    assert!(!log.contains("volume rm"), "{log}");
-}
-
-/// A machine in `config` whose `docker` says every container runs, last stopped at
-/// [`STOPPED_AT`]: a runner that had stopped before its drain, started again by the person.
-fn a_machine_whose_runners_were_started_again(config: &std::path::Path) -> Machine {
-    let machine = a_machine(config);
-    std::fs::write(
-        config.join("docker"),
-        format!(
-            "#!/bin/sh\necho \"$*\" >> '{}'\ncase \"$1 $2\" in\n  'container inspect') \
-             echo '[{{\"State\":{{\"Running\":true,\"FinishedAt\":\"{STOPPED_AT}\"}}}}]' ;;\n\
-             'container ls') for a in \"$@\"; do case $a in id=*) echo \"${{a#id=}}\" ;; esac; done ;;\n\
-             esac\nexit 0\n",
-            config.join("log").display(),
-        ),
-    )
-    .unwrap();
-    machine
-}
-
-/// **Started again, it is checked as any running one is**: asked what it holds, and, holding
-/// nothing a fetch does not bring, it is no longer said to be unchecked and its drain goes on.
-#[test]
-fn a_runner_kept_unchecked_is_checked_once_it_runs_again() {
-    let config = tempfile::tempdir().unwrap();
-    let machine = a_machine_whose_runners_are_suspended(config.path());
-    a_pool_draining(&machine);
-    drained_having_stopped_at(&machine, STOPPED_AT_SECS);
-    follow_and_drain(
-        &machine,
-        None,
-        &|_| panic!("a suspended runner is not asked"),
-        &|_| panic!("it is not asked what it holds"),
-    );
-
-    let again = a_machine_whose_runners_were_started_again(config.path());
-    let asked = std::cell::Cell::new(false);
-    let said = follow_and_drain(&again, None, &|_| Ok(0), &|_| {
-        asked.set(true);
-        Ok(Vec::new())
-    });
-
-    assert!(asked.get(), "it is asked what it holds: {said:?}");
-    assert!(
-        !said.iter().any(|one| one.contains("not checked")),
-        "{said:?}"
-    );
-    assert_eq!(left_on(&again.config, "first"), Vec::<String>::new());
-}
-
-/// **One kept unchecked is let go without being woken**: nothing runs on a stopped container, and
-/// what the person was shown is all that is known of it.
-#[test]
-fn a_stopped_runner_kept_unchecked_is_let_go_without_being_woken() {
-    let config = tempfile::tempdir().unwrap();
-    let machine = a_machine_whose_runners_are_suspended(config.path());
-    a_pool_draining(&machine);
-    drained_having_stopped_at(&machine, STOPPED_AT_SECS);
-    follow_and_drain(
-        &machine,
-        None,
-        &|_| panic!("a suspended runner is not asked"),
-        &|_| panic!("it is not asked what it holds"),
-    );
-
-    let_go(
-        &machine,
-        "first",
-        &[crate::devices::shown_safely(NOT_CHECKED_STOPPED)],
-        &|_| panic!("a stopped runner runs no chat"),
-        &|_| panic!("a stopped runner is not asked what it holds"),
-    )
-    .unwrap();
-
-    assert_eq!(names(&machine), ["first-fedcba98"]);
-    assert_eq!(left_on(&machine.config, "first"), Vec::<String>::new());
-    let log = std::fs::read_to_string(config.path().join("log")).unwrap();
-    assert!(!log.contains("start "), "{log}");
-    assert!(
-        log.contains(&format!(
-            "container rm --force --volumes {}",
-            "a".repeat(64)
-        )),
-        "{log}"
-    );
 }
 
 /// **A stopped runner is not an empty one**: found stopped with nothing to say it stopped before
@@ -1032,68 +930,11 @@ fn a_pruned_draining_runner_keeps_a_home_that_holds_a_conversation() {
     assert!(!log.contains("volume rm"), "{log}");
 }
 
-/// **One whose home holds no conversation stays, unchecked, while its home is there** (ruled
-/// 2026-11-07): what its chats left in it cannot be listed with no container to ask, so it is not
-/// removed, and the Pools group says why. Seen red: before, it was forgotten and its home removed.
+/// **One whose home holds none goes as before** (#4168): forgotten, what is left removed.
 #[test]
-fn a_pruned_draining_runner_whose_home_holds_no_conversation_stays_unchecked() {
+fn a_pruned_draining_runner_whose_home_holds_none_is_forgotten() {
     let config = tempfile::tempdir().unwrap();
     let machine = a_machine_whose_draining_runner_was_pruned(config.path());
-    a_pool_draining_a_pruned_runner(&machine);
-    std::fs::write(config.path().join("conversations"), "conversations 0 0 0\n").unwrap();
-
-    let said = follow_and_drain(
-        &machine,
-        None,
-        &|_| panic!("a pruned runner is not asked"),
-        &|_| panic!("it is not asked what it holds"),
-    );
-
-    assert_eq!(names(&machine), ["first", "first-fedcba98"], "{said:?}");
-    assert!(said[0].contains("not checked"), "{said:?}");
-    assert_eq!(left_on(&machine.config, "first"), [NOT_CHECKED_REMOVED]);
-    let log = std::fs::read_to_string(config.path().join("log")).unwrap();
-    assert!(!log.contains("volume rm"), "{log}");
-}
-
-/// **Let go, its home goes as a pruned runner's does** (#4168): forgotten, what is left removed.
-#[test]
-fn a_pruned_draining_runner_kept_unchecked_is_forgotten_once_let_go() {
-    let config = tempfile::tempdir().unwrap();
-    let machine = a_machine_whose_draining_runner_was_pruned(config.path());
-    a_pool_draining_a_pruned_runner(&machine);
-    std::fs::write(config.path().join("conversations"), "conversations 0 0 0\n").unwrap();
-    follow_and_drain(
-        &machine,
-        None,
-        &|_| panic!("a pruned runner is not asked"),
-        &|_| panic!("it is not asked what it holds"),
-    );
-
-    let_go(
-        &machine,
-        "first",
-        &[crate::devices::shown_safely(NOT_CHECKED_REMOVED)],
-        &|_| panic!("a pruned runner runs no chat"),
-        &|_| panic!("a pruned runner is not asked what it holds"),
-    )
-    .unwrap();
-
-    assert_eq!(names(&machine), ["first-fedcba98"]);
-    assert_eq!(left_on(&machine.config, "first"), Vec::<String>::new());
-    let log = std::fs::read_to_string(config.path().join("log")).unwrap();
-    assert!(log.contains("volume rm"), "{log}");
-}
-
-/// **One with nothing of it left goes as before** (#4168): forgotten, with nothing to check.
-#[test]
-fn a_pruned_draining_runner_whose_home_is_gone_too_is_forgotten() {
-    let config = tempfile::tempdir().unwrap();
-    let machine = a_machine_whose_draining_runner_was_pruned(config.path());
-    let docker = std::fs::read_to_string(config.path().join("docker"))
-        .unwrap()
-        .replace("echo purlis-runner-first-home", "true");
-    std::fs::write(config.path().join("docker"), docker).unwrap();
     a_pool_draining_a_pruned_runner(&machine);
     std::fs::write(config.path().join("conversations"), "conversations 0 0 0\n").unwrap();
 

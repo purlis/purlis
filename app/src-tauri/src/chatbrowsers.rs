@@ -4233,9 +4233,8 @@ pub fn narrowed(
 /// **Chat `browse.chat`'s browser call, in project `held`** (#2013): answered by
 /// [`ChatBrowsers::answer`], with what its browser reaches read at each act from the app's
 /// record of its sandbox and the browser sites allowed here ([`reach_of`]). Raising its browser
-/// Ask, or keeping sites waiting on the person, tells the registry. `connection` is the hook
-/// connection the call came on: a call that waits on the person ends where its asker hung up.
-pub fn answered(held: &crate::planes::Held, browse: &BrowseAsk, connection: u64) -> Answer {
+/// Ask, or keeping sites waiting on the person, tells the registry.
+pub fn answered(held: &crate::planes::Held, browse: &BrowseAsk) -> Answer {
     if !held
         .chats()
         .open_now()
@@ -4292,10 +4291,7 @@ pub fn answered(held: &crate::planes::Held, browse: &BrowseAsk, connection: u64)
     }
     // A login its persona doesn't declare waits on the person's answer here (#4595), under no
     // lock of the browsers'.
-    let gone = || held.hooks().asker_gone(connection);
-    if let Some(answer) =
-        crate::loginasks::before_the_login(held, browse, pool.as_deref(), now, &gone)
-    {
+    if let Some(answer) = crate::loginasks::before_the_login(held, browse, pool.as_deref(), now) {
         return answer;
     }
     let reach = || reach_of(held, browse.chat);

@@ -1505,6 +1505,27 @@ pub fn armed(arming: &Arming<'_>) -> Result<Armed, String> {
     }
 }
 
+/// **What arms a chat, then what its sandbox's wrap sets over both**, onto `env`: the wrap's
+/// value wins over a profile's or the arming's of the same name (its proxy, its temp
+/// directory), but for Claude Code's temp folder where the wrap sets no `TMPDIR` of its own.
+/// There the line names the chat's own temp folder (#5675) and the arming may name a narrower
+/// one, an outcome eval shell's (#4476), which its sandbox holds it to; that one stands.
+/// Sorting cannot decide it, since the session applies the pairs in order and two of one name
+/// would leave the later one standing.
+pub fn wrapped_over(
+    env: &mut Vec<(String, String)>,
+    armed: Vec<(String, String)>,
+    mut wrapped: Vec<(String, String)>,
+) {
+    let temp = crate::sandbox::claude_wrap::TMP_ENV;
+    if armed.iter().any(|(key, _)| key == temp) && !wrapped.iter().any(|(key, _)| key == "TMPDIR") {
+        wrapped.retain(|(key, _)| key != temp);
+    }
+    env.extend(armed);
+    env.retain(|(key, _)| !wrapped.iter().any(|(set, _)| set == key));
+    env.extend(wrapped);
+}
+
 /// **A chat's environment, finished** as every chat's is where it opens: what arms it after
 /// its own, what its sandbox's wrap sets over both, what its hooks read about it, sorted, and
 /// the `PATH` that finds purlis's own `binary` first.
@@ -1515,10 +1536,7 @@ pub fn finished_env(
     watched: &Watched<'_>,
     binary: Option<&Path>,
 ) -> Vec<(String, String)> {
-    env.extend(armed);
-    // What the wrap sets wins over a profile's or the arming's value of the same name.
-    env.retain(|(key, _)| !wrapped.iter().any(|(set, _)| set == key));
-    env.extend(wrapped);
+    wrapped_over(&mut env, armed, wrapped);
     what_its_hooks_read(&mut env, watched);
     env.sort();
     crate::start::with_chat_path(env, binary)

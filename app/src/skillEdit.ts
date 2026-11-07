@@ -87,8 +87,7 @@ export function useSkillSaved(tab: string): { notes: readonly string[] } | undef
 
 /** Whether `edit`'s text could be saved: the lint the core's save runs finds nothing blocking. */
 async function savable(edit: SkillEdit): Promise<boolean> {
-  // Only purlis's own lints can block a save, so no extension is asked (#3093).
-  const answer = await commands.skillLint(edit.plane, edit.level, edit.skill.name, edit.now, false);
+  const answer = await commands.skillLint(edit.plane, edit.level, edit.skill.name, edit.now);
   return answer.status !== "ok" || !answer.data.some((one) => one.level === "blocks");
 }
 

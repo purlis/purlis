@@ -6,8 +6,8 @@
 
 use unicode_normalization::UnicodeNormalization as _;
 
-/// `name` as a case-folding APFS volume compares it. APFS compares names in one canonical form,
-/// so the name is decomposed first (`é` written whole and written as `e` with its accent
+/// `name` as a case-folding disk may compare it. APFS and HFS+ compare names in one canonical
+/// form, so the name is decomposed first (`é` written whole and written as `e` with its accent
 /// are one name there), and each character is then taken to its lower case, its upper case and
 /// its lower case again. A character whose lower case alone is not the disk's fold (one with no
 /// lower case of its own, or whose upper case is two letters) comes out as the letters the disk
@@ -16,10 +16,6 @@ use unicode_normalization::UnicodeNormalization as _;
 ///
 /// A name of plain ASCII is lower-cased and nothing more, which is what all of this comes to
 /// for it.
-///
-/// **APFS only.** HFS+ also passes over a few characters no one sees (U+200B to U+200F, U+202A
-/// to U+202E, U+206A to U+206F, U+FEFF) and folds by an older table; APFS keeps those as part
-/// of the name, as this does.
 pub fn folded(name: &str) -> String {
     #[cfg(test)]
     MADE.with(|made| made.set(made.get() + 1));

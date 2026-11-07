@@ -89,7 +89,6 @@ fn the_lint_and_the_templates_are_the_cores() {
         [SkillLintFinding {
             level: SkillLintLevel::Blocks,
             says: purlis_core::skills::Problem::NoFrontmatter.to_string(),
-            by: None,
         }]
     );
     // A short description warns, and Save does not wait on it.
@@ -97,53 +96,6 @@ fn the_lint_and_the_templates_are_the_cores() {
     let said = findings(tmp.path(), &Level::project(), "deploy", &short, &[]);
     assert_eq!(said.len(), 1, "{said:?}");
     assert_eq!(said[0].level, SkillLintLevel::Warns);
-}
-
-/// A lint standing in for an extension's (#3093): one line, said under its title.
-struct Theirs;
-
-impl purlis_core::skills::SkillLint for Theirs {
-    fn findings(
-        &self,
-        _: &purlis_core::skills::SkillFiles<'_>,
-    ) -> Vec<purlis_core::skills::Finding> {
-        vec![purlis_core::skills::Finding {
-            severity: purlis_core::skills::Severity::Warns,
-            lint: purlis_core::skills::Lint::Said {
-                by: "Probe lint".to_owned(),
-                says: "deploy has no review".to_owned(),
-            },
-        }]
-    }
-}
-
-#[test]
-fn an_extensions_finding_names_the_lint_it_is_by_so_the_editor_keeps_it_apart() {
-    // #3093: the editor asks the extensions once as an edit opens and keeps what they said
-    // beside purlis's own lints, asked again as it is typed.
-    let tmp = tempfile::tempdir().unwrap();
-    let said = findings(
-        tmp.path(),
-        &Level::project(),
-        "deploy",
-        "no frontmatter",
-        &[&Theirs],
-    );
-    assert_eq!(
-        said,
-        [
-            SkillLintFinding {
-                level: SkillLintLevel::Blocks,
-                says: purlis_core::skills::Problem::NoFrontmatter.to_string(),
-                by: None,
-            },
-            SkillLintFinding {
-                level: SkillLintLevel::Warns,
-                says: "Probe lint: deploy has no review".to_owned(),
-                by: Some("Probe lint".to_owned()),
-            },
-        ]
-    );
 }
 
 #[test]
