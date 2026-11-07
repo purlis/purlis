@@ -176,6 +176,8 @@ export function anOldInstall(tree: string, home: string, shell: string): OldInst
  * the run's and stays.
  */
 export function removeTheOldInstall(old: OldInstall): void {
-  rmSync(dirname(old.plane), { recursive: true, force: true });
-  rmSync(old.configRoot, { recursive: true, force: true });
+  // The app may still be writing into these as it quits; Node retries ENOTEMPTY/EBUSY.
+  const gone = { recursive: true, force: true, maxRetries: 10, retryDelay: 200 };
+  rmSync(dirname(old.plane), gone);
+  rmSync(old.configRoot, gone);
 }
