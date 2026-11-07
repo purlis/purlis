@@ -212,6 +212,7 @@ function core({
           clashes: [],
           skills: [],
           first: { starts: false, unmoved: null },
+          places: [],
         };
       case "skills_deleted":
       case "skill_drafts":
@@ -653,6 +654,7 @@ describe("the install review", () => {
           clashes: [],
           skills: [],
           first: { starts: false, unmoved: null },
+          places: [],
         }),
         // The project holds notify already; ops does not.
         skill_install_review: (args) =>
@@ -807,6 +809,7 @@ describe("the install review", () => {
           clashes: [],
           skills: [],
           first: { starts: false, unmoved: null },
+          places: [],
         }),
         // The project holds notify already, granted to the root alone.
         skill_install_review: () => ({
@@ -881,6 +884,7 @@ describe("the install review", () => {
           clashes: [],
           skills: [],
           first: { starts: false, unmoved: null },
+          places: [],
         }),
       },
     });
@@ -1514,6 +1518,7 @@ describe("Install all… past the budget (#5355)", () => {
             clashes: [],
             skills: [],
             first: { starts: false, unmoved: null },
+            places: [],
           }),
         skill_install_set_review: (args) => setReview(args.names as string[]),
         skill_budget_preview: () => {

@@ -34,8 +34,11 @@ export const SKILL_STUDIO_TITLE = "Skill studio";
  *  persona, which brings its skills into every workspace. */
 export type StudioAt = "root" | "workspace" | "persona";
 
-/** **Whose chats the studio shows**: `name` is the workspace's or the persona's, empty at the root. */
-export type StudioScope = { at: StudioAt; name: string };
+/** **Whose chats the studio shows**: `name` is the workspace's or the persona's, empty at the root.
+ *  `where`, in a workspace, is the clone the chat it previews starts in (#4227), whose repo
+ *  skills count against its budget too; left out for a chat at the workspace's root. It is no
+ *  part of the scope's key ({@link scopeKey}): the studio's one read covers every place. */
+export type StudioScope = { at: StudioAt; name: string; where?: string };
 
 /**
  * **Each kind of scope, in one place**: the prefix of its view key (and so of the studio's
@@ -96,9 +99,16 @@ export function scopeOfKey(key: string): StudioScope {
   return key.startsWith(persona) ? asPersona(key.slice(persona.length)) : inWorkspace(key);
 }
 
-/** Two scopes are one. */
+/** Two scopes are one: whose chats, and where the chat previewed starts. */
 export function sameScope(one: StudioScope, other: StudioScope): boolean {
-  return one.at === other.at && one.name === other.name;
+  return one.at === other.at && one.name === other.name && one.where === other.where;
+}
+
+/** **`scope`, its chat started in `where`** (#4227): a clone of its workspace, or `undefined`
+ *  for the workspace's root. */
+export function startedIn(scope: StudioScope, where: string | undefined): StudioScope {
+  const whose: StudioScope = { at: scope.at, name: scope.name };
+  return where === undefined || scope.at !== "workspace" ? whose : { ...whose, where };
 }
 
 // --- Its pages, and the places an entry point opens it at ------------------------------------

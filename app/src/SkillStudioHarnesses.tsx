@@ -41,7 +41,16 @@ export function fromWhom(skill: StudioSkill): string {
  * declared program skills are not supported on (SK-30).
  */
 export type HarnessRow =
-  | { kind: "own"; id: string; harness: HarnessKind; title: string; skill: StudioSkill }
+  | {
+      kind: "own";
+      id: string;
+      harness: HarnessKind;
+      title: string;
+      skill: StudioSkill;
+      /** A repo skill of a clone other than the one the chat previewed starts in (#4227): that
+       *  chat starts without it. */
+      elsewhere?: string;
+    }
   | { kind: "left-out"; id: string; harness: HarnessKind; title: string; skill: StudioSkill }
   | { kind: "none"; id: string; harness: HarnessKind; title: string }
   | { kind: "not-supported"; id: string; one: StudioNotSupported };
@@ -63,15 +72,21 @@ export interface HarnessGroup {
 export function harnessGroups(
   harnesses: readonly StudioHarness[],
   notSupported: readonly StudioNotSupported[],
+  /** The clone the chat previewed starts in (#4227), or `undefined` at the workspace's root. */
+  where?: string,
 ): HarnessGroup[] {
   const groups: HarnessGroup[] = harnesses.map((harness) => {
-    const own: HarnessRow[] = harness.skills.map((skill) => ({
-      kind: "own",
-      id: harnessSkillId(harness.harness, skill),
-      harness: harness.harness,
-      title: harness.title,
-      skill,
-    }));
+    const own: HarnessRow[] = harness.skills.map((skill) => {
+      const repo = skill.owner?.kind === "repo" ? skill.owner.name : undefined;
+      return {
+        kind: "own",
+        id: harnessSkillId(harness.harness, skill),
+        harness: harness.harness,
+        title: harness.title,
+        skill,
+        ...(where !== undefined && repo !== undefined && repo !== where ? { elsewhere: repo } : {}),
+      };
+    });
     const none: HarnessRow[] =
       own.length === 0
         ? [
@@ -217,6 +232,7 @@ function HarnessListRow({ row }: { row: HarnessRow }) {
         <RowBelow clamp={1}>{skill.left_out ?? ""}</RowBelow>
       </ListRow>
     );
+  const elsewhere = row.kind === "own" ? row.elsewhere : undefined;
   return (
     <ListRow id={row.id} textValue={skill.name} data-testid={`found-${row.harness}-${skill.name}`}>
       <RowLabel>{skill.name}</RowLabel>
@@ -224,11 +240,19 @@ function HarnessListRow({ row }: { row: HarnessRow }) {
         <Badge>{fromWhom(skill)}</Badge>
         {skill.switch?.kind === "not" ? (
           <Badge>Read-only</Badge>
+        ) : !skill.on ? (
+          <Badge variant="waiting">Off here</Badge>
+        ) : elsewhere !== undefined ? (
+          <Badge variant="waiting">Left out</Badge>
         ) : (
-          !skill.on && <Badge variant="waiting">Off here</Badge>
+          skill.hidden.length > 0 && <Badge>Hidden by the router</Badge>
         )}
       </RowTrail>
-      <RowBelow clamp={1}>{lineOf(skill)}</RowBelow>
+      <RowBelow clamp={1}>
+        {skill.on && elsewhere !== undefined
+          ? `Only a chat started in ${elsewhere} gets it.`
+          : lineOf(skill)}
+      </RowBelow>
     </ListRow>
   );
 }

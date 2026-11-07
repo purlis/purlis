@@ -13011,6 +13011,16 @@ export type SkillHidden = {
 	said: string,
 };
 
+/**  A skill a router hid on one harness's chats started in one clone (#4227). */
+export type SkillHiddenIn = {
+	/**  The clone, by its name in the workspace. */
+	clone: string,
+	harness: HarnessKind,
+	/**  The harness, as a person reads its name. */
+	title: string,
+	hidden: SkillHidden,
+};
+
 /**  A skill a router hid on one harness's chats (SK-15). */
 export type SkillHiddenOn = {
 	harness: HarnessKind,
@@ -13025,6 +13035,15 @@ export type SkillHiddenWhy =
 "over-budget" | 
 /**  An extension router hid it, with its own one line (SK-15b). */
 { "by-router": string };
+
+/**  One harness's chats started in one clone (#4227). */
+export type SkillInAClone = {
+	/**  The clone, by its name in the workspace. */
+	clone: string,
+	harness: HarnessKind,
+	/**  The harness, as a person reads its name. */
+	title: string,
+};
 
 /**
  *  A level of the project's, as the studio names one: the project's root, a workspace's or a
@@ -13812,6 +13831,12 @@ export type Studio = {
 	 */
 	router: StudioRouter | null,
 	/**
+	 *  **The clones a chat can be previewed in** (#4227): each of the workspace's that holds
+	 *  repo skills, in its order. Empty at the project's root, while the studio is off, and
+	 *  where no clone holds one.
+	 */
+	places: StudioClone[],
+	/**
 	 *  Where purlis cannot confirm which of the project's workspace and persona folders the
 	 *  person accepted (#3718): the one item the studio shows for the project, whose Accept
 	 *  accepts the folders it lists (`skill_levels_confirm`). Null otherwise.
@@ -13863,6 +13888,22 @@ export type StudioClash = {
 	 *  (`purlis_core::skills::clash_said`, SK-46): the same line `purlis skill list` prints.
 	 */
 	said: string,
+};
+
+/**
+ *  **A clone the studio can preview a chat in** (#4227): one that holds repo skills, so a chat
+ *  started there counts more than a chat at the workspace's root.
+ */
+export type StudioClone = {
+	/**  The clone, by its name in the workspace. */
+	clone: string,
+	/**  How many repo skills it holds on, by name. */
+	repo_skills: number,
+	/**
+	 *  What the rows' hidden marks preview with it chosen, in a sentence: the Routing page's
+	 *  Preview line ([`StudioRouter::preview`] at the root).
+	 */
+	preview: string,
 };
 
 /**
@@ -14141,6 +14182,16 @@ export type StudioSkill = {
 	 *  own budget: the chat still has it, through the index skill. Empty where every one lists it.
 	 */
 	hidden: SkillHiddenOn[],
+	/**
+	 *  **Each clone whose chats a router hid it from, on each harness** (#4227): the marks once
+	 *  that clone is chosen as where the chat starts. A repo skill's are its own clone's alone.
+	 */
+	hidden_in: SkillHiddenIn[],
+	/**
+	 *  **Each clone whose repo copy a chat there takes in place of this one**, on each harness
+	 *  (#4227).
+	 */
+	replaced_in: SkillInAClone[],
 	/**  The label of the source it was installed from (ADR 0100, amended 2026-11-01). */
 	source_label: string | null,
 	/**  Whether that chat's workspace or persona pins it, so no router hides it. */

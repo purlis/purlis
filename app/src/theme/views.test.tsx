@@ -963,6 +963,7 @@ const ORDINARY: Answers = {
     on: true,
     workspace: null,
     first: { starts: false, unmoved: null },
+    places: [],
     workspaces: ["alpha"],
     levels: [],
     skills: [
@@ -1733,6 +1734,7 @@ const STATES: State[] = [
         on: true,
         workspace: null,
         first: { starts: true, unmoved: null },
+        places: [],
         workspaces: [],
         levels: [],
         skills: [],

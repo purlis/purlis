@@ -29,6 +29,8 @@ export function skill(name: string, over: Partial<StudioSkill> = {}): StudioSkil
     compat: [],
     lint: [],
     hidden: [],
+    hidden_in: [],
+    replaced_in: [],
     pinned: false,
     archived: false,
     pinned_by: [],
@@ -67,6 +69,7 @@ export function studio(skills: StudioSkill[], over: Partial<Studio> = {}): Studi
     not_supported: [],
     levels_to_confirm: null,
     router: null,
+    places: [],
     needs: [],
     ...over,
   };

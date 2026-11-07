@@ -91,6 +91,7 @@ function core(
             workspace: null,
             persona: null,
             first: { starts: false, unmoved: null },
+            places: [],
             workspaces: [],
             levels: [{ level: PROJECT, label: "project" }],
             harnesses: [],
