@@ -20,6 +20,9 @@ describe("a press that misses (temporary, #5609)", function () {
       question.id = "probe-5609";
       question.setAttribute("role", "alertdialog");
       question.setAttribute("aria-label", "Close this probe?");
+      question.style.position = "fixed";
+      question.style.top = "200px";
+      question.style.left = "200px";
       const answer = document.createElement("button");
       answer.textContent = "Close and end the probe";
       question.append(answer);
