@@ -305,7 +305,8 @@ fn workspace_files_note(workspace: &str) -> String {
 /// this chat: the window does ([`crate::sandbox::level_why`]), and the chat asks the person for it.
 pub const SANDBOXED_NOTE: &str = "⬢ **This chat runs in purlis's sandbox.** When it blocks a \
      command (a host it may not reach, or a folder it may not write), the person sees a Notice \
-     on this chat's tab and chooses **Allow for this chat**, **Always allow** (for every chat of \
+     in the Inbox, and on this chat's pane when it is on screen, and chooses **Allow for this \
+     chat**, **Always allow** (for every chat of \
      this project on their machine, or, for a host only, for everyone in the project) or **Keep \
      blocked**. If they allow it, this chat restarts on the same conversation and is told to \
      retry, so say what was blocked and wait for them. Where purlis grants nothing, the person \

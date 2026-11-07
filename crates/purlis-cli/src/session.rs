@@ -349,7 +349,7 @@ fn tell_the_app(
     let Some(chat) = chat else {
         return (
             "This chat was not started by the app (no $PURLIS_HOOK_SOCKET and $PURLIS_CHAT), \
-             so nothing ends it by itself. End it when you are done."
+             so it will not end by itself. End it when you are done."
                 .to_owned(),
             false,
         );

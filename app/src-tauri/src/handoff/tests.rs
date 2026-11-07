@@ -6734,12 +6734,12 @@ fn the_list_holds_a_handoff_the_person_s_ask_and_the_persona_s_own_profile() {
         );
     }
 
-    // The person's ask from that chat's tab, in the person's words.
+    // The person's ask from that chat, in the person's words.
     let why = ask_from_the_tab(&held, &id, asking, "devops", "check prod")
         .expect_err("nothing is started");
     assert_eq!(
         why,
-        "This tab's chat runs on profile 'work', which this project does not list for \
+        "This chat runs on profile 'work', which this project does not list for \
              persona 'devops', so nothing was started. The project lists only 'cx' for that \
              persona. Ask from a chat on that one, or list 'work' for devops under \
              [dispatch.profiles] in the project's file."
