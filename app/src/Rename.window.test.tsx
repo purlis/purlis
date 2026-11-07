@@ -312,21 +312,6 @@ describe("a view's tab", () => {
   });
 });
 
-describe("Rename chat from the pane", () => {
-  it("opens with F2 on the pane head's controls, on that pane's chat", async () => {
-    core([1, 2], twoPanes);
-    render(<App />);
-    await drawn(2);
-
-    const right = screen.getByRole("region", { name: "Right pane" });
-    within(right).getByRole("button", { name: "More for ide.2" }).focus();
-    await userEvent.keyboard("{F2}");
-
-    await screen.findByRole("dialog", { name: "Rename chat ide.2" });
-    expect(screen.queryByRole("dialog", { name: "Command palette" })).not.toBeInTheDocument();
-  });
-});
-
 describe("Rename chat from the list", () => {
   it("is on the row's menu, and renames the chat on its tab and its head", async () => {
     const asked = core([1], onePane);

@@ -84,8 +84,8 @@ export function theChatKeepsIt(e: KeyboardEvent): boolean {
 }
 
 /**
- * Whether an `F2` landed on a tab, a chat's row or a pane head's controls, where it renames
- * rather than opening this (charter-app#254, #5343, `actions.RENAMES_ON_F2`).
+ * Whether an `F2` landed on a tab or a chat's row, where it renames rather than opening this
+ * (charter-app#254, #5343, `actions.RENAMES_ON_F2`).
  *
  * The same question `theChatKeepsIt` asks — where did the keystroke land — about the one other
  * place `F2` means something of its own: the platform's rename key on a focused item. Nothing
@@ -95,6 +95,5 @@ export function theChatKeepsIt(e: KeyboardEvent): boolean {
 export function theTabRenamesOnIt(e: KeyboardEvent): boolean {
   if (e.key !== "F2") return false;
   const on = e.target;
-  // On the marked thing or inside it: a pane head's controls are marked as one (#5343).
-  return on instanceof Element && on.closest(`[${RENAMES_ON_F2}]`) !== null;
+  return on instanceof Element && on.hasAttribute(RENAMES_ON_F2);
 }
