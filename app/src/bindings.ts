@@ -2174,8 +2174,13 @@ export const commands = {
 	 *  **The live lint** of `text`, a `SKILL.md` being edited for the skill `name` at `level` of
 	 *  `plane` (SK-7; SK-8, #2771): each line the editor shows, checked against the project's skills
 	 *  and this machine's programs. Save waits only on one that blocks.
+	 * 
+	 *  **The extensions' lints only where `extensions`** (#3093): each starts its extension's
+	 *  program confined, its own proxy and folder with it, which took 345 to 449 ms a question on
+	 *  macOS where the editor asks 200 ms after a keystroke. The editor asks them as an edit opens,
+	 *  and purlis's own as it is typed; what an extension says only warns, so Save never waits on it.
 	 */
-	skillLint: (plane: PlaneId, level: SkillLevel, name: string, text: string) => typedError<SkillLintFinding[], string>(__TAURI_INVOKE("skill_lint", { plane, level, name, text })),
+	skillLint: (plane: PlaneId, level: SkillLevel, name: string, text: string, extensions: boolean) => typedError<SkillLintFinding[], string>(__TAURI_INVOKE("skill_lint", { plane, level, name, text, extensions })),
 	/**  **Makes a skill** from `template` at `level`. */
 	skillNew: (plane: PlaneId, level: SkillLevel, name: string, description: string, template: SkillTemplateId) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_new", { plane, level, name, description, template })),
 	/**  The text of a skill's `SKILL.md`, which the light editor opens. */
@@ -15861,6 +15866,11 @@ export type SkillLintFinding = {
 	level: SkillLintLevel,
 	/**  What it says, the core's sentence. */
 	says: string,
+	/**
+	 *  The extension's lint that said it, by the title it is said under; `None` for purlis's
+	 *  own. The editor asks the extensions only as an edit opens (#3093) and keeps theirs apart.
+	 */
+	by: string | null,
 };
 
 /**  How much a lint's finding stops, as the editor draws it: the core's `Severity`. */
