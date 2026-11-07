@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794093675824,
+  "lastUpdate": 1794095227585,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -42756,6 +42756,48 @@ window.BENCHMARK_DATA = {
             "value": 100.582426,
             "unit": "ms",
             "extra": "median of 5 runs: 100.451, 100.475, 100.582, 100.965, 101.723 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c1e27802f324c6a1cd30898cb5761ee2ca1a1152",
+          "message": "macOS: a large project's watch starts at once, its folders listed after (#5672) (#5715)\n\n* [DEBUG-5672] Temporary phase timers for the index build and the watch setup\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6VQ4ND0V8GQ3X8FPZ4EAYZW\nPurlis-Persona: steward\n\n* [DEBUG-5672] macOS watch: stream first, folders listed on the watch's thread; scan split timers; process sampler\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6VQ4ND0V8GQ3X8FPZ4EAYZW\nPurlis-Persona: steward\n\n* Revert the temporary diagnostics for #5672\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6VQ4ND0V8GQ3X8FPZ4EAYZW\nPurlis-Persona: steward\n\n* macOS: a project's watch starts its stream before listing its folders (#5672)\n\nWatcher setup on the macOS hosted runner took 0.8 to 2.24 s against the\nspec's 1 s budget (#5486). Phase timers on run 42406242525 put 790 ms of\n825 ms in wanted(), which lists the ~5,200 folders a one-stream watch\nkeeps events to, while the session host's index sweep held the runner's\ncores and disk. The FSEvents stream itself started in 33 ms.\n\nOn one stream the listing is now made on the watch's own thread, after\nthe stream is started. An event heard before it is listed waits for the\nlist, then is kept or dropped as before, so none is told unfiltered and\nnone is lost. Per-folder watching (Linux) is unchanged.\n\nRun 42412110760: watcher setup 22 ms on macOS.\n\nRefs #5672\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6VQ4ND0V8GQ3X8FPZ4EAYZW\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aharon@easydmarc.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-07T22:45:27Z",
+          "tree_id": "0f7243bd129e02f0e35f4f644a5a16fb346465d2",
+          "url": "https://github.com/purlis/purlis/commit/c1e27802f324c6a1cd30898cb5761ee2ca1a1152"
+        },
+        "date": 1794095222227,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.684159,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.650, 0.677, 0.684, 0.705, 0.710 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.7245415,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.690, 16.709, 16.725, 16.736, 16.746 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.12676450000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.393, 101.992, 102.127, 102.829, 103.382 ms"
           }
         ]
       }
