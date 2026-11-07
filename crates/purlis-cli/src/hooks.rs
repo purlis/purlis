@@ -371,69 +371,88 @@ pub fn sessionstart(payload: &str, now: Option<&str>) {
         // Freeze every persona's tools before the session has had a turn in which to rewrite
         // one (charter#432). Keyed on the payload's id, as every later ask is.
         let explicit = hook.payload.get("session_id").and_then(|v| v.as_str());
-        if let Some(sid) = purlis_core::hookstate::session(explicit, &env) {
-            purlis_core::personagate::snapshot(hook.root, &sid);
-        }
-        let ask = purlis_core::briefing::Ask {
-            root: hook.root,
-            cwd: hook.cwd,
-            payload: hook.payload,
-            env: &env,
-            now: hook.now,
-        };
-        let mut parts = purlis_core::briefing::parts(&ask, piece);
-        let workspace = purlis_core::briefing::workspace_of(&ask);
-        // Where this session is: a chat at the plane root is in no workspace (SI-1b), so it
-        // takes no workspace's choices and learns the reports kept for the plane root.
-        let place = purlis_core::briefing::place_of(&ask);
-        // Each extension that is on here and adds a section, quoted as data under its name —
-        // and each that hears it told a chat started — within one bounded wait
-        // (charter-app#343). None of it can hold the start past `Bounds::SESSION_START`, and a
-        // machine with no config directory has no extension to ask.
-        if let Some(config) = purlis_core::machine::config_root_if_there() {
-            use purlis_core::extension::briefing::{self, Asked};
-            // The built-ins of the bundle this binary shipped in, as `purlis statusline` draws
-            // their badges (#1366): none when it is not inside one.
-            let briefed = briefing::at_session_start(
-                &config,
-                &purlis_core::extension::BuiltIn::of_this_program(),
-                &purlis_core::extension::project::Choices::read_in(hook.root, place.workspace()),
-                &Asked {
-                    workspace: workspace.clone(),
-                    persona: env(purlis_core::active::PERSONA_ENV).filter(|it| !it.is_empty()),
-                },
-                crate::extensions::session_start_bounds(),
-            );
-            parts.extend(briefed.parts);
-            for note in briefed.notes {
-                eprintln!("purlis: {note}");
+        let sid = purlis_core::hookstate::session(explicit, &env);
+        // **Beside the briefing, and finished before the hook answers** (#5486): reading every
+        // persona's tools and writing the ceiling, flushed as it always is, took a third of a
+        // start at 100 personas, and on macOS its flushes (`F_FULLFSYNC`) are the slowest
+        // writes the hook makes. Nothing the briefing reads is the ceiling, and the scope joins
+        // the snapshot before anything is printed: the session's first turn, which comes only
+        // after the hook answers, still meets a ceiling on disk.
+        std::thread::scope(|scope| {
+            let frozen = sid.map(|sid| {
+                let root = hook.root;
+                scope.spawn(move || purlis_core::personagate::snapshot(root, &sid))
+            });
+            let ask = purlis_core::briefing::Ask {
+                root: hook.root,
+                cwd: hook.cwd,
+                payload: hook.payload,
+                env: &env,
+                now: hook.now,
+            };
+            let mut parts = purlis_core::briefing::parts(&ask, piece);
+            let workspace = purlis_core::briefing::workspace_of(&ask);
+            // Where this session is: a chat at the plane root is in no workspace (SI-1b), so it
+            // takes no workspace's choices and learns the reports kept for the plane root.
+            let place = purlis_core::briefing::place_of(&ask);
+            // Each extension that is on here and adds a section, quoted as data under its name —
+            // and each that hears it told a chat started — within one bounded wait
+            // (charter-app#343). None of it can hold the start past `Bounds::SESSION_START`, and a
+            // machine with no config directory has no extension to ask.
+            if let Some(config) = purlis_core::machine::config_root_if_there() {
+                use purlis_core::extension::briefing::{self, Asked};
+                // The built-ins of the bundle this binary shipped in, as `purlis statusline` draws
+                // their badges (#1366): none when it is not inside one.
+                let briefed = briefing::at_session_start(
+                    &config,
+                    &purlis_core::extension::BuiltIn::of_this_program(),
+                    &purlis_core::extension::project::Choices::read_in(
+                        hook.root,
+                        place.workspace(),
+                    ),
+                    &Asked {
+                        workspace: workspace.clone(),
+                        persona: env(purlis_core::active::PERSONA_ENV).filter(|it| !it.is_empty()),
+                    },
+                    crate::extensions::session_start_bounds(),
+                );
+                parts.extend(briefed.parts);
+                for note in briefed.notes {
+                    eprintln!("purlis: {note}");
+                }
             }
-        }
-        // Reports kept for this workspace because the chat that asked for them has closed
-        // (charter-app#259): the next chat to START here is the one that learns them — never a
-        // chat already running that compacted or cleared, which would take them as a side
-        // effect of its own housekeeping.
-        let starting = hook
-            .payload
-            .get("source")
-            .and_then(|v| v.as_str())
-            .is_none_or(|source| source == "startup");
-        let kept = if starting {
-            crate::dispatch::handbacks(hook.root, purlis_core::handback::For::Place(&place))
-        } else {
-            Vec::new()
-        };
-        if let Some(reports) = purlis_core::handback::context(&kept, true) {
-            parts.push(reports);
-        }
-        // Where this chat is working (#1450): who asked for it, its sibling tasks and the
-        // other chats running as its persona, as the app that started it has them recorded.
-        if let Some(working) = crate::whereworking::briefing(hook.now) {
-            parts.push(working);
-        }
-        if let Some(line) = purlis_core::briefing::emitted(&parts) {
-            say(&line);
-        }
+            // Reports kept for this workspace because the chat that asked for them has closed
+            // (charter-app#259): the next chat to START here is the one that learns them — never a
+            // chat already running that compacted or cleared, which would take them as a side
+            // effect of its own housekeeping.
+            let starting = hook
+                .payload
+                .get("source")
+                .and_then(|v| v.as_str())
+                .is_none_or(|source| source == "startup");
+            let kept = if starting {
+                crate::dispatch::handbacks(hook.root, purlis_core::handback::For::Place(&place))
+            } else {
+                Vec::new()
+            };
+            if let Some(reports) = purlis_core::handback::context(&kept, true) {
+                parts.push(reports);
+            }
+            // Where this chat is working (#1450): who asked for it, its sibling tasks and the
+            // other chats running as its persona, as the app that started it has them recorded.
+            if let Some(working) = crate::whereworking::briefing(hook.now) {
+                parts.push(working);
+            }
+            if let Some(frozen) = frozen {
+                // A panic in it is the hook's own, as it was when it ran in line.
+                frozen
+                    .join()
+                    .unwrap_or_else(|panic| std::panic::resume_unwind(panic));
+            }
+            if let Some(line) = purlis_core::briefing::emitted(&parts) {
+                say(&line);
+            }
+        });
     });
 }
 

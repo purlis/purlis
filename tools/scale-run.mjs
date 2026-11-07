@@ -4,7 +4,8 @@
 
 // The nightly scale run's measurements of the `purlis` binary (#5497): a full build of the
 // project index, the SessionStart hook, `recall` in one workspace and across all of them, and one
-// git standing look, each on a project `scale-project generate` wrote and the run committed. One
+// git standing look after the prime auto-save runs as the app opens the project (timed as a row of
+// its own), each on a project `scale-project generate` wrote and the run committed. One
 // row a measurement, as `tools/scale-report.mjs` reads them:
 //
 //   node tools/scale-run.mjs --project <dir> --os macos|linux --out rows.jsonl \
@@ -121,7 +122,9 @@ row("recall-all", {
 });
 
 const look = timed([resolve(values["scale-project"]), "look", "--project", project, "--times", "5"], { cwd: project });
-row("git-standing", { samples: JSON.parse(look.stdout).samples_ms.map((ms) => Math.round(ms * 10) / 10) });
+const looked = JSON.parse(look.stdout);
+row("git-prime", { samples: [Math.round(looked.primed_ms * 10) / 10] });
+row("git-standing", { samples: looked.samples_ms.map((ms) => Math.round(ms * 10) / 10) });
 
 writeFileSync(values.out, "");
 for (const r of rows) appendFileSync(values.out, `${JSON.stringify(r)}\n`);
