@@ -121,6 +121,16 @@ pub const READ: Duration = Duration::from_secs(30);
 /// ([`spawn_network`], [`crate::cloning::STALL`]).
 pub const NETWORK: Duration = Duration::from_secs(120);
 
+/// The deadline for the one `status` that writes the index back ([`run_status_writing_index`]).
+///
+/// Not [`READ`] (#5486): this is the status that leaves the untracked cache and the file
+/// monitor's token in the index, and the first one on a tree nothing has primed reads every
+/// file. On the scale run's macOS runner, at 200,000 files, that took 35 to 43 s, so at 30 s it
+/// was stopped every time, wrote nothing, and every look after it read the whole tree again
+/// and was stopped too. It runs once, under the save claim, off any thread a person waits on;
+/// two minutes, as a save's own writes ([`crate::planegit`]'s `WRITE`), still ends.
+pub const WRITES_INDEX: Duration = Duration::from_secs(120);
+
 /// Where to look for git when the inherited `PATH` is not to be trusted.
 ///
 /// Charter runs from a hook, so `PATH` is attacker-settable and `Command::new("git")` would
@@ -1945,7 +1955,7 @@ pub fn run_status_writing_index(dir: &Path, tuning: Tuning) -> Option<Result<Run
         Err(why) => return Some(Err(why)),
     };
     Some(counted(dir, &args, || {
-        Ok(wait(spawn_with(dir, &args, &extra)?, READ)?)
+        Ok(wait(spawn_with(dir, &args, &extra)?, WRITES_INDEX)?)
     }))
 }
 
