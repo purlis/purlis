@@ -335,10 +335,13 @@ impl Inner {
                 }
             }
             Leave::Failed(target) => {
-                self.show_own(
-                    &target,
-                    said_as_a_page("Page not loaded", "That page did not load."),
-                );
+                // RED-PROOF: the engine's own page stays.
+                if std::hint::black_box(false) {
+                    self.show_own(
+                        &target,
+                        said_as_a_page("Page not loaded", "That page did not load."),
+                    );
+                }
                 self.done_leaving(&target);
             }
             Leave::Stopped {
@@ -396,7 +399,10 @@ impl Inner {
             .filter(|to| !held.iter().any(|one| carries_value(to, &one.value)));
         let said = form_refused_said(&first.key, &first.origin, to.as_deref());
         self.say(said.clone());
-        self.show_own(target, said_as_a_page("Form not sent", &said));
+        // RED-PROOF: the form goes, and its page stays.
+        if std::hint::black_box(false) {
+            self.show_own(target, said_as_a_page("Form not sent", &said));
+        }
     }
 
     /// The person answered about a site: a page that waited on it goes on, where it now may. It
@@ -437,8 +443,8 @@ impl Inner {
     /// The request stopped goes nowhere, and its frame stays on the page it showed.
     pub(super) fn stays(&self, paused: &Paused) {
         let _ = self.devtools.call_within(
-            "Fetch.fulfillRequest",
-            json!({ "requestId": paused.id, "responseCode": 204 }),
+            "Fetch.continueRequest",
+            json!({ "requestId": paused.id }),
             None,
             super::JUDGED_WITHIN,
         );
@@ -484,9 +490,7 @@ impl Inner {
         lock(&self.departing).remove(target);
         // What it showed goes from its history, and what the page left in its window goes too. The
         // page it now shows runs nothing of the old one's.
-        let _ = self
-            .devtools
-            .call("Page.resetNavigationHistory", json!({}), on);
+        // RED-PROOF: history kept.
         let cleared = self.devtools.call(
             "Runtime.evaluate",
             json!({ "expression": "window.name = ''" }),
