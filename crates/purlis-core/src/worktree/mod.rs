@@ -1012,6 +1012,14 @@ pub fn add_vetted(
             why: layered.refusal(&path),
         });
     }
+    // Said once purlis is done writing there, so no chat's look tells this folder as one that
+    // appeared (#5702). Outside a sandbox only: a chat that runs this itself can't write it.
+    if let Err(why) = crate::sandbox::arrived::made_by_the_app(plane, &path) {
+        tracing::debug!(
+            "purlis: {} was not recorded as made ({why})",
+            path.display()
+        );
+    }
     Ok(Added {
         path,
         branch,
@@ -1708,11 +1716,17 @@ pub fn locate(plane: &Path, path: &Path) -> Option<Located> {
     }
 }
 
+/// The most a `.git` file that points at a git folder holds: `gitdir: `, a path, a new line.
+const LARGEST_POINTER: u64 = 8 * 1024;
+
 /// **The git folder of the clone a branch folder was cut from**, as git in `folder` finds it:
 /// the record its `.git` file names, and the common folder that record's `commondir` names,
-/// with its links resolved. `None` where any of it cannot be read.
+/// with its links resolved. `None` where any of it cannot be read, and where `.git` is not a
+/// regular file of at most [`LARGEST_POINTER`] bytes: a pipe there is never waited on.
 pub fn clone_git_dir_of(folder: &Path) -> Option<PathBuf> {
-    let pointer = std::fs::read_to_string(folder.join(".git")).ok()?;
+    let pointer = crate::sandbox::arrived::read_regular(&folder.join(".git"), LARGEST_POINTER + 1)
+        .filter(|bytes| bytes.len() as u64 <= LARGEST_POINTER)
+        .and_then(|bytes| String::from_utf8(bytes).ok())?;
     let record = pointer
         .trim_end_matches(['\n', '\r'])
         .strip_prefix("gitdir: ")?;
@@ -2026,6 +2040,34 @@ mod ref_records_tests;
 #[cfg(test)]
 mod locate_tests {
     use super::*;
+
+    /// A `.git` that is not a small regular file is no pointer to a record: a pipe there is
+    /// answered at once with nothing, and so is a file larger than any pointer.
+    #[cfg(unix)]
+    #[test]
+    fn a_dot_git_that_is_a_pipe_or_too_large_names_no_clone_and_holds_nothing_up() {
+        let dir = tempfile::tempdir().unwrap();
+        let piped = dir.path().join("piped");
+        std::fs::create_dir(&piped).unwrap();
+        let made =
+            crate::forklock::status(std::process::Command::new("mkfifo").arg(piped.join(".git")))
+                .unwrap();
+        assert!(made.success());
+        let (tx, rx) = std::sync::mpsc::channel();
+        let asked = piped.clone();
+        std::thread::spawn(move || {
+            let _ = tx.send(clone_git_dir_of(&asked));
+        });
+        let answered = rx.recv_timeout(std::time::Duration::from_secs(5));
+        assert_eq!(answered.ok(), Some(None), "a pipe named .git held the call");
+
+        let large = dir.path().join("large");
+        std::fs::create_dir(&large).unwrap();
+        let mut pointer = format!("gitdir: {}", "x/".repeat(64 * 1024));
+        pointer.push('\n');
+        std::fs::write(large.join(".git"), pointer).unwrap();
+        assert_eq!(clone_git_dir_of(&large), None);
+    }
 
     #[test]
     fn a_folder_the_link_check_refused_says_why_and_not_that_there_is_no_repository() {

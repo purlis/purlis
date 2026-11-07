@@ -235,6 +235,18 @@ impl Scratch {
         Ok(run)
     }
 
+    /// git across the network in the scratch repository, signed in by `helper` as a push is, with
+    /// the forge CLI's own environment: what reads the person's fork (#4342).
+    pub(super) fn network_as(
+        &self,
+        helper: Option<&str>,
+        args: &[&str],
+    ) -> Result<git::Run, String> {
+        let mut all = vec![self.git_dir.as_str()];
+        all.extend_from_slice(args);
+        git::run_network(&self.dir, helper, &all).map_err(|why| why.to_string())
+    }
+
     /// **Pushes `commit` to a new branch of `url`**: the one refspec, never forced, no tag, no
     /// hook. `helper` signs it in, and a folder on this machine needs none.
     pub(super) fn push_new_branch(

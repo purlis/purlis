@@ -270,6 +270,118 @@ pub trait Making {
     /// Delete `made`, the repo [`Making::create_repo`] answered in this run, once the forge
     /// shows it still holds that same repo. A repo already gone is `Ok`. Strict.
     fn delete_created_repo(&self, caller: &Caller, made: &MadeRepo) -> Result<(), ForgeError>;
+
+    /// Where the account's own fork of the repo at `path` is, or would be (#4342): under the
+    /// account's own name, never an organisation's or a group's, at the source's name. Reads
+    /// only. A repo there that the forge does not say is a fork of `path` is
+    /// [`ForkPlace::Taken`], never renamed around. Strict.
+    fn fork_for(&self, caller: &Caller, path: &str) -> Result<ForkPlace, ForgeError>;
+
+    /// Fork the repo at `path` under the account's own name, at the forge's default
+    /// visibility, and answer it once it can take a push: GitLab copies a fork in the
+    /// background, and is asked until its copy finished. An answer that is not a fork of `path`
+    /// is refused. Asked only where [`Making::fork_for`] said [`ForkPlace::ToMake`]. Strict.
+    fn make_fork(&self, caller: &Caller, path: &str) -> Result<Fork, ForgeError>;
+}
+
+/// **The account's fork of a repo, as the forge answered it** (#4342): only a backend's
+/// [`Making::fork_for`] or [`Making::make_fork`] makes one, so nothing typed or read from data
+/// can name a repo to push a publish to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Fork {
+    id: ForgeRef,
+    path: String,
+    web_url: String,
+    clone_url: String,
+    visibility: Visibility,
+    /// The forge's id of the repo it is a fork of: GitLab opens a request into it by that id.
+    parent: Option<ForgeRef>,
+}
+
+impl Fork {
+    /// The fork, from its forge's answer: only a backend builds one.
+    pub(super) fn answered(
+        id: ForgeRef,
+        path: String,
+        web_url: String,
+        clone_url: String,
+        visibility: Visibility,
+        parent: Option<ForgeRef>,
+    ) -> Self {
+        Fork {
+            id,
+            path,
+            web_url,
+            clone_url,
+            visibility,
+            parent,
+        }
+    }
+
+    /// The forge's own id for it.
+    pub fn id(&self) -> &ForgeRef {
+        &self.id
+    }
+
+    /// `owner/name`, or the full namespace path on GitLab.
+    pub fn path(&self) -> &str {
+        &self.path
+    }
+
+    /// The account that holds it: the first part of its path.
+    pub fn owner(&self) -> &str {
+        self.path
+            .split_once('/')
+            .map_or(&self.path, |(owner, _)| owner)
+    }
+
+    /// Its page on the forge.
+    pub fn web_url(&self) -> &str {
+        &self.web_url
+    }
+
+    /// Its HTTPS clone URL: where a publish pushes.
+    pub fn clone_url(&self) -> &str {
+        &self.clone_url
+    }
+
+    /// Who can read it.
+    pub fn visibility(&self) -> Visibility {
+        self.visibility
+    }
+
+    /// The forge's id of the repo it is a fork of, where the forge named it.
+    pub fn parent(&self) -> Option<&ForgeRef> {
+        self.parent.as_ref()
+    }
+
+    /// A public fork for a test that never asks a forge, its page `clone_url` without `.git`.
+    #[cfg(any(test, feature = "fenced"))]
+    pub fn for_a_test(id: &str, path: &str, clone_url: &str, parent: Option<&str>) -> Self {
+        Fork::answered(
+            ForgeRef(id.to_string()),
+            path.to_string(),
+            clone_url.trim_end_matches(".git").to_string(),
+            clone_url.to_string(),
+            Visibility::Public,
+            parent.map(|id| ForgeRef(id.to_string())),
+        )
+    }
+}
+
+/// What [`Making::fork_for`] answers.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ForkPlace {
+    /// The account has a fork of the repo already.
+    Yours(Fork),
+    /// It has none: one would be made at `path`, readable as `visibility`, the forge's default
+    /// for a fork of that repo.
+    ToMake {
+        path: String,
+        visibility: Visibility,
+    },
+    /// `path`, where the fork would go, holds a repo that is not a fork of this one.
+    Taken { path: String },
 }
 
 /// Whose a new repo is: the account's own, or one of its organisations' or groups'.
@@ -529,6 +641,31 @@ pub trait Requests {
         title: &str,
         body: &str,
     ) -> Result<Pr, ForgeError>;
+
+    /// Open a new draft request into `base` of the repo at `path` from `branch` of `fork`, the
+    /// account's fork of it (#4342), as [`Requests::open_draft`] does from a branch of the repo
+    /// itself.
+    #[allow(clippy::too_many_arguments)]
+    fn open_draft_from_fork(
+        &self,
+        caller: &Caller,
+        path: &str,
+        fork: &Fork,
+        branch: &str,
+        base: &str,
+        title: &str,
+        body: &str,
+    ) -> Result<Pr, ForgeError>;
+
+    /// The newest request into the repo at `path` whose head is `branch` of `fork`, in any
+    /// state. A request from the same branch name of any other fork is not it.
+    fn by_head_from_fork(
+        &self,
+        caller: &Caller,
+        path: &str,
+        fork: &Fork,
+        branch: &str,
+    ) -> Result<Option<Request>, ForgeError>;
 
     /// Where `pr` stands: open, merged or closed.
     fn state(&self, caller: &Caller, path: &str, pr: &Pr) -> Result<State, ForgeError>;

@@ -1836,7 +1836,8 @@ pub const PUSH_SECRET_REFUSED: &str = "a secret-shaped value in a commit the pus
 ///
 /// The scan is [`crate::diffscan::pushed`]'s, over HEAD as `branch` on `origin` (at `url`),
 /// past what origin itself says it has, asked of it now with the credential a fetch of the
-/// plane gets ([`crate::diffscan::remote_has`]); where it cannot be asked, the whole history. **It refuses on a credential only**: the
+/// plane gets ([`crate::diffscan::remote_has`]); where it cannot be asked, the whole history,
+/// up to [`crate::diffscan::UNASKED_AT_MOST`] commits. **It refuses on a credential only**: the
 /// save's own scan lets personal data through, as a plane's memory names people, so a push
 /// does not refuse what the save just committed. A scan git could not answer refuses too (fail
 /// closed), and says why. Refused, nothing is pushed, the findings are said masked, and the
@@ -1849,27 +1850,29 @@ fn refused_push(root: &Path, branch: &str, url: &str, head: &str, say: Sink) -> 
     let forge = crate::gitpolicy::forge_for(root, root)
         .unwrap_or_else(|| Forge::default_of(forge::DEFAULT_KIND));
     let helper = forge::gitcredential::helper_for_fetch(&forge, root).ok();
-    let known = crate::diffscan::remote_has(root, helper.as_deref(), url).unwrap_or_default();
-    let refused: Vec<crate::diffscan::Finding> =
-        match crate::diffscan::pushed_knowing(root, &updates, &known) {
-            Ok(scan) => scan
-                .refused
-                .into_iter()
-                .filter(|finding| !secretshape::is_personal(finding.rule))
-                .collect(),
-            Err(why) => {
-                let detail = format!("purlis could not scan what the push would send: {why}");
-                say(Say::Fail(format!("Not pushed — {detail}").into()));
-                return Some(record_push(
-                    root,
-                    PushResult {
-                        detail,
-                        ..PushResult::of(Outcome::Blocked, branch)
-                    },
-                    head,
-                ));
-            }
-        };
+    let scanned = match crate::diffscan::remote_has(root, helper.as_deref(), url) {
+        Some(known) => crate::diffscan::pushed_knowing(root, &updates, &known),
+        None => crate::diffscan::pushed_without_asking(root, &updates),
+    };
+    let refused: Vec<crate::diffscan::Finding> = match scanned {
+        Ok(scan) => scan
+            .refused
+            .into_iter()
+            .filter(|finding| !secretshape::is_personal(finding.rule))
+            .collect(),
+        Err(why) => {
+            let detail = format!("purlis could not scan what the push would send: {why}");
+            say(Say::Fail(format!("Not pushed — {detail}").into()));
+            return Some(record_push(
+                root,
+                PushResult {
+                    detail,
+                    ..PushResult::of(Outcome::Blocked, branch)
+                },
+                head,
+            ));
+        }
+    };
     if refused.is_empty() {
         return None;
     }

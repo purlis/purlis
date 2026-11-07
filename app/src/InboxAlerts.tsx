@@ -4,7 +4,14 @@
 import { useState, type ReactNode } from "react";
 import { OctagonAlert, TriangleAlert } from "lucide-react";
 import { ApprovePlane } from "./ApprovePlane";
-import { commands, type AlertRow, type AlertWay, type FontReview, type PlaneId } from "./bindings";
+import {
+  commands,
+  type AlertRow,
+  type AlertWay,
+  type DoctorFix,
+  type FontReview,
+  type PlaneId,
+} from "./bindings";
 import type { AlertsReading } from "./alerts";
 import { useAlertFix } from "./alertFix";
 import { identityNowOf, sendIdentity, useFixForm, type Fixer } from "./Doctor";
@@ -212,7 +219,7 @@ function ThisProject({
  * acts on (`docs/ui-copy.md`, #1719), never "Fix" alone. A fix that opens a form says so with
  * its ellipsis.
  */
-const FIX_LABELS: Readonly<Record<string, string>> = {
+const FIX_LABELS: Readonly<Partial<Record<DoctorFix, string>>> = {
   "workspace-reinit": "Update workspace layout",
   "git-identity": "Set git identity…",
   "memory-optimize": "Optimize memory indexes",
@@ -257,7 +264,7 @@ function Words({
 }
 
 /** The words on the layout fix's button (`workspace-reinit`), as the Inbox's row says them. */
-export const LAYOUT_FIX = "workspace-reinit";
+export const LAYOUT_FIX: DoctorFix = "workspace-reinit";
 export const LAYOUT_FIX_LABEL = FIX_LABELS[LAYOUT_FIX] ?? ANY_FIX;
 
 /**
@@ -299,6 +306,9 @@ function LeftMessagesRow({
   );
 }
 
+/** The cause family of a chat's arrived files Notice, listed ahead of the rest (`AHEAD`). */
+export const ARRIVED_FILES_CAUSE = "arrived-files";
+
 /**
  * **What can run later and appeared in a chat's folders** (ADR 0067 §5, amended 2026-11-05): the
  * chat, the paths and what they mean, with Put away once it is read. The files are the person's:
@@ -328,8 +338,11 @@ function ArrivedFilesRow({
   };
   return (
     <Notice
-      cause={`alert:${alert.subject}:${chat}`}
+      // Its own family, which the Inbox lists ahead of every other Notice (#5702).
+      cause={`${ARRIVED_FILES_CAUSE}:${chat}`}
       tone={toneOf(alert.severity)}
+      // Its age is from the look that found what it names, not from when the window drew it.
+      since={alert.since}
       fixes={[{ label: "Put away", onPress: putAway }]}
     >
       <Words severity={alert.severity} subject={alert.subject} detail={alert.detail} said={said} />
@@ -383,7 +396,7 @@ function ProjectRow({
     },
     identityNow: () => identityNowOf(plane),
   };
-  const fix = useFixForm(way.kind === "fix" ? way.id : "", fixer);
+  const fix = useFixForm(way.kind === "fix" ? way.id : undefined, fixer);
   let action: NoticeAction;
   switch (way.kind) {
     case "settings":

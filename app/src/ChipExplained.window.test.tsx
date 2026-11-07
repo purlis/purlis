@@ -428,7 +428,7 @@ describe("the first dispatch on a machine explains the chip (#1501)", () => {
   });
 
   it("is not on a pane that shows a task", async () => {
-    // The session's tab shows its task talk: talk's pane says where it came from in its
+    // Its asker's pane shows the task talk: talk's pane says where it came from in its
     // breadcrumb, and has nothing to explain.
     await drawn([chat(1, "alpha", { shows: 4 }), talk()]);
     await waitFor(() => expect(onScreen()).toEqual([4]));

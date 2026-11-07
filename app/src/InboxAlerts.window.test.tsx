@@ -7,7 +7,7 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import { InboxAlerts } from "./InboxAlerts";
-import { NoticeList } from "./Notice";
+import { Notice, NoticeList } from "./Notice";
 import type { AlertRow, DoctorFixed, PlaneAlerts } from "./bindings";
 import { forgetThisLaunch, settleLayout } from "./regions";
 import {
@@ -103,7 +103,12 @@ let rows: AlertRow[] = [];
 let others: PlaneAlerts[] = [];
 /** What the reading answers instead, where it fails. */
 let readingFails: string | undefined;
-let fixAnswer: DoctorFixed | string = { fix: "", refused: null, said: [], complete: true };
+let fixAnswer: DoctorFixed | string = {
+  fix: "workspace-reinit",
+  refused: null,
+  said: [],
+  complete: true,
+};
 let asked: { cmd: string; args: unknown }[] = [];
 
 /** What `review_plane` answers (#2647): the project's trust ask, none, or a refusal. */
@@ -216,6 +221,35 @@ const row = (open: HTMLElement, cause: string) => {
 const listed = (cause: string) =>
   document.querySelector(`[data-scope=notice-list] [data-cause="${cause}"]`) !== null;
 
+describe("a chat's arrived files in the Inbox (#5702)", () => {
+  it("are read again when the Inbox opens, and say when the look found them", async () => {
+    rows = [];
+    render(<App />);
+    await screen.findByRole("tab", { name: /plane/ });
+    await userEvent.click(await screen.findByRole("button", { name: "Close Inbox" }));
+    await waitFor(() => expect(calls("alerts_everywhere").length).toBeGreaterThan(0));
+    const before = calls("alerts_everywhere").length;
+    // A turn ends, and its look finds a file that can run later, two hours ago by its record.
+    rows = [
+      {
+        severity: "warn",
+        subject: "files that can run later",
+        detail: "Fix the build: these appeared in a folder it can write: work/moved/.envrc.",
+        workspaces: [],
+        // Two and a half hours: the card's clock may be read a moment before this one.
+        since: Date.now() / 1000 - 2.5 * 60 * 60,
+        way: { kind: "arrived-files", chat: "01M6M3VNN8GNE85XEV3194WJE6" },
+      },
+    ];
+    // Opened from its own button on the activity bar, not the status line's Notices.
+    await userEvent.click(screen.getByRole("tab", { name: "Inbox" }));
+    await waitFor(() => expect(calls("alerts_everywhere").length).toBeGreaterThan(before));
+    const open = await screen.findByRole("tabpanel", { name: "Inbox" });
+    await waitFor(() => expect(listed("arrived-files:01M6M3VNN8GNE85XEV3194WJE6")).toBe(true));
+    expect(row(open, "arrived-files:01M6M3VNN8GNE85XEV3194WJE6")).toHaveTextContent("2h");
+  });
+});
+
 describe("each alert in the Inbox", () => {
   it("carries its way out, and no command to type", async () => {
     rows = [PIN, FRONT_DOOR, REINIT, NESTED, ROOT, SAVE];
@@ -278,7 +312,8 @@ describe("each alert in the Inbox", () => {
   });
 
   it("names what a fix acts on, even for a fix it has no words of its own for (#1719)", async () => {
-    rows = [{ ...REINIT, subject: "something new", way: { kind: "fix", id: "some-new-fix" } }];
+    // `discover`: a fix this window has no label of its own for (`FIX_LABELS`).
+    rows = [{ ...REINIT, subject: "something new", way: { kind: "fix", id: "discover" } }];
     const open = await drawer();
 
     expect(
@@ -941,5 +976,65 @@ describe("a chat's undelivered messages (#3958)", () => {
       ]),
     );
     await waitFor(() => expect(reread).toHaveBeenCalled());
+  });
+
+  it("lists a chat's arrived files first, above the project's older Notices and its trouble (#5702)", () => {
+    mockIPC(() => null);
+    const alert = (severity: string, subject: string): AlertRow => ({
+      severity,
+      subject,
+      detail: `${subject} is wrong`,
+      workspaces: [],
+      way: { kind: "saving" },
+    });
+    const ARRIVED: AlertRow = {
+      severity: "warn",
+      subject: "files that can run later",
+      detail: "Fix the build: these appeared in a folder it can write: work/moved/.envrc.",
+      workspaces: [],
+      way: { kind: "arrived-files", chat: "01M6M3VNN8GNE85XEV3194WJE6" },
+    };
+    render(
+      <NoticeList>
+        <Notice cause="away-summary" onDismiss={() => undefined}>
+          While you were away
+        </Notice>
+        <Notice cause="window-trouble" tone="trouble" onDismiss={() => undefined}>
+          trouble
+        </Notice>
+        <InboxAlerts
+          plane={PLANE}
+          reading={{
+            at: "read",
+            planes: [
+              {
+                plane: PLANE,
+                alerts: [
+                  alert("bad", "plane root"),
+                  alert("warn", "front door"),
+                  alert("warn", "reinit"),
+                  ARRIVED,
+                ],
+                stopped: null,
+              },
+            ],
+          }}
+          machine={[]}
+          elsewhere={[]}
+          does={{
+            openSettings: vi.fn(),
+            openProject: vi.fn(),
+            openSaving: vi.fn(),
+            reread: vi.fn(),
+            openInboxOf: vi.fn(),
+          }}
+        />
+      </NoticeList>,
+    );
+    const causes = [...document.querySelectorAll("[data-scope=notice-list] [data-cause]")].map(
+      (one) => one.getAttribute("data-cause"),
+    );
+    expect(causes[0]).toBe("arrived-files:01M6M3VNN8GNE85XEV3194WJE6");
+    expect(causes).toHaveLength(6);
   });
 });

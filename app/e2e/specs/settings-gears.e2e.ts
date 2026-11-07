@@ -45,8 +45,8 @@ const mine = (() => {
   return root;
 })();
 
-/** The Sign commits row, by its control's id: what the control is, whether it is on, and where
- *  it and the row's Reset are drawn (`null` where there is no Reset). */
+/** The "Sign saves with your own git setup" row, by its control's id: what the control is,
+ *  whether it is on, and where it and the row's Reset are drawn (`null` where there is no Reset). */
 async function signRow(id: string) {
   return browser.execute((control: string) => {
     const box = (el: Element) => {
@@ -177,14 +177,14 @@ describe("the settings gears, and ⌘, at the focused level", function () {
     const signId = await browser.execute(
       () =>
         [...document.querySelectorAll("label")].find(
-          (one) => one.textContent?.trim() === "Sign commits",
+          (one) => one.textContent?.trim() === "Sign saves with your own git setup",
         )?.htmlFor ?? "",
     );
     expect(signId).not.toBe("");
     // A select of on, off and not set until the core has said what is in force.
     await browser.waitUntil(async () => (await signRow(signId)).role === "switch", {
       timeout: 20_000,
-      timeoutMsg: "Sign commits never became a switch",
+      timeoutMsg: "Sign saves with your own git setup never became a switch",
     });
     const before = await signRow(signId);
     expect(before).toMatchObject({ role: "switch", checked: "false", reset: null });
@@ -206,7 +206,10 @@ describe("the settings gears, and ⌘, at the focused level", function () {
         after = await signRow(signId);
         return after.reset !== null;
       },
-      { timeout: 20_000, timeoutMsg: "Sign commits, set here, never offered Reset" },
+      {
+        timeout: 20_000,
+        timeoutMsg: "Sign saves with your own git setup, set here, never offered Reset",
+      },
     );
     const { box, reset } = after;
     if (box === null || reset === null) throw new Error("the switch or its Reset is not drawn");

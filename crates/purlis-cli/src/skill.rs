@@ -2746,10 +2746,17 @@ fn publish(
         }
         return Ok(1);
     }
-    if review.may_push == Some(false) {
-        voice::warn(forge_says_no_push(forge.display()));
+    if let Some(said) = route_said(&review.route, forge.display()) {
+        voice::warn(esc(&said).to_string());
     }
-    if !asked("Open this draft request, under your own account?") {
+    let question = match &review.route {
+        source::publish::Route::NewFork { path, .. } => format!(
+            "Make your fork {} and open this draft request from it, under your own account?",
+            esc(path)
+        ),
+        _ => "Open this draft request, under your own account?".to_owned(),
+    };
+    if !asked(&question) {
         voice::info("Nothing was sent.");
         return Ok(1);
     }
@@ -2769,27 +2776,40 @@ fn publish(
             voice::info(esc(&format!("These files already have a request: {url}")).to_string());
         }
         source::publish::Published::PushRefused { why } => {
-            voice::err(
-                esc(&format!(
+            let said = match review.route {
+                source::publish::Route::Source => format!(
                     "Nothing was opened: git could not push to the source, which takes write \
                      access to it: {why}"
-                ))
-                .to_string(),
-            );
+                ),
+                _ => format!("Nothing was opened: git could not push to your fork: {why}"),
+            };
+            voice::err(esc(&said).to_string());
             return Ok(1);
         }
     }
     Ok(0)
 }
 
-/// What a publish review says where the forge says the person's account may not push to the
-/// source. It warns and never refuses: the push answers for itself.
-fn forge_says_no_push(forge: &str) -> String {
-    format!(
-        "{forge} says your account cannot push to this source, and publishing takes write access \
-         to it, so the push will likely be refused. Ask its owners for access, or export the \
-         skill with `purlis skill export` and send it to them."
-    )
+/// What a publish review says of where its branch goes (#4342): nothing for the source itself,
+/// and for the person's fork, why, which fork, who can read it and whether it is made.
+fn route_said(route: &source::publish::Route, forge: &str) -> Option<String> {
+    let why = format!("{forge} says your account cannot push to this source");
+    match route {
+        source::publish::Route::Source => None,
+        source::publish::Route::Fork(fork) => Some(format!(
+            "{why}, so the branch goes on your fork {} ({}), and the draft request is opened from \
+             it.",
+            fork.web_url(),
+            fork.visibility().readers()
+        )),
+        source::publish::Route::NewFork { path, visibility } => Some(format!(
+            "{why}, so publishing makes your fork {path} on {forge}, under your own account \
+             ({}), and opens the draft request from it. Nothing is made until you say yes, and \
+             the fork stays afterwards: purlis never deletes one. To send it another way, export \
+             the skill with `purlis skill export`.",
+            visibility.readers()
+        )),
+    }
 }
 
 /// What a publish says with no person to ask.

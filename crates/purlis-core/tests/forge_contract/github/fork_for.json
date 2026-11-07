@@ -1,0 +1,84 @@
+{
+  "source": "GitHub REST API version 2022-11-28, docs.github.com/en/rest: users (GET /user), repos (GET /repos/{owner}/{repo}; a repo that is not there answers 404); GraphQL Repository.forks with affiliations and ownerAffiliations OWNER, the forks the viewer owns",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "user"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"login\": \"octocat\", \"id\": 583231}",
+        "err": ""
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "repos/acme/api"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"id\": 1, \"name\": \"api\", \"full_name\": \"acme/api\", \"fork\": false, \"visibility\": \"public\", \"private\": false}",
+        "err": ""
+      }
+    },
+    {
+      "call": {
+        "endpoint": "graphql",
+        "fields": [
+          {
+            "text": [
+              "query",
+              "# The account's own fork of a repository, under whatever name it has (#4342).\nquery ForkOfMine($owner: String!, $name: String!) {\n  repository(owner: $owner, name: $name) {\n    forks(first: 1, affiliations: [OWNER], ownerAffiliations: [OWNER]) {\n      nodes {\n        databaseId\n        nameWithOwner\n        url\n        visibility\n        owner {\n          __typename\n          login\n        }\n      }\n    }\n  }\n}\n"
+            ]
+          },
+          {
+            "text": [
+              "owner",
+              "acme"
+            ]
+          },
+          {
+            "text": [
+              "name",
+              "api"
+            ]
+          }
+        ]
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"data\": {\"repository\": {\"forks\": {\"nodes\": []}}}}",
+        "err": ""
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "repos/octocat/api"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 1,
+        "out": "{\"message\": \"Not Found\", \"status\": \"404\"}",
+        "err": "gh: Not Found (HTTP 404)",
+        "status": 404
+      }
+    }
+  ]
+}

@@ -12,10 +12,28 @@ use purlis_session_protocol::browsing::FieldKind;
 
 use super::*;
 
+/// Chat `session`, as the app knows it: its number and the id its record has (ADR 0066).
+fn chat(session: u32) -> Chat<'static> {
+    Chat {
+        session,
+        id: match session {
+            7 => Some("01JX0000000000000000000007"),
+            8 => Some("01JX0000000000000000000008"),
+            _ => None,
+        },
+    }
+}
+
+/// The id of chat `session`, as a grant keeps it.
+fn chat_id(session: u32) -> Option<String> {
+    chat(session).id.map(str::to_owned)
+}
+
 fn wait(origin: &str) -> FillWait {
     FillWait {
         id: 0,
         session: 7,
+        chat: chat_id(7),
         browser: "b1".into(),
         vault: "qa".into(),
         key: "dash-api-key".into(),
@@ -101,16 +119,63 @@ fn keep_blocked_tells_the_waiting_call_and_that_key_on_that_site_isnt_asked_agai
 
     assert_eq!(heard.try_recv(), Ok(Heard::Kept(None)));
     assert!(audited.into_inner().is_empty(), "nothing was allowed");
-    assert!(fills.kept(7, "qa", "dash-api-key", "https://dash.example.test"));
+    assert!(fills.kept(7, None, "qa", "dash-api-key", "https://dash.example.test"));
     assert!(
-        !fills.kept(7, "qa", "dash-api-key", "https://other.example.test"),
+        !fills.kept(7, None, "qa", "dash-api-key", "https://other.example.test"),
         "another site is asked about"
     );
-    assert!(!fills.kept(8, "qa", "dash-api-key", "https://dash.example.test"));
+    assert!(!fills.kept(8, None, "qa", "dash-api-key", "https://dash.example.test"));
+}
+
+/// The person's ruling of 2026-11-07: a persona's Keep blocked holds for all its chats until
+/// purlis restarts, so a new chat starts no fresh tries.
+#[test]
+fn keep_blocked_holds_for_every_chat_of_the_persona_after_its_chat_closes() {
+    let fills = Fills::default();
+    let shown = FillWait {
+        persona: Some("qa".into()),
+        ..wait("https://dash.example.test")
+    };
+    let (id, _heard) = fills.raise(shown.clone()).expect("raised");
+    answered(
+        &fills,
+        &Audited::default(),
+        &press(id, Press::Keep, &shown.digest()),
+    )
+    .expect("kept");
+    fills.forget(7);
+
+    let key = ("qa", "dash-api-key", "https://dash.example.test");
+    assert!(fills.kept(8, Some("qa"), key.0, key.1, key.2));
+    assert!(!fills.kept(8, Some("ops"), key.0, key.1, key.2));
+    assert!(!fills.kept(8, None, key.0, key.1, key.2));
 }
 
 #[test]
-fn two_kept_blocked_end_a_chats_fill_notices() {
+fn two_kept_blocked_end_a_personas_fill_notices_in_every_chat() {
+    let fills = Fills::default();
+    let audited = Audited::default();
+    for origin in ["https://a.example.test", "https://b.example.test"] {
+        let shown = FillWait {
+            persona: Some("qa".into()),
+            ..wait(origin)
+        };
+        let (id, _heard) = fills.raise(shown.clone()).expect("raised");
+        answered(&fills, &audited, &press(id, Press::Keep, &shown.digest())).expect("kept");
+    }
+    fills.forget(7);
+    assert!(fills.kept(9, Some("qa"), "qa", "another-key", "https://c.example.test"));
+    assert!(!fills.kept(
+        9,
+        Some("ops"),
+        "qa",
+        "another-key",
+        "https://c.example.test"
+    ));
+}
+
+#[test]
+fn two_kept_blocked_end_a_chats_fill_notices_where_it_runs_as_no_persona() {
     let fills = Fills::default();
     let audited = Audited::default();
     for origin in ["https://a.example.test", "https://b.example.test"] {
@@ -118,7 +183,8 @@ fn two_kept_blocked_end_a_chats_fill_notices() {
         let (id, _heard) = fills.raise(shown.clone()).expect("raised");
         answered(&fills, &audited, &press(id, Press::Keep, &shown.digest())).expect("kept");
     }
-    assert!(fills.kept(7, "qa", "another-key", "https://c.example.test"));
+    assert!(fills.kept(7, None, "qa", "another-key", "https://c.example.test"));
+    assert!(!fills.kept(8, None, "qa", "another-key", "https://c.example.test"));
 }
 
 #[test]
@@ -152,7 +218,7 @@ fn a_cards_key_takes_allow_once_and_keep_blocked_alone() {
     }
     assert!(heard.try_recv().is_err(), "the call still waits");
     assert!(audited.into_inner().is_empty());
-    assert!(!fills.granted(7, "qa", "dash-api-key", "https://shop.example.test"));
+    assert!(!fills.granted(chat(7), "qa", "dash-api-key", "https://shop.example.test"));
 }
 
 #[test]
@@ -190,13 +256,13 @@ fn one_notice_waits_for_each_chat() {
 }
 
 #[test]
-fn a_chat_that_closes_takes_its_notice_and_its_kept_with_it() {
+fn a_chat_with_no_persona_that_closes_takes_its_notice_and_its_kept_with_it() {
     let fills = Fills::default();
     let (_, heard) = fills
         .raise(wait("https://dash.example.test"))
         .expect("raised");
     fills.lock().kept.push((
-        7,
+        Whose::Chat(7),
         "qa".into(),
         "k".into(),
         "https://dash.example.test".into(),
@@ -206,7 +272,7 @@ fn a_chat_that_closes_takes_its_notice_and_its_kept_with_it() {
 
     assert_eq!(heard.try_recv(), Ok(Heard::Gone));
     assert!(fills.waiting().is_empty());
-    assert!(!fills.kept(7, "qa", "k", "https://dash.example.test"));
+    assert!(!fills.kept(7, None, "qa", "k", "https://dash.example.test"));
 }
 
 #[test]
@@ -384,15 +450,15 @@ fn allow_for_this_chat_says_a_code_goes_in_and_holds_the_seed_for_that_site_alon
         panic!("{pressed:?}");
     };
     assert!(said.contains("A 2FA code from dash-2fa"), "{said}");
-    assert!(fills.code_granted(7, "qa", "dash-2fa", "https://dash.example.test"));
-    assert!(!fills.code_granted(7, "qa", "dash-2fa", "https://other.example.test"));
+    assert!(fills.code_granted(chat(7), "qa", "dash-2fa", "https://dash.example.test"));
+    assert!(!fills.code_granted(chat(7), "qa", "dash-2fa", "https://other.example.test"));
     assert!(
-        !fills.granted(7, "qa", "dash-2fa", "https://dash.example.test"),
+        !fills.granted(chat(7), "qa", "dash-2fa", "https://dash.example.test"),
         "a code's Allow holds no value"
     );
     fills.forget(7);
     assert!(
-        !fills.code_granted(7, "qa", "dash-2fa", "https://dash.example.test"),
+        !fills.code_granted(chat(7), "qa", "dash-2fa", "https://dash.example.test"),
         "it goes with the chat"
     );
 }
@@ -415,17 +481,24 @@ fn a_grant_for_a_key_holds_values_or_codes_never_both() {
     fills
         .lock()
         .granted
-        .push((7, "qa".into(), "value".into(), origin.into()));
+        .push((7, chat_id(7), "qa".into(), "value".into(), origin.into()));
     fills
         .lock()
         .codes_granted
-        .push((7, "qa".into(), "code".into(), origin.into()));
+        .push((7, chat_id(7), "qa".into(), "code".into(), origin.into()));
     let asked = |key: &str, code: bool| FillAsked {
         code,
         ..asked_into(key, FieldKind::OneLine)
     };
     let held = |key: &str, code: bool| {
-        granted(dir.path(), &fills, 7, Some("qa"), &asked(key, code), origin)
+        granted(
+            dir.path(),
+            &fills,
+            chat(7),
+            Some("qa"),
+            &asked(key, code),
+            origin,
+        )
     };
 
     assert!(held("value", false));
@@ -438,7 +511,7 @@ fn a_grant_for_a_key_holds_values_or_codes_never_both() {
         !granted(
             dir.path(),
             &fills,
-            8,
+            chat(8),
             Some("qa"),
             &asked("code", true),
             origin
@@ -635,10 +708,10 @@ fn allow_for_this_chat_holds_that_key_on_that_site_for_that_chat_alone() {
 
     assert!(matches!(pressed, Pressed::Done { .. }), "{pressed:?}");
     assert_eq!(heard.try_recv(), Ok(Heard::Allowed));
-    assert!(fills.granted(7, "qa", "dash-api-key", "https://dash.example.test"));
-    assert!(!fills.granted(7, "qa", "dash-api-key", "https://other.example.test"));
-    assert!(!fills.granted(7, "qa", "another-key", "https://dash.example.test"));
-    assert!(!fills.granted(8, "qa", "dash-api-key", "https://dash.example.test"));
+    assert!(fills.granted(chat(7), "qa", "dash-api-key", "https://dash.example.test"));
+    assert!(!fills.granted(chat(7), "qa", "dash-api-key", "https://other.example.test"));
+    assert!(!fills.granted(chat(7), "qa", "another-key", "https://dash.example.test"));
+    assert!(!fills.granted(chat(8), "qa", "dash-api-key", "https://dash.example.test"));
     assert_eq!(
         audited.into_inner(),
         [(
@@ -649,9 +722,37 @@ fn allow_for_this_chat_holds_that_key_on_that_site_for_that_chat_alone() {
     );
     fills.forget(7);
     assert!(
-        !fills.granted(7, "qa", "dash-api-key", "https://dash.example.test"),
+        !fills.granted(chat(7), "qa", "dash-api-key", "https://dash.example.test"),
         "it goes with the chat"
     );
+}
+
+/// An Allow for this chat is bound to the chat's id as well as its number: a later chat dealt the
+/// same number never reads it, a code's grant neither.
+#[test]
+fn a_grant_is_never_read_by_another_chat_dealt_its_number() {
+    let fills = Fills::default();
+    let audited = Audited::default();
+    for code in [false, true] {
+        let shown = FillWait {
+            persona: Some("qa".into()),
+            code,
+            no_always: None,
+            ..wait("https://dash.example.test")
+        };
+        let (id, _heard) = fills.raise(shown.clone()).expect("raised");
+        answered(&fills, &audited, &press(id, Press::Chat, &shown.digest())).expect("allowed");
+    }
+    let dealt_again = Chat {
+        session: 7,
+        id: Some("01JX000000000000000000007B"),
+    };
+    let on = ("qa", "dash-api-key", "https://dash.example.test");
+    assert!(fills.granted(chat(7), on.0, on.1, on.2));
+    assert!(fills.code_granted(chat(7), on.0, on.1, on.2));
+    assert!(!fills.granted(dealt_again, on.0, on.1, on.2));
+    assert!(!fills.code_granted(dealt_again, on.0, on.1, on.2));
+    assert!(fills.granted_origins(dealt_again, on.0, on.1).is_empty());
 }
 
 /// #5230, SF-15: a form may be sent to the other sites this key is approved for in this chat, never
@@ -664,7 +765,7 @@ fn a_fill_is_approved_for_the_other_sites_its_key_is_allowed_on_in_this_chat() {
         fills
             .lock()
             .granted
-            .push((chat, "qa".into(), key.into(), origin.into()));
+            .push((chat, chat_id(chat), "qa".into(), key.into(), origin.into()));
     };
     grant(7, "dash-api-key", "https://dash.example.test");
     grant(7, "dash-api-key", "https://sso.example.test");
@@ -692,7 +793,7 @@ fn a_fill_is_approved_for_the_other_sites_its_key_is_allowed_on_in_this_chat() {
     let also = approved_elsewhere(
         dir.path(),
         &fills,
-        7,
+        chat(7),
         None,
         &asked,
         "https://dash.example.test",
@@ -707,6 +808,7 @@ fn allow_for_this_chat_fills_the_next_ask_without_a_notice_and_never_a_cards() {
     let fills = Fills::default();
     fills.lock().granted.push((
         7,
+        chat_id(7),
         "qa".into(),
         "dash-api-key".into(),
         "https://dash.example.test".into(),
@@ -732,7 +834,7 @@ fn allow_for_this_chat_fills_the_next_ask_without_a_notice_and_never_a_cards() {
     assert!(granted(
         dir.path(),
         &fills,
-        7,
+        chat(7),
         Some("qa"),
         &asked("dash-api-key"),
         origin
@@ -740,7 +842,7 @@ fn allow_for_this_chat_fills_the_next_ask_without_a_notice_and_never_a_cards() {
     assert!(!granted(
         dir.path(),
         &fills,
-        8,
+        chat(8),
         Some("qa"),
         &asked("dash-api-key"),
         origin
@@ -748,7 +850,7 @@ fn allow_for_this_chat_fills_the_next_ask_without_a_notice_and_never_a_cards() {
     assert!(!granted(
         dir.path(),
         &fills,
-        7,
+        chat(7),
         Some("qa"),
         &asked("other"),
         origin
@@ -763,7 +865,7 @@ fn allow_for_this_chat_fills_the_next_ask_without_a_notice_and_never_a_cards() {
     assert!(!granted(
         dir.path(),
         &fills,
-        7,
+        chat(7),
         Some("qa"),
         &asked("dash-api-key"),
         origin
@@ -979,7 +1081,7 @@ fn a_cards_mark_added_while_the_notice_is_up_draws_it_again_before_a_press_count
     assert!(heard.try_recv().is_err(), "the call still waits");
     assert!(fills.waiting()[0].card);
     assert!(audited.into_inner().is_empty());
-    assert!(!fills.granted(7, "qa", "dash-api-key", "https://dash.example.test"));
+    assert!(!fills.granted(chat(7), "qa", "dash-api-key", "https://dash.example.test"));
 }
 
 /// A fill of key `key` into a field of `kind` whose frame is on dash.example.test.
@@ -1024,6 +1126,7 @@ fn a_multi_line_box_or_an_editable_area_asks_under_always_and_this_chat_and_a_on
     .expect("always");
     fills.lock().granted.push((
         7,
+        chat_id(7),
         "qa".into(),
         "dash-api-key".into(),
         "https://dash.example.test".into(),
@@ -1035,7 +1138,7 @@ fn a_multi_line_box_or_an_editable_area_asks_under_always_and_this_chat_and_a_on
             asks(
                 dir.path(),
                 &fills,
-                7,
+                chat(7),
                 Some("qa"),
                 &asked_into("dash-api-key", kind),
                 origin
@@ -1047,7 +1150,7 @@ fn a_multi_line_box_or_an_editable_area_asks_under_always_and_this_chat_and_a_on
         !asks(
             dir.path(),
             &fills,
-            7,
+            chat(7),
             Some("qa"),
             &asked_into("dash-api-key", FieldKind::OneLine),
             origin
@@ -1101,7 +1204,7 @@ fn a_multi_line_notice_takes_allow_once_and_keep_blocked_alone_and_says_so() {
     )
     .expect("once");
     assert_eq!(heard.try_recv(), Ok(Heard::Allowed));
-    assert!(!fills.granted(7, "qa", "dash-api-key", "https://dash.example.test"));
+    assert!(!fills.granted(chat(7), "qa", "dash-api-key", "https://dash.example.test"));
 }
 
 #[test]
@@ -1145,6 +1248,7 @@ fn a_site_on_this_machine_is_asked_about_each_time() {
     let fills = Fills::default();
     fills.lock().granted.push((
         7,
+        chat_id(7),
         "qa".into(),
         "dash-api-key".into(),
         "http://localhost:3000".into(),
@@ -1154,7 +1258,7 @@ fn a_site_on_this_machine_is_asked_about_each_time() {
     assert!(asks(
         dir.path(),
         &fills,
-        7,
+        chat(7),
         Some("qa"),
         &asked,
         "http://localhost:3000"

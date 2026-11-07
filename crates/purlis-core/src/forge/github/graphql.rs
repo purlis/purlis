@@ -95,3 +95,11 @@ pub struct MergeReady;
     response_derives = "Debug"
 )]
 pub struct ChecksExpected;
+
+#[derive(GraphQLQuery)]
+#[graphql(
+    schema_path = "src/forge/github/schema.graphql",
+    query_path = "src/forge/github/queries/fork_of_mine.graphql",
+    response_derives = "Debug"
+)]
+pub struct ForkOfMine;

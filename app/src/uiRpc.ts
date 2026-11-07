@@ -813,6 +813,14 @@ export const commands = {
 	forgeDeviceSignInStart: __WINDOW_ONLY_RESULT,
 	forgeDeviceSignInWait: __WINDOW_ONLY_RESULT,
 	forgeDeviceSignInCancel: __WINDOW_ONLY,
+	forgeSigningPermissionStart: __WINDOW_ONLY_RESULT,
+	forgeSigningPermissionWait: __WINDOW_ONLY_RESULT,
+	signingState: __WINDOW_ONLY_RESULT,
+	signingKeyShown: __WINDOW_ONLY_RESULT,
+	signingMakeKey: __WINDOW_ONLY_RESULT,
+	signingAddKey: __WINDOW_ONLY_RESULT,
+	signingKeyListed: __WINDOW_ONLY_RESULT,
+	signingCheck: __WINDOW_ONLY_RESULT,
 	agentIdentities: __WINDOW_ONLY_RESULT,
 	agentIdentityCreate: __WINDOW_ONLY_RESULT,
 	agentIdentityCreateCancel: __WINDOW_ONLY,
@@ -1103,8 +1111,13 @@ export const commands = {
 	 *  **The live lint** of `text`, a `SKILL.md` being edited for the skill `name` at `level` of
 	 *  `plane` (SK-7; SK-8, #2771): each line the editor shows, checked against the project's skills
 	 *  and this machine's programs. Save waits only on one that blocks.
+	 * 
+	 *  **The extensions' lints only where `extensions`** (#3093): each starts its extension's
+	 *  program confined, its own proxy and folder with it, which took 345 to 449 ms a question on
+	 *  macOS where the editor asks 200 ms after a keystroke. The editor asks them as an edit opens,
+	 *  and purlis's own as it is typed; what an extension says only warns, so Save never waits on it.
 	 */
-	skillLint: (plane: PlaneId, level: SkillLevel, name: string, text: string) => typedError<SkillLintFinding[], string>(__TAURI_INVOKE("skill_lint", { plane, level, name, text })),
+	skillLint: (plane: PlaneId, level: SkillLevel, name: string, text: string, extensions: boolean) => typedError<SkillLintFinding[], string>(__TAURI_INVOKE("skill_lint", { plane, level, name, text, extensions })),
 	skillNew: __WINDOW_ONLY_RESULT,
 	/**  The text of a skill's `SKILL.md`, which the light editor opens. */
 	skillText: (plane: PlaneId, level: SkillLevel, name: string) => typedError<string, string>(__TAURI_INVOKE("skill_text", { plane, level, name })),
@@ -2722,6 +2735,12 @@ export type AlertRow = {
 	 *  in place of the command the terminal status line names.
 	 */
 	way: AlertWay,
+	/**
+	 *  **When what it says was found**, in seconds since the epoch, where purlis keeps that
+	 *  (#5702): a chat's arrived files, from the look that last told them. The Inbox says the
+	 *  Notice's age from it, and without it from when the window first drew the Notice.
+	 */
+	since?: number | null,
 };
 
 /**
@@ -2737,7 +2756,7 @@ export type AlertWay =
  */
 { kind: "settings"; group: string; setting: string | null } | 
 /**  A fix of the doctor's registry, by the id `charter doctor --fix` takes (FX-1). */
-{ kind: "fix"; id: string } | 
+{ kind: "fix"; id: DoctorFix } | 
 /**  Another project to open: the one whose `workspaces/` this one is nested in. */
 { kind: "open-project"; path: string } | 
 /**  The project's Saving view, where a save is resolved. */
@@ -3156,7 +3175,12 @@ export type Asks =
 /**  `purlis profile sign-in --pool`. */
 "sign-in" | 
 /**  `purlis pool remove-profile`: its runner forgets the profile, and its sign-in there. */
-"take-off";
+"take-off" | 
+/**
+ *  `purlis signing check` (#5625): the window asks GitHub how a pushed commit shows. Its
+ *  `profile` is the repository (`owner/name`) and its `pool` the commit.
+ */
+"signing-check";
 
 /**  What a chat's row says while it is at its task limit. */
 export type AtLimit = {
@@ -5236,10 +5260,18 @@ export type Dispatches = {
 	undrawn: number,
 };
 
+/**
+ *  **A fix the doctor can make, by its id** (FX-1, #3138): the core's
+ *  [`purlis_core::doctor::fix::FixId`] as the window names it, spelled as `charter doctor --fix
+ *  <id>` takes it. Every way the window asks for a fix carries this, so it can only ask for one
+ *  the core has, and an id that names none is refused as the command's argument is read.
+ */
+export type DoctorFix = "rename-local" | "plugin-install" | "reinit" | "local-ignore" | "memory-optimize" | "discover" | "git-identity" | "rename-plane" | "persona-agents" | "workspace-reinit" | "handoff-rule" | "project-skills" | "live-skills" | "move-into-repos";
+
 /**  What applying a fix came to, as the Doctor dialog draws it. */
 export type DoctorFixed = {
 	/**  The fix that was asked for, by its id. */
-	fix: string,
+	fix: DoctorFix,
 	/**  Why it was refused, before anything was written. `None` when it ran. */
 	refused: string | null,
 	/**  What it changed, line by line, in the words and marks `charter doctor --fix` prints. */
@@ -5320,7 +5352,7 @@ export type DoctorRow = {
 	 *  by the id `charter doctor --fix <id>` takes: the dialog draws a Fix button for it, which
 	 *  calls [`plane_doctor_fix`]. `None` for a row charter cannot fix, and for the app's own.
 	 */
-	fix: string | null,
+	fix: DoctorFix | null,
 };
 
 /**  A row's verdict, as the window draws it. */
@@ -7434,6 +7466,13 @@ export type LoginShown = {
 	 *  form's, which the page may have sent the browser to. The domain where they're one.
 	 */
 	form: string,
+	/**
+	 *  **The part of the domain's host its owner registered** (the person's ruling of
+	 *  2026-11-07), by the public suffix list: the end of its host, which the notice marks.
+	 */
+	registrable: string,
+	/**  The same of the form's host. */
+	form_registrable: string,
 	vault: string,
 	user_key?: string | null,
 	key: string,
@@ -7904,7 +7943,7 @@ export type NeedFix =
  *  Move the project's skills where every program reads them: the doctor's fix, by its id
  *  (`plane_doctor_fix`).
  */
-{ kind: "move-skills"; fix: string } | 
+{ kind: "move-skills"; fix: DoctorFix } | 
 /**
  *  Propose the files without the old keys, for the person to apply
  *  (`remove_old_harness_plugins`); or leave them, which says so once
@@ -10337,6 +10376,16 @@ export type PublishAccepted = {
 /**  **How a publish ended.** */
 export type PublishDone = { kind: "opened"; url: string } | { kind: "already"; url: string } | { kind: "cannot-push"; why: string };
 
+/**  **The person's fork a publish goes through** (#4342). */
+export type PublishFork = {
+	/**  `owner/name` on the forge. */
+	path: string,
+	/**  Whether the publish makes it, once the person presses the button. */
+	made: boolean,
+	/**  Who can read it, as purlis says it before it sends. */
+	readers: string,
+};
+
 /**  One grade the description holds. */
 export type PublishGrade = {
 	skill: string,
@@ -10391,10 +10440,10 @@ export type PublishReviewView = {
 	/**  The request's description, whole. */
 	body: string,
 	/**
-	 *  Whether the forge says the person's account may not push to the source (#4342). The page
-	 *  says so up front and offers Export, and never refuses on it: the push answers for itself.
+	 *  The person's own fork the branch goes on, where the forge says their account may not push
+	 *  to the source (#4342). `None` for a branch on the source itself.
 	 */
-	forge_says_no_push: boolean,
+	fork: PublishFork | null,
 	accepted: PublishAccepted,
 };
 
@@ -12692,6 +12741,60 @@ export type SidebarWorkspace = {
 	live: boolean,
 };
 
+/**  The forge account setup adds the key to. */
+export type SigningAccount = {
+	login: string,
+	host: string,
+	/**  The forge, as a sentence names it: `GitHub`. */
+	forge: string,
+	/**  Whether its sign-in may add a signing key already, so setup asks for no permission. */
+	may_add: boolean,
+	/**
+	 *  The email the last Check in this window found verified, for "Verified on GitHub ✓".
+	 *  Only the forge's own answer sets it, and it lasts the window's life.
+	 */
+	verified_as: string | null,
+};
+
+/**  How adding the key went. */
+export type SigningAdded = 
+/**  GitHub has it now, or had it already. */
+"added" | 
+/**  The sign-in may not add it: setup asks for the permission, or the person adds it by hand. */
+"needs_permission";
+
+/**  What Check found: GitHub's own verdict on a signed test commit. */
+export type SigningCheck = {
+	verified: boolean,
+	/**
+	 *  GitHub's reason, such as `valid`, `unverified_email` or `unknown_key`: the window words
+	 *  it.
+	 */
+	reason: string,
+	/**  The email the test commit was made as: chat commits use it too. */
+	email: string,
+	/**  The repository the test commit was made in. */
+	repo: string,
+};
+
+/**  This device's key as Details and the by-hand step show it: never its private half. */
+export type SigningKeyShown = {
+	/**  `SHA256:…`, as GitHub shows it. */
+	fingerprint: string,
+	/**  The public line to paste on GitHub's page. */
+	public_key: string,
+};
+
+/**  What the card shows: whether this device has a signing key, and the GitHub account it goes to. */
+export type SigningState = {
+	/**  "On": this device has a signing key (ADR 0116 §1). Nothing else turns it on. */
+	on: boolean,
+	/**  What the key is titled on the forge: `purlis · <device>`. */
+	title: string,
+	/**  The GitHub account on github.com setup adds the key to, where one is signed in. */
+	account: SigningAccount | null,
+};
+
 /**
  *  A skill a chat would have loaded that could not be loaded (SK-8): the core's `Broken`, for
  *  the window. purlis-core keeps no UI typing crate, so its level is the studio's `Level`.
@@ -13200,6 +13303,11 @@ export type SkillLintFinding = {
 	level: SkillLintLevel,
 	/**  What it says, the core's sentence. */
 	says: string,
+	/**
+	 *  The extension's lint that said it, by the title it is said under; `None` for purlis's
+	 *  own. The editor asks the extensions only as an edit opens (#3093) and keeps theirs apart.
+	 */
+	by: string | null,
 };
 
 /**  How much a lint's finding stops, as the editor draws it: the core's `Severity`. */
@@ -13806,7 +13914,7 @@ export type StartOptions = {
 	 *  the picker offers the fix the doctor row does (NO-8). Null for a file git already
 	 *  tracks: that needs the operator's `git rm --cached`, which charter never runs.
 	 */
-	ignore_fix_id: string | null,
+	ignore_fix_id: DoctorFix | null,
 	/**
 	 *  Whether this plane declares no profiles of its own. The built-ins still start, and
 	 *  the picker says so rather than looking empty or broken.
@@ -14363,7 +14471,7 @@ export type StudioSkill = {
 export type StudioUnmoved = {
 	skills: number,
 	/**  The doctor's fix that moves them, by its id (`planeDoctorFix`). */
-	fix: string,
+	fix: DoctorFix,
 };
 
 /**  What one subject is offered. */

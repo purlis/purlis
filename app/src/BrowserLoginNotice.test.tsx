@@ -18,6 +18,8 @@ const login = (more: Partial<NonNullable<Shown["login"]>> = {}) => ({
   domain: "shop.example.test",
   path: "/login",
   form: "shop.example.test",
+  registrable: "example.test",
+  form_registrable: "example.test",
   vault: "qa",
   user_key: "username",
   key: "password",
@@ -96,6 +98,31 @@ describe("BrowserLoginNotice", () => {
     expect(screen.getByTestId("login-site")).toHaveTextContent("https://app.example.test/");
     expect(screen.getByTestId("login-site-form")).toHaveTextContent("https://auth.example.test");
     expect(screen.getByTestId("login-site")).toHaveTextContent("sign in elsewhere");
+  });
+
+  it("marks the part of each host its owner registered, so a name borrowed on its left stands out", () => {
+    render(
+      <BrowserLoginNotice
+        plane="p"
+        session={7}
+        asks={[
+          ask({
+            domain: "paypal.com.evil.example:8443",
+            registrable: "evil.example",
+            path: "/",
+            form: "login.paypa1.com",
+            form_registrable: "paypa1.com",
+          }),
+        ]}
+      />,
+    );
+    const marked = screen.getAllByTestId("login-site-registrable");
+    expect(marked.map((one) => one.textContent)).toEqual(["evil.example", "paypa1.com"]);
+    // The host is still drawn whole, its port after the mark.
+    expect(screen.getByTestId("login-site")).toHaveTextContent(
+      "https://paypal.com.evil.example:8443/",
+    );
+    expect(screen.getByTestId("login-site-form")).toHaveTextContent("https://login.paypa1.com");
   });
 
   it("says the password stays on the site it opens where the form is there", () => {

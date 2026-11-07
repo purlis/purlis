@@ -74,7 +74,7 @@ describe("the palette's rows for tasks (#1499, V100-49)", () => {
   });
 
   it("has one for a task that is on screen too, and none for a chat that is not a task", () => {
-    // A task shown in its session's tab has no tab row of its own to be found by (#1486).
+    // A task shown in the pane it returns to has no tab row of its own to be found by (#1486).
     expect(taskRows([listed(2, { tab: true })])).toHaveLength(1);
     expect(taskRows([listed(4, { mode: "handoff" }), listed(5, { mode: null })])).toEqual([]);
   });
@@ -108,7 +108,7 @@ const tabOf = (tabs: Tabs, number: number) =>
   tabs.order.find((id) => panesOf(tabs, id).some((one) => one.session === number)) ?? -1;
 
 describe("where a task is drawn, as rows of the catalogue (#1489, V100-38)", () => {
-  it("offers each task a tab of its own and a pane beside its session, and no way back from nowhere", () => {
+  it("offers each task a tab of its own and a pane beside the chat that asked for it, and no way back from nowhere", () => {
     const rows = rowsOf(sessions());
 
     expect(rows.get(ownTabId(2))).toMatchObject({
@@ -134,7 +134,7 @@ describe("where a task is drawn, as rows of the catalogue (#1489, V100-38)", () 
 
     const close = rows.get(`tab.close:${tabOf(tabs, 2)}`);
     expect(close).toMatchObject({
-      title: "Send talk back into steward 1's tab",
+      title: "Send talk back to its row",
       available: true,
       does: { verb: "sendBack", session: 2 },
     });
@@ -148,27 +148,27 @@ describe("where a task is drawn, as rows of the catalogue (#1489, V100-38)", () 
     expect(
       paneCloseOf(tabs, tabs.byId[tabOf(tabs, 2)].focused, (n) => names[n], askedByOf(all)),
     ).toMatchObject({ id: "pane.close", does: { verb: "sendBack", session: 2 } });
-    // The session's own tab still has the one close on the strip.
+    // The asking chat's own tab still has the one close on the strip.
     expect(rows.get(`tab.close:${tabOf(tabs, 1)}`)).toMatchObject({
       title: "Close steward 1",
       does: { verb: "closeTab" },
     });
     // And the rows about where it is say it: back, and not to its own tab again.
-    expect(rows.get(backId(2))?.title).toBe("Send talk back into steward 1's tab");
+    expect(rows.get(backId(2))?.title).toBe("Send talk back to its row");
     expect(rows.get(ownTabId(2))).toMatchObject({
       available: false,
       reason: "talk is in a tab of its own.",
     });
   });
 
-  it("gives a task beside its session a minimise on its pane, and leaves the session's pane its close", () => {
+  it("gives a task beside the chat that asked a minimise on its pane, and leaves the session's pane its close", () => {
     const tabs = openBeside(sessions(), 2, askedByOf(all), "talk");
     const id = tabOf(tabs, 1);
     const [own, beside] = panesOf(tabs, id);
     const nameOf = (n: number) => names[n];
 
     expect(paneCloseOf(tabs, beside.pane, nameOf, askedByOf(all))).toMatchObject({
-      title: "Send talk back among steward 1's tasks",
+      title: "Send talk back to its row",
       available: true,
       does: { verb: "sendBack", session: 2 },
     });
@@ -191,7 +191,7 @@ describe("where a task is drawn, as rows of the catalogue (#1489, V100-38)", () 
     const rows = rowsOf(tabs, [...all, orphan]);
 
     expect(rows.get(`tab.close:${tabOf(tabs, 12)}`)).toMatchObject({
-      title: "Send left behind back to the Chats list",
+      title: "Send left behind back to its row",
       does: { verb: "sendBack", session: 12 },
     });
     expect(rows.get(besideId(12))).toMatchObject({
@@ -282,7 +282,7 @@ describe("starting a task fresh (fix round 1, M2; #1609)", () => {
   });
 });
 
-describe("opening the task in front beside its session (#1499, #1489)", () => {
+describe("opening the task in front beside the chat that asked for it (#1499, #1489, #5679)", () => {
   it("is one row, which runs for the task the tab in front shows", () => {
     const shown = switchTabTo(sessions(), 2, askedByOf(all));
     const rows = catalogue({
@@ -294,7 +294,11 @@ describe("opening the task in front beside its session (#1499, #1489)", () => {
     }).filter((row) => row.id === BESIDE_ID);
 
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ available: true, does: { verb: "beside", session: 2 } });
+    expect(rows[0]).toMatchObject({
+      title: "Open the task in front beside the chat that asked for it",
+      available: true,
+      does: { verb: "beside", session: 2 },
+    });
   });
 
   it("cannot run where the chat in front is not a task, and says what does it", () => {

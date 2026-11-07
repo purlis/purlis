@@ -1,0 +1,21 @@
+{
+  "source": "GitHub REST API version 2022-11-28, docs.github.com/en/rest, pulls: List pull requests, filtered by head username:branch",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "repos/acme/api/pulls?state=all&head=octocat:purlis%2Fpublish%2Fdeploy-0123456789ab&per_page=1"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "[{\"number\": 13, \"html_url\": \"https://github.com/acme/api/pull/13\", \"state\": \"open\", \"draft\": true, \"head\": {\"ref\": \"purlis/publish/deploy-0123456789ab\", \"sha\": \"6dcb09b5b57875f334f61aebed695e2e4193db5e\", \"repo\": {\"full_name\": \"octocat/api\"}}}]",
+        "err": ""
+      }
+    }
+  ]
+}

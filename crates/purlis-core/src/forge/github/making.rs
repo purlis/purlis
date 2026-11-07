@@ -8,16 +8,23 @@
 //!   organisations needs `read:org`, which the token sign-in already asks for.
 //! - **Create**: `POST user/repos` for the account, `POST orgs/{org}/repos` for an organisation,
 //!   with `auto_init: false`, so the repo is empty and the project's first commit is its first.
+//! - **A fork** (#4342): `GET user`, the source, then the source's forks the account owns
+//!   (GraphQL's `forks(affiliations: [OWNER])`), so a fork the person renamed is found. With
+//!   none, the repo at the account's login and the source's name is free or taken: the
+//!   account's fork only where GitHub says it is a fork whose `parent` is the source. `POST repos/{owner}/{name}/forks` makes it under the account, and
+//!   its answer is held to the same.
 //! - **Delete**: `GET repos/{owner}/{name}` first, and `DELETE` only when the repo there has the id
 //!   the create answered. A repo renamed, moved or replaced since is not the one this run made,
 //!   and is left alone.
 
 use serde_json::Value;
 
-use super::super::backend::{Caller, MadeRepo, Making, NewRepo, OwnerKind, RepoOwner, Visibility};
+use super::super::backend::{
+    Caller, Fork, ForkPlace, MadeRepo, Making, NewRepo, OwnerKind, RepoOwner, Visibility,
+};
 use super::super::transport::{Call, Field, Method};
 use super::super::{ForgeError, ForgeRef, Kind, listed_id, listed_str, quote};
-use super::GitHub;
+use super::{GitHub, visibility_of};
 
 /// `owner/name` with each part encoded for a REST path.
 fn repo_path(path: &str) -> String {
@@ -133,6 +140,129 @@ impl Making for GitHub {
             Err(no) => Err(no.error(no.said().to_string())),
         }
     }
+
+    fn fork_for(&self, caller: &Caller, path: &str) -> Result<ForkPlace, ForgeError> {
+        let me = self
+            .0
+            .strict(caller, "user", "reading who this GitHub account is")?;
+        let login = listed_str(&me, "login");
+        if login.is_empty() {
+            return Err(ForgeError::new(
+                "GitHub answered who this account is without a login".to_string(),
+            ));
+        }
+        let source = self
+            .0
+            .strict(caller, &repo_path(path), &format!("reading {path}"))?;
+        let name = listed_str(&source, "name");
+        if name.is_empty() {
+            return Err(ForgeError::new(format!(
+                "reading {path}: GitHub named no repo"
+            )));
+        }
+        let visibility = visibility_of(&source).ok_or_else(|| {
+            ForgeError::new(format!("reading {path}: GitHub named no visibility"))
+        })?;
+        // The account's fork may have any name: asked of the source's own forks, owned by it.
+        let (owner, repo) = path.split_once('/').unwrap_or((path, ""));
+        let doing = format!("finding your fork of {path}");
+        let answer = self.0.ask(
+            caller,
+            &Call::graphql(
+                super::graphql::fork_of_mine::QUERY,
+                vec![Field::text("owner", owner), Field::text("name", repo)],
+                super::super::LIST_TIMEOUT,
+            ),
+            &doing,
+        )?;
+        let mine = answer["data"]["repository"]["forks"]["nodes"]
+            .as_array()
+            .and_then(|nodes| {
+                nodes
+                    .iter()
+                    .find(|node| node["owner"]["login"].as_str() == Some(login.as_str()))
+            });
+        if let Some(node) = mine {
+            return listed_fork(node)
+                .map(ForkPlace::Yours)
+                .ok_or_else(|| ForgeError::new(format!("{doing}: GitHub named no whole fork")));
+        }
+        let at = format!("{login}/{name}");
+        let doing = format!("reading {at}, where the fork of {path} goes");
+        match self.0.found(caller, &repo_path(&at), &doing, not_there)? {
+            None => Ok(ForkPlace::ToMake {
+                path: at,
+                visibility,
+            }),
+            Some(there) => Ok(match fork_of(&there, path) {
+                Some(fork) => ForkPlace::Yours(fork),
+                None => ForkPlace::Taken { path: at },
+            }),
+        }
+    }
+
+    fn make_fork(&self, caller: &Caller, path: &str) -> Result<Fork, ForgeError> {
+        let doing = format!("forking {path} on GitHub");
+        let call = Call::write(
+            Method::Post,
+            format!("{}/forks", repo_path(path)),
+            Vec::new(),
+        );
+        let answer = self.0.ask(caller, &call, &doing)?;
+        fork_of(&answer, path).ok_or_else(|| {
+            ForgeError::new(format!(
+                "{doing}: GitHub answered {}, which is not a fork of {path}",
+                Some(listed_str(&answer, "full_name"))
+                    .filter(|named| !named.is_empty())
+                    .unwrap_or_else(|| "no repo".to_string())
+            ))
+        })
+    }
+}
+
+/// The fork a [`super::graphql::ForkOfMine`] node names: its database id, path, page and
+/// visibility, its HTTPS clone URL its page's with `.git`. It is a fork of the repo asked, by the
+/// connection it is listed in.
+fn listed_fork(node: &Value) -> Option<Fork> {
+    let path = node["nameWithOwner"].as_str()?.to_string();
+    let url = node["url"].as_str()?.to_string();
+    if path.is_empty() || !url.starts_with("https://") {
+        return None;
+    }
+    let id = node["databaseId"].as_u64()?;
+    let visibility = Visibility::parse(&node["visibility"].as_str()?.to_lowercase())?;
+    Some(Fork::answered(
+        ForgeRef(id.to_string()),
+        path,
+        url.clone(),
+        format!("{url}.git"),
+        visibility,
+        None,
+    ))
+}
+
+/// The fork of `parent` in GitHub's answer, or `None` where it is not one: a repo GitHub calls a
+/// fork, whose `parent` is `parent` (case does not matter, as on GitHub), with an id, a path, a
+/// visibility and an HTTPS clone URL.
+fn fork_of(answer: &Value, parent: &str) -> Option<Fork> {
+    let path = listed_str(answer, "full_name");
+    let clone_url = listed_str(answer, "clone_url");
+    let of = answer["parent"]["full_name"].as_str()?;
+    if answer["fork"].as_bool() != Some(true)
+        || !of.eq_ignore_ascii_case(parent)
+        || path.is_empty()
+        || !clone_url.starts_with("https://")
+    {
+        return None;
+    }
+    Some(Fork::answered(
+        listed_id(answer)?,
+        path,
+        listed_str(answer, "html_url"),
+        clone_url,
+        visibility_of(answer)?,
+        listed_id(&answer["parent"]),
+    ))
 }
 
 /// The made repo in GitHub's answer to a create, or why the answer is not one.

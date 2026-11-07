@@ -4,7 +4,7 @@
 /**
  * **A limit, said where it binds** (#1498, V100-54).
  *
- * A session's tab menu ends with how many of its tasks run against the limit in force for it,
+ * A chat's tab menu ends with how many of its tasks run against the limit in force for it,
  * `4 of 6 running`: the count a dispatch from it is decided over and the limit it is decided
  * by, both the core's (`OpenChat.tasks_running`, `OpenChat.tasks_limit`). Nothing is said
  * where nothing counts against the limit: a session whose tasks have all finished has nothing

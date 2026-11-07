@@ -476,7 +476,7 @@ fn a_studio_with_only_built_in_skills_lists_them_and_offers_the_starts() {
         studio.first.unmoved,
         Some(StudioUnmoved {
             skills: 1,
-            fix: "project-skills".to_owned(),
+            fix: crate::doctor::DoctorFix::ProjectSkills,
         })
     );
 }

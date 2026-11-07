@@ -48,9 +48,12 @@
 //!
 //! What the app checks out carries these names too, and the look tells it apart by what is on
 //! disk, so it holds for every way a checkout is made, the person's own terminal included
-//! ([`Known`]). Only a new clone is said by the code that makes it ([`made_by_the_app`]), as nothing
-//! on disk tells one from a repository that arrived another way. One it can't tell apart is told:
-//! this says what appeared and never who put it there.
+//! ([`Known`]). A clone or a branch folder purlis makes itself (`purlis clone`, `purlis worktree
+//! add`) is said by the code that makes it, once it is done there ([`made_by_the_app`]): nothing on
+//! disk tells one from a folder that arrived another way, and where the chat may write the clone's
+//! `.git` that repository vouches for nothing (#5702). Each name in it is held to what it was then,
+//! so one the chat replaces is told. One it can't tell apart is told: this says what appeared and
+//! never who put it there.
 //!
 //! # The record
 //!
@@ -98,7 +101,7 @@ const MOST_CONTENT_READ: u64 = 64 * 1024 * 1024;
 /// How many entries one look goes through in what names hold ([`contents_of`]).
 const MOST_CONTENT_ENTRIES: usize = 100_000;
 
-/// The file of the clones the app made ([`made_by_the_app`]), beside the records.
+/// The file of what the app made ([`made_by_the_app`]), beside the records.
 const MADE: &str = "made-by-the-app";
 
 /// The sections of a repository's config ordinary work rewrites, which [`stamp`] leaves out.
@@ -427,6 +430,10 @@ struct Record {
     /// about what is new.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     whole_for: BTreeMap<String, usize>,
+    /// When a look last put something on the Notice, in seconds since the epoch (#5702): the
+    /// Notice's age, so a card read hours after it was first drawn says when it was found.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    told_at: Option<u64>,
 }
 
 /// What one look found, for the audit: paths and no contents.
@@ -471,6 +478,8 @@ pub struct Told {
     /// Each folder that could not be read.
     pub unread: Vec<String>,
     pub cut_short: bool,
+    /// When a look last put something on it, in seconds since the epoch, where one has (#5702).
+    pub at: Option<u64>,
 }
 
 impl Told {
@@ -671,30 +680,73 @@ fn common_of(git_dir: &Path) -> Option<PathBuf> {
     is_git(&common).then_some(common)
 }
 
-/// **A clone the app has just made in `top`**, said by the code that made it, as nothing on disk
-/// tells a clone from a repository that arrived another way. It is held to the `.git` that was
-/// there when this was said ([`Known`]). Only outside a sandbox can this be written.
+/// **What the app said it made** ([`made_by_the_app`]).
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+struct Made {
+    /// The clones, by the folder each is in, held to the `.git` folder each had then: what
+    /// [`Known`] may read of a repository.
+    #[serde(default)]
+    repos: BTreeMap<String, Pin>,
+    /// **Every name in what it made**, as it stood once the app was done with it (#5702): none is
+    /// told while it is still that thing. One the chat replaces, or one that is not there, is.
+    #[serde(default)]
+    names: BTreeMap<String, Pin>,
+}
+
+/// **A clone or a branch folder the app has just made in `top`**, said by the code that made it,
+/// once it is done writing there: nothing on disk tells one from a folder that arrived another
+/// way. Every name in it is held to what is there now, and a clone's repository to the `.git`
+/// that was there when this was said ([`Known`]). Only outside a sandbox can this be written, so
+/// no chat can say it.
 pub fn made_by_the_app(plane: &Path, top: &Path) -> io::Result<()> {
-    // No chat has a record here, so the next one to start finds this clone there as it starts.
+    // No chat has a record here, so the next one to start finds this folder there as it starts.
     if !dir(plane).is_dir() {
         return Ok(());
     }
-    let Some(pin) = Pin::of(&top.join(".git")) else {
-        return Ok(());
-    };
+    let dot_git = top.join(".git");
+    let repo = std::fs::symlink_metadata(&dot_git)
+        .is_ok_and(|kind| kind.is_dir())
+        .then(|| Pin::of(&dot_git))
+        .flatten();
+    // Weighed, so a chat's look that weighs what names hold tells one that changed since.
+    let walked = walk(&Watched {
+        folders: vec![top.to_path_buf()],
+        contents: true,
+        ..Watched::default()
+    });
     let path = dir(plane).join(MADE);
     holding(plane, || {
         let mut made = read_made(plane);
-        made.insert(key(top), pin);
+        // What has gone since says nothing: the record keeps only what is still there.
+        let there = |at: &String| std::fs::symlink_metadata(at).is_ok();
+        made.repos.retain(|at, _| there(at));
+        made.names.retain(|at, _| there(at));
+        if let Some(pin) = repo {
+            made.repos.insert(key(top), pin);
+        }
+        made.names.extend(
+            walked
+                .found
+                .iter()
+                .map(|(found, seen)| (key(found), seen.pin)),
+        );
         let bytes = serde_json::to_vec(&made).map_err(io::Error::other)?;
         crate::plane::write_private(plane, &path, &bytes)
     })
 }
 
-fn read_made(plane: &Path) -> BTreeMap<String, Pin> {
-    std::fs::read(dir(plane).join(MADE))
-        .ok()
-        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+fn read_made(plane: &Path) -> Made {
+    let Ok(bytes) = std::fs::read(dir(plane).join(MADE)) else {
+        return Made::default();
+    };
+    serde_json::from_slice(&bytes)
+        .or_else(|_| {
+            // Before #5702 the record held the clones alone.
+            serde_json::from_slice(&bytes).map(|repos| Made {
+                repos,
+                names: BTreeMap::new(),
+            })
+        })
         .unwrap_or_default()
 }
 
@@ -798,6 +850,9 @@ pub fn look(plane: &Path, chat: &str, name: Option<&str>) -> io::Result<Option<L
     };
     clear_left(&before.watched, Path::new(PROC));
     let walked = walk(&before.watched);
+    let made = read_made(plane).names;
+    // What the app made, still as it made it (#5702).
+    let mut made_here = BTreeSet::new();
     // What no look has been sure of before says nothing, and is known from here on.
     let mut first_reached = BTreeSet::new();
     let mut unseen = BTreeSet::new();
@@ -829,6 +884,10 @@ pub fn look(plane: &Path, chat: &str, name: Option<&str>) -> io::Result<Option<L
             changed.insert(found.clone());
             continue;
         }
+        if known.is_none() && made.get(&at).is_some_and(|pin| pin.holds(&seen.pin, found)) {
+            made_here.insert(found.clone());
+            continue;
+        }
         // Known and now another thing is new however deep it is.
         let beyond = known.is_none()
             && before
@@ -858,6 +917,9 @@ pub fn look(plane: &Path, chat: &str, name: Option<&str>) -> io::Result<Option<L
                 .unwrap_or_default()
         };
         let mut new = Vec::new();
+        for at in &made_here {
+            record.baseline.insert(key(at), pin_of(at));
+        }
         for at in ours.iter().chain(&first_reached) {
             record.baseline.insert(key(at), pin_of(at));
             if ours.contains(at)
@@ -933,6 +995,9 @@ pub fn look(plane: &Path, chat: &str, name: Option<&str>) -> io::Result<Option<L
         }
         record.name = name.map(str::to_owned).or(record.name);
         record.cut_short = walked.cut_short;
+        if !new.is_empty() || !unread.is_empty() {
+            record.told_at = Some(seconds_now());
+        }
         if record != was {
             write(plane, &path, &record)?;
         }
@@ -1030,6 +1095,7 @@ pub fn told(plane: &Path) -> Vec<Told> {
             paths: record.arrived.into_iter().collect(),
             unread: record.unread.into_iter().collect(),
             cut_short: record.cut_short,
+            at: record.told_at,
         })
         .collect()
 }
@@ -1052,8 +1118,16 @@ pub fn put_away(plane: &Path, chat: &str) -> io::Result<()> {
             record.put_away.insert(at, pin);
         }
         record.cut_short_told = record.cut_short_told || record.cut_short;
+        record.told_at = None;
         write(plane, &path, &record)
     })
+}
+
+/// Seconds since the epoch, as a record keeps a time.
+fn seconds_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs())
 }
 
 /// A path as a record keeps it.
@@ -1276,7 +1350,7 @@ fn small_file(path: &Path) -> Option<String> {
 /// At most `limit` bytes of the regular file at `path`, or `None` for anything else. Asked of the
 /// file once it is open, with no link followed and no wait, so swapping a name for a link or a pipe
 /// after a look at it reaches nothing and holds no look up.
-pub(super) fn read_regular(path: &Path, limit: u64) -> Option<Vec<u8>> {
+pub(crate) fn read_regular(path: &Path, limit: u64) -> Option<Vec<u8>> {
     let mut options = std::fs::OpenOptions::new();
     options.read(true);
     #[cfg(unix)]
@@ -1339,7 +1413,7 @@ struct Known {
 
 impl Known {
     fn of(plane: &Path, record: &Record) -> Self {
-        let mut pinned = read_made(plane);
+        let mut pinned = read_made(plane).repos;
         pinned.extend(record.repos.clone());
         let mut known = Self {
             tops: Vec::new(),

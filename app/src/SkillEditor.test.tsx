@@ -33,6 +33,7 @@ describe("a skill in the light editor", () => {
       {
         level: "blocks",
         says: "its frontmatter names no description:, so no chat would know when to use it",
+        by: null,
       },
     ]);
     expect(screen.getByText(/names no description/)).toBeInTheDocument();
@@ -47,7 +48,11 @@ describe("a skill in the light editor", () => {
 
   it("shows a warning and still offers Save (SK-8)", () => {
     const { container } = editor([
-      { level: "warns", says: "its ! command calls jq, which this machine does not have" },
+      {
+        level: "warns",
+        says: "its ! command calls jq, which this machine does not have",
+        by: null,
+      },
     ]);
     expect(
       screen.getByText("Worth knowing: its ! command calls jq, which this machine does not have"),

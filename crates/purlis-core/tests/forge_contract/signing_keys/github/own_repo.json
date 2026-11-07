@@ -1,0 +1,41 @@
+{
+  "source": "GitHub REST API version 2022-11-28, docs.github.com/en/rest/repos/repos (List repositories for the authenticated user, owned, most recently pushed first)",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "user/repos"
+          }
+        },
+        "fields": [
+          {
+            "typed": [
+              "affiliation",
+              "owner"
+            ]
+          },
+          {
+            "typed": [
+              "sort",
+              "pushed"
+            ]
+          },
+          {
+            "typed": [
+              "per_page",
+              "1"
+            ]
+          }
+        ]
+      },
+      "reply": {
+        "code": 0,
+        "out": "[{\"full_name\": \"octo/hello\", \"private\": true}]",
+        "err": "",
+        "status": 200
+      }
+    }
+  ]
+}

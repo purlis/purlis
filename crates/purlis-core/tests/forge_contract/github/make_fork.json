@@ -1,0 +1,21 @@
+{
+  "source": "GitHub REST API version 2022-11-28, docs.github.com/en/rest, repos/forks: Create a fork (into the account's own namespace when no organization is named)",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": "POST",
+            "path": "repos/acme/api/forks"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"id\": 1296270, \"name\": \"api\", \"full_name\": \"octocat/api\", \"fork\": true, \"visibility\": \"public\", \"private\": false, \"html_url\": \"https://github.com/octocat/api\", \"clone_url\": \"https://github.com/octocat/api.git\", \"parent\": {\"id\": 1, \"full_name\": \"acme/api\"}, \"source\": {\"id\": 1, \"full_name\": \"acme/api\"}}",
+        "err": ""
+      }
+    }
+  ]
+}

@@ -38,6 +38,11 @@ pub(crate) struct AlertRow {
     /// **What fixes it, in the window** (NO-6, #1238): the Inbox draws it as the Notice's button,
     /// in place of the command the terminal status line names.
     way: AlertWay,
+    /// **When what it says was found**, in seconds since the epoch, where purlis keeps that
+    /// (#5702): a chat's arrived files, from the look that last told them. The Inbox says the
+    /// Notice's age from it, and without it from when the window first drew the Notice.
+    #[specta(optional)]
+    since: Option<f64>,
 }
 
 /// **An alert's way out**, decided by the core's kind of alert ([`way_out`]) and never by its
@@ -54,7 +59,7 @@ pub(crate) enum AlertWay {
         setting: Option<String>,
     },
     /// A fix of the doctor's registry, by the id `charter doctor --fix` takes (FX-1).
-    Fix { id: String },
+    Fix { id: crate::doctor::DoctorFix },
     /// Another project to open: the one whose `workspaces/` this one is nested in.
     OpenProject { path: String },
     /// The project's Saving view, where a save is resolved.
@@ -101,7 +106,7 @@ fn way_out(alert: &alerts::Alert) -> AlertWay {
         }
         alerts::Alert::FrontDoor { .. } => general_at(&["persona", "default"]),
         alerts::Alert::Reinit { .. } => AlertWay::Fix {
-            id: FixId::WorkspaceReinit.id().to_owned(),
+            id: FixId::WorkspaceReinit.into(),
         },
         alerts::Alert::NestedPlane { outer, .. } => AlertWay::OpenProject {
             path: outer.display().to_string(),
@@ -209,6 +214,7 @@ fn save_blocked(root: &Path, now: f64) -> Option<AlertRow> {
         subject: "save".to_owned(),
         detail: format!("the plane's save is blocked: {why}"),
         workspaces: Vec::new(),
+        since: None,
         way: AlertWay::Saving,
     })
 }
@@ -243,6 +249,7 @@ fn request_red(
             "the {numbered} of {name} is red, so purlis did not merge it: {}",
             merge.why
         ),
+        since: None,
         workspaces: Vec::new(),
         way: AlertWay::SaveRequest {
             workspace: workspace.map(str::to_owned),
@@ -317,6 +324,7 @@ fn left_messages(root: &Path) -> Vec<AlertRow> {
             subject: LEFT_MESSAGES.to_owned(),
             detail: notice.notice(),
             workspaces: Vec::new(),
+            since: None,
             way: AlertWay::LeftMessages { report },
         })
         .collect()
@@ -353,6 +361,8 @@ fn arrived_files(root: &Path) -> Vec<AlertRow> {
             subject: ARRIVED_FILES.to_owned(),
             detail: told.words(root),
             workspaces: Vec::new(),
+            #[allow(clippy::cast_precision_loss)]
+            since: told.at.map(|at| at as f64),
             way: AlertWay::ArrivedFiles { chat: told.chat },
         })
         .collect()
@@ -410,6 +420,7 @@ fn rows(root: &Path) -> (Vec<AlertRow>, Option<String>) {
                     subject: shown.subject,
                     detail: shown.detail,
                     workspaces: about(&alert),
+                    since: None,
                     way: way_out(&alert),
                 }
             })

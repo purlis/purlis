@@ -153,14 +153,24 @@ pub fn needed(kind: Kind) -> &'static [&'static str] {
     }
 }
 
-/// The scopes that also grant `scope` on `kind`: GitHub's organisation scopes are nested.
+/// The scopes that also grant `scope` on `kind`: GitHub's organisation scopes are nested, and
+/// so is `user`, which holds `user:email`.
 fn granted_by(kind: Kind, scope: &str) -> &'static [&'static str] {
     match (kind, scope) {
         (Kind::GitHub, "read:org") => &["read:org", "write:org", "admin:org"],
         (Kind::GitHub, "repo") => &["repo"],
+        (Kind::GitHub, "user:email") => &["user:email", "user"],
+        (Kind::GitHub, "admin:ssh_signing_key") => &["admin:ssh_signing_key"],
         (Kind::GitLab, "api") => &["api"],
         _ => &[],
     }
+}
+
+/// Whether `scopes` on `kind` hold `want`, itself or a scope that holds it.
+fn grants(kind: Kind, scopes: &[String], want: &str) -> bool {
+    granted_by(kind, want)
+        .iter()
+        .any(|by| scopes.iter().any(|have| have == by))
 }
 
 /// The needed scopes `scopes` lacks, in [`needed`]'s order.
@@ -168,11 +178,7 @@ pub fn missing(kind: Kind, scopes: &[String]) -> Vec<&'static str> {
     needed(kind)
         .iter()
         .copied()
-        .filter(|want| {
-            !granted_by(kind, want)
-                .iter()
-                .any(|by| scopes.iter().any(|have| have == by))
-        })
+        .filter(|want| !grants(kind, scopes, want))
         .collect()
 }
 
@@ -180,7 +186,11 @@ pub fn missing(kind: Kind, scopes: &[String]) -> Vec<&'static str> {
 pub fn wider(kind: Kind, scopes: &[String]) -> Vec<String> {
     scopes
         .iter()
-        .filter(|have| !needed(kind).contains(&have.as_str()))
+        .filter(|have| {
+            !needed(kind).contains(&have.as_str())
+                && !(kind == Kind::GitHub
+                    && super::signingkeys::GITHUB_SCOPES.contains(&have.as_str()))
+        })
         .cloned()
         .collect()
 }
@@ -913,6 +923,7 @@ pub(super) fn sign_in(
         host,
         Held::Token(token.0),
         method,
+        None,
     )
 }
 
@@ -954,6 +965,73 @@ pub fn sign_in_with_grant(
         host,
         Held::Grant(granted),
         method,
+        None,
+    )
+}
+
+/// The scopes a step-up of `account` asks for: those it holds (what a sign-in needs, where the
+/// forge never said), and `more`, each once, in that order.
+pub fn widened_scopes(account: &ForgeAccount, more: &[&str]) -> Vec<String> {
+    let mut scopes: Vec<String> = match &account.scopes {
+        Some(held) => held.clone(),
+        None => needed(account.kind)
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect(),
+    };
+    for scope in more {
+        if !scopes.iter().any(|held| held == scope) {
+            scopes.push((*scope).to_string());
+        }
+    }
+    scopes
+}
+
+/// Whether `account` is known to hold every one of `scopes`: `false` where the forge never said
+/// what it holds (a fine-grained token).
+pub fn holds(account: &ForgeAccount, scopes: &[&str]) -> bool {
+    account
+        .scopes
+        .as_ref()
+        .is_some_and(|held| scopes.iter().all(|scope| grants(account.kind, held, scope)))
+}
+
+/// **`account`'s token and scopes replaced with what a step-up `granted`** (#5627, ADR 0116 §5):
+/// the device flow asked for the scopes it holds and `more` ([`widened_scopes`]), and the forge
+/// granted a new token. Kept only on a GitHub account, where the grant holds every one of `more`
+/// and the forge says the token is the same login's on the same host; otherwise refused with
+/// nothing changed. The account keeps its id, and is a browser sign-in from then on: its token is
+/// the grant's, renewed as a device sign-in's is. As listed now.
+pub fn widened(
+    _host: &HostScope,
+    config_root: &Path,
+    keyring: &dyn Store,
+    reach: Reach<'_>,
+    account: &ForgeAccount,
+    granted: Granted,
+    more: &[&str],
+) -> Result<ForgeAccount, String> {
+    if account.kind != Kind::GitHub {
+        return Err(format!(
+            "purlis asks {} for more permission only on GitHub, so nothing was changed.",
+            account.host
+        ));
+    }
+    if granted.access.expose_secret().is_empty() {
+        return Err(format!(
+            "{} gave no token, so nothing was changed.",
+            account.host
+        ));
+    }
+    keep(
+        config_root,
+        keyring,
+        reach,
+        account.kind,
+        account.host.clone(),
+        Held::Grant(granted),
+        Method::Device,
+        Some(StepUp { account, more }),
     )
 }
 
@@ -963,8 +1041,16 @@ enum Held {
     Grant(Granted),
 }
 
+/// A step-up's account, and the scopes it asked for beyond those it holds.
+struct StepUp<'a> {
+    account: &'a ForgeAccount,
+    more: &'a [&'a str],
+}
+
 /// Checks what is `held` with the forge and keeps it as the account's keyring item and its
-/// line in [`FILE`]: the end of every sign-in.
+/// line in [`FILE`]: the end of every sign-in. With `step_up`, a step-up's: refused, with
+/// nothing written, unless the forge says the token is that login's.
+#[allow(clippy::too_many_arguments)]
 fn keep(
     config_root: &Path,
     keyring: &dyn Store,
@@ -973,6 +1059,7 @@ fn keep(
     host: String,
     held: Held,
     method: Method,
+    step_up: Option<StepUp<'_>>,
 ) -> Result<ForgeAccount, String> {
     let secret = match &held {
         Held::Token(token) => token.clone(),
@@ -1005,6 +1092,33 @@ fn keep(
         // The grant's own word on its scopes, where the forge gave one.
         checked.scopes = Some(scopes.clone());
     }
+    if let Some(StepUp { account, more }) = &step_up {
+        if account.login != checked.login {
+            let login = &account.login;
+            return Err(format!(
+                "The code was confirmed as {} on {}, not as {login}, so nothing was changed. Confirm \
+             the code while signed in to {} as {login}.",
+                checked.login,
+                forge.host,
+                forge.kind.display()
+            ));
+        }
+        // What the grant holds, as it says or the forge read it back: every scope asked for.
+        let held = checked.scopes.as_deref().unwrap_or_default();
+        let short: Vec<&str> = more
+            .iter()
+            .copied()
+            .filter(|want| !grants(kind, held, want))
+            .collect();
+        if !short.is_empty() {
+            return Err(format!(
+                "{host} did not allow {}, so nothing was changed. Try again, and allow it on the \
+                 page {} shows.",
+                short.join(" and "),
+                kind.display()
+            ));
+        }
+    }
     if let Some(scopes) = &checked.scopes {
         let missing = missing(kind, scopes);
         if !missing.is_empty() {
@@ -1027,6 +1141,23 @@ fn keep(
         account_of(value)
             .is_some_and(|a| a.kind == kind && a.host == host && a.login == checked.login)
     });
+    // A step-up keeps the account it was asked for, by its id: one signed out or removed while
+    // the person was on the forge's page is not made again.
+    if let Some(StepUp { account, .. }) = &step_up {
+        let still = same
+            .and_then(|at| file.accounts.get(at))
+            .and_then(account_of)
+            .is_some_and(|listed| listed.id == account.id);
+        if !still {
+            return Err(format!(
+                "{} on {} was removed from this machine while {} waited, so nothing was \
+                 changed. Sign in again, then set up signing.",
+                account.login,
+                account.host,
+                kind.display()
+            ));
+        }
+    }
     let (id, rest) = match same.and_then(|at| file.accounts.get(at)) {
         Some(value) => {
             let was: Written = serde_json::from_value(value.clone())

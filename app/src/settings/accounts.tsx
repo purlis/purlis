@@ -10,6 +10,7 @@ import { ImportCliLogin } from "../ImportCliLogin";
 import type { LiveSetting, SettingsGroup } from "./groups";
 import { Button } from "../ui/button/Button";
 import { Badge } from "../ui/badge/Badge";
+import { signedCommits } from "./signing";
 
 /**
  * **You › Accounts** (#1814, ADR 0077 §6): this machine's forge accounts, each with Sign out;
@@ -43,7 +44,7 @@ export function accountsGroup(): SettingsGroup {
     id: "you.accounts",
     label: "Accounts",
     help: "The GitHub and GitLab accounts signed in on this machine. Their tokens are kept in your system keychain, never in a project, and never reach a chat. The forge work you do in this window uses them: the repo picker, discover, saves and the requests they open, and each workspace's request and checks. A host with no account here uses gh or glab, and chats always do.",
-    settings: [forgeAccounts],
+    settings: [forgeAccounts, signedCommits],
   };
 }
 

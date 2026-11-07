@@ -1,0 +1,9 @@
+{
+  "source": "GitHub REST API version 2022-11-28, docs.github.com/en/rest/commits/commits (Get a commit: its commit.verification), not verified with reason unverified_email",
+  "exchanges": [
+    {
+      "call": {"endpoint": {"rest": {"method": null, "path": "repos/octo/hello/commits/0123abc"}}, "fields": []},
+      "reply": {"code": 0, "out": "{\"sha\": \"0123abc0000000000000000000000000000000000\", \"commit\": {\"message\": \"a chat's commit\", \"verification\": {\"verified\": false, \"reason\": \"unverified_email\", \"signature\": \"-----BEGIN SSH SIGNATURE-----\", \"payload\": \"tree\", \"verified_at\": null}}}", "err": "", "status": 200}
+    }
+  ]
+}

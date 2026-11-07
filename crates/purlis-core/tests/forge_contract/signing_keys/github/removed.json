@@ -1,0 +1,9 @@
+{
+  "source": "GitHub REST API version 2022-11-28, docs.github.com/en/rest/users/ssh-signing-keys (Delete an SSH signing key for the authenticated user: 204 No Content)",
+  "exchanges": [
+    {
+      "call": {"endpoint": {"rest": {"method": "DELETE", "path": "user/ssh_signing_keys/17"}}, "fields": []},
+      "reply": {"code": 0, "out": "", "err": "", "status": 204}
+    }
+  ]
+}

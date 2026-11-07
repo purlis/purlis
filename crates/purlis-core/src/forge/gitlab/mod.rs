@@ -9,7 +9,7 @@
 use serde_json::Value;
 
 use super::backend::{
-    About, Asker, Caller, Capabilities, Capability, ForgeRef, Issues, NewWorkItem, Owner,
+    About, Asker, Caller, Capabilities, Capability, ForgeRef, Fork, Issues, NewWorkItem, Owner,
     PushProtection, Reach, Reason, RepoRecord, Repos, Requests, Support, Tier, Unavailable,
     UnknownWhy, Visibility, WorkItems,
 };
@@ -468,6 +468,21 @@ fn item_of(
     Ok(item)
 }
 
+/// The merge request `record` is, as a [`Request`]: its number, page, state and head commit.
+fn request_of(record: &Value, doing: &str) -> Result<Request, ForgeError> {
+    let pr = pr_of(record, "iid", "web_url", doing)?;
+    let head = record["sha"]
+        .as_str()
+        .filter(|sha| !sha.is_empty())
+        .ok_or_else(|| format!("{doing}: the forge named no head commit"))?;
+    Ok(Request {
+        number: pr.number,
+        url: pr.url,
+        state: state_of(record, doing)?,
+        head: head.to_string(),
+    })
+}
+
 impl Requests for GitLab {
     fn open_or_update(
         &self,
@@ -555,6 +570,83 @@ impl Requests for GitLab {
         )
     }
 
+    fn open_draft_from_fork(
+        &self,
+        caller: &Caller,
+        _path: &str,
+        fork: &Fork,
+        branch: &str,
+        base: &str,
+        title: &str,
+        body: &str,
+    ) -> Result<Pr, ForgeError> {
+        let doing = format!(
+            "opening a draft merge request from {}:{branch} into {base}",
+            fork.path()
+        );
+        // GitLab opens a fork's merge request on the fork, into the project it names by id.
+        let Some(ForgeRef(into)) = fork.parent() else {
+            return Err(ForgeError::new(format!(
+                "{doing}: GitLab named no project the fork is of"
+            )));
+        };
+        let call = Call::write(
+            Method::Post,
+            format!("projects/{}/merge_requests", quote(fork.path())),
+            vec![
+                Field::text("source_branch", branch),
+                Field::text("target_branch", base),
+                Field::text("title", &format!("Draft: {title}")),
+                Field::text("description", body),
+                Field::typed("target_project_id", into),
+            ],
+        );
+        pr_of(
+            &self.0.ask(caller, &call, &doing)?,
+            "iid",
+            "web_url",
+            &doing,
+        )
+    }
+
+    fn by_head_from_fork(
+        &self,
+        caller: &Caller,
+        path: &str,
+        fork: &Fork,
+        branch: &str,
+    ) -> Result<Option<Request>, ForgeError> {
+        let api = format!(
+            "projects/{}/merge_requests?source_branch={}&state=all&per_page=100",
+            quote(path),
+            quote(branch)
+        );
+        let doing = format!(
+            "finding the merge request from {}:{branch} in {path}",
+            fork.path()
+        );
+        let listing = self.0.ask(caller, &Call::get(&api, LIST_TIMEOUT), &doing)?;
+        // GitLab matches `source_branch` by name across every fork, so only one from this fork
+        // is the person's. Newest first, as GitLab lists them.
+        let fork_id = fork.id().0.parse::<u64>().ok();
+        let found = listing.as_array().and_then(|all| {
+            all.iter().find(|mr| {
+                fork_id.is_some() && mr.get("source_project_id").and_then(Value::as_u64) == fork_id
+            })
+        });
+        let full = listing.as_array().is_some_and(|all| all.len() >= 100);
+        if found.is_none() && full {
+            return Err(ForgeError::new(format!(
+                "{doing}: a hundred merge requests from other forks share this branch name, and \
+                 purlis reads no further"
+            )));
+        }
+        let Some(record) = found else {
+            return Ok(None);
+        };
+        request_of(record, &doing).map(Some)
+    }
+
     fn state(&self, caller: &Caller, path: &str, pr: &Pr) -> Result<State, ForgeError> {
         let api = format!("projects/{}/merge_requests/{}", quote(path), pr.number);
         let doing = format!("reading merge request !{} of {path}", pr.number);
@@ -614,17 +706,7 @@ impl Requests for GitLab {
         let Some(record) = found else {
             return Ok(None);
         };
-        let pr = pr_of(record, "iid", "web_url", &doing)?;
-        let head = record["sha"]
-            .as_str()
-            .filter(|sha| !sha.is_empty())
-            .ok_or_else(|| format!("{doing}: the forge named no head commit"))?;
-        Ok(Some(Request {
-            number: pr.number,
-            url: pr.url,
-            state: state_of(record, &doing)?,
-            head: head.to_string(),
-        }))
+        request_of(record, &doing).map(Some)
     }
 
     /// Merge when the pipeline succeeds, with `sha`. GitLab merges *at once* when told that

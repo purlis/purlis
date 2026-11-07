@@ -57,6 +57,7 @@ import {
   type HarnessSetupFound,
   type NeedsApproval,
   type NotStarted,
+  type DoctorFix,
   type FinishedTask,
   type LaidOut,
   type OpenChat,
@@ -375,7 +376,7 @@ import {
   type Tabs,
   type TabName,
   type ViewRef,
-  sessionOf,
+  returnsTo,
   namedForFirstPanes,
   tabNameOf,
 } from "./tabs";
@@ -3552,8 +3553,8 @@ export const PlaneView = memo(function PlaneView({
    *  in the title bar's switchers (#2916). One reading of the queue for all of them. */
   //
   // **A chat is counted where its tab is** (#1486, V100-40): a task that works in another
-  // workspace lives in the tab of the session that asked, so that session's workspace wears
-  // it. A chat with no tab is counted where it works, as before.
+  // workspace is at home in the tab it returns to (`returnsTo`), so that tab's workspace
+  // wears it. A chat with no tab is counted where it works, as before.
   const waitingIn = useCallback(
     (queue: readonly number[], workspace: string) =>
       queue.filter((session) => {
@@ -3842,7 +3843,7 @@ export const PlaneView = memo(function PlaneView({
    * options again, so what it draws is what is true after the fix; a refusal is said in it.
    */
   const fixInPicker = useCallback(
-    async (id: string) => {
+    async (id: DoctorFix) => {
       setPickerFixing(true);
       setPickerTrouble(undefined);
       const fixed = await commands
@@ -4738,7 +4739,7 @@ export const PlaneView = memo(function PlaneView({
    * in its tab's menu, its pane's controls, the palette; or by pressing it at all, where the
    * person set tasks to open that way (`chatsListPrefs`, V100-74). Also what a pressed task
    * falls back to when the session that asked has no tab here. **Nothing ends**, and the
-   * session's tab is left on what it showed. The core is told, so the tab comes back at the
+   * pane it returns to is left on what it showed. The core is told, so the tab comes back at the
    * next launch.
    */
   const ownTab = useCallback(
@@ -4765,7 +4766,7 @@ export const PlaneView = memo(function PlaneView({
   );
 
   /**
-   * **Opens a task beside its session, inside the session's tab** (#1489, V100-38): the
+   * **Opens a task beside its session, split from the pane it returns to** (#1489, V100-38): the
    * session's chat on one side and the task on the other, with the keyboard in the task. A
    * tab it had of its own goes. Nothing for a task whose session has no tab here: its row
    * says why (`actions.placeRows`).
@@ -4777,7 +4778,7 @@ export const PlaneView = memo(function PlaneView({
         openBeside(tabs, session, askedByNow, listedNow.current.get(session)?.name),
       );
       if (next === before) return;
-      // It is a pane of its session's tab now, and no tab of its own.
+      // It is a pane of the tab it returns to now, and no tab of its own.
       void commands.closeChatTab(plane, session).catch(() => undefined);
       const tab = tabHolding(next, session);
       const workspace =
@@ -5287,11 +5288,21 @@ export const PlaneView = memo(function PlaneView({
   }, [inboxAsked, inboxGroup, plane, showSideView]);
   /** Whether this project's Inbox is open on screen, told to the core: no notification is sent
    *  about what the person is reading (#1694, I-7). */
-  useInboxOpenTold(
-    plane,
-    inFront &&
-      arrangement.some((one) => !one.collapsed && viewOpenIn(one, presentViews) === "inbox"),
+  const inboxShown = arrangement.some(
+    (one) => !one.collapsed && viewOpenIn(one, presentViews) === "inbox",
   );
+  useInboxOpenTold(plane, inFront && inboxShown);
+  /** **Opening the Inbox reads the alerts again** (#5702): what a chat's last turn found in its
+   *  folders is listed when the person comes to look, not at the next minute's read. Only as it
+   *  opens: a project brought to the front with its Inbox open is no opening, and a switch sends
+   *  nothing more for it (`projectSwitch.cost.test.tsx`). */
+  const rereadAlerts = alerts?.does.reread;
+  const inboxWasShown = useRef(inboxShown);
+  useEffect(() => {
+    const opened = inboxShown && !inboxWasShown.current;
+    inboxWasShown.current = inboxShown;
+    if (opened && inFront) rereadAlerts?.();
+  }, [inboxShown, inFront, rereadAlerts]);
 
   /** A file ⌘P found here (FM-7), opened in its file tab the way the explorer opens one. */
   const fileHandled = useRef(fileAsked?.at);
@@ -5405,11 +5416,11 @@ export const PlaneView = memo(function PlaneView({
     openSettingsAt(settingsLinkAsked.link);
   }, [settingsLinkAsked, openSettingsAt]);
 
-  /** **Where a task's question is drawn** (#4565): a task's top is the nearest chat above it
-   *  with a tab, as its session's tab is (`sessionOf`); Open task is the person's own press. */
+  /** **Where a task's question is drawn** (#4565): a task's top is the chat it returns to,
+   *  the nearest above it with a pane (`returnsTo`); Open task is the person's own press. */
   const quizPlaces = useMemo(
     () => ({
-      topOf: (task: number) => sessionOf(tabs, task, askedBy)?.own,
+      topOf: (task: number) => returnsTo(tabs, task, askedBy)?.own,
       openTask: (task: number) => showChat(task),
       openSettings: () => openSettingsAt({ group: "you.chats", setting: "you.chats.answer" }),
       // A question's row's Answer (#5215): the Inbox, at the task's question.
@@ -9485,7 +9496,7 @@ export const PlaneView = memo(function PlaneView({
   /**
    * **Whether tab `id` is a task's own** (#1489), and then the name of the chat that asked for
    * it, where that chat is still listed: what the tab says after its own name. Nothing for a
-   * session's tab and for a view's.
+   * chat's tab and for a view's.
    */
   const taskTabOf = (id: number) => {
     const own = chatOf(tabs, id);
@@ -10154,9 +10165,9 @@ export const PlaneView = memo(function PlaneView({
     [],
   );
 
-  /** Moves a task from its line in a tab's menu (#1489): to a tab of its own, beside its
-   *  session, or back. The catalogue's own rows, read as they stand when pressed, and held
-   *  as one function for the window's life, as {@link showFromChip} is. */
+  /** Moves a task from its line in a tab's menu (#1489): to a tab of its own, beside the
+   *  chat that asked for it, or back. The catalogue's own rows, read as they stand when
+   *  pressed, and held as one function for the window's life, as {@link showFromChip} is. */
   const placeNow = useRef<(session: number, where: TaskPlace) => void>(() => undefined);
   useEffect(() => {
     placeNow.current = (session, where) => {
@@ -10166,6 +10177,12 @@ export const PlaneView = memo(function PlaneView({
   });
   const placeFromChip = useCallback(
     (session: number, where: TaskPlace) => placeNow.current(session, where),
+    [],
+  );
+  /** The catalogue's row a task's line in a tab's menu presses to move it (#5679): read as the
+   *  line is drawn, so its button says that row's title. */
+  const placeRowFromChip = useCallback(
+    (session: number, where: TaskPlace) => byNow.current(placeRowId(session, where)),
     [],
   );
   /** What a tab's chats used, for its menu (#1500): read only as the window asks. */
@@ -10278,6 +10295,7 @@ export const PlaneView = memo(function PlaneView({
           ends={taskEndsOf}
           onPress={pressTaskEnd}
           onPlace={placeFromChip}
+          placeOf={placeRowFromChip}
           used={usedFromChip}
           // The limits of this pane's own chat, the menu's first row (#1498).
           limits={runningSaid(rows[0])}
@@ -10298,6 +10316,7 @@ export const PlaneView = memo(function PlaneView({
       isDragging,
       nameOf,
       placeFromChip,
+      placeRowFromChip,
       pressTaskEnd,
       showPickedIn,
       stopAllOf,
