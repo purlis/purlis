@@ -84,7 +84,7 @@ pub fn record(config_root: &Path, project: &str, tips: &[String]) -> Result<(), 
     }
     let _locked = crate::machine::Lock::named(config_root, LOCK);
     let mut kept = read(config_root, project);
-    kept.retain(|one| !tips.iter().any(|tip| *tip == one));
+    kept.retain(|one| !tips.contains(&one));
     for tip in tips {
         if !kept.contains(tip) {
             kept.push(tip.clone());
