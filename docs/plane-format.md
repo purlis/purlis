@@ -1601,7 +1601,9 @@ machine's alone, as the rest of that copy is.
 
 - **Format:** JSON, pretty-printed, one trailing newline: `{"version": 1, "skills": [...]}`, the
   entries sorted by level then name. Each entry says what one installed skill was copied from
-  (fields below).
+  (fields below). **`version` is 2 only where an entry was copied from an extension's source**
+  (#3089), so a purlis that reads only git entries refuses that file whole rather than misread it,
+  and a file of git entries alone stays version 1.
 - **Status:** **purlis only** ([ADR 0100](adr/0100-a-skill-is-installed-from-a-git-source-as-a-pinned-copy-and-never-updates-by-itself.md)),
   **experimental** while the `skill-studio` flag is on (#2786).
 - **Tier:** Plane — committed, so every clone knows where each installed skill came from and at
@@ -1622,16 +1624,19 @@ machine's alone, as the rest of that copy is.
 | `name` | string | required | The skill's name, and its folder's at its level. | experimental | ADR 0100 §2 |
 | `source_name` | string | optional, default `name` | Its name at the source, where it was installed under a new one. An update finds it by this name. | experimental | ADR 0100, amended 2026-11-01 |
 | `level` | string | required | The level's folder in the plane: `skills`, `workspaces/<ws>/skills` (`.local` in the local lockfile). | experimental | `skills::verbs::Level` |
-| `source.url` | string | required | The source's URL: `https://` with a plain host and no credential in it, or a folder on the machine that installed it. A machine contacts one only once it is confirmed there (`[[skill_sources]]` in its `charter.local.toml`, which an install writes), and never a folder another machine named. | experimental | ADR 0100 §1 |
+| `source.extension` | string | required for an extension's source, in place of `source.url` | The id of the extension whose SkillSource it was copied from (ADR 0100 §8, #3089). A machine asks it only where it approved that extension and the project has it on, as every studio question is asked (ADR 0101). | experimental | ADR 0100 §8 |
+| `source.url` | string | required for a git source | The source's URL: `https://` with a plain host and no credential in it, or a folder on the machine that installed it. A machine contacts one only once it is confirmed there (`[[skill_sources]]` in its `charter.local.toml`, which an install writes), and never a folder another machine named. | experimental | ADR 0100 §1 |
 | `source.branch` | string | optional, default the source's `HEAD` | The branch its newest commit is read from. | experimental | ADR 0100 §1 |
 | `folder` | string | required | The skill's folder in the source; empty for a source that is one skill. | experimental | ADR 0100 §2 |
-| `commit` | string | required | The commit the copy was made from: the pin. | experimental | ADR 0100 §2 |
+| `commit` | string | required for a git source | The commit the copy was made from: the pin. | experimental | ADR 0100 §2 |
+| `revision` | string | required for an extension's source, in place of `commit` | The revision the extension named what it held by when the copy was made: the pin. At most 128 letters, digits and `. - _ : +`. | experimental | ADR 0100 §8 |
 | `digest` | string | required | `sha256:` over each file's path, mode and digest, in path order. | experimental | `source::digest_of` |
 | `files` | list of `{path, executable?, sha256}` | required | Each file the install wrote, so an edit here is seen and an update removes only what the install wrote. With `source_name`, the digest of `SKILL.md` leaves out its `name:` line, so a new name is never read as an edit. | experimental | ADR 0100 §4 |
 | `brought_by` | string | optional | The skill whose install brought this one along, as one it refers to. | experimental | ADR 0100 §2 |
 
 Every entry is checked as it is read: a name that is a skill's, plain file paths and folder,
-a level that belongs in this lockfile, and a source purlis reads. One that is not refuses the
+a level that belongs in this lockfile, and a source purlis reads: `source.url` with `commit`, or
+`source.extension` with `revision`, never both and never a mix. One that is not refuses the
 whole file in one sentence, and nothing installed changes.
 
 **An entry whose `<level>/<name>/SKILL.md` is gone is a deleted skill's** (#5331). A delete leaves

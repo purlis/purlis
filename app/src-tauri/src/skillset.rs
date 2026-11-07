@@ -153,7 +153,11 @@ pub(crate) async fn skill_source_installed(
     crate::off_the_window("reading what is installed from the source", move || {
         flag_on()?;
         Ok(
-            set::installed_from(held.root(), &remote.core(), workspace.as_deref())
+            set::installed_from(
+                held.root(),
+                &purlis_core::skills::source::Origin::Git(remote.core()),
+                workspace.as_deref(),
+            )
                 .iter()
                 .map(|one| InstalledCopy {
                     member: (&one.member).into(),

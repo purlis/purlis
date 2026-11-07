@@ -10,7 +10,7 @@ use super::*;
 use crate::repocmd::Say;
 use crate::settings::Which;
 use crate::skills::source::lock::{AtLevel, Kept, Locked, Lockfile, Wrote};
-use crate::skills::source::{Commit, Remote};
+use crate::skills::source::{Commit, Origin, Pin, Remote};
 use crate::skills::verbs::{By, restore};
 use crate::testgit::run;
 
@@ -41,9 +41,9 @@ fn locked(level: Level, name: &str, text: &str) -> Locked {
         name: name.to_owned(),
         source_name: None,
         level: AtLevel(level),
-        source: remote(),
+        source: Origin::Git(remote()),
         folder: format!("skills/{name}"),
-        commit: Commit::parse(&"a".repeat(40)).unwrap(),
+        pin: Pin::Commit(Commit::parse(&"a".repeat(40)).unwrap()),
         digest: "sha256:0".to_owned(),
         files: vec![Wrote {
             path: "SKILL.md".to_owned(),
@@ -367,12 +367,12 @@ fn removing_the_source_with_its_skills_is_the_same_commit_and_undo_brings_both_b
 fn a_skill_deleted_is_no_longer_installed_and_comes_back_pinned_as_it_was() {
     let tmp = plane();
     let root = tmp.path();
-    assert_eq!(installed_from(root, &remote(), None).len(), 4);
+    assert_eq!(installed_from(root, &Origin::Git(remote()), None).len(), 4);
     did(root, |cx| {
         delete_set(cx, &[project("grilling")], None, None)
     })
     .unwrap();
-    let names: Vec<String> = installed_from(root, &remote(), None)
+    let names: Vec<String> = installed_from(root, &Origin::Git(remote()), None)
         .into_iter()
         .filter(|one| !one.member.level.local)
         .map(|one| one.member.name)
@@ -389,7 +389,7 @@ fn a_skill_deleted_is_no_longer_installed_and_comes_back_pinned_as_it_was() {
     let held = lock::read(root, Kept::Shared).unwrap();
     assert!(held.lock.skills.iter().any(|one| one.name == "grilling"));
     did(root, |cx| restore_set(cx, &deleted(root), None)).unwrap();
-    assert_eq!(installed_from(root, &remote(), None).len(), 4);
+    assert_eq!(installed_from(root, &Origin::Git(remote()), None).len(), 4);
 }
 
 #[test]
@@ -401,7 +401,7 @@ fn what_is_installed_from_a_source_says_each_level_and_what_changed_since_instal
         "---\nname: tdd\ndescription: Mine.\n---\n",
     )
     .unwrap();
-    let copies = installed_from(root, &remote(), None);
+    let copies = installed_from(root, &Origin::Git(remote()), None);
     let of = |level: &Level, name: &str| {
         copies
             .iter()
@@ -534,7 +534,7 @@ fn turning_a_set_off_is_one_commit_and_turning_it_on_takes_back_what_it_turned_o
     assert_eq!(changed, ["grilling", "tdd"]);
     assert_eq!(commits(root), before + 1);
     assert_eq!(crate::skills::turned_off(root, "ops"), ["grilling", "tdd"]);
-    let copies = installed_from(root, &remote(), Some("ops"));
+    let copies = installed_from(root, &Origin::Git(remote()), Some("ops"));
     let on = |name: &str| {
         copies
             .iter()

@@ -18,7 +18,7 @@ use specta::Type;
 use purlis_core::settings::Which;
 use purlis_core::skills::review as summary;
 use purlis_core::skills::source::{
-    self, Accepted, AcceptedSkill, Commit, Remote, Source, VaultEntry,
+    self, Accepted, AcceptedSkill, Commit, Origin, Pin, Remote, Source, VaultEntry,
 };
 use purlis_core::skills::tree;
 
@@ -138,6 +138,16 @@ impl From<&Commit> for SourceCommit {
         SourceCommit {
             id: commit.as_str().to_owned(),
             short: commit.short().to_owned(),
+        }
+    }
+}
+
+/// A pin, a git source's commit or an extension's revision, as the window shows a commit.
+impl From<&Pin> for SourceCommit {
+    fn from(pin: &Pin) -> Self {
+        SourceCommit {
+            id: pin.as_str().to_owned(),
+            short: pin.short().to_owned(),
         }
     }
 }
@@ -502,7 +512,7 @@ pub struct ReviewedSkill {
 impl From<&Accepted> for Reviewed {
     fn from(accepted: &Accepted) -> Self {
         Reviewed {
-            commit: accepted.commit.as_str().to_owned(),
+            commit: accepted.pin.as_str().to_owned(),
             skills: accepted
                 .skills
                 .iter()
@@ -519,8 +529,10 @@ impl TryFrom<&Reviewed> for Accepted {
     type Error = String;
     fn try_from(reviewed: &Reviewed) -> Result<Accepted, String> {
         Ok(Accepted {
-            commit: Commit::parse(&reviewed.commit)
-                .ok_or_else(|| "That review is not one purlis gave.".to_owned())?,
+            pin: Pin::Commit(
+                Commit::parse(&reviewed.commit)
+                    .ok_or_else(|| "That review is not one purlis gave.".to_owned())?,
+            ),
             skills: reviewed
                 .skills
                 .iter()
@@ -822,7 +834,7 @@ fn checked_shown(root: &std::path::Path) -> Result<Vec<SourceChecked>, String> {
                 remote: (&remote).into(),
                 at: last.map(|at| seconds(at.at)),
                 skills: last.and_then(|at| at.skills),
-                installed: source::checked::installed_from(&locked, &remote),
+                installed: source::checked::installed_from(&locked, &Origin::Git(remote.clone())),
             }
         })
         .collect())
@@ -1119,16 +1131,17 @@ pub(crate) async fn skill_updates(
     let held = planes.held(&plane)?;
     crate::off_the_window("asking the skill sources", move || {
         flag_on()?;
-        let found = source::updates(held.root());
+        let found = source::updates(held.root(), None);
         Ok(SkillUpdates {
             offers: found
                 .offers
                 .iter()
-                .map(|one| SkillUpdateOffer {
+                .filter_map(|one| Some((one, one.source.remote()?)))
+                .map(|(one, remote)| SkillUpdateOffer {
                     label: one.level.to_string(),
                     level: (&one.level).into(),
                     name: esc(&one.name),
-                    remote: (&one.remote).into(),
+                    remote: remote.into(),
                     pinned: (&one.pinned).into(),
                     newer: (&one.newer).into(),
                     edited: one.edited,

@@ -348,8 +348,8 @@ fn an_install_lands_a_pinned_copy_and_a_lockfile_entry() {
     let names: Vec<&str> = lock.skills.iter().map(|s| s.name.as_str()).collect();
     assert_eq!(names, ["deploy", "notify"]);
     let deploy = &lock.skills[0];
-    assert_eq!(deploy.commit.as_str(), commit);
-    assert_eq!(deploy.source.url, remote.url());
+    assert_eq!(deploy.pin.as_str(), commit);
+    assert_eq!(deploy.source.remote().unwrap().url, remote.url());
     assert_eq!(deploy.folder, "skills/deploy");
     assert_eq!(deploy.digest, review.skills[0].digest);
     assert_eq!(lock.skills[1].brought_by.as_deref(), Some("deploy"));
@@ -410,7 +410,7 @@ fn an_install_whose_source_changed_since_the_review_installs_nothing() {
     )]);
     remote.commit(&tree, Some(&commit));
     let accepted = Accepted {
-        commit: Commit::parse(&"0".repeat(40)).unwrap(),
+        pin: Pin::Commit(Commit::parse(&"0".repeat(40)).unwrap()),
         skills: vec![AcceptedSkill {
             name: "notify".into(),
             digest: "sha256:00".into(),
@@ -560,7 +560,7 @@ fn a_newer_commit_is_offered_and_never_applied_by_itself() {
 
     let Updates {
         offers, unasked, ..
-    } = updates(root);
+    } = updates(root, None);
     assert!(unasked.is_empty(), "{unasked:?}");
     assert_eq!(offers.len(), 1);
     assert_eq!(
@@ -614,8 +614,8 @@ fn a_newer_commit_is_offered_and_never_applied_by_itself() {
     );
     assert!(root.join("skills/notify/extra.sh").is_file());
     let lock = lock::read(root, Kept::Shared).unwrap().lock;
-    assert_eq!(lock.skills[0].commit.as_str(), second);
-    assert!(updates(root).offers.is_empty());
+    assert_eq!(lock.skills[0].pin.as_str(), second);
+    assert!(updates(root, None).offers.is_empty());
 }
 
 #[test]
@@ -639,17 +639,17 @@ fn a_force_pushed_source_moves_no_pin() {
         b"---\nname: notify\ndescription: other\n---\nrm -rf /\n",
     )]);
     let rewritten = remote.commit(&tree, None);
-    let offers = updates(root).offers;
+    let offers = updates(root, None).offers;
     assert_eq!(offers[0].newer.as_str(), rewritten);
     let lock = lock::read(root, Kept::Shared).unwrap().lock;
-    assert_eq!(lock.skills[0].commit.as_str(), first);
+    assert_eq!(lock.skills[0].pin.as_str(), first);
     assert_eq!(
         std::fs::read(root.join("skills/notify/SKILL.md")).unwrap(),
         NOTIFY
     );
     // An update accepted for other bytes than the source now holds is refused.
     let wrong = Accepted {
-        commit: Commit::parse(&rewritten).unwrap(),
+        pin: Pin::Commit(Commit::parse(&rewritten).unwrap()),
         skills: accepted.skills.clone(),
     };
     let (answer, _) = on(root, |cx| {
@@ -658,7 +658,7 @@ fn a_force_pushed_source_moves_no_pin() {
     assert!(answer.is_err());
     assert_eq!(
         lock::read(root, Kept::Shared).unwrap().lock.skills[0]
-            .commit
+            .pin
             .as_str(),
         first
     );
@@ -689,7 +689,7 @@ fn an_edited_copy_says_so_and_its_update_lists_the_edits() {
         b"---\nname: notify\ndescription: v2\n---\n",
     )]);
     remote.commit(&tree, Some(&first));
-    let offers = updates(root).offers;
+    let offers = updates(root, None).offers;
     assert!(offers[0].edited);
     let diff = update_review(root, &Level::project(), "notify").unwrap();
     assert_eq!(diff.edited, ["SKILL.md"]);
@@ -1295,7 +1295,7 @@ fn a_source_only_the_committed_lock_names_is_not_contacted_until_confirmed() {
         .to_string(),
     )
     .unwrap();
-    let found = updates(root);
+    let found = updates(root, None);
     assert!(found.offers.is_empty());
     assert_eq!(found.unconfirmed.len(), 1);
     assert_eq!(
@@ -1319,7 +1319,7 @@ fn a_source_only_the_committed_lock_names_is_not_contacted_until_confirmed() {
     // Confirmed, it is asked, and here it cannot be reached.
     let near = found.unconfirmed[0].remote.clone();
     assert!(on(root, |cx| confirm(cx, &near)).0.unwrap());
-    let found = updates(root);
+    let found = updates(root, None);
     assert!(found.unconfirmed.is_empty());
     assert!(
         found
@@ -1562,7 +1562,7 @@ fn an_update_of_a_skill_from_an_unconfirmed_committed_source_fetches_nothing() {
     let why = update_review(root, &Level::project(), "notify").unwrap_err();
     assert!(why.contains("never a folder on one machine"), "{why}");
     let wanted = Accepted {
-        commit: Commit::parse(&"0".repeat(40)).unwrap(),
+        pin: Pin::Commit(Commit::parse(&"0".repeat(40)).unwrap()),
         skills: accepted.skills.clone(),
     };
     let (answer, _) = on(root, |cx| {
@@ -1574,7 +1574,7 @@ fn an_update_of_a_skill_from_an_unconfirmed_committed_source_fetches_nothing() {
             .contains("never a folder on one machine")
     );
     assert_eq!(std::fs::read(root.join(lock::FILE)).unwrap(), lock_before);
-    let found = updates(root);
+    let found = updates(root, None);
     assert!(
         found.offers.is_empty() && found.unconfirmed.is_empty(),
         "{found:?}"
@@ -1821,7 +1821,7 @@ fn an_updates_check_records_when_it_asked_and_keeps_the_count_the_browse_found()
     .unwrap();
     checked::noted(root, &source.remote, 5, Some(7));
 
-    let found = updates(root);
+    let found = updates(root, None);
 
     assert!(found.unasked.is_empty(), "{:?}", found.unasked);
     let read = checked::read(root);
@@ -1851,7 +1851,7 @@ fn a_source_that_does_not_answer_the_updates_check_is_not_recorded_as_checked() 
     checked::noted(root, &source.remote, 5, Some(2));
     std::fs::remove_dir_all(&remote.git_dir).unwrap();
 
-    let found = updates(root);
+    let found = updates(root, None);
 
     assert_eq!(found.unasked.len(), 1, "{:?}", found.unasked);
     assert_eq!(checked::read(root)[0].at, 5);
@@ -1938,12 +1938,12 @@ fn the_skills_installed_from_a_source_are_counted_from_the_lockfiles() {
     .unwrap();
     let (locked, _) = lock::every(root);
     // deploy, and notify, which it brought along.
-    assert_eq!(checked::installed_from(&locked, &source.remote), 2);
+    assert_eq!(checked::installed_from(&locked, &Origin::Git(source.remote.clone())), 2);
     let other = Remote {
         url: "https://example.com/other".into(),
         branch: None,
     };
-    assert_eq!(checked::installed_from(&locked, &other), 0);
+    assert_eq!(checked::installed_from(&locked, &Origin::Git(other.clone())), 0);
 }
 
 #[test]
@@ -2064,18 +2064,18 @@ fn a_set_of_skills_installs_through_one_review_and_one_change() {
     // Each pinned to the reviewed commit (that an install is one commit is
     // `an_install_into_a_git_plane_is_one_commit_of_the_copies_and_the_lockfile`).
     let lock = lock::read(root, Kept::Shared).unwrap().lock;
-    let pinned: Vec<(&str, &Commit)> = lock
+    let pinned: Vec<(&str, &Pin)> = lock
         .skills
         .iter()
-        .map(|s| (s.name.as_str(), &s.commit))
+        .map(|s| (s.name.as_str(), &s.pin))
         .collect();
     assert_eq!(
         pinned,
         // The lockfile keeps its entries by name.
         [
-            ("deploy", &review.commit),
-            ("lint", &review.commit),
-            ("notify", &review.commit)
+            ("deploy", &Pin::Commit(review.commit.clone())),
+            ("lint", &Pin::Commit(review.commit.clone())),
+            ("notify", &Pin::Commit(review.commit.clone()))
         ]
     );
 }
@@ -2764,7 +2764,7 @@ fn a_copy_under_a_new_name_is_not_edited_and_its_update_finds_it_by_its_name_at_
     let second = remote.tree(&[("skills/grilling/SKILL.md", "100644", two)]);
     remote.commit(&second, Some(&parent));
 
-    let offers = updates(root).offers;
+    let offers = updates(root, None).offers;
     assert_eq!(offers[0].name, "acme-grilling");
     assert!(!offers[0].edited, "the new name is not an edit");
     let shown = update_review(root, &level, "acme-grilling").unwrap();
@@ -2786,7 +2786,7 @@ fn a_copy_under_a_new_name_is_not_edited_and_its_update_finds_it_by_its_name_at_
         std::fs::read_to_string(root.join("skills/acme-grilling/SKILL.md")).unwrap(),
         "---\nname: acme-grilling\ndescription: Two.\n---\n\nSecond.\n"
     );
-    assert!(updates(root).offers.is_empty());
+    assert!(updates(root, None).offers.is_empty());
 }
 
 #[test]
@@ -2926,3 +2926,6 @@ fn a_persona_skill_from_a_source_carries_its_label_in_the_personas_rows() {
 
 /// Several updates as one change (#5354).
 mod update_set;
+
+#[cfg(unix)]
+mod extension;

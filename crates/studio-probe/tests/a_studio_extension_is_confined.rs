@@ -328,16 +328,22 @@ fn it_adds_a_template_a_lint_a_panel_and_a_source() {
     assert_eq!(panels[1].by.as_deref(), Some("Studio probe"));
 
     // A skill source: what it offers, and the install review purlis shows of it.
-    let browse = purlis_core::skills::source::extension::browse(studio, ID).expect("it lists");
-    assert_eq!(browse.revision, studio_probe::REVISION);
-    let names: Vec<&str> = browse.skills.iter().map(|it| it.name.as_str()).collect();
+    let browse = purlis_core::skills::source::extension::browse(studio, &probe.plane(), ID)
+        .expect("it lists");
+    assert_eq!(browse.revision.as_str(), studio_probe::REVISION);
+    let names: Vec<&str> = browse.skills.iter().map(|it| it.skill.name.as_str()).collect();
     assert_eq!(names, [studio_probe::OFFERED]);
-    let review = purlis_core::skills::source::extension::review(
+    let (review, held) = purlis_core::skills::source::extension::review(
         studio,
+        &probe.plane(),
         ID,
         &[studio_probe::OFFERED.to_owned()],
+        &purlis_core::skills::verbs::Level::project(),
     )
     .expect("purlis reviews what it answers");
+    // What the review read is held for the install, which asks the extension nothing (#3089).
+    assert_eq!(held.extension(), ID);
+    assert_eq!(held.revision(), &review.revision);
     let skill = &review.skills[0];
     let files: Vec<&str> = skill.files.iter().map(|it| it.path.as_str()).collect();
     assert_eq!(files, ["SKILL.md", "scripts/check.sh"]);
