@@ -15,7 +15,10 @@
 //!   unpaired first over a link of its own, and one that stopped during its drain is held for
 //!   the person ([`purlis_core::pools::DrainLook::Held`]), as is one that had stopped before it
 //!   or was removed outside purlis whose home holds a chat's conversation
-//!   ([`purlis_core::pools::held_for_its_conversations`], #4633);
+//!   ([`purlis_core::pools::held_for_its_conversations`], #4633). One of those two whose home
+//!   holds none cannot be checked for work a fetch does not bring without being woken, so it stays
+//!   unchecked until it runs again or the person lets it go ([`NOT_CHECKED_STOPPED`],
+//!   [`NOT_CHECKED_REMOVED`]);
 //! - **a pool of a team's own image is never moved**: its row says its runner is behind
 //!   (`crate::dockerpools::docker_pool_version`).
 //!
@@ -486,7 +489,14 @@ fn let_go_unasked(
     shown: &[String],
 ) -> Result<(), String> {
     let runner = kept.name();
-    let owed = purlis_core::pools::work_owed_from(&machine.config, kept.pool(), runner)?;
+    // A fetch can still reach a stopped one, never one whose container is gone, which went
+    // whatever it owed before it was kept unchecked (#4168).
+    let owed = match how {
+        Unasked::StoppedBefore => {
+            purlis_core::pools::work_owed_from(&machine.config, kept.pool(), runner)?
+        }
+        Unasked::Removed => Vec::new(),
+    };
     if !owed.is_empty() {
         let into: Vec<String> = owed
             .iter()
@@ -506,6 +516,12 @@ fn let_go_unasked(
         return Err(format!(
             "Runner {runner} now holds work you were not shown, so it stays. Look at what it \
              holds in Devices and let it go again."
+        ));
+    }
+    // Started again since, it is asked as any running one is.
+    if unasked(machine, kept) != Some(how) {
+        return Err(format!(
+            "Runner {runner} runs again, so it stays until a look checks what it holds."
         ));
     }
     let removed = match how {
@@ -652,6 +668,7 @@ pub fn follow_and_drain(
             if let Some(line) =
                 kept_for_its_conversations(machine, &kept, "was removed outside purlis")
             {
+                lock_left().remove(&at);
                 said.push(line);
                 continue;
             }
@@ -709,7 +726,7 @@ pub fn follow_and_drain(
         let look = machine
             .ran(&kept)
             .map(|ran| purlis_core::pools::drain_look(&kept, ran));
-        // Only a runner that runs is asked what it holds: one stopped goes without being woken.
+        // Only a runner that runs is asked what it holds: one stopped is not woken to be asked.
         let runs = matches!(look, Ok(DrainLook::Ask) | Err(_));
         let stopped_before = matches!(look, Ok(DrainLook::StoppedBefore));
         let chats = match look {
@@ -732,6 +749,7 @@ pub fn follow_and_drain(
                     kept_for_its_conversations(machine, &kept, "had stopped before its drain")
                 {
                     lock_waiting().remove(&at);
+                    lock_left().remove(&at);
                     said.push(line);
                     continue;
                 }
