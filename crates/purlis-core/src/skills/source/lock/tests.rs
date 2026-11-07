@@ -167,6 +167,15 @@ fn an_entry_that_mixes_a_git_source_with_a_revision_or_names_a_bad_extension_is_
         read(root, Kept::Shared).is_err()
     };
     assert!(!refused(good()), "the good entry reads");
+    std::fs::write(
+        root.join(FILE),
+        serde_json::json!({ "version": 1, "skills": [good()] }).to_string(),
+    )
+    .unwrap();
+    assert!(
+        read(root, Kept::Shared).is_err(),
+        "an extension's entry in a version 1 file"
+    );
     let mut both = good();
     both["source"]["url"] = "https://example.com/skills".into();
     assert!(refused(both), "a source that is both git and an extension");

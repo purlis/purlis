@@ -331,7 +331,11 @@ fn it_adds_a_template_a_lint_a_panel_and_a_source() {
     let browse = purlis_core::skills::source::extension::browse(studio, &probe.plane(), ID)
         .expect("it lists");
     assert_eq!(browse.revision.as_str(), studio_probe::REVISION);
-    let names: Vec<&str> = browse.skills.iter().map(|it| it.skill.name.as_str()).collect();
+    let names: Vec<&str> = browse
+        .skills
+        .iter()
+        .map(|it| it.skill.name.as_str())
+        .collect();
     assert_eq!(names, [studio_probe::OFFERED]);
     let (review, held) = purlis_core::skills::source::extension::review(
         studio,

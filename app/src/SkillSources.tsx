@@ -202,9 +202,7 @@ function aboutSource(source: StudioSource, checked: string | null = null): strin
 /** What an extension's source's row and page say of it: the extension it is, and how many
  *  skills are installed from it (#3092). */
 function aboutExtension(extension: ExtensionSkillSource): string {
-  return [`The extension ${extension.id}`, `${extension.installed} installed`, WHO.local].join(
-    " · ",
-  );
+  return [`The extension ${extension.id}`, `${extension.installed} installed`].join(" · ");
 }
 
 /** What a git source's row and page say of it. */
@@ -279,9 +277,12 @@ function checkedOf(checked: readonly SourceChecked[], source: StudioSource) {
   return checked.find((one) => sourceKey(one.remote) === source.key);
 }
 
-/** Every source the pages show: the git ones, then each extension's (#3092). */
-function allSources(read: ReturnType<typeof useSourcesRead>): StudioSource[] {
-  return [...(read.sources?.data ?? []).map(gitSource), ...read.extensions.map(extensionSource)];
+/** Every source the pages show: the git ones `gits`, then each extension's (#3092). */
+function allSources(
+  gits: readonly SkillSource[],
+  extensions: readonly ExtensionSkillSource[],
+): StudioSource[] {
+  return [...gits.map(gitSource), ...extensions.map(extensionSource)];
 }
 
 /**
@@ -352,7 +353,9 @@ export function SkillSourcesPage({
   };
   const updates = read.updates?.data;
   const sourceAt =
-    at === undefined ? undefined : allSources(read).find((one) => one.key === at.source);
+    at === undefined
+      ? undefined
+      : allSources(read.sources?.data ?? [], read.extensions).find((one) => one.key === at.source);
   const toSource = (one: SourcesAt): SourcesAt => ({
     at: "source",
     source: one.source,
@@ -692,7 +695,7 @@ function SourcesList({
           </h3>
           <Held read={read.sources} what="this project's skill sources" again={read.again}>
             {(gits) => {
-              const sources = [...gits.map(gitSource), ...read.extensions.map(extensionSource)];
+              const sources = allSources(gits, read.extensions);
               return sources.length === 0 ? (
                 <EmptyState
                   headline="This project has no skill sources yet"

@@ -114,8 +114,8 @@ pub struct Locked {
 }
 
 /// Where an entry was copied from, as the file spells it: `url` and `branch`, or `extension`.
+/// Unknown keys are left unread, as a git source's always were.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 struct SourceOnDisk {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     url: Option<String>,
@@ -345,7 +345,15 @@ pub fn read(plane: &Path, kept: Kept) -> Result<Read, String> {
             return Err(refused(why));
         }
     }
-    if lock.version > EXTENSION_VERSION {
+    // An extension's entry is written only in a file of its version, which an older purlis
+    // refuses: one in an older file was not written by purlis.
+    if lock.version > EXTENSION_VERSION
+        || (lock.version < EXTENSION_VERSION
+            && lock
+                .skills
+                .iter()
+                .any(|one| matches!(one.source, Origin::Extension(_))))
+    {
         return Err(refused(format!("it is version {}", lock.version)));
     }
     Ok(Read {

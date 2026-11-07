@@ -80,12 +80,47 @@ fn held(what: &For) -> Result<Held, String> {
         .ok_or_else(|| "That review is no longer open: review it again.".to_owned())
 }
 
+/// Lets go of what the review of `what` read: its change was made, and the same accept sent
+/// again needs a new review, never the old bytes over what changed since.
+fn release(what: &For) {
+    HELD.lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .retain(|(one, _)| one != what);
+}
+
+/// **Refused unless the extension `id` is still a skill source here**: approved on this machine,
+/// on in the project, and declaring `skill-source`. What its review read is copied only while
+/// the person's consent to it stands; asking it nothing.
+fn still_a_source(
+    executor: &purlis_core::executor::Executor,
+    root: &Path,
+    id: &str,
+) -> Result<(), String> {
+    let on = with_studio(executor, root, |studio| {
+        studio.is_some_and(|studio| {
+            studio
+                .declaring(Capability::SkillSource)
+                .iter()
+                .any(|one| one.id == id)
+        })
+    });
+    if on {
+        Ok(())
+    } else {
+        Err(format!(
+            "The extension {} is no longer approved or on here, so nothing was changed. Turn it \
+             on in Extensions, then review it again.",
+            esc(id)
+        ))
+    }
+}
+
 /// What was accepted, at the extension's revision.
 fn accepted_at_revision(reviewed: &Reviewed) -> Result<Accepted, String> {
     Ok(Accepted {
         pin: Pin::Revision(
             Revision::parse(&reviewed.commit)
-                .ok_or_else(|| "That review is not one purlis gave.".to_owned())?,
+                .ok_or_else(|| "That review is not one purlis gave: review it again.".to_owned())?,
         ),
         skills: reviewed
             .skills
@@ -106,7 +141,11 @@ fn studied<T>(
 ) -> Result<T, String> {
     with_studio(executor, root, |studio| match studio {
         Some(studio) => with(studio),
-        None => Err("purlis cannot start its extensions here, so the source was not asked.".into()),
+        None => Err(
+            "purlis could not read its extensions here, so the source was not asked. Open \
+             Extensions to check them, then try again."
+                .into(),
+        ),
     })
 }
 
@@ -268,6 +307,7 @@ pub(crate) async fn skill_extension_install_set_review(
 #[specta::specta]
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn skill_extension_install(
+    views: tauri::State<'_, crate::views::Views>,
     planes: tauri::State<'_, crate::planes::Planes>,
     plane: crate::planes::PlaneId,
     id: String,
@@ -277,16 +317,19 @@ pub(crate) async fn skill_extension_install(
     renames: Vec<SkillRename>,
 ) -> Result<SkillChanged, String> {
     let held = planes.held(&plane)?;
+    let executor = views.executor();
     crate::off_the_window("installing the skill", move || {
         flag_on()?;
         let root = held.root();
-        let read = self::held(&For::Install {
+        still_a_source(&executor, root, &id)?;
+        let what = For::Install {
             plane: root.to_path_buf(),
             id,
-        })?;
+        };
+        let read = self::held(&what)?;
         let accepted = accepted_at_revision(&reviewed)?;
         let grant: Option<purlis_core::skills::Grant> = grant.map(Into::into);
-        heard(root, |cx| {
+        let changed = heard(root, |cx| {
             ext::install(
                 cx,
                 &read,
@@ -298,7 +341,9 @@ pub(crate) async fn skill_extension_install(
                     .map(|one| (one.from.clone(), one.to.clone()))
                     .collect(),
             )
-        })
+        })?;
+        release(&what);
+        Ok(changed)
     })
     .await
 }
@@ -341,6 +386,7 @@ pub(crate) async fn skill_extension_update_review(
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_extension_update(
+    views: tauri::State<'_, crate::views::Views>,
     planes: tauri::State<'_, crate::planes::Planes>,
     plane: crate::planes::PlaneId,
     level: SkillLevel,
@@ -349,20 +395,25 @@ pub(crate) async fn skill_extension_update(
     grant: Option<SkillGrant>,
 ) -> Result<SkillChanged, String> {
     let held = planes.held(&plane)?;
+    let executor = views.executor();
     crate::off_the_window("updating the skill", move || {
         flag_on()?;
         let root = held.root();
         let at: purlis_core::skills::verbs::Level = (&level).into();
-        let read = self::held(&For::Update {
+        let what = For::Update {
             plane: root.to_path_buf(),
             level: at.to_string(),
             name: name.clone(),
-        })?;
+        };
+        let read = self::held(&what)?;
+        still_a_source(&executor, root, read.extension())?;
         let accepted = accepted_at_revision(&reviewed)?;
         let grant: Option<purlis_core::skills::Grant> = grant.map(Into::into);
-        heard(root, |cx| {
+        let changed = heard(root, |cx| {
             ext::update(cx, &read, &at, &name, &accepted, grant.as_ref())
-        })
+        })?;
+        release(&what);
+        Ok(changed)
     })
     .await
 }
@@ -387,6 +438,9 @@ mod tests {
         let two = Held::of("acme", "r2", &[]);
         hold(for_(MOST_HELD), two.clone());
         assert_eq!(held(&for_(MOST_HELD)).unwrap(), two);
+        // Once its change is made, the same accept needs a new review.
+        release(&for_(MOST_HELD));
+        assert!(held(&for_(MOST_HELD)).is_err());
     }
 
     #[test]
