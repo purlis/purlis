@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794095124343,
+  "lastUpdate": 1794095181496,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -16800,6 +16800,42 @@ window.BENCHMARK_DATA = {
             "value": 920.8,
             "unit": "MB",
             "extra": "median of 6 samples: 877.3, 897.6, 912.7, 929.2, 928.9, 997.1 MB; window 605.7 MB, session host 315 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "da111cb2fd1f3396cba54c0ef324ceaaa27cce4d",
+          "message": "A login notice marks the host's owner, Keep blocked counts per persona, and a login notice nobody waits on goes (#5684)\n\n* Built on #5671: a login notice says a key its vault lacks, and its grant is the chat's by id\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6VKZQQDE133AS24SDTMEGVP\nPurlis-Persona: steward\n\n* Built on #5671: its changelog fragment\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6VKZQQDE133AS24SDTMEGVP\nPurlis-Persona: steward\n\n* A login notice marks the part of each host its owner registered\n\nThe labels on a host's left are anyone's to write, so the notice marks\nthe name its owner registered, by the public suffix list: a known name\nborrowed on the left, or a swapped letter, stands out. The list is the\npsl crate's, compiled in, already in the tree through the browser engine.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6VKZQQDE133AS24SDTMEGVP\nPurlis-Persona: steward\n\n* Keep blocked counts per persona for this run of purlis\n\nKeep blocked on a login or a secret fill a chat suggests now holds for\nevery chat of that persona until purlis restarts, and two of them end\nits chats' notices, so a new chat starts no fresh tries (the person's\nruling of 2026-11-07). A chat that runs as no persona keeps its own\ncount, which goes when it closes.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6VKZQQDE133AS24SDTMEGVP\nPurlis-Persona: steward\n\n* A secret fill's Allow for this chat is bound to the chat's id\n\nAn Allow for this chat on a secret fill, and one on a 2FA code, is kept\nwith the chat's id (ADR 0066) beside its number, and answers only the\nchat with both, as a login's grant already does: a later chat dealt the\nsame number never reads it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6VKZQQDE133AS24SDTMEGVP\nPurlis-Persona: steward\n\n* A runner chat's login notice lets go after 15 minutes\n\nA login notice from a chat on a pool's runner has no call waiting on\nit. It now goes after as long as a waiting call waits, unless it was\nanswered or its chat closed by then, and the chat is told on its next\nturn that nobody answered (the person's ruling of 2026-11-07). The\nchat's line for that answer is a new one, NotAnswered.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6VKZQQDE133AS24SDTMEGVP\nPurlis-Persona: steward\n\n* A cancelled login call takes its notice with it\n\nA chat's browser call now carries the hook connection it came on, and a\nlogin that waits on the person looks every second whether the call's\nasker hung up. Where it did, the wait ends and the notice goes, so the\nchat's next try isn't refused for the 15 minutes and no Allow is held\nfor a call nobody makes.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6VKZQQDE133AS24SDTMEGVP\nPurlis-Persona: steward\n\n* Keep blocked counts only with the wait it ends\n\nA Keep pressed as a login's wait ran out, or its call ended, still\ncounted toward the persona's two. Keep now records and ends the wait\nin one step under the waits' lock, for logins and secret fills, and\ncounts nothing where the wait has already gone.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6VKZQQDE133AS24SDTMEGVP\nPurlis-Persona: steward\n\n* Stories: the login notice's pictures with the owner's part of each host marked\n\nDrawn by this pull request's stories run 42406859090.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6VKZQQDE133AS24SDTMEGVP\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-07T21:09:07Z",
+          "tree_id": "c1a7d2066c3f6fb1fbdc11b09f9903c518fe8824",
+          "url": "https://github.com/purlis/purlis/commit/da111cb2fd1f3396cba54c0ef324ceaaa27cce4d"
+        },
+        "date": 1794095176038,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 2209.7,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1962.7, 2209.7, 2495.1 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 911.3,
+            "unit": "MB",
+            "extra": "median of 6 samples: 883, 893.7, 905.8, 916.8, 916.9, 976 MB; window 597.7 MB, session host 313.6 MB"
           }
         ]
       }
