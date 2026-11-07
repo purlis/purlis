@@ -22,9 +22,9 @@ import { closeProject, openThroughTheTrustQuestion } from "../opening.js";
  *
  * **The pointer is the page's own events**, as `tab-chip.e2e.ts` sends them: a WebDriver move
  * does not make WebKit match `:hover` (run 37260967190), and React hears a card entered and left
- * from the `pointerout` and `pointerover` a pointer sends. The driver's pointer is moved to the
- * same place first, so nothing WebKit sends from where it was ends the hover ({@link point}). The keyboard's way in is a focus, as
- * a WebDriver Tab moves none.
+ * from the `pointerout` and `pointerover` a pointer sends. WebKit's own `pointerover`s and
+ * `pointerout`s are kept from the page while it points, so none ends the hover ({@link point}).
+ * The keyboard's way in is a focus, as a WebDriver Tab moves none.
  *
  * **Its own project, copied into the run's tree**, holding a theme folder of the project's, and
  * closed through the window when it is done, as `settings-gears.e2e.ts` does.
@@ -91,14 +91,27 @@ const surface = () =>
 /**
  * Sends the card the events a pointer sends going onto it (`over`) or off it to the nav.
  *
- * **The driver's own pointer goes there first** (#5586). A hover react-aria has started ends at
- * the first `pointerover` outside the card, and WebKit sends one where its pointer last was
- * whenever the layout under it changes, as drawing the card's theme does. A spec run alone has
- * no pointer in the window; after other specs in one process (the stress run) it is wherever the
- * last of them moved it, and the preview's own redraw ended the hover there.
+ * **Only these events reach the page while it points** (#5586). A hover react-aria has started
+ * ends at the first `pointerover` outside the card, which it hears on the document, and React
+ * ends it at a `pointerout` from the card. In the stress run, after other specs in one process,
+ * the card's hover never held on Ubuntu, and WebKit can send both of its own, where the
+ * driver's pointer last was, when the layout under it changes, as drawing a card's theme does.
+ * So the window stops every trusted `pointerover` and `pointerout` before the page hears it,
+ * from the first point to the end of the spec, and counts them for the failure to say.
  */
 async function point(over: boolean): Promise<void> {
-  await $(over ? CARD : 'nav[aria-label="Groups"]').moveTo();
+  await browser.execute(() => {
+    const held = window as unknown as Record<string, unknown>;
+    if (held.__e2eOnlyOurOvers !== undefined) return;
+    held.__e2eTrustedEvents = 0;
+    const stop = (event: Event) => {
+      if (!event.isTrusted) return;
+      held.__e2eTrustedEvents = Number(held.__e2eTrustedEvents) + 1;
+      event.stopImmediatePropagation();
+    };
+    held.__e2eOnlyOurOvers = stop;
+    for (const type of ["pointerover", "pointerout"]) window.addEventListener(type, stop, true);
+  });
   await browser.execute(
     (card: string, onto: boolean) => {
       const it = document.querySelector<HTMLElement>(card);
@@ -131,8 +144,9 @@ async function point(over: boolean): Promise<void> {
  *
  * Its failure says the last surface seen, read when it fails: a `timeoutMsg` is written before
  * the wait, when nothing had been seen (#5586). With it go what puts a preview back unasked, the
- * window's focus and visibility, the theme the window says it draws, and whether the card heard
- * the pointer (react-aria's `data-hovered`).
+ * window's focus and visibility, the theme the window says it draws, whether the card heard the
+ * pointer (react-aria's `data-hovered`), and how many of WebKit's own pointer events {@link point}
+ * kept from the page.
  */
 async function surfaceBecomes(want: string | readonly string[], why: string): Promise<void> {
   const wanted = typeof want === "string" ? [want] : want;
@@ -158,6 +172,7 @@ async function surfaceBecomes(want: string | readonly string[], why: string): Pr
         disabled: it?.dataset.disabled ?? null,
         inert: it?.closest("[inert]") != null,
         active: document.activeElement?.outerHTML.slice(0, 80) ?? null,
+        trustedEvents: (window as unknown as Record<string, unknown>).__e2eTrustedEvents ?? null,
       };
     }, CARD);
     throw new Error(
@@ -206,6 +221,15 @@ describe("Settings › Theme's hover preview", function () {
   });
 
   after(async () => {
+    await browser.execute(() => {
+      const held = window as unknown as Record<string, unknown>;
+      const stop = held.__e2eOnlyOurOvers as EventListener | undefined;
+      if (stop !== undefined)
+        for (const type of ["pointerover", "pointerout"])
+          window.removeEventListener(type, stop, true);
+      delete held.__e2eOnlyOurOvers;
+      delete held.__e2eTrustedEvents;
+    });
     const closer = `${PROJECTS} [role="tab"][aria-label="${basename(mine)}"]`;
     if (await $(closer).isExisting()) {
       await closeProject(closer);
