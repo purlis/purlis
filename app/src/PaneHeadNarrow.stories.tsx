@@ -323,7 +323,15 @@ function UsingHeads() {
 export const UsingDropsInOrder: Story = {
   render: () => <UsingHeads />,
   beforeEach: () => {
-    mockIPC((cmd) => (cmd === "skill_studio_on" ? true : null));
+    // The studio is on, and a browser's view is never attached, so each thumbnail is drawn as
+    // its mark, as `BrowsersGridTab`'s are: a picture with no frame to race.
+    mockIPC((cmd) =>
+      cmd === "skill_studio_on"
+        ? true
+        : cmd === "watch_browser"
+          ? new Promise(() => undefined)
+          : null,
+    );
   },
   play: async ({ canvas, canvasElement, userEvent }) => {
     const at = (width: number) =>
