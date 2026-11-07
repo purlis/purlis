@@ -829,10 +829,13 @@ pub fn stage(
     )
     .map_err(|why| super::not_written("the grade's record of its folder", why))?;
     if shell {
-        // Made before the chat starts, a new name of its own, `0700` as tempfile makes it.
-        let made = tempfile::Builder::new()
-            .prefix(TEMP_PREFIX)
-            .rand_bytes(8)
+        // Made before the chat starts, a new name of its own, `0700` from the start: the
+        // system's temp folder is shared, and the umask alone would leave it readable by all.
+        let mut builder = tempfile::Builder::new();
+        builder.prefix(TEMP_PREFIX).rand_bytes(8);
+        #[cfg(unix)]
+        builder.permissions(std::os::unix::fs::PermissionsExt::from_mode(0o700));
+        let made = builder
             .tempdir_in(std::env::temp_dir())
             .map_err(|why| {
                 format!("the chat's folder for temporary files could not be made ({why})")
