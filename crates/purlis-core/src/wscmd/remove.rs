@@ -224,6 +224,37 @@ pub(crate) fn remove_unless_running(
             .into(),
         ));
     }
+    // #5552: and what it committed leaves the index, or a new workspace of the same name that
+    // makes the same file would have it tracked. `--cached` as `live --off` does, through the
+    // hardened runner; the name taken literally, never as a pattern. A plane that is no git
+    // repo tracks nothing.
+    if root.join(".git").exists() {
+        let ours = format!(":(literal)workspaces/{name}/");
+        let argv = [
+            "rm",
+            "-r",
+            "--cached",
+            "-q",
+            "--ignore-unmatch",
+            "--",
+            ours.as_str(),
+        ];
+        let run = crate::worktree::git::run(root, &argv, crate::worktree::git::READ);
+        let failed = match run {
+            Ok(run) if run.ok() => None,
+            Ok(run) => Some(run.err.trim().to_string()),
+            Err(why) => Some(why.to_string()),
+        };
+        if let Some(why) = failed {
+            say(Say::Warn(
+                format!(
+                    "'{name}' is removed, but git could not untrack the files it committed \
+                 ({why}). Run git rm -r --cached -- workspaces/{name}/ in the project."
+                )
+                .into(),
+            ));
+        }
+    }
     // The dispatch grants limited to this workspace cover nothing from here on, and none of
     // them is for a workspace made under the name later (#1505).
     let left = crate::dispatchwithin::naming(root, name);

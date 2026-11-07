@@ -427,3 +427,61 @@ fn an_nfd_named_entry_that_is_saved_is_committed_by_git_however_git_reads_names(
         );
     }
 }
+
+#[test]
+fn an_nfd_named_entry_is_marked_saved_only_when_git_adds_it_whichever_of_its_lines_is_left() {
+    // `café` spelled decomposed on disk, with only one of its two lines left in the block, as a
+    // hand edit or an older purlis leaves it.
+    let nfd = "cafe\u{301}";
+    let nfc = "caf\u{e9}";
+    for precompose in ["true", "false"] {
+        for gone in [nfc, nfd] {
+            let dir = plane();
+            let root = dir.path();
+            let entry = root.join("workspaces/alpha").join(nfd);
+            std::fs::create_dir_all(&entry).unwrap();
+            std::fs::write(entry.join("menu.md"), "x\n").unwrap();
+            assert!(git(root, &["init", "-q"]).status.success());
+            assert!(
+                git(root, &["config", "core.precomposeunicode", precompose])
+                    .status
+                    .success()
+            );
+            add(root, "alpha", nfd).unwrap();
+            let without = gitignore(root).replace(&format!("!/workspaces/alpha/{gone}\n"), "");
+            std::fs::write(root.join(".gitignore"), without).unwrap();
+
+            let added = unignored(root)
+                .iter()
+                .any(|path| path.ends_with("/menu.md"));
+            let marked = kept(root, &format!("{nfd}/menu.md")) == Kept::WithTheProject;
+            assert_eq!(
+                marked,
+                added,
+                "precompose {precompose}, {} line gone: {}",
+                if gone == nfc {
+                    "composed"
+                } else {
+                    "decomposed"
+                },
+                gitignore(root)
+            );
+        }
+    }
+}
+
+#[test]
+fn a_name_git_would_read_as_a_pattern_is_never_marked_saved() {
+    let dir = plane();
+    let root = dir.path();
+    add(root, "alpha", "notes").unwrap();
+    commit_all(root);
+    // Untracked and ignored, but each would match the tracked `notes/plan.md` as a pathspec.
+    for name in ["n*", "*", "note?", "[n]otes", "n\\otes"] {
+        assert_eq!(kept(root, name), Kept::ThisMachineOnly, "{name}");
+    }
+    for path in ["notes/pl*", "notes/plan.m?"] {
+        assert_eq!(kept(root, path), Kept::ThisMachineOnly, "{path}");
+    }
+    assert_eq!(kept(root, "notes/plan.md"), Kept::WithTheProject);
+}

@@ -24,7 +24,9 @@
 //! block: `git check-ignore`, which reads every `.gitignore` on the way, `info/exclude` and the
 //! person's global excludes, and which never calls a path ignored that the index tracks. So a
 //! tracked file whose line is gone is marked saved, because a save commits it. Asked only of a
-//! LIVE workspace: a LOCAL one's files are all this machine's, and the window marks none.
+//! LIVE workspace: a LOCAL one's files are all this machine's, and the window marks none. Each
+//! path is asked in the one form git reads it in, and one git would read as a pattern is never
+//! asked ([`Marks::of_paths`]).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io;
@@ -213,6 +215,9 @@ pub fn forget(root: &Path, ws: &str) -> io::Result<bool> {
 pub struct Marks {
     root: PathBuf,
     ws: String,
+    /// Whether git reads names composed (NFC), as a Mac's git does with
+    /// `core.precomposeunicode` on; otherwise it reads the bytes on disk.
+    precomposes: bool,
 }
 
 impl Marks {
@@ -224,25 +229,34 @@ impl Marks {
         live_in(&text).contains(ws).then(|| Self {
             root: root.to_path_buf(),
             ws: ws.to_string(),
+            precomposes: precomposes(root),
         })
     }
 
     /// Where each of `paths`, paths of the workspace's files, is kept, asked of git in one
     /// `check-ignore`: kept on this machine only when git ignores it, which it never says of a
-    /// path the index tracks or of a folder holding one. A name not spelled composed is asked in
-    /// both forms, and is saved when git would take either. `None` when git cannot answer, as in
-    /// a project that is no git repo: then nothing is committed by anybody, and nothing marked.
+    /// path the index tracks or of a folder holding one. Each is asked in the form git reads it
+    /// in, composed when git precomposes names and as on disk otherwise, since `check-ignore`
+    /// echoes what it is sent without precomposing it. A path git would read as a pattern
+    /// (`check-ignore` matches its input as a pathspec and refuses `--literal-pathspecs`), or
+    /// whose top entry no line can save, is this machine's without asking: it could match a
+    /// tracked file it is not. `None` when git cannot answer, as in a project that is no git
+    /// repo: then nothing is committed by anybody, and nothing marked.
     pub fn of_paths(&self, paths: &[&str]) -> Option<Vec<Kept>> {
-        let asked: Vec<Vec<String>> = paths
+        let asked: Vec<Option<String>> = paths
             .iter()
             .map(|path| {
-                let path = format!("workspaces/{}/{}", self.ws, path.trim_matches('/'));
-                let nfc = composed(&path);
-                if nfc == path {
-                    vec![path]
-                } else {
-                    vec![path, nfc]
+                let path = path.trim_matches('/');
+                let top = path.split('/').next().unwrap_or_default();
+                if path.contains(['*', '?', '[', '\\']) || !one_entry(top) {
+                    return None;
                 }
+                let path = format!("workspaces/{}/{path}", self.ws);
+                Some(if self.precomposes {
+                    composed(&path)
+                } else {
+                    path
+                })
             })
             .collect();
         let mut input = Vec::new();
@@ -270,16 +284,25 @@ impl Marks {
         Some(
             asked
                 .iter()
-                .map(|forms| {
-                    if forms.iter().all(|form| ignored.contains(form.as_bytes())) {
-                        Kept::ThisMachineOnly
-                    } else {
-                        Kept::WithTheProject
-                    }
+                .map(|path| match path {
+                    Some(path) if !ignored.contains(path.as_bytes()) => Kept::WithTheProject,
+                    _ => Kept::ThisMachineOnly,
                 })
                 .collect(),
         )
     }
+}
+
+/// Whether the plane's git reads names composed: only a Mac's git precomposes, and only with
+/// `core.precomposeunicode` on.
+fn precomposes(root: &Path) -> bool {
+    cfg!(target_os = "macos")
+        && crate::worktree::git::run(
+            root,
+            &["config", "--bool", "--get", "core.precomposeunicode"],
+            crate::worktree::git::READ,
+        )
+        .is_ok_and(|run| run.ok() && run.out.trim() == "true")
 }
 
 #[cfg(test)]
