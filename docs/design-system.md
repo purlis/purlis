@@ -1231,13 +1231,13 @@ has it; nothing reads the key after that.
   run.
 - **`chats`** is how chats are listed and summed up, on this machine (#1499, V100-73):
   **`grouped`**, `true` when the sessions of one workspace stand together. A row is one line
-  (#1675), so the `lines` an older purlis wrote here is read as if it were not there. And what pressing a
-  task does (#1489, V100-74): **`tabbed`**, `true` when it opens in a tab of its own, with a
-  minimise button in place of the close; `false`, its session's tab is switched to it. And
+  (#1675), so the `lines` an older purlis wrote here is read as if it were not there. An older
+  **`tabbed`** (#1489, V100-74) is read as if it were not there: a task is pressed like any chat,
+  into the focused pane (#4750). And
   **`away`** (#1514, V100-73), `false` when coming back to the window draws no summary of what
   happened while you were away. And **`beside`** (#2024), `true` when a browser a chat starts
-  opens beside the chat, in its tab. Leave any out for its default, `false`, `false`, `true`
-  and `false`; purlis leaves the whole of `chats` out
+  opens in a split beside the chat's pane, when a pane shows it. Leave any out for its default,
+  `false`, `true` and `false`; purlis leaves the whole of `chats` out
   while all are the defaults. A value that is neither is the default, and the Inbox says so. Settings
   writes it (`app/src/chatsListPrefs.ts`). It is in this file because it is how one person
   likes their window, and a project would carry it to every clone.
