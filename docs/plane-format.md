@@ -2808,9 +2808,10 @@ beside a purlis one is removed when the record is published (V93i).
   `workspaces/<ws>/repos/<repo>/`, its landing folder beside it in `repos/` while it is made. A
   clone made before then stays at `workspaces/<ws>/<repo>/` and is read there for ever; the
   operator moves it only through `doctor`'s **Move into repos/** fix, which refuses while a chat
-  is open in the workspace, runs `git worktree repair`, and puts everything back if any step
-  fails. When both `<repo>/` and `repos/<repo>/` exist, `repos/<repo>/` is the repo and `doctor`
-  warns. A clone at the root named `repos` (a `repos/` with `.git` directly in it) is read as
+  is open in the workspace (and puts everything back if one opens during the move), runs `git
+  worktree repair`, and puts everything back if any step fails. A move cut short by a crash is
+  finished by the next one, from its journal (`.charter/move-into-repos.json`). When both `<repo>/` and `repos/<repo>/` exist (on a disk that ignores case, in any
+  case: `Foo/` beside `repos/foo/`), `repos/<repo>/` is the repo and `doctor` warns. A clone at the root named `repos` (a `repos/` with `.git` directly in it) is read as
   that clone, and a new clone into its workspace is refused until it is renamed. Everything
   below holds for a clone in either place.
 - **Format:** an ordinary git clone. purlis recognises it by `<dir>/.git` being a
@@ -3181,6 +3182,7 @@ a command acts on, or record workspace state.
 | `.charter/workspace-arrivals/<name>` | Clone state, transient, legacy | empty file; its existence marks "a handoff landed here" | stable — one process records the arrival, another reads it; deleting it clears the mark only | `charter/workspace.py:1113`, `charter/workspace.py:1127` |
 | `.charter/unrecorded/<sha256(realpath(tree))[:32]>.json` | Clone state, rebuildable | `{"errno": …, "says": …}` for a marker publish that failed | stable — `doctor` reads it in another process; recomputed on the next failed publish | `charter/workspace.py:2960`, written `charter/workspace.py:2977` |
 | `.charter/workspace-rename.json` | Clone state, transient | **purlis only** (charter#367). `{"from": <old>, "to": <new>, "moved": <bool>}`, JSON, 0600, replaced whole by `rewrite::replace`: the journal of a `purlis workspace rename` in progress. Written before `workspaces/<old>` is renamed, marked `moved` right after (the commit point), and removed once every record that names the workspace has followed. While one that got past the commit point is there, every other rename is refused and the same rename finishes it. One that never moved is stale and the next rename replaces it | stable — a second process (the next rename) reads what the first wrote; deleting it after the move leaves the records the rename had not reached yet naming the old name | `crates/purlis-core/src/wscmd/rename.rs` |
+| `.charter/move-into-repos.json` | Clone state, transient | **purlis only** (#5569, ADR 0114 decision 4). `{"workspace": <ws>, "repos": [<name>…]}`, JSON, 0600, replaced whole by `rewrite::replace`: the journal of doctor's **Move into repos/** in progress. Written before the first clone of the workspace moves, and removed once the move is done or everything is put back. One still there was cut short (a crash, a kill, a power cut): the doctor's `move into repos/ cut short` row names it, and the next `move-into-repos` finishes it first, running `git worktree repair` in each clone it names that is in `repos/` and no longer at the root. The next move replaces one that names nothing to finish | internal — read only by the next move and the doctor in this clone; deleting it leaves the branch folders of a move cut short unrepaired, which `git worktree repair` in each clone mends by hand | `crates/purlis-core/src/doctor/fix/move_into_repos.rs` |
 | `.charter/ws-autosave/<ws>` | Clone state, transient, legacy | debounce marker (mtime + a float) for the Stop-hook autosave | internal — deleting it costs one extra commit attempt | `charter/commands_workspace.py:1171`, written `charter/commands_workspace.py:1179` |
 
 Resolution order (`workspace.chosen`, `charter/workspace.py:615`–`649`, and `resolve`

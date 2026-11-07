@@ -4806,6 +4806,13 @@ export const commands = {
 	 */
 	planeDoctorMoveIntoReposPlan: (plane: PlaneId) => typedError<MoveIntoReposPlan[], string>(__TAURI_INVOKE("plane_doctor_move_into_repos_plan", { plane })),
 	/**
+	 *  **Move into repos/, as its confirmation showed it** (#5569): `move-into-repos` in the plane
+	 *  the window names, where each workspace moves only the repos `shown` listed for it, and one
+	 *  that has others now, or that it did not list, is refused with nothing moved. The chats open
+	 *  in a workspace are asked as it moves, and again once it has moved.
+	 */
+	planeDoctorMoveIntoRepos: (plane: PlaneId, shown: MoveIntoReposPlan[]) => typedError<DoctorFixed, string>(__TAURI_INVOKE("plane_doctor_move_into_repos", { plane, shown })),
+	/**
 	 *  Apply the `git-identity` fix with the name and email the Doctor's form was given (FX-3):
 	 *  the core checks both, then writes them to git's global config, as `charter doctor --fix
 	 *  git-identity --name … --email …` does. Answers the fix's outcome, or each field's refusal.
@@ -10174,7 +10181,7 @@ export type MouseButton = "none" | "left" | "middle" | "right";
 
 /**
  *  One workspace **Move into repos/** would move (#5374): what its confirmation shows before
- *  anything moves.
+ *  anything moves, and what it sends back when the operator presses Move (#5569).
  */
 export type MoveIntoReposPlan = {
 	workspace: string,
@@ -10190,6 +10197,11 @@ export type MoveIntoReposPlan = {
 	 *  workspace is left as it is.
 	 */
 	open: string[],
+	/**
+	 *  The repos a move cut short left in its repos/ with their branch folders unrepaired, by
+	 *  name: the move repairs them first (#5569).
+	 */
+	finishing: string[],
 };
 
 /**  What the window is told of a move it asked for to switch now. */

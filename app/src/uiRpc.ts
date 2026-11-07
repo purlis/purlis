@@ -2316,6 +2316,7 @@ export const commands = {
 	 *  chats this window has open in each.
 	 */
 	planeDoctorMoveIntoReposPlan: (plane: PlaneId) => typedError<MoveIntoReposPlan[], string>(__TAURI_INVOKE("plane_doctor_move_into_repos_plan", { plane })),
+	planeDoctorMoveIntoRepos: __WINDOW_ONLY_RESULT,
 	planeDoctorFixIdentity: __WINDOW_ONLY_RESULT,
 	/**
 	 *  What git's global identity holds now: the form locks the keys that are set, because the
@@ -7530,7 +7531,7 @@ export type MouseButton = "none" | "left" | "middle" | "right";
 
 /**
  *  One workspace **Move into repos/** would move (#5374): what its confirmation shows before
- *  anything moves.
+ *  anything moves, and what it sends back when the operator presses Move (#5569).
  */
 export type MoveIntoReposPlan = {
 	workspace: string,
@@ -7546,6 +7547,11 @@ export type MoveIntoReposPlan = {
 	 *  workspace is left as it is.
 	 */
 	open: string[],
+	/**
+	 *  The repos a move cut short left in its repos/ with their branch folders unrepaired, by
+	 *  name: the move repairs them first (#5569).
+	 */
+	finishing: string[],
 };
 
 /**  What the window is told of a move it asked for to switch now. */

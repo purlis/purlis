@@ -13,6 +13,11 @@
 //! - **`repo named repos`**: an old clone at the root named `repos`, which holds every new clone
 //!   of its workspace back until it is renamed ([`crate::repofolder::Refused::RepoNamedRepos`]).
 //!
+//! - **`move into repos/ cut short`**: a move that a crash, a kill or a power cut stopped
+//!   partway, leaving clones in `repos/` whose branch folders git may not read until `git
+//!   worktree repair` runs in them, which the same fix does first
+//!   ([`move_into_repos::cut_short`]; #5569).
+//!
 //! A workspace that cannot be read is left out here; the `workspace clones` row names it.
 
 use super::fix::{FixId, move_into_repos};
@@ -20,7 +25,7 @@ use super::{Doctor, Row};
 use crate::counts::counted;
 use crate::repofolder;
 
-/// The three rows, each only where it has something to say.
+/// The rows, each only where it has something to say.
 pub(super) fn rows(d: &Doctor) -> Vec<Row> {
     if !d.has_plane {
         return Vec::new();
@@ -44,12 +49,39 @@ pub(super) fn rows(d: &Doctor) -> Vec<Row> {
         }
         beside.extend(held.shadowed.iter().map(|row| {
             let name = &row.repo.name;
+            // As `repos/` spells it, which on a disk that ignores case may differ (#5569).
+            let folded = crate::files::workspace::folded(name);
+            let read = held
+                .repos
+                .iter()
+                .filter(|repo| repo.layout == repofolder::Layout::Repos)
+                .map(|repo| &repo.repo.name)
+                .find(|repo| crate::files::workspace::folded(repo) == folded)
+                .unwrap_or(name);
             shown(&format!(
-                "{ws}/{name}/ beside {ws}/repos/{name}/ (repos/{name}/ is the repo)"
+                "{ws}/{name}/ beside {ws}/repos/{read}/ (repos/{read}/ is the repo)"
             ))
         }));
     }
     let mut rows = Vec::new();
+    if let Some((ws, moved)) = move_into_repos::cut_short(&d.root)
+        && !moved.is_empty()
+    {
+        rows.push(
+            Row::warn(
+                "move into repos/ cut short",
+                format!(
+                    "a move into repos/ in {} stopped partway: git may not read the branch \
+                     folders of {}",
+                    shown(&ws),
+                    listed(&moved.iter().map(|name| shown(name)).collect::<Vec<_>>())
+                ),
+                "Nothing was lost. `purlis doctor --fix move-into-repos` finishes it: it runs \
+                 git worktree repair in each of them, then moves what is still to move.",
+            )
+            .fixed_by(FixId::MoveIntoRepos),
+        );
+    }
     if !outside.is_empty() {
         rows.push(
             Row::warn(

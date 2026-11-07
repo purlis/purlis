@@ -14,7 +14,7 @@ import {
   useDoctor,
   type DoctorState,
 } from "./Doctor";
-import type { DoctorReport, DoctorRow } from "./bindings";
+import type { DoctorReport, DoctorRow, MoveIntoReposPlan } from "./bindings";
 import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
@@ -838,17 +838,24 @@ describe("Move into repos/ asks before anything moves (#5374)", () => {
     detail: "2 repos outside repos/: alpha/api, beta/web",
     fix: "move-into-repos",
   });
-  const plans = [
-    { workspace: "alpha", repos: ["api"], unresumable: ["In the clone"], open: [] },
-    { workspace: "beta", repos: ["web"], unresumable: ["Held back"], open: ["steward 2"] },
+  const plans: MoveIntoReposPlan[] = [
+    { workspace: "alpha", repos: ["api"], unresumable: ["In the clone"], open: [], finishing: [] },
+    {
+      workspace: "beta",
+      repos: ["web"],
+      unresumable: ["Held back"],
+      open: ["steward 2"],
+      finishing: [],
+    },
   ];
 
-  async function confirmation(asked: string[]) {
-    mockIPC((cmd) => {
+  async function confirmation(asked: string[], shown: unknown[] = [], planned = plans) {
+    mockIPC((cmd, args) => {
       asked.push(cmd);
       if (cmd === "plane_doctor") return report([outside]);
-      if (cmd === "plane_doctor_move_into_repos_plan") return plans;
-      if (cmd === "plane_doctor_fix")
+      if (cmd === "plane_doctor_move_into_repos_plan") return planned;
+      if (cmd === "plane_doctor_move_into_repos") shown.push((args as { shown: unknown }).shown);
+      if (cmd === "plane_doctor_move_into_repos" || cmd === "plane_doctor_fix")
         return {
           fix: "move-into-repos",
           refused: null,
@@ -884,12 +891,13 @@ describe("Move into repos/ asks before anything moves (#5374)", () => {
     expect(asked).not.toContain("plane_doctor_fix");
   });
 
-  it("moves nothing on Cancel, and applies the fix on Move repos", async () => {
+  it("moves nothing on Cancel, and on Move repos sends the plan it showed (#5569)", async () => {
     const asked: string[] = [];
-    const asking = await confirmation(asked);
+    const shown: unknown[] = [];
+    const asking = await confirmation(asked, shown);
     await userEvent.click(within(asking).getByRole("button", { name: "Cancel" }));
     await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
-    expect(asked).not.toContain("plane_doctor_fix");
+    expect(asked).not.toContain("plane_doctor_move_into_repos");
 
     const dialog = screen.getByRole("dialog");
     await userEvent.click(
@@ -898,7 +906,45 @@ describe("Move into repos/ asks before anything moves (#5374)", () => {
     const again = await screen.findByRole("alertdialog", { name: "Move repos into repos/?" });
     await userEvent.click(within(again).getByRole("button", { name: "Move repos" }));
 
-    await vi.waitFor(() => expect(asked).toContain("plane_doctor_fix"));
+    await vi.waitFor(() => expect(asked).toContain("plane_doctor_move_into_repos"));
+    expect(shown).toEqual([[plans[0]]]);
+    expect(asked).not.toContain("plane_doctor_fix");
+  });
+
+  it("never sends a workspace it showed as left as they are, so closing its chat moves nothing there (#5569)", async () => {
+    const asked: string[] = [];
+    const shown: unknown[] = [];
+    const finishing: MoveIntoReposPlan = {
+      workspace: "gamma",
+      repos: [],
+      unresumable: [],
+      open: [],
+      finishing: ["lib"],
+    };
+    const asking = await confirmation(asked, shown, [...plans, finishing]);
+    expect(within(asking).getByRole("region", { name: "Left as they are" })).toHaveTextContent(
+      "beta",
+    );
+
+    await userEvent.click(within(asking).getByRole("button", { name: "Move repos" }));
+
+    await vi.waitFor(() => expect(shown).toHaveLength(1));
+    expect(shown).toEqual([[plans[0], finishing]]);
+  });
+
+  it("names a move cut short, and offers to finish it with nothing left to move (#5569)", async () => {
+    const asked: string[] = [];
+    const asking = await confirmation(
+      asked,
+      [],
+      [{ workspace: "alpha", repos: [], unresumable: [], open: [], finishing: ["api"] }],
+    );
+
+    expect(within(asking).getByRole("region", { name: "Cut short" })).toHaveTextContent(
+      "alpha: api",
+    );
+    expect(within(asking).queryByRole("list", { name: "What moves" })).toBeNull();
+    expect(answersOf(asking)).toEqual(["Cancel", "Move repos"]);
   });
 });
 

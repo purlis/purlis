@@ -19,7 +19,7 @@ import {
   type MoveIntoReposPlan,
   type PlaneId,
 } from "./bindings";
-import { MOVE_INTO_REPOS, MoveIntoReposConfirm } from "./MoveIntoReposConfirm";
+import { MOVE_INTO_REPOS, MoveIntoReposConfirm, shownMoving } from "./MoveIntoReposConfirm";
 import { said, useSwitches } from "./switchClock";
 import { Button } from "./ui/button/Button";
 import { Dialog } from "./ui/dialog/Dialog";
@@ -110,6 +110,9 @@ export type DoctorState = {
   /** What `move-into-repos` would do, for its confirmation, or why it could not be read: the
    *  confirmation then says so and the fix is not applied (#5374). */
   movePlan?: () => Promise<MovePlanRead>;
+  /** Apply `move-into-repos` as its confirmation showed it, then check again: a workspace
+   *  that has other repos to move now is refused with nothing moved (#5569). */
+  moveIntoRepos?: (shown: MoveIntoReposPlan[]) => void;
   /** The fix on its way, by its id. */
   fixing?: string;
   /** What the last fix came to: its lines, or why it was refused. */
@@ -192,8 +195,8 @@ export function useDoctor(plane: PlaneId): DoctorState {
     },
     [plane],
   );
-  const fix = useCallback(
-    (id: string) => {
+  const sendFix = useCallback(
+    (id: string, send: () => ReturnType<typeof commands.planeDoctorFix>) => {
       const mine = ++newestFix.current;
       setLastFix({ plane, fixing: id });
       const landed = (fixed: DoctorFixed) => {
@@ -202,8 +205,7 @@ export function useDoctor(plane: PlaneId): DoctorState {
         // Checked again whatever came of it: a fix that half-ran changed something too.
         run(true);
       };
-      void commands
-        .planeDoctorFix(plane, id)
+      void send()
         .then((answer) =>
           landed(
             answer.status === "ok"
@@ -216,6 +218,15 @@ export function useDoctor(plane: PlaneId): DoctorState {
         );
     },
     [plane, run],
+  );
+  const fix = useCallback(
+    (id: string) => sendFix(id, () => commands.planeDoctorFix(plane, id)),
+    [plane, sendFix],
+  );
+  const moveIntoRepos = useCallback(
+    (shown: MoveIntoReposPlan[]) =>
+      sendFix(MOVE_INTO_REPOS, () => commands.planeDoctorMoveIntoRepos(plane, shown)),
+    [plane, sendFix],
   );
   const fixIdentity = useCallback(
     async (name: string, email: string): Promise<IdentityRefused | undefined> => {
@@ -252,6 +263,7 @@ export function useDoctor(plane: PlaneId): DoctorState {
     fixIdentity,
     identityNow,
     movePlan,
+    moveIntoRepos,
     fixing: ours?.fixing,
     fixed: ours?.fixed,
     forget,
@@ -367,6 +379,8 @@ export type Fixer = {
   identityNow?: () => Promise<IdentityNow>;
   /** What `move-into-repos` would do, read when its confirmation opens (#5374). */
   movePlan?: () => Promise<MovePlanRead>;
+  /** `move-into-repos`, sent with what its confirmation showed (#5569). */
+  moveIntoRepos?: (shown: MoveIntoReposPlan[]) => void;
 };
 
 /**
@@ -411,7 +425,9 @@ export function useFixForm(fix: string, fixer: Fixer) {
       onCancel={() => setPlans(undefined)}
       onMove={() => {
         setPlans(undefined);
-        fixer.apply(fix);
+        // Only what the confirmation showed moves: a repo added since refuses the move, and a
+        // workspace it left as it is stays so (#5569).
+        if ("plans" in plans) fixer.moveIntoRepos?.(shownMoving(plans.plans));
       }}
     />
   );
@@ -420,7 +436,7 @@ export function useFixForm(fix: string, fixer: Fixer) {
      *  `move-into-repos` a way to ask what it would do. */
     offered:
       fix === MOVE_INTO_REPOS
-        ? fixer.movePlan !== undefined
+        ? fixer.movePlan !== undefined && fixer.moveIntoRepos !== undefined
         : !withForm || fixer.identity !== undefined,
     press,
     /** The button's state, for a fix with a form. */
@@ -514,6 +530,7 @@ function FindingNotice({
     identity: doctor.fixIdentity,
     identityNow: doctor.identityNow,
     movePlan: doctor.movePlan,
+    moveIntoRepos: doctor.moveIntoRepos,
   };
   const { offered, press, opens, form } = useFixForm(row.fix, fixer);
   // What the last fix of this finding came to, when it did not mend it: the doctor checks
@@ -688,6 +705,7 @@ export function Health({
     identity: doctor.fixIdentity,
     identityNow: doctor.identityNow,
     movePlan: doctor.movePlan,
+    moveIntoRepos: doctor.moveIntoRepos,
   };
   const ours = report?.app_rows ?? [];
 
