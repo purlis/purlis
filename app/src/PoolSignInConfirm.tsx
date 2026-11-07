@@ -75,8 +75,9 @@ function useAsked(): [PoolSignInAsk | null, () => void] {
 
 /**
  * **A pool sign-in started from the command is confirmed here**, and so is a profile taken off a
- * pool from the command (#5174): `purlis profile sign-in --pool` and `purlis pool remove-profile`
- * wait for this answer. It starts on Cancel, so a Return meant for something else declines it,
+ * pool from the command (#5174), and a commit `purlis signing check` asks GitHub about (#5625):
+ * `purlis profile sign-in --pool`, `purlis pool remove-profile` and `purlis signing check` wait
+ * for this answer. It starts on Cancel, so a Return meant for something else declines it,
  * and its yes is pressed or not taken (`variant: "grants"`, or `"danger"` for taking one off, which
  * Return never finds either), and only once nothing has been typed
  * for a moment. Escape declines too. It shows the code the command's terminal shows, to tell one
@@ -100,25 +101,34 @@ export function PoolSignInConfirm() {
     });
   };
   const takingOff = drawn.asks === "take-off";
+  const checking = drawn.asks === "signing-check";
   return (
     <AlertDialog
       onClose={() => answer(false)}
       title={
-        takingOff
-          ? `Take ${drawn.profile} off ${drawn.pool}?`
-          : `Sign ${drawn.profile} in on ${drawn.pool}?`
+        checking
+          ? `Check ${drawn.pool} in ${drawn.profile} on GitHub?`
+          : takingOff
+            ? `Take ${drawn.profile} off ${drawn.pool}?`
+            : `Sign ${drawn.profile} in on ${drawn.pool}?`
       }
       titleId="pool-sign-in-confirm"
       aria-describedby="pool-sign-in-confirm-said"
       initialFocus="cancel"
       main={{
-        children: takingOff ? "Take it off" : "Sign in",
+        children: checking ? "Check it" : takingOff ? "Take it off" : "Sign in",
         variant: takingOff ? "danger" : "grants",
         isDisabled: !armed,
         onPress: () => answer(true),
       }}
     >
-      {takingOff ? (
+      {checking ? (
+        <p id="pool-sign-in-confirm-said">
+          The <code>purlis signing check</code> command asks this window to ask GitHub, with your
+          sign-in, whether this commit shows as Verified. Check it only if you ran it and your
+          terminal shows the code <code>{drawn.code}</code>. Otherwise, cancel and nothing is asked.
+        </p>
+      ) : takingOff ? (
         <p id="pool-sign-in-confirm-said">
           The <code>purlis pool remove-profile</code> command asks to take this profile off this
           pool. Its runner forgets the profile, and its sign-in there with it. Take it off only if

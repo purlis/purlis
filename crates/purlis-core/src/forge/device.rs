@@ -362,6 +362,12 @@ pub fn widen(
     account: &ForgeAccount,
     more: &[&str],
 ) -> Result<ForgeAccount, Ended> {
+    if at.host != account.host || registration.kind != account.kind {
+        return Err(Ended::Failed(format!(
+            "this permission was asked of {}, not {}, so nothing was changed.",
+            at.host, account.host
+        )));
+    }
     let granted = wait(endpoint, at, registration, started, pace)?;
     super::accounts::widened(host, config_root, keyring, reach, account, granted, more)
         .map_err(Ended::Failed)

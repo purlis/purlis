@@ -567,6 +567,25 @@ pub fn listen_for_the_command_line() {
             // `purlis signing` in the person's own terminal holds no sign-in, so it asks this
             // window, which asks the forge with its own (#5625).
             if let purlis_core::windowline::Asked::Signing(asked) = &asked {
+                // A pushed commit is asked about only on the person's yes here, as the line's
+                // other asks are.
+                if let purlis_core::signingsetup::Asked::Check { repo, commit, code } = asked {
+                    let Some(app) = APP.get() else {
+                        return purlis_core::windowline::Said::Refused {
+                            why: "this window is still starting".to_owned(),
+                        };
+                    };
+                    if let Err(why) = crate::poolsignin_confirm::ask_the_person(
+                        app,
+                        crate::poolsignin_confirm::Asks::SigningCheck,
+                        repo,
+                        commit,
+                        code,
+                        hung_up,
+                    ) {
+                        return purlis_core::windowline::Said::Refused { why };
+                    }
+                }
                 return purlis_core::signingsetup::said_in_the_window(asked);
             }
             purlis_core::windowline::answer(

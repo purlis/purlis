@@ -1023,22 +1023,6 @@ pub fn widened(
             account.host
         ));
     }
-    if let Some(scopes) = &granted.scopes {
-        let short: Vec<&str> = more
-            .iter()
-            .copied()
-            .filter(|want| !grants(account.kind, scopes, want))
-            .collect();
-        if !short.is_empty() {
-            return Err(format!(
-                "{} did not allow {}, so nothing was changed. Try again, and allow it on the \
-                 page {} shows.",
-                account.host,
-                short.join(" and "),
-                account.kind.display()
-            ));
-        }
-    }
     keep(
         config_root,
         keyring,
@@ -1047,7 +1031,7 @@ pub fn widened(
         account.host.clone(),
         Held::Grant(granted),
         Method::Device,
-        Some(&account.login),
+        Some(StepUp { account, more }),
     )
 }
 
@@ -1057,8 +1041,14 @@ enum Held {
     Grant(Granted),
 }
 
+/// A step-up's account, and the scopes it asked for beyond those it holds.
+struct StepUp<'a> {
+    account: &'a ForgeAccount,
+    more: &'a [&'a str],
+}
+
 /// Checks what is `held` with the forge and keeps it as the account's keyring item and its
-/// line in [`FILE`]: the end of every sign-in. With `only_as`, a step-up's: refused, with
+/// line in [`FILE`]: the end of every sign-in. With `step_up`, a step-up's: refused, with
 /// nothing written, unless the forge says the token is that login's.
 #[allow(clippy::too_many_arguments)]
 fn keep(
@@ -1069,7 +1059,7 @@ fn keep(
     host: String,
     held: Held,
     method: Method,
-    only_as: Option<&str>,
+    step_up: Option<StepUp<'_>>,
 ) -> Result<ForgeAccount, String> {
     let secret = match &held {
         Held::Token(token) => token.clone(),
@@ -1102,14 +1092,32 @@ fn keep(
         // The grant's own word on its scopes, where the forge gave one.
         checked.scopes = Some(scopes.clone());
     }
-    if let Some(login) = only_as.filter(|login| *login != checked.login) {
-        return Err(format!(
-            "The code was confirmed as {} on {}, not as {login}, so nothing was changed. Confirm \
+    if let Some(StepUp { account, more }) = &step_up {
+        if account.login != checked.login {
+            let login = &account.login;
+            return Err(format!(
+                "The code was confirmed as {} on {}, not as {login}, so nothing was changed. Confirm \
              the code while signed in to {} as {login}.",
-            checked.login,
-            forge.host,
-            forge.kind.display()
-        ));
+                checked.login,
+                forge.host,
+                forge.kind.display()
+            ));
+        }
+        // What the grant holds, as it says or the forge read it back: every scope asked for.
+        let held = checked.scopes.as_deref().unwrap_or_default();
+        let short: Vec<&str> = more
+            .iter()
+            .copied()
+            .filter(|want| !grants(kind, held, want))
+            .collect();
+        if !short.is_empty() {
+            return Err(format!(
+                "{host} did not allow {}, so nothing was changed. Try again, and allow it on the \
+                 page {} shows.",
+                short.join(" and "),
+                kind.display()
+            ));
+        }
     }
     if let Some(scopes) = &checked.scopes {
         let missing = missing(kind, scopes);
@@ -1133,6 +1141,23 @@ fn keep(
         account_of(value)
             .is_some_and(|a| a.kind == kind && a.host == host && a.login == checked.login)
     });
+    // A step-up keeps the account it was asked for, by its id: one signed out or removed while
+    // the person was on the forge's page is not made again.
+    if let Some(StepUp { account, .. }) = &step_up {
+        let still = same
+            .and_then(|at| file.accounts.get(at))
+            .and_then(account_of)
+            .is_some_and(|listed| listed.id == account.id);
+        if !still {
+            return Err(format!(
+                "{} on {} was removed from this machine while {} waited, so nothing was \
+                 changed. Sign in again, then set up signing.",
+                account.login,
+                account.host,
+                kind.display()
+            ));
+        }
+    }
     let (id, rest) = match same.and_then(|at| file.accounts.get(at)) {
         Some(value) => {
             let was: Written = serde_json::from_value(value.clone())

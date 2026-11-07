@@ -197,6 +197,17 @@ fn on_github(signer: &Signer) -> Reached {
     })
 }
 
+/// A code the window shows beside the question, for the person to compare with this terminal.
+#[cfg(unix)]
+fn a_new_code() -> String {
+    purlis_core::windowline::a_new_code()
+}
+
+#[cfg(not(unix))]
+fn a_new_code() -> String {
+    String::new()
+}
+
 #[cfg(unix)]
 fn ask_the_window(asked: Asked) -> Reached {
     signingsetup::reach(asked, purlis_core::windowline::ask)
@@ -235,9 +246,6 @@ fn not_asked(reached: &Reached) -> String {
         Reached::OtherAnswer | Reached::Heard(Heard::Checked(_) | Heard::KeyOnAccount { .. }) => {
             purlis_core::windowline::OTHER_ANSWER.to_owned()
         }
-        Reached::Heard(Heard::NeedsPermission) => "purlis's sign-in to GitHub may not read your \
-             signing keys yet, so GitHub was not asked."
-            .to_owned(),
         Reached::Refused(why) => format!(
             "The purlis window could not ask GitHub: {}.",
             why.trim_end_matches('.')
@@ -373,9 +381,14 @@ fn status(
 fn check(repo: &str, commit: &str) -> Result<u8, String> {
     signingkeys::repo_named(repo)?;
     signingkeys::commit_named(commit)?;
+    let code = a_new_code();
+    voice::info(format!(
+        "Confirm checking {commit} in {repo} in the purlis window, if it shows the code {code}…"
+    ));
     let reached = ask_the_window(Asked::Check {
         repo: repo.to_owned(),
         commit: commit.to_owned(),
+        code,
     });
     let Reached::Heard(Heard::Checked(checked)) = reached else {
         return Err(not_asked(&reached));

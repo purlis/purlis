@@ -882,3 +882,31 @@ fn a_step_up_confirmed_as_another_login_changes_nothing() {
     assert_eq!(machine.list(), std::slice::from_ref(&signed_in));
     assert_eq!(machine.token(&signed_in).as_deref(), Some(ACCESS));
 }
+
+#[test]
+fn a_step_up_for_an_account_removed_while_github_waited_signs_nobody_in() {
+    purlis_core::unsteered!();
+    let machine = Machine::new();
+    let signed_in = machine
+        .sign_in(&Scripted::answering(&[
+            codes("https://github.com/login/device"),
+            grant(ACCESS, REFRESH),
+        ]))
+        .unwrap();
+    accounts::sign_out(
+        &HostScope::for_a_test(),
+        machine.config(),
+        machine.keyring.as_ref(),
+        &signed_in.id,
+    )
+    .unwrap();
+    let forge = Scripted::answering(&[
+        codes("https://github.com/login/device"),
+        grant_for_signing(ACCESS_TWO, REFRESH_TWO),
+    ]);
+    let Err(Ended::Failed(why)) = machine.widen(&forge, &signed_in, "token_check.signing") else {
+        panic!("a step-up for an account no longer here is refused");
+    };
+    assert!(why.contains("was removed from this machine"), "{why}");
+    assert!(machine.list().is_empty(), "{:?}", machine.list());
+}

@@ -81,6 +81,16 @@ fn the_key_line(out: &Output) -> String {
         .to_owned()
 }
 
+/// The code the command's terminal showed, to compare with the window's.
+fn shown_code(out: &Output) -> String {
+    let text = said(out);
+    let after = text
+        .split("shows the code ")
+        .nth(1)
+        .expect("a code is shown");
+    after.split('…').next().unwrap().trim().to_owned()
+}
+
 /// A window on `config` that answers each ask with `answer`, and what it was asked.
 struct AWindow {
     socket: PathBuf,
@@ -176,21 +186,6 @@ fn status_asks_the_window_whether_github_has_this_devices_key() {
 }
 
 #[test]
-fn a_window_whose_sign_in_may_not_read_signing_keys_says_github_was_not_asked() {
-    let machine = a_machine();
-    let config = machine.path();
-    assert!(purlis(config, &["signing", "setup"], &[]).status.success());
-    let _window = AWindow::answering(config, Said::Signing(Heard::NeedsPermission));
-    let out = purlis(config, &["signing", "status"], &[]);
-    assert!(
-        said(&out).contains("may not read your signing keys yet"),
-        "{}",
-        said(&out)
-    );
-    gh_never_ran(config);
-}
-
-#[test]
 fn setup_goes_straight_to_its_check_where_github_has_the_key_already() {
     let machine = a_machine();
     let config = machine.path();
@@ -255,9 +250,11 @@ fn check_asks_the_window_and_says_the_reason_in_plain_words() {
         window.asked(),
         [Asked::Signing(signingsetup::Asked::Check {
             repo: "octo/hello".to_owned(),
-            commit: "0123abc".to_owned()
+            commit: "0123abc".to_owned(),
+            code: shown_code(&out),
         })]
     );
+    assert!(said(&out).contains("Confirm checking 0123abc in octo/hello in the purlis window"));
     gh_never_ran(config);
 }
 

@@ -1,9 +1,0 @@
-{
-  "source": "GitHub REST API version 2022-11-28, docs.github.com/en/rest/users/ssh-signing-keys (List SSH signing keys needs the read:ssh_signing_key scope or more; an OAuth token without it is answered 404 Not Found)",
-  "exchanges": [
-    {
-      "call": {"endpoint": {"rest": {"method": null, "path": "user/ssh_signing_keys"}}, "fields": [{"typed": ["per_page", "100"]}]},
-      "reply": {"code": 1, "out": "", "err": "Not Found (HTTP 404)", "status": 404, "headers": [["x-oauth-scopes", "repo, read:org"]]}
-    }
-  ]
-}

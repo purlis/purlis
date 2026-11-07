@@ -30,12 +30,14 @@
 //! keep through: it answers only the question it was asked.
 //!
 //! **`purlis signing` asks the forge through it** ([`Asked::Signing`], #5625): the command holds
-//! no forge sign-in (ADR 0070 ruling 5), so the window asks GitHub with its own, as the person in
-//! it ([`crate::signingsetup::answered_in_the_window`]). Only reads go this way: whether the
-//! account has a public key the command names, and what GitHub says of a commit. What comes back
-//! is a yes or no, or GitHub's verdict and its reason; never a token, a key's private half, or
-//! anything a write needs. A key is added to the account only from the window's own setup,
-//! behind the person's click there.
+//! no forge sign-in (ADR 0070 ruling 5), so the window asks GitHub with its own
+//! ([`crate::signingsetup::answered_in_the_window`]). Only reads go this way. Whether the account
+//! has a key the command names is read from GitHub's public list of its signing keys. A pushed
+//! commit's check is asked of GitHub only on the person's yes in the window, to that repository,
+//! that commit and that code, as the line's other asks are. What comes back is a yes or no, or
+//! GitHub's verdict and its reason; never a token, a key's private half, or anything a write
+//! needs. A key is added to the account only from the window's own setup, behind the person's
+//! click there.
 
 use std::io::{Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -452,6 +454,10 @@ pub fn ask(asked: &Asked) -> Answered {
         Asked::ApproveSignIn { .. } => THE_PERSON_HAS + THE_WINDOW_SAYS_WITHIN,
         // The person's answer, then the runner woken and asked to forget it.
         Asked::TakeOffAPool { .. } => THE_PERSON_HAS + THE_WINDOW_KEEPS_WITHIN,
+        // The person's answer first, then GitHub's.
+        Asked::Signing(crate::signingsetup::Asked::Check { .. }) => {
+            THE_PERSON_HAS + THE_WINDOW_ANSWERS_WITHIN
+        }
         Asked::Signing(_) => THE_WINDOW_ANSWERS_WITHIN,
     };
     ask_on(&socket(), asked, within)
