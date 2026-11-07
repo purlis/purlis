@@ -280,6 +280,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     "forge_signing_permission_start",
     "forge_signing_permission_wait",
     "signing_state",
+    "signing_key_shown",
     "signing_make_key",
     "signing_add_key",
     "signing_key_listed",

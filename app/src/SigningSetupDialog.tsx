@@ -3,7 +3,13 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { commands, type ForgeDeviceCode, type SigningCheck, type SigningState } from "./bindings";
+import {
+  commands,
+  type ForgeDeviceCode,
+  type SigningCheck,
+  type SigningKeyShown,
+  type SigningState,
+} from "./bindings";
 import { SettingActions } from "./settings/components";
 import { Button } from "./ui/button/Button";
 import { Card } from "./ui/card/Card";
@@ -89,6 +95,8 @@ export function SigningSetupDialog({
 }) {
   const [now, setNow] = useState<Now>({ step: "reading" });
   const [state, setState] = useState<SigningState>();
+  /** The key's public half, read from the Keychain only for the step that adds it by hand. */
+  const [key, setKey] = useState<SigningKeyShown>();
   const [showing, setShowing] = useState<string | null>(null);
   /** The permission flow waiting on GitHub: stopped once it is no longer this one, or as the
    *  dialog closes. An answer that comes after a dialog closed changes nothing. */
@@ -130,9 +138,15 @@ export function SigningSetupDialog({
       setState(read.data);
       if (!read.data.on) go({ step: "key", key: { at: "explain" } });
       else if (read.data.account?.may_add) add();
-      else go({ step: "add", add: { at: "ask" } });
+      else
+        // A key added by hand before is on GitHub's public list already: Check runs on, and no
+        // permission is asked for.
+        void commands.signingKeyListed().then((listed) => {
+          if (listed.status === "ok" && listed.data) check();
+          else go({ step: "add", add: { at: "ask" } });
+        });
     });
-  }, [add, go]);
+  }, [add, check, go]);
 
   const makeKey = () => {
     go({ step: "key", key: { at: "making" } });
@@ -175,16 +189,23 @@ export function SigningSetupDialog({
     });
   };
 
-  const copyKey = useCallback(
-    async () =>
-      state?.public_key
-        ? (navigator.clipboard?.writeText(state.public_key).then(
-            () => true,
-            () => false,
-          ) ?? false)
-        : false,
-    [state],
-  );
+  /** The public key read (once), then copied: whether it reached the clipboard. */
+  const copyKey = useCallback(async () => {
+    let shown = key;
+    if (!shown) {
+      const read = await commands.signingKeyShown();
+      if (read.status === "error") return false;
+      shown = read.data;
+      setKey(shown);
+    }
+    const put = navigator.clipboard?.writeText(shown.public_key);
+    return put
+      ? put.then(
+          () => true,
+          () => false,
+        )
+      : false;
+  }, [key]);
 
   const byHand = () => {
     setFlow(undefined);
@@ -302,6 +323,7 @@ export function SigningSetupDialog({
         <Body
           now={now}
           state={state}
+          shownKey={key}
           login={login}
           onCopy={() =>
             void copyKey().then((copied) => go({ step: "add", add: { at: "by-hand", copied } }))
@@ -314,24 +336,20 @@ export function SigningSetupDialog({
 
 /** What a done step settled on, when the person goes back to it on the rail. */
 function LookBack({ showing, state }: { showing: string | null; state?: SigningState }) {
-  if (showing === "key")
-    return (
-      <p>
-        This Mac&apos;s signing key is kept in its Keychain
-        {state?.fingerprint ? <> as {state.fingerprint}</> : null}.
-      </p>
-    );
+  if (showing === "key") return <p>This Mac&apos;s signing key is kept in its Keychain.</p>;
   return <p>The key is on {state?.account?.login ?? "your account"} on GitHub.</p>;
 }
 
 function Body({
   now,
   state,
+  shownKey,
   login,
   onCopy,
 }: {
   now: Now;
   state?: SigningState;
+  shownKey?: SigningKeyShown;
   login: string;
   onCopy: () => void;
 }) {
@@ -374,7 +392,9 @@ function Body({
         </>
       );
     case "add":
-      return <AddBody add={now.add} state={state} login={login} onCopy={onCopy} />;
+      return (
+        <AddBody add={now.add} state={state} shownKey={shownKey} login={login} onCopy={onCopy} />
+      );
     case "check":
       return (
         <>
@@ -411,11 +431,13 @@ function Body({
 function AddBody({
   add,
   state,
+  shownKey,
   login,
   onCopy,
 }: {
   add: Add;
   state?: SigningState;
+  shownKey?: SigningKeyShown;
   login: string;
   onCopy: () => void;
 }) {
@@ -494,9 +516,9 @@ function AddBody({
             </li>
             <li>Paste it, name it &quot;{state?.title ?? "purlis"}&quot;, and save.</li>
           </ol>
-          {state?.public_key && (
+          {shownKey && (
             <Card as="p" variant="ask" className="signing-public-key">
-              <code aria-label="This Mac's public signing key">{state.public_key}</code>
+              <code aria-label="This Mac's public signing key">{shownKey.public_key}</code>
             </Card>
           )}
           <p className="pending" role="status" aria-busy="true">

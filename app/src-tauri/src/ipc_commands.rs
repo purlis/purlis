@@ -289,6 +289,7 @@ macro_rules! app_commands {
                 forgeaccounts::forge_signing_permission_start,
                 forgeaccounts::forge_signing_permission_wait,
                 signingsetup::signing_state,
+                signingsetup::signing_key_shown,
                 signingsetup::signing_make_key,
                 signingsetup::signing_add_key,
                 signingsetup::signing_key_listed,

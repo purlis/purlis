@@ -24,10 +24,6 @@ use crate::forgeaccounts::{blocking, config_root};
 pub struct SigningState {
     /// "On": this device has a signing key (ADR 0116 §1). Nothing else turns it on.
     pub on: bool,
-    /// The key's fingerprint and public line, for the card's Details and the by-hand step; only
-    /// where it is on.
-    pub fingerprint: Option<String>,
-    pub public_key: Option<String>,
     /// What the key is titled on the forge: `purlis · <device>`.
     pub title: String,
     /// The GitHub account on github.com setup adds the key to, where one is signed in.
@@ -98,8 +94,8 @@ fn the_key(root: &std::path::Path) -> Result<commitsign::Signer, String> {
         .ok_or_else(|| "This Mac has no signing key yet. Make it first.".to_string())
 }
 
-/// **What the Signed commits card shows.** Asks the keychain only whether the key is there, so
-/// opening Settings never makes macOS ask; the key itself is read only where it is.
+/// **What the Signed commits card shows.** Asks the keychain only whether the key is there, never
+/// for the key, so opening Settings never makes macOS ask ([`signing_key_shown`] reads it).
 #[tauri::command]
 #[specta::specta]
 pub async fn signing_state() -> Result<SigningState, String> {
@@ -107,11 +103,6 @@ pub async fn signing_state() -> Result<SigningState, String> {
         let root = config_root()?;
         let keyring = commitsign::this_builds_keyring(&root);
         let on = signingsetup::key_is_there(&root, keyring.as_ref())?;
-        let key = if on {
-            signingsetup::key_kept(&root, keyring.as_ref())?
-        } else {
-            None
-        };
         let verified = VERIFIED.lock().unwrap_or_else(|e| e.into_inner()).clone();
         let account = the_account(&root)?.map(|account| SigningAccount {
             may_add: accounts::holds(&account, &signingkeys::GITHUB_SCOPES),
@@ -123,11 +114,33 @@ pub async fn signing_state() -> Result<SigningState, String> {
             host: account.host,
         });
         Ok(SigningState {
-            on: key.is_some(),
-            fingerprint: key.as_ref().map(commitsign::Signer::fingerprint),
-            public_key: key.as_ref().map(commitsign::Signer::public_line),
+            on,
             title: signingkeys::title(),
             account,
+        })
+    })
+    .await
+}
+
+/// This device's key as Details and the by-hand step show it: never its private half.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct SigningKeyShown {
+    /// `SHA256:…`, as GitHub shows it.
+    pub fingerprint: String,
+    /// The public line to paste on GitHub's page.
+    pub public_key: String,
+}
+
+/// **This device's key, shown**: read from the Keychain only when the person opens Details or
+/// adds the key by hand, so the card itself never makes macOS ask.
+#[tauri::command]
+#[specta::specta]
+pub async fn signing_key_shown() -> Result<SigningKeyShown, String> {
+    blocking(|| {
+        let key = the_key(&config_root()?)?;
+        Ok(SigningKeyShown {
+            fingerprint: key.fingerprint(),
+            public_key: key.public_line(),
         })
     })
     .await

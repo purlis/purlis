@@ -23,8 +23,6 @@ const ACCOUNT = {
 
 const OFF: SigningState = {
   on: false,
-  fingerprint: null,
-  public_key: null,
   title: "purlis · studio",
   account: ACCOUNT,
 };
@@ -32,9 +30,6 @@ const OFF: SigningState = {
 const ON: SigningState = {
   ...OFF,
   on: true,
-  fingerprint: "SHA256:q3VbT1sMk2pQ1",
-  public_key:
-    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK2Vb9pQ1example purlis signs commits made for chats",
 };
 
 /** The core, faked: `state` as setup opens, and how each step answers. */
@@ -79,6 +74,12 @@ function theCore({
         return waitRefused ? Promise.reject(waitRefused) : new Promise(() => undefined);
       case "signing_key_listed":
         return false;
+      case "signing_key_shown":
+        return {
+          fingerprint: "SHA256:q3VbT1sMk2pQ1",
+          public_key:
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK2Vb9pQ1example purlis signs commits made for chats",
+        };
       case "signing_check":
         return checked;
       default:
@@ -134,7 +135,10 @@ export const KeychainDenied: Story = {
     const dialog = await theDialog();
     await userEvent.click(await within(dialog).findByRole("button", { name: "Make my key" }));
     await within(dialog).findByRole("alert");
-    await expect(within(dialog).getByRole("button", { name: "Try again" })).toBeEnabled();
+    const again = within(dialog).getByRole("button", { name: "Try again" });
+    await expect(again).toBeEnabled();
+    again.focus();
+    await expect(again).toHaveFocus();
     expectFocusInSight();
   },
 };
@@ -191,6 +195,9 @@ export const ByHand: Story = {
     );
     await within(dialog).findByText(/Waiting for it to appear on octocat/);
     await expect(dialog).toHaveTextContent("Signing Key");
+    const added = within(dialog).getByRole("button", { name: "I've added it" });
+    added.focus();
+    await expect(added).toHaveFocus();
     expectFocusInSight();
   },
 };

@@ -1776,10 +1776,15 @@ export const commands = {
 	 */
 	forgeSigningPermissionWait: (flow: number) => typedError<ForgeAccountRow, string>(__TAURI_INVOKE("forge_signing_permission_wait", { flow })),
 	/**
-	 *  **What the Signed commits card shows.** Asks the keychain only whether the key is there, so
-	 *  opening Settings never makes macOS ask; the key itself is read only where it is.
+	 *  **What the Signed commits card shows.** Asks the keychain only whether the key is there, never
+	 *  for the key, so opening Settings never makes macOS ask ([`signing_key_shown`] reads it).
 	 */
 	signingState: () => typedError<SigningState, string>(__TAURI_INVOKE("signing_state")),
+	/**
+	 *  **This device's key, shown**: read from the Keychain only when the person opens Details or
+	 *  adds the key by hand, so the card itself never makes macOS ask.
+	 */
+	signingKeyShown: () => typedError<SigningKeyShown, string>(__TAURI_INVOKE("signing_key_shown")),
 	/**
 	 *  **Step 1: this device's key, made and kept in the Keychain**, where it has none. macOS asks the
 	 *  person here; where they say no, the sentence says to try again and choose Always Allow.
@@ -15431,16 +15436,18 @@ export type SigningCheck = {
 	repo: string,
 };
 
+/**  This device's key as Details and the by-hand step show it: never its private half. */
+export type SigningKeyShown = {
+	/**  `SHA256:…`, as GitHub shows it. */
+	fingerprint: string,
+	/**  The public line to paste on GitHub's page. */
+	public_key: string,
+};
+
 /**  What the card shows: whether this device has a signing key, and the GitHub account it goes to. */
 export type SigningState = {
 	/**  "On": this device has a signing key (ADR 0116 §1). Nothing else turns it on. */
 	on: boolean,
-	/**
-	 *  The key's fingerprint and public line, for the card's Details and the by-hand step; only
-	 *  where it is on.
-	 */
-	fingerprint: string | null,
-	public_key: string | null,
 	/**  What the key is titled on the forge: `purlis · <device>`. */
 	title: string,
 	/**  The GitHub account on github.com setup adds the key to, where one is signed in. */

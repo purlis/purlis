@@ -28,8 +28,6 @@ const ACCOUNT = {
 
 const OFF: SigningState = {
   on: false,
-  fingerprint: null,
-  public_key: null,
   title: "purlis · studio",
   account: ACCOUNT,
 };
@@ -37,8 +35,6 @@ const OFF: SigningState = {
 const ON: SigningState = {
   ...OFF,
   on: true,
-  fingerprint: "SHA256:q3VbT1sM",
-  public_key: PUBLIC,
 };
 
 const CODE: ForgeDeviceCode = {
@@ -92,7 +88,7 @@ beforeEach(() => {
         return structuredClone(state);
       case "signing_make_key":
         if (makeRefused !== undefined) throw makeRefused;
-        state = { ...state, on: true, fingerprint: ON.fingerprint, public_key: PUBLIC };
+        state = { ...state, on: true };
         return "SHA256:q3VbT1sM";
       case "forge_signing_permission_start":
         return CODE;
@@ -117,6 +113,8 @@ beforeEach(() => {
         return addAnswers;
       case "signing_key_listed":
         return listed;
+      case "signing_key_shown":
+        return { fingerprint: "SHA256:q3VbT1sM", public_key: PUBLIC };
       case "signing_check":
         return checked;
       default:
@@ -214,12 +212,24 @@ describe("SigningSetupDialog", () => {
     );
 
     // Not there yet: it keeps waiting. Then the person adds it.
+    // Asked once as the dialog opened (not there yet), and again on I've added it.
     await userEvent.click(within(dialog).getByRole("button", { name: "I've added it" }));
-    await waitFor(() => expect(commandsSent("signing_key_listed").length).toBe(1));
+    await waitFor(() => expect(commandsSent("signing_key_listed").length).toBe(2));
     expect(dialog).toHaveTextContent("Waiting for it to appear on octocat");
     listed = true;
     await userEvent.click(within(dialog).getByRole("button", { name: "I've added it" }));
     expect(await within(dialog).findByText("Verified on GitHub ✓")).toBeTruthy();
+  });
+
+  it("a key added by hand before, and listed on GitHub, goes straight to Check with no permission asked", async () => {
+    state = structuredClone(ON);
+    addAnswers = "needs_permission";
+    listed = true;
+    render(<SigningSetupDialog onClose={vi.fn()} />);
+    const dialog = await theDialog();
+    expect(await within(dialog).findByText("Verified on GitHub ✓")).toBeTruthy();
+    expect(commandsSent("forge_signing_permission_start")).toEqual([]);
+    expect(commandsSent("signing_key_shown")).toEqual([]);
   });
 
   it("an account that may add keys already runs on from the key to Verified by itself", async () => {
@@ -279,6 +289,8 @@ describe("the Signed commits card", () => {
   it("not set up, says what signing is and offers Set up signing, with no SSH words", async () => {
     render(<Card />);
     expect(await screen.findByText("Not set up")).toBeTruthy();
+    // Opening the card asks the Keychain nothing.
+    expect(commandsSent("signing_key_shown")).toEqual([]);
     expect(screen.getByText(/stays in its Keychain/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Set up signing" })).toBeTruthy();
     expect(document.body.textContent).not.toMatch(/SSH|Ed25519|gpg/);

@@ -128,20 +128,37 @@ function Signing({ signing, onSetUp }: { signing: SigningState; onSetUp: () => v
       ) : (
         <p className="ui-setting-help">Sign in to GitHub above to add the key to your account.</p>
       )}
-      <Disclosure label="Details">
-        <dl className="signing-details">
-          <dt>Key</dt>
-          <dd>Ed25519 SSH key{signing.fingerprint ? `, ${signing.fingerprint}` : ""}</dd>
-          <dt>Kept in</dt>
-          <dd>This Mac&apos;s Keychain, as purlis/@commit-signing</dd>
-          <dt>Named on GitHub</dt>
-          <dd>{signing.title}</dd>
-          <dt>Your own key</dt>
-          <dd>
-            To use a key you already have, run <code>purlis signing setup --key</code> in Terminal.
-          </dd>
-        </dl>
-      </Disclosure>
+      <Details title={signing.title} />
     </>
+  );
+}
+
+/**
+ * **Details**: the only place the card names SSH or Ed25519. The key's fingerprint is read from
+ * the Keychain only once Details is opened, so the card itself never makes macOS ask.
+ */
+function Details({ title }: { title: string }) {
+  const [fingerprint, setFingerprint] = useState<string>();
+  const opened = (open: boolean) => {
+    if (!open || fingerprint !== undefined) return;
+    void commands.signingKeyShown().then((shown) => {
+      if (shown.status === "ok") setFingerprint(shown.data.fingerprint);
+    });
+  };
+  return (
+    <Disclosure label="Details" onExpandedChange={opened}>
+      <dl className="signing-details">
+        <dt>Key</dt>
+        <dd>Ed25519 SSH key{fingerprint ? `, ${fingerprint}` : ""}</dd>
+        <dt>Kept in</dt>
+        <dd>This Mac&apos;s Keychain, as purlis/@commit-signing</dd>
+        <dt>Named on GitHub</dt>
+        <dd>{title}</dd>
+        <dt>Your own key</dt>
+        <dd>
+          To use a key you already have, run <code>purlis signing setup --key</code> in Terminal.
+        </dd>
+      </dl>
+    </Disclosure>
   );
 }

@@ -816,6 +816,7 @@ export const commands = {
 	forgeSigningPermissionStart: __WINDOW_ONLY_RESULT,
 	forgeSigningPermissionWait: __WINDOW_ONLY_RESULT,
 	signingState: __WINDOW_ONLY_RESULT,
+	signingKeyShown: __WINDOW_ONLY_RESULT,
 	signingMakeKey: __WINDOW_ONLY_RESULT,
 	signingAddKey: __WINDOW_ONLY_RESULT,
 	signingKeyListed: __WINDOW_ONLY_RESULT,
@@ -12726,16 +12727,18 @@ export type SigningCheck = {
 	repo: string,
 };
 
+/**  This device's key as Details and the by-hand step show it: never its private half. */
+export type SigningKeyShown = {
+	/**  `SHA256:…`, as GitHub shows it. */
+	fingerprint: string,
+	/**  The public line to paste on GitHub's page. */
+	public_key: string,
+};
+
 /**  What the card shows: whether this device has a signing key, and the GitHub account it goes to. */
 export type SigningState = {
 	/**  "On": this device has a signing key (ADR 0116 §1). Nothing else turns it on. */
 	on: boolean,
-	/**
-	 *  The key's fingerprint and public line, for the card's Details and the by-hand step; only
-	 *  where it is on.
-	 */
-	fingerprint: string | null,
-	public_key: string | null,
 	/**  What the key is titled on the forge: `purlis · <device>`. */
 	title: string,
 	/**  The GitHub account on github.com setup adds the key to, where one is signed in. */

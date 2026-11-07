@@ -26,8 +26,6 @@ const ACCOUNT = {
 
 const OFF: SigningState = {
   on: false,
-  fingerprint: null,
-  public_key: null,
   title: "purlis · studio",
   account: ACCOUNT,
 };
@@ -35,9 +33,6 @@ const OFF: SigningState = {
 const ON: SigningState = {
   ...OFF,
   on: true,
-  fingerprint: "SHA256:q3VbT1sMk2pQ1",
-  public_key:
-    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK2Vb9pQ1example purlis signs commits made for chats",
 };
 
 /** The card's row, as the Settings tab draws a live setting. */
@@ -62,7 +57,13 @@ const meta = {
   component: Card,
   beforeEach: ({ parameters }) => {
     const state = (parameters.signing as SigningState | undefined) ?? OFF;
-    mockIPC((cmd) => (cmd === "signing_state" ? state : null));
+    mockIPC((cmd) =>
+      cmd === "signing_state"
+        ? state
+        : cmd === "signing_key_shown"
+          ? { fingerprint: "SHA256:q3VbT1sMk2pQ1", public_key: "ssh-ed25519 AAAA example" }
+          : null,
+    );
     return () => clearMocks();
   },
 } satisfies Meta<typeof Card>;

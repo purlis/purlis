@@ -455,8 +455,6 @@ function dialogCore() {
       case "signing_state":
         return {
           on: false,
-          fingerprint: null,
-          public_key: null,
           title: "purlis · studio",
           account: {
             login: "octocat",
