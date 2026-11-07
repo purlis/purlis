@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793807365032,
+  "lastUpdate": 1794090378638,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -16728,6 +16728,42 @@ window.BENCHMARK_DATA = {
             "value": 875.3,
             "unit": "MB",
             "extra": "median of 6 samples: 843, 857.9, 869.3, 881.3, 881.9, 954.6 MB; window 581.7 MB, session host 294.8 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "260140d2bb235eac9431e37b18138e3ac7a7ec32",
+          "message": "Files dropped from Finder onto a workspace's own files are imported (#5378) (#5668)\n\n* Files dropped from Finder onto a workspace's own files are imported (#5378)\n\nA drop from the file manager onto Explorer's workspace tree imports as\nImport files... does: onto a folder of the person's own into it, onto a\nfile of theirs into its folder, onto no row into the workspace's top.\nA drop on what purlis keeps, a repo or repos/ is refused with why.\n\nThe files never cross the window's seam: the app holds what the system\ndropped on each webview (Dropped, heard from Tauri's webview drag\nevents), and workspace_files_import_dropped imports those, the window\nnaming only the folder. The window hit-tests Tauri's drag position\nagainst the tree's rows and marks the target with the tree family's\ndata-drop-target, now drawn on the tree itself too.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6VC30MBWDCN0R905019SRJ2\nPurlis-Persona: steward\n\n* The drop's hook, its window tests and its changelog fragment (#5378)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6VC30MBWDCN0R905019SRJ2\nPurlis-Persona: steward\n\n* The DropTargets story's baselines, drawn by #5668's stories run (#5378)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6VC30MBWDCN0R905019SRJ2\nPurlis-Persona: steward\n\n* A drop is heard from the window, at the page's point, and only with files (#5378)\n\nReview fixes on #5668:\n\n- The core held a drop from on_webview_event, which tauri-runtime-wry never\n  calls for a webview window's own webview without the unstable feature: it\n  tells the drag to the window (SynthesizedWindowEvent::DragDrop then\n  WindowEvent::DragDrop). It is now held from on_window_event, by the\n  window's label, through workspacewrites::window_event, which a test drives.\n- The drop's point is the page's on macOS (points) and Linux (GTK logical\n  pixels); only Windows (ScreenToClient physical pixels) is divided by the\n  page's scale (wry 0.57).\n- A drag that carries no files, as one inside the window does, draws no\n  target and imports or refuses nothing.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6VKY9KXPVP8A8EAFW2FMYBG\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aharon@easydmarc.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-07T19:22:23Z",
+          "tree_id": "09a4f3e8e7d3342202cade7081276d4492c4ce3d",
+          "url": "https://github.com/purlis/purlis/commit/260140d2bb235eac9431e37b18138e3ac7a7ec32"
+        },
+        "date": 1794090372520,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 2166.3,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1933.9, 2166.3, 2437.2 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 920.8,
+            "unit": "MB",
+            "extra": "median of 6 samples: 877.3, 897.6, 912.7, 929.2, 928.9, 997.1 MB; window 605.7 MB, session host 315 MB"
           }
         ]
       }
