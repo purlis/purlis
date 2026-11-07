@@ -11651,6 +11651,8 @@ export const PlaneView = memo(function PlaneView({
                           // Search contents (#3343): Search on the filter's scope, with its words.
                           onSearchContents={searchContents}
                           onSearchKey={keepExplorerSearchKey}
+                          // Files dropped from the file manager on the workspace's own (#5378).
+                          onDropFiles={workspaceWrites.drop}
                         />
                       )}
                     />

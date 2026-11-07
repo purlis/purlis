@@ -1380,6 +1380,10 @@ tree's role (`tree`, `treeitem`, `treegrid`), wears the shared tree's old classe
   no motion, so opening moves nothing). It is React Aria's toggle, "Expand ‹row›" or "Collapse
   ‹row›", never a Tab stop, and the arrows never land on it.
 - **Sizes**: `sm` (24 px, a side view's), `md` (28, the default), `lg` (32). A tree takes one.
+- **Where a drop lands is marked `data-drop-target`**, React Aria's own mark: on a row, the wash
+  and an edge all round; on the tree itself, the edge alone, so its rows read as they were. Files
+  dropped from the file manager on a workspace's own files mark either as the drag moves
+  (`finderDrop.ts`, #5378), and Import files… in the row's menu does the same import.
 - **Drawn by its parts** (ADR 0103, [the tree family joins the
   manifest](adr/0103/2026-10-25-the-tree-family-joins-the-manifest.md)): the tree is
   `data-scope="tree" data-part="body"` (its `data-twist`), a row the family's root with

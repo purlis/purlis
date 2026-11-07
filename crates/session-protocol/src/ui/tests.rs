@@ -216,6 +216,7 @@ fn a_workspaces_own_files_are_written_from_the_window_alone() {
         "workspace_files_rename",
         "workspace_files_trash",
         "workspace_files_import",
+        "workspace_files_import_dropped",
     ] {
         assert!(window_only(command), "{command}");
         assert!(!served_on_a_link(command), "{command}");

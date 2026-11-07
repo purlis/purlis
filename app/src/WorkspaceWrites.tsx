@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { WorkspaceWrite } from "./actions";
 import { commands, type PlaneId } from "./bindings";
+import type { FinderDrop } from "./finderDrop";
 import { Field, SettingRow } from "./settings/components";
 import { touchSaid } from "./touching";
 import { AlertDialog, Dialog } from "./ui/dialog/Dialog";
@@ -17,6 +18,9 @@ import { AlertDialog, Dialog } from "./ui/dialog/Dialog";
  *   for Rename anyway.
  * - **Delete…** asks once, saying it goes to the Trash, and which chat is writing it, if one is.
  * - **Import files…** asks nothing here: the system's file picker is its question.
+ * - **A drop from the file manager** (#5378) asks nothing either: the drop is the question. It
+ *   imports as Import files… does, into the folder it landed on, and a row that takes none says
+ *   why here, as a refusal of the core's is said.
  *
  * **This validates nothing**, for `RenameChat`'s reason: where a write may land, and what name
  * it may take, is the core's to say (`files::workspace`), and its sentence comes back here
@@ -36,6 +40,8 @@ export type Asking = {
   /** Why the last answer wrote nothing: the core's sentence, unchanged. */
   trouble?: string;
   busy: boolean;
+  /** An import of files dropped from the file manager (#5378), not of the picker's. */
+  dropped?: boolean;
 };
 
 /** The dialog a write asks with, for `asking`, or none when it asks nothing here (an import's
@@ -140,7 +146,9 @@ export function WorkspaceWriteDialog({
       return asking.trouble === undefined ? null : (
         <AlertDialog
           onClose={onClose}
-          title="Import files did not finish"
+          title={
+            asking.dropped === true ? "The drop did not finish" : "Import files did not finish"
+          }
           description={
             <p className="trouble" role="alert">
               {asking.trouble}
@@ -221,7 +229,11 @@ function NameDialog({
 export function useWorkspaceWrites(
   plane: PlaneId | undefined,
   onWritten?: (does: WorkspaceWrite, path: string) => void,
-): { ask: (does: WorkspaceWrite) => void; dialog: ReactNode } {
+): {
+  ask: (does: WorkspaceWrite) => void;
+  drop: (workspace: string, drop: FinderDrop) => void;
+  dialog: ReactNode;
+} {
   const [asking, setAsking] = useState<Asking>();
   const close = useCallback(() => setAsking(undefined), []);
   // Heard through a ref, so `ask` stays one function across renders: the window's `doing` is
@@ -232,12 +244,18 @@ export function useWorkspaceWrites(
   }, [onWritten]);
 
   const run = useCallback(
-    async (does: WorkspaceWrite, write: () => Promise<WriteAnswer>) => {
+    async (does: WorkspaceWrite, write: () => Promise<WriteAnswer>, dropped?: boolean) => {
       if (plane === undefined) return;
-      setAsking((was) => (was === undefined ? { does, busy: true } : { ...was, busy: true }));
+      setAsking((was) =>
+        was === undefined ? { does, busy: true, dropped } : { ...was, busy: true },
+      );
       const answer = await write();
       if (answer.status === "error") {
-        setAsking((was) => ({ ...(was ?? { does }), busy: false, trouble: answer.error }));
+        setAsking((was) => ({
+          ...(was ?? { does, dropped }),
+          busy: false,
+          trouble: answer.error,
+        }));
         return;
       }
       setAsking(undefined);
@@ -256,6 +274,26 @@ export function useWorkspaceWrites(
       // The system's file picker is the question; only a refusal is drawn here.
       void run(does, async () =>
         commands.workspaceFilesImport(plane, does.at.workspace, does.at.path),
+      );
+    },
+    [plane, run],
+  );
+
+  const drop = useCallback(
+    (workspace: string, landed: FinderDrop) => {
+      if (plane === undefined) return;
+      const does: WorkspaceWrite = {
+        verb: "importWorkspaceFiles",
+        at: { workspace, repo: "", piece: null, path: "into" in landed ? landed.into : "" },
+      };
+      if ("refused" in landed) {
+        setAsking({ does, busy: false, dropped: true, trouble: landed.refused });
+        return;
+      }
+      void run(
+        does,
+        async () => commands.workspaceFilesImportDropped(plane, workspace, landed.into),
+        true,
       );
     },
     [plane, run],
@@ -301,7 +339,7 @@ export function useWorkspaceWrites(
         onClose={close}
       />
     );
-  return { ask, dialog };
+  return { ask, drop, dialog };
 }
 
 /** What a write answers: the paths it made, or the core's refusal. */
