@@ -62,7 +62,7 @@ describe("the four corners", function () {
 
   it("draws the right bar as a 44px column of 36px icons", async () => {
     const column = await boxOf(".activity-column[data-side='right']");
-    const inbox = await boxOf(tab(ATTENTION, "Inbox"));
+    const inbox = await boxOf(tab(ATTENTION, "Asks"));
     expect(column?.width).toBe(44);
     expect(inbox?.width).toBe(36);
     expect(inbox?.height).toBe(36);
@@ -101,7 +101,7 @@ describe("the four corners", function () {
     expect(await closing.on(panel)).toEqual([]);
 
     const opening = await hearAnimations(panel);
-    await press(tab(ATTENTION, "Inbox"));
+    await press(tab(ATTENTION, "Asks"));
     // 300px where the row of regions has room, else its 20% of that row (R124): the row is the
     // window less the project rail, the bars and the gutters.
     const row = (await boxOf(".region-row"))?.width ?? 0;
@@ -116,7 +116,7 @@ describe("the four corners", function () {
     await press(tab(ATTENTION, "Personas"));
     await browser.pause(400);
     expect(await switching.on(panel)).toEqual([]);
-    await press(tab(ATTENTION, "Inbox"));
+    await press(tab(ATTENTION, "Asks"));
   });
 
   it("opens a bottom half from its icon, and only that half arrives", async () => {

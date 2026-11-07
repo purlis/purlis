@@ -17,7 +17,7 @@ import { showNotices, showUpdates } from "./test-strips";
 import { GLOBAL } from "./windowprefs";
 
 /**
- * **Dismiss all, with Undo, on Mine, Project and Notices** (#5650, spec #5638, ADR 0117
+ * **Dismiss all, with Undo, on Mine, Project and Notices** (#5650, spec #5638, ADR 0119
  * decision 9), on the real window with the core mocked. Each list's Dismiss all is each line's
  * own Dismiss done to every line it lists: an update goes for its day, in the core's inbox
  * store; a Notice until its cause changes, in the layout file; a teammate's change is recorded

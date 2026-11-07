@@ -320,7 +320,7 @@ fn bounded(one: Update, now: u64) -> Update {
     }
 }
 
-/// **Snooze all** (#5647, ADR 0117): each snoozed chat, by its session, with the keys of the
+/// **Snooze all** (#5647, ADR 0119): each snoozed chat, by its session, with the keys of the
 /// asks it held when it was snoozed. A chat stays away until it holds an ask its record has not
 /// ([`Store::release`]); nothing brings it back on a timer.
 pub type Snoozed = std::collections::BTreeMap<u32, Vec<String>>;
@@ -457,7 +457,7 @@ impl Store {
     }
 }
 
-/// **The first-open baseline** (#5648, ADR 0117): the record, made the first time a project
+/// **The first-open baseline** (#5648, ADR 0119): the record, made the first time a project
 /// opens on this machine, that what was already there counts as seen. Kept beside the updates
 /// (`<project key>.baseline.json`), on this machine and never in the project. A project with a
 /// record is never baselined again.

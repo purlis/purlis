@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! Snooze all (#5647, ADR 0117): the record of what each chat held when it was snoozed, kept per
+//! Snooze all (#5647, ADR 0119): the record of what each chat held when it was snoozed, kept per
 //! project beside the updates, and the rule that brings a chat back. Driven through [`Store`]
 //! alone, on a data home of the test's own.
 

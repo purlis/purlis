@@ -74,7 +74,7 @@ pub struct Asking {
     /// its task's row alone says it, and nothing here is counted by the ✋ or listed in the
     /// Inbox, which read [`Asking::asks`].
     pub with_asking_chat: Vec<WithAskingChat>,
-    /// **The asks Snooze all put away** (#5647, ADR 0117): each held by a chat that holds no
+    /// **The asks Snooze all put away** (#5647, ADR 0119): each held by a chat that holds no
     /// ask it did not have when it was snoozed. Listed apart from [`Asking::asks`], so neither
     /// the ✋ nor Asks counts them; the Chats view, which reads the board, still says the chat
     /// waits. Only [`asks_waiting`] puts any here.
@@ -752,11 +752,12 @@ pub async fn asks_waiting(
     let held = planes.held(&plane)?;
     crate::off_the_window(READING_ASKS, move || {
         let root = held.root().to_path_buf();
-        Ok(snoozed_apart(
-            every_ask(&held),
-            purlis_core::inboxupdates::Store::here().as_ref(),
-            &root,
-        ))
+        // Snooze all's record is this machine's (#5647): where the app keeps no store, as in a
+        // test of its own, nothing is snoozed and no data home is looked for.
+        let store = held
+            .config()
+            .and_then(|_| purlis_core::inboxupdates::Store::here());
+        Ok(snoozed_apart(every_ask(&held), store.as_ref(), &root))
     })
     .await
 }

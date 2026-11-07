@@ -7,7 +7,7 @@ import type { MessageTone } from "./ui/message/Message";
 import type { NoticeTone } from "./ui/notice/Notice";
 
 /**
- * **What a line is, as its message row's state** (#5649, ADR 0117 decision 6): the one table an
+ * **What a line is, as its message row's state** (#5649, ADR 0119 decision 6): the one table an
  * ask, a line of Mine or Project and a Notice all take their row's tone from. What waits on the
  * person is `waiting`; trouble, or what came to nothing, `failed`; a task that finished `done`;
  * what came back (a chat resumed, a handoff arrived) a `report`; any other Notice `plain`.

@@ -184,7 +184,7 @@ export function ActivityCount({
 }
 
 /**
- * **A dot on an item** (ADR 0117, #5645): where the count is drawn, a mark in the danger colour
+ * **A dot on an item** (ADR 0119, #5645): where the count is drawn, a mark in the danger colour
  * that says something needs fixing, and never a number. `said` is the item's description, as a
  * count's sentence is. The danger tone is its own role, as the needs-you count's is: a count rule
  * of `parts` never reaches it.

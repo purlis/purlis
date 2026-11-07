@@ -10,7 +10,7 @@ import type { DoctorRow, InboxBaseline, InboxUpdate } from "./bindings";
 import { forgetInboxOpen, inboxOpenAtLaunch } from "./test-inbox";
 
 /**
- * **The first-open baseline** (#5648, ADR 0117), against the whole window: the first time a
+ * **The first-open baseline** (#5648, ADR 0119), against the whole window: the first time a
  * plane opens on a machine with no seen record for it, what is already there counts as seen
  * and is listed under Updates' Project, read; the open asks the person may answer stay in Asks.
  *

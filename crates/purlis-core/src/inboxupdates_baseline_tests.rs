@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! The first-open baseline (#5648, ADR 0117): the record, kept per project beside the updates,
+//! The first-open baseline (#5648, ADR 0119): the record, kept per project beside the updates,
 //! that the past was counted as seen the first time the project opened on this machine. Driven
 //! through [`Store`] alone, on a data home of the test's own.
 

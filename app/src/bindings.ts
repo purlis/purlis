@@ -1386,7 +1386,7 @@ export const commands = {
 	 */
 	settleInboxUpdates: (plane: PlaneId, keys: string[] | null, how: UpdateSettled) => typedError<InboxUpdate_Serialize[], string>(__TAURI_INVOKE("settle_inbox_updates", { plane, keys, how })),
 	/**
-	 *  **Snooze all** (#5647, ADR 0117): puts each of `chats` away with the asks it holds, until it
+	 *  **Snooze all** (#5647, ADR 0119): puts each of `chats` away with the asks it holds, until it
 	 *  holds an ask it did not have. Nothing is answered, and no timer brings it back. Kept on this
 	 *  machine per project, never in the plane.
 	 */
@@ -1397,7 +1397,7 @@ export const commands = {
 	 */
 	wakeInboxAsks: (plane: PlaneId, sessions: number[] | null) => typedError<null, string>(__TAURI_INVOKE("wake_inbox_asks", { plane, sessions })),
 	/**
-	 *  **The project opens in the window** (#5648, ADR 0117): its first-open baseline, made where
+	 *  **The project opens in the window** (#5648, ADR 0119): its first-open baseline, made where
 	 *  this machine has none. The first time a project opens on a machine with no seen record for
 	 *  it, what is already there counts as seen, and its hosts and presets as told; a project with
 	 *  a record keeps it, so updating purlis clears nothing.
@@ -6004,7 +6004,7 @@ export type Asking = {
 	 */
 	with_asking_chat: WithAskingChat[],
 	/**
-	 *  **The asks Snooze all put away** (#5647, ADR 0117): each held by a chat that holds no
+	 *  **The asks Snooze all put away** (#5647, ADR 0119): each held by a chat that holds no
 	 *  ask it did not have when it was snoozed. Listed apart from [`Asking::asks`], so neither
 	 *  the ✋ nor Asks counts them; the Chats view, which reads the board, still says the chat
 	 *  waits. Only [`asks_waiting`] puts any here.
@@ -9897,7 +9897,7 @@ export type InTurn =
 /**  The file, compared across the turn. */
 { kind: "changed"; shown: WhatChanged };
 
-/**  **The first-open baseline** (#5648, ADR 0117), as the window reads it. */
+/**  **The first-open baseline** (#5648, ADR 0119), as the window reads it. */
 export type InboxBaseline = {
 	/**  When the project first opened on this machine, in seconds since 1970. */
 	at: number,

@@ -289,7 +289,7 @@ describe("the list", () => {
 });
 
 /**
- * **Mine or Project** (#5646, ADR 0117): each kind of update is the person's own chat's or
+ * **Mine or Project** (#5646, ADR 0119): each kind of update is the person's own chat's or
  * task's, under Mine (From your chats), or the project's, under Project (From the project). The
  * bell counts the unread Mine lines alone.
  */

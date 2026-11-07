@@ -7,7 +7,7 @@ import { Notice } from "./Notice";
 import { UNDO_MS } from "./undo";
 
 /**
- * **A Dismiss held for its Undo** (#5650, ADR 0117 decision 9): Dismiss and Dismiss all on Mine,
+ * **A Dismiss held for its Undo** (#5650, ADR 0119 decision 9): Dismiss and Dismiss all on Mine,
  * Project and Notices take the lines away at once, and an Undo stands for {@link UNDO_MS}. Only
  * when it goes is each line's own Dismiss carried out, by its own rule: an update is put away for
  * its day in the core's inbox store, a Notice until its cause changes in the layout file

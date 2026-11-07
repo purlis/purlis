@@ -1178,7 +1178,7 @@ has it; nothing reads the key after that.
   `notices` (#5645), `memory`, `todos` or `sessions` for `panel-right` (#1738).
   Leave it out for the one it opens on: `chats` on the left, `asks` on the right, `repos` and
   `memory` in the Panel. A view the region does not have opens on that one, and the window says
-  so — but `inbox`, the view Asks and Updates took the place of (ADR 0117, #5644), opens on
+  so — but `inbox`, the view Asks and Updates took the place of (ADR 0119, #5644), opens on
   `asks` without a word, and a view another region of the same side holds now, as `aside` held `memory` before
   #1738, or the place a view was moved to (`moved`, below), opens on it without a word; an
   extension's panel

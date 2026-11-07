@@ -315,7 +315,7 @@ pub struct SnoozedChat {
     pub asks: Vec<String>,
 }
 
-/// **Snooze all** (#5647, ADR 0117): puts each of `chats` away with the asks it holds, until it
+/// **Snooze all** (#5647, ADR 0119): puts each of `chats` away with the asks it holds, until it
 /// holds an ask it did not have. Nothing is answered, and no timer brings it back. Kept on this
 /// machine per project, never in the plane.
 #[tauri::command]
@@ -362,7 +362,7 @@ pub async fn wake_inbox_asks(
     .await
 }
 
-/// **The first-open baseline** (#5648, ADR 0117), as the window reads it.
+/// **The first-open baseline** (#5648, ADR 0119), as the window reads it.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct InboxBaseline {
     /// When the project first opened on this machine, in seconds since 1970.
@@ -397,7 +397,7 @@ pub fn first_open_in(
         .map_err(|err| format!("purlis could not keep what this machine has seen: {err}"))
 }
 
-/// **The project opens in the window** (#5648, ADR 0117): its first-open baseline, made where
+/// **The project opens in the window** (#5648, ADR 0119): its first-open baseline, made where
 /// this machine has none. The first time a project opens on a machine with no seen record for
 /// it, what is already there counts as seen, and its hosts and presets as told; a project with
 /// a record keeps it, so updating purlis clears nothing.

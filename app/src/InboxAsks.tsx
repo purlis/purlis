@@ -105,7 +105,7 @@ export type Shape = {
   said: string | undefined;
   /** It is a task's question, which the Answer form takes. */
   answerable: boolean;
-  /** **It is answered here, behind its Answer link** (#5651, ADR 0117 decision 7): its answers,
+  /** **It is answered here, behind its Answer link** (#5651, ADR 0119 decision 7): its answers,
    *  its reply box, its dispatch's Notice or a task's Answer form. An ask only its own place can
    *  answer (a prompt in its terminal, its browser waiting for a sign-in) has Go to chat alone. */
   form: boolean;
@@ -583,7 +583,7 @@ export function Ask({
 
   return (
     <Stop id={key}>
-      {/* **A row of Asks** (#5649, ADR 0117 decision 6): its kind's glyph in the waiting tint;
+      {/* **A row of Asks** (#5649, ADR 0119 decision 6): its kind's glyph in the waiting tint;
           the chat's name with how long it has waited at the right, the × in its place under the
           pointer; what it waits on (in the waiting colour) and where; its words; its links
           (Answer, Go to chat); and what answers it, in the row. */}
@@ -727,7 +727,7 @@ export function Ask({
           )}
         </MessageBody>
         {/* **Its links** (#5649): Answer, where it is answered here, which opens its form in the
-            row and reads Cancel while it is open (#5651, ADR 0117 decision 7); and Go to chat,
+            row and reads Cancel while it is open (#5651, ADR 0119 decision 7); and Go to chat,
             on every ask of a chat. */}
         {(shape.form || shape.go) && (
           <MessageLinks>
@@ -777,7 +777,7 @@ export function Ask({
   );
 }
 
-/** **The most lines an ask's own words show before "Show all · N lines"** (#5649, ADR 0117
+/** **The most lines an ask's own words show before "Show all · N lines"** (#5649, ADR 0119
  *  decision 7): a long one never pushes the others away. */
 export const ASK_FOLD_LINES = 3;
 
@@ -898,7 +898,7 @@ function answeredNow(plane: PlaneId, ask: Shown, answer: string) {
 }
 
 /**
- * **A task's question, answered in its row** (#5651, ADR 0107, ADR 0117 decision 7): the Answer
+ * **A task's question, answered in its row** (#5651, ADR 0107, ADR 0119 decision 7): the Answer
  * form's rules (`useAnswerQuestion`: it reads the question the task is paused on and answers that
  * one by its number, refuses an empty answer, and keeps what was typed through a refusal), drawn
  * as the reply strip is, since the row already shows the question. Enter sends.

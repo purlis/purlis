@@ -88,7 +88,7 @@ export const KIND_SAID: Record<UpdateKind, string> = {
 };
 
 /**
- * **Which of Updates' two lists an update is listed in** (#5646, ADR 0117): `mine`, From your
+ * **Which of Updates' two lists an update is listed in** (#5646, ADR 0119): `mine`, From your
  * chats, what the person's own chats and tasks did; or `project`, From the project, what is the
  * project's and no chat's of theirs. The bell counts the unread Mine lines alone.
  */
@@ -122,7 +122,7 @@ export const fromOf = (kind: UpdateKind): UpdateFrom => FROM[kind];
 
 /**
  * **The list `update` is listed in**: its kind's, except that a line the first-open baseline set
- * aside (#5648, ADR 0117) is Project's, whatever made it: it was already there the first time
+ * aside (#5648, ADR 0119) is Project's, whatever made it: it was already there the first time
  * the project opened on this machine.
  */
 export const listedFrom = (update: Pick<InboxUpdate, "kind" | "baselined">): UpdateFrom =>

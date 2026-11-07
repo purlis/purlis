@@ -3226,7 +3226,7 @@ export type Asking = {
 	 */
 	with_asking_chat: WithAskingChat[],
 	/**
-	 *  **The asks Snooze all put away** (#5647, ADR 0117): each held by a chat that holds no
+	 *  **The asks Snooze all put away** (#5647, ADR 0119): each held by a chat that holds no
 	 *  ask it did not have when it was snoozed. Listed apart from [`Asking::asks`], so neither
 	 *  the ✋ nor Asks counts them; the Chats view, which reads the board, still says the chat
 	 *  waits. Only [`asks_waiting`] puts any here.
@@ -7119,7 +7119,7 @@ export type InTurn =
 /**  The file, compared across the turn. */
 { kind: "changed"; shown: WhatChanged };
 
-/**  **The first-open baseline** (#5648, ADR 0117), as the window reads it. */
+/**  **The first-open baseline** (#5648, ADR 0119), as the window reads it. */
 export type InboxBaseline = {
 	/**  When the project first opened on this machine, in seconds since 1970. */
 	at: number,

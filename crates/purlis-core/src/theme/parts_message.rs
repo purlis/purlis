@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **The message family** (#5649, spec #5638, ADR 0117 decision 6): one message of the Inbox's
+//! **The message family** (#5649, spec #5638, ADR 0119 decision 6): one message of the Inbox's
 //! views, an ask, a line of Mine or Project, a Notice, drawn as a row of its view rather than a
 //! boxed card, declared once here and once in its wrapper, `app/src/ui/message/Message.tsx`,
 //! whose stylesheet (`message.css`) draws the defaults [`super::Look`] holds a copy of.

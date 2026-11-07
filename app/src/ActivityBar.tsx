@@ -196,9 +196,9 @@ export const VIEW_MARKS: Record<OwnViewId, LucideIcon> = {
   repos: FolderGit2,
   // The title bar's hand (#1692): the ✋ counts the asks and opens this view.
   asks: Hand,
-  // ADR 0117: the bell, for what happened rather than what asks.
+  // ADR 0119: the bell, for what happened rather than what asks.
   updates: Bell,
-  // ADR 0117 (#5645): a warning sign, for what stands wrong until it is fixed.
+  // ADR 0119 (#5645): a warning sign, for what stands wrong until it is fixed.
   notices: TriangleAlert,
   todos: ListTodo,
   memory: Brain,

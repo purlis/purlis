@@ -111,7 +111,7 @@ describe("a store's archive, long", function () {
     const now = join(store(), "MEMORY.md");
     if (index === undefined) rmSync(now, { force: true });
     else writeFileSync(now, index);
-    await showView("Inbox");
+    await showView("Asks");
   });
 
   it("draws one page of a long archive, and Show more draws the rest", async () => {

@@ -8,7 +8,7 @@ import { drawnWith } from "./cascade.testkit";
 import { Notice, NoticeInCentre, NoticeList, NoticeOf, type NoticeProps } from "./Notice";
 
 /**
- * **A Notice is a row of the Notices view** (#5649, spec #5638, ADR 0117 decision 6; a card of its
+ * **A Notice is a row of the Notices view** (#5649, spec #5638, ADR 0119 decision 6; a card of its
  * own before, #5217): the message family's row, as Asks and Updates draw theirs. Its tone's glyph
  * in a tinted round mark; its title, with its age at the right and its × in that place under the
  * pointer; its state under it; purlis's sentence; its ways as text links, one leading in the

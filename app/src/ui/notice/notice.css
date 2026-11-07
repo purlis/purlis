@@ -280,7 +280,7 @@
   border-block-start: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 
-/* **In the Notices view each Notice is a row of the view** (#5649, ADR 0117 decision 6; it was a
+/* **In the Notices view each Notice is a row of the view** (#5649, ADR 0119 decision 6; it was a
    card of its own, #5217): the list draws no box, and a hairline stands between two rows, past
    their marks, as the message family draws it between rows that are siblings. Each row stands in
    an element of its own, which the list moves (`Notice.tsx`), so the hairline is drawn here. */

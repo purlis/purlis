@@ -203,7 +203,7 @@ export function Inbox({
   hold,
 }: {
   /**
-   * **Which view of the right bar this draws** (ADR 0117, #5644, #5645): `asks`, the asks
+   * **Which view of the right bar this draws** (ADR 0119, #5644, #5645): `asks`, the asks
    * grouped by chat with the scope switch and what waits in other windows; `updates`, the
    * updates; or `notices`, the project's Notices, the window's own lines and Results, in the
    * Panel's right half. Left out, all three, one after the other, as one list.
@@ -242,7 +242,7 @@ export function Inbox({
   /** The project's updates, drawn after the asks (#1693); none before they were read. */
   updates?: Updates;
   /**
-   * **What teammates changed in the project** (#5646, ADR 0117): the teammate Notices (its
+   * **What teammates changed in the project** (#5646, ADR 0119): the teammate Notices (its
    * hosts, its presets, its dispatch grants), listed under Updates' Project and never counted.
    */
   project?: ReactNode;
@@ -327,7 +327,7 @@ export function Inbox({
   };
   const scope = scopeDrawn(picked, counts);
   /**
-   * **Updates' two lists** (#5646, ADR 0117): Mine, what the person's own chats and tasks did,
+   * **Updates' two lists** (#5646, ADR 0119): Mine, what the person's own chats and tasks did,
    * which it opens on; or Project, what is the project's. Narrowed by the scope switch as the
    * asks are, where the window says which workspace is in front: this workspace's are the lines
    * of the chats filed there. The whole Inbox (no `part`) lists every update, as it did.

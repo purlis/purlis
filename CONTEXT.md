@@ -1280,7 +1280,7 @@ Notices view, the first of the right side's **Lower icons**, which opens in the 
 the **Panel**; an alert purlis
 finds about a project or this machine is one of them (#1695). Every doctor finding together
 stands as one Notice line, and a Notice about what a teammate changed is listed in **From the
-project** instead (ADR 0117). Not an
+project** instead (ADR 0119). Not an
 **Update**, which says what happened, and not **Needs you**, which is a chat waiting on the
 operator.
 _Avoid_: notification, banner, toast, message (for the thing itself)
@@ -1326,7 +1326,7 @@ _Avoid_: prompt (that is what the operator types), approval (that is one kind of
 
 **Inbox**:
 The person's own place for what waits on them or is theirs to know, in three views of the right
-bar (ADR 0117): **Asks** (a chat waiting in another window among them, as "In other windows") and
+bar (ADR 0119): **Asks** (a chat waiting in another window among them, as "In other windows") and
 **Updates**, whose switch shows **Mine** (**From your chats**) or **Project** (**From the
 project**), at the top; and **Notices** among the **Lower icons**, opening in the right half of the **Panel**. Nothing
 about another person is listed. Each list is cleared at once by its own rule: Snooze all for the
@@ -1342,7 +1342,7 @@ finding, a chat that resumed, a sandbox change, a dispatch refused while nobody 
 Smart close that stopped, a report with nowhere to go, a commit refused (#1694), an Ask about a
 chat's browser that ended with the browser (#2015). Listed newest first in the **Inbox**, in
 **From your chats** when the person's own chat or task made it and in **From the project**
-otherwise (ADR 0117), and kept a day per
+otherwise (ADR 0119), and kept a day per
 machine in purlis's data home, never in a project, so it survives a relaunch (#1693). Read and
 dismissed one at a time or all at once (Dismiss all), and never counted on the ✋.
 A task that failed is an update and not an **Ask**. Not an **Ask**.
@@ -1352,14 +1352,14 @@ _Avoid_: notification, news
 The **updates** the person's own chats and tasks made, listed under **Mine** in the **Inbox**'s
 Updates view: finished, failed, arrived, a report with nowhere to go, a commit refused. A line
 opens in place to show its report or the reason it failed, and opening it marks it read. Its
-unread count stands on the Updates icon and never on the ✋ (ADR 0117).
+unread count stands on the Updates icon and never on the ✋ (ADR 0119).
 _Avoid_: from your agents, agent inbox, results feed
 
 **From the project**:
 What is listed under **Project** in the **Inbox**'s Updates view, never counted: what teammates
 changed in the project (sandbox hosts, presets, a dispatch grant, the expected version), purlis's own news, and
 what the **First-open baseline** counted as seen. It is where a fresh clone's history goes, read
-(ADR 0117).
+(ADR 0119).
 _Avoid_: activity (that is a chat's timeline), feed, team news
 
 **First-open baseline**:
@@ -1367,7 +1367,7 @@ The record, made the first time a plane opens on a machine with no seen record f
 everything already there is seen: it goes to **From the project**, read, except the open asks
 the person may answer, and a doctor finding counts too. A teammate's dispatch grant or browser
 site is not counted as seen, since that would put it in force; it waits under **From the
-project** for the person's answer. A machine that already has a seen record is never baselined. Machine, device-bound, never in the project (ADR 0117).
+project** for the person's answer. A machine that already has a seen record is never baselined. Machine, device-bound, never in the project (ADR 0119).
 _Avoid_: reset, mark all read, first run
 
 **Kill switch**:

@@ -6,7 +6,7 @@ import { commands, type DoctorReport, type InboxBaseline, type PlaneId } from ".
 import { findingCauses } from "./Doctor";
 
 /**
- * **The first-open baseline** (#5648, ADR 0117): the first time a project opens on a machine
+ * **The first-open baseline** (#5648, ADR 0119): the first time a project opens on a machine
  * with no record of it (`Store::opened_before`), what is already there counts as seen, so a fresh clone opens
  * quiet. The core keeps the record and, at that open, writes the teammate Notices' seen records
  * (`inbox_first_open`); a project with a record is never baselined again.

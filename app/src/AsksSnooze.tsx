@@ -9,7 +9,7 @@ import { Notice } from "./Notice";
 import { Button, ButtonRow } from "./ui/button/Button";
 
 /**
- * **Snooze all on Asks** (#5647, ADR 0117): every listed chat's asks put away at once, answering
+ * **Snooze all on Asks** (#5647, ADR 0119): every listed chat's asks put away at once, answering
  * nothing and with no timer. A chat comes back, with all its asks, as soon as it raises an ask
  * it did not have when snoozed: the core's inbox store keeps what each chat held, on this
  * machine, and lists a snoozed chat's asks apart (`Asking.snoozed`), so neither the ✋ nor Asks

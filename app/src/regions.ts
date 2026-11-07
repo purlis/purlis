@@ -273,7 +273,7 @@ function homeOf(view: string): RegionId | undefined {
   return REGION_IDS.find((id) => holds(id, view));
 }
 
-/** **Asks and Updates never move** (P-4, as the Inbox they took the place of did; ADR 0117):
+/** **Asks and Updates never move** (P-4, as the Inbox they took the place of did; ADR 0119):
  *  each is pinned to the right sidebar, so what is for the person is never hidden in a half that
  *  is put away, and its icon is where it always was. */
 const PINNED: readonly ViewId[] = ["asks", "updates"];
@@ -530,7 +530,7 @@ const MOST_VIEW = 200;
 /** A region id version 1 wrote, by the id it has now. */
 const RENAMED: Record<string, RegionId> = { explorer: "navigation" };
 
-/** **A view an older build kept, by the view that took its place** (#5644, ADR 0117): the
+/** **A view an older build kept, by the view that took its place** (#5644, ADR 0119): the
  *  Inbox became Asks and Updates, and a file that names it opens on Asks, without a word. */
 const RENAMED_VIEWS: Readonly<Record<string, ViewId>> = { inbox: "asks" };
 

@@ -996,7 +996,7 @@ for a run's one notice, in the Inbox's card. Only the wrapper writes `data-scope
 ## The message family
 
 **A message of the Inbox's views is a row of its view, not a boxed card** (`app/src/ui/message/`,
-#5649, spec #5638, ADR 0117 decision 6): `MessageRow`, holding `MessageTop` (its title, the chat
+#5649, spec #5638, ADR 0119 decision 6): `MessageRow`, holding `MessageTop` (its title, the chat
 or the thing, cut with an ellipsis, and its time at the right), `MessageMeta` (what it is and
 where, quiet), `MessageBody` (what it says), `MessageLinks` (its ways out as text links in the
 shared small `ButtonRow`) and `MessageForm` (what answers it in the row: a reply box, an ask's

@@ -212,7 +212,7 @@
   color: var(--needs-you-count-text);
 }
 
-/* **A Notice needs fixing** (ADR 0117, #5645): a dot in the danger colour where a count would
+/* **A Notice needs fixing** (ADR 0119, #5645): a dot in the danger colour where a count would
    be, with no number, ringed in the bar's ground as a count is. */
 [data-scope="activity"][data-part="count"][data-tone="danger"] {
   inset-block-start: var(--space-2);

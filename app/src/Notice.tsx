@@ -563,7 +563,7 @@ function stateSaid({
 }
 
 /**
- * **A Notice as a row of the Notices view** (#5649, ADR 0117 decision 6; a card of the Notices
+ * **A Notice as a row of the Notices view** (#5649, ADR 0119 decision 6; a card of the Notices
  * centre before, #5217): the message family's row, as the view's other lines are. Its tone's
  * glyph in its state's tint; its title, with how long it has stood at the right and its × in that
  * place under the pointer; its state under it; what it says; its ways as text links (its fix,
@@ -643,7 +643,7 @@ function NoticeViewRow({
   const hasLinks =
     goes !== undefined || links.length > 0 || link !== undefined || copy !== undefined;
   return (
-    // **A Notice as a row of its view** (#5649, ADR 0117 decision 6): its tone's glyph in its
+    // **A Notice as a row of its view** (#5649, ADR 0119 decision 6): its tone's glyph in its
     // state's tint; its title with how long it has stood at the right, the × in its place under
     // the pointer; its state; what it says; its ways as links (Go to chat, its fix); a
     // consent's answers and what a way out opened, in the row.

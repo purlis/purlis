@@ -5,4 +5,4 @@
   changes and comes back when it does, and a teammate's change to the project is recorded as
   seen until they change it again. The lines go at once and an Undo stands for a few seconds,
   after a single Dismiss too; only when it goes is anything kept. What you dismiss is kept on
-  this machine through a relaunch and never written into the plane (ADR 0117, #5650).
+  this machine through a relaunch and never written into the plane (ADR 0119, #5650).

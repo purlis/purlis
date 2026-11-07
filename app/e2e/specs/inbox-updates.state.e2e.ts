@@ -16,13 +16,14 @@ import {
   declareAProfile,
   writeReportingShell,
 } from "../harness.js";
-import { closeProject, showView } from "../opening.js";
+import { closeProject, openThroughTheTrustQuestion, showView } from "../opening.js";
 import { endChatById, startAChat, type Started } from "../started.js";
 import { PROJECTS, ask, inFront, openFromTheStrip } from "../switching.js";
 
 /**
- * **Mark all read and Dismiss all act on the Inbox's updates alone, with a real ask waiting**
- * (#1693, D-1693-1), in the built app against the real core, the real doctor and the real hook.
+ * **Mark all read and Dismiss all act on Updates alone, with a real ask waiting in Asks**
+ * (#1693, D-1693-1; ADR 0119), in the built app against the real core, the real doctor and the
+ * real hook.
  *
  * `inbox-updates.e2e.ts` holds the bulk acts against the Notices only: the base run's harness
  * raises no ask. This is the run whose harness asks through `purlis hook` (`wdio.state.conf.ts`),
@@ -30,8 +31,9 @@ import { PROJECTS, ask, inFront, openFromTheStrip } from "../switching.js";
  *
  * - **the update** is the doctor's git-identity finding, the one update the run can make
  *   deterministically (a finished task's update needs a core that dispatched one): the run's own
- *   `.gitconfig` is emptied and a project of the spec's own is opened, whose preflight finds no
- *   identity. The identity is put back at once: a doctor's update is not a live kind
+ *   `.gitconfig` is emptied and a project of the spec's own is opened again, whose preflight finds
+ *   no identity. Opened once before with the identity in place, so the first-open baseline
+ *   (#5648) does not count the finding as seen; the doctor's line is listed under Project. The identity is put back at once: a doctor's update is not a live kind
  *   (`inboxUpdates.ts`), so it stays listed after the finding clears, and the chat below starts
  *   with the run's identity as every other chat does;
  * - **the ask** is the reporting harness's permission ask (`ASKS_A_PERMISSION`). The project
@@ -47,9 +49,11 @@ import { PROJECTS, ask, inFront, openFromTheStrip } from "../switching.js";
  * launch's project in front, and the left side on Chats.
  */
 
-const INBOX = '[role="tabpanel"][data-view="inbox"]';
+const INBOX = '[role="tabpanel"][data-view="updates"]';
+const ASKS = '[role="tabpanel"][data-view="asks"]';
 const UPDATES = `${INBOX} section[aria-label="Updates"]`;
-const ASK = `${INBOX} .inbox-ask[data-source="permission"]`;
+const PROJECT_LIST = `${INBOX} [aria-label="Project, from the project"]`;
+const ASK = `${ASKS} .inbox-ask[data-source="permission"]`;
 const HAND = '[data-testid="title-bar"] [data-testid="needs-you-button"]';
 const WAITS = /^\d+ (thing waits on|things wait on|chat needs|chats need) you$/;
 
@@ -84,11 +88,16 @@ async function updates(): Promise<Update[]> {
   );
 }
 
-/** The permission ask as the Inbox draws it: what it says, and whether its Allow can be pressed. */
+/** The permission ask as Asks draws it: what it says, and whether its Allow can be pressed. Its
+ *  form stands behind its Answer link (#5651), which this opens where it is closed. */
 async function theAsk(): Promise<{ says: string; allow: boolean } | null> {
   return browser.execute((selector: string) => {
     const row = document.querySelector<HTMLElement>(selector);
     if (row === null) return null;
+    const answer = [...row.querySelectorAll<HTMLButtonElement>("button")].find(
+      (one) => one.textContent?.trim() === "Answer" && one.getAttribute("aria-expanded") !== "true",
+    );
+    answer?.click();
     const allow = [...row.querySelectorAll<HTMLButtonElement>("button")].find(
       (one) => one.textContent?.trim() === "Allow",
     );
@@ -130,9 +139,26 @@ async function pressInUpdates(words: string): Promise<void> {
 /** What the Inbox says, for a failure's message. */
 async function inboxSays(): Promise<string> {
   return browser.execute(
-    (inbox: string) => document.querySelector<HTMLElement>(inbox)?.innerText.trim() ?? "(none)",
-    INBOX,
+    (views: string[]) =>
+      views
+        .map((view) => document.querySelector<HTMLElement>(view)?.innerText.trim() ?? "(none)")
+        .join(" | "),
+    [ASKS, INBOX],
   );
+}
+
+/** Opens this spec's project again, which this machine has approved: no trust question. */
+async function openAgain(): Promise<void> {
+  await $(`${PROJECTS} button[aria-label="Open a project…"]`).click();
+  const box = await $('[data-setting="open-by-path"] input');
+  await box.waitForDisplayed({ timeout: 20_000 });
+  await box.addValue(mine);
+  await $('form.by-path button[type="submit"]').click();
+  await openThroughTheTrustQuestion({ ifAsked: true, within: 5_000 });
+  await browser.waitUntil(async () => (await inFront()) === mine, {
+    timeout: 30_000,
+    timeoutMsg: `${mine} never came to the front again`,
+  });
 }
 
 /** What chat `session`'s pane shows. */
@@ -183,7 +209,7 @@ async function theAskStillWaits(after: string, counted: string): Promise<void> {
   expect(await handSays()).toBe(counted);
 }
 
-describe("the Inbox's bulk acts on updates, with an ask waiting", function () {
+describe("Updates' bulk acts, with an ask waiting in Asks", function () {
   this.timeout(240_000);
 
   /** The project the launch opened, which this spec never touches. */
@@ -194,11 +220,16 @@ describe("the Inbox's bulk acts on updates, with an ask waiting", function () {
   before(async () => {
     first = (await ask<string[]>("open_planes"))[0];
 
+    // Opened first with the identity in place, so the first-open baseline holds no finding.
+    await openFromTheStrip(mine);
+    await ask("close_plane", { plane: mine });
     // The update: the preflight is asked when a project opens, and finds no identity.
     writeFileSync(THE_RUNS_GIT_CONFIG, "");
     try {
-      await openFromTheStrip(mine);
-      await showView("Inbox");
+      await openAgain();
+      await showView("Updates");
+      await $(PROJECT_LIST).waitForExist({ timeout: 20_000 });
+      await $(PROJECT_LIST).click();
       await browser
         .waitUntil(
           async () =>
@@ -227,7 +258,7 @@ describe("the Inbox's bulk acts on updates, with an ask waiting", function () {
     await $(`[data-testid="pane"][data-session="${session}"] .xterm-helper-textarea`).addValue(
       "\n",
     );
-    await showView("Inbox");
+    await showView("Asks");
     await browser
       .waitUntil(async () => (await theAsk())?.says.includes(ASKED_COMMAND) ?? false, {
         timeout: 30_000,
@@ -235,7 +266,7 @@ describe("the Inbox's bulk acts on updates, with an ask waiting", function () {
       })
       .catch(async () => {
         throw new Error(
-          `chat ${session}'s ask never stood in the Inbox; it says: ${await inboxSays()}`,
+          `chat ${session}'s ask never stood in Asks; they say: ${await inboxSays()}`,
         );
       });
   });
@@ -267,7 +298,7 @@ describe("the Inbox's bulk acts on updates, with an ask waiting", function () {
   });
 
   it("marks every update read and puts them away, and the ask still waits to be answered", async () => {
-    await showView("Inbox");
+    await showView("Updates");
     let counted = "";
     await browser.waitUntil(
       async () => {
@@ -289,12 +320,13 @@ describe("the Inbox's bulk acts on updates, with an ask waiting", function () {
     await theAskStillWaits("Mark all read", counted);
 
     await pressInUpdates("Dismiss all");
-    await browser.waitUntil(async () => !(await $(UPDATES).isExisting()), {
+    await browser.waitUntil(async () => (await updates()).length === 0, {
       timeout: 20_000,
       timeoutMsg: "Dismiss all left the updates listed",
     });
     await theAskStillWaits("Dismiss all", counted);
 
+    await showView("Asks");
     // Answered now, and only now: the chat carrying on is the proof that neither bulk act
     // answered it. An Allow waits for its row to settle (`SETTLE_MS`, 1.5 s): the person reads
     // the ask before allowing it, so a press too soon after the updates went is pressed again.
@@ -305,7 +337,18 @@ describe("the Inbox's bulk acts on updates, with an ask waiting", function () {
           if ((await paneSays(session)).includes(INBOX_ALLOWED)) return true;
           await browser.pause(2_000);
           await browser.execute((selector: string) => {
-            [...(document.querySelector(selector)?.querySelectorAll<HTMLElement>("button") ?? [])]
+            const buttons = () => [
+              ...(document.querySelector(selector)?.querySelectorAll<HTMLElement>("button") ?? []),
+            ];
+            // Its form stands behind its Answer link (#5651).
+            buttons()
+              .find(
+                (one) =>
+                  one.textContent?.trim() === "Answer" &&
+                  one.getAttribute("aria-expanded") !== "true",
+              )
+              ?.click();
+            buttons()
               .find((one) => one.textContent?.trim() === "Allow")
               ?.click();
           }, ASK);
@@ -320,7 +363,7 @@ describe("the Inbox's bulk acts on updates, with an ask waiting", function () {
       });
     await browser.waitUntil(async () => (await theAsk()) === null, {
       timeout: 20_000,
-      timeoutMsg: "the answered ask stayed in the Inbox",
+      timeoutMsg: "the answered ask stayed in Asks",
     });
   });
 });

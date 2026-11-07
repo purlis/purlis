@@ -12,7 +12,7 @@ import { forgetProjectViews } from "./projectViews";
 import type { InboxUpdate } from "./bindings";
 
 /**
- * **Updates: Mine and Project** (#5646, ADR 0117): a switch of two lists. Mine (From your chats)
+ * **Updates: Mine and Project** (#5646, ADR 0119): a switch of two lists. Mine (From your chats)
  * holds what the person's own chats and tasks did; Project (From the project) holds what is the
  * project's, the teammate Notices among it. It opens on Mine, and keeps the scope switch.
  */

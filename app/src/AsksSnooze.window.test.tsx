@@ -18,7 +18,7 @@ import { forgetInbox } from "./inboxRules";
 import { forgetProjectViews } from "./projectViews";
 
 /**
- * **Snooze all on Asks** (#5647, spec #5638, ADR 0117), on the real window with the core
+ * **Snooze all on Asks** (#5647, spec #5638, ADR 0119), on the real window with the core
  * mocked: asked once in a line inside the view, it puts every listed chat's asks away and the
  * ✋ drops them; Asks says how many are snoozed with Show them now; an Undo stands a few
  * seconds; a chat comes back with all its asks when it raises a new one; and the Chats view,

@@ -33,7 +33,7 @@ export type UpdateRow = {
   go?: () => void;
   /** A sentence of the source's own under it, before its answers. */
   more?: string;
-  /** **What it opens in place to show** (#5651, ADR 0117 decision 8): a finished task's report,
+  /** **What it opens in place to show** (#5651, ADR 0119 decision 8): a finished task's report,
    *  or why it failed, in the task's words. Read opens it. */
   report?: string;
   /** Mark it read: done once it is opened in place. */
@@ -238,7 +238,7 @@ function UpdateItem({ row, above }: { row: UpdateRow; above: string }) {
   const kind = kindOfUpdate(update.kind);
   return (
     <Stop id={key}>
-      {/* **A line of Mine or Project** (#5649, ADR 0117 decision 6): its kind's glyph in its
+      {/* **A line of Mine or Project** (#5649, ADR 0119 decision 6): its kind's glyph in its
           state's tint; whose it is, or what happened where it is no chat's, with its time at the
           right, the × in its place under the pointer; its kind; what happened; Go to chat. */}
       <MessageRow
@@ -298,7 +298,7 @@ function UpdateItem({ row, above }: { row: UpdateRow; above: string }) {
         )}
         {(report !== undefined || go !== undefined) && (
           <MessageLinks>
-            {/* **Read opens it in place** (#5651, ADR 0117 decision 8), and reads Hide while it
+            {/* **Read opens it in place** (#5651, ADR 0119 decision 8), and reads Hide while it
                 is open; Go to chat still goes to the chat. */}
             {report !== undefined && (
               <Stop id={`${key}:read`}>

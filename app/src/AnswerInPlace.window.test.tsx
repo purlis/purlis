@@ -16,7 +16,7 @@ import { SETTLE_MS } from "./TaskBlocksNotice";
 import { showUpdates } from "./test-strips";
 
 /**
- * **The Answer link on an ask, and a result read in place** (#5651, spec #5638, ADR 0117
+ * **The Answer link on an ask, and a result read in place** (#5651, spec #5638, ADR 0119
  * decisions 7 and 8), on the real window with the core mocked. An ask the window can answer
  * shows Answer, which opens its form in the row with the keyboard in it and reads Cancel while
  * it is open; an ask only its own place can answer shows Go to chat alone. Answering clears

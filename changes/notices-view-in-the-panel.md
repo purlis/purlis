@@ -7,4 +7,4 @@
   a number. The status line's Notices item and the palette's Show the Notices view open it.
   Every doctor finding stands together as one line, "Doctor: N findings", that opens to the list,
   with Fix all for the fixes one press may run, and Updates lists no Notices or doctor findings
-  any more (ADR 0117, #5645).
+  any more (ADR 0119, #5645).

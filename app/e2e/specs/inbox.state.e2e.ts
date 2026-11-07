@@ -22,7 +22,7 @@ import { ASKED_COMMAND, ASKS_A_PERMISSION, INBOX_ALLOWED } from "../harness.js";
 const HAND = '[data-testid="title-bar"] [data-testid="needs-you-button"]';
 
 /** The Inbox view, wherever the right side's bar draws it. */
-const INBOX = '[role="tabpanel"][data-view="inbox"]';
+const INBOX = '[role="tabpanel"][data-view="asks"]';
 
 /** The permission ask the harness raised, as the Inbox draws it. */
 const ASK = `${INBOX} .inbox-ask[data-source="permission"]`;
@@ -92,10 +92,13 @@ describe("the Inbox", () => {
               ? group.getBoundingClientRect().right - view.getBoundingClientRect().right
               : Number.NaN,
           primary: px(".inbox-primary"),
-          meta: px(".inbox-meta"),
+          meta: px('[data-scope="message"][data-part="meta"]'),
           heavy: weight(".inbox-primary"),
-          light: weight(".inbox-meta"),
-          mark: item?.querySelector(".inbox-kind svg")?.getBoundingClientRect().width ?? 0,
+          light: weight('[data-scope="message"][data-part="meta"]'),
+          mark:
+            item
+              ?.querySelector('[data-scope="message"][data-part="mark"] svg')
+              ?.getBoundingClientRect().width ?? 0,
         };
       },
       INBOX,
@@ -111,6 +114,8 @@ describe("the Inbox", () => {
 
     // An Allow waits for its row to settle (`SETTLE_MS`, 1.5 s, #1695): the person reads the
     // ask before allowing it, or the press allows nothing.
+    // Its options stand behind its Answer link (#5651, ADR 0119).
+    await ask.$("button=Answer").click();
     await pressGrant(await ask.$("button=Allow"));
 
     // The hook printed the window's decision, and the harness went on past it.

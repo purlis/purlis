@@ -77,7 +77,7 @@ export const InAPane: Story = {
   },
 };
 
-/** The Inbox's list: trouble first, then news, each a card of its own (#5217). */
+/** The Inbox's list: trouble first, then news, each a row of the view (#5217, #5649). */
 export const InTheInbox: Story = {
   render: () => (
     <div
@@ -104,13 +104,13 @@ export const InTheInbox: Story = {
   ),
   play: async ({ canvas, userEvent }) => {
     await waitFor(() => expect(canvas.getAllByRole("status")).toHaveLength(2));
-    // Trouble is listed first, whatever order the two were written in: its × in its head, then
-    // its answer under its words.
-    await userEvent.tab();
-    await expect(canvas.getByRole("button", { name: "Dismiss" })).toHaveFocus();
-    expectFocusInSight();
+    // Trouble is listed first, whatever order the two were written in: its answer under its
+    // words, then its ×, last as in every message row (#5649).
     await userEvent.tab();
     await expect(canvas.getByRole("button", { name: "Try again" })).toHaveFocus();
+    expectFocusInSight();
+    await userEvent.tab();
+    await expect(canvas.getByRole("button", { name: "Dismiss" })).toHaveFocus();
     expectFocusInSight();
     // The picture is of the list at rest, never of a way the keyboard is on.
     (document.activeElement as HTMLElement).blur();

@@ -6,4 +6,4 @@
   open; Enter in the box sends. A task's question is answered there too, with no dialog. A prompt
   in a chat's terminal and a browser waiting for a sign-in show Go to chat alone. A line under
   Mine has Read, which opens its report or the reason it failed in place and marks it read
-  (ADR 0117, #5651).
+  (ADR 0119, #5651).

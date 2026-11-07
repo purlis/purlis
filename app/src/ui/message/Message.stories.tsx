@@ -421,7 +421,7 @@ function ResultReadHere() {
   );
 }
 
-/** **A result read in place** (#5651, ADR 0117 decision 8): Read opens its report or why it
+/** **A result read in place** (#5651, ADR 0119 decision 8): Read opens its report or why it
  *  failed, marks it read, and reads Hide while it is open. */
 export const ResultReadInPlace: Story = {
   render: () => <ResultReadHere />,

@@ -1786,7 +1786,7 @@ describe("the right side's activity bar", () => {
     core();
     render(<App />);
     const asks = await screen.findByRole("tabpanel", { name: "Asks" });
-    // Asks has its scope switch (ADR 0117)…
+    // Asks has its scope switch (ADR 0119)…
     expect(await within(asks).findByLabelText(SCOPE_LABEL)).toBeInTheDocument();
 
     await userEvent.click(lowerTab("Notices"));
@@ -1798,7 +1798,7 @@ describe("the right side's activity bar", () => {
       }),
     ).toBeInTheDocument();
     expect(within(notices).queryByText("The sandbox now allows api.example.com")).toBeNull();
-    // …and Notices none: they are always the project in front's (ADR 0117).
+    // …and Notices none: they are always the project in front's (ADR 0119).
     expect(within(notices).queryByLabelText(SCOPE_LABEL)).toBeNull();
 
     await userEvent.click(tab("Updates"));

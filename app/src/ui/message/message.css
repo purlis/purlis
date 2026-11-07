@@ -1,7 +1,7 @@
 /* Copyright 2026 Purlis */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* **The message family's default** (#5649, spec #5638, ADR 0117 decision 6; ADR 0103, ADR 0104):
+/* **The message family's default** (#5649, spec #5638, ADR 0119 decision 6; ADR 0103, ADR 0104):
    one message of the Inbox's views as a row of its view (`ui/message/Message.tsx`), keyed on the
    wrapper's attributes alone; `purlis_core::theme::parts` holds a copy of its colours.
 

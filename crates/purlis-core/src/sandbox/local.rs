@@ -935,7 +935,7 @@ pub fn told_any(root: &Path) -> bool {
         || !held.browser_sites_seen.is_empty()
 }
 
-/// **The first-open baseline** (#5648, ADR 0117): the project's hosts and Internet access
+/// **The first-open baseline** (#5648, ADR 0119): the project's hosts and Internet access
 /// presets as they stand count as told, so a fresh clone does not tell a teammate's past
 /// change as new; a change after this is told. Neither grants anything: what a chat reaches is
 /// the committed file's either way. Browser sites and dispatch grants are not touched, since

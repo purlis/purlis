@@ -10984,7 +10984,7 @@ export const PlaneView = memo(function PlaneView({
     settle: settleUpdates,
     setAside,
   } = useInboxUpdates(plane, derivedUpdates);
-  /** **The first-open baseline** (#5648, ADR 0117): a fresh clone opens quiet. */
+  /** **The first-open baseline** (#5648, ADR 0119): a fresh clone opens quiet. */
   const firstOpen = useFirstOpen({ plane, report: doctor.report, setAside, dismiss });
   /** **Updates' and the Notices' Dismiss, held for their Undo** (#5650): each view's own. */
   const updatesHold = useDismissHold();
@@ -11276,7 +11276,7 @@ export const PlaneView = memo(function PlaneView({
     ...(alerts?.reading.at === "reading" ? ["Reading the alerts…"] : []),
   ];
   /**
-   * **What teammates changed in the project** (#5646, ADR 0117): its hosts and browser sites,
+   * **What teammates changed in the project** (#5646, ADR 0119): its hosts and browser sites,
    * its Internet access presets and its dispatch grants. Listed under Updates' Project, never
    * among the Notices and never counted: each is told once, and asks the person nothing that
    * blocks a chat of theirs. purlis has no Notice of the purlis version a project expects yet.
@@ -11972,7 +11972,7 @@ export const PlaneView = memo(function PlaneView({
                       tone="needs-you"
                     />
                   ),
-                  // The unread lines From your chats (#5646, ADR 0117): the bell's count, in the plain
+                  // The unread lines From your chats (#5646, ADR 0119): the bell's count, in the plain
                   // colours, since a result is news of the person's own work and asks nothing.
                   // Project is never counted.
                   updates: (

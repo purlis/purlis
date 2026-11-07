@@ -13,7 +13,7 @@ import { forgetProjectViews } from "./projectViews";
 import type { InboxUpdate, Shown } from "./bindings";
 
 /**
- * **Messages are rows of their view, without borders** (#5649, spec #5638, ADR 0117 decision 6):
+ * **Messages are rows of their view, without borders** (#5649, spec #5638, ADR 0119 decision 6):
  * Asks, Mine, Project and Notices draw every line with the one row of the message family, never
  * a boxed card. Each row says its state by a tinted glyph and its words, has its title and its
  * time at the right, and, where it can be put away, a × that takes the time's place under the

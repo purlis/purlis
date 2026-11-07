@@ -572,7 +572,7 @@ export const DOCTOR_LINE = `${DOCTOR_FINDING}:*`;
 const findingsSaid = (count: number) => `Doctor: ${count} ${count === 1 ? "finding" : "findings"}`;
 
 /**
- * **Every doctor finding, as one Notice line** (#5645, ADR 0117): "Doctor: N findings", in the
+ * **Every doctor finding, as one Notice line** (#5645, ADR 0119): "Doctor: N findings", in the
  * Notices view, from the doctor the window already runs. It opens to the list (Show findings),
  * each finding as the Doctor dialog's row says it. A finding of {@link FINDINGS_AS_NOTICES}
  * (D-1301-1) carries its Fix there, a form for a fix that takes input (#1250); **Fix all**

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * **The message family** (#5649, spec #5638, ADR 0117 decision 6): one message of the Inbox's
+ * **The message family** (#5649, spec #5638, ADR 0119 decision 6): one message of the Inbox's
  * views, an ask, a line of Mine or Project, a Notice, drawn as a row of its view rather than a
  * boxed card. The look is the variants prototype's variant A
  * (`app/src/inbox-variants.prototype.html`, which lives on the branch `prototype/inbox` and not in

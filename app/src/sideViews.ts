@@ -91,14 +91,14 @@ export const drawnOnlyPresent = (view: string): boolean =>
   isPanelView(view) || (PREVIEWED_VIEWS as readonly string[]).includes(view);
 
 /** The right sidebar's own views, in its bar's order (#1678, #1738): the attention region's.
- *  Asks is first (#1692, I-2; ADR 0117, #5644): what waits on the person heads the "for you"
+ *  Asks is first (#1692, I-2; ADR 0119, #5644): what waits on the person heads the "for you"
  *  side, and the side opens on it. Updates follows it: the updates the Inbox listed after its
  *  asks. */
 export const RIGHT_SIDEBAR_VIEWS: readonly OwnViewId[] = ["asks", "updates", "personas", "vaults"];
 
 /** The right side's views in its half of the Panel, in its Lower icons' order (#1738, P-2):
  *  what you keep, out of the sidebar so it never hides what is asking for you. Notices first
- *  (ADR 0117, #5645): the project's standing faults, read under Asks or Updates rather than in
+ *  (ADR 0119, #5645): the project's standing faults, read under Asks or Updates rather than in
  *  their place. The half still opens on Memory (P-14, `regions.ts`). */
 export const RIGHT_HALF_VIEWS: readonly OwnViewId[] = ["notices", "memory", "todos", "sessions"];
 

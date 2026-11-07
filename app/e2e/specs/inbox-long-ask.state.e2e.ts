@@ -22,7 +22,7 @@ import { ASKS_A_LONG_PERMISSION, INBOX_ALLOWED, LONG_ASKED_COMMAND } from "../ha
  */
 
 const HAND = '[data-testid="title-bar"] [data-testid="needs-you-button"]';
-const INBOX = '[role="tabpanel"][data-view="inbox"]';
+const INBOX = '[role="tabpanel"][data-view="asks"]';
 const ASK = `${INBOX} .inbox-ask[data-source="permission"]`;
 
 /** What the engine drew of the ask's line, and what scrolls sideways around it. */
@@ -157,6 +157,8 @@ describe("a long ask in the Inbox", () => {
 
     // Drawn whole, word for word, so the core offers Allow on it (`hooked::shown_in_full`).
     // It waits for its row to settle (`SETTLE_MS`, 1.5 s, #1695) before it allows anything.
+    // Its options stand behind its Answer link (#5651, ADR 0119).
+    await ask.$("button=Answer").click();
     await pressGrant(await ask.$("button=Allow"));
     await browser.waitUntil(
       async () => (await (await pane.$(".xterm-rows")).getText()).includes(INBOX_ALLOWED),
