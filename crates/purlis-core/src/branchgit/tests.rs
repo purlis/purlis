@@ -97,6 +97,92 @@ fn a_literal_cd_into_the_branch_folder_is_followed() {
     assert_eq!(l.ask(&back, &l.folder), None, "{back}");
 }
 
+/// A `cd` that fails leaves the shell where it was, and a command after a `;` or a new line runs
+/// all the same: so git there is judged in both folders, the one the `cd` names and the one it
+/// left. Only `&&` all the way from the `cd` to the git says the `cd` was made.
+#[test]
+fn git_after_a_cd_that_may_have_failed_is_judged_in_the_folder_the_shell_was_in_too() {
+    use crate::piececlaim::Act;
+    let l = Layout::new();
+    let elsewhere = l.root.join("not-there");
+    let elsewhere = elsewhere.display();
+    for cmd in [
+        format!("cd {elsewhere}; git add -A"),
+        format!("cd {elsewhere}\ngit commit -m x"),
+        format!("cd {elsewhere} && ls; git commit -m x"),
+        format!("cd {elsewhere}; cd {}; git add -A", l.clone.display()),
+    ] {
+        assert!(l.ask(&cmd, &l.folder).is_some(), "{cmd:?} was let through");
+    }
+    assert_eq!(
+        l.write(&format!("cd {elsewhere}; git push"), &l.folder),
+        Some(("push".to_owned(), Act::Push))
+    );
+    // Run only once the `cd` is made: the git is where the `cd` went.
+    let made = format!("cd {elsewhere} && git add -A");
+    assert_eq!(l.ask(&made, &l.folder), None, "{made}");
+}
+
+/// After a `cd` that may have failed, the git may run in either folder: each is judged, and a
+/// branch folder's claim is asked of every one it may be.
+#[test]
+fn git_that_may_run_in_either_of_two_branch_folders_is_judged_in_both() {
+    use crate::piececlaim::Act;
+    let l = Layout::new();
+    let cmd = format!("cd {}; git commit -m x", l.second.display());
+
+    let writes = l.writes(&cmd, &l.folder);
+
+    assert_eq!(
+        writes,
+        [
+            ("commit".to_owned(), Act::Commit, l.second.clone()),
+            ("commit".to_owned(), Act::Commit, l.folder.clone()),
+        ]
+    );
+}
+
+/// A long line is read whole where its moves leave the shell in few folders: a chain joined by
+/// `&&` alone, which is certain, and the same move made again and again.
+#[test]
+fn a_long_line_of_moves_that_leave_few_folders_is_read_whole() {
+    use crate::piececlaim::Act;
+    let l = Layout::new();
+    let chain = format!(
+        "cd {} && cd workspaces && cd ide && cd .worktrees && cd purlis && cd guard-port && \
+         cd src && cd .. && cd src && cd .. && cd src && cd .. && git commit -m x",
+        l.root.display()
+    );
+    assert_eq!(
+        l.write(&chain, &l.theirs),
+        Some(("commit".to_owned(), Act::Commit)),
+        "{chain}"
+    );
+    let again = format!("cd {}; ", l.folder.display()).repeat(12) + "git commit -m x";
+    assert_eq!(
+        l.write(&again, &l.root),
+        Some(("commit".to_owned(), Act::Commit)),
+        "{again}"
+    );
+}
+
+/// A line of many moves that may each have failed leaves the shell in too many folders to
+/// follow: it is left to the sandbox, and read in time that grows with its length alone.
+#[test]
+fn a_line_of_many_moves_that_may_each_fail_is_left_to_the_sandbox() {
+    let l = Layout::new();
+    let many: String = (0..20).map(|n| format!("cd d{n}; ")).collect();
+    let cmd = format!("{many}cd {}; git commit -m x", l.folder.display());
+
+    assert_eq!(l.writes(&cmd, &l.root), []);
+    let long = "cd d && ".repeat(5000) + "git commit -m x";
+    let started = std::time::Instant::now();
+    assert_eq!(l.writes(&long, &l.root), []);
+    let long_and_then = long.replace("git commit", "true; git commit");
+    assert_eq!(l.writes(&long_and_then, &l.root), []);
+    assert!(started.elapsed() < std::time::Duration::from_secs(5));
+}
+
 /// The review of #3841: a `cd` in a subshell or a pipeline does not move the shell the next
 /// command runs in, so it is never carried over to it.
 #[test]

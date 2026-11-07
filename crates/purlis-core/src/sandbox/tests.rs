@@ -3341,6 +3341,23 @@ fn a_chat_in_a_branch_folder_purlis_cut_leaves_its_clones_git_folder_to_the_app(
     }
 }
 
+/// ADR 0114: a clone made since lives in `repos/<repo>`, and its branch folders are cut in the
+/// same `.worktrees/<repo>/<piece>`, so its git folder is held as an older clone's is.
+#[test]
+fn a_chat_in_a_branch_folder_of_a_clone_in_repos_leaves_its_clones_git_folder_to_the_app() {
+    let plane = plane_saying(ON);
+    let root = plane.path().canonicalize().expect("real");
+    let workspace = root.join("workspaces/w");
+    let piece = workspace.join(".worktrees/repo/p1");
+    let clone = workspace.join("repos/repo");
+    std::fs::create_dir_all(clone.join(".git")).unwrap();
+    std::fs::create_dir_all(&piece).unwrap();
+    let held = clone.join(".git");
+
+    let settings = claude_settings_in(&root, &piece);
+    assert!(claude_holds(&settings, &held));
+}
+
 #[test]
 fn a_chat_anywhere_in_the_project_leaves_the_project_roots_git_folder_to_the_app() {
     let plane = plane_saying(ON);
@@ -5738,6 +5755,37 @@ fn a_missing_folder_that_differs_from_the_ground_only_in_case_covers_it_where_ca
         "../newer",
     )];
     assert_eq!(covering(&denied, &ground), None);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_missing_folder_the_disk_takes_for_the_grounds_own_name_covers_it_where_case_folds() {
+    // A name a case-folding volume treats as the same as the ground's is the same folder there,
+    // spelled however it is spelled.
+    let base = tempfile::tempdir().expect("a base");
+    let base = base.path().canonicalize().expect("the base");
+    std::fs::create_dir_all(base.join("plane")).expect("the plane");
+    let folds = std::fs::metadata(base.join("PLANE")).is_ok();
+    let ground = [base.join("plane/session/repo")];
+    let alike: Vec<String> = ["session", "SESSION"]
+        .iter()
+        .flat_map(|name| crate::casefold::spelled_alike(name))
+        .collect();
+    assert!(!alike.is_empty(), "no other spelling to try");
+    for written in alike {
+        let written = format!("plane/{written}");
+        let denied = [later_code(
+            base.join(&written).to_str().expect("a path"),
+            "/f",
+            "./x",
+        )];
+        assert_eq!(
+            covering(&denied, &ground).is_some(),
+            folds,
+            "{}",
+            written.escape_default()
+        );
+    }
 }
 
 #[cfg(target_os = "macos")]

@@ -1409,10 +1409,9 @@ pub struct Denied {
 /// A worktree the person made elsewhere keeps its own git, since the app commits for none of those.
 fn clones_git_held(root: &Path, cwd: Option<&Path>) -> Option<Denial> {
     let here = crate::worktree::locate(root, cwd?)?;
-    let dot_git = root
-        .join(WORKSPACES)
-        .join(&here.workspace)
-        .join(&here.repo)
+    // In either layout (ADR 0114): `repos/<repo>` or the workspace's own `<repo>`.
+    let dot_git = crate::repofolder::folder(root, &here.workspace, &here.repo)
+        .ok()?
         .join(".git");
     // The one shape the app keeps a branch folder's clone in: it updates no other.
     crate::worktree::is_own_git_dir(&dot_git).then_some(())?;
@@ -5783,9 +5782,9 @@ fn spellings(path: &Path) -> Vec<PathBuf> {
     out
 }
 
-/// `path` with every part lower-cased: what a volume that folds case compares.
+/// `path` as a volume that folds case compares it ([`crate::casefold::folded`]).
 fn folded(path: &Path) -> PathBuf {
-    PathBuf::from(path.to_string_lossy().to_lowercase())
+    PathBuf::from(crate::casefold::folded(&path.to_string_lossy()))
 }
 
 /// Whether the volume `path` is on folds case (#1356): whether the deepest folder of it that

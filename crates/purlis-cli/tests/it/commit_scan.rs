@@ -589,6 +589,29 @@ fn a_secret_added_and_removed_again_before_the_push_is_still_refused() {
     assert_eq!(chat.remote_main(&origin), published);
 }
 
+/// What the remote has is asked of the remote: the clone's own refs saying it has everything
+/// take nothing out of what the push is scanned for.
+#[test]
+fn a_secret_is_refused_before_push_whatever_the_clones_own_refs_say_the_remote_has() {
+    let chat = Chat::new();
+    let origin = chat.with_origin();
+    let published = chat.remote_main(&origin);
+    std::fs::write(chat.repo.join("deploy.sh"), format!("TOKEN={}\n", key())).unwrap();
+    chat.operator_git(&["add", "deploy.sh"]);
+    chat.operator_git(&["commit", "-q", "-m", "oops"]);
+    chat.operator_git(&["rm", "-q", "deploy.sh"]);
+    chat.operator_git(&["commit", "-q", "-m", "gone again"]);
+    let head = chat.head();
+    chat.operator_git(&["update-ref", "refs/remotes/origin/main", head.trim()]);
+
+    let ran = chat.git(&["push", "origin", "main"]);
+
+    assert!(!ran.status.success(), "{ran:?}");
+    assert_eq!(chat.remote_main(&origin), published, "nothing was pushed");
+    let said = String::from_utf8_lossy(&ran.stderr);
+    assert!(said.contains("deploy.sh:1"), "{said}");
+}
+
 #[test]
 fn a_clean_push_goes_through_and_the_repositorys_own_pre_push_reads_what_git_sent() {
     let chat = Chat::new();
