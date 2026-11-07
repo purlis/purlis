@@ -4330,8 +4330,9 @@ pub fn answered(held: &crate::planes::Held, browse: &BrowseAsk) -> Answer {
     if let Browsing::LogIn { login, .. } = &browse.asked {
         let ran = !held.browsers().login_never_ran(browse.chat, login);
         let persona = held.chats().secret_grants_of(browse.chat);
+        let chat = held.chats().id_of(browse.chat);
         held.login_grants()
-            .answered(browse.chat, persona.as_deref(), login, ran);
+            .answered(browse.chat, chat.as_deref(), persona.as_deref(), login, ran);
     }
     // The sites the browser held back wait in the registry (#2018).
     if let Answer::Browsed { browsed, .. } = &answer
@@ -4635,7 +4636,11 @@ fn taken_as_read<T>(
     if read.is_err() && waits_on_its_secret(&held.secret_asks().open(), session, tool) {
         return read;
     }
-    match held.login_grants().take(session, persona, name) {
+    let chat = held.chats().id_of(session);
+    match held
+        .login_grants()
+        .take(session, chat.as_deref(), persona, name)
+    {
         Some(taken) if taken == *tool => read,
         Some(_) => Err(format!("login {name} changed, so nothing was filled")),
         None => Err(format!(
@@ -4677,7 +4682,10 @@ fn origin_asked(
             .ok()
             .map(|(origin, _)| origin),
         None => {
-            let tool = held.login_grants().granted(browse.chat, persona, login)?;
+            let chat = held.chats().id_of(browse.chat);
+            let tool = held
+                .login_grants()
+                .granted(browse.chat, chat.as_deref(), persona, login)?;
             purlis_core::sandbox::tools::login::origin_of(&tool.login?.url).ok()
         }
     }
@@ -4724,9 +4732,10 @@ fn still_the_login(
                 })
         }
     };
+    let chat = held.chats().id_of(browse.chat);
     let granted = held
         .login_grants()
-        .granted(browse.chat, Some(&persona), login);
+        .granted(browse.chat, chat.as_deref(), Some(&persona), login);
     let refused = purlis_core::sandbox::policy::Locks::of(held.root())
         .refuses_tool(&persona, login)
         .is_some()
@@ -4785,9 +4794,10 @@ fn login_of(held: &crate::planes::Held, session: u32, name: &str) -> ReadLogin {
     // decision of 2026-11-06); its vaults stay the persona it was started as.
     let grants = held.chats().secret_grants_of(session);
     // One the person allowed from its notice (#4595): nothing of it is kept, on disk or sealed.
-    if let Some(tool) = held
-        .login_grants()
-        .granted(session, grants.as_deref(), name)
+    let chat = held.chats().id_of(session);
+    if let Some(tool) =
+        held.login_grants()
+            .granted(session, chat.as_deref(), grants.as_deref(), name)
     {
         // Policy changed since the press holds a grant too.
         let persona = grants.as_deref().unwrap_or_default();
@@ -4942,7 +4952,8 @@ fn pool_login_of(
     asker.confines = None;
     // One the person allowed from its notice still needs its opt-in here (#4595, ADR 0089).
     let grants = held.login_grants();
-    let granted = grants.granted(session, asker.persona.as_deref(), name);
+    let chat = held.chats().id_of(session);
+    let granted = grants.granted(session, chat.as_deref(), asker.persona.as_deref(), name);
     let identity = match &granted {
         Some(tool) => purlis_core::secrets::brokered::granted_login_identity(&asker, tool)?,
         None => purlis_core::secrets::brokered::login_allowed(&asker, name, true)?,

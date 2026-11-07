@@ -17,9 +17,17 @@ const VAULTS: &str = r#"{"vaults":{
     "prod":{"provider":"plain-file","config":{"file":"p.json"},"persona":"ops"}
 }}"#;
 
+/// What vault qa holds: each key a test suggests.
+const QA_HOLDS: &str = r#"{"username":"u","password":"p"}"#;
+
+/// The id of chat 7, the chat the tests raise their logins for.
+const CHAT_7: Option<&str> = Some("01JX0000000000000000000007");
+
 fn project(file: &str) -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("a folder");
     std::fs::write(dir.path().join("vaults.json"), VAULTS).expect("a registry");
+    // Vault qa holds every key the tests suggest, so no notice says one is missing.
+    std::fs::write(dir.path().join("q.json"), QA_HOLDS).expect("vault qa");
     std::fs::write(purlis_core::names::manifest(dir.path()), file).expect("a project file");
     dir
 }
@@ -69,6 +77,7 @@ fn raised_finding(
         .raise(LoginWait {
             id: 0,
             session: 7,
+            chat: CHAT_7.map(str::to_owned),
             proposal: judged.proposal,
             since: 1,
             vault_too: judged.vault_too,
@@ -122,7 +131,7 @@ fn file_of(root: &Path) -> String {
 }
 
 fn tool_of(grants: &Grants, name: &str) -> Option<Tool> {
-    grants.granted(7, Some("qa"), name)
+    grants.granted(7, CHAT_7, Some("qa"), name)
 }
 
 #[test]
@@ -147,9 +156,9 @@ fn allow_once_fills_what_was_confirmed_writes_nothing_and_goes_with_its_read() {
         tool.login.expect("a login").origin,
         "https://shop.example.test"
     );
-    assert!(grants.take(7, Some("qa"), "shop-login").is_some());
+    assert!(grants.take(7, CHAT_7, Some("qa"), "shop-login").is_some());
     assert!(tool_of(&grants, "shop-login").is_none(), "used once");
-    assert!(grants.take(7, Some("qa"), "shop-login").is_none());
+    assert!(grants.take(7, CHAT_7, Some("qa"), "shop-login").is_none());
 }
 
 #[test]
@@ -165,15 +174,43 @@ fn allow_for_this_chat_stays_for_that_chat_and_persona_alone() {
         &press(id, Press::Chat, &proposal.digest()),
     )
     .expect("allowed");
-    assert!(grants.take(7, Some("qa"), "shop-login").is_some());
+    assert!(grants.take(7, CHAT_7, Some("qa"), "shop-login").is_some());
     assert!(tool_of(&grants, "shop-login").is_some());
-    assert!(grants.granted(8, Some("qa"), "shop-login").is_none());
-    assert!(grants.granted(7, Some("ops"), "shop-login").is_none());
+    assert!(grants.granted(8, None, Some("qa"), "shop-login").is_none());
+    assert!(
+        grants
+            .granted(7, CHAT_7, Some("ops"), "shop-login")
+            .is_none()
+    );
     grants.forget(7);
     assert!(
         tool_of(&grants, "shop-login").is_none(),
         "a later chat dealt 7 gets nothing"
     );
+}
+
+#[test]
+fn a_grant_is_never_read_by_another_chat_dealt_its_number() {
+    let dir = project("");
+    let grants = Grants::default();
+    let (id, proposal, _heard) = raised(dir.path(), &grants, "https://shop.example.test/login");
+    let audited = Audited::default();
+    answered(
+        dir.path(),
+        &grants,
+        &audited,
+        &press(id, Press::Chat, &proposal.digest()),
+    )
+    .expect("allowed");
+    let another = Some("01JX0000000000000000000008");
+    assert!(
+        grants
+            .granted(7, another, Some("qa"), "shop-login")
+            .is_none()
+    );
+    assert!(grants.take(7, another, Some("qa"), "shop-login").is_none());
+    assert!(grants.granted(7, None, Some("qa"), "shop-login").is_none());
+    assert!(tool_of(&grants, "shop-login").is_some(), "still chat 7's");
 }
 
 #[test]
@@ -217,6 +254,7 @@ fn a_second_call_never_replaces_the_proposal_shown() {
     let refused = grants.raise(LoginWait {
         id: 0,
         session: 7,
+        chat: CHAT_7.map(str::to_owned),
         proposal: other.proposal,
         since: 2,
         vault_too: false,
@@ -302,6 +340,7 @@ fn a_warning_that_came_up_while_the_notice_was_drawn_is_drawn_before_a_press_cou
         .raise(LoginWait {
             id: 0,
             session: 9,
+            chat: None,
             proposal: judged(
                 dir.path(),
                 "qa",
@@ -318,7 +357,7 @@ fn a_warning_that_came_up_while_the_notice_was_drawn_is_drawn_before_a_press_cou
         })
         .expect("raised");
     assert!(grants.allow(other_id, "qa", other, true));
-    grants.take(9, Some("qa"), "other");
+    grants.take(9, None, Some("qa"), "other");
     let audited = Audited::default();
     let drawn = answered(
         dir.path(),
@@ -361,6 +400,43 @@ fn a_vault_that_isnt_the_personas_is_said() {
             .iter()
             .any(|one| matches!(one, loginask::Warning::NotItsVault { .. }))
     );
+}
+
+#[test]
+fn a_key_the_vault_has_nothing_under_is_said_on_the_notice() {
+    let dir = project("");
+    let wrong = Suggested {
+        key: "pasword".to_owned(),
+        ..suggested("https://shop.example.test/")
+    };
+    let judged = judged(dir.path(), "qa", "shop-login", &wrong, &[]).expect("judged");
+    let missing = loginask::Warning::NotInVault {
+        vault: "qa".to_owned(),
+        keys: vec!["pasword".to_owned()],
+    };
+    assert!(
+        judged.proposal.warnings.contains(&missing),
+        "{:?}",
+        judged.proposal.warnings
+    );
+}
+
+#[test]
+fn a_key_put_in_the_vault_while_the_notice_is_up_is_no_reason_to_draw_it_again() {
+    let dir = project("");
+    std::fs::write(dir.path().join("q.json"), "{}").expect("vault qa, empty");
+    let grants = Grants::default();
+    let (id, proposal, heard) = raised(dir.path(), &grants, "https://shop.example.test/");
+    std::fs::write(dir.path().join("q.json"), r#"{"username":"u"}"#).expect("one key added");
+    let audited = Audited::default();
+    let done = answered(
+        dir.path(),
+        &grants,
+        &audited,
+        &press(id, Press::Once, &proposal.digest()),
+    );
+    assert!(matches!(done, Ok(Pressed::Done { .. })), "{done:?}");
+    assert_eq!(heard.try_recv(), Ok(Heard::Allowed));
 }
 
 #[test]
@@ -723,6 +799,7 @@ fn raised_replacing(root: &Path, grants: &Grants) -> (u32, Proposal, mpsc::Recei
         .raise(LoginWait {
             id: 0,
             session: 7,
+            chat: CHAT_7.map(str::to_owned),
             proposal: judged.proposal,
             since: 1,
             vault_too: judged.vault_too,
@@ -989,19 +1066,19 @@ fn allow_once_is_given_back_only_to_a_login_that_never_ran() {
     )
     .expect("allowed");
 
-    assert!(grants.take(7, Some("qa"), "shop-login").is_some());
+    assert!(grants.take(7, CHAT_7, Some("qa"), "shop-login").is_some());
     assert!(
         tool_of(&grants, "shop-login").is_none(),
         "taken by its read"
     );
-    grants.answered(7, Some("qa"), "shop-login", false);
+    grants.answered(7, CHAT_7, Some("qa"), "shop-login", false);
     assert!(tool_of(&grants, "shop-login").is_some(), "the chat's again");
     // Another chat's or persona's answer gives nothing back to this one.
-    grants.answered(8, Some("qa"), "shop-login", false);
+    grants.answered(8, None, Some("qa"), "shop-login", false);
 
-    assert!(grants.take(7, Some("qa"), "shop-login").is_some());
-    grants.answered(7, Some("qa"), "shop-login", true);
+    assert!(grants.take(7, CHAT_7, Some("qa"), "shop-login").is_some());
+    grants.answered(7, CHAT_7, Some("qa"), "shop-login", true);
     assert!(tool_of(&grants, "shop-login").is_none(), "spent");
-    grants.answered(7, Some("qa"), "shop-login", false);
+    grants.answered(7, CHAT_7, Some("qa"), "shop-login", false);
     assert!(tool_of(&grants, "shop-login").is_none(), "answered once");
 }
