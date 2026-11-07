@@ -140,6 +140,7 @@ function doing(): Doing & { calls: string[] } {
     closeOtherTabs: note("closeOtherTabs"),
     selectTab: note("selectTab"),
     renameChat: note("renameChat"),
+    renameTab: note("renameTab"),
     linkWorkItem: note("linkWorkItem"),
     startFresh: note("startFresh"),
     restartChat: note("restartChat"),
@@ -1911,6 +1912,9 @@ describe("carrying out a row", () => {
         "moveToWindow:1,true,",
         "renameChat:7",
         "renameChat:8",
+        // A tab's Rename… (#5343), each tab's.
+        "renameTab:1",
+        "renameTab:2",
         // The same three calls whether the row was the chat in front's or the explorer's:
         // both name the piece, so both arrive here identically (charter-app#174).
         "removeWorktree:svc/fix-it,false",
@@ -2162,6 +2166,38 @@ describe("renaming a chat (charter-app#254)", () => {
   });
 });
 
+describe("renaming a tab (#5343)", () => {
+  it("is a row on a tab with one chat, which says it renames the chat", () => {
+    const tabs = openTab(noTabs(), 7, "3", "steward");
+    const row = by(catalogue(now({ tabs })), `tab.rename:${tabs.order[0]}`);
+
+    expect(row?.title).toBe("Rename tab steward 3…");
+    expect(row?.available).toBe(true);
+    expect(row?.does).toEqual({ verb: "renameTab", tab: tabs.order[0], split: false });
+  });
+
+  it("is a row on a split tab", () => {
+    const tabs = splitFocusedPane(openTab(noTabs(), 7, "3", "steward"), "row", 8, "4");
+    const row = by(catalogue(now({ tabs })), `tab.rename:${tabs.order[0]}`);
+
+    expect(row?.does).toEqual({ verb: "renameTab", tab: tabs.order[0], split: true });
+  });
+
+  it("is no row on a view's tab, which shows the view's own name", () => {
+    const tabs = openView(noTabs(), { from: null, view: "activity", key: "" }, "Activity", "ops");
+    expect(by(catalogue(now({ tabs })), `tab.rename:${tabs.order[0]}`)).toBeUndefined();
+  });
+
+  it("is in the palette for the tab in front only", () => {
+    const tabs = openTab(openTab(noTabs(), 7, "3", "steward"), 8, "4", "devops");
+    const rows = catalogue(now({ tabs }));
+    const [behind, front] = tabs.order;
+
+    expect(by(rows, `tab.rename:${behind}`)?.menuOnly).toBe(true);
+    expect(by(rows, `tab.rename:${front}`)?.menuOnly).toBeUndefined();
+  });
+});
+
 describe("a chat's work link (V60, ADR 0088)", () => {
   const tabs = openTab(openTab(noTabs(), 7, "3", "steward"), 8, "4", "steward");
   const inAWorkspace = (session: number) => session === 7;
@@ -2315,6 +2351,9 @@ describe("the catalogue as the tabs change", () => {
       "tab.new",
       "tab.select:1",
       "tab.select:2",
+      // A tab's Rename… (#5343), each tab's: its menu's, its double-click's and its F2's.
+      "tab.rename:1",
+      "tab.rename:2",
       // The pin rows sit with the switching rows, above the line: pinning is an arrangement
       // and ends nothing, and `frame/leave.py`'s rule is that only the destructive go last.
       "tab.pin:1",
@@ -2715,8 +2754,10 @@ describe("the palette at fifty chats", () => {
     // the strip's `+`, apart from New chat. 1225 since #4764: Move…, each of the fifty chats'
     // own row, and each of the fifty tabs' right-click, whose forty-nine behind are menu-only,
     // as Close other tabs' are. 1224 since #5318: no Close pane row, the tab in front having one
-    // pane.
-    expect(offers).toHaveLength(1224);
+    // pane. 1274 since #5343: a tab's Rename…, each of the fifty tabs' own row, whose forty-nine
+    // behind are menu-only.
+    expect(offers).toHaveLength(1274);
+    expect(inPalette(offers).filter((row) => row.id.startsWith("tab.rename:"))).toHaveLength(1);
     expect(inPalette(offers).filter((row) => row.id.startsWith("tab.closeOthers:"))).toHaveLength(
       1,
     );
@@ -2741,16 +2782,17 @@ describe("the palette at fifty chats", () => {
    * different is the shape: the scan's cost is the catalogue's length, and #174 is the change
    * that grew it — a third more comparisons for the same fifty menus, before anything is
    * added next. A millisecond assertion would be flaky on a shared runner, so what is pinned
-   * below is the work itself, which is the standard #133 set: 450 lookups (150 before a chat
+   * below is the work itself, which is the standard #133 set: 500 lookups (150 before a chat
    * could be renamed, charter-app#254; 200 before a wrapping-up tab could cancel its smart
    * close, ADR 0064; 250 before a tab could move to a window of its own, #4768; 300 before
-   * Move…, #4764; 350 before a lone view's two splits, #5318), and the same 450 whichever
+   * Move…, #4764; 350 before a lone view's two splits, #5318; 450 before a tab's Rename…,
+   * #5343), and the same 500 whichever
    * catalogue it is.
    *
    * **The 450 measured again** (#5444), on the same machine, min of ten batches of a hundred:
    * a fifty-tab strip's `menuRows` and `menuIsEmpty` for every tab, against the 1,224-row
    * catalogue of fifty chats, cost **0.050 ms** a render (median 0.054 ms). That is about 1/300
-   * of a 60 Hz frame, so the nine ids per tab stay as they are.
+   * of a 60 Hz frame, so the nine ids per tab stay as they are (ten since #5343).
    */
   describe("what a menu on the chat strip costs (charter-app#174)", () => {
     /** A catalogue that counts what is asked of it. `Map` and not a stand-in, so what is
@@ -2769,20 +2811,21 @@ describe("the palette at fifty chats", () => {
       return offers.lookups;
     }
 
-    it("asks for nine rows per tab and never walks the list", () => {
+    it("asks for ten rows per tab and never walks the list", () => {
       const offers = new Counting(loaded().map((offer) => [offer.id, offer]));
 
-      // 50 tabs × the nine ids a tab's menu lists: Pin, a lone view's two splits (#5318), Tile all
-      // (#4765), Move… (#4764), Keep open, Move to new window (#4768), Close other tabs and Close
+      // 50 tabs × the ten ids a tab's menu lists: Rename… (#5343), Pin, a lone view's two splits
+      // (#5318), Tile all (#4765), Move… (#4764), Keep open, Move to new window (#4768), Close
+      // other tabs and Close
       // (#4760). A
       // chat's rows are its own list's since #4753, which a strip never draws.
       // **Not fifty scans of 291 rows**, which is
       // what this cost before the lookup was built once for the window — and the number that
       // does not move when the catalogue grows again.
-      expect(strip(offers)).toBe(450);
+      expect(strip(offers)).toBe(500);
     });
 
-    it("is the same 450 whether the catalogue carries the pieces or not", () => {
+    it("is the same 500 whether the catalogue carries the pieces or not", () => {
       // The property, not the timing: the cost of a menu is flat in the length of the list it
       // reads. A scan is not, which is why #174's hundred rows needed this first.
       const small = new Counting(
@@ -2791,7 +2834,7 @@ describe("the palette at fifty chats", () => {
         ),
       );
 
-      expect(strip(small)).toBe(450);
+      expect(strip(small)).toBe(500);
     });
   });
 });
@@ -3927,11 +3970,12 @@ describe("stopping a chat (#1448)", () => {
   });
 
   describe("a tab's right-click and a pane's rows (#4760)", () => {
-    it("holds Pin tab, Tile all, Move…, Keep open, Move to new window, Close other tabs and Close tab, and nothing else", () => {
+    it("holds Rename…, Pin tab, Tile all, Move…, Keep open, Move to new window, Close other tabs and Close tab, and nothing else", () => {
       expect(menuOn({ on: "tab", tab: 7 })).toEqual({
         // Move to new window (#4768): the tab into a tab window of its project.
         // A lone view's splits (#5318): no other tab's catalogue has their rows.
         above: [
+          "tab.rename:7",
           "tab.pin:7",
           "tab.split.right:7",
           "tab.split.down:7",

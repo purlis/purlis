@@ -198,13 +198,17 @@ const stopped = (warns: string, said: Dress["said"] = unnamed): Dress => ({
  * A row that is not here is drawn by its title, where `actions.menuOn` put it, so a new row is
  * never lost; `menuModel.test.ts` lists the ones that are meant to be.
  */
+/** A tab's Rename… as its menu says it: a split's names the tab only (#5343). */
+const tabRenameSaid = (offer: Offer): string =>
+  offer.does.verb === "renameTab" && offer.does.split ? SAID.renameTab : SAID.rename;
+
 const DRESS: Readonly<Record<string, Dress>> = {
   // A chat's one list (#4753): its pane head's ⋯, its sidebar row's ⋯ and right-click.
   // Where policy locks all dispatch, the Ask row that says why, in Ask's place.
   "chat.ask": { said: (offer) => offer.title, slot: "first" },
   "chat.smartclose.cancel": { said: SAID.cancelSmartClose, slot: "first" },
   "needs.dismiss": { said: SAID.dismiss, slot: "first" },
-  "chat.rename": { said: SAID.rename, slot: "first", keys: () => RENAME_KEY_SAID },
+  "chat.rename": { said: SAID.renameChat, slot: "first", keys: () => RENAME_KEY_SAID },
   "chat.useskill": { said: SAID.useSkill, slot: "first" },
   "chat.worklink": { said: SAID.linkWorkItem, slot: "first" },
   "chat.workunlink": { said: SAID.unlinkWorkItem, slot: "first" },
@@ -257,6 +261,8 @@ const DRESS: Readonly<Record<string, Dress>> = {
   "tab.split.down": { said: (offer) => offer.title, slot: "first" },
   "tab.select": { said: SAID.switchTo, slot: "first", quiet: true },
   "tab.pin": pin,
+  // A tab's Rename… (#5343): a split's names only the tab, and says so in the menu too.
+  "tab.rename": { said: tabRenameSaid, slot: "first", keys: () => RENAME_KEY_SAID },
   // Tile all (#4765): among a tab's own rows on its right-click, and with the splits on a pane's,
   // where it rearranges the panes as they do (#4760, `command-table.md` "Panes").
   "tab.tile": { said: SAID.tileAll, slot: (_offer, on) => (on.on === "pane" ? "run" : "first") },

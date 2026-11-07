@@ -141,6 +141,7 @@ import {
   type Tab,
   tabNameOf,
 } from "./tabs";
+import { renameOf } from "./tabRenaming";
 import { canTileAll, isSplit, zoomedOf } from "./tiling";
 import { canUndoLayout } from "./layoutUndo";
 import { isBrowser } from "./browsers";
@@ -384,9 +385,12 @@ export type Does =
    *  `tab` but the pinned ones. */
   | { verb: "closeOtherTabs"; tab: number; closes: readonly number[] }
   | { verb: "selectTab"; tab: number }
-  /** Opens a chat's name for editing (charter-app#254, #4753): in place on the strip where the
-   *  chat is its tab's own, and in a dialog where it has no tab. By the chat's number. */
+  /** Opens Rename chat (charter-app#254, #4753, #5343): the dialog that renames a chat
+   *  everywhere it is named, by the chat's number. */
   | { verb: "renameChat"; session: number }
+  /** Opens a tab's Rename (#5343), which says what it renames: a tab with one chat renames the
+   *  chat unless only the tab is named, and a split names the tab only (`tabRenaming`). */
+  | { verb: "renameTab"; tab: number; split: boolean }
   /** Asks which work item a chat works on, and links it (V60, ADR 0088). */
   | { verb: "linkWorkItem"; session: number }
   /** Ends a chat's work link. */
@@ -1105,9 +1109,11 @@ export type Doing = {
   /** Closes each of `tabs`, as its own close does (#4762). */
   closeOtherTabs: (tabs: readonly number[]) => void;
   selectTab: (tab: number) => void;
-  /** Opens the chat's name for editing: on its tab where it has one, else in a dialog.
-   *  Nothing is renamed until the operator says the name, so it answers no `Ran`. */
+  /** Opens Rename chat. Nothing is renamed until the operator says the name, so it answers no
+   *  `Ran`. */
   renameChat: (session: number) => void;
+  /** Opens a tab's Rename. As `renameChat`, it answers no `Ran`. */
+  renameTab: (tab: number) => void;
   /** Opens the dialog that asks for the work item. Nothing is linked until it is answered. */
   linkWorkItem: (session: number) => void;
   /** Asks whether to start the chat fresh, and does on a yes (NO-3). */
@@ -1638,8 +1644,10 @@ export const chatSkillsId = (session: number) => `chat.skills:${session}`;
 export const chatStudioId = (session: number) => `chat.studio:${session}`;
 /** The id of the row that opens Use skill… for chat `session` (#2775). */
 export const usingSkillId = (session: number) => `chat.useskill:${session}`;
-/** The id of Rename… for chat `session`. */
+/** The id of Rename chat… for chat `session`. */
 export const renameId = (session: number) => `chat.rename:${session}`;
+/** The id of a tab's Rename… (#5343). */
+export const tabRenameId = (tab: number) => `tab.rename:${tab}`;
 /** The id of Link to work item… for chat `session` (V60). */
 export const workLinkId = (session: number) => `chat.worklink:${session}`;
 /** The id of Unlink work item for chat `session` (V60). */
@@ -2275,6 +2283,20 @@ export function catalogue(now: Now): Offer[] {
         ? cannot(`tab.select:${tab}`, title, "It is already in front.", name)
         : can(`tab.select:${tab}`, title, { verb: "selectTab", tab }, name),
     );
+  }
+
+  // **Rename…** (#5343): a tab's own, which its dialog says the meaning of: the chat of a tab
+  // that holds one, or the tab alone. A view's tab has none: it says the view's own name. On a
+  // tab's menu, a double-click on it and F2 on it; the palette lists the tab in front's.
+  for (const tab of now.tabs.order) {
+    const renames = renameOf(now.tabs, tab);
+    if (renames === undefined) continue;
+    const name = tabNameOf(now.tabs.byId[tab]);
+    const split = renames.kind === "tab";
+    offers.push({
+      ...can(tabRenameId(tab), `Rename tab ${name}…`, { verb: "renameTab", tab, split }, name),
+      ...(tab !== now.tabs.inFront ? { menuOnly: true as const } : {}),
+    });
   }
 
   // **Pinning is here and not on the tab**, which is the whole of its surface. A `📌` on
@@ -3578,6 +3600,9 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
     case "renameChat":
       doing.renameChat(does.session);
       return DID;
+    case "renameTab":
+      doing.renameTab(does.tab);
+      return DID;
     case "linkWorkItem":
       doing.linkWorkItem(does.session);
       return DID;
@@ -4484,8 +4509,8 @@ function chatRows(now: Now): Offer[] {
         note: "The chat stays open and running.",
       });
 
-    // **Rename…** (charter-app#254): on its tab in place where it is its tab's own, else in a
-    // dialog. A double-click on the tab's name and F2 on it run this same row.
+    // **Rename chat…** (charter-app#254, #5343): its dialog, wherever it is asked for. A tab's
+    // own Rename… is the tab's row (`tab.rename`), whose dialog says when it renames the chat.
     offers.push(
       can(renameId(session), `Rename chat ${name}…`, { verb: "renameChat", session }, name),
     );
@@ -5743,6 +5768,7 @@ export function menuOn(what: MenuOn): { above: string[]; below: string[] } {
       // the palette lists the tab in front's alone (#4762).
       return {
         above: [
+          tabRenameId(what.tab),
           `tab.pin:${what.tab}`,
           // A lone view's splits (#5318): no other tab has these rows.
           `tab.split.right:${what.tab}`,

@@ -17,6 +17,10 @@ export const SAID = {
   switchTo: "Switch to",
   focus: "Focus",
   rename: "Rename…",
+  // A chat's own (#5343): said with what it renames, so a pane's ⋯ never reads like its tab's.
+  renameChat: "Rename chat…",
+  // A split tab's (#5343): it names the tab, never a chat.
+  renameTab: "Rename tab…",
   pinned: "Pinned",
   settings: "Settings…",
   saving: "Saving…",
