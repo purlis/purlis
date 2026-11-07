@@ -94,8 +94,11 @@ pub struct RunnerLog {
     /// The runner's device, once its host said where its log ends: none for a runner before
     /// 1.41, which says none of its log.
     device: Option<String>,
-    /// The last `seq` held of it.
+    /// The last `seq` read of it.
     cursor: u64,
+    /// Where its log ended as the link came up: only a run that ended after it is drawn, though
+    /// the link reads on from where this window last logged its project's skill runs (#4219).
+    began_at: u64,
     lines: VecDeque<RunEndLine>,
     bytes: usize,
     /// Whether some of its lines were not kept for the window to read (#940's retention, or
@@ -133,13 +136,21 @@ impl RunnerLogNow {
 }
 
 impl RunnerLog {
-    /// The runner's host said its log is `device`'s and ends at `seq`: read on from there.
-    pub fn starts_at(&mut self, device: String, seq: u64) {
+    /// The runner's host said its log is `device`'s and ends at `seq`: read on from `from`, where
+    /// this window last logged a project's skill runs of it (#4219), else from there. A `from`
+    /// past the end is a log begun again, read on from its end.
+    pub fn starts_at(&mut self, device: String, seq: u64, from: Option<u64>) {
         if device.is_empty() || device.len() > MOST_ID {
             return;
         }
         self.device = Some(device);
-        self.cursor = seq;
+        self.cursor = from.filter(|from| *from <= seq).unwrap_or(seq);
+        self.began_at = seq;
+    }
+
+    /// Where the runner's log ended as the link came up.
+    pub fn began_at(&self) -> u64 {
+        self.began_at
     }
 
     /// Whether the runner's host has said where its log ends.
@@ -164,7 +175,7 @@ impl RunnerLog {
             return false;
         }
         self.cursor = event.seq;
-        let Some(line) = RunEndLine::of(event) else {
+        let Some(line) = RunEndLine::of(event).filter(|_| event.seq > self.began_at) else {
             return true;
         };
         self.bytes += line.bytes();
@@ -185,6 +196,12 @@ impl RunnerLog {
         }
         self.missed = true;
         self.cursor = self.cursor.max(resumes_at.saturating_sub(1));
+    }
+
+    /// Some of the runner's lines were let go of before anything read them (#4219): said, as a
+    /// gap in its log is.
+    pub fn let_go(&mut self) {
+        self.missed = true;
     }
 
     /// The link to the runner went down, or came back.
@@ -208,142 +225,4 @@ impl RunnerLog {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// **Two runners' logs are one pool's** (#4271): both's ends oldest first, and what either
-    /// missed or has down is said.
-    #[test]
-    fn a_pools_two_runners_read_as_one() {
-        let line = |ulid: &str| RunEndLine {
-            chat: "chat".into(),
-            ended: RunEnded::Completed,
-            ulid: ulid.into(),
-            device: "device".into(),
-        };
-        let now = RunnerLogNow {
-            device: Some("new".into()),
-            lines: vec![line("02")],
-            missed: false,
-            down: false,
-        };
-        let draining = RunnerLogNow {
-            device: Some("old".into()),
-            lines: vec![line("01"), line("03")],
-            missed: true,
-            down: true,
-        };
-
-        let joined = now.beside(draining);
-
-        let ulids: Vec<&str> = joined.lines.iter().map(|line| line.ulid.as_str()).collect();
-        assert_eq!(ulids, ["01", "02", "03"]);
-        assert_eq!(joined.device.as_deref(), Some("new"));
-        assert!(joined.missed && joined.down);
-    }
-
-    const RUNNER: &str = "01JB0RUNNER0000000000000000";
-    const CHAT: &str = "01K6W0RKER000000000000000B";
-
-    fn line(device: &str, seq: u64) -> Event {
-        Event {
-            v: 1,
-            device_id: device.into(),
-            seq,
-            ulid: format!("01JB{seq:022}"),
-            chat: Some(CHAT.into()),
-            run: None,
-            parent_run: None,
-            kind: "run.ended".into(),
-            body: serde_json::json!({ "state": "completed" }),
-        }
-    }
-
-    fn seqs(log: &RunnerLog) -> Vec<String> {
-        log.now()
-            .lines
-            .iter()
-            .map(|line| line.ulid.clone())
-            .collect()
-    }
-
-    #[test]
-    fn a_runner_that_said_no_device_is_asked_for_none_of_its_log_and_keeps_none() {
-        let mut log = RunnerLog::default();
-        assert!(log.since().is_empty());
-        assert!(!log.started());
-        log.heard(&line(RUNNER, 1));
-        assert!(log.now().lines.is_empty());
-    }
-
-    #[test]
-    fn lines_are_kept_after_the_cursor_once_each_and_the_cursor_follows_them() {
-        let mut log = RunnerLog::default();
-        log.starts_at(RUNNER.into(), 4);
-        let read: Vec<bool> = [3, 5, 5, 6]
-            .into_iter()
-            .map(|seq| log.heard(&line(RUNNER, seq)))
-            .collect();
-        assert_eq!(read, [false, true, false, true], "each line read once");
-        assert!(!log.heard(&line("01JA0DESKT0P00000000000000", 7)));
-        assert_eq!(seqs(&log), vec![line(RUNNER, 5).ulid, line(RUNNER, 6).ulid]);
-        assert_eq!(log.since(), Since::from([(RUNNER.to_owned(), 6)]));
-    }
-
-    // Seen red: with every kind kept, the hook line and the sub-agent's end are held too.
-    #[test]
-    fn only_a_top_level_runs_end_of_a_known_word_is_kept_and_the_rest_moves_the_cursor() {
-        let mut log = RunnerLog::default();
-        log.starts_at(RUNNER.into(), 0);
-        let mut hook = line(RUNNER, 1);
-        hook.kind = "hook.stop".into();
-        let mut child = line(RUNNER, 2);
-        child.parent_run = Some("01K6PARENT0000000000000000".into());
-        let mut odd = line(RUNNER, 3);
-        odd.body = serde_json::json!({ "state": "completed. All checks passed" });
-        let mut long = line(RUNNER, 4);
-        long.chat = Some("x".repeat(MOST_ID + 1));
-        let mut failed = line(RUNNER, 5);
-        failed.body = serde_json::json!({ "state": "failed", "padding": "x".repeat(100_000) });
-        for event in [hook, child, odd, long, failed] {
-            log.heard(&event);
-        }
-        let now = log.now();
-        assert_eq!(now.lines.len(), 1);
-        assert_eq!(now.lines[0].ended, RunEnded::Failed);
-        assert_eq!(log.since(), Since::from([(RUNNER.to_owned(), 5)]));
-    }
-
-    #[test]
-    fn a_gap_is_said_and_read_on_from_where_the_log_resumes() {
-        let mut log = RunnerLog::default();
-        log.starts_at(RUNNER.into(), 2);
-        log.missed(RUNNER, 10);
-        assert!(log.now().missed);
-        assert_eq!(log.since(), Since::from([(RUNNER.to_owned(), 9)]));
-    }
-
-    // Seen red: with the bounds' loop taken out, every line is held.
-    #[test]
-    fn it_holds_the_last_lines_alone_within_its_bounds_and_says_it_let_the_first_go() {
-        let mut log = RunnerLog::default();
-        log.starts_at(RUNNER.into(), 0);
-        for seq in 1..=(MOST_LINES as u64 + 2) {
-            log.heard(&line(RUNNER, seq));
-        }
-        let now = log.now();
-        assert_eq!(now.lines.len(), MOST_LINES);
-        assert_eq!(now.lines[0].ulid, line(RUNNER, 3).ulid);
-        assert!(now.missed);
-        assert!(log.bytes <= MOST_BYTES);
-    }
-
-    #[test]
-    fn a_link_that_is_down_is_said_so() {
-        let mut log = RunnerLog::default();
-        log.link(true);
-        assert!(log.now().down);
-        log.link(false);
-        assert!(!log.now().down);
-    }
-}
+mod tests;

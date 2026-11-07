@@ -338,6 +338,7 @@ fn a_runs_start_records_the_folder_it_ran_or_that_it_held_changes_not_committed(
                 workspace: None,
                 level: Some(copy_of(&Level::project())),
                 harness: Some("claude"),
+                ran: None,
             },
             None,
             chrono::DateTime::from_timestamp(i64::try_from(T2 + 60).unwrap(), 0).unwrap(),

@@ -745,6 +745,30 @@ const SORTED: &[(&str, &str, Group, &str)] = &[
     ),
     (
         "crates/session-protocol/src/session.rs",
+        "MOST_ARMED_SKILLS",
+        Security,
+        "bounds what a runner says it armed a chat with, which a window holds (#4218)",
+    ),
+    (
+        "crates/session-protocol/src/session.rs",
+        "MOST_ARMED_SKILL_NAME",
+        Security,
+        "bounds what a runner says it armed a chat with, which a window holds (#4218)",
+    ),
+    (
+        "crates/session-protocol/src/session.rs",
+        "MOST_ARMED_SKILL_LEVEL",
+        Security,
+        "bounds what a runner says it armed a chat with, which a window holds (#4218)",
+    ),
+    (
+        "app/src-tauri/src/hostedsessions.rs",
+        "MOST_SKILL_LINES_HELD",
+        Internal,
+        "how many of a runner's skill lines a link holds for a project held later (#4219)",
+    ),
+    (
+        "crates/session-protocol/src/session.rs",
         "MOST_PROFILE_SETTINGS_BYTES",
         PoolLimit,
         "a default in poollimits",

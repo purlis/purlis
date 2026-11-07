@@ -97,6 +97,7 @@ impl Host for Waiting {
                     confined: None,
                     sandbox: None,
                     prompt_key: None,
+                    armed_skills: None,
                 })
             }
             Command::Write { chat, bytes } => {
