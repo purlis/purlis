@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794009196572,
+  "lastUpdate": 1794010704714,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -41580,6 +41580,48 @@ window.BENCHMARK_DATA = {
             "value": 102.7597705,
             "unit": "ms",
             "extra": "median of 5 runs: 102.363, 102.753, 102.760, 102.894, 102.935 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "b460af4f6837021bf4a553e70ff8e65e795edd21",
+          "message": "Scale: cheaper git standing — untracked cache, fsmonitor, read on change (#5505) (#5578)\n\n* Cheaper git standing: untracked cache, fsmonitor, read on change (#5505)\n\nA save ends with one index-writing status that leaves git's untracked cache\n(for --untracked-files=all) and, on macOS/Windows with git >= 2.37, the\nfsmonitor token in the index; automatic reads stay lock-free (FD-11). The\nplane's status reads with core.fsmonitor=true where git ships the daemon.\nOn macOS the one recursive stream covers the plane's standing, so it is\nread again on what moved, not on the 10 s clock. An older git gets neither.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6S9DW10GGND36ZYK6JWG2YH\nPurlis-Persona: steward\n\n* cargo fmt; the trace read goes through forklock::output (#5505)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6S9DW10GGND36ZYK6JWG2YH\nPurlis-Persona: steward\n\n* The plane's state folder is named through names::STATE_DIR (#5505)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6S9DW10GGND36ZYK6JWG2YH\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aharon@easydmarc.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-06T23:17:30Z",
+          "tree_id": "ab28e6a6f056efe2f4e947db38310455825927a3",
+          "url": "https://github.com/purlis/purlis/commit/b460af4f6837021bf4a553e70ff8e65e795edd21"
+        },
+        "date": 1794010700848,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.543822,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.535, 0.541, 0.544, 0.554, 0.566 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3353495,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.232, 16.251, 16.335, 16.348, 16.391 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.52730600000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.524, 99.903, 100.527, 100.729, 101.329 ms"
           }
         ]
       }
