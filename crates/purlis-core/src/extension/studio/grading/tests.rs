@@ -440,11 +440,17 @@ fn a_grader_is_not_told_what_a_chat_said() {
     assert_eq!(told.answer, None);
 }
 
-/// **A grade's lines of version 1 of the extension API, as it was frozen** (ADR 0101, amended
-/// 2026-11-02): the recorded request, what a Grader answers to it, and what purlis writes back.
+/// **A grade's lines of each version of the extension API, as it was recorded** (ADR 0101,
+/// amended 2026-11-02 and 2026-11-07): the recorded request, what a Grader answers to it, and what
+/// purlis writes back.
 #[test]
-fn a_grade_of_version_one_goes_line_by_line_as_the_contract_records_it() {
-    let contract = crate::extension::studio::version_one();
+fn a_grade_of_each_version_goes_line_by_line_as_its_contract_records_it() {
+    for contract in crate::extension::studio::every_version() {
+        graded_as_recorded(&contract);
+    }
+}
+
+fn graded_as_recorded(contract: &serde_json::Value) {
     let protocol = u32::try_from(contract["protocol"].as_u64().expect("a number")).expect("small");
     let lines = &contract["grade"];
     let request: GradeRequest =
@@ -467,8 +473,13 @@ fn a_grade_of_version_one_goes_line_by_line_as_the_contract_records_it() {
 }
 
 #[test]
-fn every_way_a_chat_of_version_one_ends_is_spelled_as_the_contract_records_it() {
-    let lines = &crate::extension::studio::version_one()["grade"];
+fn every_way_a_chat_of_each_version_ends_is_spelled_as_its_contract_records_it() {
+    for contract in crate::extension::studio::every_version() {
+        ends_as_recorded(&contract["grade"]);
+    }
+}
+
+fn ends_as_recorded(lines: &serde_json::Value) {
     let ends = [
         ChatEnd::Turn,
         ChatEnd::TimedOut,

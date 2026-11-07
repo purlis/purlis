@@ -108,7 +108,7 @@ impl AskRouter for Fake {
         self.asked
             .lock()
             .unwrap()
-            .push((extension.to_owned(), ask.line()));
+            .push((extension.to_owned(), ask.line(crate::executor::PROTOCOL)));
         std::thread::sleep(self.wait);
         self.answer
             .clone()
@@ -274,9 +274,20 @@ fn a_router_is_asked_its_candidates_and_the_budget_and_nothing_of_the_chat() {
     keys.sort();
     assert_eq!(
         keys,
-        ["ask", "besides", "budget", "skills"],
+        ["ask", "besides", "budget", "index", "skills"],
         "nothing else of the chat"
     );
+    // On Claude Code a skill costs its whole line, more than its description (#4680), and so
+    // does the index.
+    for one in line["skills"].as_array().unwrap() {
+        let described = one["description"].as_str().unwrap().chars().count();
+        assert!(
+            one["chars"].as_u64().unwrap() > described as u64,
+            "{one} costs its whole line"
+        );
+    }
+    assert_eq!(line["index"]["skills"], 1);
+    assert!(line["index"]["chars"].as_u64().unwrap() > 0);
 }
 
 #[test]

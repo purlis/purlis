@@ -250,13 +250,15 @@ impl SkillSet {
             skills: parts
                 .could
                 .iter()
-                .map(|(e, _)| Candidate {
+                .map(|listed @ (e, _)| Candidate {
                     name: e.skill.name.clone(),
                     description: e.skill.description.clone(),
                     pinned: parts.pins.contains(e.skill.name.as_str()),
+                    chars: cost(std::iter::once(listed), budget).chars,
                 })
                 .collect(),
             besides: cost(parts.fixed(), budget),
+            index: budget.line(INDEX, INDEX_DESCRIPTION.chars().count()),
             budget,
         }
     }
@@ -447,16 +449,23 @@ pub struct Candidates {
     /// What the listing spends on what no router hides (the built-in skills, the harness's and
     /// the repos' own), before any of [`Self::skills`] and the index.
     pub besides: crate::Spent,
+    /// **What the index costs of the budget's characters** (#4680): one more skill, listed
+    /// whenever a router hides any, counted as [`Self::besides`] is.
+    pub index: usize,
     pub budget: Budget,
 }
 
-/// One skill a router may hide, by its name and description, and whether the chat pins it: a
-/// pin is never hidden.
+/// One skill a router may hide, by its name and description, whether the chat pins it (a pin is
+/// never hidden), and what it costs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Candidate {
     pub name: String,
     pub description: String,
     pub pinned: bool,
+    /// **What it costs of the budget's characters on the chat's harness** (#4680), counted as
+    /// [`Candidates::besides`] is: on a harness that counts whole lines, its name, `when_to_use`
+    /// and the line around them as well as its description.
+    pub chars: usize,
 }
 
 /// A set's listing, split by what a router may do with each skill.
