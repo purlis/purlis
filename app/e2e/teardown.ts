@@ -4,7 +4,7 @@
 import { spawnSync } from "node:child_process";
 import { readdirSync, rmSync } from "node:fs";
 import process from "node:process";
-import type { AppProcesses } from "./processes.js";
+import type { RunsApp } from "./processes.js";
 
 /**
  * **What a run that removes its temporary folders does first: end the app that writes in them**
@@ -75,13 +75,46 @@ async function end(pids: number[], os: Os): Promise<number[]> {
 }
 
 /**
- * Ends the run's app: its windows first, so each finishes its last saves, then the session
- * hosts they started. Returns once every one has gone, with the pids of any that would not.
+ * Ends the run's app: its windows first, as the Tauri service would, then the session hosts
+ * they started, which a signalled window does not end (#2006), then any program left below
+ * them, each in a group of its own. Returns once every one has gone, with the pids of any that
+ * would not.
  */
-export async function endTheApp(app: AppProcesses, os: Os = THIS_MACHINE): Promise<number[]> {
+export async function endTheApp(app: RunsApp, os: Os = THIS_MACHINE): Promise<number[]> {
   const windows = await end(app.windows, os);
   const hosts = await end(app.sessionHosts, os);
-  return [...windows, ...hosts];
+  const programs = await end(app.programs, os);
+  return [...windows, ...hosts, ...programs];
+}
+
+/** `pids` named as `one` or `many`, or `none` when there are none. */
+function named(pids: number[], one: string, many: string): string {
+  if (pids.length === 0) return `no ${one}`;
+  return `${pids.length === 1 ? one : many} ${pids.join(", ")}`;
+}
+
+/**
+ * {@link endTheApp}, as the last step of a run: it says what it found still running, which is
+ * the run's evidence of what would have written into its folders, and what would not end. **It
+ * never throws:** a signal that failed is written down, and the removal after it still runs.
+ */
+export async function endTheRunsApp(
+  app: RunsApp,
+  os: Os = THIS_MACHINE,
+  log: (line: string) => void = (line) => console.warn(line),
+): Promise<void> {
+  log(
+    `Before removing its folders, the run ends what of its app still runs: ` +
+      `${named(app.windows, "window", "windows")}, ` +
+      `${named(app.sessionHosts, "session host", "session hosts")}, ` +
+      `${named(app.programs, "program", "programs")}.`,
+  );
+  try {
+    const left = await endTheApp(app, os);
+    if (left.length > 0) log(`The run's app would not end, even killed: pid ${left.join(", ")}.`);
+  } catch (error) {
+    log(`Ending the run's app failed: ${(error as Error).message}.`);
+  }
 }
 
 /**
