@@ -20,7 +20,8 @@ import { stripNamed } from "./test-strips";
 
 /**
  * A chat's name, against the whole window (charter-app#254): the default `<persona> <N>`, the
- * picker's Name field, the three ways to rename a tab, and the name coming back at a relaunch.
+ * picker's Name field, a tab's Rename and Rename chat (#5343), and the name coming back at a
+ * relaunch.
  *
  * **What a rename changes is charter's label and nothing else.** The core is asked to hold the
  * name (`rename_chat`), and its answer is what the tab draws; the chat's own name — what its
@@ -137,7 +138,6 @@ const tabNames = () =>
     .getAllByRole("tab")
     .map((tab) => tab.querySelector(".tab-name")?.textContent);
 const theTab = () => within(strip()).getAllByRole("tab")[0];
-const renameBox = () => within(strip()).getByRole("textbox", { name: /^Rename chat/ });
 const asked = (asks: Asked[], cmd: string) => asks.filter((one) => one.cmd === cmd);
 
 /**
@@ -218,7 +218,7 @@ describe("a new chat's name", () => {
   });
 });
 
-describe("renaming a chat's tab", () => {
+describe("renaming a tab with one chat (#5343)", () => {
   async function oneChat() {
     const { asked: asks } = core();
     render(<App />);
@@ -226,14 +226,27 @@ describe("renaming a chat's tab", () => {
     await waitFor(() => expect(tabNames()).toEqual(["steward 1"]));
     return asks;
   }
+  const dialog = () => screen.getByRole("dialog", { name: /^Rename/ });
+  const box = () => within(dialog()).getByLabelText("New name");
 
-  it("opens the name for editing on a double-click, and Enter saves it", async () => {
-    const asks = await oneChat();
+  it("opens on a double-click", async () => {
+    await oneChat();
 
     await userEvent.dblClick(theTab());
-    const box = renameBox();
-    expect(box).toHaveValue("steward 1");
-    expect(box).toHaveFocus();
+
+    await screen.findByRole("dialog", { name: "Rename steward 1" });
+  });
+
+  it("says it renames the chat, Enter renames it, and the keyboard goes back to the tab", async () => {
+    const asks = await oneChat();
+    theTab().focus();
+
+    await userEvent.keyboard("{F2}");
+    expect(await screen.findByRole("dialog", { name: "Rename steward 1" })).toHaveTextContent(
+      "This tab shows one chat, so this renames the chat: on its tab, in the list and on its head.",
+    );
+    await waitFor(() => expect(box()).toHaveFocus());
+    expect(box()).toHaveValue("steward 1");
     await userEvent.keyboard("{Control>}a{/Control}billing bug{Enter}");
 
     await waitFor(() => expect(tabNames()).toEqual(["billing bug"]));
@@ -242,40 +255,51 @@ describe("renaming a chat's tab", () => {
       { plane: PLANE, session: 1, label: "billing bug" },
     ]);
     // The keyboard is back on the tab it renamed.
-    expect(theTab()).toHaveFocus();
+    await waitFor(() => expect(theTab()).toHaveFocus());
   });
 
-  it("leaves the name as it was on Escape, and asks the core nothing", async () => {
+  it("changes nothing on Escape, asks the core nothing, and hands the keyboard back to the tab", async () => {
     const asks = await oneChat();
+    theTab().focus();
 
-    await userEvent.dblClick(theTab());
+    await userEvent.keyboard("{F2}");
+    await waitFor(() => expect(box()).toHaveFocus());
     await userEvent.keyboard("{Control>}a{/Control}never mind{Escape}");
 
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(tabNames()).toEqual(["steward 1"]);
     expect(asked(asks, "rename_chat")).toEqual([]);
-    expect(theTab()).toHaveFocus();
-    // Escape belonged to the box, not to anything behind it.
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await waitFor(() => expect(theTab()).toHaveFocus());
   });
 
-  it("saves what was typed when the box loses the keyboard", async () => {
-    const asks = await oneChat();
+  it("opens with F2 on a focused tab, the platform's rename key, and not the palette", async () => {
+    await oneChat();
+    theTab().focus();
 
-    await userEvent.dblClick(theTab());
-    await userEvent.keyboard("{Control>}a{/Control}billing bug");
-    fireEvent.blur(renameBox());
+    await userEvent.keyboard("{F2}");
 
-    await waitFor(() => expect(tabNames()).toEqual(["billing bug"]));
-    expect(asked(asks, "rename_chat")).toHaveLength(1);
+    await screen.findByRole("dialog", { name: "Rename steward 1" });
+    expect(screen.queryByRole("dialog", { name: "Command palette" })).not.toBeInTheDocument();
+  });
+
+  it("opens from the tab's own menu", async () => {
+    await oneChat();
+
+    fireEvent.contextMenu(theTab());
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Rename…" }));
+
+    await screen.findByRole("dialog", { name: "Rename steward 1" });
   });
 
   it("takes the default back when the name is cleared", async () => {
     await oneChat();
     await userEvent.dblClick(theTab());
+    await waitFor(() => expect(box()).toHaveFocus());
     await userEvent.keyboard("{Control>}a{/Control}billing bug{Enter}");
     await waitFor(() => expect(tabNames()).toEqual(["billing bug"]));
 
     await userEvent.dblClick(theTab());
+    await waitFor(() => expect(box()).toHaveFocus());
     await userEvent.keyboard("{Control>}a{/Control}{Backspace}{Enter}");
 
     await waitFor(() => expect(tabNames()).toEqual(["steward 1"]));
@@ -285,42 +309,24 @@ describe("renaming a chat's tab", () => {
     const asks = await oneChat();
 
     await userEvent.dblClick(theTab());
+    await waitFor(() => expect(box()).toHaveFocus());
     await userEvent.keyboard("{Backspace}{Backspace}{Delete}");
 
-    expect(renameBox()).toBeInTheDocument();
+    expect(box()).toBeInTheDocument();
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(asked(asks, "close_session")).toEqual([]);
   });
 
-  it("opens on its tab from the chat's list (#4753)", async () => {
-    await oneChat();
+  it("keeps F2 typed into the box from opening the palette", async () => {
+    const asks = await oneChat();
 
-    // The chat's own list: its Rename… opens the name in place on the tab it is the own of.
-    await userEvent.click(await screen.findByRole("button", { name: "More for steward 1" }));
-    await userEvent.click(await screen.findByRole("menuitem", { name: "Rename…" }));
+    await userEvent.dblClick(theTab());
+    await waitFor(() => expect(box()).toHaveFocus());
+    await userEvent.keyboard("{Control>}a{/Control}half{F2}");
 
-    await waitFor(() => expect(renameBox()).toHaveFocus());
-    expect(renameBox()).toHaveValue("steward 1");
-  });
-
-  it("opens from the palette's row", async () => {
-    await oneChat();
-
-    await userEvent.keyboard("{F2}");
-    await screen.findByRole("dialog", { name: "Command palette" });
-    await userEvent.keyboard("rename chat steward 1{Enter}");
-
-    await waitFor(() => expect(renameBox()).toHaveFocus());
-  });
-
-  it("opens with F2 on a focused tab, the platform's rename key", async () => {
-    await oneChat();
-    theTab().focus();
-
-    await userEvent.keyboard("{F2}");
-
-    await waitFor(() => expect(renameBox()).toHaveFocus());
     expect(screen.queryByRole("dialog", { name: "Command palette" })).not.toBeInTheDocument();
+    expect(box()).toHaveValue("half");
+    expect(asked(asks, "rename_chat")).toEqual([]);
   });
 
   it("says why when the core refuses the name, and keeps the one it had", async () => {
@@ -329,47 +335,70 @@ describe("renaming a chat's tab", () => {
     core({ refuse: "That name is 80 characters long, and a chat's name is at most 64." });
 
     await userEvent.dblClick(theTab());
+    await waitFor(() => expect(box()).toHaveFocus());
     await userEvent.keyboard("{Control>}a{/Control}too long{Enter}");
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(/at most 64/);
-    expect(renameBox()).toHaveAttribute("aria-invalid", "true");
+    expect(await within(dialog()).findByRole("alert")).toHaveTextContent(/at most 64/);
     await userEvent.keyboard("{Escape}");
     expect(tabNames()).toEqual(["steward 1"]);
   });
 
-  it("leaves the name as it was and closes when a refused name loses the keyboard", async () => {
-    // A box left open behind an operator who went elsewhere holds the tab's place with
-    // nothing to focus: the tab could not be clicked or reached by the arrows.
-    await oneChat();
-    clearMocks();
-    core({ refuse: "That name is 80 characters long, and a chat's name is at most 64." });
-
-    await userEvent.dblClick(theTab());
-    await userEvent.keyboard("{Control>}a{/Control}too long");
-    fireEvent.blur(renameBox());
-
-    await waitFor(() => expect(tabNames()).toEqual(["steward 1"]));
-    expect(within(strip()).queryByRole("textbox")).not.toBeInTheDocument();
-  });
-
-  it("keeps F2 typed into the box from opening the palette", async () => {
+  it("names only the tab with Only this tab, leaves the chat's name, and can use the chat name again", async () => {
     const asks = await oneChat();
 
     await userEvent.dblClick(theTab());
-    await userEvent.keyboard("{Control>}a{/Control}half{F2}");
+    await waitFor(() => expect(box()).toHaveFocus());
+    await userEvent.keyboard("{Control>}a{/Control}the build");
+    await userEvent.click(within(dialog()).getByRole("checkbox", { name: "Only this tab" }));
+    await userEvent.click(within(dialog()).getByRole("button", { name: "Rename tab" }));
 
-    expect(screen.queryByRole("dialog", { name: "Command palette" })).not.toBeInTheDocument();
-    expect(renameBox()).toHaveValue("half");
+    await waitFor(() => expect(tabNames()).toEqual(["the build"]));
+    // The chat keeps its name: the core is told nothing (`Rename.window.test.tsx` reads the
+    // list and the head).
     expect(asked(asks, "rename_chat")).toEqual([]);
+
+    await userEvent.dblClick(theTab());
+    const again = await screen.findByRole("dialog", { name: "Rename the build" });
+    expect(within(again).getByRole("checkbox", { name: "Only this tab" })).toBeChecked();
+    await userEvent.click(within(again).getByRole("button", { name: "Use the chat name again" }));
+
+    await waitFor(() => expect(tabNames()).toEqual(["steward 1"]));
+  });
+
+  it("opens Rename chat from the pane's ⋯, on the chat's own name", async () => {
+    await oneChat();
+
+    await userEvent.click(await screen.findByRole("button", { name: "More for steward 1" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Rename chat…" }));
+
+    const asking = await screen.findByRole("dialog", { name: "Rename chat steward 1" });
+    expect(asking).toHaveTextContent(
+      "This renames the chat everywhere: in the list, on its head and on a tab named for it.",
+    );
+    await waitFor(() => expect(within(asking).getByLabelText("New name")).toHaveFocus());
+    await userEvent.keyboard("{Control>}a{/Control}billing bug{Enter}");
+
+    // The tab it leads follows it.
+    await waitFor(() => expect(tabNames()).toEqual(["billing bug"]));
+  });
+
+  it("opens Rename chat from the palette's row", async () => {
+    await oneChat();
+
+    await userEvent.keyboard("{F2}");
+    await screen.findByRole("dialog", { name: "Command palette" });
+    await userEvent.keyboard("rename chat steward 1{Enter}");
+
+    await screen.findByRole("dialog", { name: "Rename chat steward 1" });
   });
 
   it("names the chat by it wherever the chat is named: the palette's rows", async () => {
     await oneChat();
     await userEvent.dblClick(theTab());
+    await waitFor(() => expect(box()).toHaveFocus());
     await userEvent.keyboard("{Control>}a{/Control}billing bug{Enter}");
     await waitFor(() => expect(tabNames()).toEqual(["billing bug"]));
 
-    // ⌘K, because the keyboard is back on the tab, where F2 renames it again.
     await userEvent.keyboard("{Meta>}k{/Meta}");
     const palette = await screen.findByRole("dialog", { name: "Command palette" });
 

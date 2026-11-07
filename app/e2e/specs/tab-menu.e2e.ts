@@ -176,7 +176,8 @@ describe("a chat's list, and a tab's menu", () => {
     expect(name).not.toBe("");
     expect(drawn.rows.filter((row) => row.name.includes(name)).map((row) => row.name)).toEqual([]);
     const names = drawn.rows.map((row) => row.name);
-    expect(names).toContain(ROW.rename);
+    // Rename chat… says what it renames, beside a tab that has a Rename of its own (#5343).
+    expect(names).toContain(ROW.renameChat);
     expect(names).toContain(ROW.end);
     // A tab's rows are the tab's (#4753): no pin and no switch on a chat's list.
     expect(names).not.toContain(ROW.pinned);
@@ -257,10 +258,12 @@ describe("a chat's list, and a tab's menu", () => {
     await openMenuOn(SELECTED_TAB);
     const names = (await menuNames())[0];
 
-    // The tab in front: its pin and its close, and no row that could only say it is in front.
+    // The tab in front: its Rename (#5343), its pin and its close, and no row that could only say
+    // it is in front.
+    expect(names).toContain(ROW.rename);
     expect(names).toContain(ROW.pinned);
     expect(names).not.toContain(ROW.switchTo);
-    for (const chats of [ROW.rename, ROW.restart, ROW.activity, SUB.open, SUB.stop])
+    for (const chats of [ROW.renameChat, ROW.restart, ROW.activity, SUB.open, SUB.stop])
       expect(names).not.toContain(chats);
   });
 
