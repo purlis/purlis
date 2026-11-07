@@ -756,6 +756,55 @@ Read the results this way [inference]:
 - If the CLI step recompiles `purlis-core`, unifying the features of the two steps saves a whole
   `purlis-core` build in the release job.
 
+## Measured
+
+Lever 3 was measured on the hosted runners on 2026-11-06 and 2026-11-07 (#5277), and
+`opt-level = 1` on `purlis-app` shipped (ADR 0092 amended 2026-11-07). The build was the one
+`ci`'s outcome-bars job runs, `npx tauri build --features e2e ... --profile dev-release`, with
+each candidate set by `--config profile.dev-release.package.purlis-app.<key>=<value>`. Main's
+settings were built twice (`base-a`, `base-b`), to show the noise between two identical builds.
+The throwaway workflow was on the `measure-build-memory` branch; runs 42279014678 and
+42299963320.
+
+**Peak memory, the whole build on Linux** (GNU `time -v`, plus a `rustc` wrapper logging each
+crate's peak) [measured]:
+
+| | Run 1 | Run 2 |
+|---|---|---|
+| main (`opt-level = 3`, 16 units), twice | 14.45 / 14.46 GB | 14.41 / 14.46 GB |
+| `opt-level = 2` | 14.50 GB | |
+| `opt-level = 3`, `codegen-units = 4` | 14.51 GB | |
+| `opt-level = 1` | 6.58 GB | 6.61 GB |
+
+In every case the peak was `purlis_app_lib`'s own `rustc`. Level 2 did not move it at all and
+level 1 halved it, so the memory is in LLVM's level-3 work on the app crate, not in the
+front-end (open question 3). `opt-level = 1` also built faster: 16 min 2 s against 22 min 43 s
+and 24 min 40 s. On macOS, where memory is not the limit, cargo's largest child peaked at 4.1 to 4.6 GB with main's
+settings and with `opt-level = 1` alike (BSD `time -l`), so that number says little.
+
+**At run time, `opt-level = 1` against `base-a`** [measured]:
+
+- Cold start on Linux (`tools/coldstart-linux.sh`, interleaved ratio; bare, i3, i3 without the
+  session bus): 1.011 / 1.009 / 0.995 in run 1, 1.006 / 1.013 / 0.999 in run 2. `base-b` gave
+  0.989 to 1.002.
+- The outcome bars' openings on codex's stand-in, medians of two rounds each:
+
+  | | Run 1, Linux | Run 1, macOS | Run 2, Linux | Run 2, macOS |
+  |---|---|---|---|---|
+  | `base-a` | 424 / 408 ms | 236 / 248 ms | 443 / 424 ms | 272 / 288 ms |
+  | `base-b` | 407 / 376 ms | 217 / 232 ms | 435 / 451 ms | 218 / 204 ms |
+  | `opt-level = 1` | 378 / 375 ms | 236 / 233 ms | 437 / 452 ms | 273 / 213 ms |
+
+  No difference beyond the gap between the two copies of main, which on macOS was 25 %. The
+  operator's own Mac opened the `opt-level = 1` app's bars under their 300 ms budget.
+- Not measured: claude's and opencode's stand-ins did not run in the measurement job, on main's
+  build as well (the picker did not close after *Approve and start*, where `ci` passes at the
+  same commit). The session layer's latency bench builds only `purlis-session-protocol`, which
+  the override does not reach.
+
+So open question 2 has a practical answer: whether or not ThinLTO now optimises purlis-core's
+code at level 1 too, no measured opening or start got slower.
+
 ## Open questions
 
 1. **Unverified sources.** In the first pass the sandbox refused web fetches. The second pass

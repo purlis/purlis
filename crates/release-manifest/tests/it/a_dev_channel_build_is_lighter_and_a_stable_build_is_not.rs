@@ -74,6 +74,24 @@ fn release_links_as_dev_release_does_and_dev_release_changes_nothing_else() {
     );
 }
 
+#[test]
+fn both_channels_build_the_app_crate_at_opt_level_1_and_nothing_else_is_overridden() {
+    // `purlis_app_lib` at level 3 took one rustc to 14.4 GB, past a 16 GB runner; at level 1 the
+    // whole build peaked at 6.6 GB (ADR 0092 amended 2026-11-07, #5277).
+    assert_eq!(profile("release.package.purlis-app"), ["opt-level = 1"]);
+
+    // On `release` alone, so `dev-release` carries it by inheritance. A table of the
+    // dev profile's own could make the channels differ in it; another crate's override is a
+    // new measurement and a new amendment.
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../Cargo.toml");
+    let overrides: Vec<String> = workflow::read(&path)
+        .lines()
+        .filter(|l| l.starts_with("[profile.release.") || l.starts_with("[profile.dev-release."))
+        .map(str::to_owned)
+        .collect();
+    assert_eq!(overrides, ["[profile.release.package.purlis-app]"]);
+}
+
 /// The lines of `plan`'s decision for one event: from its `case` arm to the next arm.
 fn arm(lines: &[String], event: &str) -> Vec<String> {
     const ARMS: [&str; 4] = ["push)", "workflow_run)", "schedule)", "*)"];

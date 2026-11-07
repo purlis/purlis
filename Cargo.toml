@@ -112,11 +112,18 @@ opt-level = 3
 panic = "unwind"
 strip = true
 
+# The app crate is optimised at level 1, everything else at `release`'s 3 (ADR 0092 amended
+# 2026-11-07, #5277). At 3, `purlis_app_lib` alone took one rustc to 14.4 GB, past a 16 GB
+# runner with the rest of the build beside it; at 1 the whole build peaked at 6.6 GB, with cold
+# start and the outcome bars unchanged. `dev-release` inherits this table with the rest.
+[profile.release.package.purlis-app]
+opt-level = 1
+
 # What a dev channel build is compiled with (ADR 0092, #1429). It inherits `release`, whose link
 # is now the same thin LTO across sixteen codegen units (ADR 0092 amended 2026-11-06), so the two
-# differ only in the name a build reports. `opt-level`, `panic` and `strip` are `release`'s, by
-# inheritance, and nothing else may be set here. A stable build, a build started by hand and the
-# nightly profile guard all use `release` itself.
+# differ only in the name a build reports. `opt-level`, `panic`, `strip` and the app crate's
+# `opt-level` above are `release`'s, by inheritance, and nothing else may be set here. A stable
+# build, a build started by hand and the nightly profile guard all use `release` itself.
 [profile.dev-release]
 inherits = "release"
 lto = "thin"
