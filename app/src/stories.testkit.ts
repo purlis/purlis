@@ -25,6 +25,29 @@ export async function pictureNow(): Promise<void> {
   if (typeof take === "function") await (take as () => Promise<void>)();
 }
 
+/**
+ * **How far each story frame stands below the top of what it is drawn in** (#5463), in CSS
+ * pixels, one entry for each `[data-story-frame]` under `inside` that does not stand at its
+ * top. A frame drawn on a line of text sits on that line's baseline, so its top would move with
+ * whatever baseline its story's content gives it, by a fraction of a pixel as often as not, and
+ * its picture would take a row more. Every frame stands at the top of its line.
+ */
+export function framesOffTheirLine(inside: ParentNode = document): string[] {
+  return [...inside.querySelectorAll("[data-story-frame]")].flatMap((frame) => {
+    const line = frame.parentElement;
+    if (line === null) return [];
+    const drop = frame.getBoundingClientRect().top - line.getBoundingClientRect().top;
+    return drop === 0 ? [] : [`the story's frame stands ${drop} px below the top of its line`];
+  });
+}
+
+/** **The story's frame stands at the top of its line**, as `framesOffTheirLine` measures it;
+ *  `step` names where in the story. */
+export function expectFrameOnItsLine(inside: ParentNode, step: string): void {
+  const off = framesOffTheirLine(inside);
+  if (off.length > 0) throw new Error(`${step}: ${off.join("; ")}`);
+}
+
 /** The global the story tests put their window-sizer on (`.storybook/cell.setup.ts`). */
 export const WINDOW_GLOBAL = "__PURLIS_STORY_WINDOW__";
 

@@ -74,6 +74,7 @@ export function stories(): TestProjectInlineConfiguration[] {
         here("at-rest.setup.ts"),
         here("faded.setup.ts"),
         here("parts.setup.ts"),
+        here("standing.setup.ts"),
         ...(pictures && cell.pictured ? [here("screenshots.setup.ts")] : []),
       ],
       browser: {
