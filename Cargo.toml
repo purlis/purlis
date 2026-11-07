@@ -122,8 +122,8 @@ opt-level = 1
 # What a dev channel build is compiled with (ADR 0092, #1429). It inherits `release`, whose link
 # is now the same thin LTO across sixteen codegen units (ADR 0092 amended 2026-11-06), so the two
 # differ only in the name a build reports. `opt-level`, `panic`, `strip` and the app crate's
-# `opt-level` above are `release`'s, by inheritance, and nothing else may be set here. A stable build, a build started by hand and the
-# nightly profile guard all use `release` itself.
+# `opt-level` above are `release`'s, by inheritance, and nothing else may be set here. A stable
+# build, a build started by hand and the nightly profile guard all use `release` itself.
 [profile.dev-release]
 inherits = "release"
 lto = "thin"

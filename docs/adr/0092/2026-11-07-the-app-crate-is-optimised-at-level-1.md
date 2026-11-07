@@ -3,9 +3,12 @@
 **By the operator's rulings of 2026-11-06 and 2026-11-07** on #5277, after an A/B measurement on
 the hosted runners. `release` gets one per-package override, `[profile.release.package.purlis-app]`
 with `opt-level = 1`. Every other crate stays at `opt-level = 3`. `dev-release` inherits the
-override with the rest of `release`, so the channels still differ only in their bundle set and
-in the profile's name (decision 7 and the amendment of 2026-11-06 stand). The rest of this record
-stands.
+override with the rest of `release`.
+
+It qualifies decision 7: `opt-level = 3` is inherited by every crate but `purlis-app`, which both
+profiles build at 1. Decision 1, as amended 2026-11-06, now also covers this override: the stable
+build's profile changes with the dev channel's. The channels still differ only in their bundle
+set and in the profile's name. The rest of this record stands.
 
 ## Why
 
