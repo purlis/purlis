@@ -641,10 +641,14 @@ describe("a browser the person opened goes where they send it (#2176)", () => {
     expect(screen.queryByText(/on this (Mac|computer)/)).toBeNull();
   });
 
-  it("names no site, plainly, once its page is told with none", async () => {
+  it("names no site, plainly, once its page is told with none, not even where it was sent", async () => {
+    besides.go_browser = () => ({ outcome: "went", address: "https://example.com/docs" });
     const host = await opened();
-    host.page("http://localhost:5173");
-    expect(await screen.findByText(/^localhost:5173 on this/)).toBeInTheDocument();
+    fireEvent.change(await screen.findByRole("textbox", { name: "Address" }), {
+      target: { value: "example.com/docs" },
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Go" }));
+    expect(await screen.findByText(/^example\.com on this/)).toBeInTheDocument();
 
     // A page whose address holds what purlis kept out is told with no site at all.
     host.page(null);
@@ -652,7 +656,7 @@ describe("a browser the person opened goes where they send it (#2176)", () => {
     await waitFor(() =>
       expect(screen.getByTestId("browser-chip")).toHaveTextContent(/^On this (Mac|computer)$/),
     );
-    expect(screen.queryByText(/localhost:5173/)).toBeNull();
+    expect(screen.queryByText(/example\.com/)).toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
