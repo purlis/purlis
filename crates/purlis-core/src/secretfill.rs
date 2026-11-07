@@ -211,7 +211,9 @@ impl HeldByLines {
 
     /// [`a_mints`], from what was read.
     pub fn mints(&self, vault: &str, key: &str) -> bool {
-        self.lines.as_ref().is_none_or(|lines| lines.held(&lines.mints, vault, key))
+        self.lines
+            .as_ref()
+            .is_none_or(|lines| lines.held(&lines.mints, vault, key))
     }
 
     /// [`a_browsers`], from what was read.

@@ -200,8 +200,16 @@ fn what_no_program_is_handed_is_read_once_and_judges_every_key_from_that_read() 
             "{vault}/{key}"
         );
     }
-    assert!(judge.refuses("app", &["priv"]).is_some_and(|why| why.contains("priv")));
-    assert!(judge.refuses("prod", &["pw"]).is_some_and(|why| why.contains("browser")));
+    assert!(
+        judge
+            .refuses("app", &["priv"])
+            .is_some_and(|why| why.contains("priv"))
+    );
+    assert!(
+        judge
+            .refuses("prod", &["pw"])
+            .is_some_and(|why| why.contains("browser"))
+    );
     assert_eq!(judge.refuses("qa", &["other"]), None);
 
     // Every line gone, and the index with them: the judge answers from its read.
@@ -209,7 +217,11 @@ fn what_no_program_is_handed_is_read_once_and_judges_every_key_from_that_read() 
     std::fs::remove_file(crate::secrets::links::path(&ctx)).expect("no links");
     assert!(judge.refuses("app", &["priv"]).is_some(), "read once");
     assert!(judge.refuses("prod", &["pw"]).is_some(), "read once");
-    assert_eq!(NoProgram::read(&ctx).refuses("app", &["priv"]), None, "read again");
+    assert_eq!(
+        NoProgram::read(&ctx).refuses("app", &["priv"]),
+        None,
+        "read again"
+    );
 
     // A file that can't be read refuses every key, as the one-key judge does.
     std::fs::write(crate::names::manifest(dir.path()), "[sandbox\n").expect("a broken file");
