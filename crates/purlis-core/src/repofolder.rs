@@ -268,15 +268,20 @@ pub fn repos(plane: &Path, ws: &str) -> Result<Vec<Row>, Trouble> {
 /// name in `repos/` would be a second copy, which [`folder`] answers in place of the one there
 /// (#5601). A workspace that cannot be read holds none.
 pub fn holds(plane: &Path, ws: &str, name: &str) -> bool {
-    let Ok(held) = holdings(plane, ws) else {
-        return false;
-    };
+    held(plane, ws, name).is_some()
+}
+
+/// **The folder with a `.git` that holds `name` in workspace `ws`**, as [`holds`] finds it: the
+/// repo of that name first, so a shadowed folder is answered only where no repo has the name.
+pub fn held(plane: &Path, ws: &str, name: &str) -> Option<Row> {
+    let found = holdings(plane, ws).ok()?;
     let name = crate::files::workspace::folded(name);
-    held.repos
-        .iter()
-        .chain(&held.shadowed)
-        .chain(&held.others)
-        .any(|row| crate::files::workspace::folded(&row.repo.name) == name)
+    found
+        .repos
+        .into_iter()
+        .chain(found.shadowed)
+        .chain(found.others)
+        .find(|row| crate::files::workspace::folded(&row.repo.name) == name)
 }
 
 /// **The folder with a `.git` in `plane` that `path` is inside**, in either layout, or `None`.

@@ -853,6 +853,70 @@ fn a_clone_the_runner_chat_made_is_not_made_again_beside_a_root_clone_whose_git_
 
     assert_eq!(came.made, []);
     assert!(!world.root.join("workspaces/app/repos/api").exists());
+    assert_eq!(
+        came.stayed.len(),
+        1,
+        "it is said, never silent: {:?}",
+        came.stayed
+    );
+    let said = &came.stayed[0];
+    assert!(said.contains("workspaces/app/api"), "{said}");
+    assert!(said.contains("stayed on the runner"), "{said}");
+    assert!(said.contains(".git is a link"), "{said}");
+}
+
+/// **A runner's clone whose name a `repos/` folder with a `.git` file holds is said to stay**
+/// (#5601): that folder is no clone purlis moves work for, and a second copy would hide it, so
+/// the runner's work stays there, in words, and is never left behind in silence.
+#[test]
+fn a_clone_the_runner_chat_made_stays_in_words_beside_a_repos_folder_whose_git_is_a_file() {
+    let world = World::new();
+    world.sessions.hold_with_the_code().expect("sent");
+    let (link, project) = world.sessions.moving_link_in_a_test().unwrap();
+    let api = world.root.join("workspaces/app/repos/api");
+    std::fs::create_dir_all(&api).unwrap();
+    std::fs::write(api.join(".git"), "gitdir: /nowhere\n").unwrap();
+    let there = world.kept().join("workspaces/app/repos/api");
+    std::fs::create_dir_all(&there).unwrap();
+    git(&there, &["init", "-q", "-b", "main"]);
+    committed(&there, "lib.rs", "pub fn api() {}\n");
+
+    let came =
+        super::move_workspace_back(&link, &project, &world.root, "app", "builds").expect("moved");
+
+    assert_eq!(came.made, []);
+    assert_eq!(came.stayed.len(), 1, "{:?}", came.stayed);
+    let said = &came.stayed[0];
+    assert!(said.contains("workspaces/app/api"), "{said}");
+    assert!(said.contains("stayed on the runner"), "{said}");
+    assert!(said.contains(".git is a file"), "{said}");
+}
+
+/// **A fresh runner's clone held here by a folder no work is moved for fails in words** (#5601):
+/// it is in neither the clones fetched nor the clones made, so it is said, and the runner kept.
+#[test]
+fn a_fresh_runners_clone_beside_a_root_clone_whose_git_is_a_link_is_said_not_to_come_back() {
+    let world = World::new();
+    world.sessions.hold_with_the_code().expect("sent");
+    let (link, project) = world.sessions.moving_link_in_a_test().unwrap();
+    let api = world.root.join("workspaces/app/api");
+    std::fs::create_dir_all(&api).unwrap();
+    std::os::unix::fs::symlink(world.root.join("workspaces/app/web/.git"), api.join(".git"))
+        .unwrap();
+    let there = world.kept().join("workspaces/app/repos/api");
+    std::fs::create_dir_all(&there).unwrap();
+    git(&there, &["init", "-q", "-b", "main"]);
+    committed(&there, "lib.rs", "pub fn api() {}\n");
+
+    let failed = super::fetch_whole(&link, &project, &world.root, "app", "builds");
+
+    assert!(
+        failed
+            .iter()
+            .any(|why| why.contains("workspaces/app/api") && why.contains(".git is a link")),
+        "{failed:?}"
+    );
+    assert!(!world.root.join("workspaces/app/repos/api").exists());
 }
 
 /// **A fresh runner's clone is never a second copy beside an old clone at the root whose name
@@ -909,4 +973,32 @@ fn an_old_clone_named_repos_keeps_a_runner_made_clone_there_and_the_rest_comes_b
     assert!(said.contains("Rename it"), "{said}");
     assert!(!said.contains("add the repo again"), "{said}");
     assert!(!world.root.join("workspaces/app/repos/api").exists());
+}
+
+/// **Which runner's clone a folder here holds back, and why** (#5601): one whose name a folder
+/// here holds that is no clone purlis moves work for is said, by what its `.git` is; one whose
+/// name a clone here has, in any case, or nothing at all has, is not.
+#[test]
+fn a_name_held_here_by_no_clone_work_moves_for_is_said_with_why() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(dir.path()).unwrap();
+    let ws = root.join("workspaces/alpha");
+    let real = ws.join("API");
+    std::fs::create_dir_all(&real).unwrap();
+    git(&real, &["init", "-q", "-b", "main", "."]);
+    let linked = ws.join("web");
+    std::fs::create_dir_all(&linked).unwrap();
+    std::os::unix::fs::symlink(real.join(".git"), linked.join(".git")).unwrap();
+    let filed = ws.join("repos/docs");
+    std::fs::create_dir_all(&filed).unwrap();
+    std::fs::write(filed.join(".git"), "gitdir: /nowhere\n").unwrap();
+
+    let web = super::held_back_here(&root, "alpha", "web").expect("web is held back");
+    assert!(web.contains("workspaces/alpha/web"), "{web}");
+    assert!(web.contains(".git is a link"), "{web}");
+    let docs = super::held_back_here(&root, "alpha", "docs").expect("docs is held back");
+    assert!(docs.contains("workspaces/alpha/repos/docs"), "{docs}");
+    assert!(docs.contains(".git is a file"), "{docs}");
+    assert_eq!(super::held_back_here(&root, "alpha", "api"), None);
+    assert_eq!(super::held_back_here(&root, "alpha", "new"), None);
 }
