@@ -625,10 +625,10 @@ fn a_secret_is_refused_before_push_whatever_the_clones_own_refs_say_the_remote_h
 }
 
 /// The remote is asked at the address git pushes to, reading none of the configuration the
-/// chat's environment points at: a global config that rewrites that address to a copy holding
-/// the whole history takes nothing out of what the push is scanned for.
+/// chat's environment points at: what that configuration says of the address changes nothing
+/// the push is scanned for.
 #[test]
-fn a_secret_is_refused_before_push_whatever_a_config_the_chat_points_at_rewrites() {
+fn a_secret_is_refused_before_push_whatever_the_chats_configuration_says_of_the_address() {
     let chat = Chat::new();
     let origin = chat.with_origin();
     let published = chat.remote_main(&origin);
@@ -637,15 +637,15 @@ fn a_secret_is_refused_before_push_whatever_a_config_the_chat_points_at_rewrites
     chat.operator_git(&["commit", "-q", "-m", "oops"]);
     chat.operator_git(&["rm", "-q", "deploy.sh"]);
     chat.operator_git(&["commit", "-q", "-m", "gone again"]);
-    let decoy = chat.dir.path().join("decoy.git");
+    let other = chat.dir.path().join("other.git");
     let made = support::command("git")
         .args(["init", "-q", "--bare"])
-        .arg(&decoy)
+        .arg(&other)
         .env("GIT_CONFIG_GLOBAL", "/dev/null")
         .output()
         .unwrap();
     assert!(made.status.success(), "{made:?}");
-    let copied = chat.operator_git(&["push", "-q", &decoy.display().to_string(), "main"]);
+    let copied = chat.operator_git(&["push", "-q", &other.display().to_string(), "main"]);
     assert!(copied.status.success(), "{copied:?}");
     let config = chat.dir.path().join("xdg");
     std::fs::create_dir_all(config.join("git")).unwrap();
@@ -653,7 +653,7 @@ fn a_secret_is_refused_before_push_whatever_a_config_the_chat_points_at_rewrites
         config.join("git/config"),
         format!(
             "[url \"{}\"]\n\tinsteadOf = {}\n",
-            decoy.display(),
+            other.display(),
             origin.display()
         ),
     )

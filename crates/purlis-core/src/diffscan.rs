@@ -582,13 +582,11 @@ pub fn remote_has(dir: &Path, helper: Option<&str>, remote: &str) -> Option<Vec<
 /// The commits the remote at the address `url` says its branches and tags are at, asked of the
 /// address itself, for a push git hands to a hook ([`pushed`]); `None` where it cannot be asked.
 ///
-/// **Nothing the repository at `dir` says is read.** git hands the hook the address it resolved
-/// already, so the address is asked from an empty folder outside the repository, reading no
-/// configuration but its own ([`git::isolated`]): neither the repository's, nor the global or
-/// system file, nor one `XDG_CONFIG_HOME` points at. No remote, `insteadOf` or
-/// `pushInsteadOf` a chat wrote can then point the question at another repository than the one
-/// the push goes to, and the scan show nothing. An address that is also a remote's name in
-/// `dir`, or a path that means something only from the repository's own folder, is not asked.
+/// **The address is asked as git handed it.** git gives the hook the address it resolved
+/// already, so it is asked from an empty folder outside the repository, reading no configuration
+/// but its own ([`git::isolated`]): neither the repository's, nor the global or system file, nor
+/// one `XDG_CONFIG_HOME` points at. An address that is also a remote's name in `dir`, or a path
+/// that means something only from the repository's own folder, is not asked.
 fn address_has(dir: &Path, helper: Option<&str>, url: &str) -> Option<Vec<String>> {
     if url.is_empty() || url.starts_with('-') || !an_address_anywhere(url) {
         return None;
@@ -2545,27 +2543,26 @@ mod tests {
         );
     }
 
-    /// What the push's own repository says of an address is not read when the remote is asked:
-    /// an `insteadOf`, or a remote named as the address itself, that points the question at a
-    /// copy holding the whole history would otherwise have the scan show nothing.
+    /// The remote is asked at the address the push goes to, as git handed it: what the
+    /// repository's configuration says of that address changes nothing the scan reads.
     #[test]
     fn a_push_asks_the_address_git_pushes_to_whatever_the_repository_says_of_it() {
-        for decoy_by in ["url.{decoy}.insteadOf", "remote.{url}.url"] {
+        for configured in ["url.{other}.insteadOf", "remote.{url}.url"] {
             let (dir, repo) = repo();
             let url = a_remote_beside(&repo);
             let tip = a_history_the_clone_says_the_remote_has(&repo);
-            let decoy = dir.path().join("decoy.git");
-            testgit::run(dir.path(), &["init", "-q", "--bare", "decoy.git"]);
-            let decoy = decoy.display().to_string();
+            let other = dir.path().join("other.git");
+            testgit::run(dir.path(), &["init", "-q", "--bare", "other.git"]);
+            let other = other.display().to_string();
             testgit::run(
                 &repo,
-                &["push", "-q", &decoy, &format!("{tip}:refs/heads/main")],
+                &["push", "-q", &other, &format!("{tip}:refs/heads/main")],
             );
-            let key = decoy_by.replace("{decoy}", &decoy).replace("{url}", &url);
-            let value = if decoy_by.starts_with("url.") {
+            let key = configured.replace("{other}", &other).replace("{url}", &url);
+            let value = if configured.starts_with("url.") {
                 &url
             } else {
-                &decoy
+                &other
             };
             testgit::run(&repo, &["config", &key, value]);
 
@@ -2577,7 +2574,7 @@ mod tests {
                     .map(|f| f.path.as_str())
                     .collect::<Vec<_>>(),
                 ["deploy.sh"],
-                "{decoy_by}"
+                "{configured}"
             );
         }
     }
