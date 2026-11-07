@@ -630,8 +630,8 @@ fn a_chat_at_the_floor_makes_its_tools_folders_in_a_bare_home() {
 /// Code, as CI sets it.
 #[test]
 fn two_claude_code_chats_each_write_a_temporary_folder_of_their_own_and_not_the_others() {
-    use std::os::unix::fs::{DirBuilderExt, MetadataExt};
     purlis_core::unsteered!();
+    use std::os::unix::fs::{DirBuilderExt, MetadataExt};
     let Some(program) = std::env::var_os("PURLIS_CLAUDE_CODE").map(PathBuf::from) else {
         return;
     };
