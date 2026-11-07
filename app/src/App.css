@@ -1635,6 +1635,19 @@ body {
   align-items: center;
 }
 
+/* **A head with no state word draws its tasks' button as the tasks' glyph** (#5446, #5524): the
+   mark it starts with wears the state's own, which is never drawn twice. The size of a state's. */
+.pane-tasks-glyph {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-secondary);
+}
+
+.pane-tasks-glyph svg {
+  width: 0.8rem;
+  height: 0.8rem;
+}
+
 /* **The menu's summary** (#5341): a count for each way its tasks stand, each with its state's
    mark, in the secondary words, as a tab's chip drew them, then the key that opens it too. */
 .tasks-menu-summary {

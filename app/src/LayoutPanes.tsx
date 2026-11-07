@@ -89,7 +89,17 @@ import {
 } from "./ChatNotices";
 import { Button, IconButton } from "./ui/button/Button";
 import { TIPS_BELOW } from "./ui/tooltip/Tooltip";
-import { Bell, Plus, Puzzle, Reply, ScrollText, Square, SquareTerminal, Undo2 } from "lucide-react";
+import {
+  Bell,
+  ListTree,
+  Plus,
+  Puzzle,
+  Reply,
+  ScrollText,
+  Square,
+  SquareTerminal,
+  Undo2,
+} from "lucide-react";
 import {
   paneKindOf,
   paneLinesOf,
@@ -182,7 +192,7 @@ const asItIs: TasksOn = (_session, _at, word, alone) => (alone ? null : word);
  * (a task's path says it, or the pane is too narrow) still draws the mark alone as that button
  * where the chat has tasks, so ⌘⇧J always has its menu to open.
  */
-function PaneTasksWord({
+export function PaneTasksWord({
   tasksOn = asItIs,
   session,
   at,
@@ -198,18 +208,33 @@ function PaneTasksWord({
   markWord: boolean;
   chat: ChatHead["chat"];
 }) {
-  const drawn = tasksOn(
-    session,
-    at,
+  // **The state's glyph is drawn once on a head** (#5446, #5524): the mark it starts with wears it
+  // on its badge, so the line says it again only with its word. A head with no word draws no
+  // state of its own: only the button of its tasks, where it has any, drawn as the tasks' glyph
+  // and named by the word, as it is with one.
+  const said = word && markWord;
+  const state = (
     <ChatShownState
       session={session}
       shell={chat.shell}
       report={chat.report}
       outcome={chat.outcome}
       harness={chat.harness}
-      markOnly={!word || !markWord}
-    />,
-    !word,
+      heardOnly={!said}
+    />
+  );
+  const drawn = tasksOn(
+    session,
+    at,
+    said ? (
+      state
+    ) : (
+      <span className="pane-tasks-glyph">
+        <ListTree aria-hidden="true" />
+        {state}
+      </span>
+    ),
+    !said,
   );
   return drawn == null ? null : <span className="pane-state-mark">{drawn}</span>;
 }

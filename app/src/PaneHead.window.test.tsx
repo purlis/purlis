@@ -392,6 +392,28 @@ describe("a narrow pane's head", () => {
     expect(right).toBe("Split right");
     expect(rest).toEqual([]);
   });
+
+  /** The glyphs drawn on the head's chat side, by their lucide names, in order. */
+  const glyphs = () =>
+    [...head().querySelectorAll(".pane-chips svg")].map(
+      (one) => [...one.classList].find((name) => /^lucide-(?!icon$)/.test(name)) ?? "?",
+    );
+
+  it.each([
+    ["with its mark and no word", 400],
+    ["with no state of its own", 360],
+  ])("draws each state's glyph once, %s (#5446)", async (_, width) => {
+    await aPaneOf(width);
+
+    for (const moved of [RUNNING, WAITING]) {
+      await act(() => emit(...onTheWire("chat-moved", moved)));
+      await waitFor(() =>
+        expect(head().querySelector('[data-scope="chat-mark"][data-part="badge"]')).not.toBeNull(),
+      );
+      const drawn = glyphs();
+      expect(drawn).toEqual([...new Set(drawn)]);
+    }
+  });
 });
 
 describe("a chat's pane foot (#5202)", () => {
