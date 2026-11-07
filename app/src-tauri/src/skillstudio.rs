@@ -1430,6 +1430,9 @@ pub struct StatsRow {
     /// Tokens spent inside them, or null where no run said its tokens.
     pub tokens: Option<u32>,
     pub ms: u32,
+    /// Times a built-in skill should have started and did not (#5738): counted by harness, and
+    /// 0 in every other grouping.
+    pub misses: u32,
 }
 
 /// A skill's totals, by what it ran on, by persona and by workspace (SK-20).
@@ -1453,11 +1456,12 @@ pub(crate) fn stats_row(group: StatsGroup, totals: purlis_core::skilluse::Totals
         asks: small(totals.asks),
         tokens: (totals.tokens_said > 0).then(|| small(totals.tokens)),
         ms: small(totals.ms),
+        misses: small(totals.misses),
     }
 }
 
-/// The totals of every run of `skill` the project at `root` has recorded
-/// (`purlis_core::skilluse::stats`).
+/// The totals of every run of `skill` the project at `root` has recorded, with its misses
+/// (`purlis_core::skilluse::stats_with_misses`).
 pub(crate) fn stats(root: &std::path::Path, skill: &str) -> SkillStats {
     use purlis_core::skilluse::{By, Group};
     let runs: Vec<purlis_core::skilluse::Run> =
@@ -1465,8 +1469,13 @@ pub(crate) fn stats(root: &std::path::Path, skill: &str) -> SkillStats {
             .into_iter()
             .map(|nested| nested.run)
             .collect();
+    // A built-in's misses (#5738), by its own name: only a built-in has any.
+    let misses: Vec<purlis_core::skilluse::Miss> = purlis_core::skilluse::misses(root)
+        .into_iter()
+        .filter(|miss| miss.is_of(skill))
+        .collect();
     let rows = |by: By| -> Vec<StatsRow> {
-        purlis_core::skilluse::stats(&runs, by)
+        purlis_core::skilluse::stats_with_misses(&runs, &misses, by)
             .into_iter()
             .map(|row| {
                 let group = match by {

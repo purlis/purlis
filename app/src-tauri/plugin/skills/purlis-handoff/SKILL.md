@@ -16,8 +16,8 @@ person's work moves to a chat they will read themselves.
 
 **1. Does this chat need the answer?** Then it is not a handoff.
 
-- To carry on *this turn*, with work this chat's own persona owns: your harness's own helper,
-  a sub-agent.
+- To carry on *this turn* with read-only work this chat's own persona owns (searching,
+  reading, reviewing): your harness's own helper, a sub-agent. Work that writes is a task.
 - Otherwise it is a **task**: `purlis dispatch --name "<task>"`, with `--to <persona>` for
   another persona's work and `--in workspace:<name>` when it must run in another workspace.
   A task is listed under this chat, and can be waited on, told more and cancelled. The
@@ -82,12 +82,13 @@ request from this chat to another, and the chat that gets it applies its own jud
 
 - **The operator already said where** ("hand this to billing", "open a chat for it here"):
   go to step 5.
-- **Otherwise ask once**, with **AskUserQuestion**, and show the brief beside the question so
+- **Otherwise ask once**, with `ask_operator`, and show the brief beside the question so
   they see what is being sent. Offer:
   - **this workspace**: a new chat here;
   - **the matched workspace(s)**: one option each, named, with its vision;
   - **`new: <name> — <vision>`**: a workspace to create;
-  - **a task or a sub-agent instead**: when the first test was closer than you thought;
+  - **a task instead** (or a sub-agent, for read-only work): when the first test was closer
+    than you thought;
   - **not at all**: the work is not worth a chat.
 
 Say the task name and the persona beside the brief.

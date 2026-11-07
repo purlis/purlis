@@ -465,6 +465,11 @@ struct Row {
     level: Option<String>,
     tree: Option<String>,
     harness: Option<String>,
+    /// The skill a miss is of (#5738): a miss's row has no `skill`, so a purlis before misses
+    /// reads none of it as a run.
+    missed: Option<String>,
+    signal: Option<String>,
+    harness_version: Option<String>,
     /// Present, null or not, only where the row says it.
     #[serde(deserialize_with = "said")]
     workspace: Option<Option<String>>,
@@ -493,32 +498,10 @@ pub fn runs_since(root: &Path, since: u64) -> std::collections::BTreeMap<String,
 /// **Every skill run the plane's skill log holds**, newest first: each start with its end
 /// where one is logged, and each row written before runs were recorded as a run of its own.
 pub fn runs(root: &Path) -> Vec<Run> {
-    let dir = root.join("personas").join(DIR_NAME);
-    let Ok(reader) = std::fs::read_dir(dir) else {
-        return Vec::new();
-    };
-    let mut files: Vec<PathBuf> = reader
-        .filter_map(Result::ok)
-        .map(|e| e.path())
-        .filter(|p| p.extension().is_some_and(|e| e == "jsonl"))
-        .collect();
-    files.sort();
     let mut runs: Vec<Run> = Vec::new();
     let mut ends: std::collections::HashMap<String, End> = std::collections::HashMap::new();
-    for file in files {
-        let device = file
-            .file_stem()
-            .and_then(|stem| stem.to_str())
-            .and_then(|stem| stem.split_once('.'))
-            .map(|(_, device)| device.to_owned())
-            .unwrap_or_default();
-        let Ok(text) = std::fs::read_to_string(&file) else {
-            continue;
-        };
-        for line in crate::mdsection::split_lines(&text) {
-            let Ok(row) = serde_json::from_str::<Row>(line) else {
-                continue;
-            };
+    for (device, rows) in rows(root) {
+        for row in rows {
             match (row.skill.filter(|s| !s.is_empty()), row.run, row.ended) {
                 (Some(skill), id, _) => {
                     let workspace = row.workspace.map(|ws| ws.filter(|ws| !ws.is_empty()));
@@ -570,6 +553,161 @@ pub fn runs(root: &Path) -> Vec<Run> {
     }
     runs.sort_by(|a, b| b.started.cmp(&a.started).then(b.id.cmp(&a.id)));
     runs
+}
+
+/// **Every row of the plane's skill log**, file by file in the order the files sort, each with
+/// the device whose log holds it: a line that is no row is skipped.
+fn rows(root: &Path) -> Vec<(String, Vec<Row>)> {
+    let dir = root.join("personas").join(DIR_NAME);
+    let Ok(reader) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut files: Vec<PathBuf> = reader
+        .filter_map(Result::ok)
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|e| e == "jsonl"))
+        .collect();
+    files.sort();
+    files
+        .into_iter()
+        .filter_map(|file| {
+            let device = file
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .and_then(|stem| stem.split_once('.'))
+                .map(|(_, device)| device.to_owned())
+                .unwrap_or_default();
+            let text = std::fs::read_to_string(&file).ok()?;
+            let rows = crate::mdsection::split_lines(&text)
+                .into_iter()
+                .filter_map(|line| serde_json::from_str::<Row>(line).ok())
+                .collect();
+            Some((device, rows))
+        })
+        .collect()
+}
+
+/// **What says a built-in skill was missed** (#5738, spec #5714): a [`Signal::Correction`], the
+/// person starting it themselves right after a turn that did not, or a [`Signal::Report`] the
+/// person filed that it should have started.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+#[non_exhaustive]
+pub enum Signal {
+    Correction,
+    Report,
+    /// A signal a newer purlis wrote, which this one does not know: still a miss.
+    #[serde(other)]
+    Unknown,
+}
+
+impl Signal {
+    /// The word a miss records: `correction`, `report` or `unknown`.
+    pub fn word(self) -> &'static str {
+        match self {
+            Self::Correction => "correction",
+            Self::Report => "report",
+            Self::Unknown => "unknown",
+        }
+    }
+
+    fn parse(word: &str) -> Self {
+        match word {
+            "correction" => Self::Correction,
+            "report" => Self::Report,
+            _ => Self::Unknown,
+        }
+    }
+}
+
+/// A miss of a built-in skill, as [`missed`] logs it.
+#[derive(Debug, Clone, Copy)]
+pub struct Missing<'a> {
+    /// The skill, by its own name ([`own_name`]).
+    pub skill: &'a str,
+    /// The harness the chat ran on, by the word the plane calls it, where it is known.
+    pub harness: Option<&'a str>,
+    /// The harness's version, where this purlis heard it.
+    pub harness_version: Option<&'a str>,
+    pub persona: Option<&'a str>,
+    pub signal: Signal,
+}
+
+/// **Logs a miss of a built-in skill** (#5738): one row beside the runs, with the skill, the
+/// harness and its version, the persona and the signal, and never a prompt. Its skill is
+/// `missed`, never `skill`, so a purlis from before misses reads no run of it. Nothing is
+/// logged in a project this purlis may not write.
+pub fn missed(
+    root: &Path,
+    miss: &Missing<'_>,
+    when: chrono::DateTime<chrono::Utc>,
+    device: &str,
+) -> Option<PathBuf> {
+    let skill = crate::memstore::py_strip(miss.skill);
+    if skill.is_empty() || !writable(root) {
+        return None;
+    }
+    fn said(value: Option<&str>) -> Option<&str> {
+        value
+            .map(crate::memstore::py_strip)
+            .filter(|value| !value.is_empty())
+    }
+    let row = serde_json::json!({
+        "missed": skill,
+        "signal": miss.signal.word(),
+        "harness": said(miss.harness),
+        "harness_version": said(miss.harness_version),
+        "persona": said(miss.persona),
+        "ts": crate::dispatch::stamp(when),
+    });
+    crate::dispatch::append(&path_for(root, when, device), root, &row)
+}
+
+/// One miss of a built-in skill, as the plane's skill log holds it (#5738).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct Miss {
+    /// The skill, by its own name.
+    pub skill: String,
+    pub harness: Option<String>,
+    pub harness_version: Option<String>,
+    pub persona: Option<String>,
+    pub signal: Signal,
+    /// When it was logged, as the row stamped it.
+    pub at: String,
+    /// The device whose log holds it.
+    pub device: String,
+}
+
+impl Miss {
+    /// Whether this is a miss of skill `name`, by its own name or the name a harness starts it
+    /// by (`purlis:purlis-secrets`).
+    pub fn is_of(&self, name: &str) -> bool {
+        self.skill == purlis_skills::run_name(name)
+    }
+}
+
+/// **Every miss the plane's skill log holds** (#5738), newest first.
+pub fn misses(root: &Path) -> Vec<Miss> {
+    let mut misses: Vec<Miss> = rows(root)
+        .into_iter()
+        .flat_map(|(device, rows)| {
+            rows.into_iter().filter_map(move |row| {
+                let skill = row.missed.filter(|skill| !skill.is_empty())?;
+                let some = |value: Option<String>| value.filter(|value| !value.is_empty());
+                Some(Miss {
+                    skill,
+                    harness: some(row.harness),
+                    harness_version: some(row.harness_version),
+                    persona: some(row.persona),
+                    signal: row.signal.as_deref().map_or(Signal::Unknown, Signal::parse),
+                    at: row.ts.unwrap_or_default(),
+                    device: device.clone(),
+                })
+            })
+        })
+        .collect();
+    misses.sort_by(|a, b| b.at.cmp(&a.at));
+    misses
 }
 
 /// **What a skill's runs are totalled by** (SK-20): the harness its chat ran on, the persona,
@@ -638,6 +776,9 @@ pub struct Totals {
     pub tokens_said: u64,
     /// Time inside them, in milliseconds.
     pub ms: u64,
+    /// Misses of the skill (#5738): times it should have started and did not. Counted by
+    /// harness alone ([`stats_with_misses`]).
+    pub misses: u64,
 }
 
 impl Totals {
@@ -670,9 +811,25 @@ pub struct Stats {
 /// group, named groups by name before none and the runs that do not say. The one reading a
 /// skill's tab, and any other surface that totals runs, draws.
 pub fn stats(runs: &[Run], by: By) -> Vec<Stats> {
+    stats_with_misses(runs, &[], by)
+}
+
+/// **The totals of `runs` and `misses` by `by`** (#5738): [`stats`], with each harness's misses
+/// counted beside its runs, and a harness that had misses and no run a row of its own. Misses
+/// are totalled per harness alone: by persona, workspace or version none is counted.
+pub fn stats_with_misses(runs: &[Run], misses: &[Miss], by: By) -> Vec<Stats> {
     let mut groups: std::collections::BTreeMap<Group, Totals> = std::collections::BTreeMap::new();
     for run in runs {
         groups.entry(Group::of(run, by)).or_default().add(run);
+    }
+    if by == By::Harness {
+        for miss in misses {
+            let group = miss
+                .harness
+                .clone()
+                .map_or(Group::NotRecorded, Group::Named);
+            groups.entry(group).or_default().misses += 1;
+        }
     }
     let mut rows: Vec<Stats> = groups
         .into_iter()

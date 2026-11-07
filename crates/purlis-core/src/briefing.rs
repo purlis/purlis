@@ -325,9 +325,9 @@ pub const SANDBOXED_NOTE: &str = "⬢ **This chat runs in purlis's sandbox.** Wh
      never granted to a chat: run one of your persona's declared tools by its plain name, which \
      purlis runs through `purlis secret exec` and hands the credential. Any other command with a \
      vault is refused, and the refusal names the tool to declare; the person can run it in \
-     their own terminal. A website login is a browser-login tool of your persona: run it by its \
-     name with `-s=<session>`, and load the session it leaves into your browser; purlis fills \
-     the login on the declared site alone. Git work happens in branch folders purlis cuts: \
+     their own terminal. A website login is the `browser_login` tool: call it with the login's \
+     name, and purlis fills it in your browser on the declared site alone; running the login's \
+     name as a command does nothing. Git work happens in branch folders purlis cuts: \
      `purlis worktree add <repo> <piece>` makes one (a raw `git worktree add` is refused), and \
      you commit and push from it with `purlis worktree commit` and `purlis worktree push`.";
 
@@ -420,7 +420,8 @@ pub const ONE_ROUTE_IS_A_TASK: &str = "Work that writes, commits, needs its own 
 /// What stands after it: the route is for work that must come back as an answer and that
 /// another chat has to do, and says nothing about work this chat can do itself.
 pub const ONE_ROUTE_ONLY_THEN: &str = "This says where such work goes, not that work should \
-     go: what this chat can do itself, it does.";
+     go: what this chat can do itself, it does, and it dispatches when the work needs another \
+     persona's charter, memory or vault.";
 
 /// [`UNSANDBOXED_NOTE`] for a chat the app started (it has the app's socket) with no sandbox, in
 /// the project at `root` whose sandbox is in force; none for any other, a harness started in a
@@ -586,7 +587,7 @@ fn workspace_confirm_nudge(ask: &Ask, ids: &Ids, summaries: &Summaries) -> Optio
     };
     Some(format!(
         "⬢ **Confirm the workspace before any repo work.** {standing} (it would otherwise default \
-         to `{current}`). Ask the user — via a quiz (AskUserQuestion) — whether to **create a \
+         to `{current}`). Ask the user with `ask_operator` whether to **create a \
          new** workspace or **use an existing** one (existing: {existing}), then run `purlis \
          workspace use <name>` (or `purlis workspace create <name> --use`).{lock} If the user's \
          first message already names or clearly implies a workspace, confirm that one instead \
