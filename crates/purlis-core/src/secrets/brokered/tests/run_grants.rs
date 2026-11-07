@@ -1550,7 +1550,7 @@ fn a_key_linked_into_a_vault_the_persona_may_not_use_is_never_offered_to_a_progr
 
     let (why, code) = refusal(&frames);
     assert_eq!(code, 1, "{frames:?}");
-    assert!(why.contains("other"), "names where the link leads: {why}");
+    assert!(why.contains("may not use"), "says why: {why}");
     assert!(!why.contains("pr0d-v4lue"), "never the value: {why}");
     assert!(asks.open_runs().is_empty(), "asked nobody");
 }

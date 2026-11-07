@@ -1299,7 +1299,7 @@ impl Asks {
                 // planted in another persona's vault is read by that persona's tools. A replace
                 // was judged so as it was asked. And only to an entry the run's picker would
                 // list (D-5246-1), whatever the window listed.
-                if let Err(why) = self.linkable(ctx, &vault, &key, reason.is_none(), &to) {
+                if let Err(why) = self.linkable(ctx, &vault, &key, reason.is_none(), to) {
                     still_open();
                     return Err(why);
                 }

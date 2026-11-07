@@ -742,7 +742,7 @@ pub fn entries_for(held: &crate::planes::Held, id: u32) -> Result<Vec<EntriesOf>
     Ok(links::pickable(&ctx, Some(&asked))
         .map_err(|e| e.message.to_string())?
         .into_iter()
-        .filter(|one| usable.iter().any(|vault| *vault == one.vault))
+        .filter(|one| usable.contains(&one.vault))
         .map(|one| match one.keys {
             Ok(keys) => EntriesOf {
                 keys: keys

@@ -1035,7 +1035,7 @@ fn grantable(
         .iter()
         .map(|value| value.key.as_str())
         .collect();
-    match no_program_is_handed(&reading_for(asker), asked.vault, &keys) {
+    match handed_to_no_granted_program(&reading_for(asker), Some(persona), asked.vault, &keys) {
         Some(why) => Err(why),
         None => Ok(ready),
     }
@@ -1049,6 +1049,41 @@ fn grantable(
 /// Fill, which may link the key to an entry the person keeps.
 pub fn no_program_is_handed(ctx: &Ctx, vault: &str, keys: &[&str]) -> Option<String> {
     NoProgram::read(ctx).refuses(vault, keys)
+}
+
+/// **Why no program the person allowed may be handed one of `keys` of `vault`** (ADR 0112): what
+/// [`no_program_is_handed`] refuses, and a key that is a link into a vault `persona` may not use
+/// (D-5246-1, the person's ruling amending D-5080-11). A Run grant's notice names only the
+/// persona's vault, so a value read through such a link would go where the person never read;
+/// however the link came to be, before the picker and the press were narrowed too. A link that
+/// can't be read is refused, failing closed. A declared tool is not judged so: it reads through a
+/// link as it always did.
+fn handed_to_no_granted_program(
+    ctx: &Ctx,
+    persona: Option<&str>,
+    vault: &str,
+    keys: &[&str],
+) -> Option<String> {
+    no_program_is_handed(ctx, vault, keys).or_else(|| {
+        let persona = persona.unwrap_or_default();
+        keys.iter()
+            .find_map(|&key| {
+                match super::links::of(ctx, vault, key) {
+            Ok(None) => None,
+            Ok(Some(to)) => authorise(ctx, Some(persona), &to.vault).err().map(|_| {
+                format!(
+                    "{key} in vault {vault} reads an entry of a vault {persona} may not use, so \
+                     no program is handed it; the person can link it to an entry {persona} may \
+                     use, or fill it"
+                )
+            }),
+            Err(_) => Some(format!(
+                "purlis could not read where {key} in vault {vault} leads, so no program is \
+                 handed it"
+            )),
+        }
+            })
+    })
 }
 
 /// **[`no_program_is_handed`] for many keys, the project's file and the links index read once**
@@ -1304,7 +1339,12 @@ fn run_granted(
         .iter()
         .map(|value| value.key.as_str())
         .collect();
-    match no_program_is_handed(&reading_for(asker), &wanted.vault, &keys) {
+    match handed_to_no_granted_program(
+        &reading_for(asker),
+        asker.persona.as_deref(),
+        &wanted.vault,
+        &keys,
+    ) {
         Some(why) => refused_after(why),
         None => Ok((ready, bound)),
     }
@@ -3268,8 +3308,9 @@ pub(crate) fn serve_recorded(
                 Err((code, why)) => return refuse(&mut *writer, code, why),
             }
             if under_a_grant
-                && let Some(why) = no_program_is_handed(
+                && let Some(why) = handed_to_no_granted_program(
                     &ctx,
+                    asker.persona.as_deref(),
                     &wanted.vault,
                     &keys_named(&wanted).collect::<Vec<_>>(),
                 )
@@ -3538,7 +3579,12 @@ pub(crate) fn serve_recorded(
                         // The person may have filled it with an entry they keep, as a link: one
                         // a browser login fills is no granted program's either.
                         if under_a_grant
-                            && let Some(why) = no_program_is_handed(&ctx, &wanted.vault, &[&key])
+                            && let Some(why) = handed_to_no_granted_program(
+                                &ctx,
+                                asker.persona.as_deref(),
+                                &wanted.vault,
+                                &[&key],
+                            )
                         {
                             if let Some(bound) = &grant_bound {
                                 missing.asks.drop_once(bound);
