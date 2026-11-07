@@ -16,7 +16,9 @@
 
 use serde_json::Value;
 
-use super::super::backend::{Caller, MadeRepo, Making, NewRepo, OwnerKind, RepoOwner, Visibility};
+use super::super::backend::{
+    Caller, Fork, ForkPlace, MadeRepo, Making, NewRepo, OwnerKind, RepoOwner, Visibility,
+};
 use super::super::transport::{Call, Field, Method, Reply};
 use super::super::{Failure, ForgeError, ForgeRef, Kind, listed_id, listed_str, quote};
 use super::GitLab;
@@ -150,6 +152,14 @@ impl Making for GitLab {
             )),
             Err(no) => Err(no.error(no.said().to_string())),
         }
+    }
+
+    fn fork_for(&self, _caller: &Caller, _path: &str) -> Result<ForkPlace, ForgeError> {
+        todo!("#4342")
+    }
+
+    fn make_fork(&self, _caller: &Caller, _path: &str) -> Result<Fork, ForgeError> {
+        todo!("#4342")
     }
 }
 

@@ -1,0 +1,37 @@
+{
+  "source": "GitLab 19.4 REST API docs (gitlab-org/gitlab 19-4-stable-ee, doc/api), project_forks.md: Fork a project (asynchronous: import_status is polled on GET /projects/:id until it is finished)",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": "POST",
+            "path": "projects/acme%2Fapi/fork"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"id\": 4242, \"path\": \"api\", \"path_with_namespace\": \"octocat/api\", \"visibility\": \"public\", \"web_url\": \"https://gitlab.com/octocat/api\", \"http_url_to_repo\": \"https://gitlab.com/octocat/api.git\", \"forked_from_project\": {\"id\": 1, \"path_with_namespace\": \"acme/api\"}, \"import_status\": \"started\"}",
+        "err": ""
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "projects/4242"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"id\": 4242, \"path\": \"api\", \"path_with_namespace\": \"octocat/api\", \"visibility\": \"public\", \"web_url\": \"https://gitlab.com/octocat/api\", \"http_url_to_repo\": \"https://gitlab.com/octocat/api.git\", \"forked_from_project\": {\"id\": 1, \"path_with_namespace\": \"acme/api\"}, \"import_status\": \"finished\"}",
+        "err": ""
+      }
+    }
+  ]
+}

@@ -9,7 +9,7 @@
 use serde_json::Value;
 
 use super::backend::{
-    About, Asker, Caller, Capabilities, Capability, ForgeRef, Issues, NewWorkItem, Owner,
+    About, Asker, Caller, Capabilities, Capability, ForgeRef, Fork, Issues, NewWorkItem, Owner,
     PushProtection, Reach, Reason, RepoRecord, Repos, Requests, Support, Tier, Unavailable,
     UnknownWhy, Visibility, WorkItems,
 };
@@ -553,6 +553,29 @@ impl Requests for GitLab {
             "web_url",
             &doing,
         )
+    }
+
+    fn open_draft_from_fork(
+        &self,
+        _caller: &Caller,
+        _path: &str,
+        _fork: &Fork,
+        _branch: &str,
+        _base: &str,
+        _title: &str,
+        _body: &str,
+    ) -> Result<Pr, ForgeError> {
+        todo!("#4342")
+    }
+
+    fn by_head_from_fork(
+        &self,
+        _caller: &Caller,
+        _path: &str,
+        _fork: &Fork,
+        _branch: &str,
+    ) -> Result<Option<Request>, ForgeError> {
+        todo!("#4342")
     }
 
     fn state(&self, caller: &Caller, path: &str, pr: &Pr) -> Result<State, ForgeError> {

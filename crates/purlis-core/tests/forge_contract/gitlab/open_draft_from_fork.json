@@ -1,0 +1,52 @@
+{
+  "source": "GitLab 19.4 REST API docs (gitlab-org/gitlab 19-4-stable-ee, doc/api), merge_requests.md: Create a merge request, from the fork's project into target_project_id, a draft by its title's Draft:",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": "POST",
+            "path": "projects/octocat%2Fapi/merge_requests"
+          }
+        },
+        "fields": [
+          {
+            "text": [
+              "source_branch",
+              "purlis/publish/deploy-0123456789ab"
+            ]
+          },
+          {
+            "text": [
+              "target_branch",
+              "main"
+            ]
+          },
+          {
+            "text": [
+              "title",
+              "Draft: Add the skill deploy"
+            ]
+          },
+          {
+            "text": [
+              "description",
+              "Published with purlis."
+            ]
+          },
+          {
+            "typed": [
+              "target_project_id",
+              "1"
+            ]
+          }
+        ]
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"id\": 91, \"iid\": 13, \"web_url\": \"https://gitlab.com/acme/api/-/merge_requests/13\", \"state\": \"opened\"}",
+        "err": ""
+      }
+    }
+  ]
+}

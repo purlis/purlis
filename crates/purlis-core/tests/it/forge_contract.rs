@@ -37,8 +37,8 @@ use purlis_core::forge::pr::{
 };
 use purlis_core::forge::recorded::Recorded;
 use purlis_core::forge::{
-    Caller, Capability, Forge, ForgeBackend, ForgeRef, Kind, MadeRepo, NewRepo, Owner, OwnerKind,
-    Reach, RepoOwner, Support,
+    Caller, Capability, Forge, ForgeBackend, ForgeRef, Fork, ForkPlace, Kind, MadeRepo, NewRepo,
+    Owner, OwnerKind, Reach, RepoOwner, Support,
 };
 use purlis_core::work;
 use serde_json::{Value, json};
@@ -53,7 +53,7 @@ mod scene;
 use scene::{MERGE, SAVE, SHA, Scene};
 
 /// Every case, by the seam method it covers. The parity test compares this with the traits.
-const CASES: [&str; 28] = [
+const CASES: [&str; 32] = [
     "owned",
     "about",
     "reachable",
@@ -82,12 +82,16 @@ const CASES: [&str; 28] = [
     "delete_created_repo",
     "keep_images",
     "comment",
+    "fork_for",
+    "make_fork",
+    "open_draft_from_fork",
+    "by_head_from_fork",
 ];
 
 /// The cases the live run does not run, each with why and the ticket that will run it. Each one
 /// would merge or queue the fixture's one open request, which the read cases need open; running
 /// them needs a request opened afresh for each run.
-const NOT_LIVE: [(&str, &str); 13] = [
+const NOT_LIVE: [(&str, &str); 17] = [
     (
         "open_draft",
         "each run would leave one more draft on the fixture; it needs a request opened per run (#712)",
@@ -143,6 +147,24 @@ const NOT_LIVE: [(&str, &str); 13] = [
         "comment",
         "it comments on the fixture's open request each run; it needs a request opened per run \
          (#3395)",
+    ),
+    (
+        "fork_for",
+        "the fixture account owns the scene's repos, so it has no fork of them to find; it needs \
+         a second account (#712)",
+    ),
+    (
+        "make_fork",
+        "it makes a fork on the fixture account each run, which only a run that can delete it \
+         may (#712)",
+    ),
+    (
+        "open_draft_from_fork",
+        "each run would leave one more draft on the fixture, from a fork it does not have (#712)",
+    ),
+    (
+        "by_head_from_fork",
+        "it needs a request open from a second account's fork of the fixture (#712)",
     ),
 ];
 
@@ -896,6 +918,84 @@ mod cases {
         spent(&over);
     }
 
+    /// Where the account's fork of `api` is: none yet, so one would be made under the account's
+    /// own name, as public as the source.
+    pub fn fork_for(kind: &str, how: How) {
+        let Some(over) = over(kind, "fork_for", how) else {
+            return;
+        };
+        let scene = &over.scene;
+        assert_eq!(
+            over.backend.fork_for(&over.caller, &scene.path("api")),
+            Ok(ForkPlace::ToMake {
+                path: "octocat/api".into(),
+                visibility: Visibility::Public,
+            })
+        );
+        spent(&over);
+    }
+
+    /// The account's fork of `api`, made, and on GitLab waited for until its copy finished.
+    pub fn make_fork(kind: &str, how: How) {
+        let Some(over) = over(kind, "make_fork", how) else {
+            return;
+        };
+        let scene = &over.scene;
+        let fork = over
+            .backend
+            .make_fork(&over.caller, &scene.path("api"))
+            .unwrap();
+        assert_eq!(fork.path(), "octocat/api");
+        assert_eq!(fork.web_url(), format!("https://{kind}.com/octocat/api"));
+        assert_eq!(
+            fork.clone_url(),
+            format!("https://{kind}.com/octocat/api.git")
+        );
+        assert_eq!(fork.visibility(), Visibility::Public);
+        spent(&over);
+    }
+
+    /// A draft request into `api` from a branch of the account's fork.
+    pub fn open_draft_from_fork(kind: &str, how: How) {
+        let Some(over) = over(kind, "open_draft_from_fork", how) else {
+            return;
+        };
+        let scene = &over.scene;
+        let opened = over
+            .backend
+            .open_draft_from_fork(
+                &over.caller,
+                &scene.path("api"),
+                &the_fork(kind),
+                PUBLISHED,
+                "main",
+                "Add the skill deploy",
+                "Published with purlis.",
+            )
+            .unwrap();
+        assert_eq!(opened.number, 13);
+        spent(&over);
+    }
+
+    /// The request into `api` from the fork's branch, and never one from another fork's branch of
+    /// the same name.
+    pub fn by_head_from_fork(kind: &str, how: How) {
+        let Some(over) = over(kind, "by_head_from_fork", how) else {
+            return;
+        };
+        let scene = &over.scene;
+        let found = over
+            .backend
+            .by_head_from_fork(&over.caller, &scene.path("api"), &the_fork(kind), PUBLISHED)
+            .unwrap()
+            .expect("a request");
+        assert_eq!(
+            (found.number, found.state, found.head.as_str()),
+            (13, State::Open, SHA)
+        );
+        spent(&over);
+    }
+
     pub fn create(kind: &str, how: How) {
         let Some(over) = over(kind, "create", how) else {
             return;
@@ -1259,8 +1359,159 @@ macro_rules! contract {
                 purlis_core::unsteered!();
                 super::cases::comment(stringify!($forge), super::How::$how);
             }
+            #[test]
+            $(#[$attr])?
+            fn fork_for_says_a_fork_would_be_made_under_the_account() {
+                purlis_core::unsteered!();
+                super::cases::fork_for(stringify!($forge), super::How::$how);
+            }
+            #[test]
+            $(#[$attr])?
+            fn make_fork_makes_the_accounts_fork_and_waits_for_it() {
+                purlis_core::unsteered!();
+                super::cases::make_fork(stringify!($forge), super::How::$how);
+            }
+            #[test]
+            $(#[$attr])?
+            fn open_draft_from_fork_opens_a_draft_from_the_forks_branch() {
+                purlis_core::unsteered!();
+                super::cases::open_draft_from_fork(stringify!($forge), super::How::$how);
+            }
+            #[test]
+            $(#[$attr])?
+            fn by_head_from_fork_finds_only_the_forks_request() {
+                purlis_core::unsteered!();
+                super::cases::by_head_from_fork(stringify!($forge), super::How::$how);
+            }
         }
     };
+}
+
+/// The branch a publish through a fork pushes, in the fork cases.
+const PUBLISHED: &str = "purlis/publish/deploy-0123456789ab";
+
+/// The account's fork of `api`, as each forge's recording answers it.
+fn the_fork(kind: &str) -> Fork {
+    let id = if kind == "github" { "1296270" } else { "4242" };
+    Fork::for_a_test(&format!("{kind}.com"), id, "octocat/api", Some("1"))
+}
+
+/// A backend over `exchanges`, and their check.
+fn over_these(kind: Kind, exchanges: Value) -> (Box<dyn ForgeBackend>, Arc<Recorded>) {
+    let text = json!({"source": "as the fork cases' recordings", "exchanges": exchanges});
+    let recorded = Arc::new(Recorded::parse(&text.to_string()).unwrap());
+    let backend = Forge::default_of(kind).backend_over(recorded.clone());
+    (backend, recorded)
+}
+
+/// `fork_for`'s recording, with the account's own repo at the fork's path answered as `there`.
+fn fork_for_finding(kind: &str, there: Value) -> Value {
+    let mut exchanges: Value =
+        serde_json::from_str::<Value>(&recording(kind, "fork_for")).unwrap()["exchanges"].clone();
+    exchanges[2]["reply"] = json!({"code": 0, "out": there.to_string(), "err": ""});
+    exchanges
+}
+
+#[test]
+fn a_fork_of_the_source_already_under_the_account_is_found_on_both_forges() {
+    purlis_core::unsteered!();
+    for (kind, there) in [
+        (
+            Kind::GitHub,
+            json!({"id": 1296270, "full_name": "octocat/api", "fork": true,
+                   "visibility": "public", "html_url": "https://github.com/octocat/api",
+                   "clone_url": "https://github.com/octocat/api.git",
+                   "parent": {"id": 1, "full_name": "acme/api"}}),
+        ),
+        (
+            Kind::GitLab,
+            json!({"id": 4242, "path_with_namespace": "octocat/api", "visibility": "public",
+                   "web_url": "https://gitlab.com/octocat/api",
+                   "http_url_to_repo": "https://gitlab.com/octocat/api.git",
+                   "forked_from_project": {"id": 1, "path_with_namespace": "acme/api"}}),
+        ),
+    ] {
+        let name = kind.word();
+        let (backend, recorded) = over_these(kind, fork_for_finding(name, there));
+        let Ok(ForkPlace::Yours(fork)) = backend.fork_for(&caller(), "acme/api") else {
+            panic!("{name}: the fork is not found");
+        };
+        assert_eq!(fork.path(), "octocat/api", "{name}");
+        assert_eq!(
+            fork.clone_url(),
+            format!("https://{name}.com/octocat/api.git")
+        );
+        spent(&recorded);
+    }
+}
+
+#[test]
+fn a_repo_under_the_accounts_name_that_is_not_the_sources_fork_is_taken_on_both_forges() {
+    purlis_core::unsteered!();
+    for (kind, there) in [
+        // Not a fork at all.
+        (
+            Kind::GitHub,
+            json!({"id": 5, "full_name": "octocat/api", "fork": false, "visibility": "public",
+                   "html_url": "https://github.com/octocat/api",
+                   "clone_url": "https://github.com/octocat/api.git"}),
+        ),
+        // A fork, of another repo.
+        (
+            Kind::GitLab,
+            json!({"id": 5, "path_with_namespace": "octocat/api", "visibility": "public",
+                   "web_url": "https://gitlab.com/octocat/api",
+                   "http_url_to_repo": "https://gitlab.com/octocat/api.git",
+                   "forked_from_project": {"id": 77, "path_with_namespace": "other/api"}}),
+        ),
+    ] {
+        let name = kind.word();
+        let (backend, recorded) = over_these(kind, fork_for_finding(name, there));
+        assert_eq!(
+            backend.fork_for(&caller(), "acme/api"),
+            Ok(ForkPlace::Taken {
+                path: "octocat/api".into()
+            }),
+            "{name}"
+        );
+        spent(&recorded);
+    }
+}
+
+#[test]
+fn a_github_fork_answered_for_another_repo_is_refused() {
+    purlis_core::unsteered!();
+    let mut exchanges: Value = serde_json::from_str::<Value>(&recording("github", "make_fork"))
+        .unwrap()["exchanges"]
+        .clone();
+    exchanges[0]["reply"]["out"] = json!(
+        json!({"id": 9, "full_name": "octocat/other", "fork": true, "visibility": "public",
+               "html_url": "https://github.com/octocat/other",
+               "clone_url": "https://github.com/octocat/other.git",
+               "parent": {"id": 3, "full_name": "acme/other"}})
+        .to_string()
+    );
+    let (backend, _) = over_these(Kind::GitHub, exchanges);
+    let refused = backend.make_fork(&caller(), "acme/api").unwrap_err();
+    assert!(
+        refused.to_string().contains("not a fork of acme/api"),
+        "{refused}"
+    );
+}
+
+#[test]
+fn a_gitlab_fork_whose_copy_failed_is_refused() {
+    purlis_core::unsteered!();
+    let mut exchanges: Value = serde_json::from_str::<Value>(&recording("gitlab", "make_fork"))
+        .unwrap()["exchanges"]
+        .clone();
+    let mut failed: Value =
+        serde_json::from_str(exchanges[1]["reply"]["out"].as_str().unwrap()).unwrap();
+    failed["import_status"] = json!("failed");
+    exchanges[1]["reply"]["out"] = json!(failed.to_string());
+    let (backend, _) = over_these(Kind::GitLab, exchanges);
+    let refused = backend.make_fork(&caller(), "acme/api").unwrap_err();
+    assert!(refused.to_string().contains("copy failed"), "{refused}");
 }
 
 /// The two pictures the browser proof cases keep, as the recordings carry them.
