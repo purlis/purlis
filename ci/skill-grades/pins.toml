@@ -1,0 +1,9 @@
+# The harness versions a pull request's skill grades run on (spec #5714, decision Q23): a score
+# changes only because the pull request changed something. The nightly (#5729) runs the latest
+# versions and proposes a bump here when every grade stays green. Change by hand only with the
+# reason in the pull request.
+
+[harness]
+# npm's @anthropic-ai/claude-code. 2.1.316 is the newest version purlis's own notes record
+# measuring (crates/purlis-core/src/harness/); the first nightly bumps it.
+claude-code = "2.1.316"

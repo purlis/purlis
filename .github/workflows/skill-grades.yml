@@ -1,0 +1,173 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+name: skill-grades
+
+# The CI grader (#5727 of spec #5714; ADR 0105 as amended 2026-11-08): whether purlis's built-in
+# skills start when they should and stay quiet when they should not, measured on Claude Code
+# started headless with purlis's plugin, its session-start briefing and its MCP tools, among the
+# crowd fixture (`ci/skill-grades/crowd`) and bare. Each built-in's trigger tests and trigger bar
+# are in its `evals/` folder; `crates/skill-grader` runs them and `purlis_skills::grade::ci`
+# scores them.
+#
+# **A pull request is graded only for the built-ins it touches**: their own folder, or the plugin
+# wiring, the briefing or the grader, which touch every one (`skill-grader select`). One that
+# touches none of them does not start this workflow, and one that touches a built-in without
+# trigger tests grades nothing.
+#
+# **The key is the person's to provision** (`ci/skill-grades/wizard.sh`): the GitHub environment
+# `skill-grades` holds one secret, `ANTHROPIC_API_KEY`, of a key whose console workspace has a
+# hard spend limit. The secret is named statically, so the runner is sent that one and no other.
+# Without it (not set up yet, or a fork's pull request, which GitHub never hands a secret) the
+# grade says so in the run's summary and stops, green: nothing was graded, and nothing claims it.
+#
+# Harness versions come from `ci/skill-grades/pins.toml`; each result records the version and
+# model the runs said they ran on. The nightly on main and Codex and opencode are #5729 and #5728.
+#
+# `crates/release-manifest/tests/it/the_skill_grades_run_with_one_key_and_skip_without_it.rs`
+# holds this file to those rules.
+
+on:
+  pull_request:
+    paths:
+      - "app/src-tauri/plugin/**"
+      - "crates/purlis-core/src/plugin.rs"
+      - "crates/purlis-core/src/chattools.rs"
+      - "crates/purlis-core/src/harness/claude.rs"
+      - "crates/purlis-core/src/briefing.rs"
+      - "crates/purlis-core/src/briefing/**"
+      - "crates/skills/src/grade/ci.rs"
+      - "crates/skills/src/grade/ci/**"
+      - "crates/skill-grader/**"
+      - "ci/skill-grades/**"
+      - ".github/workflows/skill-grades.yml"
+  workflow_dispatch:
+
+# Nothing by default: each job names what it needs.
+permissions: {}
+
+concurrency:
+  group: skill-grades-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  select:
+    name: what the change grades
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      skills: ${{ steps.select.outputs.skills }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: ./.github/actions/rust-toolchain
+      # This job holds no secret, so it may restore a cache.
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: Build the grader
+        run: cargo build -p skill-grader --locked
+      - name: Which built-ins the change touches
+        id: select
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = pull_request ]; then
+            git diff --name-only "$BASE"...HEAD > "$RUNNER_TEMP/changed"
+          else
+            # By hand: the grader itself, so every built-in with trigger tests.
+            echo ci/skill-grades/pins.toml > "$RUNNER_TEMP/changed"
+          fi
+          skills="$(target/debug/skill-grader select --changed "$RUNNER_TEMP/changed" | paste -sd, -)"
+          echo "skills=$skills" >> "$GITHUB_OUTPUT"
+          if [ -z "$skills" ]; then
+            echo "### Skill trigger grades: no built-in with trigger tests is touched, nothing to grade" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  grade:
+    name: grade on Claude Code
+    needs: [select]
+    if: needs.select.outputs.skills != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    environment: skill-grades
+    permissions:
+      contents: read
+    steps:
+      # The key decides whether anything runs. It is handed over again only to the step that
+      # grades, which is the only other step that names it.
+      - name: Is the key provisioned?
+        id: provisioned
+        env:
+          KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "$KEY" ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=skill-grades::Skill trigger grades skipped: no ANTHROPIC_API_KEY from the skill-grades environment (not set up, or a fork's pull request), so nothing was graded"
+            {
+              echo "### Skill trigger grades skipped: no \`ANTHROPIC_API_KEY\` from the \`skill-grades\` environment, so nothing was graded"
+              echo
+              echo "It is not set up yet (\`ci/skill-grades/wizard.sh\` sets it up), or this is a fork's"
+              echo "pull request, which GitHub never hands a secret."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.provisioned.outputs.ready == 'true'
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/rust-toolchain
+        if: steps.provisioned.outputs.ready == 'true'
+      # Built before the key is handed over, so it is in no build script's environment. No
+      # cache: this job holds a key, and a cache is written by whichever job saved it last.
+      - name: Build purlis and the grader
+        if: steps.provisioned.outputs.ready == 'true'
+        run: cargo build -p purlis-cli -p skill-grader --locked
+      # The runner image's own Node: setup-node can restore a cache, and this job holds a key.
+      - name: Install the pinned Claude Code
+        if: steps.provisioned.outputs.ready == 'true'
+        run: |
+          set -euo pipefail
+          version="$(target/debug/skill-grader pin claude-code)"
+          npm install --global "@anthropic-ai/claude-code@$version"
+          claude --version
+      # A plane for the runs to start in, so the session-start briefing has one to brief.
+      - name: Make a plane
+        if: steps.provisioned.outputs.ready == 'true'
+        run: |
+          set -euo pipefail
+          mkdir "$RUNNER_TEMP/plane"
+          cd "$RUNNER_TEMP/plane"
+          "$GITHUB_WORKSPACE/target/debug/purlis" init --forge github --owner skill-grades
+      - name: Grade
+        if: steps.provisioned.outputs.ready == 'true'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SKILLS: ${{ needs.select.outputs.skills }}
+        run: |
+          set -euo pipefail
+          target/debug/skill-grader grade \
+            --skills "$SKILLS" \
+            --claude "$(command -v claude)" \
+            --purlis "$GITHUB_WORKSPACE/target/debug/purlis" \
+            --cwd "$RUNNER_TEMP/plane" \
+            --records "$RUNNER_TEMP/records" \
+            --summary "$GITHUB_STEP_SUMMARY"
+      # What each run wrote, to read a failing prompt's run. The runs' output names the key's
+      # source, never the key.
+      - name: Keep the runs
+        if: always() && steps.provisioned.outputs.ready == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: skill-grades-runs
+          path: ${{ runner.temp }}/records
+          if-no-files-found: warn

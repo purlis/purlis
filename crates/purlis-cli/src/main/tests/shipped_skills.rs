@@ -74,7 +74,67 @@ const RULES: &[(&str, Rule)] = &[
     ("names a tool a chat is handed", tools_are_real),
     ("has a description a harness lists", description_is_listable),
     ("says purlis in its description", description_says_purlis),
+    ("says each settled pair one way", says_no_losing_side),
 ];
+
+/// **The losing side of each settled pair** (#5722, spec #5714's Q28): words a skill, the
+/// briefing or a tool description said that another place contradicted, each beside the ruling
+/// that settled it. Matched in any case, with runs of spaces and line breaks read as one space.
+/// (e), (g) and (j) are said in words a phrase cannot hold, so they are read in review.
+const LOSING: &[(&str, &str)] = &[
+    (
+        "(a) a website login is the `browser_login` tool, never a login run by its name",
+        "run it by its name",
+    ),
+    (
+        "(b) a chat commits in a branch folder with `purlis worktree commit`, in a terminal too",
+        "commits with plain `git commit`",
+    ),
+    (
+        "(c) a helper does read-only work; writing work is a purlis task",
+        "right tool for work this chat's own persona owns",
+    ),
+    (
+        "(c) a helper does read-only work; writing work is a purlis task",
+        "with work this chat's own persona owns: your harness's own helper",
+    ),
+    (
+        "(d) a chat does what it can itself, and dispatches when the work needs another \
+         persona's charter, memory or vault",
+        "rather than doing it yourself",
+    ),
+    (
+        "(f) the app saves a sandboxed chat's change to the project, a terminal chat runs \
+         `purlis save`",
+        "commit it.",
+    ),
+    (
+        "(h) a chat never asks for a secret's value: it raises a Secret ask",
+        "supply the value",
+    ),
+    (
+        "(i) purlis asks the person through `ask_operator`, not one harness's question tool",
+        "askuserquestion",
+    ),
+    (
+        "(i) purlis asks the person through `ask_operator`, not one harness's question tool",
+        "request_user_input",
+    ),
+];
+
+/// Each ruling `text` says the losing side of, once per phrase found.
+fn losing_sides(text: &str) -> Vec<&'static str> {
+    let text = text
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase();
+    LOSING
+        .iter()
+        .filter(|(_, phrase)| text.contains(&phrase.to_lowercase()))
+        .map(|(ruling, _)| *ruling)
+        .collect()
+}
 
 // ---- reading a skill's code ----------------------------------------------------------- //
 
@@ -375,6 +435,13 @@ fn description_says_purlis(skill: &Skill, _: &Built) -> Vec<String> {
     }
 }
 
+fn says_no_losing_side(skill: &Skill, _: &Built) -> Vec<String> {
+    losing_sides(&skill.page)
+        .into_iter()
+        .map(|ruling| format!("says the losing side of a settled pair, against {ruling}"))
+        .collect()
+}
+
 /// Each skill, by name, with every line a rule has against it.
 fn check(skills: &[Skill], built: &Built) -> Vec<String> {
     let mut out = Vec::new();
@@ -599,4 +666,70 @@ fn a_comment_a_wrapped_span_and_purlis_as_an_argument_are_read_as_a_shell_and_ma
     ] {
         assert_eq!(problems(&format!("{GOOD}{page}\n")).len(), 1, "{page}");
     }
+}
+
+#[test]
+fn a_skill_that_says_the_losing_side_of_a_settled_pair_is_named_with_the_ruling() {
+    for (page, ruling) in [
+        ("Run the login: run it by its\nname with `-s=<s>`.", "(a)"),
+        ("Ask the user to Supply the value by stdin.", "(h)"),
+        ("Ask once, with **AskUserQuestion**.", "(i)"),
+        ("Write the persona. Commit it. Personas are shared.", "(f)"),
+    ] {
+        let found = problems(&format!("{GOOD}{page}\n"));
+        assert_eq!(found.len(), 1, "{page}: {found:?}");
+        assert!(
+            found[0].contains("losing side") && found[0].contains(ruling),
+            "{found:?}"
+        );
+    }
+    // The winning side of each passes.
+    for page in [
+        "Call `browser_login`; running the login's name as a command does nothing.",
+        "Ask with `ask_operator`.",
+        "Commit with `purlis worktree commit`, and commit it there alone.",
+    ] {
+        assert_eq!(
+            problems(&format!("{GOOD}{page}\n")),
+            Vec::<String>::new(),
+            "{page}"
+        );
+    }
+}
+
+/// The settled pairs hold beyond the skills: in what every chat is told at its start, and in
+/// every purlis tool's description and arguments, a chat's other two sources of purlis's words.
+#[test]
+fn the_briefing_and_every_tool_description_say_no_losing_side() {
+    use purlis_core::briefing;
+    let mut said: Vec<(String, String)> = [
+        ("the sandboxed note", briefing::SANDBOXED_NOTE),
+        ("the unsandboxed note", briefing::UNSANDBOXED_NOTE),
+        (
+            "the branch-folder note",
+            briefing::BRANCH_FOLDER_COMMIT_NOTE,
+        ),
+        ("the one route", purlis_core::handoff::ONE_ROUTE),
+        ("the one route's tools", briefing::ONE_ROUTE_TOOLS),
+        ("the one route's task", briefing::ONE_ROUTE_IS_A_TASK),
+        ("the one route's limit", briefing::ONE_ROUTE_ONLY_THEN),
+    ]
+    .into_iter()
+    .map(|(what, text)| (what.to_owned(), text.to_owned()))
+    .collect();
+    for tool in crate::mcp::every_tool() {
+        said.push((
+            format!("the `{}` tool", tool.name),
+            format!("{} {}", tool.description, (tool.schema)()),
+        ));
+    }
+    let wrong: Vec<String> = said
+        .iter()
+        .flat_map(|(what, text)| {
+            losing_sides(text)
+                .into_iter()
+                .map(move |ruling| format!("{what} says the losing side, against {ruling}"))
+        })
+        .collect();
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
 }
