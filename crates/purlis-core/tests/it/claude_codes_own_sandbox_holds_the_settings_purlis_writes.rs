@@ -741,23 +741,28 @@ fn an_outcome_evals_shell_writes_only_its_piece_and_reaches_no_host() {
         .to_string(),
     )
     .expect("the settings");
+    // The program's own temp folder, as a start leaves it: outside the piece.
+    let own_tmp = at.join("tmp");
+    fs::create_dir_all(&own_tmp).expect("a temp folder");
     let command = format!(
         "w() {{ if (mkdir -p \"$(dirname \"$1\")\" && echo x > \"$1\") 2>/dev/null; \
          then echo \"wrote $2\"; else echo \"refused $2\"; fi; }}; \
          w '{piece}/made.txt' piece; w \"$TMPDIR/made.txt\" temp; echo \"temp at $TMPDIR\"; \
          w '{root}/outside.txt' project; w '{home}/outside.txt' home; \
+         w '{own_tmp}/outside.txt' program-tmp; \
          w /tmp/purlis-4476-$$ tmp; w /tmp/claude/purlis-4476-$$ claude-tmp; \
          if curl -sS -m 20 -o /dev/null https://example.com/ 2>/dev/null; \
          then echo 'reached example.com'; else echo 'refused example.com'; fi",
         piece = piece.display(),
         root = root.display(),
         home = home.display(),
+        own_tmp = own_tmp.display(),
     );
     let what = "an outcome eval's shell";
     let said = ran_with(
         &program,
         &home,
-        &temp,
+        &own_tmp,
         &piece,
         &file,
         &["--setting-sources".to_owned(), String::new()],
@@ -770,6 +775,7 @@ fn an_outcome_evals_shell_writes_only_its_piece_and_reaches_no_host() {
         ("wrote temp", "it writes its temp folder"),
         ("refused project", "the project outside its piece"),
         ("refused home", "the home"),
+        ("refused program-tmp", "the program's own temp folder"),
         ("refused tmp", "the system's temp folder"),
         ("refused claude-tmp", "Claude Code's own temp folder"),
         ("refused example.com", "a host the project lists"),
@@ -779,9 +785,12 @@ fn an_outcome_evals_shell_writes_only_its_piece_and_reaches_no_host() {
             "{what}: {why}:\n{said}"
         );
     }
+    // Claude Code hands each command a temp folder of its own inside the one it was given.
     assert!(
-        said.lines()
-            .any(|line| line.trim() == format!("temp at {}", temp.display())),
+        said.lines().any(|line| line
+            .trim()
+            .strip_prefix("temp at ")
+            .is_some_and(|at| Path::new(at).starts_with(&temp))),
         "{what}: its temp folder is in its piece:\n{said}"
     );
     assert!(!root.join("outside.txt").exists() && !home.join("outside.txt").exists());

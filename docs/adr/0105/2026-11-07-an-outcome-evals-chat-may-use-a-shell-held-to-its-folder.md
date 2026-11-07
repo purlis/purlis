@@ -52,7 +52,10 @@ chat either, as only a proxy that asks live takes one. The hold above also sets
 **The shell writes only its own folder** (ruling 2a). That same decision gives it none of the
 project's package caches: they are shared with the person's own chats, and a graded skill could
 leave something there for one of them to run. Its temporary files, and Claude Code's own, go in
-`.tmp/` inside its piece (`TMPDIR` and `CLAUDE_CODE_TMPDIR`). It writes nowhere else: not the
+`.tmp/` inside its piece: Claude Code's temp folder is put there (`CLAUDE_CODE_TMPDIR`), and
+Claude Code gives each command its `TMPDIR` inside it. The program's own `TMPDIR` is left as it
+is, because on Linux its sandbox makes its proxy's sockets there, and a socket path inside a
+piece can be too long to make (measured on CI). It writes nowhere else: not the
 project outside its piece, not the home, not the system's temp folder. Writes by Write and Edit
 stay held to its piece by their guard, as before.
 

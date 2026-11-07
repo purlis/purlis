@@ -1746,8 +1746,8 @@ fn a_chat_whose_pins_are_past_its_budget_is_handed_a_limit_that_holds_them() {
 }
 
 /// #4476: an outcome eval's chat whose skill asked for a shell is not asked about each command,
-/// and keeps its temporary files, and Claude Code's, in its piece; one whose skill did not still
-/// asks at its first command, and has no temp folder named.
+/// and Claude Code's temp folder, which its commands write theirs in, is in its piece; one whose
+/// skill did not still asks at its first command, and has no temp folder named.
 #[test]
 fn an_outcome_chat_with_a_shell_runs_it_and_keeps_its_temp_files_in_its_piece() {
     let piece = tempfile::tempdir().expect("a directory");
@@ -1792,11 +1792,12 @@ fn an_outcome_chat_with_a_shell_runs_it_and_keeps_its_temp_files_in_its_piece() 
         .to_string();
     let (settings, env) = armed(true);
     assert!(!asks_for_bash(&settings), "{settings}");
-    assert_eq!(temp(&env, "TMPDIR").as_deref(), Some(inside.as_str()));
     assert_eq!(
         temp(&env, "CLAUDE_CODE_TMPDIR").as_deref(),
         Some(inside.as_str())
     );
+    // The program's own is left alone: its sandbox's sockets on Linux are made there.
+    assert_eq!(temp(&env, "TMPDIR"), None);
     let (settings, env) = armed(false);
     assert!(asks_for_bash(&settings), "{settings}");
     assert_eq!(temp(&env, "TMPDIR"), None);
