@@ -20,7 +20,7 @@ import {
   secretAsk,
 } from "./secretAsk.testkit";
 import { SecretAskNotice } from "./SecretAskNotice";
-import { expectFocusInSight, inAWindow, untilFocused } from "./stories.testkit";
+import { expectFocusInSight, inAWindow, untilFocused, untilSettled } from "./stories.testkit";
 import { Card } from "./ui/card/Card";
 
 /** The card the Inbox draws an ask on, around the notice. */
@@ -240,6 +240,8 @@ export const ScopeDont: Story = {
     await userEvent.keyboard("{Enter}");
     await waitFor(() => expect(args.onAnswer).toHaveBeenCalled());
     await expect(pressed(args.onAnswer).id).toBe("keep");
+    // Pictured once the press's own transition is done.
+    await untilSettled(canvas.getByTestId("secret-ask"));
   },
 };
 
@@ -520,7 +522,8 @@ export const ThePickerOpen: Story = {
     await expect(await page.findByRole("option", { name: "STRIPE_TEST_KEY" })).toBeInTheDocument();
     await expect(page.getByRole("option", { name: "SENTRY_DSN" })).toBeInTheDocument();
     await document.fonts.ready;
-    await new Promise((frame) => requestAnimationFrame(frame));
+    // Pictured once the popover is done arriving and placed.
+    await untilSettled(page.getByRole("listbox"));
   },
 };
 
