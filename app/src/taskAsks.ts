@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * **What a task asks of the person, as its asker's pane says it** (#1508, V100-56, V100-57).
+ * **What a task asks of the person, as the pane it returns to says it** (#1508, V100-56, V100-57).
  *
  * - **Whose it is, by its whole path**: `“deep” (a task of “steward 4” › “talk”)`. The path's
  *   shape is read from the core's list of who asked whom (`ListedChat.parent`, which the app
@@ -30,7 +30,7 @@ export function named(name: string): string {
 }
 
 /**
- * **Whose a Notice of `chat` is, said on its asker's pane**: the session's own name for the
+ * **Whose a Notice of `chat` is, said on the pane it returns to**: the session's own name for the
  * session, and for a task its name with the path above it, each name quoted: `“talk” (a task
  * of “steward 4”)`, `“deep” (a task of “steward 4” › “talk”)`. Where the path does not reach
  * `own` in the core's list (a link it does not hold), only the session is named, never a guess.
@@ -53,7 +53,7 @@ export function whoseOf(chat: ListedChat, own: ListedChat, chats: readonly Liste
   return `${named(chat.name)} (a task of ${named(own.name)})`;
 }
 
-/** One task in a question its asker's pane asks for several. */
+/** One task in a question asked for several, on the pane they return to. */
 export type Member = { session: number; whose: string; block: ChatBlocked };
 
 /** **Several tasks of one session blocked on the same thing**, asked about in one Notice. */

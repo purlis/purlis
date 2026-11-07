@@ -1948,7 +1948,7 @@ export function closeChat(
   const found = tabs.order
     .flatMap((id) => panesOf(tabs, id).map((one) => ({ id, ...one })))
     .find((one) => one.session === session);
-  // **A task shown in its asker's pane is not taken off the screen by its end** (#1486,
+  // **A task shown in the pane it returns to is not taken off the screen by its end** (#1486,
   // V100-37): a pane never changes what it shows by itself. The tab keeps showing it, as
   // ended ({@link shownLive}), until the person leaves it.
   if (found === undefined) return tabs;
@@ -1999,7 +1999,7 @@ export function replaceSession(tabs: Tabs, from: number, to: number): Tabs {
     const layout = replace(tab.layout, found.pane, (pane) => ({ ...pane, content }));
     return { ...moved, byId: { ...moved.byId, [id]: { ...tab, layout } } };
   }
-  // A task shown in its asker's pane, started again: the pane shows the new one (#1486).
+  // A task shown in the pane it returns to, started again: the pane shows the new one (#1486).
   for (const id of moved.order) {
     const tab = moved.byId[id];
     const at = Object.entries(tab.shows ?? {}).find(([, shown]) => shown === from);
@@ -2265,8 +2265,8 @@ export function restoreShown(tabs: Tabs, shown: readonly number[], askedBy: Aske
 export type Placed = "tab" | "beside";
 
 /**
- * **Whether a task has a pane of its own, and where** (#1489): nothing for a task shown in its
- * asker's pane or in no pane at all, which is every task until the person asks, and
+ * **Whether a task has a pane of its own, and where** (#1489): nothing for a task shown in the
+ * pane it returns to or in no pane at all, which is every task until the person asks, and
  * nothing for a chat nobody asked for. `tab` where it is its tab's own chat ({@link chatOf}),
  * `beside` where its pane is in another chat's tab.
  *
@@ -2388,7 +2388,7 @@ export function panesMovedInto(
  * it was opened beside its session in. Its own tasks go with it: they are at home in its tab
  * ({@link homeOf}). A task that already has its tab has it brought forward.
  *
- * **Nothing ends, and the asker's pane is left on what it showed.** `chat`, `who` and
+ * **Nothing ends, and the pane it returns to is left on what it showed.** `chat`, `who` and
  * `label` name the tab as {@link openTab} names any.
  */
 export function moveToOwnTab(

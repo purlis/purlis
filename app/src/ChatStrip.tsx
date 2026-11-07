@@ -59,7 +59,7 @@ export const NO_ROWS: readonly ChatRow[] = [];
 export const NO_ENDED: readonly Ended[] = [];
 
 /**
- * **The chat tab `id` shows** (#1486): the task its asker's pane is switched to, and otherwise
+ * **The chat tab `id` shows** (#1486): the task its first pane is switched to, and otherwise
  * the tab's own chat. Nothing for a tab that opened on a view. What a thing dropped on the tab
  * is handed to, since the tab reads as the chat it shows.
  */

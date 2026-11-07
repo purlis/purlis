@@ -41,8 +41,8 @@ import { heard } from "./frame.testkit";
 import { onTheWire } from "./chatEvents.testkit";
 
 /**
- * **A task opens in its asker's pane** (#1486), against the whole window: pressing a task
- * swaps what the tab of the session that asked shows, and adds no tab. While a tab shows a
+ * **A task opens in the pane it returns to** (#1486), against the whole window: pressing a task
+ * swaps what a pane shows, and adds no tab. While a tab shows a
  * task, the pane's existing top line carries a breadcrumb and the tab's label says the task.
  *
  * The core here is a fixture: a task is a chat whose `from` says `task: true` and
@@ -623,7 +623,7 @@ describe("pressing a task", () => {
     expect(tree.textContent).not.toContain("no tab");
   });
 
-  it("lands in the focused pane of the tab in front, not in its asker's pane (#4757)", async () => {
+  it("lands in the focused pane of the tab in front, not in the pane it returns to (#4757)", async () => {
     const { tree } = await drawn(withTasks());
     await userEvent.click(tab("steward 2"));
     await waitFor(() => expect(onScreen()).toEqual([2]));
@@ -1229,7 +1229,7 @@ describe("the tab's label", () => {
 });
 
 describe("a task that needs you and is not on screen", () => {
-  it("puts the hand on its asker's tab, and switches nothing", async () => {
+  it("puts the hand on the tab it returns to, and switches nothing", async () => {
     const { move } = await drawn(withTasks());
     expect(handOn("steward 1")).toBeNull();
 
@@ -1308,7 +1308,7 @@ describe("a task that needs you and is not on screen", () => {
     expect(crumbsSay()).toMatch(/^steward 1 › sweep · /);
   });
 
-  it("is worn by its asker's tab, and counted on that tab's workspace, when it works in another", async () => {
+  it("is worn by the tab it returns to, and counted on that tab's workspace, when it works in another", async () => {
     const { move } = await drawn(withTasks());
     await move(6, "waiting", 10, [6]);
 
@@ -1526,7 +1526,7 @@ describe("closing, while a tab shows a task", () => {
     // The tab is talk's now: its pane was given talk (#4757), and a task's tab closes by its
     // minimise.
     const close = tab("talk").closest(".tab")?.querySelector<HTMLElement>("button.closer");
-    expect(close?.getAttribute("aria-label")).toBe("Send talk back to the Chats list");
+    expect(close?.getAttribute("aria-label")).toBe("Send talk back to its row");
     await userEvent.click(close as HTMLElement);
 
     await waitFor(() => expect(tabNames()).toEqual(["steward 2"]));
@@ -1790,7 +1790,7 @@ describe("a chat the person asked for from a tab (#1492, V100-70)", () => {
   });
 });
 
-describe("what a task asks, on its asker's pane (#1508)", () => {
+describe("what a task asks, on the pane it returns to (#1508)", () => {
   /** The clock the questions read, moved by hand: a press too soon after a question is drawn
    *  does nothing. */
   const clock = { now: 1_000_000 };
@@ -1820,7 +1820,7 @@ describe("what a task asks, on its asker's pane (#1508)", () => {
 
     await holdDispatch(7);
 
-    // Reachable from the asker's pane without opening the task, and named from the core's
+    // Reachable from the pane it returns to without opening the task, and named from the core's
     // record of who asked whom.
     expect(
       await screen.findByRole("status", {

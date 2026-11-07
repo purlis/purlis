@@ -36,8 +36,8 @@ import { CLOSE_QUIZ } from "./TaskQuiz";
 /**
  * **The Chats section, against the whole window** (#1447): every running chat of the project
  * in one tree in the left region, nested by which chat started which. A handoff has a tab; a
- * task is listed with none of its own, and its row shows it inside the tab of the session that
- * asked for it (#1486, and `TaskInTab.window.test.tsx` for what that tab then says).
+ * task is listed with none of its own, under the chat that asked for it, and its row shows it in
+ * a pane (#1486, #4757, and `TaskInTab.window.test.tsx` for what that tab then says).
  *
  * Nothing starts a task chat yet, so the ones here are the core's answer as a fixture: a chat
  * whose `from` says `task: true` and `tab: false`. The record that says so is `reopen.rs`'s
@@ -755,7 +755,7 @@ describe("a task chat", () => {
 
   it("comes back as the tab it was, for a task an earlier purlis opened as a tab of its own", async () => {
     // The record says this task has a tab: one was opened for it before tasks lived inside
-    // their asker's pane, or its session has gone. It is still a tab.
+    // the pane they return to, or its session has gone. It is still a tab.
     core([
       chat(1, "alpha"),
       chat(4, "alpha", { persona: "devops", from: { ...by(1, "task"), tab: true } }),

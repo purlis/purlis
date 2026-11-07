@@ -97,8 +97,8 @@ export function chatsOfTabs(
   const askedBy = askedByOf(chats);
   const key = (at: { tab: number; pane: number }) => `${at.tab}:${at.pane}`;
   /**
-   * The pane a chat is listed under: its home, and for a task beside its session, in the
-   * session's own tab, the session's pane, however many such steps there are.
+   * The pane a chat is listed under: its home, and for a task beside the chat it returns to,
+   * that chat's pane, however many such steps there are.
    */
   const listedAt = (home: { tab: number; pane: number; own: number }) => {
     let at = home;
@@ -262,7 +262,7 @@ export function placedCrumbsOf(
  *
  * **A task moved to a tab of its own still asks through the session that asked it** (#1601):
  * while its own tab is not in front, it and its own tasks are counted for the tab of the chat
- * that asked it too, so the session's chip wears the hand and names it. A handoff is no task
+ * that asked it too, so that tab's chip wears the hand and names it. A handoff is no task
  * (`askedByOf`), so it never is.
  */
 export function hiddenNeeding(

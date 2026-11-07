@@ -66,13 +66,13 @@ function tabOf(tabs: Tabs, session: number): number {
 const onScreen = (tabs: Tabs) => visibleSessions(tabs);
 
 describe("a task's home", () => {
-  it("is the tab of the session that asked for it", () => {
+  it("is the pane of the chat that asked for it", () => {
     const tabs = twoSessions();
     expect(homeOf(tabs, 4, askedBy)).toMatchObject({ tab: tabOf(tabs, 1), own: 1 });
     expect(homeOf(tabs, 7, askedBy)).toMatchObject({ tab: tabOf(tabs, 2), own: 2 });
   });
 
-  it("is, for a task of a task, the tab of the session at the top", () => {
+  it("is, for a task of a task whose asker has no pane, the pane of the chat above that", () => {
     const tabs = twoSessions();
     expect(homeOf(tabs, 6, askedBy)).toMatchObject({ tab: tabOf(tabs, 1), own: 1 });
   });
@@ -97,7 +97,7 @@ describe("a task's home", () => {
 });
 
 describe("switching a tab to a chat", () => {
-  it("shows the task in its asker's pane, brings that tab forward, and adds no tab", () => {
+  it("shows the task in the pane it returns to, brings that tab forward, and adds no tab", () => {
     const tabs = twoSessions();
     const shown = switchTabTo(tabs, 4, askedBy);
 
@@ -122,7 +122,7 @@ describe("switching a tab to a chat", () => {
     expect(own.byId[tabOf(tabs, 1)]).toEqual(selectTab(tabs, tabOf(tabs, 1)).byId[tabOf(tabs, 1)]);
   });
 
-  it("shows a task of a task in the tab of the session at the top", () => {
+  it("shows a task of a task in the pane of the nearest chat above it with one", () => {
     const shown = switchTabTo(twoSessions(), 6, askedBy);
     expect(onScreen(shown)).toEqual([6]);
     expect(shown.order).toHaveLength(2);
@@ -284,7 +284,7 @@ describe("a shown task that is gone", () => {
     expect(closed.byId[closed.inFront ?? -1].shows).toBeUndefined();
   });
 
-  it("closes the asker's tab, shown task or not, when the session itself closes", () => {
+  it("closes a chat's own tab, shown task or not, when that chat itself closes", () => {
     const tabs = twoSessions();
     const shown = switchTabTo(tabs, 4, askedBy);
     const after = closeChat(shown, 1, oneWorkspace);
@@ -338,7 +338,7 @@ describe("whether a pane can draw the chat it shows", () => {
 });
 
 describe("what the tabs showed, put back", () => {
-  it("shows each task in its asker's pane again, and moves nothing to the front", () => {
+  it("shows each task in the pane it returns to again, and moves nothing to the front", () => {
     const tabs = twoSessions();
     const back = restoreShown(tabs, [4, 7], askedBy);
 

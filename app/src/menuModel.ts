@@ -137,10 +137,9 @@ type Dress = {
 const KINDS = "chat|tab|task|workspace|project|branch|folder|repo|vault|persona|todo|memory";
 
 /**
- * A row's title with the name it carries taken out: *End chat 3 steward* is *End*, *Send task 2
- * back under steward 4 in the Chats list* is *Send back under steward 4 in the Chats list*.
- * For the rows whose title changes with what they would do, so their words here cannot fall
- * behind the catalogue's.
+ * A row's title with the name it carries taken out: *End chat 3 steward* is *End*, *Stop chat
+ * steward 4 and everything below it* is *Stop and everything below it*. For the rows whose title
+ * changes with what they would do, so their words here cannot fall behind the catalogue's.
  *
  * The name is taken out where the title says it: after the word for its kind, or else where it
  * first stands after the title's verb. A chat a person named *End* is still ended by *End*.

@@ -342,7 +342,7 @@ const over = (mark: Element | null) => {
       mark.dispatchEvent(new Event(name, { bubbles: true }));
   });
 };
-/** The chat drawn in the pane in front: a task is shown in its asker's pane (#1486). */
+/** The chat drawn in the pane in front: a task is shown in the pane it returns to (#1486). */
 const shownInFront = () => screen.getByTestId("pane").textContent;
 /** The word a row says its state in. */
 const word = (name: string) =>
@@ -1323,7 +1323,7 @@ describe("the keys of a row (#1499)", () => {
     act(() => row("devops 2").focus());
     await userEvent.keyboard(" ");
 
-    // In the asker's tab: its chat on one side, the task on the other.
+    // In the tab it returns to: its chat on one side, the task on the other.
     await waitFor(() =>
       expect(screen.getAllByTestId("pane").map((pane) => pane.textContent)).toEqual([
         "session 1",

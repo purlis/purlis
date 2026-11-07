@@ -331,7 +331,7 @@ export function ChatsSection({
   besides?: ReadonlySet<number>;
   /** The chats in no pane with a note in the Notices centre (#4759): their rows are marked. */
   noted?: ReadonlySet<number>;
-  /** A row was pressed: go to that chat. A task is shown in its asker's pane (#1486).
+  /** A row was pressed: go to that chat. A task is shown in the pane it returns to (#1486).
    *  The one way a row opens. */
   onOpen: (session: number) => void;
   /** The catalogue as it stands, by id: what each row's menu reads its rows from. */
@@ -1402,7 +1402,7 @@ const Row = memo(function Row({
   /** The chat it came from, by name: a handoff's, or a task's whose asker has closed. Nothing
    *  for a chat drawn under its parent. */
   from: string | null;
-  /** A task the person asked for themselves, from its asker's ⋯ list (V100-70). */
+  /** A task the person asked for themselves, from the ⋯ menu of the chat that asked (V100-70). */
   byYou: boolean;
   /** The newest open chat its work was handed off to, by name; nothing for a chat that
    *  handed nothing off. */

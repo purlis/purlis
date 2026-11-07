@@ -65,7 +65,7 @@ describe("how the Chats list is drawn (#1499, V100-73)", () => {
       });
   });
 
-  it("opens a pressed task in its asker's pane until the person says otherwise (#1489)", () => {
+  it("opens a pressed task in the pane it returns to until the person says otherwise (#1489)", () => {
     expect(DEFAULT_CHATS_LIST.tabbed).toBe(false);
     expect(loadChatsList({ chats: { tabbed: true } }).prefs).toEqual({
       grouped: false,

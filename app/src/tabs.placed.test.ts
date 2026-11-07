@@ -33,7 +33,7 @@ import {
  * **A task with a pane of its own** (#1489): in a tab of its own, which the person asked for,
  * or beside the session that asked for it, split from that session's pane. The layout already says
  * it (a chat with a pane is its own home, `tabs.homeOf`); these are the ways in and out, and
- * what the asker's tab still says of a task that has left its pane.
+ * what the tab it returns to still says of a task that has left its pane.
  */
 
 const oneWorkspace: FiledIn = () => "alpha";
@@ -60,7 +60,7 @@ function tabOf(tabs: Tabs, session: number): number {
 const sessionsOf = (tabs: Tabs) => tabs.order.map((id) => panesOf(tabs, id).map((p) => p.session));
 
 describe("moving a task to a tab of its own", () => {
-  it("gives it a tab at the strip's end, in front, and leaves its asker's tab as it was", () => {
+  it("gives it a tab at the strip's end, in front, and leaves the tab it returns to as it was", () => {
     const tabs = moveToOwnTab(twoSessions(), 4, "talk", "devops", null);
 
     expect(sessionsOf(tabs)).toEqual([[1], [2], [4]]);
@@ -78,7 +78,7 @@ describe("moving a task to a tab of its own", () => {
 
     const tabs = moveToOwnTab(shown, 4, "talk", "devops", null);
 
-    // One chat, one place: the asker's pane does not go on showing it as "moved".
+    // One chat, one place: the pane it returns to does not go on showing it as "moved".
     expect(shownIn(tabs, tabOf(tabs, 1))).toEqual([
       expect.objectContaining({ own: 1, session: 1 }),
     ]);
@@ -144,7 +144,7 @@ describe("sending a task back", () => {
     expect(sessionsOf(tabs)).toEqual([[1], [2]]);
     // The tab beside it on the strip, as `closeTab` sends it.
     expect(tabs.inFront).toBe(closeTab(own, tabOf(own, 4), oneWorkspace).inFront);
-    // It is at home in its asker's pane again, which shows what it showed.
+    // It is at home in the pane it returns to again, which shows what it showed.
     expect(homeOf(tabs, 4, askedBy)).toMatchObject({ tab: tabOf(tabs, 1), own: 1 });
     expect(visibleSessions(selectTab(tabs, tabOf(tabs, 1)))).toEqual([1]);
   });
@@ -164,7 +164,7 @@ describe("sending a task back", () => {
 });
 
 describe("opening a task beside its session", () => {
-  it("splits the session's pane in the asker's tab, the task on the far side, focused", () => {
+  it("splits the pane it returns to, the task on the far side, focused", () => {
     const tabs = openBeside(selectTab(twoSessions(), 2), 4, askedBy, "talk");
 
     expect(sessionsOf(tabs)).toEqual([[1, 4], [2]]);

@@ -42,8 +42,9 @@ export type TaskBelow = {
   shell: boolean;
   /** Whether the session asked for it itself, and not a task below the session. */
   direct: boolean;
-  /** Whether the person asked for it themselves, from its asker's ⋯ list: the session did not
-   *  ask for it and is not waiting on it or on anything below it, though it is counted. */
+  /** Whether the person asked for it themselves, from the ⋯ menu of the chat that asked: that
+   *  chat did not ask for it and is not waiting on it or on anything below it, though it is
+   *  counted. */
   byYou: boolean;
 } & RowFacts;
 

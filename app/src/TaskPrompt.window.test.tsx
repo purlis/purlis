@@ -31,7 +31,7 @@ import { aTabForEachChat } from "./laidOut.testkit";
  * `TabChip.window.test.tsx` has it: a task is a chat whose `from` says `task: true`.
  *
  * The core says a chat's permission prompt the moment its hook holds it (`asks-changed`): the
- * asker's tab wears the hand for it at once, and the session's pane says whose it is and
+ * tab it returns to wears the hand for it at once, and the session's pane says whose it is and
  * what it asks, with Show the task. Nothing here answers it.
  */
 
@@ -343,7 +343,7 @@ const promptNotice = (session: number) =>
   document.querySelector<HTMLElement>(`[data-cause^="task-permission:${session}:"]`);
 
 describe("a task stopped on a permission prompt", () => {
-  it("puts the hand on its asker's tab the moment its hook holds the prompt", async () => {
+  it("puts the hand on the tab it returns to the moment its hook holds the prompt", async () => {
     const { said } = await drawn(withTasks());
     expect(hand("steward 1")).toBeNull();
 
@@ -509,7 +509,7 @@ describe("putting a waiting chat's Notice away (qw386)", () => {
     fireEvent.click(dismiss);
 
     await waitFor(() => expect(promptNotice(5)).toBeNull());
-    // Hidden, not answered: the hand stays on the asker's tab.
+    // Hidden, not answered: the hand stays on the tab it returns to.
     expect(hand("steward 1")).not.toBeNull();
     // The same prompt said again does not bring it back.
     await asks(said, [prompt(5, "Run purlis persona where")]);

@@ -50,7 +50,7 @@ type Answer = { status: "ok"; data: { said: string } | null } | { status: "error
  * Only a press does any of it. Where an administrator's policy forbids Allow, it is not
  * offered, and the Notice says what policy forbids and who set it.
  *
- * **Drawn for a chat that is not on screen** (#1538), on its asker's pane: the Notice starts
+ * **Drawn for a chat that is not on screen** (#1538), on the pane it returns to: the Notice starts
  * with the chat's whole path (`NoticeOf`), so its own sentences say "it" and "that chat", never
  * "this chat", which would read as the chat on screen. On its own pane it says "this chat".
  *

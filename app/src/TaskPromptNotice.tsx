@@ -12,8 +12,8 @@ import { putAwayEverywhere } from "./notesClearedEverywhere";
  * **A chat that is not on screen is stopped on a prompt** (reported 2026-10-09): its harness
  * asked the person's permission for a tool call, or asked them something, in a terminal nobody
  * is looking at, and everything it does waits on that answer. Said on the pane of the tab it
- * lives in — for a task, its asker's pane — naming whose it is by its whole path (`NoticeOf`),
- * with **Show the task**, which switches the tab to it.
+ * lives in — for a task, the pane it returns to — naming whose it is by its whole path
+ * (`NoticeOf`), with **Show the task**, which switches the tab to it.
  *
  * - **Only for a chat that is not on screen.** On screen, the prompt is in its own pane, and a
  *   second line about it would say it twice. So nothing is drawn where no `NoticeOf` is given.

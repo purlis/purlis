@@ -3294,7 +3294,7 @@ export function catalogue(now: Now): Offer[] {
       offers.push({
         ...can(
           `tab.close:${tab}`,
-          backTitle(now.tabs, own, now.nameOf, askedBy),
+          backTitle(now.nameOf(own)),
           { verb: "sendBack", session: own },
           name,
         ),
@@ -4402,11 +4402,11 @@ export function taskEndRows(listed: readonly ListedChat[], stopping: readonly nu
 
 /**
  * **A row for each task** (#1499, V100-49), so the palette's search finds a task as it finds a
- * tab: `chat.show:<session>`, which shows the task as its row in the Chats list does, inside
- * the tab of the session that asked for it (#1486). Its title says where it works and who
- * asked, so either finds it. **Every task, shown or not**: a task on screen is in its
- * asker's pane and has no `Switch to tab` row of its own, so leaving it out would make the
- * one the person is looking at the one the palette cannot find.
+ * tab: `chat.show:<session>`, which shows the task as its row in the Chats list does (#1486,
+ * #4757). Its title says where it works and who asked, so either finds it. **Every task,
+ * shown or not**: a task on screen may be in a pane it was pressed into, and has no `Switch to
+ * tab` row of its own, so leaving it out would make the one the person is looking at the one
+ * the palette cannot find.
  */
 export function taskRows(listed: readonly ListedChat[]): Offer[] {
   return listed
@@ -5030,22 +5030,11 @@ export const ONLY_A_TASK_OPENS_BESIDE =
 
 /**
  * **What sending a task back is called** (#1489, #5667): out of a tab of its own or a pane
- * beside the chat that asked for it, back to the Chats list, where its row stays under that
- * chat. Its minimise button says the same. The chat it names is the one whose pane it then
- * answers to ({@link returnsTo}), the nearest above it with a pane, and so a row it is nested
- * under. A task whose askers have no pane in this window goes back to the Chats list alone.
+ * beside a chat, back to being its row in the Chats list, which never left (`BACK_NOTE`). One
+ * title wherever it is pressed: its minimise, its menus, the palette and its tab's chip.
  */
-export function backTitle(
-  tabs: Tabs,
-  task: number,
-  nameOf: (session: number) => string,
-  askedBy: AskedBy,
-): string {
-  const name = nameOf(task);
-  const home = returnsTo(tabs, task, askedBy);
-  return home === undefined
-    ? `Send ${name} back to the Chats list`
-    : `Send ${name} back under ${nameOf(home.own)} in the Chats list`;
+export function backTitle(name: string): string {
+  return `Send ${name} back to its row`;
 }
 
 /**
@@ -5097,12 +5086,7 @@ export function placeRows(
       ];
       if (placed !== undefined)
         rows.push({
-          ...can(
-            backId(session),
-            backTitle(tabs, session, nameOf, askedBy),
-            { verb: "sendBack", session },
-            name,
-          ),
+          ...can(backId(session), backTitle(name), { verb: "sendBack", session }, name),
           note: BACK_NOTE,
         });
       return rows;
@@ -5431,7 +5415,7 @@ export function paneCloseOf(
     return {
       ...can(
         "pane.close",
-        backTitle(tabs, content.session, nameOf, askedBy),
+        backTitle(nameOf(content.session)),
         { verb: "sendBack", session: content.session },
         nameOf(content.session),
       ),
