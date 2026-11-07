@@ -33,10 +33,13 @@ const named = (before: Tabs, after: Tabs) =>
 const ID = 1;
 const one = () => openTab(noTabs(), 1, "1", "steward");
 const split = () => named(one(), splitFocusedPane(one(), "row", 2, "2"));
-const second = (tabs: Tabs) =>
-  panes(tabs.byId[ID].layout).find(
+const second = (tabs: Tabs) => {
+  const found = panes(tabs.byId[ID].layout).find(
     (pane) => pane.content.kind === "session" && pane.content.session === 2,
-  )!.pane;
+  );
+  if (found === undefined) throw new Error("no pane shows chat 2");
+  return found.pane;
+};
 
 describe("what a tab's Rename renames", () => {
   it("renames the chat of a tab with one chat", () => {
@@ -54,7 +57,10 @@ describe("what a tab's Rename renames", () => {
 
   it("renames the chat again once a split closes back to one pane", () => {
     const before = split();
-    const closed = named(before, closePane(before, ID, second(before), () => "ops"));
+    const closed = named(
+      before,
+      closePane(before, ID, second(before), () => "ops"),
+    );
     expect(renameOf(closed, ID)).toEqual({ kind: "chat", session: 1 });
   });
 });
@@ -74,7 +80,10 @@ describe("a tab's own name", () => {
 
   it("is kept through a close back to one pane", () => {
     const before = nameTab(split(), ID, "the build");
-    const closed = named(before, closePane(before, ID, second(before), () => "ops"));
+    const closed = named(
+      before,
+      closePane(before, ID, second(before), () => "ops"),
+    );
     expect(tabNameOf(closed.byId[ID])).toBe("the build");
   });
 

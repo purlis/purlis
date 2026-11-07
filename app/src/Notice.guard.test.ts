@@ -452,6 +452,10 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     count: 1,
     why: ACTION,
   },
+  "RenameTab.tsx": {
+    count: 1,
+    why: ACTION,
+  },
   "RenameWorkspace.tsx": {
     count: 1,
     why: ACTION,
@@ -566,7 +570,6 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "footer, and a Start pressed early that the details turned into a grant says, there, why " +
       "nothing started (#4736, ADR 0097 §6); the turned button above it is the way on",
   },
-  "TabRename.tsx": { count: 1, why: "a rename's refusal, beside the box being typed in" },
   "ThemeDraftStrip.tsx": {
     count: 4,
     why:

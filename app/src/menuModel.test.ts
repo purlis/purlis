@@ -679,7 +679,11 @@ describe("the other tabs' menus", () => {
 
   it("a task's list, which has its own two ends and no End…", () => {
     expect(said(menuOf({ on: "chat", session: 11 }, offers))).toEqual([
-      ["Rename chat…", `Ask ▸ [${PERSONAS.map((one) => `${one}…`).join(", ")}]`, "Link to work item…"],
+      [
+        "Rename chat…",
+        `Ask ▸ [${PERSONAS.map((one) => `${one}…`).join(", ")}]`,
+        "Link to work item…",
+      ],
       [
         "Move to its own tab",
         "Open beside console-developer 16",

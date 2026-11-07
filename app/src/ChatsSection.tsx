@@ -22,6 +22,8 @@ import { Bell, ChevronRight, Ellipsis, Hand, LayoutGrid, Plus, Search } from "lu
 import {
   BROWSERS_SHOW,
   besideId,
+  RENAMES_ON_F2,
+  renameId,
   ONLY_A_TASK_OPENS_BESIDE,
   taskStopId,
   DISPATCHES_SHOW,
@@ -196,7 +198,7 @@ const NO_IDS: ReadonlySet<string> = new Set();
 const NO_FOLDS: ReadonlyMap<number, boolean> = new Map();
 
 /** What a key on a row asks for beside opening it. */
-type Asked = "beside" | "stop";
+type Asked = "beside" | "stop" | "rename";
 
 /** **What a chat's row says of its dispatches waiting on memory** (#1617): how many. */
 function onMemoryWords(waiting: number): string {
@@ -752,7 +754,14 @@ export function ChatsSection({
       // row's own task beside its session** (#1489): that task's row of the catalogue, so what
       // opens is the row the key was pressed on. A chat that is not a task has neither row,
       // and Space says why.
-      const offer = offers.get(what === "beside" ? besideId(session) : taskStopId(session));
+      // **F2 opens Rename chat** (#5343), the platform's rename key on a focused item: its row.
+      const offer = offers.get(
+        what === "beside"
+          ? besideId(session)
+          : what === "rename"
+            ? renameId(session)
+            : taskStopId(session),
+      );
       if (offer === undefined) {
         if (what === "beside") setSaid(ONLY_A_TASK_OPENS_BESIDE);
         return;
@@ -1462,6 +1471,15 @@ const Row = memo(function Row({
     // A key held down is one press: neither asks a second time.
     if (event.key === " ") {
       if (!event.repeat) onAct(session, "beside");
+    } else if (
+      event.key === "F2" &&
+      !event.altKey &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      !event.shiftKey
+    ) {
+      // Here, and not the palette's, which stands back on a row marked so (`RENAMES_ON_F2`).
+      if (!event.repeat) onAct(session, "rename");
     } else if (task && deletes(event)) {
       if (!event.repeat) onAct(session, "stop");
     } else if (open !== null && event.key === "ArrowRight" && !open) onFold(session, false);
@@ -1597,7 +1615,7 @@ const Row = memo(function Row({
             // The chat's number, as a pane carries it: what a reveal finds the row by (#1490).
             data-session={session}
             // Dragged onto a pane or the strip, it lands there (#4763); a press stays a press.
-            {...{ [CHAT_ROW]: String(session) }}
+            {...{ [CHAT_ROW]: String(session), [RENAMES_ON_F2]: "" }}
             onClick={() => {
               // A press focuses the row too: that is no rest of the keyboard.
               away();
