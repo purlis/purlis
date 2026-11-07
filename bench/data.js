@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794066758828,
+  "lastUpdate": 1794069277058,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -42294,6 +42294,48 @@ window.BENCHMARK_DATA = {
             "value": 101.29468349999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.235, 101.279, 101.295, 101.652, 102.975 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "f667ca3707287103a9d8414778776459499e87f7",
+          "message": "A narrow pane head drops the skill run and browsers in its order (#5614) (#5640)\n\n* A narrow pane head drops the skill run and browsers after the state's word (#5614)\n\nWhat the chat uses now joins the head's narrow order (#4760): it goes under\n450px, after the mark's word and before the button's word and the mark, so a\nnarrow pane keeps its name and mark. New story UsingDropsInOrder draws it at\n470, 450, 449 and 379px.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6V1PTV82JJP46NVJ62K8MZ5\nPurlis-Persona: steward\n\n* Review: one window test narrows a pane past 450px, the story walks Tab (#5614)\n\nThe window test now sees the run drawn at 450px and then gone as the same pane\nnarrows to 449px, so it can no longer pass before the run arrives. The story\nTabs onto each head's skill run. Comments re-flowed, and a test name says what\nits fact means.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6V1PTV82JJP46NVJ62K8MZ5\nPurlis-Persona: steward\n\n* The skill run's chip is named by the words it shows (#5614)\n\nThe new story put the chip under axe for the first time, which refused it:\nits aria-label held none of its visible text together (label-content-name-\nmismatch, WCAG 2.5.3). The button is now named from its content: the name\nand count a person sees, completed by sr-only words, with spaces between\nthem in one display: contents run so they are heard and never drawn. The\nname is word for word what it was, and the tests now read it as a name.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6V1PTV82JJP46NVJ62K8MZ5\nPurlis-Persona: steward\n\n* UsingDropsInOrder: a browser's view is never attached, so no frame races its picture (#5614)\n\nThe story answered watch_browser with null, which browserWatch reads a view\nfrom: 48 unhandled rejections, and the stories run drew no baselines. It now\nnever answers, as BrowsersGridTab's story does, so each thumbnail is its mark.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6V1PTV82JJP46NVJ62K8MZ5\nPurlis-Persona: steward\n\n* Story pictures from #5640's own stories run (#5614)\n\nNew: PaneHeadNarrow's UsingDropsInOrder. Changed: ChatFoot's HeadAtEveryWidth,\nwhich draws a head at each width of HEAD_DROPS and so gains its 450px row.\nPulled with tools/story-baselines-pull.mjs from run 42379101923.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6V1PTV82JJP46NVJ62K8MZ5\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-07T15:33:34Z",
+          "tree_id": "99a014e8b7a211e2f8347c1d7f08d2ab6e4dc075",
+          "url": "https://github.com/purlis/purlis/commit/f667ca3707287103a9d8414778776459499e87f7"
+        },
+        "date": 1794069273033,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.553553,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.547, 0.547, 0.554, 0.562, 0.573 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.270674,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.083, 16.178, 16.271, 16.368, 16.867 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.5907795,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.029, 100.517, 100.591, 103.300, 103.733 ms"
           }
         ]
       }
