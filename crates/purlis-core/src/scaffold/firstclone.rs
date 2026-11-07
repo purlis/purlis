@@ -98,7 +98,7 @@ pub(super) fn into_workspace(
         return Ok(dest);
     }
 
-    crate::repocmd::clone::make_repos_folder(&dest)?;
+    let made_repos = crate::repocmd::clone::make_repos_folder(&dest)?;
     run.info(format!("Cloning {name} into workspace '{ws}' …"));
     let src_arg = source.display().to_string();
     let dest_arg = dest.display().to_string();
@@ -114,8 +114,12 @@ pub(super) fn into_workspace(
         Err(why) => Some(why.to_string()),
     };
     if let Some(said) = failed {
+        if made_repos && let Some(repos) = dest.parent() {
+            // Only an empty folder goes: the `repos/` made for this clone alone (#5534).
+            let _ = std::fs::remove_dir(repos);
+        }
         return Err(format!(
-            "could not clone {} into {} — nothing else was changed.\n{said}",
+            "could not clone {} into {}.\n{said}",
             source.display(),
             dest.display()
         ));

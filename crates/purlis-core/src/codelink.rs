@@ -249,11 +249,7 @@ pub fn keep_only_whats_new(repo: &Path, runner: &str) -> Result<(), Refused> {
 /// places the clone is in is each machine's own (ADR 0114), so it is answered here, by
 /// [`crate::repofolder::folder`].
 pub fn repo_in(project: &Path, repo: &str) -> Result<PathBuf, Refused> {
-    let refused = || {
-        not_allowed(format!(
-            "`{repo}` is not a repository's folder in the project, so no code was moved there"
-        ))
-    };
+    let refused = || not_a_repo_in(repo);
     let at = match repo.split('/').collect::<Vec<_>>().as_slice() {
         [""] => project.to_path_buf(),
         ["workspaces", workspace, name]
@@ -264,7 +260,40 @@ pub fn repo_in(project: &Path, repo: &str) -> Result<PathBuf, Refused> {
         }
         _ => return Err(refused()),
     };
-    // No link from the project down: a chat could put one there to send a transfer elsewhere.
+    reached_through_no_link(project, repo, at)
+}
+
+/// **The folder a repository new to this machine is made in** for a transfer (#5534):
+/// `workspaces/<workspace>/<repo>` names it, and it goes where every new clone goes,
+/// [`crate::repofolder::new_folder`], whatever is at the old place. Refused for the project's
+/// own, which is never new, for a name no new repo may have, and where no new repo can go, in
+/// [`crate::repofolder::new_folder`]'s words. No folder from the project down to it a link.
+pub fn new_repo_in(project: &Path, repo: &str) -> Result<PathBuf, Refused> {
+    let at = match repo.split('/').collect::<Vec<_>>().as_slice() {
+        ["workspaces", workspace, name] if crate::contain::workspace_name_ok(workspace) => {
+            crate::repofolder::new_folder(project, workspace, name).map_err(|why| match why {
+                crate::repofolder::Refused::RepoNamedRepos { .. }
+                | crate::repofolder::Refused::ReposNotAFolder { .. } => {
+                    not_allowed(why.to_string())
+                }
+                _ => not_a_repo_in(repo),
+            })?
+        }
+        _ => return Err(not_a_repo_in(repo)),
+    };
+    reached_through_no_link(project, repo, at)
+}
+
+fn not_a_repo_in(repo: &str) -> Refused {
+    not_allowed(format!(
+        "`{repo}` is not a repository's folder in the project, so no code was moved there"
+    ))
+}
+
+/// `at`, where no folder from `project` down to it is a link: a chat could put one there to send
+/// a transfer elsewhere.
+fn reached_through_no_link(project: &Path, repo: &str, at: PathBuf) -> Result<PathBuf, Refused> {
+    let refused = || not_a_repo_in(repo);
     let mut walked = project.to_path_buf();
     for part in at
         .strip_prefix(project)

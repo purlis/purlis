@@ -512,6 +512,35 @@ fn a_clone_named_repos_is_refused_and_so_is_any_clone_while_an_old_clone_named_r
 }
 
 #[test]
+fn an_old_clone_named_repos_is_already_there_when_it_is_cloned_again() {
+    // #5534: the old clone is found before the name is refused, as for every other kept name.
+    let w = World::new();
+    w.remote("repos", "main");
+    w.inventory(json!([World::record("repos", "main")]));
+    let old = w.cloned("repos");
+
+    let out = w.charter(&["clone", "repos", "-w", "alpha"]);
+
+    let said = stderr(&out);
+    assert!(out.status.success(), "{said}");
+    assert!(said.contains("repos: already cloned in 'alpha'"), "{said}");
+    assert!(old.join(".git").is_dir(), "{said}");
+}
+
+#[test]
+fn a_first_clone_that_fails_leaves_no_repos_folder_behind() {
+    // #5534: `repos/` is made only by the clone that needs it, and goes again when it fails.
+    let w = World::new();
+    w.inventory(json!([World::record("ghost", "main")]));
+
+    let out = w.charter(&["clone", "ghost", "-w", "alpha"]);
+
+    let said = stderr(&out);
+    assert_eq!(out.status.code(), Some(1), "{said}");
+    assert!(!w.root.join("workspaces/alpha/repos").exists(), "{said}");
+}
+
+#[test]
 fn a_bad_workspace_name_or_a_linked_workspace_is_still_refused_and_nothing_is_made() {
     let w = World::new();
     w.remote("widget", "main");
