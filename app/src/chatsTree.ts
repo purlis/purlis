@@ -66,7 +66,7 @@ export type ListedChat = {
   /** How many of its dispatches wait until this machine has memory to spare (#1617), where
    *  any does: its row says so, as the Dispatches tab's *Not started* list names them. */
   waitingOnMemory?: number | null;
-  /** A task the person asked for themselves, from its session's tab (#1492, V100-70): its row
+  /** A task the person asked for themselves, from its asker's ⋯ list (#1492, V100-70): its row
    *  and its breadcrumb say `asked by you`. */
   byYou?: boolean;
   /** Whether its harness is one purlis types a line of its own into (`typedInto`). Not said
@@ -135,7 +135,7 @@ export type ChatRow = ListedChat & {
   /** Its parent has closed, so it stands at the top and says where it came from. */
   orphaned: boolean;
   /**
-   * Where it is, for a task listed among the chats of its session's tab though it has a pane
+   * Where it is, for a task listed among the chats of its asker's tab though it has a pane
    * of its own (#1489, `tabs.Placed`): in a tab of its own, or beside its session. Only a
    * tab's own list says it (`tabChats.chatsOfTab`); the Chats list's rows never do.
    */

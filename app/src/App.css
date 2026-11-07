@@ -1587,13 +1587,13 @@ body {
 }
 
 /* **A task's own tab** (#1489, V100-38): the task mark before its name, whose task it is after
-   it, dimmer (`talk · steward 4`), and a minimise where a session's tab has its close. The
+   it, dimmer (`talk · steward 4`), and a minimise where a chat's tab has its close. The
    minimise ends nothing, as no close does (#4756). */
 .tab[data-task-tab] .tab-mark[data-mark="task"] {
   color: var(--text-secondary);
 }
 
-/* The hand a session's tab wears for a task of its own that needs you and is not on screen
+/* The hand a chat's tab wears for a task of its own that needs you and is not on screen
    (#1486): the mark the Chats list's rows wear, at the tab's size. */
 .tabs .tab .needs-you-mark,
 .more-menu .needs-you-mark {

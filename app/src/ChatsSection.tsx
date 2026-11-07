@@ -234,7 +234,7 @@ export const ON_MEMORY_SAID =
  * **A row is a way to the chat.** Pressing one, or Enter on it, shows its chat (`onOpen`, the
  * one way a row opens): a task has no tab of its own, and is shown inside the tab of the
  * session that asked for it (#1486). Space opens a task beside the session that asked for it,
- * inside that session's tab (#1489), and Delete on a task asks to stop it: both are rows of the
+ * split from that chat's pane (#1489), and Delete on a task asks to stop it: both are rows of the
  * window's catalogue, and one that cannot run says why here.
  *
  * **At fifty chats** (#1499). The sessions that need you stand first, then the ones at work,
@@ -331,7 +331,7 @@ export function ChatsSection({
   besides?: ReadonlySet<number>;
   /** The chats in no pane with a note in the Notices centre (#4759): their rows are marked. */
   noted?: ReadonlySet<number>;
-  /** A row was pressed: go to that chat. A task is shown inside its session's tab (#1486).
+  /** A row was pressed: go to that chat. A task is shown in its asker's pane (#1486).
    *  The one way a row opens. */
   onOpen: (session: number) => void;
   /** The catalogue as it stands, by id: what each row's menu reads its rows from. */
@@ -1402,7 +1402,7 @@ const Row = memo(function Row({
   /** The chat it came from, by name: a handoff's, or a task's whose asker has closed. Nothing
    *  for a chat drawn under its parent. */
   from: string | null;
-  /** A task the person asked for themselves, from its session's tab (V100-70). */
+  /** A task the person asked for themselves, from its asker's ⋯ list (V100-70). */
   byYou: boolean;
   /** The newest open chat its work was handed off to, by name; nothing for a chat that
    *  handed nothing off. */

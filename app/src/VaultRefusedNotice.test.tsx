@@ -568,7 +568,7 @@ describe("the refused vault Notice's persona mark", () => {
 });
 
 /**
- * **Drawn for a chat that is not on screen** (#1538): on its session's tab the Notice starts
+ * **Drawn for a chat that is not on screen** (#1538): on its asker's pane the Notice starts
  * with the chat's whole path (`NoticeOf`), so its own sentences say "it" and "that chat",
  * never "this chat", which would read as the chat on screen.
  */

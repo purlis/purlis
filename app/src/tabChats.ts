@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * **The chats a session's tab can show** (#1486): the session's own chat and the tasks below
+ * **The chats a chat's pane can show** (#1486): the session's own chat and the tasks below
  * it, read from the two things that already exist. The tabs say which chat each pane is and
  * what it shows (`tabs.ts`); the core's list says who asked whom (`chatsTree.ts`). Nothing
  * here is state: every answer is derived, so the Chats list, a tab's label, a pane's
@@ -13,7 +13,7 @@ import {
   homeOf,
   panesOf,
   placedOf,
-  sessionOf,
+  returnsTo,
   shownIn,
   type AskedBy,
   type Placed,
@@ -105,7 +105,7 @@ export function chatsOfTabs(
     const seen = new Set<number>();
     while (!seen.has(at.own)) {
       seen.add(at.own);
-      const session = sessionOf(tabs, at.own, askedBy);
+      const session = returnsTo(tabs, at.own, askedBy);
       if (session === undefined || session.tab !== at.tab) break;
       at = session;
     }
@@ -137,7 +137,7 @@ export function chatsOfTabs(
       continue;
     }
     // In another tab than its session's: listed there too, alone.
-    const session = sessionOf(tabs, chat.session, askedBy);
+    const session = returnsTo(tabs, chat.session, askedBy);
     if (session === undefined) continue;
     const there = key(listedAt(session));
     add(there, chat);

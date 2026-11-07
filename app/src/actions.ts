@@ -125,7 +125,7 @@ import {
   harnessCardView,
   panesOf,
   placedOf,
-  sessionOf,
+  returnsTo,
   SHORTCUTS_TITLE,
   SHORTCUTS_VIEW,
   AGENT_IDENTITY_TITLE,
@@ -460,7 +460,7 @@ export type Does =
   | { verb: "paneBack" }
   /** Gives a task a tab of its own (#1489). Nothing ends, and nothing is asked. */
   | { verb: "ownTab"; session: number }
-  /** Opens a task beside the session that asked for it, inside that session's tab (#1489). */
+  /** Opens a task beside the session that asked for it, split from that chat's pane (#1489). */
   | { verb: "beside"; session: number }
   /** Sends a task back out of its own tab or its pane (#1489): the minimise. **It ends
    *  nothing**, so it is never asked about, and it is not a close. */
@@ -1177,9 +1177,9 @@ export type Doing = {
   paneBack: () => void;
   /** Gives a task a tab of its own, in front. */
   ownTab: (session: number) => void;
-  /** Opens a task beside its session, in the session's tab, with the keyboard in it. */
+  /** Opens a task beside its session, split from its pane, with the keyboard in it. */
   beside: (session: number) => void;
-  /** Takes a task's own tab or pane away. The task goes on, in its session's tab. */
+  /** Takes a task's own tab or pane away. The task goes on, a row in the Chats list. */
   sendBack: (session: number) => void;
   /** Opens the menu of the tasks chat `session` asked for, with the keyboard on the first. */
   showChatTasks: (session: number) => void;
@@ -3287,7 +3287,7 @@ export function catalogue(now: Now): Offer[] {
     const name = tabNameOf(now.tabs.byId[tab]);
     const chats = panesOf(now.tabs, tab).length;
     // **A task's own tab has no close** (#1489, V100-38): the row its `−` runs sends the task
-    // back into its session's tab, and ends nothing. The same id, so the tab's key, its menu
+    // back to the Chats list, and ends nothing. The same id, so the tab's key, its menu
     // and its button all do the one thing a task's tab can do.
     const own = chatOf(now.tabs, tab);
     if (own !== undefined && askedBy(own) !== undefined) {
@@ -4405,7 +4405,7 @@ export function taskEndRows(listed: readonly ListedChat[], stopping: readonly nu
  * tab: `chat.show:<session>`, which shows the task as its row in the Chats list does, inside
  * the tab of the session that asked for it (#1486). Its title says where it works and who
  * asked, so either finds it. **Every task, shown or not**: a task on screen is in its
- * session's tab and has no `Switch to tab` row of its own, so leaving it out would make the
+ * asker's pane and has no `Switch to tab` row of its own, so leaving it out would make the
  * one the person is looking at the one the palette cannot find.
  */
 export function taskRows(listed: readonly ListedChat[]): Offer[] {
@@ -5029,10 +5029,11 @@ export const ONLY_A_TASK_OPENS_BESIDE =
   "Only a task opens beside the chat that asked for it. Press Enter to show this chat.";
 
 /**
- * **What sending a task back is called**, by where it is and where it goes (#1489): out of a
- * tab of its own, back into its session's tab, which is the name its minimise button says;
- * out of a pane beside its session, back among that session's tasks; and for a task whose
- * session has no tab in this window, back to the Chats list, which is the one place it is.
+ * **What sending a task back is called** (#1489, #5667): out of a tab of its own or a pane
+ * beside the chat that asked for it, back to the Chats list, where its row stays under that
+ * chat. Its minimise button says the same. The chat it names is the one whose pane it then
+ * answers to ({@link returnsTo}), the nearest above it with a pane, and so a row it is nested
+ * under. A task whose askers have no pane in this window goes back to the Chats list alone.
  */
 export function backTitle(
   tabs: Tabs,
@@ -5041,11 +5042,10 @@ export function backTitle(
   askedBy: AskedBy,
 ): string {
   const name = nameOf(task);
-  const session = sessionOf(tabs, task, askedBy);
-  if (session === undefined) return `Send ${name} back to the Chats list`;
-  return placedOf(tabs, task, askedBy) === "beside"
-    ? `Send ${name} back among ${nameOf(session.own)}'s tasks`
-    : `Send ${name} back into ${nameOf(session.own)}'s tab`;
+  const home = returnsTo(tabs, task, askedBy);
+  return home === undefined
+    ? `Send ${name} back to the Chats list`
+    : `Send ${name} back under ${nameOf(home.own)} in the Chats list`;
 }
 
 /**
@@ -5068,7 +5068,7 @@ export function placeRows(
     .flatMap((chat) => {
       const { session, name } = chat;
       const placed = placedOf(tabs, session, askedBy);
-      const home = sessionOf(tabs, session, askedBy);
+      const home = returnsTo(tabs, session, askedBy);
       const own = `Move ${name} to its own tab`;
       const beside =
         home === undefined
@@ -5128,7 +5128,7 @@ function besideInFront(
       title,
       "The chat in front is not a task. Space on a task's row in the Chats list opens it beside the chat that asked for it.",
     );
-  const home = sessionOf(tabs, shown, askedBy);
+  const home = returnsTo(tabs, shown, askedBy);
   if (home === undefined)
     return cannot(
       BESIDE_ID,

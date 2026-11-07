@@ -1054,7 +1054,7 @@ function TaskLine({
             )}
             {line.placed !== undefined && (
               <PlaceButton
-                says={`Send ${line.name} back into this tab`}
+                says={`Send ${line.name} back to the Chats list`}
                 onPress={() => onPlace(moves.session, "back")}
               >
                 <Minus />

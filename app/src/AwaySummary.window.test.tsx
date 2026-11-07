@@ -521,7 +521,7 @@ describe("while you were away (#1514)", () => {
         .getAllByRole("menuitem")
         .map((one) => one.textContent),
     ).toEqual(["steward 2", "talk"]);
-    // A task waiting on you is shown where it lives, inside its session's tab, where its
+    // A task waiting on you is shown where it lives, in its asker's pane, where its
     // question is answered as it always is.
     await userEvent.click(within(waiting).getByRole("menuitem", { name: "talk" }));
     await waitFor(() => expect(onScreen()).toEqual([4]));

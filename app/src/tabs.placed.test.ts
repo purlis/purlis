@@ -19,7 +19,7 @@ import {
   placedOf,
   selectTab,
   sendBack,
-  sessionOf,
+  returnsTo,
   shownIn,
   switchTabTo,
   tasksPlacedBelow,
@@ -31,9 +31,9 @@ import {
 
 /**
  * **A task with a pane of its own** (#1489): in a tab of its own, which the person asked for,
- * or beside the session that asked for it, inside that session's tab. The layout already says
+ * or beside the session that asked for it, split from that session's pane. The layout already says
  * it (a chat with a pane is its own home, `tabs.homeOf`); these are the ways in and out, and
- * what the session's tab still says of a task that has left its pane.
+ * what the asker's tab still says of a task that has left its pane.
  */
 
 const oneWorkspace: FiledIn = () => "alpha";
@@ -60,7 +60,7 @@ function tabOf(tabs: Tabs, session: number): number {
 const sessionsOf = (tabs: Tabs) => tabs.order.map((id) => panesOf(tabs, id).map((p) => p.session));
 
 describe("moving a task to a tab of its own", () => {
-  it("gives it a tab at the strip's end, in front, and leaves its session's tab as it was", () => {
+  it("gives it a tab at the strip's end, in front, and leaves its asker's tab as it was", () => {
     const tabs = moveToOwnTab(twoSessions(), 4, "talk", "devops", null);
 
     expect(sessionsOf(tabs)).toEqual([[1], [2], [4]]);
@@ -69,7 +69,7 @@ describe("moving a task to a tab of its own", () => {
     expect(placedOf(tabs, 4, askedBy)).toBe("tab");
     expect(homeOf(tabs, 4, askedBy)?.own).toBe(4);
     // Its session is still where it goes back to.
-    expect(sessionOf(tabs, 4, askedBy)).toMatchObject({ tab: tabOf(tabs, 1), own: 1 });
+    expect(returnsTo(tabs, 4, askedBy)).toMatchObject({ tab: tabOf(tabs, 1), own: 1 });
   });
 
   it("takes it out of the pane that was showing it, which shows its own chat again", () => {
@@ -78,7 +78,7 @@ describe("moving a task to a tab of its own", () => {
 
     const tabs = moveToOwnTab(shown, 4, "talk", "devops", null);
 
-    // One chat, one place: the session's tab does not go on showing it as "moved".
+    // One chat, one place: the asker's pane does not go on showing it as "moved".
     expect(shownIn(tabs, tabOf(tabs, 1))).toEqual([
       expect.objectContaining({ own: 1, session: 1 }),
     ]);
@@ -144,7 +144,7 @@ describe("sending a task back", () => {
     expect(sessionsOf(tabs)).toEqual([[1], [2]]);
     // The tab beside it on the strip, as `closeTab` sends it.
     expect(tabs.inFront).toBe(closeTab(own, tabOf(own, 4), oneWorkspace).inFront);
-    // It lives in its session's tab again, which shows what it showed.
+    // It is at home in its asker's pane again, which shows what it showed.
     expect(homeOf(tabs, 4, askedBy)).toMatchObject({ tab: tabOf(tabs, 1), own: 1 });
     expect(visibleSessions(selectTab(tabs, tabOf(tabs, 1)))).toEqual([1]);
   });
@@ -164,7 +164,7 @@ describe("sending a task back", () => {
 });
 
 describe("opening a task beside its session", () => {
-  it("splits the session's pane inside the session's tab, the task on the far side, focused", () => {
+  it("splits the session's pane in the asker's tab, the task on the far side, focused", () => {
     const tabs = openBeside(selectTab(twoSessions(), 2), 4, askedBy, "talk");
 
     expect(sessionsOf(tabs)).toEqual([[1, 4], [2]]);
@@ -194,7 +194,7 @@ describe("opening a task beside its session", () => {
   it("opens a task of a task beside the pane it lives in", () => {
     const tabs = openBeside(twoSessions(), 6, askedBy, "probe");
     expect(sessionsOf(tabs)).toEqual([[1, 6], [2]]);
-    expect(sessionOf(tabs, 6, askedBy)?.own).toBe(1);
+    expect(returnsTo(tabs, 6, askedBy)?.own).toBe(1);
   });
 
   it("only focuses a task that is already beside its session", () => {
@@ -278,7 +278,7 @@ const said = (rows: readonly { name: string; level: number; placed?: string }[])
     (row) => `${"  ".repeat(row.level - 1)}${row.name}${row.placed ? ` [${row.placed}]` : ""}`,
   );
 
-describe("the chats of a session's tab, when a task has a pane of its own", () => {
+describe("the chats of a chat's tab, when a task has a pane of its own", () => {
   it("still lists a task in a tab of its own under its session, marked, and not what is below it", () => {
     const tabs = moveToOwnTab(twoSessions(), 4, "talk", "devops", null);
 

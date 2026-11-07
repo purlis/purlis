@@ -755,7 +755,7 @@ describe("a task chat", () => {
 
   it("comes back as the tab it was, for a task an earlier purlis opened as a tab of its own", async () => {
     // The record says this task has a tab: one was opened for it before tasks lived inside
-    // their session's tab, or its session has gone. It is still a tab.
+    // their asker's pane, or its session has gone. It is still a tab.
     core([
       chat(1, "alpha"),
       chat(4, "alpha", { persona: "devops", from: { ...by(1, "task"), tab: true } }),

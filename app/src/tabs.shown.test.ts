@@ -34,7 +34,7 @@ import {
 } from "./tabs";
 
 /**
- * **What a session's tab shows** (#1486): the session's own chat, or one of the tasks below it.
+ * **What a chat's pane shows** (#1486): the session's own chat, or one of the tasks below it.
  * The core keeps who asked whom, and it is handed in here as a function, as where a chat is
  * filed is.
  */
@@ -97,7 +97,7 @@ describe("a task's home", () => {
 });
 
 describe("switching a tab to a chat", () => {
-  it("shows the task in its session's tab, brings that tab forward, and adds no tab", () => {
+  it("shows the task in its asker's pane, brings that tab forward, and adds no tab", () => {
     const tabs = twoSessions();
     const shown = switchTabTo(tabs, 4, askedBy);
 
@@ -284,7 +284,7 @@ describe("a shown task that is gone", () => {
     expect(closed.byId[closed.inFront ?? -1].shows).toBeUndefined();
   });
 
-  it("closes the session's tab, shown task or not, when the session itself closes", () => {
+  it("closes the asker's tab, shown task or not, when the session itself closes", () => {
     const tabs = twoSessions();
     const shown = switchTabTo(tabs, 4, askedBy);
     const after = closeChat(shown, 1, oneWorkspace);
@@ -338,7 +338,7 @@ describe("whether a pane can draw the chat it shows", () => {
 });
 
 describe("what the tabs showed, put back", () => {
-  it("shows each task in its session's tab again, and moves nothing to the front", () => {
+  it("shows each task in its asker's pane again, and moves nothing to the front", () => {
     const tabs = twoSessions();
     const back = restoreShown(tabs, [4, 7], askedBy);
 

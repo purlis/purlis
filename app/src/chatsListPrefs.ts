@@ -7,7 +7,7 @@ import { layoutPref } from "./layoutPref";
  * **How the Chats list is drawn** (#1499, V100-73): whether the sessions of one workspace
  * stand together. A row is one line (#1675), so how many lines it takes is no longer a choice:
  * a file that still says `lines` is read as if it did not, and says nothing of it. **And what pressing a task in it does**
- * (#1489, V100-74): shows it inside its session's tab, or opens it in a tab of its own. **And
+ * (#1489, V100-74): shows it in its asker's pane, or opens it in a tab of its own. **And
  * where a chat's browser opens** (#2024, spec #2008): beside its chat, or only where the person
  * opens it from its row or its tab.
  *
@@ -20,7 +20,7 @@ export type ChatsListPrefs = {
   /** Whether the sessions are grouped by the workspace they work in. */
   grouped: boolean;
   /** Whether a pressed task opens in a tab of its own (V100-74, "Open tasks in their own
-   *  tabs"), where otherwise its session's tab is switched to it. */
+   *  tabs"), where otherwise its asker's pane is switched to it. */
   tabbed: boolean;
   /** Whether coming back to the window after a while away sums up what happened meanwhile
    *  (#1514, V100-73, "Away summary"), one Notice per project (`AwaySummary.tsx`). */

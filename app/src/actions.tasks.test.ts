@@ -74,7 +74,7 @@ describe("the palette's rows for tasks (#1499, V100-49)", () => {
   });
 
   it("has one for a task that is on screen too, and none for a chat that is not a task", () => {
-    // A task shown in its session's tab has no tab row of its own to be found by (#1486).
+    // A task shown in its asker's pane has no tab row of its own to be found by (#1486).
     expect(taskRows([listed(2, { tab: true })])).toHaveLength(1);
     expect(taskRows([listed(4, { mode: "handoff" }), listed(5, { mode: null })])).toEqual([]);
   });
@@ -134,7 +134,7 @@ describe("where a task is drawn, as rows of the catalogue (#1489, V100-38)", () 
 
     const close = rows.get(`tab.close:${tabOf(tabs, 2)}`);
     expect(close).toMatchObject({
-      title: "Send talk back into steward 1's tab",
+      title: "Send talk back under steward 1 in the Chats list",
       available: true,
       does: { verb: "sendBack", session: 2 },
     });
@@ -154,7 +154,7 @@ describe("where a task is drawn, as rows of the catalogue (#1489, V100-38)", () 
       does: { verb: "closeTab" },
     });
     // And the rows about where it is say it: back, and not to its own tab again.
-    expect(rows.get(backId(2))?.title).toBe("Send talk back into steward 1's tab");
+    expect(rows.get(backId(2))?.title).toBe("Send talk back under steward 1 in the Chats list");
     expect(rows.get(ownTabId(2))).toMatchObject({
       available: false,
       reason: "talk is in a tab of its own.",
@@ -168,7 +168,7 @@ describe("where a task is drawn, as rows of the catalogue (#1489, V100-38)", () 
     const nameOf = (n: number) => names[n];
 
     expect(paneCloseOf(tabs, beside.pane, nameOf, askedByOf(all))).toMatchObject({
-      title: "Send talk back among steward 1's tasks",
+      title: "Send talk back under steward 1 in the Chats list",
       available: true,
       does: { verb: "sendBack", session: 2 },
     });

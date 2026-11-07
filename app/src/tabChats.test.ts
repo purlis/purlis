@@ -234,7 +234,7 @@ describe("the chats of a tab that are waiting and are not on screen", () => {
       expect(hiddenNeeding(all, tabOf(all, 4), askedBy, [6])).toEqual([6]);
     });
 
-    it("puts no hand on the session's tab while the task's own tab is in front", () => {
+    it("puts no hand on the asker's tab while the task's own tab is in front", () => {
       const all = selectTab(moved(), tabOf(moved(), 4));
       expect(hiddenNeeding(all, tabOf(all, 1), askedBy, [4, 6])).toEqual([]);
     });

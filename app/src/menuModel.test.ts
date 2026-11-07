@@ -212,8 +212,8 @@ describe("a row's words", () => {
     expect(row("Stop chat steward 4 and everything below it", "steward 4")).toBe(
       "Stop and everything below it",
     );
-    expect(row("Send devops 2 back into steward 4's tab", "devops 2")).toBe(
-      "Send back into steward 4's tab",
+    expect(row("Send devops 2 back under steward 4 in the Chats list", "devops 2")).toBe(
+      "Send back under steward 4 in the Chats list",
     );
     expect(row("Make alpha live…", "alpha")).toBe("Make live…");
     // A name with a pattern's own characters in it is read as a name.

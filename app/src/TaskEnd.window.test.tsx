@@ -559,7 +559,7 @@ describe("a task that has a tab of its own", () => {
     expect(tabOf("sweep")).toBeDefined();
     // The cross says what it does, and is not drawn as one that ends a chat.
     expect(closeOf("sweep").getAttribute("aria-label")).toBe(
-      "Send sweep back into steward 1's tab",
+      "Send sweep back under steward 1 in the Chats list",
     );
     expect(closeOf("sweep").className).not.toContain("ends-a-chat");
 

@@ -30,8 +30,8 @@ export const QUESTION_WHAT = "A task's question";
 
 /**
  * **Where the window places a task's question**, lent to every pane by the window (#4565):
- * `topOf` is a task's top, the nearest chat above it with a tab (`sessionOf`), and `openTask`
- * shows a task as a press of the person's does.
+ * `topOf` is a task's top, the chat it returns to, the nearest above it with a pane
+ * (`returnsTo`), and `openTask` shows a task as a press of the person's does.
  */
 export const QuizPlaces = createContext<
   | {
