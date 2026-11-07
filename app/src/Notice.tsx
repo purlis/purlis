@@ -931,8 +931,8 @@ function BandRow({
 }
 
 /**
- * **How important a Notice is, by the family of its cause** (V91i): trouble, then attention, then
- * news ({@link TONE_ORDER}), then
+ * **How important a Notice is, by the family of its cause** (V91i): after the families listed
+ * {@link AHEAD} of all, trouble, then attention, then news ({@link TONE_ORDER}), then
  * this order, then the one drawn first. A family is the cause up to its first `:`; one not in
  * the list comes after every one that is.
  *
@@ -971,6 +971,16 @@ const DISMISS = ':scope > [role="status"] :is(.notice-dismiss, [data-way="dismis
 
 /** A cause's family: what it is up to the first `:` (`pin-dormant:ide` is a `pin-dormant`). */
 export const familyOf = (cause: string): string => cause.split(":", 1)[0];
+
+/**
+ * **The families listed before every other Notice, whatever its tone** (#5702): what has appeared
+ * in a chat's folders and can run later (ADR 0067 §5). It is told after the turn that caused it,
+ * and the person has to find it then, before they or a tool work in that folder: listed by its
+ * tone, it stood below the project's older Notices, out of sight.
+ */
+export const AHEAD: ReadonlySet<string> = new Set(["arrived-files"]);
+
+const ahead = (cause: string) => (AHEAD.has(familyOf(cause)) ? 0 : 1);
 
 const rank = (cause: string) => {
   const at = IMPORTANCE.indexOf(familyOf(cause));
@@ -1078,7 +1088,10 @@ export function NoticeList({
     () =>
       [...entries.values()].sort(
         (a, b) =>
-          TONE_ORDER[a.tone] - TONE_ORDER[b.tone] || rank(a.cause) - rank(b.cause) || a.seq - b.seq,
+          ahead(a.cause) - ahead(b.cause) ||
+          TONE_ORDER[a.tone] - TONE_ORDER[b.tone] ||
+          rank(a.cause) - rank(b.cause) ||
+          a.seq - b.seq,
       ),
     [entries],
   );

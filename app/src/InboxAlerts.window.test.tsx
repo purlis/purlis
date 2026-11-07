@@ -7,7 +7,7 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import { InboxAlerts } from "./InboxAlerts";
-import { NoticeList } from "./Notice";
+import { Notice, NoticeList } from "./Notice";
 import type { AlertRow, DoctorFixed, PlaneAlerts } from "./bindings";
 import { forgetThisLaunch, settleLayout } from "./regions";
 import {
@@ -941,5 +941,65 @@ describe("a chat's undelivered messages (#3958)", () => {
       ]),
     );
     await waitFor(() => expect(reread).toHaveBeenCalled());
+  });
+
+  it("lists a chat's arrived files first, above the project's older Notices and its trouble (#5702)", () => {
+    mockIPC(() => null);
+    const alert = (severity: string, subject: string): AlertRow => ({
+      severity,
+      subject,
+      detail: `${subject} is wrong`,
+      workspaces: [],
+      way: { kind: "saving" },
+    });
+    const ARRIVED: AlertRow = {
+      severity: "warn",
+      subject: "files that can run later",
+      detail: "Fix the build: these appeared in a folder it can write: work/moved/.envrc.",
+      workspaces: [],
+      way: { kind: "arrived-files", chat: "01M6M3VNN8GNE85XEV3194WJE6" },
+    };
+    render(
+      <NoticeList>
+        <Notice cause="away-summary" onDismiss={() => undefined}>
+          While you were away
+        </Notice>
+        <Notice cause="window-trouble" tone="trouble" onDismiss={() => undefined}>
+          trouble
+        </Notice>
+        <InboxAlerts
+          plane={PLANE}
+          reading={{
+            at: "read",
+            planes: [
+              {
+                plane: PLANE,
+                alerts: [
+                  alert("bad", "plane root"),
+                  alert("warn", "front door"),
+                  alert("warn", "reinit"),
+                  ARRIVED,
+                ],
+                stopped: null,
+              },
+            ],
+          }}
+          machine={[]}
+          elsewhere={[]}
+          does={{
+            openSettings: vi.fn(),
+            openProject: vi.fn(),
+            openSaving: vi.fn(),
+            reread: vi.fn(),
+            openInboxOf: vi.fn(),
+          }}
+        />
+      </NoticeList>,
+    );
+    const causes = [...document.querySelectorAll("[data-scope=notice-list] [data-cause]")].map(
+      (one) => one.getAttribute("data-cause"),
+    );
+    expect(causes[0]).toBe("arrived-files:01M6M3VNN8GNE85XEV3194WJE6");
+    expect(causes).toHaveLength(6);
   });
 });

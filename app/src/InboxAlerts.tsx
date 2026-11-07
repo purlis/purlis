@@ -299,6 +299,9 @@ function LeftMessagesRow({
   );
 }
 
+/** The cause family of a chat's arrived files Notice, listed ahead of the rest (`AHEAD`). */
+export const ARRIVED_FILES_CAUSE = "arrived-files";
+
 /**
  * **What can run later and appeared in a chat's folders** (ADR 0067 §5, amended 2026-11-05): the
  * chat, the paths and what they mean, with Put away once it is read. The files are the person's:
@@ -328,7 +331,8 @@ function ArrivedFilesRow({
   };
   return (
     <Notice
-      cause={`alert:${alert.subject}:${chat}`}
+      // Its own family, which the Inbox lists ahead of every other Notice (#5702).
+      cause={`${ARRIVED_FILES_CAUSE}:${chat}`}
       tone={toneOf(alert.severity)}
       fixes={[{ label: "Put away", onPress: putAway }]}
     >
