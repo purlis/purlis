@@ -6,8 +6,9 @@
  * the status line, over the lines it wrote and never cut, and the one line that says so where
  * the app heard no message. The person answers from here, so the reply box is walked to. What
  * the chat said is its markdown under the safe subset, folded past three lines (#5649). It is a
- * row of Asks (#5649): its chat and age on its first line, Go to chat among its links, the reply
- * a strip in the row whose send is its one button, and the × that ignores it over its age.
+ * row of Asks (#5649): its chat and age on its first line, Answer and Go to chat among its links,
+ * the reply a strip in the row, opened by Answer (#5651), whose send is its one button, and the ×
+ * that ignores it over its age.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent, waitFor, within } from "storybook/test";
@@ -48,7 +49,8 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 /** The list is one Tab stop: Tab lands on the row, ↓ goes on (past its Show all, where it has
- *  one) to its Go to chat and on to its reply strip, and Shift+Tab leaves the list. */
+ *  one) to its Answer and its Go to chat, Enter on Answer opens the reply strip with the caret in
+ *  it (#5651), and Shift+Tab leaves the list. */
 async function theReplyBoxIsReached(canvasElement: HTMLElement) {
   const card = () => canvasElement.querySelector("li.inbox-ask");
   await userEvent.tab();
@@ -59,14 +61,20 @@ async function theReplyBoxIsReached(canvasElement: HTMLElement) {
   if ((document.activeElement?.textContent ?? "").startsWith("Show all"))
     await userEvent.keyboard("{ArrowDown}");
   await untilFocused(
-    () => within(canvasElement).getByRole("button", { name: "Go to chat steward 6" }),
-    "↓ reaches Go to chat among the row's links",
+    () => within(canvasElement).getByRole("button", { name: "Answer steward 6" }),
+    "↓ reaches Answer, the first of the row's links",
   );
   expectFocusInSight();
   await userEvent.keyboard("{ArrowDown}");
   await untilFocused(
+    () => within(canvasElement).getByRole("button", { name: "Go to chat steward 6" }),
+    "↓ reaches Go to chat among the row's links",
+  );
+  expectFocusInSight();
+  await userEvent.keyboard("{ArrowUp}{Enter}");
+  await untilFocused(
     () => within(canvasElement).getByRole("textbox", { name: "Reply to steward 6" }),
-    "↓ reaches the reply strip",
+    "Enter on Answer opens the reply strip with the caret in it",
   );
   expectFocusInSight();
   await userEvent.keyboard("{Escape}");
@@ -109,7 +117,7 @@ const LONG = `I'm waiting for #5141 to merge before the last part of #5160. Unti
 I've sent you a note saying this. When you tell me #5141 has merged, I'll rebase onto main, do that last part, run tsc and eslint, and push.`;
 
 /** **A long message** (#5649): folded at three lines behind Show all · N lines, which ↓ reaches
- *  first; opened, it shows whole, and ↓ goes on past Go to chat to the reply strip. */
+ *  first; opened, it shows whole, and ↓ goes on to Answer, which opens the reply strip (#5651). */
 export const ALongMessage: Story = {
   args: { last_message: LONG },
   play: async ({ canvasElement }) => {
@@ -126,10 +134,15 @@ export const ALongMessage: Story = {
       "Enter opens it whole",
     );
     expectFocusInSight();
-    await userEvent.keyboard("{ArrowDown}{ArrowDown}");
+    await userEvent.keyboard("{ArrowDown}");
+    await untilFocused(
+      () => card.getByRole("button", { name: "Answer steward 6" }),
+      "↓ goes on to Answer",
+    );
+    await userEvent.keyboard("{Enter}");
     await untilFocused(
       () => card.getByRole("textbox", { name: "Reply to steward 6" }),
-      "↓ goes on past Go to chat to the reply box in the row",
+      "Enter on Answer opens the reply box in the row",
     );
     expectFocusInSight();
   },
@@ -141,9 +154,11 @@ export const TheReplyStripHeld: Story = {
   args: { last_message: "Which should I build on, main or dev?" },
   play: async ({ canvasElement }) => {
     const card = within(canvasElement);
-    const box = card.getByRole("textbox", { name: "Reply to steward 6" });
+    // Its strip stands behind its Answer link (#5651).
+    await userEvent.click(card.getByRole("button", { name: "Answer steward 6" }));
+    const box = await card.findByRole("textbox", { name: "Reply to steward 6" });
     const strip = () => canvasElement.querySelector("[data-foot-strip]");
-    await expect(strip()).toHaveAttribute("data-rows", "1");
+    // Answer puts the caret in it, so it opens at two lines.
     await userEvent.click(box);
     await waitFor(() => expect(strip()).toHaveAttribute("data-rows", "2"));
     await expect(card.getByText(REPLY_HINT)).toHaveAttribute("data-shown");
