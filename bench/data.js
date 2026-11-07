@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794012958468,
+  "lastUpdate": 1794014565255,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -41664,6 +41664,48 @@ window.BENCHMARK_DATA = {
             "value": 101.549502,
             "unit": "ms",
             "extra": "median of 5 runs: 100.436, 101.055, 101.550, 101.870, 102.478 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "7806cebfe35944a8a99f126d9dabd708e34b48d2",
+          "message": "LIVE workspace files say where they are kept, and Save with the project (#5377) (#5516)\n\n* LIVE workspace files say where they are kept, and Save with the project (#5377)\n\nIn a LIVE workspace each of its own files and folders in Explorer is\nmarked This machine only, or Saved with the project when the\nworkspace's LIVE allowlist holds it (ADR 0038, amended 2026-11-05).\nSave with the project, on an entry at the top of the workspace's\nfolder that purlis does not keep, adds exactly one line,\n!/workspaces/<ws>/<entry>, to the LIVE block after the workspace's own.\n\n- purlis_core::wscmd::saved: the saved entries read back from the\n  block, the one write (add), and the marks read from the plane's\n  .gitignore as git reads it, for a LIVE workspace only.\n- Every rewrite of the block keeps a LIVE workspace's saved lines:\n  refresh_live_block (so reinit), rename, and another workspace made\n  LIVE or LOCAL. Making the workspace LOCAL drops them, and live --off\n  untracks what they named (meta_paths).\n- files::workspace: each entry's kept mark and save_with_the_project,\n  which refuses what purlis keeps, a path below the top, a repo, a link\n  and an entry not there.\n- workspace_save_with_the_project: a window-only command.\n- Explorer: the mark beside each row, the menu row, and the open\n  folders read again after a save.\n- plane-format.md: the saved entries' store, with its Tier.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6R9YZNXA5J75C4DHGEEM314\nPurlis-Persona: steward\n\n* Explorer: Save with the project stands under the line, last in the menu (#5377)\n\nThe row's id had no dress in menuModel.ts, so the menu placed it among\nthe others and the LiveWorkspaceFolder story's last row was Add to a\nchat's context. It is an act that shares the entry, so it takes the end\nslot, and the unit test now asks for it last.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6R9YZNXA5J75C4DHGEEM314\nPurlis-Persona: steward\n\n* Resolver guard: the saved entries' two lines name a workspace's own files (#5377)\n\n#5372's guard reads format!(\"workspaces/{ws}/{entry}\") as a repo path\nbuilt by hand. Both sites this branch adds name one of a workspace's\nown files saved with the project, the LIVE block's line in\nwscmd/saved.rs and its staged path in meta_paths, and files::workspace\nrefuses a repo's name before either is written, so each is allowed\nwith that reason.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6R9YZNXA5J75C4DHGEEM314\nPurlis-Persona: steward\n\n* live --off untracks what a never-tracked saved entry used to stop, and a repo is never saved (#5377)\n\nA saved entry git never tracked (an empty folder, or one saved since\nthe last commit) made git rm --cached fail as a whole, and live --off\nwent LOCAL anyway: the manifest, memory, todos and sessions stayed\ntracked and went on reaching teammates. git rm now runs with\n--ignore-unmatch, and when it fails while git still tracks a path,\nlive --off says so and stays LIVE.\n\nA folder with a .git whose name purlis takes for no repo's (My Tool),\nor whose .git cannot be read, was listed as the person's own and could\nbe saved, which commits a gitlink. Those names are a repo's now;\nsaved::add refuses an entry holding a .git, and block_for drops the\nline of one that has since become a repo. The resolver guard's reasons\nfor both sites say so.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6R9YZNXA5J75C4DHGEEM314\nPurlis-Persona: steward\n\n* Explorer: where a file is kept gives way on a narrow row, ending in an ellipsis (#5377)\n\nThe LiveWorkspaceFolder pictures CI drew show Saved with the project\ncut at the panel's edge with no ellipsis: a badge never shrinks, and\nthe row's label clips what overflows. The kept mark, the longest and\nlast on a row, now shrinks with its words in a span of their own, so\nit ends in an ellipsis; its tooltip and accessible name stay whole.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6R9YZNXA5J75C4DHGEEM314\nPurlis-Persona: steward\n\n* Explorer: take back the kept mark's ellipsis, which a row fitted to its words never needs (#5377)\n\nThe Explorer's tree fits each row to its words (fit=\"content\", #1796)\nand scrolls sideways, so the mark that looked cut was past the edge of\na view that scrolls, as a long name is. A row that is never narrower\nthan its content never shrinks the mark, so the rule did nothing.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6R9YZNXA5J75C4DHGEEM314\nPurlis-Persona: steward\n\n* Stories: LiveWorkspaceFolder's baselines, drawn by #5516's stories run (#5377)\n\nTaken with tools/story-baselines-pull.mjs from run 42285705835, and\nreviewed: each row's mark, managed beside it where purlis keeps the\nfile, in the 12 themes in Chromium and WebKit. The run also re-drew\nPanePreview's Resting On A Tab, which fails on main and on other pull\nrequests too; those pictures are left as they are.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6R9YZNXA5J75C4DHGEEM314\nPurlis-Persona: steward\n\n* Stories: LiveWorkspaceFolder waits for the keyboard back on its row before it blurs (#5377)\n\nThe closed menu hands the keyboard back to deploy.sh a frame or more\nafter it closes. The story blurred as soon as the menu was gone, so\nwhether the row's ring was in the picture depended on which came\nfirst: four WebKit themes drew it without, against baselines with.\nThe story now waits for the keyboard on the row, which also checks\nEsc gives it back, then blurs and waits for it to leave.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6R9YZNXA5J75C4DHGEEM314\nPurlis-Persona: steward\n\n* Stories: LiveWorkspaceFolder's WebKit baselines with the row blurred (#5377)\n\nTaken with tools/story-baselines-pull.mjs from run 42300420005 and\nreviewed: since the story waits for the keyboard back on deploy.sh\nbefore it blurs, the eight WebKit themes that kept the row's ring end\nwithout it, as Chromium and the other four already did. The run also\nre-drew other stories' pictures from the newer main it was merged\nwith; those are main's and are left as they are.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6R9YZNXA5J75C4DHGEEM314\nPurlis-Persona: steward\n\n* Stories: LiveWorkspaceFolder's baselines on main with #5376 (#5377)\n\nTaken with tools/story-baselines-pull.mjs from run 42315731969, the\nonly pictures it drew, and reviewed: the head now carries #5376's new\nfile, new folder and import buttons; each row's mark is as before,\nand no row keeps the keyboard's ring.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6R9YZNXA5J75C4DHGEEM314\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aharon@easydmarc.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-07T00:47:31Z",
+          "tree_id": "90992e4a4a860b256de593835ca8ea46a4c3441f",
+          "url": "https://github.com/purlis/purlis/commit/7806cebfe35944a8a99f126d9dabd708e34b48d2"
+        },
+        "date": 1794014560419,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.610935,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.587, 0.603, 0.611, 0.614, 0.618 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.580213,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.499, 16.529, 16.580, 16.587, 16.600 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.87218200000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.730, 101.734, 101.872, 102.018, 102.351 ms"
           }
         ]
       }
