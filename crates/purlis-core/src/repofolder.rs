@@ -269,6 +269,23 @@ pub fn repos(plane: &Path, ws: &str) -> Result<Vec<Row>, Trouble> {
     Ok(holdings(plane, ws)?.repos)
 }
 
+/// **Whether workspace `ws` holds a folder with a `.git` named `name`**, in either place and of
+/// any kind ([`Holdings::repos`], [`Holdings::shadowed`], [`Holdings::others`]), the names read as
+/// a disk that ignores case reads them ([`crate::files::workspace::folded`]). A new repo of that
+/// name in `repos/` would be a second copy, which [`folder`] answers in place of the one there
+/// (#5601). A workspace that cannot be read holds none.
+pub fn holds(plane: &Path, ws: &str, name: &str) -> bool {
+    let Ok(held) = holdings(plane, ws) else {
+        return false;
+    };
+    let name = crate::files::workspace::folded(name);
+    held.repos
+        .iter()
+        .chain(&held.shadowed)
+        .chain(&held.others)
+        .any(|row| crate::files::workspace::folded(&row.repo.name) == name)
+}
+
 /// **The folder with a `.git` in `plane` that `path` is inside**, in either layout, or `None`.
 ///
 /// Any `.git`, as [`Located::git`] says: a caller who wants a repository asks for
@@ -515,6 +532,27 @@ fn kept(name: &str, keeps: impl Fn(&str) -> bool) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #5601: a runner's clone is never made in `repos/` beside an old clone at the root that
+    /// a disk ignoring case takes for it, nor one whose `.git` is a link.
+    #[test]
+    fn a_name_is_held_by_a_root_folder_with_any_git_in_any_case() {
+        let dir = tempfile::tempdir().unwrap();
+        let plane = dir.path();
+        let ws = plane.join("workspaces/alpha");
+        std::fs::create_dir_all(ws.join("API/.git")).unwrap();
+        std::fs::create_dir_all(ws.join("web")).unwrap();
+        std::os::unix::fs::symlink(ws.join("API/.git"), ws.join("web/.git")).unwrap();
+        std::fs::create_dir_all(ws.join("notes")).unwrap();
+
+        assert!(holds(plane, "alpha", "api"));
+        assert!(holds(plane, "alpha", "web"));
+        assert!(
+            !holds(plane, "alpha", "notes"),
+            "a folder with no .git is the person's"
+        );
+        assert!(!holds(plane, "alpha", "cli"));
+    }
 
     #[test]
     fn repos_is_an_old_repos_name_however_it_is_cased_though_the_workspace_keeps_it() {

@@ -1001,4 +1001,39 @@ fn a_clone_with_no_large_files_never_fetches_any() {
     assert!(!ran.exists(), "{said:?}");
 }
 
+/// **A `repos/` another clone run took away is made again** (#5601): two runs in a workspace
+/// with no `repos/` each take away the folder they found empty, and one may do so after the
+/// other made it and before it claimed its landing folder in it. That clone still lands.
+#[test]
+fn a_clone_whose_repos_was_taken_away_before_its_claim_still_lands() {
+    let world = World::holding(&["widget"]);
+    let heard = |_: Stage, _: u8| {};
+    let off = AtomicBool::new(false);
+    let watch = world.watching(&heard, &off, Duration::from_secs(60), None);
+    let url = format!("https://{HOST}/acme/widget.git");
+    let forge = Forge::for_clone(&json!({"forge": "gitlab"}), &url);
+    let dest = world.dest("widget");
+    assert!(
+        !world.ws().join("repos").exists(),
+        "the other run took it away"
+    );
+    let route = landing::Route {
+        root: &world.root,
+        ws: "alpha",
+        name: "widget",
+        dest: &dest,
+        url: &url,
+        forge: &forge,
+        watch: Some(&watch),
+    };
+    let landed = as_the_window(
+        &HostScope::for_a_test(),
+        Path::new("/Applications/purlis.app/Contents/MacOS/purlis-app"),
+        world.home.path(),
+        || landing::land(&route),
+    );
+    assert!(matches!(landed, landing::Landed::Cloned), "{landed:?}");
+    assert!(dest.join("README.md").is_file());
+}
+
 mod real_lfs;

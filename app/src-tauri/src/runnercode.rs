@@ -262,13 +262,24 @@ pub(crate) fn move_workspace_back(
 ) -> Result<crate::host::CameBack, String> {
     let here = clones_of(root, workspace);
     // Asked first, so a runner that cannot say changes nothing here.
-    let only_there = made_there(link, project, workspace, &here)?;
+    let mut only_there = made_there(link, project, root, workspace)?;
+    let mut came_back = crate::host::CameBack::default();
+    // An old clone named `repos` holds back only what would go in `repos/` (#5601).
+    only_there.retain(|rel, _| match held_back_by_repos(root, rel) {
+        Some(why) => {
+            came_back.stayed.push(format!(
+                "{}, which the runner's chat cloned, stayed on the runner: {why}",
+                shown(rel)
+            ));
+            false
+        }
+        None => true,
+    });
     // And each fresh one is checked to have room here before any clone here is taken over, so
     // one refused changes nothing.
     for rel in only_there.keys() {
         room_for(root, rel)?;
     }
-    let mut came_back = crate::host::CameBack::default();
     for rel in here {
         let repo = folder_of(root, &rel)?;
         let leave_out = leave_out_of(root, &rel)?;
@@ -353,6 +364,9 @@ fn room_for(root: &Path, rel: &str) -> Result<(), String> {
     let refused = |why: &str| {
         format!("{rel}, which the runner's chat cloned, did not come back from the runner: {why}")
     };
+    if let Some(why) = held_back_by_repos(root, rel) {
+        return Err(refused(&why));
+    }
     let repo = codelink::new_repo_in(root, rel).map_err(|why| refused(&why.to_string()))?;
     if std::fs::symlink_metadata(&repo).is_ok() {
         return Err(refused("something of that name is here already"));
@@ -363,6 +377,26 @@ fn room_for(root: &Path, rel: &str) -> Result<(), String> {
         return Err(refused("its workspace's folder is not here"));
     }
     Ok(())
+}
+
+/// **Why no fresh clone at `rel` can be made here**, while an old clone named `repos` stands where
+/// new clones go in its workspace (#5601), in words that fit work coming back; `None` otherwise.
+fn held_back_by_repos(root: &Path, rel: &str) -> Option<String> {
+    let ["workspaces", workspace, name] = rel.split('/').collect::<Vec<_>>()[..] else {
+        return None;
+    };
+    matches!(
+        purlis_core::repofolder::new_folder(root, workspace, name),
+        Err(purlis_core::repofolder::Refused::RepoNamedRepos { .. })
+    )
+    .then(|| {
+        format!(
+            "workspace '{workspace}' has an old clone named repos where new clones now go. \
+             Rename it (move workspaces/{workspace}/repos to another name, then run `git \
+             worktree repair` in it if it has branch folders), and the runner's clone can come \
+             back"
+        )
+    })
 }
 
 /// Why a clone made fresh has no remote where the runner named none (#3985): it names none
@@ -380,12 +414,13 @@ const NO_ORIGIN_SAID: &str =
 /// this machine's rules. None from a runner before session protocol 1.51, which cannot say. A
 /// name no repository's folder may have is refused, in words; one the workspace keeps for its
 /// own is never a clone, and stays there. A clone here is the runner's of that name however
-/// either is cased, as this machine's disk may not tell them apart.
+/// either is cased, as this machine's disk may not tell them apart, and whatever its `.git` is
+/// ([`purlis_core::repofolder::holds`], #5601): a second copy in `repos/` would hide it.
 fn made_there(
     link: &HostLink,
     project: &str,
+    root: &Path,
     workspace: &str,
-    here: &[String],
 ) -> Result<std::collections::BTreeMap<String, Option<String>>, String> {
     let Some((there, mut origins)) = link
         .clones_of(project, workspace)
@@ -404,10 +439,9 @@ fn made_there(
         if purlis_core::contain::workspace_keeps(&name) {
             continue;
         }
-        let rel = format!("workspaces/{workspace}/{name}");
-        if !here.iter().any(|one| one.eq_ignore_ascii_case(&rel)) {
+        if !purlis_core::repofolder::holds(root, workspace, &name) {
             let origin = origins.remove(&name);
-            only_there.insert(rel, origin);
+            only_there.insert(format!("workspaces/{workspace}/{name}"), origin);
         }
     }
     Ok(only_there)
@@ -580,10 +614,13 @@ fn fetch_whole_said(
             ));
             continue;
         }
-        let rel = format!("workspaces/{workspace}/{name}");
-        if purlis_core::contain::workspace_keeps(&name) || here.contains(&rel) {
+        // Held here in any case and by any `.git`, it is not made again beside (#5601).
+        if purlis_core::contain::workspace_keeps(&name)
+            || purlis_core::repofolder::holds(root, workspace, &name)
+        {
             continue;
         }
+        let rel = format!("workspaces/{workspace}/{name}");
         if let Err(why) = comes_here_whole(link, project, root, &rel, runner) {
             failed.push(format!(
                 "the clone {} did not come back from its runner: {why}",
