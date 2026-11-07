@@ -6675,7 +6675,7 @@ export const PlaneView = memo(function PlaneView({
 
   /**
    * **Opens Rename chat** (charter-app#254, #4753, #5343): what its rows, the palette's row and
-   * F2 on its row or its pane run, through the one catalogue row. Always the dialog, which says
+   * F2 on its row or its pane's head run, through the one catalogue row. Always the dialog, which says
    * it renames the chat everywhere; a tab's own Rename is {@link beginTabRename}.
    */
   const beginRename = useCallback((session: number) => {

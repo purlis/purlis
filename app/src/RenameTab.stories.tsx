@@ -83,6 +83,23 @@ export const Split: Story = {
   },
 };
 
+/** A split tab with a name of its own: no tick, and the way back to its first chat's name. */
+export const SplitOwnName: Story = {
+  args: { renames: { kind: "tab", panes: 3 }, name: "the build", own: true },
+  play: async ({ canvasElement, args }) => {
+    const page = within(canvasElement.ownerDocument.body);
+    const box = await page.findByLabelText("New name");
+    await untilFocused(() => box, "It starts in the box");
+    await expect(page.queryByRole("checkbox")).toBeNull();
+    await userEvent.tab();
+    await userEvent.tab();
+    const clear = page.getByRole("button", { name: "Use the chat name again" });
+    await untilFocused(() => clear, "Tab reaches Use the chat name again, after Cancel");
+    await userEvent.keyboard("{Enter}");
+    await expect(args.onClear).toHaveBeenCalled();
+  },
+};
+
 /** The core would not hold the name: its words, beside the box. */
 export const Refused: Story = {
   args: { trouble: "That name is 80 characters long, and a chat's name is at most 64." },

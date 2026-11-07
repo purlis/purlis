@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { chatOf, contentsOf, type Tabs } from "./tabs";
+import { chatOf, contentsOf, renameTab, type Tabs } from "./tabs";
 
 /**
  * **What a tab's Rename renames** (#5343, spec #5339), from what the tab holds and nothing else:
@@ -45,14 +45,7 @@ export function nameTab(tabs: Tabs, id: number, own: string | undefined): Tabs {
  * name stays over it. Answers `tabs` itself where no tab is named for that chat.
  */
 export function chatRenamed(tabs: Tabs, session: number, label: string | null): Tabs {
-  let byId: Tabs["byId"] | undefined;
-  for (const id of tabs.order) {
-    const tab = tabs.byId[id];
-    if (chatOf(tabs, id) !== session) continue;
-    const name = label ?? tab.defaultName;
-    if (tab.name === name) continue;
-    byId ??= { ...tabs.byId };
-    byId[id] = { ...tab, name };
-  }
-  return byId === undefined ? tabs : { ...tabs, byId };
+  return tabs.order
+    .filter((id) => chatOf(tabs, id) === session)
+    .reduce((named, id) => renameTab(named, id, label), tabs);
 }

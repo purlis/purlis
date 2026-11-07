@@ -124,7 +124,7 @@ describe("what a menu lists", () => {
     const tab = titles({ on: "tab", tab: 1 }, { tabs });
     expect(tab.above).toEqual([
       // A tab's own Rename… (#5343), whose dialog says it renames the chat.
-      "Rename tab 3 steward…",
+      "Rename chat 3 steward…",
       "Pin tab 3 steward",
       "Tile all in 3 steward",
       // Placement mode, the keyboard's drag (#4764).

@@ -2171,7 +2171,9 @@ describe("renaming a tab (#5343)", () => {
     const tabs = openTab(noTabs(), 7, "3", "steward");
     const row = by(catalogue(now({ tabs })), `tab.rename:${tabs.order[0]}`);
 
-    expect(row?.title).toBe("Rename tab steward 3…");
+    expect(row?.title).toBe("Rename chat steward 3…");
+    // The palette has the chat's own row: this one is the tab's menu's, double-click's and F2's.
+    expect(row?.menuOnly).toBe(true);
     expect(row?.available).toBe(true);
     expect(row?.does).toEqual({ verb: "renameTab", tab: tabs.order[0], split: false });
   });
@@ -2188,8 +2190,12 @@ describe("renaming a tab (#5343)", () => {
     expect(by(catalogue(now({ tabs })), `tab.rename:${tabs.order[0]}`)).toBeUndefined();
   });
 
-  it("is in the palette for the tab in front only", () => {
-    const tabs = openTab(openTab(noTabs(), 7, "3", "steward"), 8, "4", "devops");
+  it("is in the palette for a split tab in front only", () => {
+    const split = (tabs: Tabs, session: number) => splitFocusedPane(tabs, "row", session);
+    const tabs = split(
+      openTab(split(openTab(noTabs(), 7, "3", "steward"), 9), 8, "4", "devops"),
+      10,
+    );
     const rows = catalogue(now({ tabs }));
     const [behind, front] = tabs.order;
 
@@ -2757,7 +2763,8 @@ describe("the palette at fifty chats", () => {
     // pane. 1274 since #5343: a tab's Rename…, each of the fifty tabs' own row, whose forty-nine
     // behind are menu-only.
     expect(offers).toHaveLength(1274);
-    expect(inPalette(offers).filter((row) => row.id.startsWith("tab.rename:"))).toHaveLength(1);
+    // Fifty tabs of one chat each: the palette has their chats' Rename chat rows instead.
+    expect(inPalette(offers).filter((row) => row.id.startsWith("tab.rename:"))).toHaveLength(0);
     expect(inPalette(offers).filter((row) => row.id.startsWith("tab.closeOthers:"))).toHaveLength(
       1,
     );

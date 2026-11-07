@@ -271,6 +271,62 @@ describe("a split tab", () => {
   });
 });
 
+describe("a view's tab", () => {
+  it("has no rename: a double-click and F2 on it open nothing", async () => {
+    const laid: LaidOut = {
+      strip: null,
+      tabs: [
+        tab({ kind: "chat", chat: 1 }),
+        {
+          ...tab({
+            kind: "view",
+            view: {
+              from: null,
+              view: "saving",
+              key: "",
+              title: "Saving",
+              workspace: null,
+              at: 1,
+              active: false,
+              pinned: false,
+            },
+          }),
+          front: false,
+        },
+      ],
+    };
+    core([1], laid);
+    render(<App />);
+    await drawn(1);
+    const viewTab = await waitFor(() => {
+      const found = within(stripNamed("Tabs")).getAllByRole("tab")[1];
+      if (found === undefined) throw new Error("no view tab yet");
+      return found;
+    });
+
+    await userEvent.dblClick(viewTab);
+    viewTab.focus();
+    await userEvent.keyboard("{F2}");
+
+    expect(screen.queryByRole("dialog", { name: /^Rename/ })).not.toBeInTheDocument();
+  });
+});
+
+describe("Rename chat from the pane", () => {
+  it("opens with F2 on the pane head's controls, on that pane's chat", async () => {
+    core([1, 2], twoPanes);
+    render(<App />);
+    await drawn(2);
+
+    const right = screen.getByRole("region", { name: "Right pane" });
+    within(right).getByRole("button", { name: "More for ide.2" }).focus();
+    await userEvent.keyboard("{F2}");
+
+    await screen.findByRole("dialog", { name: "Rename chat ide.2" });
+    expect(screen.queryByRole("dialog", { name: "Command palette" })).not.toBeInTheDocument();
+  });
+});
+
 describe("Rename chat from the list", () => {
   it("is on the row's menu, and renames the chat on its tab and its head", async () => {
     const asked = core([1], onePane);
