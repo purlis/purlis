@@ -23,14 +23,21 @@ import { SecretAskNotice } from "./SecretAskNotice";
 import { expectFocusInSight, inAWindow, untilFocused } from "./stories.testkit";
 import { Card } from "./ui/card/Card";
 
-/** The card the Inbox draws an ask on, around the notice, as wide as the Inbox panel. */
+/** The card the Inbox draws an ask on, around the notice. */
+function TheCard(props: Parameters<typeof SecretAskNotice>[0]) {
+  return (
+    <Card variant="ask" className="inbox-ask">
+      <SecretAskNotice {...props} />
+    </Card>
+  );
+}
+
+/** **The card in the Inbox's panel**: as wide as the panel, in a list that scrolls, so the action
+ *  bar is held at the panel's foot as it is in the window, and the picture is the panel's top. */
 function OnTheCard(props: Parameters<typeof SecretAskNotice>[0]) {
   return (
-    // The Inbox panel's width, as its own stories draw a card.
-    <div style={{ inlineSize: 420 }}>
-      <Card variant="ask" className="inbox-ask">
-        <SecretAskNotice {...props} />
-      </Card>
+    <div style={{ inlineSize: 420, maxBlockSize: 720, overflow: "auto" }}>
+      <TheCard {...props} />
     </div>
   );
 }
@@ -538,8 +545,8 @@ export const Undeclared: Story = {
 export const InAnOrdinaryWindow: Story = {
   args: { ask: runAsk({ not_its_vault: true }) },
   render: (props) => (
-    <div style={{ maxBlockSize: "60vh", overflow: "auto" }} data-testid="band">
-      <OnTheCard {...props} />
+    <div style={{ inlineSize: 420, maxBlockSize: "60vh", overflow: "auto" }} data-testid="band">
+      <TheCard {...props} />
     </div>
   ),
   play: async ({ canvasElement }) => {
