@@ -61,6 +61,9 @@ type Story = StoryObj<typeof meta>;
 /** **The panel scrolled to its end**, for a story whose subject is the notice's last line: the
  *  bar then stands at the card's own foot, under it. */
 async function toTheEnd(canvasElement: HTMLElement) {
+  // Once the faces are in, so the list is as tall as the picture will find it.
+  await document.fonts.ready;
+  await new Promise((frame) => requestAnimationFrame(frame));
   const list = canvasElement
     .querySelector<HTMLElement>('[data-testid="secret-ask"]')
     ?.closest("div[style]");
@@ -473,7 +476,6 @@ export const BrokenLink: Story = {
 
 /** Use an entry I have: the picker, grouped by vault with a filter, and a pick sent as a link. */
 export const PickAnEntry: Story = {
-  parameters: { screenshot: "page" },
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement);
     await userEvent.click(canvas.getByRole("radio", { name: "Use an entry I have" }));
@@ -492,6 +494,22 @@ export const PickAnEntry: Story = {
         remember: [],
       },
     });
+  },
+};
+
+/** The picker open: the person's entries grouped by vault, with the filter on top (#5070). */
+export const ThePickerOpen: Story = {
+  parameters: { screenshot: "page" },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole("radio", { name: "Use an entry I have" }));
+    const picker = await canvas.findByRole("button", { name: /Entry STRIPE_API_KEY reads/ });
+    await userEvent.click(picker);
+    const page = within(canvasElement.ownerDocument.body);
+    await page.findByRole("option", { name: "STRIPE_TEST_KEY" });
+    await expect(page.getByRole("option", { name: "SENTRY_DSN" })).toBeVisible();
+    await document.fonts.ready;
+    await new Promise((frame) => requestAnimationFrame(frame));
   },
 };
 
@@ -569,6 +587,8 @@ export const InAnOrdinaryWindow: Story = {
     await inAWindow(1280, 820);
     const canvas = within(canvasElement);
     const band = canvas.getByTestId("band");
+    await document.fonts.ready;
+    await new Promise((frame) => requestAnimationFrame(frame));
     band.scrollTop = band.scrollHeight;
     await waitFor(() => {
       const foot = canvas
