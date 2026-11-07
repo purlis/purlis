@@ -58,6 +58,16 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+/** **The panel scrolled to its end**, for a story whose subject is the notice's last line: the
+ *  bar then stands at the card's own foot, under it. */
+async function toTheEnd(canvasElement: HTMLElement) {
+  const list = canvasElement
+    .querySelector<HTMLElement>('[data-testid="secret-ask"]')
+    ?.closest("div[style]");
+  if (list instanceof HTMLElement) list.scrollTop = list.scrollHeight;
+  await new Promise((frame) => requestAnimationFrame(frame));
+}
+
 /** The press the story's notice sent last: its option's id and what it gave. */
 function pressed(onAnswer: unknown) {
   const calls = (onAnswer as ReturnType<typeof fn>).mock.calls;
@@ -162,6 +172,7 @@ export const ScopeForThisChat: Story = {
     await expect(
       canvas.getByRole("button", { name: "Fill and allow for this chat" }),
     ).toBeVisible();
+    await toTheEnd(canvasElement);
   },
 };
 
@@ -173,6 +184,7 @@ export const ScopeAlways: Story = {
     await expect(canvas.getByTestId("sa-tool-line")).toHaveTextContent('curl = { vault = "team"');
     await expect(canvas.getByTestId("sa-others-wait")).toHaveTextContent("moves with this line");
     await expect(canvas.getByTestId("sa-env-advice")).toBeVisible();
+    await toTheEnd(canvasElement);
   },
 };
 
@@ -193,6 +205,7 @@ export const ScopeAlwaysOthersPending: Story = {
     await expect(canvas.getByTestId("sa-others-wait")).toHaveTextContent(
       "This approves only this line: their notice stays up",
     );
+    await toTheEnd(canvasElement);
   },
 };
 
@@ -217,6 +230,7 @@ export const ScopeDont: Story = {
     await userEvent.keyboard("{Enter}");
     await waitFor(() => expect(args.onAnswer).toHaveBeenCalled());
     await expect(pressed(args.onAnswer).id).toBe("keep");
+    await toTheEnd(canvasElement);
   },
 };
 
@@ -265,6 +279,7 @@ export const AllowOnly: Story = {
     await expect(canvas.queryByTestId("sa-key-fill")).toBeNull();
     await expect(canvas.getByRole("button", { name: "Allow once" })).toBeVisible();
     await expect(canvas.queryByRole("button", { name: "Not now" })).toBeNull();
+    await toTheEnd(canvasElement);
   },
 };
 
@@ -275,6 +290,7 @@ export const AheadOfItsRun: Story = {
     const canvas = within(canvasElement);
     await expect(canvas.getByTestId("sa-ahead")).toHaveTextContent("None yet");
     await expect(canvas.queryByTestId("sa-command")).toBeNull();
+    await toTheEnd(canvasElement);
   },
 };
 
@@ -335,7 +351,7 @@ export const Interpreter: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(canvas.getByTestId("sa-locked")).toHaveTextContent("Python3 gets no Allow");
+    await expect(canvas.getByTestId("sa-locked")).toHaveTextContent("python3 gets no Allow");
     await expect(canvas.queryByRole("radio", { name: "Allow once" })).toBeNull();
   },
 };

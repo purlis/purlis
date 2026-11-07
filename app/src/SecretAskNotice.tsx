@@ -525,11 +525,11 @@ function Facts({
   );
 }
 
-/** A sentence of the app's, with its full stop. */
+/** A sentence of the app's, with its full stop. Its first word is left as the core wrote it: it
+ *  is often a program's name (`curl`, `python3`), which keeps its own spelling. */
 const sentence = (said: string) => {
   const trimmed = said.trim();
-  const first = trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
-  return /[.!?]$/.test(first) ? first : `${first}.`;
+  return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
 };
 
 /** **What the chat wrote**: its command and its purpose, behind the rule, inert. */
