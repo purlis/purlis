@@ -764,8 +764,7 @@ pub struct Studio {
     /// for a read of Needs you alone.
     pub router: Option<StudioRouter>,
     /// **The clones a chat can be previewed in** (#4227): each of the workspace's that holds
-    /// repo skills, in its order. Empty at the project's root, while the studio is off, and
-    /// where no clone holds one.
+    /// repo skills, in its order. Empty at the project's root and where no clone holds one.
     pub places: Vec<StudioClone>,
     /// Where purlis cannot confirm which of the project's workspace and persona folders the
     /// person accepted (#3718): the one item the studio shows for the project, whose Accept
