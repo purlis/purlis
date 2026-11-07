@@ -77,7 +77,19 @@ async function sidebarAnswers(
 
 /** The watch's setup, as the app logged it for this project (`planes.rs`). */
 function watcherSetupMs(): number | undefined {
-  const said = new RegExp(`is watched, set up in (\\d+) ms`);
+  return loggedMs(/is watched, set up in (\d+) ms/);
+}
+
+/**
+ * How long the session host took to make the project's index ready, as it logged it
+ * (`projectindex::Keeper`): the first build, or the sweep of the one the run built.
+ */
+function indexReadyMs(): number | undefined {
+  return loggedMs(/is indexed, ready in (\d+) ms/);
+}
+
+/** The number `said` captures on the app's first log line about this project that has it. */
+function loggedMs(said: RegExp): number | undefined {
   for (const file of readdirSync(LOGS)) {
     if (!file.endsWith(".log")) continue;
     for (const line of readFileSync(join(LOGS, file), "utf8").split("\n")) {
@@ -181,6 +193,18 @@ describe("the app on a project at scale", () => {
   });
 
   it("sits idle for a minute with its window shown", async () => {
+    // **The index ready first** (#5486): the host builds or sweeps it as it opens the project,
+    // and the first build of 200,000 memories takes minutes. A minute that overlaps it measures
+    // the build, not the app at rest. Not asserted: a host that never says so is reported, and
+    // the minute is taken anyway.
+    let ready: number | undefined;
+    await browser
+      .waitUntil(async () => (ready = indexReadyMs()) !== undefined, {
+        timeout: 600_000,
+        interval: 1000,
+      })
+      .catch(() => console.log(`scale-run | the host never said the index of ${plane} is ready`));
+    if (ready !== undefined) row("index-ready", { samples: [ready] });
     // Its first git standing and the rest of the launch's work done, so the minute is idle.
     await sleep(20_000);
     const app = appProcesses(built(process.platform === "win32" ? "purlis-app.exe" : "purlis-app"));

@@ -5,12 +5,16 @@
 //!
 //! ```text
 //! scale-project generate --out <dir> [--seed N] [--at 2026-11-06T12:00:00] [--small]
+//! scale-project index --project <dir>
 //! scale-project look --project <dir> [--times N]
 //! ```
 //!
-//! `generate` writes the project and prints one line of JSON saying what it holds. `look`
-//! times the project's git standing as the app takes it (`planegit::standing`) and prints the
-//! samples as one line of JSON.
+//! `generate` writes the project and prints one line of JSON saying what it holds. `index`
+//! builds the project index as the session host's keeper does when it opens a project (ADR
+//! 0079), and prints how long it took: a person's chats meet a project the host has indexed, so
+//! the run's timings of the hook and of recall are taken on one. `look` times the project's git
+//! standing as the app takes it (`planegit::standing`) and prints the samples as one line of
+//! JSON.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -41,6 +45,11 @@ enum Command {
         /// A few of everything instead of the target size.
         #[arg(long)]
         small: bool,
+    },
+    /// Build the project index, as the session host does when it opens the project.
+    Index {
+        #[arg(long)]
+        project: PathBuf,
     },
     /// Time the project's git standing, as the app takes it.
     Look {
@@ -86,6 +95,32 @@ fn main() -> ExitCode {
                     "workspace": workspace_name(1),
                     "persona": persona_name(1),
                     "seconds": started.elapsed().as_secs_f64(),
+                })
+            );
+            ExitCode::SUCCESS
+        }
+        Command::Index { project } => {
+            let started = Instant::now();
+            // What `projectindex::Keeper` does before it hears its first change: build (or
+            // sweep) the index, then record the git standing the briefing reads in its place.
+            let writer = match purlis_core::projectindex::Writer::open(&project) {
+                Ok(writer) => writer,
+                Err(why) => {
+                    eprintln!("scale-project: {} is not indexed: {why}", project.display());
+                    return ExitCode::FAILURE;
+                }
+            };
+            let built = started.elapsed().as_secs_f64() * 1000.0;
+            let standing = purlis_core::planegit::shared_standing(&project);
+            if let Err(why) = writer.record_standing(&standing) {
+                eprintln!("scale-project: the standing is not recorded: {why}");
+                return ExitCode::FAILURE;
+            }
+            println!(
+                "{}",
+                serde_json::json!({
+                    "built_ms": built,
+                    "ms": started.elapsed().as_secs_f64() * 1000.0,
                 })
             );
             ExitCode::SUCCESS

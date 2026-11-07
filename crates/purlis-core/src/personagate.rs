@@ -753,16 +753,22 @@ pub fn marker_file(state: &State, sid: &str) -> PathBuf {
 
 /// Freeze every persona's effective tools for session `sid` — `toolgate.snapshot`. Returns
 /// what was frozen; empty when nothing could be stored, which later reads as "no grant".
+///
+/// Every chat start takes it, for every persona, so each definition is read once for all of
+/// them ([`crate::personas::read_once`]): a persona's tools, its chain and what it borrows each
+/// read the definitions again, which at 100 personas cost a chat start 80 ms (#5486).
 pub fn snapshot(plane: &Path, sid: &str) -> BTreeMap<String, Vec<String>> {
-    let data: BTreeMap<String, Vec<String>> = personagrant::list_personas(plane)
-        .into_iter()
-        .map(|n| {
-            let tools = personagrant::effective_tools(plane, &n)
-                .into_iter()
-                .collect();
-            (n, tools)
-        })
-        .collect();
+    let data: BTreeMap<String, Vec<String>> = crate::personas::read_once(|| {
+        personagrant::list_personas(plane)
+            .into_iter()
+            .map(|n| {
+                let tools = personagrant::effective_tools(plane, &n)
+                    .into_iter()
+                    .collect();
+                (n, tools)
+            })
+            .collect()
+    });
     let state = State::of(plane);
     if state.touch(&marker_file(&state, sid)).is_err() {
         return BTreeMap::new();
@@ -1709,5 +1715,28 @@ mod tests {
     fn a_plane_with_no_sessions_sweeps_nothing() {
         let (_d, root) = plane("gh");
         assert_eq!(sweep_ceilings(&root, std::time::SystemTime::now()), 0);
+    }
+
+    #[test]
+    fn a_chat_start_freezes_every_personas_tools_reading_each_definition_once() {
+        // #5486: every chat start freezes every persona's tools; at 100 personas, reading each
+        // definition again for its tools, its chain and what it borrows cost 80 ms of it.
+        let dir = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        std::fs::write(root.join("charter.toml"), "").unwrap();
+        for (name, text) in [
+            ("ops", "---\nrole: Ops\ntools: gh\n---\n"),
+            ("qa", "---\nrole: QA\nextends: ops\ntools: jq\n---\n"),
+        ] {
+            let persona = root.join("personas").join(name);
+            std::fs::create_dir_all(&persona).unwrap();
+            std::fs::write(persona.join("persona.md"), text).unwrap();
+        }
+        let before = crate::personas::DEFINITION_READS.with(std::cell::Cell::get);
+        let frozen = snapshot(&root, "s1");
+        let reads = crate::personas::DEFINITION_READS.with(std::cell::Cell::get) - before;
+        assert_eq!(frozen.get("ops"), Some(&vec!["gh".to_owned()]));
+        assert!(frozen["qa"].contains(&"jq".to_owned()), "{frozen:?}");
+        assert_eq!(reads, 2, "two definitions, each read once");
     }
 }

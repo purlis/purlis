@@ -714,28 +714,62 @@ fn cwd(root: &Path, kind: Kind, subject_dir: &Path, runs_in: Option<RunsIn>) -> 
 /// named in [`Resolution::warnings`] whenever it was, or may have been, meant for this kind.
 ///
 /// A subject that is not there is refused, in the words the plane's own lookups use.
+///
+/// For more than one subject, read the project once with [`Offers::read`] and ask it for each:
+/// this reads every workspace, persona and declared action again.
 pub fn resolve(root: &Path, subject: &Subject) -> Result<Resolution, String> {
-    let plane = crate::workspaces::Plane::open(root);
+    Offers::read(root).resolve(subject)
+}
+
+/// What every subject of one project is resolved against, read once (#5486): its workspaces,
+/// its personas, each persona's declared actions, and the persona that runs charter's own.
+///
+/// The window asks for every workspace's and every persona's actions at once, and reading the
+/// project again for each of a thousand subjects took seconds.
+pub struct Offers {
+    root: PathBuf,
+    workspaces: BTreeSet<String>,
+    personas: BTreeSet<String>,
+    /// Each persona's declared actions, in the order the plane lists its personas.
+    declared: Vec<(String, Vec<Parsed>)>,
+    builtin_runner: Option<String>,
+}
+
+impl Offers {
+    /// The project at `root`, as it is on disk now.
+    pub fn read(root: &Path) -> Self {
+        let plane = crate::workspaces::Plane::open(root);
+        let personas = plane.personas().unwrap_or_default();
+        Self {
+            root: root.to_path_buf(),
+            workspaces: plane.workspaces().unwrap_or_default().into_iter().collect(),
+            declared: personas
+                .iter()
+                .map(|persona| (persona.clone(), declared(root, persona)))
+                .collect(),
+            personas: personas.into_iter().collect(),
+            builtin_runner: crate::active::plane_default_persona(root),
+        }
+    }
+
+    /// [`resolve`]'s answer for `subject`, from what was read.
+    pub fn resolve(&self, subject: &Subject) -> Result<Resolution, String> {
+        resolved(self, subject)
+    }
+}
+
+fn resolved(offers: &Offers, subject: &Subject) -> Result<Resolution, String> {
+    let root = offers.root.as_path();
     let (name, dir) = match (subject.kind, subject.name.as_deref()) {
         (Kind::Workspace, Some(name)) => {
-            let known = crate::contain::workspace_name_ok(name)
-                && plane
-                    .workspaces()
-                    .unwrap_or_default()
-                    .iter()
-                    .any(|w| w == name);
+            let known = crate::contain::workspace_name_ok(name) && offers.workspaces.contains(name);
             if !known {
                 return Err(format!("no workspace '{name}'"));
             }
             (name.to_string(), root.join("workspaces").join(name))
         }
         (Kind::Persona, Some(name)) => {
-            let known = crate::personas::valid_name(name)
-                && plane
-                    .personas()
-                    .unwrap_or_default()
-                    .iter()
-                    .any(|p| p == name);
+            let known = crate::personas::valid_name(name) && offers.personas.contains(name);
             if !known {
                 return Err(format!("no persona '{name}'"));
             }
@@ -776,7 +810,7 @@ pub fn resolve(root: &Path, subject: &Subject) -> Result<Resolution, String> {
     // own to name here (ADR 0061).
     let builtin_runner = match subject.kind {
         Kind::Persona => Some(name.clone()),
-        _ => crate::active::plane_default_persona(root),
+        _ => offers.builtin_runner.clone(),
     };
     for builtin in BUILTINS.iter().filter(|b| b.on.contains(&subject.kind)) {
         let cwd = if builtin.at_plane_root {
@@ -800,8 +834,8 @@ pub fn resolve(root: &Path, subject: &Subject) -> Result<Resolution, String> {
     }
 
     let mut warnings = Vec::new();
-    for persona in plane.personas().unwrap_or_default() {
-        for parsed in declared(root, &persona) {
+    for (persona, declared) in &offers.declared {
+        for parsed in declared {
             match &parsed.action {
                 Some(action) if action.on.contains(&subject.kind) => {
                     actions.push(Resolved {

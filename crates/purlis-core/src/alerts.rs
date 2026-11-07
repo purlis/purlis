@@ -656,12 +656,15 @@ fn tracked_dirty(root: &Path) -> bool {
     let Ok(run) = crate::worktree::git::run(
         root,
         // Without the index refresh a plain `status` does, which takes `index.lock` from
-        // under a save running in the same plane (charter-app#294).
+        // under a save running in the same plane (charter-app#294). And without the untracked
+        // files, which the answer leaves out anyway: at 200,000 files their walk was a third of
+        // each render (#5486).
         &[
             "--no-optional-locks",
             "status",
             "--porcelain=v1",
             "--branch",
+            "--untracked-files=no",
         ],
         STATUS_TIMEOUT,
     ) else {

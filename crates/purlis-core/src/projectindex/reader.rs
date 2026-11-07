@@ -8,7 +8,6 @@
 //! the caller scans the files instead. Every query names a [`Reach`], which the FTS5 query
 //! filters on, and the row table is filtered by again.
 
-use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use rusqlite::{Connection, OpenFlags, params_from_iter};
@@ -58,9 +57,7 @@ pub struct WorkspaceSummary {
     pub vision: String,
     /// The newest modification time among its own files and its indexed items.
     pub last_active: Option<f64>,
-    pub memories: usize,
     pub todos: usize,
-    pub sessions: usize,
 }
 
 /// A read-only connection to the live generation.
@@ -201,64 +198,42 @@ impl Reader {
     }
 
     /// Every workspace's summary, by name.
+    ///
+    /// One seek per workspace and kind on `item_owner_mtime`, never a pass over every item: at
+    /// 1,000 workspaces and 100,000 of their memories, grouping every item cost each chat start
+    /// 30 ms warm and 430 ms cold (#5486).
     pub fn workspaces(&self) -> Result<Vec<WorkspaceSummary>> {
-        let mut counts: BTreeMap<String, (usize, usize, usize, Option<f64>)> = BTreeMap::new();
-        {
-            let mut stmt = self.conn.prepare(
-                "SELECT owner, kind, COUNT(*), MAX(mtime) FROM item
-                 WHERE kind IN ('workspace', 'todos', 'sessions') AND owner != ''
-                 GROUP BY owner, kind",
-            )?;
-            let rows = stmt.query_map([], |r| {
-                Ok((
-                    r.get::<_, String>(0)?,
-                    r.get::<_, String>(1)?,
-                    r.get::<_, i64>(2)?,
-                    r.get::<_, Option<i64>>(3)?,
-                ))
-            })?;
-            for row in rows {
-                let (owner, kind, n, mtime) = row?;
-                let entry = counts.entry(owner).or_default();
-                match kind.as_str() {
-                    "workspace" => entry.0 = n as usize,
-                    "todos" => entry.1 = n as usize,
-                    _ => entry.2 = n as usize,
-                }
-                if let Some(ns) = mtime {
-                    let secs = ns as f64 / 1e9;
-                    entry.3 = Some(entry.3.map_or(secs, |b: f64| b.max(secs)));
-                }
-            }
-        }
-        let mut stmt = self
-            .conn
-            .prepare("SELECT name, vision, mtime FROM workspace ORDER BY name")?;
+        let mut stmt = self.conn.prepare(
+            "SELECT w.name, w.vision, w.mtime,
+                (SELECT MAX(mtime) FROM item WHERE kind = 'workspace' AND owner = w.name),
+                (SELECT MAX(mtime) FROM item WHERE kind = 'todos' AND owner = w.name),
+                (SELECT MAX(mtime) FROM item WHERE kind = 'sessions' AND owner = w.name),
+                (SELECT COUNT(*) FROM item WHERE kind = 'todos' AND owner = w.name)
+             FROM workspace w ORDER BY w.name",
+        )?;
         let rows = stmt.query_map([], |r| {
-            Ok((
-                r.get::<_, String>(0)?,
-                r.get::<_, String>(1)?,
-                r.get::<_, Option<f64>>(2)?,
-            ))
-        })?;
-        let mut out = Vec::new();
-        for row in rows {
-            let (name, vision, own) = row?;
-            let (memories, todos, sessions, items) = counts.remove(&name).unwrap_or_default();
+            let own = r.get::<_, Option<f64>>(2)?;
+            // An item's mtime is in nanoseconds; the workspace's own, in seconds.
+            let items = [3, 4, 5]
+                .into_iter()
+                .map(|at| r.get::<_, Option<i64>>(at))
+                .collect::<rusqlite::Result<Vec<_>>>()?
+                .into_iter()
+                .flatten()
+                .map(|ns| ns as f64 / 1e9)
+                .reduce(f64::max);
             let last_active = match (own, items) {
                 (Some(a), Some(b)) => Some(a.max(b)),
                 (a, b) => a.or(b),
             };
-            out.push(WorkspaceSummary {
-                name,
-                vision,
+            Ok(WorkspaceSummary {
+                name: r.get(0)?,
+                vision: r.get(1)?,
                 last_active,
-                memories,
-                todos,
-                sessions,
-            });
-        }
-        Ok(out)
+                todos: r.get::<_, i64>(6)? as usize,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
     fn rows(&self, sql: &str, values: Vec<rusqlite::types::Value>) -> Result<Vec<Row>> {

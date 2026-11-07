@@ -38,6 +38,7 @@ CREATE TABLE item(
 );
 CREATE INDEX item_base ON item(base);
 CREATE INDEX item_owner ON item(kind, owner, date);
+CREATE INDEX item_owner_mtime ON item(kind, owner, mtime);
 CREATE INDEX item_newest ON item(date DESC, rank, basekey, pathkey);
 CREATE TABLE unread(base TEXT NOT NULL, kind TEXT NOT NULL, owner TEXT NOT NULL, path TEXT NOT NULL, code INTEGER);
 CREATE INDEX unread_base ON unread(base);

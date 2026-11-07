@@ -6231,3 +6231,34 @@ fn an_update_refuses_a_project_whose_orig_head_has_a_second_name() {
     assert_eq!(fixture.head_subject(), "one");
     assert_eq!(std::fs::read_to_string(&outside).unwrap(), "untouched\n");
 }
+
+/// Whether the index of the repository at `root` carries git's untracked cache (its `UNTR`
+/// extension).
+fn holds_an_untracked_cache(root: &Path) -> bool {
+    let index = std::fs::read(root.join(".git/index")).unwrap();
+    index.windows(4).any(|four| four == b"UNTR")
+}
+
+#[test]
+fn priming_a_plane_nothing_has_saved_leaves_gits_untracked_cache_in_its_index() {
+    // #5486: a project committed by hand and never saved by purlis read its whole tree on
+    // every look at its standing.
+    let fixture = Fixture::plane();
+    if !git::Tuning::here().untracked_cache {
+        return;
+    }
+    assert!(
+        !holds_an_untracked_cache(&fixture.root),
+        "the fixture starts without one"
+    );
+    prime(&fixture.root);
+    assert!(holds_an_untracked_cache(&fixture.root));
+}
+
+#[test]
+fn priming_a_plane_something_is_saving_leaves_its_index_to_that_save() {
+    let fixture = Fixture::plane();
+    let _saving = Claim::of(&fixture.root).expect("the plane is free");
+    prime(&fixture.root);
+    assert!(!holds_an_untracked_cache(&fixture.root));
+}
