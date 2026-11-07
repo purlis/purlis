@@ -422,6 +422,7 @@ macro_rules! app_commands {
                 skillgrade::drafted::skill_draft_grade_set_cap,
                 skillgrade::skill_grade_stop,
                 skillgrade::batch::skill_grades_plan,
+                skillgrade::batch::skill_grades_resume_plan,
                 skillgrade::batch::skill_grades_start,
                 skillgrade::batch::skill_grades_stop,
                 skillgrade::batch::skill_grades_running,

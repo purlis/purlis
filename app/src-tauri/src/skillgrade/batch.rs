@@ -61,6 +61,9 @@ pub struct BatchSkill {
     /// What pressing Start consents to for it: handed back, and a grade on another plan is
     /// refused.
     pub consent: String,
+    /// **The stopped grade it resumes** (#5718), where the batch resumes one: its chats are those
+    /// left, and its estimate what they would spend.
+    pub resume: Option<String>,
 }
 
 /// **A skill a batch leaves out**, and why, in a sentence.
@@ -142,8 +145,20 @@ impl SkillGradesPlan {
                 limit_usd: plan.cost_cap_usd,
                 estimate: plan.estimate.clone(),
                 consent: plan.consent.clone().unwrap_or_default(),
+                resume: None,
             });
         }
+        Self::of_skills(skills, left_out, profile, refused)
+    }
+
+    /// **The estimate of grading `skills`**, leaving `left_out` out, its chats on `profile` or
+    /// refused there with `refused`: their estimates added, and each one's own limit.
+    fn of_skills(
+        skills: Vec<BatchSkill>,
+        left_out: Vec<BatchLeftOut>,
+        profile: Option<String>,
+        refused: Option<String>,
+    ) -> Self {
         let each: Vec<Option<f64>> = skills
             .iter()
             .map(|one| one.estimate.as_ref().and_then(|estimate| estimate.cost_usd))
@@ -175,6 +190,10 @@ pub struct BatchPick {
     pub level: SkillLevel,
     pub name: String,
     pub consent: String,
+    /// **The stopped grade it resumes** (#5718), where Select's Resume picked it: only its
+    /// unfinished cases run.
+    #[serde(default)]
+    pub resume: Option<String>,
 }
 
 /// **Where a skill of a batch is**, as the window is told it.
@@ -446,6 +465,82 @@ pub(crate) async fn skill_grades_plan(
     .await
 }
 
+/// **What resuming the stopped grades `grades` together would run and spend** (#5718, the
+/// operator's ruling 6): each stopped skill's chats left and what they would spend, under one new
+/// limit the person sets; a grade that cannot be resumed now is left out with why.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_grades_resume_plan(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    grades: Vec<String>,
+) -> Result<SkillGradesPlan, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("reading what resuming several grades runs", move || {
+        flag_on()?;
+        let root = held.root();
+        let mut skills = Vec::new();
+        let mut left_out = Vec::new();
+        let mut profile = None;
+        for grade in grades {
+            let Some(stopped) = purlis_core::skills::grades::resumable::of(root, &grade) else {
+                continue;
+            };
+            let level = stopped
+                .level
+                .as_deref()
+                .and_then(purlis_core::skills::grades::level_of_recorded)
+                .map_or(SkillLevel::Project { local: false }, |level| {
+                    (&level).into()
+                });
+            let shown = super::resumed::plan_of(root, &plane, &stopped);
+            let why = shown.refused.clone().or_else(|| {
+                shown
+                    .waits_until
+                    .as_ref()
+                    .map(|_| "It waits until its usage limit resets.".to_owned())
+            });
+            if let Some(why) = why.or_else(|| {
+                shown
+                    .running
+                    .as_ref()
+                    .map(|_| "A grade of it is running already.".to_owned())
+            }) {
+                left_out.push(BatchLeftOut {
+                    level,
+                    name: stopped.skill.clone(),
+                    why,
+                });
+                continue;
+            }
+            profile = profile.or_else(|| shown.profile.clone());
+            skills.push(BatchSkill {
+                level,
+                name: stopped.skill.clone(),
+                chats: shown.left,
+                limit_usd: shown.limit_usd,
+                estimate: Some(GradeEstimate {
+                    tokens: shown.tokens_left,
+                    cost_usd: shown.usd_left,
+                    chats_then: shown.left,
+                    ts: stopped.ts.clone(),
+                    profile: shown.profile.clone(),
+                    harness: stopped.deciding.program.clone(),
+                    model: shown.model.clone(),
+                    same_profile: Some(true),
+                    interrupted: false,
+                }),
+                consent: shown.consent.clone().unwrap_or_default(),
+                resume: Some(stopped.grade.clone()),
+            });
+        }
+        let mut plan = SkillGradesPlan::of_skills(skills, left_out, profile, None);
+        plan.running = holds(&plane).map(str::to_owned);
+        Ok(plan)
+    })
+    .await
+}
+
 /// **Grades the copies `skills`**, a few at a time, under `limit_usd` (see the module). The
 /// answer is the batch's id. Refused while any grade runs in the project.
 #[tauri::command]
@@ -546,6 +641,26 @@ fn start_one(
     tell: &Sender<Heard>,
 ) -> Result<String, String> {
     let pick = &driving.skills[at].pick;
+    let in_batch = {
+        let tell = tell.clone();
+        InBatch {
+            id: driving.id.clone(),
+            told: Box::new(move |step: &SkillGradeStep| {
+                let _ = tell.send(Heard::Step(at, Box::new(step.clone())));
+            }),
+        }
+    };
+    // A stopped grade it resumes runs only what it left, on its own plan (#5718).
+    if let Some(grade) = &pick.resume {
+        return super::resumed::begin_resume(
+            app.clone(),
+            Arc::clone(held),
+            driving.plane.clone(),
+            grade,
+            &pick.consent,
+            Some(in_batch),
+        );
+    }
     let root = held.root();
     let level: Level = (&pick.level).into();
     let on = chats_on(root, None, None);
@@ -558,7 +673,6 @@ fn start_one(
         &pick.name,
         "it was not started",
     )?;
-    let tell = tell.clone();
     begin(
         app.clone(),
         Arc::clone(held),
@@ -572,12 +686,7 @@ fn start_one(
             grader: None,
             follower: None,
             draft: None,
-            batch: Some(InBatch {
-                id: driving.id.clone(),
-                told: Box::new(move |step: &SkillGradeStep| {
-                    let _ = tell.send(Heard::Step(at, Box::new(step.clone())));
-                }),
-            }),
+            batch: Some(in_batch),
             resume: None,
         },
         planned,

@@ -236,51 +236,65 @@ pub(crate) async fn skill_grade_resume(
     let held = planes.held(&plane)?;
     crate::off_the_window("resuming a grade", move || {
         flag_on()?;
-        let stopped = resumable::of(held.root(), &grade).ok_or(
-            "That grade cannot be resumed now: it was resumed or graded again, so nothing was \
-             started.",
-        )?;
-        let shown = plan_of(held.root(), &plane, &stopped);
-        if let Some(why) = shown.refused {
-            return Err(why);
-        }
-        if let Some(at) = shown.waits_until {
-            return Err(format!(
-                "Resume waits until the usage limit resets ({at}), so nothing was started."
-            ));
-        }
-        if shown.consent.as_deref() != Some(consent.as_str()) {
-            return Err(
-                "What a resume would run changed since its plan was shown, so nothing was \
-                 started. Read the plan again."
-                    .to_owned(),
-            );
-        }
-        let now = read_now(held.root(), &stopped)?;
-        let draft = now.draft.as_ref().map(|draft| DraftBegun {
-            id: stopped.draft_of.clone().unwrap_or_default(),
-            mark: grades::draft::Mark::of(draft, now.planned.plan.map_or(0, |plan| plan.chats)),
-        });
-        begin(
-            app,
-            held,
-            Begin {
-                plane,
-                level: now.level,
-                skill: stopped.skill.clone(),
-                profile: stopped.deciding.profile.clone(),
-                model: stopped.deciding.model.clone(),
-                after_edit: false,
-                grader: None,
-                follower: None,
-                draft,
-                batch: None,
-                resume: Some(stopped),
-            },
-            now.planned,
-        )
+        begin_resume(app, held, plane, &grade, &consent, None)
     })
     .await
+}
+
+/// **Resumes the stopped grade `grade`** in `plane`, held, on the plan whose consent is `consent`,
+/// alone or as one of the batch `batch`: refused where it cannot be resumed now, where it waits
+/// for a usage limit's reset, or where its plan changed since it was shown.
+pub(crate) fn begin_resume(
+    app: tauri::AppHandle,
+    held: std::sync::Arc<crate::planes::Held>,
+    plane: PlaneId,
+    grade: &str,
+    consent: &str,
+    batch: Option<super::InBatch>,
+) -> Result<String, String> {
+    let stopped = resumable::of(held.root(), grade).ok_or(
+        "That grade cannot be resumed now: it was resumed or graded again, so nothing was \
+         started.",
+    )?;
+    let shown = plan_of(held.root(), &plane, &stopped);
+    if let Some(why) = shown.refused {
+        return Err(why);
+    }
+    if let Some(at) = shown.waits_until {
+        return Err(format!(
+            "Resume waits until the usage limit resets ({at}), so nothing was started."
+        ));
+    }
+    if shown.consent.as_deref() != Some(consent) {
+        return Err(
+            "What a resume would run changed since its plan was shown, so nothing was started. \
+             Read the plan again."
+                .to_owned(),
+        );
+    }
+    let now = read_now(held.root(), &stopped)?;
+    let draft = now.draft.as_ref().map(|draft| DraftBegun {
+        id: stopped.draft_of.clone().unwrap_or_default(),
+        mark: grades::draft::Mark::of(draft, now.planned.plan.map_or(0, |plan| plan.chats)),
+    });
+    begin(
+        app,
+        held,
+        Begin {
+            plane,
+            level: now.level,
+            skill: stopped.skill.clone(),
+            profile: stopped.deciding.profile.clone(),
+            model: stopped.deciding.model.clone(),
+            after_edit: false,
+            grader: None,
+            follower: None,
+            draft,
+            batch,
+            resume: Some(stopped),
+        },
+        now.planned,
+    )
 }
 
 /// **The Skill studio's Needs you items of the stopped grades of the project at `root`** (#5718,
