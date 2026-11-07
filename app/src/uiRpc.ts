@@ -7207,6 +7207,12 @@ export type LimitRefused = {
 	 *  found the pool missing or its link down ([`unavailable`]). Absent for every other refusal.
 	 */
 	pool_unavailable?: string | null,
+	/**
+	 *  **The Secret ask a start was refused on** (#5137): the open ask for its profile's
+	 *  credential, which the Start dialog fills so the start goes on. Only where the core named
+	 *  it beside this refusal ([`purlis_core::profilesignin::attempt`]), never read from words.
+	 */
+	secret_ask?: StartSecretAsk | null,
 };
 
 /**  A range of lines, as the window names one: both ends counted from 1 and included. */
@@ -13699,6 +13705,20 @@ export type StartRunsOn = {
 	at_root: boolean,
 	pools: string[],
 	ran_on: string[],
+};
+
+/**
+ *  **A start's Secret ask, as the Start dialog finds it** (#5137): the ask it draws is the one
+ *  open for this vault and key.
+ */
+export type StartSecretAsk = {
+	vault: string,
+	key: string,
+	/**
+	 *  What the dialog says once the person declines it: the core's words for a start whose ask
+	 *  was declined.
+	 */
+	declined: string,
 };
 
 /**  A chat that started: its session, and the name it was given as charter holds it. */

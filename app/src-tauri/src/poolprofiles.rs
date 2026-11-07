@@ -912,6 +912,22 @@ pub struct LimitRefused {
     /// found the pool missing or its link down ([`unavailable`]). Absent for every other refusal.
     #[specta(optional)]
     pub pool_unavailable: Option<String>,
+    /// **The Secret ask a start was refused on** (#5137): the open ask for its profile's
+    /// credential, which the Start dialog fills so the start goes on. Only where the core named
+    /// it beside this refusal ([`purlis_core::profilesignin::attempt`]), never read from words.
+    #[specta(optional)]
+    pub secret_ask: Option<StartSecretAsk>,
+}
+
+/// **A start's Secret ask, as the Start dialog finds it** (#5137): the ask it draws is the one
+/// open for this vault and key.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct StartSecretAsk {
+    pub vault: String,
+    pub key: String,
+    /// What the dialog says once the person declines it: the core's words for a start whose ask
+    /// was declined.
+    pub declined: String,
 }
 
 impl From<String> for LimitRefused {
@@ -920,6 +936,7 @@ impl From<String> for LimitRefused {
             words,
             limit: None,
             pool_unavailable: None,
+            secret_ask: None,
         }
     }
 }
@@ -972,7 +989,8 @@ pub(crate) fn offering_limits<T>(
         }
     }
     let ends = Ends(UNAVAILABLE.replace(Some(None)));
-    let (done, refused) = purlis_core::poollimits::attempt(work);
+    let ((done, refused), asked) =
+        purlis_core::profilesignin::attempt(|| purlis_core::poollimits::attempt(work));
     let marked = UNAVAILABLE.with_borrow_mut(|now| now.as_mut().and_then(Option::take));
     drop(ends);
     done.map_err(|words| {
@@ -980,10 +998,18 @@ pub(crate) fn offering_limits<T>(
         let pool_unavailable = marked
             .filter(|(_, said)| words.contains(said.as_str()))
             .map(|(pool, _)| pool);
+        let secret_ask = asked
+            .filter(|asked| words.contains(asked.said.as_str()))
+            .map(|asked| StartSecretAsk {
+                vault: asked.vault,
+                key: asked.key,
+                declined: asked.declined,
+            });
         LimitRefused {
             words,
             limit: refused.map(offer_of),
             pool_unavailable,
+            secret_ask,
         }
     })
 }

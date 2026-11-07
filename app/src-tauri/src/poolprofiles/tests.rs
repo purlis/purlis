@@ -1233,3 +1233,35 @@ fn a_pool_not_reached_is_offered_only_beside_the_refusal_it_made() {
         "nothing kept outside an attempt"
     );
 }
+
+/// **A start refused on its profile credential's Secret ask names that ask** (#5137), so the
+/// Start dialog fills it there: beside its own refusal alone, as a pool not reached is.
+#[test]
+fn a_start_refused_on_its_secret_ask_names_it_beside_its_own_refusal_alone() {
+    let asked = || purlis_core::profilesignin::Asked {
+        vault: "providers".to_owned(),
+        key: "anthropic".to_owned(),
+        said: "waiting on you for providers/anthropic".to_owned(),
+        declined: "declined providers/anthropic, so nothing was started".to_owned(),
+    };
+    let refused = offering_limits(|| -> Result<(), String> {
+        purlis_core::profilesignin::asked_on(asked());
+        Err("it could not be read (waiting on you for providers/anthropic)".to_owned())
+    })
+    .unwrap_err();
+    assert_eq!(
+        refused.secret_ask,
+        Some(StartSecretAsk {
+            vault: "providers".to_owned(),
+            key: "anthropic".to_owned(),
+            declined: "declined providers/anthropic, so nothing was started".to_owned(),
+        })
+    );
+
+    let got_past = offering_limits(|| -> Result<(), String> {
+        purlis_core::profilesignin::asked_on(asked());
+        Err("its profile is signed out".to_owned())
+    })
+    .unwrap_err();
+    assert_eq!(got_past.secret_ask, None);
+}

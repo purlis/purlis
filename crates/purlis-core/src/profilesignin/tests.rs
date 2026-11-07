@@ -309,6 +309,47 @@ mod at_start {
         assert!(why.contains("nothing was started"), "{why}");
         assert_eq!(asks.open().len(), 1, "the ask stays open");
     }
+
+    // The Start dialog fills it (#5137): the refusal names its ask as data, never in words.
+
+    #[test]
+    fn a_start_refused_on_its_open_secret_ask_names_that_ask_and_the_words_a_decline_says() {
+        let plane = plane();
+        let asks = crate::secrets::ask::Asks::new(plane.root());
+        let (why, asked) = attempt(|| reads_asking(&plane, &asks, std::time::Duration::ZERO));
+        let why = why.unwrap_err();
+        let asked = asked.expect("the refusal names the ask it waits on");
+        assert_eq!(
+            (asked.vault.as_str(), asked.key.as_str()),
+            ("providers", "elsewhere")
+        );
+        assert!(why.contains(&asked.said), "{why} / {asked:?}");
+        assert_eq!(
+            asked.declined,
+            "this chat's profile names ANTHROPIC_API_KEY as 'elsewhere' in vault 'providers', \
+             and it could not be read (declined providers/elsewhere), so nothing was started"
+        );
+    }
+
+    #[test]
+    fn a_start_refused_for_any_other_reason_names_no_ask() {
+        let plane = plane();
+        let (why, asked) = attempt(|| read(&plane.ctx, Some("dev"), &a_missing_key(), None));
+        assert!(why.is_err());
+        assert_eq!(asked, None);
+        let (_, asked) = attempt(|| read(&plane.ctx, Some("dev"), &work_key(), None));
+        assert_eq!(asked, None, "a start that read its key names none");
+    }
+
+    #[test]
+    fn an_ask_named_by_one_attempt_is_never_named_by_the_next() {
+        let plane = plane();
+        let asks = crate::secrets::ask::Asks::new(plane.root());
+        // Outside an attempt nothing is kept, so a later attempt has nothing of it.
+        assert!(reads_asking(&plane, &asks, std::time::Duration::ZERO).is_err());
+        let (_, asked) = attempt(|| read(&plane.ctx, Some("dev"), &work_key(), None));
+        assert_eq!(asked, None);
+    }
 }
 
 mod billed {
