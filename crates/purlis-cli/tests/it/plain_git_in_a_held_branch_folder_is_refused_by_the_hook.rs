@@ -339,7 +339,8 @@ fn where_no_app_answers_in_time_the_git_runs() {
 fn a_git_the_line_cannot_place_is_refused_though_the_app_is_slow() {
     let p = Project::new();
     let (_app, token, socket) = p.an_app(App::Slow);
-    let line = "git push && cd \"$ELSEWHERE\" && git commit -m x";
+    // Two writes the app is asked about, each waited on, then one the line cannot place.
+    let line = "git commit -m x && git push && cd \"$ELSEWHERE\" && git merge main";
     let why = p
         .denial(line, &p.p1, &chat_3(&socket, &token))
         .expect("the git after the move was let through");
