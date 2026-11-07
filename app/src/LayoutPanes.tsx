@@ -37,8 +37,6 @@ import {
   briefId,
   menuOn,
   OUTSIDE,
-  renameId,
-  RENAMES_ON_F2,
   restartId,
   workItemSaid,
   type Catalogued,
@@ -789,20 +787,8 @@ export function PaneActions({
   // The bell is a chat's, drawn where the pane holds a chat's notices: a view's pane has none.
   const hasBell = useContext(PaneBellOf) !== null;
   const parts = useContext(PaneActionsOf);
-  // **F2 on the head's controls opens Rename chat** (#5343): the platform's rename key on a
-  // focused item, the chat's own row, as its ⋯ lists it. Its terminal keeps F2 for the palette.
-  const renames = chat === undefined ? undefined : chat.offers.get(renameId(chat.session));
   return (
-    <div
-      className="pane-actions"
-      {...(renames === undefined ? {} : { [RENAMES_ON_F2]: "" })}
-      onKeyDown={(event) => {
-        if (renames === undefined || event.key !== "F2" || event.repeat) return;
-        if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
-        event.preventDefault();
-        props.onPaneDoes(props.pane, renames);
-      }}
-    >
+    <div className="pane-actions">
       {/* **The state button, then the bell, then ⋯** (#4760, #5203), each always drawn: the
           chat's part of the head, before the pane's own controls. The bell keeps a fixed slot
           with its count or none (#4754), and the controls after it are always drawn too (#5318),

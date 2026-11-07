@@ -7,7 +7,7 @@ import { Dialog } from "./ui/dialog/Dialog";
 
 /**
  * **Rename chat** (#4753, #5343): its Rename chat… row, from its sidebar row's menu, its pane's
- * ⋯, the palette, or F2 on its row or on its pane's head. It says it renames the chat everywhere: the
+ * ⋯, the palette, or F2 on its row. It says it renames the chat everywhere: the
  * list, its head, and any tab named for it, which follows unless the tab has a name of its own
  * (`tabRenaming.chatRenamed`). A tab's own Rename is `RenameTab`. Renaming never changes what
  * is on screen.

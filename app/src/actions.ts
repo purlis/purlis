@@ -301,8 +301,9 @@ export const PASS_THROUGH_BYTES = "\u001bOQ";
 export const CHAT_KEYBOARD = "data-chat-keyboard";
 
 /**
- * The mark that says `F2` renames here (charter-app#254, #5343): on a tab (its Rename), a chat's
- * row in the list and a pane head's controls (Rename chat).
+ * The mark that says `F2` renames here (charter-app#254, #5343): on a tab (its Rename) and a
+ * chat's row in the list (Rename chat). Not a pane's head: F6 lands the keyboard there, and F2
+ * from it is the palette's (#1751).
  *
  * `F2` is the platform's rename key for a focused item — and it is also the palette's, claimed
  * on the window, capture-phase, from anywhere (`Palette.opensIt`). **These are the places the
