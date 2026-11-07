@@ -100,6 +100,33 @@ export async function openFromTheStrip(plane: string): Promise<void> {
 }
 
 /**
+ * **Opens `plane` once and lets it go, so this machine has seen it** (#5648, ADR 0119): what a
+ * project already holds the first time it opens on a machine counts as seen, so a spec that
+ * needs a doctor's finding to be new opens its project this way first, with nothing to find.
+ * The first-open record is asked for here, not left to the window, whose own ask may not have
+ * landed before the project is let go. Opened again, `plane` is approved: no trust question.
+ */
+export async function openedOnceBefore(plane: string): Promise<void> {
+  await openFromTheStrip(plane);
+  await ask("inbox_first_open", { plane });
+  await ask("close_plane", { plane });
+}
+
+/** Opens `plane` again after {@link openedOnceBefore}: approved, so no trust question. */
+export async function openAgain(plane: string): Promise<void> {
+  await $(`${PROJECTS} button[aria-label="Open a project…"]`).click();
+  const box = await $('[data-setting="open-by-path"] input');
+  await box.waitForDisplayed({ timeout: 20_000 });
+  await box.addValue(plane);
+  await $('form.by-path button[type="submit"]').click();
+  await openThroughTheTrustQuestion({ ifAsked: true, within: 5_000 });
+  await browser.waitUntil(async () => (await inFront()) === plane, {
+    timeout: 30_000,
+    timeoutMsg: `${plane} never came to the front again`,
+  });
+}
+
+/**
  * Closes every `switch-<n>` project from its rail button, answering the question a project with a chat
  * open asks. The strip collapses rather than scrolling, so a project it was hiding comes onto
  * it as the drawn ones go — `endEveryChat`'s loop one level up, and bounded the same way.

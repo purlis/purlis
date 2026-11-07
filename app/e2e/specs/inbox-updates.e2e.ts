@@ -10,40 +10,39 @@ import {
   THE_RUNS_GIT_CONFIG,
   THE_RUNS_GIT_CONFIG_TEXT,
 } from "../harness.js";
-import { openThroughTheTrustQuestion, showView } from "../opening.js";
-import { PROJECTS, ask, inFront, openFromTheStrip } from "../switching.js";
+import { showView } from "../opening.js";
+import { PROJECTS, ask, inFront, openAgain, openedOnceBefore } from "../switching.js";
 
 /**
- * **Updates' doctor line: listed under Project, and Mark all read and Dismiss all act on the
- * updates alone** (#1693, f818038e; ADR 0119), in the built app against the real core and the
- * real doctor.
+ * **The doctor's findings stand as one Notice line, never as an update, and Dismiss all puts it
+ * away until a finding changes** (#5645, #5650; ADR 0119), in the built app against the real
+ * core and the real doctor.
  *
- * The update is the doctor's, made the way `git-identity.e2e.ts` makes its finding: the run's own
- * `.gitconfig` (never the runner's) is emptied, and a project of the spec's own is opened, whose
- * preflight then finds no git identity. The finding stands twice: in the Notices view, as a
- * Notice the person answers with its Fix, and in Updates, under Project, as a line that only
- * says it happened. A finding already there the first time a project opens on a machine counts
- * as seen (#5648), so the project is opened once with the identity in place, let go, and opened
+ * The finding is made the way `git-identity.e2e.ts` makes it: the run's own `.gitconfig` (never
+ * the runner's) is emptied, and a project of the spec's own is opened, whose preflight then finds
+ * no git identity. A finding already there the first time a project opens on a machine counts as
+ * seen (#5648), so the project is opened once with the identity in place, let go, and opened
  * again without it: the finding is then new.
  *
- * - The doctor's update is listed under Project, never under Mine.
- * - Mark all read marks every update read, and the Notice still stands.
- * - Dismiss all puts every update away, and the Notice still stands; the dismissed update does
- *   not come back, its Undo past, while the doctor still says it.
+ * - The Notices view lists it as the doctor's one line, "Doctor: N findings".
+ * - Updates lists no line for it, under Mine or Project: a doctor finding is a Notice only.
+ * - Dismiss all puts the line away, and it does not come back, its Undo past, while the doctor
+ *   still says the same.
  *
- * `Inbox.window.test.tsx`, `UpdatesMineProject.window.test.tsx` and `inboxUpdates.test.ts` hold
+ * `DoctorNotice.window.test.tsx`, `DismissAll.window.test.tsx` and `inboxUpdates.test.ts` hold
  * each rule against a mocked core.
  *
  * **Nothing left behind**: the identity is put back whatever happened, the project is let go,
- * and the launch's project is in front. What the updates' store noted is this project's, in the
- * run's own data home.
+ * and the launch's project is in front. What the stores noted is this project's, in the run's
+ * own data home.
  */
 
-const INBOX = '[role="tabpanel"][data-view="updates"]';
-const NOTICES = '[role="tabpanel"][data-view="notices"]';
-const UPDATES = `${INBOX} section[aria-label="Updates"]`;
-const PROJECT_LIST = `${INBOX} [aria-label="Project, from the project"]`;
-const CAUSE = "doctor-finding:git-identity";
+const UPDATES_VIEW = '[role="tabpanel"][data-view="updates"]';
+const NOTICES_VIEW = '[role="tabpanel"][data-view="notices"]';
+const NOTICES = `${NOTICES_VIEW} section[aria-label="Notices"]`;
+const PROJECT_LIST = `${UPDATES_VIEW} [aria-label="Project, from the project"]`;
+/** The doctor's one line (`DOCTOR_LINE`, `Doctor.tsx`). */
+const DOCTOR_LINE = `${NOTICES_VIEW} [data-cause="doctor-finding:*"]`;
 
 /** This spec's own project: the fixture, renamed, with nothing to put back on open. */
 const mine = (() => {
@@ -58,37 +57,27 @@ const mine = (() => {
 /** The run's identity, as every other spec has it. */
 const putTheIdentityBack = () => writeFileSync(THE_RUNS_GIT_CONFIG, THE_RUNS_GIT_CONFIG_TEXT);
 
-type Update = { kind: string; read: boolean; says: string };
-
-/** The Inbox's updates, as it draws them; one pass. */
-async function updates(): Promise<Update[]> {
+/** The kinds of the lines Updates lists now, under the list picked; one pass. */
+async function updateKinds(): Promise<string[]> {
   return browser.execute(
-    (section: string) =>
-      [...document.querySelectorAll<HTMLElement>(`${section} li.inbox-update`)].map((row) => ({
-        kind: row.dataset.kind ?? "",
-        read: row.dataset.read !== undefined,
-        says: row.innerText.trim(),
-      })),
-    UPDATES,
+    (view: string) =>
+      [...document.querySelectorAll<HTMLElement>(`${view} li.inbox-update`)].map(
+        (row) => row.dataset.kind ?? "",
+      ),
+    UPDATES_VIEW,
   );
 }
 
-/** Whether the doctor's Notice stands in the Notices view, drawn and in view. */
-async function noticeStands(): Promise<boolean> {
-  return browser.execute(
-    (inbox: string, cause: string) => {
-      const notice = [...document.querySelectorAll<HTMLElement>(`${inbox} [data-cause]`)].find(
-        (one) => one.dataset.cause === cause,
-      );
-      return notice !== undefined && notice.closest("[hidden]") === null;
-    },
-    NOTICES,
-    CAUSE,
-  );
+/** What the doctor's line says, or `null` where it is not drawn in view. */
+async function doctorLine(): Promise<string | null> {
+  return browser.execute((line: string) => {
+    const found = document.querySelector<HTMLElement>(line);
+    return found === null || found.closest("[hidden]") !== null ? null : found.innerText.trim();
+  }, DOCTOR_LINE);
 }
 
-/** Presses the updates' own button that says `words`, from the page. */
-async function pressInUpdates(words: string): Promise<void> {
+/** Presses the Notices' own button that says `words`, from the page. */
+async function pressInNotices(words: string): Promise<void> {
   const pressed = await browser.execute(
     (section: string, said: string) => {
       const button = [...document.querySelectorAll<HTMLButtonElement>(`${section} button`)].find(
@@ -100,38 +89,24 @@ async function pressInUpdates(words: string): Promise<void> {
       button?.click();
       return button !== undefined;
     },
-    UPDATES,
+    NOTICES,
     words,
   );
-  if (!pressed) throw new Error(`the updates offer no ${words} to press`);
+  if (!pressed) throw new Error(`the Notices offer no ${words} to press`);
 }
 
-/** What Updates and Notices say, for a failure's message. */
-async function inboxSays(): Promise<string> {
+/** What Notices and Updates say, for a failure's message. */
+async function viewsSay(): Promise<string> {
   return browser.execute(
     (views: string[]) =>
       views
         .map((view) => document.querySelector<HTMLElement>(view)?.innerText.trim() ?? "(none)")
         .join(" | "),
-    [INBOX, NOTICES],
+    [NOTICES_VIEW, UPDATES_VIEW],
   );
 }
 
-/** Opens this spec's project again, which this machine has approved: no trust question. */
-async function openAgain(): Promise<void> {
-  await $(`${PROJECTS} button[aria-label="Open a project…"]`).click();
-  const box = await $('[data-setting="open-by-path"] input');
-  await box.waitForDisplayed({ timeout: 20_000 });
-  await box.addValue(mine);
-  await $('form.by-path button[type="submit"]').click();
-  await openThroughTheTrustQuestion({ ifAsked: true, within: 5_000 });
-  await browser.waitUntil(async () => (await inFront()) === mine, {
-    timeout: 30_000,
-    timeoutMsg: `${mine} never came to the front again`,
-  });
-}
-
-describe("Updates' doctor line", function () {
+describe("the doctor's Notice line", function () {
   this.timeout(180_000);
 
   /** The project the launch opened, which this spec never touches. */
@@ -162,55 +137,40 @@ describe("Updates' doctor line", function () {
     );
   });
 
-  it("lists the doctor's update under Project, and the bulk acts leave the Notice alone", async () => {
+  it("stands as one Notice line and no update, and Dismiss all puts it away", async () => {
     // Opened first with the identity in place, so the first-open baseline holds no finding.
-    await openFromTheStrip(mine);
-    await ask("close_plane", { plane: mine });
+    await openedOnceBefore(mine);
     writeFileSync(THE_RUNS_GIT_CONFIG, "");
     try {
-      // The preflight is asked when a project opens: the read this spec's update comes from.
-      await openAgain();
+      // The preflight is asked when a project opens: the read this spec's finding comes from.
+      await openAgain(mine);
       await showView("Notices");
-      await showView("Updates");
-      await $(PROJECT_LIST).waitForExist({ timeout: 20_000 });
-      // Mine first, where a doctor's line is never listed.
-      await browser.pause(1_000);
-      expect((await updates()).some((one) => one.kind === "doctor")).toBe(false);
-      await $(PROJECT_LIST).click();
       await browser
-        .waitUntil(
-          async () =>
-            (await noticeStands()) &&
-            (await updates()).some(
-              (one) => one.kind === "doctor" && one.says.includes("git identity"),
-            ),
-          { timeout: 60_000, interval: 500 },
-        )
+        .waitUntil(async () => /^Doctor: \d+ findings?/.test((await doctorLine()) ?? ""), {
+          timeout: 60_000,
+          interval: 500,
+        })
         .catch(async () => {
-          throw new Error(
-            `the doctor's finding never stood as a Notice and a Project update; they say: ${await inboxSays()}`,
-          );
+          throw new Error(`the doctor's line never stood; the views say: ${await viewsSay()}`);
         });
-      expect((await updates()).some((one) => !one.read)).toBe(true);
 
-      await pressInUpdates("Mark all read");
-      await browser.waitUntil(async () => (await updates()).every((one) => one.read), {
-        timeout: 20_000,
-        timeoutMsg: "Mark all read left an update unread",
-      });
-      expect((await updates()).length).toBeGreaterThan(0);
-      expect(await noticeStands()).toBe(true);
+      // No update for it, under either list.
+      await showView("Updates");
+      await browser.pause(1_000);
+      expect(await updateKinds()).not.toContain("doctor");
+      await $(PROJECT_LIST).click();
+      await browser.pause(1_000);
+      expect(await updateKinds()).not.toContain("doctor");
 
-      await pressInUpdates("Dismiss all");
-      await browser.waitUntil(async () => (await updates()).length === 0, {
+      await pressInNotices("Dismiss all");
+      await browser.waitUntil(async () => (await doctorLine()) === null, {
         timeout: 20_000,
-        timeoutMsg: "Dismiss all left the updates listed",
+        timeoutMsg: "Dismiss all left the doctor's line listed",
       });
-      expect(await noticeStands()).toBe(true);
       // The doctor still says it, and what was dismissed does not come back for that, its
       // Undo past (`UNDO_MS`, 8 s).
       await browser.pause(10_000);
-      expect(await updates()).toEqual([]);
+      expect(await doctorLine()).toBeNull();
     } finally {
       putTheIdentityBack();
     }

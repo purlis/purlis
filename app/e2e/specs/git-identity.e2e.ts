@@ -11,7 +11,7 @@ import {
   THE_RUNS_GIT_CONFIG_TEXT,
 } from "../harness.js";
 import { bandNotice } from "../reading.js";
-import { openThroughTheTrustQuestion } from "../opening.js";
+import { openAgain, openedOnceBefore } from "../switching.js";
 
 /**
  * **A machine with no git identity is told so by a Notice** (#1250), in the built app against
@@ -31,7 +31,10 @@ const PROJECTS = '[data-strip="Projects"]';
 
 const NAME = "no-identity";
 
-const CAUSE = "doctor-finding:git-identity";
+/** The doctor's one Notice line (#5645, `DOCTOR_LINE`), whose list holds the finding. */
+const CAUSE = "doctor-finding:*";
+/** The finding's row in the line's list, by the doctor row's name. */
+const ROW = `[data-cause="${CAUSE}"] li.doctor-row[data-row="git identity"]`;
 
 /** This spec's own project: the fixture plane, with nothing to put back on open. */
 const mine = (() => {
@@ -88,23 +91,14 @@ describe("a machine with no git identity", function () {
     expect((await ask<string[]>("open_planes"))[0]).toBe(first);
   });
 
-  it("is shown the doctor's finding as a Notice, with its Fix", async () => {
+  it("is shown the doctor's finding in its Notice line, with its Fix", async () => {
+    // Opened once with the identity in place: what a project holds the first time it opens on a
+    // machine counts as seen (#5648), and this spec's finding has to be new.
+    await openedOnceBefore(mine);
     writeFileSync(THE_RUNS_GIT_CONFIG, "");
     try {
-      // Through the opener, as `notices.e2e.ts` opens its own project: the preflight is asked
-      // when a project opens, and that is the read this spec is about.
-      await $(`${PROJECTS} button[aria-label="Open a project…"]`).click();
-      const box = await $('[data-setting="open-by-path"] input');
-      await box.waitForDisplayed({ timeout: 20_000 });
-      await box.addValue(mine);
-      // The path box's own submit, found by its form, and the trust question's act found
-      // in the question: the two are both named Open project.
-      await $('form.by-path button[type="submit"]').click();
-      await openThroughTheTrustQuestion();
-      await browser.waitUntil(async () => (await ask<string[]>("open_planes")).includes(mine), {
-        timeout: 30_000,
-        timeoutMsg: "this spec's project never opened",
-      });
+      // The preflight is asked when a project opens, and that is the read this spec is about.
+      await openAgain(mine);
 
       let said = "";
       await browser.waitUntil(
@@ -113,10 +107,15 @@ describe("a machine with no git identity", function () {
           if (now.state === "shown") said = now.text;
           return now.state === "shown";
         },
-        { timeout: 60_000, timeoutMsg: "no Notice said the git identity is not set" },
+        { timeout: 60_000, timeoutMsg: "the doctor's Notice line never stood" },
       );
-      expect(said).toContain("git identity: not set: user.name, user.email");
-      await expect($(`[data-cause="${CAUSE}"]`).$("button=Fix")).toBeExisting();
+      expect(said).toMatch(/Doctor: \d+ findings?/);
+      // Its list, opened from the line: the finding, as the Doctor dialog's row says it.
+      await $(`[data-cause="${CAUSE}"]`).$("button=Show findings").click();
+      const row = await $(ROW);
+      await row.waitForDisplayed({ timeout: 20_000 });
+      await expect(row).toHaveText(expect.stringContaining("not set: user.name, user.email"));
+      await expect(row.$("button=Fix")).toBeExisting();
     } finally {
       putTheIdentityBack();
     }

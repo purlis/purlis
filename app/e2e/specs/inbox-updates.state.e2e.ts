@@ -16,43 +16,43 @@ import {
   declareAProfile,
   writeReportingShell,
 } from "../harness.js";
-import { closeProject, openThroughTheTrustQuestion, showView } from "../opening.js";
+import { closeProject, showView } from "../opening.js";
 import { endChatById, startAChat, type Started } from "../started.js";
-import { PROJECTS, ask, inFront, openFromTheStrip } from "../switching.js";
+import { PROJECTS, ask, inFront, openAgain, openedOnceBefore } from "../switching.js";
 
 /**
- * **Mark all read and Dismiss all act on Updates alone, with a real ask waiting in Asks**
- * (#1693, D-1693-1; ADR 0119), in the built app against the real core, the real doctor and the
+ * **Dismiss all on the Notices answers nothing, with a real ask waiting in Asks** (#1693,
+ * D-1693-1, #5650; ADR 0119), in the built app against the real core, the real doctor and the
  * real hook.
  *
- * `inbox-updates.e2e.ts` holds the bulk acts against the Notices only: the base run's harness
- * raises no ask. This is the run whose harness asks through `purlis hook` (`wdio.state.conf.ts`),
- * so both sources stand in one project's Inbox at once:
+ * `inbox-updates.e2e.ts` holds the doctor's Notice line and its Dismiss all where no ask
+ * stands: the base run's harness raises none. This is the run whose harness asks through
+ * `purlis hook` (`wdio.state.conf.ts`), so both stand in one project at once:
  *
- * - **the update** is the doctor's git-identity finding, the one update the run can make
- *   deterministically (a finished task's update needs a core that dispatched one): the run's own
- *   `.gitconfig` is emptied and a project of the spec's own is opened again, whose preflight finds
- *   no identity. Opened once before with the identity in place, so the first-open baseline
- *   (#5648) does not count the finding as seen; the doctor's line is listed under Project. The identity is put back at once: a doctor's update is not a live kind
- *   (`inboxUpdates.ts`), so it stays listed after the finding clears, and the chat below starts
- *   with the run's identity as every other chat does;
+ * - **the Notice** is the doctor's one line (#5645), from its git-identity finding, the one the
+ *   run can make deterministically: the run's own `.gitconfig` is emptied and a project of the
+ *   spec's own is opened again, whose preflight finds no identity. Opened once before with the
+ *   identity in place, so the first-open baseline (#5648) does not count the finding as seen.
+ *   The identity is put back at once: the doctor runs when the project opens, so the line stands
+ *   until it is put away, and the chat below starts with the run's identity as every other does;
  * - **the ask** is the reporting harness's permission ask (`ASKS_A_PERMISSION`). The project
  *   declares that harness as its own profile, the piece D-1693-1 named as missing: the state
  *   run declares it in the launch's project only.
  *
- * After Mark all read, and again after Dismiss all, the ask is still listed with its Allow, and
- * the title bar's hand still counts it. Then Allow is pressed, and the chat carrying on proves
- * the bulk acts answered nothing for it.
+ * After Dismiss all, the ask is still listed with its Allow, and the title bar's hand still
+ * counts it. Then Allow is pressed, and the chat carrying on proves the bulk act answered nothing
+ * for it.
  *
  * **Nothing left behind**, each step tried whatever became of the one before it: the ask's file
  * is removed, the identity put back, the chat ended by its number, the project closed, the
  * launch's project in front, and the left side on Chats.
  */
 
-const INBOX = '[role="tabpanel"][data-view="updates"]';
+const NOTICES_VIEW = '[role="tabpanel"][data-view="notices"]';
+const NOTICES = `${NOTICES_VIEW} section[aria-label="Notices"]`;
+/** The doctor's one line (`DOCTOR_LINE`, `Doctor.tsx`). */
+const DOCTOR_LINE = `${NOTICES_VIEW} [data-cause="doctor-finding:*"]`;
 const ASKS = '[role="tabpanel"][data-view="asks"]';
-const UPDATES = `${INBOX} section[aria-label="Updates"]`;
-const PROJECT_LIST = `${INBOX} [aria-label="Project, from the project"]`;
 const ASK = `${ASKS} .inbox-ask[data-source="permission"]`;
 const HAND = '[data-testid="title-bar"] [data-testid="needs-you-button"]';
 const WAITS = /^\d+ (thing waits on|things wait on|chat needs|chats need) you$/;
@@ -73,19 +73,9 @@ const mine = (() => {
 /** The run's identity, as every other spec has it. */
 const putTheIdentityBack = () => writeFileSync(THE_RUNS_GIT_CONFIG, THE_RUNS_GIT_CONFIG_TEXT);
 
-type Update = { kind: string; read: boolean; says: string };
-
-/** The Inbox's updates, as it draws them; one pass. */
-async function updates(): Promise<Update[]> {
-  return browser.execute(
-    (section: string) =>
-      [...document.querySelectorAll<HTMLElement>(`${section} li.inbox-update`)].map((row) => ({
-        kind: row.dataset.kind ?? "",
-        read: row.dataset.read !== undefined,
-        says: row.innerText.trim(),
-      })),
-    UPDATES,
-  );
+/** Whether the doctor's line is drawn in the Notices view. */
+async function doctorLineStands(): Promise<boolean> {
+  return browser.execute((line: string) => document.querySelector(line) !== null, DOCTOR_LINE);
 }
 
 /** The permission ask as Asks draws it: what it says, and whether its Allow can be pressed. Its
@@ -117,8 +107,8 @@ async function handSays(): Promise<string> {
   );
 }
 
-/** Presses the updates' own button that says `words`, from the page. */
-async function pressInUpdates(words: string): Promise<void> {
+/** Presses the Notices' own button that says `words`, from the page. */
+async function pressInNotices(words: string): Promise<void> {
   const pressed = await browser.execute(
     (section: string, said: string) => {
       const button = [...document.querySelectorAll<HTMLButtonElement>(`${section} button`)].find(
@@ -130,10 +120,10 @@ async function pressInUpdates(words: string): Promise<void> {
       button?.click();
       return button !== undefined;
     },
-    UPDATES,
+    NOTICES,
     words,
   );
-  if (!pressed) throw new Error(`the updates offer no ${words} to press`);
+  if (!pressed) throw new Error(`the Notices offer no ${words} to press`);
 }
 
 /** What the Inbox says, for a failure's message. */
@@ -143,22 +133,8 @@ async function inboxSays(): Promise<string> {
       views
         .map((view) => document.querySelector<HTMLElement>(view)?.innerText.trim() ?? "(none)")
         .join(" | "),
-    [ASKS, INBOX],
+    [ASKS, NOTICES_VIEW],
   );
-}
-
-/** Opens this spec's project again, which this machine has approved: no trust question. */
-async function openAgain(): Promise<void> {
-  await $(`${PROJECTS} button[aria-label="Open a project…"]`).click();
-  const box = await $('[data-setting="open-by-path"] input');
-  await box.waitForDisplayed({ timeout: 20_000 });
-  await box.addValue(mine);
-  await $('form.by-path button[type="submit"]').click();
-  await openThroughTheTrustQuestion({ ifAsked: true, within: 5_000 });
-  await browser.waitUntil(async () => (await inFront()) === mine, {
-    timeout: 30_000,
-    timeoutMsg: `${mine} never came to the front again`,
-  });
 }
 
 /** What chat `session`'s pane shows. */
@@ -209,7 +185,7 @@ async function theAskStillWaits(after: string, counted: string): Promise<void> {
   expect(await handSays()).toBe(counted);
 }
 
-describe("Updates' bulk acts, with an ask waiting in Asks", function () {
+describe("the Notices' Dismiss all, with an ask waiting in Asks", function () {
   this.timeout(240_000);
 
   /** The project the launch opened, which this spec never touches. */
@@ -221,26 +197,17 @@ describe("Updates' bulk acts, with an ask waiting in Asks", function () {
     first = (await ask<string[]>("open_planes"))[0];
 
     // Opened first with the identity in place, so the first-open baseline holds no finding.
-    await openFromTheStrip(mine);
-    await ask("close_plane", { plane: mine });
-    // The update: the preflight is asked when a project opens, and finds no identity.
+    await openedOnceBefore(mine);
+    // The Notice: the preflight is asked when a project opens, and finds no identity.
     writeFileSync(THE_RUNS_GIT_CONFIG, "");
     try {
-      await openAgain();
-      await showView("Updates");
-      await $(PROJECT_LIST).waitForExist({ timeout: 20_000 });
-      await $(PROJECT_LIST).click();
+      await openAgain(mine);
+      await showView("Notices");
       await browser
-        .waitUntil(
-          async () =>
-            (await updates()).some(
-              (one) => one.kind === "doctor" && one.says.includes("git identity"),
-            ),
-          { timeout: 60_000, interval: 500 },
-        )
+        .waitUntil(doctorLineStands, { timeout: 60_000, interval: 500 })
         .catch(async () => {
           throw new Error(
-            `the doctor's finding never stood as an update; the Inbox says: ${await inboxSays()}`,
+            `the doctor's finding never stood as its Notice line; the views say: ${await inboxSays()}`,
           );
         });
     } finally {
@@ -297,8 +264,8 @@ describe("Updates' bulk acts, with an ask waiting in Asks", function () {
     await tried("showing Chats on the left", () => showView("Chats"));
   });
 
-  it("marks every update read and puts them away, and the ask still waits to be answered", async () => {
-    await showView("Updates");
+  it("puts the Notices away, and the ask still waits to be answered", async () => {
+    await showView("Notices");
     let counted = "";
     await browser.waitUntil(
       async () => {
@@ -307,27 +274,17 @@ describe("Updates' bulk acts, with an ask waiting in Asks", function () {
       },
       { timeout: 20_000, interval: 250, timeoutMsg: "the hand never counted the ask" },
     );
-    const listed = await updates();
-    expect(listed.length).toBeGreaterThan(0);
-    expect(listed.some((one) => !one.read)).toBe(true);
+    expect(await doctorLineStands()).toBe(true);
 
-    await pressInUpdates("Mark all read");
-    await browser.waitUntil(async () => (await updates()).every((one) => one.read), {
+    await pressInNotices("Dismiss all");
+    await browser.waitUntil(async () => !(await doctorLineStands()), {
       timeout: 20_000,
-      timeoutMsg: "Mark all read left an update unread",
-    });
-    expect((await updates()).length).toBeGreaterThan(0);
-    await theAskStillWaits("Mark all read", counted);
-
-    await pressInUpdates("Dismiss all");
-    await browser.waitUntil(async () => (await updates()).length === 0, {
-      timeout: 20_000,
-      timeoutMsg: "Dismiss all left the updates listed",
+      timeoutMsg: "Dismiss all left the doctor's line listed",
     });
     await theAskStillWaits("Dismiss all", counted);
 
     await showView("Asks");
-    // Answered now, and only now: the chat carrying on is the proof that neither bulk act
+    // Answered now, and only now: the chat carrying on is the proof that the bulk act
     // answered it. An Allow waits for its row to settle (`SETTLE_MS`, 1.5 s): the person reads
     // the ask before allowing it, so a press too soon after the updates went is pressed again.
     const session = asking?.session ?? -1;
