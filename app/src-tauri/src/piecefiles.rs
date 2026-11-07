@@ -23,6 +23,7 @@ use base64::Engine as _;
 use purlis_core::files::{self, Branch, Entry, Kind, Mark, Opened, Reader, workspace};
 use purlis_core::youreditor::{self, Editor, Launch};
 
+use crate::chats::NoTurnsFrom;
 use crate::planes::{PlaneId, Planes};
 
 /// One file of a branch, as the light editor draws it.
@@ -659,14 +660,14 @@ pub async fn turn_changed(
     let root = held.root().to_path_buf();
     let silent = held
         .chats()
-        .silent_about_turns_in(&root, &workspace, &repo, piece.as_deref());
+        .no_turns_from_in(&root, &workspace, &repo, piece.as_deref());
     tauri::async_runtime::spawn_blocking(move || {
         turn_changed_of(
             &root,
             branch(&workspace, &repo, &piece),
             &path,
             turn,
-            silent.as_deref(),
+            silent.as_ref(),
         )
     })
     .await
@@ -678,7 +679,7 @@ fn turn_changed_of(
     branch: Branch<'_>,
     path: &str,
     turn: Option<TurnPick>,
-    silent: Option<&str>,
+    silent: Option<&NoTurnsFrom>,
 ) -> Result<TurnChanged, String> {
     let turn = turn.map(|TurnPick { chat, number }| files::TurnKey { chat, number });
     let read = files::turn_changed(&crate::reader(), plane, branch, path, turn.as_ref())
@@ -709,16 +710,31 @@ fn turn_changed_of(
     })
 }
 
-/// Why a branch has no turn to show: a chat working there whose program reports none, by name,
-/// or no turn yet.
-fn no_turn_why(silent: Option<&str>) -> String {
+/// Why a branch has no turn to show: a chat working there that records none, by name, or no turn
+/// yet.
+fn no_turn_why(silent: Option<&NoTurnsFrom>) -> String {
     match silent {
-        Some(chat) => format!(
+        Some(NoTurnsFrom::Unreported { chat }) => format!(
             "{chat} runs a program that does not report its turns to purlis, so it has no turn \
              to show here. Against base still shows this file."
         ),
+        Some(NoTurnsFrom::OnARunner { chat, runner }) => {
+            on_a_runner(chat, &format!("runner {runner}"))
+        }
+        Some(NoTurnsFrom::OnAPool { chat, pool }) => {
+            on_a_runner(chat, &format!("a runner of pool {pool}"))
+        }
         None => "No chat has finished a turn on this branch yet.".to_owned(),
     }
+}
+
+/// A chat on a runner works in a folder of the runner's, so purlis records none of its turns
+/// (#5427): `on` is where it runs.
+fn on_a_runner(chat: &str, on: &str) -> String {
+    format!(
+        "{chat} runs on {on}, and purlis does not record the turns of a chat on a runner yet, so \
+         it has no turn to show here. Against base still shows this file."
+    )
 }
 
 fn what_changed_of(plane: &Path, branch: Branch<'_>, path: &str) -> Result<WhatChanged, String> {

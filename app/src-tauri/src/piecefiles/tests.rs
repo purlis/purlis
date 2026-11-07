@@ -790,3 +790,36 @@ fn a_live_workspaces_entries_say_where_they_are_kept_and_a_save_moves_one() {
         ]
     );
 }
+
+/// #5427: **why a branch has no turn names the chat that records none, and why it records none**:
+/// a program that reports no turns, or a chat on a runner or a pool's runner, whose folder is the
+/// runner's. Each sends the reader to Against base.
+#[test]
+fn no_turn_names_the_chat_and_whether_it_reports_none_or_runs_on_a_runner() {
+    let chat = || "Builder".to_owned();
+    assert_eq!(
+        no_turn_why(None),
+        "No chat has finished a turn on this branch yet."
+    );
+    assert_eq!(
+        no_turn_why(Some(&NoTurnsFrom::Unreported { chat: chat() })),
+        "Builder runs a program that does not report its turns to purlis, so it has no turn to \
+         show here. Against base still shows this file."
+    );
+    assert_eq!(
+        no_turn_why(Some(&NoTurnsFrom::OnARunner {
+            chat: chat(),
+            runner: "build-box".to_owned(),
+        })),
+        "Builder runs on runner build-box, and purlis does not record the turns of a chat on a \
+         runner yet, so it has no turn to show here. Against base still shows this file."
+    );
+    assert_eq!(
+        no_turn_why(Some(&NoTurnsFrom::OnAPool {
+            chat: chat(),
+            pool: "builds".to_owned(),
+        })),
+        "Builder runs on a runner of pool builds, and purlis does not record the turns of a chat \
+         on a runner yet, so it has no turn to show here. Against base still shows this file."
+    );
+}
