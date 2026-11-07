@@ -673,10 +673,12 @@ pub fn run_entries_for(held: &crate::planes::Held, id: u32) -> Result<Vec<Entrie
         vault: vault.to_owned(),
         key: key.to_owned(),
     };
-    // **Read once, however many keys are listed** (#5582): the vaults the persona may use, as
-    // the broker's rule answers each (failing closed: none where the registry can't be read),
-    // and what no program is handed. Each key is then judged from those reads alone, by the
-    // rule a press holds a pick to, which reads them again.
+    // **Read once, however many keys are listed** (#5582): the vaults the persona is handed
+    // (`vaults_of`: tagged for it, or allowed here where policy lets the person; none where the
+    // registry can't be read or there is no persona), and what no program is handed. Each key
+    // is then judged from those reads alone. `vaults_of` does not check a vault's own entry as
+    // `authorise` does, so a tagged vault with a broken entry is listed, as one whose keys could
+    // not be listed (`pickable` reads that entry); a press is held to `authorise`, read again.
     let usable = (!open.persona.is_empty())
         .then(|| purlis_core::secrets::brokered::vaults_of(&ctx, &open.persona).ok())
         .flatten()

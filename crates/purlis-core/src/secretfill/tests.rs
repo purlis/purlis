@@ -186,20 +186,28 @@ fn what_no_program_is_handed_is_read_once_and_judges_every_key_from_that_read() 
     )
     .expect("a links index");
     let judge = NoProgram::read(&ctx);
-    let keys = [
-        ("app", "priv"),
-        ("APP", "Priv"),
-        ("qa", "shop-pw"),
-        ("prod", "pw"),
-        ("qa", "other"),
-    ];
-    for (vault, key) in keys {
-        assert_eq!(
-            judge.refuses(vault, &[key]),
-            no_program_is_handed(&ctx, vault, &[key]),
-            "{vault}/{key}"
-        );
-    }
+    // What the one-key judge answered before #5582, word for word.
+    let mint_said = "'priv' in vault 'app' is a GitHub App's key that a persona's tool mints \
+                     tokens with, so purlis never hands it over: a chat's gh is handed a token \
+                     minted from it";
+    assert_eq!(judge.refuses("app", &["priv"]).as_deref(), Some(mint_said));
+    assert!(judge.refuses("APP", &["Priv"]).is_some(), "in any case");
+    assert_eq!(
+        judge.refuses("qa", &["shop-pw"]).as_deref(),
+        Some(
+            "shop-pw in vault qa is one purlis fills in a browser itself, on the one site a \
+             persona declares, so no program is handed it"
+        )
+    );
+    assert_eq!(
+        judge.refuses("qa", &["other", "shop-pw"]),
+        judge.refuses("qa", &["shop-pw"])
+    );
+    assert_eq!(
+        no_program_is_handed(&ctx, "prod", &["pw"]),
+        judge.refuses("prod", &["pw"]),
+        "the one-key judge is the same rule"
+    );
     assert!(
         judge
             .refuses("app", &["priv"])
@@ -230,4 +238,33 @@ fn what_no_program_is_handed_is_read_once_and_judges_every_key_from_that_read() 
         judge.refuses("qa", &["other"]),
         Some(crate::sandbox::tools::mint::unreadable_said())
     );
+}
+
+/// #5582: a key is held through a link either way, one hop, and where a link can't be read
+/// every key is held once a line marks anything; with nothing marked, nothing is.
+#[test]
+fn a_marked_key_holds_through_a_link_either_way_and_an_unreadable_link_holds_every_key() {
+    use crate::secrets::links::Target;
+    let marked = vec![("app".to_owned(), "priv".to_owned())];
+    let to = |vault: &str, key: &str| Target {
+        vault: vault.to_owned(),
+        key: key.to_owned(),
+    };
+    // The marked key is itself a link: a key it reads is held too.
+    let marked_reads =
+        |vault: &str, key: &str| Some((vault == "app" && key == "priv").then(|| to("keep", "PEM")));
+    assert!(
+        held_among(&marked, &marked_reads, "KEEP", "pem"),
+        "its target"
+    );
+    assert!(!held_among(&marked, &marked_reads, "keep", "other"));
+    // The asked key is a link to the marked one.
+    let asked_reads =
+        |vault: &str, key: &str| Some((vault == "qa" && key == "l").then(|| to("APP", "Priv")));
+    assert!(held_among(&marked, &asked_reads, "qa", "l"), "a link to it");
+    assert!(!held_among(&marked, &asked_reads, "qa", "m"));
+    // A link that can't be read holds every key, and holds none where nothing is marked.
+    let unreadable = |_: &str, _: &str| None;
+    assert!(held_among(&marked, &unreadable, "qa", "other"));
+    assert!(!held_among(&[], &unreadable, "qa", "other"));
 }
