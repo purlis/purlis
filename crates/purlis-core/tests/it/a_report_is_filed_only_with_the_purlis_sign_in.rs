@@ -30,7 +30,7 @@ use purlis_core::forge::route::HostScope;
 use purlis_core::forge::signin;
 use purlis_core::forge::transport::{Call, NoAnswer, Reply, Transport};
 use purlis_core::forge::{Caller, Failure, Forge, ForgeError, Kind};
-use purlis_core::report::{self, Evidence, Hit, Known, Outcome, Refusal, Reports, Route};
+use purlis_core::report::{self, Consent, Evidence, Hit, Known, Outcome, Refusal, Reports, Route};
 use secrecy::ExposeSecret;
 use serde_json::json;
 
@@ -166,9 +166,15 @@ fn evidence() -> Evidence {
     }
 }
 
-/// The Reports module knowing nothing of this machine, so the draft is the same on every one.
+/// The Reports module knowing nothing of this machine, so the draft is the same on every one,
+/// with a yes to both streams: what a stream without one is refused is
+/// `a_report_waits_for_its_streams_consent`'s (#5688), and here only the sign-in decides.
 fn reports() -> Reports {
-    Reports::new(Known::default())
+    Reports::new(Known::default()).with_consent(Consent {
+        crash_reports: Some(true),
+        agent_drafts: Some(true),
+        asked: true,
+    })
 }
 
 /// What the module drafts of [`evidence`] for `source`, and the route it chose.

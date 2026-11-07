@@ -61,6 +61,9 @@ use sha2::{Digest, Sha256};
 use crate::forge::backend::{Caller, NewWorkItem, WorkItems};
 use crate::forge::{self, Forge, ForgeError, Kind as ForgeKind};
 
+mod consent;
+pub use consent::{Consent, Stream};
+
 /// The repository reports are filed on (RN-9: the product's repository since 2026-10-05).
 pub const UPSTREAM: &str = "purlis/purlis";
 
@@ -811,28 +814,70 @@ pub enum Refusal {
         link: String,
         whole: bool,
     },
+    /// The person has not said yes to the stream this report belongs to: nothing was drafted
+    /// and nothing sent (#5688).
+    NoConsent(Stream),
 }
 
 /// The one module every report passes through: evidence from a source in, an outcome out.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct Reports {
     known: Known,
+    /// The answers it is held to, or `None` for this machine's, read only when a report belongs
+    /// to a stream: a person's own report never reaches for the machine's store.
+    consent: Option<Consent>,
+}
+
+impl Default for Reports {
+    /// Knowing nothing of this machine, and no stream with a yes.
+    fn default() -> Self {
+        Reports::new(Known::default())
+    }
 }
 
 impl Reports {
     /// Reports that scrub what `known` names.
+    /// No stream has a yes: only a person's own report is drafted ([`Reports::with_consent`]).
     pub fn new(known: Known) -> Reports {
-        Reports { known }
+        Reports {
+            known,
+            consent: Some(Consent::default()),
+        }
     }
 
-    /// Reports that scrub what this process can identify, inside `plane` when there is one.
+    /// Reports that scrub what this process can identify, inside `plane` when there is one, held
+    /// to the answers this machine keeps ([`Consent::here`]).
     pub fn here(plane: Option<&Path>) -> Reports {
-        Reports::new(Known::here(plane))
+        Reports {
+            known: Known::here(plane),
+            consent: None,
+        }
+    }
+
+    /// The same Reports, held to `consent`.
+    pub fn with_consent(self, consent: Consent) -> Reports {
+        Reports {
+            consent: Some(consent),
+            ..self
+        }
+    }
+
+    /// Refused when `evidence` from `source` belongs to a stream the person has not said yes to.
+    fn consented(&self, evidence: &Evidence, source: &Caller) -> Result<(), Refusal> {
+        match stream_of(evidence, source) {
+            Some(stream) if !self.consent.unwrap_or_else(Consent::here).allows(stream) => {
+                Err(Refusal::NoConsent(stream))
+            }
+            _ => Ok(()),
+        }
     }
 
     /// `evidence` from `source`, scrubbed and drafted, with the route it would take. Nothing is
     /// sent.
     pub fn take(&self, evidence: Evidence, source: &Caller) -> Outcome {
+        if let Err(refused) = self.consented(&evidence, source) {
+            return Outcome::Refused(refused);
+        }
         match self.draft(evidence) {
             Ok(draft) => {
                 let route = match as_the_reporter(source) {
@@ -857,6 +902,9 @@ impl Reports {
     /// Files the draft of `evidence` from `source`, only if its digest is `shown`: the digest
     /// the reporter was shown. Anything else is refused unsent.
     pub fn file(&self, evidence: Evidence, source: &Caller, shown: &str) -> Outcome {
+        if let Err(refused) = self.consented(&evidence, source) {
+            return Outcome::Refused(refused);
+        }
         let draft = match self.draft(evidence) {
             Ok(draft) => draft,
             Err(refused) => return Outcome::Refused(refused),
@@ -892,6 +940,28 @@ impl Reports {
             | Evidence::WindowError(never) => match never {},
         };
         made.map_err(|Refused(said)| Refusal::Unusable(said))
+    }
+}
+
+/// The stream `evidence` from `source` belongs to, or none for a person's own report.
+///
+/// A chat's draft is an agent's, whatever it holds. A person at the window or at a command they
+/// typed writes their own and needs no yes, except for evidence only a machine makes. With nobody
+/// at the keyboard (a trigger), a crash is a Crash report and anything else an Agent draft.
+fn stream_of(evidence: &Evidence, source: &Caller) -> Option<Stream> {
+    use crate::forge::backend::Surface;
+    if source.is_a_chat() {
+        return Some(Stream::AgentDrafts);
+    }
+    let crash = matches!(
+        evidence,
+        Evidence::Panic { .. } | Evidence::NativeCrash(_) | Evidence::WindowError(_)
+    );
+    match (evidence, source.surface()) {
+        (Evidence::NativeCrash(_) | Evidence::WindowError(_), _) => Some(Stream::CrashReports),
+        (_, Surface::Window | Surface::Command) => None,
+        (_, Surface::Trigger | Surface::Mcp) if crash => Some(Stream::CrashReports),
+        (_, Surface::Trigger | Surface::Mcp) => Some(Stream::AgentDrafts),
     }
 }
 

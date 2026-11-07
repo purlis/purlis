@@ -3,6 +3,17 @@
 
 import type { Level } from "./groups";
 
+/** What else a person calls You › Reports (#5688): the palette and the filter find it by each. */
+export const REPORTS_ALSO: readonly string[] = [
+  "crash",
+  "crash reports",
+  "telemetry",
+  "error reporting",
+  "bug report",
+  "diagnostics",
+  "privacy",
+];
+
 /**
  * **Every Settings group by its address and its label, without building a level** (#1201).
  *
@@ -17,7 +28,13 @@ import type { Level } from "./groups";
  * builds its rows from the project's profiles (`profilePageRows` in `actions.ts`, #1201) rather
  * than from this static list. The Persona level has no groups of its own yet.
  */
-export type CataloguedGroup = { id: string; label: string };
+export type CataloguedGroup = {
+  id: string;
+  label: string;
+  /** Other words the palette finds the group by, never drawn (#5688): what a person may call
+   *  it that its label does not say. The group's builder holds the same list, for the filter. */
+  also?: readonly string[];
+};
 
 export const SETTINGS_GROUPS: Readonly<
   Record<Exclude<Level, "persona">, readonly CataloguedGroup[]>
@@ -31,6 +48,7 @@ export const SETTINGS_GROUPS: Readonly<
     { id: "you.editor", label: "Editor" },
     { id: "you.chats", label: "Chats list" },
     { id: "you.notifications", label: "Notifications" },
+    { id: "you.reports", label: "Reports", also: REPORTS_ALSO },
     { id: "you.machine", label: "This machine" },
     { id: "you.machine.browsers", label: "Browsers" },
     { id: "you.machine.pools", label: "Pools" },

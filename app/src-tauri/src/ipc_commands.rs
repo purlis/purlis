@@ -77,6 +77,8 @@ macro_rules! app_commands {
                 firstrun::install_developer_tools,
                 onboarding::onboarding_progress,
                 onboarding::keep_onboarding_progress,
+                reportconsent::report_consent,
+                reportconsent::keep_report_consent,
                 sandboxing::sandbox_state,
                 sandboxing::answer_sandbox_offer,
                 sandboxing::acknowledge_project_hosts,
