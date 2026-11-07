@@ -419,7 +419,8 @@ import { sendToDriven } from "./browserDriving";
 import { programsOf, useBrowsersTakenBack, useChatBrowsers } from "./chatBrowsers";
 import { browserTimelineTitle, browserTimelineView } from "./browserTimelines";
 import { onInspect, openInspector } from "./inspector";
-import type { BrowserShown } from "./ChatBrowsersShown";
+import { PaneBrowsers, type BrowserShown } from "./ChatBrowsersShown";
+import { SkillRunChip } from "./SkillRunChip";
 import {
   forgetProjectsBrowsers,
   tellProjectBrowsers,
@@ -688,7 +689,13 @@ import {
   withNote,
   ChatNotices,
 } from "./ChatNotices";
-import { type EndedChat, LayoutPanes, type PaneFace, type TasksOn } from "./LayoutPanes";
+import {
+  type EndedChat,
+  LayoutPanes,
+  type PaneFace,
+  type TasksOn,
+  type UsingOn,
+} from "./LayoutPanes";
 import { drawnOf } from "./paneFold";
 import { usePaneRoom } from "./usePaneRoom";
 import { ChatPersonaState } from "./ChatPersonaState";
@@ -702,6 +709,9 @@ const samePanels = (a: readonly PanelTab[], b: readonly PanelTab[]) =>
   a.every(
     (one, at) => one.view === b[at].view && one.name === b[at].name && one.mark === b[at].mark,
   );
+
+/** No browsers: a chat that uses none. */
+const NO_BROWSERS: readonly BrowserShown[] = [];
 
 /** One empty list, so a prop left out is the same list at every render. */
 const NONE: readonly never[] = [];
@@ -5740,8 +5750,9 @@ export const PlaneView = memo(function PlaneView({
   /**
    * **What a tab's panes are called on the strip** (#4762): a chat by its own name, never the
    * name of the tab whose pane it is in, which is the first pane's; a chat with a tab of its
-   * own by that tab's name, which a rename sets. A view beside another, as DevTools is beside
-   * its browser, has no title of its own, and is called what its tab is.
+   * own by that tab's name, which a rename sets. A view is called by its own title (#5577), the
+   * one it was opened with (a file's name, a settings page's), which its pane keeps
+   * (`tabFace.faceOf`); one opened with none is called what its tab is.
    */
   const naming = useMemo<Naming>(() => {
     const known = new Map(
@@ -5758,7 +5769,7 @@ export const PlaneView = memo(function PlaneView({
         const chat = known.get(session);
         return chat === undefined ? nameOf(session) : untabbedName(chat);
       },
-      // A view beside another has no title of its own: its tab's name is said (`tabFace`).
+      // A view's own title is its pane's (`tabFace`, #5577): nothing to say over it here.
       view: () => undefined,
     };
   }, [nameOf, reopened, sidebar, tabs]);
@@ -5809,12 +5820,6 @@ export const PlaneView = memo(function PlaneView({
       })),
     ],
     [chatBrowsersShown, keptShown, reopened],
-  );
-  /** The browsers of the chats tab `id` shows (#2024), drawn live beside it. */
-  const browsersOfTab = useCallback(
-    (id: number) =>
-      panesOf(tabs, id).flatMap(({ session }) => chatBrowsersShown.get(session) ?? []),
-    [tabs, chatBrowsersShown],
   );
   /** A chat's browser's view, in a tab of its own on its chat's strip (#2024). */
   const openChatBrowser = useCallback(
@@ -5944,6 +5949,8 @@ export const PlaneView = memo(function PlaneView({
                 outcome={factsOf(content.session)?.outcome ?? null}
               />
             ),
+            // Its mark wears the chat's state, ✋ among them: the rail draws no second (#5447).
+            stated: true,
           },
     [naming, personaOf, shells, factsOf],
   );
@@ -10110,6 +10117,20 @@ export const PlaneView = memo(function PlaneView({
     },
     [filedIn, personaOf, showView],
   );
+  /** **What a chat uses now, on its pane head** (#5524): its skill run open (SK-3) and its
+   *  browsers, live (#2024), each pressed to open what it is. They left its tab (#5339). */
+  const usingOn = useCallback<UsingOn>(
+    (session) => (
+      <>
+        <SkillRunChip session={session} onOpen={openSkillRun} />
+        <PaneBrowsers
+          browsers={chatBrowsersShown.get(session) ?? NO_BROWSERS}
+          onOpen={openChatBrowser}
+        />
+      </>
+    ),
+    [chatBrowsersShown, openChatBrowser, openSkillRun],
+  );
 
   /**
    * **A tab on the strip was pressed.** One that is behind comes forward, on whatever it was
@@ -11823,15 +11844,12 @@ export const PlaneView = memo(function PlaneView({
                       tasksRunningOf={tasksRunningOf}
                       waitingOn={waitingOn}
                       showFromChip={showFromChip}
-                      openSkillRun={openSkillRun}
                       freshOf={freshOf}
                       freshMarkOf={freshMarkOf}
                       planeUpdates={planeUpdates}
                       handedFrom={handedFrom}
                       workItems={workItems}
                       restoring={restoringChats}
-                      browsersOfTab={browsersOfTab}
-                      openBrowser={openChatBrowser}
                     />
                     {/* The centre is where a chat is, so its menu is the pane's rows: the two splits,
                 the tab in front's Tile all, the key the palette claimed, and — under the line —
@@ -11874,6 +11892,7 @@ export const PlaneView = memo(function PlaneView({
                                   finished={frontFinished}
                                   explaining={chipToExplain}
                                   tasksOn={tasksOn}
+                                  usingOn={usingOn}
                                   others={frontOthers}
                                   asked={frontAsked}
                                   asks={asksHere}

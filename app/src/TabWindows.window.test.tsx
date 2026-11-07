@@ -220,8 +220,72 @@ describe("a split tab in a tab window (#5342)", () => {
       ).toBe("needs"),
     );
     // And its picture of the layout in place of `+1`: two side by side.
-    expect(only.querySelectorAll('[data-scope="tabs"][data-part="picture"] line')).toHaveLength(1);
+    expect(only.querySelectorAll('[data-scope="tabs"][data-part="picture"] rect')).toHaveLength(2);
     expect(only).toHaveTextContent("2, split, 2 panes");
+  });
+});
+
+describe("what failed is seen in a tab window (#5448, #5340)", () => {
+  afterEach(() => void vi.restoreAllMocks());
+
+  /** Chat `session`'s board, with a task of it that failed and that nobody has looked at. */
+  const failedUnder = (session: number) => ({
+    plane: ONE,
+    session,
+    state: "waiting",
+    needs_you: false,
+    queue: [],
+    sequence: 1,
+    moved_at: 1,
+    reports: [],
+    refusals: [],
+    children: [],
+    needs: [
+      {
+        kind: "task_failed",
+        id: `failed-${session}`,
+        task: "check staging",
+        how: "failed",
+        why: "The cluster refused the login.",
+      },
+    ],
+  });
+
+  /** A tab window holding chat 2's tab in front and chat 3's behind it, each with a failure. */
+  async function aTabWindow(keyboard: boolean) {
+    vi.spyOn(document, "hasFocus").mockReturnValue(keyboard);
+    mockWindows("window-1");
+    const { sent } = core({
+      tabWindow: 1,
+      layout: { strip: null, tabs: [tab(0, true, 1), tab(1, true, 2), tab(1, false, 3)] },
+      chats: [1, 2, 3],
+      states: [failedUnder(1), failedUnder(2), failedUnder(3)],
+    });
+    render(<App />);
+    await screen.findByText("session 2");
+    // Its tab's mark says the failure until it is seen: the window has heard it.
+    await waitFor(() =>
+      expect(
+        within(stripNamed("Tabs"))
+          .getAllByRole("tab")
+          .map((one) =>
+            one.querySelector('[data-scope="chat-mark"]')?.getAttribute("data-variant"),
+          ),
+      ).toEqual(["failed", "failed"]),
+    );
+    return (sent as (cmd: string) => { args: Record<string, unknown> }[])("task_failure_seen").map(
+      (one) => one.args.session,
+    );
+  }
+
+  it("is seen of the chat focused in the front tab, in a window with the keyboard", async () => {
+    const seen = await aTabWindow(true);
+    expect(seen).toEqual([2]);
+  });
+
+  it("is not seen while that window is in the background", async () => {
+    const seen = await aTabWindow(false);
+    expect(seen).toEqual([]);
   });
 });
 

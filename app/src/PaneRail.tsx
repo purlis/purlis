@@ -20,7 +20,8 @@ import { RAIL } from "./paneHeld";
  * **Drawn from the pane's model** (#5366, `paneHead.paneLinesOf`): a folded pane's head is who it
  * runs as and its name, and its one action its bell, so the rail's button wears the mark and says
  * the name, and the bell's count stands beside it, each where the model keeps it. Its ✋ is no
- * part of a line: an ask never hides.
+ * part of a line: an ask never hides. Where the mark wears the chat's state, its badge is that ✋,
+ * and the rail draws no second (#5447).
  */
 
 /** One folded pane, as its rail draws it. */
@@ -34,6 +35,9 @@ export type RailPane = {
   holds: BandHolds;
   /** The chat it shows asks the person something now. */
   asks: boolean;
+  /** **Its mark wears its chat's one state** (#5340), the needs badge among them: then the
+   *  rail draws no ✋ of its own beside it (#5447). */
+  stated?: boolean;
 };
 
 /**
@@ -108,7 +112,10 @@ export function PaneRail({
                 {notes}
               </span>
             )}
-            {one.asks && (
+            {/* **One mark says it** (#5447, the one-mark rule of #5340): a mark that wears its
+                chat's state shows ✋ on its badge already, so the rail's own is drawn only beside
+                a mark that cannot. */}
+            {one.asks && one.stated !== true && (
               <Hand className="pane-rail-asks" data-mark="needs-you" aria-hidden="true" />
             )}
           </div>

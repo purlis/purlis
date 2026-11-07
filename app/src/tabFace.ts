@@ -24,7 +24,10 @@ import { zoomedOf } from "./tiling";
  */
 export type TabFace = {
   /** What the first pane holds: the tab's icon where no pane's chat has a state to show. */
-  lead: { kind: "chat"; session: number } | { kind: "view"; view: ViewRef } | { kind: "empty" };
+  lead:
+    | { kind: "chat"; session: number }
+    | { kind: "view"; view: ViewRef; title?: string }
+    | { kind: "empty" };
   /** The tab's name: its own, or its first pane's. */
   name: string;
   /**
@@ -60,7 +63,15 @@ export function faceOf(tabs: Tabs, id: number, naming: Naming): TabFace {
   const panes = contentsOf(tabs, id).map(({ pane, content }): { pane: number; lead: Lead } => {
     if (content.kind === "session")
       return { pane, lead: { kind: "chat", session: content.session } };
-    if (content.kind === "view") return { pane, lead: { kind: "view", view: content.view } };
+    if (content.kind === "view")
+      return {
+        pane,
+        lead: {
+          kind: "view",
+          view: content.view,
+          ...(content.title === undefined ? {} : { title: content.title }),
+        },
+      };
     return { pane, lead: { kind: "empty" } };
   });
   const tab = tabs.byId[id];
@@ -74,7 +85,8 @@ export function faceOf(tabs: Tabs, id: number, naming: Naming): TabFace {
       : lead.kind === "chat"
         ? naming.chat(lead.session)
         : lead.kind === "view"
-          ? (naming.view(lead.view, pane) ?? tab?.name ?? lead.view.view)
+          ? // **Its own title** (#5577), as a file's name: never its view's word.
+            (naming.view(lead.view, pane) ?? lead.title ?? tab?.name ?? lead.view.view)
           : NEW_CHAT;
   const lead = panes[0];
   if (lead === undefined)

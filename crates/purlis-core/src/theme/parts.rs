@@ -5051,6 +5051,31 @@ fn targets(rule: &Rule, property: Prop, sized: bool) -> Vec<String> {
     }
 }
 
+/// **What a hovered tab's fill says to its ×** (#5524): the ground the × and its fade stand on,
+/// `--tabs-closer-over`, on the tab whose pill it is, so the × is never a box of another shade
+/// inside the pill. Nothing for any other rule.
+fn closer_over(
+    rule: &Rule,
+    property: Prop,
+    value: PartValue,
+    sized: bool,
+) -> Option<(String, String)> {
+    let part = rule.family.parts[rule.part].name;
+    if (rule.family.name, part, property, rule.state)
+        != ("tabs", "tab", Prop::Fill, Some(State::Hover))
+    {
+        return None;
+    }
+    let PartValue::Colour(token) = value else {
+        return None;
+    };
+    let root = root_selectors(rule, sized).join(", ");
+    Some((
+        format!(":where({root}:not([data-selected]))"),
+        format!("--tabs-closer-over: {};", colour_css(token)),
+    ))
+}
+
 /// The selectors of the parts drawn around the tabs, and of a chosen tab and its flares.
 const LAYOUT: &str = ":where([data-scope=\"tabs\"][data-part=\"layout\"])";
 const STRIP: &str = ":where([data-scope=\"tabs\"][data-part=\"strip\"])";
@@ -5463,6 +5488,14 @@ pub fn stylesheet(theme: &ResolvedTheme) -> String {
                     match blocks.iter_mut().find(|(at, _)| *at == target) {
                         Some((_, list)) => list.push(said.clone()),
                         None => blocks.push((target, vec![said.clone()])),
+                    }
+                }
+                // **The × stands on the pill it is drawn over** (#5524): a hovered tab's fill is
+                // said to its × and the fade over its name too, which `tabs.css` draws from.
+                if let Some((target, over)) = closer_over(rule, *property, *value, sized) {
+                    match blocks.iter_mut().find(|(at, _)| *at == target) {
+                        Some((_, list)) => list.push(over),
+                        None => blocks.push((target, vec![over])),
                     }
                 }
             }

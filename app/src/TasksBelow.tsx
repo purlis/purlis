@@ -1,14 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import {
-  createContext,
-  useContext,
-  useLayoutEffect,
-  useState,
-  useSyncExternalStore,
-  type ReactNode,
-} from "react";
+import { createContext, useContext, useLayoutEffect, useState, type ReactNode } from "react";
 import { useSyncExternalStoreWithSelector } from "use-sync-external-store/with-selector";
 import { useChatsHere, useChatsSelect } from "./chatState";
 import { sameBuckets, taskCountsSaid, type TaskCounts } from "./taskBuckets";
@@ -76,11 +69,40 @@ export function TasksBelowLent({
   return <TasksBelowHere.Provider value={held}>{children}</TasksBelowHere.Provider>;
 }
 
-/** **Every session's tasks**, by its number: for a reader of several sessions at once, as a split
- *  tab's mark is (#5342). Drawn again whenever any session's rows change. */
-export function useEveryTasksBelow(): ReadonlyMap<number, TasksBelow> {
+/** **The tasks of `sessions`**, by number: for a reader of several sessions at once, as a split
+ *  tab's mark is (#5342). Drawn again only when one of their own rows changes (#5577), never for
+ *  another session's, so a task starting redraws the marks of the tabs it is in and no other. */
+export function useTasksBelowOf(sessions: readonly number[]): ReadonlyMap<number, TasksBelow> {
   const held = useContext(TasksBelowHere);
-  return useSyncExternalStore(held.subscribe, held.get, held.get);
+  const key = sessions.join(",");
+  return useSyncExternalStoreWithSelector(
+    held.subscribe,
+    held.get,
+    held.get,
+    (all) =>
+      new Map(
+        key === ""
+          ? []
+          : key.split(",").map((one) => {
+              const session = Number(one);
+              return [session, all.get(session) ?? NONE_BELOW] as const;
+            }),
+      ),
+    sameEach,
+  );
+}
+
+/** Whether two sessions' tasks, by number, are the same sessions' with the same rows. */
+function sameEach(
+  one: ReadonlyMap<number, TasksBelow>,
+  other: ReadonlyMap<number, TasksBelow>,
+): boolean {
+  if (one.size !== other.size) return false;
+  for (const [session, below] of one) {
+    const was = other.get(session);
+    if (was === undefined || !sameBelow(below, was)) return false;
+  }
+  return true;
 }
 
 /** Session `session`'s tasks: the same value until its own rows change. */

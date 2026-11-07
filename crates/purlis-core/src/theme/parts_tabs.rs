@@ -46,14 +46,16 @@ pub(super) const TABS: Family = Family {
         Part {
             name: "count",
             since: 8,
-            description: "A count on a tab: how many of its tasks are working or waiting.",
+            description: "A count of a chat's tasks in one state, in the summary at the foot of \
+                          its tasks menu (on its pane head's state word): how many are working, \
+                          waiting, failed or done. A tab wears no count.",
             properties: &[Prop::Fill, Prop::Text, Prop::CornerRadius],
         },
         Part {
             name: "picture",
             since: super::NEXT,
             description: "A split tab's small picture of its layout's shape, after its name: \
-                      its box and the lines between its panes.",
+                      a tile for each pane, and past four a 3 × 3 grid.",
             properties: &[Prop::Text],
         },
         Part {

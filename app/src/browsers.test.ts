@@ -33,7 +33,7 @@ describe("a browser's view tab (#2012)", () => {
 
     const shown = contentsOf(split, tab).map(({ content }) => content);
     expect(shown).toEqual([
-      { kind: "view", view: browserView("B1"), workspace: "alpha" },
+      { kind: "view", view: browserView("B1"), workspace: "alpha", title: BROWSER_TITLE },
       { kind: "session", session: 7, chat: "steward 7" },
     ]);
     expect(browsersShown(split)).toEqual(new Set(["B1"]));
