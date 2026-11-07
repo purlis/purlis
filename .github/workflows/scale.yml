@@ -101,12 +101,11 @@ jobs:
       - run: npm ci
         working-directory: app
       - name: The generator, purlis, and the harness the app's panes run, in release
-        run: cargo build --release --locked -p scale-project  # DIAG-5486: only the generator
+        run: cargo build --release --locked -p scale-project -p purlis-cli -p fake-harness
       # The `e2e` feature puts WebdriverIO's embedded WebDriver server inside the app; it is in no
       # build anyone is given. Release, with no bundle, as the timings need.
       - name: The app, in release, for the window's measurements
         id: built
-        if: false # DIAG-5486
         run: npx tauri build --no-bundle --features e2e --config src-tauri/tauri.e2e.conf.json
         working-directory: app
       - name: The project at the target size, from seed 5497, committed
@@ -121,14 +120,8 @@ jobs:
           git -C "$PURLIS_SCALE_PLANE" -c user.name="scale run" -c user.email=scale@purlis.invalid \
             commit -q -m "The generated project"
           echo "PURLIS_SCALE_WORKSPACES=$(node -p 'require("./generated.json").workspaces')" >> "$GITHUB_ENV"
-      - name: DIAG-5486 trace2 of the git standing look
-        run: bash tools/scale-diag-5486.sh "$PURLIS_SCALE_PLANE" diag
-      - name: DIAG-5486 traces
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: diag-5486-${{ matrix.os }}
-          path: diag
+      - name: The hook, recall and one git standing look
+        run: node tools/scale-run.mjs --project "$PURLIS_SCALE_PLANE" --os "$OS_WORD" --out scale-rows.jsonl
       # Each window run is its own app launch: WebdriverIO keeps one app for a run, and the two
       # chat-event runs differ in the app's environment. Each runs even if one before it broke.
       - name: The window on the project, its sidebar answer, watcher setup and idle CPU
