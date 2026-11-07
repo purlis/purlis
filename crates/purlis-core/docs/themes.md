@@ -175,7 +175,7 @@ over the appearance as its colours are.
 | `radius.xl` | px | 0–18 | 8 | 8 | the Welcome page's doors, nothing else |
 | `radius.full` | px | 0–9999 | 9999 | 9999 | pills: counts, toggle tracks |
 | `size.control` | px at 14px | 20–40 | 28 | 24 | buttons, fields, selects, menu rows, a list's rows, the workspace strip |
-| `size.chrome` | px at 14px | 16–32 | 21 | 18 | small buttons, the chat strip, pane and panel headers, a dense list's rows and every tree row |
+| `size.chrome` | px at 14px | 16–32 | 21 | 18 | small buttons, the tab strip, pane and panel headers, a dense list's rows and every tree row |
 | `window.gutter` | px | 0–16 | 0 | 0 | the gap between the window's regions, and around them inside the frame |
 | `panel.corner-radius` | px | 0–24 | 0 | 0 | a region panel's corners: the sides, the content and the bottom panel's halves |
 | `panel.border-width` | px | 0–2 | 1 | 1 | the hairline between two regions, drawn only while they sit flush (no gutter) |
@@ -333,6 +333,7 @@ says what each family, part and variant is):
 | `radio` (since version 13) | `root` (`text`, `gap`), `mark` (`fill`, `border-colour`, `border-width`), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`) | none | `hover`, `selected`, `focused`, `disabled` |
 | `rail` (since version 9) | `button` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `font-weight`, `height`), `monogram` (`font-size`, `font-weight`), `badge` (`fill`, `text`), `unsaved` (`fill`) | `project`, `action` | `hover`, `selected`, `focused` |
 | `review-page` (since version 13) | `root` (`fill`), `body` (`padding`, `gap`), `bar` (`fill`, `padding`, `gap`), `summary` (`text`, `font-size`), `answers` (`gap`) | none | none |
+| `secret-ask` (since the next release) | `root` (`gap`), `facts` (`fill`, `border-colour`, `border-width`, `corner-radius`, `padding`, `gap`), `facts-head` (`text`, `font-size`), `who` (`text`, `font-size`), `chat` (`border-colour`, `padding`, `text`), `command` (`text`, `font-size`), `control` (`fill`, `text`, `corner-radius`), `value` (`border-colour`), `scope-said` (`text`, `font-size`), `tool-line` (`fill`, `text`, `corner-radius`, `padding`, `font-size`), `foot` (`fill`, `padding`, `gap`) | none | none |
 | `segment` (since version 13) | `root` (`fill`, `text`, `shadow`, `corner-radius`), `label` (`text`), `count` (`text`) | none | `hover`, `selected`, `focused`, `disabled` |
 | `segmented-control` (since version 13) | `root` (`fill`, `corner-radius`, `shadow`, `padding`, `gap`) | none | none |
 | `select` (since version 13) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `height`), `placeholder` (`text`), `chevron` (`text`) | none | `hover`, `focused`, `disabled`, `open`, `invalid` |

@@ -66,8 +66,8 @@ function DockedStrip({
   width?: number;
   /** The chosen tab split in two, the second pane with the keyboard. */
   split?: boolean;
-  /** The strip's other marks, as the chat strip draws them: a skill run chip on the first tab and
-   *  `N more` at the row's end (#3361). */
+  /** The strip's other marks, as the chat strip draws them: `N more` at the row's end (#3361). A
+   *  tab draws no skill run chip since #5524: it is on its chat's pane head. */
   marks?: boolean;
 }) {
   const [inFront, setInFront] = useState(chosen);
@@ -95,21 +95,6 @@ function DockedStrip({
               selected={at === inFront}
               first={at === 0}
             >
-              {marks && at === 0 && (
-                // A tab's skill run chip, as `SkillRunChip` draws it.
-                <span className="tab-run">
-                  <span className="tab-run-pill">
-                    <Button
-                      variant="quiet"
-                      size="sm"
-                      className="tab-run-counts"
-                      tooltip="Using the skill review: 3 tool calls so far. Open its runs."
-                    >
-                      <span className="count">3</span>
-                    </Button>
-                  </span>
-                </span>
-              )}
               <StripTab
                 strip={along}
                 tabKey={one.name}
@@ -537,9 +522,9 @@ function middleOf(element: Element): number {
 }
 
 /**
- * **The strip's marks on the tabs' line, their tooltips clear of it** (#3361): the `+`, `N more`
- * and a tab's skill run chip are each centred on a tab's line, within a pixel, in every cell; and the
- * `+`'s tooltip, opened from the keyboard, stands below the strip, never on its row.
+ * **The strip's marks on the tabs' line, their tooltips clear of it** (#3361): the `+` and
+ * `N more` are each centred on a tab's line, within a pixel, in every cell; and their tooltips,
+ * opened from the keyboard, stand below the strip, never on its row.
  */
 export const MarksOnTheTabsLine: Story = {
   args: { marks: true },
@@ -549,25 +534,21 @@ export const MarksOnTheTabsLine: Story = {
     const line = middleOf(tab);
     const plus = canvas.getByRole("button", { name: "New tab" });
     const more = canvas.getByRole("button", { name: "2 more" });
-    const chip = canvasElement.querySelector(".tab-run-counts");
-    if (chip === null) throw new Error("no skill run chip drawn");
     for (const [what, one] of [
       ["the +", plus],
       ["N more", more],
-      ["the skill run chip", chip],
     ] as const)
       await expect(
         Math.abs(middleOf(one) - line),
         `${what} off the tabs' line`,
       ).toBeLessThanOrEqual(1);
     // Each mark's tooltip, opened by the keyboard's focus (at once), stands off the strip's row:
-    // Tab along the strip's stops (the chip, the strip's tab, the `+`, `N more`), and each mark's
+    // Tab along the strip's stops (the strip's tab, the `+`, `N more`), and each mark's
     // is measured where the focus reaches it, then taken down with Esc.
     const strip = canvasElement.querySelector("header.bar") as HTMLElement;
     const shown = () =>
       document.querySelector<HTMLElement>('[role="tooltip"][data-scope="tooltip"]');
     const marks = new Map<Element, [string, string]>([
-      [chip, ["the skill run chip", "Using the skill review"]],
       [plus, ["the +", "New tab"]],
       [more, ["N more", "2 tabs past the edge"]],
     ]);
@@ -588,14 +569,14 @@ export const MarksOnTheTabsLine: Story = {
       await waitFor(() => expect(shown()).toBeNull(), { timeout: 3000 });
       measured.push(what);
     }
-    await expect(measured).toEqual(["the skill run chip", "the +", "N more"]);
+    await expect(measured).toEqual(["the +", "N more"]);
   },
 };
 
 /**
  * **A split tab's small picture of its layout** (#5342, spec #5339), after its name in place of
- * `+1`: two side by side, three with the right half split again, four in a quad, and past four
- * the quad. Each picture is the tab's own shape, in the quiet tier, and never cut: a name gives way
+ * `+1`: a tile for each pane (#5577), two side by side, three with the right half split again,
+ * four in a quad, and past four a 3 × 3 grid. Each picture is the tab's own shape, in the quiet tier, and never cut: a name gives way
  * first. A screen reader hears how many panes in words.
  */
 export const SplitPictures: Story = {
@@ -623,7 +604,8 @@ export const SplitPictures: Story = {
       ...canvasElement.querySelectorAll<SVGElement>('[data-scope="tabs"][data-part="picture"]'),
     ];
     // One per split tab, none on the tab of one pane, each its own shape.
-    await expect(pictures.map((one) => one.querySelectorAll("line").length)).toEqual([1, 2, 3, 2]);
+    // A tile for each pane (#5577), and past four the 3 × 3 grid, which no quad draws.
+    await expect(pictures.map((one) => one.querySelectorAll("rect").length)).toEqual([2, 3, 4, 9]);
     for (const [name, panes] of [
       ["steward 1", 2],
       ["talk", 3],

@@ -49,6 +49,9 @@ pub enum Line {
         started_by: StartedBy,
         /// The copy's level, where the runner's start knew it.
         level: Option<Level>,
+        /// What it ran, read off the runner's checkout, where its start said (#4219): a runner
+        /// before says none, and what this plane holds is read in its place.
+        tree: Option<super::Content>,
     },
     Ended {
         ended: Ended,
@@ -96,6 +99,7 @@ impl Relayed {
                     .and_then(StartedBy::parse)
                     .unwrap_or(StartedBy::Unknown),
                 level: text("skill_level").and_then(Level::parse),
+                tree: text("tree").and_then(super::Content::parse),
             }
         } else {
             Line::Ended {
@@ -137,11 +141,18 @@ pub struct RanAs<'a> {
 /// written, or the line's time is not one.
 pub fn logged(root: &Path, relayed: &Relayed, ran_as: &RanAs<'_>, device: &str) -> Option<PathBuf> {
     let when = chrono::DateTime::from_timestamp_millis(i64::try_from(relayed.at_ms).ok()?)?;
+    // Once each (#4219): a window that reads a runner's log on from where it last logged here may
+    // hear again a line it logged before it closed.
+    let path = super::path_for(root, when, device);
+    if logged_already(&path, relayed) {
+        return Some(path);
+    }
     match &relayed.line {
         Line::Started {
             skill,
             started_by,
             level,
+            tree,
         } => super::started(
             root,
             &super::Starting {
@@ -151,6 +162,7 @@ pub fn logged(root: &Path, relayed: &Relayed, ran_as: &RanAs<'_>, device: &str) 
                 workspace: ran_as.workspace,
                 level: *level,
                 harness: ran_as.harness,
+                ran: tree.as_ref(),
             },
             ran_as.persona,
             when,
@@ -176,6 +188,26 @@ pub fn logged(root: &Path, relayed: &Relayed, ran_as: &RanAs<'_>, device: &str) 
             device,
         ),
     }
+}
+
+/// **Whether the row `relayed` writes is in the file at `path` already**: a start or an end of its
+/// run there, as [`super::runs`] reads a row (a start names its skill, an end how it ended).
+fn logged_already(path: &Path, relayed: &Relayed) -> bool {
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return false;
+    };
+    let key = match relayed.line {
+        Line::Started { .. } => "skill",
+        Line::Ended { .. } => "ended",
+    };
+    crate::mdsection::split_lines(&text)
+        .into_iter()
+        .any(|line| {
+            serde_json::from_str::<Value>(line).is_ok_and(|row| {
+                row.get("run").and_then(Value::as_str) == Some(relayed.run.as_str())
+                    && row.get(key).is_some_and(|said| !said.is_null())
+            })
+        })
 }
 
 #[cfg(test)]

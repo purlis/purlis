@@ -414,10 +414,11 @@ fn branch_of(root: &Path) -> Result<String, String> {
 /// **What the push would publish, scanned before it is sent**: the whole history of `branch`,
 /// since the remote has nothing yet. The pushes purlis makes run no hooks, so this is the scan
 /// a `pre-push` would have made. It refuses on a credential only, as a save's push does.
-fn scanned(root: &Path, head: &str, branch: &str, url: &str) -> Result<(), String> {
+fn scanned(root: &Path, head: &str, branch: &str) -> Result<(), String> {
     let theirs = "0".repeat(head.len().max(40));
     let updates = format!("HEAD {head} refs/heads/{branch} {theirs}\n");
-    let scan = crate::diffscan::pushed(root, "origin", url, &updates)
+    // A first publish: the remote has nothing yet, so the whole history is read.
+    let scan = crate::diffscan::pushed_knowing(root, &updates, &[])
         .map_err(|why| format!("purlis could not scan what the push would send: {why}"))?;
     let found: Vec<String> = scan
         .refused
@@ -499,7 +500,7 @@ impl Hands for OnThisMachine {
         let name = crate::worktree::name::as_ref(&branch);
         let head =
             git::commit_at(root, &name).ok_or("The project has no commit to publish".to_owned())?;
-        scanned(root, &head, &branch, &url)?;
+        scanned(root, &head, &branch)?;
         git_in(root, &["remote", "add", "origin", &url], "name the remote")?;
         let refspec = git::push_refspec(&head, &name);
         let args = ["push", "-q", "origin", refspec.as_str()];

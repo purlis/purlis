@@ -260,30 +260,28 @@ pub fn stopped(tree: &Path) -> Option<Stopped> {
 }
 
 /// The files git calls unmerged in `tree`, sorted.
+///
+/// **Read from the index alone** (#5486): an unmerged path is one the index holds at a stage
+/// above 0, so `ls-files --unmerged` answers without looking at the work tree. The standing asks
+/// this on every look, and `diff-files --diff-filter=U` gave the same names only after an
+/// `lstat` of every tracked file: 24 s of each look on the scale run's macOS runner, at 200,000
+/// files. Neither command writes the index, so neither takes `index.lock` from under a save's
+/// `git add -A` (the title bar asks this every ten seconds).
 pub fn unmerged(tree: &Path) -> Vec<String> {
     crate::worktree::git::run(
         tree,
-        // `diff-files`, the plumbing, never porcelain `diff`: the title bar asks this every ten
-        // seconds, and `diff` refreshes the index — taking `index.lock` from under a save's
-        // `git add -A` — whenever a tracked file's stat data no longer matches it, which
-        // `--no-optional-locks` does not stop (measured on git 2.50: it holds back `status`'s
-        // refresh and not `diff`'s). `diff-files` compares against the index as it is and
-        // writes nothing, and lists an unmerged path the same way.
-        &[
-            "--no-optional-locks",
-            "diff-files",
-            "--name-only",
-            "--diff-filter=U",
-            "-z",
-        ],
+        &["--no-optional-locks", "ls-files", "--unmerged", "-z"],
         crate::worktree::git::READ,
     )
     .map(|r| {
+        // `<mode> <object> <stage>\t<path>`, one entry a stage, NUL-separated: a path in
+        // conflict is listed once for each side it has.
         let mut out: Vec<String> = r
             .out
             .split('\0')
-            .filter(|l| !l.trim().is_empty())
-            .map(str::to_string)
+            .filter_map(|entry| entry.split_once('\t'))
+            .map(|(_, path)| path.to_string())
+            .filter(|path| !path.is_empty())
             .collect();
         out.sort();
         out.dedup();

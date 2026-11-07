@@ -55,11 +55,14 @@ empty state and error copy follow it.
   the asks registry (`asking.rs`), and every Notice and the Inbox draw the label its ask
   carries (#1700).
 - **A context menu's row drops the name of the thing the menu was opened on**, and keeps the
-  verb: the palette's *Rename chat console-developer 16…* is the tab's menu's *Rename…*, and
+  verb: the palette's *Rename workspace alpha…* is the workspace's menu's *Rename…*, and
   *End chat console-developer 16* is *End*. The thing is in front of the person and the menu
   says it once, as its own name. A row keeps a name when it is another thing's (*Merge into
-  svc*). These shorter words are written once too, in `menuWords.ts`, and
-  `docs/ui-primitives.md` ("Menus") has the rest of a menu's rules.
+  svc*). **A row keeps the kind of thing it acts on where two things are in front of the
+  person**: a chat's ⋯ sits on a pane inside a tab, so its rename is *Rename chat…*, and a
+  split tab's is *Rename tab…*, so neither reads as the other's (#5343). These shorter words
+  are written once too, in `menuWords.ts`, and `docs/ui-primitives.md` ("Menus") has the rest
+  of a menu's rules.
 
 ## Work in progress
 

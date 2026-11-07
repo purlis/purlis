@@ -241,7 +241,6 @@ const CEILING: Record<string, number> = {
   "StartChat.tsx": 6,
   "StripMarks.tsx": 4,
   "TabChip.tsx": 3,
-  "TabRename.tsx": 1,
   "TaskBlocksNotice.tsx": 1,
   "TaskChangesTab.tsx": 4,
   "TaskEnd.tsx": 6,
@@ -496,6 +495,8 @@ export const PANE_LINE_CHIPS = [
   "pane-from",
   "pane-work-item",
   "pane-head-where",
+  // What the chat uses now (#5524): its skill run and its browsers, which left its tab.
+  "pane-using",
 ];
 
 /** **The chips of the pane foot** (#5202, #5204, spec #5191 stories 43 and 44): harness ·
@@ -514,11 +515,10 @@ export const PANE_FOOT_CHIPS = [
 ];
 
 /** What is drawn as part of a strip or a pane's top line, as tall as it is: the ways to end a
- *  pane's task (#1488), the chip a tab wears for its skill run (SK-3; its tasks' chip went to the
- *  pane head, #5341) and the chips of the pane's head and foot. */
+ *  pane's task (#1488) and the chips of the pane's head and foot, its skill run among them (SK-3;
+ *  off the tab since #5524). */
 const STRIP_PARTS = new Set([
   "pane-task-ends",
-  "tab-run",
   // The harness's button: inside harness · workspace, a chip of either line.
   "pane-harness",
   ...PANE_LINE_CHIPS,
@@ -1044,8 +1044,8 @@ export const plantedTall = { minBlockSize: 32 };
       ".find-bar > .closer",
       ".pane-task-ends .task-end",
       ".tab .closer::before",
-      ".tabs .tab:has(> .tab-run)",
-      ".tabs .tab > .tab-run",
+      ".tabs .tab:has(> .pane-task-ends)",
+      ".tabs .tab > .pane-task-ends",
       ".half-head",
       ".status-line",
       ".panels .panel-head",
@@ -1063,7 +1063,7 @@ export const plantedTall = { minBlockSize: 32 };
       ".bar > .x ~ button",
       ".closer.toolbar-head",
       ".task-end.panel-head",
-      ".tab-run.task-end",
+      ".pane-task-ends.task-end",
       ".pane-harness",
     ].map((selector) => subjectKind(selector, controls));
     expect(kinds).toEqual([
@@ -1386,20 +1386,17 @@ describe("a chat's tab (#5341)", () => {
     return family.slice(at, family.indexOf("}", at));
   };
 
-  it("holds its button, its hand, its chips and its ×, and no count", () => {
+  it("holds its button, its hand, its fresh mark and its ×, and no count, skill run or browser (#5524)", () => {
     const parts = new Set([...cell.matchAll(/<([A-Z]\w*)/g)].map(([, name]) => name));
     expect([...parts].sort()).toEqual(
       [
         "Closer",
         "FreshMark",
         "QueueRead",
-        "SkillRunChip",
         "StripTab",
-        "TabBrowsers",
         "TabCell",
         "TabMarks",
         "TabNeeds",
-        "TabRename",
         "Pin",
       ].sort(),
     );

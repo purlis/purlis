@@ -420,7 +420,7 @@ spec:
     the operator signs again with five left. The desktop reads it as a task starts and again
     before it lets a fresh runner go, and counts it only while it holds, so an operator rolled
     back to one that does not sign it stops counting within ten minutes. Without any of these, the
-    task runs on the pool's own runner and its tab says why, and a fresh runner whose work looks
+    task runs on the pool's own runner and the chat says why, and a fresh runner whose work looks
     home is kept while its operator gives no word. The pool's runner image must list what it holds
     (session protocol 1.69): an older image refuses the task's start, saying to update it. Vault
     values and tokens reach a fresh runner under the pool's checks, each made of that runner, and a check that can't be made refuses. A restart of the window holds the

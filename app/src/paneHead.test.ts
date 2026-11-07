@@ -72,11 +72,12 @@ describe("a narrow pane head drops its parts in the ruled order (#4760, #4585 ru
     expect([...droppedAt(undefined)]).toEqual([]);
   });
 
-  it("drops the mark's word, the button's word, the mark and Split down, and no workspace", () => {
+  it("drops the mark's word, what the chat uses, the button's word, the mark and Split down, and no workspace", () => {
     expect([...droppedAt(469)]).toEqual(["markWord"]);
-    expect([...droppedAt(419)]).toEqual(["markWord", "buttonWord"]);
-    expect([...droppedAt(379)]).toEqual(["markWord", "buttonWord", "mark"]);
-    expect([...droppedAt(299)]).toEqual(["markWord", "buttonWord", "mark", "splitDown"]);
+    expect([...droppedAt(449)]).toEqual(["markWord", "using"]);
+    expect([...droppedAt(419)]).toEqual(["markWord", "using", "buttonWord"]);
+    expect([...droppedAt(379)]).toEqual(["markWord", "using", "buttonWord", "mark"]);
+    expect([...droppedAt(299)]).toEqual(["markWord", "using", "buttonWord", "mark", "splitDown"]);
     expect(HEAD_DROPS.map((drop) => drop.part as string)).not.toContain("where");
   });
 
@@ -253,6 +254,40 @@ describe("a narrow pane's two lines (#5206, spec #5191 stories 28 to 32)", () =>
         "splitRight",
         "close",
       ]);
+    });
+  });
+
+  describe("what the chat uses now, its skill run and its browsers (#5614)", () => {
+    const uses = { using: true };
+
+    it("draws it after the state, on every kind of pane that has a head to say it", () => {
+      expect(paneLinesOf("chat", 900, uses).head).toEqual([
+        "persona",
+        "name",
+        "mark",
+        "markWord",
+        "using",
+      ]);
+      expect(paneLinesOf("task", 900, uses).head).toEqual(["persona", "crumbs", "using"]);
+      for (const kind of ["ended", "endedTask", "shell", "oneJob"] as const)
+        expect(paneLinesOf(kind, 900, uses).head, kind).toContain("using");
+      expect(paneLinesOf("chat", undefined, uses).head).toContain("using");
+    });
+
+    it("draws nothing where the pane has no way to say it, nor on a rail, a view or an empty pane", () => {
+      expect(paneLinesOf("chat", 900, {}).head).not.toContain("using");
+      for (const kind of ["folded", "view", "empty"] as const)
+        expect(paneLinesOf(kind, 900, uses).head, kind).not.toContain("using");
+    });
+
+    it("goes after the state's word and before the mark, so a narrow pane keeps its name and mark", () => {
+      expect(paneLinesOf("chat", 450, uses).head).toEqual(["persona", "name", "mark", "using"]);
+      expect(paneLinesOf("chat", 449, uses).head).toEqual(["persona", "name", "mark"]);
+      expect(paneLinesOf("chat", 379, uses).head).toEqual(["persona", "name"]);
+      expect(paneLinesOf("task", 449, uses).head).toEqual(["persona", "crumbs"]);
+      const order = HEAD_DROPS.map((drop) => drop.part);
+      expect(order.indexOf("using")).toBe(order.indexOf("markWord") + 1);
+      expect(order.indexOf("using")).toBeLessThan(order.indexOf("mark"));
     });
   });
 

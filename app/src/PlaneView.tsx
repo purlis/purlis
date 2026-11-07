@@ -132,6 +132,8 @@ import { FORGE_LOGIN, typableLogin, type LoginAsk } from "./RepoPicker";
 import { NewBranch } from "./NewBranch";
 import { LinkWorkItem } from "./LinkWorkItem";
 import { RenameChat } from "./RenameChat";
+import { RenameTab } from "./RenameTab";
+import { chatRenamed, nameTab, renameOf } from "./tabRenaming";
 import { useWorkspaceWrites } from "./WorkspaceWrites";
 import { RenameWorkspace } from "./RenameWorkspace";
 import { AddVision } from "./AddVision";
@@ -330,7 +332,6 @@ import {
   viewNamedNow,
   workspaceSettingsTitle,
   workspaceSettingsView,
-  renameTab,
   viewKey,
   pinsOf,
   selectTab,
@@ -401,6 +402,7 @@ import {
   type PressHere,
   pressInProjectWindow,
   type HandedChat,
+  type StartedAs,
 } from "./tabWindows";
 import type { TabFacts } from "./ChatRows";
 import { rowFactsOf } from "./shownState";
@@ -418,7 +420,8 @@ import { sendToDriven } from "./browserDriving";
 import { programsOf, useBrowsersTakenBack, useChatBrowsers } from "./chatBrowsers";
 import { browserTimelineTitle, browserTimelineView } from "./browserTimelines";
 import { onInspect, openInspector } from "./inspector";
-import type { BrowserShown } from "./ChatBrowsersShown";
+import { PaneBrowsers, type BrowserShown } from "./ChatBrowsersShown";
+import { SkillRunChip } from "./SkillRunChip";
 import {
   forgetProjectsBrowsers,
   tellProjectBrowsers,
@@ -687,7 +690,13 @@ import {
   withNote,
   ChatNotices,
 } from "./ChatNotices";
-import { type EndedChat, LayoutPanes, type PaneFace, type TasksOn } from "./LayoutPanes";
+import {
+  type EndedChat,
+  LayoutPanes,
+  type PaneFace,
+  type TasksOn,
+  type UsingOn,
+} from "./LayoutPanes";
 import { drawnOf } from "./paneFold";
 import { usePaneRoom } from "./usePaneRoom";
 import { ChatPersonaState } from "./ChatPersonaState";
@@ -701,6 +710,9 @@ const samePanels = (a: readonly PanelTab[], b: readonly PanelTab[]) =>
   a.every(
     (one, at) => one.view === b[at].view && one.name === b[at].name && one.mark === b[at].mark,
   );
+
+/** No browsers: a chat that uses none. */
+const NO_BROWSERS: readonly BrowserShown[] = [];
 
 /** One empty list, so a prop left out is the same list at every render. */
 const NONE: readonly never[] = [];
@@ -1210,11 +1222,15 @@ export const PlaneView = memo(function PlaneView({
     },
     [plane],
   );
-  /** The chat tab whose name is open for editing on the strip, if one is (charter-app#254). */
-  const [renaming, setRenaming] = useState<number>();
+  /** The tab whose Rename is open, if one is (#5343), and how its answer is going. */
+  const [renamingTab, setRenamingTab] = useState<{
+    tab: number;
+    trouble?: string;
+    busy: boolean;
+  }>();
   /** The work item each chat works on, by session, as the core answered (V60, ADR 0088). */
   const [workItems, setWorkItems] = useState<Record<number, string>>({});
-  /** The chat a Rename… with no tab of its own to rename on is asking about, in a dialog. */
+  /** The chat Rename chat… is asking about, in a dialog. */
   const [renamingChat, setRenamingChat] = useState<{
     session: number;
     name: string;
@@ -2622,18 +2638,34 @@ export const PlaneView = memo(function PlaneView({
     },
     [filedAs, plane, tabWindow],
   );
+  /** **What a chat is known by is kept where it lands** (#5573): here, or by the window it is
+   *  handed to, so a tab window keeps nothing of a chat the project window shows. */
+  const keepStartedAs = useCallback((session: number, known: StartedAs) => {
+    if (known.shell) setShells((was) => new Set(was).add(session));
+    const { studio } = known;
+    if (studio !== undefined) setStudioLinks((was) => ({ ...was, [session]: studio }));
+  }, []);
   const showStarted = useCallback(
-    (chat: PressedChat, workspace: string, named = false, asked?: PaneAt, ownTab = false) => {
+    (
+      chat: PressedChat,
+      workspace: string,
+      named = false,
+      asked?: PaneAt,
+      ownTab = false,
+      known: StartedAs = {},
+    ) => {
       // What it is called until its row arrives (#5308), drawn with its pane.
       setStartedAs((was) => new Map(was).set(chat.session, chat));
-      const land = () =>
+      const land = () => {
+        keepStartedAs(chat.session, known);
         landOn((tabs) =>
           openNew(tabs, chat, filedAs(chat.session, workspace), { named, asked, ownTab }),
         );
+      };
       if (asked !== undefined) land();
-      else landOrHandOn({ filed: workspace, started: true, as: chat }, land);
+      else landOrHandOn({ filed: workspace, started: true, as: chat, ...known }, land);
     },
-    [filedAs, landOn, landOrHandOn],
+    [filedAs, keepStartedAs, landOn, landOrHandOn],
   );
   /**
    * **A chat that came back is a press** (#5289; spec #4750): a resumed chat or a reopened task
@@ -2654,7 +2686,7 @@ export const PlaneView = memo(function PlaneView({
    * since the start named its place.
    */
   const showPlaced = useCallback(
-    (chat: Placed) => {
+    (chat: Placed, known?: StartedAs) => {
       const workspace = chat.workspace ?? OUTSIDE;
       setStartedIn((was) => ({ ...was, [chat.session]: workspace }));
       showStarted(
@@ -2666,6 +2698,9 @@ export const PlaneView = memo(function PlaneView({
         },
         workspace,
         true,
+        undefined,
+        false,
+        known,
       );
     },
     [showStarted],
@@ -3552,12 +3587,7 @@ export const PlaneView = memo(function PlaneView({
   } = useRoom(onStrip.length);
   /** The chat tabs' ids, which the strip's tablist owns them by (#1204). */
   const chatTabId = useTabIds();
-  /** Whether chat tab `id` is drawn as its name box rather than as a tab: it is being renamed.
-   *  Since no tab turns into a chip (#4760), a chat that starts wrapping up with its name open
-   *  keeps its name box. One answer for the strip and for its tablist's `aria-owns`, so the
-   *  tablist never misses a tab it draws (#1204). */
-  const nameBoxFor = (id: number) => renaming === id;
-  /** The chat strip itself, for handing the keyboard back to a tab after a rename. */
+  /** The chat strip itself. */
   const chatStrip = useRef<HTMLElement | null>(null);
   /** Unique to this view, so two projects' tabs never name each other's fresh marks. */
   const freshMarks = useId();
@@ -3586,9 +3616,8 @@ export const PlaneView = memo(function PlaneView({
       }),
     [onStrip, room, tabs.inFront, chatLeast, chatGap, isPinned, chipWidth],
   );
-  /** Where the tab in front is drawn on the strip, or -1 where it is not (or is a name box). */
-  const frontAt = tabs.inFront === undefined ? -1 : shown.indexOf(tabs.inFront);
-  const frontPlace = frontAt >= 0 && !nameBoxFor(shown[frontAt]) ? frontAt : -1;
+  /** Where the tab in front is drawn on the strip, or -1 where it is not. */
+  const frontPlace = tabs.inFront === undefined ? -1 : shown.indexOf(tabs.inFront);
   /** The id of the tab in front, which names the panel under it. */
   const panelNamedBy = useMemo(
     () => (frontPlace >= 0 ? chatTabId(frontPlace) : undefined),
@@ -3882,15 +3911,16 @@ export const PlaneView = memo(function PlaneView({
           }
           succeeded("shell");
           const session = opened.data;
-          setShells((was) => new Set(was).add(session));
           setStartedIn((was) => ({ ...was, [session]: filed }));
           if (oneJob) {
+            setShells((was) => new Set(was).add(session));
             setOneJobs((was) => new Set(was).add(session));
             change((tabs) => openOneJob(tabs, session, name));
             giveKeyboardTo(plane, session);
           }
           // A shell follows a chat's rules (#4758; spec story 63): it opens by the one rule.
-          else showStarted({ session, chat: name }, filed, named, undefined, ownTab);
+          else
+            showStarted({ session, chat: name }, filed, named, undefined, ownTab, { shell: true });
           // A command typed in for the operator, run as if they had typed it: the shell reads
           // it once it is up, and the tab is theirs to leave. A harness's installer is named,
           // never spelled: the core types its own compiled-in line (FR-29, V65).
@@ -4802,7 +4832,7 @@ export const PlaneView = memo(function PlaneView({
       if (handed === undefined) pressHere(session);
       else {
         setStartedIn((was) => ({ ...was, [session]: handed.filed }));
-        if (handed.started) showStarted(handed.as, handed.filed, true);
+        if (handed.started) showStarted(handed.as, handed.filed, true, undefined, false, handed);
         else showResumed(handed.as, handed.filed);
       }
       if (tabWindow === undefined) paneUsed();
@@ -5719,8 +5749,9 @@ export const PlaneView = memo(function PlaneView({
   /**
    * **What a tab's panes are called on the strip** (#4762): a chat by its own name, never the
    * name of the tab whose pane it is in, which is the first pane's; a chat with a tab of its
-   * own by that tab's name, which a rename sets. A view beside another, as DevTools is beside
-   * its browser, has no title of its own, and is called what its tab is.
+   * own by that tab's name, which a rename sets. A view is called by its own title (#5577), the
+   * one it was opened with (a file's name, a settings page's), which its pane keeps
+   * (`tabFace.faceOf`); one opened with none is called what its tab is.
    */
   const naming = useMemo<Naming>(() => {
     const known = new Map(
@@ -5737,7 +5768,7 @@ export const PlaneView = memo(function PlaneView({
         const chat = known.get(session);
         return chat === undefined ? nameOf(session) : untabbedName(chat);
       },
-      // A view beside another has no title of its own: its tab's name is said (`tabFace`).
+      // A view's own title is its pane's (`tabFace`, #5577): nothing to say over it here.
       view: () => undefined,
     };
   }, [nameOf, reopened, sidebar, tabs]);
@@ -5788,12 +5819,6 @@ export const PlaneView = memo(function PlaneView({
       })),
     ],
     [chatBrowsersShown, keptShown, reopened],
-  );
-  /** The browsers of the chats tab `id` shows (#2024), drawn live beside it. */
-  const browsersOfTab = useCallback(
-    (id: number) =>
-      panesOf(tabs, id).flatMap(({ session }) => chatBrowsersShown.get(session) ?? []),
-    [tabs, chatBrowsersShown],
   );
   /** A chat's browser's view, in a tab of its own on its chat's strip (#2024). */
   const openChatBrowser = useCallback(
@@ -5923,6 +5948,8 @@ export const PlaneView = memo(function PlaneView({
                 outcome={factsOf(content.session)?.outcome ?? null}
               />
             ),
+            // Its mark wears the chat's state, ✋ among them: the rail draws no second (#5447).
+            stated: true,
           },
     [naming, personaOf, shells, factsOf],
   );
@@ -6694,79 +6721,86 @@ export const PlaneView = memo(function PlaneView({
   );
 
   /**
-   * Opens a chat's name for editing (charter-app#254, #4753) — what its rows, the palette's row,
-   * a double-click on its tab and `F2` on it all run, through the one catalogue row. **Where it
-   * is its tab's own chat, on the strip**, and the tab comes forward first, because the strip
-   * always draws the tab in front (`fits.ts`) and a name being typed has to be on screen.
-   * **Where it has no tab of its own, in a dialog**: renaming a chat never changes what is on
-   * screen.
+   * **Opens Rename chat** (charter-app#254, #4753, #5343): what its rows, the palette's row and
+   * F2 on its row run, through the one catalogue row. Always the dialog, which says
+   * it renames the chat everywhere; a tab's own Rename is {@link beginTabRename}.
    */
-  const beginRename = useCallback(
-    (session: number) => {
-      const own = ownTabOf(now.current, session);
-      if (own !== undefined) {
-        bringToFront(own);
-        setRenaming(own);
-        return;
-      }
-      setRenamingChat({ session, name: nameOfNow.current(session), busy: false });
+  const beginRename = useCallback((session: number) => {
+    setRenamingChat({ session, name: nameOfNow.current(session), busy: false });
+  }, []);
+  /**
+   * **Asks the core to hold `typed` as chat `session`'s name**, and names every tab it leads
+   * with the core's answer, not what was typed: it trims it, a blank is the default back, and a
+   * name it will not draw is refused in its own words, which this answers. Charter's label only:
+   * the harness keeps its own.
+   */
+  const renameChatTo = useCallback(
+    async (session: number, typed: string): Promise<{ refused: string } | undefined> => {
+      const said = await commands
+        .renameChat(plane, session, typed)
+        .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
+      if (said.status === "error") return { refused: said.error };
+      change((tabs) => chatRenamed(tabs, session, said.data));
+      // Its row is named by the core's list, which is read again for the new name.
+      setReplan((was) => was + 1);
+      return undefined;
     },
-    [bringToFront],
+    [change, plane],
   );
-  /** The name the Rename dialog was answered with, held by the core as `saveName` holds it. A
-   *  refusal stays in the dialog, in the core's words. */
+  /** The name the Rename chat dialog was answered with. A refusal stays in the dialog, in the
+   *  core's words. */
   const saveChatName = useCallback(
     async (typed: string) => {
       const asked = renamingChat;
       if (asked === undefined || asked.busy) return;
       setRenamingChat({ ...asked, busy: true, trouble: undefined });
-      const said = await commands
-        .renameChat(plane, asked.session, typed)
-        .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
-      if (said.status === "error") {
-        setRenamingChat({ ...asked, busy: false, trouble: said.error });
-        return;
-      }
-      setRenamingChat(undefined);
-      // Its row is named by the core's list, which is read again for the new name.
-      setReplan((was) => was + 1);
+      const refused = await renameChatTo(asked.session, typed);
+      setRenamingChat(refused ? { ...asked, busy: false, trouble: refused.refused } : undefined);
     },
-    [plane, renamingChat],
+    [renameChatTo, renamingChat],
   );
 
   /**
-   * Asks the core to hold `typed` as the chat's name, and draws what it answers.
-   *
-   * **The core's answer is the name, not what was typed**: it trims it, a blank is the default
-   * back, and a name it will not draw is refused in its own words — which is what this answers,
-   * for the box to say beside the name. Charter's label only: the harness keeps its own.
+   * **Opens a tab's Rename** (#5343): its menu's Rename…, a double-click on it and F2 on it. Its
+   * dialog says what it renames, from what the tab holds (`tabRenaming.renameOf`); a view's tab
+   * has no row, so it never opens on one.
    */
-  const saveName = useCallback(
-    async (id: number, typed: string): Promise<string | undefined> => {
-      const session = chatOf(now.current, id);
-      if (session === undefined) return "That tab has no chat to rename.";
-      const said = await commands
-        .renameChat(plane, session, typed)
-        .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
-      if (said.status === "error") return said.error;
-      change((tabs) => renameTab(tabs, id, said.data));
-      return undefined;
-    },
-    [change, plane],
-  );
-
-  /** The box is finished with. After Enter or Escape the keyboard goes back to the tab — the
-   *  one in front, which the rename brought there — once it is drawn again. */
-  const backToTheTab = useRef(false);
-  const endRename = useCallback((back: boolean) => {
-    backToTheTab.current = back;
-    setRenaming(undefined);
+  const beginTabRename = useCallback((tab: number) => {
+    if (renameOf(now.current, tab) === undefined) return;
+    setRenamingTab({ tab, busy: false });
   }, []);
-  useEffect(() => {
-    if (renaming !== undefined || !backToTheTab.current) return;
-    backToTheTab.current = false;
-    chatStrip.current?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')?.focus();
-  }, [renaming]);
+  /**
+   * The tab's Rename answered: **its own name** where only the tab is named (a split, or "Only
+   * this tab"), window state the core is not told; **else the chat's**, through the core, and
+   * a name the tab had of its own goes, so the tab follows its chat again.
+   */
+  const saveTabName = useCallback(
+    async ({ typed, only }: { typed: string; only: boolean }) => {
+      const asked = renamingTab;
+      if (asked === undefined || asked.busy) return;
+      const renames = renameOf(now.current, asked.tab);
+      if (renames === undefined) return setRenamingTab(undefined);
+      if (only || renames.kind === "tab") {
+        change((tabs) => nameTab(tabs, asked.tab, typed));
+        return setRenamingTab(undefined);
+      }
+      setRenamingTab({ ...asked, busy: true, trouble: undefined });
+      const refused = await renameChatTo(renames.session, typed);
+      if (refused) return setRenamingTab({ ...asked, busy: false, trouble: refused.refused });
+      change((tabs) => nameTab(tabs, asked.tab, undefined));
+      setRenamingTab(undefined);
+    },
+    [change, renameChatTo, renamingTab],
+  );
+  /** What the open tab's Rename renames, as the tab is now. */
+  const tabRenames = renamingTab === undefined ? undefined : renameOf(tabs, renamingTab.tab);
+  /** "Use the chat name again": the tab's own name goes, and it is its first chat's again. */
+  const clearTabName = useCallback(() => {
+    const asked = renamingTab;
+    if (asked === undefined) return;
+    change((tabs) => nameTab(tabs, asked.tab, undefined));
+    setRenamingTab(undefined);
+  }, [change, renamingTab]);
 
   /**
    * Runs an extension's action from the palette (charter-app#341): on nothing in particular, in
@@ -6968,8 +7002,7 @@ export const PlaneView = memo(function PlaneView({
           const chat = started.data;
           // What the core recorded on the chat, so its chip and the skill's page say it at once.
           const link = linkOfAsk(wanted);
-          if (link !== undefined) setStudioLinks((was) => ({ ...was, [chat.session]: link }));
-          showPlaced(chat);
+          showPlaced(chat, link === undefined ? undefined : { studio: link });
         });
     };
     window.addEventListener(SKILL_CHAT, asked);
@@ -8520,6 +8553,7 @@ export const PlaneView = memo(function PlaneView({
       },
       selectTab: bringToFront,
       renameChat: beginRename,
+      renameTab: beginTabRename,
       linkWorkItem,
       unlinkWorkItem,
       startFresh: askStartFresh,
@@ -8658,6 +8692,7 @@ export const PlaneView = memo(function PlaneView({
       workspaceWrites.ask,
       studioLinks,
       beginRename,
+      beginTabRename,
       showSideViewSeen,
       toggleRegionSeen,
       moveSideView,
@@ -10089,6 +10124,20 @@ export const PlaneView = memo(function PlaneView({
       showView(skillRunsAt(scope, skill, run), SKILL_STUDIO_TITLE);
     },
     [filedIn, personaOf, showView],
+  );
+  /** **What a chat uses now, on its pane head** (#5524): its skill run open (SK-3) and its
+   *  browsers, live (#2024), each pressed to open what it is. They left its tab (#5339). */
+  const usingOn = useCallback<UsingOn>(
+    (session) => (
+      <>
+        <SkillRunChip session={session} onOpen={openSkillRun} />
+        <PaneBrowsers
+          browsers={chatBrowsersShown.get(session) ?? NO_BROWSERS}
+          onOpen={openChatBrowser}
+        />
+      </>
+    ),
+    [chatBrowsersShown, openChatBrowser, openSkillRun],
   );
 
   /**
@@ -11785,9 +11834,6 @@ export const PlaneView = memo(function PlaneView({
                       draggedAtRef={draggedAt}
                       notGoingBack={notGoingBack}
                       isPinned={isPinned}
-                      nameBoxFor={nameBoxFor}
-                      saveName={saveName}
-                      endRename={endRename}
                       pressTab={pressTab}
                       referenceChats={referenceChats}
                       wrapping={wrapping}
@@ -11803,15 +11849,12 @@ export const PlaneView = memo(function PlaneView({
                       tasksRunningOf={tasksRunningOf}
                       waitingOn={waitingOn}
                       showFromChip={showFromChip}
-                      openSkillRun={openSkillRun}
                       freshOf={freshOf}
                       freshMarkOf={freshMarkOf}
                       planeUpdates={planeUpdates}
                       handedFrom={handedFrom}
                       workItems={workItems}
                       restoring={restoringChats}
-                      browsersOfTab={browsersOfTab}
-                      openBrowser={openChatBrowser}
                     />
                     {/* The centre is where a chat is, so its menu is the pane's rows: the two splits,
                 the tab in front's Tile all, the key the palette claimed, and — under the line —
@@ -11854,6 +11897,7 @@ export const PlaneView = memo(function PlaneView({
                                   finished={frontFinished}
                                   explaining={chipToExplain}
                                   tasksOn={tasksOn}
+                                  usingOn={usingOn}
                                   others={frontOthers}
                                   asked={frontAsked}
                                   asks={asksHere}
@@ -12062,6 +12106,22 @@ export const PlaneView = memo(function PlaneView({
                 )}
 
                 {workspaceWrites.dialog}
+
+                {renamingTab && tabRenames && (
+                  <RenameTab
+                    // A tab that splits or closes to one pane while it is open asks again.
+                    key={`${renamingTab.tab}:${tabRenames.kind}`}
+                    renames={tabRenames}
+                    name={tabNameOf(tabs.byId[renamingTab.tab])}
+                    chat={nameOf(chatOf(tabs, renamingTab.tab) ?? -1)}
+                    own={tabs.byId[renamingTab.tab].own !== undefined}
+                    trouble={renamingTab.trouble}
+                    busy={renamingTab.busy}
+                    onRename={(answer) => void saveTabName(answer)}
+                    onClear={clearTabName}
+                    onCancel={() => setRenamingTab(undefined)}
+                  />
+                )}
 
                 {renamingChat && (
                   <RenameChat
@@ -13035,7 +13095,7 @@ function paneChatName(tabs: Tabs, session: number): string | undefined {
   return undefined;
 }
 
-/** The tab chat `session` is the own chat of, where it has one: where it renames in place. */
+/** The tab chat `session` is the own chat of, where it has one: the tab it leads. */
 function ownTabOf(tabs: Tabs, session: number): number | undefined {
   return tabs.order.find((id) => chatOf(tabs, id) === session);
 }

@@ -47,7 +47,8 @@ When two choices conflict, the higher priority wins.
 - **App**: the desktop GUI. **Core**: the Rust library the app and the CLI share.
   **`purlis` binary**: the CLI on PATH, called by hooks, scripts and agents.
 - **Session**: one harness process in one PTY, owned by the core. **Chat**: a session as the
-  UI shows it: its tab, its workspace, its state. **Shell tab**: a chat running the operator's
+  UI shows it: its row, the pane that shows it, its workspace, its state. **Shell**: a chat running
+  the operator's
   own shell, with no harness and no profile (ADR 0062).
 - **Run state** (ADR 0076): `queued`, `starting`, `working`, `input-required`, `paused` and
   `hibernated` while a run lives, then `completed`, `failed` or `stopped`, once and for good.
@@ -55,7 +56,8 @@ When two choices conflict, the higher priority wins.
   the host, the operator or a policy, and never harness output (`state::run`). A chat's state is
   its current run's, and needs you is a view over its runs and its items. Until the board moves
   onto runs, the sidebar still draws each chat as `running`, `waiting` (on you), `done`,
-  `failed` or `unknown` (`state::State`; the move is #791). A shell tab draws no state mark until a harness in it
+  `failed` or `unknown` (`state::State`; the move is #791). A shell draws no state mark until a
+  harness in it
   reports one: its terminal mark says what it is, and `unknown` there read as a spinner.
 - **Python charter**: the current implementation, frozen, and the reference for differential
   tests until it is retired.
@@ -72,7 +74,8 @@ When two choices conflict, the higher priority wins.
      is open (a shell, a harness without purlis's hooks), it is a faint hand with no count
      that names those chats; with neither, nothing is drawn. Ignoring an item lasts until its
      chat asks again (purlis#248).
-   - **Center:** tabs and free split panes.
+   - **Center:** a strip of tabs, each a tree of split panes; a pane holds a chat, a view or
+     nothing.
    - **Right:** panels for the focused workspace: repos, branches, CI, todos, personas, and
      the plane's vaults. Amended 2026-09-26 (SI-3): the panels are not read-only any more.
      Each write goes through the core function its CLI command calls, so the window and a
@@ -114,12 +117,13 @@ When two choices conflict, the higher priority wins.
    - **A chat inherits none of that from purlis itself.** purlis may be launched from inside
      a harness session, and a chat that inherited its `CLAUDE_PID` would report the launcher's
      identity as its own.
-   - **A harness started by hand in a shell tab is caught by the command that started it, not
-     by anything it prints** (ADR 0062). A shell tab — the operator's own `$SHELL`, no harness,
-     `New shell` beside `New tab` — has purlis's shims first on its `PATH`, kept first after
+   - **A harness started by hand in a shell is caught by the command that started it, not
+     by anything it prints** (ADR 0062). A shell — the operator's own `$SHELL`, no harness, **New
+     shell** beside **New chat** — has purlis's shims first on its `PATH`, kept first after
      zsh's and bash's own start files. `claude`, `codex` or `opencode` typed there runs
      `purlis shell-guard`, which says the harness runs outside purlis's session tracking,
-     tells the app over this socket so the tab shows a banner with **Open as chat**, and then
+     tells the app over this socket so the shell's pane shows a banner with **Open as chat**, and
+     then
      runs the real program with the shims off its `PATH`. It moves no chat's state.
 4. **A worktree per writing chat.** The goal is that a chat that writes to a repo gets its own
    git worktree — a **piece** — by default. What ships today is narrower:
@@ -168,10 +172,12 @@ When two choices conflict, the higher priority wins.
    (purlis#250).
    **The chats start behind the window** (2026-10-13, after the operator's report that a launch
    with many chats to put back took minutes). Reopening registers every chat at once, which
-   starts nothing: each has its tab in its place from the first frame, drawn as restoring, and
+   starts nothing: each has its row from the first frame, and each tab its panes, drawn as
+   restoring, and
    the window is usable however many there are. The chats then start a few at a time across
-   every project (three to four, by the machine's cores), the chat in front of the project in
-   front first, then each project's chat in front, then the rest in the record's order. One
+   every project (three to four, by the machine's cores), the chats on screen in the project in
+   front first, then the chats in each project's front tabs, then the rest in the record's order.
+   One
    project's chats take all of those places but one, so a project whose starts hang or crawl
    never holds up another's (2026-11-03, #4986). Every
    chat still comes back, and each start is the one every chat goes through, with every check
@@ -311,7 +317,7 @@ how it is cited and nothing here is renumbered.
     drag a tab along its own strip, with the pointer or the keyboard, and a drop across the
     pinned tabs' boundary pins or unpins it. Each order is kept where that strip's arrangement
     already was, on this machine and never committed: projects in the window arrangement of
-    decision 25, workspace pins in the same store, chats in the plane's own
+    decision 25, workspace pins in the same store, a workspace's tabs in the plane's own
     `.charter/app/reopen.json`. **ADR 0039, as amended 2026-09-26.**
 30. **The plane root is the workspace strip's first tab, and a chat knows where it was
     started.** The root tab is always drawn, drawn as an icon whose tooltip is _"Plane — chats
@@ -384,16 +390,18 @@ how it is cited and nothing here is renumbered.
     ask). A workspace's records follow it LIVE or LOCAL; the plane root's stay on this machine.
     The next chat's briefing names the place's newest record in one line, its title quoted as
     data. **Smart close sends its prompt** — the operator's click is the consent, the one
-    exception to decision 31 — and the tab closes only when the record is saved, never on
-    anything the chat printed; with no record in about five minutes the tab goes back to normal
-    and stays open. `purlis session list|show` read them back, and purlis's `smart-close`
-    skill is the procedure. **In the window**, closing a chat asks Cancel, Close or Smart close;
+    exception to decision 31 — and the chat ends only when the record is saved, never on
+    anything the chat printed; with no record in about five minutes the chat goes back to normal and
+    keeps running. `purlis session list|show` read them back, and purlis's `smart-close`
+    skill is the procedure. **In the window**, **End…** asks Cancel, End or Smart close, and closing
+    a pane asks nothing and ends nothing;
     Smart close is sent (one bracketed paste and Enter, in one write) at once to a waiting chat
     and at the next `Stop` to a running one, and is refused to a chat asking a question
     mid-turn — a `Notification` while a turn runs, which the board now tells from the nudge of
-    an idle chat — and offered to no shell tab, no chat never prompted and none reporting
-    nothing. Close is the default at one turn or fewer. The tab wears a breathing amber mark
-    while it wraps up; its menu's Cancel smart close, or the operator typing into the chat
+    an idle chat — and offered to no shell, no chat never prompted and none reporting
+    nothing. End keeps the keyboard. The chat's pane head and row wear a breathing amber mark while
+    it wraps up; **Cancel smart close** (the pane head's state button, and first in the chat's
+    list), or the operator typing into the chat
     (not the terminal's own answers, not the mouse, and not an answer to the chat's own question)
     cancels it. A chat that ends on its own mid-close is an ended chat whose record was not
     written. **ADR 0064.** **The operator can always get an old session back**
@@ -434,12 +442,12 @@ dispatch` by each spelling it has (`--name`, `--to`, `--profile` first, and `rep
     2026-11-04, #5152, amending that of 2026-11-03); a call naming another site
     for a login already declared asks the same way to replace it (#4996). So does `browser_fill_secret` (#5115): its consent is the person's answer to its one notice, which names the key and the exact site the field is on. Codex's approval and
     sandbox are whole-session switches, so it carries none (ADR 0064's measurements). A record's tab resumes that record whichever place is
-    in front. **Smart close puts the chat into the background** (SI-8f): its tab shrinks to a
-    fixed chip — the chat's icon and the breathing mark, the name in its tooltip — at the chat
-    strip's left edge before the pinned tabs, and the front goes exactly where Close would send
-    it. The chip, clicked, shows the chat working. Saved, it goes and a quiet notice offers
-    **Open record**; given up, ended or refused, the tab comes back in its old place and the
-    title bar's needs-you list says why. A line the harness's sandbox kept from the hook socket
+    in front. **Smart close leaves the chat where it is** (SI-8f, as amended on 2026-11-02): there
+    is no strip chip, because a chat has no tab. Its pane head and row wear the breathing mark while
+    it wraps up. Saved, the chat ends: its pane keeps the last screen with Resume and Clear pane and
+    links the record, and a quiet notice offers **Open record**. Given up, ended or refused, the
+    mark goes and the title bar's needs-you list says why. A line the harness's sandbox kept from
+    the hook socket
     (Codex's default one) is left beside the chat and passed on by that chat's next `Stop` hook,
     only for that chat, that conversation and within the five minutes the app waits
     (`sessionrecord::relay`); the app closes on it once.

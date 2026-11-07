@@ -28,8 +28,9 @@
 //! # A worktree's life
 //!
 //! The app cuts it, never the chat, and by the brokered route
-//! ([`crate::gitbroker::in_a_checked_clone`]): a sandboxed chat may not write a clone's
-//! `.git`, and git run for it reads no configuration it could have shaped. The persona chat
+//! ([`crate::gitbroker::in_a_checked_clone`]): a sandboxed chat in a branch folder may not
+//! write its clone's `.git` (the folder's own record there, `.git/worktrees/<name>`, on every
+//! harness), and git run for it reads no configuration it could have shaped. The persona chat
 //! starts in it and commits on its branch. **purlis merges nothing for it by itself, and no
 //! chat can have purlis merge it.** The report names the branch from the dispatch's record, which
 //! the app wrote.
@@ -203,9 +204,8 @@ impl Refused {
                              as its own persona in another workspace ('{workspace}'): a \
                              chat's own persona needs no grant, so none can stand for it, \
                              and with nobody here that rule does not carry a chat into \
-                             another workspace. The person can start it from this chat's \
-                             tab. Leave out `--in` and the new chat works in this chat's \
-                             folder."
+                             another workspace. The person can start it from this chat's menu. \
+                             Leave out `--in` and the new chat works in this chat's folder."
                         );
                     }
                     (Some(asking), Some(target)) => format!(

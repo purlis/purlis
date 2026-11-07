@@ -694,6 +694,88 @@ fn a_fill_goes_in_beside_a_window_on_another_site_or_one_with_no_link_to_it() {
     }
 }
 
+/// A window that a frame of the page opened is related to the page: a fill beside one on the
+/// field's site is refused.
+#[test]
+fn a_fill_is_refused_beside_a_window_a_frame_of_the_page_opened() {
+    let (browser, engine) = browser();
+    as_fields(&engine, "one_line", Twist::None);
+    let secret = ref_of(&snapshot(&browser, 1), "- textbox \"Secret word\"");
+    assert!(
+        super::super::super::lock(&browser.inner.state)
+            .page("PAGE-1")
+            .is_some_and(|page| page.frames.contains_key("PAYMENT-FRAME")),
+        "the frame is known"
+    );
+    a_window_opens(
+        &browser,
+        &engine,
+        "PAGE-2",
+        "http://fixture.test/more.html",
+        "PAYMENT-FRAME",
+        true,
+    );
+    let holding = Arc::new(Holding::default());
+
+    let filled = browser.fill_secret(
+        browser.epoch(),
+        &fill_of(secret, "http://fixture.test"),
+        Arc::clone(&holding) as Arc<dyn FillHold>,
+    );
+
+    assert!(
+        matches!(&filled, Err(Refusal::NotFilled(why)) if why.contains("related to this page")),
+        "{}",
+        ended_as(&filled)
+    );
+    assert_eq!(inserted(&engine), 0);
+}
+
+/// A window still relates the windows it linked once it is gone: a fill beside a window on the
+/// field's site, opened by one the page opened and since closed, is refused.
+#[test]
+fn a_fill_is_refused_beside_a_window_related_through_one_since_closed() {
+    let (browser, engine) = browser();
+    as_fields(&engine, "one_line", Twist::None);
+    let secret = ref_of(&snapshot(&browser, 1), "- textbox \"Secret word\"");
+    a_window_opens(
+        &browser,
+        &engine,
+        "PAGE-2",
+        "http://other.test/a.html",
+        "PAGE-1",
+        true,
+    );
+    a_window_opens(
+        &browser,
+        &engine,
+        "PAGE-3",
+        "http://fixture.test/b.html",
+        "PAGE-2",
+        true,
+    );
+    a_window_ends(&engine, "PAGE-2");
+    wait_for("the middle window is gone", || {
+        super::super::super::lock(&browser.inner.state)
+            .page("PAGE-2")
+            .is_none()
+    });
+    let holding = Arc::new(Holding::default());
+
+    let filled = browser.fill_secret(
+        browser.epoch(),
+        &fill_of(secret, "http://fixture.test"),
+        Arc::clone(&holding) as Arc<dyn FillHold>,
+    );
+
+    assert!(
+        matches!(&filled, Err(Refusal::NotFilled(why)) if why.contains("related to this page")),
+        "{}",
+        ended_as(&filled)
+    );
+    assert_eq!(inserted(&engine), 0);
+}
+
 #[test]
 fn a_hold_ends_only_once_its_related_windows_are_gone() {
     let holding = Arc::new(Holding::default());
@@ -792,6 +874,150 @@ fn a_chosen_load_that_shows_no_document_begins_no_chain() {
     let _ = snapshot(&browser, 2);
 
     assert_eq!(began(&browser), before);
+}
+
+/// A chosen load that failed shows the engine's own page, though the engine names the address it
+/// was for: no chain begins there (#5230).
+#[test]
+fn a_chosen_load_that_failed_begins_no_chain_where_the_engine_names_its_address() {
+    let (browser, engine) = browser();
+    let _ = snapshot(&browser, 1);
+    let addressing = browser.addressing("PAGE-1", crate::drive::Why::Addressed);
+    paused(
+        &engine,
+        "R-GONE",
+        "http://other.test/gone.html",
+        "GET",
+        "Document",
+    );
+    wait_for("the load is chosen", || {
+        super::super::super::lock(&browser.inner.state)
+            .page("PAGE-1")
+            .is_some_and(|page| page.chain_begins.is_some())
+    });
+    drop(addressing);
+
+    engine.emit(
+        "Page.frameNavigated",
+        json!({ "frame": {
+            "id": "PAGE-1", "loaderId": "LOADER-ERROR", "name": "",
+            "url": "http://other.test/gone.html",
+            "unreachableUrl": "http://other.test/gone.html",
+        } }),
+        Some("S-PAGE-1"),
+    );
+    let _ = snapshot(&browser, 2);
+
+    let state = super::super::super::lock(&browser.inner.state);
+    let page = state.page("PAGE-1").expect("the page");
+    assert_eq!(
+        page.chain_began, None,
+        "a chain began on a load that failed"
+    );
+    assert!(
+        page.chain_begins.is_none(),
+        "the failed load still waits to begin one"
+    );
+}
+
+/// A document the page itself asked for at the very address a call wrote is the page's, not the
+/// call's: it begins no chain (#5230).
+#[test]
+fn a_document_the_page_asked_for_at_the_address_a_call_wrote_is_not_chosen() {
+    let (browser, engine) = browser();
+    let _ = snapshot(&browser, 1);
+    let _addressing = browser.addressing("PAGE-1", crate::drive::Why::Addressed);
+    engine.emit(
+        "Page.frameRequestedNavigation",
+        json!({
+            "frameId": "PAGE-1",
+            "reason": "scriptInitiated",
+            "url": "http://other.test/planted.html",
+            "disposition": "currentTab",
+        }),
+        Some("S-PAGE-1"),
+    );
+    paused(
+        &engine,
+        "R-PLANTED",
+        "http://other.test/planted.html",
+        "GET",
+        "Document",
+    );
+    // Read once the engine's words are in: a snapshot answers after them.
+    let _ = snapshot(&browser, 2);
+
+    let state = super::super::super::lock(&browser.inner.state);
+    let page = state.page("PAGE-1").expect("the page");
+    assert!(
+        page.chain_begins.is_none(),
+        "the page's own document began a chain as though the call chose it"
+    );
+}
+
+/// Another page's own document, sent while a call addresses this one, is no load the call
+/// chose: it begins no chain, and the call's own load, after it, still does.
+#[test]
+fn a_document_another_page_loads_while_a_call_addresses_this_one_is_not_chosen() {
+    let (browser, engine) = browser();
+    let _ = snapshot(&browser, 1);
+    a_window_opens(&browser, &engine, "PAGE-2", "about:blank", "PAGE-1", false);
+    let _addressing = browser.addressing("PAGE-1", crate::drive::Why::Addressed);
+    paused_in(
+        &engine,
+        "R-OTHER",
+        "http://other.test/own.html",
+        "GET",
+        "Document",
+        "PAGE-2",
+    );
+    paused(
+        &engine,
+        "R-CHOSEN",
+        "http://other.test/chosen.html",
+        "GET",
+        "Document",
+    );
+    // Read once the engine's words are in: a snapshot answers after them.
+    let _ = snapshot(&browser, 2);
+
+    let state = super::super::super::lock(&browser.inner.state);
+    assert!(
+        state
+            .page("PAGE-2")
+            .expect("the window")
+            .chain_begins
+            .is_none(),
+        "the other page's own document began a chain as though the call chose it"
+    );
+    assert!(
+        state
+            .page("PAGE-1")
+            .expect("the page")
+            .chain_begins
+            .is_some(),
+        "the call's own load begins none"
+    );
+}
+
+/// The engine is about to send `method` to `url` for the page's main frame, as a `kind` of
+/// resource.
+fn paused(engine: &Engine, request: &str, url: &str, method: &str, kind: &str) {
+    paused_in(engine, request, url, method, kind, "PAGE-1");
+}
+
+/// The engine is about to send `method` to `url` for frame `frame`, as a `kind` of resource.
+fn paused_in(engine: &Engine, request: &str, url: &str, method: &str, kind: &str, frame: &str) {
+    engine.emit(
+        "Fetch.requestPaused",
+        json!({
+            "requestId": request,
+            "request": { "url": url, "method": method, "headers": {} },
+            "frameId": frame,
+            "resourceType": kind,
+        }),
+        None,
+    );
 }
 
 #[test]
@@ -1150,6 +1376,35 @@ fn once_the_filled_page_loads_another_document_its_keys_go_again() {
         &id(2),
         Call::Press {
             page: None,
+            keys: vec!["Enter".to_owned()],
+        },
+    );
+    assert!(pressed.is_ok(), "{}", ended_as(&pressed));
+}
+
+/// The filled page's keys go again once it shows another document, though a window related to it
+/// still keeps the hold until it is gone.
+#[test]
+fn once_the_filled_page_leaves_its_keys_go_again_while_a_related_window_keeps_the_hold() {
+    let holding = Arc::new(Holding::default());
+    let (browser, engine) = filled_under(&holding);
+    a_window_opens(&browser, &engine, "PAGE-2", "about:blank", "PAGE-1", true);
+
+    main_frame_loads(&engine, "http://fixture.test/next.html");
+    wait_for("the related window is closed", || {
+        closes_asked_for(&engine).contains(&"PAGE-2".to_owned())
+    });
+    assert_eq!(holding.told(), ["held, 0 written"], "still held");
+
+    let page = super::super::super::lock(&browser.inner.state)
+        .page("PAGE-1")
+        .expect("the page")
+        .id
+        .clone();
+    let pressed = browser.call(
+        &id(2),
+        Call::Press {
+            page: Some(page),
             keys: vec!["Enter".to_owned()],
         },
     );

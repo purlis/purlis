@@ -44,6 +44,23 @@ const MOST_READ: usize = 16_000_000;
 /// through for.
 const MOST_LOOKED_AT: usize = 2_000_000_000;
 
+/// How much of a string is read before it is said as blanked, whole.
+#[derive(Clone, Copy)]
+struct Within {
+    /// The most characters of its readings, added up, held.
+    read: usize,
+    /// The most characters of its readings, added up, looked through for all it is looked
+    /// through for.
+    looked_at: usize,
+}
+
+impl Within {
+    const USUAL: Self = Self {
+        read: MOST_READ,
+        looked_at: MOST_LOOKED_AT,
+    };
+}
+
 /// What stands where a text was taken out.
 const SAID: &str = "(blanked)";
 
@@ -83,13 +100,14 @@ impl Scrub {
 
     /// `text` with every text kept out taken out.
     pub(crate) fn text(&self, text: &str) -> String {
-        let out = taken_out(text.to_owned(), &self.exact, false);
-        taken_out(out, &self.loose, true)
+        let out = taken_out(text.to_owned(), &self.exact, false, Within::USUAL);
+        taken_out(out, &self.loose, true, Within::USUAL)
     }
 
     /// Whether `text` holds any text kept out.
     pub(crate) fn holds(&self, text: &str) -> bool {
-        holds_in_a_reading(text, &self.exact, false) || holds_in_a_reading(text, &self.loose, true)
+        holds_in_a_reading(text, &self.exact, false, Within::USUAL)
+            || holds_in_a_reading(text, &self.loose, true, Within::USUAL)
     }
 }
 
@@ -359,21 +377,21 @@ fn readings(text: &str, most: usize) -> Option<Vec<Vec<Read>>> {
     (read <= most).then_some(all)
 }
 
-/// The readings of `text` to look through for `needles`, or `None` where that would take past the
-/// limits: such a text is said as holding what is kept out.
-fn readings_for(text: &str, needles: usize) -> Option<Vec<Vec<Read>>> {
-    let all = readings(text, MOST_READ)?;
+/// The readings of `text` to look through for `needles`, or `None` where that would take past
+/// `within`: such a text is said as holding what is kept out.
+fn readings_for(text: &str, needles: usize, within: Within) -> Option<Vec<Vec<Read>>> {
+    let all = readings(text, within.read)?;
     let read: usize = all.iter().map(Vec::len).sum();
-    (read.saturating_mul(needles) <= MOST_LOOKED_AT).then_some(all)
+    (read.saturating_mul(needles) <= within.looked_at).then_some(all)
 }
 
 /// `text` with each of `needles` taken out of each reading of it. One pass of each, so what stands
 /// in its place is never looked into again for long, whatever the needle is.
-fn taken_out(mut text: String, needles: &[Needle], loose: bool) -> String {
+fn taken_out(mut text: String, needles: &[Needle], loose: bool, within: Within) -> String {
     if needles.is_empty() {
         return text;
     }
-    let Some(mut all) = readings_for(&text, needles.len()) else {
+    let Some(mut all) = readings_for(&text, needles.len(), within) else {
         return SAID.to_owned();
     };
     for needle in needles {
@@ -390,11 +408,11 @@ fn taken_out(mut text: String, needles: &[Needle], loose: bool) -> String {
 }
 
 /// Whether any reading of `text` holds any of `needles`.
-fn holds_in_a_reading(text: &str, needles: &[Needle], loose: bool) -> bool {
+fn holds_in_a_reading(text: &str, needles: &[Needle], loose: bool, within: Within) -> bool {
     if needles.is_empty() {
         return false;
     }
-    let Some(all) = readings_for(text, needles.len()) else {
+    let Some(all) = readings_for(text, needles.len(), within) else {
         return true;
     };
     needles.iter().any(|needle| {
@@ -412,13 +430,13 @@ pub(crate) fn holds_any(text: &str, blanked: &[&str]) -> bool {
         .filter(|one| one.chars().count() >= SHORTEST_SCRUBBED)
         .map(|one| needle(one))
         .collect();
-    holds_in_a_reading(text, &needles, false)
+    holds_in_a_reading(text, &needles, false, Within::USUAL)
 }
 
 /// Whether any reading of `text` holds any of `loose`, ignoring case and any spaces or dashes
 /// between its characters.
 pub(crate) fn holds_loosely(text: &str, loose: &[&str]) -> bool {
-    holds_in_a_reading(text, &loose_needles(loose), true)
+    holds_in_a_reading(text, &loose_needles(loose), true, Within::USUAL)
 }
 
 #[cfg(test)]

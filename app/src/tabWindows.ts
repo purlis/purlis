@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { emitTo } from "@tauri-apps/api/event";
-import { commands, type LaidNode, type LaidOut, type PlaneId } from "./bindings";
+import { commands, type LaidNode, type LaidOut, type PlaneId, type StudioLink } from "./bindings";
 import { chatsOf, type Reopening, tabsOf } from "./laidOut";
 import type { StartNotes } from "./ChatNotices";
 import type { HeldBlock } from "./sandboxBlocks";
@@ -106,9 +106,17 @@ export type PressHere = { plane: string; chat: number; handed?: HandedChat };
 /**
  * **A chat a tab window started or resumed and hands on** (#5533): no list has it yet, so it
  * carries where it is filed, whether it was started (which replaces nothing) or resumed (which
- * lands as a press does), and what its tab is named by.
+ * lands as a press does), what its tab is named by, and what it is known by (#5573).
  */
-export type HandedChat = { filed: string; started: boolean; as: PressedChat };
+export type HandedChat = { filed: string; started: boolean; as: PressedChat } & StartedAs;
+
+/**
+ * **What a chat started here is known by beyond its name** (#5573): a shell's mark, and what the
+ * Skill studio started it for. Kept by the window the chat lands in, so a chat handed on takes
+ * them along, and the window that started it keeps nothing of it. Its start's notes need no
+ * place here: the window holding them hands them to the one that comes to show it (#5225).
+ */
+export type StartedAs = { shell?: true; studio?: StudioLink };
 
 /**
  * **A press a tab window does not take goes to the project window** (#5330): the window holding

@@ -9,6 +9,7 @@ import type { Channel } from "@tauri-apps/api/core";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { BrowserFrame } from "./bindings";
+import { forgetOrigins } from "./browserWatch";
 import { pickIn, selectNamed } from "./ui/select/select.testkit";
 import { onAMac } from "./tabKeys";
 import { stripNamed } from "./test-strips";
@@ -53,6 +54,8 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   clearMocks();
+  // Where each browser's page is outlives a render: each test starts from none.
+  forgetOrigins();
 });
 
 const PLANE = "/home/dev/plane";
@@ -639,6 +642,25 @@ describe("a browser the person opened goes where they send it (#2176)", () => {
 
     expect(await screen.findByText("localhost:5173 on pool builds")).toBeInTheDocument();
     expect(screen.queryByText(/on this (Mac|computer)/)).toBeNull();
+  });
+
+  it("names no site, plainly, once its page is told with none, not even where it was sent", async () => {
+    besides.go_browser = () => ({ outcome: "went", address: "https://example.com/docs" });
+    const host = await opened();
+    fireEvent.change(await screen.findByRole("textbox", { name: "Address" }), {
+      target: { value: "example.com/docs" },
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Go" }));
+    expect(await screen.findByText(/^example\.com on this/)).toBeInTheDocument();
+
+    // A page whose address holds what purlis kept out is told with no site at all.
+    host.page(null);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("browser-chip")).toHaveTextContent(/^On this (Mac|computer)$/),
+    );
+    expect(screen.queryByText(/example\.com/)).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("names no device while neither its view nor the chats' browsers say where it runs (#2050)", async () => {

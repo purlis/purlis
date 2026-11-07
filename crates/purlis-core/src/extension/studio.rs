@@ -31,9 +31,10 @@
 //!   the sandbox is missing at a question, nothing starts ([`Confined::start`]).
 //!
 //! The words are known only where the `skill-studio` flag is on
-//! ([`super::capability::Capability::known`]). Three are version 1 of the public extension API,
-//! whose messages are `docs/extension-api.md` and `tests/fixtures/extension-api/v1.json`; the
-//! others are experimental ([`super::capability::Capability::VERSION_ONE`]).
+//! ([`super::capability::Capability::known`]). Three are versions 1 and 2 of the public
+//! extension API, whose messages are `docs/extension-api.md` and the files of
+//! `tests/fixtures/extension-api/` (`v1.json` protocol 4, `v2.json` protocol 5); the others are
+//! experimental ([`super::capability::Capability::VERSION_ONE`]).
 
 pub mod grading;
 
@@ -46,13 +47,30 @@ use super::capability::Capability;
 use crate::sandbox::Os;
 use crate::sandbox::hosts::Host;
 
-/// **Version 1 of the extension API, as it was frozen** (ADR 0101, amended 2026-11-02).
+/// **Version 1 of the extension API, as it was frozen** (ADR 0101, amended 2026-11-02):
+/// protocol 4.
 #[cfg(test)]
 pub(crate) fn version_one() -> serde_json::Value {
     serde_json::from_str(include_str!(
         "../../../../tests/fixtures/extension-api/v1.json"
     ))
     .expect("the contract is JSON")
+}
+
+/// **Version 2 of the extension API** (ADR 0101, amended 2026-11-07; #4680): protocol 5, whose
+/// route question says what each skill costs.
+#[cfg(test)]
+pub(crate) fn version_two() -> serde_json::Value {
+    serde_json::from_str(include_str!(
+        "../../../../tests/fixtures/extension-api/v2.json"
+    ))
+    .expect("the contract is JSON")
+}
+
+/// Every version of the extension API, each of which every build still answers.
+#[cfg(test)]
+pub(crate) fn every_version() -> [serde_json::Value; 2] {
+    [version_one(), version_two()]
 }
 
 /// The most hosts one manifest declares. Each is named in the approval prompt, one by one.
@@ -881,13 +899,16 @@ pub enum Ask<'a> {
         files: &'a [HandedFile],
     },
     /// **Which of a chat's `skills` its listing hides** (SK-15b, ADR 0102 §1), asked at its
-    /// start: each skill the router may hide, by name and description and whether the chat pins
-    /// it (never hidden), what the rest of the listing spends, and the budget. Never a prompt,
+    /// start: each skill the router may hide, by name and description, whether the chat pins it
+    /// (never hidden) and, from [`ROUTE_COSTS_SINCE`], what it costs; what the rest of the
+    /// listing spends, the budget, and, from [`ROUTE_COSTS_SINCE`], what the index costs, listed
+    /// whenever the router hides a skill. Never a prompt,
     /// the chat's id or anything else of the chat.
     Route {
         skills: &'a [RouteSkill],
         budget: RouteBudget,
         besides: RouteBudget,
+        index: RouteBudget,
     },
     /// **A grade of a skill** (protocol 4, #3236): the grade request, whose answer is run-chat
     /// requests and then the grade report, asked only by
@@ -965,7 +986,14 @@ pub struct RouteSkill {
     pub name: String,
     pub description: String,
     pub pinned: bool,
+    /// **What it costs of the budget's characters on the chat's harness** (#4680), counted as
+    /// `besides` is. Asked only from [`ROUTE_COSTS_SINCE`].
+    pub chars: usize,
 }
+
+/// **The protocol whose route question gives each skill its `chars`, and the index's cost**
+/// (#4680; ADR 0101, amended 2026-11-07). A router of an earlier protocol is asked the question it was written for.
+pub const ROUTE_COSTS_SINCE: u32 = 5;
 
 /// Skills and characters of what is listed of them: a chat's budget, or what part of its listing
 /// spends.
@@ -1022,9 +1050,51 @@ impl Ask<'_> {
         }
     }
 
-    /// Its `ask` in the request line.
-    pub(crate) fn line(&self) -> serde_json::Value {
-        serde_json::to_value(self).unwrap_or(serde_json::Value::Null)
+    /// Its `ask` in the request line of `protocol`: a route question below
+    /// [`ROUTE_COSTS_SINCE`] is the one protocol 4 froze, with no skill's `chars` and no `index`.
+    pub(crate) fn line(&self, protocol: u32) -> serde_json::Value {
+        match self {
+            Self::Route {
+                skills,
+                budget,
+                besides,
+                ..
+            } if protocol < ROUTE_COSTS_SINCE => serde_json::to_value(FrozenRoute {
+                ask: "route",
+                skills: skills.iter().map(FrozenRouteSkill::of).collect(),
+                budget: *budget,
+                besides: *besides,
+            }),
+            _ => serde_json::to_value(self),
+        }
+        .unwrap_or(serde_json::Value::Null)
+    }
+}
+
+/// [`Ask::Route`] as protocols 3 and 4 ask it, frozen (ADR 0101, amended 2026-11-02).
+#[derive(Serialize)]
+struct FrozenRoute<'a> {
+    ask: &'static str,
+    skills: Vec<FrozenRouteSkill<'a>>,
+    budget: RouteBudget,
+    besides: RouteBudget,
+}
+
+/// A [`RouteSkill`] as protocols 3 and 4 hand it: no `chars`.
+#[derive(Serialize)]
+struct FrozenRouteSkill<'a> {
+    name: &'a str,
+    description: &'a str,
+    pinned: bool,
+}
+
+impl<'a> FrozenRouteSkill<'a> {
+    fn of(skill: &'a RouteSkill) -> Self {
+        Self {
+            name: &skill.name,
+            description: &skill.description,
+            pinned: skill.pinned,
+        }
     }
 }
 

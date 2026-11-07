@@ -218,6 +218,11 @@ pub struct PoolVersion {
     pub owed: Vec<PoolOwed>,
     /// Why purlis could not read which projects those are, shown safely; none where it could.
     pub owed_why: Option<String>,
+    /// **What an older runner holds that bringing its work back does not reach**, as the last
+    /// look found it (ruled 2026-11-07), a sentence each, shown safely: a stash, a commit on no
+    /// branch, a clone only there, or one whose folder here was removed or renamed, keeps the
+    /// runner. Empty where none does.
+    pub left: Vec<String>,
 }
 
 /// **A project an older runner of a pool waits on** (#5461): it still has to bring back what its
@@ -702,6 +707,43 @@ pub async fn docker_pool_remove_held_runner(
     }
 }
 
+/// **Lets the older runner `runner` go, as the person pressed Let it go in Devices** (the
+/// person's ruling of 2026-11-07): a draining runner the drain keeps for work no fetch brings
+/// here, removed with that work ([`crate::poolfollow::let_go`]), only where all it holds now is
+/// among what the person was `shown`. Its pool and the pool's runner now are untouched. The window's alone, as removing a held runner is. Why not, where it does
+/// not go.
+#[tauri::command]
+#[specta::specta]
+pub async fn docker_pool_let_runner_go(
+    app: tauri::AppHandle,
+    runner: String,
+    shown: Vec<String>,
+) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        crate::off_the_window("letting an older runner go", move || {
+            let machine = Machine::here(&config_root()?)?;
+            crate::poolfollow::let_go(
+                &machine,
+                &runner,
+                &shown,
+                &|to| crate::runnerlinks::chats_on(to),
+                &|to| crate::runnerlinks::left_on(to, &machine.config),
+            )?;
+            if let Some(host) = tauri::Manager::try_state::<crate::sessionhost::SessionHost>(&app) {
+                host.connection().links_to_gone_runners_end(&machine.config);
+            }
+            Ok(())
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (app, runner, shown);
+        Err(NOT_HERE.to_owned())
+    }
+}
+
 /// **Brings back the held runner `runner`'s conversations to its pool's runner, as the person
 /// pressed** (#4633, ruled 2026-11-02), and then removes it, once none is left behind
 /// ([`purlis_core::pools::bring_back`]). The window's alone, as removing one is. What stopped
@@ -875,6 +917,10 @@ pub fn version_on(
             .map(suspends_shown),
         owed,
         owed_why,
+        left: crate::poolfollow::left_on(&machine.config, name)
+            .iter()
+            .map(|one| crate::devices::shown_safely(one))
+            .collect(),
     })
 }
 

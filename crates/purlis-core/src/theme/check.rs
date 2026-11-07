@@ -557,6 +557,10 @@ pub const PAIRS: &[Pair] = &[
     p("markdown.code-block", "surface.sunken", TEXT),
     p("markdown.quote", "surface.sunken", TEXT),
     p("markdown.heading", "surface.sunken", TEXT),
+    // - A link on the launcher's page (#5347): with no project open, the welcome is drawn on the
+    //   window's deepest surface, and its links (a door page's back, Open a folder) are the
+    //   button family's `link` look, words in `markdown.link`.
+    p("markdown.link", "surface.deep", TEXT),
     // - The window's own text selection, on each ground it is drawn on (#2706): the window, a
     //   field, a pane and a Notice, a dialog, and a trouble Notice. A see-through selection is
     //   measured laid over each. A token left to the platform is not measured (`PLATFORM_DRAWN`);

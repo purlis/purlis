@@ -4977,6 +4977,60 @@ fn a_saves_push_of_a_hand_made_commit_holding_a_credential_is_refused() {
     }
 }
 
+/// What origin has is asked of origin: a commit it does not have is scanned before a save
+/// pushes it, whatever the plane's own refs say origin has.
+#[test]
+fn a_saves_push_scans_what_origin_lacks_whatever_the_planes_own_refs_say() {
+    let (fixture, bare) = published();
+    let before = ask(&bare, &["rev-parse", "main"]);
+    std::fs::write(fixture.root.join("notes.md"), format!("T={}\n", token())).unwrap();
+    run(&fixture.root, &["add", "-A"]);
+    run(&fixture.root, &["commit", "-q", "-m", "by hand"]);
+    std::fs::write(fixture.root.join("notes.md"), "plain\n").unwrap();
+    run(&fixture.root, &["add", "-A"]);
+    run(&fixture.root, &["commit", "-q", "-m", "tidy"]);
+    run(
+        &fixture.root,
+        &["update-ref", "refs/remotes/origin/main", "HEAD"],
+    );
+
+    let (pushed, said) = push(&fixture, false);
+
+    assert_eq!(pushed.outcome, Outcome::Blocked, "{said}");
+    assert_eq!(pushed.detail, PUSH_SECRET_REFUSED);
+    assert_eq!(ask(&bare, &["rev-parse", "main"]), before, "{said}");
+}
+
+/// A credential origin already has, on any branch, is not the save's to answer for: origin
+/// says it has it, and only what the push sends is read.
+#[test]
+fn a_saves_push_leaves_out_what_origin_says_it_has() {
+    let (fixture, bare) = published();
+    std::fs::write(fixture.root.join("old.md"), format!("T={}\n", token())).unwrap();
+    run(&fixture.root, &["add", "-A"]);
+    run(&fixture.root, &["commit", "-q", "-m", "long ago"]);
+    run(
+        &fixture.root,
+        &[
+            "push",
+            "-q",
+            &bare.display().to_string(),
+            "HEAD:refs/heads/kept",
+        ],
+    );
+    run(
+        &fixture.root,
+        &["update-ref", "-d", "refs/remotes/origin/main"],
+    );
+    std::fs::write(fixture.root.join("notes.md"), "plain\n").unwrap();
+    run(&fixture.root, &["add", "-A"]);
+    run(&fixture.root, &["commit", "-q", "-m", "plain"]);
+
+    let (pushed, said) = push(&fixture, false);
+
+    assert_eq!(pushed.outcome, Outcome::Pushed, "{said}");
+}
+
 /// Train 77 review: a scan git cannot answer refuses the save's push (fail closed). The blob a
 /// hand-made commit adds is taken out of the object store, so the push scan cannot read it:
 /// nothing is pushed, the outcome is blocked, and the save says it could not scan.

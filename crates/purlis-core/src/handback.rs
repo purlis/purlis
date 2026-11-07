@@ -951,7 +951,7 @@ pub fn context(reports: &[Handback], gone: bool) -> Option<String> {
                     Place::PlaneRoot => "at the plane root",
                 };
                 format!(
-                    "the work `{}` — a chat {where_it_was} that has since closed — handed to it",
+                    "the work `{}` — a chat {where_it_was} that has since ended — handed to it",
                     report.to
                 )
             } else {
@@ -1033,19 +1033,18 @@ fn operator_stopped(report: &Handback, stopped: &Stopped, whence: &str, gone: bo
     // A task was dispatched; a handoff's work was handed over. Said as a report says each.
     let whose = match (gone, stopped.by_person, stopped.task) {
         (true, true, _) => format!(
-            "a task the person started from `{}`, a chat {where_it_was} that has \
-             since closed",
+            "a task the person started from `{}`, a chat {where_it_was} that has since ended",
             report.to
         ),
         (false, true, _) => "a task the person started from this chat, which you did not \
                              dispatch"
             .to_owned(),
         (true, false, true) => format!(
-            "the task `{}` — a chat {where_it_was} that has since closed — dispatched to it",
+            "the task `{}` — a chat {where_it_was} that has since ended — dispatched to it",
             report.to
         ),
         (true, false, false) => format!(
-            "the work `{}` — a chat {where_it_was} that has since closed — handed to it",
+            "the work `{}` — a chat {where_it_was} that has since ended — handed to it",
             report.to
         ),
         (false, false, true) => "the task you dispatched to it".to_owned(),
@@ -1076,12 +1075,11 @@ fn whose_task(report: &Handback, by_person: bool, gone: bool) -> String {
     };
     match (gone, by_person) {
         (true, false) => format!(
-            "the task `{}` — a chat {where_it_was} that has since closed — dispatched to it",
+            "the task `{}` — a chat {where_it_was} that has since ended — dispatched to it",
             report.to
         ),
         (true, true) => format!(
-            "a task the person started from `{}`, a chat {where_it_was} that has \
-             since closed",
+            "a task the person started from `{}`, a chat {where_it_was} that has since ended",
             report.to
         ),
         (false, false) => "the task you dispatched to it".to_owned(),
@@ -1266,12 +1264,11 @@ fn tasks_report(
     // not one that chat asked for, and the chat is told so (#1438).
     let whose = match (gone, task.by_person) {
         (true, false) => format!(
-            "the task `{}` — a chat {where_it_was} that has since closed — dispatched to it",
+            "the task `{}` — a chat {where_it_was} that has since ended — dispatched to it",
             report.to
         ),
         (true, true) => format!(
-            "a task the person started from `{}`, a chat {where_it_was} that has \
-             since closed",
+            "a task the person started from `{}`, a chat {where_it_was} that has since ended",
             report.to
         ),
         (false, false) => "the task you dispatched to it".to_owned(),
@@ -2231,7 +2228,7 @@ mod tests {
 
         assert!(text.contains("reported: done"), "{text}");
         assert!(
-            text.contains("the task `steward 3` — a chat in this workspace that has since closed"),
+            text.contains("the task `steward 3` — a chat in this workspace that has since ended"),
             "{text}"
         );
         assert!(
@@ -2268,7 +2265,7 @@ mod tests {
         assert!(
             kept.contains(
                 "on a task the person started from `steward 3`, a chat in this \
-                 workspace that has since closed."
+                 workspace that has since ended."
             ),
             "{kept}"
         );
@@ -2396,7 +2393,7 @@ mod tests {
         let kept = context(&[bare], true).unwrap();
         assert!(kept.contains("failed: ended without a report"), "{kept}");
         assert!(
-            kept.contains("the task `steward 3` — a chat in this workspace that has since closed"),
+            kept.contains("the task `steward 3` — a chat in this workspace that has since ended"),
             "{kept}"
         );
         assert!(kept.ends_with("It wrote no session record."), "{kept}");
@@ -2780,7 +2777,7 @@ mod tests {
         let told = context(std::slice::from_ref(&older), true).unwrap();
         assert!(
             told.contains(
-                "the task `steward 3` — a chat in this workspace that has since closed — \
+                "the task `steward 3` — a chat in this workspace that has since ended — \
                  dispatched to it. It sent its last report before it ended."
             ),
             "{told}"
@@ -3085,7 +3082,7 @@ mod tests {
         let text = context(&[a_report("done")], true).unwrap();
 
         assert!(text.contains("`steward 3`"), "{text}");
-        assert!(text.contains("has since closed"), "{text}");
+        assert!(text.contains("has since ended"), "{text}");
     }
 
     fn ops() -> Place {

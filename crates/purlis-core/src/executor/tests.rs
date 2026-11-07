@@ -2665,12 +2665,71 @@ fn asked_line_with(
 }
 
 #[test]
-fn every_question_of_version_one_is_asked_as_the_contract_records_it() {
+fn every_question_of_each_version_is_asked_as_its_contract_records_it() {
+    for contract in extension::studio::every_version() {
+        let protocol =
+            u32::try_from(contract["protocol"].as_u64().expect("a number")).expect("small");
+        asked_as_recorded(&contract, protocol);
+    }
+}
+
+#[test]
+fn an_extension_of_protocol_three_is_asked_version_one_s_questions_under_its_own_number() {
+    asked_as_recorded(&extension::studio::version_one(), 3);
+}
+
+/// #4680: protocol 5 says what each skill costs; a router of protocol 4 is asked as it was frozen.
+#[test]
+fn a_route_question_says_what_each_skill_costs_only_from_protocol_five() {
+    use extension::studio::{Ask, RouteBudget, RouteSkill};
+    let skills = [RouteSkill {
+        name: "pdf".to_owned(),
+        description: "Makes PDFs.".to_owned(),
+        pinned: false,
+        chars: 58,
+    }];
+    let none = RouteBudget {
+        skills: 0,
+        chars: 0,
+    };
+    let ask = Ask::Route {
+        skills: &skills,
+        budget: none,
+        besides: none,
+        index: RouteBudget {
+            skills: 1,
+            chars: 197,
+        },
+    };
+    let costed = asked_line(5, &ask);
+    assert_eq!(costed["ask"]["skills"][0]["chars"], 58);
+    assert_eq!(
+        costed["ask"]["index"],
+        serde_json::json!({ "skills": 1, "chars": 197 })
+    );
+    for frozen in [3, 4] {
+        let line = asked_line(frozen, &ask);
+        assert_eq!(line["ask"].get("index"), None, "protocol {frozen}");
+        assert_eq!(
+            line["ask"]["skills"][0],
+            serde_json::json!({ "name": "pdf", "description": "Makes PDFs.", "pinned": false }),
+            "protocol {frozen}"
+        );
+    }
+}
+
+/// The questions `contract` records, each asked as a build asks it in `protocol`, under that
+/// number: those of every capability `protocol` carries.
+fn asked_as_recorded(contract: &serde_json::Value, protocol: u32) {
+    use extension::capability::Capability;
     use extension::studio::{Ask, HandedFile, HandedPrompt, PromptSkill, RouteBudget, RouteSkill};
     use purlis_skills::grade::{Arm, GradeRequest, TriggerTest};
 
-    let contract = extension::studio::version_one();
-    let protocol = u32::try_from(contract["protocol"].as_u64().expect("a number")).expect("small");
+    let recorded = |of: &serde_json::Value| {
+        let mut kept = of.clone();
+        kept["charter"] = protocol.into();
+        kept
+    };
     let files = [HandedFile {
         path: "SKILL.md".to_owned(),
         text: "---\n".to_owned(),
@@ -2680,6 +2739,7 @@ fn every_question_of_version_one_is_asked_as_the_contract_records_it() {
         name: "pdf".to_owned(),
         description: "Makes PDFs.".to_owned(),
         pinned: false,
+        chars: 58,
     }];
     let prompt = [PromptSkill {
         name: "pdf".to_owned(),
@@ -2710,6 +2770,10 @@ fn every_question_of_version_one_is_asked_as_the_contract_records_it() {
             skills: 3,
             chars: 300,
         },
+        index: RouteBudget {
+            skills: 1,
+            chars: 197,
+        },
     };
     let pointing = || Ask::Prompt {
         prompt: HandedPrompt::of("make me a pdf"),
@@ -2718,35 +2782,26 @@ fn every_question_of_version_one_is_asked_as_the_contract_records_it() {
 
     assert_eq!(
         asked_line(protocol, &panel()),
-        contract["panel"]["question"]
+        recorded(&contract["panel"]["question"])
     );
     assert_eq!(
         asked_line(protocol, &routed()),
-        contract["route"]["question"]
+        recorded(&contract["route"]["question"])
     );
     assert_eq!(
         asked_line(protocol, &pointing()),
-        contract["prompt"]["question"]
+        recorded(&contract["prompt"]["question"])
     );
-    assert_eq!(
-        asked_line(protocol, &Ask::Grade { request: &request }),
-        contract["grade"]["question"]
-    );
+    if Capability::Grader.since() <= protocol {
+        assert_eq!(
+            asked_line(protocol, &Ask::Grade { request: &request }),
+            recorded(&contract["grade"]["question"])
+        );
+    }
     // An extension that declares settings is handed them with every question.
-    let with_settings = &contract["panel"]["question_with_settings"];
+    let with_settings = recorded(&contract["panel"]["question_with_settings"]);
     assert_eq!(
         asked_line_with(protocol, &panel(), Some(with_settings["settings"].clone())),
-        *with_settings
+        with_settings
     );
-
-    // An extension whose manifest names protocol 3 reads the same question, under its own number.
-    for (asked, kept) in [
-        (asked_line(3, &panel()), &contract["panel"]["question"]),
-        (asked_line(3, &routed()), &contract["route"]["question"]),
-        (asked_line(3, &pointing()), &contract["prompt"]["question"]),
-    ] {
-        let mut in_three = kept.clone();
-        in_three["charter"] = 3.into();
-        assert_eq!(asked, in_three);
-    }
 }

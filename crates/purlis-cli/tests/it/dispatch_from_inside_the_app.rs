@@ -425,7 +425,7 @@ fn a_place_that_is_neither_word_is_refused_before_the_app_is_asked() {
 
 #[test]
 fn a_dispatch_the_person_is_asked_about_is_held_and_says_what_happens_next() {
-    // Held, not refused: the app keeps the dispatch and asks the person on this chat's tab.
+    // Held, not refused: the app keeps the dispatch and asks the person in the Inbox.
     // The command says so on stdout and exits 0, so the chat carries on and does not retry.
     let tmp = daily();
     let (app, _reading, asked) = an_app(&tmp, |tickets, connection, ask| {
@@ -448,10 +448,11 @@ fn a_dispatch_the_person_is_asked_about_is_held_and_says_what_happens_next() {
     assert_eq!(
         text(&out.stdout),
         "purlis dispatch: held for the person. 'steward' chats may not dispatch to 'qa' yet, so \
-         the person is being asked on this chat's tab, with this brief in front of them. Nothing \
-         has started. If they allow it, 'check the queue' starts then and its report reaches \
-         this chat as context on a later turn; if they keep it blocked, this chat is told on \
-         its next turn. Carry on with other work, and do not dispatch it again.\n"
+         the person is being asked in the Inbox, and on this chat's pane when it is on screen, \
+         with this brief in front of them. Nothing has started. If they allow it, 'check the \
+         queue' starts then and its report reaches this chat as context on a later turn; if they \
+         keep it blocked, this chat is told on its next turn. Carry on with other work, and do not \
+         dispatch it again.\n"
     );
     assert_eq!(the_dispatch(&asked).to.as_deref(), Some("qa"));
 }
@@ -1496,7 +1497,7 @@ fn a_dispatch_to_another_persona_starts_nothing_and_says_the_person_is_being_ask
     assert!(
         text(&out.stdout).starts_with(
             "purlis dispatch: held for the person. 'steward' chats may not dispatch to 'qa' \
-             yet, so the person is being asked on this chat's tab"
+             yet, so the person is being asked in the Inbox"
         ),
         "{}",
         text(&out.stdout)
@@ -2156,7 +2157,7 @@ fn a_refused_message_says_why_in_the_apps_words() {
 
 #[test]
 fn a_task_the_person_asked_for_is_refused_to_the_asking_chat_in_words_that_say_so() {
-    // #1492, V100-70. The person asked devops from this chat's tab: chat 9 is listed under
+    // #1492, V100-70. The person asked devops from this chat: chat 9 is listed under
     // this chat and reports to it, and this chat's cancel, tell and answer for it are refused
     // in the app's sentence, said whole, which says whose the task is.
     let tmp = daily();

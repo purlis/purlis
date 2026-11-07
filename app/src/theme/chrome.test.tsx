@@ -59,6 +59,7 @@ import { AddDockerPoolHost } from "../AddDockerPool";
 import { startAddingAPool } from "../pools";
 import { ReplaceRunner } from "../settings/PoolLimits";
 import { DiscardHeldRunner, RemovePool } from "../settings/pools";
+import { LetRunnerGo } from "../KeptRunnerNotice";
 import { StartOverAsk } from "../AgentIdentityFlow";
 import { RemoveIdentity } from "../AgentIdentityTab";
 import { RemoveProfile } from "../settings/profiles";
@@ -95,7 +96,7 @@ import { SavingView } from "../SavingView";
 import { StartChat } from "../StartChat";
 import { ChatsSection } from "../ChatsSection";
 import { chatsTree } from "../chatsTree";
-import { TabRename } from "../TabRename";
+import { RenameTab } from "../RenameTab";
 import { TaskEndAsk } from "../TaskEnd";
 import { PinItem, UpdateItem } from "../Updates";
 import { VaultTab } from "../VaultTab";
@@ -437,6 +438,8 @@ const SKILL: StudioSkill = {
   lint: [],
   hidden: [],
   pinned: false,
+  hidden_in: [],
+  replaced_in: [],
   archived: false,
   pinned_by: [],
 };
@@ -811,8 +814,20 @@ const DIALOGS: Opened[] = [
       render(
         <MoveIntoReposConfirm
           plans={[
-            { workspace: "alpha", repos: ["api"], unresumable: ["In the clone"], open: [] },
-            { workspace: "beta", repos: ["web"], unresumable: [], open: ["steward 2"] },
+            {
+              workspace: "alpha",
+              repos: ["api"],
+              unresumable: ["In the clone"],
+              open: [],
+              finishing: [],
+            },
+            {
+              workspace: "beta",
+              repos: ["web"],
+              unresumable: [],
+              open: ["steward 2"],
+              finishing: [],
+            },
           ]}
           onCancel={nothing}
           onMove={nothing}
@@ -1040,6 +1055,20 @@ const DIALOGS: Opened[] = [
     open: async () =>
       render(
         <DiscardHeldRunner name="builds-old" ask="again" onGoOn={nothing} onCancel={nothing} />,
+      ),
+  },
+  {
+    name: "letting an older runner go with the work it holds",
+    file: "KeptRunnerNotice.tsx",
+    open: async () =>
+      render(
+        <LetRunnerGo
+          runner="builds-old"
+          pool="builds"
+          left={["the project's own repository on the runner holds 1 stashed change"]}
+          onGo={nothing}
+          onCancel={nothing}
+        />,
       ),
   },
   {
@@ -1615,15 +1644,21 @@ const DIALOGS: Opened[] = [
   },
   {
     name: "a tab's name refused",
-    file: "TabRename.tsx",
-    open: async () => {
+    file: "RenameTab.tsx",
+    open: async () =>
       render(
-        <TabRename name="claude 4" onSave={async () => "That name is taken"} onDone={nothing} />,
-      );
-      const box = await screen.findByRole("textbox");
-      await userEvent.clear(box);
-      await userEvent.type(box, "web{Enter}");
-    },
+        <RenameTab
+          renames={{ kind: "chat", session: 4 }}
+          name="claude 4"
+          chat="claude 4"
+          own={false}
+          trouble="That name is taken"
+          busy={false}
+          onRename={nothing}
+          onClear={nothing}
+          onCancel={nothing}
+        />,
+      ),
   },
   {
     name: "ending a task",

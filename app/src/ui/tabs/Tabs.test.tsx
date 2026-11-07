@@ -115,22 +115,22 @@ describe("a split tab's picture", () => {
     children: [chat(1), { kind: "split", direction: "column", children: [chat(2), chat(3)] }],
   };
 
-  it("is the family's picture part: its box, then a line for each line between its panes", () => {
+  it("is the family's picture part: a tile for each pane, parted by a gap (#5577)", () => {
     const picture = pictureOf(three);
     if (picture === undefined) throw new Error("three panes have a picture");
     const { container } = render(<TabPicture picture={picture} />);
     const drawn = container.querySelector('[data-scope="tabs"][data-part="picture"]');
     expect(drawn?.tagName.toLowerCase()).toBe("svg");
-    expect(drawn?.querySelectorAll("rect")).toHaveLength(1);
-    // In the box from 2.5 to 13.5 of the 16 the icon is drawn on: down the middle, then across
-    // the right half.
+    // In the box from 2 to 14 of the 16 the icon is drawn on, 1.5 between tiles: the left half
+    // whole, then the right half's two, one over the other.
     expect(
-      [...(drawn?.querySelectorAll("line") ?? [])].map((line) =>
-        ["x1", "y1", "x2", "y2"].map((at) => Number(line.getAttribute(at))),
+      [...(drawn?.querySelectorAll("rect") ?? [])].map((rect) =>
+        ["x", "y", "width", "height"].map((at) => Number(rect.getAttribute(at))),
       ),
     ).toEqual([
-      [8, 2.5, 8, 13.5],
-      [8, 8, 13.5, 8],
+      [2, 2, 5.25, 12],
+      [8.75, 2, 5.25, 5.25],
+      [8.75, 8.75, 5.25, 5.25],
     ]);
   });
 

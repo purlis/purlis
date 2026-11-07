@@ -326,12 +326,16 @@ describe("a chat's browser in the Chats list", () => {
   });
 });
 
-describe("a chat's browser on its chat's tab", () => {
+describe("a chat's browser on its chat's pane head (#5524)", () => {
   it("is drawn live there, as a thumbnail, and pressed opens its browser view", async () => {
     const host = core([B7]);
     await opened();
 
     const thumbnail = await screen.findByRole("button", { name: "Open browser b1 of steward 1" });
+    // On the head of the pane showing its chat, never on the tab, which says only which chat
+    // this is and whether it needs you (#5339).
+    expect(thumbnail.closest(".pane-head")).not.toBeNull();
+    expect(thumbnail.closest('[data-strip="Tabs"]')).toBeNull();
     await waitFor(() =>
       expect(host.asked("watch_browser")).toContainEqual(
         expect.objectContaining({ program: "B7", role: "thumbnail" }),
@@ -354,7 +358,7 @@ describe("a chat's browser on its chat's tab", () => {
     await waitFor(() => expect(tabNames()).toContain("Browser b1 of steward 1"));
   });
 
-  it("is on no tab of a chat that has no browser", async () => {
+  it("is on no head of a chat that has no browser", async () => {
     core([B7]);
     await opened();
     await screen.findByRole("button", { name: "Open browser b1 of steward 1" });
@@ -407,19 +411,20 @@ describe("a chat's browser view, opened from its row", () => {
   });
 });
 
-describe("a chat's browsers counted on its tab", () => {
-  it("says how many browsers the chat has, in the tab's count style", async () => {
+describe("a chat's browsers counted on its pane head (#5524)", () => {
+  it("says how many browsers the chat has, in the count style", async () => {
     core([B7, B8]);
     await opened();
 
     const count = await screen.findByRole("img", { name: "2 browsers" });
     expect(count).toHaveAttribute("data-scope", "count");
-    expect(count.closest(".tab")).not.toBeNull();
+    expect(count.closest(".pane-head")).not.toBeNull();
+    expect(count.closest(".tab")).toBeNull();
   });
 });
 
 describe("a chat's browser not ended yet (D-2013-16)", () => {
-  it("is a row under its chat that says so, and has no thumbnail on the tab", async () => {
+  it("is a row under its chat that says so, and has no thumbnail on its head", async () => {
     core([B7, { ...B8, unended: true }]);
     await opened();
 

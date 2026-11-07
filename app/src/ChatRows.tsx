@@ -48,15 +48,20 @@ import { TabPicture, tabPart } from "./ui/tabs/Tabs";
 export const ChatShownState = memo(function ChatShownState({
   changed = false,
   markOnly = false,
+  heardOnly = false,
   ...of
 }: ShownOf & {
   /** Its state changed while its row was not drawn, so it arrives in it (`StateShown`). */
   changed?: boolean;
   /** Its mark alone, its word said only to a screen reader: a narrow pane's head (#4760). */
   markOnly?: boolean;
+  /** **Its word alone, said only to a screen reader** (#5446): where a mark beside it already
+   *  draws the state's glyph, so the glyph is never drawn twice. */
+  heardOnly?: boolean;
 }) {
   const shown = useShownState(of);
   if (shown === undefined) return null;
+  if (heardOnly) return <span className="hidden-words">{shown.word}</span>;
   // The one state's glyph (#5340), so this line never disagrees with the mark beside it.
   const said = shown.mark === null ? shown : { ...shown, ...MARK_SAID[shown.mark] };
   return <StateShown shown={said} changed={changed} markOnly={markOnly} />;

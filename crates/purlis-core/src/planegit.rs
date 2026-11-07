@@ -1835,18 +1835,23 @@ pub const PUSH_SECRET_REFUSED: &str = "a secret-shaped value in a commit the pus
 /// was published unscanned.
 ///
 /// The scan is [`crate::diffscan::pushed`]'s, over HEAD as `branch` on `origin` (at `url`),
-/// past what any of `origin`'s tracking refs say it has. **It refuses on a credential only**: the
+/// past what origin itself says it has, asked of it now with the credential a fetch of the
+/// plane gets ([`crate::diffscan::remote_has`]); where it cannot be asked, the whole history. **It refuses on a credential only**: the
 /// save's own scan lets personal data through, as a plane's memory names people, so a push
 /// does not refuse what the save just committed. A scan git could not answer refuses too (fail
 /// closed), and says why. Refused, nothing is pushed, the findings are said masked, and the
 /// outcome is recorded as `blocked`, with [`PUSH_SECRET_REFUSED`] for a finding.
 fn refused_push(root: &Path, branch: &str, url: &str, head: &str, say: Sink) -> Option<PushResult> {
-    // What origin has is what its tracking refs say, all of them (`--not --remotes=origin`): so
-    // the remote's side of the one ref is left as nothing.
+    // What origin has is what it says it has, every branch and tag: so the remote's side of the
+    // one ref is left as nothing.
     let theirs = "0".repeat(head.len().max(40));
     let updates = format!("HEAD {head} refs/heads/{branch} {theirs}\n");
+    let forge = crate::gitpolicy::forge_for(root, root)
+        .unwrap_or_else(|| Forge::default_of(forge::DEFAULT_KIND));
+    let helper = forge::gitcredential::helper_for_fetch(&forge, root).ok();
+    let known = crate::diffscan::remote_has(root, helper.as_deref(), url).unwrap_or_default();
     let refused: Vec<crate::diffscan::Finding> =
-        match crate::diffscan::pushed(root, "origin", url, &updates) {
+        match crate::diffscan::pushed_knowing(root, &updates, &known) {
             Ok(scan) => scan
                 .refused
                 .into_iter()

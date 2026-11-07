@@ -48,8 +48,11 @@ FROM ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab0
 # `gh` and `glab` are installed from the packages checked above, listed by dpkg, so the image's
 # SBOM names them; the packages themselves are mounted, and stay out of the image.
 # Ubuntu's own `ubuntu` user (1000) is removed, so the image has one user who is not root.
-RUN --mount=type=bind,from=forge-programs,target=/forge-programs apt-get update \
- && apt-get install --yes --no-install-recommends ca-certificates git tini \
+# apt asks the archive for a file up to five more times before it fails the build (#5176): a
+# required check builds this image, and one fetch that fails should not block a merge.
+RUN --mount=type=bind,from=forge-programs,target=/forge-programs \
+    apt-get --option Acquire::Retries=5 update \
+ && apt-get --option Acquire::Retries=5 install --yes --no-install-recommends ca-certificates git tini \
       fonts-liberation libasound2t64 libatk-bridge2.0-0t64 libatk1.0-0t64 libatspi2.0-0t64 \
       libcairo2 libcups2t64 libdbus-1-3 libdrm2 libexpat1 libgbm1 libglib2.0-0t64 libnspr4 \
       libnss3 libpango-1.0-0 libudev1 libx11-6 libxcb1 libxcomposite1 libxdamage1 libxext6 \

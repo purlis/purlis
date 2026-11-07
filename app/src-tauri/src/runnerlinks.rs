@@ -683,6 +683,51 @@ pub fn unpair(to: &ToARunner) -> Result<(), String> {
     .map_err(|why| crate::devices::shown_safely(&why))
 }
 
+/// What a runner listed: every repository it holds, and what it could not look through.
+pub type Held = (Vec<purlis_core::codelink::held::Held>, Vec<String>);
+
+/// **Every repository the runner `to` holds in the projects it keeps**, with what it could not
+/// look through, as a draining runner is checked before it goes (ruled 2026-11-07): one link,
+/// waiting as long as a fresh runner's proof does for the list. `None` from a runner too old to
+/// list them (before 1.69), which a drain lets go of as it did before. Why not, shown safely,
+/// where it did not list.
+pub fn repos_held_on(to: &ToARunner) -> Result<Option<Held>, String> {
+    use purlis_session_protocol::session::{Answer, Command, KNOWS_REPOS_HELD};
+    let within = purlis_core::codelink::held::LOOK_WITHIN + ANSWER_WITHIN;
+    on_one_link_within(to, within, async |linked| {
+        let client = linked.map_err(|down| down.why)?;
+        if client.version() < KNOWS_REPOS_HELD {
+            return Ok(None);
+        }
+        match client.call(Command::ReposHeld).await {
+            Ok(Answer::ReposHeld { repos, unread }) => {
+                Ok(Some((crate::runnercode::held_of(repos), unread)))
+            }
+            Ok(_) => Err("the runner did not say which repositories it holds".to_owned()),
+            Err(why) => Err(refused_by_the_runner(&why)),
+        }
+    })
+    .map_err(|why| crate::devices::shown_safely(&why))
+}
+
+/// **What the runner `to` holds that no fetch brings here** (ruled 2026-11-07), in sentences,
+/// each project found among those this machine knows in `config`
+/// ([`purlis_core::pools::left_beyond_a_fetch`]). Why, where it did not list.
+pub fn left_on(to: &ToARunner, config: &std::path::Path) -> Result<Vec<String>, String> {
+    left_of(repos_held_on(to)?, |held, unread| {
+        purlis_core::pools::left_beyond_a_fetch(config, held, unread)
+    })
+}
+
+/// What `prove` finds of what a runner `listed`: nothing from a runner too old to list what it
+/// holds, which goes as it did before it could.
+pub(crate) fn left_of(
+    listed: Option<Held>,
+    prove: impl FnOnce(&[purlis_core::codelink::held::Held], &[String]) -> Result<Vec<String>, String>,
+) -> Result<Vec<String>, String> {
+    listed.map_or(Ok(Vec::new()), |(held, unread)| prove(&held, &unread))
+}
+
 /// **A profile a runner kept**: whether it is signed in there.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProfileKept {

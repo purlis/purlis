@@ -134,7 +134,7 @@ The **Skills** view in the left sidebar lists the same skills for the chat in fr
   to one line, with **Copy command** where a command would put it right.
 
 While the Skill studio or another tab that isn't a chat is in front, the view keeps answering for
-the chat you were last in, until that chat's tab closes. With no chat to answer for, it answers
+the chat you were last in, until that chat ends. With no chat to answer for, it answers
 for a new chat, and the heading reads **A new chat gets** instead of *In this chat*.
 
 A chat keeps the skills it started with. When a skill changes, purlis offers to restart the chat

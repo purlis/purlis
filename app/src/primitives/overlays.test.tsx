@@ -291,9 +291,9 @@ describe("every overlay in the window", () => {
     // The dialogs are the dialog family's, whose answers it draws itself (`ui/dialog/Dialog.tsx`),
     // and are held by its own tests: no Radix dialog is left.
     expect(parts.filter(({ tag }) => /^(Dialog|AlertDialog)\./.test(tag))).toEqual([]);
-    // The cards are the popover family's: a chat row's, a list row's and a refused name's; and
-    // the title bar's two switchers (#2916).
-    expect(families.filter(({ tag }) => /Popover/.test(tag)).length).toBe(5);
+    // The cards are the popover family's: a chat row's and a list row's; and the title bar's two
+    // switchers (#2916). A refused tab name's went with the box on the strip (#5343).
+    expect(families.filter(({ tag }) => /Popover/.test(tag)).length).toBe(4);
     expect(parts.filter(({ tag }) => tag === "Popover.Content").length).toBe(0);
   });
 

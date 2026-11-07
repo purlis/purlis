@@ -42,6 +42,9 @@ export const OLD: OldInstall = made
   : anOldInstall(THE_RUNS_TREE, THE_RUNS_HOME, writeShell(built("fake-harness")));
 process.env.CHARTER_UPGRADE_INSTALL = JSON.stringify(OLD);
 
+/** The app this run launches. */
+const launched = built(process.platform === "win32" ? "purlis-app.exe" : "purlis-app");
+
 export const config: WebdriverIO.Config = {
   ...base,
   specs: ["./specs/**/*.upgrade.e2e.ts"],
@@ -55,7 +58,7 @@ export const config: WebdriverIO.Config = {
     [
       "@wdio/tauri-service",
       {
-        appBinaryPath: built(process.platform === "win32" ? "purlis-app.exe" : "purlis-app"),
+        appBinaryPath: launched,
         captureBackendLogs: true,
         captureFrontendLogs: true,
         // `CHARTER_CONFIG_HOME` named here replaces the fresh one `theRunsEnvironment` would
@@ -71,8 +74,9 @@ export const config: WebdriverIO.Config = {
     ],
   ],
   // Nothing of the old install outlives the run. A failed run keeps it, beside the rest of its
-  // evidence, for whoever reads why.
-  onComplete(exitCode: number) {
-    if (exitCode === 0) removeTheOldInstall(OLD);
+  // evidence, for whoever reads why. This hook runs before the service's, which is what stops
+  // the app on macOS, so the removal ends the app itself first (#5653).
+  async onComplete(exitCode: number) {
+    if (exitCode === 0) await removeTheOldInstall(OLD, launched);
   },
 };

@@ -10,6 +10,8 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { Puzzle, SquareTerminal } from "lucide-react";
 import { expect, fn } from "storybook/test";
 import { PaneRail, type RailPane } from "./PaneRail";
+import { MARK_STATES } from "./shownState";
+import { ChatMark } from "./ui/chat-mark/ChatMark";
 import { expectFocusInSight, untilFocused } from "./stories.testkit";
 
 const FOLDED: RailPane[] = [
@@ -87,6 +89,38 @@ export const Bar: Story = {
       () => canvas.getByRole("button", { name: "devops 2, 3 notices, folded" }),
       "Tab to the first folded pane",
     );
+    expectFocusInSight();
+  },
+};
+
+/** One folded chat in each state its mark tells, the one that needs you asking. */
+const EACH_STATE: RailPane[] = MARK_STATES.map((state, at) => ({
+  pane: at + 10,
+  name: `chat ${state}`,
+  mark: <ChatMark state={state} who={<SquareTerminal aria-hidden="true" />} />,
+  holds: { notes: 0, trouble: 0, asks: state === "needs" ? 1 : 0 },
+  asks: state === "needs",
+  stated: true,
+}));
+
+/**
+ * **A rail in each state** (#5447): each folded chat wears its one mark, and the one that needs
+ * you shows ✋ once, on its mark's badge, with no second ✋ of the rail's beside it.
+ */
+export const RailInEachState: Story = {
+  args: { panes: EACH_STATE },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    const asks = canvas.getByRole("button", { name: "chat needs, folded, asks you" });
+    const item = asks.closest(".pane-rail-item");
+    await expect(item?.querySelectorAll('[data-mark="needs-you"]').length).toBe(1);
+    await expect(canvasElement.querySelector(".pane-rail-asks")).toBeNull();
+    for (const state of MARK_STATES)
+      await expect(
+        canvasElement.querySelector(`[data-scope="chat-mark"][data-variant="${state}"]`),
+        state,
+      ).not.toBeNull();
+    await userEvent.tab();
+    await untilFocused(() => asks, "Tab to the first folded chat");
     expectFocusInSight();
   },
 };

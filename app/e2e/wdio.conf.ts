@@ -19,7 +19,14 @@ import {
   writeShell,
 } from "./harness.js";
 import { browser } from "@wdio/globals";
-import { coveredIn, whatCovers } from "./covers.js";
+import {
+  coveredIn,
+  describeEveryMissedPress,
+  forgetTheMiss,
+  messageOf,
+  theMissBehind,
+  whatWasOver,
+} from "./covers.js";
 import { theWindowIsDrawn } from "./drawn.js";
 import { theProjectsFoldersAreAccepted } from "./acting.js";
 import { noDialogIsLeftUp } from "./opening.js";
@@ -81,16 +88,15 @@ async function evidence(error?: unknown): Promise<Evidence> {
         ).__purlisLateAnswers?.() ?? [],
     )
     .catch(() => []);
-  // And, where the test could not press or see an element, what lay over it.
-  const message =
-    typeof error === "object" && error !== null && "message" in error
-      ? String((error as { message: unknown }).message)
-      : String(error ?? "");
+  // And, where the test could not press or see an element, what lay over it: as the press
+  // missed, where `describeEveryMissedPress` took it then (#5609), or else asked now.
+  const message = messageOf(error);
   const covered = coveredIn(message);
+  const missed = theMissBehind(message);
   return {
     late: late.map((one) => ({ command: one.command, ms: one.ms })),
     coreLog: coreLogTail(LOGS),
-    covers: covered === undefined ? undefined : await whatCovers(covered),
+    covers: missed ?? (covered === undefined ? undefined : await whatWasOver(covered)),
     shown: await whatTheWindowShows(),
   };
 }
@@ -176,6 +182,8 @@ export const config: WebdriverIO.Config = {
   // its first key to a window with nothing in it yet. Every config spreads this one, so each of
   // them waits too.
   async before() {
+    // A press that misses is described as it misses (#5609, `covers.ts`).
+    describeEveryMissedPress();
     await theWindowIsDrawn();
     // The default window, wide enough for the project rail beside both sidebars, whatever an
     // earlier spec left (`rail.ts`, #3077). A spec that measures a narrower window, where the
@@ -224,6 +232,14 @@ export const config: WebdriverIO.Config = {
       },
     ],
   ],
+
+  // A miss a spec caught on purpose is never handed to a later failure (`covers.ts`, #5609).
+  beforeTest() {
+    forgetTheMiss();
+  },
+  beforeHook() {
+    forgetTheMiss();
+  },
 
   // A test that fails because the app died looks, from the test, like any other: an element
   // that never came. So every failure writes down whether the app is alive, its size, and

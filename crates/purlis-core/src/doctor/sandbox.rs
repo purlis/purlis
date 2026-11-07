@@ -393,9 +393,9 @@ pub(super) fn blocks_at(d: &Doctor, now: u64) -> Option<Row> {
         Some(Row::warn(
             NAME,
             detail,
-            "A block of purlis's own operation is a purlis bug. The chat's tab offers Report, \
-             which shows a draft naming only the operation, the kind of path and the versions, \
-             and sends nothing until you press File report.",
+            "A block of purlis's own operation is a purlis bug. Its Notice on the chat offers \
+             Report, which shows a draft naming only the operation, the kind of path and the \
+             versions, and sends nothing until you press File report.",
         ))
     } else {
         Some(Row::ok(NAME, detail))

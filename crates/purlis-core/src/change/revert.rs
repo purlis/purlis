@@ -64,12 +64,12 @@ use crate::worktree::git;
 /// since the rule has no length bound and the prefix starts with a letter.
 pub const REVERT_PREFIX: &str = "revert-";
 
-/// Every git verb a revert runs, and no other: reads (`diff-files` asks whether a merge or
-/// rebase is stopped part-way), `switch` to make and leave the branch, and `revert` (with its
+/// Every git verb a revert runs, and no other: reads (`ls-files` asks the index whether a merge
+/// or rebase is stopped part-way), `switch` to make and leave the branch, and `revert` (with its
 /// `--abort`). No `push`, `branch`, `reset`, `update-ref` or `clean`.
 pub const VERBS: [&str; 8] = [
     "status",
-    "diff-files",
+    "ls-files",
     "rev-parse",
     "rev-list",
     "merge-base",

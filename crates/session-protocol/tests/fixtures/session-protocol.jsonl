@@ -231,3 +231,7 @@
 {"reply":{"re":196,"refused":{"code":"no_login_form_on_clean_load","why":"no login form appeared on https://shop.example.test within 30 seconds of clearing it, so nothing was filled"}}}
 {"call":{"id":197,"command":"log_in","program":"01J9ZQ8000000000000000000D","login":{"address":"https://shop.example.test/login","password":"fixture-word"}}}
 {"reply":{"re":197,"refused":{"code":"login_not_run","why":"this browser holds a login at https://app.example.test, and reaches nothing else: open a new browser with browser_new and log in to https://shop.example.test there"}}}
+{"call":{"id":198,"command":"start_program","project":"01J9PRJCT00000000000000000","kind":"harness","number":14,"persona":"steward"}}
+{"reply":{"re":198,"ok":{"program_started":{"program":"01J9ZQ5000000000000000000H","number":14,"process":4246,"sandbox":"off","armed_skills":[{"name":"purlis-secrets","level":"built-in"},{"name":"deploy","level":"workspace"}]}}}}
+{"call":{"id":199,"command":"programs_of","project":"01J9PRJCT00000000000000000"}}
+{"reply":{"re":199,"ok":{"programs":[{"program":"01J9ZQ5000000000000000000H","kind":"harness","number":14,"process":4246,"sandbox":"off","cols":80,"rows":24,"armed_skills":[{"name":"purlis-secrets","level":"built-in"},{"name":"deploy","level":"workspace"}]}]}}}

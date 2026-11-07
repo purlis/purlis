@@ -262,13 +262,27 @@ pub(crate) fn move_workspace_back(
 ) -> Result<crate::host::CameBack, String> {
     let here = clones_of(root, workspace);
     // Asked first, so a runner that cannot say changes nothing here.
-    let only_there = made_there(link, project, workspace, &here)?;
+    let (mut only_there, stayed) = made_there(link, project, root, workspace)?;
+    let mut came_back = crate::host::CameBack {
+        stayed,
+        ..Default::default()
+    };
+    // An old clone named `repos` holds back only what would go in `repos/` (#5601).
+    only_there.retain(|rel, _| match held_back_by_repos(root, rel) {
+        Some(why) => {
+            came_back.stayed.push(format!(
+                "{}, which the runner's chat cloned, stayed on the runner: {why}",
+                shown(rel)
+            ));
+            false
+        }
+        None => true,
+    });
     // And each fresh one is checked to have room here before any clone here is taken over, so
     // one refused changes nothing.
     for rel in only_there.keys() {
         room_for(root, rel)?;
     }
-    let mut came_back = crate::host::CameBack::default();
     for rel in here {
         let repo = folder_of(root, &rel)?;
         let leave_out = leave_out_of(root, &rel)?;
@@ -353,6 +367,9 @@ fn room_for(root: &Path, rel: &str) -> Result<(), String> {
     let refused = |why: &str| {
         format!("{rel}, which the runner's chat cloned, did not come back from the runner: {why}")
     };
+    if let Some(why) = held_back_by_repos(root, rel) {
+        return Err(refused(&why));
+    }
     let repo = codelink::new_repo_in(root, rel).map_err(|why| refused(&why.to_string()))?;
     if std::fs::symlink_metadata(&repo).is_ok() {
         return Err(refused("something of that name is here already"));
@@ -365,6 +382,52 @@ fn room_for(root: &Path, rel: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// **Why a runner's clone named `name` cannot come back into `workspace`** (#5601), where a
+/// folder here holds that name ([`purlis_core::repofolder::held`]) that is not one of the clones
+/// work moves for ([`clones_of`]): a second copy in `repos/` would hide it, and nothing moves
+/// into it, so the runner's work is said to stay rather than left there in silence. `None` where
+/// a clone here has the name, or nothing does.
+fn held_back_here(root: &Path, workspace: &str, name: &str) -> Option<String> {
+    let row = purlis_core::repofolder::held(root, workspace, name)?;
+    if clones_of(root, workspace)
+        .iter()
+        .any(|rel| rel.rsplit('/').next() == Some(row.repo.name.as_str()))
+    {
+        return None;
+    }
+    let what = match row.git {
+        purlis_core::repofolder::Git::Link => "its .git is a link",
+        purlis_core::repofolder::Git::File => "its .git is a file",
+        purlis_core::repofolder::Git::Directory => "purlis does not move work for it",
+    };
+    let at = row.repo.path.strip_prefix(root).unwrap_or(&row.repo.path);
+    Some(format!(
+        "{} here holds that name and is not a clone work comes back into ({what}). Move it to \
+         another name, and the runner's clone can come back",
+        at.display()
+    ))
+}
+
+/// **Why no fresh clone at `rel` can be made here**, while an old clone named `repos` stands where
+/// new clones go in its workspace (#5601), in words that fit work coming back; `None` otherwise.
+fn held_back_by_repos(root: &Path, rel: &str) -> Option<String> {
+    let ["workspaces", workspace, name] = rel.split('/').collect::<Vec<_>>()[..] else {
+        return None;
+    };
+    matches!(
+        purlis_core::repofolder::new_folder(root, workspace, name),
+        Err(purlis_core::repofolder::Refused::RepoNamedRepos { .. })
+    )
+    .then(|| {
+        format!(
+            "workspace '{workspace}' has an old clone named repos where new clones now go. \
+             Rename it (move workspaces/{workspace}/repos to another name, then run `git \
+             worktree repair` in it if it has branch folders), and the runner's clone can come \
+             back"
+        )
+    })
+}
+
 /// Why a clone made fresh has no remote where the runner named none (#3985): it names none
 /// that is not a forge's address with no sign-in in it.
 const NO_ORIGIN_NAMED: &str = "the runner named no origin a forge reaches for it";
@@ -374,26 +437,34 @@ const NO_ORIGIN_NAMED: &str = "the runner named no origin a forge reaches for it
 const NO_ORIGIN_SAID: &str =
     "the runner's purlis is too old to say where its clone came from; a newer one would";
 
+/// Each clone [`made_there`] finds, by its folder in the project, with the `origin` the runner
+/// names for it.
+type MadeThere = std::collections::BTreeMap<String, Option<String>>;
+
 /// **The clones of `workspace` the runner holds and this machine has none of** (#3811), by
 /// their folders in the project: what its chat cloned there, each with the `origin` URL the
 /// runner names for it (1.54, #3985), its word alone, which [`codelink::offered_origin`] holds to
 /// this machine's rules. None from a runner before session protocol 1.51, which cannot say. A
 /// name no repository's folder may have is refused, in words; one the workspace keeps for its
 /// own is never a clone, and stays there. A clone here is the runner's of that name however
-/// either is cased, as this machine's disk may not tell them apart.
+/// either is cased, as this machine's disk may not tell them apart, and whatever its `.git` is
+/// ([`purlis_core::repofolder::holds`], #5601): a second copy in `repos/` would hide it. Where
+/// what holds the name is no clone work comes back into, the runner's clone is said to stay, in
+/// the sentences answered beside ([`held_back_here`]).
 fn made_there(
     link: &HostLink,
     project: &str,
+    root: &Path,
     workspace: &str,
-    here: &[String],
-) -> Result<std::collections::BTreeMap<String, Option<String>>, String> {
+) -> Result<(MadeThere, Vec<String>), String> {
     let Some((there, mut origins)) = link
         .clones_of(project, workspace)
         .map_err(|why| format!("the runner did not say which clones it holds: {why}"))?
     else {
-        return Ok(std::collections::BTreeMap::new());
+        return Ok(Default::default());
     };
     let mut only_there = std::collections::BTreeMap::new();
+    let mut stayed = Vec::new();
     for name in there {
         if !purlis_core::contain::repo_name_ok(&name) {
             return Err(format!(
@@ -405,12 +476,16 @@ fn made_there(
             continue;
         }
         let rel = format!("workspaces/{workspace}/{name}");
-        if !here.iter().any(|one| one.eq_ignore_ascii_case(&rel)) {
+        if let Some(why) = held_back_here(root, workspace, &name) {
+            stayed.push(format!(
+                "{rel}, which the runner's chat cloned, stayed on the runner: {why}"
+            ));
+        } else if !purlis_core::repofolder::holds(root, workspace, &name) {
             let origin = origins.remove(&name);
             only_there.insert(rel, origin);
         }
     }
-    Ok(only_there)
+    Ok((only_there, stayed))
 }
 
 /// The repositories of `workspace` in the project at `root`, in `repos/` or at its root
@@ -472,7 +547,10 @@ pub(crate) fn send_workspace(
 
 /// **Fetch the branches of every clone of `workspace` back from the runner**, into each clone's
 /// `refs/remotes/<pool>/*`. Each clone fetches on its own: one that fails is said, and the rest
-/// still fetch. `left` is a pool the workspace no longer runs on (#4590).
+/// still fetch. `left` is a pool the workspace no longer runs on (#4590). Each branch tip that
+/// came is recorded in `tips_in`, this machine's config home, where there is one: a tip fetched
+/// once is home when an older runner is let go (ruled 2026-11-07, [`purlis_core::tipsfetched`]).
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn fetch_workspace(
     link: &HostLink,
     project: &str,
@@ -481,6 +559,7 @@ pub(crate) fn fetch_workspace(
     pool: &str,
     beside: bool,
     left: bool,
+    tips_in: Option<&Path>,
 ) -> Vec<String> {
     fetch_clones(
         link,
@@ -490,10 +569,12 @@ pub(crate) fn fetch_workspace(
         pool,
         beside,
         left,
+        tips_in,
     )
 }
 
 /// [`fetch_workspace`], of the clones `clones`.
+#[allow(clippy::too_many_arguments)]
 fn fetch_clones(
     link: &HostLink,
     project: &str,
@@ -502,6 +583,7 @@ fn fetch_clones(
     pool: &str,
     beside: bool,
     left: bool,
+    tips_in: Option<&Path>,
 ) -> Vec<String> {
     let mut failed = Vec::new();
     for rel in clones {
@@ -520,11 +602,20 @@ fn fetch_clones(
             }
             .map_err(|why| why.to_string())
         });
-        if let Err(why) = fetched {
-            failed.push(format!(
+        match fetched {
+            Ok(came) => {
+                if let Some(config) = tips_in {
+                    let tips: Vec<String> = came.into_iter().map(|one| one.oid).collect();
+                    // Only a record: a tip not in it keeps an older runner, never loses work.
+                    if let Err(why) = purlis_core::tipsfetched::record(config, project, &tips) {
+                        tracing::warn!("purlis: in {}: {why}", shown(rel));
+                    }
+                }
+            }
+            Err(why) => failed.push(format!(
                 "the runner's branches of {} were not fetched: {why}",
                 shown(rel)
-            ));
+            )),
         }
     }
     failed
@@ -581,7 +672,18 @@ fn fetch_whole_said(
             continue;
         }
         let rel = format!("workspaces/{workspace}/{name}");
-        if purlis_core::contain::workspace_keeps(&name) || here.contains(&rel) {
+        if purlis_core::contain::workspace_keeps(&name) {
+            continue;
+        }
+        // Held here in any case and by any `.git`, it is not made again beside (#5601), and
+        // where no work comes back into what holds it, that is said.
+        if let Some(why) = held_back_here(root, workspace, &name) {
+            failed.push(format!(
+                "the clone {rel} did not come back from its runner: {why}"
+            ));
+            continue;
+        }
+        if purlis_core::repofolder::holds(root, workspace, &name) {
             continue;
         }
         if let Err(why) = comes_here_whole(link, project, root, &rel, runner) {
@@ -595,7 +697,7 @@ fn fetch_whole_said(
         here.push(String::new());
     }
     failed.extend(
-        fetch_clones(link, project, root, &here, runner, true, false)
+        fetch_clones(link, project, root, &here, runner, true, false, None)
             .into_iter()
             .filter(|why| !why.contains(codelink::NO_REPOSITORY_THERE)),
     );
@@ -674,7 +776,14 @@ pub(crate) fn not_home_within(
             )]);
         }
     };
-    let held: Vec<codelink::held::Held> = repos
+    codelink::held::not_home(root, project, &held_of(repos), &unread)
+}
+
+/// The repositories a runner listed, as the proof reads them.
+pub(crate) fn held_of(
+    repos: Vec<purlis_session_protocol::session::RepoHeld>,
+) -> Vec<codelink::held::Held> {
+    repos
         .into_iter()
         .map(|one| codelink::held::Held {
             project: one.project,
@@ -689,8 +798,7 @@ pub(crate) fn not_home_within(
                 })
                 .collect(),
         })
-        .collect();
-    codelink::held::not_home(root, project, &held, &unread)
+        .collect()
 }
 
 /// How long a fresh runner's end waits for the programs of its project there to end (#4569).

@@ -70,6 +70,13 @@ const inItsFonts: Loader = async ({ globals }) => {
   return {};
 };
 
+/**
+ * The frame is as wide as its story (`inline-block`), and stands at the top of its line
+ * (`vertical-align: top`), never on the line's baseline (#5463). On the baseline its top would be
+ * the line's ascent less however far down its story's content puts a baseline: a chat's pane is
+ * a flex column whose empty top synthesizes one at the frame's padding, so in WebKit the frame
+ * stood 7.594 px low in a compact cell and its picture took a row more than its baseline.
+ */
 const drawnIn: Decorator = (Story, { globals }) => {
   drawCell(globals);
   return (
@@ -77,6 +84,7 @@ const drawnIn: Decorator = (Story, { globals }) => {
       data-story-frame=""
       style={{
         display: "inline-block",
+        verticalAlign: "top",
         padding: "var(--space-4)",
         background: "var(--surface-base)",
         color: "var(--text-primary)",

@@ -176,7 +176,9 @@ describe("a press never replaces a view (#4757)", () => {
 
     const { tabs: next } = press(viewed, pressed(3), pressing());
 
-    expect(shows(next, view)).toEqual([{ kind: "view", view: PERSONA, workspace: "ops" }]);
+    expect(shows(next, view)).toEqual([
+      { kind: "view", view: PERSONA, workspace: "ops", title: "steward" },
+    ]);
     expect(shows(next, second)).toEqual([chat(3)]);
     expect(shows(next, first)).toEqual([chat(1)]);
     expect(next.inFront).toBe(second);
@@ -221,7 +223,7 @@ describe("a press never replaces a view (#4757)", () => {
     expect(next.order).toHaveLength(2);
     expect(focusedChat(next)).toBe(3);
     expect(shows(next, viewed.inFront as number)).toEqual([
-      { kind: "view", view: PERSONA, workspace: "ops" },
+      { kind: "view", view: PERSONA, workspace: "ops", title: "steward" },
     ]);
   });
 });

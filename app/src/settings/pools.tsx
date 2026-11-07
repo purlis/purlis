@@ -216,6 +216,23 @@ export function owedSaid(version: PoolVersion | undefined, now: number): string 
   return lines.join(" ");
 }
 
+/**
+ * **What a row says of work an older runner holds that bringing work back does not reach**
+ * (ruled 2026-11-07): a stash, a commit on no branch, a clone only on the runner, or one whose
+ * folder here was removed or renamed. The runner stays, the row lists what keeps it, and says
+ * what lets it go: Let it go in Devices, which frees that runner alone. Nothing where nothing
+ * does.
+ */
+export function leftSaid(version: PoolVersion | undefined): string | undefined {
+  if (version === undefined || version.left.length === 0) return undefined;
+  const shown = version.left.slice(0, 5);
+  const more = version.left.length - shown.length;
+  return [
+    `An older runner stays, since it holds work purlis can't bring back on its own: ${shown.join("; ")}${more > 0 ? `; and ${more} more` : ""}.`,
+    "To keep it, copy it out of the runner's container with Docker. Let it go in Devices removes only that runner, and deletes that work with it.",
+  ].join(" ");
+}
+
 /** When a project was last opened, `opened` in seconds since the epoch, in whole days before
  *  `now` in milliseconds, never calendar days: a clock that moved back is under a day. */
 function openedAgo(opened: number, now: number): string {
@@ -486,6 +503,7 @@ function PoolEntry({
 }) {
   const remove = onAsk;
   const owed = owedSaid(version, useNow());
+  const left = leftSaid(version);
   return (
     <li className="ui-machine-entry">
       <span className="ui-machine-name">{pool.name}</span>
@@ -522,6 +540,7 @@ function PoolEntry({
         <p className="ui-setting-help">{versionSaid(version)}</p>
       )}
       {owed !== undefined && <p className="ui-setting-help">{owed}</p>}
+      {left !== undefined && <p className="ui-setting-help">{left}</p>}
       {notHeld}
       {profiles}
       <PoolLimits pool={pool.name} plane={plane} />

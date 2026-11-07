@@ -21,7 +21,7 @@
 
 use std::collections::BTreeMap;
 
-use agent_client_protocol::schema::v1::{
+use agent_client_protocol::v1::schema::{
     CreateElicitationRequest, ElicitationContentValue, ElicitationMode, ElicitationPropertySchema,
     ElicitationScope, EnumOption, MultiSelectItems, StringFormat,
 };

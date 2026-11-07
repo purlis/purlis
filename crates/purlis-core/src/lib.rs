@@ -18,6 +18,7 @@ pub mod branchgit;
 pub mod briefing;
 pub mod brokered;
 pub mod browsertools;
+pub mod casefold;
 pub mod change;
 pub mod chatenv;
 pub mod chatpiece;
@@ -224,6 +225,7 @@ pub mod rewrite;
 pub mod rootupdate;
 pub mod roster;
 pub mod rulespelling;
+pub mod runnercursors;
 #[cfg(unix)]
 pub mod runnerhours;
 #[cfg(unix)]
@@ -285,6 +287,8 @@ pub mod testrun;
 pub mod theme;
 pub mod themechat;
 pub mod themepreview;
+#[cfg(unix)]
+pub mod tipsfetched;
 pub mod toolgate;
 pub mod toolhooks;
 pub mod touching;

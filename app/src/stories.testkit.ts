@@ -25,6 +25,40 @@ export async function pictureNow(): Promise<void> {
   if (typeof take === "function") await (take as () => Promise<void>)();
 }
 
+/**
+ * **Each story frame that does not stand at the top of what it is drawn in, on a whole pixel**
+ * (#5463), one entry for each `[data-story-frame]` under `inside`. A frame drawn on a line of
+ * text sits on that line's baseline, so its top would move with whatever baseline its story's
+ * content gives it, by a fraction of a pixel as often as not, and its picture would take a row
+ * more. Measured exactly, with no tolerance: a fraction is the fault, and both engines lay out
+ * in whole sixty-fourths, so a frame at its line's top measures 0 from it.
+ */
+export function framesOffTheirLine(inside: ParentNode = document): string[] {
+  return [...inside.querySelectorAll("[data-story-frame]")].flatMap((frame) => {
+    const line = frame.parentElement;
+    if (line === null) return [];
+    const { top } = frame.getBoundingClientRect();
+    // The top of the line's content box: past its border and its padding, where the frame goes.
+    const drawn = getComputedStyle(line);
+    const lineTop =
+      line.getBoundingClientRect().top +
+      parseFloat(drawn.borderTopWidth) +
+      parseFloat(drawn.paddingTop);
+    const off: string[] = [];
+    if (top !== lineTop)
+      off.push(`the story's frame stands ${top - lineTop} px below the top of its line`);
+    if (!Number.isInteger(top)) off.push(`the story's frame's top is at ${top} px, between pixels`);
+    return off;
+  });
+}
+
+/** **The story's frame stands at the top of its line**, as `framesOffTheirLine` measures it;
+ *  `step` names where in the story. */
+export function expectFrameOnItsLine(inside: ParentNode, step: string): void {
+  const off = framesOffTheirLine(inside);
+  if (off.length > 0) throw new Error(`${step}: ${off.join("; ")}`);
+}
+
 /** The global the story tests put their window-sizer on (`.storybook/cell.setup.ts`). */
 export const WINDOW_GLOBAL = "__PURLIS_STORY_WINDOW__";
 

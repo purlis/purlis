@@ -94,6 +94,8 @@ struct Host {
     confined: RefCell<Vec<ConfinePlan>>,
     recorded: RefCell<Vec<serde_json::Value>>,
     refuses_to_record: bool,
+    /// What the start said it armed the chat with (#4218).
+    armed: RefCell<Option<Vec<session::ArmedSkill>>>,
 }
 
 impl Beside for Host {
@@ -120,6 +122,10 @@ impl Beside for Host {
         }
         self.recorded.borrow_mut().push(entry);
         Ok(())
+    }
+
+    fn armed(&self, skills: Vec<session::ArmedSkill>) {
+        *self.armed.borrow_mut() = Some(skills);
     }
 }
 
@@ -796,4 +802,54 @@ fn a_composed_claude_code_line_is_read_as_running_in_its_own_sandbox() {
         "{:?}",
         words(&launch)
     );
+}
+
+/// A skill folder `name` in `dir`, as a plane holds one.
+fn skill_in(dir: &Path, name: &str) {
+    fs::create_dir_all(dir.join(name)).unwrap();
+    fs::write(
+        dir.join(name).join("SKILL.md"),
+        format!("---\nname: {name}\ndescription: Does {name}.\n---\n\nbody\n"),
+    )
+    .unwrap();
+}
+
+/// **SK-15h, #4218: a chat the host composes tells its host the skills it armed it with**, by
+/// name and level alone, and only where its desktop's word lets the plane's skills reach it.
+#[test]
+fn a_composed_chat_tells_its_host_the_names_and_levels_of_the_skills_it_armed_it_with() {
+    purlis_core::unsteered!();
+    let project = Project::on("claude");
+    skill_in(&project.root().join("skills"), "deploy");
+    let armed = |on: bool| {
+        let host = Host::default();
+        let start = asking(|start| {
+            start.plane_skills = Some(on);
+            start.without_sandbox = true;
+            start.workspace = None;
+        });
+        hoststart::compose(
+            &Starting {
+                root: project.root(),
+                number: 3,
+                start: &start,
+                reporting: None,
+                started_by: "remote-link",
+                prompt_key: None,
+            },
+            &project.kit(),
+            &host,
+        )
+        .expect("composed");
+        host.armed.take().expect("its start said what it armed")
+    };
+
+    assert_eq!(
+        armed(true),
+        [session::ArmedSkill {
+            name: "deploy".into(),
+            level: "project".into(),
+        }]
+    );
+    assert_eq!(armed(false), [], "the plane's skills do not reach it");
 }

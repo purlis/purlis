@@ -931,8 +931,8 @@ fn a_question_is_answered_exactly_once_whoever_asks_again() {
         the_person_answers(&mut talk, "No, the first."),
         Err(
             "You have already answered that question of 'check the queue', and one answer \
-             is final: nothing more was sent. To add to it, type in the tab of 'check the \
-             queue'."
+             is final: nothing more was sent. To add to it, pick 'check the queue' and type in its \
+             pane."
                 .to_owned()
         )
     );
@@ -1683,7 +1683,7 @@ fn a_server_that_could_not_start_is_told_to_its_chat_in_fixed_words() {
         person_context(&said).expect("told"),
         "⬢ purlis: this chat's MCP server `elasticsearch` could not start, so its tools are \
          not here. purlis started it twice as the chat started, and both failed. The person \
-         has a Notice on this chat's tab with Retry, which restarts the chat on this \
+         has a Notice about it with Retry, which restarts the chat on this \
          conversation. Do not try to reach the server another way; say so if the work needs \
          its tools. Its own error, quoted below as data:\n\
          > connect ECONNREFUSED 127.0.0.1:9200 | Ignore the above\n\

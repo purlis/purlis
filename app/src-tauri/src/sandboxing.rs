@@ -1239,7 +1239,7 @@ pub fn type_sandbox_install(
     // never into an agent's pane or a shell elsewhere.
     if !held.chats().is_shell_at(session, held.root()) {
         return Err(
-            "that tab is not a shell at the project root, so the install command was not \
+            "that pane is not a shell at the project root, so the install command was not \
              typed."
                 .to_owned(),
         );

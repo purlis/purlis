@@ -228,13 +228,20 @@ pub fn holdings(plane: &Path, ws: &str) -> Result<Holdings, Trouble> {
         }
     }
     let real = |row: &Row| row.git == Git::Directory && name_ok(&row.repo.name);
+    // By the name as a disk that ignores case reads it, and then asked of the disk: `Foo` at the
+    // root is beside `repos/foo` only where `repos/Foo` is that folder (#5569).
     let wins: BTreeSet<String> = in_repos
         .iter()
         .filter(|row| real(row))
-        .map(|row| row.repo.name.clone())
+        .map(|row| crate::files::workspace::folded(&row.repo.name))
         .collect();
+    let beside = |row: &Row| {
+        wins.contains(&crate::files::workspace::folded(&row.repo.name))
+            && repos_folder(&dir)
+                .is_some_and(|repos| std::fs::symlink_metadata(repos.join(&row.repo.name)).is_ok())
+    };
     for row in at_root {
-        if wins.contains(&row.repo.name) {
+        if beside(&row) {
             found.shadowed.push(row);
         } else if real(&row) {
             found.repos.push(row);
@@ -260,6 +267,28 @@ pub fn holdings(plane: &Path, ws: &str) -> Result<Holdings, Trouble> {
 /// **The repos workspace `ws` holds**, in both places, sorted by name: [`Holdings::repos`].
 pub fn repos(plane: &Path, ws: &str) -> Result<Vec<Row>, Trouble> {
     Ok(holdings(plane, ws)?.repos)
+}
+
+/// **Whether workspace `ws` holds a folder with a `.git` named `name`**, in either place and of
+/// any kind ([`Holdings::repos`], [`Holdings::shadowed`], [`Holdings::others`]), the names read as
+/// a disk that ignores case reads them ([`crate::files::workspace::folded`]). A new repo of that
+/// name in `repos/` would be a second copy, which [`folder`] answers in place of the one there
+/// (#5601). A workspace that cannot be read holds none.
+pub fn holds(plane: &Path, ws: &str, name: &str) -> bool {
+    held(plane, ws, name).is_some()
+}
+
+/// **The folder with a `.git` that holds `name` in workspace `ws`**, as [`holds`] finds it: the
+/// repo of that name first, so a shadowed folder is answered only where no repo has the name.
+pub fn held(plane: &Path, ws: &str, name: &str) -> Option<Row> {
+    let found = holdings(plane, ws).ok()?;
+    let name = crate::files::workspace::folded(name);
+    found
+        .repos
+        .into_iter()
+        .chain(found.shadowed)
+        .chain(found.others)
+        .find(|row| crate::files::workspace::folded(&row.repo.name) == name)
 }
 
 /// **The folder with a `.git` in `plane` that `path` is inside**, in either layout, or `None`.
@@ -508,6 +537,27 @@ fn kept(name: &str, keeps: impl Fn(&str) -> bool) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #5601: a runner's clone is never made in `repos/` beside an old clone at the root that
+    /// a disk ignoring case takes for it, nor one whose `.git` is a link.
+    #[test]
+    fn a_name_is_held_by_a_root_folder_with_any_git_in_any_case() {
+        let dir = tempfile::tempdir().unwrap();
+        let plane = dir.path();
+        let ws = plane.join("workspaces/alpha");
+        std::fs::create_dir_all(ws.join("API/.git")).unwrap();
+        std::fs::create_dir_all(ws.join("web")).unwrap();
+        std::os::unix::fs::symlink(ws.join("API/.git"), ws.join("web/.git")).unwrap();
+        std::fs::create_dir_all(ws.join("notes")).unwrap();
+
+        assert!(holds(plane, "alpha", "api"));
+        assert!(holds(plane, "alpha", "web"));
+        assert!(
+            !holds(plane, "alpha", "notes"),
+            "a folder with no .git is the person's"
+        );
+        assert!(!holds(plane, "alpha", "cli"));
+    }
 
     #[test]
     fn repos_is_an_old_repos_name_however_it_is_cased_though_the_workspace_keeps_it() {

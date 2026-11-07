@@ -298,6 +298,8 @@ describe("the key a row shows (N25)", () => {
     expect(rowKey("shell.new", false)).toBe("Ctrl+Shift+T");
     expect(rowKey("tab.close:7", true)).toBe("⌫");
     expect(rowKey("chat.rename:7", false)).toBe("F2");
+    // A tab's own Rename… (#5343).
+    expect(rowKey("tab.rename:7", false)).toBe("F2");
     expect(rowKey("view.toggle:navigation", true)).toBe("⌘B");
     expect(rowKey("shortcuts.show", true)).toBe("⌘/");
     expect(rowKey("focus.toggle", false)).toBe("Ctrl+Shift+Enter");

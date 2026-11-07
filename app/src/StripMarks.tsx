@@ -394,6 +394,11 @@ export function Closer({
         // and with Delete on the focused tab (charter-app#239, `closeOnDelete`).
         tabIndex={reachable ? 0 : -1}
         aria-label={offer.title}
+        // **A background tab's `×` never takes the keyboard** (#5445): pressed, it closes a
+        // tab behind the one in front, and the keyboard stays where it was in that front tab,
+        // not on a button that is about to go. The front tab's takes it as any button does,
+        // and its close puts the keyboard in what comes to the front (#5392).
+        onMouseDown={reachable ? undefined : (event) => event.preventDefault()}
         onClick={() => onPress(offer)}
       >
         {minimise ? <Minus /> : <X />}

@@ -81,15 +81,20 @@ export function stateButtonOf(chat: {
  * among them: they never go. The workspace is not either, being the foot's (#5206).
  *
  * - `markWord`: the state mark's word, its dot staying.
+ * - `using`: what the chat uses now, its skill run and its browsers (#5524, #5614), together. Each
+ *   is a glance with another home (the run in the Skill studio's Runs, each browser a row under
+ *   its chat and in the Browsers grid), so it goes before anything the head presses or says the
+ *   chat by: after the state's word, before the button's word and the mark.
  * - `buttonWord`: the state button's word, its icon staying with the word as its name.
  * - `mark`: the state mark, dot and all.
  * - `splitDown`: the Split down button.
  */
-export type HeadPart = "markWord" | "buttonWord" | "mark" | "splitDown";
+export type HeadPart = "markWord" | "using" | "buttonWord" | "mark" | "splitDown";
 
 /** **The ruled order**, and the pane width in CSS pixels under which each part goes (#4585). */
 export const HEAD_DROPS: readonly { part: HeadPart; below: number }[] = [
   { part: "markWord", below: 470 },
+  { part: "using", below: 450 },
   { part: "buttonWord", below: 420 },
   { part: "mark", below: 380 },
   { part: "splitDown", below: 300 },
@@ -135,12 +140,22 @@ export type PaneKind =
 
 /**
  * **A chip of the head's line** (the **pane line**, `.pane-chips`), in its drawn order: who it
- * runs as, which chat it is (its name, or the path to the task it shows) and its state mark and
- * the mark's word. A pane with no foot keeps its details here too (spec #5191, Out of Scope): its
- * sandbox, harness · workspace (`where`), where it came from and its work item.
+ * runs as, which chat it is (its name, or the path to the task it shows), its state mark and
+ * the mark's word, and what it uses now (`using`, #5524). A pane with no foot keeps its details
+ * here too (spec #5191, Out of Scope): its sandbox, harness · workspace (`where`), where it came
+ * from and its work item.
  */
 export type LinePart =
-  "persona" | "name" | "crumbs" | "sandbox" | "mark" | "markWord" | "where" | "from" | "workItem";
+  | "persona"
+  | "name"
+  | "crumbs"
+  | "sandbox"
+  | "mark"
+  | "markWord"
+  | "using"
+  | "where"
+  | "from"
+  | "workItem";
 
 /**
  * **A part of the pane foot** (#5202, #5204, spec #5191, look A), in its drawn order: at its start
@@ -216,6 +231,9 @@ export type LineFacts = {
   workItem?: boolean;
   /** Its sandbox is known. */
   sandbox?: boolean;
+  /** It may use something now, its skill run or its browsers, which its head says after its
+   *  state (#5524) until a narrow pane drops it (#5614). */
+  using?: boolean;
   /** False where the pane draws no close: a pane showing a task of its session (#1486). */
   closes?: boolean;
   /**
@@ -280,6 +298,7 @@ export function paneLinesOf(
     head.push("mark");
     if (!drops.has("markWord")) head.push("markWord");
   }
+  if (facts.using === true && !drops.has("using")) head.push("using");
   if (!footed && details) {
     head.push("where");
     if (facts.from === true) head.push("from");

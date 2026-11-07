@@ -1666,3 +1666,88 @@ fn the_person_takes_a_real_browser_over_types_and_the_agent_never_sees_it() {
         }
     }
 }
+
+// ---- a page whose address holds what purlis filled, end to end ----
+
+/// A page whose address holds a value a login purlis performed filled reaches the window named
+/// by no site, and a page of the same site whose address holds none of it is named again: the
+/// window's chip is told no origin for it. Run in homes of its own, as a login reads the data
+/// home (see [`a_chats_browser_tools_drive_a_real_engine_through_every_hop`]).
+#[test]
+fn a_page_whose_address_holds_what_a_login_filled_reaches_the_window_with_no_site() {
+    if !a_real_engine_runs_here() {
+        return;
+    }
+    in_homes_of_its_own(
+        "browsers::tests::end_to_end::a_page_holding_what_a_login_filled_in_homes_of_its_own",
+    );
+}
+
+/// [`a_page_whose_address_holds_what_a_login_filled_reaches_the_window_with_no_site`], in homes
+/// of its own.
+#[test]
+#[ignore = "run by a_page_whose_address_holds_what_a_login_filled_reaches_the_window_with_no_site"]
+fn a_page_holding_what_a_login_filled_in_homes_of_its_own() {
+    if !a_real_engine_runs_here() {
+        return;
+    }
+    let site = Site::serve();
+    // The login's form sends what it was filled with in the address of the page it goes to.
+    let window = Window::declaring(
+        Host::serving,
+        &format!("browser = \"{}\"", site.at("login-echoes.html")),
+        &[site.site()],
+    );
+    let (chat, mut tools) = window.a_chat();
+    tools.call("browser_snapshot", json!({}));
+    crate::chatbrowsers::allowed(&window.held, chat, false).expect("the person allows it");
+    window.opens(&mut tools, &site.at("counter.html"));
+    let program = window.program_of(chat);
+
+    // The person watches it, as the window's view does: where its page is, as it is told.
+    let told: Arc<Mutex<Vec<Option<String>>>> = Arc::default();
+    let hearing = Arc::clone(&told);
+    window
+        .browsers
+        .watch(
+            &program,
+            crate::browsers::BrowserViewRole::Focused,
+            Box::new(|_, _| {}),
+            Box::new(move |origin| {
+                hearing
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .push(origin);
+            }),
+            Arc::new(|_| {}),
+        )
+        .expect("the person watches the browser");
+    let latest = || {
+        told.lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .last()
+            .cloned()
+    };
+    let origin = format!("http://127.0.0.1:{}", site.port);
+    until("the page's site is told", || {
+        latest() == Some(Some(origin.clone()))
+    });
+
+    tools.done("browser_login", json!({ "login": LOGIN }));
+    // The login sent its form to the page that echoes its address.
+    let sent = tools.done("browser_wait_for_text", json!({ "text": "Sent" }));
+    assert!(sent.text.contains("The text was seen."), "{}", sent.text);
+    until(
+        "the page that holds what was filled is told with no site",
+        || latest() == Some(None),
+    );
+
+    // Back on a page of the same site whose address holds none of it: named again.
+    tools.done(
+        "browser_navigate",
+        json!({ "address": site.at("counter.html") }),
+    );
+    until("the page's site is told again", || {
+        latest() == Some(Some(origin.clone()))
+    });
+}

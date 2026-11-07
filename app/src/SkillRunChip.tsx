@@ -9,14 +9,13 @@ import { useSkillStudioOn } from "./skillStudio";
 import { Button } from "./ui/button/Button";
 
 /**
- * **The skill run open in a tab's chat** (SK-3, #2766): the skill's name, the tool calls made
+ * **The skill run open in a chat, on its pane head** (SK-3, #2766; off its tab since #5524): the skill's name, the tool calls made
  * inside it so far and, where the chat's harness says its usage, the tokens it has spent since
  * (SK-26, #3694, decision 41), from the moment the chat uses the skill until its turn ends.
  * Where the harness says no usage it says no tokens, never a zero. Pressed,
  * it opens the Skill studio at that skill's Runs, with the run marked (#3682). The skill is the one the core counts the run of, by its
  * own name (`secrets` for opencode's `purlis-secrets`, #3385): the window reads no name itself.
  *
- * Beside the tab's button, not inside it: the tab is a button, and a button holds no button.
  * Nothing while no run is open, and nothing while the Skill studio is not on.
  */
 export const SkillRunChip = memo(function SkillRunChip({
@@ -35,29 +34,40 @@ export const SkillRunChip = memo(function SkillRunChip({
   const tokens = run.tokens === null ? undefined : `${tokensShort(run.tokens)} tokens`;
   const sofar = tokens === undefined ? calls : `${calls} and ${tokens}`;
   return (
-    <span className="tab-run tab-skill-run">
+    <span className="pane-skill-run">
       {/* On a sunken pill, as a tab's task counts were before they moved to its pane's head
           (#3264, #5341). */}
-      <span className="tab-run-pill">
+      <span className="skill-run-pill">
         <Button
           variant="quiet"
           size="sm"
-          className="tab-run-counts"
-          data-testid="tab-skill-run"
+          className="skill-run-counts"
+          data-testid="pane-skill-run"
           tooltip={`Using the skill ${run.name}: ${sofar} so far. Open its runs.`}
-          aria-label={`Using the skill ${run.name}, ${sofar} so far. Open its runs`}
           onPress={() => session !== undefined && onOpen(run.name, run.id, session, run.level)}
         >
-          <span className="count">
-            <Sparkles aria-hidden="true" />
-            <span className="skill-run-name">{run.name}</span>
-          </span>
-          <span className="count">{run.tool_calls}</span>
-          {tokens !== undefined && (
-            <span className="count skill-run-tokens" data-testid="tab-skill-run-tokens">
-              {tokens}
+          {/* **Named by what it shows** (#5614): the words a sighted person reads stay in its
+              name, which the rest of the sentence, heard and not drawn, completes (WCAG 2.5.3).
+              One run of text laid out as if it were not there, so its spaces are heard between
+              the pills and never drawn. */}
+          <span className="skill-run-said">
+            <span className="count">
+              <Sparkles aria-hidden="true" />
+              <span className="sr-only">Using the skill</span>{" "}
+              <span className="skill-run-name">{run.name}</span>
             </span>
-          )}
+            <span className="sr-only">,</span> <span className="count">{run.tool_calls}</span>{" "}
+            <span className="sr-only">{run.tool_calls === 1 ? "tool call" : "tool calls"}</span>{" "}
+            {tokens !== undefined && (
+              <>
+                <span className="sr-only">and</span>{" "}
+                <span className="count skill-run-tokens" data-testid="pane-skill-run-tokens">
+                  {tokens}
+                </span>{" "}
+              </>
+            )}
+            <span className="sr-only">so far. Open its runs</span>
+          </span>
         </Button>
       </span>
     </span>

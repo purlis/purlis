@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { appProcessesIn, descriptorsListed } from "./processes.js";
+import { parseProcesses } from "./memory.js";
+import { appProcessesIn, descriptorsListed, theRunsApp } from "./processes.js";
 
 /**
  * How a macOS run counts the app's open descriptors: `lsof -F f`, whose `f` field is either a
@@ -66,5 +67,72 @@ describe("the app's processes in a ps listing", () => {
   it("are not another binary whose path only begins with the app's", () => {
     const listing = [`300 ${app}-helper`, `301 /usr/bin/grep ${app}`].join("\n");
     expect(appProcessesIn(listing, app)).toEqual({ windows: [], sessionHosts: [] });
+  });
+});
+
+/**
+ * The app this run's launcher started, and the session hosts that app started (#5653): what
+ * the upgrade run ends before it removes its temporary plane. By the process tree, so another
+ * run's app on the same build is never touched.
+ */
+describe("the run's app in a ps listing with parents", () => {
+  const app = "/runner/target/debug/purlis-app";
+  const launcher = 5000;
+  /** `ps -A -o pid=,ppid=,rss=,etime=,command=`, as `processes()` reads it. */
+  const rows = (lines: string[]) => parseProcesses(lines.join("\n"), "");
+
+  it("is the window the launcher started and the session host that window started", () => {
+    const listing = [
+      "   1 0 1 00:01 /sbin/launchd",
+      " 5000   900 1 00:01 node wdio run e2e/wdio.upgrade.conf.ts",
+      ` 5100 5000 1 00:01 ${app}`,
+      ` 5200 5100 1 00:01 ${app} purlis-serve-for-the-window`,
+      "",
+    ];
+    expect(theRunsApp(rows(listing), launcher, app)).toEqual({
+      windows: [5100],
+      sessionHosts: [5200],
+      programs: [],
+    });
+  });
+
+  it("is found below a driver the launcher started, as on Linux", () => {
+    const listing = [
+      "5050 5000 1 00:01 /usr/bin/WebKitWebDriver --port=4445",
+      ` 5100 5050 1 00:01 ${app}`,
+      ` 5200 5100 1 00:01 ${app} purlis-serve-for-the-window`,
+    ];
+    expect(theRunsApp(rows(listing), launcher, app)).toEqual({
+      windows: [5100],
+      sessionHosts: [5200],
+      programs: [],
+    });
+  });
+
+  it("is not another run's app on the same build, nor its host", () => {
+    const listing = [
+      ` 6100 6000 1 00:01 ${app}`,
+      ` 6200 6100 1 00:01 ${app} purlis-serve-for-the-window`,
+      "5300 5000 1 00:01 /usr/bin/true",
+    ];
+    expect(theRunsApp(rows(listing), launcher, app)).toEqual({
+      windows: [],
+      sessionHosts: [],
+      programs: [],
+    });
+  });
+
+  it("holds the programs its host started, each in a group of its own, to end after the host", () => {
+    const listing = [
+      ` 5100 5000 1 00:01 ${app}`,
+      ` 5200 5100 1 00:01 ${app} purlis-serve-for-the-window`,
+      " 5300 5200 1 00:01 /runner/target/debug/fake-harness --resume",
+      " 5400 5300 1 00:01 /bin/sh -c sleep 60",
+    ];
+    expect(theRunsApp(rows(listing), launcher, app)).toEqual({
+      windows: [5100],
+      sessionHosts: [5200],
+      programs: [5300, 5400],
+    });
   });
 });

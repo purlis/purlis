@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! `charter shell-guard`: what a shell tab's shims run in front of a harness (ADR 0062).
+//! `charter shell-guard`: what a shell's shims run in front of a harness (ADR 0062).
 //!
 //! Everything it decides is `purlis_core::shellguard::plan`'s. This is the doing of it, in
 //! the order that keeps the operator's harness starting whatever goes wrong: the line on
@@ -31,7 +31,7 @@ pub fn run(shims: &Path, word: &str, args: &[OsString]) -> ExitCode {
         let _ = hookwire::tell(socket, hookwire::ChatToken::from_env().as_ref(), notice);
     }
     let Some(program) = plan.program else {
-        eprintln!("purlis: no {word} on PATH outside purlis's shell-tab shims");
+        eprintln!("purlis: no {word} on PATH outside purlis's shell shims");
         // What a shell answers for a command it cannot find, because that is what this is.
         return ExitCode::from(127);
     };

@@ -39,6 +39,10 @@ let heldRemoved: string[];
 /** The held runners whose conversations the core was asked to bring back, and what it says. */
 let broughtBack: string[];
 let bringBackSays: { error: string } | undefined;
+/** The kept runners the core was asked to let go of, and why it did not, where it did not. */
+let letGone: string[];
+let letGoSays: { error: string } | undefined;
+let letGoShown: unknown[];
 let devicesRead: number;
 /** The moment the fixture's contacts are said against: one for the fixture and the view, so a
  *  run across midnight never puts them on two days ("Last answered Nov 3 at …"). */
@@ -58,9 +62,10 @@ beforeEach(() => {
           pool: "builds",
           runner: "builds",
           draining: false,
+          left: [],
           on: { chats: [{ plane: PLANE, session: 2, name: "verify" }], browsers: [] },
         },
-        { pool: "qa", runner: "qa", draining: false, on: { chats: [], browsers: [] } },
+        { pool: "qa", runner: "qa", draining: false, left: [], on: { chats: [], browsers: [] } },
       ],
       unkept: [],
       unkept_browsers: [],
@@ -107,6 +112,9 @@ beforeEach(() => {
   heldRemoved = [];
   broughtBack = [];
   bringBackSays = undefined;
+  letGone = [];
+  letGoSays = undefined;
+  letGoShown = [];
   devicesRead = 0;
   runnersAsked = [];
   holdAnswers = undefined;
@@ -119,6 +127,7 @@ beforeEach(() => {
       runner?: string;
       name?: string;
       discarding?: unknown;
+      shown?: unknown;
     };
     if (cmd === "devices") {
       devicesRead += 1;
@@ -139,6 +148,12 @@ beforeEach(() => {
     if (cmd === "docker_pool_bring_back_held_runner") {
       broughtBack.push(a.runner ?? "");
       if (bringBackSays !== undefined) throw bringBackSays.error;
+      return null;
+    }
+    if (cmd === "docker_pool_let_runner_go") {
+      letGone.push(a.runner ?? "");
+      letGoShown.push(a.shown);
+      if (letGoSays !== undefined) throw letGoSays.error;
       return null;
     }
     if (cmd === "device_runner") {
@@ -448,6 +463,103 @@ describe("DevicesView", () => {
     expect(
       screen.getByText("1 file of 2 files of its chats' conversations came back.").tagName,
     ).toBe("BDI");
+  });
+
+  /** Runner qa of pool qa drains, kept for a stash no fetch brings. */
+  const keptForAStash = () => {
+    const runners = shown.placement.runners;
+    runners[1] = {
+      ...(runners[1] as (typeof runners)[number]),
+      draining: true,
+      left: ["in project alpha, the project's own repository on the runner holds 1 stashed change"],
+    };
+  };
+  const keptNotice = () =>
+    waitFor(() => {
+      const found = document.querySelector('[data-cause="devices-kept-runner:qa"]');
+      if (!(found instanceof HTMLElement)) throw new Error("no Notice yet");
+      return found;
+    });
+
+  it("offers Let it go on an older runner kept for work it holds, naming what goes, and lets only it go once asked", async () => {
+    keptForAStash();
+    render(<DevicesView />);
+    const notice = await keptNotice();
+    expect(notice.textContent).toContain("purlis keeps older runner qa of pool qa");
+    expect(section("Runner qa of pool qa").textContent).toContain(
+      "An older runner purlis keeps, since it holds work purlis can't bring back",
+    );
+    const reads = devicesRead;
+
+    await userEvent.click(within(notice).getByRole("button", { name: "Let it go…" }));
+    const asking = await screen.findByRole("alertdialog", { name: "Let runner qa go?" });
+    expect(asking.textContent).toContain("1 stashed change");
+    expect(asking.textContent).toContain("Pool qa and its runner now stay as they are.");
+    // It opens on its way back, so the press that opened it lets nothing go.
+    await waitFor(() =>
+      expect(document.activeElement).toBe(within(asking).getByRole("button", { name: "Cancel" })),
+    );
+    expect(letGone).toEqual([]);
+    await userEvent.click(within(asking).getByRole("button", { name: "Let it go" }));
+
+    await vi.waitFor(() => expect(letGone).toEqual(["qa"]));
+    // Only what the ask named goes: the core is told it, and keeps a runner that holds more.
+    expect(letGoShown).toEqual([
+      ["in project alpha, the project's own repository on the runner holds 1 stashed change"],
+    ]);
+    await vi.waitFor(() => expect(devicesRead).toBeGreaterThan(reads));
+    expect(removed).toEqual([]);
+    expect(heldRemoved).toEqual([]);
+  });
+
+  it("lets nothing go when asked and cancelled, and the keyboard goes back to Let it go…", async () => {
+    keptForAStash();
+    render(<DevicesView />);
+    const notice = await keptNotice();
+    const letGo = within(notice).getByRole("button", { name: "Let it go…" });
+
+    await userEvent.click(letGo);
+    await screen.findByRole("alertdialog", { name: "Let runner qa go?" });
+    await userEvent.keyboard("{Escape}");
+
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(letGo));
+    expect(letGone).toEqual([]);
+  });
+
+  it("says why a runner was not let go, and keeps its Notice", async () => {
+    keptForAStash();
+    letGoSays = { error: "1 chat still runs on runner qa, so it stays until it ends." };
+    render(<DevicesView />);
+    const notice = await keptNotice();
+    const reads = devicesRead;
+
+    await userEvent.click(within(notice).getByRole("button", { name: "Let it go…" }));
+    await userEvent.click(
+      within(await screen.findByRole("alertdialog", { name: "Let runner qa go?" })).getByRole(
+        "button",
+        { name: "Let it go" },
+      ),
+    );
+
+    expect(await screen.findByText(/Runner qa was not let go:/)).toBeInTheDocument();
+    expect(
+      screen.getByText("1 chat still runs on runner qa, so it stays until it ends.").tagName,
+    ).toBe("BDI");
+    expect(document.querySelector('[data-cause="devices-kept-runner:qa"]')).not.toBeNull();
+    // What it holds now is read again, so the next ask names it.
+    await vi.waitFor(() => expect(devicesRead).toBeGreaterThan(reads));
+  });
+
+  it("offers Let it go on no runner that nothing keeps", async () => {
+    const runners = shown.placement.runners;
+    runners[1] = { ...(runners[1] as (typeof runners)[number]), draining: true };
+    render(<DevicesView />);
+    await waitFor(() => expect(screen.getByText("Runner qa of pool qa")).toBeInTheDocument());
+    await waitFor(() => expect(runnersAsked).toContain("qa/qa"));
+
+    expect(document.querySelector('[data-cause^="devices-kept-runner"]')).toBeNull();
+    expect(screen.queryByRole("button", { name: "Let it go…" })).toBeNull();
   });
 
   it("leads a key-changed runner's row to removing its pool, asking first", async () => {

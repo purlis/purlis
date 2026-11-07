@@ -19,6 +19,7 @@ import {
   PROGRAM_COLUMNS,
   PS_COLUMNS,
   type ProcessRow,
+  descendants,
   harnessMemory,
   parseFootprints,
   parseProcesses,
@@ -107,6 +108,16 @@ export interface AppProcesses {
   sessionHosts: number[];
 }
 
+/** Which of the app's processes `command` is, when it runs `binary`; `null` when it does not,
+ *  or runs it as a helper ({@link HELPER_ARGUMENTS}, {@link READER_ARGUMENT}). */
+function appProcessKind(command: string, binary: string): keyof AppProcesses | null {
+  if (!(command === binary || command.startsWith(`${binary} `))) return null;
+  const words = command.slice(binary.length).trim().split(/\s+/);
+  const first = words[0];
+  if (HELPER_ARGUMENTS.includes(first) || words[words.length - 1] === READER_ARGUMENT) return null;
+  return first === SESSION_HOST_ARGUMENT ? "sessionHosts" : "windows";
+}
+
 /**
  * The processes in `listing` (`ps -A -o pid=,command=`) that run `binary`, split into the app's
  * windows and its session hosts.
@@ -121,16 +132,49 @@ export function appProcessesIn(listing: string, binary: string): AppProcesses {
   for (const raw of listing.split("\n")) {
     const line = raw.trim();
     const pid = Number.parseInt(line, 10);
-    const command = line.slice(line.indexOf(" ") + 1).trimStart();
-    if (!Number.isInteger(pid) || !(command === binary || command.startsWith(`${binary} `))) {
-      continue;
-    }
-    const words = command.slice(binary.length).trim().split(/\s+/);
-    const first = words[0];
-    if (HELPER_ARGUMENTS.includes(first) || words[words.length - 1] === READER_ARGUMENT) continue;
-    (first === SESSION_HOST_ARGUMENT ? found.sessionHosts : found.windows).push(pid);
+    const kind = appProcessKind(line.slice(line.indexOf(" ") + 1).trimStart(), binary);
+    if (Number.isInteger(pid) && kind !== null) found[kind].push(pid);
   }
   return found;
+}
+
+/** The run's app: its windows and session hosts, and every program they started. */
+export interface RunsApp extends AppProcesses {
+  /**
+   * Everything below the windows and hosts that is neither: a chat's harness and what it runs,
+   * each in a process group of its own (`purlis_core::executor`), so a host that is killed
+   * leaves them running.
+   */
+  programs: number[];
+}
+
+/**
+ * The app's processes running `binary` below `launcher` in `rows`: the windows anything the
+ * launcher started started, the session hosts those windows started, and every program below
+ * them (#5653).
+ *
+ * By the tree, not the binary alone: another run's app on the same build is not this run's to
+ * end. The host runs in a process group of its own (#2006), so its parent is what ties it to
+ * the window; a host whose window already went has been handed to `init` and is not found.
+ */
+export function theRunsApp(rows: ProcessRow[], launcher: number, binary: string): RunsApp {
+  const found: RunsApp = { windows: [], sessionHosts: [], programs: [] };
+  for (const row of descendants(rows, launcher)) {
+    const kind = appProcessKind(row.command, binary);
+    if (kind !== null) found[kind].push(row.pid);
+  }
+  const app = new Set([...found.windows, ...found.sessionHosts]);
+  for (const pid of app) {
+    for (const row of descendants(rows, pid)) {
+      if (!app.has(row.pid) && !found.programs.includes(row.pid)) found.programs.push(row.pid);
+    }
+  }
+  return found;
+}
+
+/** The app this process started, running `binary`, asked of the operating system. */
+export function theRunsAppNow(binary: string): RunsApp {
+  return theRunsApp(processes(), process.pid, binary);
 }
 
 /** The app's processes running `binary`, asked of the operating system. */

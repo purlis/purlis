@@ -189,6 +189,9 @@ pub struct Composed {
     pub ran: Option<purlis_session_protocol::session::RunSandbox>,
     /// The prompt key the host minted for it (#3369), where it says one.
     pub prompt_key: Option<purlis_core::skillspan::PromptSalt>,
+    /// The skills the host armed it with, by name and level (1.77, #4218): `None` from a host
+    /// before 1.77, which does not say them.
+    pub armed_skills: Option<Vec<purlis_session_protocol::session::ArmedSkill>>,
 }
 
 /// **A chat that moves between this machine and a runner** (#2048): where it works, the profile
@@ -212,6 +215,9 @@ pub struct CameBack {
     /// Each clone made here fresh from the runner's chat's work (#3811): every file of it was
     /// made there (#3990).
     pub made: Vec<MadeHere>,
+    /// Each clone the runner's chat made that stayed on the runner, said with why and what to do
+    /// (#5601).
+    pub stayed: Vec<String>,
 }
 
 /// **A clone made here fresh from a runner's chat's work** (#3811, #3985).
@@ -780,6 +786,17 @@ pub trait SessionHost: Send + Sync {
         None
     }
 
+    /// **The skills chat `number`, left running, was armed with, as its host said** (1.77,
+    /// #4218): what a window that reattaches a runner's chat lists for it. `None` where its host
+    /// says none: one before 1.77, or a chat the window composed. Read before it is reattached.
+    fn armed_skills_left(
+        &self,
+        number: u32,
+    ) -> Option<Vec<purlis_session_protocol::session::ArmedSkill>> {
+        let _ = number;
+        None
+    }
+
     /// **How chat `number`, left running, is sandboxed, as its host applied it** (#2636): `None`
     /// where its host keeps no such record, which the window takes as sandboxed. Read before
     /// it is reattached.
@@ -1023,6 +1040,9 @@ pub(crate) mod pretend {
         /// How it records the run of each chat it composes from now on, where a test said
         /// ([`Pretend::records_composed_runs_as`], #2692): in `seatbelt` otherwise.
         composed_ran: Mutex<Option<Option<purlis_session_protocol::session::RunSandbox>>>,
+        /// The skills it says it armed each chat it composes, or one left running, with
+        /// ([`Pretend::says_it_armed`], #4218): none said otherwise, as a host before 1.77.
+        composed_armed: Mutex<Option<Vec<purlis_session_protocol::session::ArmedSkill>>>,
         /// The chats it says run on a pool's runner, and the pool ([`Pretend::runs_on_pool`]).
         pools: Mutex<Vec<(u32, String)>>,
         /// Every input, resize and view of a terminal, in the order it reached the host
@@ -1116,6 +1136,15 @@ pub(crate) mod pretend {
             ran: Option<purlis_session_protocol::session::RunSandbox>,
         ) {
             *lock(&self.seen.composed_ran) = Some(ran);
+        }
+
+        /// Says each chat it composes from now on, and each it left running, was armed with
+        /// `skills`, as a host of 1.77 answers (#4218): `None` for one before, which says none.
+        pub fn says_it_armed(
+            &self,
+            skills: Option<Vec<purlis_session_protocol::session::ArmedSkill>>,
+        ) {
+            *lock(&self.seen.composed_armed) = skills;
         }
 
         /// Each chat started by its names, in order: its number, what it was named, and whether
@@ -1413,6 +1442,7 @@ pub(crate) mod pretend {
                 }),
                 // The runner mints its own (#3369).
                 prompt_key: purlis_core::skillspan::PromptSalt::of_key(&format!("composed-{id}")),
+                armed_skills: lock(&self.seen.composed_armed).clone(),
             })
         }
         fn move_ahead(&self, pool: &str, workspace: &str) -> Result<(), String> {
@@ -1576,6 +1606,14 @@ pub(crate) mod pretend {
         fn prompt_key_left(&self, number: u32) -> Option<purlis_core::skillspan::PromptSalt> {
             self.left_running(number)
                 .then(|| purlis_core::skillspan::PromptSalt::of_key(&format!("left-{number}")))
+                .flatten()
+        }
+        fn armed_skills_left(
+            &self,
+            number: u32,
+        ) -> Option<Vec<purlis_session_protocol::session::ArmedSkill>> {
+            self.left_running(number)
+                .then(|| lock(&self.seen.composed_armed).clone())
                 .flatten()
         }
         fn ran_with(&self, number: u32) -> Option<purlis_core::sandbox::plan::Plan> {

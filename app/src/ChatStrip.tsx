@@ -6,7 +6,7 @@ import { QueueRead } from "./QueueRead";
 import { closestCenter, DndContext } from "@dnd-kit/core";
 import { horizontalListSortingStrategy, SortableContext } from "@dnd-kit/sortable";
 import {
-  renameId,
+  tabRenameId,
   tileAllId,
   workItemSaid,
   RENAMES_ON_F2,
@@ -23,7 +23,6 @@ import {
 } from "./sortable";
 import { droppedReference, overChat, type ChatsForReferences } from "./references";
 import { FreshMark, freshMarkShown } from "./PlaneUpdated";
-import { TabBrowsers, type BrowserShown } from "./ChatBrowsersShown";
 import { REGION_CHROME } from "./RegionFrame";
 import { movedAt, sameList, useChatsSelect, type Chats } from "./chatState";
 import {
@@ -36,7 +35,6 @@ import {
   type Tabs,
 } from "./tabs";
 import { TabNeeds } from "./TabChip";
-import { SkillRunChip } from "./SkillRunChip";
 import { type Ended, type Needing } from "./tabTasks";
 import { TabCell, tabsPart, type TabVariant } from "./ui/tabs/Tabs";
 import { StripTab, TabStripRow, useTabStrip } from "./ui/tabs/TabStrip";
@@ -45,7 +43,6 @@ import { tornOff } from "./tabWindows";
 import { WRAPPING_UP } from "./NeedsYou";
 import { NONE_RESTORING, RESTORING } from "./restoringChats";
 import { closeOnDelete, renameOnF2 } from "./tabKeys";
-import { TabRename } from "./TabRename";
 import { type ChatRow } from "./chatsTree";
 import { STRIP, TAB } from "./paneDrag";
 import { showsStopping, TabMarks, type TabFacts } from "./ChatRows";
@@ -90,7 +87,7 @@ function tabTip(from: string | undefined, workItem: string | undefined): string 
 
 /**
  * **The chat strip** (ADR 0036, DS-6 #1836): the focused workspace's tabs above the panes, each
- * with its task chip, fresh mark and `×`, the `+` that opens a chat, and the show-more menu of
+ * with its fresh mark and `×`, the `+` that opens a chat, and the show-more menu of
  * what the strip is not drawing. Split out of `PlaneView.tsx` (#1035), which owns every value
  * it is handed.
  */
@@ -119,9 +116,6 @@ export function ChatStrip({
   draggedAtRef,
   notGoingBack,
   isPinned,
-  nameBoxFor,
-  saveName,
-  endRename,
   pressTab,
   referenceChats,
   wrapping,
@@ -143,23 +137,16 @@ export function ChatStrip({
   handedFrom,
   workItems,
   restoring = NONE_RESTORING,
-  browsersOfTab,
-  openBrowser,
-  openSkillRun,
 }: ChatStripProps) {
   /** Where the pointer is while a tab is carried, for a tear-off (#4768). */
   const pointer = useFollowedPointer();
   /** Tile all on the tab in front, as the catalogue holds it (#4765). */
   const tileAll = tabs.inFront === undefined ? undefined : by(tileAllId(tabs.inFront));
-  // The tabs drawn, as React Aria's tablist knows them (`ui/tabs/TabStrip`): not a tab being
-  // renamed, whose name box is drawn in its place and is not a tab.
-  /** The Rename… row of the tab's own chat (#4753): a double-click on its name and F2 on it
-   *  press the chat's row, which the chat's list and the palette list. A view's tab has none. */
-  const renameOf = (id: number) => {
-    const own = chatOf(tabs, id);
-    return own === undefined ? undefined : by(renameId(own));
-  };
-  const drawn = shown.filter((id) => !nameBoxFor(id)).map(String);
+  /** The tab's own Rename… row (#5343): a double-click on it and F2 on it press it, as its menu
+   *  does, and its dialog says what it renames. A view's tab has none. */
+  const renameRowOf = (id: number) => by(tabRenameId(id));
+  // The tabs drawn, as React Aria's tablist knows them (`ui/tabs/TabStrip`).
+  const drawn = shown.map(String);
   // What each tab wears (#4762), read once a draw for every tab it is drawn or listed by.
   const faces = useMemo(
     () => new Map([...shown, ...hidden].map((id) => [id, faceOf(tabs, id, naming)])),
@@ -218,12 +205,11 @@ export function ChatStrip({
         <SortableContext items={shown.map(String)} strategy={horizontalListSortingStrategy}>
           {/* The arrows, Home and End along the tabs, and the one Tab stop, are React Aria's
             (`ui/tabs/TabStrip`), heard on this row for keys pressed on a tab. Its tablist owns
-            the tabs and not the `×`, fresh mark and task chip beside each (#1204). Not a tab
-            being renamed: its name box is drawn in its place, and is not a tab. */}
+            the tabs and not the `×`, fresh mark and task chip beside each (#1204). */}
           <TabStripRow
             strip={along}
             name="Tabs"
-            ids={shown.flatMap((id, place) => (nameBoxFor(id) ? [] : [chatTabId(place)]))}
+            ids={shown.map((_, place) => chatTabId(place))}
             className="tabs"
             data-strip="Tabs"
             // A pane or a chat dropped here makes a tab of its own (#4763).
@@ -291,101 +277,89 @@ export function ChatStrip({
                         panesOf(tabs, id).some((one) => restoring.has(one.session)) || undefined
                       }
                     >
-                      {nameBoxFor(id) ? (
-                        // The name, open for editing in the tab's place (charter-app#254). Not
-                        // inside the tab's button: an input inside a button is two controls in one.
-                        <TabRename
-                          name={tabs.byId[id].name}
-                          onSave={(typed) => saveName(id, typed)}
-                          onDone={endRename}
-                        />
-                      ) : (
-                        <StripTab
-                          strip={along}
-                          tabKey={String(id)}
-                          selected={id === tabs.inFront}
-                          tip={
-                            panesOf(tabs, id).some((one) => wrapping.has(one.session))
-                              ? WRAPPING_UP
-                              : panesOf(tabs, id).some((one) => restoring.has(one.session))
-                                ? RESTORING
-                                : // A split lists its panes on hover, in reading order (#4762),
-                                  // and a tab says how many of its tasks run (#5341).
-                                  tipLines(
-                                    splitTip(faceAt(id)) ??
-                                      tabTip(
-                                        handedFrom[chatOf(tabs, id) ?? -1],
-                                        workItems[chatOf(tabs, id) ?? -1],
-                                      ),
-                                    runningSaid(tasksRunningOf(id)),
-                                  )
-                          }
-                          id={chatTabId(place)}
-                          // What a press does that the tab's name does not say (#1486):
-                          // in front and showing a task, it goes back to the session.
-                          aria-description={
-                            id === tabs.inFront && taskNameOf(id) !== undefined
-                              ? `Press to go back to ${tabs.byId[id].name}`
-                              : undefined
-                          }
-                          // The fresh mark beside it as well (#1246): it is outside the tab.
-                          aria-describedby={
-                            [
-                              sortable.attributes["aria-describedby"],
-                              freshMarkShown(freshOf(id), planeUpdates[chatOf(tabs, id) ?? -1])
-                                ? freshMarkOf(id)
-                                : undefined,
-                            ]
-                              .filter(Boolean)
-                              .join(" ") || undefined
-                          }
-                          // F2 renames here rather than opening the palette (`RENAMES_ON_F2`), on a
-                          // tab that has a rename row — a chat's, and never a view's.
-                          {...(renameOf(id) ? { [RENAMES_ON_F2]: "" } : {})}
-                          {...sortable.listeners}
-                          onKeyDown={(event) => {
-                            // A tab that is up is being carried: its keys are the drag's.
-                            keepsTheFocus(event, sortable.isDragging);
-                            sortable.listeners?.onKeyDown?.(event);
-                            if (sortable.isDragging) return;
-                            closeOnDelete(event, by(`tab.close:${id}`), press);
-                            renameOnF2(event, renameOf(id), press);
-                          }}
-                          // The catalogue's row, not a second copy of it. The tab already in front
-                          // has a row that says so and cannot run — a tab is never disabled, because
-                          // the selected tab is the one a keyboard has to be able to land on.
-                          //
-                          // **Pressed while it is in front, a tab showing a task goes
-                          // back to its session's own chat** (#1486, `pressTab`).
-                          onClick={(event) =>
-                            pressTab(id, by(`tab.select:${id}`), event.detail > 0)
-                          }
-                          // A double-click on the name renames it — the same row again.
-                          onDoubleClick={() => {
-                            // Not a press to go back to the main chat (#1486).
-                            notGoingBack();
-                            // …and keeps a preview tab, VS Code's double-click (SI-9b).
-                            const offer = renameOf(id) ?? by(`tab.keep:${id}`);
-                            if (offer?.available) press(offer);
-                          }}
-                        >
-                          {/* No `updates` here: on the strip the plane-updated mark
+                      <StripTab
+                        strip={along}
+                        tabKey={String(id)}
+                        selected={id === tabs.inFront}
+                        tip={
+                          panesOf(tabs, id).some((one) => wrapping.has(one.session))
+                            ? WRAPPING_UP
+                            : panesOf(tabs, id).some((one) => restoring.has(one.session))
+                              ? RESTORING
+                              : // A split lists its panes on hover, in reading order (#4762),
+                                // and a tab says how many of its tasks run (#5341).
+                                tipLines(
+                                  splitTip(faceAt(id)) ??
+                                    tabTip(
+                                      handedFrom[chatOf(tabs, id) ?? -1],
+                                      workItems[chatOf(tabs, id) ?? -1],
+                                    ),
+                                  runningSaid(tasksRunningOf(id)),
+                                )
+                        }
+                        id={chatTabId(place)}
+                        // What a press does that the tab's name does not say (#1486):
+                        // in front and showing a task, it goes back to the session.
+                        aria-description={
+                          id === tabs.inFront && taskNameOf(id) !== undefined
+                            ? `Press to go back to ${tabs.byId[id].name}`
+                            : undefined
+                        }
+                        // The fresh mark beside it as well (#1246): it is outside the tab.
+                        aria-describedby={
+                          [
+                            sortable.attributes["aria-describedby"],
+                            freshMarkShown(freshOf(id), planeUpdates[chatOf(tabs, id) ?? -1])
+                              ? freshMarkOf(id)
+                              : undefined,
+                          ]
+                            .filter(Boolean)
+                            .join(" ") || undefined
+                        }
+                        // F2 renames here rather than opening the palette (`RENAMES_ON_F2`), on a
+                        // tab that has a rename row, and never a view's.
+                        {...(renameRowOf(id) ? { [RENAMES_ON_F2]: "" } : {})}
+                        {...sortable.listeners}
+                        onKeyDown={(event) => {
+                          // A tab that is up is being carried: its keys are the drag's.
+                          keepsTheFocus(event, sortable.isDragging);
+                          sortable.listeners?.onKeyDown?.(event);
+                          if (sortable.isDragging) return;
+                          closeOnDelete(event, by(`tab.close:${id}`), press);
+                          renameOnF2(event, renameRowOf(id), press);
+                        }}
+                        // The catalogue's row, not a second copy of it. The tab already in front
+                        // has a row that says so and cannot run — a tab is never disabled, because
+                        // the selected tab is the one a keyboard has to be able to land on.
+                        //
+                        // **Pressed while it is in front, a tab showing a task goes
+                        // back to its session's own chat** (#1486, `pressTab`).
+                        onClick={(event) => pressTab(id, by(`tab.select:${id}`), event.detail > 0)}
+                        // A double-click on the tab opens its Rename — the same row again.
+                        onDoubleClick={() => {
+                          // Not a press to go back to the main chat (#1486).
+                          notGoingBack();
+                          // …and keeps a preview tab, VS Code's double-click (SI-9b).
+                          const offer = renameRowOf(id) ?? by(`tab.keep:${id}`);
+                          if (offer?.available) press(offer);
+                        }}
+                      >
+                        {/* No `updates` here: on the strip the plane-updated mark
                                   is a button of its own beside the tab (`FreshMark`). */}
-                          <TabMarks
-                            tabs={tabs}
-                            id={id}
-                            face={faceAt(id)}
-                            personaOf={personaOf}
-                            factsOf={factsOf}
-                            shells={shells}
-                            wrapping={wrapping}
-                            stopping={stopping}
-                            task={taskNameOf(id)}
-                            taskOf={taskTabOf(id)}
-                            pin={<Pin held={isPinned(id)} what="tab" />}
-                          />
-                        </StripTab>
-                      )}
+                        <TabMarks
+                          tabs={tabs}
+                          id={id}
+                          face={faceAt(id)}
+                          personaOf={personaOf}
+                          factsOf={factsOf}
+                          shells={shells}
+                          wrapping={wrapping}
+                          stopping={stopping}
+                          task={taskNameOf(id)}
+                          taskOf={taskTabOf(id)}
+                          pin={<Pin held={isPinned(id)} what="tab" />}
+                        />
+                      </StripTab>
                       {/* **A chat of the tab waits for you off screen** (V100-37): the hand,
                             and a press goes to the one that has waited longest. All a tab draws
                             of its tasks (#5341): their counts and their menu are on the chat's
@@ -393,18 +367,14 @@ export function ChatStrip({
                       <QueueRead>
                         {(queue) => <TabNeeds needs={hiddenIn(queue, id)} onShow={showFromChip} />}
                       </QueueRead>
-                      {/* **The skill run open in the tab's chat** (SK-3): pressed, it
-                            opens the skill's Runs in the studio on that run. Beside the tab's button, as
-                            the tasks' chip is. */}
-                      {openSkillRun !== undefined && (
-                        <SkillRunChip session={chatOf(tabs, id)} onOpen={openSkillRun} />
-                      )}
-                      {/* **The tab's chats' browsers, live** (#2024): a thumbnail each,
-                            pressed to open its view. Beside the tab's button, as the fresh
-                            mark is. */}
-                      {browsersOfTab !== undefined && openBrowser !== undefined && (
-                        <TabBrowsers browsers={browsersOfTab(id)} onOpen={openBrowser} />
-                      )}
+                      {/* **No skill run and no browsers on a tab** (#5524): a tab says which
+                            chat this is and whether it needs you (#5339). What its chat uses now
+                            is on its pane head (`usingOn`), and its browsers are rows under it in
+                            the Chats list too. */}
+                      {/* **The fresh mark stays on the tab** (#5524, recorded): the ruling on
+                            charter#369 put it here, so the person, who alone can start the chat
+                            fresh, is told where they look for whether a chat needs them. Moving
+                            it is a change to that ruling, not a cleanup. */}
                       <FreshMark
                         id={freshMarkOf(id)}
                         // **Never on a task's own tab** (#1489): nothing drawn on
@@ -609,9 +579,6 @@ type ChatStripProps = {
   draggedAtRef: RefObject<number>;
   notGoingBack: () => void;
   isPinned: Pinned;
-  nameBoxFor: (id: number) => boolean;
-  saveName: (id: number, typed: string) => Promise<string | undefined>;
-  endRename: (back: boolean) => void;
   pressTab: (id: number, select: Offer | undefined, byPointer: boolean) => void;
   referenceChats: ChatsForReferences;
   wrapping: ReadonlySet<number>;
@@ -640,13 +607,6 @@ type ChatStripProps = {
   workItems: Record<number, string>;
   /** The chats the launch has still to start (`restoring.rs`): each one's tab says so. */
   restoring?: ReadonlySet<number>;
-  /** The browsers of tab `id`'s chats (#2024), drawn live beside it. */
-  browsersOfTab?: (id: number) => readonly BrowserShown[];
-  /** Opens a browser's view, from its thumbnail on a tab. */
-  openBrowser?: (shown: BrowserShown) => void;
-  /** Opens a skill's Runs in the studio on one of its runs, from the chip of the run open in a
-   *  tab's chat (`session`'s). */
-  openSkillRun?: (skill: string, run: string, session: number, level: string | null) => void;
 };
 
 /**

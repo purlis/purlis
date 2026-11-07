@@ -452,6 +452,10 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     count: 1,
     why: ACTION,
   },
+  "RenameTab.tsx": {
+    count: 1,
+    why: ACTION,
+  },
   "RenameWorkspace.tsx": {
     count: 1,
     why: ACTION,
@@ -517,9 +521,13 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     why: "a copy the clipboard refused, said beside the read-only screen it was asked of (#3676)",
   },
   "SearchTab.tsx": { count: 1, why: "the search's progress, a live value" },
-  "SecretFill.tsx": {
+  "ui/secret-ask/SecretAsk.tsx": {
     count: 1,
-    why: "what a picked entry does to the asked key, a live value under the picker in the ask's own row (#5073)",
+    why: "what the Allow chosen does, said under the choice as it moves (#5080): about the choice in hand, not a standing line",
+  },
+  "SecretAskNotice.tsx": {
+    count: 1,
+    why: "what a picked entry does to the asked key, a live value under the picker in the ask's own row (#5073, #5080)",
   },
   "UnsavedWorkQuestion.tsx": { count: 1, why: ACTION },
   "SkillBudget.tsx": {
@@ -566,7 +574,6 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "footer, and a Start pressed early that the details turned into a grant says, there, why " +
       "nothing started (#4736, ADR 0097 §6); the turned button above it is the way on",
   },
-  "TabRename.tsx": { count: 1, why: "a rename's refusal, beside the box being typed in" },
   "ThemeDraftStrip.tsx": {
     count: 4,
     why:

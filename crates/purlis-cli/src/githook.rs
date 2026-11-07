@@ -115,14 +115,14 @@ fn push(args: &[String]) -> ExitCode {
     let Ok(repo) = std::env::current_dir() else {
         return cannot("no working directory");
     };
-    let [remote, url, ..] = args else {
+    let [_remote, url, ..] = args else {
         return cannot("git named no remote");
     };
     let mut updates = String::new();
     if let Err(e) = std::io::stdin().read_to_string(&mut updates) {
         return cannot(&format!("the refs git sent could not be read: {e}"));
     }
-    match diffscan::pushed(&repo, remote, url, &updates) {
+    match diffscan::pushed(&repo, url, &updates) {
         Ok(scan) if scan.changes_the_allowlist => {
             eprint!("{}", diffscan::PUSH_ALLOWLIST_REFUSAL);
             tell_the_app(format!(

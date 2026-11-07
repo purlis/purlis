@@ -1382,6 +1382,194 @@ struct Shared {
     /// Who logs each skill run that runner's log says started or ended, by the project's id: each
     /// project held on it in the runner's own checkout (SK-20b, #3084).
     skill_runs: Mutex<HashMap<String, crate::host::SkillRunsHeard>>,
+    /// This machine's config home, where how far each project logged its runner's skill runs is
+    /// kept (#4219, [`purlis_core::runnercursors`]): none, and the link reads on from the log's
+    /// end and keeps nothing, as before.
+    cursors: Mutex<Option<PathBuf>>,
+    /// The skill lines this link read, and how far each project was told them (#4219).
+    skill_lines: Mutex<SkillLines>,
+    /// Logs each skill line, and keeps how far, one at a time in the order they were read.
+    skill_logger: Mutex<Option<std::sync::mpsc::Sender<SkillLogged>>>,
+}
+
+/// **The skill lines a link to a pool's runner read** (#4219): the newest
+/// [`MOST_SKILL_LINES_HELD`] of them, so a project held on the link after they came is told those
+/// past where it last logged, and the `seq` up to which each project held on it was told.
+#[derive(Default)]
+struct SkillLines {
+    heard: std::collections::VecDeque<(u64, purlis_core::skilluse::relayed::Relayed)>,
+    told_up_to: HashMap<String, u64>,
+    /// The newest `seq` let go of to keep [`MOST_SKILL_LINES_HELD`]: a project whose cursor is
+    /// below it missed lines, which is said ([`crate::runnerlog::RunnerLog::let_go`]).
+    let_go_up_to: u64,
+}
+
+/// The most skill lines a link holds for a project held on it after they came.
+const MOST_SKILL_LINES_HELD: usize = 1024;
+
+/// One line for the link's logger: told to a project's logger, then how far it was told kept.
+struct SkillLogged {
+    tell: Option<(
+        crate::host::SkillRunsHeard,
+        purlis_core::skilluse::relayed::Relayed,
+    )>,
+    keep: Option<KeptCursor>,
+}
+
+/// **How far a project was told its runner's skill lines**, kept in this machine's config home
+/// ([`purlis_core::runnercursors`], #4219).
+struct KeptCursor {
+    config: PathBuf,
+    device: String,
+    project: String,
+    seq: u64,
+}
+
+impl KeptCursor {
+    /// Where the link keeps cursors at all and its runner said its device: else none.
+    fn of(config: Option<&Path>, device: Option<&str>, project: &str, seq: u64) -> Option<Self> {
+        Some(KeptCursor {
+            config: config?.to_path_buf(),
+            device: device?.to_owned(),
+            project: project.to_owned(),
+            seq,
+        })
+    }
+}
+
+impl Shared {
+    /// Hands `logged` to this link's logger, started the first time: one thread, which logs each
+    /// in turn and ends with the link.
+    fn log(&self, logged: Vec<SkillLogged>) {
+        if logged.is_empty() {
+            return;
+        }
+        let mut logger = lock(&self.skill_logger);
+        let sender = logger.get_or_insert_with(|| {
+            let (sender, lines) = std::sync::mpsc::channel::<SkillLogged>();
+            std::thread::spawn(move || {
+                for line in lines {
+                    if let Some((tell, run)) = &line.tell {
+                        tell(None, run);
+                    }
+                    if let Some(kept) = &line.keep
+                        && let Err(why) = purlis_core::runnercursors::keep(
+                            &kept.config,
+                            &kept.device,
+                            &kept.project,
+                            kept.seq,
+                        )
+                    {
+                        tracing::warn!(
+                            "purlis: how far a runner's skill runs were logged was not kept ({why})"
+                        );
+                    }
+                }
+            });
+            sender
+        });
+        for line in logged {
+            let _ = sender.send(line);
+        }
+    }
+
+    /// **`project` is held on the link, its runs told to `tell`** ([`HostLink::hear_skill_runs`]):
+    /// the lines held past its kept cursor first, and each read after.
+    fn hand_off(&self, project: &str, tell: crate::host::SkillRunsHeard) {
+        let shared = self;
+        let (device, began_at) = {
+            let log = lock(&shared.runner_log);
+            (log.now().device, log.began_at())
+        };
+        let config = lock(&shared.cursors).clone();
+        let kept = config
+            .as_deref()
+            .zip(device.as_deref())
+            .and_then(|(config, device)| {
+                purlis_core::runnercursors::logged_up_to(config, device, project)
+            });
+        let from = kept.unwrap_or(began_at);
+        // Held before the project is, as a line read takes it first (see `Shared::skill_line`).
+        let mut lines = lock(&shared.skill_lines);
+        if lock(&shared.skill_runs)
+            .insert(project.to_owned(), Arc::clone(&tell))
+            .is_some()
+        {
+            return;
+        }
+        let keep = |seq: u64| KeptCursor::of(config.as_deref(), device.as_deref(), project, seq);
+        let mut logged: Vec<SkillLogged> = lines
+            .heard
+            .iter()
+            .filter(|(seq, _)| *seq > from)
+            .map(|(seq, run)| SkillLogged {
+                tell: Some((Arc::clone(&tell), run.clone())),
+                keep: keep(*seq),
+            })
+            .collect();
+        // Lines past its cursor this link let go of before it was held: said, never skipped in
+        // silence.
+        let missed = lines.let_go_up_to > from;
+        let up_to = lines.heard.back().map_or(from, |(seq, _)| from.max(*seq));
+        lines.told_up_to.insert(project.to_owned(), up_to);
+        drop(lines);
+        if missed {
+            lock(&shared.runner_log).let_go();
+        }
+        // A project with no cursor kept starts one where the link came up.
+        if logged.is_empty() && kept.is_none() {
+            logged.push(SkillLogged {
+                tell: None,
+                keep: keep(from),
+            });
+        }
+        shared.log(logged);
+    }
+
+    /// **A skill line of the runner's log came, read at `seq`** (#4219): held for a project held
+    /// on the link later, and told to each held on it now that was not told it.
+    fn skill_line(&self, seq: u64, run: purlis_core::skilluse::relayed::Relayed) {
+        let device = lock(&self.runner_log).now().device;
+        let config = lock(&self.cursors).clone();
+        // Taken before the projects, as a project's hand-off takes it before it is held: a line
+        // is either held for its hand-off or told it here, never neither.
+        let mut lines = lock(&self.skill_lines);
+        let tells: Vec<(String, crate::host::SkillRunsHeard)> = lock(&self.skill_runs)
+            .iter()
+            .map(|(project, tell)| (project.clone(), Arc::clone(tell)))
+            .collect();
+        let mut logged = Vec::new();
+        for (project, tell) in tells {
+            // A project whose hand-off has not begun is told it there.
+            let Some(up_to) = lines.told_up_to.get_mut(&project) else {
+                continue;
+            };
+            if seq <= *up_to {
+                continue;
+            }
+            *up_to = seq;
+            logged.push(SkillLogged {
+                tell: Some((tell, run.clone())),
+                keep: KeptCursor::of(config.as_deref(), device.as_deref(), &project, seq),
+            });
+        }
+        lines.heard.push_back((seq, run));
+        while lines.heard.len() > MOST_SKILL_LINES_HELD {
+            if let Some((gone, _)) = lines.heard.pop_front() {
+                lines.let_go_up_to = gone;
+            }
+        }
+        drop(lines);
+        self.log(logged);
+    }
+}
+
+/// **Where a link reads runner `device`'s log on from** (#4219): the lowest cursor this machine
+/// kept of it, of any project, so each project held on the link is told what it has not logged.
+/// None, where none was kept or the link keeps none.
+fn read_on_from(shared: &Shared, device: &str) -> Option<u64> {
+    let config = lock(&shared.cursors).clone()?;
+    purlis_core::runnercursors::lowest_for(&config, device)
 }
 
 /// What a link hears of the runner its host relays it to (#2496).
@@ -1489,12 +1677,27 @@ impl HostLink {
     /// `relay_to` `not_allowed`, and keeps the name for this link. The window sends the same
     /// `relay_to` once more, [`NAMED_AGAIN_AFTER`] later, once the old link has ended. A second
     /// refusal is the link's: it is not opened.
+    #[cfg(test)]
     pub async fn over_relayed(
         link: Link,
         runtime: tokio::runtime::Handle,
         ended: impl FnOnce() + Send + 'static,
         naming: Option<purlis_session_protocol::browsing::Secret>,
         relaying: Option<&str>,
+    ) -> Result<HostLink, String> {
+        Self::over_relayed_keeping(link, runtime, ended, naming, relaying, None).await
+    }
+
+    /// [`Self::over_relayed`], keeping in the config home `cursors` how far each project held on
+    /// the link logged its runner's skill runs, and reading the runner's log on from there
+    /// (#4219, [`purlis_core::runnercursors`]).
+    pub async fn over_relayed_keeping(
+        link: Link,
+        runtime: tokio::runtime::Handle,
+        ended: impl FnOnce() + Send + 'static,
+        naming: Option<purlis_session_protocol::browsing::Secret>,
+        relaying: Option<&str>,
+        cursors: Option<&Path>,
     ) -> Result<HostLink, String> {
         let (client, views, events) = Client::new(link);
         let client = Arc::new(client);
@@ -1526,12 +1729,17 @@ impl HostLink {
             })?;
         }
         let shared = Arc::new(Shared::default());
+        *lock(&shared.cursors) = cursors
+            .filter(|_| relaying.is_some())
+            .map(Path::to_path_buf);
         // A runner's own event log is read from where it ends now, with a cursor for its device
-        // (#3393): a runner before 1.41 says no end, and none of its log is read.
+        // (#3393): a runner before 1.41 says no end, and none of its log is read. Or from where
+        // this window last logged a project's skill runs of it, the lowest (#4219).
         if relaying.is_some()
             && let Ok((device, seq)) = client.log_end().await
         {
-            lock(&shared.runner_log).starts_at(device, seq);
+            let from = read_on_from(&shared, &device);
+            lock(&shared.runner_log).starts_at(device, seq, from);
         }
         let since = lock(&shared.runner_log).since();
         client
@@ -2472,8 +2680,12 @@ impl HostLink {
 
     /// Tell `tell` each skill run the log of the runner this link is relayed to says started or
     /// ended, for `project`, held there in the runner's own checkout (SK-20b, #3084), from now on.
+    ///
+    /// **From where this window last logged them** (#4219): the lines the link read past the
+    /// project's kept cursor, those its runner wrote while no window read its log among them, are
+    /// told it first; a project with none kept is told those since the link came up.
     pub(crate) fn hear_skill_runs(&self, project: &str, tell: crate::host::SkillRunsHeard) {
-        lock(&self.shared.skill_runs).insert(project.to_owned(), tell);
+        self.shared.hand_off(project, tell);
     }
 
     /// Hear the lines `project`'s hooks write with `relayed`, from now on.
@@ -2985,17 +3197,10 @@ async fn hear(mut events: Events, client: Arc<Client>, shared: Arc<Shared>, line
             Told::Pushed(Pushed::Event(event)) => {
                 let taken = lock(&shared.runner_log).heard(&event);
                 // A runner chat's skill run, logged in this machine's plane (SK-20b, #3084):
-                // once, as its line is first taken, and off the runtime, as it writes a file.
+                // once, as its line is first taken, by the link's logger, in turn, off the
+                // runtime, as it writes a file, and how far kept (#4219).
                 if taken && let Some(run) = purlis_core::skilluse::relayed::Relayed::of(&event) {
-                    let told: Vec<crate::host::SkillRunsHeard> =
-                        lock(&shared.skill_runs).values().cloned().collect();
-                    if !told.is_empty() {
-                        tokio::task::spawn_blocking(move || {
-                            for tell in told {
-                                tell(None, &run);
-                            }
-                        });
-                    }
+                    shared.skill_line(event.seq, run);
                 }
             }
             Told::Pushed(Pushed::Missed {
@@ -3028,7 +3233,8 @@ async fn hear(mut events: Events, client: Arc<Client>, shared: Arc<Shared>, line
                     let (client, shared) = (Arc::clone(&client), Arc::clone(&shared));
                     tokio::spawn(async move {
                         if let Ok((device, seq)) = client.log_end().await {
-                            lock(&shared.runner_log).starts_at(device, seq);
+                            let from = read_on_from(&shared, &device);
+                            lock(&shared.runner_log).starts_at(device, seq, from);
                             let since = lock(&shared.runner_log).since();
                             let _ = client.subscribe(since).await;
                         }
@@ -4370,8 +4576,16 @@ impl HostedSessions {
                 confined,
                 sandbox,
                 prompt_key,
+                armed_skills,
                 ..
-            }) => (program, process, confined, sandbox, prompt_key),
+            }) => (
+                program,
+                process,
+                confined,
+                sandbox,
+                prompt_key,
+                armed_skills.map(|armed| session::ArmedSkill::bounded(*armed)),
+            ),
             Ok(other) => {
                 return Err(unclear(format!(
                     "the session host answered a start with {other:?}"
@@ -4391,7 +4605,7 @@ impl HostedSessions {
             }
             Err(refused) => return Err(unclear(refused.why)),
         };
-        let (program, pid, confined, ran, prompt_key) = started;
+        let (program, pid, confined, ran, prompt_key, armed_skills) = started;
         // A chat that runs on a pool's runner with nothing holding its files leaves that runner
         // trusted with no browser and no login until it is made again (D-2050-27): kept here,
         // where no runner reaches, before it is kept as running. Where that cannot be kept, it
@@ -4419,6 +4633,7 @@ impl HostedSessions {
             prompt_key: prompt_key
                 .as_ref()
                 .and_then(purlis_core::skillspan::PromptSalt::answered),
+            armed_skills,
         })
     }
 }
@@ -4444,6 +4659,8 @@ struct Begun {
     ran: Option<session::RunSandbox>,
     /// The chat's prompt key, as the host said it (1.60, #3369).
     prompt_key: Option<purlis_core::skillspan::PromptSalt>,
+    /// The skills the host armed it with, where it composed it and says (1.77, #4218).
+    armed_skills: Option<Vec<session::ArmedSkill>>,
 }
 
 /// Each call is documented once, on [`SessionHost`].
@@ -4601,6 +4818,7 @@ impl SessionHost for HostedSessions {
             confined,
             ran,
             prompt_key,
+            armed_skills,
         } = self
             .started(&link, id, start, false, announce, &named.asked_to_run)
             .inspect_err(|_| unheard(&confinement))?;
@@ -4615,6 +4833,7 @@ impl SessionHost for HostedSessions {
                 confinement: None,
                 ran,
                 prompt_key,
+                armed_skills,
             });
         };
         let held = HeldInTheHost::new(confinement, Arc::clone(&link), true);
@@ -4635,6 +4854,7 @@ impl SessionHost for HostedSessions {
             confinement: Some(confinement),
             ran,
             prompt_key,
+            armed_skills,
         })
     }
 
@@ -5180,6 +5400,15 @@ impl SessionHost for HostedSessions {
             .and_then(purlis_core::skillspan::PromptSalt::answered)
     }
 
+    fn armed_skills_left(&self, number: u32) -> Option<Vec<session::ArmedSkill>> {
+        self.link().ok()?;
+        lock(&self.left)
+            .get(&number)?
+            .armed_skills
+            .clone()
+            .map(session::ArmedSkill::bounded)
+    }
+
     fn prompt_key_started(
         &self,
         number: u32,
@@ -5238,8 +5467,16 @@ impl HostedSessions {
                 let beside = self.connection.links_of(&self.root).len() > 1
                     || lock(&self.stays_on).is_some()
                     || self.connection.pool_drains();
+                let tips_in = self.connection.runners_config();
                 crate::runnercode::fetch_workspace(
-                    &link, &project, &self.root, workspace, pool, beside, left,
+                    &link,
+                    &project,
+                    &self.root,
+                    workspace,
+                    pool,
+                    beside,
+                    left,
+                    tips_in.as_deref(),
                 )
             }
             Err(why) => vec![why],

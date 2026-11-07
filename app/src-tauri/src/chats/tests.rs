@@ -2748,6 +2748,7 @@ fn a_port_withdrawn_while_a_chat_runs_is_withdrawn_from_a_browser_it_opens_after
             skills_read: Default::default(),
             last_prompt: None,
             runs_as: None,
+            runners_word: None,
             clones_at_start: None,
             prompt_key: None,
         },
@@ -2827,6 +2828,7 @@ fn chats_started_with_different_grants_are_compiled_apart_and_listed_apart() {
                 skills_read: Default::default(),
                 last_prompt: None,
                 runs_as: None,
+                runners_word: None,
                 clones_at_start: None,
                 prompt_key: None,
             },
@@ -3013,8 +3015,8 @@ fn a_restart_the_person_asked_for_that_is_refused_is_not_owed_again() {
         refused,
         format!(
             "purlis did not restart chat {session}: it has no conversation to resume. If it \
-                 has only just started, send it a message and restart it again. Start fresh on \
-                 its tab's menu starts it again without a conversation."
+                 has only just started, send it a message and restart it again. Start fresh on its \
+                 menu starts it again without a conversation."
         )
     );
     assert!(
@@ -3270,6 +3272,7 @@ fn a_chat_on_a_profile_is_compared_under_the_persona_grants_it_started_with() {
                 skills_read: Default::default(),
                 last_prompt: None,
                 runs_as: None,
+                runners_word: None,
                 clones_at_start: None,
                 prompt_key: None,
             },
@@ -8265,6 +8268,7 @@ fn each_path_reads_the_run_record_in_the_direction_that_fails_closed_for_it() {
                 skills_read: Default::default(),
                 last_prompt: None,
                 runs_as: None,
+                runners_word: None,
                 clones_at_start: None,
                 prompt_key: None,
             },
@@ -8757,6 +8761,7 @@ fn only_a_chat_with_no_sandbox_at_all_runs_unconfined() {
                 skills_read: Default::default(),
                 last_prompt: None,
                 runs_as: None,
+                runners_word: None,
                 clones_at_start: None,
                 prompt_key: None,
             },
@@ -8815,6 +8820,7 @@ fn a_login_is_asked_for_by_the_persona_its_chat_was_started_as() {
                 skills_read: Default::default(),
                 last_prompt: None,
                 runs_as: None,
+                runners_word: None,
                 clones_at_start: None,
                 prompt_key: None,
             },
@@ -9032,6 +9038,7 @@ fn two_chats_asking_live(plane: &std::path::Path) -> (Chats, [Arc<Told>; 2]) {
                 skills_read: Default::default(),
                 last_prompt: None,
                 runs_as: None,
+                runners_word: None,
                 clones_at_start: None,
                 prompt_key: None,
             },
@@ -9310,6 +9317,7 @@ fn a_chat_whose_skills_changed_since_it_started_is_listed_for_a_restart() {
                 skills_read: Default::default(),
                 last_prompt: None,
                 runs_as: None,
+                runners_word: None,
                 clones_at_start: None,
                 prompt_key: None,
             },
@@ -9396,6 +9404,7 @@ fn a_chat_skill_stamp_is_read_again_only_once_the_instructions_change() {
                 skills_read: Default::default(),
                 last_prompt: None,
                 runs_as: None,
+                runners_word: None,
                 clones_at_start: None,
                 prompt_key: None,
             },
@@ -9651,6 +9660,7 @@ fn a_runner_chats_skill_run_is_logged_here_with_where_this_window_says_it_ran_30
         skill: "review".to_owned(),
         started_by: purlis_core::skills::runs::StartedBy::SkillTool,
         level: None,
+        tree: None,
     };
     let ended = Line::Ended {
         ended: purlis_core::skills::runs::Ended::Turn,
@@ -10641,4 +10651,113 @@ fn a_reattached_chat_leaves_the_projects_git_to_itself() {
     assert_eq!(host.reattached(), [3]);
     let reattached = chats.confines_of(3).expect("its confines are kept");
     assert_eq!(reattached.roots_git, None);
+}
+
+/// #4218 (SK-15h): a runner's chat is shown the skills its runner said it armed it with, at its
+/// start and once this window reattaches it; a runner before 1.77, which says none, leaves it
+/// saying so, never an empty set. A chat armed here has no runner's word.
+#[test]
+fn a_runners_chat_has_the_skills_its_runner_said_it_armed_it_with_4218() {
+    let said = vec![purlis_session_protocol::session::ArmedSkill {
+        name: "deploy".into(),
+        level: "project".into(),
+    }];
+    let plane = tempfile::tempdir().expect("a plane");
+    std::fs::write(plane.path().join(purlis_core::plane::MANIFEST), "").expect("charter.toml");
+    let host = Pretend::default();
+    host.on_a_runner();
+    host.says_it_armed(Some(said.clone()));
+    let chats = Chats::on_host(
+        Box::new(|_| {}),
+        Box::new(host.clone()),
+        plane.path().to_path_buf(),
+    );
+    let started = chats
+        .start_ready(&on_the_profile_work(), &a_harness_ready(None), SIZE)
+        .expect("it starts on the runner");
+    assert_eq!(
+        chats.skills_of(started).expect("open").runners_word,
+        Some(RunnersWord::Said(said.clone())),
+        "at its start"
+    );
+    host.says_it_armed(None);
+    let older = chats
+        .start_ready(&on_the_profile_work(), &a_harness_ready(None), SIZE)
+        .expect("it starts on the runner");
+    assert_eq!(
+        chats.skills_of(older).expect("open").runners_word,
+        Some(RunnersWord::NotSaid),
+        "a runner before 1.77"
+    );
+
+    let host = Pretend::default();
+    host.on_a_runner();
+    host.says_it_armed(Some(said.clone()));
+    host.leaves_running(3, None);
+    let chats = restartable_chats_of(plane.path(), host.clone());
+    chats.put_back(
+        &left_running_in(plane.path(), a_resumable_chat_in(plane.path())),
+        SIZE,
+    );
+    assert_eq!(host.reattached(), [3]);
+    assert_eq!(
+        chats.skills_of(3).expect("open").runners_word,
+        Some(RunnersWord::Said(said)),
+        "once reattached"
+    );
+    let _ = chats.close(3);
+}
+
+/// #4219 (SK-20c): a runner's lines come as the link comes up, before a chat the window puts back
+/// is open: a skill run of one still coming back is logged here with the window's word for it
+/// from its record (its persona, harness and workspace). A chat neither open nor coming back is
+/// none of this window's, and logs nothing.
+#[test]
+fn a_skill_run_of_a_runner_chat_still_coming_back_is_logged_from_its_record_4219() {
+    use purlis_core::skilluse::relayed::{Line, Relayed};
+    let plane = tempfile::tempdir().expect("a plane");
+    std::fs::write(plane.path().join(purlis_core::plane::MANIFEST), "").expect("charter.toml");
+    let host = Pretend::default();
+    host.on_a_runner();
+    let mut chats = Chats::on_host(
+        Box::new(|_| {}),
+        Box::new(host.clone()),
+        plane.path().to_path_buf(),
+    );
+    chats.on_device(Some(DEVICE.to_owned()));
+    let record = left_running_in(
+        plane.path(),
+        Chat {
+            persona: Some("steward".to_owned()),
+            ..a_resumable_chat_in(plane.path())
+        },
+    );
+    chats.begin_put_back(&record, &|_| None);
+    let started = |chat: &str, run: &str| Relayed {
+        chat: chat.to_owned(),
+        run: run.to_owned(),
+        at_ms: 1_793_440_800_000,
+        line: Line::Started {
+            skill: "review".to_owned(),
+            started_by: purlis_core::skills::runs::StartedBy::SkillTool,
+            level: None,
+            tree: None,
+        },
+    };
+
+    chats.skill_run_heard(
+        Some("builds"),
+        &started(CHAT_ID, "01K6RUNA00000000000000000A"),
+    );
+    chats.skill_run_heard(
+        Some("builds"),
+        &started("01K6NOTHERE00000000000000D", "01K6RUND00000000000000000D"),
+    );
+
+    let runs = purlis_core::skilluse::runs(plane.path());
+    assert_eq!(runs.len(), 1, "{runs:?}");
+    assert_eq!(runs[0].id.as_deref(), Some("01K6RUNA00000000000000000A"));
+    assert_eq!(runs[0].persona.as_deref(), Some("steward"));
+    assert_eq!(runs[0].harness.as_deref(), Some(Harness::ClaudeCode.name()));
+    assert_eq!(runs[0].device, DEVICE);
 }

@@ -163,7 +163,7 @@ pub struct Facts {
 pub fn offer(facts: &Facts) -> SmartCloseOffer {
     let close_first = facts.turns <= 1 && !facts.resumed;
     let why = if facts.shell {
-        Some("A shell tab runs no harness, so there is no chat to write a session record.")
+        Some("A shell runs no harness, so there is no chat to write a session record.")
     } else if matches!(facts.state, State::Done | State::Failed) {
         Some("This chat's program has ended, so nothing is left to write a session record.")
     } else if facts.state == State::Unknown {
@@ -1093,7 +1093,11 @@ mod tests {
             ..a_chat(State::Waiting, 3)
         });
         assert!(!shell.available);
-        assert!(shell.why.is_some_and(|why| why.contains("shell tab")));
+        assert!(
+            shell
+                .why
+                .is_some_and(|why| why.contains("A shell runs no harness"))
+        );
         for ended in [State::Done, State::Failed] {
             assert!(!offer(&a_chat(ended, 3)).available);
         }

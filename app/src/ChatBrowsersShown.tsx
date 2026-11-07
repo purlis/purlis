@@ -16,7 +16,7 @@ import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /**
  * **A chat's browsers, where the window draws them besides their view tab** (#2024, spec
- * #2008): live on their chat's tab, and as rows under their chat in the Chats list. Either
+ * #2008): live on the head of their chat's pane (#5524), and as rows under their chat in the Chats list. Either
  * opens the browser's view in a tab of its own, where the person watches it whole and takes
  * it over (#2014).
  */
@@ -108,13 +108,13 @@ const NOT_ENDED_YET =
   "Its chat no longer uses it, and purlis keeps trying to end it. Stop all in the title bar ends it now.";
 
 /**
- * **A chat's browsers on its tab** (#2024): how many, as the tab's count pill (`CountPill`'s
- * look, with a browser's mark), then each a live thumbnail, pressed to open its view. Beside
- * the tab's button, as the fresh mark is: a button holds no button. Out of the strip's Tab
- * order, as that mark is; the keyboard opens a browser from its row in the Chats list. One that
- * could not be ended yet is its chat's no more, and is on its row alone.
+ * **A chat's browsers on its pane head** (#2024; moved off its tab by #5524, since a tab says
+ * which chat this is and whether it needs you, #5339): how many, as a count pill (`CountPill`'s
+ * look, with a browser's mark), then each a live thumbnail, pressed to open its view. Out of the
+ * Tab order; the keyboard opens a browser from its row in the Chats list. One that could not be
+ * ended yet is its chat's no more, and is on its row alone.
  */
-export function TabBrowsers({
+export function PaneBrowsers({
   browsers,
   onOpen,
 }: {
@@ -125,7 +125,7 @@ export function TabBrowsers({
   if (used.length === 0) return null;
   const said = browsersSaid(used.length);
   return (
-    <span className="tab-browsers">
+    <span className="pane-browsers">
       <Tooltip tip={said}>
         <Count role="img" aria-label={said}>
           <Globe aria-hidden="true" />
@@ -133,14 +133,14 @@ export function TabBrowsers({
         </Count>
       </Tooltip>
       {used.map((shown) => (
-        <TabBrowser key={shown.browser.program} shown={shown} onOpen={onOpen} />
+        <PaneBrowser key={shown.browser.program} shown={shown} onOpen={onOpen} />
       ))}
     </span>
   );
 }
 
-/** One browser's live thumbnail on its chat's tab, pressed to open its view (#2024). */
-function TabBrowser({
+/** One browser's live thumbnail on its chat's pane head, pressed to open its view (#2024). */
+function PaneBrowser({
   shown,
   onOpen,
 }: {
@@ -158,7 +158,7 @@ function TabBrowser({
       }`}
       tooltip={browserSaid(shown, origin, onAMac()).join("\n")}
       onPress={() => onOpen(shown)}
-      className="tab-browser"
+      className="pane-browser"
     >
       <BrowserThumbnail program={shown.browser.program} driver={driver} />
     </Button>

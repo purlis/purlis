@@ -9,7 +9,8 @@ import type { Shown } from "./bindings";
 import { LayoutPanes } from "./LayoutPanes";
 import { PaneRail } from "./PaneRail";
 import { RAIL } from "./paneHeld";
-import type { Layout } from "./tabs";
+import type { Content, Layout } from "./tabs";
+import { ChatMark } from "./ui/chat-mark/ChatMark";
 
 /**
  * **Narrow windows fold panes to rails, as `LayoutPanes` draws them** (#4766, spec #4750 stories
@@ -193,6 +194,28 @@ describe("a 3 × 3 grid at 770px (#4766)", () => {
       asks.closest(".pane-rail-item")?.querySelector('[data-mark="needs-you"]'),
     ).not.toBeNull();
     expect(within(second).getByRole("button", { name: "chat 5, folded" })).toBeInTheDocument();
+  });
+
+  it("draws one ✋ for a folded chat that needs you, its mark's, never a second beside it (#5447)", () => {
+    // A chat's face as the window gives it: its mark, which wears its one state (#5340).
+    const faceOf = (content: Content) =>
+      content.kind !== "session"
+        ? undefined
+        : {
+            name: content.chat,
+            mark: <ChatMark state={content.session === 6 ? "needs" : "working"} />,
+            stated: true,
+          };
+    render(
+      <LayoutPanes
+        {...propsOf(grid, { room: { width: 770, height: 600 }, waiting: [asking(6)], faceOf })}
+      />,
+    );
+
+    const asks = within(rails()[1]).getByRole("button", { name: "chat 6, folded, asks you" });
+    const item = asks.closest(".pane-rail-item") as HTMLElement;
+    expect(item.querySelectorAll('[data-mark="needs-you"]')).toHaveLength(1);
+    expect(item.querySelector(".pane-rail-asks")).toBeNull();
   });
 });
 

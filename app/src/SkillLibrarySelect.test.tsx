@@ -42,6 +42,7 @@ function core(
           workspace,
           persona: null,
           first: { starts: false, unmoved: null },
+          places: [],
           workspaces: ["ops"],
           levels: [
             { level: { at: "project", local: false }, label: "project" },

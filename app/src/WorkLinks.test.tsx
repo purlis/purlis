@@ -207,7 +207,7 @@ describe("a chat's work link", () => {
     core({ atRoot: true });
     render(<App />);
     await chatList();
-    await screen.findByRole("menuitem", { name: "Rename…" });
+    await screen.findByRole("menuitem", { name: "Rename chat…" });
     expect(screen.queryByRole("menuitem", { name: "Link to work item…" })).not.toBeInTheDocument();
     expect(screen.queryByRole("menuitem", { name: "Unlink work item" })).not.toBeInTheDocument();
   });

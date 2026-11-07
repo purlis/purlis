@@ -58,36 +58,42 @@ export function tabPart(part: "label" | "closer" | "count" | "picture") {
   return { "data-scope": "tabs", "data-part": part } as const;
 }
 
-/** Where a picture's box sits on the 16 its icon is drawn on, and how wide it is. */
-const BOX_AT = 2.5;
-const BOX_SIDE = 11;
+/** Where a picture's box sits on the 16 its icon is drawn on, how wide it is, and the gap
+ *  between its tiles. */
+const BOX_AT = 2;
+const BOX_SIDE = 12;
+const GAP = 1.5;
+/** A tile's edge, on the 16: the gap halved on each side that meets another tile. */
 const placed = (at: number) => BOX_AT + BOX_SIDE * at;
+const near = (at: number) => placed(at) + (at > 0 ? GAP / 2 : 0);
+const far = (at: number) => placed(at) - (at < 1 ? GAP / 2 : 0);
+/** A fraction of the box, to its few places: a share is a thousandth. */
+const exact = (n: number) => Math.round(n * 1000) / 1000;
 
 /**
- * **A split tab's small picture of its layout's shape** (#5342, spec #5339): its box, and the
- * lines between its panes where they divide it, in place of `+1`. Drawn at the size of the tab's
- * other marks, in the quiet tier. A screen reader hears it as words: how many panes it holds.
+ * **A split tab's small picture of its layout's shape** (#5342, spec #5339): a tile for each pane,
+ * parted by a gap, in place of `+1` (#5577: tiles, so three panes never read as the quad). Drawn
+ * at the size of the tab's other marks, in the quiet tier. A screen reader hears it as words: how
+ * many panes it holds.
  */
 export function TabPicture({ picture }: { picture: Picture }) {
   return (
     <>
-      <svg
-        {...tabPart("picture")}
-        viewBox="0 0 16 16"
-        fill="none"
-        stroke="currentColor"
-        aria-hidden="true"
-      >
-        <rect x={BOX_AT} y={BOX_AT} width={BOX_SIDE} height={BOX_SIDE} rx="1.5" />
-        {picture.lines.map((line) => (
-          <line
-            key={`${line.x1} ${line.y1} ${line.x2} ${line.y2}`}
-            x1={placed(line.x1)}
-            y1={placed(line.y1)}
-            x2={placed(line.x2)}
-            y2={placed(line.y2)}
-          />
-        ))}
+      <svg {...tabPart("picture")} viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+        {picture.tiles.map((tile) => {
+          const [x, y] = [exact(tile.x), exact(tile.y)];
+          const [right, bottom] = [exact(tile.x + tile.w), exact(tile.y + tile.h)];
+          return (
+            <rect
+              key={`${x} ${y}`}
+              x={near(x)}
+              y={near(y)}
+              width={far(right) - near(x)}
+              height={far(bottom) - near(y)}
+              rx="1"
+            />
+          );
+        })}
       </svg>
       <span className="hidden-words">, split, {picture.panes} panes</span>
     </>

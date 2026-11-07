@@ -19,6 +19,7 @@ import type { Moved } from "./bindings";
 import { onTheWire } from "./chatEvents.testkit";
 import { aTabForEachChat } from "./laidOut.testkit";
 import { placementFor } from "./ui/tooltip/Tooltip";
+import { setSkillStudioOn } from "./skillStudio";
 
 /**
  * **A chat's pane head, against the whole window** (#4760, spec #4750 stories 54, 55, 60 and
@@ -113,7 +114,7 @@ let usage: unknown = null;
 
 function core(chat: typeof CHAT | typeof SHELL = CHAT, listed: Promise<void> = Promise.resolve()) {
   mockIPC(
-    (cmd) => {
+    (cmd, args) => {
       if (cmd === "chat_usage") return usage;
       if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
       if (cmd === "opened_chats") return [chat];
@@ -134,6 +135,7 @@ function core(chat: typeof CHAT | typeof SHELL = CHAT, listed: Promise<void> = P
       if (cmd === "asks_waiting") return { plane: PLANE, asks: [] };
       if (cmd === "mcp_failures") return [];
       if (cmd === "smart_closing") return [];
+      if (cmd === "set_skill_studio_on") return (args as { on: boolean }).on;
       return null;
     },
     { shouldMockEvents: true },
@@ -333,14 +335,83 @@ describe("a chat wrapping up (#4760)", () => {
   });
 });
 
+describe("what a chat uses now, on its pane head (#5524)", () => {
+  it("draws the skill run open in the chat on its pane head, and none on its tab", async () => {
+    mockIPC(
+      (cmd, args) => {
+        if (cmd === "skill_studio_on") return true;
+        if (cmd === "set_skill_studio_on") return (args as { on: boolean }).on;
+        if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
+        if (cmd === "opened_chats") return [CHAT];
+        if (cmd === "reopened_layout") return aTabForEachChat([CHAT], () => "alpha");
+        if (cmd === "plane_sidebar")
+          return {
+            root: PLANE,
+            personas: [],
+            persona: null,
+            unfiled: [],
+            workspaces: [{ name: "alpha", path: ALPHA, vision: "", todos: [], chats: [CHAT] }],
+          };
+        if (cmd === "asks_waiting") return { plane: PLANE, asks: [] };
+        return null;
+      },
+      { shouldMockEvents: true },
+    );
+    // The studio is on: what the window heard of it before this test is kept (`skillStudio.ts`).
+    await setSkillStudioOn(true);
+    render(<App />);
+    await screen.findByTestId("pane");
+
+    await act(() =>
+      emit(
+        ...onTheWire("chat-skill-run", {
+          plane: PLANE,
+          session: 4,
+          run: {
+            skill: "deploy",
+            name: "deploy",
+            id: "01RUN",
+            tool_calls: 2,
+            tokens: null,
+            level: null,
+          },
+        }),
+      ),
+    );
+
+    const chip = await screen.findByTestId("pane-skill-run");
+    expect(head()).toContainElement(chip);
+    expect(chip.closest('[data-strip="Tabs"]')).toBeNull();
+    await setSkillStudioOn(false);
+  });
+});
+
 describe("a narrow pane's head", () => {
-  /** Draws the window with every pane `width` pixels wide, as the layout engine would. */
-  async function aPaneOf(width: number) {
+  /** How wide every pane is now, and what is told when that changes. */
+  let width = 0;
+  let resized: (() => void)[] = [];
+  afterEach(() => {
+    resized = [];
+  });
+
+  /** Makes every pane `to` pixels wide, telling whatever watches their size. */
+  async function narrowedTo(to: number) {
+    width = to;
+    await act(async () => {
+      for (const tell of resized) tell();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+  }
+
+  /** Draws the window with every pane `at` pixels wide, as the layout engine would. */
+  async function aPaneOf(at: number) {
+    width = at;
     vi.stubGlobal(
       "ResizeObserver",
       class {
         constructor(private readonly told: (entries: unknown[], seen: unknown) => void) {}
         observe() {
+          resized.push(() => this.told([], this));
           this.told([], this);
         }
         disconnect() {}
@@ -391,6 +462,69 @@ describe("a narrow pane's head", () => {
     expect(more).toBe(`More for ${NAME}`);
     expect(right).toBe("Split right");
     expect(rest).toEqual([]);
+  });
+
+  describe("what the chat uses now (#5614)", () => {
+    afterEach(async () => {
+      await setSkillStudioOn(false);
+    });
+
+    /** Chat 4 has the `deploy` skill's run open, with the studio on to say it. */
+    async function aSkillRunOpen() {
+      await setSkillStudioOn(true);
+      await act(() =>
+        emit(
+          ...onTheWire("chat-skill-run", {
+            plane: PLANE,
+            session: 4,
+            run: {
+              skill: "deploy",
+              name: "deploy",
+              id: "01RUN",
+              tool_calls: 2,
+              tokens: null,
+              level: null,
+            },
+          }),
+        ),
+      );
+    }
+
+    it("keeps its skill run while the head has room for it, and drops it next after the state's word", async () => {
+      await aPaneOf(450);
+      await aSkillRunOpen();
+      expect(await within(head()).findByTestId("pane-skill-run")).toBeInTheDocument();
+
+      await narrowedTo(449);
+
+      await waitFor(() => expect(head().querySelector(".pane-using")).toBeNull());
+      expect(within(head()).queryByTestId("pane-skill-run")).toBeNull();
+      // The chat's name and its mark stay: under 470 the mark at the head's start says the state.
+      expect(within(head()).getByText(NAME)).toHaveClass("pane-name");
+      expect(head().querySelector('.pane-persona [data-scope="chat-mark"]')).not.toBeNull();
+    });
+  });
+
+  /** The glyphs drawn on the head's chat side, by their lucide names, in order. */
+  const glyphs = () =>
+    [...head().querySelectorAll(".pane-chips svg")].map(
+      (one) => [...one.classList].find((name) => /^lucide-(?!icon$)/.test(name)) ?? "?",
+    );
+
+  it.each([
+    ["with its mark and no word", 400],
+    ["with no state of its own", 360],
+  ])("draws each state's glyph once, %s (#5446)", async (_, width) => {
+    await aPaneOf(width);
+
+    for (const moved of [RUNNING, WAITING]) {
+      await act(() => emit(...onTheWire("chat-moved", moved)));
+      await waitFor(() =>
+        expect(head().querySelector('[data-scope="chat-mark"][data-part="badge"]')).not.toBeNull(),
+      );
+      const drawn = glyphs();
+      expect(drawn).toEqual([...new Set(drawn)]);
+    }
   });
 });
 

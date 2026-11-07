@@ -60,7 +60,7 @@ fn inside_a_chat_it_is_refused_writes_nothing_and_names_both_ways_forward() {
             "nothing was changed, and commands here still use 'steward', with the vaults of ",
             "'steward'.\n",
             "• To use a vault of 'devops' here, run the command that needs it and ask the ",
-            "operator to press Allow in the notice on this chat's tab. To have 'devops' do ",
+            "operator to press Allow on this chat's vault notice. To have 'devops' do ",
             "the work, dispatch to it: `purlis dispatch --to devops`.\n",
         )
     );

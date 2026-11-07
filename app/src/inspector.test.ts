@@ -21,8 +21,9 @@ describe("a browser's DevTools, in a view tab (#2028)", () => {
     const opened = openInspector(browser, "B1", "alpha");
 
     expect(contentsOf(opened, tab).map(({ content }) => content)).toEqual([
-      { kind: "view", view: browserView("B1"), workspace: "alpha" },
-      { kind: "view", view: inspectorView("B1"), workspace: "alpha" },
+      { kind: "view", view: browserView("B1"), workspace: "alpha", title: BROWSER_TITLE },
+      // Opened with a title of their own, which names them in the split (#5577).
+      { kind: "view", view: inspectorView("B1"), workspace: "alpha", title: INSPECTOR_TITLE },
     ]);
     const devtools = contentsOf(opened, tab).find(
       ({ content }) => content.kind === "view" && isInspector(content.view),
@@ -47,7 +48,7 @@ describe("a browser's DevTools, in a view tab (#2028)", () => {
     const tab = opened.byId[opened.inFront ?? -1];
     expect(tab.name).toBe(INSPECTOR_TITLE);
     expect(contentsOf(opened, tab.id).map(({ content }) => content)).toEqual([
-      { kind: "view", view: inspectorView("B1"), workspace: "alpha" },
+      { kind: "view", view: inspectorView("B1"), workspace: "alpha", title: INSPECTOR_TITLE },
     ]);
   });
 

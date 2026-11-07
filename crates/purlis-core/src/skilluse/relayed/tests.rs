@@ -144,3 +144,53 @@ fn a_runners_skill_run_is_logged_in_no_project_this_purlis_may_not_write() {
     );
     assert!(crate::skilluse::runs(not_a_plane.path()).is_empty());
 }
+
+/// The rows of the desktop's file of the runner's lines' month.
+fn rows(plane: &Path) -> Vec<Value> {
+    let when = chrono::DateTime::from_timestamp_millis(1_793_440_800_000).unwrap();
+    std::fs::read_to_string(crate::skilluse::path_for(plane, when, DESKTOP))
+        .unwrap_or_default()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect()
+}
+
+/// **#4219: a runner's line read again logs nothing again**: a window that reads a runner's log
+/// on from where it last logged may hear a line it logged before it closed, and a run is logged
+/// once.
+#[test]
+fn a_runners_line_logged_already_is_not_logged_twice() {
+    let plane = a_plane();
+    let ran_as = RanAs::default();
+    for event in [started(), ended(), started(), ended()] {
+        let relayed = Relayed::of(&event).expect("a skill run's line");
+        logged(plane.path(), &relayed, &ran_as, DESKTOP);
+    }
+
+    let rows = rows(plane.path());
+    assert_eq!(rows.len(), 2, "one start and one end: {rows:?}");
+    assert_eq!(crate::skilluse::runs(plane.path()).len(), 1);
+}
+
+/// **#4219: a runner's start says the tree it ran**, read off its own checkout, and that is what
+/// is logged, never what this machine's plane holds of the skill now: a skill edited here after
+/// the runner was sent the project is not what the runner ran.
+#[test]
+fn a_runners_start_is_logged_with_the_tree_it_said_it_ran() {
+    let plane = a_plane();
+    let tree = "0123456789abcdef0123456789abcdef01234567";
+    let mut event = started();
+    event.body["tree"] = tree.into();
+    let mut odd = started();
+    odd.body["tree"] = "not a tree".into();
+
+    assert_eq!(
+        Relayed::of(&odd).map(|relayed| relayed.line),
+        Relayed::of(&started()).map(|relayed| relayed.line),
+        "a word that is no tree is not taken"
+    );
+    let relayed = Relayed::of(&event).expect("a skill run's line");
+    logged(plane.path(), &relayed, &RanAs::default(), DESKTOP);
+
+    assert_eq!(rows(plane.path())[0]["tree"], tree);
+}

@@ -47,6 +47,7 @@ const runner = (
     pool,
     runner: name,
     draining: false,
+    left: [],
     on: { chats, browsers },
   }) satisfies RunnerOnTheList;
 

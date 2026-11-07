@@ -1185,6 +1185,24 @@ impl Asks {
         values: Vec<(String, super::Zeroizing<String>)>,
         by: Answerer,
     ) -> Result<RunFilled, String> {
+        self.fill_run_with(ctx, id, values, Vec::new(), by)
+    }
+
+    /// **[`Self::fill_run`], with a field filled by an entry the person keeps** (#5080): each of
+    /// `links` makes its field's key a Linked entry reading the entry, never a copy, as a Secret
+    /// ask's link does ([`super::Answer::Link`]), and under the same rule as a value: only where
+    /// the vault holds nothing under the key, or a link whose entry is gone. A field is given a
+    /// value or an entry, never both. Links are written first, then values; one that fails stops
+    /// there, leaving what was written before it, which a press again finds filled. The caller
+    /// judges every entry before this is called.
+    pub fn fill_run_with(
+        &self,
+        ctx: &super::Ctx,
+        id: u32,
+        values: Vec<(String, super::Zeroizing<String>)>,
+        links: Vec<(String, super::super::links::Target)>,
+        by: Answerer,
+    ) -> Result<RunFilled, String> {
         if by.scope() != HumanScope::LocalUi {
             return Err("a secret ask is answered in purlis's window only".to_owned());
         }
@@ -1197,7 +1215,41 @@ impl Asks {
             };
             (asked.open.bound.vault.clone(), asked.open.fills.clone())
         };
+        for (key, _) in &links {
+            if !fills.iter().any(|fill| fill.key == *key) {
+                return Err(format!("{key} is not a value this notice asks for"));
+            }
+            if values
+                .iter()
+                .any(|(typed, value)| typed == key && !value.is_empty())
+            {
+                return Err(format!(
+                    "{key} has a value typed and an entry picked: keep one"
+                ));
+            }
+        }
         let mut stored = Vec::new();
+        for (key, to) in links {
+            let Some(fill) = fills.iter().find(|fill| fill.key == key) else {
+                return Err(format!("{key} is not a value this notice asks for"));
+            };
+            let v = super::cmd::provider(ctx, &vault).map_err(|e| e.message.to_string())?;
+            match super::cmd::get_value(ctx, &v, &key) {
+                // Filled meanwhile, elsewhere: what is there stays.
+                Ok(_) => {}
+                Err(e)
+                    if matches!(
+                        e.kind,
+                        crate::secrets::Kind::NotFound | crate::secrets::Kind::BrokenLink
+                    ) =>
+                {
+                    super::linked_to(ctx, &vault, &key, fill.reason.as_ref(), &to)
+                        .map_err(|e| e.message.to_string())?;
+                }
+                Err(e) => return Err(e.message.to_string()),
+            }
+            stored.push(key);
+        }
         for (key, value) in values {
             let Some(fill) = fills.iter().find(|fill| fill.key == key) else {
                 return Err(format!("{key} is not a value this notice asks for"));

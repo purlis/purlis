@@ -13,7 +13,7 @@ else: the git repository where purlis keeps your workspaces, personas, memory an
 - At least one harness, the coding agent a chat runs: Claude Code (`claude`), Codex or
   opencode. Each one signs in with its own login, the first time a chat starts it. With none
   installed, purlis lists each one's official installer once your repo is open, and
-  **Install** runs it in a shell tab.
+  **Install** runs it in a shell.
 - GitLab's own command-line tool, [`glab`](https://gitlab.com/gitlab-org/cli), signed in with
   `glab auth login` (add `--hostname <host>` for a self-managed GitLab). purlis lists your
   repos, clones them and opens merge requests through `glab`, as you: it keeps no GitLab token
@@ -89,8 +89,9 @@ in.
 
 **Sign in to GitHub or GitLab**, under the welcome's doors, shows whether `gh` and `glab` are
 installed and signed in. Without a purlis sign-in, a GitLab user needs only `glab`. If `glab` is
-installed but not signed in, **Sign in to GitLab** opens a shell tab running `glab auth login`.
-For a self-managed GitLab, add `--hostname <host>` in that tab before you press Enter, because
+installed but not signed in, **Sign in to GitLab** runs `glab auth login` in a split beside the pane
+you are in, which goes when you're signed in. For a self-managed GitLab, add `--hostname <host>` in
+that terminal before you press Enter, because
 purlis checks only `gitlab.com`. **Sign in with GitLab** on the same page signs you in to
 gitlab.com through your browser: purlis opens gitlab.com there, you approve purlis, and the
 browser comes back to purlis by itself. **Sign in with a token…** keeps a GitLab
@@ -168,6 +169,7 @@ purlis has five concepts, and every other word belongs to one of them
 - **Project:** the git repository that holds your workspaces, personas, memory and settings. A
   code repo is never a project, on any forge.
 - **Workspace:** a named piece of work, with its own `workspace.md`, memory, todos and repos.
-- **Chat:** one conversation with an agent, in a tab.
+- **Chat:** one conversation with an agent. It's listed in the sidebar, and you show it in a pane by
+  picking it.
 - **Persona:** a role a chat can take, with its own instructions, memory and vault.
 - **Memory:** what purlis keeps so that the next chat knows what earlier ones learned.

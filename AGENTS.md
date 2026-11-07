@@ -154,7 +154,9 @@ is told, is `tools/mutants-report.py notice`, tested in `tools/mutants-report.te
 
 ### Issue tracker
 
-GitHub Issues on `purlis/purlis`, through `gh`. See `docs/agents/issue-tracker.md`.
+GitHub Issues on `purlis/purlis`, through `gh`. See `docs/agents/issue-tracker.md`. Every issue gets
+a milestone when it is filed, unless it is filed with `needs-triage` (triage sets one) or labelled
+`bot-maintained`; that file says which milestone.
 
 ### Triage labels
 

@@ -1,6 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { basename } from "node:path";
 import { $, browser } from "@wdio/globals";
 
 /**
@@ -22,6 +23,7 @@ export async function pickAndStart(within = 20_000): Promise<void> {
   // The picker can take the palette's place, so it is looked for by its buttons at every look,
   // and nothing found before it is held (#2126).
   let pressing = "";
+  let instead: string | null = null;
   await browser.waitUntil(
     async () => {
       // Not while the rows' details are read (#4736): until they arrive the button says Start
@@ -29,10 +31,19 @@ export async function pickAndStart(within = 20_000): Promise<void> {
       // instead of going, so it is chosen once the picker knows which it is. In one look, so the
       // dialog cannot be drawn between "is it checking?" and "which button?" (#4979).
       pressing = (await browser.execute(whatThePickerOffers, PICKER)) ?? "";
-      return pressing !== "";
+      if (pressing !== "") return true;
+      // A project where nothing can start draws no picker at all (#5580): said at once.
+      instead = await browser.execute(whatCameInsteadOfThePicker);
+      return instead !== null;
     },
     { timeout: within, timeoutMsg: "the picker never offered Start" },
   );
+  if (instead !== null)
+    throw new Error(
+      `the picker was never drawn: nothing can start in the project in front, so New chat ` +
+        `opened ${instead} in its place (FR-29). A spec before this one may have left the ` +
+        `window on that project (#5580).`,
+    );
   const start = await $(`button=${pressing}`);
   await start.waitForClickable({ timeout: 20_000 });
   await start.click();
@@ -65,6 +76,24 @@ export function whatThePickerOffers(text: string): string | null {
     for (const words of ["Approve and start", "Start chat"]) if (said.includes(words)) return words;
   }
   return null;
+}
+
+/**
+ * The name of the Set up a harness tab when it is the tab in front, or `null`. **Run in the
+ * page.** In a project where no harness can start, New chat opens that tab and never draws the
+ * picker (FR-29, `PlaneView`'s `ask`), so a spec waiting on the picker there waits for nothing
+ * (#5580). Only while no picker is up: from that tab, its own Start a chat draws one.
+ */
+export function whatCameInsteadOfThePicker(): string | null {
+  const pickerUp = [...document.querySelectorAll('[role="dialog"]')].some((dialog) =>
+    (dialog.textContent ?? "").includes("Start a chat"),
+  );
+  if (pickerUp) return null;
+  const front = document
+    .querySelector('[data-strip="Tabs"] [role="tab"][aria-selected="true"]')
+    ?.querySelector(".tab-name")
+    ?.textContent?.trim();
+  return front?.startsWith("Set up a harness") ? front : null;
 }
 
 /**
@@ -413,6 +442,34 @@ export async function closeProject(button: string): Promise<void> {
     await theDialogHasGone("alertdialog", "", "the question about closing the project never went");
   }
   await everyCloseHasLetGo();
+}
+
+/**
+ * **Closes the project at `plane` by its tab, for a spec's `after`, and hands back what failed
+ * rather than throwing it** (#5580): an `after` that stops at a failed close leaves the project
+ * open and in front for every spec after it, so it goes on to close what is left through the
+ * core and throws this at its end. A question the press never answered is put away with Escape,
+ * so no dialog outlives the spec. Nothing to do, and `undefined`, for `""` or a project with no
+ * tab.
+ */
+export async function closingByTheWindow(plane: string): Promise<unknown> {
+  if (plane === "") return undefined;
+  // `switching.ts`'s PROJECTS, written out: that module imports this one.
+  const closer = `[data-strip="Projects"] [role="tab"][aria-label="${basename(plane)}"]`;
+  try {
+    if (await $(closer).isExisting()) await closeProject(closer);
+    return undefined;
+  } catch (error) {
+    for (let left = 0; left < 3; left++) {
+      const up = await browser.execute(
+        () => document.querySelector('[role="alertdialog"]') !== null,
+      );
+      if (!up) break;
+      await browser.keys(["Escape"]);
+      await browser.pause(200);
+    }
+    return error;
+  }
 }
 
 /**

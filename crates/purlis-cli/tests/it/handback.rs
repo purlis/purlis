@@ -175,7 +175,7 @@ fn a_report_kept_for_a_workspace_is_learned_by_the_next_chat_that_starts_there()
 
     let context = context_of(&out, "SessionStart");
     assert!(context.contains("`steward 3`"), "{context}");
-    assert!(context.contains("has since closed"), "{context}");
+    assert!(context.contains("has since ended"), "{context}");
     assert!(context.ends_with("> done"), "{context}");
     assert!(
         handback::take(

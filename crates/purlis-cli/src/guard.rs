@@ -181,7 +181,8 @@ fn held_branch_folder(root: &Path, command: &str, cwd: &str) -> Option<toolgate:
     crate::session::chat_number()?;
     let ends = Instant::now() + CLAIMS_ARE_ANSWERED_WITHIN;
     let mut asked = Vec::new();
-    for write in purlis_core::branchgit::branch_write(command, cwd, &root.display().to_string()) {
+    let writes = purlis_core::branchgit::branch_write(command, cwd, &root.display().to_string());
+    for write in writes.found {
         let Some(at) = purlis_core::worktree::locate(root, &write.folder) else {
             continue;
         };
@@ -224,6 +225,18 @@ fn held_branch_folder(root: &Path, command: &str, cwd: &str) -> Option<toolgate:
                 denial: why.join(" "),
             });
         }
+    }
+    // A git that may write a branch where the line cannot be followed: with no sandbox behind
+    // it, it is refused with the shape that places it, where the project has a branch folder
+    // it could be in.
+    if let Some(sub) = writes.unplaced
+        && purlis_core::branchgit::any_branch_folder(root)
+    {
+        return Some(toolgate::Verdict {
+            reason: purlis_core::piececlaim::REASON.to_owned(),
+            denial: purlis_core::branchgit::unplaced_said(&sub),
+            shape: Some(sub),
+        });
     }
     None
 }

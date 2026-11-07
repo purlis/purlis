@@ -387,6 +387,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     // client's: a chat must not learn where a value lives.
     "link_secret_ask",
     "secret_ask_entries",
+    // And a run's notice's fields (#5080): the same entries, and the same reason.
+    "run_ask_entries",
     // A chat's browser sites (#2018): the person's answer alone. No chat allows its own
     // browser a site.
     "allow_browser_sites",
@@ -552,6 +554,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     "type_sandbox_install",
     "plane_doctor_fix",
     "plane_doctor_fix_identity",
+    "plane_doctor_move_into_repos",
     "change_land",
     "change_push",
     "publish_project",
@@ -896,6 +899,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Bringing a held runner's conversations back (#4633): it writes into the pool's runner's
     // home and then removes the held one, so the person's press alone.
     "docker_pool_bring_back_held_runner",
+    // Letting an older runner go with work no fetch brings (ruled 2026-11-07): that work goes
+    // with it, so the person's press alone.
+    "docker_pool_let_runner_go",
     // The runner image this version's release names (2026-10-30): the Add a pool dialog's
     // default image, read through the updater, for the person's own window.
     "runner_image_of_this_version",

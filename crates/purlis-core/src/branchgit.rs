@@ -22,11 +22,19 @@
 //!   made with `git worktree add` anywhere else is left to the sandbox, since `purlis worktree
 //!   commit` would not commit there (the review of #3841);
 //! - and the line can be placed: a `cd` to a literal folder is followed only on a line whose
-//!   commands all run in one shell, one after another (`&&`, `;`). A `cd` in a subshell, a
-//!   pipeline or a substitution, or any move it cannot place (an expansion, `cd -`, `popd`),
-//!   leaves the line to the sandbox. A wrapper's own move to a literal folder
-//!   (`env -C <folder> git …`, #3931) places that one command; one it cannot place leaves that
-//!   command to the sandbox.
+//!   commands all run in one shell, one after another (`&&`, `;`). A `cd` can fail, so after a
+//!   `;` or a new line the git is judged in the folder the `cd` left as well as the one it
+//!   names; only `&&` from the `cd` to the git says the `cd` was made. A `cd` in a subshell, a
+//!   pipeline or a substitution, or any move it cannot place (an expansion, `cd -`, `popd`,
+//!   `pushd +1`, a `cd` that `CDPATH` may send elsewhere), leaves the line to the sandbox. A
+//!   wrapper's own move to a literal folder (`env -C <folder> git …`, #3931) places that one
+//!   command; one it cannot place leaves that command to the sandbox.
+//!
+//! **A chat with no sandbox has no sandbox to leave a line to.** Its guard holds a branch
+//! folder's writes to the folder's one live writer ([`branch_write`]), and reads the same line
+//! the same way, but where it cannot place a git that may write a branch (after a move it
+//! cannot follow, past [`MOST_PLACES`], or as an alias it cannot read) it says so
+//! ([`BranchWrites::unplaced`]), and the guard refuses that git with the shape that places it.
 
 use std::path::{Component, Path, PathBuf};
 
@@ -40,6 +48,63 @@ pub const REASON: &str = "branch-folder-git";
 /// (`workspaces/<ws>/.worktrees/<repo>/<piece>`), as [`crate::active::workspace_of_tree`]
 /// reads it.
 const WORKTREES: &str = ".worktrees";
+
+/// The most folders [`found`] keeps the shell possibly in, after `cd`s that may each have
+/// failed. Each `cd` before a `;` can add one, so past this many the shell's folder is taken as
+/// unknown rather than followed, and no move joins more than this many paths. A chain joined by
+/// `&&` alone adds none: whatever runs after it, runs where it went.
+const MOST_PLACES: usize = 8;
+
+/// git's own commands, as `git --list-cmds=main` lists them (git 2.50): git runs its own
+/// command by such a name whatever an alias of it says, so an unsandboxed chat's guard reads no
+/// alias for them ([`alias_of`]).
+#[rustfmt::skip]
+const GITS_OWN: &[&str] = &[
+    "add", "am", "annotate", "apply", "archive", "backfill", "bisect", "blame", "branch",
+    "bugreport", "bundle", "cat-file", "check-attr", "check-ignore", "check-mailmap",
+    "check-ref-format", "checkout", "checkout-index", "cherry", "cherry-pick", "clean", "clone",
+    "column", "commit", "commit-graph", "commit-tree", "config", "count-objects", "credential",
+    "credential-cache", "credential-osxkeychain", "credential-store", "daemon", "describe",
+    "diagnose", "diff", "diff-files", "diff-index", "diff-pairs", "diff-tree", "difftool",
+    "fast-export", "fast-import", "fetch", "fetch-pack", "filter-branch", "fmt-merge-msg",
+    "for-each-ref", "for-each-repo", "format-patch", "fsck", "fsck-objects", "gc",
+    "get-tar-commit-id", "grep", "hash-object", "help", "hook", "http-backend", "http-fetch",
+    "http-push", "imap-send", "index-pack", "init", "init-db", "interpret-trailers", "log",
+    "ls-files", "ls-remote", "ls-tree", "mailinfo", "mailsplit", "maintenance", "merge",
+    "merge-base", "merge-file", "merge-index", "merge-octopus", "merge-one-file", "merge-ours",
+    "merge-recursive", "merge-recursive-ours", "merge-recursive-theirs", "merge-resolve",
+    "merge-subtree", "merge-tree", "mergetool", "mktag", "mktree", "multi-pack-index", "mv",
+    "name-rev", "notes", "p4", "pack-objects", "pack-redundant", "pack-refs", "patch-id", "pickaxe",
+    "prune", "prune-packed", "pull", "push", "quiltimport", "range-diff", "read-tree", "rebase",
+    "receive-pack", "reflog", "refs", "remote", "remote-ext", "remote-fd", "remote-ftp",
+    "remote-ftps", "remote-http", "remote-https", "repack", "replace", "replay", "request-pull",
+    "rerere", "reset", "restore", "rev-list", "rev-parse", "revert", "rm", "send-email",
+    "send-pack", "shell", "shortlog", "show", "show-branch", "show-index", "show-ref",
+    "sparse-checkout", "stage", "stash", "status", "stripspace", "submodule", "subtree", "switch",
+    "symbolic-ref", "tag", "unpack-file", "unpack-objects", "update-index", "update-ref",
+    "update-server-info", "upload-archive", "upload-pack", "var", "verify-commit", "verify-pack",
+    "verify-tag", "version", "whatchanged", "worktree", "write-tree",
+];
+
+/// What [`found`] does at a git it cannot place.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Unplaced {
+    /// Stop reading the line: what follows is left to the sandbox.
+    Stop,
+    /// Read on, and name the first such git: there is no sandbox to leave it to.
+    Name,
+}
+
+/// Every git on a line that writes a branch folder's branch ([`branch_write`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BranchWrites {
+    /// Each one placed, in the line's order.
+    pub found: Vec<InAFolder<crate::piececlaim::Act>>,
+    /// The subcommand of the first git that may write a branch where the line could not be
+    /// followed to the folder it runs in: after a move that cannot be placed, past
+    /// [`MOST_PLACES`], or an alias whose command cannot be read. `None` where there is none.
+    pub unplaced: Option<String>,
+}
 
 /// What the chat is told, for `git <sub>`: the shape to retry, in a call of its own.
 pub fn said(sub: &str) -> String {
@@ -55,12 +120,25 @@ pub fn said(sub: &str) -> String {
     )
 }
 
+/// What an unsandboxed chat is told of `git <sub>` on a line that cannot be followed to the
+/// folder it runs in ([`BranchWrites::unplaced`]): the shape that places it.
+pub fn unplaced_said(sub: &str) -> String {
+    format!(
+        "purlis cannot tell which folder `git {sub}` on this line runs in, so it cannot check \
+         that no other live chat is working in that branch folder. Run it in a call of its own, \
+         from the folder or after a `cd` to the folder's literal path joined by `&&` (`cd \
+         <folder> && git {sub} …`), and as the git command itself rather than an alias that \
+         stands for it."
+    )
+}
+
 /// The refusal for `cmd`, run in `cwd` by a chat the app gave a sandbox, in the project at
 /// `root`: `(subcommand, sentence)`, or `None`.
 pub fn refusal(cmd: &str, cwd: &str, root: &str) -> Option<(String, String)> {
-    let first = found(cmd, cwd, root, |sub, post| {
+    let first = found(cmd, cwd, root, Unplaced::Stop, |sub, post| {
         writes_the_index(sub, post).then_some(())
     })
+    .0
     .into_iter()
     .next()?;
     let why = said(&first.sub);
@@ -86,8 +164,29 @@ pub struct InAFolder<T> {
 /// dry run, and a rebase, merge, cherry-pick, revert or am that only stops or shows one under
 /// way (`--abort`, `--quit`, `--show-current-patch`), writes nothing of its own and is let
 /// through.
-pub fn branch_write(cmd: &str, cwd: &str, root: &str) -> Vec<InAFolder<crate::piececlaim::Act>> {
-    found(cmd, cwd, root, writes_the_branch)
+///
+/// A git that may write a branch but cannot be placed is named apart
+/// ([`BranchWrites::unplaced`]): this reader has no sandbox to leave it to. An alias is read
+/// from the configuration of each folder it may run in; one that runs a shell command, or that
+/// the line itself or git's environment defines, cannot be.
+pub fn branch_write(cmd: &str, cwd: &str, root: &str) -> BranchWrites {
+    let (found, unplaced) = found(cmd, cwd, root, Unplaced::Name, writes_the_branch);
+    BranchWrites { found, unplaced }
+}
+
+/// Whether the project at `root` has a branch folder purlis made, in any workspace: where it
+/// has none, no git can write one.
+pub fn any_branch_folder(root: &Path) -> bool {
+    let Ok(workspaces) = std::fs::read_dir(root.join("workspaces")) else {
+        return false;
+    };
+    workspaces.flatten().any(|ws| {
+        std::fs::read_dir(ws.path().join(WORKTREES)).is_ok_and(|repos| {
+            repos.flatten().any(|repo| {
+                std::fs::read_dir(repo.path()).is_ok_and(|mut pieces| pieces.next().is_some())
+            })
+        })
+    })
 }
 
 /// What `git <sub> <post…>` does to the branch it runs on, as a branch folder's claim names it
@@ -109,20 +208,27 @@ fn writes_the_branch(sub: &str, post: &[String]) -> Option<crate::piececlaim::Ac
 /// Every `git` on the line `cmd`, run in `cwd`, that `wanted` names a `T` for and whose
 /// repository is the record of a branch folder purlis made in the project at `root`, in the
 /// line's order. A wrapper's own move (`env -C <folder> git …`) places that one command where
-/// it is literal. Reading stops at a move the line makes that cannot be placed: what it found
-/// before that move is kept.
-fn found<T>(
+/// it is literal.
+///
+/// Where the line makes a move that cannot be placed, `unplaced` says what follows: with
+/// [`Unplaced::Stop`], reading stops there and what it found before that move is kept; with
+/// [`Unplaced::Name`], it reads on and names the first git after it that `wanted` names a `T`
+/// for, or that may be an alias, which then runs in a folder it does not know. With
+/// [`Unplaced::Name`], an alias is read too ([`alias_of`]), and one it cannot read is named so.
+fn found<T: Clone>(
     cmd: &str,
     cwd: &str,
     root: &str,
+    unplaced: Unplaced,
     wanted: impl Fn(&str, &[String]) -> Option<T>,
-) -> Vec<InAFolder<T>> {
+) -> (Vec<InAFolder<T>>, Option<String>) {
     let mut seen = Vec::new();
+    let mut lost: Option<String> = None;
     if !shellwrap::prefilter_text(cmd).contains("git") {
-        return seen;
+        return (seen, lost);
     }
     let Some(segments) = shellseg::joined_argv(cmd) else {
-        return seen;
+        return (seen, lost);
     };
     // A `cd` carries over to the next command only where both run in this shell, in turn.
     let in_turn = |op: &Option<String>| {
@@ -134,8 +240,52 @@ fn found<T>(
         .all(|segment| in_turn(&segment.before) && in_turn(&segment.after));
     let argvs: Vec<Vec<String>> = segments.iter().map(|s| s.argv.clone()).collect();
     let exported = shellwrap::exported_env(&argvs);
-    let mut here = PathBuf::from(cwd);
+    // A relative `cd` is looked for along `CDPATH` first, where the shell has one: this
+    // process's, or one the line sets.
+    let cdpath_here = std::env::var_os("CDPATH").is_some_and(|it| !it.is_empty());
+    let sets_cdpath = |env: &[String]| {
+        env.iter().any(|pair| {
+            pair.strip_prefix("CDPATH=")
+                .is_some_and(|it| !it.is_empty())
+        })
+    };
+    // Every folder the shell may be in: a `cd` that fails leaves it where it was, and only
+    // `&&` stops what follows. So a `cd` adds the folder it names, and the folders it left come
+    // back at the first `;` or new line after it. Empty once it cannot be known.
+    let mut here = vec![PathBuf::from(cwd)];
+    let mut if_a_move_failed: Vec<PathBuf> = Vec::new();
+    // More folders a failed move may have left than [`MOST_PLACES`]: they are no longer kept,
+    // and from the first `;` or new line after them the shell's folder is not known.
+    let mut too_many_if_a_move_failed = false;
+    let add = |places: &mut Vec<PathBuf>, place: PathBuf| {
+        if !places.contains(&place) {
+            places.push(place);
+        }
+    };
+    // Where the shell is can no longer be told: stop, or read on knowing no folder.
+    macro_rules! out_of_sight {
+        () => {{
+            if unplaced == Unplaced::Stop {
+                return (seen, lost);
+            }
+            here.clear();
+            if_a_move_failed.clear();
+            too_many_if_a_move_failed = false;
+        }};
+    }
     for (segment, before) in segments.iter().zip(exported.iter()) {
+        if segment.before.as_deref().is_some_and(|op| op != "&&") {
+            if too_many_if_a_move_failed {
+                out_of_sight!();
+            }
+            for left in if_a_move_failed.drain(..) {
+                add(&mut here, left);
+            }
+            // More places than a line of a few moves has: out of sight.
+            if here.len() > MOST_PLACES {
+                out_of_sight!();
+            }
+        }
         let call = shellwrap::split_env_chdir(&segment.argv);
         let program = base_lower(&call.prog);
         match program.as_str() {
@@ -144,41 +294,105 @@ fn found<T>(
             "cd" | "pushd" => match call.argv.get(1) {
                 Some(to)
                     if one_shell
+                        && !here.is_empty()
                         && !projectgit::unplaceable(to)
                         && to != "-"
-                        && !to.starts_with('-') =>
+                        && !to.starts_with(['-', '+'])
+                        && !((cdpath_here || sets_cdpath(before) || sets_cdpath(&call.env))
+                            && !beside_or_absolute(to)) =>
                 {
-                    here = here.join(to);
+                    let mut moved = Vec::new();
+                    for from in &here {
+                        add(&mut moved, from.join(to));
+                    }
+                    for left in std::mem::replace(&mut here, moved) {
+                        if !too_many_if_a_move_failed {
+                            add(&mut if_a_move_failed, left);
+                        }
+                    }
+                    if if_a_move_failed.len() > MOST_PLACES {
+                        too_many_if_a_move_failed = true;
+                        if_a_move_failed.clear();
+                    }
                     continue;
                 }
-                _ => return seen,
+                _ => {
+                    out_of_sight!();
+                    continue;
+                }
             },
-            "popd" => return seen,
+            "popd" => {
+                out_of_sight!();
+                continue;
+            }
             _ => {}
         }
         if program != "git" {
             continue;
         }
-        // `env -C <folder>` moves this one command, never the shell.
-        let at = if call.chdir.is_empty() {
-            here.clone()
-        } else if projectgit::unplaceable(&call.chdir) {
-            continue;
-        } else {
-            here.join(&call.chdir)
-        };
         let (pre, rest) = shellwrap::git_globals(&call.argv);
         let Some((sub, post)) = rest.split_first() else {
             continue;
         };
-        let Some(what) = wanted(sub, post) else {
-            continue;
-        };
         let mut env = before.clone();
         env.extend(call.env.iter().cloned());
-        if let Some(folder) = projectgit::repository(&at, &pre, &env)
-            .and_then(|repo| purlis_made(&repo, Path::new(root)))
-        {
+        let direct = wanted(sub, post);
+        let may_be_an_alias =
+            unplaced == Unplaced::Name && direct.is_none() && !GITS_OWN.contains(&sub.as_str());
+        // An alias the line defines itself, or one git is handed through its environment, is
+        // read from no configuration.
+        let defined_here = pre
+            .windows(2)
+            .any(|two| two[0] == "-c" && two[1].starts_with(&format!("alias.{sub}=")))
+            || env.iter().any(|pair| pair.starts_with("GIT_CONFIG_"));
+        let placeable =
+            !here.is_empty() && (call.chdir.is_empty() || !projectgit::unplaceable(&call.chdir));
+        if !placeable || (may_be_an_alias && defined_here) {
+            if unplaced == Unplaced::Name && (direct.is_some() || may_be_an_alias) && lost.is_none()
+            {
+                lost = Some(sub.clone());
+            }
+            continue;
+        }
+        // Every branch folder the git may run in, each once. `env -C <folder>` moves this one
+        // command, never the shell.
+        let mut folders: Vec<(PathBuf, T)> = Vec::new();
+        for from in &here {
+            let at = if call.chdir.is_empty() {
+                from.clone()
+            } else {
+                from.join(&call.chdir)
+            };
+            let Some(folder) = projectgit::repository(&at, &pre, &env)
+                .and_then(|repo| purlis_made(&repo, Path::new(root)))
+            else {
+                continue;
+            };
+            if folders.iter().any(|(placed, _)| *placed == folder) {
+                continue;
+            }
+            let what = match &direct {
+                Some(what) => Some(what.clone()),
+                None if may_be_an_alias => match alias_of(&folder, sub) {
+                    Alias::None => None,
+                    Alias::Runs(words) => words.split_first().and_then(|(sub, more)| {
+                        let post: Vec<String> = more.iter().chain(post).cloned().collect();
+                        wanted(sub, &post)
+                    }),
+                    Alias::Unread => {
+                        if lost.is_none() {
+                            lost = Some(sub.clone());
+                        }
+                        None
+                    }
+                },
+                None => None,
+            };
+            if let Some(what) = what {
+                folders.push((folder, what));
+            }
+        }
+        for (folder, what) in folders {
             seen.push(InAFolder {
                 sub: sub.clone(),
                 what,
@@ -186,7 +400,51 @@ fn found<T>(
             });
         }
     }
-    seen
+    (seen, lost)
+}
+
+/// Whether a `cd` to `to` goes where it says whatever `CDPATH` holds: an absolute folder, or one
+/// named from the shell's own (`.`, `..`, `./…`, `../…`), which the shell never looks for along
+/// `CDPATH`.
+fn beside_or_absolute(to: &str) -> bool {
+    Path::new(to).is_absolute()
+        || matches!(to, "." | "..")
+        || to.starts_with("./")
+        || to.starts_with("../")
+}
+
+/// What a git subcommand stands for in a branch folder, as an alias.
+enum Alias {
+    /// No alias of that name.
+    None,
+    /// The git command it stands for, as words.
+    Runs(Vec<String>),
+    /// One that runs a shell command, or whose configuration could not be read.
+    Unread,
+}
+
+/// The alias `sub` is in the branch folder `folder`, as git there reads it.
+fn alias_of(folder: &Path, sub: &str) -> Alias {
+    use crate::worktree::git;
+    let key = format!("alias.{sub}");
+    let Ok(run) = git::run(folder, &["config", "--get", &key], git::READ) else {
+        return Alias::Unread;
+    };
+    match run.code {
+        // git's own answer for a key that is not set.
+        Some(1) => Alias::None,
+        Some(0) => {
+            let words = run.line().trim();
+            if words.starts_with('!') {
+                return Alias::Unread;
+            }
+            match shellseg::joined_argv(words) {
+                Some(segments) if segments.len() == 1 => Alias::Runs(segments[0].argv.clone()),
+                _ => Alias::Unread,
+            }
+        }
+        _ => Alias::Unread,
+    }
 }
 
 /// Whether `git <sub> <post…>` writes the index: `add` and `commit`, but for their dry runs

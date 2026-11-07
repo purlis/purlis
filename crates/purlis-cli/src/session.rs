@@ -134,10 +134,10 @@ fn record(
             }
             voice::ok(format!("Session record → {}", saved.shown));
             println!("{}", saved.shown);
-            if saved.tab_warns {
-                voice::warn(saved.tab.to_string());
+            if saved.ends_warns {
+                voice::warn(saved.ends.to_string());
             } else {
-                voice::info(saved.tab.to_string());
+                voice::info(saved.ends.to_string());
             }
             Ok(0)
         }
@@ -149,17 +149,17 @@ fn record(
     }
 }
 
-/// A session record written, by the app or by this process, and what becomes of the tab.
+/// A session record written, by the app or by this process, and what becomes of the chat.
 pub struct Saved {
     /// The record, plane-relative.
     pub shown: String,
     /// What did not follow it ([`sessionrecord::Recorded::warnings`]).
     pub warnings: Vec<String>,
-    /// What becomes of the chat's tab, in a sentence the chat relays.
-    pub tab: String,
-    /// Whether that sentence is a warning: the tab is left for the operator because something
-    /// failed, not because nobody asked for it to close.
-    pub tab_warns: bool,
+    /// What becomes of the chat, in a sentence the chat relays.
+    pub ends: String,
+    /// Whether that sentence is a warning: the chat is left for the operator to end because
+    /// something failed, not because nobody asked for it to end.
+    pub ends_warns: bool,
 }
 
 /// Why no record was written.
@@ -233,12 +233,12 @@ pub fn write(
         Err(refused) => return Err(NotWritten::Refused(refused.to_string())),
     };
     let conversation = facts.chat.as_ref().and_then(|c| c.conversation.clone());
-    let (tab, tab_warns) = tell_the_app(here, chat, conversation, &recorded.path);
+    let (ends, ends_warns) = tell_the_app(here, chat, conversation, &recorded.path);
     Ok(Saved {
         shown: recorded.shown,
         warnings: recorded.warnings,
-        tab,
-        tab_warns,
+        ends,
+        ends_warns,
     })
 }
 
@@ -257,11 +257,11 @@ enum Forwarded {
 /// How long the app may take to write a record and answer: a file, an index and a pointer.
 const A_RECORD_TAKES_AT_MOST: std::time::Duration = std::time::Duration::from_secs(15);
 
-/// What becomes of the tab when nobody started a smart close for the chat: the sentence the
+/// What becomes of the chat when nobody started a smart close for the chat: the sentence the
 /// skill relays to the operator.
-pub const NO_PASS: &str = "No smart close was started for this chat (the tab's Smart close, or \
-                           typing /purlis-smart-close), so its tab will not close by itself. \
-                           Close it when you are done.";
+pub const NO_PASS: &str = "No smart close was started for this chat (Smart close in its End… \
+                           dialog, or typing /purlis-smart-close), so it will not end by itself. \
+                           End it when you are done.";
 
 /// Hands the record to the app that started this chat, over the chat's hook socket (#1332).
 fn forwarded(here: &Here, title: &str, body: &str, pieces: &[String]) -> Forwarded {
@@ -299,12 +299,12 @@ fn answered(answer: std::io::Result<hookwire::Answer>) -> Forwarded {
         }) => Forwarded::Written(Saved {
             shown: record,
             warnings,
-            tab: if closes {
-                "The app wrote it, and closes this tab when this turn ends.".to_owned()
+            ends: if closes {
+                "The app wrote it, and ends this chat when this turn ends.".to_owned()
             } else {
                 format!("The app wrote it. {NO_PASS}")
             },
-            tab_warns: false,
+            ends_warns: false,
         }),
         // An app with nothing that answers asks: a test's, or one that is closing.
         Ok(hookwire::Answer::No { why }) if why == hookwire::NOTHING_ANSWERS => {
@@ -330,9 +330,9 @@ pub(crate) fn chat_number() -> Option<u32> {
         .find_map(|n| n.trim().parse::<u32>().ok().filter(|n| *n > 0))
 }
 
-/// Tells the app this chat's record is saved, and answers what becomes of the tab, as a
-/// sentence and whether it is a warning: the record is written whatever happens here, and a
-/// tab that nothing will close is the operator's to close.
+/// Tells the app this chat's record is saved, and answers what becomes of the chat, as
+/// a sentence and whether it is a warning: the record is written whatever happens here, and a
+/// chat that nothing will end is the operator's to end.
 ///
 /// **A line the socket refused is left for the chat's next `Stop` hook** (#517,
 /// `sessionrecord::relay`): a harness can run this command in a sandbox that refuses the
@@ -349,7 +349,7 @@ fn tell_the_app(
     let Some(chat) = chat else {
         return (
             "This chat was not started by the app (no $PURLIS_HOOK_SOCKET and $PURLIS_CHAT), \
-             so its tab will not close by itself — close it when you are done."
+             so it will not end by itself. End it when you are done."
                 .to_owned(),
             false,
         );
@@ -364,7 +364,7 @@ fn tell_the_app(
             match hookwire::tell_saved(Path::new(&socket), token.as_ref(), &saved) {
                 Ok(()) => {
                     return (
-                        "Told the app: a Smart close waiting on this record closes the tab."
+                        "Told the app: a Smart close waiting on this record ends the chat."
                             .to_owned(),
                         false,
                     );
@@ -384,15 +384,15 @@ fn tell_the_app(
         Ok(_) => (
             format!(
                 "The app did not hear it ({not_heard}), so this chat's hook tells it when this \
-                 turn ends. If the tab is still open after that, close it yourself."
+                 turn ends. If the chat is still running after that, end it yourself."
             ),
             false,
         ),
         Err(kept) => (
             format!(
                 "The app did not hear it ({not_heard}), and purlis could not leave it for this \
-                 chat's hook ({kept}), so the tab will not close by itself — close it yourself \
-                 when you are done."
+                 chat's hook ({kept}), so the chat will not end by itself. End it yourself when \
+                 you are done."
             ),
             true,
         ),

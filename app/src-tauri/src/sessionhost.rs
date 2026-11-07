@@ -183,6 +183,9 @@ impl purlis_host::Compose for Composes {
                 // The chat's confinement as it is now, which its tool's runs here are held to
                 // (#3407).
                 |confinement: &str| beside.reach_of(confinement),
+                // The skills it was armed with, which the host answers its start and a window
+                // that takes it back with (#4218).
+                |skills| beside.armed(skills),
             ),
         )
     }
@@ -941,7 +944,18 @@ async fn open_link_relayed(
     let link = link::connect(stream, session::speaks(), Scope::LocalUi, credential)
         .await
         .map_err(|why| format!("it refused the window: {why}"))?;
-    HostLink::over_relayed(link, tokio::runtime::Handle::current(), ended, naming, pool).await
+    // How far each project logged its runner's skill runs, kept in this machine's config home, so
+    // a window started again reads on from there (#4219).
+    let cursors = pool.and_then(|_| purlis_core::machine::config_root());
+    HostLink::over_relayed_keeping(
+        link,
+        tokio::runtime::Handle::current(),
+        ended,
+        naming,
+        pool,
+        cursors.as_deref(),
+    )
+    .await
 }
 
 /// Opens one more link to the host that the host relays to a pool's runner (#2046): what

@@ -711,30 +711,36 @@ pub fn take_work_fresh(
     }
     let parent = repo.parent().ok_or_else(|| not_made("has no folder"))?;
     // `repos/`, where a new clone goes (ADR 0114), is made by the clone that needs it, with
-    // `mkdir` alone, which follows no link (#5534).
-    let made_repos = parent
+    // `mkdir` alone, which follows no link (#5534): by `make_in_repos` alone, which makes it
+    // again where another run took it away at any moment before (#5601).
+    let in_repos = parent
         .file_name()
-        .is_some_and(|name| name == crate::repofolder::REPOS)
-        && std::fs::create_dir(parent).is_ok();
-    let unmake_repos = || {
+        .is_some_and(|name| name == crate::repofolder::REPOS);
+    let unmake_repos = |made_repos: bool| {
         if made_repos {
             // Only an empty folder goes, and only the one made here.
             let _ = std::fs::remove_dir(parent);
         }
     };
-    if !std::fs::symlink_metadata(parent).is_ok_and(|meta| meta.is_dir()) {
-        return Err(not_made("is not in a folder here"));
+    match std::fs::symlink_metadata(parent) {
+        Ok(meta) if meta.is_dir() => {}
+        Err(why) if in_repos && why.kind() == std::io::ErrorKind::NotFound => {}
+        _ => return Err(not_made("is not in a folder here")),
     }
     // Made, or refused where anything is there already: the folder removed below is only ever
     // the one made here.
-    if let Err(why) = std::fs::create_dir(repo) {
-        unmake_repos();
-        return Err(if why.kind() == std::io::ErrorKind::AlreadyExists {
-            not_made("is here already")
-        } else {
-            Refused::Git(format!("{} could not be made: {why}", repo.display()))
-        });
-    }
+    let made_repos = match crate::repocmd::clone::make_in_repos(repo) {
+        Ok(made_repos) => made_repos,
+        Err(why) => {
+            return Err(if why.kind() == std::io::ErrorKind::AlreadyExists {
+                not_made("is here already")
+            } else if !std::fs::symlink_metadata(parent).is_ok_and(|meta| meta.is_dir()) {
+                not_made("is not in a folder here")
+            } else {
+                Refused::Git(format!("{} could not be made: {why}", repo.display()))
+            });
+        }
+    };
     let made = super::made(repo).and_then(|()| {
         fetch_incoming(repo, bundle, heads)?;
         if commit_of(repo, &format!("{}^1", snapshot.oid))? != head.oid {
@@ -753,7 +759,7 @@ pub fn take_work_fresh(
     if made.is_err() {
         // Only what this made: nothing was at `repo` before it.
         let _ = std::fs::remove_dir_all(repo);
-        unmake_repos();
+        unmake_repos(made_repos);
     } else {
         drop_incoming(repo);
     }

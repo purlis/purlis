@@ -922,7 +922,7 @@ fn roster_line(working: &Working) -> Option<String> {
 }
 
 /// The line for a chat's own tasks that began waiting on the person: who, and for what, and
-/// that the answer is the person's, given in that task's own tab. The chat is told so it can
+/// that the answer is the person's, given from the Inbox. The chat is told so it can
 /// say so where the person is; nothing it does answers the prompt.
 fn waiting_line(working: &Working) -> Option<String> {
     if working.waiting_on_you.is_empty() {
@@ -944,8 +944,8 @@ fn waiting_line(working: &Working) -> Option<String> {
         })
         .collect();
     Some(format!(
-        "⬢ A task of yours is stopped ({AS_DATA}): {}. Only the person answers it, in that \
-         task's own tab: tell them, and do not answer it or work around it.",
+        "⬢ A task of yours is stopped ({AS_DATA}): {}. Only the person answers it, from the Inbox: \
+         tell them, and do not answer it or work around it.",
         said.join("; ")
     ))
 }

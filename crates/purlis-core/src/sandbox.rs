@@ -1407,23 +1407,47 @@ pub struct Denied {
 /// The clone's git folder, for a chat in a branch folder purlis cut (`cwd`): written by the app
 /// alone, which commits, updates and pushes for it, as a chat above the folder finds it already.
 /// A worktree the person made elsewhere keeps its own git, since the app commits for none of those.
-fn clones_git_held(root: &Path, cwd: Option<&Path>) -> Option<Denial> {
-    let here = crate::worktree::locate(root, cwd?)?;
-    let dot_git = root
-        .join(WORKSPACES)
-        .join(&here.workspace)
+///
+/// The clone is the one git in the folder uses: the folder's `.git` names its record, and the
+/// record's `commondir` the clone's git folder ([`crate::worktree::clone_git_dir_of`]). The
+/// clone of the folder's repo by name, in either layout (ADR 0114), is held as well, so a record
+/// that cannot be read, or that names another clone, holds no less than the name does.
+fn clones_git_held(root: &Path, cwd: Option<&Path>) -> Vec<Denial> {
+    let Some(here) = cwd.and_then(|cwd| crate::worktree::locate(root, cwd)) else {
+        return Vec::new();
+    };
+    let workspace = root.join(WORKSPACES).join(&here.workspace);
+    let folder = workspace
+        .join(crate::worktree::DIR_NAME)
         .join(&here.repo)
-        .join(".git");
-    // The one shape the app keeps a branch folder's clone in: it updates no other.
-    crate::worktree::is_own_git_dir(&dot_git).then_some(())?;
-    Some(Denial {
-        class: Class::LaterCode,
-        path: dot_git,
-        access: Access::Write,
-        named: None,
-        reach: Reach::AndBelow,
-        any_case: false,
-    })
+        .join(&here.piece);
+    let by_name = [
+        workspace
+            .join(crate::repofolder::REPOS)
+            .join(&here.repo)
+            .join(".git"),
+        workspace.join(&here.repo).join(".git"),
+    ];
+    let mut held: Vec<PathBuf> = Vec::new();
+    for dot_git in crate::worktree::clone_git_dir_of(&folder)
+        .into_iter()
+        .chain(by_name)
+    {
+        // The one shape the app keeps a branch folder's clone in: it updates no other.
+        if crate::worktree::is_own_git_dir(&dot_git) && !held.contains(&dot_git) {
+            held.push(dot_git);
+        }
+    }
+    held.into_iter()
+        .map(|path| Denial {
+            class: Class::LaterCode,
+            path,
+            access: Access::Write,
+            named: None,
+            reach: Reach::AndBelow,
+            any_case: false,
+        })
+        .collect()
 }
 
 /// The project root's git folder, for a chat wherever it stands: written by the app alone, which
@@ -4365,12 +4389,14 @@ impl Applied {
                 })
                 .collect(),
             // The one git folder in a chat's folders its sandbox holds whole ([`chain`]).
-            held_git: matches!(*self.form, Form::ClaudeCode(_))
-                .then(|| clones_git_held(&self.root, cwd))
-                .flatten()
-                .map(|denial| denial.path)
-                .into_iter()
-                .collect(),
+            held_git: if matches!(*self.form, Form::ClaudeCode(_)) {
+                clones_git_held(&self.root, cwd)
+            } else {
+                Vec::new()
+            }
+            .into_iter()
+            .map(|denial| denial.path)
+            .collect(),
             // What isn't there now gets a placeholder while each command runs.
             placeholders: self
                 .later_code_by_path(cwd)
@@ -4512,7 +4538,11 @@ impl Applied {
     /// The manifests a chat in `cwd` is denied that the compiled form does not already deny.
     fn chain(&self, cwd: Option<&Path>) -> Vec<Denial> {
         let claude = matches!(*self.form, Form::ClaudeCode(_));
-        let clones_git = claude.then(|| clones_git_held(&self.root, cwd)).flatten();
+        let clones_git = if claude {
+            clones_git_held(&self.root, cwd)
+        } else {
+            Vec::new()
+        };
         let roots_git = claude.then(|| roots_git_held(&self.root)).flatten();
         manifests_held(&self.root, cwd)
             .into_iter()
@@ -5746,21 +5776,33 @@ fn ground(root: &Path, home: Option<&Path>) -> Vec<PathBuf> {
 /// everywhere it works. That is never what a class means, so the chat is refused, naming what
 /// named the path, rather than started read-only or started with the rule left out.
 pub fn covering(denied: &[Denial], ground: &[PathBuf]) -> Option<NotStarted> {
-    let ground: Vec<(PathBuf, bool)> = ground
+    // Each name is folded once, before any pair is compared: the list is read against the ground
+    // several times for every start, and folding inside the pairs made a start on a volume that
+    // folds case take time in proportion to the two lists multiplied.
+    let ground: Vec<(PathBuf, Option<PathBuf>)> = ground
         .iter()
         .flat_map(|folder| {
             let folds = folds_case(folder);
-            spellings(folder).into_iter().map(move |name| (name, folds))
+            spellings(folder).into_iter().map(move |name| {
+                let as_folded = folds.then(|| folded(&name));
+                (name, as_folded)
+            })
         })
         .collect();
+    let any_folds = ground.iter().any(|(_, as_folded)| as_folded.is_some());
     // An entry held alone holds nothing below it (#2752), so no ground is under it.
     denied
         .iter()
         .filter(|denial| denial.reach == Reach::AndBelow)
         .find_map(|denial| {
             let covers = spellings(&denial.path).iter().any(|name| {
-                ground.iter().any(|(folder, folds)| {
-                    folder.starts_with(name) || (*folds && folded(folder).starts_with(folded(name)))
+                let name_folded = any_folds.then(|| folded(name));
+                ground.iter().any(|(folder, as_folded)| {
+                    folder.starts_with(name)
+                        || as_folded
+                            .as_ref()
+                            .zip(name_folded.as_ref())
+                            .is_some_and(|(folder, name)| folder.starts_with(name))
                 })
             });
             covers.then(|| NotStarted::CoversItsGround {
@@ -5783,9 +5825,9 @@ fn spellings(path: &Path) -> Vec<PathBuf> {
     out
 }
 
-/// `path` with every part lower-cased: what a volume that folds case compares.
+/// `path` as a volume that folds case compares it ([`crate::casefold::folded`]).
 fn folded(path: &Path) -> PathBuf {
-    PathBuf::from(path.to_string_lossy().to_lowercase())
+    PathBuf::from(crate::casefold::folded(&path.to_string_lossy()))
 }
 
 /// Whether the volume `path` is on folds case (#1356): whether the deepest folder of it that
