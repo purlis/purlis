@@ -385,7 +385,22 @@ pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, String> {
                     say(purlis_core::repocmd::Say::Fail(why.into()));
                     return 1;
                 }
-                piececmd::remove(&root, &ws, &repo, &piece, force, delete_branch, &mut say)
+                piececmd::remove(
+                    &root,
+                    &ws,
+                    &repo,
+                    &piece,
+                    force,
+                    delete_branch,
+                    purlis_core::finished::Forge::asking(
+                        &purlis_core::finished::merged::of_the_plane(
+                            &root,
+                            &ws,
+                            &purlis_core::forge::Caller::command(),
+                        ),
+                    ),
+                    &mut say,
+                )
             }) {
                 Ok(code) => code,
                 Err(why) => {
@@ -462,6 +477,13 @@ pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, String> {
                     repo: repo.as_deref(),
                     dry_run,
                     keep_branches,
+                    forge: purlis_core::finished::Forge::asking(
+                        &purlis_core::finished::merged::of_the_plane(
+                            &root,
+                            &ws,
+                            &purlis_core::forge::Caller::command(),
+                        ),
+                    ),
                 },
                 &purlis_core::prune::Asker {
                     who: &who,
