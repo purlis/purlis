@@ -266,6 +266,8 @@ pub fn interrupted_report(
         outcome_usd: None,
         outcomes: Vec::new(),
         failed: None,
+        resets_at: None,
+        earlier: None,
     }
 }
 

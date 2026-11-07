@@ -100,6 +100,8 @@ fn report(passed_with: bool) -> GradeReport {
         outcome_usd: None,
         outcomes: Vec::new(),
         failed: None,
+        resets_at: None,
+        earlier: None,
     }
 }
 
@@ -625,8 +627,41 @@ fn a_row_whose_spend_or_report_does_not_hold_together_is_skipped() {
         uncommitted_row().sound(chrono::Utc::now()),
         "a row purlis writes is kept"
     );
+    // #5718: a stop at a usage limit says when it resets, and a resumed grade what it went on
+    // from; both are kept.
+    let mut at_the_limit = uncommitted_row();
+    at_the_limit.report.ended = GradeEnd::UsageLimit;
+    at_the_limit.report.resets_at = Some("2026-11-08T14:00:00Z".into());
+    at_the_limit.report.earlier = Some(grade::Earlier {
+        tokens: Some(200),
+        usd: Some(0.01),
+        ..grade::Earlier::default()
+    });
+    assert!(at_the_limit.sound(chrono::Utc::now()));
     type Breaks = fn(&mut Graded);
-    let broken: [(&str, Breaks); 18] = [
+    let broken: [(&str, Breaks); 22] = [
+        (
+            "a reset time on a grade not stopped at a usage limit",
+            |row| {
+                row.report.resets_at = Some("2026-11-08T14:00:00Z".into());
+            },
+        ),
+        ("a reset time that is no time", |row| {
+            row.report.ended = GradeEnd::UsageLimit;
+            row.report.resets_at = Some("at two\u{1b}[2J".into());
+        }),
+        ("an earlier run that spent more than both", |row| {
+            row.report.earlier = Some(grade::Earlier {
+                tokens: Some(row.report.spent_tokens.unwrap_or(0) + 1),
+                ..grade::Earlier::default()
+            });
+        }),
+        ("an earlier run's cost below nothing", |row| {
+            row.report.earlier = Some(grade::Earlier {
+                usd: Some(-1.0),
+                ..grade::Earlier::default()
+            });
+        }),
         ("more chats asked and run than the grade had", |row| {
             row.report.triggers[0].asked = 1;
         }),

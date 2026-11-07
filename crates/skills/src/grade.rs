@@ -198,6 +198,28 @@ pub enum ChatEnd {
     /// A judge reached past what purlis laid out for it, as its turn's end found: it fails that
     /// run of its eval, the operator's ruling of 2026-11-01.
     ReadPast,
+    /// **Its program's usage limit was reached** (#5718), as its harness's own hook said it: no
+    /// run, and the grade stops there, as every chat after it would meet the same limit.
+    /// `resets_at` is when the limit resets, an RFC 3339 time, where the harness said.
+    UsageLimit {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        resets_at: Option<String>,
+    },
+    /// **Its program could not reach its service** (#5718), as its harness's own hook said it: no
+    /// run, and the grade stops there.
+    Unreachable,
+}
+
+impl ChatEnd {
+    /// **Whether a chat that ended so has its result** (#5718): it ran its turn or past its time,
+    /// or it asked and was ended there, which a grade counts as it is. Every other end was cut
+    /// short or never started, so a resumed grade runs that case again, whole.
+    pub fn has_its_result(&self) -> bool {
+        matches!(
+            self,
+            Self::Turn | Self::TimedOut | Self::Asked | Self::AskedFor { .. } | Self::ReadPast
+        )
+    }
 }
 
 /// **The run-chat result**: what one chat did.
@@ -401,6 +423,30 @@ pub enum GradeEnd {
     /// the plan or its limits, too late, or not at all. purlis scored what ran itself, and
     /// [`GradeReport::failed`] says why in a sentence.
     GraderFailed,
+    /// **Its program's usage limit was reached** (#5718): a chat's harness said so, and every
+    /// chat after it would meet the same limit. [`GradeReport::resets_at`] says when it resets,
+    /// where the harness said.
+    UsageLimit,
+    /// **Its program could not reach its service** (#5718): a chat's harness said so.
+    Unreachable,
+}
+
+impl GradeEnd {
+    /// **Whether a grade that ended so may be resumed** (#5718): it stopped short of its plan,
+    /// for a reason that may pass, and holds what it ran. A whole grade has nothing left; one
+    /// purlis stopped under was never scored; and a Grader's own grade is the Grader's to run.
+    pub fn resumable(self) -> bool {
+        matches!(
+            self,
+            Self::Cancelled
+                | Self::ChatsDidNotStart
+                | Self::OverCap
+                | Self::OverLimit
+                | Self::SpendNotReported
+                | Self::UsageLimit
+                | Self::Unreachable
+        )
+    }
 }
 
 /// **The grade report**: the scores per trigger test and arm, each arm's summary, and the
@@ -451,6 +497,42 @@ pub struct GradeReport {
     /// sentence. Absent in every other report, and in a row written before #3236.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub failed: Option<String>,
+    /// **When the program's usage limit resets** (#5718), an RFC 3339 time, where a grade that
+    /// stopped at it ([`GradeEnd::UsageLimit`]) was told. Absent in every other report.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resets_at: Option<String>,
+    /// **What the grade it resumed had spent** (#5718), where it resumed one: this report's
+    /// [`Self::spent_tokens`] and [`Self::spent_usd`] are both runs' together, and the cap and
+    /// the limit held only this run's. Absent in a grade that resumed none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub earlier: Option<Earlier>,
+}
+
+/// **What the run a resumed grade went on from spent** (#5718), where its chats said.
+#[derive(Debug, Clone, Copy, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Earlier {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tokens: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usd: Option<f64>,
+    /// Of those, its outcome chats' and judges'.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outcome_tokens: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outcome_usd: Option<f64>,
+}
+
+/// **What the grade `report` ran spent, as a resume of it goes on from** (#5718): both runs'
+/// where it was itself a resume.
+impl From<&GradeReport> for Earlier {
+    fn from(report: &GradeReport) -> Self {
+        Self {
+            tokens: report.spent_tokens,
+            usd: report.spent_usd,
+            outcome_tokens: report.outcome_tokens,
+            outcome_usd: report.outcome_usd,
+        }
+    }
 }
 
 /// **What a grade may spend**: a cap in tokens, and a dollar limit besides where one is set. It
@@ -541,31 +623,141 @@ impl GradeReport {
 /// chat that started and did not say what it spent stops it too, however it ended, as the cap
 /// could not be held after it.
 pub fn grade(request: &GradeRequest, chats: &mut dyn Chats, limits: Option<Limits>) -> GradeReport {
+    grade_keeping(request, chats, limits).0
+}
+
+/// **[`grade`], and what it ran, kept to resume it from** (#5718): each chat's result in its
+/// place, as [`resume`] takes it.
+pub fn grade_keeping(
+    request: &GradeRequest,
+    chats: &mut dyn Chats,
+    limits: Option<Limits>,
+) -> (GradeReport, Kept) {
     let mut held = Held::new(request, chats, limits);
-    'runs: for _run in 0..request.runs {
-        for test in &request.triggers {
-            for arm in &request.arms {
-                let chat = RunChat {
-                    arm: *arm,
-                    prompt: test.query.clone(),
-                    kind: ChatKind::Trigger,
-                };
-                // Asked in the plan's own order, so no chat is past it.
-                if held.ask(&chat).is_err() || held.ended().is_some() {
-                    break 'runs;
-                }
-            }
-        }
-        for e in 0..held.evals.len() {
-            for a in 0..request.arms.len() {
-                held.run_eval(e, a);
-                if held.ended().is_some() {
-                    break 'runs;
-                }
+    held.run_the_plan();
+    let report = held.scored(BUILT_IN, None);
+    let kept = held.kept(&report);
+    (report, kept)
+}
+
+/// **Resumes the grade of `request` that stopped with `kept`** (#5718, the operator's ruling of
+/// 2026-11-08): only the cases it did not finish run, each a test or an eval in one arm on one
+/// run, and a case cut off as it ran (a chat stopped, ended at a limit, or never started) runs
+/// again whole. What ran before keeps its place, so the report is scored over both runs alike,
+/// in the shape a whole grade's has. `limits` hold this run's spend alone; the report says both
+/// runs' together, with what the earlier one spent ([`GradeReport::earlier`]). `Err` where
+/// `kept` is not of `request`'s shape.
+pub fn resume(
+    request: &GradeRequest,
+    chats: &mut dyn Chats,
+    limits: Option<Limits>,
+    kept: Kept,
+) -> Result<(GradeReport, Kept), String> {
+    kept.fits(request)?;
+    let mut held = Held::new(request, chats, limits);
+    held.ran = kept.triggers;
+    for (e, of_eval) in kept.outcomes.into_iter().enumerate() {
+        for (a, runs) in of_eval.into_iter().enumerate() {
+            for one in runs {
+                held.judged[e][a].push(one.run);
+                held.outcome_counts[e][a].push((one.asked, one.ran));
             }
         }
     }
-    held.scored(BUILT_IN, None)
+    held.earlier = Some(kept.earlier);
+    held.run_the_plan();
+    let report = held.scored(BUILT_IN, None);
+    let kept = held.kept(&report);
+    Ok((report, kept))
+}
+
+/// **What a grade ran, each chat's result in its place** (#5718): `triggers[test][arm][run]` and
+/// `outcomes[eval][arm][run]`, of the evals it judges, and what it spent in all. What a resume of
+/// it goes on from ([`resume`]).
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Kept {
+    pub triggers: Vec<Vec<Vec<ChatRan>>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub outcomes: Vec<Vec<Vec<KeptEvalRun>>>,
+    pub earlier: Earlier,
+}
+
+/// **One run of an outcome eval in one arm, as a grade kept it** (#5718): its judged run, and the
+/// chats it asked for and of those ran, its judge's among them.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct KeptEvalRun {
+    pub run: OutcomeRun,
+    pub asked: u32,
+    pub ran: u32,
+}
+
+impl KeptEvalRun {
+    /// Whether it has its result: it was judged, or failed with why. A run whose chat or judge
+    /// was cut off has none, and a resume runs it again whole.
+    fn has_its_result(&self) -> bool {
+        self.run.passed.is_some()
+    }
+}
+
+impl Kept {
+    /// **Whether this is what a grade of `request` ran**: a cell for each test and judged eval in
+    /// each arm, each at most its runs.
+    fn fits(&self, request: &GradeRequest) -> Result<(), String> {
+        let runs = usize::from(request.runs);
+        let arms = request.arms.len();
+        let evals = judged_evals(request).count();
+        let tests_fit = self.triggers.len() == request.triggers.len()
+            && self
+                .triggers
+                .iter()
+                .all(|cells| cells.len() == arms && cells.iter().all(|cell| cell.len() <= runs));
+        let evals_fit = (self.outcomes.is_empty() || self.outcomes.len() == evals)
+            && self
+                .outcomes
+                .iter()
+                .all(|cells| cells.len() == arms && cells.iter().all(|cell| cell.len() <= runs));
+        if tests_fit && evals_fit {
+            Ok(())
+        } else {
+            Err(
+                "what the stopped grade ran is not of this grade's tests, evals and arms"
+                    .to_owned(),
+            )
+        }
+    }
+
+    /// **The chats a resume of it would run for `request`** (#5718): one for each trigger test's
+    /// case without its result, and two (its chat and its judge's) for each outcome eval's.
+    pub fn left(&self, request: &GradeRequest) -> u32 {
+        let runs = usize::from(request.runs);
+        let tests: usize = self
+            .triggers
+            .iter()
+            .flatten()
+            .map(|cell| {
+                runs - cell
+                    .iter()
+                    .take(runs)
+                    .filter(|one| one.end.has_its_result())
+                    .count()
+            })
+            .sum();
+        let evals = judged_evals(request).count();
+        let eval_cases: usize = (0..evals)
+            .flat_map(|e| (0..request.arms.len()).map(move |a| (e, a)))
+            .map(|(e, a)| {
+                let done = self
+                    .outcomes
+                    .get(e)
+                    .and_then(|cells| cells.get(a))
+                    .map_or(0, |cell| {
+                        cell.iter().filter(|one| one.has_its_result()).count()
+                    });
+                runs - done.min(runs)
+            })
+            .sum();
+        u32::try_from(tests + 2 * eval_cases).unwrap_or(u32::MAX)
+    }
 }
 
 /// **A grade held to its plan and to its limits** (ADR 0105 §1 and §4; #3236): every chat a
@@ -591,13 +783,17 @@ pub struct Held<'a> {
     cost_cap: Option<f64>,
     unpriced_at: Option<f64>,
     priced: Option<Priced>,
-    /// ran[test][arm] = each run's result, in run order.
+    /// ran[test][arm] = each run's result, in run order: a resumed case's in its run's place.
     ran: Vec<Vec<Vec<ChatRan>>>,
-    /// The outcome evals it runs; judged[eval][arm] = each run, in run order; and each arm's
-    /// outcome chats, judges' among them, asked for and of those run.
+    /// The outcome evals it runs; judged[eval][arm] = each run, in run order; and each run's
+    /// outcome chats, judges' among them, asked for and of those run, in the same places.
     evals: Vec<&'a OutcomeEval>,
     judged: Vec<Vec<Vec<OutcomeRun>>>,
-    outcome_asked: Vec<(u32, u32)>,
+    outcome_counts: Vec<Vec<Vec<(u32, u32)>>>,
+    /// When the program's usage limit resets, where a chat that met it said (#5718).
+    resets_at: Option<String>,
+    /// What the grade it resumes spent, where it resumes one (#5718).
+    earlier: Option<Earlier>,
     // The judges' alone (SK-55): the eval chats between them start, and a judge that does not
     // start leaves every eval chat before it spent for nothing.
     judges_not_started_in_a_row: u32,
@@ -637,7 +833,12 @@ impl<'a> Held<'a> {
             ran: vec![vec![Vec::new(); request.arms.len()]; request.triggers.len()],
             evals: judged_evals(request).collect(),
             judged: vec![vec![Vec::new(); request.arms.len()]; judged_evals(request).count()],
-            outcome_asked: vec![(0, 0); request.arms.len()],
+            outcome_counts: vec![
+                vec![Vec::new(); request.arms.len()];
+                judged_evals(request).count()
+            ],
+            resets_at: None,
+            earlier: None,
             judges_not_started_in_a_row: 0,
             outcome_tokens: None,
             outcome_usd: None,
@@ -751,7 +952,7 @@ impl<'a> Held<'a> {
 
     /// **One run of the outcome eval at `e` in the arm at `a`**: its chat, then, where that left
     /// an outcome, its judge's, each counted and held as any chat is.
-    fn run_eval(&mut self, e: usize, a: usize) {
+    fn run_eval(&mut self, e: usize, a: usize, r: usize) {
         let eval = self.evals[e];
         let arm = self.request.arms[a];
         let chat = RunChat {
@@ -765,7 +966,7 @@ impl<'a> Held<'a> {
         let Asked::Ran(done) = self.run(&chat, a) else {
             return;
         };
-        self.count_outcome(a, &done);
+        let mut counted = counted_outcome((0, 0), &done);
         let mut run = OutcomeRun {
             chat: done.chat.clone(),
             judge: None,
@@ -803,19 +1004,86 @@ impl<'a> Held<'a> {
                 },
             };
             if let Asked::Ran(verdict) = self.run(&judge, a) {
-                self.count_outcome(a, &verdict);
+                counted = counted_outcome(counted, &verdict);
                 verdict_of(&mut run, &verdict, &eval.expectations);
             }
         }
-        self.judged[e][a].push(run);
+        placed(&mut self.judged[e][a], r, run);
+        placed(&mut self.outcome_counts[e][a], r, counted);
     }
 
-    /// Counts the outcome eval's or judge's chat `one` in the arm at `a`.
-    fn count_outcome(&mut self, a: usize, one: &ChatRan) {
-        let counted = &mut self.outcome_asked[a];
-        counted.0 = counted.0.saturating_add(1);
-        if one.ran() {
-            counted.1 = counted.1.saturating_add(1);
+    /// **Runs every case of the plan that has no result yet** (#5718): each run in turn, every
+    /// trigger test in it and then every outcome eval, every arm for each, in the plan's own
+    /// order, so a grade the person stops has scored every arm alike so far. A fresh grade has
+    /// none; a resumed one has those it kept, which are passed over.
+    fn run_the_plan(&mut self) {
+        let request = self.request;
+        for r in 0..usize::from(request.runs) {
+            for t in 0..request.triggers.len() {
+                for a in 0..request.arms.len() {
+                    if self.ran[t][a]
+                        .get(r)
+                        .is_some_and(|one| one.end.has_its_result())
+                    {
+                        continue;
+                    }
+                    let chat = RunChat {
+                        arm: request.arms[a],
+                        prompt: request.triggers[t].query.clone(),
+                        kind: ChatKind::Trigger,
+                    };
+                    if let Asked::Ran(result) = self.run(&chat, a) {
+                        placed(&mut self.ran[t][a], r, result);
+                    }
+                    if self.ended.is_some() {
+                        return;
+                    }
+                }
+            }
+            for e in 0..self.evals.len() {
+                for a in 0..request.arms.len() {
+                    if self.judged[e][a]
+                        .get(r)
+                        .is_some_and(|one| one.passed.is_some())
+                    {
+                        continue;
+                    }
+                    self.run_eval(e, a, r);
+                    if self.ended.is_some() {
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    /// **What it ran, each chat's result in its place, kept to resume it from** (#5718), with
+    /// what `report`, its score, says it spent.
+    fn kept(&self, report: &GradeReport) -> Kept {
+        Kept {
+            triggers: self.ran.clone(),
+            outcomes: self
+                .judged
+                .iter()
+                .zip(&self.outcome_counts)
+                .map(|(of_eval, counts)| {
+                    of_eval
+                        .iter()
+                        .zip(counts)
+                        .map(|(runs, counts)| {
+                            runs.iter()
+                                .zip(counts)
+                                .map(|(run, (asked, ran))| KeptEvalRun {
+                                    run: run.clone(),
+                                    asked: *asked,
+                                    ran: *ran,
+                                })
+                                .collect()
+                        })
+                        .collect()
+                })
+                .collect(),
+            earlier: Earlier::from(report),
         }
     }
 
@@ -895,6 +1163,11 @@ impl<'a> Held<'a> {
             ChatEnd::Cancelled => Some(GradeEnd::Cancelled),
             ChatEnd::OverCap => Some(GradeEnd::OverCap),
             ChatEnd::OverLimit => Some(GradeEnd::OverLimit),
+            ChatEnd::UsageLimit { resets_at } => {
+                self.resets_at.clone_from(resets_at);
+                Some(GradeEnd::UsageLimit)
+            }
+            ChatEnd::Unreachable => Some(GradeEnd::Unreachable),
             ChatEnd::Turn
             | ChatEnd::TimedOut
             | ChatEnd::Asked
@@ -905,7 +1178,10 @@ impl<'a> Held<'a> {
                 None
             }
         };
-        self.ended = if unreported {
+        // A limit the program met, or a service it could not reach, is why it stopped, whatever
+        // the chat said of its spend: the next chat would meet the same.
+        let met = matches!(stop, Some(GradeEnd::UsageLimit | GradeEnd::Unreachable));
+        self.ended = if unreported && !met {
             Some(GradeEnd::SpendNotReported)
         } else if stop.is_some() {
             stop
@@ -1003,7 +1279,13 @@ impl<'a> Held<'a> {
                             .filter_map(|run| run.share(eval.expectations.len()))
                     })
                     .collect();
-                let (outcome_all, outcome_ran) = self.outcome_asked[a];
+                let (outcome_all, outcome_ran) = self
+                    .outcome_counts
+                    .iter()
+                    .flat_map(|of_eval| &of_eval[a])
+                    .fold((0u32, 0u32), |(all, ran), (asked, did)| {
+                        (all.saturating_add(*asked), ran.saturating_add(*did))
+                    });
                 // Each run's share of the tests that passed in it, over the tests it ran.
                 let per_run: Vec<f64> = (0..usize::from(request.runs))
                     .filter_map(|r| {
@@ -1063,8 +1345,16 @@ impl<'a> Held<'a> {
         let mut report = self.closed(grader, triggers, arms, delta, failed);
         report.outcomes = outcome_scores;
         report.outcome_delta = outcome_delta;
-        report.outcome_tokens = self.outcome_tokens;
-        report.outcome_usd = self.outcome_usd;
+        report.outcome_tokens = both(
+            self.earlier.and_then(|was| was.outcome_tokens),
+            self.outcome_tokens,
+            u64::saturating_add,
+        );
+        report.outcome_usd = both(
+            self.earlier.and_then(|was| was.outcome_usd),
+            self.outcome_usd,
+            |a, b| a + b,
+        );
         report
     }
 
@@ -1094,9 +1384,17 @@ impl<'a> Held<'a> {
                 .then(|| self.not_started.clone())
                 .flatten(),
             cap: self.cap,
-            spent_tokens: self.spent,
+            spent_tokens: both(
+                self.earlier.and_then(|was| was.tokens),
+                self.spent,
+                u64::saturating_add,
+            ),
             cost_cap_usd: self.cost_cap,
-            spent_usd: self.spent_usd,
+            spent_usd: both(
+                self.earlier.and_then(|was| was.usd),
+                self.spent_usd,
+                |a, b| a + b,
+            ),
             counted_usd: (self.cost_cap.is_some() && self.counted_unpriced)
                 .then_some(self.counted_usd),
             priced: self.priced.clone(),
@@ -1105,6 +1403,10 @@ impl<'a> Held<'a> {
             outcome_tokens: None,
             outcome_usd: None,
             failed,
+            resets_at: (ended == GradeEnd::UsageLimit)
+                .then(|| self.resets_at.clone())
+                .flatten(),
+            earlier: self.earlier,
         }
     }
 
@@ -1283,6 +1585,31 @@ impl From<ReportedStat> for Stat {
     }
 }
 
+/// Two runs' figures added, where either said one (#5718).
+fn both<T>(earlier: Option<T>, now: Option<T>, add: impl FnOnce(T, T) -> T) -> Option<T> {
+    match (earlier, now) {
+        (Some(earlier), Some(now)) => Some(add(earlier, now)),
+        (one, other) => one.or(other),
+    }
+}
+
+/// `counted`, an outcome eval's run's chats (asked for, and of those run), with `one` counted.
+fn counted_outcome(counted: (u32, u32), one: &ChatRan) -> (u32, u32) {
+    (
+        counted.0.saturating_add(1),
+        counted.1.saturating_add(u32::from(one.ran())),
+    )
+}
+
+/// **`one` put in its run's place `r` of `cell`** (#5718): over a case cut off there, where a
+/// resumed grade runs it again, else after the runs before it.
+fn placed<T>(cell: &mut Vec<T>, r: usize, one: T) {
+    match cell.get_mut(r) {
+        Some(was) => *was = one,
+        None => cell.push(one),
+    }
+}
+
 /// Why an outcome eval's chat that asked for `what` failed its run: a limit of a grade's chat, not
 /// a fault of the skill.
 fn asked_said(what: &str) -> String {
@@ -1332,7 +1659,9 @@ fn verdict_of(run: &mut OutcomeRun, verdict: &ChatRan, expectations: &[String]) 
         | ChatEnd::ClosedEarly { .. }
         | ChatEnd::Cancelled
         | ChatEnd::OverCap
-        | ChatEnd::OverLimit => {}
+        | ChatEnd::OverLimit
+        | ChatEnd::UsageLimit { .. }
+        | ChatEnd::Unreachable => {}
     }
 }
 

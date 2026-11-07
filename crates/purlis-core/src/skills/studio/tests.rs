@@ -217,6 +217,8 @@ fn a_grade() -> super::super::grades::Graded {
             outcome_usd: None,
             outcomes: Vec::new(),
             failed: None,
+            resets_at: None,
+            earlier: None,
         },
         spent: super::super::grades::Spent {
             chats: 6,
