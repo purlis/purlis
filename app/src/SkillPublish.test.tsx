@@ -119,7 +119,7 @@ describe("the publish review", () => {
     await screen.findByText(
       /GitHub says your account cannot push to this source, so publishing makes your fork ada\/skills/,
     );
-    screen.getByText(/PUBLIC: everyone can read what is sent/);
+    screen.getByText(/public: everyone can read what is sent/);
     screen.getByText("Made when you publish");
     expect(asked.some((one) => one.cmd === "skill_publish")).toBe(false);
 

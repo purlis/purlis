@@ -184,13 +184,27 @@ fn stops_of(out: &Outgoing) -> Vec<OutgoingStop> {
             Stop::Local { .. } => None,
             Stop::ForkTaken { path } => Some(OutgoingStop {
                 place: esc(path),
-                said: "Yours already, and not a fork of the source, so no fork can be made there. \
-                       Rename or delete it on the forge, then review again"
-                    .to_owned(),
+                said: FORK_TAKEN.to_owned(),
             }),
         })
         .collect()
 }
+
+/// Who can read a fork, as the window says it: in sentence case (`docs/ui-copy.md`), where the
+/// terminal's words shout PUBLIC.
+fn readers_said(visibility: purlis_core::forge::backend::Visibility) -> &'static str {
+    use purlis_core::forge::backend::Visibility;
+    match visibility {
+        Visibility::Public => "public: everyone can read what is sent",
+        Visibility::Internal => "internal: everyone signed in to the instance can read it",
+        Visibility::Private => "private",
+    }
+}
+
+/// What the page says of a repo of the person's at the fork's name that is not the source's fork.
+const FORK_TAKEN: &str = "Your account already has it, and it is not a fork of the source, so no \
+                          fork can be made there. Rename or delete it on the forge, then review \
+                          again";
 
 /// The fork the page names, where the branch goes on one.
 fn fork_of(route: &Route) -> Option<PublishFork> {
@@ -199,12 +213,12 @@ fn fork_of(route: &Route) -> Option<PublishFork> {
         Route::Fork(fork) => Some(PublishFork {
             path: esc(fork.path()),
             made: false,
-            readers: fork.visibility().readers().to_owned(),
+            readers: readers_said(fork.visibility()).to_owned(),
         }),
         Route::NewFork { path, visibility } => Some(PublishFork {
             path: esc(path),
             made: true,
-            readers: visibility.readers().to_owned(),
+            readers: readers_said(*visibility).to_owned(),
         }),
     }
 }

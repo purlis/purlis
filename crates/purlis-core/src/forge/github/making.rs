@@ -8,9 +8,10 @@
 //!   organisations needs `read:org`, which the token sign-in already asks for.
 //! - **Create**: `POST user/repos` for the account, `POST orgs/{org}/repos` for an organisation,
 //!   with `auto_init: false`, so the repo is empty and the project's first commit is its first.
-//! - **A fork** (#4342): `GET user`, the source, and the repo at the account's login and the
-//!   source's name, which is the account's fork only where GitHub says it is a fork whose
-//!   `parent` is the source. `POST repos/{owner}/{name}/forks` makes it under the account, and
+//! - **A fork** (#4342): `GET user`, the source, then the source's forks the account owns
+//!   (GraphQL's `forks(affiliations: [OWNER])`), so a fork the person renamed is found. With
+//!   none, the repo at the account's login and the source's name is free or taken: the
+//!   account's fork only where GitHub says it is a fork whose `parent` is the source. `POST repos/{owner}/{name}/forks` makes it under the account, and
 //!   its answer is held to the same.
 //! - **Delete**: `GET repos/{owner}/{name}` first, and `DELETE` only when the repo there has the id
 //!   the create answered. A repo renamed, moved or replaced since is not the one this run made,
@@ -154,13 +155,37 @@ impl Making for GitHub {
             .0
             .strict(caller, &repo_path(path), &format!("reading {path}"))?;
         let name = listed_str(&source, "name");
-        let visibility = visibility_of(&source).ok_or_else(|| {
-            ForgeError::new(format!("reading {path}: GitHub named no visibility"))
-        })?;
         if name.is_empty() {
             return Err(ForgeError::new(format!(
                 "reading {path}: GitHub named no repo"
             )));
+        }
+        let visibility = visibility_of(&source).ok_or_else(|| {
+            ForgeError::new(format!("reading {path}: GitHub named no visibility"))
+        })?;
+        // The account's fork may have any name: asked of the source's own forks, owned by it.
+        let (owner, repo) = path.split_once('/').unwrap_or((path, ""));
+        let doing = format!("finding your fork of {path}");
+        let answer = self.0.ask(
+            caller,
+            &Call::graphql(
+                super::graphql::fork_of_mine::QUERY,
+                vec![Field::text("owner", owner), Field::text("name", repo)],
+                super::super::LIST_TIMEOUT,
+            ),
+            &doing,
+        )?;
+        let mine = answer["data"]["repository"]["forks"]["nodes"]
+            .as_array()
+            .and_then(|nodes| {
+                nodes
+                    .iter()
+                    .find(|node| node["owner"]["login"].as_str() == Some(login.as_str()))
+            });
+        if let Some(node) = mine {
+            return listed_fork(node)
+                .map(ForkPlace::Yours)
+                .ok_or_else(|| ForgeError::new(format!("{doing}: GitHub named no whole fork")));
         }
         let at = format!("{login}/{name}");
         let doing = format!("reading {at}, where the fork of {path} goes");
@@ -193,6 +218,27 @@ impl Making for GitHub {
             ))
         })
     }
+}
+
+/// The fork a [`super::graphql::ForkOfMine`] node names: its database id, path, page and
+/// visibility, its HTTPS clone URL its page's with `.git`. It is a fork of the repo asked, by the
+/// connection it is listed in.
+fn listed_fork(node: &Value) -> Option<Fork> {
+    let path = node["nameWithOwner"].as_str()?.to_string();
+    let url = node["url"].as_str()?.to_string();
+    if path.is_empty() || !url.starts_with("https://") {
+        return None;
+    }
+    let id = node["databaseId"].as_u64()?;
+    let visibility = Visibility::parse(&node["visibility"].as_str()?.to_lowercase())?;
+    Some(Fork::answered(
+        ForgeRef(id.to_string()),
+        path,
+        url.clone(),
+        format!("{url}.git"),
+        visibility,
+        None,
+    ))
 }
 
 /// The fork of `parent` in GitHub's answer, or `None` where it is not one: a repo GitHub calls a

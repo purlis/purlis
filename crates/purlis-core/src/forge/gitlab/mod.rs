@@ -468,6 +468,21 @@ fn item_of(
     Ok(item)
 }
 
+/// The merge request `record` is, as a [`Request`]: its number, page, state and head commit.
+fn request_of(record: &Value, doing: &str) -> Result<Request, ForgeError> {
+    let pr = pr_of(record, "iid", "web_url", doing)?;
+    let head = record["sha"]
+        .as_str()
+        .filter(|sha| !sha.is_empty())
+        .ok_or_else(|| format!("{doing}: the forge named no head commit"))?;
+    Ok(Request {
+        number: pr.number,
+        url: pr.url,
+        state: state_of(record, doing)?,
+        head: head.to_string(),
+    })
+}
+
 impl Requests for GitLab {
     fn open_or_update(
         &self,
@@ -629,17 +644,7 @@ impl Requests for GitLab {
         let Some(record) = found else {
             return Ok(None);
         };
-        let pr = pr_of(record, "iid", "web_url", &doing)?;
-        let head = record["sha"]
-            .as_str()
-            .filter(|sha| !sha.is_empty())
-            .ok_or_else(|| format!("{doing}: the forge named no head commit"))?;
-        Ok(Some(Request {
-            number: pr.number,
-            url: pr.url,
-            state: state_of(record, &doing)?,
-            head: head.to_string(),
-        }))
+        request_of(record, &doing).map(Some)
     }
 
     fn state(&self, caller: &Caller, path: &str, pr: &Pr) -> Result<State, ForgeError> {
@@ -701,17 +706,7 @@ impl Requests for GitLab {
         let Some(record) = found else {
             return Ok(None);
         };
-        let pr = pr_of(record, "iid", "web_url", &doing)?;
-        let head = record["sha"]
-            .as_str()
-            .filter(|sha| !sha.is_empty())
-            .ok_or_else(|| format!("{doing}: the forge named no head commit"))?;
-        Ok(Some(Request {
-            number: pr.number,
-            url: pr.url,
-            state: state_of(record, &doing)?,
-            head: head.to_string(),
-        }))
+        request_of(record, &doing).map(Some)
     }
 
     /// Merge when the pipeline succeeds, with `sha`. GitLab merges *at once* when told that

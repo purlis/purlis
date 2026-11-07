@@ -649,13 +649,14 @@ pub fn publish(
     let fork = match &now.route {
         Route::NewFork { path, .. } => {
             // The one place a fork is made: after a yes to a review that named it and said so.
-            let made = forge.make_fork().map_err(|why| {
-                format!("Your fork could not be made, so nothing was sent: {why}")
-            })?;
+            // A forge that made the fork and then failed to copy it says so, and the fork stays.
+            let made = forge
+                .make_fork()
+                .map_err(|why| format!("Nothing was sent. Making your fork stopped: {why}"))?;
             if !made.path().eq_ignore_ascii_case(path) {
                 return Err(format!(
                     "The forge answered your fork as {}, not {path} as reviewed, so nothing was \
-                     pushed. Review it again",
+                     pushed. That fork stays; review again and the publish uses it",
                     made.web_url()
                 ));
             }
@@ -671,26 +672,31 @@ pub fn publish(
         ),
         _ => why,
     };
-    let (remote, handed) = match &fork {
-        None => (source.remote.clone(), handing(plane, source)?),
-        Some(fork) => (
-            super::Remote {
-                url: fork.clone_url().to_owned(),
-                branch: None,
-            },
-            Handing::helper(forge.helper()),
-        ),
+    let helper = forge.helper();
+    let reach = match &fork {
+        None => Reach::Source {
+            remote: &source.remote,
+            handed: handing(plane, source)?,
+            named: source.to_string(),
+        },
+        Some(fork) => Reach::Fork {
+            url: fork.clone_url(),
+            helper: helper.as_deref(),
+            named: format!("your fork {}", fork.web_url()),
+        },
     };
-    let place = match &fork {
-        None => source.to_string(),
-        Some(fork) => format!("your fork {}", fork.web_url()),
-    };
+    if made_now {
+        // A forge copies a new fork in the background: git is answered once the copy is there.
+        reach.answers(&scratch).map_err(kept)?;
+    }
     // A branch an earlier publish pushed, whose request never opened or has since closed, is used
     // again when it holds these files, and nothing else is ever pushed over.
-    if !branch_holds(&remote, &handed, &place, &scratch, &now.branch, &tree).map_err(kept)? {
-        let helper = forge.helper();
-        let pushed =
-            scratch.push_new_branch(&remote.url, helper.as_deref(), &commit, &now.branch)?;
+    if !branch_holds(&reach, &scratch, &now.branch, &tree).map_err(kept)? {
+        let url = match &fork {
+            None => source.remote.url.as_str(),
+            Some(fork) => fork.clone_url(),
+        };
+        let pushed = scratch.push_new_branch(url, helper.as_deref(), &commit, &now.branch)?;
         if !pushed.ok() {
             return Ok(Published::PushRefused {
                 why: kept(super::fetch::complaint(&pushed)),
@@ -711,35 +717,117 @@ pub fn publish(
     })
 }
 
-/// Whether `branch` is on `remote`, called `place`, already and holds `tree`. Holding anything
-/// else is refused, as the branch is someone's work.
+/// **Where the branch is pushed, as git reaches it**: the source, signed in as its fetch is, or
+/// the person's fork, signed in as the push is.
+enum Reach<'a> {
+    Source {
+        remote: &'a super::Remote,
+        handed: Handing,
+        named: String,
+    },
+    Fork {
+        url: &'a str,
+        helper: Option<&'a str>,
+        named: String,
+    },
+}
+
+/// The longest a fork made just now is waited for, until git is answered there.
+const FORK_ANSWERS_WITHIN: std::time::Duration = std::time::Duration::from_secs(60);
+
+impl Reach<'_> {
+    fn named(&self) -> &str {
+        match self {
+            Reach::Source { named, .. } | Reach::Fork { named, .. } => named,
+        }
+    }
+
+    /// git's `ls-remote` of `wanted` there.
+    fn list(&self, scratch: &Scratch, wanted: &str) -> Result<git::Run, String> {
+        match self {
+            Reach::Source { remote, handed, .. } => {
+                scratch.network(remote, handed, &["ls-remote", "--", REMOTE, wanted])
+            }
+            Reach::Fork { url, helper, .. } => {
+                scratch.network_as(*helper, &["ls-remote", "--", url, wanted])
+            }
+        }
+    }
+
+    /// Fetches `wanted` there to `to`.
+    fn fetch(&self, scratch: &Scratch, wanted: &str, to: &str) -> Result<git::Run, String> {
+        match self {
+            Reach::Source { remote, handed, .. } => scratch.fetch(remote, handed, wanted, to),
+            Reach::Fork { url, helper, .. } => {
+                let refspec = format!("+{wanted}:{to}");
+                scratch.network_as(
+                    *helper,
+                    &[
+                        "fetch",
+                        "--quiet",
+                        "--no-tags",
+                        "--no-recurse-submodules",
+                        "--no-write-fetch-head",
+                        "--depth=1",
+                        "--",
+                        url,
+                        &refspec,
+                    ],
+                )
+            }
+        }
+    }
+
+    /// Waits until git is answered there, for at most [`FORK_ANSWERS_WITHIN`].
+    fn answers(&self, scratch: &Scratch) -> Result<(), String> {
+        let started = std::time::Instant::now();
+        let mut pause = std::time::Duration::from_millis(500);
+        loop {
+            let listed = self.list(scratch, "HEAD")?;
+            if listed.ok() {
+                return Ok(());
+            }
+            if started.elapsed() > FORK_ANSWERS_WITHIN {
+                return Err(format!(
+                    "{} did not answer git within {} seconds, so nothing was pushed: {}",
+                    self.named(),
+                    FORK_ANSWERS_WITHIN.as_secs(),
+                    super::fetch::complaint(&listed)
+                ));
+            }
+            std::thread::sleep(pause);
+            pause = (pause * 2).min(std::time::Duration::from_secs(8));
+        }
+    }
+}
+
+/// Whether `branch` is there already and holds `tree`. Holding anything else is refused, as the
+/// branch is someone's work.
 fn branch_holds(
-    remote: &super::Remote,
-    handed: &Handing,
-    place: &str,
+    reach: &Reach<'_>,
     scratch: &Scratch,
     branch: &str,
     tree: &str,
 ) -> Result<bool, String> {
-    let source = place;
+    let place = reach.named();
     let wanted = format!("refs/heads/{branch}");
-    let listed = scratch.network(remote, handed, &["ls-remote", "--", REMOTE, &wanted])?;
+    let listed = reach.list(scratch, &wanted)?;
     if !listed.ok() {
         return Err(format!(
-            "{source} could not be asked: {}",
+            "{place} could not be asked: {}",
             super::fetch::complaint(&listed)
         ));
     }
     if listed.out.trim().is_empty() {
         return Ok(false);
     }
-    let run = scratch.fetch(remote, handed, &wanted, "refs/purlis/earlier")?;
+    let run = reach.fetch(scratch, &wanted, "refs/purlis/earlier")?;
     let held = scratch.git(&["rev-parse", "refs/purlis/earlier^{tree}"])?;
     if run.ok() && held.ok() && held.line().trim() == tree {
         return Ok(true);
     }
     Err(format!(
-        "{source} already has a branch {branch} that holds something else, so nothing was sent. \
+        "{place} already has a branch {branch} that holds something else, so nothing was sent. \
          Delete that branch, then publish again"
     ))
 }

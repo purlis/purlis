@@ -64,20 +64,6 @@ pub(super) struct Handing {
     pub(super) secrets: Vec<String>,
 }
 
-impl Handing {
-    /// What a push's own credential `helper` hands git: the forge's sign-in, for the person's fork
-    /// (#4342). Nothing where there is none.
-    pub(super) fn helper(helper: Option<String>) -> Handing {
-        Handing {
-            config: helper
-                .map(|helper| format!("credential.helper={helper}"))
-                .into_iter()
-                .collect(),
-            ..Handing::default()
-        }
-    }
-}
-
 /// The one credential helper a private source's fetch runs: it answers `get` with the user name
 /// and the token from [`USER_VAR`] and [`TOKEN_VAR`], only where git asks for the source's own
 /// host ([`HOST_VAR`]) over https, and nothing else, so the token is in git's environment and the
@@ -247,6 +233,18 @@ impl Scratch {
         run.err = crate::secrets::redact_str(&run.err, &handing.secrets);
         run.out = crate::secrets::redact_str(&run.out, &handing.secrets);
         Ok(run)
+    }
+
+    /// git across the network in the scratch repository, signed in by `helper` as a push is, with
+    /// the forge CLI's own environment: what reads the person's fork (#4342).
+    pub(super) fn network_as(
+        &self,
+        helper: Option<&str>,
+        args: &[&str],
+    ) -> Result<git::Run, String> {
+        let mut all = vec![self.git_dir.as_str()];
+        all.extend_from_slice(args);
+        git::run_network(&self.dir, helper, &all).map_err(|why| why.to_string())
     }
 
     /// **Pushes `commit` to a new branch of `url`**: the one refspec, never forced, no tag, no

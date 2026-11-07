@@ -77,13 +77,13 @@ export const LOCAL: PublishReviewView = { ...REVIEW, local: ["deploy"] };
  */
 export const THROUGH_A_NEW_FORK: PublishReviewView = {
   ...REVIEW,
-  fork: { path: "ada/skills", made: true, readers: "PUBLIC: everyone can read what is sent" },
+  fork: { path: "ada/skills", made: true, readers: "public: everyone can read what is sent" },
 };
 
 /** The same, through the fork the person has already. */
 export const THROUGH_THEIR_FORK: PublishReviewView = {
   ...REVIEW,
-  fork: { path: "ada/skills", made: false, readers: "PUBLIC: everyone can read what is sent" },
+  fork: { path: "ada/skills", made: false, readers: "public: everyone can read what is sent" },
 };
 
 /** A repo of the person's at the fork's name that is not a fork of the source. */
@@ -92,7 +92,7 @@ export const FORK_TAKEN: PublishReviewView = {
   stops: [
     {
       place: "ada/skills",
-      said: "Yours already, and not a fork of the source, so no fork can be made there. Rename or delete it on the forge, then review again",
+      said: "Your account already has it, and it is not a fork of the source, so no fork can be made there. Rename or delete it on the forge, then review again",
     },
   ],
 };

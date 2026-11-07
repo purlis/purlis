@@ -12,7 +12,7 @@ A fork is a lasting repo on the person's account, and it is public when the sour
 ## Whose fork, and which
 
 - **The account's own namespace only**, never an organisation's or a group's, at the source's name.
-- **A fork the person has is used again**, but only one the forge says is a fork of this source: GitHub's `parent`, GitLab's `forked_from_project` by id.
+- **A fork the person has is used again**, but only one the forge says is a fork of this source: on GitHub one the source's forks list as the account's own, whatever it was renamed to; on GitLab one whose `forked_from_project` is the source by id.
 - **A repo of theirs at that name that is not the source's fork stops the publish**, with a sentence. purlis never renames to get around it.
 
 ## What the review says, and what a yes covers
@@ -25,6 +25,7 @@ A fork is a lasting repo on the person's account, and it is public when the sour
 ## After it is made
 
 - **A fork stays, and purlis never deletes one.** Where the push or the request fails after the fork was made, the message says the fork was made and stays, and a publish again uses it.
-- GitLab copies a fork in the background. The forge seam waits for its `import_status` to be `finished`, for at most two minutes, before anything is pushed.
+- Both forges copy a fork in the background. The forge seam waits for GitLab's `import_status` to be `finished`, for at most two minutes, and the publish then waits until git answers on the new fork, for at most a minute, before anything is pushed.
+- The fork's branch is read and pushed with the person's sign-in for the host, so a private fork is reached as the push reaches it.
 - The push to the fork uses the same credential helper as a push to the source: the person's purlis sign-in for the host. No token passes through a chat.
 - The draft request is opened into the source from the fork's branch: on GitHub with a `login:branch` head, on GitLab on the fork with the source as `target_project_id`. A request already open from the same files on the same fork is answered as before. A request from another fork's branch of the same name is not.

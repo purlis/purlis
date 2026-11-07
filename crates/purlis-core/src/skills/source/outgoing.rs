@@ -114,7 +114,7 @@ impl std::fmt::Display for Stop {
             ),
             Stop::ForkTaken { path } => write!(
                 f,
-                "your account already has {path}, which is not a fork of the source, so no fork \
+                "your account already has {path}, and it is not a fork of the source, so no fork \
                  can be made there. Rename or delete it on the forge, then review again"
             ),
         }

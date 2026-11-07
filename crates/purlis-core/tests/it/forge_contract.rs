@@ -1409,35 +1409,53 @@ fn over_these(kind: Kind, exchanges: Value) -> (Box<dyn ForgeBackend>, Arc<Recor
     (backend, recorded)
 }
 
-/// `fork_for`'s recording, with the account's own repo at the fork's path answered as `there`.
-fn fork_for_finding(kind: &str, there: Value) -> Value {
+/// `fork_for`'s recording on `kind`, with `mine` the forks GitHub lists as the account's own
+/// (GitHub alone asks), and the account's repo at the fork's name answered as `there`, or never
+/// asked where `there` is `None`.
+fn fork_for_finding(kind: &str, mine: Value, there: Option<Value>) -> Value {
     let mut exchanges: Value =
         serde_json::from_str::<Value>(&recording(kind, "fork_for")).unwrap()["exchanges"].clone();
-    exchanges[2]["reply"] = json!({"code": 0, "out": there.to_string(), "err": ""});
+    let all = exchanges.as_array_mut().unwrap();
+    if kind == "github" {
+        all[2]["reply"]["out"] =
+            json!(json!({"data": {"repository": {"forks": {"nodes": mine}}}}).to_string());
+    }
+    match there {
+        Some(there) => {
+            let last = all.len() - 1;
+            all[last]["reply"] = json!({"code": 0, "out": there.to_string(), "err": ""});
+        }
+        None => {
+            all.pop();
+        }
+    }
     exchanges
 }
 
 #[test]
 fn a_fork_of_the_source_already_under_the_account_is_found_on_both_forges() {
     purlis_core::unsteered!();
-    for (kind, there) in [
+    for (kind, mine, there) in [
         (
             Kind::GitHub,
-            json!({"id": 1296270, "full_name": "octocat/api", "fork": true,
-                   "visibility": "public", "html_url": "https://github.com/octocat/api",
-                   "clone_url": "https://github.com/octocat/api.git",
-                   "parent": {"id": 1, "full_name": "acme/api"}}),
+            json!([{"databaseId": 1296270, "nameWithOwner": "octocat/api",
+                    "url": "https://github.com/octocat/api", "visibility": "PUBLIC",
+                    "owner": {"__typename": "User", "login": "octocat"}}]),
+            None,
         ),
         (
             Kind::GitLab,
-            json!({"id": 4242, "path_with_namespace": "octocat/api", "visibility": "public",
+            json!([]),
+            Some(
+                json!({"id": 4242, "path_with_namespace": "octocat/api", "visibility": "public",
                    "web_url": "https://gitlab.com/octocat/api",
                    "http_url_to_repo": "https://gitlab.com/octocat/api.git",
                    "forked_from_project": {"id": 1, "path_with_namespace": "acme/api"}}),
+            ),
         ),
     ] {
         let name = kind.word();
-        let (backend, recorded) = over_these(kind, fork_for_finding(name, there));
+        let (backend, recorded) = over_these(kind, fork_for_finding(name, mine, there));
         let Ok(ForkPlace::Yours(fork)) = backend.fork_for(&caller(), "acme/api") else {
             panic!("{name}: the fork is not found");
         };
@@ -1448,6 +1466,22 @@ fn a_fork_of_the_source_already_under_the_account_is_found_on_both_forges() {
         );
         spent(&recorded);
     }
+}
+
+/// A GitHub fork the person renamed is theirs all the same, and found by what GitHub lists.
+#[test]
+fn a_github_fork_the_person_renamed_is_found() {
+    purlis_core::unsteered!();
+    let mine = json!([{"databaseId": 7, "nameWithOwner": "octocat/our-api",
+                       "url": "https://github.com/octocat/our-api", "visibility": "PRIVATE",
+                       "owner": {"__typename": "User", "login": "octocat"}}]);
+    let (backend, recorded) = over_these(Kind::GitHub, fork_for_finding("github", mine, None));
+    let Ok(ForkPlace::Yours(fork)) = backend.fork_for(&caller(), "acme/api") else {
+        panic!("the renamed fork is not found");
+    };
+    assert_eq!(fork.path(), "octocat/our-api");
+    assert_eq!(fork.visibility(), Visibility::Private);
+    spent(&recorded);
 }
 
 #[test]
@@ -1471,7 +1505,7 @@ fn a_repo_under_the_accounts_name_that_is_not_the_sources_fork_is_taken_on_both_
         ),
     ] {
         let name = kind.word();
-        let (backend, recorded) = over_these(kind, fork_for_finding(name, there));
+        let (backend, recorded) = over_these(kind, fork_for_finding(name, json!([]), Some(there)));
         assert_eq!(
             backend.fork_for(&caller(), "acme/api"),
             Ok(ForkPlace::Taken {
