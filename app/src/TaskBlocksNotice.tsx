@@ -37,7 +37,7 @@ function seenOf(members: readonly Member[]): SeenBlock[] {
 
 /**
  * **One question for the tasks of one session that hit the same block** (#1508, V100-57), on
- * the session's tab: "3 tasks want to reach registry.npmjs.org", each task named by its whole
+ * the pane it returns to: "3 tasks want to reach registry.npmjs.org", each task named by its whole
  * path, and one answer that applies to each task listed and to no other chat.
  *
  * - **Its scopes in the single-chat Notice's order** (#1709): for a host, the main button allows

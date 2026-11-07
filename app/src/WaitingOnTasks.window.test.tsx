@@ -572,7 +572,7 @@ describe("a limit, said where it binds (#1498)", () => {
     expect(steward).toHaveAccessibleDescription(expect.stringContaining(SAID));
   });
 
-  it("ends the session's tab menu with how many of its tasks run against its limit", async () => {
+  it("ends a chat's tab menu with how many of its tasks run against its limit", async () => {
     core([chat(1, { tasks_limit: 6, tasks_running: 2 }), task(2, "check prod"), task(3, "x")]);
     render(<App />);
     await rows(3);
@@ -783,7 +783,7 @@ describe("what a finishing task does to its session's row", () => {
     await waitFor(() =>
       expect(asked("task_failure_seen")).toEqual([{ plane: PLANE, session: 1, id: "01K6BLOCKED" }]),
     );
-    // Shown inside its session's tab, as a pressed task's row shows it.
+    // Shown in the pane it returns to, as a pressed task's row shows it.
     await waitFor(() => expect(screen.getByTestId("pane").textContent).toBe("session 2"));
   });
 

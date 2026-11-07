@@ -375,7 +375,7 @@ import {
   type Tabs,
   type TabName,
   type ViewRef,
-  sessionOf,
+  returnsTo,
   namedForFirstPanes,
   tabNameOf,
 } from "./tabs";
@@ -3552,8 +3552,8 @@ export const PlaneView = memo(function PlaneView({
    *  in the title bar's switchers (#2916). One reading of the queue for all of them. */
   //
   // **A chat is counted where its tab is** (#1486, V100-40): a task that works in another
-  // workspace lives in the tab of the session that asked, so that session's workspace wears
-  // it. A chat with no tab is counted where it works, as before.
+  // workspace is at home in the tab it returns to (`returnsTo`), so that tab's workspace
+  // wears it. A chat with no tab is counted where it works, as before.
   const waitingIn = useCallback(
     (queue: readonly number[], workspace: string) =>
       queue.filter((session) => {
@@ -4738,7 +4738,7 @@ export const PlaneView = memo(function PlaneView({
    * in its tab's menu, its pane's controls, the palette; or by pressing it at all, where the
    * person set tasks to open that way (`chatsListPrefs`, V100-74). Also what a pressed task
    * falls back to when the session that asked has no tab here. **Nothing ends**, and the
-   * session's tab is left on what it showed. The core is told, so the tab comes back at the
+   * pane it returns to is left on what it showed. The core is told, so the tab comes back at the
    * next launch.
    */
   const ownTab = useCallback(
@@ -4765,7 +4765,7 @@ export const PlaneView = memo(function PlaneView({
   );
 
   /**
-   * **Opens a task beside its session, inside the session's tab** (#1489, V100-38): the
+   * **Opens a task beside its session, split from the pane it returns to** (#1489, V100-38): the
    * session's chat on one side and the task on the other, with the keyboard in the task. A
    * tab it had of its own goes. Nothing for a task whose session has no tab here: its row
    * says why (`actions.placeRows`).
@@ -4777,7 +4777,7 @@ export const PlaneView = memo(function PlaneView({
         openBeside(tabs, session, askedByNow, listedNow.current.get(session)?.name),
       );
       if (next === before) return;
-      // It is a pane of its session's tab now, and no tab of its own.
+      // It is a pane of the tab it returns to now, and no tab of its own.
       void commands.closeChatTab(plane, session).catch(() => undefined);
       const tab = tabHolding(next, session);
       const workspace =
@@ -5405,11 +5405,11 @@ export const PlaneView = memo(function PlaneView({
     openSettingsAt(settingsLinkAsked.link);
   }, [settingsLinkAsked, openSettingsAt]);
 
-  /** **Where a task's question is drawn** (#4565): a task's top is the nearest chat above it
-   *  with a tab, as its session's tab is (`sessionOf`); Open task is the person's own press. */
+  /** **Where a task's question is drawn** (#4565): a task's top is the chat it returns to,
+   *  the nearest above it with a pane (`returnsTo`); Open task is the person's own press. */
   const quizPlaces = useMemo(
     () => ({
-      topOf: (task: number) => sessionOf(tabs, task, askedBy)?.own,
+      topOf: (task: number) => returnsTo(tabs, task, askedBy)?.own,
       openTask: (task: number) => showChat(task),
       openSettings: () => openSettingsAt({ group: "you.chats", setting: "you.chats.answer" }),
       // A question's row's Answer (#5215): the Inbox, at the task's question.
@@ -9485,7 +9485,7 @@ export const PlaneView = memo(function PlaneView({
   /**
    * **Whether tab `id` is a task's own** (#1489), and then the name of the chat that asked for
    * it, where that chat is still listed: what the tab says after its own name. Nothing for a
-   * session's tab and for a view's.
+   * chat's tab and for a view's.
    */
   const taskTabOf = (id: number) => {
     const own = chatOf(tabs, id);

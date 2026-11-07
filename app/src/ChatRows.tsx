@@ -133,7 +133,7 @@ export function TabMarks({
    * **The tab is a task's own** (#1489, V100-38): the name of the chat that asked for it, or
    * nothing where that chat has no name to say any more. The tab then wears the task mark
    * before its name and says whose task it is after it, dimmer (`talk · steward 4`), so it is
-   * never read as a session's tab. Left out for every other tab.
+   * never read as the tab of the chat that asked. Left out for every other tab.
    */
   taskOf?: { asker: string | undefined };
   /** The task the tab shows in place of its session's own chat, by name (#1486): the label

@@ -1948,7 +1948,7 @@ export function closeChat(
   const found = tabs.order
     .flatMap((id) => panesOf(tabs, id).map((one) => ({ id, ...one })))
     .find((one) => one.session === session);
-  // **A task shown in its session's tab is not taken off the screen by its end** (#1486,
+  // **A task shown in the pane it returns to is not taken off the screen by its end** (#1486,
   // V100-37): a pane never changes what it shows by itself. The tab keeps showing it, as
   // ended ({@link shownLive}), until the person leaves it.
   if (found === undefined) return tabs;
@@ -1999,7 +1999,7 @@ export function replaceSession(tabs: Tabs, from: number, to: number): Tabs {
     const layout = replace(tab.layout, found.pane, (pane) => ({ ...pane, content }));
     return { ...moved, byId: { ...moved.byId, [id]: { ...tab, layout } } };
   }
-  // A task shown in its session's tab, started again: the tab shows the new one (#1486).
+  // A task shown in the pane it returns to, started again: the pane shows the new one (#1486).
   for (const id of moved.order) {
     const tab = moved.byId[id];
     const at = Object.entries(tab.shows ?? {}).find(([, shown]) => shown === from);
@@ -2059,13 +2059,14 @@ export function visibleSessions(tabs: Tabs): number[] {
 export type AskedBy = (session: number) => number | undefined;
 
 /**
- * **Where a chat is shown: the tab and pane of the nearest chat, itself or above it, that has
- * a pane of its own** (#1486). A session's own chat is at home in its pane; a task is at home
- * in the pane of the session that asked for it, and a task of a task in that same pane. A chat
- * that was given a tab of its own is at home there, and so is everything below it.
+ * **A chat's home: the tab and pane of the nearest chat, itself or above it, that has a pane
+ * of its own** (#1486, #5667). A chat in a pane is at home in it. A task with no pane of its
+ * own is a row in the Chats list under the chat that asked, and is at home in that chat's pane,
+ * or the pane of the nearest chat above that one: where its Notices are drawn and its tab's
+ * chip counts it. A task given a pane of its own is at home there, and so is everything below it.
  *
- * Nothing when no chat above it has a tab in this window: the session that asked was closed
- * and left its tasks, or is in another window.
+ * Nothing when no chat above it has a pane in this window: the chat that asked was closed and
+ * left its tasks, or is in another window.
  */
 export function homeOf(
   tabs: Tabs,
@@ -2259,13 +2260,13 @@ export function restoreShown(tabs: Tabs, shown: readonly number[], askedBy: Aske
 
 /**
  * **Where a task with a pane of its own is** (#1489): in a `tab` of its own, which the person
- * asked for, or `beside` the session that asked for it, in a pane of that session's tab.
+ * asked for, or `beside` the chat it returns to ({@link returnsTo}), split from that chat's pane.
  */
 export type Placed = "tab" | "beside";
 
 /**
- * **Whether a task has a pane of its own, and where** (#1489): nothing for a task shown inside
- * its session's tab or in no tab at all, which is every task until the person asks, and
+ * **Whether a task has a pane of its own, and where** (#1489): nothing for a task shown in the
+ * pane it returns to or in no pane at all, which is every task until the person asks, and
  * nothing for a chat nobody asked for. `tab` where it is its tab's own chat ({@link chatOf}),
  * `beside` where its pane is in another chat's tab.
  *
@@ -2280,11 +2281,13 @@ export function placedOf(tabs: Tabs, chat: number, askedBy: AskedBy): Placed | u
 }
 
 /**
- * **The session a task belongs to: the home of the chat that asked for it** (#1489). Where a
- * task with a pane of its own goes back to, and the tab whose chip still lists it. Nothing for
- * a chat nobody asked for, and for a task whose asker has no tab in this window.
+ * **Where a task returns to: the home of the chat that asked for it** (#1489, #5667). A task
+ * that has no pane of its own, or loses the one it had, is a row in the Chats list under the
+ * chat that asked, and this is the pane that answers for it: its Notices and its hand are drawn
+ * there, its tab's chip counts it, and a pane beside it opens there. Nothing for a chat nobody
+ * asked for, and for a task none of whose askers has a pane in this window.
  */
-export function sessionOf(
+export function returnsTo(
   tabs: Tabs,
   task: number,
   askedBy: AskedBy,
@@ -2295,7 +2298,7 @@ export function sessionOf(
 
 /**
  * **Every task below chat `session` that has a pane of its own**, at any depth, by number
- * (#1489): what a close of the session's tab has to say, and to send back.
+ * (#1489): what a close of that chat's tab has to say, and to send back.
  */
 export function tasksPlacedBelow(
   tabs: Tabs,
@@ -2385,7 +2388,7 @@ export function panesMovedInto(
  * it was opened beside its session in. Its own tasks go with it: they are at home in its tab
  * ({@link homeOf}). A task that already has its tab has it brought forward.
  *
- * **Nothing ends, and the session's tab is left on what it showed.** `chat`, `who` and
+ * **Nothing ends, and the pane it returns to is left on what it showed.** `chat`, `who` and
  * `label` name the tab as {@link openTab} names any.
  */
 export function moveToOwnTab(
@@ -2407,8 +2410,9 @@ export function moveToOwnTab(
 /**
  * **Sends a task back out of its pane** (#1489): the minimise. Its tab leaves the strip, or
  * its pane leaves the split and what shared the split takes the room. **Nothing ends**: the
- * task is at home in its session's tab again, which shows what it showed, and its chip lists
- * it. The front goes where closing that tab would send it ({@link closeTab}). Answers `tabs`
+ * task is a row in the Chats list under the chat that asked, at home where it returns to
+ * ({@link returnsTo}), whose pane shows what it showed and whose tab's chip counts it. The
+ * front goes where closing the task's tab would send it ({@link closeTab}). Answers `tabs`
  * itself for a task with no pane.
  */
 export function sendBack(
@@ -2421,9 +2425,9 @@ export function sendBack(
 }
 
 /**
- * **Gives a task a pane beside its session, inside the session's tab** (#1489, V100-38): the
- * pane it lives in ({@link sessionOf}) is split side by side, the session's chat stays where it
- * was and the task is on the far side. The pane stops showing the task in place of its own
+ * **Gives a task a pane beside the chat it returns to** (#1489, V100-38): that chat's pane
+ * ({@link returnsTo}) is split side by side, that chat stays where it was and the task is on
+ * the far side. The pane stops showing the task in place of its own
  * chat, and a tab the task had of its own goes. **Nothing comes to the front and no pane takes
  * the keyboard**: this is what a launch puts back ({@link openBeside} is the person's press).
  *
@@ -2431,12 +2435,12 @@ export function sendBack(
  * is beside its session already.
  */
 export function placeBeside(tabs: Tabs, task: number, askedBy: AskedBy, chat?: string): Tabs {
-  const before = sessionOf(tabs, task, askedBy);
+  const before = returnsTo(tabs, task, askedBy);
   if (before === undefined) return tabs;
   const had = ownedIn(tabs).get(task);
   if (had !== undefined && had.tab === before.tab) return tabs;
   const cleared = withoutPaneOf(leftBy(tabs, task, askedBy), task);
-  const home = sessionOf(cleared, task, askedBy);
+  const home = returnsTo(cleared, task, askedBy);
   if (home === undefined) return tabs;
   const tab = cleared.byId[home.tab];
   const pane = cleared.named.panes + 1;
@@ -2459,14 +2463,14 @@ export function placeBeside(tabs: Tabs, task: number, askedBy: AskedBy, chat?: s
 }
 
 /**
- * **Opens a task beside its session** (#1489): {@link placeBeside}, and then the session's tab
+ * **Opens a task beside its session** (#1489): {@link placeBeside}, and then that chat's tab
  * is in front and the task's pane has the keyboard. A task already beside its session is
  * focused there.
  */
 export function openBeside(tabs: Tabs, task: number, askedBy: AskedBy, chat?: string): Tabs {
   const placed = placeBeside(tabs, task, askedBy, chat);
   const at = ownedIn(placed).get(task);
-  const home = sessionOf(placed, task, askedBy);
+  const home = returnsTo(placed, task, askedBy);
   if (at === undefined || home === undefined || at.tab !== home.tab) return tabs;
   const tab = placed.byId[at.tab];
   if (tab.focused === at.pane && placed.inFront === tab.id) return placed;
