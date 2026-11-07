@@ -239,8 +239,7 @@ fn move_tree(
     to_head: &str,
     undo: impl Fn(),
 ) -> Result<(), Refused> {
-    let empty = empty_tree(repo)?;
-    let attr = format!("--attr-source={empty}");
+    let attr = super::no_attributes(repo)?;
     let quiet = [
         "-c",
         "core.attributesFile=/dev/null",

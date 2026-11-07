@@ -234,6 +234,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`workspaces/<ws>/.claude/settings.json` — the generated harness layer](#workspaceswsclaudesettingsjson--the-generated-harness-layer)
   - [`workspaces/<ws>/repos/<repo>/` — a cloned repo (guest checkout)](#workspaceswsreposrepo--a-cloned-repo-guest-checkout)
   - [`refs/purlis/turns/<chat>/<n>/start` and `…/end` — each turn of a chat, in a clone's git](#refspurlisturnschatnstart-and-end--each-turn-of-a-chat-in-a-clones-git)
+  - [`refs/purlis/runners/<pool>/turns/…` — a runner's turns, on the desktop](#refspurlisrunnerspoolturns--a-runners-turns-on-the-desktop)
   - [`workspaces/<ws>/themes/` — the workspace's theme folders](#workspaceswsthemes--the-workspaces-theme-folders)
   - [`<clone>/.git/info/exclude` — purlis's managed block](#clonegitinfoexclude--purliss-managed-block)
   - [`workspaces/<ws>/.worktrees/<repo>/<piece>/` — pieces](#workspaceswsworktreesrepopiece--pieces)
@@ -397,6 +398,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`<data>/app-state/<clone key>/skill-grade-chats/<skill>/<grade>/<chat>.screen`](#dataapp-stateclone-keyskill-grade-chatsskillgradechatscreen)
   - [`<data>/app-state/<clone key>/router-grade-chats/<router>/<workspace>/<persona>/<grade>/<chat>.screen`](#dataapp-stateclone-keyrouter-grade-chatsrouterworkspacepersonagradechatscreen)
   - [`<data>/app-state/<clone key>/skill-tries/<id>/`](#dataapp-stateclone-keyskill-triesid)
+  - [`/tmp/purlis-g-<random>/`](#tmppurlis-g-random)
   - [`<data>/app-state/<clone key>/skill-levels/<chat id>.json`](#dataapp-stateclone-keyskill-levelschat-idjson)
   - [Environment variables that move or key this state](#environment-variables-that-move-or-key-this-state)
   - [What the tmux frame and the status line read that a **hook** wrote](#what-the-tmux-frame-and-the-status-line-read-that-a-hook-wrote)
@@ -2921,11 +2923,33 @@ The branch's state before and after turn `<n>` of a chat (N3, ADR 0084 §1's com
   program end, through `files::turns` and the git runner, with hooks and the repo's programs off.
   Only a chat whose folder is on this machine and in a workspace's repo records any, and only while
   the app holds its project: a turn that ends with no window open has no `end` until the next one.
+  **On a pool's runner** (#5427, session protocol 1.78), the runner's `purlisd` writes them the same
+  way, in the clone it keeps in `<data>/projects/<project id>/`, as its hook channel hears the chat
+  (`hookchannel::HostedTurns`), and undoes one there when the window asks; the desktop keeps a copy
+  of them ([the next section](#refspurlisrunnerspoolturns--a-runners-turns-on-the-desktop)).
 - **And `…/undone`, once the turn is undone** (**Undo a turn**, #5411): the same tier, and
   pointing at the turn's `end`. It is written by the app in the step that puts the turn's files
   back, and it is what makes the turn before it the one Undo is offered on next. A turn with it
   is still compared, and goes with the chat's other refs.
 - **Removed** when the chat is removed: `turns::forget`.
+
+### `refs/purlis/runners/<pool>/turns/…` — a runner's turns, on the desktop
+
+A pool's runner's `refs/purlis/turns/<chat>/<n>/{start,end,undone}`, as the desktop last fetched
+them (#5427, ADR 0078 §7, session protocol 1.78), which the file diff reads as it reads its own.
+
+- **Tier:** Clone state, rebuildable — in the desktop's clone's own git, never pushed by anything
+  purlis runs, and fetched again from the runner, which keeps the turns themselves.
+- **Its names:** `<pool>` is the pool's name, as its branches are kept under `refs/remotes/<pool>/`,
+  and the rest is the runner's ref under `refs/purlis/turns/`. Not under `refs/remotes/<pool>/`: a
+  fetch prunes that folder to the runner's branches and lists each ref there as one.
+- **Written by** the app's fetch of a pool's runner's code (`codelink::fetch_back_with_turns`),
+  from a runner of 1.78 or later: only refs a runner names that are turns as purlis writes them,
+  and a copy the runner no longer names goes. And `…/undone`, by the app, once the runner says it
+  has undone the turn. A runner before 1.78 names none, and none is fetched.
+- **Read by** the file diff: a turn here is compared as it ended on the runner, never with this
+  machine's folder, which never had its files. Undo is the runner's to carry out.
+- **Removed** when the chat is removed, with its own refs: `turns::forget`.
 
 ### `workspaces/<ws>/themes/` — the workspace's theme folders
 
@@ -8729,9 +8753,32 @@ of 2026-11-01). A purlis from before it refuses a file holding it, as it refuses
   of the built-in router has no `router`. Both arms hold `pins`, the pins of the workspace or persona that chose
   the router, one name a line (absent for none), which the chat's set is routed with
   (`drafts::pins_of_arm`).
+  And `drafts::stage`, for an outcome eval's chat (SK-55, #3235): a file `outcome` beside
+  `graded`, which arms its chat as one that may write its piece (`drafts::outcome_piece`). It is
+  empty, or holds `shell` where the skill's `allowed-tools` names Bash (#4476): its chat then has
+  a shell (`drafts::shell_piece`), its start held to its piece and to no host
+  (`sandbox::policy::holding_to_its_folder`), and a file `temp` beside it names that chat's
+  [temp folder](#tmppurlis-g-random) (`drafts::temp_of`). `drafts::lay_out_judge` writes `judge` in
+  its place for a judge's chat, held to reading (`drafts::judge_piece`).
 - **Removed by:** with its [throwaway piece](#workspacesthrowawaypurlis-try-id), the same way and
   at the same moments. What is left is the skill run the chat recorded, under the skill's name.
 - **Git:** outside every project, in the data home; the piece is ignored and never staged.
+
+### `/tmp/purlis-g-<random>/`
+- **Format:** a folder, `0700`, of one outcome eval's chat that has a shell (#4476), `<random>`
+  eight random letters and digits, made in `/tmp` (the system's temp folder off Unix,
+  `drafts::temp_base`) as the piece is staged (`drafts::stage`) and named by its try's `temp`
+  file. Its chat is handed it as `TMPDIR` and `CLAUDE_CODE_TMPDIR`, and its commands write their
+  temporary files in it, under `claude-<uid>/`. It is outside the piece, and short, because
+  Claude Code makes its sandbox's sockets there, and hands a command `claude-<uid>/` in it only
+  where that path is 44 bytes at most (`drafts::CLAUDE_CODE_TEMP_MOST`), its shared
+  `/tmp/claude-<uid>` otherwise; on macOS the system's temp folder alone is longer (#5655).
+- **Status:** **internal**, **experimental** behind the `skill-studio` flag.
+- **Tier:** Machine, device-bound, transient — it lasts as long as its chat.
+- **Written by:** that chat's commands, under its sandbox. No other chat can write it.
+- **Removed by:** `drafts::end_try`, with its piece, and only a folder named so, in
+  `drafts::temp_base`, that is no link.
+- **Git:** outside every project.
 
 ### `<data>/app-state/<clone key>/skill-levels/<chat id>.json`
 - **Format:** JSON, one file per sandboxed chat that is running (SK-9, #2772): `name`, the chat's

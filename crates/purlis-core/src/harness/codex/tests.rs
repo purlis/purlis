@@ -57,6 +57,7 @@ fn kit() -> Kit<'static> {
         graded: false,
         judging: false,
         writes_its_piece: false,
+        runs_a_shell: false,
     }
 }
 

@@ -1558,3 +1558,94 @@ fn a_mark_a_task_removed_since_keeps_the_hosts_own_first_start() {
         "{unread:?}"
     );
 }
+
+/// **A git that plays git 2.39** (Debian 12's, Apple Git-143's), which has no `--attr-source`
+/// (#2830 used it, git 2.40+): it answers its version as 2.39 and refuses that option as 2.39
+/// does, with its usage after it; every other call it hands to the machine's own git.
+#[cfg(unix)]
+fn a_git_before_attr_source(top: &Path) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    let stand_in = top.join("old-git/git");
+    std::fs::create_dir_all(stand_in.parent().unwrap()).unwrap();
+    let script = format!(
+        r#"#!/bin/sh
+for word in "$@"; do
+  case "$word" in
+    --version|version) echo "git version 2.39.5"; exit 0 ;;
+    --attr-source*)
+      echo "unknown option: $word" >&2
+      echo "usage: git [-v | --version] [-h | --help] [-C <path>] [-c <name>=<value>]" >&2
+      exit 129 ;;
+  esac
+done
+exec '{}' "$@"
+"#,
+        crate::worktree::git::real_binary().display()
+    );
+    std::fs::write(&stand_in, script).unwrap();
+    std::fs::set_permissions(&stand_in, std::fs::Permissions::from_mode(0o755)).unwrap();
+    stand_in
+}
+
+/// **A move with a git too old to stage with no attributes says so plainly** (the person's
+/// notice of 2026-11-07: "git could not stage the uncommitted work: unknown option:
+/// --attr-source=… usage: git [-v | --version] …"): which git ran, the version it is and the
+/// version a move needs, and never git's own usage.
+#[cfg(unix)]
+#[test]
+fn a_snapshot_with_a_git_before_2_40_names_that_git_and_the_version_needed() {
+    let world = World::new();
+    std::fs::write(world.desktop.join("fix.txt"), "the work\n").unwrap();
+    let stand_in = a_git_before_attr_source(&world.top);
+
+    let refused = crate::worktree::git::with_stand_in(&stand_in, || {
+        snapshot(&world.desktop, &world.scratch(), &[])
+    })
+    .expect_err("a git without --attr-source cannot stage the work");
+
+    let said = refused.to_string();
+    assert!(!said.contains("usage:"), "{said}");
+    assert!(!said.contains("unknown option"), "{said}");
+    assert!(said.contains("2.39.5"), "{said}");
+    assert!(said.contains("2.40"), "{said}");
+    assert!(said.contains(&stand_in.display().to_string()), "{said}");
+}
+
+/// The runner's end too: a check-out of the work that came, with a git before 2.40, says the
+/// same, so a runner's image with an older git is named as plainly.
+#[cfg(unix)]
+#[test]
+fn a_check_out_with_a_git_before_2_40_names_that_git_and_the_version_needed() {
+    let world = World::new();
+    let repo = world.top.join("fresh");
+    std::fs::create_dir_all(&repo).unwrap();
+    git(&repo, &["init", "-q", "-b", "unborn", "."]);
+    git(
+        &repo,
+        &["fetch", "-q", world.desktop.to_str().unwrap(), "fix:fix"],
+    );
+    let stand_in = a_git_before_attr_source(&world.top);
+
+    let refused = crate::worktree::git::with_stand_in(&stand_in, || {
+        check_out_fresh(&repo, "refs/heads/fix", None)
+    })
+    .expect_err("a git without --attr-source cannot check the work out");
+
+    let said = refused.to_string();
+    assert!(!said.contains("usage:"), "{said}");
+    assert!(said.contains("2.39.5") && said.contains("2.40"), "{said}");
+}
+
+#[test]
+fn a_gits_version_is_read_from_each_way_git_spells_it() {
+    for (said, wanted) in [
+        ("git version 2.39.5", Some((2, 39))),
+        ("git version 2.39.3 (Apple Git-143)", Some((2, 39))),
+        ("git version 2.50.1 (Apple Git-155)", Some((2, 50))),
+        ("git version 2.45.1.windows.1", Some((2, 45))),
+        ("git version 3.0.0", Some((3, 0))),
+        ("not git at all", None),
+    ] {
+        assert_eq!(version_of(said), wanted, "{said}");
+    }
+}

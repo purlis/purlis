@@ -546,8 +546,7 @@ fn work_tree(
     }
     let index = scratch.join("snapshot.index");
     let _ = std::fs::remove_file(&index);
-    let empty = empty_tree(tree)?;
-    let attr = format!("--attr-source={empty}");
+    let attr = no_attributes(tree)?;
     // An ignored name that git does not track is never staged, and git refuses a pathspec that
     // names one: only such a name goes unnamed. One git tracks is staged with its changes however
     // it is ignored, so it is left out by name. Where the repository ignores case, so does the
@@ -708,6 +707,45 @@ fn empty_tree(repo: &Path) -> Result<String, Refused> {
         return Err(git_failed("name the empty tree", &ran));
     }
     Ok(ran.line().to_owned())
+}
+
+/// The first git that reads a tree's attributes from a tree it is named (`--attr-source`).
+const ATTR_SOURCE_SINCE: (u32, u32) = (2, 40);
+
+/// **`--attr-source=` the empty tree**, the option that keeps every attribute of `repo`'s work
+/// tree unread while git stages or checks out its files, so no filter it names runs. Refused in
+/// a sentence where the git purlis runs is older than 2.40, which has no such option: that git
+/// would refuse it in its own usage (the person's notice of 2026-11-07), and staging without it
+/// would run what the work tree's attributes name.
+fn no_attributes(repo: &Path) -> Result<String, Refused> {
+    let ran = run(repo, &["version"])?;
+    if let Some(found) = ran.ok().then(|| version_of(ran.line())).flatten()
+        && found < ATTR_SOURCE_SINCE
+    {
+        let (binary, _) = git::git_binary();
+        let named = ran.line().trim_start_matches("git version ").trim();
+        return Err(Refused::Git(format!(
+            "{} is git {named}, and sending code to a runner needs git {}.{} or later. Update \
+             that git, then try again",
+            binary.display(),
+            ATTR_SOURCE_SINCE.0,
+            ATTR_SOURCE_SINCE.1
+        )));
+    }
+    Ok(format!("--attr-source={}", empty_tree(repo)?))
+}
+
+/// The major and minor version in git's answer to `git version` (`git version 2.39.3 (Apple
+/// Git-143)`, `git version 2.45.1.windows.1`), or `None` where it names none.
+fn version_of(said: &str) -> Option<(u32, u32)> {
+    let number = said
+        .strip_prefix("git version ")?
+        .split_whitespace()
+        .next()?;
+    let mut parts = number.split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next()?.parse().ok()?;
+    Some((major, minor))
 }
 
 /// **What no snapshot of a project's own repository carries**: purlis's state folder, where its
@@ -993,8 +1031,7 @@ pub fn check_out_fresh(
     if checked_out.ok() {
         return Ok(());
     }
-    let empty = empty_tree(repo)?;
-    let attr = format!("--attr-source={empty}");
+    let attr = no_attributes(repo)?;
     let quiet = ["-c", "core.attributesFile=/dev/null", attr.as_str()];
     let mut args: Vec<&str> = quiet.to_vec();
     args.extend(["checkout", "--quiet", "--force", "--no-guess", short, "--"]);
@@ -1088,6 +1125,70 @@ pub fn give(repo: &Path, have: &[String], into: &Path) -> Result<(Vec<Ref>, Bund
     Ok((heads, bundled))
 }
 
+/// **[`give`], with the turns of the chats that worked in `repo`** (1.78, #5427): every
+/// `refs/purlis/turns/…` it holds ([`crate::files::turns::NAMESPACE`]) is named and bundled beside
+/// its branches, so the desktop's turn diff reads a runner chat's turns as this host recorded
+/// them.
+pub fn give_with_turns(
+    repo: &Path,
+    have: &[String],
+    into: &Path,
+) -> Result<(Vec<Ref>, Bundled), Refused> {
+    if !repo.join(".git").exists() {
+        return Err(not_allowed(NO_REPOSITORY_THERE));
+    }
+    let heads = refs_under(repo, &[HEADS])?;
+    if heads.is_empty() {
+        return Ok((heads, Bundled::Nothing));
+    }
+    let turns = refs_under(repo, &[crate::files::turns::NAMESPACE])?;
+    let named: Vec<Ref> = heads.into_iter().chain(turns).collect();
+    let names: Vec<&str> = named.iter().map(|one| one.name.as_str()).collect();
+    let bundled = bundle(repo, &names, have, into)?;
+    Ok((named, bundled))
+}
+
+/// **[`fetch_back`], with the runner's turns** (1.78, #5427): what the runner names of its turns
+/// ([`give_with_turns`]) is kept as `refs/purlis/runners/<pool>/turns/…`
+/// ([`crate::files::turns::copies_of`]), and a copy the runner no longer names goes. A ref of a
+/// turn purlis never writes is refused, as any ref a runner may not send is, and nothing is
+/// fetched. Asked only of a runner that speaks 1.78: an older one names no turn, and its copies
+/// here would all go.
+pub fn fetch_back_with_turns(
+    repo: &Path,
+    pool: &str,
+    scratch: &Path,
+    through: impl FnOnce(Vec<String>, &Path) -> Result<(Vec<Ref>, bool), String>,
+) -> Result<Vec<Ref>, Refused> {
+    fetch_back_as(repo, pool, Taking::with_turns(), HEADS, scratch, through)
+}
+
+/// How a fetch back takes what a runner names.
+#[derive(Clone, Copy, Default)]
+struct Taking {
+    /// Leave every branch it did not name: a draining runner's come back beside those of the
+    /// pool's runner now (#4248), and neither's fetch removes the other's.
+    beside: bool,
+    /// Take the runner's turns too ([`fetch_back_with_turns`]).
+    turns: bool,
+}
+
+impl Taking {
+    const fn beside(beside: bool) -> Taking {
+        Taking {
+            beside,
+            turns: false,
+        }
+    }
+
+    const fn with_turns() -> Taking {
+        Taking {
+            beside: false,
+            turns: true,
+        }
+    }
+}
+
 /// **The desktop takes a runner's branches back** into `repo`, as `refs/remotes/<pool>/<branch>`
 /// and nowhere else: from the bundle at `bundle` where the runner sent one, else from the
 /// commits `repo` holds. `heads` are the runner's branches, each one [`carried`] takes; a remote
@@ -1099,7 +1200,7 @@ pub fn take_back(
     bundle: Option<&Path>,
     heads: &[Ref],
 ) -> Result<Vec<Ref>, Refused> {
-    take_back_as(repo, pool, false, bundle, heads)
+    take_back_as(repo, pool, Taking::default(), bundle, heads)
 }
 
 /// [`take_back`], where `beside` leaves every branch it did not name: a draining runner's come
@@ -1107,10 +1208,11 @@ pub fn take_back(
 fn take_back_as(
     repo: &Path,
     pool: &str,
-    beside: bool,
+    taking: Taking,
     bundle: Option<&Path>,
     heads: &[Ref],
 ) -> Result<Vec<Ref>, Refused> {
+    let beside = taking.beside;
     if !pool_ok(pool) {
         return Err(not_allowed(format!(
             "`{pool}` is not a pool's name refs can be kept under, so nothing was fetched"
@@ -1133,9 +1235,16 @@ fn take_back_as(
         .cloned()
         .collect();
     let heads = heads.as_slice();
+    let turns = crate::files::turns::NAMESPACE;
     let remote = |name: &str| -> Result<String, Refused> {
         match name.strip_prefix(HEADS) {
             Some(branch) if carried(name).is_ok() => Ok(format!("refs/remotes/{pool}/{branch}")),
+            // A turn of a runner chat (#5427), kept beside the runner's branches.
+            None if taking.turns && crate::files::turns::a_turn_ref(name) => Ok(format!(
+                "{}{}",
+                crate::files::turns::copies_of(pool),
+                &name[turns.len()..]
+            )),
             _ => Err(not_allowed(format!(
                 "the runner sent `{name}`, which is not a branch, so nothing was fetched"
             ))),
@@ -1205,6 +1314,22 @@ fn take_back_as(
         let ran = run(repo, &["update-ref", &remote(&head.name)?, &head.oid])?;
         if !ran.ok() {
             return Err(git_failed("keep the runner's branch", &ran));
+        }
+    }
+    if taking.turns {
+        let copies = crate::files::turns::copies_of(pool);
+        let named: Vec<String> = heads
+            .iter()
+            .filter(|head| head.name.starts_with(turns))
+            .map(|head| remote(&head.name))
+            .collect::<Result<_, _>>()?;
+        for kept in refs_under(repo, &[copies.as_str()])? {
+            if !named.contains(&kept.name) {
+                let ran = run(repo, &["update-ref", "-d", &kept.name])?;
+                if !ran.ok() {
+                    return Err(git_failed("remove a turn the runner no longer has", &ran));
+                }
+            }
         }
     }
     let prefix = format!("refs/remotes/{pool}/");
@@ -1296,7 +1421,7 @@ pub fn fetch_back(
     scratch: &Path,
     through: impl FnOnce(Vec<String>, &Path) -> Result<(Vec<Ref>, bool), String>,
 ) -> Result<Vec<Ref>, Refused> {
-    fetch_back_as(repo, pool, false, HEADS, scratch, through)
+    fetch_back_as(repo, pool, Taking::default(), HEADS, scratch, through)
 }
 
 /// [`fetch_back`] from a draining runner: what it has comes back beside what the pool's runner
@@ -1307,7 +1432,7 @@ pub fn fetch_back_beside(
     scratch: &Path,
     through: impl FnOnce(Vec<String>, &Path) -> Result<(Vec<Ref>, bool), String>,
 ) -> Result<Vec<Ref>, Refused> {
-    fetch_back_as(repo, pool, true, HEADS, scratch, through)
+    fetch_back_as(repo, pool, Taking::beside(true), HEADS, scratch, through)
 }
 
 /// [`fetch_back`] from a pool the clone's workspace no longer runs on (#4590): the pool is told
@@ -1320,13 +1445,20 @@ pub fn fetch_back_left(
     through: impl FnOnce(Vec<String>, &Path) -> Result<(Vec<Ref>, bool), String>,
 ) -> Result<Vec<Ref>, Refused> {
     let its_own = format!("refs/remotes/{pool}/");
-    fetch_back_as(repo, pool, beside, &its_own, scratch, through)
+    fetch_back_as(
+        repo,
+        pool,
+        Taking::beside(beside),
+        &its_own,
+        scratch,
+        through,
+    )
 }
 
 fn fetch_back_as(
     repo: &Path,
     pool: &str,
-    beside: bool,
+    taking: Taking,
     held_here: &str,
     scratch: &Path,
     through: impl FnOnce(Vec<String>, &Path) -> Result<(Vec<Ref>, bool), String>,
@@ -1343,7 +1475,7 @@ fn fetch_back_as(
     let into = scratch.join("fetch.bundle");
     let (heads, wrote) = through(have, &into).map_err(Refused::Git)?;
     let bundle = wrote.then_some(into.as_path());
-    let kept = take_back_as(repo, pool, beside, bundle, &heads);
+    let kept = take_back_as(repo, pool, taking, bundle, &heads);
     let _ = std::fs::remove_file(&into);
     kept
 }
@@ -1552,6 +1684,21 @@ impl purlis_host::Code for Moves {
         let at = repo_in(project, repo).map_err(code_refused)?;
         let (heads, bundled) = give(&at, have, into).map_err(code_refused)?;
         Ok((wire_refs(heads), bundled == Bundled::Wrote))
+    }
+
+    fn give_with_turns(
+        &self,
+        project: &Path,
+        repo: &str,
+        have: &[String],
+        into: &Path,
+    ) -> Result<
+        (Vec<purlis_host::protocol::session::CodeRef>, bool),
+        purlis_host::protocol::session::Refusal,
+    > {
+        let at = repo_in(project, repo).map_err(code_refused)?;
+        let (named, bundled) = give_with_turns(&at, have, into).map_err(code_refused)?;
+        Ok((wire_refs(named), bundled == Bundled::Wrote))
     }
 
     fn take_work(

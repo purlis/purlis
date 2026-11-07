@@ -269,6 +269,53 @@ fn a_workspaces_clones_reach_the_runner_before_a_chat_starts_there_and_its_commi
     );
 }
 
+/// #5427: **a runner chat's turns come back with its code**, over the link, as its runner's host
+/// recorded them in its own folder, and the turn diff here reads them as the turn ended there.
+#[test]
+fn a_runner_chats_turns_come_back_with_its_code_and_the_turn_diff_reads_them() {
+    use purlis_core::files::{self, Branch, InTurn, TurnChanged, turns};
+    const CHAT: &str = "01J9CHAT0000000000000000RC";
+    let world = World::new();
+    world.sends_its_clones();
+    let kept = world.kept();
+    let there = kept.join("workspaces/app/web");
+    let web = Branch::repo("app", "web");
+    // As the runner's host records a turn of its chat, from its prompt and its stop.
+    assert_eq!(turns::began(&kept, web, CHAT).unwrap(), Some(1));
+    std::fs::write(there.join("login.rs"), "fn log_in() { done() }\n").unwrap();
+    assert_eq!(turns::ended(&kept, web, CHAT).unwrap(), Some(1));
+
+    let failed = world.sessions.fetch_back("app", "builds");
+
+    assert_eq!(failed, Vec::<String>::new());
+    let here = world.root.join("workspaces/app/web");
+    let copy = format!("refs/purlis/runners/builds/turns/{CHAT}/1/end");
+    assert_eq!(
+        git(&here, &["rev-parse", &copy]),
+        git(
+            &there,
+            &["rev-parse", &format!("refs/purlis/turns/{CHAT}/1/end")]
+        )
+    );
+    let read = files::turn_changed(&crate::reader(), &world.root, web, "login.rs", None)
+        .expect("it reads");
+    let TurnChanged::Of {
+        chat,
+        number: 1,
+        file: InTurn::Changed(shown),
+        ..
+    } = read
+    else {
+        panic!("login.rs is what the runner chat's turn made: {read:?}");
+    };
+    assert_eq!(chat, CHAT);
+    assert!(!shown.since_turn_ended);
+    assert!(
+        !here.join("login.rs").exists(),
+        "the work tree here is untouched"
+    );
+}
+
 /// **Each branch tip a fetch brings is recorded** (ruled 2026-11-07): once here, it is home when
 /// an older runner is let go, though the branch is squashed or deleted here since.
 #[test]

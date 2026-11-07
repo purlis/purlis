@@ -280,3 +280,37 @@ export const Empty: Story = {
     await expect(canvas.getByText("Nothing here")).toBeVisible();
   },
 };
+
+/**
+ * **Where a drop lands** (#5378: files dropped from the file manager on a workspace's own
+ * files): on a folder, its row drawn as the drop's target; on no row, the whole tree, by its
+ * edge alone. The window marks either as the drag moves (`data-drop-target`, which React Aria
+ * marks a drop target with too), and the keyboard is untouched by it. The picture is both.
+ */
+export const DropTargets: Story = {
+  render: () => (
+    <div style={{ inlineSize: "16rem", display: "grid", gap: "var(--space-3)" }}>
+      <Tree aria-label="Dropped on a folder" size="sm">
+        {folder("notes", "notes", [])}
+        {file("plan", "plan.md")}
+      </Tree>
+      <Tree aria-label="Dropped on the top" size="sm">
+        {folder("scripts", "scripts", [])}
+        {file("todo", "todo.md")}
+      </Tree>
+    </div>
+  ),
+  play: async ({ canvas }) => {
+    const onFolder = canvas.getByRole("treegrid", { name: "Dropped on a folder" });
+    const notes = within(onFolder).getByRole("row", { name: "notes" });
+    const onTop = canvas.getByRole("treegrid", { name: "Dropped on the top" });
+    notes.setAttribute("data-drop-target", "");
+    onTop.setAttribute("data-drop-target", "");
+    await expect(getComputedStyle(notes).boxShadow).not.toBe("none");
+    await expect(getComputedStyle(onTop).boxShadow).not.toBe("none");
+    await expect(getComputedStyle(onTop).backgroundColor).toBe(
+      getComputedStyle(canvas.getByRole("treegrid", { name: "Dropped on a folder" }))
+        .backgroundColor,
+    );
+  },
+};

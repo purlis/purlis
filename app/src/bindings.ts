@@ -3481,6 +3481,12 @@ export const commands = {
 	 */
 	workspaceFilesImport: (plane: PlaneId, workspace: string, folder: string) => typedError<string[], string>(__TAURI_INVOKE("workspace_files_import", { plane, workspace, folder })),
 	/**
+	 *  **A drop from the file manager**, onto the folder `folder` of a workspace's own files
+	 *  (#5378): the files the system dropped on this webview last, copied in as Import files… copies
+	 *  them, each imported once. The paths they were given; none when nothing was dropped.
+	 */
+	workspaceFilesImportDropped: (plane: PlaneId, workspace: string, folder: string) => typedError<string[], string>(__TAURI_INVOKE("workspace_files_import_dropped", { plane, workspace, folder })),
+	/**
 	 *  **Save with the project** (#5377): one file or folder at the top of a LIVE workspace's folder
 	 *  gets one line in the workspace's LIVE allowlist, so the next save shares it. `true` when the
 	 *  line was added, `false` when it was there already.
@@ -9122,6 +9128,11 @@ export type GradeEval = {
 	/**  Whether the person ticked it (off until they do), and the chats ticking it adds. */
 	on: boolean,
 	chats: number,
+	/**
+	 *  Whether its chats have a shell, as its skill asks (#4476): held to its own folder and
+	 *  reaching no host. Said before it is ticked.
+	 */
+	shell: boolean,
 };
 
 /**  **An outcome eval a grade leaves out** (`grades::LeftOutEval`): its id, and why. */
@@ -9995,6 +10006,12 @@ export type LimitRefused = {
 	 *  found the pool missing or its link down ([`unavailable`]). Absent for every other refusal.
 	 */
 	pool_unavailable?: string | null,
+	/**
+	 *  **The Secret ask a start was refused on** (#5137): the open ask for its profile's
+	 *  credential, which the Start dialog fills so the start goes on. Only where the core named
+	 *  it beside this refusal ([`purlis_core::profilesignin::attempt`]), never read from words.
+	 */
+	secret_ask?: StartSecretAsk | null,
 };
 
 /**  A range of lines, as the window names one: both ends counted from 1 and included. */
@@ -16512,6 +16529,22 @@ export type StartRunsOn = {
 	at_root: boolean,
 	pools: string[],
 	ran_on: string[],
+};
+
+/**
+ *  **A start's Secret ask, as the Start dialog finds it** (#5137): the ask it draws is the one
+ *  open for this vault and key.
+ */
+export type StartSecretAsk = {
+	/**  The variable the chat's harness is handed the value in. */
+	variable: string,
+	vault: string,
+	key: string,
+	/**
+	 *  What the dialog says once the person declines it: the core's words for a start whose ask
+	 *  was declined.
+	 */
+	declined: string,
 };
 
 /**  A chat that started: its session, and the name it was given as charter holds it. */

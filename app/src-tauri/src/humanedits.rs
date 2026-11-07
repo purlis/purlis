@@ -215,6 +215,10 @@ pub(crate) fn undo_in(
     let folder = placed_of(&reader, root, at, "")?.absolute;
     let chats = crate::staleclones::chats_placed_in(held, &folder);
     let untold = crate::staleclones::untold_in(held, &folder);
+    // A runner's turn is put back by that runner, under its own idle check (#5427).
+    if let Some(pool) = files::turns::runner_of(root, at, &turn.chat, turn.number) {
+        return undo_on_a_runner(held, at, turn, &pool, &chats, untold);
+    }
     held.hooks().while_held(|glance| {
         let recording = |number: u32| {
             held.chats()
@@ -249,6 +253,64 @@ pub(crate) fn undo_in(
             untold,
         })
     })
+}
+
+/// **Undo `turn`, a turn of a chat on `pool`'s runner** (session protocol 1.78, #5427): asked of
+/// that runner, which carries it out in its own folder under its own idle check. What it waits on
+/// is named as a chat here would be; once it has put the files back, the edit is kept and told
+/// here as an undo of this machine's is, to `chats`, which work in the folder, and this machine's
+/// copy of the turn is marked undone.
+fn undo_on_a_runner(
+    held: &Held,
+    at: Branch<'_>,
+    turn: &files::TurnKey,
+    pool: &str,
+    chats: &[(u32, String)],
+    untold: Vec<String>,
+) -> Result<UndoAnswer, String> {
+    use purlis_session_protocol::session::Answer;
+    let root = held.root();
+    let place = files::turns::Place {
+        ws: at.ws.to_owned(),
+        repo: at.repo.to_owned(),
+        piece: at.piece.map(str::to_owned),
+    };
+    match held.chats().sessions().undo_turn_on(pool, &place, turn)? {
+        Answer::UndoWaits { chats: waits } => Ok(UndoAnswer::Busy {
+            chats: waits
+                .into_iter()
+                .map(|one| BusyChat {
+                    name: chats
+                        .iter()
+                        .find(|(number, _)| *number == one.number)
+                        .map_or_else(|| format!("chat {}", one.number), |(_, name)| name.clone()),
+                    state: one.state,
+                })
+                .collect(),
+        }),
+        Answer::TurnUndone { edit, unmarked } => {
+            let edit: HumanEdit = serde_json::from_value(edit).map_err(|why| {
+                format!("the runner put the files back, but its record of it was unreadable: {why}")
+            })?;
+            let edit = HumanEdit {
+                chats: chats.iter().map(|(number, _)| *number).collect(),
+                chat_ids: chats
+                    .iter()
+                    .filter_map(|(number, _)| held.chats().id_of(*number))
+                    .collect(),
+                ..edit
+            };
+            let marked = files::turns::undone(root, at, &turn.chat, turn.number)
+                .err()
+                .map(|why| why.to_string());
+            Ok(UndoAnswer::Undone {
+                unrecorded: record(held, root, &edit).err(),
+                unmarked: unmarked.or(marked),
+                untold,
+            })
+        }
+        other => Err(format!("the runner answered something else: {other:?}")),
+    }
 }
 
 fn record(held: &Held, root: &Path, edit: &HumanEdit) -> Result<(), String> {

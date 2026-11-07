@@ -56,6 +56,7 @@ fn a_chat_is_handed_every_built_in_skill_by_its_harness_route() {
         graded: false,
         judging: false,
         writes_its_piece: false,
+        runs_a_shell: false,
     };
     for harness in [Harness::ClaudeCode, Harness::Codex, Harness::Opencode] {
         let set = for_chat(kit, harness);

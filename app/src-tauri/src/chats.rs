@@ -196,7 +196,8 @@ pub enum NoTurnsFrom {
     Unreported { chat: String },
     /// It runs on runner `runner`, in a folder of the runner's (#5427).
     OnARunner { chat: String, runner: String },
-    /// It runs on a runner of pool `pool`, in a folder of the runner's (#5427).
+    /// It runs on a runner of pool `pool`, in a folder of the runner's, too old to record its
+    /// turns there (#5427: before session protocol 1.78).
     OnAPool { chat: String, pool: String },
 }
 
@@ -2179,9 +2180,11 @@ impl Chats {
             })
             .find_map(|(session, one)| {
                 let chat = one.chat.name.clone();
-                // A pool's runner first: a chat on one is told by its pool, not its machine.
+                // A pool's runner first: a chat on one is told by its pool, not its machine. A
+                // runner of 1.78 records its turns, which come back with its code (#5427).
                 if let Some(pool) = self.sessions.pool_of(*session) {
-                    return Some(NoTurnsFrom::OnAPool { chat, pool });
+                    return (!self.sessions.records_turns_of(*session))
+                        .then_some(NoTurnsFrom::OnAPool { chat, pool });
                 }
                 let runner = one.confinement.as_ref().and_then(|held| held.runner());
                 if let Some(runner) = runner {
@@ -4722,11 +4725,12 @@ impl Chats {
         // (#2036). Set on the harness's program as it starts; the commands, hooks and tools it
         // starts inherit them.
         // One its vault holds none of is a Secret ask (#5074, ADR 0109), raised and waited on
-        // by nothing: the start is refused, saying so, and the ask stays in the Inbox, where the
-        // person fills it and starts the chat again, which reads the value filled. No start
-        // waits, as none waits on a sign-in (ADR 0095 §3): the Start dialog is modal, so the
-        // person could not reach the ask while it waited, and any other start (a relaunch, a
-        // dispatch's) may run under a lock the window's commands wait on.
+        // by nothing: the start is refused, saying so, and names the ask beside its refusal
+        // (`profilesignin::attempt`). The Start dialog draws that ask, and once it is filled
+        // there it starts again, which reads the value filled (#5137). Any other start is
+        // pointed to the ask in the Inbox. No start waits, as none waits on a sign-in (ADR 0095
+        // §3): a relaunch or a dispatch's start may run under a lock the window's commands
+        // wait on.
         let secret_asks = lock(&self.secret_asks).clone();
         let moved = || self.asks_may_have_moved();
         let missing = secret_asks
@@ -4999,22 +5003,27 @@ impl Chats {
         let reached =
             reached_by_the_proxy(Arc::clone(&self.reached), Arc::clone(&whose), who.clone());
         // The live ask (#1666): a connection to a host nothing lists is held while the person
-        // is asked, unless an administrator's policy turns that off.
-        let asks = (!purlis_core::sandbox::policy::Locks::of(&self.project).forbids_live_asks())
-            .then(|| {
-                asked_by_the_proxy(
-                    Asking {
-                        hear: Arc::clone(&self.refused),
-                        reached: Arc::clone(&self.reached),
-                        whose: Arc::clone(&whose),
-                        who,
-                        harness,
-                        blocks: Arc::clone(&self.blocks),
-                        moved: Arc::clone(&self.asks_moved),
-                    },
-                    self.project.clone(),
-                )
-            });
+        // is asked, unless an administrator's policy turns that off. Never for a grade's chat,
+        // which asks nobody (ADR 0105 §3): an answer would widen what the person consented to,
+        // and an outcome eval's shell reaches no host at all (#4476). Its proxy refuses instead.
+        let asks = asks_live(
+            chat.graded,
+            &purlis_core::sandbox::policy::Locks::of(&self.project),
+        )
+        .then(|| {
+            asked_by_the_proxy(
+                Asking {
+                    hear: Arc::clone(&self.refused),
+                    reached: Arc::clone(&self.reached),
+                    whose: Arc::clone(&whose),
+                    who,
+                    harness,
+                    blocks: Arc::clone(&self.blocks),
+                    moved: Arc::clone(&self.asks_moved),
+                },
+                self.project.clone(),
+            )
+        });
         // Started where the chat runs, from the plan its sandbox compiled to: in the window, or
         // in the session host, which holds it for as long as the chat runs (#1999). A chat
         // reattached runs in the one it ran in, heard by this window from now on (#2006).
@@ -8367,6 +8376,14 @@ fn refused_by_the_proxy(
                 });
         })
     })
+}
+
+/// **Whether a chat's proxy holds a connection to an unlisted host while the person is asked**
+/// (#1666): unless policy turns the live ask off, and never for a grade's chat (`graded`), which
+/// asks nobody (ADR 0105 §3, as #4476 makes exact): its proxy refuses, and no Allow is taken live
+/// by it.
+fn asks_live(graded: bool, locks: &purlis_core::sandbox::policy::Locks) -> bool {
+    !graded && !locks.forbids_live_asks()
 }
 
 /// What an Allow reached live ([`Chats::allow_live`], #1666).

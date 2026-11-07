@@ -98,6 +98,7 @@ export function SecretAskNotice({
   busy,
   onAnswer,
   onSaid,
+  start,
 }: {
   ask: Shown;
   /** The chat that asks, by the name the person sees. */
@@ -109,6 +110,10 @@ export function SecretAskNotice({
   onAnswer: (option: Offered, given: () => SecretAskGiven) => void;
   /** Why a press sends nothing yet, said where the row says it. */
   onSaid: (said: string) => void;
+  /** **A start's ask, in the Start dialog** (#5137): the chat starts with the value in
+   *  `variable`. Its key is the one its profile names, so its field offers no Change, as a
+   *  run's doesn't (D-5080-1). */
+  start?: { variable: string };
 }) {
   const secret = ask.secret ?? undefined;
   const run = ask.run ?? undefined;
@@ -251,6 +256,11 @@ export function SecretAskNotice({
 
   const hears = (() => {
     const whom = `${chat} hears`;
+    // A start's chat is handed the value; any running chat that joined the ask hears as ever.
+    if (secret && start)
+      return secret.waiting > 1
+        ? `${chat} starts with the value in ${start.variable}. Each other chat waiting on it hears filled or declined and the key's name, never the value.`
+        : `${chat} starts with the value in ${start.variable}.`;
     if (secret) {
       return `${whom} filled or declined${secret.no_allow != null ? ", why no Allow is offered," : ""} and the key's name. Never the value.`;
     }
@@ -308,7 +318,8 @@ export function SecretAskNotice({
           }}
           listed={listed}
           named={named}
-          onNamed={secret ? setNamed : undefined}
+          onNamed={secret && !start ? setNamed : undefined}
+          handedIn={start?.variable}
           chat={chat}
         />
       ))}
@@ -572,6 +583,7 @@ function OneField({
   named,
   onNamed,
   chat,
+  handedIn,
 }: {
   fieldKey: string;
   persona: string;
@@ -587,6 +599,9 @@ function OneField({
   named: { vault: string; key: string } | undefined;
   onNamed: ((to: { vault: string; key: string } | undefined) => void) | undefined;
   chat: string;
+  /** A start's variable (#5137): the chat is handed the value in it, so it is never said to be
+   *  kept from the chat. */
+  handedIn?: string;
 }) {
   const [changing, setChanging] = useState(false);
   const at = named ?? { vault, key: fieldKey };
@@ -693,7 +708,9 @@ function OneField({
             help={
               secret?.reads != null
                 ? `Stored in ${secret.reads.vault}/${secret.reads.key}, which ${fieldKey} reads.`
-                : `Stored in vault ${at.vault} on this machine. Never shown to the chat.`
+                : handedIn !== undefined
+                  ? `Stored in vault ${at.vault} on this machine, and handed to the chat in ${handedIn}.`
+                  : `Stored in vault ${at.vault} on this machine. Never shown to the chat.`
             }
           />
         ) : (

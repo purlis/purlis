@@ -5,6 +5,7 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
 import { endEveryChat, harnessRowsDrawn, pressAndStart, openThePicker } from "../opening.js";
+import { closesTheTabsItOpens } from "../reach.js";
 
 /**
  * **The harness capability card** (HP-19, W10), in the built app: what each harness can do,
@@ -190,6 +191,9 @@ describe("a harness's capability card", function () {
   before(async () => {
     await $('button[aria-label="New tab"]').waitForClickable({ timeout: 60_000 });
   });
+
+  // The tabs it opens, unnamed "Empty tab" ones too, close here, after its chats end (#5586).
+  closesTheTabsItOpens();
 
   it("is named in a chat's header, and opens the harness's card in a tab", async () => {
     // The plane's `scenario` profile is of kind claude: its chat runs Claude Code's card.

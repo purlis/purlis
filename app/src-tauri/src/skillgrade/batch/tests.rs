@@ -87,6 +87,7 @@ fn a_skill_with_no_tests_is_left_out_and_named_with_why() {
             expectations: 1,
             on: false,
             chats: 12,
+            shell: false,
         });
         plan
     });

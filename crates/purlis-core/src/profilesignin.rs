@@ -288,10 +288,27 @@ pub fn read(
                         crate::secrets::ask::Unread::Vault(e) => refused(&e.message),
                         // What to do: the ask waits in the Inbox, and a start once it is
                         // filled reads the value (a declined one is asked afresh).
-                        crate::secrets::ask::Unread::Asked(line) => format!(
-                            "{}; fill it from the Secret ask in the Inbox, then start the chat again",
-                            refused(&line)
-                        ),
+                        crate::secrets::ask::Unread::Asked(line) => {
+                            let said = format!(
+                                "{}; fill it from the Secret ask in the Inbox, then start the \
+                                 chat again",
+                                refused(&line)
+                            );
+                            asked_on(Asked {
+                                variable: variable.clone(),
+                                vault: reference.vault.clone(),
+                                key: reference.key.clone(),
+                                said: said.clone(),
+                                declined: format!(
+                                    "{}; start the chat again to be asked for it again",
+                                    refused(&crate::secrets::ask::declined_said(
+                                        &reference.vault,
+                                        &reference.key,
+                                    ))
+                                ),
+                            });
+                            said
+                        }
                     })?
             }
         };
@@ -310,6 +327,57 @@ pub fn read(
         ],
     );
     Ok(Handed { pairs })
+}
+
+/// **The Secret ask a start was refused on** (#5137): the ask for its profile's credential,
+/// still open, that the Start dialog fills so the start goes on. Data, so the window never reads
+/// it out of the refusal's words.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Asked {
+    /// The variable the chat's harness is handed the value in.
+    pub variable: String,
+    pub vault: String,
+    pub key: String,
+    /// The refusal it was named for: a refusal in other words came of another step.
+    pub said: String,
+    /// What the start says once the person declines it: refused as a start whose ask was
+    /// declined is refused.
+    pub declined: String,
+}
+
+std::thread_local! {
+    /// The ask the attempt running on this thread was refused on: outside [`attempt`], nothing is
+    /// kept, so an earlier refusal never names its ask to a later one.
+    static ATTEMPT: std::cell::RefCell<Option<Option<Asked>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// **`work`, with the Secret ask it was refused on** ([`read`]), as
+/// [`crate::poollimits::attempt`] keeps the limits one was refused on: on the thread it runs on,
+/// so what it names is this attempt's alone.
+pub fn attempt<T>(work: impl FnOnce() -> T) -> (T, Option<Asked>) {
+    /// Puts back the attempt this one is inside, however it ends.
+    struct Ends(Option<Option<Asked>>);
+    impl Drop for Ends {
+        fn drop(&mut self) {
+            ATTEMPT.set(self.0.take());
+        }
+    }
+    let ends = Ends(ATTEMPT.replace(Some(None)));
+    let done = work();
+    let asked = ATTEMPT.with_borrow_mut(|now| now.as_mut().and_then(Option::take));
+    drop(ends);
+    (done, asked)
+}
+
+/// `asked`, kept for the [`attempt`] it refused: what [`read`] does where a start's credential
+/// is asked of the person. Outside an attempt it keeps nothing.
+pub fn asked_on(asked: Asked) {
+    ATTEMPT.with_borrow_mut(|now| {
+        if let Some(kept) = now {
+            *kept = Some(asked);
+        }
+    });
 }
 
 /// The event a profile's read at a chat's start is recorded under.

@@ -499,6 +499,7 @@ fn the_refusal_comes_before_any_compiler_is_asked() {
         os: Os::Linux,
         homes: Homes::default(),
         widened: Widened::default(),
+        own_temp_only: false,
     };
     for harness in HARNESSES {
         let compile = compiler(harness).expect("a compiler");

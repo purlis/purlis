@@ -1080,7 +1080,8 @@ fn serve(suspends_after: Option<std::time::Duration>) -> ExitCode {
                         // (#2447), and what its chats queued for the app carried to it, since
                         // the window does not read this disk (#4804).
                         purlis_core::hookchannel::HookChannels::keeping(log.clone())
-                            .carrying_dispatch_messages(),
+                            .carrying_dispatch_messages()
+                            .recording_turns_here(),
                         Confines,
                     )
                     // What a chat's end leaves, kept as the window's own host keeps it (#2494),
@@ -5080,6 +5081,11 @@ fn main() -> ExitCode {
     if let Some(code) =
         purlis_linux_sandbox::serve_if_asked_telling(purlis_core::sandboxblock::supervised::teller)
     {
+        std::process::exit(code);
+    }
+    // Started again by `purlis serve`'s host as the bounded reader of a branch, for an undo of a
+    // turn of a chat it runs (#5427): answer one question and exit.
+    if let Some(code) = purlis_core::files::serve_if_asked() {
         std::process::exit(code);
     }
     // FIRST, before anything that could panic, argv and clap included: a guard that crashed

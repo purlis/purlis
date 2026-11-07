@@ -9086,8 +9086,9 @@ fn open_a_harness_chat(
 }
 
 /// #5427: **a branch worked on by a chat on a runner or a pool's runner says so as why it has no
-/// turn**, since such a chat records none, though its harness reports its turns. A chat here with
-/// that harness gives no reason, and one in another folder is not asked about.
+/// turn**, where its runner records none, though its harness reports its turns: one too old to
+/// (before session protocol 1.78). A chat here with that harness gives no reason, nor one whose
+/// runner records its turns, and one in another folder is not asked about.
 #[test]
 fn a_chat_on_a_runner_or_a_pool_is_why_its_branch_has_no_turn() {
     use super::NoTurnsFrom;
@@ -9136,6 +9137,9 @@ fn a_chat_on_a_runner_or_a_pool_is_why_its_branch_has_no_turn() {
             pool: "builds".to_owned(),
         })
     );
+    // A runner of 1.78 records its turns there, and they come back with its code.
+    host.records_turns_of_chat(3);
+    assert_eq!(why(Some("fix")), None, "its runner records its turns");
 }
 
 fn hosts_of(told: &Mutex<Vec<(String, purlis_core::sandbox::reach::By)>>) -> Vec<String> {
@@ -10569,6 +10573,22 @@ fn a_chat_the_studio_did_not_start_has_no_job_to_be_done() {
 
     assert_eq!(chats.record().chats[0].studio, None);
     let _ = chats.close(session);
+}
+
+/// #4476: a grade's chat asks nobody, so its proxy never holds a connection for the person's
+/// answer, and so takes no Allow live; any other chat does unless policy turns it off.
+#[test]
+fn a_grades_chat_has_no_live_ask_and_another_chat_has_one_unless_policy_says_not() {
+    let open = purlis_core::sandbox::policy::Locks::none();
+    assert!(super::asks_live(false, &open));
+    assert!(!super::asks_live(true, &open));
+    let off = purlis_core::sandbox::policy::Locks::parse(
+        r#"{"sandbox": {"live-asks": false}}"#,
+        std::path::Path::new("/etc/purlis/policy.json"),
+    );
+    assert!(off.refused_because().is_none(), "{off:?}");
+    assert!(off.forbids_live_asks());
+    assert!(!super::asks_live(false, &off));
 }
 
 /// #5248: a studio chat's job stops as its program ends, runs again with a later start, and the

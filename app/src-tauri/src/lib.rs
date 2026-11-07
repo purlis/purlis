@@ -49,7 +49,6 @@ mod createproject;
 mod curation;
 mod layout;
 mod questiontrail;
-mod turns;
 // The Devices view (#2052).
 mod clusterpools;
 mod debug5478; // [DEBUG-5478] temporary diagnostics, removed with the rest of the tag.
@@ -3889,7 +3888,13 @@ pub fn run() {
     app.invoke_handler(commands.invoke_handler())
         .menu(lifecycle::menu)
         .on_menu_event(|app, event| lifecycle::clicked(app, event.id().as_ref()))
+        // A drop from the file manager (#5378): its files held for the window's import of them,
+        // as the system tells the window, so the window never sends a path from outside the
+        // workspace.
+        .manage(workspacewrites::Dropped::default())
         .on_window_event(|window, event| {
+            // A drop from the file manager is told to the window, not its webview (#5378).
+            workspacewrites::window_event(window, event);
             // The close button hides the window. Every session is a child of this process
             // (ADR 0025), so a close that ended them would end the day's work; the way out
             // is Quit, which says what it is about to end.

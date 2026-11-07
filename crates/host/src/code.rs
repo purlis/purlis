@@ -113,6 +113,18 @@ pub trait Code: Send + Sync + 'static {
 
     /// **The clones the project at `project` holds in `workspace`** (1.51, #3811), by their
     /// folder names in it. A binary that moves no chat refuses it.
+    /// [`Code::give`], with every `refs/purlis/turns/…` the repository holds named and bundled
+    /// beside its branches (1.78, #5427). A host that records no turns gives its branches alone.
+    fn give_with_turns(
+        &self,
+        project: &Path,
+        repo: &str,
+        have: &[String],
+        into: &Path,
+    ) -> Result<(Vec<CodeRef>, bool), Refusal> {
+        self.give(project, repo, have, into)
+    }
+
     fn clones_of(&self, project: &Path, workspace: &str) -> Result<Vec<String>, Refusal> {
         let _ = (project, workspace);
         Err(moves_no_chat())
@@ -222,8 +234,13 @@ pub(crate) enum Way {
         moving: bool,
         held: Option<CodeHeld>,
     },
-    /// The host writes it: `give_code`, with the work tree's work where `with_work`.
-    Out { have: Vec<String>, with_work: bool },
+    /// The host writes it: `give_code`, with the work tree's work where `with_work`, and the
+    /// repository's turns where `with_turns` (1.78, #5427).
+    Out {
+        have: Vec<String>,
+        with_work: bool,
+        with_turns: bool,
+    },
     /// The client writes a moving chat's conversation: `take_conversation` (1.44).
     ConversationIn(Carried),
     /// The host writes one: `give_conversation` (1.44).
@@ -302,11 +319,17 @@ impl Hosting {
                     })
                     .await
                 }
-                Way::Out { have, with_work } => {
+                Way::Out {
+                    have,
+                    with_work,
+                    with_turns,
+                } => {
                     let into = file.clone();
                     let (heads, wrote) = blocking(move || {
                         if with_work {
                             code.give_work(&at, &repo, &have, &into)
+                        } else if with_turns {
+                            code.give_with_turns(&at, &repo, &have, &into)
                         } else {
                             code.give(&at, &repo, &have, &into)
                         }
