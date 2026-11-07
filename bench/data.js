@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794069277058,
+  "lastUpdate": 1794072633889,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -42336,6 +42336,48 @@ window.BENCHMARK_DATA = {
             "value": 100.5907795,
             "unit": "ms",
             "extra": "median of 5 runs: 100.029, 100.517, 100.591, 103.300, 103.733 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "eb512a2e34667fd91b3afd7d21b8ad5cce6714bf",
+          "message": "Scenarios: the upgrade run ends its app before removing its temporary plane, and a removal that fails is logged (#5653) (#5662)\n\n* The upgrade run ends its app and session host before removing its temporary plane, and a removal that still fails is logged, not a red run (#5653)\n\nWebdriverIO runs a config's onComplete before the services' onComplete, and on macOS the\nTauri service's is what stops the app it launched, so removeTheOldInstall ran under a live\napp still writing into the plane. The session host the app starts outlives a signalled\nwindow for its grace period, so it is ended after its window, as tools/relaunch.mjs does.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6VB95AJ7WSKV01XJ0XPCBBN\nPurlis-Persona: steward\n\n* Review: end the chat programs below the run's app too, never throw while ending it, and say each run what was still running (#5653)\n\nThe theRunsApp walk reuses memory.ts's process rows and a shared descendants walk instead of a\nsecond ps parser. A signal that fails is logged rather than failing a run whose specs passed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6VB95AJ7WSKV01XJ0XPCBBN\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-07T16:59:20Z",
+          "tree_id": "23bf488c14bf3a262809fb35a69a17a3121ef22a",
+          "url": "https://github.com/purlis/purlis/commit/eb512a2e34667fd91b3afd7d21b8ad5cce6714bf"
+        },
+        "date": 1794072629929,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.550253,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.540, 0.545, 0.550, 0.567, 0.581 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.483615999999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.202, 16.431, 16.484, 16.567, 16.681 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.4792175,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.974, 102.389, 102.479, 102.523, 103.220 ms"
           }
         ]
       }
