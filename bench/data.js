@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794081152787,
+  "lastUpdate": 1794082637221,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -42504,6 +42504,48 @@ window.BENCHMARK_DATA = {
             "value": 101.8751425,
             "unit": "ms",
             "extra": "median of 5 runs: 101.007, 101.225, 101.875, 102.088, 102.354 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "c12c96a2235eb5e8092f36229fe9d619276e18f7",
+          "message": "e2e: stress 'fifty tabs' green — leftover tabs, notices, helpers, hover preview; budgets reported (#5586) (#5605)\n\n* e2e: the #5111 guard counts an extra unnamed New chat tab as left open (#5586)\n\nopenedSince never counted a \"New chat\" tab, so a spec that left unnamed\ntabs on the strip passed and the files after it failed. One kept empty\ntab stays the strip's own; any more count. pressClose presses as many\ntabs of a shared name as it is called with.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6TCPXXFRF2NEH8XZ0FKTY7Q\nPurlis-Persona: steward\n\n* e2e: harness-card, harness-declaration, picker and launch.finder close their New chat tabs (#5586)\n\nThe stricter #5111 guard named them: each left one to three unnamed\nNew chat tabs on the strip. Each now closes the tabs it opens in its\nown after, once its chats have ended.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6TCPXXFRF2NEH8XZ0FKTY7Q\nPurlis-Persona: steward\n\n* e2e: pane notices put back, helpers not counted as a second app, stress time budgets reported (#5586)\n\n- pane-notices and pane-warnings expanded the window's pane notices to\n  raise theirs and left them expanded; skill-compat then found its bell\n  open in the single-process stress run. They minimise again in after.\n- appProcessesIn counted the app binary run as a helper (a Linux chat's\n  _sandbox wrap, the engine keeper, git's credential helper, the keyring\n  writer, a branch reader) as a second window; stress failed on Ubuntu\n  with a chat's wrap still closing.\n- stress.e2e.ts: with STRESS_BUDGETS=report (set by stress.yml) a missed\n  time budget is written to logs/stress-budgets-missed.jsonl and shown\n  as a warning and in the job summary, not failed. Its other checks\n  still fail the job. The suite backstop goes from 15 to 30 minutes: the\n  two hundred now take 680 s to open on a macOS runner.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6TCPXXFRF2NEH8XZ0FKTY7Q\nPurlis-Persona: steward\n\n* e2e: the kept empty tab is \"Empty tab\" on main now: tests and comments follow (#5586)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6TCPXXFRF2NEH8XZ0FKTY7Q\nPurlis-Persona: steward\n\n* e2e: the two hundred wait longer for the picker; theme-gallery says what it saw (#5586)\n\nOn a macOS runner the picker took past twenty seconds to offer Start once 190 chats were\nopen (the slowdown is #5615), which ended the stress run before it was measured. The opens\nnow give it two minutes; OPEN_TARGET_BUDGET still judges their time.\n\ntheme-gallery's failure message was written before its wait, so it always said the window\ndrew nothing. It now says the last surface seen, with the window's focus, visibility and theme.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6TCPXXFRF2NEH8XZ0FKTY7Q\nPurlis-Persona: steward\n\n* e2e: stress backstop 60 minutes; theme-gallery says whether the card heard the pointer (#5586)\n\nRun 42363113627: on macOS the two hundred took 1,353 s to open (#5615), so the 30-minute\nbackstop cut off their close. On Ubuntu theme-gallery's message now showed the preview was\nnever drawn (the window stayed on Purlis, focused and visible); it now also says the card's\nhover state, how many such cards there are and where the focus is.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6TCPXXFRF2NEH8XZ0FKTY7Q\nPurlis-Persona: steward\n\n* e2e: theme-gallery moves the driver's pointer to where it points (#5586)\n\nRun 42371114280 showed the card never kept its hover (no data-hovered) in the stress run,\nonly there. react-aria ends a hover at the first pointerover outside the card, and WebKit\nsends one where its pointer last was when the layout under it changes: drawing the card's\ntheme does. After the other specs in one process that pointer was elsewhere in the window,\nso the preview's own redraw put the theme back. The driver's pointer now goes to the card\n(and to the nav when leaving) before the page's events are sent.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6TCPXXFRF2NEH8XZ0FKTY7Q\nPurlis-Persona: steward\n\n* e2e: theme-gallery keeps WebKit's own pointerover/out from the page while it points (#5586)\n\nMoving the driver's pointer to the card was not enough (run 42378443134): the card still never\nkept its hover in the stress run on Ubuntu. react-aria ends a hover at a pointerover outside the\ncard and React at a pointerout from it; WebKit sends its own where its pointer was when the\nlayout under it changes, as a card's theme drawn does, and the card can move from under it. The\nspec's pointer is its own events, so the window now stops trusted pointerover and pointerout\nfrom the first point to the spec's end, and the failure says how many it stopped.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6TCPXXFRF2NEH8XZ0FKTY7Q\nPurlis-Persona: steward\n\n* e2e: theme-gallery's diagnostics do not shadow window (#5586)\n\nThe local named window was referenced inside its own initialiser's callback (TS7022).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6TCPXXFRF2NEH8XZ0FKTY7Q\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-07T19:13:04Z",
+          "tree_id": "24a3129dd9fe4ddee8f220dcfe113db8c180ad08",
+          "url": "https://github.com/purlis/purlis/commit/c12c96a2235eb5e8092f36229fe9d619276e18f7"
+        },
+        "date": 1794082630661,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.3562895,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.320, 0.349, 0.356, 0.362, 0.362 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.214793,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.190, 16.193, 16.215, 16.298, 16.770 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.87212199999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.833, 101.386, 101.872, 101.876, 102.464 ms"
           }
         ]
       }
