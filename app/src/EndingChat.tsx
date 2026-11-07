@@ -20,8 +20,7 @@ const STOP = "stop";
  * the `×`, and a tooltip saying *"Ends the program it runs. There is no undo."* That was the
  * fix for charter-app#130, where a glyph reading "hide this tab" was ending live harnesses,
  * and it was the right fix for a *name*. It is not a guard against the press itself, and the
- * press is now one of several: a `×` on a tab, a `×` on a pane that appears under the pointer
- * on hover, and a row of the palette.
+ * press is now one of several: a `×` on a tab, a `×` on a pane, and a row of the palette.
  *
  * **Every route through it, because there is one list of actions.** This is asked in
  * `PlaneView`'s `run`, which is what carries out a row from whichever surface pressed it — so

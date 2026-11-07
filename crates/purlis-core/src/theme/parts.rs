@@ -80,7 +80,7 @@ use super::{Complaint, ResolvedTheme, stringify};
 /// never changes it: what it adds is `since:` [`NEXT`], and the release step
 /// (`node tools/theme-parts-release.mjs`, `docs/updating.md`) turns every [`NEXT`] into this
 /// version plus one, raises this, and pins the new version's digest.
-pub const VERSION: u32 = 12;
+pub const VERSION: u32 = 13;
 
 /// **The version what is added since the last release comes in**: a pull request that adds a
 /// family, a part, a variant, a state or a property gives it `since: NEXT` (written
@@ -167,7 +167,7 @@ impl State {
     /// The manifest version it came in.
     pub fn since(self) -> u32 {
         match self {
-            Self::Invalid => NEXT,
+            Self::Invalid => 13,
             _ => 1,
         }
     }
@@ -527,7 +527,7 @@ pub struct Family {
     fills: &'static [(&'static str, &'static str)],
     /// **Where a part's words stand without a fill of their own**, by the part's name, for a part
     /// drawn on other grounds than the family's (#3099, #3384). One ground is what its parent
-    /// paints: a tab's count on the counts button, a switcher's row on the popover it is drawn in.
+    /// paints: a tab's count on the tasks menu it sums up, a switcher's row on the popover it is drawn in.
     /// Several are the fewer the window draws it on: a field's error, on where a field that can
     /// refuse stands ([`FIELD_ERROR_GROUNDS`]), and its help, on where a field given help stands
     /// ([`FIELD_HELP_GROUNDS`]). Its words are held to these, but a fallback never
@@ -712,7 +712,7 @@ pub(super) fn apart_look_in(family_name: &str, part: &str, states: &[State]) -> 
 
 /// **The version the manifest says which parts are drawn apart in** (#3656): its `apart` on each
 /// such part. The release step writes the number over `NEXT`, as it does a part's `since`.
-const APART_SINCE: u32 = NEXT;
+const APART_SINCE: u32 = 13;
 
 /// The states `part` of `family` is marked in on its own element, when it is drawn apart from
 /// the family's root ([`APART`]).
@@ -890,7 +890,10 @@ pub(super) use dialog::DIALOG_TIERS;
 /// while a set of states holds: a resize separator's line and grip. What such a family draws in
 /// a state is held at 3:1 on its grounds, as a non-text mark (WCAG 1.4.11), and it has no words
 /// to hold; at rest its line is the window's hairline, which the token floors hold.
-const MARKED: &[(&str, MarkFills)] = &[("panel-separator", separator::separator_fill)];
+const MARKED: &[(&str, MarkFills)] = &[
+    ("panel-separator", separator::separator_fill),
+    ("grip", grip::grip_fill),
+];
 
 /// A family's parts' fills by default, by part and the states that hold.
 type MarkFills = fn(usize, &[State]) -> &'static str;
@@ -922,7 +925,10 @@ fn tracked(family: &Family) -> Option<Tracked> {
 
 /// **The attributes a family's root is keyed on in a state, where they are not React Aria's**
 /// (#3143): the panel library marks its handles itself.
-const OWN_STATES: &[(&str, &[(State, &str)])] = &[("panel-separator", separator::OWN_STATES)];
+const OWN_STATES: &[(&str, &[(State, &str)])] = &[
+    ("panel-separator", separator::OWN_STATES),
+    ("grip", grip::OWN_STATES),
+];
 
 /// The default fills of `family`'s parts by state, when it is drawn in marks.
 fn marked(family: &Family) -> Option<MarkFills> {
@@ -1377,6 +1383,13 @@ pub(super) fn activity_selected_json() -> Value {
 #[cfg(test)]
 pub(super) fn separator_fill_of(part: usize, states: &[State]) -> &'static str {
     separator::separator_fill(part, states)
+}
+
+/// The grip's default fill of `part` while `states` hold, for the test that holds it to
+/// `grip.css` (#5290).
+#[cfg(test)]
+pub(super) fn grip_fill_of(part: usize, states: &[State]) -> &'static str {
+    grip::grip_fill(part, states)
 }
 
 /// The family `name` names.
@@ -2704,15 +2717,17 @@ fn unreadable(
     unreadable_by(0.0, theme, on, rules, family, variant, states, look)
 }
 
-/// **Parts drawn inside their root on an opaque ground of their own**, so the root's fill is not
-/// under them: a chip's count, on the bar's ground in the count's shape (`titlebar.css`, D-3345-3).
-const ON_A_GROUND_OF_THEIR_OWN: &[(&str, &str)] = &[("titlebar", "count")];
+/// **Parts drawn on an opaque ground of their own**, so the root's fill is not under them: a
+/// chip's count, on the bar's ground in the count's shape (`titlebar.css`, D-3345-3); and a tab's
+/// count, which a tab no longer wears and which sums up a chat's tasks menu, on the menu's surface
+/// whatever state its tab is in (#5341).
+const ON_A_GROUND_OF_THEIR_OWN: &[(&str, &str)] = &[("titlebar", "count"), ("tabs", "count")];
 
 /// **What part `at` is laid on, as drawn** (#3303): the root's own fill over the family's grounds
 /// `on`, so a see-through part fill is measured where it is. A part with no ground of its own
 /// reads the root's fill itself, and one drawn around the root, on a ground of its own or on its
 /// variant's stands on `on` alone. A part with a fill of a theme's own over what its parent paints
-/// ([`Family::under`]) is laid over that too (#4406): a tab's count over its counts button. A
+/// ([`Family::under`]) is laid over that too (#4406): a tab's count over the tasks menu it sums up (#5341). A
 /// part drawn on fewer grounds than its family stands on those in place of `on` (#3384), which
 /// keeps it off any surface a theme fills: no such family is in [`STANDS_ON`].
 fn under_part(
@@ -2729,6 +2744,10 @@ fn under_part(
     if let Some([parent]) = stands_on
         && ground != *parent
     {
+        // On a ground of its own, that ground alone is under it, not its root's fill.
+        if ON_A_GROUND_OF_THEIR_OWN.contains(&(family.name, name)) {
+            return laid_over(theme, parent, on);
+        }
         return laid_over(theme, parent, &laid_over(theme, look.fill, on));
     }
     let fewer = stands_on
@@ -5296,8 +5315,10 @@ fn selector(rule: &Rule, sized: bool) -> String {
 }
 
 /// The parts whose tone (`data-tone`) is drawn by the family alone: a theme's colours reach them
-/// only where no tone is set (the activity item's count, whose needs-you tone is hot, R120).
-const TONED: &[(&str, &str)] = &[("activity", "count")];
+/// only where no tone is set (the activity item's count, whose needs-you tone is hot, R120; the
+/// pane foot's number, whose warning is the waiting or the failed colour the check holds on the
+/// terminal's fill, #5262).
+const TONED: &[(&str, &str)] = &[("activity", "count"), ("pane-foot", "value")];
 
 /// Whether a property changes a control's size: what the roots at another of the family's sizes
 /// and in a wrapping row keep as their own.

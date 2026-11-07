@@ -1185,7 +1185,7 @@ mod tests {
 
         assert!(root.join(purlis_core::plane::MANIFEST).is_file());
         assert!(
-            root.join("workspaces/default/svc/.git").exists(),
+            root.join("workspaces/default/repos/svc/.git").exists(),
             "the repository was not cloned into the plane's first workspace"
         );
         assert!(!repo.join(purlis_core::plane::MANIFEST).exists());

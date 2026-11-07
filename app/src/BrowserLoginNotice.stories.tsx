@@ -45,6 +45,23 @@ export const Warned: Story = {
   },
 };
 
+/** The person's ruling of 2026-11-05: a page the chat chose, not the front one, is shown as large as
+ * the site, and said. */
+export const OnAPageTheChatChose: Story = {
+  args: {
+    login: {
+      ...login,
+      path: "/~mallory/notes.html",
+      warnings: [
+        "The chat chose the page /~mallory/notes.html, not the site's front page. Opening a page can sign the browser in to someone else's account, on a shared site a page can be anyone's, and a page sees what's filled on it. Allow only if you know /~mallory/notes.html as this site's sign-in page.",
+      ],
+      line: 'shop-login = { vault = "qa", browser = "https://shop.example.test/~mallory/notes.html", user = "username", key = "password" }',
+    },
+    typed: undefined,
+    onTyped: () => {},
+  },
+};
+
 /** #4995: the page sends the browser to sign in on another host, and the password goes there. */
 export const SignsInElsewhere: Story = {
   args: {

@@ -4,6 +4,10 @@
 /// <reference types="vite/client" />
 import { useEffect, useState } from "react";
 import type { OpenChat } from "./bindings";
+// The scenario specs fit the ways they draw on a breadcrumb's line with the window's own measure
+// (`wholeWays.ts`, `pane-crumbs.e2e.ts`), which that module hands them as it loads in the e2e
+// build. Loaded here, since no chip on a tab loads it any more (#5341).
+import "./wholeWays";
 
 /**
  * **Tasks the scenario specs pretend a session has** (#1487), so a tab's chip and its menu

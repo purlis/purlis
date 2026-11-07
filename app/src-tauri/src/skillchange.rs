@@ -198,6 +198,9 @@ pub struct DeletedSkill {
     pub reserved: bool,
     /// The set it was deleted with (#5331): what the Deleted page groups it by.
     pub set: Option<DeletedSet>,
+    /// Where its name belongs to purlis now (#5457): the new name offered, as an install offers
+    /// one, and the names it cannot take. Bring back waits for the person to confirm a name.
+    pub clash: Option<crate::skillsources::ReviewClash>,
 }
 
 /// A set of skills deleted as one change, as the Deleted page groups them.
@@ -645,6 +648,9 @@ pub(crate) async fn skills_deleted(
             .map(|one| {
                 Ok(DeletedSkill {
                     reserved: purlis_core::skills::name_reserved(&one.name),
+                    clash: purlis_core::skills::source::review::deleted_clash(held.root(), &one)
+                        .as_ref()
+                        .map(crate::skillsources::ReviewClash::from),
                     days_left: u32::try_from(one.days_left(now)).unwrap_or(u32::MAX),
                     in_history: one.kept().in_git(),
                     id: serde_json::to_string(&one)

@@ -201,10 +201,10 @@ export function NewSkillDialog({
           ? busy
             ? "Making…"
             : "Make it and open its page"
-          : `Open a chat ${chatPlace(level)}`,
+          : `Open a chat ${chatPlace(level, plane)}`,
         reserve: writing
           ? ["Make it and open its page", "Making…"]
-          : levels.map((one) => `Open a chat ${chatPlace(one.level)}`),
+          : levels.map((one) => `Open a chat ${chatPlace(one.level, plane)}`),
         isDisabled: !ready,
         onPress: () => {
           if (!ready) return;

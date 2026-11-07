@@ -68,7 +68,7 @@ pub(super) fn into_first_workspace(
     }
 }
 
-/// Clone `source` into `workspaces/<ws>/<name>`, making the workspace first when it is not
+/// Clone `source` into `workspaces/<ws>/repos/<name>` (ADR 0114), making the workspace first when it is not
 /// there. [`into_first_workspace`] with the workspace and the clone's name handed in, so the
 /// first run can name the workspace after the repository (FR-4). Answers the clone's path,
 /// whether it was cloned now or before, or what went wrong — said by the caller, after
@@ -82,15 +82,12 @@ pub(super) fn into_workspace(
     now: chrono::DateTime<chrono::Utc>,
 ) -> Result<std::path::PathBuf, String> {
     let author = crate::wscmd::ensure::author();
-    let ws_dir = match crate::wscmd::ensure::ensure(root, ws, now, &author) {
-        Ok(_) => root.join("workspaces").join(ws),
-        Err(why) => return Err(why),
-    };
+    crate::wscmd::ensure::ensure(root, ws, now, &author)?;
     // The exact path created is gated as itself, not as its parent: `name` comes off an
     // `origin` URL, which is a string somebody else chose. `repocmd::clone` gates its
     // destination the same way and for the same reason, so a first clone is held to the rule
     // every later clone is.
-    let dest = match crate::repocmd::clone::destination(root, ws, &ws_dir, name) {
+    let dest = match crate::repocmd::clone::destination(root, ws, name) {
         Ok(dest) => dest,
         Err(why) => return Err(format!("{name}: not cloned — {why}.")),
     };
@@ -101,6 +98,7 @@ pub(super) fn into_workspace(
         return Ok(dest);
     }
 
+    crate::repocmd::clone::make_repos_folder(&dest)?;
     run.info(format!("Cloning {name} into workspace '{ws}' …"));
     let src_arg = source.display().to_string();
     let dest_arg = dest.display().to_string();

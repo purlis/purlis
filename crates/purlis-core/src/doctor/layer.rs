@@ -139,7 +139,7 @@ fn read(root: &Path, workspaces: &[String]) -> Read {
             .into_iter()
             .map(|(rel, found)| (rel, word(found), String::new()))
             .collect();
-        let (trees, unlisted) = wslayer::guest_trees(&dir);
+        let (trees, unlisted) = wslayer::guest_trees(root, &dir);
         for tree in &trees {
             let label = wslayer::checkout_label(&dir, tree);
             let standing = crate::guest::status(root, tree);

@@ -217,6 +217,8 @@ fn the_broker_at(
                 persona: Some("steward".to_owned()),
                 harnessed: true,
                 unsandboxed: false,
+                roots_git_held: false,
+                unreadable: Vec::new(),
                 config: None,
                 id: None,
                 live: None,
@@ -330,7 +332,7 @@ fn a_sandboxed_chats_clone_and_worktree_are_made_by_the_app_and_say_what_the_ter
             repos: vec!["widget".to_owned()]
         }
     );
-    let clone = brokered.join("workspaces/alpha/widget");
+    let clone = brokered.join("workspaces/alpha/repos/widget");
     for written in [
         ".git/config",
         ".vscode/settings.json",
@@ -472,7 +474,7 @@ fn a_sandboxed_chats_create_with_repos_is_made_by_the_app_whole_and_only_there()
     assert!(charter.contains("Ship it"), "{charter}");
     for written in [".git/config", ".vscode/settings.json", "README.md"] {
         assert!(
-            beta.join("widget").join(written).is_file(),
+            beta.join("repos/widget").join(written).is_file(),
             "{written} is not in the clone: {}",
             err(&made)
         );
@@ -635,7 +637,7 @@ fn a_sandboxed_chats_update_and_push_of_its_branch_folder_are_run_by_the_app() {
     );
 
     // #3831: standing in the clone itself, the update is the clone's, and the app runs it.
-    let clone = root.join("workspaces/alpha/widget");
+    let clone = root.join("workspaces/alpha/repos/widget");
     let ran = support::purlis()
         .args(["worktree", "update"])
         .current_dir(&clone)
@@ -683,7 +685,7 @@ fn a_host_outside_the_chats_internet_access_is_refused_and_never_cloned() {
     assert_eq!(ran.status.code(), Some(1), "{}", err(&ran));
     assert!(err(&ran).contains("'github.com'"), "{}", err(&ran));
     assert!(err(&ran).contains("sandbox"), "{}", err(&ran));
-    assert!(!root.join("workspaces/alpha/widget").exists());
+    assert!(!root.join("workspaces/alpha/repos/widget").exists());
 }
 
 #[test]
@@ -709,7 +711,7 @@ fn a_git_action_the_app_refuses_is_refused_here_and_never_run_here() {
             err(&ran)
         );
     }
-    assert!(!root.join("workspaces/alpha/widget").exists());
+    assert!(!root.join("workspaces/alpha/repos/widget").exists());
 }
 
 #[test]
@@ -738,12 +740,12 @@ fn where_no_app_takes_the_ask_the_command_runs_here() {
 
     assert!(ran.status.success(), "{}", err(&ran));
     assert_eq!(*taken.lock().unwrap(), 1, "the app was not asked first");
-    assert!(root.join("workspaces/alpha/widget/.git").exists());
+    assert!(root.join("workspaces/alpha/repos/widget/.git").exists());
 
     let alone = world.plane("alone", "[\"forge\"]");
     let ran = world.purlis(&alone, &["clone", "widget", "-w", "alpha"], &[]);
     assert!(ran.status.success(), "{}", err(&ran));
-    assert!(alone.join("workspaces/alpha/widget/.git").exists());
+    assert!(alone.join("workspaces/alpha/repos/widget/.git").exists());
 }
 
 /// The core's commit broker, for sandboxed chat 3 standing in branch folder `cwd`, as persona
@@ -763,6 +765,8 @@ fn the_commit_broker(
                 persona: Some("steward".to_owned()),
                 harnessed: true,
                 unsandboxed: false,
+                roots_git_held: false,
+                unreadable: Vec::new(),
                 config: None,
                 id: None,
                 live: None,
@@ -1099,7 +1103,7 @@ fn a_chat_commits_with_the_command_with_and_without_the_sandbox() {
     let piece = root.join("workspaces/alpha/.worktrees/widget/p1");
     // A hook of the repository's own: a linked worktree runs its clone's.
     let hook_ran = world.base.join("hook-ran");
-    let hook = root.join("workspaces/alpha/widget/.git/hooks/pre-commit");
+    let hook = root.join("workspaces/alpha/repos/widget/.git/hooks/pre-commit");
     std::fs::create_dir_all(hook.parent().unwrap()).unwrap();
     std::fs::write(
         &hook,
@@ -1121,6 +1125,8 @@ fn a_chat_commits_with_the_command_with_and_without_the_sandbox() {
                 persona: Some("steward".to_owned()),
                 harnessed: true,
                 unsandboxed: false,
+                roots_git_held: false,
+                unreadable: Vec::new(),
                 config: None,
                 id: None,
                 live: None,

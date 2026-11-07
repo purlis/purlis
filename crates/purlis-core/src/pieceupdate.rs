@@ -31,8 +31,10 @@
 //!   and fast-forward the branch to it or rebase the branch's own commits onto it, with the
 //!   same `--continue` and `--abort`, the same judging for a sandboxed chat, and the same
 //!   refusal of uncommitted changes. Never the project's root folder, which is the person's.
-//!   For a sandboxed chat, a rebase stopped there goes on or back by its own git, in its own
-//!   sandbox, and the app then only puts the branch where it belongs ([`settled_by_the_chat`]).
+//!   For a sandboxed chat, the app runs no rebase in a clone: it fetches, works out the rebase
+//!   and names it, for the chat's own git to run in its own sandbox, and goes on or back the
+//!   same way; the app then only puts the branch where it belongs, from the commit it recorded
+//!   ([`settled_by_the_chat`]).
 //!   Either kind is refused where it would write over a file on disk that the current commit
 //!   does not track (an ignored `.env`, an untracked file): someone's work, which git would
 //!   overwrite or stop on halfway.
@@ -78,6 +80,9 @@ pub struct Reach<'a> {
     /// Where a sandboxed chat that asks was started: an update is judged for the files its
     /// sandbox denies. `None` from a terminal or a chat that is not sandboxed.
     pub sandboxed_at: Option<&'a Path>,
+    /// Whether the app runs the verb for a chat: its push is then never signed, whatever
+    /// `push.gpgSign` says. `false` from a terminal, where the person's own config holds.
+    pub for_a_chat: bool,
 }
 
 /// The settings every rebase here runs with, whatever the repository's config says: no editor,
@@ -152,14 +157,26 @@ pub fn update_clone(
     say: &mut dyn FnMut(Say),
 ) -> u8 {
     mended(at.root, at.ws, at.repo, say);
-    let on_a_branch = matches!(step, UpdateStep::Start { .. });
+    let chat_resumes = reach.sandboxed_at.is_some();
+    // For a sandboxed chat, a re-run after its own git ran the step finds the clone on no
+    // branch, and settles it as `--continue` does.
+    let on_a_branch = matches!(step, UpdateStep::Start { .. }) && !chat_resumes;
     let ran = Here::of_clone(at, on_a_branch).and_then(|mut here| {
-        here.chat_resumes = reach.sandboxed_at.is_some();
+        here.chat_resumes = chat_resumes;
         let lock = broker::lock_of(&here.git_dir);
         let _held = lock
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         match step {
+            UpdateStep::Start { .. } if here.chat_resumes && here.branch.is_empty() => {
+                if Record::read(&here.notes).is_none() {
+                    return Err(format!(
+                        "{} is on no branch (a detached HEAD), so there is no branch to update",
+                        here.label
+                    ));
+                }
+                settled_by_the_chat(&here, &UpdateStep::Continue, say)
+            }
             UpdateStep::Start { base } => start_clone(at, &here, base.as_deref(), reach, say),
             UpdateStep::Merge { .. } => Err(format!(
                 "{} is a clone, brought up to the remote branch its own branch follows: `--merge` \
@@ -789,12 +806,18 @@ fn rebased(
         &from_id,
         &head_id,
     ]);
+    // A clone, for a sandboxed chat: the app runs no rebase there. The chat's own git runs it,
+    // in its sandbox, and the app then only moves the branch from the commit recorded
+    // ([`settled_by_the_chat`]).
+    if here.chat_resumes {
+        return Ok(Moved::Stopped(named_for_the_chat(here, &args, say)));
+    }
     // Untimed: a rebase checks trees out, and one killed halfway is left half done.
     let went = git::run_untimed(&here.folder, &args).map_err(|e| e.to_string())?;
     if !went.ok() {
         return Ok(Moved::Stopped(stopped_said(here, &went.err, say)));
     }
-    finish(here, &record)?;
+    finish(here, &record, Some(&onto_id), say)?;
     NewBase::recorded(here, &record.branch, say);
     Ok(if forward {
         Moved::Forward
@@ -935,6 +958,12 @@ fn go_on(here: &Here, say: &mut dyn FnMut(Say)) -> Result<u8, String> {
     if !files.is_empty() {
         stage_resolved(here, &files)?;
     }
+    // What the rebase replays onto, read before git finishes it and takes its notes away: the
+    // commits after it are the ones it made, and the ones the app signs (#5480).
+    let onto = state_text(&here.git_dir.join("rebase-merge"), "onto")
+        .ok()
+        .map(|onto| onto.trim().to_owned())
+        .filter(|onto| full_id(onto));
     let mut args: Vec<&str> = REBASE.to_vec();
     args.extend(["rebase", "--continue"]);
     let went = git::run_untimed(&here.folder, &args).map_err(|e| e.to_string())?;
@@ -946,7 +975,7 @@ fn go_on(here: &Here, say: &mut dyn FnMut(Say)) -> Result<u8, String> {
     if !went.ok() {
         return Ok(stopped_said(here, &went.err, say));
     }
-    finish(here, &record)?;
+    finish(here, &record, onto.as_deref(), say)?;
     // From the record: a rebase that stopped had the folder on no branch when `here` was read.
     NewBase::recorded(here, &record.branch, say);
     say(Say::Done(format!("{label} is rebased").into()));
@@ -1203,13 +1232,25 @@ fn full_id(id: &str) -> bool {
     matches!(id.len(), 40 | 64) && id.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
-/// The rebase is done, on a detached head: the branch is moved to it only from the commit it
-/// was judged at, the folder is put back on the branch, and the commit is noted as the one
-/// this update left it at.
-fn finish(here: &Here, record: &Record) -> Result<(), String> {
+/// The rebase is done, on a detached head: the commits it made after `onto` signed where the
+/// app holds a key for a chat ([`signed_since`]), the branch moved to them only from the commit
+/// it was judged at, the folder put back on the branch, and the commit noted as the one this
+/// update left it at.
+fn finish(
+    here: &Here,
+    record: &Record,
+    onto: Option<&str>,
+    say: &mut dyn FnMut(Say),
+) -> Result<(), String> {
     let _ = std::fs::remove_file(here.notes.join(UNDER_WAY));
     let new = commit_of(&here.folder, "HEAD").ok_or("git did not say where the rebase ended")?;
+    let new = match onto {
+        Some(onto) => signed_since(&here.folder, new, &[onto], say),
+        None => new,
+    };
     let local_ref = name::as_ref(&record.branch);
+    // The branch's reflog and HEAD's are written by name: never through a link left there.
+    crate::worktree::ref_records_refused(&here.git_dir)?;
     let moved = git::run(
         &here.folder,
         &[
@@ -1249,6 +1290,54 @@ fn finish(here: &Here, record: &Record) -> Result<(), String> {
     )
     .map_err(|why| format!("purlis could not note the update it made: {why}"))
 }
+
+/// **The commits git made for a chat since `before`, signed** (#5480): where the app runs this
+/// update for a chat ([`git::isolation`]), each commit `head` reaches and `before` does not is
+/// written again with the app's signature ([`crate::commitsign::sign_made`]), and the id that
+/// stands for `head` then is answered, for the caller to move the branch to. With no key set up,
+/// or where signing fails, `head` as git made it, and said. From a terminal, `head` untouched:
+/// the person's own git is in charge there.
+pub(crate) fn signed_since(
+    folder: &Path,
+    head: String,
+    before: &[&str],
+    say: &mut dyn FnMut(Say),
+) -> String {
+    let Some(held) = git::isolation() else {
+        return head;
+    };
+    let Some(signer) = held.signer() else {
+        let mut args = vec!["rev-list", "--count", head.as_str(), "--not"];
+        args.extend(before.iter().copied());
+        let made = git::run(folder, &args, git::READ)
+            .ok()
+            .filter(git::Run::ok)
+            .is_some_and(|counted| counted.line().trim() != "0");
+        if made {
+            say(Say::Warn(UNSIGNED_UPDATE.into()));
+        }
+        return head;
+    };
+    match crate::commitsign::sign_made(folder, &head, before, signer) {
+        Ok(signed) => signed,
+        Err(why) => {
+            say(Say::Warn(
+                format!(
+                    "the commits this update made are not signed: {why}. A repository that \
+                     requires signed commits will refuse a pull request with them"
+                )
+                .into(),
+            ));
+            head
+        }
+    }
+}
+
+/// What an update that made commits says where no signing key is set up (#5480).
+const UNSIGNED_UPDATE: &str = "the commits this update made are not signed: the app has no \
+     signing key on this machine yet, so a repository that requires signed commits will refuse a \
+     pull request with them. Ask the person to run `purlis signing setup` once in their own \
+     terminal; it says each step in plain words, and later updates sign what they make";
 
 /// The files git named as conflicted, each as it is staged, or why they may not be staged for
 /// a chat: each a name inside the folder reached through no link, not another repository nor
@@ -1461,6 +1550,29 @@ const GO_ON_YOURSELF: &str = "run `git -c core.editor=: rebase --continue` in th
 const GO_BACK_YOURSELF: &str = "run `git rebase --abort` in the clone, then `purlis worktree \
      update --abort`, which puts the folder back on its branch";
 
+/// The rebase `args` (git's own, after `git`) named for a sandboxed chat to run in the clone
+/// with its own git, and what follows it: the status to exit with, since nothing has moved yet.
+fn named_for_the_chat(here: &Here, args: &[&str], say: &mut dyn FnMut(Say)) -> u8 {
+    say(Say::Warn(
+        format!(
+            "{} is not moved yet: run `git {}` in the clone, then `purlis worktree update \
+             --continue`, which puts the branch on the result. Should it stop on a conflict, \
+             resolve and `git add` the files, then {GO_ON_YOURSELF}; or {GO_BACK_YOURSELF}",
+            here.label,
+            args.join(" ")
+        )
+        .into(),
+    ));
+    1
+}
+
+/// Whether the folder is still on `branch`, at `head`: a step named for the chat not yet run.
+fn still_on(here: &Here, branch: &str, head: &str) -> bool {
+    let on = git::run(&here.folder, &["symbolic-ref", "-q", "HEAD"], git::READ)
+        .is_ok_and(|run| run.ok() && run.line().trim() == name::as_ref(branch));
+    on && commit_of(&here.folder, "HEAD").as_deref() == Some(head)
+}
+
 /// `--continue` or `--abort` in a clone, for a sandboxed chat: it resumes git's rebase with its
 /// own git, in its own sandbox, and is told so while one is stopped. Once none is, all that is
 /// left is purlis's: the branch moved from the commit recorded, and the folder put back on it.
@@ -1488,8 +1600,15 @@ fn settled_by_the_chat(
     let Some(record) = record else {
         return Err(format!("no rebase is stopped in {label}"));
     };
+    if going_on && still_on(here, &record.branch, &record.head) {
+        return Err(format!(
+            "the rebase purlis named for {label} has not run: run it in the clone, then `purlis \
+             worktree update --continue`. `purlis worktree update` names it again"
+        ));
+    }
     if going_on {
-        finish(here, &record)?;
+        // The chat's own git replayed these, in its sandbox: the app moves the branch only.
+        finish(here, &record, None, say)?;
         NewBase::recorded(here, &record.branch, say);
         say(Say::Done(format!("{label} is rebased").into()));
     } else {
@@ -1731,6 +1850,10 @@ fn pushed(
         .as_deref()
         .map(|theirs| format!("--force-with-lease={local_ref}:{theirs}"));
     let mut args = vec!["push"];
+    // The person's key signs only what the person pushes.
+    if reach.for_a_chat {
+        args.push("--no-signed");
+    }
     if let Some(leased) = &leased {
         args.push(leased);
     }

@@ -30,6 +30,30 @@ pub const EVENT: &str = "chat-events";
 /// How long the first telling waits for others to join it before the batch is sent.
 pub const INTERVAL: Duration = Duration::from_millis(100);
 
+/// The variable that names another interval, in milliseconds, as the `e2e` build reads it: the
+/// nightly scale run's load bench measures the chat events reaching the window with `0`, each
+/// telling sent as it comes, beside the batched default (#4883, `app/e2e/specs/*.scale.e2e.ts`).
+#[cfg(feature = "e2e")]
+pub const INTERVAL_VARIABLE: &str = "PURLIS_E2E_CHAT_EVENTS_MS";
+
+/// The interval the app batches with: [`INTERVAL`], or in the `e2e` build alone the one
+/// [`INTERVAL_VARIABLE`] names (`var` reads the environment). **Every other build reads
+/// nothing**: the variable is never looked up, so the window anyone is given batches at
+/// [`INTERVAL`] whatever its environment holds.
+pub fn interval(var: impl FnOnce(&str) -> Option<String>) -> Duration {
+    #[cfg(feature = "e2e")]
+    {
+        var(INTERVAL_VARIABLE)
+            .and_then(|ms| ms.trim().parse().ok())
+            .map_or(INTERVAL, Duration::from_millis)
+    }
+    #[cfg(not(feature = "e2e"))]
+    {
+        let _ = var;
+        INTERVAL
+    }
+}
+
 /// One thing a chat told the window: what each of the four events used to carry on its own.
 #[derive(Debug, Clone, serde::Serialize, specta::Type)]
 #[serde(tag = "kind", content = "told", rename_all = "kebab-case")]

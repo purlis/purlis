@@ -266,8 +266,8 @@ fn bus_of(again: &std::process::Command) -> Vec<(String, Option<String>)> {
 
 fn again(bus: &Bus) -> std::process::Command {
     launch_on(
-        "/usr/bin/charter-app".into(),
-        Some("charter-app".into()),
+        "/usr/bin/purlis-app".into(),
+        Some("purlis-app".into()),
         ["--no-restore".into()],
         bus,
     )

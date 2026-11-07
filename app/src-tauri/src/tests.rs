@@ -75,6 +75,56 @@ fn a_listed_chat_carries_the_id_it_keeps_across_a_launch() {
     );
 }
 
+#[test]
+fn the_sidebar_answer_counts_a_workspaces_open_todos_and_carries_none_of_their_titles() {
+    // #5501 (the scale spec #5486, story 20): the sidebar is every workspace's summary, so its
+    // answer does not grow with every workspace's todos. Their titles are the workspace's
+    // panels' (`workspace_panels`), read for the one in front.
+    let dir = tempfile::tempdir().expect("a directory");
+    let root = std::fs::canonicalize(dir.path()).expect("a resolved plane");
+    std::fs::write(root.join(purlis_core::plane::MANIFEST), "").expect("a manifest");
+    let store = root.join("workspaces/alpha/todos");
+    std::fs::create_dir_all(&store).expect("a todo store");
+    for (slug, title) in [
+        ("t1", "Wire the index"),
+        ("t2", "Measure the hook"),
+        ("t3", "Slim it"),
+    ] {
+        std::fs::write(store.join(format!("{slug}.md")), format!("# {title}\n")).expect("a todo");
+    }
+    std::fs::create_dir_all(root.join("workspaces/beta")).expect("a workspace without todos");
+    let planes = Planes::telling(
+        std::sync::Arc::new(|_: hooks::Moved| {}),
+        Shipped::default(),
+        None,
+    );
+    let plane = planes.open(&root);
+    let held = planes.held(&plane).expect("held");
+
+    let answer = serde_json::to_value(sidebar_of(&held).expect("the sidebar")).expect("json");
+
+    let counts: Vec<(String, u64)> = answer["workspaces"]
+        .as_array()
+        .expect("the workspaces")
+        .iter()
+        .map(|ws| {
+            let name = ws["name"].as_str().expect("a name").to_owned();
+            (
+                name,
+                ws["open_todos"].as_u64().expect("a count of open todos"),
+            )
+        })
+        .collect();
+    assert_eq!(counts, [("alpha".to_owned(), 3), ("beta".to_owned(), 0)]);
+    let said = answer.to_string();
+    for title in ["Wire the index", "Measure the hook", "Slim it"] {
+        assert!(
+            !said.contains(title),
+            "the answer carries {title:?}: {said}"
+        );
+    }
+}
+
 /// A git repo at a fresh temp dir holding the local settings file and nothing ignoring it.
 fn plane_carrying_local_settings() -> tempfile::TempDir {
     let plane = tempfile::tempdir().expect("a plane");

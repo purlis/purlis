@@ -340,3 +340,30 @@ fn nothing_is_exported_while_something_stops_it() {
     assert!(export_zip(&out, &to.path().join("z.zip")).is_err());
     assert!(!to.path().join("f").exists() && !to.path().join("z.zip").exists());
 }
+
+#[test]
+fn a_set_goes_out_with_each_skill_and_each_one_they_name_once() {
+    let plane = tempfile::tempdir().unwrap();
+    let project = Level::project();
+    skill_at(plane.path(), &project, "deploy", SKILL, &[]);
+    let review = "---\nname: review\ndescription: Reviews it\n---\nCall skills:checks first.\n";
+    skill_at(plane.path(), &project, "review", review, &[]);
+    let checks = "---\nname: checks\ndescription: Checks it\n---\nCheck.\n";
+    skill_at(plane.path(), &project, "checks", checks, &[]);
+    let lint = "---\nname: lint\ndescription: Lints it\n---\nCall skills:checks too.\n";
+    skill_at(plane.path(), &project, "lint", lint, &[]);
+    let out = gather_set(
+        plane.path(),
+        None,
+        &[
+            (project.clone(), "deploy".to_owned()),
+            (project.clone(), "review".to_owned()),
+            (project.clone(), "lint".to_owned()),
+        ],
+        Purpose::Export,
+    )
+    .unwrap();
+    let mut names: Vec<&str> = out.skills.iter().map(|one| one.name.as_str()).collect();
+    names.sort_unstable();
+    assert_eq!(names, ["checks", "deploy", "lint", "review"], "checks once");
+}

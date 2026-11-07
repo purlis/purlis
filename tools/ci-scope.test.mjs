@@ -506,8 +506,6 @@ const WALK_ONLY_CODE = {
   "crates/purlis-cli/tests/it/every_command_charter_names_is_one_it_has.rs":
     "crates/*/src, app/src-tauri/src and the plugin's skills",
   "crates/purlis-core/src/doctor/shadowed/tests.rs": "a plane's docs/; purlis's own is exempt",
-  "crates/purlis-core/tests/it/every_git_call_goes_through_the_runner.rs":
-    "crates/ and app/src-tauri/",
   "crates/purlis-core/tests/it/every_named_limit_on_a_runners_path_is_sorted.rs":
     "crates/ and app/src-tauri/ Rust",
   "crates/purlis-core/tests/it/four_unsafe_blocks.rs": "crates/ and app/src-tauri/ Rust",
@@ -847,6 +845,7 @@ test("the search finds a Rust path named whole, in pieces, or from a URL", () =>
 const READERS_HELD_ELSEWHERE = {
   "app/.storybook/handed.plugin.ts": "the stories: READ_BY_WEB runs everything",
   "app/e2e/recordedForge.ts": "imported by recordedForge.test.ts, a reader, and a scenario spec",
+  "app/e2e/wdio.browser.conf.ts": "the browser scenario run's own config: it reads the pin's date",
   "app/src/ui/field/fieldCalls.testkit.ts":
     "imported by fieldHelp.guard.test.ts and refusingFields.guard.test.ts, readers",
 };

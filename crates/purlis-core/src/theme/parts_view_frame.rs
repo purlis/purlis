@@ -24,17 +24,17 @@ pub(super) const VIEW_FRAME: Family = Family {
     name: "view-frame",
     description: "A view tab laid out as pages: the page navigation, the page's list, and the \
                   item chosen in it beside it.",
-    since: super::NEXT,
+    since: 13,
     parts: &[
         Part {
             name: "root",
-            since: super::NEXT,
+            since: 13,
             description: "The frame: the panes side by side, or one at a time when it is narrow.",
             properties: &[Prop::Fill],
         },
         Part {
             name: "nav",
-            since: super::NEXT,
+            since: 13,
             description: "The page navigation's column: its fill, the line after it and the \
                           room around its pages.",
             properties: &[
@@ -46,25 +46,32 @@ pub(super) const VIEW_FRAME: Family = Family {
         },
         Part {
             name: "list",
-            since: super::NEXT,
+            since: 13,
             description: "The page's list pane: its fill and the line between it and the item.",
             properties: PANE,
         },
         Part {
             name: "item",
-            since: super::NEXT,
+            since: 13,
             description: "The pane of the item chosen in the list.",
             properties: &[Prop::Fill],
         },
         Part {
             name: "head",
-            since: super::NEXT,
+            since: 13,
             description: "The heading over a page's list and its lead line: the room around them.",
             properties: ROOM,
         },
         Part {
-            name: "header",
+            name: "heading",
             since: super::NEXT,
+            description: "The line of a page's heading and the one action beside it (#5332): \
+                          the Library's Select.",
+            properties: &[Prop::Gap],
+        },
+        Part {
+            name: "header",
+            since: 13,
             description: "The item's page header, held in view over its body: its name, tag, \
                           mark, description and actions.",
             properties: &[
@@ -77,20 +84,20 @@ pub(super) const VIEW_FRAME: Family = Family {
         },
         Part {
             name: "name",
-            since: super::NEXT,
+            since: 13,
             description: "The item's name in its page header.",
             properties: &[Prop::Text, Prop::FontSize, Prop::FontWeight],
         },
         Part {
             name: "lead",
-            since: super::NEXT,
+            since: 13,
             description: "The one line under a page's heading or an item's name that says what \
                           it is.",
             properties: &[Prop::Text, Prop::FontSize],
         },
         Part {
             name: "bar",
-            since: super::NEXT,
+            since: 13,
             description: "The view's top bar over its panes (#3667): back and forward, the path \
                           and the view's own controls, over a line.",
             properties: &[
@@ -103,25 +110,25 @@ pub(super) const VIEW_FRAME: Family = Family {
         },
         Part {
             name: "history",
-            since: super::NEXT,
+            since: 13,
             description: "The back and forward buttons at the bar's start: the room between them.",
             properties: &[Prop::Gap],
         },
         Part {
             name: "path",
-            since: super::NEXT,
+            since: 13,
             description: "The breadcrumb of the view's pages: its words' colour and size.",
             properties: &[Prop::Text, Prop::FontSize],
         },
         Part {
             name: "crumb",
-            since: super::NEXT,
+            since: 13,
             description: "The last name on the path: where the person is.",
             properties: &[Prop::Text, Prop::FontWeight],
         },
         Part {
             name: "crumb-separator",
-            since: super::NEXT,
+            since: 13,
             description: "The mark between two names on the path.",
             properties: &[Prop::Text],
         },
@@ -167,23 +174,23 @@ pub(super) const VIEW_NAV: Family = Family {
     name: "view-nav",
     description: "A page in a view frame's navigation: its name, its count, and the mark that \
                   says it is the current page.",
-    since: super::NEXT,
+    since: 13,
     parts: &[
         Part {
             name: "item",
-            since: super::NEXT,
+            since: 13,
             description: "The page itself: its fill, its words' colour and its corners.",
             properties: &[Prop::Fill, Prop::Text, Prop::CornerRadius],
         },
         Part {
             name: "label",
-            since: super::NEXT,
+            since: 13,
             description: "The page's name, cut short with an ellipsis rather than widening it.",
             properties: &[Prop::FontSize, Prop::FontWeight],
         },
         Part {
             name: "indicator",
-            since: super::NEXT,
+            since: 13,
             description: "The mark at the current page's start edge, which tells it apart by more \
                           than its colour.",
             properties: &[Prop::Fill, Prop::CornerRadius],

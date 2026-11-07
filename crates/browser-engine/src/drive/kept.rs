@@ -153,6 +153,25 @@ impl Kept {
             .collect()
     }
 
+    /// This with `texts` gone, whatever their case.
+    pub(crate) fn without(&self, texts: &[&str]) -> Self {
+        let mut rest = self.clone();
+        rest.texts.retain(|kept| {
+            !texts
+                .iter()
+                .any(|text| text.to_lowercase() == kept.text.to_lowercase())
+        });
+        rest
+    }
+
+    /// Only the texts of at least `chars` characters: what can't be an ordinary word of a page or a
+    /// site's name.
+    pub(crate) fn at_least(&self, chars: usize) -> Self {
+        let mut rest = self.clone();
+        rest.texts.retain(|kept| kept.text.chars().count() >= chars);
+        rest
+    }
+
     /// Whether nothing is kept.
     pub(crate) fn is_empty(&self) -> bool {
         self.texts.is_empty()
@@ -163,11 +182,11 @@ impl Kept {
             if text.is_empty() {
                 continue;
             }
-            let lower = text.to_lowercase();
+            // Kept in each case it came in: its base64 and hex differ by case.
             if !self
                 .texts
                 .iter()
-                .any(|kept| kept.from.as_ref() == from && kept.text.to_lowercase() == lower)
+                .any(|kept| kept.from.as_ref() == from && kept.text == text)
             {
                 self.texts.push(Text {
                     from: from.cloned(),
@@ -222,6 +241,17 @@ mod tests {
         kept.run(&["them"]);
         kept.field(&field(8), &["theme"]);
         assert_eq!(kept.texts(), vec!["the", "them", "theme"]);
+    }
+
+    #[test]
+    fn at_least_keeps_only_the_texts_that_long() {
+        let mut kept = Kept::default();
+        kept.field(&field(8), &["plumtree"]);
+        kept.run(&["plum", "pl\u{fc}mtree"]);
+        assert_eq!(
+            kept.at_least(KEPT_WHOLE_FROM).texts(),
+            vec!["plumtree", "pl\u{fc}mtree"]
+        );
     }
 
     #[test]

@@ -194,7 +194,7 @@ fn the_helper_is_named_only_for_the_window_and_never_for_a_chats_brokered_call()
         kind: Kind::GitHub,
         host: "github.example.com".into(),
     };
-    let exe = Path::new("/Applications/purlis.app/Contents/MacOS/charter-app");
+    let exe = Path::new("/Applications/purlis.app/Contents/MacOS/purlis-app");
 
     assert!(for_the_window("github.example.com").is_none(), "outside");
     let (inside, other_host, brokered) =
@@ -230,7 +230,7 @@ fn a_path_the_shell_could_not_quote_names_no_helper() {
     let machine = Machine::signed_in_on("github.example.com");
     let named = as_the_window(
         &HostScope::for_a_test(),
-        Path::new("/Apps/it's here/charter-app"),
+        Path::new("/Apps/it's here/purlis-app"),
         machine.config(),
         || for_the_window("github.example.com"),
     );
@@ -260,7 +260,7 @@ impl Helper {
              --test-threads=1 2>/dev/null | sed -n 's/^{SAYS}//p'\n",
             me.display()
         );
-        let exe = stand_in::program(dir.path(), "charter-app", &script);
+        let exe = stand_in::program(dir.path(), "purlis-app", &script);
         Helper { _dir: dir, exe }
     }
 }

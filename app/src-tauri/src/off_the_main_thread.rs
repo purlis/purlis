@@ -158,4 +158,8 @@ mod costs;
 mod lane_writes;
 
 #[cfg(test)]
+#[path = "off_the_main_thread/tests/startup.rs"]
+mod startup;
+
+#[cfg(test)]
 pub(crate) mod tests;

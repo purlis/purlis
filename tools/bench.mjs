@@ -9,7 +9,7 @@
 //   node tools/bench.mjs                 # build, then measure everything, both renderer arms
 //   node tools/bench.mjs --skip-build    # measure what is already built
 //   node tools/bench.mjs --only window --arms webgl
-//   node tools/bench.mjs --skip-build --only coldstart --app target/debug/charter-app --limit 2000 \
+//   node tools/bench.mjs --skip-build --only coldstart --app target/debug/purlis-app --limit 2000 \
 //     --ceiling 2500 --warm-up --fresh-profile
 //                                        # CI's Linux cold start: one discarded launch, then each
 //                                        # launch on a fresh profile; fails when the median is
@@ -21,7 +21,7 @@
 //                                        # build and this one launched in turn; fails when this one
 //                                        # is past 1.15 times main's in two passes (the limit is
 //                                        # reported, not gated)
-//   node tools/bench.mjs --skip-build --only restore --app target/debug/charter-app --evidence
+//   node tools/bench.mjs --skip-build --only restore --app target/debug/purlis-app --evidence
 //                                        # a launch that puts 1, 10 and 40 chats back: when the
 //                                        # window could be used, and when the chats had started
 //                                        # (row L8); reported, and fails nothing
@@ -172,7 +172,7 @@ function summary(samples) {
 // Build: the app as it ships (for cold start), then the same app with the e2e seam, both in
 // release, because a debug build's numbers say nothing about what a person would feel.
 
-const SHIPPED = join(ROOT, "target", "bench", "charter-app-shipped");
+const SHIPPED = join(ROOT, "target", "bench", "purlis-app-shipped");
 const COLD_START_APP = options.app ? resolve(options.app) : SHIPPED;
 
 if (!options["skip-build"]) {
@@ -185,7 +185,7 @@ if (!options["skip-build"]) {
     { cwd: ROOT },
   );
   run("npx", ["tauri", "build", "--no-bundle"], { cwd: APP });
-  cpSync(join(RELEASE, "charter-app"), SHIPPED);
+  cpSync(join(RELEASE, "purlis-app"), SHIPPED);
   run(
     "npx",
     ["tauri", "build", "--no-bundle", "--features", "e2e", "--config", "src-tauri/tauri.e2e.conf.json"],

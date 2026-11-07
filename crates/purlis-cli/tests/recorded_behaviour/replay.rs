@@ -522,6 +522,7 @@ fn run(
         .flatten()
         .map(|v| v.as_str().expect("a path").to_owned())
         .collect();
+    let ignore = tree::in_either_layout(&ignore);
     let before_plane = tree::compared(&tree::under(&before, "plane"), &ignore);
     let got_plane = tree::compared(&tree::under(&after, "plane"), &ignore);
     {

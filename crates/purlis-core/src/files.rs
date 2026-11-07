@@ -39,6 +39,8 @@ pub use find::{Finder, Found, Hit, Named, Place, branches, find};
 use kept::Kept;
 // One folder outside any branch, read whole: a skill's (#5183).
 pub mod folder;
+// A workspace's own folder, but its repos and their branches' folders (#5375).
+pub mod workspace;
 // What a branch changed (FM-4): its own file, so the calls other tickets add here stay apart.
 mod status;
 pub use status::{AheadBehind, Change, MARKED, Mark, RefusedChange, RefusedFor, Rolled, Status};
@@ -108,13 +110,25 @@ pub const WATCHED: usize = 256;
 /// folder is, less what [`kept`] leaves out. It is named by [`Branch::plane_root`] and by
 /// nothing else: no workspace, repo or piece name spells it, so a command that takes those
 /// three names can never be pointed at the project's own files.
+///
+/// **Or a workspace's own files** (#5375): its folder but its repos and their branches' folders,
+/// read by [`workspace`] and by nothing else here. Named by [`Branch::workspace_files`] alone,
+/// with no repo, so every read of a branch refuses it as a branch with no repo's name.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Branch<'a> {
     pub ws: &'a str,
     pub repo: &'a str,
     pub piece: Option<&'a str>,
-    /// Whether this is the plane root. Private, so only [`Branch::plane_root`] says so.
-    root: bool,
+    /// Which kind of place. Private, so only its constructors say so.
+    of: Of,
+}
+
+/// Which kind of place a [`Branch`] names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Of {
+    Branch,
+    PlaneRoot,
+    WorkspaceFiles,
 }
 
 impl<'a> Branch<'a> {
@@ -124,7 +138,7 @@ impl<'a> Branch<'a> {
             ws,
             repo,
             piece: Some(piece),
-            root: false,
+            of: Of::Branch,
         }
     }
 
@@ -134,7 +148,7 @@ impl<'a> Branch<'a> {
             ws,
             repo,
             piece: None,
-            root: false,
+            of: Of::Branch,
         }
     }
 
@@ -144,19 +158,36 @@ impl<'a> Branch<'a> {
             ws: "",
             repo: "",
             piece: None,
-            root: true,
+            of: Of::PlaneRoot,
         }
     }
 
     /// Whether this is [`Branch::plane_root`].
     pub const fn is_plane_root(&self) -> bool {
-        self.root
+        matches!(self.of, Of::PlaneRoot)
+    }
+
+    /// Workspace `ws`'s own files ([`workspace`]): no repo's, and no branch's.
+    pub const fn workspace_files(ws: &'a str) -> Self {
+        Self {
+            ws,
+            repo: "",
+            piece: None,
+            of: Of::WorkspaceFiles,
+        }
+    }
+
+    /// Whether this is [`Branch::workspace_files`].
+    pub const fn is_workspace_files(&self) -> bool {
+        matches!(self.of, Of::WorkspaceFiles)
     }
 
     /// What the branch is called in a sentence: its folder's name.
     fn called(&self) -> &'a str {
-        if self.root {
-            return "the project";
+        match self.of {
+            Of::PlaneRoot => return "the project",
+            Of::WorkspaceFiles => return self.ws,
+            Of::Branch => {}
         }
         self.piece.unwrap_or(self.repo)
     }
@@ -1722,7 +1753,7 @@ impl Root {
         let named = match piece {
             _ if branch.is_plane_root() => self.plane().to_path_buf(),
             Some(piece) => worktree::path_for(self.plane(), ws, repo, piece)?,
-            None => self.plane().join("workspaces").join(ws).join(repo),
+            None => worktree::clone_folder(self.plane(), ws, repo)?,
         };
         let placed = place_named_folder(&named, branch)?;
         if placed.absolute != self.base()? {

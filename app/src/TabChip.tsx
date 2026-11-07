@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {
+  isValidElement,
   memo,
   useCallback,
   useEffect,
-  useLayoutEffect,
   useRef,
   useState,
   type CSSProperties,
@@ -50,17 +50,23 @@ import {
   countsOf,
   kindsOf,
   menuOf,
+  hasTasks,
   needsSaid,
-  wearsChip,
   type Ended,
   type Line,
   type Needing,
 } from "./tabTasks";
-import { TASK_BUCKETS, TASK_BUCKET_DRAWN, tasksIn, type TaskBucket } from "./taskBuckets";
+import {
+  TASK_BUCKETS,
+  TASK_BUCKET_DRAWN,
+  taskCountsSaid,
+  tasksIn,
+  type TaskBucket,
+} from "./taskBuckets";
+import { taskKeySaid } from "./taskKeys";
 import type { TasksUsed } from "./bindings";
 import { askOf, tokensOfLine, tokensSaid, type UsedAsk, type UsedReader } from "./tasksUsed";
 import { property } from "./theme/theme";
-import { fitCountsOn } from "./wholeWays";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 import { Button, IconButton } from "./ui/button/Button";
 import { Twist } from "./ui/disclosure/Disclosure";
@@ -85,23 +91,26 @@ const MARKS: Readonly<Record<TaskBucket, LucideIcon>> = {
 };
 
 type Props = {
-  /** The id of the counts button: what the tab is described by, so a screen reader on the
-   *  tab hears that it has tasks. */
+  /** The id the button's summary is said by. */
   id: string;
-  /** The session's name, as its tab says it: whose tasks these are. */
+  /** The chat's name, as its head says it: whose tasks these are. */
   name: string;
-  /** The chats of the tab, as a tree (`tabChats.chatsOfTab`). */
+  /** The chat and its tasks, as a tree, the chat at level 1 (`tabChats.chatsOfChat`). */
   rows: readonly ChatRow[];
   /** Its tasks that have ended and still have a line. */
   ended: readonly Ended[];
-  /** The chat the tab shows now. */
+  /** The chat the pane shows now. */
   current: number | undefined;
-  /** Its chats waiting for the person and not on screen, the longest waiting first. */
-  needs: readonly Needing[];
-  /** How many times the window has asked for a tab's menu from the keyboard, while this tab's
-   *  is the one asked for, and 0 while another's is. A rise opens it, or closes it if it is
-   *  open; a fall to 0 closes it, so one menu is open at a time. */
+  /** How many times the window has asked for this chat's menu from the keyboard (⌘⇧J, the
+   *  palette), while this chat's is the one asked for, and 0 while another's is. A rise opens
+   *  it, or closes it if it is open; a fall to 0 closes it, so one menu is open at a time. */
   asked: number;
+  /** **What the button says**: the head's state, its mark and its word (#5341). A chat with no
+   *  tasks draws it as it is, and no menu. */
+  children: ReactNode;
+  /** The head says no state of its own: the button is the mark alone, and a chat with no tasks
+   *  draws nothing. */
+  alone?: boolean;
   /** How long each chat has been in its state, as this window saw it. */
   clock: StateClock;
   /** Whether a tab is being carried along the strip: no menu opens under a drag. */
@@ -211,9 +220,20 @@ function sameNeeds(one: readonly Needing[], other: readonly Needing[]): boolean 
   );
 }
 
-/** Whether a chip would be drawn the same: held on what it says, not on the lists' identity,
+/** Whether the word a button says is drawn the same: the same element, or one of the same kind
+ *  with the same props, which its pane builds again on every draw. */
+function sameWord(one: ReactNode, other: ReactNode): boolean {
+  if (one === other) return true;
+  if (!isValidElement(one) || !isValidElement(other) || one.type !== other.type) return false;
+  const was = one.props as Record<string, unknown>;
+  const now = other.props as Record<string, unknown>;
+  const keys = Object.keys(was);
+  return keys.length === Object.keys(now).length && keys.every((key) => was[key] === now[key]);
+}
+
+/** Whether a tasks button would be drawn the same: held on what it says, not on the lists' identity,
  *  which the window builds again whenever any tab changes. */
-function sameChip(was: Props, now: Props): boolean {
+function sameTasks(was: Props, now: Props): boolean {
   return (
     was.id === now.id &&
     was.name === now.name &&
@@ -229,43 +249,83 @@ function sameChip(was: Props, now: Props): boolean {
     was.onPress === now.onPress &&
     was.stopAll === now.stopAll &&
     was.onActivity === now.onActivity &&
+    was.alone === now.alone &&
+    sameWord(was.children, now.children) &&
     sameRows(was.rows, now.rows) &&
-    sameEnded(was.ended, now.ended) &&
-    sameNeeds(was.needs, now.needs)
+    sameEnded(was.ended, now.ended)
   );
 }
 
 /**
- * **The chip a session's tab wears for its tasks** (#1487, V100-32, V100-33, V100-37): how
- * many are working, waiting, failed and finished (`taskCounts.ts`), each count with its
- * state's shape, and the hand when a chat of the tab is waiting for the person off screen. It
- * opens the menu of the tab's chats. A tab with no tasks draws nothing here, and is the tab it
- * always was.
+ * **The hand a tab wears when a chat of it waits for the person off screen** (V100-37): a press
+ * goes to the one that has waited longest. It is all a tab draws of its tasks (#5341): the
+ * counts and their menu are on the chat's pane head ({@link ChatTasks}), since a tab says which
+ * chat it is and whether it needs you, and nothing else.
  *
  * **Beside the tab's button and not inside it**: the tab is a button, and a button holds no
- * button. The hand is its own button for the same reason: pressing it goes to the chat that
- * waits, and pressing the counts opens the menu.
+ * button.
+ */
+export const TabNeeds = memo(
+  function TabNeeds({
+    needs,
+    onShow,
+  }: {
+    /** Its chats waiting for the person and not on screen, the longest waiting first. */
+    needs: readonly Needing[];
+    onShow: (session: number) => void;
+  }) {
+    if (needs.length === 0) return null;
+    return (
+      <span className="tab-needs">
+        {/* The quiet ghost (#3264), its hand in the needs-you colour, in a box of its own that
+            draws the keyboard's ring inside it. Not a Tab stop, as a tab's `×` is not: the
+            strip is one stop. */}
+        <span className="tab-needs-mark">
+          <IconButton
+            variant="quiet"
+            size="sm"
+            icon={<Hand aria-hidden="true" style={HAND} />}
+            className="tab-needs-hand"
+            data-mark="needs-you"
+            tabIndex={-1}
+            aria-label={`${needsSaid(needs.map((chat) => chat.name))}. Go to ${needs[0].name}`}
+            onPress={() => onShow(needs[0].session)}
+          />
+        </span>
+      </span>
+    );
+  },
+  (was, now) => was.onShow === now.onShow && sameNeeds(was.needs, now.needs),
+);
+
+/**
+ * **A chat's tasks, from its pane head's state button** (#1487, #5341, V100-32, V100-33): the
+ * head's state, its mark and its word ("waiting on 3 tasks"), as a button that opens the menu of
+ * the chat and its tasks: each task with its mark, End a task, Activity and a summary of how
+ * many are working, waiting, failed and finished (`taskCounts.ts`). ⌘⇧J opens the same menu
+ * (`asked`), so the two can never drift. A chat with no tasks draws its state as it always did,
+ * and no menu.
  *
- * **It reads its own chats' states** (SC-3), so a task that moves redraws this chip, and only
- * when a state changes. The strip around it is not drawn again.
+ * **It reads its own chats' states** (SC-3), so a task that moves redraws this button, and only
+ * when a state changes. The pane around it is not drawn again.
  *
  * **Three ways in, and each closes its own way.**
- * - **A press**, and **the keyboard** (the window's key, Down on the tab, the palette): the
- *   menu has the keyboard, and stays until Escape, a pick, a press outside, or the same ask
- *   again. A pointer wandering off closes neither: the next keys would go to the terminal.
- * - **A rest**: the pointer, moved onto the counts by the person's hand and then still for
+ * - **A press**, and **the keyboard** (the window's key, the palette): the menu has the
+ *   keyboard, and stays until Escape, a pick, a press outside, or the same ask again. A pointer
+ *   wandering off closes neither: the next keys would go to the terminal.
+ * - **A rest**: the pointer, moved onto the button by the person's hand and then still for
  *   {@link REST_MS}. That menu takes no keyboard, so whoever was typing goes on typing, and it
- *   also closes {@link GRACE_MS} after the pointer has left both the chip and the menu.
+ *   also closes {@link GRACE_MS} after the pointer has left both the button and the menu.
  *
  * **A rest is only ever the person's.** The engine sends "the pointer came onto this" when a
- * chip appears, widens or slides under a pointer that has not moved. So coming on arms
+ * button appears, widens or slides under a pointer that has not moved. So coming on arms
  * nothing: the rest starts at the first move to a new point, with no button held. A pointer
- * passing over is on the chip for less than a rest, and nothing opens under a drag.
+ * passing over is on the button for less than a rest, and nothing opens under a drag.
  */
-export const TabTasks = memo(function TabTasks(props: Props) {
-  if (!wearsChip(props.rows, props.ended, props.needs)) return null;
-  return <Chip {...props} />;
-}, sameChip);
+export const ChatTasks = memo(function ChatTasks(props: Props) {
+  if (!hasTasks(props.rows, props.ended)) return props.alone ? null : <>{props.children}</>;
+  return <TasksButton {...props} />;
+}, sameTasks);
 
 /** How a menu came to be open: what decides who has the keyboard and what closes it. */
 type OpenedBy = "press" | "rest" | "keys";
@@ -274,13 +334,12 @@ type Point = { x: number; y: number };
 
 const NO_REPORTS: ReadonlySet<string> = new Set();
 
-function Chip({
+function TasksButton({
   id,
   name,
   rows,
   ended,
   current,
-  needs,
   asked,
   clock,
   dragging,
@@ -292,8 +351,9 @@ function Chip({
   onPress,
   stopAll,
   onActivity,
+  children,
 }: Props) {
-  // One reading of the store for the chip and its menu: each row's state, redrawn only when
+  // One reading of the store for the button and its menu: each row's state, redrawn only when
   // one of them changes.
   const kinds = useChatsSelect(useChatsHere(), (states) => kindsOf(states, rows), sameList);
   const counts = countsOf(rows, kinds, ended);
@@ -400,7 +460,7 @@ function Chip({
       show("rest", document.activeElement);
     }, REST_MS);
   };
-  /** The pointer left the chip or the menu: a menu its rest opened closes soon. */
+  /** The pointer left the button or the menu: a menu its rest opened closes soon. */
   const leaveSoon = () => {
     notResting();
     seenAt.current = undefined;
@@ -411,19 +471,22 @@ function Chip({
     leaving.current = window.setTimeout(hide, GRACE_MS);
   };
 
-  // Gone from the window, which an engine may not say on the chip or the menu (#3095).
+  // Gone from the window, which an engine may not say on the button or the menu (#3095).
   useWindowLeft((why) => {
     if (why === "pointer") leaveSoon();
   });
 
-  // **The keyboard's own open lands on the chat the tab shows**, or its first line: the menu
-  // takes the keyboard on itself as it opens, and then on that line.
+  // **The keyboard's own open lands on a line**: the menu takes the keyboard on itself as it
+  // opens, and then on that line.
   useEffect(() => {
     if (!open || how !== "keys") return;
     const frame = window.requestAnimationFrame(() => {
       const list = content.current;
+      // **On its first task** (#5058, #5341): the chat the head shows is on screen already, in
+      // this pane, so the line the keyboard wants is the next one; the chat's own where it has
+      // none open.
       const on =
-        list?.querySelector<HTMLElement>("[data-current]") ??
+        list?.querySelector<HTMLElement>('[role^="menuitem"]:not([data-current])') ??
         list?.querySelector<HTMLElement>('[role^="menuitem"]');
       on?.focus({ preventScroll: true });
     });
@@ -452,13 +515,6 @@ function Chip({
     return true;
   };
   const said = chipSaid(name, counts);
-  // **Each count whole or not at all**, and only once the name has given up what it can:
-  // measured, as the tab strip is (`wholeWays.ts`).
-  const anyTasks = tasksIn(counts) > 0;
-  useLayoutEffect(() => {
-    if (!anyTasks || trigger.current === null) return;
-    return fitCountsOn(trigger.current);
-  }, [anyTasks]);
   /** The tab's open tasks, each with the rows that end it: what "End a task" lists. Never a
    *  pane's own chat, which is no task, and never a task that has ended. */
   const endable =
@@ -517,101 +573,69 @@ function Chip({
   );
 
   return (
-    <span className="tab-tasks" data-open={open || undefined}>
-      {/* **A chat of this tab is waiting for you and is not on screen** (V100-37): the hand,
-          and a press goes to the one that has waited longest. The tab stays there after. */}
-      {needs.length > 0 && (
-        // The quiet ghost (#3264), its hand in the needs-you colour, in a box of its own that
-        // draws the keyboard's ring inside it (`.tab-tasks-mark`).
-        <span className="tab-tasks-mark">
-          <IconButton
-            variant="quiet"
-            size="sm"
-            icon={<Hand aria-hidden="true" style={HAND} />}
-            className="tab-tasks-hand"
-            data-mark="needs-you"
-            tabIndex={-1}
-            aria-label={`${needsSaid(needs.map((chat) => chat.name))}. Go to ${needs[0].name}`}
-            onPress={() => onShow(needs[0].session)}
-          />
-        </span>
-      )}
+    <span className="pane-tasks" data-open={open || undefined}>
       {tasksIn(counts) > 0 && (
         <>
-          {/* **The chip's pill** (#3264): the sunken ground the counts stand on, and the open
-              menu's, drawn here; the counts themselves are the button family's quiet ghost. */}
-          <span className="tab-tasks-pill">
-            <Button
-              variant="quiet"
-              size="sm"
-              id={id}
-              ref={trigger}
-              className="tab-tasks-counts"
-              // Not a Tab stop, as a tab's `×` is not: the strip is one stop. The keyboard opens
-              // this menu with its key, with Down on the tab, or from the palette. No `title`: a
-              // tooltip would come up over the menu the same rest opened.
-              tabIndex={-1}
-              aria-label={said}
-              aria-haspopup="menu"
-              aria-expanded={open}
-              // The click toggles it, not the pointer going down: not every way of pressing a
-              // button sends a pointer event (`ShowMore` has the measurement).
-              onPointerDown={(event) => {
-                event.preventDefault();
-                notResting();
-                pressedFrom.current = document.activeElement;
-              }}
-              // A press that did not end in a click (a right press, one let go elsewhere) is
-              // over: where the keyboard was then says nothing of the next press.
-              onPointerUp={() => {
-                window.setTimeout(() => (pressedFrom.current = undefined));
-              }}
-              onPointerCancel={() => {
-                pressedFrom.current = undefined;
-              }}
-              // A press by any pointer, or a screen reader's, which sends none and lands where
-              // the keyboard's own open does (#4304).
-              onPress={(event) => {
-                const opened = event.pointerType === "virtual" ? "keys" : "press";
-                const from = pressedFrom.current ?? document.activeElement;
-                pressedFrom.current = undefined;
-                notResting();
-                notLeaving();
-                if (dragging()) return;
-                if (open && by.current === "rest") {
-                  // A press on a menu the rest opened keeps it, and gives it the keyboard.
-                  by.current = opened;
-                  setHow(opened);
-                  content.current?.focus({ preventScroll: true });
-                } else if (open) hide();
-                else show(opened, from === trigger.current ? null : from);
-              }}
-              // Coming on arms nothing (see `TabTasks`): it is only where the pointer is.
-              onPointerEnter={(event) => {
-                notLeaving();
-                seenAt.current = { x: event.clientX, y: event.clientY };
-              }}
-              onPointerMove={moved}
-              onPointerLeave={leaveSoon}
-            >
-              {TASK_BUCKETS.filter((bucket) => counts[bucket] > 0).map((bucket) => {
-                const Mark = MARKS[bucket];
-                return (
-                  <span
-                    key={bucket}
-                    className="count"
-                    data-count={bucket}
-                    aria-hidden="true"
-                    // A count on a tab, which a theme's `tabs.count.*` reaches (`ui/tabs`).
-                    {...tabPart("count")}
-                  >
-                    <Mark style={{ color: `var(${property(TASK_BUCKET_DRAWN[bucket].token)})` }} />
-                    {counts[bucket]}
-                  </span>
-                );
-              })}
-            </Button>
+          <span className="pane-tasks-said hidden-words" id={id}>
+            {said}
           </span>
+          <Button
+            variant="quiet"
+            size="sm"
+            ref={trigger}
+            className="pane-tasks-button"
+            // **A stop of the head's, in its drawn order**, as its other controls are: the
+            // keyboard also opens this menu with its key, or from the palette. No `title`: a
+            // tooltip would come up over the menu the same rest opened.
+            aria-describedby={id}
+            aria-haspopup="menu"
+            aria-expanded={open}
+            // The click toggles it, not the pointer going down: not every way of pressing a
+            // button sends a pointer event (`ShowMore` has the measurement).
+            onPointerDown={(event) => {
+              event.preventDefault();
+              notResting();
+              pressedFrom.current = document.activeElement;
+            }}
+            // A press that did not end in a click (a right press, one let go elsewhere) is
+            // over: where the keyboard was then says nothing of the next press.
+            onPointerUp={() => {
+              window.setTimeout(() => (pressedFrom.current = undefined));
+            }}
+            onPointerCancel={() => {
+              pressedFrom.current = undefined;
+            }}
+            // A press by any pointer, by the keyboard, or by a screen reader.
+            onPress={(event) => {
+              // Enter or Space on it, and a screen reader's, which sends no pointer, land where
+              // the keyboard's own open does (#4304, #5341).
+              const opened =
+                event.pointerType === "virtual" || event.pointerType === "keyboard"
+                  ? "keys"
+                  : "press";
+              const from = pressedFrom.current ?? document.activeElement;
+              pressedFrom.current = undefined;
+              notResting();
+              notLeaving();
+              if (dragging()) return;
+              if (open && by.current === "rest") {
+                // A press on a menu the rest opened keeps it, and gives it the keyboard.
+                by.current = opened;
+                setHow(opened);
+                content.current?.focus({ preventScroll: true });
+              } else if (open) hide();
+              else show(opened, from === trigger.current ? null : from);
+            }}
+            // Coming on arms nothing (see `ChatTasks`): it is only where the pointer is.
+            onPointerEnter={(event) => {
+              notLeaving();
+              seenAt.current = { x: event.clientX, y: event.clientY };
+            }}
+            onPointerMove={moved}
+            onPointerLeave={leaveSoon}
+          >
+            {children}
+          </Button>
           <AnchoredMenu
             triggerRef={trigger}
             isOpen={open}
@@ -633,28 +657,52 @@ function Chip({
           >
             <Menu
               listRef={content}
-              // Named by the chip that opened it: "Tasks of steward 4: …". Said here because the
-              // chip's id is the window's (the tab is described by it).
-              aria-labelledby={id}
+              // Whose tasks these are: the button that opened it says the chat's state.
+              aria-label={`Tasks of ${name}`}
               className="tasks-menu"
               takesNoKeyboard={quiet}
               onPointerEnter={notLeaving}
               onPointerLeave={leaveSoon}
               footer={
-                (limits != null || figures?.total != null) && (
-                  <div className="tasks-menu-foot">
-                    {limits != null && <div className="tasks-menu-limits">{limits}</div>}
-                    {/* What the tab's chats used (#1500, V100-43): one line, added up and
-                        spelled by the core, with what it adds up as its hint. No money. */}
-                    {figures?.total != null && (
-                      <Tooltip tip={figures.total.explained}>
-                        <div className="tasks-menu-totals" data-testid="tasks-used">
-                          {figures.total.said}
-                        </div>
-                      </Tooltip>
-                    )}
+                <div className="tasks-menu-foot">
+                  {/* **The summary** (#5341): how many of its tasks are working, waiting, failed
+                      and finished, each with its state's shape, as a tab's count said it, and
+                      the key that opens this menu too. */}
+                  <div className="tasks-menu-summary" data-testid="tasks-summary">
+                    <span className="hidden-words">
+                      {taskCountsSaid(counts, { separator: ", " })}
+                    </span>
+                    {TASK_BUCKETS.filter((bucket) => counts[bucket] > 0).map((bucket) => {
+                      const Mark = MARKS[bucket];
+                      return (
+                        <span
+                          key={bucket}
+                          className="count"
+                          data-count={bucket}
+                          aria-hidden="true"
+                          // A count of a chat's tasks, which a theme's `tabs.count.*` reaches.
+                          {...tabPart("count")}
+                        >
+                          <Mark
+                            style={{ color: `var(${property(TASK_BUCKET_DRAWN[bucket].token)})` }}
+                          />
+                          {counts[bucket]}
+                        </span>
+                      );
+                    })}
+                    <span className="tasks-menu-key">Also {taskKeySaid("menu", onAMac())}</span>
                   </div>
-                )
+                  {limits != null && <div className="tasks-menu-limits">{limits}</div>}
+                  {/* What the tab's chats used (#1500, V100-43): one line, added up and
+                        spelled by the core, with what it adds up as its hint. No money. */}
+                  {figures?.total != null && (
+                    <Tooltip tip={figures.total.explained}>
+                      <div className="tasks-menu-totals" data-testid="tasks-used">
+                        {figures.total.said}
+                      </div>
+                    </Tooltip>
+                  )}
+                </div>
               }
             >
               {lines.map(line)}

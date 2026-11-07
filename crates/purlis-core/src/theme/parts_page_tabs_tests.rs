@@ -33,7 +33,7 @@ fn page_tabs_come_in_the_next_release_s_manifest() {
         .find(|one| one["name"] == "page-tabs")
         .expect("page tabs are in the manifest")
         .clone();
-    assert_eq!(family["since"], parts::NEXT);
+    assert_eq!(family["since"], 13);
     let parts: Vec<&str> = family["parts"]
         .as_array()
         .unwrap()

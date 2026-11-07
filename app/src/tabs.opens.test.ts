@@ -17,6 +17,7 @@ import {
   openTab,
   openView,
   press,
+  wouldLeaveStrip,
   type Pressing,
   selectTab,
   setPinned,
@@ -341,5 +342,28 @@ describe("what opening leaves (#5289)", () => {
       expect(contentsOf(next, id)).toEqual(contentsOf(tabs, id));
       expect(focusedChat(next)).toBe(3);
     }
+  });
+});
+
+/**
+ * **A press that would move a window to another strip** (#5330): what a tab window hands to the
+ * project window, since it holds only the tabs torn off into it.
+ */
+describe("a press that would leave the strip in front (#5330)", () => {
+  it("for a chat in no pane, filed on another strip", () => {
+    expect(wouldLeaveStrip(onePane(), 9, filedIn)).toBe(true);
+  });
+
+  it("not for a chat in no pane, filed on the strip in front", () => {
+    expect(wouldLeaveStrip(onePane(), 2, filedIn)).toBe(false);
+  });
+
+  it("not for a chat on screen, even on another strip's tab", () => {
+    const both = selectTab(openTab(onePane(), 9, "9", "steward"), 1);
+    expect(wouldLeaveStrip(both, 9, filedIn)).toBe(false);
+  });
+
+  it("not with no tab in front", () => {
+    expect(wouldLeaveStrip(noTabs(), 9, filedIn)).toBe(false);
   });
 });

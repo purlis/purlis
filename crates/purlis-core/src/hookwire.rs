@@ -1547,6 +1547,13 @@ pub enum Ask {
     /// held for the person, who alone applies it. **It carries a value and no file**, so nothing
     /// else in the pool's file can change. No ticket, for [`Self::Removal`]'s reason.
     ProposeLimit(Box<ProposeLimitAsk>),
+    /// **A change to several skills at once a chat proposes** (#5357, the operator's ruling of
+    /// 2026-11-05): what `purlis skill rm`, `off`, `on`, `pin` and `archive` hand over in a chat.
+    /// The same ask as [`Self::Propose`]: held for the person, who alone applies it, in the
+    /// window, after the review the app reads from the plane itself. **It names skills and an
+    /// act, and nothing else**, so no part of what is shown or made is the chat's. No ticket,
+    /// for [`Self::Removal`]'s reason.
+    ProposeSkillSet(Box<ProposeSkillSetAsk>),
     /// Drive one of this chat's browsers (#2013): what a chat's browser tools hand over. The app
     /// decides whether the chat may have a browser at all (the one Ask that sets its posture),
     /// starts its browser in the session host with what it may reach, and hands the act on. It
@@ -1724,6 +1731,15 @@ pub struct ProposeLimitAsk {
     pub key: String,
     /// The value; `None` returns it to purlis's default.
     pub value: Option<u64>,
+}
+
+/// **A change to several skills a chat proposes** ([`Ask::ProposeSkillSet`], #5357). Judged by
+/// the app against the plane when it is asked, and again at Apply.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ProposeSkillSetAsk {
+    /// The chat asking, from [`CHAT_ENV`]: the chat whose token the line must carry.
+    pub chat: u32,
+    pub change: crate::skills::verbs::set::SetChange,
 }
 
 /// Something a chat asks the person to remove ([`crate::removalask`], qw356).
@@ -1968,6 +1984,20 @@ pub enum GitWork {
     /// window's own Update run for the chat, only on a clean tree, and refused where it would
     /// write a file the chat's sandbox denies. The ask's workspace is empty and unread.
     RootUpdate {},
+    /// `purlis save [-m <message>] [--sign] [--no-push] [--pull]`, standing anywhere in the
+    /// project: the project saved by the app, as the terminal's `purlis save` saves it, with the
+    /// chat's provenance from the app's own record of it. The ask's workspace is empty and
+    /// unread. A kind of its own, so an app that does not know it answers nothing.
+    RootSave {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        message: Option<String>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        sign: bool,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        no_push: bool,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        pull: bool,
+    },
     /// `purlis worktree push [--force-with-lease]` (qw387): the branch of folder
     /// `<repo>/<piece>` pushed to its remote, under its own name and nothing else.
     WorktreePush {
@@ -2577,6 +2607,7 @@ impl Ask {
             Self::Removal(removal) => removal.chat,
             Self::Propose(proposed) => proposed.chat,
             Self::ProposeLimit(proposed) => proposed.chat,
+            Self::ProposeSkillSet(proposed) => proposed.chat,
             Self::Browse(browse) => browse.chat,
             Self::ThemePreview(asks) => asks.chat,
             Self::ThemeDraft(draft) => draft.chat,
@@ -4220,6 +4251,13 @@ const A_FRAME_WRITE_TAKES_AT_MOST: std::time::Duration = std::time::Duration::fr
 
 /// What an app with no answerer says to an ask, so an asker never waits on a silence.
 pub const NOTHING_ANSWERS: &str = "this app does not open chats on request";
+
+/// What the app answers a chat's save or update of the project where the chat's own sandbox
+/// does not keep it from writing the project's git ([`crate::gitbroker::Asker::roots_git_held`]):
+/// the chat's own `purlis` runs it, as it does outside a chat, and an asker reads it as no app
+/// having taken the ask.
+pub const LEFT_TO_THE_CHAT: &str =
+    "this chat writes the project's git itself, so the app leaves its save and update to it";
 
 /// What the app answers a line it cannot read (#1333): one from a newer purlis, whose kind it
 /// does not know. An asker can tell an older app from a refusal by it.

@@ -12,6 +12,8 @@ import {
   pieceFileView,
   pieceFilesView,
   pieceOf,
+  isWorkspaceFiles,
+  workspaceFiles,
 } from "./pieceViews";
 
 const CUT = { workspace: "alpha", repo: "svc", piece: "fix-it" };
@@ -31,6 +33,21 @@ describe("a piece's files and one of its files are views named by data", () => {
     expect(pieceOf(pieceFileView(own, "src/a.rs"))).toEqual({ place: own, path: "src/a.rs" });
     expect(pieceOf(pieceFilesView(own))).toEqual({ place: own });
     expect(pieceFileTitle(own, "src/a.rs")).toBe("a.rs · svc");
+  });
+
+  it("names a file of a workspace's own files by the workspace and no repo (#5375)", () => {
+    const own = workspaceFiles("alpha");
+
+    expect(isWorkspaceFiles(own)).toBe(true);
+    expect(isWorkspaceFiles({ workspace: "alpha", repo: "svc", piece: null })).toBe(false);
+    expect(isWorkspaceFiles(PLANE_ROOT)).toBe(false);
+    expect(pieceOf(pieceFileView(own, "notes/plan.md"))).toEqual({
+      place: own,
+      path: "notes/plan.md",
+    });
+    expect(pieceFileTitle(own, "notes/plan.md")).toBe("plan.md · alpha");
+    // A piece with no repo names nothing.
+    expect(pieceOf({ from: null, view: "piece-file", key: "alpha//fix/notes.md" })).toBeUndefined();
   });
 
   it("names a file of the plane root by its path alone, in a view of its own kind (#1916)", () => {

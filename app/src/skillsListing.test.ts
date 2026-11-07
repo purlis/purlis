@@ -580,6 +580,39 @@ describe("a row's menu", () => {
   });
 });
 
+describe("a repo skill in a clone in the workspace's repos folder (ADR 0114)", () => {
+  const inRepos = skill("lint-rs", {
+    level: "repo",
+    folder: "workspaces/ops/repos/api/.claude/skills/lint-rs",
+    owner: { kind: "repo", name: "api" },
+  });
+
+  it("opens its file and shows its folder in that clone", () => {
+    expect(filePlaceOf(inRepos)).toEqual({
+      workspace: "ops",
+      repo: "api",
+      path: ".claude/skills/lint-rs/SKILL.md",
+    });
+    expect(explorerPlaceOf(inRepos, "ops")).toEqual({
+      repo: "api",
+      folder: ".claude/skills/lint-rs",
+    });
+  });
+
+  it("still reads an old clone named repos at the workspace's root as that clone", () => {
+    const old = skill("fmt", {
+      level: "repo",
+      folder: "workspaces/ops/repos/.claude/skills/fmt",
+      owner: { kind: "repo", name: "repos" },
+    });
+    expect(filePlaceOf(old)).toEqual({
+      workspace: "ops",
+      repo: "repos",
+      path: ".claude/skills/fmt/SKILL.md",
+    });
+  });
+});
+
 describe("a repo skill in a branch folder (#4326)", () => {
   const onTheBranch = skill("fmt", {
     level: "repo",

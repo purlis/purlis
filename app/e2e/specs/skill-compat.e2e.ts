@@ -7,12 +7,7 @@ import { showView } from "../opening.js";
 import { $, browser, expect } from "@wdio/globals";
 import { projectRoot } from "../acting.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
-import {
-  closeTheViewTabsOpenedSince,
-  focusWorkspace,
-  runFromThePalette,
-  tabNames,
-} from "../reach.js";
+import { closesTheTabsItOpens, focusWorkspace, runFromThePalette } from "../reach.js";
 import { studioSkill } from "../studio.js";
 import { startAChat } from "../started.js";
 
@@ -43,9 +38,11 @@ describe("a skill's compatibility and a skill that cannot be loaded", function (
   const written: string[] = [];
   let local = "";
   let declared = "";
-  let wereOpen: string[] = [];
   let wereRunning: Running = {};
 
+  // Hooks of a kind run in the order they are registered: the strip is read once alpha is
+  // focused and before the chats running are, and its view tabs are closed once the chats are
+  // ended and before the files are put back.
   before(async () => {
     const root = await projectRoot();
     const skills = join(root, "skills");
@@ -73,13 +70,19 @@ describe("a skill's compatibility and a skill that cannot be loaded", function (
     local = join(root, "charter.local.toml");
     declared = readFileSync(local, "utf8");
     await focusWorkspace("alpha");
-    wereOpen = await tabNames();
-    wereRunning = await chatsRunning();
   });
 
   after(async () => {
     await endTheChatsStartedSince(wereRunning);
-    await closeTheViewTabsOpenedSince(wereOpen);
+  });
+
+  closesTheTabsItOpens();
+
+  before(async () => {
+    wereRunning = await chatsRunning();
+  });
+
+  after(() => {
     if (declared !== "") writeFileSync(local, declared);
     for (const path of written) rmSync(path, { recursive: true, force: true });
   });

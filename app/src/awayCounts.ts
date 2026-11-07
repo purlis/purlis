@@ -118,6 +118,7 @@ export const NOTHING_READ: AwayRead = readOf({
   asking: {},
   ownWork: {},
   backgroundTurns: {},
+  onlyFailures: {},
 });
 
 /** Whether two reads hold the same shares: the store keeps a share that did not change. */

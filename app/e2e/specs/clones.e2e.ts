@@ -297,9 +297,10 @@ async function theTabOf(path: string): Promise<void> {
 /** A repo's row among the ones not cloned here. */
 const rowOf = (repo: string) => `[data-testid="absent-${repo}"]`;
 
-/** A repo's folder and its hidden one, under `plane`'s workspace. */
+/** A repo's folder and its hidden one, in `plane`'s workspace's `repos/`, where a clone lands
+ *  (ADR 0114). */
 function foldersOf(plane: string, workspace: string, repo: string) {
-  const dir = join(plane, "workspaces", workspace);
+  const dir = join(plane, "workspaces", workspace, "repos");
   return { landed: join(dir, repo), hidden: join(dir, `.cloning-${repo}`) };
 }
 
@@ -343,8 +344,10 @@ async function pictures(name: string, parts: Record<string, string>): Promise<vo
 /** Nothing of the repo anywhere in the workspace, finished or hidden. */
 function nothingOf(plane: string, workspace: string, repo: string): void {
   const { landed, hidden } = foldersOf(plane, workspace, repo);
-  const there = readdirSync(join(plane, "workspaces", workspace)).filter((one) =>
-    one.includes(repo),
+  const ws = join(plane, "workspaces", workspace);
+  const repos = join(ws, "repos");
+  const there = [...readdirSync(ws), ...(existsSync(repos) ? readdirSync(repos) : [])].filter(
+    (one) => one.includes(repo),
   );
   expect({ landed: existsSync(landed), hidden: existsSync(hidden), there }).toEqual({
     landed: false,
@@ -475,11 +478,17 @@ describe("cloning from a self-hosted GitLab in the real window", function () {
     await press(WELCOME, SIGN_IN_DOOR);
     await untilSays(WELCOME, "Sign in with GitLab");
     await press(WELCOME, "Sign in with GitLab");
-    await browser.waitUntil(() => existsSync(PAGE), {
-      timeout: 30_000,
-      timeoutMsg: "the sign-in never opened the forge's page",
-    });
-    await forge.playBrowser(readFileSync(PAGE, "utf8"));
+    // The app writes the page's address with a plain write, which makes the file before it fills
+    // it: an empty read there is the moment between, not the page.
+    let page = "";
+    await browser.waitUntil(
+      () => {
+        page = existsSync(PAGE) ? readFileSync(PAGE, "utf8") : "";
+        return /^https?:\/\/\S+$/.test(page);
+      },
+      { timeout: 30_000, timeoutMsg: "the sign-in never opened the forge's page" },
+    );
+    await forge.playBrowser(page);
     await browser.waitUntil(
       async () => (await ask<Account[]>("forge_accounts")).some((a) => a.host === forge.server),
       { timeout: 30_000, timeoutMsg: "the browser's redirect signed no account in" },

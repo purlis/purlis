@@ -268,8 +268,7 @@ export const UnavailableSubmit: Story = {
  */
 export const QuietPaneMarks: Story = {
   render: () => (
-    // The pane's group shows itself on the pane's hover or focus; here it is always shown.
-    <div className="pane-doing" style={{ visibility: "visible" }}>
+    <div className="pane-doing">
       <IconButton icon={<Plus />} aria-label="Split right" variant="quiet" size="sm" />
       <IconButton icon={<X />} aria-label="Close this pane" variant="quiet" size="sm" />
       <span data-testid="danger" style={{ background: "var(--danger-surface)" }} />

@@ -91,7 +91,8 @@ impl HarnessAdapter for ClaudeCode {
         };
         let mut args = words(["--plugin-dir", &plugin.display().to_string()]);
         // The plane's skills, as a plugin of their own (ADR 0063 as amended 2026-10-20).
-        if let Some(linked) = crate::skills::linked(&skills, kit) {
+        let linked = crate::skills::linked(&skills, kit);
+        if let Some(linked) = linked {
             args.extend(words(["--plugin-dir", &linked.display().to_string()]));
         }
         // An outcome eval's chat loads no settings file at all: what it may do is its `--settings`.
@@ -160,6 +161,13 @@ impl HarnessAdapter for ClaudeCode {
                 (
                     crate::toolhooks::OUTCOME_FOLDER_ENV.to_owned(),
                     cwd.display().to_string(),
+                )
+            }))
+            // What `skill_load` may send it to `skills:<name>` for (#4510): that folder alone.
+            .chain(linked.map(|linked| {
+                (
+                    crate::skills::HANDED_ENV.to_owned(),
+                    linked.display().to_string(),
                 )
             }))
             .collect(),

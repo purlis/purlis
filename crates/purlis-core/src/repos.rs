@@ -41,14 +41,15 @@ pub struct Clones {
     pub refused: Vec<(String, String)>,
 }
 
-/// The clones directly under `workspaces/<ws>`, sorted, with what was refused beside them.
+/// The clones of `workspaces/<ws>`, in `repos/` and at its root, sorted, with what was refused
+/// beside them.
 ///
-/// A reading of [`repofolder::holdings`], the one walk of a workspace. Only its root for now. A
-/// repo in `repos/` joins this list with the migration of the scanners (#5371), which is more than
-/// the filter going away, since `foo/` beside `repos/foo/` would then be listed twice: it stops
-/// reading `shadowed`, reads `repos` whole, and reads `others` and `refused` from both places, with
-/// a directory in `others` still a clone only at the root. A repository in a name the workspace
-/// keeps is a clone here, as it has always been; in `repos/` it never was one.
+/// A reading of [`repofolder::holdings`], the one walk of a workspace (#5371). It reads `repos`
+/// whole and never `shadowed`, so `foo/` beside the repo `repos/foo/` is not listed twice: the
+/// repo in `repos/` is the clone, and the one at the root is doctor's to warn about. It reads
+/// `others` and `refused` from both places, with a directory in `others` still a clone only at
+/// the root: a repository in a name the workspace keeps is a clone here, as it has always been,
+/// and in `repos/` it never was one.
 pub fn clones(plane: &Path, ws: &str) -> Result<Clones, Trouble> {
     // The workspace directory is the anchor, and it is asked for rather than assumed: a
     // committed `workspaces/<legal-name> -> elsewhere` travels to every machine that clones
@@ -56,40 +57,57 @@ pub fn clones(plane: &Path, ws: &str) -> Result<Clones, Trouble> {
     // workspace with no folder is an error here, which the walk would read as empty.
     confine::workspace_dir(plane, ws)?;
     let walked = repofolder::holdings(plane, ws)?;
-    let mut found = Clones::default();
-    for row in [walked.repos, walked.shadowed, walked.others]
-        .into_iter()
-        .flatten()
-        .filter(|row| row.layout == Layout::Root)
-    {
-        let name = row.repo.name.clone();
-        match row.git {
-            Git::Directory => found.repos.push(row.repo),
-            // A linked worktree. Neither a mistake nor a clone, so not worth a line in the panel.
-            Git::File => {}
-            // Said, not dropped. A repo that quietly disappears from the panel reads as "this
-            // workspace has one fewer repo", which is the same class of lie as a blank CI
-            // cell — and the operator is the only one who can tell whether the link is theirs.
-            Git::Link => found.refused.push((
-                name.clone(),
-                format!(
-                    "'{name}/.git' is a symlink, and purlis will not run git through one: \
-                     the repository it acts on would not be the one inside this workspace. A \
-                     `.git` purlis created is never a link"
-                ),
-            )),
-        }
-    }
-    found.refused.extend(
-        walked
-            .refused
+    let mut found = Clones {
+        repos: clone_rows(&walked)
             .into_iter()
-            .filter(|said| said.layout == Layout::Root)
-            .map(|said| (said.name, said.why)),
-    );
+            .map(|row| row.repo)
+            .collect(),
+        refused: Vec::new(),
+    };
+    // Said, not dropped. A repo that quietly disappears from the panel reads as "this workspace
+    // has one fewer repo", which is the same class of lie as a blank CI cell — and the operator
+    // is the only one who can tell whether the link is theirs. A linked worktree (`.git` a file)
+    // is neither a mistake nor a clone, so not worth a line in the panel.
+    for row in walked.others.iter().filter(|row| row.git == Git::Link) {
+        let name = &row.repo.name;
+        // Where it is, so the operator looks in the right folder of the two.
+        let at = match row.layout {
+            Layout::Repos => format!("{}/{name}", repofolder::REPOS),
+            Layout::Root => name.clone(),
+        };
+        found.refused.push((
+            name.clone(),
+            format!(
+                "'{at}/.git' is a symlink, and purlis will not run git through one: the \
+                 repository it acts on would not be the one inside this workspace. A `.git` \
+                 purlis created is never a link"
+            ),
+        ));
+    }
+    found
+        .refused
+        .extend(walked.refused.into_iter().map(|said| (said.name, said.why)));
     found.repos.sort_by(|a, b| a.name.cmp(&b.name));
     found.refused.sort();
     Ok(found)
+}
+
+/// **The rows of `walked` that are a workspace's clones**, sorted by name: every repo, in either
+/// place, and a repository at the root in a name the workspace keeps.
+fn clone_rows(walked: &repofolder::Holdings) -> Vec<repofolder::Row> {
+    let mut rows: Vec<repofolder::Row> = walked
+        .repos
+        .iter()
+        .chain(
+            walked
+                .others
+                .iter()
+                .filter(|row| row.git == Git::Directory && row.layout == Layout::Root),
+        )
+        .cloned()
+        .collect();
+    rows.sort_by(|a, b| a.repo.name.cmp(&b.repo.name));
+    rows
 }
 
 /// The clone `name` resolves to in workspace `ws`, or `None`.
@@ -99,12 +117,16 @@ pub fn clones(plane: &Path, ws: &str) -> Result<Clones, Trouble> {
 /// the path must stay inside the workspace without passing through a link, and its `.git`
 /// must be a directory. A link out of the workspace, a plain directory and a linked worktree
 /// are all `None`.
+///
+/// In either layout ([`repofolder::folder`]): `repos/<name>` where that is a repo, else
+/// `<name>`. A name only one entry and no repo's name purlis takes (`.github`) is only ever at
+/// the root, where it always was.
 pub fn clone_at(plane: &Path, ws: &str, name: &str) -> Option<Repo> {
     if !contain::segment_ok(name) {
         return None;
     }
-    let dir = confine::workspace_dir(plane, ws).ok()?;
-    let path = confine::within_workspace(plane, ws, &dir.join(name)).ok()?;
+    let named = repofolder::entry(plane, ws, name)?;
+    let path = confine::within_workspace(plane, ws, &named).ok()?;
     matches!(repofolder::git_of(&path), Ok(Some(Git::Directory))).then(|| Repo {
         name: name.to_string(),
         path,

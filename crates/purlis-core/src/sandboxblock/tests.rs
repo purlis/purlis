@@ -1696,6 +1696,21 @@ fn a_write_to_a_clones_git_folder_names_the_app_and_never_a_grant() {
 }
 
 #[test]
+fn a_write_to_the_project_roots_git_folder_names_purlis_save() {
+    for path in [
+        "/Users/dev/plane/.git/index.lock",
+        "/Users/dev/plane/.git/refs/heads/main.lock",
+        "/Users/dev/plane/.git/objects/ab/cdef",
+    ] {
+        let way = way_out(Path::new(path), Path::new(ROOT)).expect(path);
+        assert!(way.contains("purlis save"), "{way}");
+    }
+    // A `.git` further down is no project root's.
+    let below = "/Users/dev/plane/vendor/x/.git/index.lock";
+    assert_eq!(way_out(Path::new(below), Path::new(ROOT)), None);
+}
+
+#[test]
 fn a_block_in_its_own_clones_git_folder_is_a_branch_folder_chats_own_to_retry() {
     let dir = tempfile::tempdir().unwrap();
     let base = std::fs::canonicalize(dir.path()).unwrap();

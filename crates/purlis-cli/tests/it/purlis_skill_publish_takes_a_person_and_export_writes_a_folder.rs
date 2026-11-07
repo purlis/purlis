@@ -21,9 +21,7 @@ fn purlis(at: &Path, args: &[&str], chat: bool) -> Output {
         .env("PURLIS_SKILL_STUDIO", "1")
         .env("NO_COLOR", "1")
         .stdin(Stdio::null());
-    for spelling in purlis_core::envvar::spellings("PURLIS_SESSION_ID") {
-        command.env_remove(spelling);
-    }
+    crate::support::at_a_terminal(&mut command);
     if chat {
         command.env("PURLIS_SESSION_ID", "s1");
     }

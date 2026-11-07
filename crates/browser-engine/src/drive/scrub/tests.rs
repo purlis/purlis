@@ -238,3 +238,90 @@ fn what_a_screenshot_looks_for_leaves_a_short_text_alone() {
     assert!(!every.iter().any(|one| **one == *"ab"));
     assert!(!every.iter().any(|one| **one == *"YWI="), "nor its base64");
 }
+
+#[test]
+fn a_letter_whose_capital_is_spelled_otherwise_is_found_in_either_case() {
+    assert_eq!(
+        scrub_of(&["stra\u{df}e"]).text("a STRA\u{1e9e}E b"),
+        "a (blanked) b"
+    );
+    assert_eq!(
+        scrub_of(&["stra\u{df}e"]).text("a STRASSE b"),
+        "a (blanked) b"
+    );
+    assert_eq!(
+        scrub_of(&["\u{3c3}\u{3b1}\u{3c2}"]).text("a \u{3a3}\u{391}\u{3a3} b"),
+        "a (blanked) b"
+    );
+}
+
+#[test]
+fn a_value_a_page_wrote_in_latin1_is_found_in_an_address() {
+    let scrub = scrub_of(&["p\u{e4}ssword"]);
+    assert_eq!(
+        scrub.text("http://a.test/?p=p%E4ssword"),
+        "http://a.test/?p=(blanked)"
+    );
+    assert_eq!(
+        scrub.text("http://a.test/?p=p%25e4ssword"),
+        "http://a.test/?p=(blanked)"
+    );
+    assert_eq!(
+        scrub.text("http://a.test/?p=p%C3%A4ssword"),
+        "http://a.test/?p=(blanked)"
+    );
+}
+
+#[test]
+fn a_plus_in_a_value_read_as_a_space_is_found() {
+    assert_eq!(scrub_of(&["a+b+c"]).text("x a b c y"), "x (blanked) y");
+}
+
+#[test]
+fn a_plus_in_a_code_from_boxes_is_no_separator() {
+    let mut kept = Kept::default();
+    let first = crate::drive::tree::NodeKey {
+        frame: "f".to_owned(),
+        backend: 1,
+    };
+    kept.group(&first, &["a+b"]);
+    let scrub = Scrub::of(&kept);
+    assert_eq!(scrub.text("a%20%2B%20b"), "(blanked)");
+}
+
+#[test]
+fn what_a_screenshot_looks_for_in_a_code_is_found_when_it_is_escaped() {
+    assert!(holds_loosely("1%202%203", &["123"]));
+}
+
+#[test]
+fn a_value_the_same_as_the_blank_is_still_held() {
+    assert!(scrub_of(&["(blanked)"]).holds("a (blanked) b"));
+}
+
+#[test]
+fn a_string_too_much_to_read_is_said_as_blanked_whole() {
+    // Encoded sixteen times over, and long: every reading changes, so each is a whole read.
+    let mut deep = "%".to_owned();
+    for _ in 0..16 {
+        deep = deep.replace('%', "%25");
+    }
+    let long = format!("{deep}{}", "x".repeat(2_000_000));
+    let scrub = scrub_of(&["abc-value"]);
+    // Compared by hand: a failure must not print megabytes.
+    assert!(scrub.text(&long) == "(blanked)", "said at length");
+    assert!(scrub.holds(&long));
+    // And a long one that reads as it is stays.
+    let plain = "x".repeat(2_000_000);
+    assert!(scrub.text(&plain) == plain, "a plain long string changed");
+}
+
+#[test]
+fn a_value_kept_in_two_cases_is_found_in_the_hex_and_base64_of_each() {
+    let scrub = scrub_of(&["hunter2abc", "Hunter2ABC"]);
+    let hex: String = "Hunter2ABC"
+        .bytes()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    assert_eq!(scrub.text(&format!("a {hex} b")), "a (blanked) b");
+}

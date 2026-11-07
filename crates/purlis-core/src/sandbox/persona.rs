@@ -661,6 +661,18 @@ pub fn looked_at(root: &Path) -> Option<Vec<(Shown, Vec<super::tools::Tool>)>> {
     )
 }
 
+/// **Each persona's hosts and tools as `text`, the project's file, says them** (#5245), read whether
+/// or not its chats are sandboxed, and marking nothing: what an Allow of exactly that file would be
+/// bound to, however the file on disk moves meanwhile. None where it is not TOML or says no policy.
+#[must_use]
+pub fn unjudged_in(root: &Path, text: &str) -> Vec<Shown> {
+    let said = super::Plane::of(Some(text)).said();
+    said.policy
+        .or(said.unset)
+        .map(|policy| shown_of(root, &policy.personas, &Locks::of(root), false))
+        .unwrap_or_default()
+}
+
 /// [`shown_in`]'s answer for `personas`. Where `judged`, an Allow that no longer matches is marked
 /// ([`standing`]).
 fn shown_of(

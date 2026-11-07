@@ -189,3 +189,88 @@ fn a_download_that_knows_no_length_says_none() {
     let (_, length) = Bytes.fetch_sized("https://a.test/x").unwrap();
     assert_eq!(length, None);
 }
+
+/// An answer of `status` with an empty body, the connection closed after it.
+fn empty(status: &str) -> (Duration, String) {
+    (
+        Duration::ZERO,
+        format!("HTTP/1.1 {status}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"),
+    )
+}
+
+/// The manifest's text, answered whole.
+fn manifest() -> (Duration, String) {
+    (
+        Duration::ZERO,
+        "HTTP/1.1 200 OK\r\nContent-Length: 12\r\nConnection: close\r\n\r\nthe manifest".to_owned(),
+    )
+}
+
+#[test]
+fn a_server_error_is_asked_again_and_the_answer_after_it_is_read() {
+    let (port, _done) = serving(|_| vec![empty("504 Gateway Timeout"), manifest()]);
+    let (https, heard) = plain(Duration::from_secs(30));
+    let url = format!("http://127.0.0.1:{port}/engine-manifest.json");
+    let mut text = String::new();
+    https
+        .fetch(&url)
+        .expect("asked again after the 504")
+        .read_to_string(&mut text)
+        .unwrap();
+    assert_eq!(text, "the manifest");
+    assert_eq!(
+        *heard.lock().unwrap(),
+        [(url.clone(), Some(504), true), (url, Some(200), true)],
+        "each request is heard, the refused one included"
+    );
+}
+
+#[test]
+fn a_server_that_keeps_failing_is_given_up_on_with_its_last_answer() {
+    let (port, _done) = serving(|_| {
+        let mut answers = vec![empty("502 Bad Gateway")];
+        answers.extend((0..super::SERVER_ERROR_RETRIES).map(|_| empty("503 Service Unavailable")));
+        answers
+    });
+    let (https, heard) = plain(Duration::from_secs(30));
+    let url = format!("http://127.0.0.1:{port}/engine-manifest.json");
+    let Err(why) = https.fetch(&url) else {
+        panic!("a server that never answered was read");
+    };
+    assert_eq!(why.to_string(), format!("{url} answered 503"));
+    assert_eq!(
+        heard.lock().unwrap().len(),
+        1 + super::SERVER_ERROR_RETRIES,
+        "asked once and then again as many times as it is retried"
+    );
+}
+
+#[test]
+fn an_answer_that_is_not_a_server_error_is_not_asked_again() {
+    let (port, _done) = serving(|_| vec![empty("404 Not Found"), manifest()]);
+    let (https, heard) = plain(Duration::from_secs(30));
+    let url = format!("http://127.0.0.1:{port}/engine-manifest.json");
+    let Err(why) = https.fetch(&url) else {
+        panic!("a 404 was read as the manifest");
+    };
+    assert_eq!(why.to_string(), format!("{url} answered 404"));
+    assert_eq!(*heard.lock().unwrap(), [(url, Some(404), true)]);
+}
+
+#[test]
+fn a_server_error_is_not_asked_again_past_the_download_s_total_time() {
+    let (port, _done) = serving(|_| vec![empty("504 Gateway Timeout"), manifest()]);
+    let (https, heard) = plain(Duration::from_millis(300));
+    let url = format!("http://127.0.0.1:{port}/engine-manifest.json");
+    let started = Instant::now();
+    let Err(why) = https.fetch(&url) else {
+        panic!("asked again past its total time");
+    };
+    assert_eq!(why.to_string(), format!("{url} answered 504"));
+    assert!(
+        started.elapsed() < Duration::from_secs(2),
+        "{:?}",
+        started.elapsed()
+    );
+    assert_eq!(heard.lock().unwrap().len(), 1);
+}

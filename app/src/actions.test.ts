@@ -18,6 +18,7 @@ import {
   ONE_CHAT_GOES_ON,
   PANE_CLOSE,
   FILE_VERBS,
+  WORKSPACE_WRITE_VERBS,
   fileRows,
   KEEPS_THE_BRANCH,
   matches,
@@ -133,6 +134,7 @@ function doing(): Doing & { calls: string[] } {
       return { ok: true };
     },
     split: note("split"),
+    splitTab: (tab: number, direction: string) => calls.push(`splitTab:${tab}:${direction}`),
     closePane: note("closePane"),
     closeTab: note("closeTab"),
     closeOtherTabs: note("closeOtherTabs"),
@@ -346,6 +348,10 @@ function doing(): Doing & { calls: string[] } {
       calls.push(`revealPath:${at.repo}/${at.piece ?? ""}:${at.path}`);
       return { ok: true as const };
     }),
+    saveWithTheProject: vi.fn(async (at: BranchPath) => {
+      calls.push(`saveWithTheProject:${at.workspace}:${at.path}`);
+      return { ok: true as const };
+    }),
     openInEditor: vi.fn(async (at: BranchPath, line: number) => {
       calls.push(`openInEditor:${at.repo}/${at.piece ?? ""}:${at.path},${line}`);
       return { ok: true as const };
@@ -455,7 +461,7 @@ describe("the one list of actions", () => {
   });
 
   it("puts the destructive rows last, so Enter on a fresh palette never closes a chat", () => {
-    const tabs = openTab(noTabs(), 7, "one");
+    const tabs = splitFocusedPane(openTab(noTabs(), 7, "one"), "row", 8);
     const offers = ids(catalogue(now({ tabs, plane: "/plane", worktreeOf: () => PIECE })));
 
     for (const gentle of ["chat.new", "pane.split.right", "chat.branch.merge:7"]) {
@@ -551,7 +557,7 @@ describe("the one list of actions", () => {
   });
 
   it("clears a pane on Close pane and ends nothing, saying its chat goes on (#4756)", () => {
-    const offers = catalogue(now({ tabs: openTab(noTabs(), 7, "3") }));
+    const offers = catalogue(now({ tabs: splitFocusedPane(openTab(noTabs(), 7, "3"), "row", 8) }));
 
     expect(by(offers, "pane.close")?.title).toBe(PANE_CLOSE);
     expect(by(offers, "pane.close")?.does).toEqual({ verb: "closePane" });
@@ -560,13 +566,78 @@ describe("the one list of actions", () => {
 
   it("closes a pane that shows a task too, since that ends nothing either", () => {
     // Chat 9 is a task of chat 7, shown inside chat 7's tab (#1486).
-    const tabs = switchTabTo(openTab(noTabs(), 7, "3", "steward"), 9, (session) =>
-      session === 9 ? 7 : undefined,
-    );
+    const split = splitFocusedPane(openTab(noTabs(), 7, "3", "steward"), "row", 8);
+    const tabs = switchTabTo(split, 9, (session) => (session === 9 ? 8 : undefined));
     const offers = catalogue(now({ tabs, nameOf: () => "steward 3" }));
 
     expect(by(offers, "pane.close")).toMatchObject({ available: true, title: PANE_CLOSE });
     expect(by(offers, "tab.close:1")?.does).toEqual({ verb: "closeTab", tab: 1 });
+  });
+
+  it("has no Close pane row on a tab with one pane, whose own close does the same (#5318)", () => {
+    const tabs = openTab(noTabs(), 7, "3", "steward");
+    const offers = catalogue(now({ tabs, nameOf: () => "steward 3" }));
+
+    expect(by(offers, "pane.close")).toBeUndefined();
+    expect(by(offers, "tab.close:1")?.does).toEqual({ verb: "closeTab", tab: 1 });
+  });
+
+  it("has the row for both panes of a split, and for one zoomed to fill its tab (#5318, #4765)", async () => {
+    const split = splitFocusedPane(openTab(noTabs(), 7, "3", "steward"), "row", 8);
+    expect(by(catalogue(now({ tabs: split })), "pane.close")?.available).toBe(true);
+    const hands = doing();
+    await run(catalogue(now({ tabs: split })), "pane.close", hands);
+    expect(hands.calls).toEqual(["closePane"]);
+
+    // Drawn alone for now, and the tab's close would still take both.
+    const zoomed = {
+      ...split,
+      byId: { ...split.byId, 1: { ...split.byId[1], zoomed: split.byId[1].focused } },
+    };
+    expect(by(catalogue(now({ tabs: zoomed })), "pane.close")?.available).toBe(true);
+  });
+
+  describe("a view alone in its tab keeps its splits, off its content (#5318)", () => {
+    const aView = () =>
+      openView(noTabs(), { from: null, view: "persona", key: "steward" }, "steward", "alpha");
+
+    it("in the palette, on the pane in front", () => {
+      const offers = catalogue(now({ tabs: aView() }));
+      for (const id of ["pane.split.right", "pane.split.down"])
+        expect(by(offers, id)?.available).toBe(true);
+    });
+
+    it("on its tab's menu only, each row bringing that tab forward and splitting it", async () => {
+      const offers = catalogue(now({ tabs: aView() }));
+      const right = by(offers, "tab.split.right:1");
+      const down = by(offers, "tab.split.down:1");
+      expect(right).toMatchObject({ title: "Split right", available: true, menuOnly: true });
+      expect(down).toMatchObject({ title: "Split down", available: true, menuOnly: true });
+
+      const hands = doing();
+      for (const row of [right, down]) await perform(row as Offer, hands);
+      expect(hands.calls).toEqual(["splitTab:1:row", "splitTab:1:column"]);
+    });
+
+    it("has no such row on a chat's tab, or on a view's tab once it is split", () => {
+      const chat = catalogue(now({ tabs: openTab(noTabs(), 7, "3", "steward") }));
+      expect(by(chat, "tab.split.right:1")).toBeUndefined();
+      const split = catalogue(now({ tabs: splitFocusedPane(aView(), "row", 8) }));
+      expect(by(split, "tab.split.right:1")).toBeUndefined();
+    });
+
+    it("greys a row where a half would be under the minimum, as the palette's", () => {
+      const offers = catalogue(now({ tabs: aView(), paneRoom: { width: 100, height: 100 } }));
+      expect(by(offers, "tab.split.right:1")?.available).toBe(false);
+      expect(by(offers, "tab.split.right:1")?.reason).toBe(by(offers, "pane.split.right")?.reason);
+    });
+
+    it("takes no answer about room from the pane in front when its tab is behind it", () => {
+      const tabs = openTab(aView(), 7, "3", "steward");
+      const offers = catalogue(now({ tabs, paneRoom: { width: 100, height: 100 } }));
+      expect(by(offers, "pane.split.right")?.available).toBe(false);
+      expect(by(offers, "tab.split.right:1")?.available).toBe(true);
+    });
   });
 
   it("decides a pane's close for that pane, and closes the one showing a task too", () => {
@@ -1585,7 +1656,9 @@ describe("the one list of actions", () => {
     });
 
     it("closes the view's pane with words that say so, and ends nothing", () => {
-      const row = by(catalogue(now({ tabs: withView() })), "pane.close");
+      // In a split: a view alone in its tab has its tab's close and no row of its own (#5318).
+      const tabs = withView();
+      const row = paneCloseOf(tabs, tabs.byId[tabs.inFront as number].focused, () => "");
 
       expect(row?.title).toBe("Close this view");
       expect(row?.does).toEqual({ verb: "closePane" });
@@ -1780,6 +1853,8 @@ describe("carrying out a row", () => {
   it("reaches every verb it can be given", async () => {
     // Nothing in the catalogue is a verb `perform` has no arm for, and nothing in `perform`
     // is an arm no row reaches: a row that fell through would silently do nothing.
+    // Each tab has one pane, so Close pane's row and a view's tab's splits are reached by their
+    // own tests (#5318).
     const tabs = selectTab(openTab(openTab(noTabs(), 7, "one"), 8, "two"), 1);
     const hands = doing();
     const offers = catalogue(
@@ -1828,7 +1903,6 @@ describe("carrying out a row", () => {
         "ignoreNeedsYou:8",
         "selectTab:2",
         "focusWorkspace:beta",
-        "closePane",
         "closeTab:1",
         "closeTab:2",
         // Move to new window, each tab's and the focused pane's (#4768).
@@ -2640,8 +2714,9 @@ describe("the palette at fifty chats", () => {
     // focused pane's (+1). 1124 since #4484: Add a cluster pool…. 1125 since #4758: New tab,
     // the strip's `+`, apart from New chat. 1225 since #4764: Place…, each of the fifty chats'
     // own row, and each of the fifty tabs' right-click, whose forty-nine behind are menu-only,
-    // as Close other tabs' are.
-    expect(offers).toHaveLength(1225);
+    // as Close other tabs' are. 1224 since #5318: no Close pane row, the tab in front having one
+    // pane.
+    expect(offers).toHaveLength(1224);
     expect(inPalette(offers).filter((row) => row.id.startsWith("tab.closeOthers:"))).toHaveLength(
       1,
     );
@@ -2666,10 +2741,16 @@ describe("the palette at fifty chats", () => {
    * different is the shape: the scan's cost is the catalogue's length, and #174 is the change
    * that grew it — a third more comparisons for the same fifty menus, before anything is
    * added next. A millisecond assertion would be flaky on a shared runner, so what is pinned
-   * below is the work itself, which is the standard #133 set: 350 lookups (150 before a chat
+   * below is the work itself, which is the standard #133 set: 450 lookups (150 before a chat
    * could be renamed, charter-app#254; 200 before a wrapping-up tab could cancel its smart
    * close, ADR 0064; 250 before a tab could move to a window of its own, #4768; 300 before
-   * Place…, #4764), and the same 350 whichever catalogue it is.
+   * Place…, #4764; 350 before a lone view's two splits, #5318), and the same 450 whichever
+   * catalogue it is.
+   *
+   * **The 450 measured again** (#5444), on the same machine, min of ten batches of a hundred:
+   * a fifty-tab strip's `menuRows` and `menuIsEmpty` for every tab, against the 1,224-row
+   * catalogue of fifty chats, cost **0.050 ms** a render (median 0.054 ms). That is about 1/300
+   * of a 60 Hz frame, so the nine ids per tab stay as they are.
    */
   describe("what a menu on the chat strip costs (charter-app#174)", () => {
     /** A catalogue that counts what is asked of it. `Map` and not a stand-in, so what is
@@ -2688,19 +2769,20 @@ describe("the palette at fifty chats", () => {
       return offers.lookups;
     }
 
-    it("asks for seven rows per tab and never walks the list", () => {
+    it("asks for nine rows per tab and never walks the list", () => {
       const offers = new Counting(loaded().map((offer) => [offer.id, offer]));
 
-      // 50 tabs × the seven ids a tab's menu lists: Pin, Tile all (#4765), Place… (#4764), Keep
-      // open, Move to new window (#4768), Close other tabs and Close (#4760). A
+      // 50 tabs × the nine ids a tab's menu lists: Pin, a lone view's two splits (#5318), Tile all
+      // (#4765), Place… (#4764), Keep open, Move to new window (#4768), Close other tabs and Close
+      // (#4760). A
       // chat's rows are its own list's since #4753, which a strip never draws.
       // **Not fifty scans of 291 rows**, which is
       // what this cost before the lookup was built once for the window — and the number that
       // does not move when the catalogue grows again.
-      expect(strip(offers)).toBe(350);
+      expect(strip(offers)).toBe(450);
     });
 
-    it("is the same 350 whether the catalogue carries the pieces or not", () => {
+    it("is the same 450 whether the catalogue carries the pieces or not", () => {
       // The property, not the timing: the cost of a menu is flat in the length of the list it
       // reads. A scan is not, which is why #174's hundred rows needed this first.
       const small = new Counting(
@@ -2709,7 +2791,7 @@ describe("the palette at fifty chats", () => {
         ),
       );
 
-      expect(strip(small)).toBe(350);
+      expect(strip(small)).toBe(450);
     });
   });
 });
@@ -3281,12 +3363,21 @@ describe("a branch's file and folder rows (FM-10)", () => {
     expect(revealSaid("Linux x86_64")).toBe("Reveal in Files");
   });
 
-  it("offers no row that creates, renames, moves or deletes, on any row (V86 F8, ADR 0081)", () => {
+  it("offers no write action on repo, branch or managed rows, and still refuses them there (V86 F8, ADR 0081 as amended 2026-11-05)", () => {
+    const repo = (path: string): BranchPath => ({ ...at(path), piece: null });
+    const own = (path: string): BranchPath => ({ workspace: "alpha", repo: "", piece: null, path });
     const every = [
       ...file,
       ...folder,
       ...link,
       ...fileRows({ on: "file", at: at("x"), kind: "file", refused: "ignored" }),
+      // A repo's own folder, and what purlis keeps in a workspace: read-only as a branch is.
+      ...fileRows({ on: "file", at: repo("src"), kind: "folder" }),
+      ...fileRows({ on: "file", at: repo("src/lib.rs"), kind: "file" }),
+      ...fileRows({ on: "file", at: own("memory"), kind: "folder", managed: true }),
+      ...fileRows({ on: "file", at: own("workspace.md"), kind: "file", managed: true }),
+      // A link among the person's own files is never written through.
+      ...fileRows({ on: "file", at: own("notes/link.md"), kind: "link" }),
     ];
     const writes = /creat|new|renam|mov|delet|remov|trash|archiv|discard|writ|save|edit\b/i;
 
@@ -3307,6 +3398,19 @@ describe("a branch's file and folder rows (FM-10)", () => {
     }
     for (const kind of ["file", "folder", "link"] as const)
       expect(menuOn({ on: "file", at: at("a"), kind }).below).toEqual([]);
+  });
+
+  it("offers Save with the project last, only on a row that is saveable (#5377)", async () => {
+    const own = { workspace: "alpha", repo: "", piece: null, path: "notes" };
+    const rows = fileRows({ on: "file", at: own, kind: "folder", saveable: true });
+    expect(titles(rows).at(-1)).toBe("Save with the project");
+    expect(titles(fileRows({ on: "file", at: own, kind: "folder" }))).not.toContain(
+      "Save with the project",
+    );
+    const hands = doing();
+    for (const row of rows.filter((one) => one.does.verb === "saveWithTheProject"))
+      await perform(row, hands);
+    expect(hands.calls).toEqual(["saveWithTheProject:alpha:notes"]);
   });
 
   it("draws a file row's menu from its own rows, not from the catalogue", () => {
@@ -3826,7 +3930,16 @@ describe("stopping a chat (#1448)", () => {
     it("holds Pin tab, Tile all, Place…, Keep open, Move to new window, Close other tabs and Close tab, and nothing else", () => {
       expect(menuOn({ on: "tab", tab: 7 })).toEqual({
         // Move to new window (#4768): the tab into a tab window of its project.
-        above: ["tab.pin:7", "tab.tile:7", "tab.place:7", "tab.keep:7", "tab.newWindow:7"],
+        // A lone view's splits (#5318): no other tab's catalogue has their rows.
+        above: [
+          "tab.pin:7",
+          "tab.split.right:7",
+          "tab.split.down:7",
+          "tab.tile:7",
+          "tab.place:7",
+          "tab.keep:7",
+          "tab.newWindow:7",
+        ],
         below: ["tab.closeOthers:7", "tab.close:7"],
       });
     });
@@ -3990,8 +4103,17 @@ describe("ending a task by hand (#1488)", () => {
       title: "Close chat 1",
       does: { verb: "closeTab", tab: session },
     });
-    // The pane's close of the tab in front (the task's) says the same.
-    expect(by(offers, "pane.close")).toMatchObject({
+    // The pane's close of the tab in front (the task's) says the same, and so is not a row of its
+    // own while the tab has this one pane (#5318).
+    expect(by(offers, "pane.close")).toBeUndefined();
+    expect(
+      paneCloseOf(
+        tabs,
+        tabs.byId[task].focused,
+        () => "",
+        () => 1,
+      ),
+    ).toMatchObject({
       does: { verb: "sendBack", session: 2 },
     });
   });
@@ -4745,5 +4867,71 @@ describe("a chat's browser timeline (#2017)", () => {
 
   it("is no row for a chat with no id, which keeps no timeline", () => {
     expect(by(catalogue(now({ browsers: [browser(null)] })), "browser.timeline:3")).toBeUndefined();
+  });
+});
+
+describe("a workspace's own file and folder rows (#5376)", () => {
+  const own = (path: string): BranchPath => ({ workspace: "alpha", repo: "", piece: null, path });
+  const titles = (rows: readonly Offer[]) => rows.map((row) => row.title);
+  const writes = (rows: readonly Offer[]) =>
+    rows.filter((row) => (WORKSPACE_WRITE_VERBS as readonly string[]).includes(row.does.verb));
+
+  it("offers the person's own folder New file…, New folder…, Import files…, Rename… and Delete…", () => {
+    const rows = fileRows({ on: "file", at: own("notes"), kind: "folder" });
+
+    expect(titles(writes(rows))).toEqual([
+      "New file…",
+      "New folder…",
+      "Import files…",
+      "Rename…",
+      "Delete…",
+    ]);
+    expect(titles(rows).slice(0, 4)).toEqual(
+      titles(rows.filter((row) => !writes(rows).includes(row))).slice(0, 4),
+    );
+  });
+
+  it("offers the person's own file Rename… and Delete…, after what every file row offers", () => {
+    const rows = fileRows({ on: "file", at: own("notes/plan.md"), kind: "file" });
+
+    expect(titles(rows).slice(-2)).toEqual(["Rename…", "Delete…"]);
+    expect(titles(writes(rows))).toEqual(["Rename…", "Delete…"]);
+  });
+
+  it("offers the workspace's folder itself only what makes or brings in an entry", () => {
+    const rows = fileRows({ on: "file", at: own(""), kind: "folder" });
+
+    expect(titles(writes(rows))).toEqual(["New file…", "New folder…", "Import files…"]);
+  });
+
+  it("offers no write on a managed row or a link", () => {
+    for (const on of [
+      { at: own("memory"), kind: "folder", managed: true },
+      { at: own("workspace.md"), kind: "file", managed: true },
+      { at: own("notes/link.md"), kind: "link" },
+    ] as const)
+      expect(writes(fileRows({ on: "file", ...on }))).toEqual([]);
+  });
+
+  it("carries out each write with the workspace, the path and the chats writing it", async () => {
+    const asked: unknown[] = [];
+    const hands = { ...doing(), askWorkspaceWrite: (does: unknown) => asked.push(does) };
+    const touchedBy = ["console-developer 16"];
+    const rows = [
+      ...writes(fileRows({ on: "file", at: own("notes"), kind: "folder" })),
+      ...writes(fileRows({ on: "file", at: own("notes/plan.md"), kind: "file", touchedBy })),
+    ];
+
+    for (const row of rows) await perform(row, hands);
+
+    expect(asked).toEqual([
+      { verb: "newWorkspaceEntry", at: own("notes"), folder: false },
+      { verb: "newWorkspaceEntry", at: own("notes"), folder: true },
+      { verb: "importWorkspaceFiles", at: own("notes") },
+      { verb: "renameWorkspaceEntry", at: own("notes"), folder: true, touchedBy: [] },
+      { verb: "trashWorkspaceEntry", at: own("notes"), folder: true, touchedBy: [] },
+      { verb: "renameWorkspaceEntry", at: own("notes/plan.md"), folder: false, touchedBy },
+      { verb: "trashWorkspaceEntry", at: own("notes/plan.md"), folder: false, touchedBy },
+    ]);
   });
 });

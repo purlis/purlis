@@ -56,6 +56,12 @@ export function SecretFill({
         {secret.tool != null && <> for {secret.tool}</>}, on this machine. The chat hears filled or
         declined, never the value.
       </p>
+      {secret.no_allow != null && (
+        // The app's own words: policy offers no Allow on this run, and storing still works.
+        <p className="ui-text-meta" data-testid="secret-no-allow">
+          {secret.no_allow}
+        </p>
+      )}
       {secret.replace != null && (
         // The chat's words, said as the chat's (#5075).
         <p className="ui-text-meta" data-testid="secret-replace">

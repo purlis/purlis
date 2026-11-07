@@ -988,6 +988,9 @@ pub struct Chats {
     /// whatever its check found. It is held with the end, so it can't outlive it and let go of a
     /// runner whose chat was opened again since.
     fresh_ending: Arc<Mutex<std::collections::HashMap<String, bool>>>,
+    /// When the sweep may next ask each kept fresh runner, by its chat's id (#5393): a check that
+    /// took minutes is not run again a minute later. Nothing but the sweep waits for it.
+    fresh_asked_again: Arc<Mutex<std::collections::HashMap<String, std::time::Instant>>>,
     /// When the fresh runners were last swept ([`Self::sweeps_fresh_runners`]).
     fresh_swept: Mutex<Option<std::time::Instant>>,
     /// **The fresh runners kept since their work is not all here**, by their chat's id (#4569):
@@ -1356,6 +1359,18 @@ fn ends_as(discarded: bool, missing: Vec<String>, going: Going) -> (Vec<String>,
 #[cfg(unix)]
 const FRESH_SWEPT_AT_MOST_EVERY: std::time::Duration = std::time::Duration::from_secs(60);
 
+/// The longest the sweep leaves a kept fresh runner unasked (#5393).
+#[cfg(unix)]
+const FRESH_ASKED_AGAIN_AT_LEAST_EVERY: std::time::Duration = std::time::Duration::from_secs(3600);
+
+/// How long the sweep leaves a kept fresh runner whose end took `took` (#5393): ten times that, so
+/// a runner whose check always runs out spends a tenth of its time on checks at most, however
+/// large its image is.
+#[cfg(unix)]
+fn fresh_asked_again_after(took: std::time::Duration) -> std::time::Duration {
+    (took * 10).clamp(FRESH_SWEPT_AT_MOST_EVERY, FRESH_ASKED_AGAIN_AT_LEAST_EVERY)
+}
+
 /// The runner of its own a chat starts on, and whether this start made it (#4569).
 struct OwnRunner {
     name: String,
@@ -1538,6 +1553,7 @@ impl Chats {
             going: crate::goingaway::Going::default(),
             fresh_starting: Arc::default(),
             fresh_ending: Arc::default(),
+            fresh_asked_again: Arc::default(),
             fresh_swept: Mutex::new(None),
             fresh_kept: Arc::default(),
             fresh_told: Arc::default(),
@@ -1802,6 +1818,8 @@ impl Chats {
         let config = config.clone();
         let (kept, told) = (Arc::clone(&self.fresh_kept), Arc::clone(&self.fresh_told));
         let (runner_named, workspace_named) = (runner.clone(), workspace.clone());
+        let asked_again = Arc::clone(&self.fresh_asked_again);
+        let began = std::time::Instant::now();
         self.sessions.take_back_fresh(
             &runner,
             (going == Going::OnProof).then_some(workspace.as_str()),
@@ -1818,6 +1836,12 @@ impl Chats {
                     end = crate::clusterpools::fresh_runner_ended(&config, &ending.id, &[], false);
                 }
                 let went = matches!(end, crate::clusterpools::FreshEnd::Went);
+                if went {
+                    lock(&asked_again).remove(&ending.id);
+                } else {
+                    let next = std::time::Instant::now() + fresh_asked_again_after(began.elapsed());
+                    lock(&asked_again).insert(ending.id.clone(), next);
+                }
                 {
                     let mut kept = lock(&kept);
                     match end {
@@ -1926,10 +1950,20 @@ impl Chats {
                 .is_some_and(|of| of.is_of(&plane, &self.project));
             if let (true, Some(id)) = (ours, &kept.chat)
                 && !self.holds_a_chat(id)
+                && self.sweep_may_ask(id)
             {
                 self.fresh_runner_ends(id, true);
             }
         }
+    }
+
+    /// Whether the sweep may ask chat `id`'s kept runner again by now (#5393). Fetch again and a
+    /// chat's end go by no such wait: they don't ask this.
+    #[cfg(unix)]
+    fn sweep_may_ask(&self, id: &str) -> bool {
+        !lock(&self.fresh_asked_again)
+            .get(id)
+            .is_some_and(|next| std::time::Instant::now() < *next)
     }
 
     /// [`Self::sweeps_fresh_runners`]: pools run on Unix alone.
@@ -3587,7 +3621,7 @@ impl Chats {
     /// where it was (#3453): another chat of its move did not start.
     pub fn let_go_of_start(&self, session: u32, started: u32) {
         self.unclaim(session);
-        if let Err(why) = self.close(started) {
+        if let Err(why) = self.close_held_start(started) {
             tracing::warn!("purlis: a start of a move that did not happen did not end ({why})");
         }
     }
@@ -3625,7 +3659,7 @@ impl Chats {
         if !lock(&self.open).contains_key(&session) {
             lock(&self.owed).remove(&session);
             self.unclaim(session);
-            if let Err(why) = self.close(started) {
+            if let Err(why) = self.close_held_start(started) {
                 tracing::warn!("purlis: a restart of a closed chat did not end ({why})");
             }
             return Err(format!(
@@ -4043,6 +4077,7 @@ impl Chats {
             let open = lock(&self.open).contains_key(&session);
             if open {
                 lock(&self.ended).insert(session);
+                self.studio_job_stopped(session);
             }
         }
         self.project_settings.forget(session);
@@ -4601,6 +4636,7 @@ impl Chats {
                 asks,
                 within: std::time::Duration::ZERO,
                 moved: &moved,
+                run_gate: None,
             });
         let handed =
             match sign_in.filter(|s| !reattaching && !on_the_runner && !s.credentials.is_empty()) {
@@ -4902,8 +4938,17 @@ impl Chats {
             (true, Some(number), Some(purlis_session_protocol::session::RunSandbox::By(_))) => {
                 let now = sandbox.and_then(purlis_core::sandbox::Applied::plan);
                 let then = self.sessions.ran_with(number);
+                // The plan is its network's alone, and says nothing of the files its start
+                // denied: whether that start held the project's git is not on record, so the
+                // chat saves and updates the project with its own git, as one this window did
+                // not compile does.
                 (now == then)
-                    .then(|| sandbox.map(|applied| applied.confines().clone()))
+                    .then(|| {
+                        sandbox.map(|applied| purlis_core::sandbox::Confines {
+                            roots_git: None,
+                            ..applied.confines().clone()
+                        })
+                    })
                     .flatten()
             }
             (true, _, _) => None,
@@ -5418,6 +5463,10 @@ impl Chats {
         // What its harness named since its program began, which is newer than what it started
         // under. A shell tab keeps none, as `follow_conversation` keeps none for one that is open.
         let mut under = under;
+        // A studio job whose program ended runs again with it, unless its draft came (#5248).
+        if let Some(job) = under.studio.as_mut() {
+            job.runs_again();
+        }
         if let Some((id, run)) = lock(&self.named_while_starting)
             .remove(&session)
             .flatten()
@@ -5522,6 +5571,18 @@ impl Chats {
 
     /// Ends a chat. It is no longer one a quit would record.
     pub fn close(&self, session: u32) -> Result<(), String> {
+        self.close_as(session, true)
+    }
+
+    /// **Ends a start held apart for chat `session`'s move or restart** ([`Self::close`]), which
+    /// is no chat of its own: a studio chat's job stays with the chat, so nothing is kept for its
+    /// skill's Runs (#5248).
+    fn close_held_start(&self, started: u32) -> Result<(), String> {
+        self.close_as(started, false)
+    }
+
+    /// [`Self::close`], keeping a studio chat for its skill's Runs only where `a_chat`.
+    fn close_as(&self, session: u32, a_chat: bool) -> Result<(), String> {
         lock(&self.starting_as).remove(&session);
         lock(&self.named_while_starting).remove(&session);
         lock(&self.untaken).remove(&session);
@@ -5567,6 +5628,26 @@ impl Chats {
                     self.took_back(id);
                     drop(grants);
                     last_of = Some(id.to_owned());
+                }
+            }
+            // A chat the studio started stays on its skill's Runs (#5248). Not as the project is
+            // let go of: its record brings the chat back.
+            // Nor a first run that failed and is replaced: its chat goes on.
+            if let Some(job) = gone.chat.studio.as_ref()
+                && a_chat
+                && !self.ending.load(Ordering::SeqCst)
+                && !lock(&self.replacing).contains(&session)
+            {
+                let name =
+                    purlis_core::reopen::shown_name(&gone.chat, gone.harness.map(Harness::name));
+                if let Err(why) = purlis_core::reopen::studio_chats::keep(
+                    &self.project,
+                    session,
+                    &name,
+                    job,
+                    chrono::Utc::now(),
+                ) {
+                    tracing::warn!("{why}");
                 }
             }
             let mut let_go = lock(&self.let_go);
@@ -5937,8 +6018,21 @@ impl Chats {
             return;
         };
         job.done = true;
+        job.finish(chrono::Utc::now());
         drop(open);
         self.write_it_down();
+    }
+
+    /// **Chat `session`'s studio job stopped running as its program ended** (#5248): when, kept
+    /// on its record for Runs. Nothing for a chat the studio did not start, or whose job stopped.
+    fn studio_job_stopped(&self, session: u32) {
+        let stopped = lock(&self.open)
+            .get_mut(&session)
+            .and_then(|one| one.chat.studio.as_mut())
+            .is_some_and(|job| job.finish(chrono::Utc::now()));
+        if stopped {
+            self.write_it_down();
+        }
     }
 
     /// The name `session` is shown under — the one it was given, or its default — or `None`
@@ -6701,6 +6795,22 @@ impl Chats {
     /// for a chat this app does not have open.
     pub fn persona_of(&self, session: u32) -> Option<ChatPersona> {
         lock(&self.open).get(&session).map(Running::persona)
+    }
+
+    /// **The persona whose fill and login grants chat `session` reads** (the steward's decision
+    /// of 2026-11-06): where a handoff or a dispatch narrowed it to another persona's grants
+    /// ([`purlis_core::reopen::HeldGrants`]), that persona's, and none where it holds none;
+    /// otherwise the persona it was started as. Never a persona it was not narrowed to, so a
+    /// narrowed chat fills and logs in with no more than it was narrowed to. Whose vaults it reads
+    /// stays the persona it was started as ([`ChatPersona::started_as`]). None for a chat this
+    /// app does not have open.
+    pub fn secret_grants_of(&self, session: u32) -> Option<String> {
+        let open = lock(&self.open);
+        let chat = &open.get(&session)?.chat;
+        match &chat.held {
+            Some(held) => held.persona.clone(),
+            None => chat.persona.clone(),
+        }
     }
 
     /// **Who asks for chat `session`'s browser login** (#2560), and whether it runs with no

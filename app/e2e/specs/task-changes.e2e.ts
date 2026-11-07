@@ -7,7 +7,7 @@ import { join } from "node:path";
 import process from "node:process";
 import { $, browser, expect } from "@wdio/globals";
 import {
-  closeTheViewTabsOpenedSince,
+  closesTheTabsItOpens,
   focusWorkspace,
   projectInFront,
   runFromThePalette,
@@ -136,7 +136,6 @@ async function answer(says: string): Promise<void> {
 describe("a task's own Changes tab, merged and discarded", function () {
   this.timeout(240_000);
 
-  let wereAlreadyOpen: string[] = [];
   let plane = "";
   let svc = "";
   let mainWas = "";
@@ -146,10 +145,16 @@ describe("a task's own Changes tab, merged and discarded", function () {
     join(plane, "workspaces", "alpha", ".worktrees", "svc", task.piece);
   const changesTab = `[data-testid="view-pane-charter-task-changes-${MERGED.id}"]`;
 
+  // The strip of the workspace the tabs below are filed on, read once that one is focused and
+  // before the task's branches and records are made; its view tabs are closed before they are
+  // taken away again.
   before(async () => {
-    // The strip of the workspace the tabs below are filed on, read once that one is focused.
     await focusWorkspace("alpha");
-    wereAlreadyOpen = await tabNames();
+  });
+
+  closesTheTabsItOpens();
+
+  before(async () => {
     plane = await projectInFront();
     svc = join(plane, "workspaces", "alpha", "svc");
     if (!existsSync(join(svc, ".git"))) throw new Error(`${svc} is not the run's clone`);
@@ -176,8 +181,7 @@ describe("a task's own Changes tab, merged and discarded", function () {
     });
   });
 
-  after(async () => {
-    await closeTheViewTabsOpenedSince(wereAlreadyOpen);
+  after(() => {
     for (const task of [MERGED, DISCARDED])
       rmSync(join(store(), `${task.id}.json`), { force: true });
     if (svc === "") return;

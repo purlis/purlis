@@ -35,6 +35,7 @@ use crate::scaffold::Say;
 
 mod commit;
 pub mod identity;
+pub mod move_into_repos;
 pub mod persona_agents;
 pub mod project_skills;
 pub mod rename_plane;
@@ -163,11 +164,22 @@ pub enum FixId {
     /// missing. It commits nothing. Offered by the `live skills` row. It refuses, writing
     /// nothing, where `.gitignore` is a symbolic link, which git does not read.
     LiveSkills,
+    /// **`move-into-repos`** (#5374, ADR 0114 decision 4): **Move into repos/**. Each workspace's
+    /// clones at its root are moved into its `repos/` folder, one workspace at a time and all or
+    /// nothing for each: a workspace with a chat open in it is refused and nothing in it moves,
+    /// and a failure partway puts back everything it had moved. After each move `git worktree
+    /// repair` mends the links of every branch folder cut from the clone. It never touches a
+    /// harness's own stores, and it says which chats started in a moved clone their harness can
+    /// no longer resume ([`move_into_repos::plan`]); their session records still open. A folder
+    /// beside the repo of its name in `repos/`, and an old clone named `repos`, are not moved.
+    /// It commits nothing. Offered by the `repos outside repos/` row. Applied only by name
+    /// ([`FixId::by_name_only`]): moving is the operator's choice, never automatic.
+    MoveIntoRepos,
 }
 
 impl FixId {
     /// Every fix, in the order `charter doctor --fix` applies them.
-    pub const ALL: [FixId; 13] = [
+    pub const ALL: [FixId; 14] = [
         FixId::RenameLocal,
         FixId::PluginInstall,
         FixId::Reinit,
@@ -181,6 +193,7 @@ impl FixId {
         FixId::HandoffRule,
         FixId::ProjectSkills,
         FixId::LiveSkills,
+        FixId::MoveIntoRepos,
     ];
 
     /// The id, as `charter doctor --fix <id>`, `--json` and the window spell it.
@@ -199,6 +212,7 @@ impl FixId {
             Self::HandoffRule => "handoff-rule",
             Self::ProjectSkills => "project-skills",
             Self::LiveSkills => "live-skills",
+            Self::MoveIntoRepos => "move-into-repos",
         }
     }
 
@@ -212,6 +226,7 @@ impl FixId {
     /// `handoff-rule` takes a rule out of committed files every teammate pulls, and a purlis
     /// older than this one still relies on that rule to ask, so it waits as well (#1444).
     /// `project-skills` moves committed skills in a commit every teammate pulls (#2784).
+    /// `move-into-repos` moves clones, which is the operator's choice (ADR 0114, decision 4).
     pub const fn by_name_only(self) -> bool {
         matches!(
             self,
@@ -221,6 +236,7 @@ impl FixId {
                 | Self::PersonaAgents
                 | Self::HandoffRule
                 | Self::ProjectSkills
+                | Self::MoveIntoRepos
         )
     }
 
@@ -330,6 +346,7 @@ fn applied(root: &Path, id: FixId, machine: Option<&crate::plugin_install::Machi
         FixId::HandoffRule => handoff_rule(root),
         FixId::ProjectSkills => project_skills::apply(root),
         FixId::LiveSkills => live_skills(root),
+        FixId::MoveIntoRepos => move_into_repos::apply(root, &move_into_repos::open_in_record),
         FixId::PluginInstall | FixId::RenameLocal => unreachable!("answered above"),
     }
 }
@@ -491,6 +508,16 @@ pub fn apply_in_the_window(root: &Path, id: FixId) -> Fixed {
         return Fixed::Refused(why);
     }
     discover(root, &crate::forge::Caller::window())
+}
+
+/// [`apply`] of `move-into-repos`, refused in each workspace over the chats `open` says are open
+/// there: the window's way in, since it knows its own chats ([`move_into_repos::apply`]). The
+/// terminal's [`apply`] reads them from the app's record ([`move_into_repos::open_in_record`]).
+pub fn apply_moving_into_repos(root: &Path, open: &dyn Fn(&Path, &str) -> Vec<String>) -> Fixed {
+    if let Some(why) = refusal(root, FixId::MoveIntoRepos) {
+        return Fixed::Refused(why);
+    }
+    move_into_repos::apply(root, open)
 }
 
 fn discover(root: &Path, caller: &crate::forge::Caller) -> Fixed {

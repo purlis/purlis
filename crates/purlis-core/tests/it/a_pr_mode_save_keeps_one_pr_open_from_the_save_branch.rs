@@ -135,6 +135,7 @@ mod pr_saves {
                     no_push: false,
                     cwd: &self.root,
                     provenance: None,
+                    for_a_chat: false,
                 },
                 trigger,
                 &mut say,
@@ -452,6 +453,17 @@ mod pr_saves {
     /// `mergeStateStatus` for it, at `head`; and the check runs there, `runs` as GitHub lists
     /// them. Answers the read of its merge state, so a test can say whether purlis looked.
     fn looked(plane: &Plane, head: &str, merge_state: &str, runs: &[&str]) -> PathBuf {
+        looked_rebaseable(plane, head, merge_state, runs, true)
+    }
+
+    /// [`looked`], with GitHub's own answer to whether the request can be rebased.
+    fn looked_rebaseable(
+        plane: &Plane,
+        head: &str,
+        merge_state: &str,
+        runs: &[&str],
+        can_be_rebased: bool,
+    ) -> PathBuf {
         plane.state(12, true);
         let host = plane.scene.host.clone();
         let read = plane.scene.answers(
@@ -476,6 +488,7 @@ mod pr_saves {
                 "mergeCommitAllowed": true, "squashMergeAllowed": true,
                 "pullRequest": {{"state": "OPEN", "isDraft": false, "headRefOid": "{head}",
                 "mergeStateStatus": "{merge_state}", "reviewDecision": null,
+                "canBeRebased": {can_be_rebased},
                 "isMergeQueueEnabled": false, "baseRefName": "release",
                 "headRefName": "charter/save/test", "isCrossRepository": false,
                 "updatedAt": "2026-01-01T00:00:00Z", "body": "",
@@ -1165,6 +1178,422 @@ mod pr_saves {
             planegit::seen(&plane.root).map(|seen| seen.head),
             Some(head)
         );
+    }
+
+    /// **An existing plane takes new merge rules with its next save** (#5338), committed with
+    /// it, so its other machines take them from the target. Lines around the block are kept.
+    #[test]
+    fn a_save_brings_an_older_managed_block_up_to_this_builds_rules() {
+        purlis_core::unsteered!();
+        if !in_child() {
+            return;
+        }
+        let plane = plane("older-rules.test", "pr");
+        std::fs::write(
+            plane.root.join(".gitattributes"),
+            "*.png binary\n# >>> charter merge rules (managed by charter) >>>\n\
+             personas/*/memory/MEMORY.md merge=union\n# <<< charter merge rules <<<\n",
+        )
+        .unwrap();
+        git(&plane.root, &["add", "-A"]);
+        git(&plane.root, &["commit", "-q", "-m", "the older rules"]);
+        git(
+            &plane.root,
+            &[
+                "push",
+                "-q",
+                &plane.bare.display().to_string(),
+                "HEAD:refs/heads/release",
+            ],
+        );
+        git(
+            &plane.root,
+            &["update-ref", "refs/remotes/origin/release", "HEAD"],
+        );
+        plane.lookup(None);
+        plane.created(12, &["work.md"]);
+
+        let (code, said) = plane.save("work.md", "work.md");
+
+        assert_eq!(code, 0, "{said}");
+        let committed = git(&plane.root, &["show", "HEAD:.gitattributes"]);
+        assert!(committed.starts_with("*.png binary\n"), "{committed}");
+        assert!(
+            committed.contains("workspaces/*/todos/MEMORY.md merge=union"),
+            "{committed}"
+        );
+        assert!(
+            committed.contains("workspaces/*/sessions/index.md merge=union"),
+            "{committed}"
+        );
+        assert_eq!(git(&plane.root, &["status", "--porcelain"]), "", "{said}");
+    }
+
+    // ---- a moved target (#5338) -----------------------------------------------------------
+
+    const ALPHA: &str = "workspaces/alpha";
+
+    /// What a session record and a todo leave in `dir`, written as purlis writes them: the
+    /// record, the index rebuilt from the records, the pointer, a todo and its index line.
+    fn record_and_todo(dir: &Path, stamp: &str, title: &str) {
+        use purlis_core::active::Place;
+        use purlis_core::sessionrecord as records;
+        let slug = title.to_lowercase().replace(' ', "-");
+        let place = Place::Workspace("alpha".into());
+        let ws = dir.join(ALPHA);
+        std::fs::create_dir_all(ws.join("sessions")).unwrap();
+        std::fs::create_dir_all(ws.join("todos")).unwrap();
+        std::fs::write(
+            ws.join(format!("sessions/{stamp}-{slug}.md")),
+            format!("---\ntitle: {title}\n---\n\n## Goal\n\n{title}\n"),
+        )
+        .unwrap();
+        std::fs::write(
+            ws.join("sessions/index.md"),
+            records::index_text(&place, &records::list(dir, &place)),
+        )
+        .unwrap();
+        records::point(dir, "alpha").unwrap();
+        let todo = format!("{stamp}-{slug}.md");
+        std::fs::write(
+            ws.join("todos").join(&todo),
+            format!("# {title}\n\n{title}\n"),
+        )
+        .unwrap();
+        let index = ws.join("todos/MEMORY.md");
+        let text = std::fs::read_to_string(&index).unwrap();
+        std::fs::write(index, format!("{text}- [{title}]({todo})\n")).unwrap();
+    }
+
+    /// A plane in `mode` with one workspace on the target branch, already on the remote.
+    fn plane_with_a_workspace(host: &str, mode: &str) -> Plane {
+        let plane = plane(host, mode);
+        let ws = plane.root.join(ALPHA);
+        std::fs::create_dir_all(ws.join("sessions")).unwrap();
+        std::fs::create_dir_all(ws.join("todos")).unwrap();
+        std::fs::write(
+            ws.join("workspace.md"),
+            "# alpha\n\n## Vision\n\nShip it\n\n## Sessions\n\nNo session records yet.\n",
+        )
+        .unwrap();
+        std::fs::write(
+            ws.join("todos/MEMORY.md"),
+            "# Todos — workspace `alpha`\n\n",
+        )
+        .unwrap();
+        git(&plane.root, &["add", "-A"]);
+        git(&plane.root, &["commit", "-q", "-m", "the workspace"]);
+        git(
+            &plane.root,
+            &[
+                "push",
+                "-q",
+                &plane.bare.display().to_string(),
+                "HEAD:refs/heads/release",
+            ],
+        );
+        git(
+            &plane.root,
+            &["update-ref", "refs/remotes/origin/release", "HEAD"],
+        );
+        plane
+    }
+
+    /// Another machine's record and todo, landed on the target branch.
+    fn their_record(plane: &Plane, stamp: &str, title: &str) {
+        let theirs = plane.theirs();
+        record_and_todo(&theirs, stamp, title);
+        git(&theirs, &["add", "-A"]);
+        git(&theirs, &["commit", "-q", "-m", title]);
+        git(&theirs, &["push", "-q", "origin", "release"]);
+    }
+
+    /// A save of this machine's own record and todo, with #12 asked about as `subjects` say.
+    fn save_a_record(plane: &Plane, stamp: &str, title: &str) -> (u8, String) {
+        record_and_todo(&plane.root, stamp, title);
+        plane.save_as(Some(title), Trigger::Manual)
+    }
+
+    /// The merge a brought-in target leaves: HEAD has two parents, and its second is `theirs`.
+    fn assert_brought_in(plane: &Plane, said: &str) {
+        let parents = git(&plane.root, &["rev-list", "--parents", "-n", "1", "HEAD"]);
+        let parents: Vec<&str> = parents.split_whitespace().skip(1).collect();
+        assert_eq!(parents.len(), 2, "a merge commit: {said}");
+        assert_eq!(parents[1], plane.remote("release"), "{said}");
+        assert_eq!(git(&plane.root, &["status", "--porcelain"]), "", "{said}");
+    }
+
+    /// **#5338: two machines, each writing records and todos, one landing first.** The other's
+    /// next save brings the target in, with the generated files rebuilt from what both wrote:
+    /// nothing lost, the index in order, the count true, and the request pushed so it can merge.
+    #[test]
+    fn a_save_brings_a_moved_target_in_and_rebuilds_the_files_purlis_generates() {
+        purlis_core::unsteered!();
+        if !in_child() {
+            return;
+        }
+        let plane = plane_with_a_workspace("moved-target.test", "pr");
+        plane.lookup(None);
+        plane.created(12, &["first of mine"]);
+        let (code, said) = save_a_record(&plane, "20261101-100000", "first of mine");
+        assert_eq!(code, 0, "{said}");
+        their_record(&plane, "20261102-100000", "theirs");
+        plane.state(12, true);
+        plane.lookup(Some(12));
+        let updated = plane.updated(
+            12,
+            &[
+                "first of mine",
+                "second of mine",
+                "Bring release into this machine's saves",
+            ],
+        );
+
+        let (code, said) = save_a_record(&plane, "20261103-100000", "second of mine");
+
+        assert_eq!(code, 0, "{said}");
+        assert_brought_in(&plane, &said);
+        assert_eq!(plane.remote(SAVE), plane.head(), "{said}");
+        assert!(was_asked(&updated), "{said}");
+        let ws = plane.root.join(ALPHA);
+        let read = |file: &str| std::fs::read_to_string(ws.join(file)).unwrap();
+        let index = read("sessions/index.md");
+        let lines: Vec<&str> = index.lines().filter(|l| l.starts_with("- ")).collect();
+        assert_eq!(lines.len(), 3, "{index}");
+        assert!(lines[0].contains("second of mine"), "newest first: {index}");
+        assert!(lines[1].contains("theirs"), "newest first: {index}");
+        assert!(lines[2].contains("first of mine"), "newest first: {index}");
+        let charter = read("workspace.md");
+        assert!(
+            charter.contains("3 session records — the latest is [second of mine]"),
+            "{charter}"
+        );
+        assert!(charter.contains("Ship it"), "{charter}");
+        let todos = read("todos/MEMORY.md");
+        for title in ["first of mine", "theirs", "second of mine"] {
+            assert_eq!(todos.matches(&format!("[{title}]")).count(), 1, "{todos}");
+        }
+        for text in [&index, &charter, &todos] {
+            assert!(!text.contains("<<<<<<<"), "{text}");
+        }
+    }
+
+    /// **A record with a malformed name is not a record**: the pointer's count stays the count
+    /// of the index's lines, whichever side brought the file.
+    #[test]
+    fn the_rebuilt_pointer_counts_the_index_lines_and_not_the_files() {
+        purlis_core::unsteered!();
+        if !in_child() {
+            return;
+        }
+        let plane = plane_with_a_workspace("moved-target-count.test", "pr");
+        plane.lookup(None);
+        plane.created(12, &["mine"]);
+        let (code, said) = save_a_record(&plane, "20261101-100000", "mine");
+        assert_eq!(code, 0, "{said}");
+        let theirs = plane.theirs();
+        std::fs::create_dir_all(theirs.join(ALPHA).join("sessions")).unwrap();
+        std::fs::write(theirs.join(ALPHA).join("sessions/not-a-record.md"), "x\n").unwrap();
+        their_record(&plane, "20261102-100000", "theirs");
+        plane.state(12, true);
+        plane.lookup(Some(12));
+        plane.updated(
+            12,
+            &["mine", "again", "Bring release into this machine's saves"],
+        );
+
+        let (code, said) = save_a_record(&plane, "20261103-100000", "again");
+
+        assert_eq!(code, 0, "{said}");
+        assert_brought_in(&plane, &said);
+        let ws = plane.root.join(ALPHA);
+        assert!(ws.join("sessions/not-a-record.md").exists(), "{said}");
+        let index = std::fs::read_to_string(ws.join("sessions/index.md")).unwrap();
+        assert_eq!(
+            index.lines().filter(|l| l.starts_with("- ")).count(),
+            3,
+            "{index}"
+        );
+        let charter = std::fs::read_to_string(ws.join("workspace.md")).unwrap();
+        assert!(charter.contains("3 session records"), "{charter}");
+    }
+
+    /// **A conflict in what a person wrote stops the save and names the file.** Nothing is
+    /// pushed, the tree stays as it was with no markers staged, and git is stopped in nothing.
+    /// The window's Resolve is the way out: one stop, on that file alone, with the generated
+    /// files already settled, and Continue finishes it as a merge.
+    #[test]
+    fn a_conflict_in_a_persons_file_stops_the_save_and_resolve_settles_it_once() {
+        purlis_core::unsteered!();
+        use purlis_core::planegit::resolve;
+        if !in_child() {
+            return;
+        }
+        let plane = plane_with_a_workspace("moved-target-person.test", "pr");
+        plane.lookup(None);
+        plane.created(12, &["mine"]);
+        let (code, said) = save_a_record(&plane, "20261101-100000", "mine");
+        assert_eq!(code, 0, "{said}");
+        let pushed = plane.remote(SAVE);
+        their_record(&plane, "20261102-100000", "theirs");
+        plane.their_commit("README.md", "their words\n");
+        plane.state(12, true);
+
+        record_and_todo(&plane.root, "20261103-100000", "again");
+        std::fs::write(plane.root.join("README.md"), "my words\n").unwrap();
+        let (_, said) = plane.save_as(Some("again"), Trigger::Manual);
+
+        assert!(said.contains("README.md"), "{said}");
+        assert_eq!(plane.remote(SAVE), pushed, "nothing pushed: {said}");
+        assert_eq!(git(&plane.root, &["status", "--porcelain"]), "", "{said}");
+        assert_eq!(
+            std::fs::read_to_string(plane.root.join("README.md")).unwrap(),
+            "my words\n"
+        );
+        assert!(!plane.root.join(".git/MERGE_HEAD").exists(), "{said}");
+        let standing = plane.standing();
+        assert_eq!(standing.stage, Stage::Blocked, "{said}");
+        assert!(standing.rebase_by_hand, "{said}");
+        let before = plane.head();
+
+        // Abort puts it back.
+        let mut lines = |_: Say| {};
+        assert_eq!(
+            resolve::start(&plane.root, &mut lines),
+            resolve::Settled::Stopped(vec!["README.md".to_owned()])
+        );
+        assert_eq!(plane.standing().stopped_by, Some("merge"));
+        assert_eq!(resolve::abort(&plane.root), resolve::Settled::Aborted);
+        assert_eq!(plane.head(), before);
+        assert_eq!(git(&plane.root, &["status", "--porcelain"]), "");
+
+        // Settled by hand, Continue finishes the merge with the generated files rebuilt.
+        assert_eq!(
+            resolve::start(&plane.root, &mut lines),
+            resolve::Settled::Stopped(vec!["README.md".to_owned()])
+        );
+        std::fs::write(plane.root.join("README.md"), "both of our words\n").unwrap();
+        assert_eq!(
+            resolve::carry_on(&plane.root, &["README.md".to_owned()], &mut lines),
+            resolve::Settled::Replayed
+        );
+        assert_brought_in(&plane, &said);
+        let index =
+            std::fs::read_to_string(plane.root.join(ALPHA).join("sessions/index.md")).unwrap();
+        assert_eq!(
+            index.lines().filter(|l| l.starts_with("- ")).count(),
+            3,
+            "{index}"
+        );
+        assert!(!index.contains("<<<<<<<"), "{index}");
+    }
+
+    /// **The app's look brings a moved target in**, with no save, in `pr` mode too: nothing
+    /// else will touch a plane nobody is writing in. Only where the request needs it: a target
+    /// that moved with nothing to settle is left, and the request keeps its head.
+    #[test]
+    fn a_look_at_a_pr_plane_brings_a_moved_target_in_and_pushes_it() {
+        purlis_core::unsteered!();
+        if !in_child() {
+            return;
+        }
+        let plane = plane_with_a_workspace("moved-target-look.test", "pr");
+        plane.lookup(None);
+        plane.created(12, &["first of mine"]);
+        let (code, said) = save_a_record(&plane, "20261101-100000", "first of mine");
+        assert_eq!(code, 0, "{said}");
+        let head = plane.head();
+
+        plane.their_commit("theirs.md", "theirs");
+        plane.state(12, true);
+        look(&plane);
+        assert_eq!(plane.head(), head, "a request that merges as it is is left");
+
+        their_record(&plane, "20261102-100000", "theirs");
+        // Once by the look, and once by the push it makes.
+        plane.state(12, true);
+        plane.state(12, true);
+        plane.lookup(Some(12));
+        plane.updated(12, &["Bring release into this machine's saves"]);
+
+        let found = look(&plane);
+
+        assert!(found.moved && found.changed && found.open, "{found:?}");
+        assert_brought_in(&plane, "the look");
+        assert_eq!(plane.remote(SAVE), plane.head());
+    }
+
+    /// **A `pr-merge` request the forge says cannot merge is brought up by a look.** One that
+    /// can merge is not: each new head would start the wait for its checks again, so a busy
+    /// target could keep it from ever merging.
+    #[test]
+    fn a_look_at_a_pr_merge_plane_brings_the_target_in_only_for_a_request_that_cannot_merge() {
+        purlis_core::unsteered!();
+        if !in_child() {
+            return;
+        }
+        let (plane, head) = pr_merge_plane("moved-target-merge.test");
+        let (code, said) = plane.save_as(None, Trigger::Manual);
+        assert_eq!(code, 0, "{said}");
+        plane.their_commit("theirs.md", "theirs");
+        the_settle_wait_is_over(&plane);
+
+        looked(&plane, &head, "BLOCKED", &[SUCCESS]);
+        look(&plane);
+        assert_eq!(plane.head(), head, "a request still able to merge is left");
+
+        // Once by the look, and once by the push it makes.
+        looked(&plane, &head, "DIRTY", &[SUCCESS]);
+        looked(&plane, &head, "DIRTY", &[SUCCESS]);
+        plane.lookup(Some(12));
+        plane.updated(12, &["work.md", "Bring release into this machine's saves"]);
+        let found = look(&plane);
+
+        assert!(found.moved, "{found:?}");
+        assert_brought_in(&plane, "the look");
+        assert_eq!(plane.remote(SAVE), plane.head());
+    }
+
+    /// **The history a brought-in target leaves merges under the method purlis picks.** GitHub
+    /// answers `canBeRebased: false` for a request that holds a merge commit (measured on a real
+    /// one, purlis-plane#2280, 2026-11-05), and its REBASE would refuse: purlis takes the next
+    /// method the repo allows.
+    #[test]
+    fn a_request_github_cannot_rebase_merges_by_the_next_method() {
+        purlis_core::unsteered!();
+        if !in_child() {
+            return;
+        }
+        let (plane, head) = pr_merge_plane("moved-target-method.test");
+        let (code, said) = plane.save_as(None, Trigger::Manual);
+        assert_eq!(code, 0, "{said}");
+        the_settle_wait_is_over(&plane);
+        looked_rebaseable(&plane, &head, "CLEAN", &[SUCCESS], false);
+        let host = plane.scene.host.clone();
+        let put = plane.scene.answers(
+            "gh",
+            &[
+                "api",
+                "--hostname",
+                &host,
+                "-X",
+                "PUT",
+                "repos/acme/plane/pulls/12/merge",
+                "-f",
+                "merge_method=merge",
+                "-f",
+                &format!("sha={head}"),
+            ],
+            0,
+            r#"{"merged": true, "message": "Pull Request successfully merged"}"#,
+            "",
+        );
+        let at_forge = merge(&plane, "merge");
+        plane.merged(12, &at_forge);
+
+        look(&plane);
+
+        assert!(was_asked(&put), "merged by the merge method");
     }
 
     const CHECKS_EXPECTED: &str =
@@ -2287,6 +2716,7 @@ mod pr_saves {
                 no_push: false,
                 cwd: &other,
                 provenance: None,
+                for_a_chat: false,
             },
             Trigger::Manual,
             &mut |line: Say| said.push_str(&format!("{line}\n")),

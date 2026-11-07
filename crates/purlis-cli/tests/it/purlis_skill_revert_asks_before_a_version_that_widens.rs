@@ -96,9 +96,7 @@ impl Project {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        for spelling in purlis_core::envvar::spellings("PURLIS_SESSION_ID") {
-            command.env_remove(spelling);
-        }
+        crate::support::at_a_terminal(&mut command);
         let mut child = command.spawn().unwrap();
         child
             .stdin

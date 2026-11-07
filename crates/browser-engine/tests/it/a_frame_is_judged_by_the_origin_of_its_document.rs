@@ -4,7 +4,7 @@
 //! What is typed into a frame is judged by the origin of the frame's document, by the web's
 //! rules for its address: a srcdoc frame has its page's origin, unless it is sandboxed, a blob
 //! frame the origin of the document that made it, and a sandboxed or data frame none, so
-//! nothing is typed into it. A page's own document is judged by its origin the same way: a
+//! nothing is typed into it, a sandboxed frame at a web address among them. A page's own document is judged by its origin the same way: a
 //! blank page another page wrote has the writer's origin. A blob page another page opens does
 //! not stay open. Keys on a fresh blank tab are refused as on a blank tab. A frame its page
 //! sends to a blank document is judged by the page's origin once that document is known.
@@ -109,6 +109,18 @@ fn each_frame_is_judged_by_its_documents_origin() {
         typed_into(&browser, "Data field").err(),
         Some(Refusal::FrameOpaque),
         "no web origin"
+    );
+
+    assert_eq!(
+        typed_into(&browser, "Sandboxed site field").err(),
+        Some(Refusal::FrameOpaque),
+        "a sandboxed document has no web origin, whatever its address says"
+    );
+
+    assert_eq!(
+        typed_into(&browser, "Script-free site field").err(),
+        Some(Refusal::FrameOpaque),
+        "nor has one sandboxed with no scripts"
     );
 }
 

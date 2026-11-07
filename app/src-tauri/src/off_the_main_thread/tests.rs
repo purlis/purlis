@@ -111,7 +111,7 @@ fn app_with_its_window(root: &Path) -> (tauri::App<MockRuntime>, PlaneId) {
 }
 
 /// A plane with the workspace `alpha`, a todo and a memory in it, and the shared store.
-fn a_plane() -> tempfile::TempDir {
+pub(crate) fn a_plane() -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("a temp dir");
     let root = dir.path();
     std::fs::write(root.join("charter.toml"), "schema = 1\n").expect("charter.toml");

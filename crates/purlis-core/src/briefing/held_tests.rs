@@ -16,7 +16,7 @@ fn a_persona_memory_swapped_for_a_link_never_has_another_personas_index_read() {
         &root,
         "personas/devops/memory",
         "../ops/memory",
-        || super::memory_digest(&root, "devops"),
+        || super::memory_digest(&root, "devops", &super::Summaries::Files),
         |digest| {
             assert!(
                 !digest.contains("Theirs"),

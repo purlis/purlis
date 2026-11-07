@@ -17,7 +17,7 @@ fn the_textareas_hint_is_a_part_of_the_next_manifest_in_the_quiet_tier() {
         .iter()
         .position(|one| one.name == "hint")
         .expect("the hint");
-    assert_eq!(textarea.parts[at].since, parts::NEXT);
+    assert_eq!(textarea.parts[at].since, 13);
     assert_eq!(textarea.own_words_of(at), Some("text.quiet"));
     let css = include_str!("../../../../app/src/ui/field/field.css");
     let drawn = css

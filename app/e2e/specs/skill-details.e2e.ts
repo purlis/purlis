@@ -5,12 +5,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { join } from "node:path";
 import { $, expect } from "@wdio/globals";
 import { projectRoot } from "../acting.js";
-import {
-  closeTheViewTabsOpenedSince,
-  focusWorkspace,
-  runFromThePalette,
-  tabNames,
-} from "../reach.js";
+import { closesTheTabsItOpens, focusWorkspace, runFromThePalette } from "../reach.js";
 import { studioMore, studioSkill } from "../studio.js";
 
 /**
@@ -34,7 +29,6 @@ describe("a skill's tab", function () {
   this.timeout(180_000);
 
   let root = "";
-  let wereOpen: string[] = [];
   const folder = () => join(root, "skills", PROBE);
   const beside = () => join(root, "skills", `${PROBE}.toml`);
 
@@ -46,11 +40,13 @@ describe("a skill's tab", function () {
       `---\nname: ${PROBE}\ndescription: Probes a skill's tab in the scenario run.\n---\n\nThen skills:e2e-gone-probe.\n`,
     );
     await focusWorkspace("alpha");
-    wereOpen = await tabNames();
   });
 
-  after(async () => {
-    await closeTheViewTabsOpenedSince(wereOpen);
+  // Between the two: the strip is read once alpha is focused, and its view tabs are closed
+  // before the files are tidied.
+  closesTheTabsItOpens();
+
+  after(() => {
     rmSync(folder(), { recursive: true, force: true });
     rmSync(beside(), { force: true });
   });

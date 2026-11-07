@@ -15,6 +15,7 @@ import {
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
+import { findTasksButton } from "./paneTasks.testkit";
 import type { FinishedTask, OpenChat, TaskEnding } from "./bindings";
 import { forgetKeyboard } from "./paneKeyboard";
 import { forgetThisLaunch } from "./regions";
@@ -882,7 +883,7 @@ describe("a tab chip's menu (#1487)", () => {
     const { asked } = await drawn();
     // Pressed plainly: a pointer event at 0,0 is read by the region dividers (see
     // `TabChip.window.test.tsx`).
-    fireEvent.click(await screen.findByRole("button", { name: /^Tasks of steward 1/ }));
+    fireEvent.click(await findTasksButton("steward 1"));
     const menu = await screen.findByRole("menu", { name: /^Tasks of steward 1/ });
 
     // One line of the menu opens to them: never one stray press from a way to go to a chat.
@@ -921,7 +922,7 @@ describe("a tab chip's menu (#1487)", () => {
 
   it("ends with Stop all tasks, which asks once naming how many and keeps the session (#1498)", async () => {
     const { asked } = await drawn();
-    fireEvent.click(await screen.findByRole("button", { name: /^Tasks of steward 1/ }));
+    fireEvent.click(await findTasksButton("steward 1"));
     const menu = await screen.findByRole("menu", { name: /^Tasks of steward 1/ });
     fireEvent.click(within(menu).getByRole("menuitem", { name: "End a task" }));
     const ways = await screen.findByRole("menu", { name: "End a task" });
@@ -974,7 +975,7 @@ describe("a tab chip's menu (#1487)", () => {
   it("says why a way cannot be taken, and takes no press on it", async () => {
     const { asked, stopping } = await drawn();
     await stopping(5);
-    fireEvent.click(await screen.findByRole("button", { name: /^Tasks of steward 1/ }));
+    fireEvent.click(await findTasksButton("steward 1"));
     const menu = await screen.findByRole("menu", { name: /^Tasks of steward 1/ });
     fireEvent.click(within(menu).getByRole("menuitem", { name: "End a task" }));
     const ways = await screen.findByRole("menu", { name: "End a task" });
@@ -1040,4 +1041,74 @@ describe("what its row says afterwards", () => {
       expect(within(list).queryByRole("button", { name: /^Finished \(/ })).toBeNull();
     },
   );
+});
+
+describe("an ended task's foot (#5366)", () => {
+  it("goes to the chat that asked it, on ↳ from, though the core lists the task no more", async () => {
+    const { tree, asked, ended } = await drawn({}, true);
+    const own = within(stripNamed("Tabs"))
+      .queryAllByRole("tab")
+      .find((one) => one.querySelector(".tab-name")?.textContent === "sweep");
+    if (own === undefined) throw new Error("sweep has no tab of its own");
+    await userEvent.click(own);
+    await waitFor(() => expect(onScreen()).toEqual([5]));
+    await menuOf(tree, "sweep");
+    await userEvent.click(screen.getByRole("menuitem", { name: CLOSE_IT }));
+    await userEvent.click(
+      within(await second("Close sweep now, with no report?")).getByRole("button", {
+        name: "Close it",
+      }),
+    );
+    await waitFor(() => expect(ends(asked)).toHaveLength(1));
+    await ended(5);
+    await screen.findByRole("status", { name: /^Ended/ });
+
+    const foot = await waitFor(() => {
+      const found = document.querySelector<HTMLElement>(
+        '[data-scope="pane-foot"][data-part="root"]',
+      );
+      if (found === null) throw new Error("the ended task keeps its foot");
+      return found;
+    });
+    await userEvent.click(
+      await waitFor(() => within(foot).getByRole("button", { name: /↳ from steward 1/ })),
+    );
+    await waitFor(() => expect(onScreen()).toEqual([1]));
+  });
+
+  it("is offered in the palette from a tab behind, while the chat that asked it is listed (#5543)", async () => {
+    const { tree, asked, ended } = await drawn({}, true);
+    const tabOf = (name: string) => {
+      const found = within(stripNamed("Tabs"))
+        .queryAllByRole("tab")
+        .find((one) => one.querySelector(".tab-name")?.textContent === name);
+      if (found === undefined) throw new Error(`${name} has no tab of its own`);
+      return found;
+    };
+    await userEvent.click(tabOf("sweep"));
+    await waitFor(() => expect(onScreen()).toEqual([5]));
+    await menuOf(tree, "sweep");
+    await userEvent.click(screen.getByRole("menuitem", { name: CLOSE_IT }));
+    await userEvent.click(
+      within(await second("Close sweep now, with no report?")).getByRole("button", {
+        name: "Close it",
+      }),
+    );
+    await waitFor(() => expect(ends(asked)).toHaveLength(1));
+    await ended(5);
+    await screen.findByRole("status", { name: /^Ended/ });
+
+    // Its tab goes behind: the one in front is the chat that asked it.
+    await userEvent.click(tabOf("steward 1"));
+    await waitFor(() => expect(onScreen()).toEqual([1]));
+
+    await userEvent.keyboard("{F2}");
+    const palette = await screen.findByRole("dialog", { name: "Command palette" });
+    await userEvent.type(within(palette).getByRole("combobox"), "sweep came from");
+    expect(
+      await within(palette).findByRole("option", {
+        name: /Go to steward 1 \(sweep came from it\)/,
+      }),
+    ).toBeInTheDocument();
+  });
 });

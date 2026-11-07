@@ -12,9 +12,8 @@
    list's (no box of its own), and one alone on a page is edged in the subtle hairline. Its
    edge's width is no theme's: a Notice holds answers, and an ask keeps its mark.
 
-   **In a chat's pane the band places and draws them** (`paneFrame.css`, #3142, the operator's
-   variant A): washed cards with their mark and no edge, inside the pane and outside the
-   terminal. That file comes after this one, so its rules win where both set a property; the
+   **In a chat's pane the band places and draws them** (`paneFrame.css`, #5215, the person's approved
+   prototype): compact rows, inside the pane and outside the terminal. That file comes after this one, so its rules win where both set a property; the
    rules here are the family's default wherever no pane places it. The Inbox's list takes the
    card family's ground and edge width a theme sets (`purlis_core::theme::parts`, #3177).
 
@@ -104,6 +103,11 @@
 
 [data-scope="notice"][data-part="root"][data-placement="pane"] > [data-scope="button-row"] {
   flex: none;
+}
+
+/* A box's line: a band's row has its own room (`paneFrame.css`), which this would outrank (#5443). */
+[data-scope="notice"][data-part="root"][data-placement="pane"]:not([data-layout="row"])
+  > [data-scope="button-row"] {
   padding-block: var(--space-1);
   padding-inline: var(--space-3);
 }
@@ -249,17 +253,6 @@
 
 [data-placement="inbox"][data-variant="news"] [data-scope="notice"][data-part="message"] {
   color: var(--text-secondary);
-}
-
-/* **A chat's own words** (#5217), as an Inbox card draws them (#5214). */
-[data-scope="notice"][data-part="chat-words"] {
-  padding-inline-start: var(--notice-indent);
-  color: var(--text-secondary);
-  font-size: var(--font-size-md);
-}
-
-[data-scope="notice"][data-part="chat-words"] strong {
-  color: var(--text-primary);
 }
 
 [data-placement="inbox"] [data-scope="notice-card"][data-part="said"] > [data-scope="button-row"] {
@@ -415,13 +408,13 @@
 
 [data-scope="notice-row"][data-part="stack"]::before {
   inset-block-start: 0;
-  margin-block-end: calc(-1 * (var(--notice-row-fade) + var(--space-2)));
+  margin-block-end: calc(-1 * (var(--notice-row-fade) + var(--notice-row-gap, var(--space-2))));
   background-image: linear-gradient(to bottom, var(--notice-row-ground), transparent);
 }
 
 [data-scope="notice-row"][data-part="stack"]::after {
   inset-block-end: 0;
-  margin-block-start: calc(-1 * (var(--notice-row-fade) + var(--space-2)));
+  margin-block-start: calc(-1 * (var(--notice-row-fade) + var(--notice-row-gap, var(--space-2))));
   background-image: linear-gradient(to top, var(--notice-row-ground), transparent);
 }
 
@@ -544,4 +537,53 @@
   grid-column: 2 / 4;
   margin-block-start: var(--space-3);
   padding: 0;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   A row of a chat pane's band (#5215): its words and sub-line, its ways, and the band's folded line.
+   `paneFrame.css` lays the row out; these are the parts' own. The sub-line's look is its text role.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="notice"][data-part="words"] {
+  display: grid;
+  min-inline-size: 0;
+}
+
+[data-scope="notice"][data-part="ways"] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+  justify-content: flex-end;
+  min-inline-size: 0;
+}
+
+[data-scope="notice"][data-part="way-slot"] {
+  flex: none;
+  inline-size: max(24px, var(--size-chrome), var(--space-7));
+}
+
+[data-scope="notice-row"][data-part="folded"] > [data-scope="button"] {
+  inline-size: 100%;
+  justify-content: flex-start;
+}
+
+[data-scope="notice-row"][data-part="folded-says"] {
+  overflow: hidden;
+  min-inline-size: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-scope="notice-row"][data-part="folded-show"] {
+  display: inline-flex;
+  flex: none;
+  gap: var(--space-2);
+  align-items: center;
+  margin-inline-start: auto;
+}
+
+[data-scope="notice-row"][data-part="folded-show"] > svg {
+  inline-size: var(--font-size-md);
+  block-size: var(--font-size-md);
 }

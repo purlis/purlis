@@ -4,8 +4,19 @@
 import { useCallback, useRef, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { UNDO_MS } from "./MemoryEdits";
-import { CHAT_ROW, dropPane, GRIP, HOLD_MS, STRIP, TAB, usePaneDrag } from "./paneDrag";
+import {
+  CHAT_ROW,
+  dropPane,
+  GRIP,
+  GRIP_HANDLE,
+  HOLD_MS,
+  STRIP,
+  TAB,
+  usePaneDrag,
+} from "./paneDrag";
+import { Grip } from "./ui/grip/Grip";
 import type { DropContext } from "./paneDrop";
 import { recorded } from "./layoutUndo";
 import {
@@ -57,10 +68,16 @@ function Window({
   first,
   heard,
   width = 800,
+  pressed = () => undefined,
+  rowPressed = () => undefined,
 }: {
   first: Tabs;
   heard: (tabs: Tabs) => void;
   width?: number;
+  /** A grip's press, which picks up for placement mode in the window. */
+  pressed?: () => void;
+  /** The chat row's own press, which opens it in the window. */
+  rowPressed?: () => void;
 }) {
   const [tabs, setTabs] = useState(first);
   const now = useRef(first);
@@ -75,8 +92,17 @@ function Window({
     [heard],
   );
   const hold = useCallback((id: number) => change((t) => selectTab(t, id)), [change]);
+  // What a hold brought forward was told as it came: there is nothing more to tell.
+  const told = useCallback(() => undefined, []);
   const own = useCallback((session: number) => String(session), []);
-  const drag = usePaneDrag({ tabs, change, ctx, onHoldTab: hold, chatNameOf: own });
+  const drag = usePaneDrag({
+    tabs,
+    change,
+    ctx,
+    onHoldTab: hold,
+    onHoldOver: told,
+    chatNameOf: own,
+  });
   const front = tabs.inFront ?? tabs.order[0];
   const panes = contentsOf(tabs, front);
   return (
@@ -94,11 +120,25 @@ function Window({
       {panes.map(({ pane }, at) => (
         <div key={pane} {...dropPane(front, pane)} data-box={`${at * width},40,${width},600`}>
           <div {...{ [GRIP]: "" }} data-box={`${at * width},40,${width},20`}>
+            {/* The pane's grip, its mark (#5290), and one of the head's buttons. */}
+            <Grip label={`Move pane ${pane}`} onPress={pressed} marks={{ [GRIP_HANDLE]: "" }}>
+              <span>{`mark ${pane}`}</span>
+            </Grip>
             {`head ${pane}`}
+            <button type="button">{`Split right ${pane}`}</button>
           </div>
         </div>
       ))}
-      <button type="button" {...{ [CHAT_ROW]: "7" }} data-box="0,700,200,20">
+      <button
+        type="button"
+        {...{ [CHAT_ROW]: "7" }}
+        data-box="0,700,200,20"
+        onClick={() => rowPressed()}
+      >
+        {/* Its persona's mark, its grip inside the row (#5290). */}
+        <Grip onPress={pressed}>
+          <span>mark of chat 7</span>
+        </Grip>
         chat 7
       </button>
       <button
@@ -145,9 +185,21 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-function shown(width?: number): { tabs: () => Tabs } {
+function shown(
+  width?: number,
+  pressed?: () => void,
+  rowPressed?: () => void,
+): { tabs: () => Tabs } {
   let last = start();
-  render(<Window first={last} heard={(tabs) => (last = tabs)} width={width} />);
+  render(
+    <Window
+      first={last}
+      heard={(tabs) => (last = tabs)}
+      width={width}
+      pressed={pressed}
+      rowPressed={rowPressed}
+    />,
+  );
   return { tabs: () => last };
 }
 
@@ -167,7 +219,68 @@ describe("dragging a pane in the window (#4763)", () => {
     fireEvent.pointerUp(document, at(60, 300));
     expect(shape(window.tabs().byId[front].layout)).toBe("row(3 1)");
     await waitFor(() => expect(heard()).toBe("Put chat 3 left of chat 1."));
+    expect(document.querySelector('[data-scope="pane-preview"]')).toBeNull();
+  });
+
+  it("drags a pane from its grip, the mark in its head, as from the rest of its head (#5290)", async () => {
+    const window = shown();
+    const front = window.tabs().order[0];
+    const three = contentsOf(window.tabs(), front)[1].pane;
+    fireEvent.pointerDown(screen.getByText(`mark ${three}`), at(810, 50));
+    fireEvent.pointerMove(document, at(60, 300));
+    expect(await screen.findByText("chat 3 left of chat 1.")).toBeTruthy();
+    fireEvent.pointerUp(document, at(60, 300));
+    expect(shape(window.tabs().byId[front].layout)).toBe("row(3 1)");
+  });
+
+  it("starts no drag from a button in a pane's head (#5290)", () => {
+    const window = shown();
+    const before = window.tabs();
+    const three = contentsOf(before, before.order[0])[1].pane;
+    fireEvent.pointerDown(
+      screen.getByRole("button", { name: `Split right ${three}` }),
+      at(1500, 50),
+    );
+    fireEvent.pointerMove(document, at(60, 300));
+    fireEvent.pointerUp(document, at(60, 300));
+    expect(window.tabs()).toBe(before);
+    expect(heard()).toBe("");
+  });
+
+  it("drags a chat from its row's grip, the persona's mark, as from the rest of its row (#5290)", () => {
+    const window = shown();
+    fireEvent.pointerDown(screen.getByText("mark of chat 7"), at(10, 710));
+    fireEvent.pointerMove(document, at(400, 10));
+    fireEvent.pointerUp(document, at(400, 10));
+    const tabs = window.tabs();
+    expect(tabs.order.map((id) => shape(tabs.byId[id].layout))).toEqual(["row(1 3)", "4", "7"]);
+  });
+
+  it("keeps a press on a grip that moves under 5 px a press: nothing is dragged, and the grip's press runs (#5290)", async () => {
+    const pressed = vi.fn();
+    const row = vi.fn();
+    const window = shown(undefined, pressed, row);
+    const before = window.tabs();
+    const three = contentsOf(before, before.order[0])[1].pane;
+    const grip = screen.getByRole("button", { name: `Move pane ${three}` });
+    await userEvent.pointer([
+      { keys: "[MouseLeft>]", target: grip, coords: { clientX: 810, clientY: 50 } },
+      { target: grip, coords: { clientX: 813, clientY: 53 } },
+      { keys: "[/MouseLeft]", target: grip, coords: { clientX: 813, clientY: 53 } },
+    ]);
+    expect(window.tabs()).toBe(before);
+    expect(heard()).toBe("");
     expect(document.querySelector(".pane-drop-preview")).toBeNull();
+
+    // And on a row's grip, whose press is its own and not the row's.
+    const inRow = screen.getByText("mark of chat 7");
+    fireEvent.pointerDown(inRow, at(10, 710));
+    fireEvent.pointerMove(document, at(13, 713));
+    fireEvent.pointerUp(document, at(13, 713));
+    fireEvent.click(inRow);
+    expect(window.tabs()).toBe(before);
+    expect(row).not.toHaveBeenCalled();
+    expect(pressed).toHaveBeenCalledTimes(2);
   });
 
   it("swaps in a pane's middle", () => {
@@ -189,7 +302,7 @@ describe("dragging a pane in the window (#4763)", () => {
     fireEvent.pointerUp(document, at(60, 300));
     expect(window.tabs()).toBe(before);
     await waitFor(() => expect(heard()).toBe("Put back. Nothing moved."));
-    expect(document.querySelector(".pane-drop-preview")).toBeNull();
+    expect(document.querySelector('[data-scope="pane-preview"]')).toBeNull();
   });
 
   it("is no drag at all for a press that does not move", () => {
@@ -261,7 +374,7 @@ describe("dragging a pane in the window (#4763)", () => {
     // Along the strip, and just under it, it is still the strip's own drag.
     fireEvent.pointerMove(document, at(400, 20));
     fireEvent.pointerMove(document, at(400, 50));
-    expect(document.querySelector(".pane-drop-preview")).toBeNull();
+    expect(document.querySelector('[data-scope="pane-preview"]')).toBeNull();
     fireEvent.pointerMove(document, at(1500, 340));
     // The strip's drag is told to end as the tab leaves it.
     expect(escapes).toEqual(["Escape"]);
@@ -280,7 +393,7 @@ describe("dragging a pane in the window (#4763)", () => {
     fireEvent.pointerMove(document, at(1500, 340));
     fireEvent.pointerUp(document, at(1500, 340));
     expect(window.tabs()).toBe(before);
-    expect(document.querySelector(".pane-drop-preview")).toBeNull();
+    expect(document.querySelector('[data-scope="pane-preview"]')).toBeNull();
   });
 
   it("hides the Undo line after a few seconds, and ⌘Z still puts the layout back", () => {
@@ -325,7 +438,11 @@ describe("dragging a pane in the window (#4763)", () => {
 
 // Where the panes are drawn while a drag holds them is `paneMakingRoom.window.test.tsx`'s.
 describe("what is dragged over its own place (#5284, #5291)", () => {
-  const preview = () => document.querySelector<HTMLElement>(".pane-drop-preview");
+  /** A danger mark or a pane drawn in a place: what a drop somewhere else would draw. */
+  const preview = () =>
+    document.querySelector<HTMLElement>(
+      '[data-scope="pane-preview"]:is([data-part="refused"], [data-part="arriving"])',
+    );
 
   it.each([
     ["its edge", 10, 340],

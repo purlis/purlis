@@ -107,7 +107,7 @@ describe("a pane head's right side (#5203)", () => {
     const right = screen.getByRole("button", { name: "Split right" });
     expect(before(more, line as HTMLElement)).toBe(true);
     expect(before(line as HTMLElement, right)).toBe(true);
-    // Part of the pane's controls: drawn when they are, and never left alone at rest.
+    // Part of the pane's controls, and drawn with them, always (#5318).
     expect(line?.closest(".pane-doing")).not.toBeNull();
   });
 
