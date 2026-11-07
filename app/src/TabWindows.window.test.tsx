@@ -16,8 +16,10 @@ import userEvent from "@testing-library/user-event";
 import { clearMocks, mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import App, { TAB_WINDOW } from "./App";
 import type { LaidOut, LaidTab, OpenChat } from "./bindings";
+import { forgetInputRefused, heardInputRefused } from "./inputRefused";
 import { chatsOf } from "./laidOut";
-import { LAYOUT_MOVED } from "./tabWindows";
+import { LAYOUT_MOVED, PRESS_HERE } from "./tabWindows";
+import { stripNamed } from "./test-strips";
 
 /**
  * **Tab windows, as the window draws them** (#4768): a tab torn off into a bare window of its
@@ -71,9 +73,9 @@ function chat(session: number): OpenChat {
   };
 }
 
-function tab(window: number, front: boolean, session: number): LaidTab {
+function tab(window: number, front: boolean, session: number, workspace?: string): LaidTab {
   return {
-    workspace: null,
+    workspace: workspace ?? null,
     pinned: false,
     window,
     front,
@@ -90,6 +92,10 @@ function core(over: {
   inNoTab?: number[];
   /** What `press_elsewhere` answers: the label of the window the press landed in. */
   pressed?: string;
+  /** Chats filed under a workspace, by its name; every other chat is in none. */
+  filed?: Record<string, number[]>;
+  /** What the board says of the chats, as `chat_states` answers it. */
+  states?: unknown[];
 }) {
   const asked: { cmd: string; args: Record<string, unknown> }[] = [];
   const listeners = new Map<string, number[]>();
@@ -107,17 +113,31 @@ function core(over: {
     if (cmd === "tab_window_handed")
       return over.tabWindow === undefined ? null : { plane: ONE, number: over.tabWindow };
     if (cmd === "charter_windows") return ["main", "window-1"];
-    if (cmd === "plane_sidebar")
+    if (cmd === "plane_sidebar") {
+      const filed = Object.entries(over.filed ?? {});
+      const inOne = new Set(filed.flatMap(([, chats]) => chats));
       return {
         root: plane,
-        workspaces: [],
+        workspaces: filed.map(([name, chats]) => ({
+          name,
+          path: `${ONE}/${name}`,
+          vision: "",
+          todos: [],
+          chats: chats.map(chat),
+          colour: null,
+          live: false,
+        })),
         personas: [],
         persona: null,
-        unfiled: [...over.chats, ...(over.inNoTab ?? [])].map(chat),
+        unfiled: [...over.chats, ...(over.inNoTab ?? [])]
+          .filter((one) => !inOne.has(one))
+          .map(chat),
       };
+    }
+    if (cmd === "show_window_holding") return "main";
     if (cmd === "opened_chats") return over.chats.map(chat);
     if (cmd === "reopened_layout") return over.layout;
-    if (cmd === "chat_states") return [];
+    if (cmd === "chat_states") return over.states ?? [];
     if (cmd === "chats_that_would_not_start") return [];
     if (cmd === "recent_planes") return { planes: [], dropped: [], forgetful: null };
     if (cmd === "extensions_on") return [];
@@ -141,6 +161,56 @@ function core(over: {
 /** Every chat each tab a layout names, with its window. */
 const shape = (laid: LaidOut | undefined) =>
   laid?.tabs.map((one) => [one.window, chatsOf(one.tree)]) ?? [];
+
+describe("a split tab in a tab window (#5342)", () => {
+  it("draws the same face: its first chat's name, the mark of the pane that needs you, its picture", async () => {
+    mockWindows("window-1");
+    const split: LaidTab = {
+      ...tab(1, true, 2),
+      focused: "a",
+      tree: {
+        kind: "split",
+        direction: "row",
+        share: 500,
+        a: { kind: "chat", chat: 2 },
+        b: { kind: "chat", chat: 3 },
+      },
+    };
+    const moved = (session: number, needsYou: boolean) => ({
+      plane: ONE,
+      session,
+      state: "waiting",
+      needs_you: needsYou,
+      queue: needsYou ? [session] : [],
+      sequence: 1,
+      moved_at: 1,
+      reports: [],
+      refusals: [],
+      children: [],
+    });
+    core({
+      tabWindow: 1,
+      layout: { strip: null, tabs: [tab(0, true, 1), split] },
+      chats: [1, 2, 3],
+      states: [moved(2, false), moved(3, true)],
+    });
+    render(<App />);
+
+    await screen.findByText("session 3");
+    const only = within(stripNamed("Tabs")).getByRole("tab");
+    expect(only.querySelector(".tab-name")?.textContent).toBe("2");
+    await waitFor(() =>
+      expect(
+        only
+          .querySelector('[data-scope="chat-mark"][data-part="root"]')
+          ?.getAttribute("data-variant"),
+      ).toBe("needs"),
+    );
+    // And its picture of the layout in place of `+1`: two side by side.
+    expect(only.querySelectorAll('[data-scope="tabs"][data-part="picture"] line')).toHaveLength(1);
+    expect(only).toHaveTextContent("2, split, 2 panes");
+  });
+});
 
 describe("a tab window (#4768)", () => {
   it("draws only its own tabs, with no sidebar and no project strip, and says only those", async () => {
@@ -178,6 +248,9 @@ describe("a tab window's panes (#5205, story 27)", () => {
     ) as HTMLElement;
     expect(frame.querySelector(".pane-head")).not.toBeNull();
     await waitFor(() => expect(frame.lastElementChild).toHaveAttribute("data-scope", "pane-foot"));
+    // The tab's only pane: its two splits and no Close, as anywhere (#5318).
+    expect(within(frame).getByRole("button", { name: "Split right" })).toBeInTheDocument();
+    expect(within(frame).queryByRole("button", { name: "Close this pane" })).toBeNull();
   });
 });
 
@@ -350,6 +423,83 @@ describe("the most recently used pane across the project's windows (#5108)", () 
     await screen.findByText("session 3");
     expect(sent("press_elsewhere").at(-1)?.args).toEqual({ plane: ONE, chat: 3 });
     await waitFor(() => expect(shape(said().at(-1))).toEqual([[0, [3]]]));
+  });
+});
+
+/**
+ * **A press the core hands a tab window keeps the strip it shows** (#5330): the core sends a
+ * chat in no pane to the window whose pane was used last (#5108), but a tab window holds only
+ * the tabs torn off into it, so a chat filed on another strip has no tab of its strip there.
+ * The project window, which holds every strip, opens it by the rule (#5289).
+ */
+describe("a press a tab window is handed for a chat in no pane (#5330)", () => {
+  const handed = {
+    tabWindow: 1,
+    layout: { strip: "alpha", tabs: [tab(0, true, 1, "alpha"), tab(1, true, 2, "alpha")] },
+    chats: [1, 2],
+    inNoTab: [3, 4],
+    filed: { alpha: [1, 2, 4], beta: [3] },
+  };
+  const toProjectWindow = (asked: ReturnType<typeof core>["asked"]) =>
+    asked
+      .filter((one) => one.cmd === "plugin:event|emit_to" && one.args.event === PRESS_HERE)
+      .map((one) => [one.args.target, one.args.payload]);
+
+  it("of another strip, changes nothing here and goes to the project window", async () => {
+    mockWindows("window-1");
+    const { asked, fire, said, sent } = core(handed);
+    render(<App />);
+    await screen.findByText("session 2");
+    await waitFor(() => expect(shape(said().at(-1))).toEqual([[1, [2]]]));
+    const saidBefore = said().length;
+
+    fire(PRESS_HERE, { plane: ONE, chat: 3 });
+    await act(() => new Promise((done) => setTimeout(done, 0)));
+
+    // The strip it shows stays: alpha's chat in front, and no tab of beta's.
+    expect(screen.queryByText("session 3")).toBeNull();
+    expect(screen.getByText("session 2")).toBeInTheDocument();
+    expect(
+      said()
+        .slice(saidBefore)
+        .flatMap((one) => one.tabs.map((t) => chatsOf(t.tree))),
+    ).not.toContainEqual([3]);
+    // Sent once for each listener the mock heard, StrictMode's first among them.
+    await waitFor(() => expect(toProjectWindow(asked).length).toBeGreaterThan(0));
+    expect(new Set(toProjectWindow(asked).map((one) => JSON.stringify(one)))).toEqual(
+      new Set([
+        JSON.stringify([
+          { kind: "AnyLabel", label: "main" },
+          { plane: ONE, chat: 3 },
+        ]),
+      ]),
+    );
+    expect(sent("show_window_holding").at(-1)?.args).toEqual({ plane: ONE });
+  });
+
+  it("handed on to the project window, opens there and counts its pane as used", async () => {
+    const { fire, said, sent } = core({ ...handed, tabWindow: undefined });
+    render(<App />);
+    await screen.findByText("session 1");
+
+    fire(PRESS_HERE, { plane: ONE, chat: 3 });
+
+    await screen.findByText("session 3");
+    await waitFor(() => expect(shape(said().at(-1))).toContainEqual([0, [3]]));
+    await waitFor(() => expect(sent("pane_used").at(-1)?.args).toEqual({ plane: ONE }));
+  });
+
+  it("of the strip it shows, opens here by the rule", async () => {
+    mockWindows("window-1");
+    const { asked, fire, said } = core(handed);
+    render(<App />);
+    await screen.findByText("session 2");
+
+    fire(PRESS_HERE, { plane: ONE, chat: 4 });
+
+    await screen.findByText("session 4");
+    await waitFor(() => expect(shape(said().at(-1))).toContainEqual([1, [4]]));
+    expect(toProjectWindow(asked)).toEqual([]);
   });
 });
 
@@ -547,6 +697,67 @@ describe("a note of a chat shown only in a tab window (#5225)", () => {
     await screen.findByText("session 2");
     expect(screen.queryByText(/The sandbox blocked a write/)).toBeNull();
     expect(project.sent("forget_sandbox_block")).toEqual([]);
+  });
+
+  it("hands over the by-hand banner and the restart line it held before the tear-off (#5363)", async () => {
+    const project = await windowOf(undefined, 1);
+    project.fire("harness-by-hand", { plane: ONE, session: 3, harness: "codex", cwd: null });
+    project.fire("chat-project-settings-changed", {
+      plane: ONE,
+      session: 3,
+      chat: null,
+      ended: "It would not start again.",
+      notices: [],
+    });
+
+    project.fire("layout-reported", {
+      plane: ONE,
+      layout: { strip: null, tabs: [tab(0, true, 1), tab(1, true, 3)] },
+    });
+    await waitFor(() =>
+      expect(told(project, "notes-handed")).toContainEqual({
+        plane: ONE,
+        session: 3,
+        from: "main",
+        start: undefined,
+        blocks: [],
+        byHand: { harness: "codex", cwd: null },
+        restart: "It would not start again.",
+      }),
+    );
+  });
+
+  it("says the by-hand banner and the restart line it was handed, on the chat's pane (#5363)", async () => {
+    const shows = await windowOf(1, 2);
+    shows.fire("notes-handed", {
+      plane: ONE,
+      session: 2,
+      from: "main",
+      blocks: [],
+      byHand: { harness: "codex", cwd: null },
+      restart: "It would not start again.",
+    });
+    const banner = await screen.findByText(/codex runs outside purlis/);
+    expect(banner.closest('[data-placement="pane"]')).not.toBeNull();
+    expect(screen.getByText("It would not start again.")).toBeInTheDocument();
+  });
+
+  it("a note kept in a store of the window's own, cleared in another window, is let go here (#5363)", async () => {
+    try {
+      const project = await windowOf(undefined, 1);
+      heardInputRefused({ plane: ONE, session: 2, why: "the runner is reconnecting" });
+      project.fire("note-cleared", {
+        plane: ONE,
+        session: 2,
+        note: { kind: "input-refused" },
+        from: "window-1",
+      });
+      project.fire(LAYOUT_MOVED, { plane: ONE, layout: BACK });
+      await screen.findByText("session 2");
+      expect(screen.queryByText(/could not send/)).toBeNull();
+    } finally {
+      forgetInputRefused(ONE, 2);
+    }
   });
 
   it("a note cleared in another project's window stays here", async () => {

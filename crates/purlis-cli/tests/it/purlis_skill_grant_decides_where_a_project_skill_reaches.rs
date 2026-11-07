@@ -48,9 +48,7 @@ impl Project {
             .env("NO_COLOR", "1");
         // Run from a terminal, even where this test runs inside a chat: a chat changes no skill
         // itself (#2770).
-        for spelling in purlis_core::envvar::spellings("PURLIS_SESSION_ID") {
-            command.env_remove(spelling);
-        }
+        crate::support::at_a_terminal(&mut command);
         command.output().unwrap()
     }
 

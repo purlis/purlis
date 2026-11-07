@@ -17,6 +17,28 @@ use std::sync::Mutex;
 const TOKEN: &str = "s3cret-value";
 const KUBECONFIG: &str = "apiVersion: v1\nclusters: [k8s-s3cret]\n";
 
+mod one_notice;
+mod run_grants;
+
+/// Policy says `said` for this test, and no longer once it ends.
+pub(super) struct PolicySays;
+
+impl PolicySays {
+    pub(super) fn says(said: &str) -> Self {
+        crate::sandbox::policy::set_for_this_test(crate::sandbox::policy::Locks::parse(
+            said,
+            Path::new("/etc/purlis/policy.json"),
+        ));
+        Self
+    }
+}
+
+impl Drop for PolicySays {
+    fn drop(&mut self) {
+        crate::sandbox::policy::set_for_this_test(crate::sandbox::policy::Locks::none());
+    }
+}
+
 /// A project whose vault `team` is a plain file tagged for persona `devops`, beside a vault
 /// `other` tagged for nobody, and a folder `work` for the chat.
 fn project() -> tempfile::TempDir {
@@ -5309,6 +5331,7 @@ fn served_asking(
             asks,
             within,
             moved: &|| {},
+            run_gate: None,
         },
     );
     let bytes = wire.0.lock().unwrap().clone();
@@ -5568,6 +5591,7 @@ fn login_asking(
         asks,
         within,
         moved: &|| {},
+        run_gate: None,
     };
     login_and_identity_for(asker, "shop-login", false, Some(&missing)).map(|(login, _)| login)
 }

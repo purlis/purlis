@@ -2017,6 +2017,7 @@ function App() {
       newShell: () => undefined,
       newBrowser: () => undefined,
       split: () => undefined,
+      splitTab: () => undefined,
       closePane: () => undefined,
       closeTab: () => undefined,
       closeOtherTabs: () => undefined,
@@ -2139,6 +2140,7 @@ function App() {
       // A file row is a project's: there is no branch here to have one.
       copyPath: async () => nowhere(),
       revealPath: async () => nowhere(),
+      saveWithTheProject: async () => nowhere(),
       openInEditor: async () => nowhere(),
       shellInFolder: () => undefined,
       startChatHere: async () => nowhere(),

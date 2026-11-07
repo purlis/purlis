@@ -30,7 +30,14 @@ const gone = (name: string, over: Record<string, unknown> = {}) => ({
   in_history: true,
   reserved: false,
   set: null,
+  clash: null,
   ...over,
+});
+
+/** What the core says of a deleted skill whose name belongs to purlis now (#5457). */
+const held = (name: string, offered: string) => ({
+  reserved: true,
+  clash: { held_by: `the name ${name} belongs to purlis`, offered, taken: ["vault"] },
 });
 
 /** The built-in skills the studio lists, whose names a skill cannot come back under. */
@@ -105,20 +112,24 @@ describe("the Deleted page", () => {
     );
   });
 
-  it("brings back one whose name became purlis's under a new name, never one of purlis's", async () => {
-    // #3729: its name starts with `purlis-` now.
-    const asked = core([gone("purlis-secrets", { reserved: true })], undefined, BUILT_INS);
+  it("brings back one whose name became purlis's under a new name, filled in as an install fills one", async () => {
+    // #3729: its name starts with `purlis-` now; #5457: the name offered is the core's.
+    const asked = core(
+      [gone("purlis-secrets", held("purlis-secrets", "acme-purlis-secrets"))],
+      undefined,
+      BUILT_INS,
+    );
     const user = userEvent.setup();
     renderStudio(AT_THE_ROOT, "deleted");
     const page = await openDeleted("purlis-secrets", user);
     expect(within(page).getByTestId("deleted-name-taken")).toHaveTextContent(
       "Its name belongs to purlis now, so it comes back under a new name.",
     );
-    const box = within(page).getByRole("textbox", { name: "New name" });
-    expect(box).toHaveValue("my-secrets");
+    const box = within(page).getByRole("textbox", { name: "New name for purlis-secrets" });
+    expect(box).toHaveValue("acme-purlis-secrets");
     await user.clear(box);
     await user.type(box, "purlis-browser");
-    expect(within(page).getByTestId("deleted-name-reserved")).toHaveTextContent(
+    expect(page.textContent).toContain(
       "A name starting with purlis- belongs to purlis; pick another.",
     );
     const back = within(page).getByRole("button", {
@@ -126,10 +137,15 @@ describe("the Deleted page", () => {
     });
     expect(back).toBeDisabled();
     await user.click(back);
+    await user.clear(box);
+    await user.type(box, "vault");
+    expect(page.textContent).toContain("There is already a skill named vault here.");
+    expect(
+      within(page).getByRole("button", { name: "Bring back purlis-secrets as vault" }),
+    ).toBeDisabled();
     expect(asked.some((one) => one.cmd === "skill_restore")).toBe(false);
     await user.clear(box);
     await user.type(box, "vault-keys");
-    expect(within(page).queryByTestId("deleted-name-reserved")).toBeNull();
     await user.click(
       within(page).getByRole("button", { name: "Bring back purlis-secrets as vault-keys" }),
     );
@@ -232,24 +248,56 @@ describe("a set deleted together (#5331)", () => {
     expect(asked.some((one) => one.cmd === "skill_set_restore")).toBe(false);
   });
 
-  it("leaves one whose name became purlis's out of Bring all back, and says so", async () => {
+  it("asks a new name of one whose name became purlis's in Bring all back's one review, and brings the rest back as named", async () => {
+    // #5457: the group's Bring all back opens the review where each such skill gets its name.
     const asked = core([
       gone("grilling", { set: SET }),
       gone("tdd", { set: SET }),
-      gone("purlis-review", { set: SET, reserved: true }),
+      gone("purlis-review", { set: SET, ...held("purlis-review", "acme-skills-purlis-review") }),
     ]);
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "deleted");
+    const group = await screen.findByTestId(`deleted-group-${SET.id}`);
+    await user.click(within(group).getByRole("button", { name: /Bring all back/ }));
+    const review = await screen.findByTestId("set-review");
+    expect(asked.some((one) => one.cmd === "skill_set_restore")).toBe(false);
+    await user.click(within(review).getByRole("radio", { name: "Bring it back under a new name" }));
+    expect(within(review).getByRole("textbox", { name: "New name for purlis-review" })).toHaveValue(
+      "acme-skills-purlis-review",
+    );
+    await user.click(within(review).getByRole("button", { name: "Bring back 3 skills" }));
+    await waitFor(() =>
+      expect(asked.find((one) => one.cmd === "skill_set_restore")?.args).toMatchObject({
+        ids: ["grilling-id", "tdd-id", "purlis-review-id"],
+        under: [{ id: "purlis-review-id", to: "acme-skills-purlis-review" }],
+      }),
+    );
+    expect(await screen.findByRole("status", { name: /Skills brought back/ })).toHaveTextContent(
+      "3 skills are back.",
+    );
+    // Its Undo deletes them again as one group: the renamed one under the name it came back as.
+    await user.click(await screen.findByRole("button", { name: "Undo" }));
+    await waitFor(() =>
+      expect(asked.find((one) => one.cmd === "skill_set_delete")?.args).toMatchObject({
+        members: [{ name: "grilling" }, { name: "tdd" }, { name: "acme-skills-purlis-review" }],
+        from: SET.from,
+      }),
+    );
+  });
+
+  it("brings a group none of whose names became purlis's back at once, with no review", async () => {
+    const asked = core(three);
     const user = userEvent.setup();
     renderStudio(AT_THE_ROOT, "deleted");
     const group = await screen.findByTestId(`deleted-group-${SET.id}`);
     await user.click(within(group).getByRole("button", { name: /Bring all back/ }));
     await waitFor(() =>
       expect(asked.find((one) => one.cmd === "skill_set_restore")?.args).toMatchObject({
-        ids: ["grilling-id", "tdd-id"],
+        ids: ["grilling-id", "tdd-id", "review-id"],
+        under: [],
       }),
     );
-    expect(await screen.findByRole("status", { name: /Skills brought back/ })).toHaveTextContent(
-      "purlis-review stayed in Deleted",
-    );
+    expect(screen.queryByTestId("set-review")).toBeNull();
   });
 
   it("draws a skill on its own where one is left of the set", async () => {

@@ -1814,7 +1814,7 @@ fn plane_is_this_repo_scaffolds_the_repo_and_offers_its_first_clone() {
             "You are standing in the git repo 'widget'. Work happens in a workspace, not \
              in the plane root — clone it into the first one:\n      purlis init \
              --clone-this-repo\n  Nothing is cloned unless you run that. It lands in \
-             workspaces/default/widget/, and declining leaves this plane complete."
+             workspaces/default/repos/widget/, and declining leaves this plane complete."
         )))
     );
     assert!(root.join("charter.toml").is_file());
@@ -1837,7 +1837,7 @@ fn a_repository_that_is_already_a_plane_is_healed_and_offered_its_declared_works
     assert_eq!(outcome.code, 0, "{:?}", outcome.said);
     assert!(
         matches!(outcome.said.last(), Some(Say::Info(l))
-            if l.contains("It lands in workspaces/lab/widget/,")),
+            if l.contains("It lands in workspaces/lab/repos/widget/,")),
         "{:?}",
         outcome.said
     );
@@ -2014,4 +2014,23 @@ fn a_line_git_does_not_read_is_added_again() {
         assert!(added.contains(line), "{line:?} added: {after:?}");
     }
     assert!(!added.contains("/skills.local.lock"), "{after:?}");
+}
+
+#[test]
+fn adopting_into_a_plane_whose_workspaces_folder_leads_out_of_it_refuses_rather_than_hangs() {
+    // Every name the search could try is refused alike, so the first refusal ends it.
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("plane");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join("charter.toml"), "").unwrap();
+    let outside = dir.path().join("outside");
+    std::fs::create_dir_all(&outside).unwrap();
+    std::os::unix::fs::symlink(&outside, root.join("workspaces")).unwrap();
+    let source = dir.path().join("api");
+    std::fs::create_dir_all(&source).unwrap();
+    git(&source, &["init", "-q", "-b", "main"]);
+
+    let refused = adopt_as_workspace(&root, &source, chrono::Utc::now())
+        .expect_err("no workspace can be made through a link out of the plane");
+    assert!(refused.contains("cannot adopt"), "{refused}");
 }

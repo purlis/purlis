@@ -767,7 +767,11 @@ appearance and option values, and no option value can bring a consent surface be
   workspace);
 - **the state marks meet the mark floor**: every pair of `PAIRS` whose front is a `state.*`
   token or `needs-you.base`, the title bar's needs-you hand on its hovered `control.hover`
-  included.
+  included, but for those on the terminal's fill (`floors::CHECKED_ONLY`, #5262): the pane
+  foot's warning number in `state.waiting` or `state.failed` on `terminal.background` is held by
+  the check alone, as the text tiers are there. A theme that falls short is warned of the pair and
+  drawn as written, so its terminal, and its state colours everywhere else, are never drawn as
+  purlis's for a number in the foot.
 
 Each contrast floor is the pair's own floor in `PAIRS`, held as the theme is and tinted by every
 workspace palette colour. When a theme breaks one, purlis draws Purlis Classic's values of the same
@@ -1788,7 +1792,7 @@ the focus rings, #2867):
   `input`, or a class some component gives a control (a list's row is its list's). A strip or a pane header is a class named for one (`-bar`,
   `-strip`, `-head`, `-tabs`, `strip-*`, the three strips, `.pane-chips`, the status line; not
   a chart's bar or a side's column) and the rows of controls a strip or a pane's top line draws
-  as part of itself (`.pane-task-ends`, `.tab-tasks`, and the top line's chips). **The pane's
+  as part of itself (`.pane-task-ends`, `.tab-run`, and the top line's chips). **The pane's
   head and foot are each one height** (#2484, #5202): every chip on the pane line (the
   breadcrumb, its name, its state mark: `PANE_LINE_CHIPS`) and on the pane foot (harness ·
   workspace, where the chat came from, its skills warning, its sandbox, the gauge:

@@ -17,7 +17,7 @@
  * running. A chat nobody is at counts its handoffs too, and a held chat or one on the default
  * persona can be held to another number than the footer's: those are said.
  */
-import type { ChatRow, ListedChat } from "./chatsTree";
+import type { ListedChat } from "./chatsTree";
 
 /** `4 of 6 running`, for a chat the core gave both numbers for, with a task counted; and the
  *  limit that binds it where that is another than this count's (`at its chain's limit (16
@@ -48,17 +48,4 @@ function bindsSaid(
   const footerSaysIt =
     at.own && chat?.tasksLimit === at.limit && (chat.tasksRunning ?? 0) >= at.limit;
   return footerSaysIt ? undefined : at.row;
-}
-
-/** Each tab's footer, by tab: what its own session (the chat at the top of its list) says. */
-export function runningByTab(
-  rowsByTab: ReadonlyMap<number, readonly ChatRow[]>,
-): ReadonlyMap<number, string> {
-  const said = new Map<number, string>();
-  for (const [tab, rows] of rowsByTab) {
-    const own = rows.find((row) => row.level === 1);
-    const words = runningSaid(own);
-    if (words !== undefined) said.set(tab, words);
-  }
-  return said;
 }

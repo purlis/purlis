@@ -28,6 +28,8 @@ const LANE_FILE_WRITES: &[(&str, &[&str])] = &[
     // A proposed change, applied (#1975): it may be the project's manifest.
     ("proposed", &["write_pinned"]),
     ("forges", &["add", "remove"]),
+    // Always allow's line (#5245).
+    ("always_allow", &["write"]),
     (
         "harness_profiles",
         &["add", "remove", "rename", "rename_everywhere"],

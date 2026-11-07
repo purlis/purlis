@@ -328,6 +328,10 @@ fn the_entries_carry_the_names_on_disk_today() {
     // RN-3 ships `purlis` with `charter` as its alias; the guards know every name it has had.
     assert_eq!(crate::cliname::PRIMARY, BINARY.write);
     assert_eq!(BINARY.reads, [crate::cliname::ALIAS]);
+    // #1309 renamed the app's program; the update from an older app is restarted by the old one.
+    assert_eq!(crate::secrets::keyhold::APP_BINARY, APP_BINARY.write);
+    assert_eq!(APP_BINARY.reads[0], "charter-app");
+    assert_eq!(APP_BINARY.reads.len(), 1);
     assert_eq!(
         crate::leakguard::CHARTER_PROGS,
         [BINARY.write, BINARY.reads[0], BINARY.history[0]]
@@ -397,6 +401,7 @@ fn every_variable_the_product_sets_is_written_under_the_purlis_prefix() {
         crate::hookwire::TOKEN_ENV,
         crate::hookwire::HARNESS_ENV,
         crate::skills::LISTED_ENV,
+        crate::skills::HANDED_ENV,
         crate::skills::PROMPT_ROUTER_ENV,
         crate::start::FOOTER_ENV,
         crate::chatenv::SESSION_BUS_KEPT,

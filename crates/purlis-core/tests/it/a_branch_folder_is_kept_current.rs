@@ -22,6 +22,7 @@ use purlis_core::worktree::git;
 use support::git;
 
 mod by_a_merge;
+mod signed;
 
 struct World {
     _dir: tempfile::TempDir,
@@ -394,6 +395,30 @@ fn a_piece_pushes_its_own_branch_and_a_plain_push_after_an_update_goes_through()
 }
 
 #[test]
+fn a_push_the_app_makes_for_a_chat_is_not_signed_where_the_clone_signs_every_push() {
+    purlis_core::unsteered!();
+    let w = world();
+    let (code, cut) = add(&w, "p1", None);
+    assert_eq!(code, 0, "{cut}");
+    let piece = w.piece("p1");
+    commit_in(&piece, "mine.txt", "mine\n");
+    // A signed push needs a remote that takes one, and this forge does not: a push that asks
+    // for a signature is refused before anything is sent.
+    git(&w.clone, &["config", "push.gpgSign", "true"]);
+
+    let mut lines = Vec::new();
+    let reach = Reach {
+        for_a_chat: true,
+        ..Reach::default()
+    };
+    let code = brokered(|| pieceupdate::push(&w.at("p1"), &reach, &mut |l| lines.push(l)));
+
+    let said = said(&lines);
+    assert_eq!(code, 0, "{said}");
+    assert_eq!(forge_has(&w, "p1"), out(&piece, &["rev-parse", "HEAD"]));
+}
+
+#[test]
 fn a_branch_the_update_rewrote_is_pushed_with_commits_added_after_it() {
     purlis_core::unsteered!();
     let w = world();
@@ -535,6 +560,7 @@ fn an_update_for_a_sandboxed_chat_that_would_write_a_denied_file_does_not_start(
     let reach = Reach {
         hosts: None,
         sandboxed_at: Some(&chat),
+        for_a_chat: true,
     };
 
     let (code, said) = update(&w, "p1", &start(None), &reach);
@@ -899,8 +925,99 @@ fn noted(w: &World, file: &str) -> PathBuf {
     found.into_iter().next().unwrap()
 }
 
+/// The rebase an update named for a sandboxed chat, as the chat's own git runs it in the clone:
+/// what follows `git ` up to the closing backtick. Exits as git does.
+fn the_chat_runs_the_named_step(w: &World, said: &str) -> bool {
+    let named = said
+        .split("run `git ")
+        .nth(1)
+        .and_then(|rest| rest.split('`').next())
+        .unwrap_or_else(|| panic!("no step named: {said}"));
+    let args: Vec<&str> = named.split(' ').collect();
+    support::git_tried(&w.clone, &args).status.success()
+}
+
+fn sandboxed(chat: &Path) -> Reach<'_> {
+    Reach {
+        hosts: None,
+        sandboxed_at: Some(chat),
+        for_a_chat: true,
+    }
+}
+
 #[test]
-fn a_rebase_stopped_in_a_clone_goes_on_and_back_by_a_sandboxed_chats_own_git() {
+fn a_clone_update_for_a_sandboxed_chat_names_the_rebase_and_runs_none_itself() {
+    purlis_core::unsteered!();
+    let w = world();
+    write(&w.clone, "mine.txt", "mine\n");
+    git(&w.clone, &["add", "mine.txt"]);
+    git(&w.clone, &["commit", "-q", "-m", "mine"]);
+    let mine = out(&w.clone, &["rev-parse", "HEAD"]);
+    w.they_commit("new.txt", "new\n");
+    let theirs = out(&w.theirs, &["rev-parse", "HEAD"]);
+    let chat = w.plane.join("workspaces").join(WS);
+    let reach = sandboxed(&chat);
+
+    // Fetched, worked out and named, exactly as the app would run it: nothing moved.
+    let (code, said) = update_clone(&w, &start(None), &reach);
+    assert_eq!(code, 1, "{said}");
+    assert!(
+        said.contains(&format!("rebase --no-autostash --onto {theirs} ")),
+        "{said}"
+    );
+    assert!(said.contains("rebase.backend=merge"), "{said}");
+    assert!(said.contains(&format!(" {mine}`")), "{said}");
+    assert_eq!(out(&w.clone, &["rev-parse", "HEAD"]), mine);
+    assert_eq!(out(&w.clone, &["branch", "--show-current"]), "main");
+    assert!(!w.clone.join(".git/rebase-merge").exists());
+    assert_eq!(
+        out(&w.clone, &["rev-parse", "refs/remotes/origin/main"]),
+        theirs
+    );
+
+    // Too soon: the step has not run, and the branch stays where it was.
+    let (code, said) = update_clone(&w, &UpdateStep::Continue, &reach);
+    assert_eq!(code, 1, "{said}");
+    assert!(said.contains("has not run"), "{said}");
+    assert_eq!(out(&w.clone, &["branch", "--show-current"]), "main");
+    assert_eq!(out(&w.clone, &["rev-parse", "HEAD"]), mine);
+
+    // Run by the chat's own git, a plain re-run puts the branch on the result.
+    let (_, said) = update_clone(&w, &start(None), &reach);
+    assert!(the_chat_runs_the_named_step(&w, &said), "{said}");
+    let (code, said) = update_clone(&w, &start(None), &reach);
+    assert_eq!(code, 0, "{said}");
+    assert!(said.contains("is rebased"), "{said}");
+    assert_eq!(out(&w.clone, &["branch", "--show-current"]), "main");
+    assert_eq!(out(&w.clone, &["rev-parse", "HEAD~1"]), theirs);
+
+    // Nothing more to bring in, and nothing named.
+    let (code, said) = update_clone(&w, &start(None), &reach);
+    assert_eq!(code, 0, "{said}");
+    assert!(said.contains("already"), "{said}");
+}
+
+#[test]
+fn a_clone_behind_its_remote_is_fast_forwarded_by_a_sandboxed_chats_own_git() {
+    purlis_core::unsteered!();
+    let w = world();
+    w.they_commit("new.txt", "new\n");
+    let theirs = out(&w.theirs, &["rev-parse", "HEAD"]);
+    let chat = w.plane.join("workspaces").join(WS);
+    let reach = sandboxed(&chat);
+
+    let (code, said) = update_clone(&w, &start(None), &reach);
+    assert_eq!(code, 1, "{said}");
+    assert!(!w.clone.join("new.txt").exists());
+    assert!(the_chat_runs_the_named_step(&w, &said), "{said}");
+    let (code, said) = update_clone(&w, &UpdateStep::Continue, &reach);
+    assert_eq!(code, 0, "{said}");
+    assert_eq!(out(&w.clone, &["rev-parse", "main"]), theirs);
+    assert_eq!(out(&w.clone, &["branch", "--show-current"]), "main");
+}
+
+#[test]
+fn a_named_rebase_that_stops_in_a_clone_goes_on_and_back_by_a_sandboxed_chats_own_git() {
     purlis_core::unsteered!();
     let w = world();
     write(&w.clone, "shared.txt", "a\nmine\nc\n");
@@ -908,15 +1025,22 @@ fn a_rebase_stopped_in_a_clone_goes_on_and_back_by_a_sandboxed_chats_own_git() {
     let mine = out(&w.clone, &["rev-parse", "HEAD"]);
     w.they_commit("shared.txt", "a\ntheirs\nc\n");
     let chat = w.plane.join("workspaces").join(WS);
-    let reach = Reach {
-        hosts: None,
-        sandboxed_at: Some(&chat),
-    };
+    let reach = sandboxed(&chat);
 
-    // Back: the app names the step while the rebase is stopped, and runs no resume of git's.
+    // Back before the named step ran: nothing to put back but purlis's record.
     let (code, said) = update_clone(&w, &start(None), &reach);
     assert_eq!(code, 1, "{said}");
-    assert!(said.contains("conflict in shared.txt"), "{said}");
+    let (code, said) = update_clone(&w, &UpdateStep::Abort, &reach);
+    assert_eq!(code, 0, "{said}");
+    assert_eq!(out(&w.clone, &["rev-parse", "HEAD"]), mine);
+    assert_eq!(out(&w.clone, &["branch", "--show-current"]), "main");
+
+    // Back after the chat's git stopped on the conflict.
+    let (_, said) = update_clone(&w, &start(None), &reach);
+    assert!(!the_chat_runs_the_named_step(&w, &said), "{said}");
+    assert!(w.clone.join(".git/rebase-merge").is_dir());
+    let (code, said) = update_clone(&w, &start(None), &reach);
+    assert_eq!(code, 1, "{said}");
     assert!(said.contains("rebase --continue"), "{said}");
     let (code, said) = update_clone(&w, &UpdateStep::Abort, &reach);
     assert_eq!(code, 1, "{said}");
@@ -928,9 +1052,9 @@ fn a_rebase_stopped_in_a_clone_goes_on_and_back_by_a_sandboxed_chats_own_git() {
     assert_eq!(out(&w.clone, &["rev-parse", "HEAD"]), mine);
     assert_eq!(out(&w.clone, &["branch", "--show-current"]), "main");
 
-    // On: the same, and the branch is moved to where the chat's own git finished.
-    let (code, said) = update_clone(&w, &start(None), &reach);
-    assert_eq!(code, 1, "{said}");
+    // On: resolved and gone on by the chat's git, the branch is moved to where it finished.
+    let (_, said) = update_clone(&w, &start(None), &reach);
+    assert!(!the_chat_runs_the_named_step(&w, &said), "{said}");
     write(&w.clone, "shared.txt", "a\nboth\nc\n");
     let (code, said) = update_clone(&w, &UpdateStep::Continue, &reach);
     assert_eq!(code, 1, "{said}");
@@ -1049,6 +1173,7 @@ fn a_clone_update_for_a_sandboxed_chat_that_would_write_a_denied_file_does_not_s
     let reach = Reach {
         hosts: None,
         sandboxed_at: Some(&chat),
+        for_a_chat: true,
     };
 
     let (code, said) = update_clone(&w, &start(None), &reach);

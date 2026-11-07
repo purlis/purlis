@@ -105,7 +105,7 @@ bare | i3 | i3-nobus | restore) ;;
 esac
 
 # `APP` as the caller named it, then the repository root for everything else.
-app="$(realpath -m "${APP:-$(dirname "$0")/../target/debug/charter-app}")"
+app="$(realpath -m "${APP:-$(dirname "$0")/../target/debug/purlis-app}")"
 baseline="${BASELINE_APP:+$(realpath -m "$BASELINE_APP")}"
 cd "$(dirname "$0")/.."
 [[ -x "$app" ]] || broken "the app to launch is not at $app: the build before this step makes it"

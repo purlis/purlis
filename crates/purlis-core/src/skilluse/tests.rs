@@ -428,3 +428,30 @@ fn a_run_of_a_built_in_skill_by_any_of_its_names_is_a_run_of_that_skill() {
     assert!(run("deploy", Origin::Project).is_of("deploy"));
     assert!(!run("deploy", Origin::Project).is_of("purlis-deploy"));
 }
+
+#[test]
+fn runs_since_counts_each_skills_runs_by_its_own_name_from_a_moment_on_and_none_before() {
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path().join("personas").join(DIR_NAME);
+    std::fs::create_dir_all(&log).unwrap();
+    std::fs::write(
+        log.join("2026-10.laptop.jsonl"),
+        "{\"skill\": \"deploy\", \"ts\": \"2026-10-01T09:00:00+00:00\"}\n\
+         {\"skill\": \"deploy\", \"ts\": \"2026-10-20T09:00:00+00:00\"}\n\
+         {\"skill\": \"purlis:purlis-secrets\", \"ts\": \"2026-10-21T09:00:00+00:00\"}\n\
+         {\"skill\": \"deploy\", \"ts\": \"2026-10-22T09:00:00+00:00\"}\n\
+         {\"skill\": \"stamped-wrong\", \"ts\": \"yesterday\"}\n",
+    )
+    .unwrap();
+    let since = chrono::DateTime::parse_from_rfc3339("2026-10-07T00:00:00+00:00")
+        .unwrap()
+        .timestamp();
+
+    let counted = runs_since(dir.path(), u64::try_from(since).unwrap());
+
+    assert_eq!(
+        counted.into_iter().collect::<Vec<_>>(),
+        vec![("deploy".to_owned(), 2), ("purlis-secrets".to_owned(), 1)],
+        "the run of 1 October is before it, and a stamp that cannot be read is no run of the window"
+    );
+}

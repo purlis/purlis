@@ -1,9 +1,9 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { cleanup, render, renderHook, screen } from "@testing-library/react";
+import { cleanup, render, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { ChatState } from "../NeedsYou";
+import { ChatMark } from "../ui/chat-mark/ChatMark";
 import { useArrived } from "./arrived";
 
 describe("telling a change from a first draw", () => {
@@ -39,18 +39,18 @@ describe("telling a change from a first draw", () => {
 describe("a chat's state mark", () => {
   afterEach(cleanup);
 
-  const mark = () => screen.getByRole("img");
+  const badge = (holder: HTMLElement) => holder.querySelector('[data-part="badge"]');
 
   it("does not move for the state it was drawn in", () => {
     // A workspace's tabs coming back into view must not all knock at once.
-    render(<ChatState state="waiting" />);
-    expect(mark()).not.toHaveClass("arrived");
+    const { container } = render(<ChatMark state="needs" />);
+    expect(badge(container)).not.toHaveAttribute("data-arrived");
   });
 
   it("is marked as arrived when the chat changes state while it is on screen", () => {
-    const { rerender } = render(<ChatState state="running" />);
-    rerender(<ChatState state="waiting" />);
-    expect(mark()).toHaveClass("state-waiting", "arrived");
-    expect(mark()).toHaveAccessibleName("waiting on you");
+    const { container, rerender } = render(<ChatMark state="working" />);
+    rerender(<ChatMark state="needs" />);
+    expect(container.firstElementChild).toHaveAttribute("data-variant", "needs");
+    expect(badge(container)).toHaveAttribute("data-arrived");
   });
 });

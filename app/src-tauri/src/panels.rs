@@ -1497,7 +1497,9 @@ fn runner_branches(
 /// on (#4590): a move of the setting leaves those branches where Changes shows them.
 fn on_the_pools_it_left(states: &mut RepoStates, root: &Path, workspace: &str, pools: &[String]) {
     for row in &mut states.repos {
-        let clone = root.join("workspaces").join(workspace).join(&row.name);
+        let Ok(clone) = purlis_core::repofolder::folder(root, workspace, &row.name) else {
+            continue;
+        };
         for pool in pools {
             let left = purlis_core::codelink::on_a_pool_left(&clone, pool);
             row.on_a_runner.extend(runner_branches(pool, left));
@@ -1508,7 +1510,9 @@ fn on_the_pools_it_left(states: &mut RepoStates, root: &Path, workspace: &str, p
 /// What the runner of `pool` has of each clone of `workspace` in `states`, as fetched (#2046).
 fn on_its_runner(states: &mut RepoStates, root: &Path, workspace: &str, pool: &str) {
     for row in &mut states.repos {
-        let clone = root.join("workspaces").join(workspace).join(&row.name);
+        let Ok(clone) = purlis_core::repofolder::folder(root, workspace, &row.name) else {
+            continue;
+        };
         let on_it = purlis_core::codelink::on_a_runner(&clone, pool);
         row.on_a_runner.extend(runner_branches(pool, on_it));
         row.left_out_of_send = left_out_of_send(&clone);

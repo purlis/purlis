@@ -319,7 +319,9 @@ fn devtools_close_when_the_page_they_inspect_goes() {
         json!({"sessionId": "S-INSPECTED"}),
         None,
     );
-    wait_for("the Inspect ends", || !browser.inspecting());
+    wait_for("the Inspect ends", || {
+        !browser.inspecting() && !ends.lock().unwrap().is_empty()
+    });
     assert_eq!(*ends.lock().unwrap(), vec![InspectEnded::PageGone]);
 }
 
@@ -523,7 +525,9 @@ fn devtools_that_leave_their_own_page_close() {
         json!({"targetInfo":{"targetId":"FRONT-1","type":"page","title":"","url":"chrome://settings/","attached":true,"browserContextId":"CONTEXT-DEVTOOLS"}}),
         None,
     );
-    wait_for("DevTools close", || !browser.inspecting());
+    wait_for("DevTools close", || {
+        !browser.inspecting() && !ends.lock().unwrap().is_empty()
+    });
     assert_eq!(*ends.lock().unwrap(), vec![InspectEnded::Moved]);
 }
 
@@ -557,7 +561,9 @@ fn what_devtools_put_into_a_field_is_kept_out_even_when_they_closed_before_the_h
         json!({"sessionId": "S-INSPECTED"}),
         None,
     );
-    wait_for("DevTools close", || !browser.inspecting());
+    wait_for("DevTools close", || {
+        !browser.inspecting() && !ends.lock().unwrap().is_empty()
+    });
     assert_eq!(*ends.lock().unwrap(), vec![InspectEnded::PageGone]);
     browser.hand_back();
     let read = snapshot(&browser, 2);
@@ -666,7 +672,9 @@ fn a_message_too_large_on_devtools_sessions_closes_devtools_alone() {
         .map(|(_, _, sink)| Arc::clone(sink))
         .unwrap();
     sink(crate::cdp::Tapped::TooLarge);
-    wait_for("DevTools close", || !browser.inspecting());
+    wait_for("DevTools close", || {
+        !browser.inspecting() && !ends.lock().unwrap().is_empty()
+    });
     assert_eq!(*ends.lock().unwrap(), vec![InspectEnded::TooLarge]);
     // The browser answers on.
     browser.hand_back();
@@ -772,7 +780,9 @@ fn devtools_close_where_the_engines_embedder_interface_reaches_the_front_end() {
             json!({ "timestamp": 1.0 }),
             Some("S-FRONT-1"),
         );
-        wait_for("DevTools close", || !browser.inspecting());
+        wait_for("DevTools close", || {
+            !browser.inspecting() && !ends.lock().unwrap().is_empty()
+        });
         assert_eq!(*ends.lock().unwrap(), vec![InspectEnded::Ended], "{found}");
     }
 }
@@ -846,7 +856,9 @@ fn devtools_that_show_their_page_with_another_query_close() {
         json!({"targetInfo":{"targetId":"FRONT-1","type":"page","title":"","url":other,"attached":true,"browserContextId":"CONTEXT-DEVTOOLS"}}),
         None,
     );
-    wait_for("DevTools close", || !browser.inspecting());
+    wait_for("DevTools close", || {
+        !browser.inspecting() && !ends.lock().unwrap().is_empty()
+    });
     assert_eq!(*ends.lock().unwrap(), vec![InspectEnded::Moved]);
 }
 
@@ -1114,7 +1126,9 @@ fn devtools_close_where_the_front_end_does_not_answer_how_it_runs() {
             json!({ "timestamp": 1.0 }),
             Some("S-FRONT-1"),
         );
-        wait_for("DevTools close", || !browser.inspecting());
+        wait_for("DevTools close", || {
+            !browser.inspecting() && !ends.lock().unwrap().is_empty()
+        });
         assert_eq!(*ends.lock().unwrap(), vec![InspectEnded::Ended]);
     }
 }

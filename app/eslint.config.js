@@ -8,8 +8,14 @@ import tseslint from "typescript-eslint";
 import { purlisStories } from "./eslint.story-rules.js";
 import { purlisUi, rawButtons, stillOff } from "./eslint.ui-rules.js";
 
-/** The primitives library, which only its wrappers in `src/ui` import (#2904, ADR 0104). */
-const PRIMITIVES = ["react-aria-components", "react-aria", "react-stately"];
+/** The primitives libraries, which only their wrappers in `src/ui` import (#2904, ADR 0104):
+ *  React Aria's, and the virtualizer a long list draws its rows in sight with (#5501). */
+const PRIMITIVES = [
+  "react-aria-components",
+  "react-aria",
+  "react-stately",
+  "@tanstack/react-virtual",
+];
 
 /**
  * **The raw `<button>`s that are no family's yet** (#2904, D-2904-9): the settings nav and the

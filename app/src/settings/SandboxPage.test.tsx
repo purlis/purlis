@@ -895,6 +895,7 @@ describe("values an administrator's policy locks (#1343)", () => {
     required: null,
     write_grants: false,
     undeclared_secret_asks: false,
+    run_grants: false,
     ...more,
   });
   const REQUIRED = "On, required by policy, set by Platform team in /etc/purlis/policy.json.";

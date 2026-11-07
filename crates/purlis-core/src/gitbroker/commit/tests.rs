@@ -148,6 +148,8 @@ fn asker(cwd: Option<&Path>) -> Asker {
         persona: Some("steward".to_owned()),
         harnessed: true,
         unsandboxed: false,
+        roots_git_held: false,
+        unreadable: Vec::new(),
         config: None,
         id: None,
         live: None,
@@ -519,9 +521,10 @@ fn the_commit_lands_on_the_folders_branch_with_the_named_files_and_the_persons_i
     let id = t.git(&["rev-parse", "HEAD"]);
     assert_eq!(
         lines,
-        [Say::Done(
-            format!("committed {id} on piece: 2 files").into()
-        )]
+        [
+            Say::Done(format!("committed {id} on piece: 2 files").into()),
+            Say::Warn(super::UNSIGNED.into()),
+        ]
     );
     assert_eq!(t.git(&["rev-parse", "HEAD^"]), before);
     assert_eq!(t.git(&["rev-parse", "refs/heads/piece"]), id);
@@ -597,8 +600,10 @@ fn a_hook_of_the_repository_does_not_run_and_each_one_there_is_named() {
     let lines = t.asked(Stage::Tracked).expect("committed");
 
     assert!(!ran.exists(), "a hook of the repository ran");
+    // This tree has no signing key, so the answer ends with the line that says so.
+    assert_eq!(lines.last(), Some(&Say::Warn(super::UNSIGNED.into())));
     assert_eq!(
-        lines[1..],
+        lines[1..lines.len() - 1],
         ["pre-commit", "commit-msg", "post-commit"].map(|name| Say::Warn(
             format!(
                 "this repository's {name} hook was not run: for a sandboxed chat, purlis commits \

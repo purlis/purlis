@@ -47,8 +47,19 @@ impl Save for InTheHost {
     fn save(&self, saving: ToSave) -> Result<Box<dyn Saving>, String> {
         as_the_window();
         let root = saving.project_path;
+        // The project index's one writer (ADR 0079 §3): built or swept in the background, then
+        // kept up to date by the watch's paths and by the commits auto-save moves the tree to.
+        let index = Arc::new(purlis_core::projectindex::Keeper::start(
+            root.clone(),
+            Arc::new(|line: &str| say(line)),
+        ));
+        let told = Arc::clone(&index);
+        let plane = root.clone();
+        let changed: crate::planewatch::Changed = Arc::new(move |_, changes| {
+            told.touched(touched_paths(&plane, changes.as_deref()));
+        });
         // Never fatal, as it is not in the window: the standing is read again by itself.
-        let watch = crate::planewatch::Watch::in_the_host(&root)
+        let watch = crate::planewatch::Watch::in_the_host(&root, changed)
             .map_err(|why| {
                 say(&format!(
                     "{} is not watched ({why}); its auto-save reads it every few seconds",
@@ -57,9 +68,16 @@ impl Save for InTheHost {
             })
             .ok();
         let told = saving.told;
+        let pulled = Arc::clone(&index);
         let worker = autosave::Worker::start(
             root.clone(),
             Arc::new(move |looked: autosave::Looked| {
+                if looked.moved_tree {
+                    pulled.pulled();
+                }
+                // What a save committed is no longer unshared: the briefing reads the
+                // standing the index records (#5503).
+                pulled.git_moved();
                 told(Looked {
                     saved: looked.saved,
                     moved_tree: looked.moved_tree,
@@ -74,6 +92,7 @@ impl Save for InTheHost {
         Ok(Box::new(Kept {
             worker: Some(worker),
             _watch: watch,
+            _index: index,
         }))
     }
 }
@@ -83,6 +102,9 @@ impl Save for InTheHost {
 struct Kept {
     worker: Option<autosave::Worker>,
     _watch: Option<crate::planewatch::Watch>,
+    /// Dropped after the watch, which holds the other handle: its thread then ends and lets go
+    /// of the index's lock.
+    _index: Arc<purlis_core::projectindex::Keeper>,
 }
 
 impl Saving for Kept {
@@ -138,6 +160,15 @@ pub(crate) fn mid_turn_in(root: &Path, workspace: &str, working: &[Working]) -> 
         })
         .map(|one| format!("chat {}", one.number))
         .collect()
+}
+
+/// The paths a watch batch names, under `root`, for the index; `None` where the batch could not
+/// say what moved, and every source is swept.
+pub(crate) fn touched_paths(
+    root: &Path,
+    changes: Option<&[purlis_core::planechange::Change]>,
+) -> Option<Vec<std::path::PathBuf>> {
+    changes.map(|changes| changes.iter().map(|c| root.join(&c.path)).collect())
 }
 
 /// One line in the host's log, which the window keeps.

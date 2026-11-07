@@ -554,6 +554,9 @@ describe("the foot's skills warning and studio chip (#5204, #5205, #5206)", () =
     const warning = await waitFor(() => within(foot()).getByTestId("pane-skills"));
     expect(warning).toHaveTextContent("39 skills");
     expect(warning).toHaveAccessibleName(/Near the skill budget/);
+    // Its words for the press are its row's, as every part of the foot's are (#5366).
+    // A verb, as a press says what it does (#5543, `docs/ui-copy.md`).
+    expect(warning).toHaveAccessibleName(/\. Show skills of [^.]+\.$/);
     const asked: unknown[] = [];
     const hear = (event: Event) => asked.push((event as CustomEvent).detail);
     window.addEventListener(CHAT_SKILLS_ASKED, hear);

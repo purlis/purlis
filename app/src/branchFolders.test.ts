@@ -145,3 +145,28 @@ describe("a folder of the plane root (#1916)", () => {
     expect(asked).not.toContain("plane_tree");
   });
 });
+
+describe("the window's watch", () => {
+  it("is sent once for every tree whose open folders changed together, naming them all (#5375)", async () => {
+    // A project switch hides one project's trees and shows another's in one commit: each tree
+    // tells its share, and the core, which keeps one set a window, is sent their union once.
+    const watched: unknown[] = [];
+    mockIPC((cmd, args) => {
+      if (cmd === "files_watch") watched.push((args as { folders: unknown[] }).folders);
+      return cmd === "branch_tree" ? { entries: [], more: 0 } : null;
+    });
+
+    renderHook(() => {
+      useBranchFolders(PLANE, "alpha", [folder("a")]);
+      useBranchFolders(PLANE, "beta", [folder("b")]);
+    });
+    await vi.advanceTimersByTimeAsync(10);
+
+    expect(watched).toEqual([
+      [
+        { plane: PLANE, workspace: "alpha", ...folder("a") },
+        { plane: PLANE, workspace: "beta", ...folder("b") },
+      ],
+    ]);
+  });
+});

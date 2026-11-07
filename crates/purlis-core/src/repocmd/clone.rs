@@ -5,7 +5,9 @@
 //!
 //! # The destination is a name a forge chose
 //!
-//! A clone lands at `workspaces/<ws>/<name>`, and `<name>` comes out of `inventory/repos.json`
+//! A clone lands at `workspaces/<ws>/repos/<name>` (ADR 0114), with its landing folder beside it
+//! in `repos/`, unless an old clone of that name is at the workspace's root already, where it
+//! stays. `<name>` comes out of `inventory/repos.json`
 //! — a tracked file, filled from a forge's API and editable by anybody with a commit. So the
 //! exact path created is gated, not its parent: the name must be a repo name
 //! ([`contain::repo_name_ok`] — no `..`, no separator, no leading `-` git could read as an
@@ -43,6 +45,7 @@ use crate::hookwire::alive;
 use crate::inventory;
 use crate::manifest::Ownership;
 use crate::pyrepr::repr_str;
+use crate::repofolder;
 use crate::repos;
 use crate::tui::Markup;
 use crate::workspaces::Plane;
@@ -172,13 +175,10 @@ pub fn clone(request: &Request, say: Sink) -> u8 {
 
     let ws = request.ws;
     banner(ws, say);
-    let ws_dir = match workspace_dir(request, say) {
-        Ok(dir) => dir,
-        Err(why) => {
-            say(Say::Fail(why.into()));
-            return 1;
-        }
-    };
+    if let Err(why) = workspace_dir(request, say) {
+        say(Say::Fail(why.into()));
+        return 1;
+    }
 
     // The checkouts already in the workspace get the layer FIRST, and silently: Python's
     // `ensure` scaffolds the workspace before cloning, and the scaffold wires what is there
@@ -196,7 +196,7 @@ pub fn clone(request: &Request, say: Sink) -> u8 {
             .into(),
         ));
     }
-    let outcomes = clone_all(request, &ws_dir, &targets);
+    let outcomes = clone_all(request, &targets);
 
     // Printed here, from one thread, in the order the repos were asked for: eight workers
     // printing as they finish interleave into something nobody can scan for which failed.
@@ -344,7 +344,7 @@ fn workspace_dir(request: &Request, say: Sink) -> Result<PathBuf, String> {
 }
 
 /// Clone every target, [`WORKERS`] at a time, answering in the order asked.
-fn clone_all(request: &Request, ws_dir: &Path, targets: &[Value]) -> Vec<Outcome> {
+fn clone_all(request: &Request, targets: &[Value]) -> Vec<Outcome> {
     let slots: Mutex<Vec<Option<Outcome>>> = Mutex::new((0..targets.len()).map(|_| None).collect());
     let next = AtomicUsize::new(0);
     // A brokered clone's isolation is held per thread, so each worker takes it on (#1335), the
@@ -365,7 +365,7 @@ fn clone_all(request: &Request, ws_dir: &Path, targets: &[Value]) -> Vec<Outcome
                                     break;
                                 };
                                 alive::beat();
-                                let outcome = clone_one(request, ws_dir, record);
+                                let outcome = clone_one(request, record);
                                 if let Ok(mut slots) = slots.lock() {
                                     slots[i] = Some(outcome);
                                 }
@@ -384,6 +384,20 @@ fn clone_all(request: &Request, ws_dir: &Path, targets: &[Value]) -> Vec<Outcome
         .collect()
 }
 
+/// **The folder `dest` goes in**, `repos/`, made where it is not there yet: only by the clone that
+/// needs it (ADR 0114, decision 5), and with `mkdir` alone, which follows no link. What is there
+/// is checked again as the landing folder is claimed in it.
+pub fn make_repos_folder(dest: &Path) -> Result<(), String> {
+    let Some(folder) = dest.parent() else {
+        return Ok(());
+    };
+    match std::fs::create_dir(folder) {
+        Ok(()) => Ok(()),
+        Err(why) if why.kind() == std::io::ErrorKind::AlreadyExists => Ok(()),
+        Err(why) => Err(format!("could not make {} ({why})", folder.display())),
+    }
+}
+
 /// Python's `contain.refusal`: the sentence a name that is a path is refused with.
 pub fn not_a_segment(name: &str) -> String {
     format!(
@@ -394,8 +408,10 @@ pub fn not_a_segment(name: &str) -> String {
     )
 }
 
-/// The one destination a record may be cloned to, gated as itself.
-pub fn destination(root: &Path, ws: &str, ws_dir: &Path, name: &str) -> Result<PathBuf, String> {
+/// The one destination a record may be cloned to, gated as itself: where a clone of that name
+/// already is ([`repofolder::folder`], an old clone at the workspace's root included), or else
+/// where a new one goes ([`repofolder::new_folder`], `repos/<name>`). Nothing is made here.
+pub fn destination(root: &Path, ws: &str, name: &str) -> Result<PathBuf, String> {
     if !contain::segment_ok(name) {
         return Err(not_a_segment(name));
     }
@@ -414,8 +430,17 @@ pub fn destination(root: &Path, ws: &str, ws_dir: &Path, name: &str) -> Result<P
         .any(|taken| taken.eq_ignore_ascii_case(name))
     {
         return Err(format!(
-            "purlis will not clone '{}' under that name: a workspace keeps its skills in a              folder of that name. Clone it under another name",
+            "purlis will not clone '{}' under that name: a workspace keeps its skills in a \
+             folder of that name. Clone it under another name",
             crate::shown::escaped(name)
+        ));
+    }
+    if name.eq_ignore_ascii_case(repofolder::REPOS) {
+        return Err(format!(
+            "purlis will not clone '{}' under that name: '{}' is the folder a workspace's repos \
+             go in. Clone it under another name",
+            crate::shown::escaped(name),
+            repofolder::REPOS
         ));
     }
     // A clone's directory is named in `workspace.json` and that manifest is committed, so the
@@ -428,10 +453,29 @@ pub fn destination(root: &Path, ws: &str, ws_dir: &Path, name: &str) -> Result<P
             crate::shown::escaped(name)
         ));
     }
-    let dest =
-        confine::within_workspace(root, ws, &ws_dir.join(name)).map_err(|e| e.to_string())?;
+    let dest = match already_there(root, ws, name) {
+        Some(dest) => dest,
+        None if !repofolder::name_ok(name) => {
+            return Err(format!(
+                "purlis will not clone '{}' under that name: a workspace keeps a folder of that \
+                 name for its own. Clone it under another name",
+                crate::shown::escaped(name)
+            ));
+        }
+        None => repofolder::new_folder(root, ws, name).map_err(|why| why.to_string())?,
+    };
+    let dest = confine::within_workspace(root, ws, &dest).map_err(|e| e.to_string())?;
     contain::writable(root, &dest).map_err(|e| e.to_string())?;
     Ok(dest)
+}
+
+/// Where a clone named `name` is already, in either layout: a folder with a `.git` of any kind,
+/// reached through no link. A folder of the person's that only shares the name is no clone, and
+/// a new one goes to `repos/` beside it.
+fn already_there(root: &Path, ws: &str, name: &str) -> Option<PathBuf> {
+    let at = repofolder::folder(root, ws, name).ok()?;
+    let entry = std::fs::symlink_metadata(&at).ok()?;
+    (entry.is_dir() && matches!(repofolder::git_of(&at), Ok(Some(_)))).then_some(at)
 }
 
 /// The HTTPS URL a record is cloned from, or why there is none. Python's `_https_url`, and
@@ -491,20 +535,21 @@ pub fn https_url(record: &Value, root: &Path) -> Result<String, String> {
 }
 
 /// Clone ONE repo. Prints nothing: [`clone`] renders every outcome afterwards, in order.
-fn clone_one(request: &Request, ws_dir: &Path, record: &Value) -> Outcome {
+fn clone_one(request: &Request, record: &Value) -> Outcome {
     let (root, ws) = (request.root, request.ws);
     let name = record
         .get("name")
         .and_then(Value::as_str)
         .unwrap_or_default();
-    let dest = match destination(root, ws, ws_dir, name) {
+    let dest = match destination(root, ws, name) {
         Ok(dest) => dest,
         Err(why) => return Outcome::Refused(why),
     };
     match std::fs::symlink_metadata(&dest) {
         Ok(found) if found.file_type().is_symlink() => {
             return Outcome::Refused(format!(
-                "workspaces/{ws}/{name} is a symlink, and purlis will not clone through one"
+                "{} is a symlink, and purlis will not clone through one",
+                dest.strip_prefix(root).unwrap_or(&dest).display()
             ));
         }
         Ok(_) if git::isolation().is_some() || !landing::unfinished(&dest) => {
@@ -523,10 +568,12 @@ fn clone_one(request: &Request, ws_dir: &Path, record: &Value) -> Outcome {
     {
         return Outcome::Refused(why);
     }
+    if let Err(why) = make_repos_folder(&dest) {
+        return Outcome::Refused(why);
+    }
     let route = landing::Route {
         root,
         ws,
-        ws_dir,
         name,
         dest: &dest,
         url: &url,

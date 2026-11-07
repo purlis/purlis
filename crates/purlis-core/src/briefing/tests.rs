@@ -584,24 +584,24 @@ fn committed(root: &Path, share: &str) {
 fn memory_and_refs_left_uncommitted_are_counted_by_where_they_sit() {
     let (_d, root) = plane();
     committed(&root, "commit");
-    assert_eq!(uncommitted_memory_nudge(&root), None);
+    assert_eq!(uncommitted_memory_nudge(&root, &Summaries::Files), None);
     std::fs::write(root.join("personas/ops/memory/b.md"), "# B\n").unwrap();
     assert_eq!(
-        uncommitted_memory_nudge(&root).unwrap(),
+        uncommitted_memory_nudge(&root, &Summaries::Files).unwrap(),
         "⬤ 1 persona memory/ref file is **uncommitted** — durable knowledge not yet \
          shared. Commit + push it with `purlis save`."
     );
     std::fs::create_dir_all(root.join("personas/ops/refs")).unwrap();
     std::fs::write(root.join("personas/ops/refs/r.md"), "r\n").unwrap();
     assert!(
-        uncommitted_memory_nudge(&root)
+        uncommitted_memory_nudge(&root, &Summaries::Files)
             .unwrap()
             .starts_with("⬤ 2 persona memory/ref files are")
     );
     std::fs::create_dir_all(root.join("workspaces/alpha/memory")).unwrap();
     std::fs::write(root.join("workspaces/alpha/memory/w.md"), "# W\n").unwrap();
     assert!(
-        uncommitted_memory_nudge(&root)
+        uncommitted_memory_nudge(&root, &Summaries::Files)
             .unwrap()
             .starts_with("⬤ 3 persona + workspace memory/ref files are")
     );
@@ -620,7 +620,7 @@ fn memory_and_refs_left_uncommitted_are_counted_by_where_they_sit() {
         ],
     );
     assert!(
-        uncommitted_memory_nudge(&root)
+        uncommitted_memory_nudge(&root, &Summaries::Files)
             .unwrap()
             .starts_with("⬤ 1 workspace memory/ref file is")
     );
@@ -640,7 +640,7 @@ fn memory_and_refs_left_uncommitted_are_counted_by_where_they_sit() {
         ],
     );
     std::fs::write(root.join("personas/ops/notes.md"), "x\n").unwrap();
-    assert_eq!(uncommitted_memory_nudge(&root), None);
+    assert_eq!(uncommitted_memory_nudge(&root, &Summaries::Files), None);
 }
 
 #[test]
@@ -648,13 +648,13 @@ fn under_share_local_uncommitted_memory_is_the_point_and_nothing_is_said() {
     let (_d, root) = plane();
     committed(&root, "local");
     std::fs::write(root.join("personas/ops/memory/b.md"), "# B\n").unwrap();
-    assert_eq!(uncommitted_memory_nudge(&root), None);
+    assert_eq!(uncommitted_memory_nudge(&root, &Summaries::Files), None);
     std::fs::write(
         root.join("charter.toml"),
         "schema = 1\n\n[memory]\nshare = \"push\"\n",
     )
     .unwrap();
-    assert!(uncommitted_memory_nudge(&root).is_some());
+    assert!(uncommitted_memory_nudge(&root, &Summaries::Files).is_some());
 }
 
 #[test]
@@ -665,7 +665,7 @@ fn a_plane_that_is_not_a_repository_has_nothing_unshared_to_say() {
         "schema = 1\n\n[memory]\nshare = \"push\"\n",
     )
     .unwrap();
-    assert_eq!(uncommitted_memory_nudge(&root), None);
+    assert_eq!(uncommitted_memory_nudge(&root, &Summaries::Files), None);
 }
 
 #[test]
@@ -674,7 +674,7 @@ fn a_working_tree_git_cannot_read_is_said_not_taken_for_a_clean_one() {
     committed(&root, "push");
     std::fs::write(root.join("personas/ops/memory/b.md"), "# B\n").unwrap();
     std::fs::write(root.join(".git/index"), "not an index").unwrap();
-    let said = uncommitted_memory_nudge(&root).unwrap();
+    let said = uncommitted_memory_nudge(&root, &Summaries::Files).unwrap();
     assert!(
         said.starts_with(
             "⬤ purlis could not read the control plane's working tree, so it cannot say whether \
@@ -1793,4 +1793,203 @@ fn the_unattended_stop_names_both_workspace_variables() {
     let unlocked = unattended_stop(false, "default", "none yet");
     assert!(unlocked.contains("with no workspace confirmed and none pinned"));
     assert!(unlocked.contains("silently claim `default`. Do no repo work."));
+}
+
+#[test]
+fn every_harness_is_told_the_workspace_s_own_files_go_in_its_folder_and_never_in_repos() {
+    // ADR 0114: a chat that cannot tell a clone from the workspace's own folder puts its notes
+    // in a repo, where they are committed with it. Every harness's briefing is this one.
+    let (_d, root) = plane();
+    let ws = root.join("workspaces/alpha");
+    for harness in ["claude-code", "opencode", "codex"] {
+        let got = told_at(
+            &root,
+            &ws,
+            &[
+                ("PURLIS_SESSION_ID", "s1"),
+                (crate::hookwire::HARNESS_ENV, harness),
+            ],
+            serde_json::json!({}),
+        );
+        let said: Vec<&String> = got
+            .iter()
+            .filter(|part| part.contains("never inside `repos/`"))
+            .collect();
+        assert_eq!(said.len(), 1, "{harness}: {got:#?}");
+        assert!(
+            said[0].contains("`workspaces/alpha/`"),
+            "{harness}: {}",
+            said[0]
+        );
+    }
+}
+
+// ---- read from the project index (#5503) --------------------------------------------------
+
+/// Builds the project index of `root` as the host would, and lets go of it: the index is there,
+/// and nobody keeps it.
+fn indexed(root: &Path) {
+    drop(crate::projectindex::Writer::open(root).unwrap());
+}
+
+/// Sets `path`'s modification time to `secs` before [`now`].
+fn aged(path: &Path, secs: i64) {
+    let at = (now().timestamp() - secs) as u64;
+    std::fs::File::options()
+        .write(true)
+        .open(path)
+        .unwrap()
+        .set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(at))
+        .unwrap();
+}
+
+/// A project with something in every block the index answers: shared memory, todos in two
+/// workspaces, and three workspaces last worked on days apart.
+fn busy_plane() -> (tempfile::TempDir, PathBuf) {
+    let (dir, root) = plane();
+    let shared = root.join("personas/_shared/memory");
+    std::fs::create_dir_all(&shared).unwrap();
+    std::fs::write(shared.join("s.md"), "# Shared fact\n\nbody\n").unwrap();
+    std::fs::write(
+        shared.join("MEMORY.md"),
+        "# shared\n\n- [Shared fact](s.md) — a hook\n",
+    )
+    .unwrap();
+    todos(&root, "alpha", 4);
+    todos(&root, "beta", 2);
+    let gamma = root.join("workspaces/gamma");
+    std::fs::create_dir_all(&gamma).unwrap();
+    std::fs::write(
+        gamma.join("workspace.md"),
+        "# gamma\n\n## Vision\n\nRetire gamma.\n",
+    )
+    .unwrap();
+    for (ws, days) in [("alpha", 1), ("beta", 2), ("gamma", 5)] {
+        let dir = root.join("workspaces").join(ws);
+        aged(&dir.join("workspace.md"), 86_400 * days + 60);
+        if let Ok(todos) = std::fs::read_dir(dir.join("todos")) {
+            for todo in todos.flatten() {
+                aged(&todo.path(), 86_400 * days + 60);
+            }
+        }
+    }
+    (dir, root)
+}
+
+#[test]
+fn with_an_index_the_briefing_says_what_the_scan_says_and_reads_it_from_the_index() {
+    let (_d, root) = busy_plane();
+    let scanned = told(&root, &IN_ALPHA, serde_json::json!({}));
+    assert!(scanned.iter().any(|p| p.contains("2 other workspaces")));
+    indexed(&root);
+    assert_eq!(told(&root, &IN_ALPHA, serde_json::json!({})), scanned);
+    // What the index does not know yet, the briefing does not say: it read the index, not the
+    // folders.
+    std::fs::write(
+        root.join("workspaces/alpha/todos/20260509-090000-late.md"),
+        "# late\n\n_2026-05-09 09:00 · todo_\n\nx\n",
+    )
+    .unwrap();
+    std::fs::write(root.join("personas/ops/memory/b.md"), "# B fact\n\nbody\n").unwrap();
+    let got = told(&root, &IN_ALPHA, serde_json::json!({}));
+    assert!(
+        got.iter().any(|p| p.starts_with("⬢ **4 open todos")),
+        "{got:#?}"
+    );
+    assert!(
+        got.iter()
+            .any(|p| p.contains("## Memory — 1 own · 1 shared")),
+        "{got:#?}"
+    );
+}
+
+#[test]
+fn a_plane_root_chat_is_shown_the_workspaces_the_index_holds() {
+    let (_d, root) = busy_plane();
+    let at_root = &[
+        ("PURLIS_SESSION_ID", "s1"),
+        ("PURLIS_PLANE_ROOT_SESSION", "1"),
+    ];
+    let scanned = told(&root, at_root, serde_json::json!({}));
+    assert!(
+        scanned
+            .iter()
+            .any(|p| p.contains("3 workspaces on this plane"))
+    );
+    indexed(&root);
+    std::fs::create_dir_all(root.join("workspaces/delta")).unwrap();
+    std::fs::write(root.join("workspaces/delta/workspace.md"), "# delta\n").unwrap();
+    assert_eq!(told(&root, at_root, serde_json::json!({})), scanned);
+}
+
+#[test]
+fn while_the_host_builds_the_first_index_the_briefing_says_so_and_walks_no_folder() {
+    let (_d, root) = busy_plane();
+    // The host has taken the writer's lock and has not swapped a generation in yet.
+    let home = crate::projectindex::home(&root);
+    std::fs::create_dir_all(&home).unwrap();
+    let lock = std::fs::File::create(home.join("writer.lock")).unwrap();
+    lock.lock().unwrap();
+    // Folders the briefing would have to walk, that a walk could not read.
+    let todos = root.join("workspaces/alpha/todos");
+    let shared = root.join("workspaces/beta/todos");
+    use std::os::unix::fs::PermissionsExt;
+    for dir in [&todos, &shared] {
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o300)).unwrap();
+    }
+    let got = told(&root, &IN_ALPHA, serde_json::json!({}));
+    for dir in [&todos, &shared] {
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    assert!(
+        got.contains(&INDEX_BUILDING.to_string()),
+        "no index-building line in {got:#?}"
+    );
+    assert!(!got.iter().any(|p| p.contains("on this plane")), "{got:#?}");
+    assert!(
+        !got.iter().any(|p| p.contains("workspace `alpha`.**")),
+        "{got:#?}"
+    );
+    let persona = got
+        .iter()
+        .find(|p| p.contains("persona for this session"))
+        .unwrap();
+    assert!(
+        persona.contains(
+            "\n\n## Memory — newest shown (**search the rest**)\n**Before acting, search**"
+        ),
+        "{persona}"
+    );
+    assert!(
+        persona.ends_with(
+            "\n\n**own** — newest:\n- [A fact](a.md)\n**shared** — newest:\n- [Shared fact](s.md) \
+             — a hook"
+        ),
+        "{persona}"
+    );
+    assert!(!persona.contains("not read"), "{persona}");
+}
+
+#[test]
+fn the_unshared_nudge_says_what_the_host_last_recorded_and_runs_no_git() {
+    let (_d, root) = plane();
+    committed(&root, "push");
+    let writer = crate::projectindex::Writer::open(&root).unwrap();
+    writer
+        .record_standing(&crate::planegit::standing(&root))
+        .unwrap();
+    // Git would count this file; the host has not looked since.
+    std::fs::write(root.join("personas/ops/memory/b.md"), "# B\n").unwrap();
+    let nudge = |got: Vec<String>| got.into_iter().find(|p| p.contains("**uncommitted**"));
+    assert_eq!(nudge(told(&root, &IN_ALPHA, serde_json::json!({}))), None);
+    writer
+        .record_standing(&crate::planegit::standing(&root))
+        .unwrap();
+    assert_eq!(
+        nudge(told(&root, &IN_ALPHA, serde_json::json!({}))).as_deref(),
+        Some(
+            "⬤ 1 persona memory/ref file is **uncommitted** — durable knowledge not yet \
+             shared. Commit + push it with `purlis save`."
+        )
+    );
 }

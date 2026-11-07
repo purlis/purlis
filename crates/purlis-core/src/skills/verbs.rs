@@ -276,6 +276,7 @@ impl Ctx<'_> {
                 no_push: false,
                 cwd: self.plane,
                 provenance: None,
+                for_a_chat: false,
             },
             crate::planegit::Trigger::Skill(self.by),
             &unique,
@@ -911,6 +912,36 @@ pub fn move_to(
     to: &Level,
     grant: Option<&Grant>,
 ) -> Result<PathBuf, String> {
+    let planned = move_checked(cx, from, name, to, grant)?;
+    move_folder(cx.plane, &planned, name)?;
+    let touched = move_followed(cx, &planned, from, name, to, grant);
+    cx.done(format!(
+        "{name} is a {to} skill now, in {}",
+        rel(cx.plane, &planned.moved)
+    ));
+    cx.commit(&touched, &format!("skill mv {name} {to}"));
+    Ok(planned.moved)
+}
+
+/// **A move checked and not made yet** ([`move_checked`]): where the skill's folder is, where it
+/// goes, and the places git followed it through, read while git still has it there.
+pub(in crate::skills) struct MovePlan {
+    pub(in crate::skills) folder: PathBuf,
+    pub(in crate::skills) moved: PathBuf,
+    /// How many folders the level it goes to has ([`Level::depth`]).
+    depth: usize,
+    followed: Vec<(String, String)>,
+}
+
+/// **Whether `name` can move from `from` to `to`**, and where: everything [`move_to`] refuses,
+/// asked before anything is written.
+pub(in crate::skills) fn move_checked(
+    cx: &Ctx<'_>,
+    from: &Level,
+    name: &str,
+    to: &Level,
+    grant: Option<&Grant>,
+) -> Result<MovePlan, String> {
     let plane = cx.plane;
     crate::settings::writable(plane)?;
     if from == to {
@@ -945,20 +976,49 @@ pub fn move_to(
     } else {
         Vec::new()
     };
-    let moved = dir.join(&folder_is);
-    move_skill(plane, &folder, plane, &moved, to.depth()).map_err(|unmoved| match unmoved {
-        Unmoved::Nothing(why) => format!("{name} was not moved: {why}"),
-        Unmoved::Stranded(what) => format!("{name} was moved only in part: {what}"),
-    })?;
+    Ok(MovePlan {
+        moved: dir.join(&folder_is),
+        depth: to.depth(),
+        folder,
+        followed,
+    })
+}
+
+/// Moves the folder of a move [`move_checked`] planned, and the file beside it.
+pub(in crate::skills) fn move_folder(
+    plane: &Path,
+    planned: &MovePlan,
+    name: &str,
+) -> Result<(), String> {
+    move_skill(plane, &planned.folder, plane, &planned.moved, planned.depth).map_err(|unmoved| {
+        match unmoved {
+            Unmoved::Nothing(why) => format!("{name} was not moved: {why}"),
+            Unmoved::Stranded(what) => format!("{name} was moved only in part: {what}"),
+        }
+    })
+}
+
+/// **What follows a move made** ([`move_to`]): its grant, each workspace's turn-off, the persona
+/// lists and its grades. Answers every path its commit holds.
+pub(in crate::skills) fn move_followed(
+    cx: &mut Ctx<'_>,
+    planned: &MovePlan,
+    from: &Level,
+    name: &str,
+    to: &Level,
+    grant: Option<&Grant>,
+) -> Vec<String> {
+    let plane = cx.plane;
+    let moved = &planned.moved;
     let mut touched = vec![
-        rel(plane, &folder),
-        rel(plane, &beside(&folder)),
-        rel(plane, &moved),
-        rel(plane, &beside(&moved)),
+        rel(plane, &planned.folder),
+        rel(plane, &beside(&planned.folder)),
+        rel(plane, moved),
+        rel(plane, &beside(moved)),
     ];
     if to.at == Whose::Project {
         if let Some(grant) = grant
-            && let Err(why) = set_grant(&moved, grant)
+            && let Err(why) = set_grant(moved, grant)
         {
             cx.warn(format!(
                 "{name} is moved, and its grant was not written: {why}"
@@ -967,21 +1027,16 @@ pub fn move_to(
     } else if from.at == Whose::Project {
         // A workspace's or a persona's skill reaches its own chats alone: it keeps no grant, and
         // nothing turns it off.
-        if grant_of(&moved).is_ok_and(|was| was != Grant::Root) {
-            let _ = set_grant(&moved, &Grant::Root);
+        if grant_of(moved).is_ok_and(|was| was != Grant::Root) {
+            let _ = set_grant(moved, &Grant::Root);
         }
         touched.extend(turned_off_renamed(cx, name, None));
     }
     if from.at.persona() != to.at.persona() {
         touched.extend(personas_followed(cx, from, name, to));
     }
-    after_edit_follows(cx, (from, name), (to, name), &followed);
-    cx.done(format!(
-        "{name} is a {to} skill now, in {}",
-        rel(plane, &moved)
-    ));
-    cx.commit(&touched, &format!("skill mv {name} {to}"));
-    Ok(moved)
+    after_edit_follows(cx, (from, name), (to, name), &planned.followed);
+    touched
 }
 
 /// Grading after each edit of the copy of `old` at `from`, carried to `new` at `to` (#3612); where
@@ -989,7 +1044,7 @@ pub fn move_to(
 /// its grades: where git cannot follow the change, the name and level it leaves are kept on this
 /// machine (#4018), with `followed`, the places git followed it through before (name, level's
 /// folder), and where they could not be, that is said.
-fn after_edit_follows(
+pub(in crate::skills) fn after_edit_follows(
     cx: &mut Ctx<'_>,
     (from, old): (&Level, &str),
     (to, new): (&Level, &str),
@@ -1168,6 +1223,34 @@ const DELETED_DIR: &str = "skills-deleted";
 
 /// The file in a kept delete's folder that names the level its skill came from.
 const KEPT_FROM: &str = "from";
+
+/// **The trailer of a restore under a new name** (#3729, #5457, `docs/plane-format.md`): the
+/// commit that deleted it and its folder, which [`deleted`] lists no more, as nothing at its old
+/// folder or name says it is back.
+pub(super) const RESTORED_TRAILER: &str = "Purlis-Skill-Restored";
+
+/// The trailer that says `deleted` came back under a new name, where a commit deleted it.
+pub(super) fn restored_trailer(plane: &Path, deleted: &Deleted, folder: &Path) -> Option<String> {
+    match &deleted.kept.0 {
+        Source::Commit(sha) => Some(format!("{RESTORED_TRAILER}: {sha} {}", rel(plane, folder))),
+        Source::Here(_) => None,
+    }
+}
+
+/// Each delete a restore under a new name took back, as its trailer's value says it.
+fn restored_marks(plane: &Path) -> Vec<String> {
+    let format = format!("--format=%(trailers:key={RESTORED_TRAILER},valueonly,separator=%x1e)");
+    let grep = format!("--grep=^{RESTORED_TRAILER}: ");
+    // Every one, however old: a delete further back than the listing reads is listed no more
+    // anyway, and one within it must never come back to the list.
+    git(plane, &["log", &format, &grep])
+        .unwrap_or_default()
+        .split(['\u{1e}', '\n'])
+        .map(str::trim)
+        .filter(|one| !one.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
 
 /// The folder in this machine's state that holds a note for each delete by git while it runs,
 /// held locked by the delete (SK-35, #3013, `docs/plane-format.md`): one left unlocked is a delete
@@ -1389,7 +1472,7 @@ fn tracked(plane: &Path, rel_path: &str) -> bool {
 }
 
 /// The commit the plane's `HEAD` names, or empty.
-fn head(plane: &Path) -> String {
+pub(in crate::skills) fn head(plane: &Path) -> String {
     git(plane, &["rev-parse", "HEAD"])
         .map(|out| out.trim().to_owned())
         .unwrap_or_default()
@@ -1841,6 +1924,9 @@ fn deleted_with_text(plane: &Path) -> Vec<(Deleted, String)> {
             text,
         ));
     }
+    // Those Delete now took off this list on this machine (#5332): git still holds them.
+    let gone = set::gone::read(plane);
+    let restored = restored_marks(plane);
     let globs = shared_globs();
     let format = format!(
         "--format=%x01%H%x1f%ct%x1f%(trailers:key={},valueonly,separator=%x2C)%x1f%(trailers:key={},valueonly,separator=%x2C)",
@@ -1907,7 +1993,13 @@ fn deleted_with_text(plane: &Path) -> Vec<(Deleted, String)> {
             let here_too = out
                 .iter()
                 .any(|(one, _): &(Deleted, String)| one.level == level && one.folder == folder);
-            if here_too || taken_again(plane, &level, &name, folder, true) {
+            if here_too
+                || set::gone::marked(&gone, sha, folder_rel)
+                || restored
+                    .iter()
+                    .any(|one| *one == format!("{sha} {folder_rel}"))
+                || taken_again(plane, &level, &name, folder, true)
+            {
                 continue;
             }
             out.push((
@@ -1992,29 +2084,7 @@ pub fn restore(
                  names it follows"
             ));
         }
-        Some(new) => {
-            if let Some(why) = change::name_problem(new) {
-                return Err(format!("{new:?} cannot be a skill's name: {why}"));
-            }
-            cx.not_built_in(new)?;
-            if new == deleted.folder {
-                if deleted.level.named(plane, new).is_some() {
-                    return Err(format!(
-                        "the {} skills already have one named {new}: pick another name",
-                        deleted.level
-                    ));
-                }
-            } else {
-                free_at(plane, &deleted.level, new, new)?;
-            }
-            // Its text has a name to rewrite, or nothing comes back.
-            let text = deleted_text(plane, deleted)?;
-            if change::with_name(&text, new).is_none() {
-                return Err(format!(
-                    "{name}'s instructions have no name: line to change, so it was not restored"
-                ));
-            }
-        }
+        Some(new) => under_checked(cx, deleted, new)?,
     }
     let dir = level_is_there(plane, &deleted.level)?;
     let folder = dir.join(&deleted.folder);
@@ -2068,8 +2138,42 @@ pub fn restore(
         deleted.level,
         rel(plane, &landed)
     ));
-    cx.commit(&touched, &format!("skill restore {name} as {new}"));
+    let message = match restored_trailer(plane, deleted, &folder) {
+        Some(trailer) => format!("skill restore {name} as {new}\n\n{trailer}"),
+        None => format!("skill restore {name} as {new}"),
+    };
+    cx.commit(&touched, &message);
     Ok(landed)
+}
+
+/// **Whether the deleted skill `deleted` can come back as `new`** (#3729): a name the format
+/// allows, not one of purlis's own ([`Ctx::not_built_in`]), free at its level, with a `name:`
+/// line in its text to rewrite. What [`restore`] and a set's restore under new names ask first.
+pub(super) fn under_checked(cx: &Ctx<'_>, deleted: &Deleted, new: &str) -> Result<(), String> {
+    let plane = cx.plane;
+    let name = &deleted.name;
+    if let Some(why) = change::name_problem(new) {
+        return Err(format!("{new:?} cannot be a skill's name: {why}"));
+    }
+    cx.not_built_in(new)?;
+    if new == deleted.folder {
+        if deleted.level.named(plane, new).is_some() {
+            return Err(format!(
+                "the {} skills already have one named {new}: pick another name",
+                deleted.level
+            ));
+        }
+    } else {
+        free_at(plane, &deleted.level, new, new)?;
+    }
+    // Its text has a name to rewrite, or nothing comes back.
+    let text = deleted_text(plane, deleted)?;
+    if change::with_name(&text, new).is_none() {
+        return Err(format!(
+            "{name}'s instructions have no name: line to change, so it was not restored"
+        ));
+    }
+    Ok(())
 }
 
 /// **Puts the deleted skill's files back at `folder`**: from the commit that removed it, or from
@@ -2124,7 +2228,12 @@ fn kept_emptied(plane: &Path, kept: &str) {
 /// then its folder, and the file beside it, moved to `new` beside it where it is named otherwise.
 /// Answers where it is now; [`Unmoved::Nothing`] where it is still where it came back to, for
 /// [`taken_back`] to take away.
-fn renamed_back(plane: &Path, folder: &Path, name: &str, new: &str) -> Result<PathBuf, Unmoved> {
+pub(super) fn renamed_back(
+    plane: &Path,
+    folder: &Path,
+    name: &str,
+    new: &str,
+) -> Result<PathBuf, Unmoved> {
     let what = format!("{name}'s instructions");
     let file = format!("{}/SKILL.md", rel(plane, folder));
     let text = text_in(plane, folder, name).map_err(Unmoved::Nothing)?;
@@ -2137,6 +2246,29 @@ fn renamed_back(plane: &Path, folder: &Path, name: &str, new: &str) -> Result<Pa
     let to = folder.with_file_name(new);
     move_skill(plane, folder, plane, &to, usize::MAX)?;
     Ok(to)
+}
+
+/// **Undoes [`renamed_back`]**: the skill named `new` at `landed` named `old` again, its folder
+/// moved back to `folder`, so [`taken_back`] can take it away as it came back.
+pub(super) fn renamed_away(
+    plane: &Path,
+    landed: &Path,
+    folder: &Path,
+    new: &str,
+    old: &str,
+) -> Result<(), String> {
+    let what = format!("{new}'s instructions");
+    let file = format!("{}/SKILL.md", rel(plane, landed));
+    let text = text_in(plane, landed, new)?;
+    let back = change::with_name(&text, old)
+        .ok_or_else(|| format!("{what} has no name: line to change"))?;
+    write(plane, &file, &what, Some(&text), &back, usize::MAX)?;
+    if landed != folder {
+        move_skill(plane, landed, plane, folder, usize::MAX).map_err(|unmoved| match unmoved {
+            Unmoved::Nothing(why) | Unmoved::Stranded(why) => why,
+        })?;
+    }
+    Ok(())
 }
 
 /// **Takes away what a restore of `deleted` put back at `folder`**, where it could not be named
@@ -2315,7 +2447,11 @@ pub(in crate::skills) mod store {
 
     /// Makes the folder `names` names under `root`, `0700`, its parents being there: one
     /// already there is taken where `there_is_fine`, and only as a folder.
-    pub(super) fn made(root: &Path, names: &[&str], there_is_fine: bool) -> std::io::Result<()> {
+    pub(in crate::skills) fn made(
+        root: &Path,
+        names: &[&str],
+        there_is_fine: bool,
+    ) -> std::io::Result<()> {
         let (leaf, parents) = names.split_last().ok_or(std::io::ErrorKind::InvalidInput)?;
         let parents: Vec<String> = parents.iter().map(|one| (*one).to_owned()).collect();
         let at = open_dir(root, &parents, usize::MAX)?;
@@ -2331,7 +2467,7 @@ pub(in crate::skills) mod store {
     }
 
     /// Writes `text` as the new file `name` in the folder `names` names under `root`, `0600`.
-    pub(super) fn write_new(
+    pub(in crate::skills) fn write_new(
         root: &Path,
         names: &[&str],
         name: &str,
@@ -2592,6 +2728,27 @@ pub(in crate::skills) mod store {
         }
         let _ = unlinkat(&at, kept, AtFlags::REMOVEDIR);
     }
+
+    /// **Removes the kept delete `name` in `dir` under `state` now** (#5332's Delete now), as
+    /// [`super::expire`] removes one past its time: only the names a kept delete is made of.
+    pub(in crate::skills) fn remove_now(
+        state: &Path,
+        dir: &str,
+        from: &str,
+        name: &str,
+    ) -> Result<(), String> {
+        let (_, folder) = super::kept_name(name)
+            .ok_or_else(|| "it is not named as a delete names what it keeps".to_owned())?;
+        let kept = open_dir(state, &[dir.to_owned()], usize::MAX).map_err(|why| why.to_string())?;
+        remove_kept(&kept, name, folder, from)
+    }
+
+    /// The names of the plain files in the folder `dir` under `state`; none where it is not there.
+    pub(in crate::skills) fn files_in(state: &Path, dir: &str) -> Vec<String> {
+        open_dir(state, &[dir.to_owned()], usize::MAX)
+            .map(|at| names_in(&at, FileType::RegularFile))
+            .unwrap_or_default()
+    }
 }
 
 /// [`store`] where no folder can be held open: nothing is kept, and nothing is read.
@@ -2603,11 +2760,16 @@ mod store {
         std::io::Error::other("a deleted skill is kept only where its folders can be held open")
     }
 
-    pub(super) fn made(_: &Path, _: &[&str], _: bool) -> std::io::Result<()> {
+    pub(in crate::skills) fn made(_: &Path, _: &[&str], _: bool) -> std::io::Result<()> {
         Err(refused())
     }
 
-    pub(super) fn write_new(_: &Path, _: &[&str], _: &str, _: &str) -> std::io::Result<()> {
+    pub(in crate::skills) fn write_new(
+        _: &Path,
+        _: &[&str],
+        _: &str,
+        _: &str,
+    ) -> std::io::Result<()> {
         Err(refused())
     }
 
@@ -2616,6 +2778,14 @@ mod store {
     }
 
     pub(super) fn put_away(_: &Path, _: &str, _: &str, _: &str) {}
+
+    pub(in crate::skills) fn remove_now(_: &Path, _: &str, _: &str, _: &str) -> Result<(), String> {
+        Err(refused().to_string())
+    }
+
+    pub(in crate::skills) fn files_in(_: &Path, _: &str) -> Vec<String> {
+        Vec::new()
+    }
 
     pub(super) fn expire(_: &Path, _: &str, _: &str, _: u128) -> super::Expired {
         super::Expired::default()

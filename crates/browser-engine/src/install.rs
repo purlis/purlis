@@ -263,9 +263,18 @@ pub type Listener = Arc<dyn Fn(Hop<'_>) + Send + Sync>;
 /// The most redirects one download follows.
 pub const MAX_REDIRECTS: usize = 5;
 
+/// How many times a request answered with a server error (a 5xx) is asked again (#5403): a
+/// gateway's 504 is most often gone a second later, and a download that gave up on it refused
+/// the engine for one bad answer.
+pub const SERVER_ERROR_RETRIES: usize = 2;
+
+/// The pause before a server error is asked again, doubled each time after.
+const SERVER_ERROR_PAUSE: Duration = Duration::from_secs(1);
+
 /// Downloads over https, and only https, redirects included, each request told to a
 /// [`Listener`] when there is one, and the whole of each request, its body included, bounded
-/// by a total time ([`Https::within`]), so a server that stops answering is given up on.
+/// by a total time ([`Https::within`]), so a server that stops answering is given up on. A
+/// server error is asked again [`SERVER_ERROR_RETRIES`] times within that time.
 #[derive(Clone)]
 pub struct Https {
     total: Duration,
@@ -338,7 +347,9 @@ impl Fetch for Https {
         // what is left of it.
         let deadline = Instant::now() + self.total;
         let mut url = url.to_owned();
-        for _ in 0..=MAX_REDIRECTS {
+        let mut redirects = 0;
+        let mut retries = 0;
+        loop {
             let started = Instant::now();
             let left = deadline.saturating_duration_since(started);
             let response = match agent
@@ -376,6 +387,12 @@ impl Fetch for Https {
                         io::Error::other(format!("{url} redirects to no https address"))
                     })?
                     .to_owned();
+                redirects += 1;
+                if redirects > MAX_REDIRECTS {
+                    return Err(io::Error::other(format!(
+                        "more than {MAX_REDIRECTS} redirects from {url}"
+                    )));
+                }
                 continue;
             }
             if !response.status().is_success() {
@@ -385,6 +402,17 @@ impl Fetch for Https {
                     answered: true,
                     took: started.elapsed(),
                 });
+                // A server error is asked again, after a pause, while the deadline leaves room
+                // for the pause; any other answer is the server's word on it.
+                let pause = SERVER_ERROR_PAUSE * (1 << retries);
+                if response.status().is_server_error()
+                    && retries < SERVER_ERROR_RETRIES
+                    && Instant::now() + pause < deadline
+                {
+                    std::thread::sleep(pause);
+                    retries += 1;
+                    continue;
+                }
                 return Err(io::Error::other(format!("{url} answered {status}")));
             }
             let body = response.into_body();
@@ -399,9 +427,6 @@ impl Fetch for Https {
                 length,
             ));
         }
-        Err(io::Error::other(format!(
-            "more than {MAX_REDIRECTS} redirects from {url}"
-        )))
     }
 }
 

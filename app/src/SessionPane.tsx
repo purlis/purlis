@@ -53,6 +53,7 @@ import {
 import { drawTerminalFont } from "./theme/terminalFont";
 import { scrollByDistance } from "./wheel";
 import { drawnReports, writePerFrame } from "./paneWrites";
+import { watchForFreeze } from "./freezeWatch5478"; // [DEBUG-5478]
 import { useProjectShown } from "./projectShown";
 import { viewOpening } from "./slowLog";
 import { FIRST_PAGE, keepInView, pageHistory } from "./historyPages";
@@ -419,7 +420,15 @@ function startTerminal(plane: PlaneId, session: number, where: HTMLElement): Liv
    * (the pane's observer hears that).
    */
   const fit = () => {
-    if (pane.element?.isConnected) fitting.fit();
+    if (!pane.element?.isConnected) return;
+    fitting.fit();
+    // **How tall its line is, for the pane's three-line floor** (#5215): the band over it gives
+    // way before the terminal goes under three of them (`paneFrame.css`).
+    const lines = pane.element.querySelector(".xterm-screen")?.clientHeight ?? 0;
+    if (lines > 0 && pane.rows > 0)
+      pane.element
+        .closest<HTMLElement>(".pane-body")
+        ?.style.setProperty("--terminal-row", `${lines / pane.rows}px`);
   };
   const search = new SearchAddon();
   pane.loadAddon(search);
@@ -531,21 +540,34 @@ function startTerminal(plane: PlaneId, session: number, where: HTMLElement): Liv
       },
       (err: unknown) => say(String(err)),
     );
-  const typed = pane.onData((text) => sayIfRefused(commands.sendInput(plane, session, text)));
+  // [DEBUG-5478] Watches the pane for #5478's freeze, and writes one line to the log if so.
+  const freeze = watchForFreeze(
+    pane,
+    session,
+    (line) =>
+      // A line that cannot be written (a link has no log here) is let go.
+      void commands.debug5478Log(line).catch(() => {}),
+  );
+  const typed = pane.onData((text) => {
+    freeze.input(); // [DEBUG-5478]
+    sayIfRefused(commands.sendInput(plane, session, text));
+  });
   // **And what is not text, as the bytes it is** (charter#493): xterm hands a mouse report in
   // the default encoding (`?1000h` without `?1006h`) to `onBinary`, one character per byte.
   // Sent as text, a column or row past 95 — a byte above 127 — would reach the program as two.
-  const bytes = pane.onBinary((binary) =>
+  const bytes = pane.onBinary((binary) => {
+    freeze.input(); // [DEBUG-5478]
     sayIfRefused(
       commands.sendInputBytes(
         plane,
         session,
         Array.from(binary, (char) => char.charCodeAt(0) & 0xff),
       ),
-    ),
-  );
+    );
+  });
   // The terminal decides the size, and the program is told it.
   const resized = pane.onResize(({ cols, rows }) => {
+    freeze.resizeSent(cols, rows); // [DEBUG-5478]
     void commands.resizeSession(plane, session, cols, rows);
   });
 
@@ -565,7 +587,16 @@ function startTerminal(plane: PlaneId, session: number, where: HTMLElement): Liv
   // again has its screen as it is now and nothing to catch up.
   // What arrives within a frame is one write to the terminal, not one per chunk (#4732): one
   // for the terminal, whichever view it came from, so a page's reset stays in its order.
-  const writes = writePerFrame((bytes, parsed) => pane.write(bytes, parsed));
+  const writes = writePerFrame((bytes, parsed) => {
+    // [DEBUG-5478] An exception here is noted for #5478's line, then thrown on unchanged.
+    freeze.written();
+    try {
+      pane.write(bytes, parsed);
+    } catch (err) {
+      freeze.threw("write", err);
+      throw err;
+    }
+  });
   /** Ends the stall log's note of the view being opened (`slowLog.ts`). */
   let openingDone = () => {};
   // What the view is sent waits here until the terminal is the size that screen was drawn
@@ -592,6 +623,7 @@ function startTerminal(plane: PlaneId, session: number, where: HTMLElement): Liv
     output.onmessage = (buffer) => {
       if (gone || (mine !== drawing && mine !== asked)) return;
       const bytes = new Uint8Array(buffer);
+      if (mine === drawing) freeze.output(); // [DEBUG-5478]
       const benched = bench.paneSent(pane, bytes);
       const written = () => {
         keep();
@@ -664,6 +696,7 @@ function startTerminal(plane: PlaneId, session: number, where: HTMLElement): Liv
     resized.dispose();
     if (view !== undefined) void commands.unwatchSession(plane, session, view);
     writes.dispose();
+    freeze.dispose(); // [DEBUG-5478]
     pane.dispose();
     bench.paneClosed(session, pane);
   };

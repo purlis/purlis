@@ -3341,6 +3341,75 @@ fn a_chat_in_a_branch_folder_purlis_cut_leaves_its_clones_git_folder_to_the_app(
     }
 }
 
+#[test]
+fn a_chat_anywhere_in_the_project_leaves_the_project_roots_git_folder_to_the_app() {
+    let plane = plane_saying(ON);
+    let root = plane.path().canonicalize().expect("real");
+    std::fs::create_dir_all(root.join(".git")).unwrap();
+    let workspace = root.join("workspaces/w");
+    let clone = workspace.join("repo");
+    let piece = workspace.join(".worktrees/repo/p1");
+    std::fs::create_dir_all(clone.join(".git")).unwrap();
+    std::fs::create_dir_all(&piece).unwrap();
+    let held = root.join(".git");
+
+    for chat in [&root, &workspace, &clone, &piece] {
+        let settings = claude_settings_in(&root, chat);
+        assert!(claude_holds(&settings, &held), "{chat:?}");
+    }
+}
+
+#[test]
+fn a_project_root_whose_git_is_a_file_keeps_it_as_it_was() {
+    let plane = plane_saying(ON);
+    let root = plane.path().canonicalize().expect("real");
+    std::fs::write(
+        root.join(".git"),
+        "gitdir: /elsewhere/.git/worktrees/plane\n",
+    )
+    .unwrap();
+    let settings = claude_settings_in(&root, &root);
+    let path = root.join(".git").display().to_string();
+    assert!(
+        !settings.deny.contains(&format!("Edit(/{path}/**)")),
+        "{:?}",
+        settings.deny
+    );
+}
+
+#[test]
+fn only_a_chat_whose_sandbox_holds_the_project_roots_git_whole_records_it_so() {
+    let plane = plane_saying(ON);
+    let root = plane.path().canonicalize().expect("real");
+    std::fs::create_dir_all(root.join(".git")).unwrap();
+    let started = |harness| {
+        for_start(harness, &root, &machine(Os::MacOs), &|_| true)
+            .expect("starts")
+            .expect("sandboxed")
+    };
+    assert_eq!(
+        started(Harness::ClaudeCode).confines().roots_git,
+        Some(root.join(".git"))
+    );
+    // Their wraps hold the folder by its name alone: the app saves nothing there for them.
+    for harness in [Harness::Codex, Harness::Opencode] {
+        assert_eq!(started(harness).confines().roots_git, None, "{harness:?}");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_project_root_whose_git_is_a_link_records_no_held_git() {
+    let plane = plane_saying(ON);
+    let root = plane.path().canonicalize().expect("real");
+    let elsewhere = tempfile::tempdir().unwrap();
+    std::os::unix::fs::symlink(elsewhere.path(), root.join(".git")).unwrap();
+    let applied = for_start(Harness::ClaudeCode, &root, &machine(Os::MacOs), &|_| true)
+        .expect("starts")
+        .expect("sandboxed");
+    assert_eq!(applied.confines().roots_git, None);
+}
+
 /// Whether `settings` deny writing `path`, to Claude Code's sandbox and to its Edit tool.
 fn claude_holds(settings: &claude::Settings, path: &Path) -> bool {
     let path = path.display().to_string();
@@ -7882,6 +7951,17 @@ fn git_still_writes_what_is_inside_a_held_git_folder() {
             for kept in [".git/config", ".git/hooks/pre-commit"] {
                 let path = repo.join(kept);
                 assert!(!holding(&path).is_empty(), "{level:?}: {path:?} not held");
+            }
+            // The project root's git folder is the app's to write, so the form a chat is armed
+            // with holds it whole ([`roots_git_held`]); the floor here is compiled without it.
+            if repo == repositories.plane.path() {
+                if level == Level::Full {
+                    for written in [".git", ".git/index.lock", ".git/refs/heads/main"] {
+                        let path = repo.join(written);
+                        assert!(!holding(&path).is_empty(), "{level:?}: {path:?} not held");
+                    }
+                }
+                continue;
             }
             for written in [
                 ".git",

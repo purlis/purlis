@@ -320,6 +320,25 @@ pub fn compared(tree: &Tree, ignore: &[String]) -> Tree {
         .collect()
 }
 
+/// `ignore`, with each path inside a workspace's clone standing for that clone in both layouts
+/// (ADR 0114): `workspaces/<ws>/<clone>/…`, as the scenarios were recorded when every clone was
+/// at the workspace's root, and `workspaces/<ws>/repos/<clone>/…`, where a clone lands from
+/// structure version 6 on. A clone's `.git` holds what no two machines write alike (its index,
+/// its reflogs and who made them) wherever the clone is.
+pub fn in_either_layout(ignore: &[String]) -> Vec<String> {
+    let mut out = ignore.to_vec();
+    for path in ignore {
+        let parts: Vec<&str> = path.splitn(4, '/').collect();
+        if let ["workspaces", ws, clone, rest] = parts[..]
+            && clone != purlis_core::repofolder::REPOS
+            && !clone.starts_with('.')
+        {
+            out.push(format!("workspaces/{ws}/repos/{clone}/{rest}"));
+        }
+    }
+    out
+}
+
 pub fn ignored(rel: &str, ignore: &[String]) -> bool {
     ignore.iter().any(|k| {
         rel == k

@@ -133,12 +133,16 @@ function OnRows() {
   return (
     <MenuShortcuts.Provider value={(act) => rowKey(act, true)}>
       <div style={{ display: "grid", gap: "var(--space-4)", inlineSize: "26rem" }}>
-        <AimedList id="rows" aria-label="Actions">
-          {PALETTE.map((one, at) => {
+        <AimedList
+          id="rows"
+          aria-label="Actions"
+          count={PALETTE.length}
+          aimed={aimed}
+          option={(at) => {
+            const one = PALETTE[at];
             const key = rowKey(one.id, true);
             return (
               <AimedOption
-                key={one.id}
                 id={`row-${one.id}`}
                 aimed={at === aimed}
                 keys={rowAriaKeys(one.id, true)}
@@ -149,8 +153,8 @@ function OnRows() {
                 {key !== undefined && <RowShortcut keys={key} />}
               </AimedOption>
             );
-          })}
-        </AimedList>
+          }}
+        />
         <div style={{ display: "flex", gap: "var(--space-3)", alignItems: "center" }}>
           <MenuTrigger>
             <Button>Tab steward 4</Button>

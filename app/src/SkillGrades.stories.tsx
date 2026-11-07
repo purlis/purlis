@@ -397,7 +397,7 @@ export const NoChecks: Story = {
     await expect(none).toHaveTextContent("deploy has no checks yet");
     await expect(within(none).getByRole("button", { name: "Write them yourself" })).toBeVisible();
     const ask = within(none).getByRole("button", {
-      name: "Ask a chat at the project's root to write checks",
+      name: "Ask a chat at plane to write checks",
     });
     await tabInto(() => ask);
     expectFocusInSight();
@@ -494,7 +494,7 @@ export const OnlyPicked: Story = {
     const job = canvas.getByRole("region", { name: "Does it do the job?" });
     await expect(job).toHaveTextContent("None yet.");
     const ask = within(job).getByRole("button", {
-      name: "Ask a chat at the project's root to write these",
+      name: "Ask a chat at plane to write these",
     });
     await tabInto(() => ask);
     expectFocusInSight();

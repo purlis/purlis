@@ -9,14 +9,19 @@
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect } from "storybook/test";
-import type { CSSProperties, ReactNode } from "react";
+import { type CSSProperties, type ReactNode, useLayoutEffect, useRef, useState } from "react";
+import { useTabIds } from "../../StripTablist";
+import { TabCell, tabPart, tabsPart } from "../tabs/Tabs";
+import { StripTab, TabStripRow, useTabStrip } from "../tabs/TabStrip";
 import {
   PanePreviewArriving,
   PanePreviewHeld,
   PanePreviewLine,
+  PanePreviewOpening,
   PanePreviewRefused,
   PanePreviewSize,
   PanePreviewWords,
+  type PreviewBox,
 } from "./PanePreview";
 
 const WIDTH = 640;
@@ -255,6 +260,95 @@ export const OnTheStrip: Story = {
       <PanePreviewLine box={{ left: 120, top: 0, width: 2, height: 32 }} />
       <PanePreviewHeld at={{ left: 130, top: 40 }}>codeql-issues</PanePreviewHeld>
       <PanePreviewWords at={{ left: 130, top: 70 }}>A new tab with codeql-issues.</PanePreviewWords>
+    </Room>
+  ),
+};
+
+/** How tall the strip is drawn above the panes in {@link RestingOnATab}. */
+const STRIP_HEIGHT = 36;
+
+/**
+ * Two tabs on a strip, drawn by the tabs family, over two panes: the second tab wears the mark a
+ * drag resting on it draws, measured from where the strip draws it, as the window measures it.
+ */
+function RestingOnTheStrip() {
+  const names = ["copy-past-crash", "performance"];
+  const idOf = useTabIds();
+  const along = useTabStrip({ keys: names, selected: names[0] });
+  const room = useRef<HTMLDivElement>(null);
+  const resting = useRef<HTMLDivElement>(null);
+  const [mark, setMark] = useState<PreviewBox>();
+  useLayoutEffect(() => {
+    const tab = resting.current?.getBoundingClientRect();
+    const at = room.current?.getBoundingClientRect();
+    if (tab === undefined || at === undefined) return;
+    setMark({
+      left: tab.left - at.left,
+      top: tab.bottom - at.top - 2,
+      width: tab.width,
+      height: 2,
+    });
+  }, []);
+  const below = (box: typeof LEFT) => ({ ...box, top: box.top + STRIP_HEIGHT });
+  return (
+    <div ref={room} style={{ position: "absolute", inset: 0 }}>
+      <div className="editor" {...tabsPart("layout")} style={{ blockSize: STRIP_HEIGHT }}>
+        <header className="bar" {...tabsPart("strip")}>
+          <TabStripRow
+            strip={along}
+            name="Chats"
+            ids={names.map((_, at) => idOf(at))}
+            className="tabs"
+          >
+            {names.map((name, at) => (
+              <TabCell
+                key={name}
+                ref={at === 1 ? resting : undefined}
+                className="tab"
+                variant="chat"
+                selected={at === 0}
+                first={at === 0}
+              >
+                <StripTab
+                  strip={along}
+                  tabKey={name}
+                  selected={at === 0}
+                  tip={undefined}
+                  type="button"
+                  id={idOf(at)}
+                >
+                  <span className="tab-name" {...tabPart("label")}>
+                    {name}
+                  </span>
+                </StripTab>
+              </TabCell>
+            ))}
+          </TabStripRow>
+        </header>
+      </div>
+      <Pane name="copy-past-crash" {...below(LEFT)} />
+      <Pane name="codeql-issues" {...below(RIGHT)} doing="lifted" />
+      {mark !== undefined && <PanePreviewOpening box={mark} />}
+      <PanePreviewHeld at={{ left: 300, top: 40 }}>codeql-issues</PanePreviewHeld>
+      <PanePreviewWords at={{ left: 300, top: 70 }}>A new tab with codeql-issues.</PanePreviewWords>
+    </div>
+  );
+}
+
+/**
+ * Resting on another tab (#5294): it wears a mark along its bottom until it comes forward, and
+ * the words say what letting go there would do.
+ */
+export const RestingOnATab: Story = {
+  play: async (context) => {
+    await still?.(context);
+    await expect(
+      context.canvasElement.querySelector('[data-scope="pane-preview"][data-part="opening"]'),
+    ).not.toBeNull();
+  },
+  render: () => (
+    <Room>
+      <RestingOnTheStrip />
     </Room>
   ),
 };

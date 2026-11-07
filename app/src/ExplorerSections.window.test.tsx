@@ -112,6 +112,8 @@ function core() {
           }
         : { entries: [], more: 0 };
     if (cmd === "branch_status") return { changes: [], folders: [], more: 0, base: "main" };
+    // A workspace's own folder (#5375): nothing of its own, and its repos where it says.
+    if (cmd === "workspace_tree") return { entries: [], more: 0, repos: [] };
     // The plane root's files (issue 1916), as the core answers them: nothing purlis keeps to
     // itself is among them, and a workspace's repo names its workspace.
     if (cmd === "plane_tree") {
@@ -410,11 +412,10 @@ describe("Explorer in sections (#1677)", () => {
     // jsdom is not a Mac, so the key is Ctrl's (`sideKeys.ts`).
     await userEvent.keyboard("{Control>}{Shift>}E{/Shift}{/Control}");
 
+    // The workspace's own folder's first row (#5375): its one repo's, open on its files.
     await waitFor(() =>
       expect(document.activeElement).toBe(
-        within(explorer().getByRole("treegrid", { name: "Files of alpha" })).getByRole("row", {
-          name: /^README\.md/,
-        }),
+        within(explorer().getByRole("treegrid", { name: "Files of alpha" })).getAllByRole("row")[0],
       ),
     );
   });

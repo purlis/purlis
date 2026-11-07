@@ -21,8 +21,10 @@
 //! §2). A skill that narrows the chat, on a harness whose own start applies that
 //! ([`crate::harness::HarnessAdapter::narrowed_start`]) and which purlis armed with the skill,
 //! is not loaded into the chat: the load is refused, opens no run, and says how to start it with
-//! the harness's own skill tool, whose start opens the run. Anywhere else the skill is loaded and
-//! the answer says "Narrowing not applied", never silently.
+//! the harness's own skill tool, whose start opens the run. That holds only for a skill the
+//! harness was handed: one the router hid, or one made since the chat started, is not one its
+//! own tool knows (#4510). Anywhere else the skill is loaded and the answer says "Narrowing not
+//! applied", never silently.
 //!
 //! **A manual-only skill is loaded only when the person asked for it** (#4529): a harness never
 //! starts one by itself, so neither does this tool, unless the call says [`PERSON_ASKED`]. Without
@@ -143,6 +145,11 @@ pub struct Asking<'a> {
     pub route: Option<Route>,
     /// The directory of the built-in skills purlis ships ([`crate::skills::built_in_here`]).
     pub built_in: Option<&'a Path>,
+    /// **The set's folder its harness was handed the plane's skills in**, at its start
+    /// ([`crate::skills::HANDED_ENV`]), where the chat names one: what that harness's own skill
+    /// tool knows of them. A plane skill it does not hold (one the router hid, or one made since
+    /// the chat started) is one the harness cannot start (#4510).
+    pub handed: Option<&'a Path>,
 }
 
 impl Asking<'_> {
@@ -176,8 +183,20 @@ impl Asking<'_> {
         )
     }
 
+    /// **The words its harness's own skill tool starts `effective` by, applying what it
+    /// narrows** ([`crate::harness::HarnessAdapter::narrowed_start`]), where purlis armed the
+    /// harness with the skill. `None` for a chat that names no harness, and for a plane skill its
+    /// harness was not handed ([`Self::handed`]), whose own skill tool would only answer that it
+    /// knows no such skill (#4510).
     fn narrowed_start(&self, effective: &Effective) -> Option<String> {
         self.harness?;
+        if effective.origin.of_the_plane()
+            && !self
+                .handed
+                .is_some_and(|folder| crate::skills::handed_in(folder, &effective.skill.name))
+        {
+            return None;
+        }
         Harness::of_chat(self.harness)?
             .adapter()
             .narrowed_start(&effective.skill.name, effective.origin)

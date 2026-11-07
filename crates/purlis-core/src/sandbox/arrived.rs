@@ -91,6 +91,13 @@ const MOST_BRANCHES: usize = 256;
 /// The most read of a git pointer or a workspace's manifest.
 const LARGEST_READ: u64 = 1024 * 1024;
 
+/// How much one look reads of what names hold ([`contents_of`]). Past it a file counts by its size
+/// and its last change.
+const MOST_CONTENT_READ: u64 = 64 * 1024 * 1024;
+
+/// How many entries one look goes through in what names hold ([`contents_of`]).
+const MOST_CONTENT_ENTRIES: usize = 100_000;
+
 /// The file of the clones the app made ([`made_by_the_app`]), beside the records.
 const MADE: &str = "made-by-the-app";
 
@@ -129,10 +136,26 @@ pub struct Watched {
     /// The home whose own names are asked for, for a chat at the floor.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub home: Option<PathBuf>,
+    /// Whether what a name holds is told when it changes, in the folders walked: where the chat's
+    /// sandbox doesn't refuse a write to a name already there (Claude Code's on Linux, below the
+    /// chat's folder). Elsewhere only a person or a tool outside it can change one.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub contents: bool,
     /// The names a person lifted for this chat ([`super::grant::lift`]): the chat may write
     /// them, so they say nothing.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub lifted: Vec<String>,
+    /// The git folders in or below these folders that the chat's sandbox refuses it writing at
+    /// all, such as the clone of a branch folder it works in. A repository whose git folder is
+    /// in these folders and not one of these vouches for nothing ([`Known`]): the chat could
+    /// have written its branches and its index.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub held_git: Vec<PathBuf>,
+    /// The names the chat's sandbox holds by path that weren't there as the chat first started,
+    /// where it makes an empty placeholder for each while a command runs: Claude Code's on
+    /// Linux. One a sandbox killed outright leaves is cleared by the next look ([`clear_left`]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub placeholders: Vec<PathBuf>,
 }
 
 /// **Which thing is at a path**: its device and inode, its folder's, and when it last changed. A
@@ -145,6 +168,9 @@ struct Pin {
     /// For a `.git`, what of it says what runs ([`stamp`]).
     #[serde(default, skip_serializing_if = "is_zero")]
     inner: u64,
+    /// What it holds ([`contents_of`]), where the look is told to weigh it. 0 where it isn't.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    content: u64,
 }
 
 fn is_zero(value: &u64) -> bool {
@@ -183,7 +209,12 @@ fn stamp(dot_git: &Path) -> u64 {
             }
             Err(_) => words.push_str(&config),
         }
-        for other in ["config.worktree", "commondir", "objects/info/alternates"] {
+        for other in [
+            "config.worktree",
+            "commondir",
+            "objects/info/alternates",
+            "info/attributes",
+        ] {
             words.push_str(&small_file(&dot_git.join(other)).unwrap_or_default());
         }
         if let Ok(hooks) = std::fs::read_dir(dot_git.join("hooks")) {
@@ -204,14 +235,71 @@ fn stamp(dot_git: &Path) -> u64 {
             words.push_str(&listed.concat());
         }
     }
-    gix::objs::compute_hash(
-        gix::hash::Kind::Sha1,
-        gix::objs::Kind::Blob,
-        words.as_bytes(),
-    )
-    .ok()
-    .and_then(|id| id.as_bytes().first_chunk::<8>().copied())
-    .map_or(1, u64::from_le_bytes)
+    short_hash(words.as_bytes())
+}
+
+/// `bytes`, hashed short, and never 0, which says nothing was taken.
+fn short_hash(bytes: &[u8]) -> u64 {
+    gix::objs::compute_hash(gix::hash::Kind::Sha1, gix::objs::Kind::Blob, bytes)
+        .ok()
+        .and_then(|id| id.as_bytes().first_chunk::<8>().copied())
+        .map_or(1, u64::from_le_bytes)
+        .max(1)
+}
+
+/// How much of [`MOST_CONTENT_READ`] and [`MOST_CONTENT_ENTRIES`] one look has used.
+#[derive(Debug, Default)]
+struct Weighing {
+    read: u64,
+    entries: usize,
+}
+
+/// **What a name holds**: a file by its bytes, a link by what it says, a folder by every entry
+/// below it, in name order. By content, so a checkout that writes the same bytes changes nothing.
+/// No link is followed and only a regular file is opened ([`read_regular`]). Past
+/// [`MOST_FILES_CHECKED`] entries, or the look's own bounds, the rest doesn't count, and that name
+/// comes back with any folder not read whole, to be said.
+fn contents_of(path: &Path, weighing: &mut Weighing) -> (u64, Vec<PathBuf>) {
+    let mut words = String::new();
+    let mut unread = Vec::new();
+    let mut entries = 0;
+    let mut waiting = vec![path.to_path_buf()];
+    while let Some(at) = waiting.pop() {
+        entries += 1;
+        weighing.entries += 1;
+        if entries > MOST_FILES_CHECKED || weighing.entries > MOST_CONTENT_ENTRIES {
+            unread.push(path.to_path_buf());
+            break;
+        }
+        let Ok(kind) = std::fs::symlink_metadata(&at) else {
+            continue;
+        };
+        let name = at.strip_prefix(path).unwrap_or(&at).display().to_string();
+        if kind.is_dir() {
+            words.push_str(&format!("d {name}\n"));
+            let Ok(found) = std::fs::read_dir(&at) else {
+                unread.push(at);
+                continue;
+            };
+            let mut below: Vec<PathBuf> = found.flatten().map(|entry| entry.path()).collect();
+            below.sort();
+            waiting.extend(below.into_iter().rev());
+        } else if kind.is_symlink() {
+            let says = std::fs::read_link(&at).unwrap_or_default();
+            words.push_str(&format!("l {name} {}\n", says.display()));
+        } else if kind.is_file() {
+            let size = kind.len();
+            let fits = size <= LARGEST_CHECKED && weighing.read + size <= MOST_CONTENT_READ;
+            match fits.then(|| read_regular(&at, LARGEST_CHECKED)).flatten() {
+                Some(bytes) => {
+                    weighing.read += size;
+                    words.push_str(&format!("f {name} {}\n", short_hash(&bytes)));
+                }
+                None => words.push_str(&format!("s {name} {size} {}\n", ctime(&kind))),
+            }
+        }
+    }
+    (short_hash(words.as_bytes()), unread)
 }
 
 /// When `kind` last changed, which, unlike its modified time, no program sets.
@@ -238,6 +326,7 @@ impl Pin {
             folder: [folder.dev(), folder.ino()],
             changed: ctime(&own),
             inner: if is_git(path) { stamp(path) } else { 0 },
+            content: 0,
         })
     }
 
@@ -254,7 +343,22 @@ impl Pin {
     fn holds(&self, now: &Self, path: &Path) -> bool {
         let is_itself =
             is_git(path) || std::fs::symlink_metadata(path).is_ok_and(|kind| kind.is_dir());
-        self.folder == now.folder && self.inner == now.inner && (!is_itself || self.own == now.own)
+        let same_content = self.content == 0 || now.content == 0 || self.content == now.content;
+        self.folder == now.folder
+            && self.inner == now.inner
+            && same_content
+            && (!is_itself || self.own == now.own)
+    }
+
+    /// Whether `now` is this thing, holding something else: what no repository vouches for, as
+    /// a chat that writes a `.git` can make one vouch for what it likes.
+    fn only_content_differs(&self, now: &Self, path: &Path) -> bool {
+        !self.holds(now, path)
+            && Self {
+                content: now.content,
+                ..*self
+            }
+            .holds(now, path)
     }
 
     /// Whether `now`, at a repository's `.git`, is the `.git` this pin was taken of.
@@ -444,7 +548,10 @@ pub fn begin(plane: &Path, chat: &str, name: Option<&str>, watched: &Watched) ->
     let walked = walk(&Watched {
         folders: new_folders.clone(),
         home: watched.home.clone().filter(|_| had.watched.home.is_none()),
+        contents: watched.contents,
         lifted: watched.lifted.clone(),
+        held_git: watched.held_git.clone(),
+        placeholders: Vec::new(),
     });
     let repos = repos_at_start(&new_folders, &walked);
     holding(plane, || {
@@ -457,7 +564,15 @@ pub fn begin(plane: &Path, chat: &str, name: Option<&str>, watched: &Watched) ->
             }
         }
         record.watched.home = watched.home.clone().or(record.watched.home);
+        record.watched.contents = watched.contents;
         record.watched.lifted.clone_from(&watched.lifted);
+        record.watched.held_git.clone_from(&watched.held_git);
+        // Kept from the chat's first start: one left by a sandbox killed then is there by now.
+        for path in &watched.placeholders {
+            if !record.watched.placeholders.contains(path) {
+                record.watched.placeholders.push(path.clone());
+            }
+        }
         record
             .baseline
             .extend(walked.found.iter().map(|(p, found)| (key(p), found.pin)));
@@ -537,6 +652,96 @@ fn read_made(plane: &Path) -> BTreeMap<String, Pin> {
         .unwrap_or_default()
 }
 
+/// Where the kernel lists each process's mounts, as `<pid>/mountinfo`.
+const PROC: &str = "/proc";
+
+/// **What a sandbox killed outright left in a chat's folders**: each of `watched`'s placeholders
+/// that is an empty file or an empty folder, and that no process has mounted, as a running
+/// sandbox has its own. Removing one a sandbox still holds would free that name inside it, so
+/// where the mounts of `proc` can't be read, nothing is removed. Anything else at such a path,
+/// a file with something in it or a link, is kept and is the look's to tell.
+pub(super) fn clear_left(watched: &Watched, proc: &Path) {
+    if watched.placeholders.is_empty() {
+        return;
+    }
+    let Some(mounted) = mount_points(proc) else {
+        return;
+    };
+    for path in &watched.placeholders {
+        let Ok(kind) = std::fs::symlink_metadata(path) else {
+            continue;
+        };
+        if mounted.iter().any(|at| at.starts_with(path)) {
+            continue;
+        }
+        // A folder goes only while it is empty; a file only while it holds nothing.
+        let _ = if kind.is_dir() {
+            std::fs::remove_dir(path)
+        } else if kind.is_file() && kind.len() == 0 {
+            std::fs::remove_file(path)
+        } else {
+            continue;
+        };
+    }
+}
+
+/// What chat `chat`'s record watches, as the look reads it.
+#[cfg(test)]
+pub(super) fn watched_of(plane: &Path, chat: &str) -> Option<Watched> {
+    read(&file(plane, chat).ok()?)
+        .ok()
+        .flatten()
+        .map(|record| record.watched)
+}
+
+/// Every mount point any process in `proc` has, or `None` where none could be read.
+fn mount_points(proc: &Path) -> Option<Vec<PathBuf>> {
+    let mut points = Vec::new();
+    let mut read_any = false;
+    for entry in std::fs::read_dir(proc).ok()?.flatten() {
+        let name = entry.file_name();
+        if !name
+            .to_str()
+            .is_some_and(|pid| pid.bytes().all(|b| b.is_ascii_digit()))
+        {
+            continue;
+        }
+        let Ok(text) = std::fs::read_to_string(entry.path().join("mountinfo")) else {
+            continue;
+        };
+        read_any = true;
+        // `id parent major:minor root mount-point ...`, spaces in a path written as `\040`.
+        points.extend(
+            text.lines()
+                .filter_map(|line| line.split(' ').nth(4))
+                .map(|point| PathBuf::from(unescaped(point))),
+        );
+    }
+    read_any.then_some(points)
+}
+
+/// A mountinfo field with its octal escapes (`\040` for a space) read back.
+fn unescaped(field: &str) -> String {
+    let bytes = field.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut at = 0;
+    while at < bytes.len() {
+        if bytes[at] == b'\\'
+            && let Some(code) = bytes
+                .get(at + 1..at + 4)
+                .and_then(|digits| std::str::from_utf8(digits).ok())
+                .and_then(|digits| u8::from_str_radix(digits, 8).ok())
+        {
+            out.push(code);
+            at += 4;
+        } else {
+            out.push(bytes[at]);
+            at += 1;
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 /// **At the end of a turn of chat `chat`**: what has appeared since its last look, or `None` for a
 /// chat with no record, which is one purlis started with no sandbox. Each path on one Notice only:
 /// one another chat's Notice has told, and that has not changed since, goes on none here.
@@ -545,12 +750,25 @@ pub fn look(plane: &Path, chat: &str, name: Option<&str>) -> io::Result<Option<L
     let Some(before) = read(&path)? else {
         return Ok(None);
     };
+    clear_left(&before.watched, Path::new(PROC));
     let walked = walk(&before.watched);
     // What no look has been sure of before says nothing, and is known from here on.
     let mut first_reached = BTreeSet::new();
     let mut unseen = BTreeSet::new();
+    let mut changed = BTreeSet::new();
+    let mut first_weighed = BTreeMap::new();
     for (found, seen) in &walked.found {
         let at = key(found);
+        // Weighed for the first time, as a chat from before this was asked: known from here on.
+        if before.watched.contents
+            && seen.pin.content != 0
+            && before
+                .baseline
+                .get(&at)
+                .is_some_and(|pin| pin.content == 0 && pin.holds(&seen.pin, found))
+        {
+            first_weighed.insert(at.clone(), seen.pin);
+        }
         // Put away, it stays away only while it is the thing that was put away.
         let told_of = before.arrived.contains(&at)
             || before
@@ -559,6 +777,10 @@ pub fn look(plane: &Path, chat: &str, name: Option<&str>) -> io::Result<Option<L
                 .is_some_and(|pin| pin.holds(&seen.pin, found));
         let known = before.baseline.get(&at);
         if told_of || known.is_some_and(|pin| pin.holds(&seen.pin, found)) {
+            continue;
+        }
+        if known.is_some_and(|pin| pin.only_content_differs(&seen.pin, found)) {
+            changed.insert(found.clone());
             continue;
         }
         // Known and now another thing is new however deep it is.
@@ -573,12 +795,14 @@ pub fn look(plane: &Path, chat: &str, name: Option<&str>) -> io::Result<Option<L
             unseen.insert(found.clone());
         }
     }
-    let (ours, theirs) = checked(plane, &before, unseen);
+    let (ours, mut theirs) = checked(plane, &before, unseen);
+    theirs.extend(changed);
     holding(plane, || {
         let Some(mut record) = read(&path)? else {
             return Ok(None);
         };
         let was = record.clone();
+        record.baseline.extend(first_weighed.clone());
         let (others_showing, others_put_away) = told_by_others(plane, chat);
         let pin_of = |at: &Path| {
             walked
@@ -775,7 +999,10 @@ pub fn put_away(plane: &Path, chat: &str) -> io::Result<()> {
         let arrived = std::mem::take(&mut record.arrived);
         let unread = std::mem::take(&mut record.unread);
         for at in arrived.into_iter().chain(unread) {
-            let pin = Pin::of(Path::new(&at)).unwrap_or_default();
+            let mut pin = Pin::of(Path::new(&at)).unwrap_or_default();
+            if record.watched.contents && !is_git(Path::new(&at)) {
+                pin.content = contents_of(Path::new(&at), &mut Weighing::default()).0;
+            }
             record.put_away.insert(at, pin);
         }
         record.cut_short_told = record.cut_short_told || record.cut_short;
@@ -859,6 +1086,8 @@ struct Walked {
     /// Where it met its bound, the deepest level it read whole. A folder not read is said by name,
     /// and says nothing of the levels of any other.
     bound_at: Option<usize>,
+    /// How much it has weighed of what names hold.
+    weighing: Weighing,
 }
 
 impl Walked {
@@ -867,10 +1096,17 @@ impl Walked {
         self.cut_short = true;
     }
 
-    fn keep(&mut self, path: PathBuf, depth: usize) {
+    fn keep(&mut self, path: PathBuf, depth: usize, contents: bool) {
         if has_content(&path)
-            && let Some(pin) = Pin::of(&path)
+            && let Some(mut pin) = Pin::of(&path)
         {
+            if contents && !is_git(&path) {
+                let (content, unread) = contents_of(&path, &mut self.weighing);
+                pin.content = content;
+                for folder in unread {
+                    self.not_read(folder);
+                }
+            }
             self.found.insert(path, Found { depth, pin });
         }
     }
@@ -885,7 +1121,7 @@ fn walk(watched: &Watched) -> Walked {
     let mut walked = Walked::default();
     if let Some(home) = &watched.home {
         for name in names(&watched.lifted) {
-            walked.keep(home.join(name), 0);
+            walked.keep(home.join(name), 0, false);
         }
     }
     let mut level = Vec::new();
@@ -926,7 +1162,12 @@ fn walk(watched: &Watched) -> Walked {
                 let name = folded(&entry.file_name().to_string_lossy());
                 let path = entry.path();
                 if is_asked(&path, &name, &asked) {
-                    walked.keep(path, depth);
+                    // The home's own names are rewritten by a person's programs all the time,
+                    // and stay as the walk of the home kept them.
+                    let contents = watched.contents && !walked.found.contains_key(&path);
+                    if contents || !walked.found.contains_key(&path) {
+                        walked.keep(path, depth, contents);
+                    }
                     continue;
                 }
                 let is_dir = entry.file_type().is_ok_and(|kind| kind.is_dir());
@@ -983,16 +1224,31 @@ fn is_regular(path: &Path) -> bool {
 
 /// A file read up to [`LARGEST_READ`], where it is a regular file.
 fn small_file(path: &Path) -> Option<String> {
+    String::from_utf8(read_regular(path, LARGEST_READ)?).ok()
+}
+
+/// At most `limit` bytes of the regular file at `path`, or `None` for anything else. Asked of the
+/// file once it is open, with no link followed and no wait, so swapping a name for a link or a pipe
+/// after a look at it reaches nothing and holds no look up.
+pub(super) fn read_regular(path: &Path, limit: u64) -> Option<Vec<u8>> {
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC);
+    }
+    #[cfg(not(unix))]
     if !is_regular(path) {
         return None;
     }
-    let mut text = String::new();
-    std::fs::File::open(path)
-        .ok()?
-        .take(LARGEST_READ)
-        .read_to_string(&mut text)
-        .ok()?;
-    Some(text)
+    let file = options.open(path).ok()?;
+    if !file.metadata().ok()?.is_file() {
+        return None;
+    }
+    let mut bytes = Vec::new();
+    file.take(limit).read_to_end(&mut bytes).ok()?;
+    Some(bytes)
 }
 
 /// **A repository this look may read**, known by what no chat can write, and what vouches for a
@@ -1022,10 +1278,17 @@ enum Repo {
 /// A repository is known where the record pinned its `.git`, as the chat started or as one of the
 /// above made it, and it is still that `.git`. A `.git` file's git directory must be in the
 /// `worktrees` or `modules` of a `.git` so pinned. Anything else is never opened.
+///
+/// **Nor is a repository whose git folder the chat may write**: one in the folders it watches,
+/// unless its sandbox holds that git folder whole ([`Watched::held_git`]). Its branches, its
+/// index and its `worktrees` and `modules` are the chat's to write, so they vouch for nothing.
 struct Known {
     tops: Vec<(PathBuf, Repo)>,
     git_dirs: Vec<PathBuf>,
     pinned: BTreeMap<String, Pin>,
+    /// The folders the chat may write, and the git folders in them its sandbox holds.
+    folders: Vec<PathBuf>,
+    held_git: Vec<PathBuf>,
 }
 
 impl Known {
@@ -1036,6 +1299,8 @@ impl Known {
             tops: Vec::new(),
             git_dirs: Vec::new(),
             pinned,
+            folders: record.watched.folders.clone(),
+            held_git: record.watched.held_git.clone(),
         };
         for top in record.repos.keys() {
             known.add_as_it_is(Path::new(top));
@@ -1050,7 +1315,19 @@ impl Known {
         })
     }
 
-    /// `top`, read as its `.git` says, where that is a repository.
+    /// Whether the chat may write the git folder `git`: it is in a folder the chat may write,
+    /// by its path or the kernel's, and not in one its sandbox holds.
+    fn chat_may_write(&self, git: &Path) -> bool {
+        let real_git = std::fs::canonicalize(git).unwrap_or_else(|_| git.to_path_buf());
+        let within = |folder: &PathBuf| {
+            git.starts_with(folder)
+                || std::fs::canonicalize(folder).is_ok_and(|folder| real_git.starts_with(folder))
+        };
+        self.folders.iter().any(within) && !self.held_git.iter().any(within)
+    }
+
+    /// `top`, read as its `.git` says, where that is a repository whose git folder the chat
+    /// may not write.
     fn add_as_it_is(&mut self, top: &Path) {
         let dot_git = top.join(".git");
         let Ok(kind) = std::fs::symlink_metadata(&dot_git) else {
@@ -1060,11 +1337,16 @@ impl Known {
             return;
         }
         if kind.is_dir() {
+            if self.chat_may_write(&dot_git) {
+                return;
+            }
             self.git_dirs.push(dot_git);
             self.tops.push((top.to_path_buf(), Repo::Clone));
         } else if let Some(git_dir) = pointed(&dot_git)
             && let Some(common) = common_of(&git_dir)
             && common.parent().is_some_and(|clone| self.is_pinned(clone))
+            && !self.chat_may_write(&common)
+            && !self.chat_may_write(&git_dir)
         {
             self.git_dirs.push(common);
             self.tops.push((

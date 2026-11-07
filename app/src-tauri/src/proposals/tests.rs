@@ -146,6 +146,7 @@ fn apply_writes_the_change_audited_first_and_only_while_the_file_is_what_it_was(
         since: 1,
         stale: false,
         limit: None,
+        skills: None,
         behind: None,
     };
     let refused = |_: &proposed::Applied<'_>| Err("the event log is not open".to_owned());
@@ -204,6 +205,7 @@ fn apply_writes_the_change_audited_first_and_only_while_the_file_is_what_it_was(
     let marked = Proposal {
         stale: true,
         limit: None,
+        skills: None,
         behind: None,
         base: base_of(Some(b"[plane]\nmode = \"pr\"\n")),
         ..one
@@ -227,6 +229,7 @@ fn apply_is_offered_only_beside_a_change_shown_whole() {
         since: 1,
         stale: false,
         limit: None,
+        skills: None,
         behind: None,
     };
     let ids = |shown: &crate::asking::Shown| -> Vec<String> {
@@ -293,6 +296,7 @@ fn apply_never_writes_a_change_not_shown_whole() {
         since: 1,
         stale: false,
         limit: None,
+        skills: None,
         behind: None,
     };
     let audit = |_: &proposed::Applied<'_>| -> Result<(), String> {
@@ -326,6 +330,7 @@ fn two_applies_against_the_same_file_as_it_was_never_both_write() {
         since: 1,
         stale: false,
         limit: None,
+        skills: None,
         behind: None,
     };
     let handles: Vec<_> = [
@@ -369,6 +374,7 @@ fn a_write_that_fails_is_recorded_as_failed() {
         since: 1,
         stale: false,
         limit: None,
+        skills: None,
         behind: None,
     };
     std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o555)).expect("read-only");
@@ -403,6 +409,7 @@ fn a_change_too_long_for_a_row_is_shown_whole_on_its_tab() {
         since: 1,
         stale: false,
         limit: None,
+        skills: None,
         behind: None,
     };
     let long = "line\n".repeat(purlis_core::harness::asked::edit::MOST_LINES + 1);
@@ -446,6 +453,7 @@ fn a_long_change_on_its_tab_marks_only_the_lines_that_changed() {
         since: 1,
         stale: false,
         limit: None,
+        skills: None,
         behind: None,
     };
     let lines = |changed: &str| {
@@ -490,6 +498,7 @@ fn tab_hunks(before: &str, after: &str) -> Vec<(u32, u32, u32, u32)> {
         since: 1,
         stale: false,
         limit: None,
+        skills: None,
         behind: None,
     };
     let now = Now::Made {
@@ -535,6 +544,7 @@ fn a_change_too_long_for_a_row_is_applied_only_from_its_tab() {
         since: 1,
         stale: false,
         limit: None,
+        skills: None,
         behind: None,
     };
     // Too long a whole content to travel: made here, as the app would hold it.
@@ -954,6 +964,7 @@ fn a_change_purlis_holds_names_purlis_and_the_chat_and_ask_behind_it() {
         since: 1,
         stale: false,
         limit: None,
+        skills: None,
         behind: Some(Behind {
             chat: Some(7),
             key: "STRIPE_KEY".to_owned(),
@@ -1189,6 +1200,274 @@ fn a_leftover_dismissal_file_does_no_harm() {
 
     assert!(definition(&root).contains("secret-need.STRIPE_KEY"));
     assert_eq!(std::fs::read_to_string(&leftover).unwrap(), kept);
+}
+
+/// **A change to several skills a chat proposed** (#5357, the operator's ruling of 2026-11-05):
+/// held and shown from the plane, nothing changed until the person's Apply, and then only what
+/// was shown.
+mod skills {
+    use super::*;
+    use purlis_core::skills::verbs::Level;
+    use purlis_core::skills::verbs::set::Member;
+
+    fn a_plane() -> (tempfile::TempDir, PathBuf) {
+        let (dir, root) = project();
+        for name in ["grilling", "tdd", "review"] {
+            let folder = root.join("skills").join(name);
+            std::fs::create_dir_all(&folder).unwrap();
+            std::fs::write(
+                folder.join("SKILL.md"),
+                format!("---\nname: {name}\ndescription: Does {name}.\n---\n\nbody\n"),
+            )
+            .unwrap();
+        }
+        (dir, root)
+    }
+
+    fn there(root: &Path, name: &str) -> bool {
+        root.join("skills").join(name).join("SKILL.md").exists()
+    }
+
+    fn deletes(names: &[&str]) -> ProposeSkillSetAsk {
+        ProposeSkillSetAsk {
+            chat: 3,
+            change: SetChange::Delete {
+                members: names
+                    .iter()
+                    .map(|name| Member {
+                        level: Level::project(),
+                        name: (*name).to_owned(),
+                    })
+                    .collect(),
+            },
+        }
+    }
+
+    /// Records each outcome an audit is handed, in `outcomes`.
+    fn record(
+        outcomes: &Mutex<Vec<proposed::Outcome>>,
+        applied: &proposed::Applied<'_>,
+    ) -> Result<(), String> {
+        outcomes.lock().unwrap().push(applied.outcome);
+        Ok(())
+    }
+
+    /// Deletes `names`, as the person did earlier.
+    fn deleted(root: &Path, names: &[&str]) {
+        let mut say = |_: purlis_core::repocmd::Say| {};
+        let mut cx = purlis_core::skills::verbs::Ctx {
+            plane: root,
+            built_in: None,
+            by: purlis_core::skills::verbs::By::Window,
+            say: &mut say,
+        };
+        for name in names {
+            purlis_core::skills::verbs::delete(&mut cx, &Level::project(), name).unwrap();
+        }
+    }
+
+    fn in_deleted(root: &Path) -> Vec<String> {
+        let mut names: Vec<String> = purlis_core::skills::verbs::deleted(root)
+            .into_iter()
+            .map(|one| one.name)
+            .collect();
+        names.sort();
+        names
+    }
+
+    fn deletes_now(names: &[&str]) -> ProposeSkillSetAsk {
+        let SetChange::Delete { members } = deletes(names).change else {
+            unreachable!("deletes is a delete")
+        };
+        ProposeSkillSetAsk {
+            chat: 3,
+            change: SetChange::DeleteNow { members },
+        }
+    }
+
+    /// **A chat's Delete now** (#5492), the change with no undo: held, nothing taken off Deleted
+    /// until the person's Apply, audited first.
+    #[test]
+    fn a_chats_delete_now_is_held_and_takes_nothing_off_deleted_until_apply() {
+        let (_dir, root) = a_plane();
+        deleted(&root, &["grilling", "tdd"]);
+        let proposals = Proposals::default();
+        skills_asked_in(&root, &proposals, &deletes_now(&["grilling", "tdd"]), 1).unwrap();
+        assert_eq!(in_deleted(&root), ["grilling", "tdd"], "held, not made");
+        let one = proposals.every().remove(0);
+        assert_eq!(one.path, "Delete 2 skills now, with no undo");
+        let outcomes = Mutex::new(Vec::new());
+        let audit = |applied: &proposed::Applied<'_>| record(&outcomes, applied);
+        let lock = Mutex::new(());
+        apply_in(&root, &one, None, &audit, &lock, From::Row).unwrap();
+        assert!(in_deleted(&root).is_empty());
+        assert_eq!(
+            *outcomes.lock().unwrap(),
+            vec![proposed::Outcome::Intent, proposed::Outcome::Applied],
+            "audited before it is made"
+        );
+    }
+
+    /// **A chat's export of several skills is written only where the person picks** (#5492, the
+    /// person's choice of 2026-11-06): the ask carries no place, Apply with none writes nothing,
+    /// and Apply writes where the person picked.
+    #[test]
+    fn a_chats_export_is_written_only_where_the_person_picks_at_apply() {
+        let (_dir, root) = a_plane();
+        let proposals = Proposals::default();
+        let SetChange::Delete { members } = deletes(&["grilling", "tdd"]).change else {
+            unreachable!("deletes is a delete")
+        };
+        let ask = ProposeSkillSetAsk {
+            chat: 3,
+            change: SetChange::Export {
+                members,
+                zip: false,
+            },
+        };
+        skills_asked_in(&root, &proposals, &ask, 1).unwrap();
+        let one = proposals.every().remove(0);
+        assert_eq!(one.path, "Export 2 skills to a folder");
+        let outcomes = Mutex::new(Vec::new());
+        let audit = |applied: &proposed::Applied<'_>| record(&outcomes, applied);
+        let lock = Mutex::new(());
+        assert_eq!(
+            apply_in(&root, &one, None, &audit, &lock, From::Row),
+            Err(Refusal::Not(NO_PLACE_PICKED.to_owned())),
+            "no place picked, nothing written"
+        );
+        assert!(outcomes.lock().unwrap().is_empty(), "nothing was tried");
+        let out = tempfile::tempdir().unwrap();
+        let to = out.path().join("skills");
+        apply_in_to(&root, &one, None, &audit, &lock, From::Row, Some(&to)).unwrap();
+        assert!(to.join("grilling/SKILL.md").exists() && to.join("tdd/SKILL.md").exists());
+        assert!(!to.join("review").exists(), "only what was shown");
+        assert_eq!(
+            *outcomes.lock().unwrap(),
+            vec![proposed::Outcome::Intent, proposed::Outcome::Applied]
+        );
+    }
+
+    /// A skill brought back since its Delete now was proposed makes it stale: nothing goes.
+    #[test]
+    fn a_skill_brought_back_since_a_delete_now_was_proposed_makes_it_stale() {
+        let (_dir, root) = a_plane();
+        deleted(&root, &["grilling", "tdd"]);
+        let proposals = Proposals::default();
+        skills_asked_in(&root, &proposals, &deletes_now(&["grilling", "tdd"]), 1).unwrap();
+        let one = proposals.every().remove(0);
+        let tdd = purlis_core::skills::verbs::deleted(&root)
+            .into_iter()
+            .find(|one| one.name == "tdd")
+            .unwrap();
+        let mut say = |_: purlis_core::repocmd::Say| {};
+        let mut cx = purlis_core::skills::verbs::Ctx {
+            plane: &root,
+            built_in: None,
+            by: purlis_core::skills::verbs::By::Window,
+            say: &mut say,
+        };
+        purlis_core::skills::verbs::restore(&mut cx, &tdd, None).unwrap();
+        let lock = Mutex::new(());
+        let audit = |_: &proposed::Applied<'_>| -> Result<(), String> { Ok(()) };
+        assert_eq!(
+            apply_in(&root, &one, None, &audit, &lock, From::Row),
+            Err(Refusal::Stale)
+        );
+        assert_eq!(in_deleted(&root), ["grilling"], "nothing more went");
+    }
+
+    #[test]
+    fn a_chats_bulk_delete_is_held_for_the_person_and_deletes_nothing_until_apply() {
+        let (_dir, root) = a_plane();
+        let proposals = Proposals::default();
+        skills_asked_in(&root, &proposals, &deletes(&["grilling", "tdd"]), 1).unwrap();
+        assert!(
+            there(&root, "grilling") && there(&root, "tdd"),
+            "held, not made"
+        );
+
+        let one = proposals.every().remove(0);
+        assert_eq!(one.path, "Delete 2 skills");
+        let Now::Made { before, after } = now_of(&root, &one) else {
+            panic!("it is shown");
+        };
+        assert!(before.contains("grilling · project: there"), "{before}");
+        assert!(after.contains("grilling · project: deleted"), "{after}");
+        assert!(after.contains("tdd · project: deleted"), "{after}");
+        assert!(there(&root, "grilling"), "shown, still not made");
+
+        let outcomes = Mutex::new(Vec::new());
+        let audit = |applied: &proposed::Applied<'_>| record(&outcomes, applied);
+        let lock = Mutex::new(());
+        apply_in(&root, &one, None, &audit, &lock, From::Row).unwrap();
+        assert!(!there(&root, "grilling") && !there(&root, "tdd"));
+        assert!(there(&root, "review"), "only what was shown");
+        assert_eq!(
+            *outcomes.lock().unwrap(),
+            vec![proposed::Outcome::Intent, proposed::Outcome::Applied],
+            "audited before it is made"
+        );
+    }
+
+    #[test]
+    fn a_skill_changed_since_it_was_proposed_makes_it_stale_and_apply_changes_nothing() {
+        let (_dir, root) = a_plane();
+        let proposals = Proposals::default();
+        skills_asked_in(&root, &proposals, &deletes(&["grilling", "tdd"]), 1).unwrap();
+        let one = proposals.every().remove(0);
+        std::fs::write(
+            root.join("skills/tdd/SKILL.md"),
+            "---\nname: tdd\ndescription: Edited by the person.\n---\n\nnew\n",
+        )
+        .unwrap();
+        assert_eq!(now_of(&root, &one), Now::Stale);
+        let outcomes = Mutex::new(Vec::new());
+        let audit = |applied: &proposed::Applied<'_>| record(&outcomes, applied);
+        let lock = Mutex::new(());
+        assert_eq!(
+            apply_in(&root, &one, None, &audit, &lock, From::Row),
+            Err(Refusal::Stale)
+        );
+        assert!(there(&root, "grilling") && there(&root, "tdd"));
+        assert!(outcomes.lock().unwrap().is_empty(), "nothing was tried");
+    }
+
+    #[test]
+    fn a_proposal_of_no_skill_is_never_held() {
+        let (_dir, root) = a_plane();
+        let proposals = Proposals::default();
+        assert!(skills_asked_in(&root, &proposals, &deletes(&[]), 1).is_err());
+        assert!(proposals.every().is_empty());
+    }
+
+    #[test]
+    fn policy_off_holds_no_change_to_skills_either() {
+        let (_dir, root) = a_plane();
+        purlis_core::sandbox::policy::set_for_this_test(
+            purlis_core::sandbox::policy::Locks::parse(
+                r#"{"sandbox": {"proposed-changes": "off"}}"#,
+                Path::new("/etc/purlis/policy.json"),
+            ),
+        );
+        let proposals = Proposals::default();
+        let said = skills_asked_in(&root, &proposals, &deletes(&["tdd"]), 1);
+        purlis_core::sandbox::policy::set_for_this_test(purlis_core::sandbox::policy::Locks::none());
+        assert!(
+            said.expect_err("refused")
+                .starts_with("Policy turns proposed changes off")
+        );
+        assert!(proposals.every().is_empty());
+    }
+
+    #[test]
+    fn no_chat_proposes_a_change_to_skills_as_purlis() {
+        let (_dir, root) = a_plane();
+        let proposals = Proposals::default();
+        let mut ask = deletes(&["tdd"]);
+        ask.chat = BY_PURLIS;
+        assert!(skills_asked_in(&root, &proposals, &ask, 1).is_err());
+    }
 }
 
 fn git(root: &Path, args: &[&str]) {

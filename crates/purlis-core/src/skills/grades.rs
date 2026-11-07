@@ -2290,6 +2290,7 @@ fn not_on_this_harness() -> String {
 }
 
 pub mod after_edit;
+pub mod batch;
 pub mod cap;
 pub mod draft;
 pub mod earlier;

@@ -45,6 +45,8 @@ fn from_a_chat(f: &support::Fixture, cut: &Cut, delete: bool) -> (Answer, String
             persona: None,
             harnessed: true,
             unsandboxed: false,
+            roots_git_held: false,
+            unreadable: Vec::new(),
             config: None,
             id: None,
             live: None,

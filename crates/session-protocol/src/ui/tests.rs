@@ -148,3 +148,76 @@ fn every_command_of_who_may_dispatch_to_whom_is_on_the_window_only_list() {
     sorted.dedup();
     assert_eq!(sorted.len(), STANDING_DISPATCH.len());
 }
+
+/// #5375: a workspace's own files (no repo named) are listed and opened in the person's window
+/// alone, as `workspace_tree` and `workspace_file` are. A link is served a branch's paths, its
+/// find and its watch, and refused each of those for a workspace's own files.
+#[test]
+fn a_call_that_names_a_workspaces_own_files_is_not_a_links_to_ask() {
+    use serde_json::json;
+    let path = |repo: &str| json!({"plane": "/p", "workspace": "alpha", "repo": repo, "piece": null, "path": "notes/a.md"});
+    for method in ["copy_branch_path", "reveal_branch_path"] {
+        assert!(served_on_a_link(method), "{method}");
+        assert!(names_a_workspaces_own_files(method, &path("")), "{method}");
+        assert!(
+            !names_a_workspaces_own_files(method, &path("svc")),
+            "{method}"
+        );
+        // A call that names no repo names none of a branch.
+        assert!(
+            names_a_workspaces_own_files(method, &json!({"workspace": "alpha"})),
+            "{method}"
+        );
+    }
+
+    let find = |scope: Value| json!({"session": 1, "scope": scope, "query": "plan"});
+    assert!(names_a_workspaces_own_files(
+        "find_files",
+        &find(json!({"kind": "workspace-folder", "plane": "/p", "workspace": "alpha"}))
+    ));
+    assert!(names_a_workspaces_own_files(
+        "find_files",
+        &find(
+            json!({"kind": "branch", "plane": "/p", "workspace": "alpha", "repo": "", "piece": null})
+        )
+    ));
+    assert!(!names_a_workspaces_own_files(
+        "find_files",
+        &find(
+            json!({"kind": "branch", "plane": "/p", "workspace": "alpha", "repo": "svc", "piece": null})
+        )
+    ));
+    assert!(!names_a_workspaces_own_files(
+        "find_files",
+        &find(json!({"kind": "workspace", "plane": "/p", "workspace": "alpha", "near": null}))
+    ));
+
+    let folder = |repo: &str| json!({"plane": "/p", "workspace": "alpha", "repo": repo, "piece": null, "folder": "notes"});
+    assert!(names_a_workspaces_own_files(
+        "files_watch",
+        &json!({"folders": [folder("svc"), folder("")]})
+    ));
+    assert!(!names_a_workspaces_own_files(
+        "files_watch",
+        &json!({"folders": [folder("svc")]})
+    ));
+
+    // A branch's read names a branch whatever its args say; the core refuses one with no repo.
+    assert!(!names_a_workspaces_own_files("branch_tree", &path("")));
+}
+
+/// #5376: the person's own workspace files are written from their window alone. No link and
+/// no chat makes, renames, deletes or imports one.
+#[test]
+fn a_workspaces_own_files_are_written_from_the_window_alone() {
+    for command in [
+        "workspace_files_new_file",
+        "workspace_files_new_folder",
+        "workspace_files_rename",
+        "workspace_files_trash",
+        "workspace_files_import",
+    ] {
+        assert!(window_only(command), "{command}");
+        assert!(!served_on_a_link(command), "{command}");
+    }
+}

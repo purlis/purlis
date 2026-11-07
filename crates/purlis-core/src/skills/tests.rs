@@ -2534,6 +2534,24 @@ fn a_chat_in_a_branch_folder_counts_the_repo_skills_of_that_folder_under_its_clo
     assert!(own.contains(&"on-main".to_owned()), "{own:?}");
 }
 
+/// ADR 0114: a clone in `repos/` keeps its branch folders where every clone's are, in the
+/// workspace's own `.worktrees/`, so a chat in one works in that clone.
+#[test]
+fn a_chat_in_a_branch_folder_of_a_clone_in_repos_works_in_that_clone() {
+    let tmp = tempfile::tempdir().unwrap();
+    let plane = tmp.path().join("plane");
+    std::fs::create_dir_all(plane.join("workspaces/alpha/repos/api/.git")).unwrap();
+    let folder = branch_folder(&plane, "api", "fix");
+
+    let mine = checkouts_of_chat(&plane, "alpha", &folder);
+    assert_eq!(
+        mine.iter()
+            .map(|repo| (repo.name.as_str(), resolved(&repo.path)))
+            .collect::<Vec<_>>(),
+        [("api", resolved(&folder))]
+    );
+}
+
 /// #4238: only a checkout purlis's layout names is a branch folder. Each of these leaves the chat
 /// in no clone, as it was.
 #[test]

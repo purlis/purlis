@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Sign in</title></head>
+<body>
+  <h1>Sign in</h1>
+  <form action="account.html" method="get" id="form">
+    <label>User name <input name="username" autocomplete="username" id="name"></label>
+    <label id="step" hidden>Password <input type="password" name="password"></label>
+    <button type="submit">Sign in</button>
+  </form>
+  <script>
+    // The user name first: sent, it opens a window on this site, one that could read the
+    // password field, and shows that field.
+    document.getElementById('name').addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' || !document.getElementById('step').hidden) return;
+      event.preventDefault();
+      window.open('opened.html', 'beside');
+      document.getElementById('step').hidden = false;
+    });
+  </script>
+</body></html>

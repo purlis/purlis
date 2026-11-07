@@ -345,8 +345,7 @@ export type Hidden = {
  *
  * It is inside the tab's own button, so it can never be a second thing to click by accident
  * and there is no interactive element inside an interactive element for a screen reader to
- * have to explain. The glyph is decorative; `aria-label` is what carries the meaning, the
- * same split `ChatState` makes.
+ * have to explain. The glyph is decorative; `aria-label` is what carries the meaning.
  */
 export function Pin({ held, what }: { held: boolean; what: string }) {
   if (!held) return null;
@@ -364,7 +363,16 @@ export function Pin({ held, what }: { held: boolean; what: string }) {
  *
  *  **It ends nothing** (#4756): the tab's layout closes and its chats go on in the sidebar, so
  *  its name is `Close steward 3` and it has the quiet hover. Ending a chat is End…. */
-export function Closer({ offer, onPress }: { offer?: Offer; onPress: (offer: Offer) => void }) {
+export function Closer({
+  offer,
+  onPress,
+  reachable = false,
+}: {
+  offer?: Offer;
+  onPress: (offer: Offer) => void;
+  /** **The front tab's**: the one `×` in the keyboard's order, after the strip (#5341). */
+  reachable?: boolean;
+}) {
   if (!offer) return null;
   // **A task's own tab has a minimise where a session's has its close** (#1489, V100-38): `−`,
   // named for what it does, "Send talk back into steward 4's tab". It ends nothing.
@@ -378,12 +386,13 @@ export function Closer({ offer, onPress }: { offer?: Offer; onPress: (offer: Off
         data-minimise={minimise ? "" : undefined}
         // The tabs family's `×` (`ui/tabs`), which ends nothing (#4756).
         {...tabPart("closer")}
-        // **Not a Tab stop, and deliberately** (charter-app#189). The strip it sits on is ONE
-        // stop, the WAI-ARIA "Tabs" pattern; a `×` per tab in the sequence would be fifty stops
-        // again. A keyboard closes a tab from the palette's row for it, or from the tab's own menu
-        // (the context-menu key), both of which read the same catalogue row this does — and
-        // Delete on the focused tab (charter-app#239, `closeOnDelete`), which a Mac needs.
-        tabIndex={-1}
+        // **A Tab stop on the front tab only** (#5341; charter-app#189). The strip it sits on is
+        // ONE stop, the WAI-ARIA "Tabs" pattern; a `×` per tab in the sequence would be fifty
+        // stops again. So only the front tab's, which is always seen, is the next stop after the
+        // strip. A keyboard also closes a tab from the palette's row for it, or from the tab's
+        // own menu (the context-menu key), both of which read the same catalogue row this does,
+        // and with Delete on the focused tab (charter-app#239, `closeOnDelete`).
+        tabIndex={reachable ? 0 : -1}
         aria-label={offer.title}
         onClick={() => onPress(offer)}
       >

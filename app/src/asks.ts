@@ -26,6 +26,8 @@ import {
   type EntriesOf,
   type GrantLevel,
   type Press,
+  type RunGrantPress,
+  type RunValue,
   type Shown,
 } from "./bindings";
 import type { QuestionsHeld } from "./taskQuestions";
@@ -234,6 +236,16 @@ export async function answerThrough(
   return (await answerTaken(plane, ask, option)).refused;
 }
 
+/** The press a run's notice's option sends (ADR 0112, #5242), by the option's id. */
+const RUN_PRESS_OF: Readonly<Record<string, RunGrantPress | undefined>> = {
+  "allow-once": "once",
+  "allow-chat": "chat",
+  "allow-always": "always",
+  "allow-vault": "allow-vault",
+  fill: "fill",
+  keep: "refuse",
+};
+
 /** The press a login notice's option sends (#4595), by the option's id. */
 const PRESS_OF: Readonly<Record<string, Press | undefined>> = {
   once: "once",
@@ -273,6 +285,8 @@ export async function answerTaken(
   picked?: { vault: string; key: string },
   /** The purpose of the line a Secret ask's Fill writes, where Remember is ticked (#5240). */
   remember?: string,
+  /** What the person typed in a run's notice's value fields, by key (#5242). */
+  values?: RunValue[],
 ): Promise<{ refused: string | undefined; live: boolean; opened?: boolean }> {
   const path = ask.answer;
   if (path.via === "in-its-pane") return { refused: IN_ITS_CHAT, live: false };
@@ -454,6 +468,16 @@ export async function answerTaken(
         if (option === "allow") return commands.answerPoolTool(plane, ask.session, path.run, true);
         if (option === "keep") return commands.answerPoolTool(plane, ask.session, path.run, false);
         break;
+      case "run-grant": {
+        // A run's one notice (ADR 0112, #5242): a program its persona doesn't declare, the keys
+        // it lacks and a vault it may not use. An Allow is a Run grant for that chat, or, where
+        // it offers none, the vault's own Allow or Fill; the values typed go with any answer, and
+        // the command that waits goes on at once.
+        const typedIn = values ?? [];
+        const press = RUN_PRESS_OF[option];
+        if (press === undefined) break;
+        return commands.answerRunGrant(plane, path.id, press, typedIn);
+      }
       case "secret":
         // A key a chat's brokered run missed (#5068, ADR 0109): Fill stores the value typed in
         // the ask's masked box in the vault, and every command that waits on it runs; Not now

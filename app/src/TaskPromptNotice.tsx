@@ -4,8 +4,9 @@
 import { useContext, useLayoutEffect, useRef } from "react";
 import type { Shown } from "./bindings";
 import { movedAt, useChatsHere, useChatsSelect, waitsOnItsPrompt } from "./chatState";
-import { hideForNow, useHiddenForNow } from "./dismissals";
+import { useHiddenForNow } from "./dismissals";
 import { Notice, NoticeOf } from "./Notice";
+import { putAwayEverywhere } from "./notesClearedEverywhere";
 
 /**
  * **A chat that is not on screen is stopped on a prompt** (reported 2026-10-09): its harness
@@ -83,17 +84,18 @@ export function TaskPromptNotice({
     if (carried.current === null) return;
     if (!waiting) carried.current = null;
     else if (first === undefined && moved !== carried.current) {
-      hideForNow(plane, asked);
+      // In every window of the project (#5363): another never saw it carried.
+      putAwayEverywhere(plane, session, { kind: "hidden", causes: [asked] });
       carried.current = null;
     }
-  }, [waiting, first, moved, plane, asked]);
+  }, [waiting, first, moved, plane, session, asked]);
   const hidden = useHiddenForNow(plane, cause);
   if (of === null || !waiting || hidden) return null;
   // Put away for this wait: its prompt, and the line that stands for the wait once purlis's
   // hold of the prompt ends.
   const onDismiss = () => {
-    hideForNow(plane, cause);
-    hideForNow(plane, asked);
+    // In every window of the project (#5363): another may hold it for the chat coming back.
+    putAwayEverywhere(plane, session, { kind: "hidden", causes: [...new Set([cause, asked])] });
     if (first !== undefined) carried.current = moved;
   };
   // Which chat it is comes from the core's lineage (`NoticeOf.task`), never from its name.

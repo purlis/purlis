@@ -119,15 +119,32 @@ fn local(root: &Path, name: &str, say: Sink) -> u8 {
         // because the files stay on disk — this makes the workspace private, it does not
         // delete anybody's notes. Through the hardened runner like every other git charter
         // runs: `env_clear`, no hooks, no fsmonitor.
-        let mut argv: Vec<&str> = vec!["rm", "-r", "--cached", "-q", "--"];
+        // `--ignore-unmatch`, because a path git never tracked (an empty folder saved with
+        // the project, or one saved since the last commit) would otherwise fail the whole call
+        // and untrack nothing (#5377).
+        let mut argv: Vec<&str> = vec!["rm", "-r", "--cached", "-q", "--ignore-unmatch", "--"];
         argv.extend(paths.iter().map(String::as_str));
         match crate::worktree::git::run(root, &argv, crate::worktree::git::READ) {
-            // Python ignores this call's exit code, and so does this: `git rm --cached` on a
-            // path git never tracked exits non-zero, which is the ordinary case for a
-            // workspace that was LIVE and had nothing staged yet. What must not happen is the
-            // block being rewritten while the files stay tracked, and that is the ORDER
-            // below, not this code.
-            Ok(_) => {}
+            Ok(run) if run.ok() => {}
+            // What must not happen is the block being rewritten while the files stay tracked,
+            // so a failed call is asked what git still tracks. A plane that is no git repo
+            // tracks nothing, and goes LOCAL as before.
+            Ok(run) => {
+                let mut ls: Vec<&str> = vec!["ls-files", "--"];
+                ls.extend(paths.iter().map(String::as_str));
+                let still = crate::worktree::git::run(root, &ls, crate::worktree::git::READ);
+                if still.is_ok_and(|ls| ls.ok() && !ls.out.trim().is_empty()) {
+                    say(Say::Fail(
+                        format!(
+                            "git could not untrack '{name}'s shared files, so nothing was \
+                         changed and it is still LIVE ({}).",
+                            run.err.trim()
+                        )
+                        .into(),
+                    ));
+                    return 1;
+                }
+            }
             Err(why) => {
                 say(Say::Fail(
                     format!(

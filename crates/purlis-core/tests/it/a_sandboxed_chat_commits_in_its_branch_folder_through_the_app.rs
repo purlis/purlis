@@ -9,6 +9,7 @@ use crate::support;
 
 use std::path::{Path, PathBuf};
 
+use purlis_core::commitsign::Signer;
 use purlis_core::gitbroker::{Asker, commit};
 use purlis_core::hookwire::{Answer, CommitAsk, FolderName, Stage};
 use purlis_core::repocmd::Say;
@@ -16,10 +17,12 @@ use purlis_core::worktree::{self, git, link};
 
 const ULID: &str = "01J9ZQ3W5Y7X8V6T4R2P0N1M3K";
 
-/// A project with the sandbox on, one clone, and a branch folder `piece` cut from it.
+/// A project with the sandbox on, one clone, and a branch folder `piece` cut from it, and the
+/// key the app signs its chat's commits with (#5480), where it has one.
 struct Project {
     f: support::Fixture,
     piece: PathBuf,
+    signer: Option<Signer>,
 }
 
 fn project() -> Project {
@@ -32,7 +35,11 @@ fn project() -> Project {
     let piece = worktree::add(&f.plane, &f.ws, &f.repo, "piece", None)
         .expect("a piece is cut")
         .path;
-    Project { f, piece }
+    Project {
+        f,
+        piece,
+        signer: Some(Signer::generate().expect("a key is made")),
+    }
 }
 
 impl Project {
@@ -49,6 +56,8 @@ impl Project {
             persona: Some("steward".to_owned()),
             harnessed: true,
             unsandboxed: false,
+            roots_git_held: false,
+            unreadable: Vec::new(),
             config: None,
             id: None,
             live: None,
@@ -59,7 +68,8 @@ impl Project {
             stage,
             folder,
         };
-        let identity = git::Isolated::identity(Some("The Person"), Some("person@example.invalid"));
+        let identity = git::Isolated::identity(Some("The Person"), Some("person@example.invalid"))
+            .signing(self.signer.clone());
         commit::answer(&self.f.plane, &asker, &ask, &identity)
     }
 
@@ -192,6 +202,91 @@ fn the_commit_lands_on_the_folders_branch_with_the_named_files_the_identity_and_
         message.contains(&format!("{}: steward", purlis_core::provenance::PERSONA)),
         "{message}"
     );
+}
+
+/// What `git verify-commit` says of `id` in `dir`, trusting `signer` for the person's address:
+/// git's own check, through `ssh-keygen -Y verify`, as a forge's is.
+fn verified(dir: &Path, id: &str, signer: &Signer) -> bool {
+    let allowed = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(
+        allowed.path(),
+        format!(
+            "person@example.invalid namespaces=\"git\" {}\n",
+            signer.public_line()
+        ),
+    )
+    .unwrap();
+    purlis_core::forklock::output(
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(["-c", "gpg.format=ssh", "-c"])
+            .arg(format!(
+                "gpg.ssh.allowedSignersFile={}",
+                allowed.path().display()
+            ))
+            .args(["verify-commit", id])
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_NOSYSTEM", "1"),
+    )
+    .expect("git runs")
+    .status
+    .success()
+}
+
+#[test]
+fn the_commit_is_signed_with_the_apps_key_and_git_verifies_it() {
+    purlis_core::unsteered!();
+    let p = project();
+    std::fs::write(p.piece.join("README.md"), "signed\n").unwrap();
+
+    let answer = p.asked(Stage::Tracked);
+
+    let (id, rest) = committed(&answer);
+    assert!(rest.is_empty(), "{rest:?}");
+    let Answer::Said { lines, .. } = &answer else {
+        unreachable!()
+    };
+    let Some(Say::Done(first)) = lines.first() else {
+        unreachable!()
+    };
+    assert!(
+        first.ends_with(", signed"),
+        "the answer says it is signed: {first}"
+    );
+    // The branch is at the signed commit, which git verifies with the app's key and no other.
+    assert_eq!(id, p.head());
+    assert_eq!(p.git(&p.f.clone, &["rev-parse", "refs/heads/piece"]), id);
+    let signer = p.signer.as_ref().unwrap();
+    assert!(verified(&p.piece, &id, signer), "git verifies the commit");
+    assert!(
+        !verified(&p.piece, &id, &Signer::generate().unwrap()),
+        "and another key does not"
+    );
+    // Nothing of the key is in what the chat reads.
+    let said = format!("{answer:?}");
+    assert!(!said.contains("PRIVATE KEY"), "{said}");
+    // The index and the folder are as the commit left them.
+    assert_eq!(p.git(&p.piece, &["status", "--porcelain"]), "");
+}
+
+#[test]
+fn with_no_key_the_commit_is_made_unsigned_and_the_answer_says_how_to_set_one_up() {
+    purlis_core::unsteered!();
+    let mut p = project();
+    p.signer = None;
+    std::fs::write(p.piece.join("README.md"), "unsigned\n").unwrap();
+
+    let (id, rest) = committed(&p.asked(Stage::Tracked));
+
+    assert_eq!(id, p.head(), "the commit is made all the same");
+    assert_eq!(
+        p.git(&p.piece, &["log", "-1", "--format=%G?"]),
+        "N",
+        "and it carries no signature"
+    );
+    assert_eq!(rest, [Say::Warn(commit::UNSIGNED.into())]);
+    assert!(commit::UNSIGNED.contains("purlis signing setup"));
 }
 
 #[test]
@@ -677,6 +772,8 @@ fn a_chat(p: &Project, chat: u32, id: &str, live: &[purlis_core::piececlaim::Liv
         persona: Some("builder".to_owned()),
         harnessed: true,
         unsandboxed: false,
+        roots_git_held: false,
+        unreadable: Vec::new(),
         config: None,
         id: Some(id.to_owned()),
         live: Some(live.to_vec()),

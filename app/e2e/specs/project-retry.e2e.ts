@@ -38,10 +38,29 @@ async function ask<T>(command: string, args: Record<string, unknown> = {}): Prom
   return answer.ok as T;
 }
 
+/** The planes the core has said are done opening (`project-ready`), heard from now on. */
+async function hearProjectsReady(): Promise<void> {
+  await browser.executeAsync((done: () => void) => {
+    const heard: string[] = [];
+    (window as unknown as { projectsReady: string[] }).projectsReady = heard;
+    void window.__TAURI__.event
+      .listen<{ plane: string }>("project-ready", (event) => heard.push(event.payload.plane))
+      .then(() => done());
+  });
+}
+
+async function projectsReady(): Promise<string[]> {
+  return browser.execute(
+    () => (window as unknown as { projectsReady?: string[] }).projectsReady ?? [],
+  );
+}
+
 describe("retrying a project", () => {
   let plane = "";
 
   before(async () => {
+    // Heard before the project opens, so its word that the opening is over cannot be missed.
+    await hearProjectsReady();
     rmSync(folder, { recursive: true, force: true });
     mkdirSync(join(project, ".charter", "app"), { recursive: true });
     // `reopen`'s own on-disk shape, spelled exactly (`opener.e2e.ts`).
@@ -82,11 +101,13 @@ describe("retrying a project", () => {
   });
 
   it("starts the chat its project was short of, once what stopped it is put right", async () => {
-    await browser.waitUntil(
-      async () =>
-        (await ask<{ name: string }[]>("chats_that_would_not_start", { plane })).length === 1,
-      { timeoutMsg: "the chat should not have started without its folder" },
-    );
+    // A Retry while the project is still opening does nothing, by design
+    // (`Planes::retry_project`), and its chat is listed as short before the opening is over
+    // (#5460). So the press waits on the core's word that the opening is over, not on time.
+    await browser.waitUntil(async () => (await projectsReady()).includes(plane), {
+      timeoutMsg: "the project never said it had finished opening",
+    });
+    expect(await ask<{ name: string }[]>("chats_that_would_not_start", { plane })).toHaveLength(1);
 
     mkdirSync(folder, { recursive: true });
     const retried = await ask<{ started: { id: string; session: number }[] }>("retry_project", {

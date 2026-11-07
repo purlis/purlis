@@ -560,7 +560,7 @@ fn held_by(
     name: &str,
 ) -> Option<String> {
     if name_reserved(name) {
-        return Some(format!("{name} belongs to purlis"));
+        return Some(format!("the name {name} belongs to purlis"));
     }
     if !has(plane, level, name) {
         return None;
@@ -571,6 +571,27 @@ fn held_by(
             one.source.label()
         ),
         None => format!("the {level} skills have a {name} made here"),
+    })
+}
+
+/// **The name a deleted skill's Bring back waits for** (#5457): where its name belongs to purlis
+/// now, what holds it, the new name offered as an install offers one (`<source>-<name>`, the
+/// source being what its group was deleted from, spelled as a name; `my-<name>` where nothing is
+/// said of it), and the names at its level a new name cannot take. `None` where its name is free.
+pub fn deleted_clash(plane: &Path, deleted: &crate::skills::verbs::Deleted) -> Option<Clash> {
+    let name = &deleted.name;
+    if !name_reserved(name) {
+        return None;
+    }
+    let from = deleted.set.as_ref().and_then(|set| set.from.as_deref());
+    let offered = match from {
+        Some(from) => format!("{}-{name}", super::spelled(from)),
+        None => format!("my-{}", name.strip_prefix("purlis-").unwrap_or(name)),
+    };
+    Some(Clash {
+        held_by: format!("the name {name} belongs to purlis"),
+        offered,
+        taken: names_at(plane, &deleted.level),
     })
 }
 

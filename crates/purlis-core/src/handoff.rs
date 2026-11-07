@@ -491,7 +491,8 @@ pub const PERSON_TASK_STAMP: &str = "⟨the person asks, from `{from}` · {place
 ///
 /// **The request is the person's own**, typed into purlis's dialog, asking from that chat: no
 /// chat wrote it, and no line a chat sends reaches this message. It still approves nothing ahead of
-/// time: every command that asks the person asks them, in this chat's own tab.
+/// time: every command that asks the person asks them, in the Inbox and on this chat's pane
+/// when it is on screen.
 pub const PERSON_TASK_NOTE: &str = "⟨the person typed the request below in purlis's own window, \
 asking from that chat. Your own persona's rules apply, and every command that asks the person \
 still asks them. When the work is done, write your session record, then report once with `purlis \

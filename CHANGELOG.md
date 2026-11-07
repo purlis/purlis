@@ -25,7 +25,7 @@ own.
 **After updating:** if your personas had sub-agents, run `purlis doctor --fix persona-agents`
 in each project (see *Removed*).
 
-These are the highlights. All 2,438 changes are in
+These are the highlights. All 2,441 changes are in
 [Every change in 0.5.0](https://github.com/purlis/purlis/blob/v0.5.0/docs/changelog-0.5.0.md).
 
 ### Added
@@ -2081,7 +2081,7 @@ and every settings group that it would have changed says so.
   ([#105](https://github.com/diazoxide/charter/pull/105))
 
 [Unreleased]: https://github.com/purlis/purlis/compare/v0.5.0...HEAD
-[0.5.0]: https://github.com/purlis/purlis/compare/v0.4.1...v0.5.0
+[0.5.0]: https://github.com/purlis/purlis/releases/tag/v0.5.0
 [0.4.1]: https://github.com/diazoxide/charter/releases/tag/v0.4.1
 [0.4.0]: https://github.com/diazoxide/charter/releases/tag/v0.4.0
 [0.3.0]: https://github.com/diazoxide/charter/releases/tag/v0.3.0

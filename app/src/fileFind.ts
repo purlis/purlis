@@ -47,6 +47,8 @@ export function scopeSaid(scope: FileScope, nameOf: (plane: PlaneId) => string):
       return `branch ${placeName(scope)}`;
     case "workspace":
       return `workspace ${scope.workspace}`;
+    case "workspace-folder":
+      return `workspace ${scope.workspace}'s folder`;
     case "project":
       return `project ${nameOf(scope.plane)}`;
     case "open-projects":

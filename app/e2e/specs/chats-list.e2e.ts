@@ -148,12 +148,20 @@ async function measured(): Promise<Measured | null> {
       words: [...section.querySelectorAll<HTMLElement>(".finished-name .shown-state .shape")].map(
         (mark) => seen(mark, mark.closest(".shown-state")?.getAttribute("data-state") ?? ""),
       ),
-      // A chat's row leads with its persona's mark, its state on it (#3342): the mark is what
-      // must be whole, and a done chat's wears no dot.
+      // A chat's row leads with its persona's mark, its state on it (#3342, #5340): the mark is
+      // what must be whole.
       // The persona's mark itself, and not the box around it with the dot that stands past its
       // corner.
-      marks: [...section.querySelectorAll<HTMLElement>(".chat .chat-persona > :first-child")].map(
-        (mark) => seen(mark, mark.parentElement?.getAttribute("data-state") ?? ""),
+      marks: [
+        ...section.querySelectorAll<HTMLElement>(
+          '.chat [data-scope="chat-mark"][data-part="who"] > :first-child',
+        ),
+      ].map((mark) =>
+        seen(
+          mark,
+          mark.closest('[data-part="root"]')?.querySelector('[data-part="word"]')?.textContent ??
+            "",
+        ),
       ),
       rows: [
         ...section.querySelectorAll<HTMLElement>(
@@ -452,7 +460,9 @@ describe("the Chats list in a narrow sidebar", () => {
       const section = document.querySelector('[data-raised="chats-list.e2e"]');
       return [...(section?.querySelectorAll<HTMLElement>(".chat") ?? [])].map((chat) => {
         const line = chat.querySelector(".ui-row-label")?.getBoundingClientRect();
-        const mark = chat.querySelector(".chat-persona")?.getBoundingClientRect();
+        const mark = chat
+          .querySelector('[data-scope="chat-mark"][data-part="root"]')
+          ?.getBoundingClientRect();
         const name = chat.querySelector(".session")?.getBoundingClientRect();
         const time = chat.querySelector(".chat-time")?.getBoundingClientRect();
         return {

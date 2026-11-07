@@ -599,13 +599,32 @@ pub(crate) fn clone_dir(plane: &Path, ws: &str, repo: &str) -> Result<PathBuf, R
     if !crate::contain::repo_name_ok(repo) {
         return Err(Refusal::BadRepo(repo.to_string()));
     }
-    let clone = plane.join("workspaces").join(ws).join(repo);
-    let clone = within_workspace(plane, ws, &clone)?;
+    let clone = within_workspace(plane, ws, &clone_folder(plane, ws, repo)?)?;
     let seen = git::run(&clone, &["rev-parse", "--git-dir"], git::READ)?;
     if !seen.ok() {
         return Err(not_read(repo, &seen.err));
     }
     Ok(clone)
+}
+
+/// **The folder of `repo`'s clone in workspace `ws`**, in either layout ([`crate::repofolder::folder`]),
+/// with the resolver's refusal said as this module says it. Nothing about the folder is checked
+/// here but its name and its workspace: a caller gates it ([`within_workspace`]) as it gated the
+/// path it joined by hand before.
+pub fn clone_folder(plane: &Path, ws: &str, repo: &str) -> Result<PathBuf, Refusal> {
+    use crate::repofolder::{Refused, Trouble};
+    crate::repofolder::folder(plane, ws, repo).map_err(|refused| match refused {
+        Refused::NotARepoName(name) => Refusal::BadRepo(name),
+        Refused::Trouble(Trouble::Outside(outside)) => Refusal::Outside(outside),
+        Refused::Trouble(Trouble::Unreadable { ws, why }) => Refusal::Unreadable { what: ws, why },
+        // Only a new repo's place is refused for these, and `folder` never answers them.
+        other @ (Refused::RepoNamedRepos { .. } | Refused::ReposNotAFolder { .. }) => {
+            Refusal::Unreadable {
+                what: ws.to_string(),
+                why: other.to_string(),
+            }
+        }
+    })
 }
 
 /// Why `repo`'s folder was not read, from what its refused git call wrote: the link check's own
@@ -1695,26 +1714,289 @@ pub fn is_own_git_dir(dot_git: &Path) -> bool {
     std::fs::symlink_metadata(dot_git).is_ok_and(|meta| meta.file_type().is_dir())
 }
 
-/// Which workspace's clone a path stands in, as `(workspace, repo)`, or `None` for a path in no
-/// clone (#3831): `workspaces/<ws>/<repo>` or below it, where that folder holds a `.git`, and
-/// never a branch folder. Path arithmetic, as [`locate`] is; git is asked the rest by the
-/// command that runs there.
-pub fn locate_clone(plane: &Path, path: &Path) -> Option<(String, String)> {
-    let here = std::fs::canonicalize(path).ok()?;
-    let workspaces = std::fs::canonicalize(plane.join("workspaces")).ok()?;
-    let rest = here.strip_prefix(&workspaces).ok()?;
-    let mut parts = rest.components().map(|c| c.as_os_str().to_str());
-    let (Some(Some(ws)), Some(Some(repo))) = (parts.next(), parts.next()) else {
+/// **The first link among the files git writes as it records a ref's move** in the repository
+/// whose git directory is `git_dir`: `packed-refs` and everything under `logs/`, there and in
+/// the common directory it shares. These are files of the repository's own, and the app's git
+/// moves a ref only where each of them is one: never a link, nor a file with a second name.
+/// `None` where there is none.
+///
+/// What cannot be looked at is answered as a link: a `commondir` that is a link or cannot be
+/// read, one naming no folder, and a `logs/` folder, or one below it, that cannot be listed.
+pub fn ref_records_linked(git_dir: &Path) -> Option<PathBuf> {
+    let common = match common_dir(git_dir) {
+        Ok(common) => common,
+        Err(unread) => return Some(unread),
+    };
+    std::iter::once(git_dir.to_path_buf())
+        .chain(common)
+        .find_map(|dir| {
+            let packed = dir.join("packed-refs");
+            if linked(&packed) {
+                return Some(packed);
+            }
+            linked_below(&dir.join("logs"))
+        })
+}
+
+/// The common directory `git_dir`'s `commondir` names, as git reads it (relative to `git_dir`,
+/// or absolute), `None` where there is no `commondir`, or the path that could not be read.
+fn common_dir(git_dir: &Path) -> Result<Option<PathBuf>, PathBuf> {
+    let file = git_dir.join("commondir");
+    match std::fs::symlink_metadata(&file) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Ok(meta) if meta.is_file() && !linked(&file) => {}
+        _ => return Err(file),
+    }
+    let said = std::fs::read_to_string(&file).map_err(|_| file.clone())?;
+    let said = said.trim_end_matches(['\n', '\r']);
+    if said.is_empty() {
+        return Err(file);
+    }
+    let common = git_dir.join(said);
+    if std::fs::metadata(&common).is_ok_and(|meta| meta.is_dir()) {
+        Ok(Some(common))
+    } else {
+        Err(file)
+    }
+}
+
+/// Whether `path` is a link, or a file with a second name.
+fn linked(path: &Path) -> bool {
+    let Ok(meta) = std::fs::symlink_metadata(path) else {
+        return false;
+    };
+    meta.file_type().is_symlink() || has_second_name(&meta)
+}
+
+/// Whether `meta` is a file's with a second name: a hard link.
+fn has_second_name(meta: &std::fs::Metadata) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt as _;
+        meta.is_file() && meta.nlink() > 1
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = meta;
+        false
+    }
+}
+
+/// Whether the file `path` names, through a link, has a second name.
+fn second_name(path: &Path) -> bool {
+    std::fs::metadata(path).is_ok_and(|meta| has_second_name(&meta))
+}
+
+/// The files and folders of a git directory that git reads its settings, its hooks and its
+/// tree from. git writes them by renaming a new file over the old, so the app's git never
+/// writes through one; but a second name already there stays until then, and whoever may
+/// write that name changes what git reads and runs in the meantime.
+const READ_FROM: [&str; 7] = [
+    "config",
+    "config.worktree",
+    "HEAD",
+    "index",
+    "hooks",
+    "info",
+    "objects/info/alternates",
+];
+
+/// **The first file git reads its settings, hooks or tree from that has a second name**, in
+/// the repository whose git directory is `git_dir` ([`READ_FROM`]), there and in the common
+/// directory it shares: a file there, or one in a folder of them. A link is left to git, as
+/// the person's own arrangement (a hook linked to a script the repository tracks), unless the
+/// file it names has a second name. A folder there that cannot be listed is answered as one.
+/// `None` where there is none.
+fn read_from_second_named(git_dir: &Path) -> Option<PathBuf> {
+    let common = common_dir(git_dir).ok().flatten();
+    std::iter::once(git_dir.to_path_buf())
+        .chain(common)
+        .find_map(|dir| {
+            READ_FROM
+                .iter()
+                .find_map(|name| second_named_at(&dir.join(name)))
+        })
+}
+
+/// `path` where it is a file with a second name, or the first such file below it where it is
+/// a folder (never through a link to one below it), or a folder there that cannot be listed.
+fn second_named_at(path: &Path) -> Option<PathBuf> {
+    let Ok(meta) = std::fs::metadata(path) else {
         return None;
     };
+    if !meta.is_dir() {
+        return has_second_name(&meta).then(|| path.to_path_buf());
+    }
+    let Ok(entries) = std::fs::read_dir(path) else {
+        return Some(path.to_path_buf());
+    };
+    entries.into_iter().find_map(|entry| {
+        let Ok(entry) = entry else {
+            return Some(path.to_path_buf());
+        };
+        let below = entry.path();
+        match entry.file_type() {
+            Ok(kind) if kind.is_dir() => second_named_at(&below),
+            Ok(_) => second_name(&below).then_some(below),
+            Err(_) => Some(below),
+        }
+    })
+}
+
+/// The first link at or below `dir` ([`linked`]), never through one, or the first folder there
+/// that cannot be listed. `None` where `dir` is not there.
+fn linked_below(dir: &Path) -> Option<PathBuf> {
+    if linked(dir) {
+        return Some(dir.to_path_buf());
+    }
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
+        // A file git keeps there is a file, not a folder of records: a link it is not.
+        Err(_) if std::fs::symlink_metadata(dir).is_ok_and(|meta| meta.is_file()) => {
+            return None;
+        }
+        Err(_) => return Some(dir.to_path_buf()),
+    };
+    entries
+        .map(|entry| entry.map_err(|_| dir.to_path_buf()))
+        .find_map(|entry| {
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(unread) => return Some(unread),
+            };
+            let path = entry.path();
+            match entry.file_type() {
+                Ok(kind) if kind.is_dir() => linked_below(&path),
+                Ok(_) => linked(&path).then_some(path),
+                Err(_) => Some(path),
+            }
+        })
+}
+
+/// Why the app's git does not record a ref's move in the repository whose git directory is
+/// `git_dir` ([`ref_records_linked`]), or nothing where it may.
+///
+/// Nor where a file git reads its settings, hooks or tree from has a second name
+/// ([`read_from_second_named`]).
+pub fn ref_records_refused(git_dir: &Path) -> Result<(), String> {
+    match ref_records_linked(git_dir).or_else(|| read_from_second_named(git_dir)) {
+        None => Ok(()),
+        Some(link) => Err(refusal(&link, "move a ref")),
+    }
+}
+
+/// Why purlis does not `act` in a repository where `found` is a link, a file with a second
+/// name, or cannot be read, naming which and what to do.
+fn refusal(found: &Path, act: &str) -> String {
+    let what = match std::fs::symlink_metadata(found) {
+        Ok(meta) if meta.file_type().is_symlink() && meta_is_dir(found) => {
+            "is a link to a folder, as git-new-workdir makes one to share another repository's. \
+             `git worktree add` shares a repository without one"
+        }
+        Ok(meta) if meta.file_type().is_symlink() => "is a link",
+        Ok(_) if second_name(found) => "is a file with a second name (a hard link)",
+        _ => "cannot be read",
+    };
+    format!(
+        "{} {what}, where git keeps a file of the repository's own, so purlis does not {act} \
+         there. Remove the link, or make it readable, then run the command again",
+        found.display()
+    )
+}
+
+fn meta_is_dir(path: &Path) -> bool {
+    std::fs::metadata(path).is_ok_and(|meta| meta.is_dir())
+}
+
+/// The files of a git directory that a commit, merge, rebase, pull or fetch writes where they
+/// are rather than by renaming a new file over them: a message, a pseudo-ref, the fetch's
+/// record.
+const WRITTEN_IN_PLACE: [&str; 14] = [
+    "COMMIT_EDITMSG",
+    "MERGE_MSG",
+    "MERGE_HEAD",
+    "MERGE_MODE",
+    "MERGE_RR",
+    "SQUASH_MSG",
+    "ORIG_HEAD",
+    "FETCH_HEAD",
+    "AUTO_MERGE",
+    "REBASE_HEAD",
+    "CHERRY_PICK_HEAD",
+    "REVERT_HEAD",
+    "BISECT_LOG",
+    "gc.log",
+];
+
+/// The folders of a git directory those commands write files in: a rebase's and a sequence's
+/// state, recorded resolutions, and the refs themselves.
+const WRITTEN_IN: [&str; 5] = [
+    "rebase-merge",
+    "rebase-apply",
+    "sequencer",
+    "rr-cache",
+    "refs",
+];
+
+/// **The first link among the files the app's git writes in the repository whose git
+/// directory is `git_dir`** as it commits, merges, rebases, pulls or fetches: its ref records
+/// ([`ref_records_linked`]), the files of [`WRITTEN_IN_PLACE`], and everything in the folders
+/// of [`WRITTEN_IN`], there and in the common directory it shares. Or the first file it reads
+/// its settings, hooks or tree from that has a second name ([`read_from_second_named`]).
+/// `None` where there is none.
+///
+/// What cannot be looked at is answered as a link, as [`ref_records_linked`] answers it.
+pub fn git_files_linked(git_dir: &Path) -> Option<PathBuf> {
+    if let Some(linked) = ref_records_linked(git_dir).or_else(|| read_from_second_named(git_dir)) {
+        return Some(linked);
+    }
+    let common = common_dir(git_dir).ok().flatten();
+    std::iter::once(git_dir.to_path_buf())
+        .chain(common)
+        .find_map(|dir| {
+            WRITTEN_IN_PLACE
+                .iter()
+                .map(|name| dir.join(name))
+                .find(|file| linked(file) || unreadable_entry(file))
+                .or_else(|| {
+                    WRITTEN_IN
+                        .iter()
+                        .find_map(|name| linked_below(&dir.join(name)))
+                })
+        })
+}
+
+/// Whether `path` is there but cannot be looked at.
+fn unreadable_entry(path: &Path) -> bool {
+    matches!(std::fs::symlink_metadata(path), Err(e) if e.kind() != std::io::ErrorKind::NotFound)
+}
+
+/// Why the app's git does not commit, merge, rebase, pull or fetch in the repository whose git
+/// directory is `git_dir` ([`git_files_linked`]), or nothing where it may.
+pub fn git_files_refused(git_dir: &Path) -> Result<(), String> {
+    match git_files_linked(git_dir) {
+        None => Ok(()),
+        Some(link) => Err(refusal(&link, "run git")),
+    }
+}
+
+/// Which workspace's clone a path stands in, as `(workspace, repo)`, or `None` for a path in no
+/// clone (#3831): a repo's folder in either layout ([`crate::repofolder::locate`]) or below it,
+/// where that folder holds a `.git` folder of its own, and never a branch folder. Nor an old
+/// `<repo>` that a `repos/<repo>` shadows, which is not the repo of that name. Path arithmetic,
+/// as [`locate`] is; git is asked the rest by the command that runs there.
+pub fn locate_clone(plane: &Path, path: &Path) -> Option<(String, String)> {
+    let found = crate::repofolder::locate(plane, path)?;
+    let repo = found.repo.name;
     if repo == DIR_NAME
-        || !crate::contain::workspace_name_ok(ws)
-        || !crate::contain::repo_name_ok(repo)
-        || !is_own_git_dir(&workspaces.join(ws).join(repo).join(".git"))
+        || !crate::contain::workspace_name_ok(&found.ws)
+        || found.git != crate::repofolder::Git::Directory
+        || crate::repofolder::folder(plane, &found.ws, &repo).ok()? != found.repo.path
     {
         return None;
     }
-    Some((ws.to_owned(), repo.to_owned()))
+    Some((found.ws, repo))
 }
 
 /// Where a path sits, when it sits in a piece.
@@ -1724,6 +2006,9 @@ pub struct Located {
     pub repo: String,
     pub piece: String,
 }
+
+#[cfg(all(test, unix))]
+mod ref_records_tests;
 
 #[cfg(test)]
 mod locate_tests {
@@ -1840,6 +2125,27 @@ mod locate_tests {
             locate_clone(&root, &root.join("workspaces/alpha/.worktrees/thing/piece")),
             None
         );
+    }
+
+    #[test]
+    fn a_path_in_a_clone_in_repos_names_its_workspace_and_repo_and_a_shadowed_one_does_not() {
+        let dir = plane();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        std::fs::create_dir_all(root.join("workspaces/alpha/repos/thing/.git")).unwrap();
+        std::fs::create_dir_all(root.join("workspaces/alpha/repos/thing/src")).unwrap();
+        // An old `thing` beside it, which `repos/thing` shadows.
+        std::fs::create_dir_all(root.join("workspaces/alpha/thing/.git")).unwrap();
+        let alpha_thing = Some(("alpha".to_owned(), "thing".to_owned()));
+
+        for path in [
+            "workspaces/alpha/repos/thing",
+            "workspaces/alpha/repos/thing/src",
+        ] {
+            assert_eq!(locate_clone(&root, &root.join(path)), alpha_thing, "{path}");
+        }
+        for path in ["workspaces/alpha/repos", "workspaces/alpha/thing"] {
+            assert_eq!(locate_clone(&root, &root.join(path)), None, "{path}");
+        }
     }
 
     #[cfg(unix)]

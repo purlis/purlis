@@ -322,9 +322,16 @@ const tab = (name: string) => {
 /** The cell of the strip that session's tab is drawn in: the tab, its chip and its close. */
 const cell = (name: string) => tab(name).closest<HTMLElement>(".tab") as HTMLElement;
 
-/** The chip on a session's tab: the button that says its counts and opens its menu. */
+/** What a tasks button is described by: its counts, in words. */
+const describedAs = (button: Element) =>
+  document.getElementById(button.getAttribute("aria-describedby") ?? "")?.textContent ?? "";
+
+/** **The tasks button of chat `name`** (#5341): the state word on the head of the pane showing
+ *  it, which says its counts as its description and opens its menu. A tab draws none. */
 const chip = (name: string) =>
-  within(cell(name)).queryByRole("button", { name: new RegExp(`^Tasks of ${name}`) });
+  [...document.querySelectorAll<HTMLElement>('.pane-state-mark [aria-haspopup="menu"]')].find(
+    (one) => describedAs(one).startsWith(`Tasks of ${name}`),
+  ) ?? null;
 
 /** The chip, which is there. */
 const theChip = (name: string) => {
@@ -346,14 +353,14 @@ const hand = (name: string) => within(cell(name)).queryByRole("button", { name: 
 /** The menu that is open, if one is. */
 const menu = () => screen.queryByRole("menu", { name: /^Tasks of / });
 
-/** Every menu that is open, by the session whose chip it is named by. */
-const menus = () =>
-  screen.queryAllByRole("menu").map((one) =>
-    document
-      .getElementById(one.getAttribute("aria-labelledby") ?? "")
-      ?.getAttribute("aria-label")
-      ?.replace(/:.*$/, ""),
-  );
+/** The summary at the foot of the open menu (#5341). */
+const summary = () =>
+  within(
+    (menu() as HTMLElement).closest('[data-scope="popover"][data-part="root"]') as HTMLElement,
+  ).getByTestId("tasks-summary");
+
+/** Every menu that is open, by whose tasks it names. */
+const menus = () => screen.queryAllByRole("menu").map((one) => one.getAttribute("aria-label"));
 
 /** The open menu's rows, as a person reads each: its chats and its fold. The one line that
  *  opens the ways to end a task (#1488) is not a chat's, and is held in `TaskEnd.window.test.tsx`. */
@@ -461,6 +468,79 @@ afterEach(() => {
   clearMocks();
 });
 
+/** The state button on the head of the pane in front: the one that opens its chat's tasks. */
+const headTasks = () => {
+  const found = document.querySelector<HTMLElement>(
+    '.pane-frame[data-focused] .pane-state-mark [aria-haspopup="menu"]',
+  );
+  if (found === null) throw new Error("the head in front has no tasks button");
+  return found;
+};
+
+describe("what a tab shows of its tasks (#5341)", () => {
+  it("draws no count on a tab: its tasks are on its chat's head", async () => {
+    await drawn(withTasks());
+
+    expect(cell("steward 1").querySelector("[data-count]")).toBeNull();
+    expect(within(cell("steward 1")).queryByRole("button", { name: /^Tasks of / })).toBeNull();
+    // The head says the chat's state, and that word is the button its menu opens from.
+    expect(headTasks()).toHaveAccessibleDescription("Tasks of steward 1: 4 working");
+    expect(headTasks().closest(".pane-state-mark")?.querySelector(".shown-state")).not.toBeNull();
+  });
+
+  it("opens the tasks menu from the head's state button: each task, End a task, Activity and its summary", async () => {
+    await drawn(withTasks());
+
+    press(headTasks());
+
+    const open = await waitFor(() => {
+      const found = menu();
+      expect(found).not.toBeNull();
+      return found as HTMLElement;
+    });
+    expect(open).toHaveAccessibleName("Tasks of steward 1");
+    expect(lines()).toEqual(
+      ["steward 1", "talk", "deep", "sweep", "probe"].map((name) => expect.stringContaining(name)),
+    );
+    expect(within(open).getByRole("menuitem", { name: "End a task" })).toBeTruthy();
+    expect(within(open).getByRole("menuitem", { name: "Activity" })).toBeTruthy();
+    // Its summary, at the foot of the surface the menu stands on, under its rows.
+    const surface = open.closest<HTMLElement>('[data-scope="popover"][data-part="root"]');
+    expect(within(surface as HTMLElement).getByTestId("tasks-summary").textContent).toMatch(
+      /4 working/,
+    );
+  });
+
+  it("opens the same menu on ⌘⇧J", async () => {
+    await drawn(withTasks());
+    pane(1).focus();
+
+    chord("J", "KeyJ");
+
+    await waitFor(() => expect(menu()).not.toBeNull());
+    expect(
+      within(menu() as HTMLElement).getByRole("menuitem", { name: "End a task" }),
+    ).toBeTruthy();
+    expect(screen.queryAllByRole("menu")).toHaveLength(1);
+  });
+
+  it("says on a tab's hover how many tasks are running", async () => {
+    const { ended } = await drawn(withTasks());
+    // A task whose program has ended runs no more.
+    await ended(7);
+
+    expect(await hoverTipOf(tab("steward 1"))).toBe("3 tasks running");
+  });
+
+  it("keeps a chat with no tasks' head as it was: its state, and no menu", async () => {
+    await drawn([chat(1, "alpha"), chat(2, "alpha")]);
+
+    expect(
+      document.querySelector('.pane-frame[data-focused] .pane-state-mark [aria-haspopup="menu"]'),
+    ).toBeNull();
+  });
+});
+
 describe("the chip on a session's tab", () => {
   it("is not worn by a tab with no tasks, which is drawn as it always was", async () => {
     // What a tab's cell holds in a window where nothing has a task.
@@ -490,9 +570,11 @@ describe("the chip on a session's tab", () => {
     await reported(7, "done");
 
     const worn = theChip("steward 1");
-    expect(worn.getAttribute("aria-label")).toBe("Tasks of steward 1: 2 working, 1 failed, 1 done");
+    expect(describedAs(worn)).toBe("Tasks of steward 1: 2 working, 1 failed, 1 done");
+    // Drawn in its menu's summary, each count with its state's shape.
+    press(worn);
     expect(
-      [...worn.querySelectorAll("[data-count]")].map(
+      [...summary().querySelectorAll("[data-count]")].map(
         (count) => `${count.getAttribute("data-count")} ${count.textContent}`,
       ),
     ).toEqual(["working 2", "failed 1", "done 1"]);
@@ -506,47 +588,49 @@ describe("the chip on a session's tab", () => {
 
     const worn = theChip("steward 1");
     // talk works, deep has said nothing yet (its program runs); sweep is idle, probe needs you.
-    expect(worn.getAttribute("aria-label")).toBe("Tasks of steward 1: 2 working, 2 waiting");
+    expect(describedAs(worn)).toBe("Tasks of steward 1: 2 working, 2 waiting");
+    press(worn);
     expect(
-      [...worn.querySelectorAll("[data-count]")].map((count) => count.getAttribute("data-count")),
+      [...summary().querySelectorAll("[data-count]")].map((count) =>
+        count.getAttribute("data-count"),
+      ),
     ).toEqual(["working", "waiting"]);
+    press(worn);
 
     // And when every task is waiting, no ring is drawn at all.
     await move(4, "waiting", 4, [6]);
     await move(7, "waiting", 5, [6]);
-    expect(theChip("steward 1").getAttribute("aria-label")).toBe("Tasks of steward 1: 4 waiting");
-    expect(theChip("steward 1").querySelector('[data-count="working"]')).toBeNull();
+    expect(describedAs(theChip("steward 1"))).toBe("Tasks of steward 1: 4 waiting");
+    press(theChip("steward 1"));
+    expect(summary().querySelector('[data-count="working"]')).toBeNull();
   });
 
   it("draws nothing for a count of none", async () => {
     await drawn(withTasks());
 
     const worn = theChip("steward 1");
-    expect(worn.getAttribute("aria-label")).toBe("Tasks of steward 1: 4 working");
-    expect(worn.querySelectorAll("[data-count]")).toHaveLength(1);
+    expect(describedAs(worn)).toBe("Tasks of steward 1: 4 working");
+    press(worn);
+    expect(summary().querySelectorAll("[data-count]")).toHaveLength(1);
   });
 
   it("moves its counts as its tasks move, with nothing pressed", async () => {
     const { move, reported, ended } = await drawn(withTasks());
-    expect(theChip("steward 1").getAttribute("aria-label")).toBe("Tasks of steward 1: 4 working");
+    expect(describedAs(theChip("steward 1"))).toBe("Tasks of steward 1: 4 working");
 
     await reported(5, "done");
-    expect(theChip("steward 1").getAttribute("aria-label")).toBe(
-      "Tasks of steward 1: 3 working, 1 done",
-    );
+    expect(describedAs(theChip("steward 1"))).toBe("Tasks of steward 1: 3 working, 1 done");
 
     // A task whose program ended while it still owed its report: ended without one.
     await move(6, "failed", 3);
-    expect(theChip("steward 1").getAttribute("aria-label")).toBe(
+    expect(describedAs(theChip("steward 1"))).toBe(
       "Tasks of steward 1: 2 working, 1 failed, 1 done",
     );
 
     // And one that is gone from the list is counted no more.
     await ended(5);
     await waitFor(() =>
-      expect(theChip("steward 1").getAttribute("aria-label")).toBe(
-        "Tasks of steward 1: 2 working, 1 failed",
-      ),
+      expect(describedAs(theChip("steward 1"))).toBe("Tasks of steward 1: 2 working, 1 failed"),
     );
   });
 
@@ -698,19 +782,18 @@ describe("the menu a chip opens", () => {
     await waitFor(() => expect(onScreen()).toEqual([5]));
   });
 
-  it("opens the fold by itself where the chat on screen is in it", async () => {
-    const { tree, reported } = await drawn(withTasks());
-    // Beside its session (Space), so steward 1 keeps its pane and its chip: a plain press
-    // would show sweep in steward 1's place (#4757).
+  it("marks the chat its own pane shows, and not a task shown in the pane beside it", async () => {
+    const { tree } = await drawn(withTasks());
+    // Beside its session (Space), so steward 1 keeps its pane: a plain press would show sweep
+    // in steward 1's place (#4757).
     treeRow(tree, "sweep").focus();
     await userEvent.keyboard(" ");
     await waitFor(() => expect(onScreen()).toEqual([1, 5]));
-    await reported(5, "done");
 
-    // The tab is named for its focused pane, sweep's (#4762), and still wears steward 1's chip.
-    press(within(cell("sweep")).getByRole("button", { name: /^Tasks of steward 1/ }));
+    press(theChip("steward 1"));
 
-    expect(line("sweep").hasAttribute("data-current")).toBe(true);
+    expect(line("steward 1").hasAttribute("data-current")).toBe(true);
+    expect(line("sweep").hasAttribute("data-current")).toBe(false);
   });
 });
 
@@ -1030,25 +1113,22 @@ describe("opening and closing the menu", () => {
 
 describe("the keys for the chats inside a tab", () => {
   // #4304: a screen reader's press lands where the keyboard's own open does, not on the list.
-  it("lands a screen reader's press of the counts on the chat the tab shows", async () => {
+  it("lands a screen reader's press of the head's word on the chat's first task", async () => {
     await drawn(withTasks());
     press(theChip("steward 1"));
     await waitFor(() => expect(menu()).not.toBeNull());
-    await waitFor(() => expect(document.activeElement).toBe(line("steward 1")));
+    await waitFor(() => expect(document.activeElement).toBe(line("talk")));
   });
 
-  it("opens the tab's menu from the keyboard, on the chat it shows, and every row is reached", async () => {
+  it("opens from the keyboard on the chat's first task, and every row is reached", async () => {
     await drawn(withTasks());
-    tab("steward 1").focus();
+    pane(1).focus();
 
-    // Down on the tab: ⌘⇧J is the focused chat's own tasks now (#5058).
-    await userEvent.keyboard("{ArrowDown}");
+    chord("J");
 
     await waitFor(() => expect(menu()).not.toBeNull());
-    await waitFor(() => expect(document.activeElement).toBe(line("steward 1")));
+    await waitFor(() => expect(document.activeElement).toBe(line("talk")));
     // Down the rows, and Enter goes to the one the keyboard is on.
-    await userEvent.keyboard("{ArrowDown}");
-    expect(document.activeElement).toBe(line("talk"));
     await userEvent.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}");
     expect(document.activeElement).toBe(line("probe"));
     await userEvent.keyboard("{Enter}");
@@ -1060,57 +1140,44 @@ describe("the keys for the chats inside a tab", () => {
 
   it("finds a row by the letters of its name", async () => {
     await drawn(withTasks());
-    tab("steward 1").focus();
-    await userEvent.keyboard("{ArrowDown}");
-    await waitFor(() => expect(document.activeElement).toBe(line("steward 1")));
+    pane(1).focus();
+    chord("J");
+    await waitFor(() => expect(document.activeElement).toBe(line("talk")));
 
     await userEvent.keyboard("sw");
 
     expect(document.activeElement).toBe(line("sweep"));
   });
 
-  it("gives the keyboard back to the tab when the menu it opened is left with Escape", async () => {
+  it("gives the keyboard back to the chat when the menu it opened is left with Escape", async () => {
     await drawn(withTasks());
-    tab("steward 1").focus();
-    await userEvent.keyboard("{ArrowDown}");
-    await waitFor(() => expect(document.activeElement).toBe(line("steward 1")));
+    pane(1).focus();
+    chord("J");
+    await waitFor(() => expect(document.activeElement).toBe(line("talk")));
 
     await userEvent.keyboard("{Escape}");
 
     expect(menu()).toBeNull();
-    await waitFor(() => expect(document.activeElement).toBe(tab("steward 1")));
+    await waitFor(() => expect(document.activeElement).toBe(pane(1)));
   });
 
-  it("opens a tab's menu with Down on the tab", async () => {
+  it("opens nothing with Down on a tab: a tab has no menu of tasks (#5341)", async () => {
     await drawn(withTasks());
     tab("steward 1").focus();
 
     await userEvent.keyboard("{ArrowDown}");
 
-    await waitFor(() => expect(menu()).not.toBeNull());
-    // And Down on a tab with no tasks opens nothing.
-    await userEvent.keyboard("{Escape}");
-    await waitFor(() => expect(menu()).toBeNull());
-    await userEvent.click(tab("steward 2"));
-    tab("steward 2").focus();
-    await userEvent.keyboard("{ArrowDown}");
     expect(menu()).toBeNull();
   });
 
-  it("says on the tab that it has tasks, and that a menu opens from it", async () => {
+  it("says nothing of tasks on the tab, and its counts on the head's word, which opens a menu", async () => {
     await drawn(withTasks());
 
     const one = tab("steward 1");
-    expect(one.getAttribute("aria-haspopup")).toBe("menu");
-    const described = (one.getAttribute("aria-describedby") ?? "").split(" ");
-    expect(described).toContain(theChip("steward 1").id);
-    expect(document.getElementById(theChip("steward 1").id)?.getAttribute("aria-label")).toBe(
-      "Tasks of steward 1: 4 working",
-    );
-    // A tab with no tasks says neither.
-    const two = tab("steward 2");
-    expect(two.getAttribute("aria-haspopup")).toBeNull();
-    expect(two.getAttribute("aria-describedby") ?? "").not.toMatch(/-tasks-/);
+    expect(one.getAttribute("aria-haspopup")).toBeNull();
+    expect(one.getAttribute("aria-describedby") ?? "").not.toMatch(/-tasks-/);
+    expect(theChip("steward 1")).toHaveAccessibleDescription("Tasks of steward 1: 4 working");
+    expect(theChip("steward 1").getAttribute("aria-haspopup")).toBe("menu");
   });
 
   describe("asked for from the keyboard", () => {
@@ -1119,24 +1186,6 @@ describe("the keys for the chats inside a tab", () => {
       ...withTasks(),
       chat(8, "alpha", { persona: "devops", label: "notes", from: taskOf(2) }),
     ];
-
-    it("opens the menu of the tab asked, and never another tab's beside it", async () => {
-      await drawn(twoWithTasks());
-      tab("steward 1").focus();
-      await userEvent.keyboard("{ArrowDown}");
-      await waitFor(() => expect(menus()).toEqual(["Tasks of steward 1"]));
-      await userEvent.keyboard("{Escape}");
-      await waitFor(() => expect(menus()).toEqual([]));
-
-      tab("steward 2").focus();
-      await userEvent.keyboard("{ArrowDown}");
-
-      await waitFor(() => expect(menus()).toEqual(["Tasks of steward 2"]));
-      // And back: the first tab's menu, and the second's is gone. One menu at a time.
-      tab("steward 1").focus();
-      fireEvent.keyDown(tab("steward 1"), { key: "ArrowDown" });
-      await waitFor(() => expect(menus()).toEqual(["Tasks of steward 1"]));
-    });
 
     /** The name of the menu ⌘⇧J opened (#5058), which names itself. */
     const asked = () => menu()?.getAttribute("aria-label");
@@ -1294,8 +1343,17 @@ describe("the focused chat's own tasks, on its key (#5058, ruled on #4699)", () 
     chord("J");
 
     await waitFor(() => expect(menu()?.getAttribute("aria-label")).toBe("Tasks of steward 1"));
-    // Its own three: not itself, not talk's deep, and not steward 2's notes.
-    expect(named()).toEqual(["talk", "sweep", "probe"]);
+    // The menu its head opens (#5341): itself, its tasks under who asked for them, and nothing
+    // of steward 2's.
+    expect(named()).toEqual([
+      "steward 1",
+      "talk",
+      "deep",
+      "sweep",
+      "probe",
+      "End a task",
+      "Activity",
+    ]);
     await waitFor(() => expect(document.activeElement).toBe(line("talk")));
   });
 
@@ -1306,7 +1364,7 @@ describe("the focused chat's own tasks, on its key (#5058, ruled on #4699)", () 
     await waitFor(() => expect(document.activeElement).toBe(line("talk")));
 
     // probe is filed in beta: a press from the sidebar would take it to beta's strip.
-    await userEvent.keyboard("{ArrowDown}{ArrowDown}{Enter}");
+    await userEvent.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}{Enter}");
 
     await waitFor(() => expect(onScreen()).toEqual([6]));
     expect(menu()).toBeNull();
@@ -1340,18 +1398,18 @@ describe("the focused chat's own tasks, on its key (#5058, ruled on #4699)", () 
   it("lists a task that has finished by how it ended, and a pick of it shows nothing", async () => {
     await drawn(
       [chat(1, "alpha"), chat(4, "alpha", { persona: "devops", label: "talk", from: taskOf(1) })],
-      [finishedTask(1, "probe")],
+      [finishedTask(1, "probe", { how: "failed", outcome: "failed", folds: false })],
     );
     pane(1).focus();
     chord("J");
-    await waitFor(() => expect(named()).toEqual(["talk", "probe"]));
-    expect(line("probe").getAttribute("aria-disabled")).toBe("true");
-    expect(line("probe").textContent).toContain("done");
+    await waitFor(() => expect(document.activeElement).toBe(line("talk")));
+    expect(line("probe").textContent).toContain("failed");
 
     await userEvent.keyboard("{ArrowDown}");
     expect(document.activeElement).toBe(line("probe"));
     await userEvent.keyboard("{Enter}");
 
+    // Its report opens under it, and nothing is gone to.
     expect(menu()).not.toBeNull();
     expect(onScreen()).toEqual([1]);
   });
@@ -1384,7 +1442,7 @@ describe("tasks that have finished", () => {
     folds: false,
   } as const;
 
-  it("are counted on the chip by how each ended, on a tab with no task still open", async () => {
+  it("are counted on the head's word by how each ended, for a chat with no task still open", async () => {
     await drawn(some(), [
       finishedTask(2, "old"),
       finishedTask(2, "older", { how: "cancelled", outcome: "cancelled" }),
@@ -1393,13 +1451,12 @@ describe("tasks that have finished", () => {
       finishedTask(2, "halt", closed),
     ]);
 
+    await userEvent.click(tab("steward 2"));
+    await waitFor(() => expect(onScreen()).toEqual([2]));
+
     await waitFor(() =>
-      expect(chip("steward 2")?.getAttribute("aria-label")).toBe(
-        "Tasks of steward 2: 1 failed, 3 done",
-      ),
+      expect(describedAs(theChip("steward 2"))).toBe("Tasks of steward 2: 1 failed, 3 done"),
     );
-    // And the tab says so, and Down on it opens the menu.
-    expect(tab("steward 2").getAttribute("aria-haspopup")).toBe("menu");
   });
 
   it("each have a line in the menu: a failure and one the person closed alone, the rest in the fold", async () => {
@@ -1409,7 +1466,7 @@ describe("tasks that have finished", () => {
       finishedTask(1, "halt", closed),
     ]);
     await waitFor(() =>
-      expect(theChip("steward 1").getAttribute("aria-label")).toBe(
+      expect(describedAs(theChip("steward 1"))).toBe(
         "Tasks of steward 1: 1 working, 1 failed, 2 done",
       ),
     );
@@ -1429,12 +1486,12 @@ describe("tasks that have finished", () => {
     await drawn(some(), [
       finishedTask(1, "probe", { ...failed, report: "The deploy is red: the image is missing." }),
     ]);
-    await waitFor(() => expect(chip("steward 1")?.getAttribute("aria-label")).toContain("failed"));
-    tab("steward 1").focus();
-    await userEvent.keyboard("{ArrowDown}");
-    await waitFor(() => expect(document.activeElement).toBe(line("steward 1")));
+    await waitFor(() => expect(describedAs(theChip("steward 1"))).toContain("failed"));
+    pane(1).focus();
+    chord("J");
+    await waitFor(() => expect(document.activeElement).toBe(line("talk")));
 
-    await userEvent.keyboard("{ArrowDown}{ArrowDown}");
+    await userEvent.keyboard("{ArrowDown}");
     expect(document.activeElement).toBe(line("probe"));
     await userEvent.keyboard("{Enter}");
 
@@ -1454,7 +1511,7 @@ describe("tasks that have finished", () => {
       [...some(), chat(7, "alpha", { persona: "devops", label: "deep", from: taskOf(4) })],
       [finishedTask(4, "dig", failed)],
     );
-    await waitFor(() => expect(chip("steward 1")?.getAttribute("aria-label")).toContain("failed"));
+    await waitFor(() => expect(describedAs(theChip("steward 1"))).toContain("failed"));
 
     press(theChip("steward 1"));
 
@@ -1469,12 +1526,12 @@ describe("tasks that have finished", () => {
 
   it("move from the open rows to the finished ones as a task ends at its report", async () => {
     const { finishes } = await drawn(some());
-    expect(theChip("steward 1").getAttribute("aria-label")).toBe("Tasks of steward 1: 1 working");
+    expect(describedAs(theChip("steward 1"))).toBe("Tasks of steward 1: 1 working");
 
     await finishes(4, finishedTask(1, "talk"));
 
     await waitFor(() =>
-      expect(theChip("steward 1").getAttribute("aria-label")).toBe("Tasks of steward 1: 1 done"),
+      expect(describedAs(theChip("steward 1"))).toBe("Tasks of steward 1: 1 done"),
     );
     press(theChip("steward 1"));
     expect(lines()).toEqual([
@@ -1498,44 +1555,41 @@ describe("a strip of many tabs", () => {
 
   async function settled() {
     const held = await drawn(many());
-    await waitFor(() => expect(theChip("steward 30")).toBeTruthy());
+    await waitFor(() => expect(theChip("steward 1")).toBeTruthy());
     for (let turn = 0; turn < 10; turn += 1) await act(async () => {});
     chips.drawn.length = 0;
     return held;
   }
 
-  it("redraws one tab's chip when one of its tasks changes state, and no other tab's", async () => {
+  it("redraws the head's tasks button for its own chat's tasks, and for no other tab's", async () => {
     const { move, reported } = await settled();
 
-    // A turn begins: the task is working, where nothing had been heard of it.
+    // A task of a tab in the background moves: no head draws it (#5341), and its tab only its
+    // hand.
     await move(105, "running", 1);
-    expect(new Set(chips.drawn)).toEqual(new Set([5]));
-    expect(chips.drawn.length).toBeLessThanOrEqual(2);
-
-    // A move that changes nothing a chip says draws no chip at all.
-    chips.drawn.length = 0;
-    await move(105, "running", 2);
     expect(chips.drawn).toEqual([]);
-
-    // It starts waiting for the person: the queue is the project's, and still only the one
-    // chip is drawn, for its hand.
-    await move(105, "waiting", 3, [105]);
-    expect(new Set(chips.drawn)).toEqual(new Set([5]));
+    await move(105, "waiting", 2, [105]);
+    expect(chips.drawn).toEqual([]);
     expect(hand("steward 5")).not.toBeNull();
-
-    // It is answered and its turn ends: the hand goes, and one chip is drawn for that.
-    chips.drawn.length = 0;
-    await move(105, "waiting", 4, []);
-    expect(new Set(chips.drawn)).toEqual(new Set([5]));
+    await move(105, "waiting", 3, []);
     expect(hand("steward 5")).toBeNull();
 
-    // It reports: the list is read again, every tab's rows are built again, and the chips are
-    // held on what they say, so one is drawn.
+    // The chat in front's own task: its head's button is drawn, and only it.
+    await move(101, "running", 4);
+    expect(new Set(chips.drawn)).toEqual(new Set([1]));
+    expect(chips.drawn.length).toBeLessThanOrEqual(2);
+
+    // A move that changes nothing it says draws it no more.
     chips.drawn.length = 0;
-    await reported(105, "done");
-    expect(new Set(chips.drawn)).toEqual(new Set([5]));
-    expect(theChip("steward 5").getAttribute("aria-label")).toBe("Tasks of steward 5: 1 done");
-    expect(theChip("steward 6").getAttribute("aria-label")).toBe("Tasks of steward 6: 1 working");
+    await move(101, "running", 5);
+    expect(chips.drawn).toEqual([]);
+
+    // Its turn ends and it reports: the list is read again, and the button says it.
+    await move(101, "waiting", 6);
+    await reported(101, "done");
+    await waitFor(() =>
+      expect(describedAs(theChip("steward 1"))).toBe("Tasks of steward 1: 1 done"),
+    );
   });
 });
 

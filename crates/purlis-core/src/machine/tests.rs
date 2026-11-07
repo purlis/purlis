@@ -2787,6 +2787,7 @@ fn on_a_pool(pool: &str, workspace: &str) -> ChatOnPool {
     ChatOnPool {
         pool: pool.to_owned(),
         workspace: workspace.to_owned(),
+        runner: None,
     }
 }
 

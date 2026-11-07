@@ -61,17 +61,6 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** A real ask, in its own words: answered in the terminal below, where it always was. */
-export const ARealAsk: Story = {
-  args: { waiting: [ask("permission")] },
-  play: async ({ canvasElement }) => {
-    const strip = within(canvasElement).getByRole("group", { name: STRIP.waitingOn });
-    await expect(within(strip).getByText("Run npm publish --tag next")).toBeVisible();
-    // Nothing in it to press: Tab passes it by.
-    await expect(within(strip).queryAllByRole("button")).toHaveLength(0);
-  },
-};
-
 /** A long message, opened to the whole of it and folded again from the keyboard. */
 export const ALongMessageOpened: Story = {
   args: { waiting: [ask("question", { last_message: LONG })] },

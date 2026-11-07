@@ -276,7 +276,7 @@ and none takes a workspace, a project or a path:
 | Tool | What it does |
 | --- | --- |
 | `todo_list`, `todo_add`, `todo_done` | The workspace's open todos; marking one done writes its trace to memory and keeps it as done, to reopen with `purlis ws todo reopen` (ADR 0106) |
-| `memory_search`, `memory_add` | The workspace's memory |
+| `memory_search`, `memory_add` | The workspace's memory: a query answers its 8 best matches; no query answers the newest 20, newest first, with a cursor to the 20 before them, so the answer is the same size however much the workspace remembers (#5500) |
 | `persona_remember` | One memory of the chat's own persona, or of shared memory; in a chat purlis started, purlis writes it for the chat, and the tool never writes it itself there |
 | `persona_where` | Where the chat is working, from purlis's own record: the chat that asked for it, that chat's other tasks, and the other chats running as its persona, by name, workspace and state; never another chat's content |
 | `session_record_list`, `session_record_read` | The session records where the chat works, by file name |

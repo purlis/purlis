@@ -81,7 +81,8 @@ pub fn normalised(what: GrantWhat, target: &str) -> Option<String> {
         GrantWhat::Vault
         | GrantWhat::PersonaHosts
         | GrantWhat::Browser
-        | GrantWhat::BrowserSite => None,
+        | GrantWhat::BrowserSite
+        | GrantWhat::RunGrant => None,
     }
 }
 

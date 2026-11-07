@@ -254,13 +254,13 @@ describe("a view tab's close, with its unsaved work", () => {
 
     await userEvent.keyboard("{F2}");
     await screen.findByRole("dialog", { name: "Command palette" });
-    await userEvent.keyboard("Close this view{Enter}");
+    await userEvent.keyboard("Close Settings{Enter}");
     await userEvent.click(within(await question()).getByRole("button", { name: "Keep editing" }));
     expect(tabs()).toEqual([false, true]);
 
     await userEvent.keyboard("{F2}");
     await screen.findByRole("dialog", { name: "Command palette" });
-    await userEvent.keyboard("Close this view{Enter}");
+    await userEvent.keyboard("Close Settings{Enter}");
     await userEvent.click(
       within(await question()).getByRole("button", { name: "Discard and leave" }),
     );

@@ -75,6 +75,10 @@ pub enum SecretCommand {
         /// even though the vault holds it.
         #[arg(long, value_name = "REASON")]
         replace: Option<String>,
+        /// The program you will run with it, as you will name it to `purlis secret exec`: the
+        /// person may allow it on the same notice.
+        #[arg(long)]
+        program: Option<String>,
     },
 }
 
@@ -387,7 +391,15 @@ pub fn secret(here: &crate::Here, command: SecretCommand, graft: Option<Vec<Stri
             purpose,
             vault,
             replace,
-        } => match ask(&ctx, &key, &purpose, vault.as_deref(), replace.as_deref()) {
+            program,
+        } => match ask(
+            &ctx,
+            &key,
+            &purpose,
+            vault.as_deref(),
+            replace.as_deref(),
+            program.as_deref(),
+        ) {
             Ok((line, code)) => {
                 println!("{line}");
                 code
@@ -410,8 +422,9 @@ pub fn ask(
     purpose: &str,
     vault: Option<&str>,
     replace: Option<&str>,
+    program: Option<&str>,
 ) -> Result<(String, i32), String> {
-    purlis_core::secrets::ask::ask_the_window(ctx, key, purpose, vault, replace)
+    purlis_core::secrets::ask::ask_the_window(ctx, key, purpose, vault, replace, program)
         .map(|said| said.line())
 }
 
@@ -421,7 +434,15 @@ pub fn ask_tool(args: &serde_json::Map<String, serde_json::Value>) -> Result<Str
     let key = text("key").ok_or("secret_ask needs the key")?;
     let purpose = text("purpose").ok_or("secret_ask needs what the key is for, as purpose")?;
     let here = crate::Here::read()?;
-    ask(&ctx(&here), key, purpose, text("vault"), text("replace")).map(|(line, _)| line)
+    ask(
+        &ctx(&here),
+        key,
+        purpose,
+        text("vault"),
+        text("replace"),
+        text("program"),
+    )
+    .map(|(line, _)| line)
 }
 
 /// `purlis persona secret <verb> …`: the persona's vault, then the same verb.

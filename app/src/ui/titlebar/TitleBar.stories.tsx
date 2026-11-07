@@ -49,7 +49,13 @@ const START: { plane: string; name: string; ws: [string, number][]; pins: string
   },
 ];
 
-function TheBar({ railShown = true, focusedAt = "smart-ide" }) {
+/** The scale spec's 1,000 workspaces (#5501), `ws-0000` to `ws-0999`, every seventh waiting. */
+const THOUSAND: [string, number][] = Array.from({ length: 1_000 }, (_, at) => [
+  `ws-${String(at).padStart(4, "0")}`,
+  at % 7 === 0 ? 1 : 0,
+]);
+
+function TheBar({ railShown = true, focusedAt = "smart-ide", many = false }) {
   const [front, setFront] = useState(START[0].plane);
   const [focused, setFocused] = useState<Record<string, string>>({
     [START[0].plane]: focusedAt,
@@ -62,7 +68,11 @@ function TheBar({ railShown = true, focusedAt = "smart-ide" }) {
   const [said, setSaid] = useState("Nothing chosen");
   const projects = useMemo<SwitchProject[]>(
     () =>
-      START.map((one) => ({
+      START.map((given) =>
+        many && given.plane === START[0].plane
+          ? { ...given, ws: [...given.ws, ...THOUSAND] }
+          : given,
+      ).map((one) => ({
         plane: one.plane,
         name: one.name,
         waiting: one.ws.reduce((n, [, w]) => n + w, 0),
@@ -76,7 +86,7 @@ function TheBar({ railShown = true, focusedAt = "smart-ide" }) {
           waiting: Object.fromEntries([[OUTSIDE, 0], ...one.ws]),
         },
       })),
-    [focused, pins],
+    [focused, pins, many],
   );
   return (
     <div style={{ display: "grid", gap: "var(--space-6)" }}>
@@ -412,6 +422,54 @@ export const WorkspacePopover: Story = {
     await expect(within(list).getAllByRole("option")[4]).toHaveAttribute("aria-selected", "true");
     await userEvent.keyboard("{ArrowUp}{ArrowUp}{ArrowUp}");
     expectFocusInSight();
+  },
+};
+
+/**
+ * **The workspace popover over 1,000 workspaces** (#5501): only the rows in sight are drawn, each
+ * with its pin beside it at the same height, and each says its place in the whole; the arrows
+ * walk past the first screenful with the chosen row kept in sight, and typing finds the last.
+ */
+export const ThousandWorkspaces: Story = {
+  args: { many: true },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(canvas.getByRole("button", { name: "All workspaces" }));
+    const filter = await screen.findByRole("combobox", {
+      name: "Go to a workspace in charter…",
+    });
+    await untilFocused(() => filter, "All workspaces: the keyboard starts in the filter");
+    const list = screen.getByRole("listbox", { name: "Workspaces in charter" });
+    const drawn = within(list).getAllByRole("option");
+    await expect(drawn.length).toBeLessThan(60);
+    // The root, the three of the prototype, 1,000 more and New workspace…
+    await expect(drawn[0]).toHaveAttribute("aria-setsize", "1005");
+    for (let step = 0; step < 40; step++) await userEvent.keyboard("{ArrowDown}");
+    const chosen = document.getElementById(filter.getAttribute("aria-activedescendant") ?? "");
+    await expect(chosen).toHaveAttribute("aria-posinset", "42");
+    // In sight inside the popover's scrolling list, and its pin beside it, row for row.
+    const scroller = list.closest<HTMLElement>('[data-scope="popover"][data-part="list"]');
+    const seen = scroller?.getBoundingClientRect();
+    const row = chosen?.getBoundingClientRect();
+    // Within a pixel: the virtualizer rounds the scroller's height as it brings a row in.
+    await expect(row !== undefined && seen !== undefined).toBe(true);
+    await expect(row?.top ?? 0).toBeGreaterThanOrEqual((seen?.top ?? 0) - 1);
+    await expect(row?.bottom ?? 0).toBeLessThanOrEqual((seen?.bottom ?? 0) + 1);
+    // Rows keep the gap the list draws between them, as a list drawn whole does.
+    const next = chosen?.nextElementSibling?.getBoundingClientRect();
+    if (next !== undefined && row !== undefined)
+      await expect(next.top - row.bottom).toBeGreaterThan(0);
+    const pin = screen.getByRole("button", {
+      name: `Pin ${chosen?.querySelector("[data-titlebar-name]")?.textContent ?? ""} to the title bar`,
+    });
+    const centre = (box: DOMRect) => box.top + box.height / 2;
+    await expect(
+      Math.abs(centre(pin.getBoundingClientRect()) - centre(row as DOMRect)),
+    ).toBeLessThan(1);
+    expectFocusInSight();
+    await userEvent.keyboard("ws-0999");
+    await expect(
+      document.getElementById(filter.getAttribute("aria-activedescendant") ?? ""),
+    ).toHaveAccessibleName("ws-0999");
   },
 };
 

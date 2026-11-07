@@ -8,7 +8,9 @@
  */
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { editorToolbar, TabCell, tabPart, tabsPart } from "./Tabs";
+import { pictureOf } from "../../layoutPicture";
+import type { Layout } from "../../tabs";
+import { editorToolbar, TabCell, TabPicture, tabPart, tabsPart } from "./Tabs";
 
 afterEach(cleanup);
 
@@ -98,5 +100,44 @@ describe("the parts around and inside the tabs", () => {
       "data-part": "toolbar",
       "data-variant": "default",
     });
+  });
+});
+
+describe("a split tab's picture", () => {
+  const chat = (pane: number): Layout => ({
+    kind: "pane",
+    pane,
+    content: { kind: "session", session: pane, chat: String(pane) },
+  });
+  const three: Layout = {
+    kind: "split",
+    direction: "row",
+    children: [chat(1), { kind: "split", direction: "column", children: [chat(2), chat(3)] }],
+  };
+
+  it("is the family's picture part: its box, then a line for each line between its panes", () => {
+    const picture = pictureOf(three);
+    if (picture === undefined) throw new Error("three panes have a picture");
+    const { container } = render(<TabPicture picture={picture} />);
+    const drawn = container.querySelector('[data-scope="tabs"][data-part="picture"]');
+    expect(drawn?.tagName.toLowerCase()).toBe("svg");
+    expect(drawn?.querySelectorAll("rect")).toHaveLength(1);
+    // In the box from 2.5 to 13.5 of the 16 the icon is drawn on: down the middle, then across
+    // the right half.
+    expect(
+      [...(drawn?.querySelectorAll("line") ?? [])].map((line) =>
+        ["x1", "y1", "x2", "y2"].map((at) => Number(line.getAttribute(at))),
+      ),
+    ).toEqual([
+      [8, 2.5, 8, 13.5],
+      [8, 8, 13.5, 8],
+    ]);
+  });
+
+  it("is out of what a screen reader reads: the tab's words say how many panes", () => {
+    const picture = pictureOf(three);
+    if (picture === undefined) throw new Error("three panes have a picture");
+    const { container } = render(<TabPicture picture={picture} />);
+    expect(container.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
   });
 });

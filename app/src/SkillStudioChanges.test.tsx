@@ -345,6 +345,7 @@ describe("the Skill studio's changes", () => {
                 days_left: 30,
                 in_history: false,
                 reserved: false,
+                clash: null,
                 set: null,
               },
             ]

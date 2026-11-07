@@ -371,6 +371,44 @@
   align-items: center;
 }
 
+/* A list of thousands drawn in part (#5501, `ui/list/virtualRows.tsx`): it keeps the whole list's
+   height, and each row it draws, and its pin beside it, stands at its own place in it. */
+/* Still a grid, so its row gap is read for the rows it places; its one track is the height. */
+[data-part="listbox"][data-scope="titlebar"][data-partly],
+[data-part="pins"][data-scope="titlebar"][data-partly] {
+  position: relative;
+  grid-auto-rows: auto;
+}
+
+[data-part="listbox"][data-scope="titlebar"][data-partly]::before,
+[data-part="pins"][data-scope="titlebar"][data-partly]::before {
+  content: "";
+  display: block;
+  block-size: var(--list-rows-size);
+}
+
+/* The pin column keeps a toggle's width, which its placed toggles no longer give it. */
+[data-part="pins"][data-scope="titlebar"][data-partly] {
+  inline-size: 28px;
+}
+
+[data-scope="titlebar"][data-partly] > [data-placed] {
+  position: absolute;
+  inset-inline-start: 0;
+}
+
+[data-part="listbox"][data-scope="titlebar"][data-partly] > [data-placed] {
+  inset-inline-end: 0;
+  block-size: 32px;
+}
+
+/* A pin's slot is its row's height, and centres the 28px toggle in it as the grid does. */
+[data-part="pins"][data-scope="titlebar"][data-partly] > [data-placed] {
+  display: grid;
+  place-items: center;
+  block-size: 32px;
+}
+
 /* ---------------------------------------------------------------------------------------------
    A row (R96, R107): 32px, corners of 8, the secondary words; the card's fill under the pointer
    and the accent's wash on the row Enter would go to. A state changes colours only.

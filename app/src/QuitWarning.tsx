@@ -1,9 +1,11 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { ChatState } from "./NeedsYou";
 import { type State } from "./chatState";
+import { shownState } from "./shownState";
+import { ChatMark } from "./ui/chat-mark/ChatMark";
 import { AlertDialog } from "./ui/dialog/Dialog";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /**
  * One chat a quit is about to end, whichever project it is in.
@@ -95,12 +97,31 @@ export function EndingList({ chats }: { chats: readonly Ending[] }) {
         <li key={chat.key}>
           <span className="what">{chat.harness ?? "shell"}</span>
           <span>{chat.name}</span>
-          <ChatState state={chat.state} />
+          <EndingState state={chat.state} />
           {several && chat.project && <code className="where">{chat.project}</code>}
           {chat.cwd && <code className="where">{chat.cwd}</code>}
         </li>
       ))}
     </ul>
+  );
+}
+
+/** What a chat about to end is doing: its board's word on the one mark (#5340). */
+function EndingState({ state }: { state: State }) {
+  // All this list knows is the board's word, and a turn that ended waits on the person.
+  const shown = shownState({
+    board: state,
+    needsYou: state === "waiting",
+    task: null,
+    harness: null,
+  });
+  if (shown === undefined) return null;
+  return (
+    <Tooltip tip={shown.word}>
+      <span role="img" aria-label={shown.word}>
+        <ChatMark state={shown.mark} />
+      </span>
+    </Tooltip>
   );
 }
 

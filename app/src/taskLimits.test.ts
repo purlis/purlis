@@ -4,7 +4,7 @@
 import { describe, expect, it } from "vitest";
 import type { AtLimit } from "./bindings";
 import type { ChatRow } from "./chatsTree";
-import { runningByTab, runningSaid } from "./taskLimits";
+import { runningSaid } from "./taskLimits";
 
 /** The facts the footer reads of a tab's own session, at the top of its list. */
 function own(
@@ -64,14 +64,5 @@ describe("the tab menu's footer (#1498)", () => {
     expect(runningSaid(ownRow(6, 0, own(6)))).toBe("at its task limit (6)");
     // A held chat, or one on the default persona: held to 2, while the footer reads 6.
     expect(runningSaid(ownRow(6, 2, own(2)))).toBe("2 of 6 running · at its task limit (2)");
-  });
-
-  it("reads each tab's own session, never a task listed under it", () => {
-    const tabs = new Map([
-      [10, [own(6, 3), own(2, 2, 2)]],
-      [11, [own(6, 0)]],
-    ]);
-
-    expect([...runningByTab(tabs)]).toEqual([[10, "3 of 6 running"]]);
   });
 });

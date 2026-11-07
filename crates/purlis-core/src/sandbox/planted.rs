@@ -119,11 +119,60 @@ pub fn git_folder_pins(folders: &[PathBuf]) -> Vec<PathBuf> {
         .collect()
 }
 
+/// The folders a home keeps later-code names in, which a project may well use for its own files.
+const HOME_FOLDERS: [&str; 5] = [".config/", ".local/", ".ssh/", ".kube/", "Library/"];
+
+/// **The later-code names [`super::PLANTED`] holds, as plain paths in `folder`**, for a sandbox
+/// that keeps a plain path and not a rule for any depth (Claude Code's on Linux). What it holds
+/// there is pinned, so neither the name nor a folder above it is moved, removed or swapped.
+///
+/// A denied path that isn't there gets a placeholder, on its first missing part. So two kinds are
+/// named only where that costs nothing:
+///
+/// - inside `.git`, only what is there: git stops on a `commondir` it can't read, and a
+///   `worktrees` it can't make. [`super::arrived`] looks at the rest;
+/// - in a home's folders ([`HOME_FOLDERS`]), only where the folder that holds the name is there,
+///   so a project can still make its own `.config`. These run only for a folder used as a home.
+///
+/// A name with a `**`, one that holds only itself and one in `lifted` are left out. Nothing below
+/// `folder` is followed, and each path is as `folder` spells it.
+pub fn held_by_path_in(folder: &Path, lifted: &[PathBuf]) -> Vec<PathBuf> {
+    if !folder.is_dir() {
+        return Vec::new();
+    }
+    super::PLANTED
+        .iter()
+        .filter(|planted| {
+            planted.reach == super::Reach::AndBelow
+                && !planted.path.contains("**")
+                && !lifted.iter().any(|name| name.ends_with(planted.path))
+        })
+        .filter_map(|planted| {
+            let at = folder.join(planted.path);
+            let wanted = if planted.path.starts_with(".git/") {
+                std::fs::symlink_metadata(&at).is_ok()
+            } else if HOME_FOLDERS
+                .iter()
+                .any(|home| planted.path.starts_with(home))
+            {
+                at.parent()
+                    .and_then(|parent| std::fs::symlink_metadata(parent).ok())
+                    .is_some_and(|kind| kind.is_dir())
+            } else {
+                true
+            };
+            wanted.then_some(at)
+        })
+        .collect()
+}
+
 /// The folders below `folder` that purlis itself runs git in, read without a bound: `folder`
-/// itself, each clone of each workspace (`workspaces/<ws>/<clone>`, as [`crate::repos::clones`]
-/// lists them) and each branch folder (`workspaces/<ws>/.worktrees/<repo>/<piece>`). Each
-/// level is read whole and no link is followed, so nothing else in the plane, however much it
-/// holds, keeps one of these from being found.
+/// itself, each folder with a `.git` at the root of each workspace (`workspaces/<ws>/<clone>`,
+/// whatever its name), each one in its `repos/`, as [`crate::repofolder::holdings`] walks it
+/// (#5371), and each branch folder
+/// (`workspaces/<ws>/.worktrees/<repo>/<piece>`). Each level is read whole and no link is
+/// followed, so nothing else in the plane, however much it holds, keeps one of these from being
+/// found.
 pub fn clones_purlis_works_in(folder: &Path) -> Vec<PathBuf> {
     // The directories in `dir`, never a link to one; none where `dir` is itself a link.
     let folders_in = |dir: &Path| -> Vec<PathBuf> {
@@ -143,7 +192,22 @@ pub fn clones_purlis_works_in(folder: &Path) -> Vec<PathBuf> {
     };
     let mut found = vec![folder.to_path_buf()];
     for workspace in folders_in(&folder.join(super::WORKSPACES)) {
+        // The root as it always was, every folder that is not a link: doctor still runs git in
+        // a clone, or a workspace, whose name purlis refuses (#353, #4830).
         found.extend(folders_in(&workspace));
+        // And `repos/`, as the one walk that knows it reads it (#5371).
+        let walked = workspace
+            .file_name()
+            .and_then(|name| name.to_str())
+            .and_then(|ws| crate::repofolder::holdings(folder, ws).ok())
+            .unwrap_or_default();
+        found.extend(
+            [walked.repos, walked.others]
+                .into_iter()
+                .flatten()
+                .filter(|row| row.layout == crate::repofolder::Layout::Repos)
+                .map(|row| row.repo.path),
+        );
         for repo in folders_in(&workspace.join(".worktrees")) {
             found.extend(folders_in(&repo));
         }

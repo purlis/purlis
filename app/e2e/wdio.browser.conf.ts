@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import process from "node:process";
 import { config as base } from "./wdio.conf.js";
@@ -37,6 +37,14 @@ const whereTheEngineIs: Record<string, string> = linux
   ? { HOME: home, CHARTER_DATA_HOME: join(home, ".local", "share", "purlis") }
   : {};
 
+/**
+ * The moment this build's engine pin was issued, the time its debug build judges the engine's age
+ * by (#5413): this run turns neither on today's date nor on reading the published manifest.
+ */
+const thePinsIssue: string = JSON.parse(
+  readFileSync(new URL("../../crates/browser-engine/engine-pin.json", import.meta.url), "utf8"),
+).issued;
+
 export const config: WebdriverIO.Config = {
   ...base,
   specs: ["./specs/**/*.browser.e2e.ts"],
@@ -51,13 +59,14 @@ export const config: WebdriverIO.Config = {
     [
       "@wdio/tauri-service",
       {
-        appBinaryPath: built(process.platform === "win32" ? "charter-app.exe" : "charter-app"),
+        appBinaryPath: built(process.platform === "win32" ? "purlis-app.exe" : "purlis-app"),
         captureBackendLogs: true,
         captureFrontendLogs: true,
         env: theRunsEnvironment(plane, {
           CHARTER_PANIC_LOG: PANIC_LOG,
           ...whereTheEngineIs,
           PURLIS_NO_BACKGROUND_CHECKS: "1",
+          PURLIS_TEST_ENGINE_NOW: thePinsIssue,
         }),
       },
     ],

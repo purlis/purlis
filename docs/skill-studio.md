@@ -364,6 +364,18 @@ group, in **In force**.
 - **When it applies.** New chats get it. Open chats keep what they started with, and offer a restart
   once if the change moves what they would list.
 
+### Making room
+
+When these chats are over their budget, the **Budget** line on **Routing** says how many skills
+the router hides from their lists and offers **Make room…**. The **Install all…** review offers it
+too when what you install would take a chat's list past a program's budget, and says which.
+
+**Make room…** opens the Library in **Select** with the skills least used in the last 30 days
+first, each row saying its runs ("No runs in the last 30 days", "4 runs in the last 30 days"),
+counted from the chats' run records. Nothing is ticked: you choose. It offers only **Turn off**
+and **Archive** for what goes, and **Pin** for what stays listed. Each is one change with one Undo,
+as Select's actions are, and Select ends after it.
+
 ### Routers, the index skill and pins
 
 When a chat's skills are over its budget, a **router** decides what the chat's list shows. The

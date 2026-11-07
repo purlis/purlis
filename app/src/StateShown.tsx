@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { useArrived } from "./lib/arrived";
-import type { Shown, ShownShape } from "./shownState";
+import type { Said, ShownShape } from "./shownState";
 import { property } from "./theme/theme";
 
 /**
@@ -67,7 +67,7 @@ export function StateShown({
   changed = false,
   markOnly = false,
 }: {
-  shown: Shown;
+  shown: Said;
   changed?: boolean;
   /** Draws the mark alone, as a one-line row says its state (#1675, #1687): the word is still
    *  the row's to a screen reader, out of sight where it stands (`.hidden-words`). */
@@ -77,7 +77,7 @@ export function StateShown({
   // A state this row CHANGED to, not the one it was drawn in (`useArrived`).
   const arrived = useArrived(shown.kind) || changed;
   /** The state whose arrival has been played: its motion is over until the next change. */
-  const [played, setPlayed] = useState<Shown["kind"]>();
+  const [played, setPlayed] = useState<Said["kind"]>();
   // Another state since: the next time it comes to this one is a change again.
   if (played !== undefined && played !== shown.kind) setPlayed(undefined);
   return (
