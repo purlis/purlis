@@ -387,13 +387,31 @@ describe("what a chat uses now, on its pane head (#5524)", () => {
 });
 
 describe("a narrow pane's head", () => {
-  /** Draws the window with every pane `width` pixels wide, as the layout engine would. */
-  async function aPaneOf(width: number) {
+  /** How wide every pane is now, and what is told when that changes. */
+  let width = 0;
+  let resized: (() => void)[] = [];
+  afterEach(() => {
+    resized = [];
+  });
+
+  /** Makes every pane `to` pixels wide, telling whatever watches their size. */
+  async function narrowedTo(to: number) {
+    width = to;
+    await act(async () => {
+      for (const tell of resized) tell();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+  }
+
+  /** Draws the window with every pane `at` pixels wide, as the layout engine would. */
+  async function aPaneOf(at: number) {
+    width = at;
     vi.stubGlobal(
       "ResizeObserver",
       class {
         constructor(private readonly told: (entries: unknown[], seen: unknown) => void) {}
         observe() {
+          resized.push(() => this.told([], this));
           this.told([], this);
         }
         disconnect() {}
@@ -472,23 +490,16 @@ describe("a narrow pane's head", () => {
       );
     }
 
-    it("keeps its skill run where the head has room for it, after the state's word has gone", async () => {
+    it("keeps its skill run while the head has room for it, and drops it next after the state's word", async () => {
       await aPaneOf(450);
       await aSkillRunOpen();
-
       expect(await within(head()).findByTestId("pane-skill-run")).toBeInTheDocument();
-    });
 
-    it("drops its skill run next, keeping the chat's name and mark", async () => {
-      await aPaneOf(449);
-      await aSkillRunOpen();
-      // The run is heard as at 450px, which draws it.
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 0));
-      });
+      await narrowedTo(449);
 
+      await waitFor(() => expect(head().querySelector(".pane-using")).toBeNull());
       expect(within(head()).queryByTestId("pane-skill-run")).toBeNull();
-      expect(head().querySelector(".pane-using")).toBeNull();
+      // The chat's name and its mark stay: under 470 the mark at the head's start says the state.
       expect(within(head()).getByText(NAME)).toHaveClass("pane-name");
       expect(head().querySelector('.pane-persona [data-scope="chat-mark"]')).not.toBeNull();
     });

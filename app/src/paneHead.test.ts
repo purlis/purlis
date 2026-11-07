@@ -274,7 +274,7 @@ describe("a narrow pane's two lines (#5206, spec #5191 stories 28 to 32)", () =>
       expect(paneLinesOf("chat", undefined, uses).head).toContain("using");
     });
 
-    it("draws nothing for a chat that uses nothing, nor on a rail, a view or an empty pane", () => {
+    it("draws nothing where the pane has no way to say it, nor on a rail, a view or an empty pane", () => {
       expect(paneLinesOf("chat", 900, {}).head).not.toContain("using");
       for (const kind of ["folded", "view", "empty"] as const)
         expect(paneLinesOf(kind, 900, uses).head, kind).not.toContain("using");

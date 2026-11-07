@@ -325,11 +325,11 @@ export const UsingDropsInOrder: Story = {
   beforeEach: () => {
     mockIPC((cmd) => (cmd === "skill_studio_on" ? true : null));
   },
-  play: async ({ canvasElement }) => {
+  play: async ({ canvas, canvasElement, userEvent }) => {
     const at = (width: number) =>
       canvasElement.querySelector<HTMLElement>(`[data-width="${width}"]`);
     const goes = (part: string) => HEAD_DROPS.find((drop) => drop.part === part)?.below ?? 0;
-    // What the studio says is on before the chip is drawn: wait for it, so the picture never races it.
+    // The chip waits on the studio saying it is on: wait for it, so the picture never races it.
     await waitFor(() => expect(at(450)?.querySelector(".pane-skill-run") ?? null).not.toBeNull());
     for (const width of WIDTHS) {
       const chips = at(width);
@@ -345,5 +345,15 @@ export const UsingDropsInOrder: Story = {
         `${width}`,
       ).not.toBeNull();
     }
+    // **Its keyboard path**: Tab takes the skill run of each head that draws it, in order, and
+    // nothing of a head that dropped it; the browsers are out of the Tab order (`PaneBrowsers`).
+    const runs = canvas.getAllByRole("button", { name: /^Using the skill deploy/ });
+    await expect(runs).toHaveLength(WIDTHS.filter((width) => width >= goes("using")).length);
+    for (const run of runs) {
+      await userEvent.tab();
+      await untilFocused(() => run, "Tab onto a head's skill run");
+      expectFocusInSight();
+    }
+    (document.activeElement as HTMLElement | null)?.blur();
   },
 };

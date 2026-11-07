@@ -141,8 +141,9 @@ export type PaneKind =
 /**
  * **A chip of the head's line** (the **pane line**, `.pane-chips`), in its drawn order: who it
  * runs as, which chat it is (its name, or the path to the task it shows), its state mark and
- * the mark's word, and what it uses now (`using`, #5524). A pane with no foot keeps its details here too (spec #5191, Out of Scope): its
- * sandbox, harness · workspace (`where`), where it came from and its work item.
+ * the mark's word, and what it uses now (`using`, #5524). A pane with no foot keeps its details
+ * here too (spec #5191, Out of Scope): its sandbox, harness · workspace (`where`), where it came
+ * from and its work item.
  */
 export type LinePart =
   | "persona"
