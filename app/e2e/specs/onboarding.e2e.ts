@@ -3,13 +3,13 @@
 
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { join } from "node:path";
 import process from "node:process";
 import { $, browser, expect } from "@wdio/globals";
 import { press, untilSays } from "../acting.js";
 import { aGitAnswerIsWaiting, noGitAnswerWaits, theNextLookForGitFindsNone } from "../gitAnswer.js";
 import { THE_RUNS_TREE } from "../harness.js";
-import { closeProject } from "../opening.js";
+import { closingByTheWindow } from "../opening.js";
 import { ask, inFront, PROJECTS } from "../switching.js";
 
 /**
@@ -189,10 +189,12 @@ describe("the guided steps", function () {
         .catch(() => false)
     )
       await browser.keys(["Escape"]);
-    if (local !== "") {
-      const closer = `${PROJECTS} [role="tab"][aria-label="${basename(local)}"]`;
-      if (await $(closer).isExisting()) await closeProject(closer);
-    }
+    // **A close by the window that fails still leaves the rest to do** (#5580): on macOS its
+    // question once never took the press, and the hook stopped there, with the local project
+    // open and in front. The next spec found it already open, and the palette's then started its
+    // chats in a project where nothing can start. So the core closes what is left whatever the
+    // window did, and the window's failure is said once all of it is done.
+    const failed = await closingByTheWindow(local);
     for (const plane of (await ask<string[]>("open_planes")).filter((one) => one !== first))
       await ask("close_plane", { plane });
     if (local !== "") {
@@ -202,6 +204,7 @@ describe("the guided steps", function () {
     // The specs after this one meet a machine that has been through the steps once.
     await ask("keep_onboarding_progress", { progress: { ...FRESH, finished_once: true } });
     await backTo(first);
+    if (failed !== undefined) throw failed;
   });
 
   it("go from the welcome through the git check and the harness step to an open project", async () => {

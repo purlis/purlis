@@ -11,8 +11,9 @@ import {
   pressOnly,
   whereTheKeyboardIs,
 } from "../opening.js";
-import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
-import { KEPT_EMPTY, openedSince } from "../reach.js";
+import { chatsRunning, endTheChatsStartedSince, leftOver, type Running } from "../chatsLeft.js";
+import { KEPT_EMPTY, closeTheViewTabsOpenedSince, openedSince, projectInFront } from "../reach.js";
+import { paneInFront } from "../started.js";
 
 /**
  * The command palette against the real app, driven by the keyboard and nothing else.
@@ -177,15 +178,50 @@ describe("the command palette", () => {
   // `lifecycle.e2e.ts` states the same rule; this file learned it. One failed assertion left
   // the profile picker on screen, and because WebdriverIO's Tauri service keeps ONE app
   // process for the whole run, every spec after it failed on a modal it never opened.
-  afterEach(async () => {
-    for (const selector of [PALETTE, '[role="dialog"][aria-labelledby="start-chat"]']) {
+  afterEach(async function () {
+    // A question left up by a failed test too, or the cleanup below meets it (#5580).
+    for (const selector of [
+      PALETTE,
+      '[role="dialog"][aria-labelledby="start-chat"]',
+      '[role="alertdialog"]',
+    ]) {
       const dialog = await $(selector);
       if (await dialog.isDisplayed().catch(() => false)) {
         await browser.keys(["Escape"]);
         await dialog.waitForDisplayed({ reverse: true, timeout: 10_000 }).catch(() => undefined);
       }
     }
+    // **A test that failed leaves the window as the file found it** (#5580): every chat this file
+    // started is ended and every tab it opened is closed, so the next test starts clean and starts
+    // its own chat where it needs one ({@link aChatOfThisFileInFront}). On macOS one miss of the
+    // picker failed every test after it, each on what the first had left.
+    if (this.currentTest?.state === "failed") await backToHowTheFileFoundIt();
   });
+
+  /**
+   * Ends this file's chats, clears their ended panes and closes the tabs it opened. Each step is
+   * best effort, since the test has already failed: what it could not undo is said by the file's
+   * `after` ("left a chat open") and the tabs guard.
+   */
+  async function backToHowTheFileFoundIt(): Promise<void> {
+    await endTheChatsStartedSince(chatsBefore).catch(() => undefined);
+    await clearEndedPanes().catch(() => undefined);
+    await closeTheViewTabsOpenedSince(wereAlreadyOpen).catch(() => undefined);
+  }
+
+  /**
+   * **A chat this file started, in front**: the one the test before left there, or, where that
+   * test failed and took its chat away with it, a new one in a tab of its own (#5580). Each test
+   * that ends or asks about the chat in front stands on its own this way.
+   */
+  async function aChatOfThisFileInFront(): Promise<void> {
+    const front = await paneInFront();
+    const plane = await projectInFront();
+    const ours = leftOver(chatsBefore, await chatsRunning()).some(
+      (one) => one.session === front && one.plane === plane,
+    );
+    if (!ours) await pressAndStart("New tab");
+  }
 
   it("opens on a keystroke, wherever the keyboard happened to be", async () => {
     const up = await openPalette();
@@ -280,6 +316,7 @@ describe("the command palette", () => {
     // **Escape is a real answer and not a consolation.** Radix listens for it on `document`,
     // which is why it works here when nothing aimed at a button does, and it has a real
     // consequence this asserts: nothing is ended. `docs/ui-primitives.md` records the rest.
+    await aChatOfThisFileInFront();
     const before = await tabNames();
     const ending = await endOfTheChatInFront();
     await openPalette();
@@ -308,16 +345,17 @@ describe("the command palette", () => {
   });
 
   it("ends the chat once the question is answered yes", async () => {
-    // The pane the test above opened is that tab's only one, so ending its chat and clearing the
-    // ended band it leaves (#5019) closes the tab with it — which is what makes this checkable
-    // without counting panes across tabs. Its End…, the one row that ends a chat: Close pane
-    // ends nothing (#4756).
+    // The pane the test above opened (or the one opened here, #5580) is that tab's only one, so
+    // ending its chat and clearing the ended band it leaves (#5019) closes the tab with it —
+    // which is what makes this checkable without counting panes across tabs. Its End…, the one
+    // row that ends a chat: Close pane ends nothing (#4756).
     //
     // **The yes is a click here, and only because a scenario cannot press a button by
     // keyboard at all** — see the spec above for the trace that measured it. What this proves
     // is what a scenario uniquely can: that the row the palette ran really does raise the
     // question against the real core, and that answering it really does end the chat and take
     // its tab off the strip. Whether a keyboard can press the answer is `App.test.tsx`'s.
+    await aChatOfThisFileInFront();
     const before = await tabNames();
     const ending = await endOfTheChatInFront();
     await openPalette();
