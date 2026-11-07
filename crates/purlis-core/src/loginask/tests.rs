@@ -872,3 +872,58 @@ fn always_writes_nothing_over_a_line_that_changed_since_it_was_shown() {
         assert!(with_line(&changed, &one).is_err(), "{changed}");
     }
 }
+
+// ---- A key the vault doesn't hold ----
+
+/// A project whose vault `qa` is a plain file holding `held`, and `op`, a 1Password vault.
+fn with_vaults(held: &str) -> tempfile::TempDir {
+    let dir = project("");
+    std::fs::write(
+        dir.path().join("vaults.json"),
+        r#"{"vaults":{
+            "qa":{"provider":"plain-file","config":{"file":"q.json"}},
+            "op":{"provider":"1password","config":{"vault":"Team"}}
+        }}"#,
+    )
+    .expect("a registry");
+    std::fs::write(dir.path().join("q.json"), held).expect("a vault file");
+    dir
+}
+
+fn ctx(root: &Path) -> crate::secrets::Ctx {
+    crate::secrets::Ctx::new(root, crate::secrets::Env::of(&[]))
+}
+
+#[test]
+fn a_key_its_vault_has_nothing_under_is_said_by_name() {
+    let dir = with_vaults(r#"{"password":"p"}"#);
+    let one = proposed(dir.path(), "https://shop.example.test/");
+    assert_eq!(
+        not_in_vault(&ctx(dir.path()), &one),
+        Some(Warning::NotInVault {
+            vault: "qa".to_owned(),
+            keys: vec!["username".to_owned()],
+        })
+    );
+    let said = not_in_vault(&ctx(dir.path()), &one)
+        .expect("a warning")
+        .said();
+    assert!(said.contains("username"), "{said}");
+}
+
+#[test]
+fn keys_its_vault_holds_are_not_said() {
+    let dir = with_vaults(r#"{"password":"p","username":"u"}"#);
+    let one = proposed(dir.path(), "https://shop.example.test/");
+    assert_eq!(not_in_vault(&ctx(dir.path()), &one), None);
+}
+
+#[test]
+fn a_vault_that_cant_be_listed_quietly_is_not_listed() {
+    let dir = with_vaults("{}");
+    let one = Proposal {
+        vault: "op".to_owned(),
+        ..proposed(dir.path(), "https://shop.example.test/")
+    };
+    assert_eq!(not_in_vault(&ctx(dir.path()), &one), None);
+}

@@ -17,12 +17,17 @@ const VAULTS: &str = r#"{"vaults":{
     "prod":{"provider":"plain-file","config":{"file":"p.json"},"persona":"ops"}
 }}"#;
 
+/// What vault qa holds: each key a test suggests.
+const QA_HOLDS: &str = r#"{"username":"u","password":"p"}"#;
+
 /// The id of chat 7, the chat the tests raise their logins for.
 const CHAT_7: Option<&str> = Some("01JX0000000000000000000007");
 
 fn project(file: &str) -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("a folder");
     std::fs::write(dir.path().join("vaults.json"), VAULTS).expect("a registry");
+    // Vault qa holds every key the tests suggest, so no notice says one is missing.
+    std::fs::write(dir.path().join("q.json"), QA_HOLDS).expect("vault qa");
     std::fs::write(purlis_core::names::manifest(dir.path()), file).expect("a project file");
     dir
 }
@@ -394,6 +399,25 @@ fn a_vault_that_isnt_the_personas_is_said() {
             .warnings
             .iter()
             .any(|one| matches!(one, loginask::Warning::NotItsVault { .. }))
+    );
+}
+
+#[test]
+fn a_key_the_vault_has_nothing_under_is_said_on_the_notice() {
+    let dir = project("");
+    let wrong = Suggested {
+        key: "pasword".to_owned(),
+        ..suggested("https://shop.example.test/")
+    };
+    let judged = judged(dir.path(), "qa", "shop-login", &wrong, &[]).expect("judged");
+    let missing = loginask::Warning::NotInVault {
+        vault: "qa".to_owned(),
+        keys: vec!["pasword".to_owned()],
+    };
+    assert!(
+        judged.proposal.warnings.contains(&missing),
+        "{:?}",
+        judged.proposal.warnings
     );
 }
 

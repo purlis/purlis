@@ -649,6 +649,9 @@ fn finish(root: &Path, locks: &Locks, proposal: Proposal) -> Result<Judged, Stri
         .map_err(|why| why.message.to_string())?;
     let vault_too = brokered::not_tagged(&ctx, Some(&proposal.persona), &proposal.vault).is_some();
     let mut proposal = proposal;
+    proposal
+        .warnings
+        .extend(loginask::not_in_vault(&ctx, &proposal));
     if vault_too {
         proposal.warnings.push(loginask::Warning::NotItsVault {
             vault: proposal.vault.clone(),
