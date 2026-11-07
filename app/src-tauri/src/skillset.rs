@@ -562,7 +562,6 @@ pub(crate) async fn skill_set_update(
         })
         .collect::<Result<_, String>>()?;
     let (said, undo) = crate::off_the_window("updating the skills", move || {
-        flag_on()?;
         let mut undo = None;
         let said = heard(held.root(), |cx| {
             undo = Some(set_update::update_set(cx, &set)?);
@@ -618,7 +617,6 @@ pub(crate) async fn skill_set_update_undo(
         kept.held.remove(at)
     };
     let done = crate::off_the_window("undoing the update", move || {
-        flag_on()?;
         let mut refused = false;
         let said = heard(held.root(), |cx| {
             set_update::undo_update_set(cx, &taken.undo).map_err(|why| {
