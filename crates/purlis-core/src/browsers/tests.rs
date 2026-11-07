@@ -2067,3 +2067,102 @@ fn a_download_from_no_site_is_refused_while_the_browser_signs_in_on_one() {
         "a browser that signs in nowhere"
     );
 }
+
+/// Where a stand-in browser says each download began, and which downloads it was asked of.
+#[derive(Default)]
+struct Began {
+    kept_off: Option<&'static str>,
+    on_the_sign_ins_page: bool,
+    asked: std::sync::Mutex<Vec<String>>,
+}
+
+impl super::DownloadsWhence for Began {
+    fn kept_off(&self, id: &str) -> Option<String> {
+        self.asked.lock().unwrap().push(id.to_owned());
+        self.kept_off.map(str::to_owned)
+    }
+
+    fn began_on_the_sign_ins_page(&self, id: &str) -> bool {
+        self.asked.lock().unwrap().push(id.to_owned());
+        self.on_the_sign_ins_page
+    }
+}
+
+/// Download `id`, done, from `origin`.
+fn done_download(id: &str, origin: Option<&str>) -> purlis_browser_engine::drive::DownloadInfo {
+    purlis_browser_engine::drive::DownloadInfo {
+        id: id.to_owned(),
+        name: "report.csv".to_owned(),
+        origin: origin.map(str::to_owned),
+        received: 22,
+        total: Some(22),
+        state: purlis_browser_engine::drive::DownloadState::Done,
+        file: "4f1c".to_owned(),
+    }
+}
+
+#[test]
+fn a_download_is_judged_on_what_its_browser_and_its_login_say_of_it_now() {
+    use super::DownloadsSite;
+    use crate::sandbox::browser_reach::{Bound, LoginSites, Site};
+    let bound = Bound::default();
+    let sign_in = bound
+        .to(&LoginSites {
+            page: Site::of("app.test", 443),
+            form: Some(Site::of("auth.test", 443)),
+        })
+        .unwrap()
+        .expect("a sign-in opens on the form's site");
+
+    // During the sign-in: what the browser says of this download, and the site signed in on.
+    let browser = Began {
+        kept_off: Some("auth.test:443"),
+        on_the_sign_ins_page: true,
+        ..Began::default()
+    };
+    assert_eq!(
+        DownloadsSite::of(
+            &done_download("d2", Some("https://auth.test")),
+            &browser,
+            Some(&bound)
+        ),
+        DownloadsSite {
+            kept_off: Some("auth.test:443".to_owned()),
+            from_no_origin: false,
+            began_on_the_sign_ins_page: true,
+            keeps_off: None,
+            signing_on: Some("auth.test:443".to_owned()),
+        }
+    );
+    assert_eq!(
+        *browser.asked.lock().unwrap(),
+        ["d2", "d2"],
+        "the browser is asked of this download"
+    );
+
+    // Once it is over: the site the browser signs in on keeps one from no origin.
+    bound.sign_in_over(sign_in);
+    let from_nowhere = done_download("d3", None);
+    assert_eq!(
+        DownloadsSite::of(&from_nowhere, &Began::default(), Some(&bound)),
+        DownloadsSite {
+            kept_off: None,
+            from_no_origin: true,
+            began_on_the_sign_ins_page: false,
+            keeps_off: Some("auth.test:443".to_owned()),
+            signing_on: None,
+        }
+    );
+
+    // A browser given no reach holds no login.
+    assert_eq!(
+        DownloadsSite::of(&from_nowhere, &Began::default(), None),
+        DownloadsSite {
+            kept_off: None,
+            from_no_origin: true,
+            began_on_the_sign_ins_page: false,
+            keeps_off: None,
+            signing_on: None,
+        }
+    );
+}
