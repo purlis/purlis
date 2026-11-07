@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794074863190,
+  "lastUpdate": 1794077680155,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -42420,6 +42420,48 @@ window.BENCHMARK_DATA = {
             "value": 101.9000295,
             "unit": "ms",
             "extra": "median of 5 runs: 101.505, 101.736, 101.900, 102.146, 102.265 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "800923d6fa0462c57c31a86169cf41895811e316",
+          "message": "Records sweep: ui-copy, ui-primitives and the window's \"shell tab\" copy (#5637) (#5659)\n\n* Records sweep: ui-copy, ui-primitives and the window's \"shell tab\" copy say shell and pane (#5637)\n\nA shell is shown in a pane like a chat (CONTEXT: Shell, _Avoid_ shell tab), so the window\nsays \"Open a shell here\", \"Type it in a shell\", \"Install runs that command in a shell\",\nand a terminal editor opens in a pane beside the one you are in (a one-job pane, #4761).\nui-primitives drops the chat strip and chat tabs for the tab strip and tabs, and says a\ntab's or pane's close ends nothing. A changelog fragment says so.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6V8Q8KZDENSD1GX6Q8NZ6BD\nPurlis-Persona: steward\n\n* Changelog fragment: the window says shell, not shell tab (#5637)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6V8Q8KZDENSD1GX6Q8NZ6BD\nPurlis-Persona: steward\n\n* Review: a forge's login is typed in a pane (a one-job pane, not a shell); ChatMark, the Delete bullet and the off-unix shims error say the new model; rustfmt (#5637)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6V8Q8KZDENSD1GX6Q8NZ6BD\nPurlis-Persona: steward\n\n* Prettier: the three files the reworded copy left long (#5637)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6V8Q8KZDENSD1GX6Q8NZ6BD\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-07T17:32:13Z",
+          "tree_id": "734ed69add5c584c35af22416a2e59ec8bb6a1ba",
+          "url": "https://github.com/purlis/purlis/commit/800923d6fa0462c57c31a86169cf41895811e316"
+        },
+        "date": 1794077674929,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.536948,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.523, 0.531, 0.537, 0.547, 0.554 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.259429,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.141, 16.149, 16.259, 16.281, 16.470 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.4437365,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.778, 101.234, 101.444, 102.584, 103.659 ms"
           }
         ]
       }
