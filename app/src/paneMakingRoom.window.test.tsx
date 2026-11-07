@@ -7,7 +7,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { CHAT_ROW, dropPane, GRIP, HOLD_MS, STRIP, TAB, usePaneDrag } from "./paneDrag";
 import { keystroke, shortcut } from "./keys/registry";
 import { onAMac } from "./tabKeys";
-import { PANES_ROOM, TERMINAL_HOLDER, terminalInPane } from "./paneHeld";
+import { PANES_ROOM, RAIL, TERMINAL_HOLDER, terminalInPane } from "./paneHeld";
 import type { DropContext } from "./paneDrop";
 import { boxesOf } from "./panePreview";
 import {
@@ -160,6 +160,10 @@ function Window({
         chat 7
       </button>
       <input aria-label="elsewhere" data-box="0,800,200,20" />
+      {/* A side folded to a rail, as `PaneRail` draws it: no pane a drop can land in. */}
+      <div {...{ [RAIL]: "" }} data-box="0,900,40,200">
+        <button type="button">rail</button>
+      </div>
       {drag.layer}
     </div>
   );
@@ -189,7 +193,7 @@ beforeEach(() => {
   // The strip and the rows are found by the point; the panes never are: their zones stay put.
   document.elementFromPoint = (x: number, y: number) => {
     const holding = [
-      ...document.querySelectorAll(`[${STRIP}], [${TAB}]:not([${"data-drop-pane"}])`),
+      ...document.querySelectorAll(`[${STRIP}], [${TAB}]:not([${"data-drop-pane"}]), [${RAIL}]`),
     ].filter((el) => {
       const b = boxOf(el);
       return x >= b.left && x < b.left + b.width && y >= b.top && y < b.top + b.height;
@@ -236,8 +240,8 @@ const drawnFront = () =>
   );
 
 /** ⌘⇧M, or Ctrl+Shift+M off a Mac: the registry's own chord, on what has the keyboard. */
-function pressPlace() {
-  const chord = shortcut("pane.place").chords[onAMac() ? "mac" : "other"][0];
+function pressMove() {
+  const chord = shortcut("pane.move").chords[onAMac() ? "mac" : "other"][0];
   act(() => {
     (document.activeElement ?? document.body).dispatchEvent(keystroke(chord));
   });
@@ -403,6 +407,20 @@ describe("the panes move to where a drop would leave them (#5291)", () => {
     expect(held.style.left).toBe("114px");
     fireEvent.pointerMove(document, at(140, 900));
     expect(held.style.left).toBe("154px");
+  });
+
+  it("says why a side folded to a rail takes no drop, as a refusal, and letting go there cancels (#5415)", () => {
+    const window = shown();
+    fireEvent.pointerDown(head(3), at(900, 50));
+    fireEvent.pointerMove(document, at(20, 1000));
+    settle();
+    expect(part("words")?.textContent).toBe(
+      "A folded pane takes no drop. Let go here to cancel. Esc also cancels.",
+    );
+    expect(root().hasAttribute("data-pane-refused")).toBe(true);
+    fireEvent.pointerUp(document, at(20, 1000));
+    expect(window.tells()).toBe(0);
+    expect(heard()).toBe("Put back. Nothing moved.");
   });
 });
 
@@ -793,7 +811,7 @@ describe("placement mode draws the same preview as a drag (#5293)", () => {
     const window = shown();
     const close = screen.getByText("Close 3");
     close.focus();
-    pressPlace();
+    pressMove();
     act(() => vi.advanceTimersByTime(1));
     return { window, close };
   }

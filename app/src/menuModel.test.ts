@@ -533,7 +533,7 @@ describe("a chat's list (#4753)", () => {
       rows.filter((row) => row.keys !== undefined).map((row) => [row.said, row.keys]),
     );
 
-    // Place…'s key picks the chat up from its row or its pane (#4764).
+    // Move…'s key picks the chat up from its row or its pane (#4764).
     expect(keys).toEqual({
       "Rename…": "F2",
       "Move…": expect.stringMatching(/^(⌘⇧M|Ctrl\+Shift\+M)$/),
@@ -619,7 +619,7 @@ describe("a tab's menu (#4753)", () => {
     });
   });
 
-  it("on a view's tab is Pinned, its splits, Tile all, Place…, Move to new window, Close other tabs and Close, and its Close is not coloured", () => {
+  it("on a view's tab is Pinned, its splits, Tile all, Move…, Move to new window, Close other tabs and Close, and its Close is not coloured", () => {
     const withView = openView(tabs, { from: null, view: "vault", key: "forge" }, "forge", "beta");
     const view = withView.order[withView.order.length - 1];
     const menu = menuOf(

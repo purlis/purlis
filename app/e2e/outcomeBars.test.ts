@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   OPEN_BUDGET_MS,
   OPEN_GUARD_MEDIAN_MS,
+  OPEN_GUARD_MEDIAN_MS_LINUX,
   USE_BUDGET_MS,
   aPersonsTime,
   harnessUnderTest,
@@ -68,8 +69,18 @@ describe("how an L10 opening is judged where it is measured", () => {
     expect(verdict.said).toContain(`median ${OPEN_GUARD_MEDIAN_MS - 0.5} ms`);
   });
 
-  it("sets no limit on Linux CI, where no run has measured one, and says so", () => {
-    const verdict = openJudged(of(5000), { ci: true, platform: "linux" });
+  it("holds Linux CI to its own median guard, not to macOS's", () => {
+    const here = { ci: true, platform: "linux" };
+    expect(OPEN_GUARD_MEDIAN_MS_LINUX).toBeLessThan(OPEN_GUARD_MEDIAN_MS);
+    expect(openJudged(of(OPEN_GUARD_MEDIAN_MS_LINUX - 1), here).met).toBe(true);
+    expect(openJudged(of(OPEN_GUARD_MEDIAN_MS_LINUX), here).met).toBe(false);
+    expect(openJudged(of(OPEN_GUARD_MEDIAN_MS_LINUX), here).said).toContain(
+      `against the guard's ${OPEN_GUARD_MEDIAN_MS_LINUX} ms`,
+    );
+  });
+
+  it("sets no limit on a CI platform no run has measured, and says so", () => {
+    const verdict = openJudged(of(5000), { ci: true, platform: "win32" });
     expect(verdict.met).toBe(true);
     expect(verdict.said).toContain("no limit");
   });

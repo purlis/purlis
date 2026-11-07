@@ -42,7 +42,7 @@ pub use sources::{Kind, Reach};
 pub use writer::Writer;
 
 /// The schema this build writes and reads. A generation recording any other is discarded.
-pub const SCHEMA: &str = "1";
+pub const SCHEMA: &str = "2";
 
 /// The file naming the live generation.
 const CURRENT: &str = "current";

@@ -2101,7 +2101,7 @@ function App() {
       pinTab: async () => nowhere(),
       moveToWindow: async () => nowhere(),
       tileAll: () => undefined,
-      place: () => undefined,
+      moveTo: () => undefined,
       zoomPane: () => undefined,
       undoLayout: () => undefined,
       pinWorkspace: async () => nowhere(),

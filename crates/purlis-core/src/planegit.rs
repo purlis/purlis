@@ -1415,6 +1415,18 @@ pub fn pull(root: &Path, say: Sink) -> u8 {
     }
 }
 
+/// Leaves git's untracked cache and its file system monitor's token in the index of the plane
+/// at `root`, when nothing else holds the plane (#5486): what a save leaves there, so every
+/// look at the standing after it reads only what moved. A plane nothing has saved yet, a fresh
+/// clone or one where nothing changes, would otherwise have neither, and each look would read
+/// the whole tree. Once, as its saving starts; under the claim, as a save's own status is, so
+/// it never races a save. A plane someone is saving is left to that save, which writes them.
+pub fn prime(root: &Path) {
+    if let Some(_claim) = Claim::of(root) {
+        let _ = git::run_status_writing_index(root, git::Tuning::here());
+    }
+}
+
 /// `git status --porcelain=v1 -z`'s paths: what `git add -A` would take. `-z` for the same
 /// reason the save's secret guard uses it — no quoting, NUL the only separator.
 pub(crate) fn changed_paths(root: &Path) -> Vec<String> {
@@ -1427,17 +1439,18 @@ fn status_of(root: &Path) -> (Vec<String>, bool) {
     // git's own file system monitor, where the installed git has one (#5505): the index a
     // save left says which files can have moved since, and only those are `lstat`ed.
     let mut args = git::Tuning::here().for_a_read();
+    //
+    // **No pathspec**: what is never staged is left out below, by [`kept_out`], the rule the
+    // pathspecs are spelled from. git reads its untracked cache only for a status of the
+    // whole tree; with `-- .` or an exclude it opens every folder again, which at 1,000
+    // workspaces doubled each look (#5486).
     args.extend([
         "--no-optional-locks",
         "status",
         "--porcelain=v1",
         "-z",
         "--untracked-files=all",
-        "--",
-        ".",
     ]);
-    let excluded = never_staged();
-    args.extend(excluded.iter().map(String::as_str));
     let Ok(run) = git::run(
         root,
         // `--no-optional-locks`, as `profiles.rs` and `guest.rs` ask: a plain `status`
@@ -1458,12 +1471,15 @@ fn status_of(root: &Path) -> (Vec<String>, bool) {
             continue;
         }
         let (status, path) = entry.split_at(3);
-        tracked |= !status.starts_with("??");
-        out.push(path.to_string());
         // A rename or copy names where it came from next, as an entry of its own.
         if status.contains(['R', 'C']) {
             entries.next();
         }
+        if kept_out(path) {
+            continue;
+        }
+        tracked |= !status.starts_with("??");
+        out.push(path.to_string());
     }
     out.sort();
     (out, tracked)

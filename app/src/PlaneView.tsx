@@ -97,7 +97,7 @@ import {
   type Clone,
   type Cut,
   type Doing,
-  type PlacedFrom,
+  type MovedFrom,
   type Offer,
   type Project,
   type Ran,
@@ -400,6 +400,7 @@ import {
   PRESS_HERE,
   type PressHere,
   pressInProjectWindow,
+  type HandedChat,
 } from "./tabWindows";
 import type { TabFacts } from "./ChatRows";
 import { rowFactsOf } from "./shownState";
@@ -1513,6 +1514,9 @@ export const PlaneView = memo(function PlaneView({
    * by a different chat.
    */
   const [startedIn, setStartedIn] = useState<Record<number, string>>({});
+  /** **Each chat this window started, as it was started** (#5308): what {@link nameOf} calls it
+   *  until its row arrives, and is never read after. Not pruned, as {@link startedIn} is not. */
+  const [startedAs, setStartedAs] = useState<ReadonlyMap<number, PressedChat>>(new Map());
   /** **Which chat each task the plane has listed was a task of**, kept once it lists it no more:
    *  the plane can be read again before a task's end arrives (#5106), and until then, and after,
    *  its tab stands where its asker is filed and its end keeps its pane. `askedByNow` is what
@@ -2588,11 +2592,38 @@ export const PlaneView = memo(function PlaneView({
     }),
     [pressing],
   );
+  /**
+   * **A tab window keeps its strip on a chat started or resumed here** (#5533), as it does on a
+   * press (#5330): a chat filed on another strip and in no pane here is opened by the project
+   * window, which comes forward, and is told where the chat is filed, since no list has it yet.
+   * Where no window holds the project, it lands here after all.
+   */
+  const landOrHandOn = useCallback(
+    (handed: HandedChat, land: () => void) => {
+      const { session } = handed.as;
+      const elsewhere =
+        tabWindow !== undefined &&
+        wouldLeaveStrip(now.current, session, filedAs(session, handed.filed).filedIn);
+      if (!elsewhere) {
+        land();
+        return;
+      }
+      void pressInProjectWindow(plane, session, handed).then((held) => {
+        if (!held) land();
+      });
+    },
+    [filedAs, plane, tabWindow],
+  );
   const showStarted = useCallback(
     (chat: PressedChat, workspace: string, named = false, asked?: PaneAt) => {
-      landOn((tabs) => openNew(tabs, chat, filedAs(chat.session, workspace), { named, asked }));
+      // What it is called until its row arrives (#5308), drawn with its pane.
+      setStartedAs((was) => new Map(was).set(chat.session, chat));
+      const land = () =>
+        landOn((tabs) => openNew(tabs, chat, filedAs(chat.session, workspace), { named, asked }));
+      if (asked !== undefined) land();
+      else landOrHandOn({ filed: workspace, started: true, as: chat }, land);
     },
-    [filedAs, landOn],
+    [filedAs, landOn, landOrHandOn],
   );
   /**
    * **A chat that came back is a press** (#5289; spec #4750): a resumed chat or a reopened task
@@ -2601,9 +2632,11 @@ export const PlaneView = memo(function PlaneView({
    */
   const showResumed = useCallback(
     (chat: PressedChat, workspace: string) => {
-      landOn((tabs) => pressChat(tabs, chat, filedAs(chat.session, workspace)));
+      landOrHandOn({ filed: workspace, started: false, as: chat }, () =>
+        landOn((tabs) => pressChat(tabs, chat, filedAs(chat.session, workspace))),
+      );
     },
-    [filedAs, landOn],
+    [filedAs, landOn, landOrHandOn],
   );
   /**
    * **A chat the core started and placed** (#4758): a curation, a Fix, a theme, a skill, a
@@ -3661,10 +3694,11 @@ export const PlaneView = memo(function PlaneView({
 
   /** **A press in another of the project's windows landed on a chat this one has in a pane**
    *  (#4768): it is shown here, in its pane, and this window has come forward. */
-  const showChatHere = useRef<(session: number) => void>(() => undefined);
+  const showChatHere = useRef<(session: number, handed?: HandedChat) => void>(() => undefined);
   useEffect(() => {
     const listening = listen<PressHere>(PRESS_HERE, (event) => {
-      if (event.payload.plane === plane) showChatHere.current(event.payload.chat);
+      if (event.payload.plane === plane)
+        showChatHere.current(event.payload.chat, event.payload.handed);
     }).catch(() => undefined);
     return () => void listening.then((stop) => stop?.()).catch(() => undefined);
   }, [plane]);
@@ -4277,17 +4311,17 @@ export const PlaneView = memo(function PlaneView({
       // the operator is looking at.
       const filed = filedIn ?? filedFor(cwd, focused);
       setStartedIn((was) => ({ ...was, [session]: filed }));
+      const pressed: PressedChat = {
+        session,
+        chat: name,
+        who: whoOf(persona, kind),
+        label: started.data.label ?? null,
+      };
       if ("tab" in where) {
         // **It opens by the one rule** (#5289), and replaces nothing. A start that names its
         // place, a directory or a strip the caller chose, keeps that place's strip.
-        const label = started.data.label ?? null;
         const named = where.in !== undefined || filedIn !== undefined;
-        showStarted(
-          { session, chat: name, who: whoOf(persona, kind), label },
-          filed,
-          named,
-          where.pane,
-        );
+        showStarted(pressed, filed, named, where.pane);
         return undefined;
       }
       // The tab that was to be split can have gone while the picker was open: the chat goes on
@@ -4295,6 +4329,8 @@ export const PlaneView = memo(function PlaneView({
       // Undo puts it back (#4763); its chat runs on in the sidebar. **Only the tab that was
       // split**: every strip keeps a tab (#4758), so another one, such as the empty tab left
       // where that one went, can be in front by now, and is not the tab the person split.
+      // What it is called until its row arrives (#5308), drawn with its pane.
+      setStartedAs((was) => new Map(was).set(session, pressed));
       change((tabs) =>
         inFrontTab === undefined || tabs.inFront !== inFrontTab
           ? tabs
@@ -4663,12 +4699,14 @@ export const PlaneView = memo(function PlaneView({
   const pressHere = useCallback(
     (session: number, into?: PaneAt) => {
       const land = () => landOn((tabs) => pressChat(tabs, pressedOf(session), pressing, into));
-      // Until the list of chats is read, nothing says which strip a chat is on.
+      // **Until the list of chats is read, nothing says which strip a chat is on** (#5533): a
+      // chat no tab here holds is the project window's, which holds every strip.
       const elsewhere =
         tabWindow !== undefined &&
         into === undefined &&
-        sidebar !== undefined &&
-        wouldLeaveStrip(now.current, session, pressing.filedIn);
+        (sidebar === undefined
+          ? tabHolding(now.current, session) === undefined
+          : wouldLeaveStrip(now.current, session, pressing.filedIn));
       if (!elsewhere) {
         land();
         return;
@@ -4740,11 +4778,17 @@ export const PlaneView = memo(function PlaneView({
   // **The pane it lands in counts as used** (#5330): a press a tab window handed over says so
   // to the core, which counted the tab window's pane, so the next press comes straight here.
   useEffect(() => {
-    showChatHere.current = (session) => {
-      pressHere(session);
+    showChatHere.current = (session, handed) => {
+      // A chat a tab window started or resumed (#5533), filed where it said: no list has it yet.
+      if (handed === undefined) pressHere(session);
+      else {
+        setStartedIn((was) => ({ ...was, [session]: handed.filed }));
+        if (handed.started) showStarted(handed.as, handed.filed, true);
+        else showResumed(handed.as, handed.filed);
+      }
       if (tabWindow === undefined) paneUsed();
     };
-  }, [paneUsed, pressHere, tabWindow]);
+  }, [paneUsed, pressHere, showResumed, showStarted, tabWindow]);
   // **Go to it, on a chat's arrival card** (#4759): a press on a card said before it was drawn,
   // heard here, where the press as it stands now is. Every project this window holds hears it,
   // and a chat's number means something only in its own.
@@ -5465,16 +5509,27 @@ export const PlaneView = memo(function PlaneView({
   const nameOfNow = useRef<(session: number) => string>((session) => String(session));
   /** What a chat the project lists is called now, or nothing for one it does not list. */
   const nameOfListed = useCallback((session: number) => chatNames.get(session), [chatNames]);
-  /** What a chat is called here: as its row names it (`shownName`); for a chat the project
-   *  does not list yet, the tab holding it; or its session number. */
+  /**
+   * What a chat is called here: as its row names it (`shownName`). **A chat the project does not
+   * list yet** (#5308) is named as `shownName` will name it once its row arrives: the name of the
+   * tab it is the own chat of; else, beside another chat, never that tab's name but what its row
+   * will say, from what the core said of it as it came back or what this window started it as;
+   * else its own name as its pane holds it; or its session number.
+   */
   const nameOf = useCallback(
     (session: number) => {
       const listed = chatNames.get(session);
       if (listed !== undefined) return listed;
-      const held = tabHolding(tabs, session);
-      return held !== undefined ? tabs.byId[held].name : String(session);
+      const own = ownTabOf(tabs, session);
+      if (own !== undefined) return tabs.byId[own].name;
+      const back = reopened.find((chat) => chat.session === session);
+      if (back !== undefined) return untabbedName(back);
+      const started = startedAs.get(session);
+      if (started !== undefined) return pressedName(started);
+      // Any other: its own name, as its pane holds it, never the tab's.
+      return paneChatName(tabs, session) ?? String(session);
     },
-    [chatNames, tabs],
+    [chatNames, reopened, startedAs, tabs],
   );
 
   useEffect(() => {
@@ -5541,10 +5596,10 @@ export const PlaneView = memo(function PlaneView({
   });
   /** The window's one Undo (#4763, #4765): the palette's row runs the toast's and ⌘Z's. */
   const undoLayoutIn = paneDrag.undo;
-  /** A Place… row's pick-up (#4764): the keyboard goes back, on Esc, to what had it. */
+  /** A Move… row's pick-up (#4764): the keyboard goes back, on Esc, to what had it. */
   const { pickUp } = paneDrag.placing;
-  const placeFrom = useCallback(
-    (from: PlacedFrom) =>
+  const moveFrom = useCallback(
+    (from: MovedFrom) =>
       pickUp(from.kind === "chat" ? { ...from, chat: "" } : from, document.activeElement),
     [pickUp],
   );
@@ -8436,7 +8491,7 @@ export const PlaneView = memo(function PlaneView({
       closePane,
       tileAll: tileAllIn,
       moveToWindow,
-      place: placeFrom,
+      moveTo: moveFrom,
       zoomPane,
       undoLayout: undoLayoutIn,
       closeTab: closeFromItsControl,
@@ -8606,7 +8661,7 @@ export const PlaneView = memo(function PlaneView({
       closePane,
       tileAllIn,
       moveToWindow,
-      placeFrom,
+      moveFrom,
       undoLayoutIn,
       zoomPane,
       curate,
@@ -12933,8 +12988,27 @@ type StopAllAsking = StopAllAsked & { session: number; busy: boolean; trouble?: 
 
 /** What a chat with no tab is called: what its tab would say, were it opened (#1447). */
 function untabbedName(chat: OpenChat): string {
-  const who = whoOf(chat.persona, chat.harness);
-  return chat.label ?? (who ? `${who} ${chat.name}` : chat.name);
+  return pressedName({
+    session: chat.session,
+    chat: chat.name,
+    who: whoOf(chat.persona, chat.harness),
+    label: chat.label,
+  });
+}
+
+/** **What a chat is called by its own name, who runs it and its label** (#1447, #5308): the
+ *  label the person gave it, else its persona or program before its name. One answer for a
+ *  listed chat ({@link untabbedName}) and one this window started that is not listed yet. */
+function pressedName(chat: PressedChat): string {
+  return chat.label ?? (chat.who ? `${chat.who} ${chat.chat}` : chat.chat);
+}
+
+/** Chat `session`'s own name, as a pane showing it records it ({@link Content}'s `chat`). */
+function paneChatName(tabs: Tabs, session: number): string | undefined {
+  for (const id of tabs.order)
+    for (const { content } of contentsOf(tabs, id))
+      if (content.kind === "session" && content.session === session) return content.chat;
+  return undefined;
 }
 
 /** The tab chat `session` is the own chat of, where it has one: where it renames in place. */

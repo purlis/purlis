@@ -234,6 +234,42 @@ export function placeOf(error, root, own) {
   return mine ?? places[0];
 }
 
+/** A number of CSS pixels as a measurement says it: up to three decimals, no trailing zeros. */
+const px = (value) => String(Math.round(Number(value) * 1000) / 1000);
+
+/** A box, `<width>×<height> at <x>,<y>`. */
+const boxSaid = (box) =>
+  box ? `${px(box.width)}×${px(box.height)} at ${px(box.x)},${px(box.y)}` : "none";
+
+/** Where a picture's element stood (`LaidOut` in `screenshots.setup.ts`), in one line. */
+const laidOutSaid = (at) => {
+  const terminals = (at?.terminals ?? []).map(boxSaid);
+  const viewport = at?.viewport
+    ? `${boxSaid(at.viewport)} ×${px(at.viewport.scale)}`
+    : "none";
+  return [
+    `frame ${boxSaid(at?.frame)}`,
+    `terminals ${terminals.length > 0 ? terminals.join(", ") : "none"}`,
+    `device pixel ratio ${px(at?.devicePixelRatio)}`,
+    `scroll ${px(at?.scroll?.x)},${px(at?.scroll?.y)}`,
+    `viewport ${viewport}`,
+  ].join("; ");
+};
+
+/**
+ * **A picture that came out another size than its baseline, measured** (#5463), in one line: the
+ * sizes Vitest's comparator gave, then where its element stood before the picture and after the
+ * miss, and the box Playwright cut it by (`pictureMiss` in `screenshots.setup.ts`).
+ */
+export function measuredOf(miss) {
+  return [
+    plain(miss.said ?? ""),
+    `Before: ${laidOutSaid(miss.before)}.`,
+    `After: ${laidOutSaid(miss.after)}.`,
+    `Playwright's box: ${boxSaid(miss.playwright)}.`,
+  ].join(" ");
+}
+
 /** One annotation: where it is, if anywhere, its title and its text, each escaped. */
 const error = (title, text, at) =>
   `::error ${at ? `file=${property(at.file)},line=${at.line},` : ""}title=${property(title)}::${data(text)}`;
@@ -279,6 +315,7 @@ export function failedIn(report, browser, root) {
     const title = `${story} in ${browser}${cell ? `, ${cell}` : ""}`;
     const gates = [...new Set(errors.map(gateOf).filter((gate) => gate !== "screenshot"))];
     const why = `${gateOf(first)}: ${whyOf(first)}${broke}`;
+    const measured = failure.measured ? measuredOf(failure.measured) : undefined;
     return {
       blocks,
       line: error(
@@ -294,6 +331,8 @@ export function failedIn(report, browser, root) {
       once: `${story} (${file}): ${gates.join(", ") || "renders"}`,
       browser,
       cell,
+      // Where a picture that missed on size stood, on its line among the pictures alone.
+      measured,
     };
   });
   const outside = report.errors.map((one) => {
@@ -401,7 +440,9 @@ export function named(runs, root, missing = []) {
     sections.push(
       `## ${stories(alone.length, "failed on its picture alone", "failed on their picture alone")}`,
       "",
-      ...alone.map(({ named: name }) => `- ${plain(name)}`),
+      ...alone.map(({ named: name, measured }) =>
+        `- ${plain(name)}${measured ? `: ${plain(measured)}` : ""}`,
+      ),
       "",
     );
   return { headline, annotations: lines, summary: sections.join("\n") };
@@ -453,8 +494,14 @@ export default class StoryFailures {
         story: test.fullName.replaceAll(" > ", " "),
         cell: cellOfTest(test, module),
         errors: (test.result().errors ?? []).map(kept),
+        // Where a picture that missed on size stood (#5463).
+        ...(test.meta?.()?.pictureMiss ? { measured: test.meta().pictureMiss } : {}),
       })),
     );
+    // Each picture that missed on size, in the run's log too, as it happens rarely and in CI.
+    for (const { story, cell, measured } of failures)
+      if (measured)
+        console.log(`picture missed on size: ${story}${cell ? `, ${cell}` : ""}: ${measuredOf(measured)}`);
     const inFiles = testModules.flatMap((module) =>
       [module, ...module.children.allSuites()]
         .flatMap((part) => part.errors())

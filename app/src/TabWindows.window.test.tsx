@@ -20,6 +20,8 @@ import { forgetInputRefused, heardInputRefused } from "./inputRefused";
 import { chatsOf } from "./laidOut";
 import { LAYOUT_MOVED, PRESS_HERE } from "./tabWindows";
 import { stripNamed } from "./test-strips";
+import type { Fixing } from "./bindings";
+import { tellFixStarted } from "./saving";
 
 /**
  * **Tab windows, as the window draws them** (#4768): a tab torn off into a bare window of its
@@ -96,6 +98,8 @@ function core(over: {
   filed?: Record<string, number[]>;
   /** What the board says of the chats, as `chat_states` answers it. */
   states?: unknown[];
+  /** The list of chats is answered once this settles, not at once. */
+  listedAfter?: Promise<void>;
 }) {
   const asked: { cmd: string; args: Record<string, unknown> }[] = [];
   const listeners = new Map<string, number[]>();
@@ -113,27 +117,31 @@ function core(over: {
     if (cmd === "tab_window_handed")
       return over.tabWindow === undefined ? null : { plane: ONE, number: over.tabWindow };
     if (cmd === "charter_windows") return ["main", "window-1"];
-    if (cmd === "plane_sidebar") {
-      const filed = Object.entries(over.filed ?? {});
-      const inOne = new Set(filed.flatMap(([, chats]) => chats));
-      return {
-        root: plane,
-        workspaces: filed.map(([name, chats]) => ({
-          name,
-          path: `${ONE}/${name}`,
-          vision: "",
-          todos: [],
-          chats: chats.map(chat),
-          colour: null,
-          live: false,
-        })),
-        personas: [],
-        persona: null,
-        unfiled: [...over.chats, ...(over.inNoTab ?? [])]
-          .filter((one) => !inOne.has(one))
-          .map(chat),
-      };
-    }
+    if (cmd === "plane_sidebar" && over.listedAfter !== undefined)
+      return over.listedAfter.then(() => sidebarOf(plane));
+    if (cmd === "plane_sidebar") return sidebarOf(plane);
+    return answer(cmd);
+  });
+  function sidebarOf(plane: string) {
+    const filed = Object.entries(over.filed ?? {});
+    const inOne = new Set(filed.flatMap(([, chats]) => chats));
+    return {
+      root: plane,
+      workspaces: filed.map(([name, chats]) => ({
+        name,
+        path: `${ONE}/${name}`,
+        vision: "",
+        todos: [],
+        chats: chats.map(chat),
+        colour: null,
+        live: false,
+      })),
+      personas: [],
+      persona: null,
+      unfiled: [...over.chats, ...(over.inNoTab ?? [])].filter((one) => !inOne.has(one)).map(chat),
+    };
+  }
+  function answer(cmd: string): unknown {
     if (cmd === "show_window_holding") return "main";
     if (cmd === "opened_chats") return over.chats.map(chat);
     if (cmd === "reopened_layout") return over.layout;
@@ -144,7 +152,7 @@ function core(over: {
     if (cmd === "tab_windows_back") return 0;
     if (cmd === "press_elsewhere") return over.pressed ?? null;
     return null;
-  });
+  }
   const fire = (event: string, payload: unknown) => {
     const handlers = listeners.get(event) ?? [];
     if (handlers.length === 0) throw new Error(`the window is not listening for ${event}`);
@@ -500,6 +508,133 @@ describe("a press a tab window is handed for a chat in no pane (#5330)", () => {
     await screen.findByText("session 4");
     await waitFor(() => expect(shape(said().at(-1))).toContainEqual([1, [4]]));
     expect(toProjectWindow(asked)).toEqual([]);
+  });
+});
+
+describe("a tab window's strip on a chat it did not press (#5533)", () => {
+  const handed = {
+    tabWindow: 1,
+    layout: { strip: "alpha", tabs: [tab(0, true, 1, "alpha"), tab(1, true, 2, "alpha")] },
+    chats: [1, 2],
+    inNoTab: [3, 4],
+    filed: { alpha: [1, 2, 4], beta: [3] },
+  };
+  const toProjectWindow = (asked: ReturnType<typeof core>["asked"]) =>
+    asked
+      .filter((one) => one.cmd === "plugin:event|emit_to" && one.args.event === PRESS_HERE)
+      .map((one) => JSON.stringify([one.args.target, one.args.payload]));
+  /** A Fix's chat the core started, filed under `workspace`. */
+  const fix = (session: number, workspace: string): Fixing => ({
+    session,
+    name: String(session),
+    label: String(session),
+    persona: null,
+    harness: "claude",
+    workspace,
+    existing: false,
+  });
+
+  it("hands a press before the list is read to the project window, and changes nothing here", async () => {
+    mockWindows("window-1");
+    let list = () => {};
+    const listedAfter = new Promise<void>((done) => (list = done));
+    const { asked, fire, said } = core({ ...handed, listedAfter });
+    render(<App />);
+    await screen.findByText("session 2");
+    await waitFor(() => expect(asked.some((one) => one.cmd === "plane_sidebar")).toBe(true));
+
+    fire(PRESS_HERE, { plane: ONE, chat: 3 });
+    await act(() => new Promise((done) => setTimeout(done, 0)));
+
+    expect(screen.queryByText("session 3")).toBeNull();
+    expect(said().flatMap((one) => one.tabs.map((t) => chatsOf(t.tree)))).not.toContainEqual([3]);
+    await waitFor(() =>
+      expect(new Set(toProjectWindow(asked))).toEqual(
+        new Set([
+          JSON.stringify([
+            { kind: "AnyLabel", label: "main" },
+            { plane: ONE, chat: 3 },
+          ]),
+        ]),
+      ),
+    );
+    await act(async () => list());
+  });
+
+  it("hands a chat started for another strip to the project window, with where it is filed", async () => {
+    mockWindows("window-1");
+    const { asked, said } = core(handed);
+    render(<App />);
+    await screen.findByText("session 2");
+    await waitFor(() => expect(shape(said().at(-1))).toEqual([[1, [2]]]));
+    const saidBefore = said().length;
+
+    act(() => tellFixStarted(ONE, fix(5, "beta")));
+    await act(() => new Promise((done) => setTimeout(done, 0)));
+
+    expect(screen.queryByText("session 5")).toBeNull();
+    expect(screen.getByText("session 2")).toBeInTheDocument();
+    expect(
+      said()
+        .slice(saidBefore)
+        .flatMap((one) => one.tabs.map((t) => chatsOf(t.tree))),
+    ).not.toContainEqual([5]);
+    await waitFor(() =>
+      expect(new Set(toProjectWindow(asked))).toEqual(
+        new Set([
+          JSON.stringify([
+            { kind: "AnyLabel", label: "main" },
+            {
+              plane: ONE,
+              chat: 5,
+              handed: {
+                filed: "beta",
+                started: true,
+                as: { session: 5, chat: "5", who: "claude", label: "5" },
+              },
+            },
+          ]),
+        ]),
+      ),
+    );
+  });
+
+  it("opens a chat started for the strip it shows here", async () => {
+    mockWindows("window-1");
+    const { asked, said } = core(handed);
+    render(<App />);
+    await screen.findByText("session 2");
+
+    act(() => tellFixStarted(ONE, fix(5, "alpha")));
+
+    await screen.findByText("session 5");
+    await waitFor(() => expect(shape(said().at(-1))).toContainEqual([1, [5]]));
+    expect(toProjectWindow(asked)).toEqual([]);
+  });
+
+  it("handed on to the project window with where it is filed, opens there on that strip, named", async () => {
+    const { fire, said } = core({ ...handed, tabWindow: undefined });
+    render(<App />);
+    await screen.findByText("session 1");
+
+    fire(PRESS_HERE, {
+      plane: ONE,
+      chat: 5,
+      handed: {
+        filed: "beta",
+        started: true,
+        as: { session: 5, chat: "5", who: "claude", label: "fix the save" },
+      },
+    });
+
+    await screen.findByText("session 5");
+    // Named as the tab window knew it, though no list here has it yet.
+    expect(screen.getAllByText("fix the save").length).toBeGreaterThan(0);
+    await waitFor(() =>
+      expect(said().at(-1)?.tabs).toContainEqual(
+        expect.objectContaining({ window: 0, workspace: "beta", tree: { kind: "chat", chat: 5 } }),
+      ),
+    );
   });
 });
 

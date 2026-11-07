@@ -41,6 +41,123 @@ pub const MOST_WAIT: std::time::Duration = std::time::Duration::from_secs(10);
 /// How often a wait looks again.
 const LOOKED_EVERY: std::time::Duration = std::time::Duration::from_millis(25);
 
+/// How a wait for a lock ([`in_turn`]) ended.
+#[cfg(unix)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Waited {
+    /// Held now, by the descriptor waited on.
+    Taken,
+    /// Another holder kept it past the wait.
+    Busy,
+    /// The filesystem can't lock it: see the module header.
+    Unlockable,
+}
+
+/// **Take an exclusive `flock` on `fd`, waiting `most` at most, in turn** (#5559). The wait is
+/// the kernel's own, a blocking `flock` on a thread of its own, so the lock goes to a writer
+/// already waiting when its holder lets go. Asked for every few milliseconds instead, it went to
+/// whoever asked next: a writer that let go and asked again at once took it straight back, and
+/// one writer of two waited out the whole bound behind the other's many short holds.
+///
+/// A wait given up leaves its thread blocked until the holder lets go: it then lets go at once.
+/// So a caller waits on an open file no later lock is taken on (`held::Store::lock`), as that
+/// thread holds the lock for that file. Where no thread can be had, or 16 already wait (a holder
+/// that never lets go keeps each wait given up on it), the lock is asked for every
+/// [`LOOKED_EVERY`] instead.
+#[cfg(unix)]
+pub(crate) fn in_turn(fd: std::os::fd::BorrowedFd<'_>, most: std::time::Duration) -> Waited {
+    use rustix::fs::{FlockOperation, flock};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, Condvar, Mutex, PoisonError};
+
+    /// The threads waiting in turn now, those of waits given up among them.
+    static QUEUED: AtomicUsize = AtomicUsize::new(0);
+    /// The most that wait at once: a holder that never lets go keeps each wait given up on it.
+    const MOST_QUEUED: usize = 16;
+
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum Turn {
+        Waiting,
+        Ended(Waited),
+        GaveUp,
+    }
+
+    match flock(fd, FlockOperation::NonBlockingLockExclusive) {
+        Ok(()) => return Waited::Taken,
+        Err(rustix::io::Errno::WOULDBLOCK | rustix::io::Errno::INTR) => {}
+        Err(_) => return Waited::Unlockable,
+    }
+    // Waits given up on a holder that never lets go each leave a thread: past a few, ask instead.
+    if QUEUED.fetch_add(1, Ordering::SeqCst) >= MOST_QUEUED {
+        QUEUED.fetch_sub(1, Ordering::SeqCst);
+        return asked_for(fd, most);
+    }
+    // The same open file, so what the thread takes the caller holds.
+    let Ok(queued) = rustix::io::fcntl_dupfd_cloexec(fd, 0) else {
+        QUEUED.fetch_sub(1, Ordering::SeqCst);
+        return asked_for(fd, most);
+    };
+    let turn = Arc::new((Mutex::new(Turn::Waiting), Condvar::new()));
+    let told = Arc::clone(&turn);
+    let waiting = std::thread::Builder::new()
+        .name("lock-in-turn".to_owned())
+        .spawn(move || {
+            let ended = loop {
+                match flock(&queued, FlockOperation::LockExclusive) {
+                    Ok(()) => break Waited::Taken,
+                    Err(rustix::io::Errno::INTR) => {}
+                    Err(_) => break Waited::Unlockable,
+                }
+            };
+            let (now, ended_here) = &*told;
+            let mut now = now.lock().unwrap_or_else(PoisonError::into_inner);
+            if *now == Turn::GaveUp {
+                if ended == Waited::Taken {
+                    let _ = flock(&queued, FlockOperation::Unlock);
+                }
+            } else {
+                *now = Turn::Ended(ended);
+                ended_here.notify_all();
+            }
+            QUEUED.fetch_sub(1, Ordering::SeqCst);
+        });
+    if waiting.is_err() {
+        QUEUED.fetch_sub(1, Ordering::SeqCst);
+        return asked_for(fd, most);
+    }
+    let (now, ended_here) = &*turn;
+    let now = now.lock().unwrap_or_else(PoisonError::into_inner);
+    let (mut now, _) = ended_here
+        .wait_timeout_while(now, most, |now| *now == Turn::Waiting)
+        .unwrap_or_else(PoisonError::into_inner);
+    match *now {
+        Turn::Ended(ended) => ended,
+        Turn::Waiting | Turn::GaveUp => {
+            *now = Turn::GaveUp;
+            Waited::Busy
+        }
+    }
+}
+
+/// [`in_turn`] where no thread can wait: the lock asked for every [`LOOKED_EVERY`], `most` at most.
+#[cfg(unix)]
+fn asked_for(fd: std::os::fd::BorrowedFd<'_>, most: std::time::Duration) -> Waited {
+    let until = std::time::Instant::now() + most;
+    loop {
+        match rustix::fs::flock(fd, rustix::fs::FlockOperation::NonBlockingLockExclusive) {
+            Ok(()) => return Waited::Taken,
+            Err(rustix::io::Errno::INTR) => {}
+            Err(rustix::io::Errno::WOULDBLOCK) => {
+                if std::time::Instant::now() >= until {
+                    return Waited::Busy;
+                }
+                std::thread::sleep(LOOKED_EVERY);
+            }
+            Err(_) => return Waited::Unlockable,
+        }
+    }
+}
+
 /// What a writer is told of a folder held past the wait.
 fn busy(dir: &Path) -> io::Error {
     io::Error::new(
@@ -103,25 +220,15 @@ impl Lock {
             else {
                 return Ok(Self(None));
             };
-            let until = std::time::Instant::now() + most;
-            loop {
-                match rustix::fs::flock(&file, rustix::fs::FlockOperation::NonBlockingLockExclusive)
-                {
-                    Ok(()) => return Ok(Self(Some(file))),
-                    Err(rustix::io::Errno::INTR) => {}
-                    Err(rustix::io::Errno::WOULDBLOCK) => {
-                        if std::time::Instant::now() >= until {
-                            return Err(busy(dir));
-                        }
-                        std::thread::sleep(LOOKED_EVERY);
-                    }
-                    Err(_) => return Ok(Self(None)),
-                }
+            match in_turn(std::os::fd::AsFd::as_fd(&file), most) {
+                Waited::Taken => Ok(Self(Some(file))),
+                Waited::Busy => Err(busy(dir)),
+                Waited::Unlockable => Ok(Self(None)),
             }
         }
         #[cfg(not(unix))]
         {
-            let _ = (dir, most, LOOKED_EVERY, busy);
+            let _ = (dir, most, busy);
             Ok(Self(None))
         }
     }

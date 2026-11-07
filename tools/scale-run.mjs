@@ -2,10 +2,10 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-// The nightly scale run's measurements of the `purlis` binary (#5497): the SessionStart hook,
-// `recall` in one workspace and across all of them, and one git standing look, each on a
-// project `scale-project generate` wrote and the run committed. One row a measurement, as
-// `tools/scale-report.mjs` reads them:
+// The nightly scale run's measurements of the `purlis` binary (#5497): a full build of the
+// project index, the SessionStart hook, `recall` in one workspace and across all of them, and one
+// git standing look, each on a project `scale-project generate` wrote and the run committed. One
+// row a measurement, as `tools/scale-report.mjs` reads them:
 //
 //   node tools/scale-run.mjs --project <dir> --os macos|linux --out rows.jsonl \
 //     [--purlis target/release/purlis] [--scale-project target/release/scale-project] [--times 20]
@@ -15,7 +15,12 @@
 // the run's own (a home, a config home and a data home in a temporary folder), never the one it
 // was started from, so a chat's socket or persona from the shell around it reaches nothing.
 // The first run of each is a warm-up and is not kept: the page cache is what a person's second
-// chat of the day meets. A command that fails, or a hook that answers no briefing, fails the run:
+// chat of the day meets.
+//
+// **The index is built first** (#5486), as the session host builds it when it opens the project:
+// a person's chats meet a project the host has indexed. Timed before it, the hook and `recall`
+// read every file instead (the CLI never writes an index), which measured the scan the index
+// replaces, not purlis: the hook took 25 s on macOS for a `git status` the index answers. A command that fails, or a hook that answers no briefing, fails the run:
 // a timing of a broken answer is no evidence.
 
 import { spawnSync } from "node:child_process";
@@ -86,6 +91,10 @@ const row = (budget, measured) => {
   rows.push({ budget, os: values.os, ...measured });
   console.log(`scale-run | ${budget} | ${JSON.stringify(measured)}`);
 };
+
+// A full build, as `scale-project index` takes it on a project with none: the host's first.
+const indexed = timed([resolve(values["scale-project"]), "index", "--project", project], { cwd: project });
+row("index-rebuild", { samples: [Math.round(JSON.parse(indexed.stdout).built_ms * 10) / 10] });
 
 row("hook", {
   samples: samples([purlis, "hook", "sessionstart"], {

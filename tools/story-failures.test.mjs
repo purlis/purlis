@@ -13,6 +13,7 @@ import StoryFailures, {
   annotations,
   cellOf,
   gateOf,
+  measuredOf,
   named,
   picturesAlone,
   picturesToDraw,
@@ -882,4 +883,72 @@ test("a test with no cell in its meta is named by its project, as before", () =>
     ),
   );
   assert.equal(JSON.parse(readFileSync(to, "utf8")).failures[0].cell, "purlis_light");
+});
+
+// A picture that came out another size than its baseline carries where it stood (#5463).
+const MISS = {
+  said: "Expected image dimensions to be 1280×333px, but received 1280×334px.",
+  before: {
+    frame: { x: 0, y: 0, width: 1280, height: 332.40625 },
+    terminals: [{ x: 8, y: 7.0001, width: 1264, height: 325.40625 }],
+    devicePixelRatio: 1,
+    scroll: { x: 0, y: 0 },
+    viewport: { x: 0, y: 0, width: 1280, height: 720, scale: 1 },
+  },
+  after: {
+    frame: { x: 0, y: 0.59375, width: 1280, height: 332.40625 },
+    terminals: [],
+    devicePixelRatio: 1,
+    scroll: { x: 0, y: 0 },
+    viewport: null,
+  },
+  playwright: { x: 0, y: 0.59375, width: 1280, height: 332.40625 },
+};
+
+const SAID_MISS =
+  "Expected image dimensions to be 1280×333px, but received 1280×334px. " +
+  "Before: frame 1280×332.406 at 0,0; terminals 1264×325.406 at 8,7; device pixel ratio 1; " +
+  "scroll 0,0; viewport 1280×720 at 0,0 ×1. " +
+  "After: frame 1280×332.406 at 0,0.594; terminals none; device pixel ratio 1; scroll 0,0; " +
+  "viewport none. Playwright's box: 1280×332.406 at 0,0.594.";
+
+test("a picture that missed on size is said with where it stood and Playwright's box", () => {
+  assert.equal(measuredOf(MISS), SAID_MISS);
+  assert.match(measuredOf({ ...MISS, playwright: null }), /Playwright's box: none\.$/);
+});
+
+test("the reporter keeps where a picture that missed on size stood, and logs it", () => {
+  const to = join(mkdtempSync(join(tmpdir(), "story-failures-")), "report.json");
+  const missed = {
+    fullName: "WaitingStrip > Over A Real Terminal",
+    meta: () => ({ cell: "purlis_dark", pictureMiss: MISS }),
+    result: () => ({ errors: [failedAt("screenshot", "webkit")] }),
+  };
+  const other = {
+    fullName: "Probe > Steps",
+    result: () => ({ errors: [failedAt("screenshot", "webkit")] }),
+  };
+  const logged = [];
+  const log = console.log;
+  console.log = (line) => logged.push(line);
+  try {
+    reporting(to, (reporter) =>
+      reporter.onTestRunEnd([moduleOf({ tests: [missed, other] })], [], "failed"),
+    );
+  } finally {
+    console.log = log;
+  }
+  const report = JSON.parse(readFileSync(to, "utf8"));
+  assert.deepEqual(report.failures[0].measured, MISS);
+  assert.equal("measured" in report.failures[1], false);
+  assert.deepEqual(logged, [
+    `picture missed on size: WaitingStrip Over A Real Terminal, purlis_dark: ${SAID_MISS}`,
+  ]);
+  const { summary } = named([{ browser: "webkit", report }]);
+  assert.ok(
+    summary.includes(
+      `- WaitingStrip Over A Real Terminal in webkit, purlis_dark (src/Probe.stories.tsx): ${SAID_MISS}`,
+    ),
+    summary,
+  );
 });

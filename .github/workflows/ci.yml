@@ -73,7 +73,7 @@ on:
 # jobs first come, first served, so a pull request's run holds the queue back. 8 of the 22 pull
 # requests with a run going were drafts, which are pushed again and again while their author works
 # and cannot be merged. So the macOS scenarios, the scoped macOS jobs and the outcome bars (both
-# legs: one matrix) wait for the pull request to be marked ready (`ready_for_review` starts that
+# legs, each a job of its own) wait for the pull request to be marked ready (`ready_for_review` starts that
 # run), and `scenario tests (macos-latest)` passes on a draft with its legs skipped. That green is
 # the draft run's, so `tools/land.mjs` waits for the ready's run to finish before it reads the
 # checks.
@@ -247,7 +247,7 @@ jobs:
       # cargo-nextest runs every test binary's tests at once, each test in a process of its own,
       # where `cargo test` runs the binaries one after another. Its settings are in
       # `.config/nextest.toml`. A machine without it runs the same tests with `cargo test`.
-      - uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
+      - uses: taiki-e/install-action@682ce6c3c696a4cd5168a05f98e51aa02b877941 # v2.89.1
         with:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       # The pinned engine makes its sandbox with user namespaces, which Ubuntu 23.10 and later
@@ -267,11 +267,22 @@ jobs:
         uses: ./.github/actions/studio-probe-names
       # Built in a step of its own, so the run's step timings say how much of this job is
       # compiling and linking the test binaries and how much is running them, with no log to read.
-      # It takes 5 to 9 minutes. On 2026-11-03 (job 125815923694, in the merge queue) it finished
-      # building and then hung for 36 minutes listing a binary's tests, until the job's 45-minute
-      # limit cancelled it and the queue waited on it; twenty minutes ends such a hang sooner.
+      # On 2026-11-03 (job 125815923694, in the merge queue) it finished building and then hung for
+      # 36 minutes listing a binary's tests, until the job's 45-minute limit cancelled it and the
+      # queue waited on it: this step's own limit ends such a hang sooner.
+      #
+      # **The limit is set from what the step takes** (#5535). Over 882 builds from 2026-10-31 to
+      # 2026-11-07: p50 9.2 minutes, p95 10.3, p99 11.9, the longest 15.7. One with no cache to
+      # restore takes about 3 minutes more (20 of them: p50 11.9, longest 12.4), so a cache miss
+      # is not what makes one slow. The one build that ran out of the old 20 minutes (job
+      # 128025376476, a pull request that changed no Rust) had restored the cache whole, on a
+      # runner where every step before it took 2 to 12 times as long as on its sibling parts: a
+      # slow runner, which nothing here can make faster. 30 minutes is about three times p95 (two
+      # and a half times p99), room for a runner that slow, and still ends a hang a quarter of an
+      # hour before the job's limit. The times are each rust part's "Build the tests" step, read
+      # from the Actions API's jobs of ci.yml's runs.
       - name: Build the tests
-        timeout-minutes: 20
+        timeout-minutes: 30
         run: cargo nextest run --workspace --locked --no-run
       # Every test's result, never the first red only (`fail-fast = false` in the profile): a
       # flake in one test (charter-app#39) must not hide the rest of the suite.
@@ -384,7 +395,7 @@ jobs:
         with:
           shared-key: rust
           save-if: false
-      - uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
+      - uses: taiki-e/install-action@682ce6c3c696a4cd5168a05f98e51aa02b877941 # v2.89.1
         with:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       # Where a person's `git lfs install` writes it, for every git of this machine's.
@@ -568,7 +579,7 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - if: steps.scope.outputs.run == 'true'
-        uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
+        uses: taiki-e/install-action@682ce6c3c696a4cd5168a05f98e51aa02b877941 # v2.89.1
         with:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       # tauri::generate_context! reads the built frontend, so it has to exist before a build.
@@ -1361,7 +1372,7 @@ jobs:
         run: sudo mdutil -a -i off
       # tauri::generate_context! reads the built frontend, as in the `rust` job.
       - run: mkdir -p app/dist
-      - uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
+      - uses: taiki-e/install-action@682ce6c3c696a4cd5168a05f98e51aa02b877941 # v2.89.1
         with:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       # The names the studio probe's network tests look up, from the hosts file, not outside DNS
@@ -2163,17 +2174,20 @@ jobs:
 
   # **The Skill studio's outcome bars** (SK-23, #4343): the scenario legs' steps, with every leg's
   # own flag off and `outcome` on, so it runs the three runs alone, on a `dev-release` build
-  # (2026-11-03, #4351). Not required, and no `scenario-checks` waits on it: it measures on a
-  # shared runner, and a miss is a ticket (the operator's ruling of 2026-10-31), not a block on
-  # every merge. It says L10's p95 and judges a median guard: the 300 ms is judged on a real Mac
-  # (ADR 0086, amended 2026-11-05). It becomes required with the flag's flip (#2786).
+  # (2026-11-03, #4351). Its macOS leg is not required, and no `scenario-checks` waits on it: it
+  # measures on a shared runner, and a miss is a ticket (the operator's ruling of 2026-10-31), not a
+  # block on every merge. It becomes required with the flag's flip (#2786). Its Linux leg is
+  # `outcome-bars-linux`, below, and is required. Each says L10's p95 and judges a median guard
+  # of its own platform: the 300 ms is judged on a real Mac (ADR 0086, amended 2026-11-05 and
+  # 2026-11-06).
   #
   # On main's push, and on a pull request that touches what the bars measure (`GATES`), by the
   # operator's choice of 2026-11-01: it takes a macOS and a Linux runner, for 11 to 17 minutes on
   # the debug build it used to make, and for about 31 on the release build warm (#4351). A
   # regression from anywhere else shows on main, not on its pull request.
   outcome-bars:
-    name: outcome bars (${{ matrix.os }})
+    # Named outright, not by `matrix.os`: a pattern would match the Linux leg's required check too.
+    name: outcome bars (macos-latest)
     needs: changes
     # A missed bar keeps this job red and the `ci` run green, so it does not stop `tools/land.mjs`,
     # which refuses to land while main's newest finished `ci` run failed. This line goes once its
@@ -2194,7 +2208,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, ubuntu-24.04]
+        os: [macos-latest]
         shard: [bars]
         shards: [1]
         extras: [false]
@@ -2203,6 +2217,54 @@ jobs:
         outcome: [true]
     runs-on: ${{ matrix.os }}
     steps: *scenario-steps
+
+  # **The outcome bars' Linux leg, required** (#5277): what `outcome-bars` does, on Linux, with no
+  # `continue-on-error`. A runner shutdown cut it off until #5379 gave its build the swap it needs;
+  # it passed on all 14 of main's runs that finished it from #5379's merge to 2026-11-06, so it is
+  # required, as the person's ruling of 2026-11-05 said it would be once #5277 was fixed. It
+  # judges L10's Linux guard (ADR 0086, amended 2026-11-06). It runs in the merge queue and
+  # nightly too, which a required check needs; `outcome-bars-linux-checks` carries the check's name.
+  outcome-bars-linux:
+    name: outcome bars run (ubuntu-24.04)
+    needs: changes
+    # `outcome-bars`'s bound, for the same build: cold, it took 27 minutes here.
+    timeout-minutes: 75
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.outcome-bars != 'false') && !github.event.pull_request.draft }}
+    env:
+      CHARTER_TARGET_DIR: ${{ github.workspace }}/target/dev-release
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04]
+        shard: [bars]
+        shards: [1]
+        extras: [false]
+        specs: [false]
+        sandbox: [false]
+        outcome: [true]
+    runs-on: ${{ matrix.os }}
+    steps: *scenario-steps
+
+  # The required check that names the outcome bars' Linux leg (#5277), as `scenario-linux-checks`
+  # is for the Linux scenarios: its leg passed wherever it runs, and on a pull request it is skipped
+  # where its change cannot move a bar and on a draft, as `outcome-bars-linux`'s `if:` says.
+  outcome-bars-linux-checks:
+    name: outcome bars (ubuntu-24.04)
+    needs: [changes, outcome-bars-linux]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: The Linux leg passed
+        env:
+          SCOPE: ${{ needs.changes.outputs.outcome-bars }}
+          EVENT: ${{ github.event_name }}
+          DRAFT: ${{ github.event.pull_request.draft }}
+          RESULT: ${{ needs.outcome-bars-linux.result }}
+        run: |
+          want=success
+          if [ "$EVENT" = pull_request ] && { [ "$SCOPE" = false ] || [ "$DRAFT" = true ]; }; then want=skipped; fi
+          echo "scope: ${SCOPE:-unknown}, event: $EVENT, draft: ${DRAFT:-false}, result: $RESULT"
+          test "$RESULT" = "$want"
 
   # **Pool setup's Docker path, walked in the window** (#4985, #4484's first acceptance
   # criterion): the scenario legs' steps with every leg's own flag off and `pool` on, on Linux,

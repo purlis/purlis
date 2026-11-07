@@ -69,6 +69,10 @@ const COMMITTED_LINE_CAP: usize = 200;
 /// How many todo titles are shown — `_TODO_DIGEST_N`.
 const TODO_DIGEST_N: usize = 3;
 
+/// How many workspaces the workspace gate names, the most recently used (ruling of
+/// 2026-11-07, #5486): the rest are counted and left to `purlis workspace list`.
+const GATE_WORKSPACES_N: usize = 10;
+
 /// How many other workspaces are listed — `_NEIGHBOUR_DIGEST_N`.
 const NEIGHBOUR_DIGEST_N: usize = 5;
 
@@ -174,12 +178,12 @@ pub fn parts(ask: &Ask, piece_note: Option<String>) -> Vec<String> {
     let mut parts = Vec::new();
     let ids = ask.ids();
     let at_root = ask.plane_root(&ids);
+    let summaries = Summaries::of(ask.root);
     if let Some(by) = at_root {
         parts.push(plane_root_note(by));
-    } else if let Some(gate) = workspace_confirm_nudge(ask, &ids) {
+    } else if let Some(gate) = workspace_confirm_nudge(ask, &ids, &summaries) {
         parts.push(gate);
     }
-    let summaries = Summaries::of(ask.root);
     let selected = selected_persona(ask);
     if let Some(name) = selected.name.as_deref() {
         match personagrant::resolve(ask.root, name) {
@@ -530,7 +534,7 @@ fn unattended_stop(locks: bool, current: &str, existing: &str) -> String {
 
 /// `_workspace_confirm_nudge`: ask for a workspace before any repo work, or `None` when one is
 /// pinned or locked.
-fn workspace_confirm_nudge(ask: &Ask, ids: &Ids) -> Option<String> {
+fn workspace_confirm_nudge(ask: &Ask, ids: &Ids, summaries: &Summaries) -> Option<String> {
     let pinned = (ask.env)(active::WORKSPACE_ENV)
         .map(|v| memstore::py_strip(&v).to_string())
         .filter(|v| !v.is_empty());
@@ -547,11 +551,23 @@ fn workspace_confirm_nudge(ask: &Ask, ids: &Ids) -> Option<String> {
     let existing = if names.is_empty() {
         "none yet".to_string()
     } else {
-        names
+        let more = names.len().saturating_sub(GATE_WORKSPACES_N);
+        let shown = if more == 0 {
+            names
+        } else {
+            most_recently_used(ask, names, summaries)
+        };
+        let listed = shown
             .iter()
+            .take(GATE_WORKSPACES_N)
             .map(|n| format!("`{n}`"))
             .collect::<Vec<_>>()
-            .join(", ")
+            .join(", ");
+        if more == 0 {
+            listed
+        } else {
+            format!("{listed}, …and {more} more: `purlis workspace list`")
+        }
     };
     if ask.unattended() {
         return Some(unattended_stop(locks, &current, &existing));
@@ -578,6 +594,33 @@ fn workspace_confirm_nudge(ask: &Ask, ids: &Ids) -> Option<String> {
          goal>\"` (it seeds the living charter `workspace.md`, which a fork inherits). Keep that \
          charter current as the work evolves."
     ))
+}
+
+/// `names`, most recently used first: when each was last active, from the index where there is
+/// one and from the workspaces' files where there is none ([`last_active`]). While the first
+/// index is built nothing says when, so they stay in the plane's order.
+fn most_recently_used(ask: &Ask, mut names: Vec<String>, summaries: &Summaries) -> Vec<String> {
+    let when: std::collections::HashMap<String, f64> = match summaries {
+        Summaries::Index(reader) => reader
+            .workspaces()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|w| (w.name, w.last_active.unwrap_or(0.0)))
+            .collect(),
+        Summaries::Building => return names,
+        Summaries::Files => names
+            .iter()
+            .map(|n| (n.clone(), last_active(ask.root, n).unwrap_or(0.0)))
+            .collect(),
+    };
+    let at = |n: &String| when.get(n).copied().unwrap_or(0.0);
+    // Stable, so workspaces used at the same moment keep the plane's order.
+    names.sort_by(|a, b| {
+        at(b)
+            .partial_cmp(&at(a))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    names
 }
 
 /// What a plane-root chat is told in the gate's place (SI-1): where it is, that it stays

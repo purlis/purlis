@@ -51,7 +51,9 @@ pub struct Keeper {
 
 impl Keeper {
     /// Starts keeping the index of the project at `root`. `say` is told what went wrong, once
-    /// per failure, in a sentence.
+    /// per failure, in a sentence, and once that the index is ready, and how long it took: at
+    /// the target size its first build takes minutes, and what a person feels meanwhile (a
+    /// briefing that leaves the summaries out, a busy machine) is read against that line.
     pub fn start(root: PathBuf, say: std::sync::Arc<dyn Fn(&str) + Send + Sync>) -> Self {
         let (sent, heard) = mpsc::channel();
         let thread = std::thread::Builder::new()
@@ -107,6 +109,7 @@ impl Drop for Keeper {
 
 /// The keeper's thread.
 fn run(root: &Path, heard: &Receiver<Message>, say: &(dyn Fn(&str) + Send + Sync)) {
+    let started = std::time::Instant::now();
     let mut writer = match Writer::open(root) {
         Ok(writer) => writer,
         Err(why) => {
@@ -128,6 +131,11 @@ fn run(root: &Path, heard: &Receiver<Message>, say: &(dyn Fn(&str) + Send + Sync
     }
     let _ = writer.compact();
     record_standing(root, &writer);
+    say(&format!(
+        "{} is indexed, ready in {} ms",
+        root.display(),
+        started.elapsed().as_millis()
+    ));
     let mut idle_since_delete = false;
     loop {
         let first = match heard.recv_timeout(IDLE) {

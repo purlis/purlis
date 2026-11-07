@@ -496,6 +496,49 @@ fn a_workspaces_repo_is_answered_where_this_machine_holds_it_in_either_layout() 
     );
 }
 
+/// **A repository new to this machine goes in `repos/`** (#5534, ADR 0114): a transfer that makes
+/// one is answered where every new clone lands, whatever the old place holds, and refused where
+/// no new repo can go.
+#[test]
+fn a_repository_new_to_this_machine_is_answered_in_repos_whatever_is_at_the_old_place() {
+    let world = World::new();
+    let workspace = world.project.join("workspaces/app");
+    std::fs::create_dir_all(&workspace).unwrap();
+
+    assert_eq!(
+        new_repo_in(&world.project, "workspaces/app/api").unwrap(),
+        workspace.join("repos/api")
+    );
+    // A folder of the person's that only shares the name is no clone, and is left alone.
+    std::fs::create_dir_all(workspace.join("notes")).unwrap();
+    assert_eq!(
+        new_repo_in(&world.project, "workspaces/app/notes").unwrap(),
+        workspace.join("repos/notes")
+    );
+    for refused in [
+        "",
+        "workspaces/app",
+        "workspaces/app/repos",
+        "workspaces/app/memory",
+        "workspaces/app/web/.git",
+        "workspaces/../web",
+    ] {
+        assert!(
+            matches!(
+                new_repo_in(&world.project, refused),
+                Err(Refused::NotAllowed(_))
+            ),
+            "{refused}"
+        );
+    }
+    // An old clone named `repos` stands where new ones go, and says how to move it.
+    let old = workspace.join("repos");
+    std::fs::create_dir_all(&old).unwrap();
+    git(&old, &["init", "-q", "-b", "main", "."]);
+    let said = new_repo_in(&world.project, "workspaces/app/api").unwrap_err();
+    assert!(said.to_string().contains("rename"), "{said}");
+}
+
 /// **Where each clone a runner holds came from** (1.54, #3985): its own `origin`, as its git
 /// keeps it, only where that is a forge's HTTPS or SSH address with no sign-in in it. Never a
 /// local path, another transport or a token, nothing an included file names, and nothing for a

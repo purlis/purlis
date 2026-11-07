@@ -9,7 +9,7 @@ use crate::repofolder::Layout;
 
 /// A project with workspace `alpha`: a repo `api` in `repos/`, an old clone `svc` at the root,
 /// the branches' folders, what purlis keeps there and the person's own notes and script.
-fn project() -> (tempfile::TempDir, PathBuf) {
+pub(super) fn project() -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir().unwrap();
     let plane = std::fs::canonicalize(dir.path()).unwrap();
     let ws = plane.join("workspaces/alpha");
@@ -42,7 +42,7 @@ fn project() -> (tempfile::TempDir, PathBuf) {
     (dir, plane)
 }
 
-fn files(plane: &Path) -> Files {
+pub(super) fn files(plane: &Path) -> Files {
     Files::of(plane, "alpha").unwrap()
 }
 

@@ -166,10 +166,32 @@ pub enum NotWritten {
          in your file manager or a terminal."
     )]
     NotAFileToImport(String),
+    #[error("purlis copied in {}, and then stopped: {why}", quoted(copied))]
+    PartlyImported {
+        /// The paths the files copied before it stopped were given, in order.
+        copied: Vec<String>,
+        why: Box<NotWritten>,
+    },
+    #[error(
+        "purlis did not delete '{0}': it, or a folder it is in, was moved or replaced while \
+         purlis was checking it, so purlis left everything where it is. Look again, and try \
+         again."
+    )]
+    Moved(String),
     #[error(
         "purlis could not {what}: {why}. Try again, or do it in your file manager or a terminal."
     )]
     Failed { what: String, why: String },
+}
+
+/// `paths`, each in quotes, as a sentence lists them: `'a'`, `'a' and 'b'`, `'a', 'b' and 'c'`.
+fn quoted(paths: &[String]) -> String {
+    let quoted: Vec<String> = paths.iter().map(|path| format!("'{path}'")).collect();
+    match quoted.split_last() {
+        Some((last, [])) => last.clone(),
+        Some((last, rest)) => format!("{} and {last}", rest.join(", ")),
+        None => String::new(),
+    }
 }
 
 /// Whether `path`, a path of the workspace files, is one purlis keeps: a reserved workspace name

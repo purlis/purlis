@@ -22,6 +22,17 @@ export const OPEN_BUDGET_MS = 300;
  * return to the 880 to 2,300 ms of most runs before #4351's fixes, not a small slip.
  */
 export const OPEN_GUARD_MEDIAN_MS = 800;
+/**
+ * **The same guard on Linux CI** (#5277, ADR 0086's amendment of 2026-11-06), set the way the
+ * macOS one was: the same code's medians ran from 349 to 605 ms over sixteen runs once the build
+ * finished there (#5379), warm and cold caches both, so this sits about a quarter above that worst.
+ */
+export const OPEN_GUARD_MEDIAN_MS_LINUX = 750;
+/** The guard each CI platform's median is held to; a platform not named here has none yet. */
+const OPEN_GUARDS: Record<string, number> = {
+  darwin: OPEN_GUARD_MEDIAN_MS,
+  linux: OPEN_GUARD_MEDIAN_MS_LINUX,
+};
 /** Story 10's load. */
 export const SKILLS_AT_THE_BAR = 200;
 /** How many openings the p95 is of. */
@@ -95,8 +106,8 @@ function medianOf(samples: readonly number[]): number {
 
 /**
  * **What the openings are judged against where they were measured** (#4351): a real machine against
- * the 300 ms bar, macOS CI against the median guard, and Linux CI against nothing yet, since no
- * run there has measured the current code to set a limit from.
+ * the 300 ms bar, and macOS and Linux CI each against its own median guard (#5277). Any other
+ * platform's CI has no limit, since no run there has measured the code to set one from.
  */
 export function openJudged(
   samples: readonly number[],
@@ -105,10 +116,11 @@ export function openJudged(
   if (!ci) return openVerdict(samples);
   const median = medianOf(samples);
   const what = `the studio opening with ${SKILLS_AT_THE_BAR} skills on CI: median ${median.toFixed(1)} ms`;
-  if (platform !== "darwin") return { met: true, said: `${what}, no limit on this platform yet` };
+  const guard = OPEN_GUARDS[platform];
+  if (guard === undefined) return { met: true, said: `${what}, no limit on this platform yet` };
   return {
-    met: median < OPEN_GUARD_MEDIAN_MS,
-    said: `${what} against the guard's ${OPEN_GUARD_MEDIAN_MS} ms, over ${samples.length} openings`,
+    met: median < guard,
+    said: `${what} against the guard's ${guard} ms, over ${samples.length} openings`,
   };
 }
 

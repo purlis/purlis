@@ -520,6 +520,44 @@ fn a_clone_the_runner_made_names_what_a_local_tool_runs_and_every_link() {
     );
 }
 
+/// **A clone made fresh lands in `repos/`, made for it** (#5534): where the workspace has no
+/// `repos/` yet, the clone makes it, and one that does not come takes away the `repos/` it made.
+#[test]
+fn a_clone_the_runner_made_lands_in_repos_and_one_that_does_not_come_leaves_no_repos() {
+    let world = World::new();
+    a_clone_made_on_the_runner(&world);
+    let workspace = world.desktop.parent().unwrap().to_path_buf();
+    let here = workspace.join("repos/web");
+    let into = world.scratch("inrepos").join("work.bundle");
+    let (heads, _) = give_work(&world.runner, &world.scratch("giveinrepos"), &[], &into).unwrap();
+
+    let missing = "1".repeat(40);
+    let refused = take_work_fresh(
+        &here,
+        "builds",
+        None,
+        &[
+            Ref {
+                name: "refs/heads/fix".into(),
+                oid: missing.clone(),
+            },
+            Ref {
+                name: "refs/purlis/snapshots/fix".into(),
+                oid: missing,
+            },
+        ],
+    );
+    assert!(refused.is_err(), "{refused:?}");
+    assert!(
+        !workspace.join("repos").exists(),
+        "no repos/ is left by a clone that did not come"
+    );
+
+    take_work_fresh(&here, "builds", Some(&into), &heads).expect("the clone comes back");
+    assert_eq!(git(&here, &["branch", "--show-current"]), "fix");
+    assert!(!world.desktop.exists(), "nothing is made at the old place");
+}
+
 /// A fresh clone is made only where nothing is: a folder here of that name is never written
 /// into, and a refused one leaves nothing behind.
 #[test]

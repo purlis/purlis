@@ -45,7 +45,7 @@ const { evaluateKeyboardEvent } = (await import(/* @vite-ignore */ KEYBOARD)) as
 
 /** The window's keys this ruling claims. Their chords are read from the registry, so a chord
  *  added to one of them is covered; a new key is added here. */
-const CLAIMED = ["pane.focus", "tab.next", "tab.previous", "tasks.menu", "pane.back", "pane.place"];
+const CLAIMED = ["pane.focus", "tab.next", "tab.previous", "tasks.menu", "pane.back", "pane.move"];
 
 /** The key codes xterm.js reads, for the keys these chords use. */
 const KEY_CODES: Record<string, number> = {

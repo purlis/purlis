@@ -21,7 +21,7 @@
  */
 import "./handed";
 import { afterEach, beforeEach, expect, inject, type TestContext } from "vitest";
-import { cdp, page, server } from "vitest/browser";
+import { cdp, commands, page, server } from "vitest/browser";
 import { facesLoaded } from "../src/theme/theme";
 import { PICTURE_GLOBAL } from "../src/stories.testkit";
 import { cellInTest, pictureOf } from "./matrix";
@@ -39,6 +39,81 @@ declare module "vitest" {
     /** What this story's picture is of, for the reporter (`tools/story-failures.mjs`): a story
      *  that takes none has its baselines called obsolete (`tools/story-baselines.mjs`). */
     screenshot?: { story: string; taken: Taken };
+    /** Where the picture stood when it came out another size than its baseline (#5463). */
+    pictureMiss?: PictureMiss;
+  }
+}
+
+declare module "vitest/browser" {
+  interface BrowserCommands {
+    /** Playwright's own bounding box of what `selector` names in the story's page, the box its
+     *  element picture is cut by (`vitest.project.ts`). */
+    pictureBox: (selector: string) => Promise<Box | null>;
+  }
+}
+
+/** A box, in CSS pixels. */
+type Box = { x: number; y: number; width: number; height: number };
+
+/** Where a picture's element stood, as the page lays it out. */
+type LaidOut = {
+  frame: Box;
+  /** Each terminal (`.xterm`) in it: its height rounds as the frame's does not (#5463). */
+  terminals: Box[];
+  devicePixelRatio: number;
+  scroll: { x: number; y: number };
+  viewport: (Box & { scale: number }) | null;
+};
+
+/**
+ * **A picture that came out another size than its baseline** (#5463): the size each had, and
+ * where the element stood just before the picture and just after the miss, with the box
+ * Playwright cut it by, so the next miss carries its evidence.
+ */
+export type PictureMiss = {
+  said: string;
+  before: LaidOut;
+  after: LaidOut;
+  playwright: Box | null;
+};
+
+/** The size miss Vitest's comparator says: `Expected image dimensions to be …`. */
+const SIZE_MISS = /Expected image dimensions to be [^\n]*/;
+
+const boxOf = (element: Element): Box => {
+  const { x, y, width, height } = element.getBoundingClientRect();
+  return { x, y, width, height };
+};
+
+function laidOut(frame: Element): LaidOut {
+  const viewport = window.visualViewport;
+  return {
+    frame: boxOf(frame),
+    terminals: [...frame.querySelectorAll(".xterm")].map(boxOf),
+    devicePixelRatio: window.devicePixelRatio,
+    scroll: { x: window.scrollX, y: window.scrollY },
+    viewport: viewport && {
+      x: viewport.offsetLeft,
+      y: viewport.offsetTop,
+      width: viewport.width,
+      height: viewport.height,
+      scale: viewport.scale,
+    },
+  };
+}
+
+/** The attribute that names a missed picture's element to Playwright, for as long as it measures. */
+const MEASURED = "data-picture-measured";
+
+/** Playwright's box of `frame`, or `null` where it can't be had: evidence, never a failure. */
+async function playwrightBoxOf(frame: Element): Promise<Box | null> {
+  frame.setAttribute(MEASURED, "");
+  try {
+    return await commands.pictureBox(`[${MEASURED}]`);
+  } catch {
+    return null;
+  } finally {
+    frame.removeAttribute(MEASURED);
   }
 }
 
@@ -97,7 +172,20 @@ async function picture(context: TestContext): Promise<void> {
   // In the theme's own fonts: every face it asked for made, then laid out.
   await facesLoaded();
   await document.fonts.ready;
-  await expect.element(page.elementLocator(frame)).toMatchScreenshot(pictureOf(story.id, cell));
+  const before = laidOut(frame);
+  try {
+    await expect.element(page.elementLocator(frame)).toMatchScreenshot(pictureOf(story.id, cell));
+  } catch (missed) {
+    const said = SIZE_MISS.exec(missed instanceof Error ? missed.message : String(missed));
+    if (said)
+      context.task.meta.pictureMiss = {
+        said: said[0],
+        before,
+        after: laidOut(frame),
+        playwright: await playwrightBoxOf(frame),
+      };
+    throw missed;
+  }
 }
 
 beforeEach(async (context) => {
