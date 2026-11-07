@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794048445223,
+  "lastUpdate": 1794059856135,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -42084,6 +42084,48 @@ window.BENCHMARK_DATA = {
             "value": 101.5747595,
             "unit": "ms",
             "extra": "median of 5 runs: 100.797, 100.957, 101.575, 101.793, 102.082 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "aa8105c7c4c102e282f5093338784240cb7debf5",
+          "message": "Protocol 5: a router's route question says what each skill costs (#4680) (#5620)\n\n* Protocol 5: a router's route question says what each skill costs (#4680)\n\nA route question in protocol 5 gives each skill chars, what its whole line\ncosts of the budget on the chat's harness, from the same count as besides.\nA router of protocol 3 or 4 is asked the frozen question byte for byte.\nVersion 2 of the extension API is recorded in tests/fixtures/extension-api/v2.json\nbeside v1.json, and the contract tests hold each build to both.\nADR 0101 amended 2026-11-07.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6TK5E93MT07JWGTFE4SXRM8\nPurlis-Persona: steward\n\n* Protocol 5's route question also says what the index costs; review fixes (#4680)\n\nThe index skill is listed whenever a router hides one, and its line depends\non the harness, so a router following each skill's chars could still go over\nby it. Protocol 5 adds index, one skill and its line; protocols 3 and 4 still\nget the frozen question. A test holds that besides, the listed skills' chars\nand index add to what the routed listing spends, with paths and cut\ndescriptions too. The protocol-3 check is a test of its own; the Ask::Route\ndoc names what it costs.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6TK5E93MT07JWGTFE4SXRM8\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-07T12:17:09Z",
+          "tree_id": "57cb3d63484305f7909ba21cb91f5ac96a3b87e9",
+          "url": "https://github.com/purlis/purlis/commit/aa8105c7c4c102e282f5093338784240cb7debf5"
+        },
+        "date": 1794059851180,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.695514,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.690, 0.691, 0.696, 0.698, 0.699 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5572075,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.454, 16.481, 16.557, 16.668, 16.683 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.7121335,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.808, 102.169, 102.712, 102.849, 103.029 ms"
           }
         ]
       }
