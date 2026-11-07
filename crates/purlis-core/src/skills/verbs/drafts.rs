@@ -723,29 +723,26 @@ const OUTCOME: &str = "outcome";
 /// **Whether `cwd` is an outcome eval's chat's piece** in the project at `root` ([`stage`]): a
 /// grade's arm marked so. Only this machine's state says so, and no chat writes it.
 pub fn outcome_piece(root: &Path, cwd: &Path) -> bool {
-    graded_piece(root, cwd)
-        && try_of(root, cwd).is_some_and(|id| {
-            crate::appstate::dir(root).is_some_and(|state| {
-                read_at(&state, &format!("{TRIES_DIR}/{id}/{OUTCOME}"))
-                    .ok()
-                    .flatten()
-                    .is_some()
-            })
-        })
+    outcome_mark(root, cwd).is_some()
+}
+
+/// What the mark of the outcome eval's piece `cwd` says (empty, or [`SHELL`]), where `cwd` is a
+/// grade's arm marked as one: the one read [`outcome_piece`] and [`shell_piece`] share.
+fn outcome_mark(root: &Path, cwd: &Path) -> Option<String> {
+    if !graded_piece(root, cwd) {
+        return None;
+    }
+    let id = try_of(root, cwd)?;
+    let state = crate::appstate::dir(root)?;
+    read_at(&state, &format!("{TRIES_DIR}/{id}/{OUTCOME}"))
+        .ok()
+        .flatten()
 }
 
 /// **Whether `cwd` is the piece of an outcome eval's chat that has a shell** (#4476): an
 /// [`outcome_piece`] staged with one. Only this machine's state says so, and no chat writes it.
 pub fn shell_piece(root: &Path, cwd: &Path) -> bool {
-    graded_piece(root, cwd)
-        && try_of(root, cwd).is_some_and(|id| {
-            crate::appstate::dir(root).is_some_and(|state| {
-                read_at(&state, &format!("{TRIES_DIR}/{id}/{OUTCOME}"))
-                    .ok()
-                    .flatten()
-                    .is_some_and(|said| said == SHELL)
-            })
-        })
+    outcome_mark(root, cwd).is_some_and(|said| said == SHELL)
 }
 
 /// What an outcome eval's piece's mark says where its chat has a shell (#4476).

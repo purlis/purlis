@@ -282,6 +282,7 @@ impl Locks {
                 no_vault_grants: true,
                 no_socket_grants: true,
                 no_run_grants: true,
+                no_live_asks: true,
                 allow_scopes: Some(Vec::new()),
                 relayed_internal: Vec::new(),
                 ..held

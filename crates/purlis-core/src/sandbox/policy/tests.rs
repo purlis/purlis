@@ -1596,6 +1596,7 @@ fn a_shell_held_to_its_folder_is_decided_with_no_preset_and_no_host_and_only_whi
     assert_eq!(held.allowed_hosts(), Some(&[][..]));
     assert!(held.forbids_personal_hosts() && held.forbids_persona_hosts());
     assert!(held.forbids_socket_grants() && held.forbids_write_grants());
+    assert!(held.forbids_live_asks());
     assert!(!held.keeps_scope(crate::sandbox::grant::Level::Chat));
     assert!(held.relayed_internal().is_empty());
     assert_eq!(

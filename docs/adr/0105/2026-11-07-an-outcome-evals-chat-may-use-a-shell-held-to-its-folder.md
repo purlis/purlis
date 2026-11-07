@@ -41,6 +41,14 @@ limits: a shell that reached a model's API could spend tokens the chat never rep
 reason a grade's chat starts no sub-agent. An eval's inputs are staged into its piece, so its
 task has nothing to fetch.
 
+**No grade's chat has a live ask** (§3's "asks nobody", made exact by the review of #4476).
+Until now, a grade's chat's proxy held a connection to an unlisted host while the person was
+asked (#1666). The grade's watch did not hear that ask, so the chat waited out its time. Worse,
+"Allow" taken live would have widened a chat the person had consented to without it. Its proxy
+now refuses such a connection instead. An Allow made elsewhere is never taken live by a grade's
+chat either, as only a proxy that asks live takes one. The hold above also sets
+`no_live_asks`, so the decision says the same.
+
 **The shell writes only its own folder** (ruling 2a). That same decision gives it none of the
 project's package caches: they are shared with the person's own chats, and a graded skill could
 leave something there for one of them to run. Its temporary files, and Claude Code's own, go in
