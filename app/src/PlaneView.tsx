@@ -68,6 +68,7 @@ import {
   type RunsOnPick,
   type Sidebar as SidebarModel,
   type StartOptions,
+  type StartSecretAsk as StartSecretAskNamed,
   type ViewTab,
   type WindowDraft,
 } from "./bindings";
@@ -634,7 +635,9 @@ import type { Naming } from "./tabFace";
 import { tabPanelOf, tabsPart } from "./ui/tabs/Tabs";
 import { panelRoot } from "./ui/panel/Panel";
 import { oneChatMidTurn, type Ending } from "./QuitWarning";
-import { asksMoved } from "./asks";
+import { answerTaken, asksMoved, secretAskEntries } from "./asks";
+import type { SecretAskGiven } from "./SecretAskNotice";
+import type { SecretAskEnded } from "./StartChat";
 import { useTextSizes } from "./textSize";
 import { focusStands } from "./Cockpit";
 import {
@@ -1183,6 +1186,15 @@ export const PlaneView = memo(function PlaneView({
    *  signed in here (#2035), with that refusal: the picker offers Sign in beside it, and beside
    *  no other. */
   const [pickerSignIn, setPickerSignIn] = useState<{ profile: string; refused: string }>();
+  /** **The Secret ask a start was refused on** (#5137), with that refusal: the picker draws the
+   *  ask beside it, and beside no other. */
+  const [pickerSecret, setPickerSecret] = useState<{
+    asked: StartSecretAskNamed;
+    refused: string;
+  }>();
+  /** Whether the picker's Secret ask is being answered, and what its last press was told. */
+  const [pickerSecretBusy, setPickerSecretBusy] = useState(false);
+  const [pickerSecretSaid, setPickerSecretSaid] = useState<string>();
   /** The pool's limit a start was refused on (spec #4275), with that refusal: the picker offers
    *  to raise it beside it, and beside no other. */
   const [pickerLimit, setPickerLimit] = useState<{
@@ -4454,6 +4466,11 @@ export const PlaneView = memo(function PlaneView({
         setPickerTrouble(refused);
         setPickerSignIn(undefined);
         setPickerLimit(offer === null ? undefined : { offer, refused, profile });
+        // Its profile's credential is a Secret ask (#5137), named by the core, never read from
+        // the refusal's words: the picker fills it, and this start goes on.
+        const asked = started.secret_ask ?? undefined;
+        setPickerSecretSaid(undefined);
+        setPickerSecret(asked === undefined ? undefined : { asked, refused });
         // A pool that is gone, stopped or not reached, as the core found it (#4536).
         const gone = started.pool_unavailable ?? undefined;
         setPickerPoolGone(gone === undefined ? undefined : { pool: gone, refused });
@@ -4512,6 +4529,63 @@ export const PlaneView = memo(function PlaneView({
       await startPicked(profile, persona, showFooter, label, newBranch, withoutSandbox, runsOn);
     },
     [plane, startPicked],
+  );
+
+  /** **The picker's Secret ask** (#5137): the open ask, in this project's list, for the vault
+   *  and key the core named beside the refusal shown. None where it is answered elsewhere or not
+   *  listed yet: the refusal's words are said, as before. */
+  const pickerAsk =
+    pickerSecret !== undefined && pickerSecret.refused === pickerTrouble
+      ? waiting?.find(
+          (one) =>
+            one.answer.via === "secret" &&
+            one.secret?.vault === pickerSecret.asked.vault &&
+            one.secret?.key === pickerSecret.asked.key,
+        )
+      : undefined;
+  /** **Answers the picker's Secret ask** (#5137): through the one ask for that vault and key, as
+   *  the Inbox answers it, so it closes there too, and every list of this project's asks is read
+   *  again. Answers how it ended: the picker starts again with what it shows now, never what it
+   *  showed at the refusal, and only while it is open. Not now says the core's words for a start
+   *  whose credential was declined. */
+  const answerPickerAsk = useCallback(
+    async (option: Offered, given: () => SecretAskGiven): Promise<SecretAskEnded> => {
+      if (pickerAsk === undefined || pickerSecret === undefined || pickerSecretBusy)
+        return "refused";
+      const { asked } = pickerSecret;
+      setPickerSecretBusy(true);
+      setPickerSecretSaid(undefined);
+      // The value is read from its box only now, and the box emptied.
+      const got = given();
+      try {
+        const { refused } = await answerTaken(
+          plane,
+          pickerAsk,
+          option.id,
+          undefined,
+          got.typed,
+          got.picked,
+          got.remember,
+          undefined,
+          got.named,
+        );
+        if (refused !== undefined) {
+          setPickerSecretSaid(refused);
+          return "refused";
+        }
+        setPickerSecret(undefined);
+        if (option.id === "keep") {
+          setPickerTrouble(asked.declined);
+          return "declined";
+        }
+        setPickerTrouble(undefined);
+        return "filled";
+      } finally {
+        setPickerSecretBusy(false);
+        asksMoved(plane);
+      }
+    },
+    [pickerAsk, pickerSecret, pickerSecretBusy, plane],
   );
 
   const split = useCallback((direction: Direction) => void ask({ split: direction }), [ask]);
@@ -12554,6 +12628,19 @@ export const PlaneView = memo(function PlaneView({
                     }
                     // Pool setup, where the pool is added or mended: the picker closes, as it does
                     // for Settings, since the chat it was for starts after the mend.
+                    secretAsk={
+                      pickerAsk === undefined || pickerSecret === undefined
+                        ? undefined
+                        : {
+                            ask: pickerAsk,
+                            variable: pickerSecret.asked.variable,
+                            entries: () => secretAskEntries(plane, pickerAsk),
+                            busy: pickerSecretBusy,
+                            said: pickerSecretSaid,
+                            onAnswer: answerPickerAsk,
+                            onSaid: setPickerSecretSaid,
+                          }
+                    }
                     onPoolSetup={(pool) => {
                       setPicking(undefined);
                       setPickerTrouble(undefined);

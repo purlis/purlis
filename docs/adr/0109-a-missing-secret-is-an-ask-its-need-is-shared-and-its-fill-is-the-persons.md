@@ -6,6 +6,8 @@ and ADR 0107 (where a task's asks are answered).
 **Amended by ADR 0112** (2026-11-05): a Secret need is written only when the person asks, in the
 Fill notice, and a person may allow an undeclared program there.
 
+The amendments to this decision are files of their own in [`0109/`](0109/), one per ruling.
+
 ## Where purlis was
 
 A persona names one vault in its committed definition, and every teammate's chat looks for a
