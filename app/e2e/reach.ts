@@ -148,30 +148,44 @@ export const KEPT_EMPTY = "New chat";
 
 /**
  * **The tabs on `now` that were not on `before`**: by name, and as many times as each was added,
- * so a second tab of a name the strip already had is one. **The strip's kept empty tab is never
- * one** (#4756): closing a strip's last tab keeps one empty pane, named "New chat", and closing
- * that changes nothing. The one rule both a spec's own `after` and `tabsLeft.ts`'s guard use.
+ * so a second tab of a name the strip already had is one. **One kept empty tab is never one**
+ * (#4756): closing a strip's last tab keeps one empty pane, named "New chat", and a fresh strip
+ * starts with one, so one "New chat" is always the strip's own. **Past that one, or past as many
+ * as the strip began with, a "New chat" is a tab left open** (#5586): the strip's `+`, or a chat's pane
+ * emptied, leaves an unnamed tab, and a file that leaves them fills the strip of every file
+ * after it. The one rule both a spec's own `after` and `tabsLeft.ts`'s guard use.
  */
 export function openedSince(before: readonly string[], now: readonly string[]): string[] {
   const had = new Map<string, number>();
   for (const name of before) had.set(name, (had.get(name) ?? 0) + 1);
+  had.set(KEPT_EMPTY, Math.max(had.get(KEPT_EMPTY) ?? 0, 1));
   const opened: string[] = [];
   for (const name of now) {
     const kept = had.get(name) ?? 0;
     if (kept > 0) had.set(name, kept - 1);
-    else if (name !== KEPT_EMPTY) opened.push(name);
+    else opened.push(name);
   }
   return opened;
 }
 
-/** Presses each named tab's own `Close <name>` on the strip in front, from the page. */
+/**
+ * Presses each named tab's own `Close <name>` on the strip in front, from the page: a name
+ * called twice presses two tabs of that name, the strip's last ones, since unnamed "New chat"
+ * tabs share one name.
+ */
 export async function pressClose(names: readonly string[]): Promise<void> {
   await browser.execute(
     (strip: string, called: string[]) => {
-      for (const name of called)
-        document
-          .querySelector<HTMLElement>(`${strip} button[aria-label="Close ${CSS.escape(name)}"]`)
-          ?.click();
+      const times = new Map<string, number>();
+      for (const name of called) times.set(name, (times.get(name) ?? 0) + 1);
+      for (const [name, count] of times) {
+        const buttons = [
+          ...document.querySelectorAll<HTMLElement>(
+            `${strip} button[aria-label="Close ${CSS.escape(name)}"]`,
+          ),
+        ];
+        for (const button of buttons.slice(-count)) button.click();
+      }
     },
     TABS,
     [...names],
