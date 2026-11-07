@@ -6,7 +6,7 @@ import type { ChatStates } from "./chatState";
 import { standingOfRows } from "./sessionTasks";
 import type { ChatRow } from "./chatsTree";
 import type { ShownKind } from "./shownState";
-import { everyWhileShown } from "./whileShown";
+import { useNow } from "./rowClock";
 
 /**
  * **How long each chat has been in its state, as this window saw it** (#1499, V100-19).
@@ -102,34 +102,6 @@ export function stateClock(): StateClock {
   };
 }
 
-/** How often a row's time is read again. A row says minutes, so half of one is enough. It is
- *  read on the window's one beat (`whileShown.ts`): not while the window is hidden, and at once
- *  when it is shown again, so a row is never drawn with the minutes it had when the window went. */
-const TICK_MS = 30_000;
-let nowMs = 0;
-let stopTicking: (() => void) | undefined;
-const tickers = new Set<() => void>();
-
-function tick(): void {
-  nowMs = Date.now();
-  for (const one of [...tickers]) one();
-}
-
-function everyTick(listener: () => void): () => void {
-  tickers.add(listener);
-  if (stopTicking === undefined) {
-    nowMs = Date.now();
-    stopTicking = everyWhileShown(TICK_MS, tick);
-  }
-  return () => {
-    tickers.delete(listener);
-    if (tickers.size === 0) {
-      stopTicking?.();
-      stopTicking = undefined;
-    }
-  };
-}
-
 /**
  * How many seconds chat `session` has been in its state, or nothing where the window did not
  * see it change. One clock for every row, read twice a minute, and a row is drawn again by it
@@ -137,22 +109,9 @@ function everyTick(listener: () => void): () => void {
  */
 export function useStateSince(clock: StateClock, session: number): number | null {
   const at = useSyncExternalStore(clock.subscribe, () => clock.since(session));
-  const now = useSyncExternalStore(
-    everyTick,
-    () => nowMs,
-    () => nowMs,
-  );
+  const now = useNow();
   return at === null ? null : Math.max(0, Math.floor((now - at) / 1000));
 }
 
-/**
- * **The row's clock, now** (#4564): the same one beat every row's time is read on, twice a
- * minute, so what a row says in minutes changes at most once a minute.
- */
-export function useNow(): number {
-  return useSyncExternalStore(
-    everyTick,
-    () => nowMs,
-    () => nowMs,
-  );
-}
+/** The row's clock, now (`rowClock.ts`). */
+export { useNow };
