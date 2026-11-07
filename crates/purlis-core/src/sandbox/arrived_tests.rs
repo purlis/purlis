@@ -862,8 +862,68 @@ fn a_clone_the_app_says_it_made_is_not_told_and_what_it_holds_is_where_the_chat_
         &fix.folder,
         &["clone", "-q", remote.to_str().expect("a path"), "other"],
     );
-    // Its `.git` is the app's; its branches, in the chat's folder, are the chat's to write.
-    assert_eq!(fix.look(), ["made/.vscode", "other/.git", "other/.vscode"]);
+    // Its `.git` and what it held as the app made it are the app's (#5702); the other clone's
+    // branches, in the chat's folder, are the chat's to write, so they vouch for nothing.
+    assert_eq!(fix.look(), ["other/.git", "other/.vscode"]);
+    // Replaced by the chat, a name the app made is told.
+    fs::remove_dir_all(fix.folder.join("made/.vscode")).expect("gone");
+    file(&fix.folder.join("made/.vscode/tasks.json"), "the chat's\n");
+    assert_eq!(fix.look(), ["made/.vscode"]);
+}
+
+/// #5702: `purlis worktree add` in a chat's folder, where the chat may write the clone's `.git`,
+/// told the new branch folder's `.git` file as an arrival. Said by the app as it makes it, the
+/// folder is not told, and the vouching rule of #5514 stands for every other.
+#[test]
+fn a_branch_folder_the_app_made_is_not_told_where_the_chat_may_write_its_clone() {
+    let fix = Fixture::new();
+    let clone = clone_behind(&fix);
+    git(&clone, &["pull", "-q", "--ff-only"]);
+    fix.begin();
+    let cut = |name: &str| {
+        let folder = fix.folder.join(".worktrees").join(name);
+        git(
+            &clone,
+            &[
+                "worktree",
+                "add",
+                "-q",
+                "-b",
+                name,
+                folder.to_str().expect("a path"),
+            ],
+        );
+        folder
+    };
+    let made = cut("made");
+    file(&made.join(".claude/settings.local.json"), "{}\n");
+    arrived::made_by_the_app(&fix.plane, &made).expect("said");
+    // The chat's own `git worktree add`, which the app did not make.
+    cut("theirs");
+    assert_eq!(
+        fix.look(),
+        [".worktrees/theirs/.git", ".worktrees/theirs/.vscode"]
+    );
+
+    // What appears in it afterwards is told, and so is its `.git` put back another way.
+    file(&made.join(".envrc"), "x\n");
+    assert_eq!(fix.look(), [".worktrees/made/.envrc"]);
+    let words = fs::read_to_string(made.join(".git")).expect("its .git");
+    fs::remove_file(made.join(".git")).expect("gone");
+    file(&made.join(".git"), &words);
+    assert_eq!(fix.look(), [".worktrees/made/.git"]);
+}
+
+/// What the app made is held to what it held then: a name that appears in it later is told.
+#[test]
+fn a_name_the_app_did_not_make_in_a_folder_it_made_is_told() {
+    let fix = Fixture::new();
+    fix.begin();
+    let top = fix.folder.join("made");
+    file(&top.join(".mcp.json"), "{}\n");
+    arrived::made_by_the_app(&fix.plane, &top).expect("said");
+    file(&top.join("sub/.envrc"), "x\n");
+    assert_eq!(fix.look(), ["made/sub/.envrc"]);
 }
 
 #[test]
