@@ -4726,7 +4726,10 @@ mod left_beyond_a_fetch {
     #[test]
     fn the_work_of_a_project_this_machine_no_longer_knows_is_left() {
         let world = World::new();
-        crate::machine::update(&world.config, |store| store.forget(&world.here)).unwrap();
+        crate::machine::update(&world.config, |store| {
+            store.forget(&world.here);
+        })
+        .unwrap();
 
         let left = world.left();
 
@@ -4746,6 +4749,19 @@ mod left_beyond_a_fetch {
         crate::machine::update(&world.config, |store| store.remember(&other, 2)).unwrap();
 
         assert_eq!(world.left(), Vec::<String>::new());
+    }
+
+    #[test]
+    fn a_project_whose_folder_is_no_repository_is_proved_by_its_clones_alone() {
+        let world = World::new();
+        std::fs::remove_dir_all(world.runner.join(".git")).unwrap();
+        std::fs::remove_dir_all(world.here.join(".git")).unwrap();
+
+        assert_eq!(world.left(), Vec::<String>::new());
+
+        commit(&world.web(), "index.html", "only on the runner\n");
+        let left = world.left();
+        assert!(says(&left, "refs/heads/main"), "{left:?}");
     }
 
     #[test]
