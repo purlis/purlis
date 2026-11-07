@@ -1277,9 +1277,7 @@ describe("a harness charter cannot wrap on this system in a sandboxed project", 
 
     expect(screen.getByRole("alert")).toHaveTextContent(said);
     expect(screen.queryByRole("button", { name: "Start chat" })).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "Type it in a shell" }),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Type it in a shell" })).not.toBeInTheDocument();
     await userEvent
       .setup()
       .click(screen.getByRole("button", { name: "Start without the sandbox" }));

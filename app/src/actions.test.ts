@@ -1148,9 +1148,7 @@ describe("the one list of actions", () => {
     expect(by(offers, "worktree.reveal:svc/fix-it")?.title).toMatch(
       /^Reveal branch fix\/login in (Finder|File Explorer|Files)$/,
     );
-    expect(by(offers, "worktree.shell:svc/fix-it")?.title).toBe(
-      "Open a shell in branch fix/login",
-    );
+    expect(by(offers, "worktree.shell:svc/fix-it")?.title).toBe("Open a shell in branch fix/login");
     expect(by(offers, "worktree.shell:svc/fix-it")?.name).toBe("fix/login");
     expect(by(offers, "worktree.copypath:svc/fix-it")?.does).toEqual({
       verb: "copyPath",
@@ -1177,9 +1175,7 @@ describe("the one list of actions", () => {
 
     // A folder git has on no branch is named as a folder; with no plane, nothing is placed.
     const folder = catalogue(now({ plane: "/plane", pieces: [{ ...cut, branch: null }] }));
-    expect(by(folder, "worktree.shell:svc/fix-it")?.title).toBe(
-      "Open a shell in folder fix-it",
-    );
+    expect(by(folder, "worktree.shell:svc/fix-it")?.title).toBe("Open a shell in folder fix-it");
     const planeless = catalogue(now({ plane: undefined, pieces: [cut] }));
     for (const id of ["copypath", "reveal", "shell"])
       expect(by(planeless, `worktree.${id}:svc/fix-it`)?.available).toBe(false);
