@@ -165,6 +165,21 @@ pub async fn workspace_files_import_dropped(
     .await
 }
 
+/// **What the system says of a drag over a window** (#5378), held for that window's webview.
+///
+/// Every purlis window is a webview window, and without Tauri's `unstable` feature
+/// tauri-runtime-wry tells its drags to the window (`WindowEvent::DragDrop`), never to a
+/// webview's own listeners, which hear only a window's child webviews. A webview window's
+/// webview has the window's label, so the import, asked by that webview, finds them.
+pub fn window_event<R: tauri::Runtime>(window: &tauri::Window<R>, event: &tauri::WindowEvent) {
+    use tauri::Manager;
+    if let tauri::WindowEvent::DragDrop(drag) = event
+        && let Some(dropped) = window.try_state::<Dropped>()
+    {
+        dropped.heard(window.label(), drag);
+    }
+}
+
 /// **The files the system last dropped on each webview** (#5378), by its label, until the window
 /// imports them or another drag begins. Heard from the system's own drag events, before the
 /// window hears of the drop, so the files are here when its import is asked.
@@ -267,6 +282,31 @@ mod tests {
             },
         );
         assert!(dropped.take("main").is_empty());
+    }
+
+    /// purlis's windows are webview windows, so the system's drag reaches the window's event
+    /// handler as `WindowEvent::DragDrop`, never a webview's (tauri-runtime-wry without
+    /// `unstable`). Driven here through the handler `lib.rs` installs.
+    #[test]
+    fn a_drop_told_to_a_window_is_held_for_its_webview() {
+        use tauri::Manager;
+        let app = tauri::test::mock_builder()
+            .build(tauri_context!(test = true))
+            .expect("the app builds");
+        app.manage(Dropped::default());
+        let window =
+            tauri::WebviewWindowBuilder::new(&app, "split-1", tauri::WebviewUrl::default())
+                .build()
+                .expect("a window");
+
+        super::window_event(
+            &window.as_ref().window(),
+            &tauri::WindowEvent::DragDrop(drop_of(&["/Users/me/a.txt"])),
+        );
+
+        let dropped = app.state::<Dropped>();
+        assert!(dropped.take("main").is_empty());
+        assert_eq!(dropped.take("split-1"), [PathBuf::from("/Users/me/a.txt")]);
     }
 
     #[test]

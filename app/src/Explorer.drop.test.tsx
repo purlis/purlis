@@ -144,13 +144,11 @@ function pointAt(under: () => Element) {
 
 const POINT = { x: 40, y: 80 };
 
-/** The system says the drag is `over`, `dropped`, or has left. */
-async function drag(type: "enter" | "over" | "drop" | "leave") {
+/** The system says a drag of `paths` has entered, is `over`, `dropped`, or has left. */
+async function drag(type: "enter" | "over" | "drop" | "leave", paths = ["/Users/me/a.txt"]) {
   const event = `tauri://drag-${type}`;
   const payload =
-    type === "leave"
-      ? null
-      : { paths: type === "over" ? undefined : ["/Users/me/a.txt"], position: POINT };
+    type === "leave" ? null : { paths: type === "over" ? undefined : paths, position: POINT };
   await act(async () => {
     await emit(event, payload);
   });
@@ -207,16 +205,44 @@ describe("Explorer, files dropped from the file manager (#5378)", () => {
     await waitFor(() => expect(calls.map((one) => one.args.folder)).toEqual(["notes"]));
   });
 
-  it("reads the system's point in physical pixels as the page's", async () => {
+  // wry tells a drag's point in the view's own points on macOS (`draggingLocation`) and in
+  // GTK's logical pixels on Linux, which are the page's; on Windows in the client area's
+  // physical pixels (`ScreenToClient`), which the page's scale divides.
+  it.each([
+    ["MacIntel", { x: 40, y: 80 }],
+    ["Linux x86_64", { x: 40, y: 80 }],
+    ["Win32", { x: 20, y: 40 }],
+  ])("reads the system's point on %s as the page's at %o", async (platform, page) => {
     core();
     render(<Window />);
     await row(/^notes/);
+    vi.spyOn(navigator, "platform", "get").mockReturnValue(platform);
     vi.spyOn(window, "devicePixelRatio", "get").mockReturnValue(2);
     const at = pointAt(tree);
 
-    await drag("over");
+    await drag("enter");
 
-    expect(at).toHaveBeenCalledWith(20, 40);
+    expect(at).toHaveBeenCalledWith(page.x, page.y);
+  });
+
+  it("hears nothing of a drag that carries no files, as a drag inside the window does", async () => {
+    const calls = core();
+    render(<Window />);
+    const memory = await row(/^memory/);
+    const notes = await row(/^notes/);
+    let under: Element = notes;
+    pointAt(() => under);
+
+    await drag("enter", []);
+    await drag("over");
+    expect(dropTargets()).toHaveLength(0);
+
+    under = memory;
+    await drag("drop", []);
+
+    expect(dropTargets()).toHaveLength(0);
+    expect(calls).toEqual([]);
+    expect(screen.queryByRole("alertdialog")).toBeNull();
   });
 
   it.each([
@@ -279,7 +305,7 @@ describe("Explorer, files dropped from the file manager (#5378)", () => {
     let under: Element = plan;
     pointAt(() => under);
 
-    await drag("over");
+    await drag("enter");
     expect([...dropTargets()]).toEqual([notes]);
 
     under = memory;
@@ -298,6 +324,7 @@ describe("Explorer, files dropped from the file manager (#5378)", () => {
     await row(/^notes/);
     pointAt(() => document.body);
 
+    await drag("enter");
     await drag("over");
     await drag("drop");
 
@@ -312,6 +339,7 @@ describe("Explorer, files dropped from the file manager (#5378)", () => {
     const notes = await row(/^notes/);
     pointAt(() => notes);
 
+    await drag("enter");
     await drag("over");
     await drag("drop");
 

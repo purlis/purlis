@@ -9,8 +9,9 @@ import { getCurrentWebview, type DragDropEvent } from "@tauri-apps/api/webview";
  * landed, said by the rows it can land on, and the row drawn as the drop's target while the drag
  * is over it.
  *
- * The system tells the drag through Tauri's own drag events, at a point in physical pixels; the
- * row under it is the one the page draws there. A row says what a drop on it does with two
+ * The system tells the drag through Tauri's own drag events, at a point Tauri calls physical
+ * but wry measures as each platform does ({@link pagePoint}); the row under it is the one the
+ * page draws there. A drag that carries no files, as one inside the window does, is no drop. A row says what a drop on it does with two
  * attributes ({@link dropOn}): `data-drop-into`, the folder it imports into, or
  * `data-drop-refused`, the sentence that says why it takes none. A point in the view on no row
  * is the workspace's top. A point outside the view is no drop of this view's: it is left alone.
@@ -36,14 +37,26 @@ export function dropOn(drop: FinderDrop | undefined): {
 /** The attribute that draws a row, or the tree, as a drop's target (the tree family's own). */
 const TARGET = "data-drop-target";
 
-/** Where the drop at `point`, in physical pixels, lands in `view`, and what to draw as its
- *  target: none outside the view. */
+/**
+ * The page's point for the point the system tells a drag at (wry 0.57). On macOS it is the
+ * view's own points (`draggingLocation`), and on Linux GTK's logical pixels: both are the
+ * page's. On Windows it is the client area's physical pixels (`ScreenToClient`), which the
+ * page's scale divides. Tauri calls all three physical, unscaled.
+ */
+function pagePoint(point: { x: number; y: number }): { x: number; y: number } {
+  if (!navigator.platform.startsWith("Win")) return point;
+  const scale = window.devicePixelRatio || 1;
+  return { x: point.x / scale, y: point.y / scale };
+}
+
+/** Where the drop at the system's `point` lands in `view`, and what to draw as its target:
+ *  none outside the view. */
 export function landing(
   view: HTMLElement,
   point: { x: number; y: number },
 ): { drop: FinderDrop; target: HTMLElement | null } | undefined {
-  const scale = window.devicePixelRatio || 1;
-  const under = document.elementFromPoint(point.x / scale, point.y / scale);
+  const at = pagePoint(point);
+  const under = document.elementFromPoint(at.x, at.y);
   if (under === null || !view.contains(under)) return undefined;
   const row = under.closest<HTMLElement>("[data-drop-into], [data-drop-refused]");
   const top = view.querySelector<HTMLElement>('[role="treegrid"]');
@@ -88,6 +101,8 @@ export function useFinderDrop(
   useEffect(() => {
     if (!on) return;
     let drawn: HTMLElement | null = null;
+    // Whether the drag now over the window carries files: its `over`s say none of their own.
+    let files = false;
     const draw = (target: HTMLElement | null) => {
       if (drawn === target) return;
       drawn?.removeAttribute(TARGET);
@@ -96,7 +111,9 @@ export function useFinderDrop(
     };
     const hear = ({ payload }: { payload: DragDropEvent }) => {
       const here = viewed.current();
-      if (payload.type === "leave" || here === null) {
+      if (payload.type === "enter") files = payload.paths.length > 0;
+      if (payload.type === "drop") files = payload.paths.length > 0;
+      if (payload.type === "leave" || here === null || !files) {
         draw(null);
         return;
       }
