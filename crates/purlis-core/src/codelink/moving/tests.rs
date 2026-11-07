@@ -614,3 +614,47 @@ fn a_clone_the_runner_made_is_never_made_over_a_folder_here() {
         "nothing is left of a clone that did not come"
     );
 }
+
+/// The index a move that does not finish puts back is as old as the one it kept, so git still
+/// reads again a file written in that index's own tick ("racy git"). The file is changed at the
+/// same size in that tick, and the copy kept of the index is given a time of its own, as
+/// `std::fs::copy` gives one on Linux (macOS's clones the file, time and all). The tick is put
+/// seconds back, and ctime is not trusted, because a test cannot set it.
+#[test]
+fn a_file_written_in_the_indexs_own_tick_at_the_same_size_is_changed_after_a_move_puts_the_index_back()
+ {
+    let world = World::new();
+    let repo = &world.desktop;
+    git(repo, &["config", "core.trustctime", "false"]);
+    let index = PathBuf::from(git(
+        repo,
+        &["rev-parse", "--path-format=absolute", "--git-path", "index"],
+    ));
+    let tick = std::time::SystemTime::now() - std::time::Duration::from_secs(10);
+    let written_at = |path: &Path, when: std::time::SystemTime| {
+        std::fs::File::options()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_modified(when)
+            .unwrap();
+    };
+    // The index holds README as written at the tick, and is itself newer, so nothing is racy.
+    written_at(&repo.join("README"), tick);
+    git(repo, &["update-index", "-q", "--refresh"]);
+    // README changed at the same size, in the tick the index was written in.
+    std::fs::write(repo.join("README"), "two\n").unwrap();
+    written_at(&repo.join("README"), tick);
+    written_at(&index, tick);
+    let scratch = world.scratch("move");
+
+    let kept = IndexKept::of(repo, &scratch).unwrap();
+    written_at(&scratch.join("index.kept"), std::time::SystemTime::now());
+    git(repo, &["read-tree", "HEAD"]);
+    kept.put_back();
+
+    assert_eq!(
+        git(repo, &["diff", "--name-only", "--", "README"]),
+        "README"
+    );
+}

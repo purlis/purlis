@@ -141,10 +141,14 @@ fn agreed_tree(
     }
 }
 
-/// A copy of `repo`'s index, put back where a move does not finish.
+/// A copy of `repo`'s index, put back where a move does not finish, **written when it was**. git
+/// trusts an entry's stat only where the file is older than the index that holds it, and reads
+/// again a file written in the index's own tick ("racy git"). An index put back newer than it was
+/// would take a file changed in that tick at the same size as unchanged, and a plain copy on Linux
+/// is newer (macOS's `std::fs::copy` clones the file, time and all).
 struct IndexKept {
     at: std::path::PathBuf,
-    copy: Option<std::path::PathBuf>,
+    copy: Option<(std::path::PathBuf, std::time::SystemTime)>,
 }
 
 impl IndexKept {
@@ -158,8 +162,11 @@ impl IndexKept {
         }
         let at = std::path::PathBuf::from(ran.line());
         let copy = scratch.join("index.kept");
-        let copy = match std::fs::copy(&at, &copy) {
-            Ok(_) => Some(copy),
+        let copy = match std::fs::metadata(&at)
+            .and_then(|index| index.modified())
+            .and_then(|written| std::fs::copy(&at, &copy).map(|_| written))
+        {
+            Ok(written) => Some((copy, written)),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
             Err(e) => {
                 return Err(Refused::Git(format!("the index could not be kept: {e}")));
@@ -170,8 +177,13 @@ impl IndexKept {
 
     fn put_back(&self) {
         match &self.copy {
-            Some(copy) => {
-                let _ = std::fs::copy(copy, &self.at);
+            Some((copy, written)) => {
+                let _ = std::fs::copy(copy, &self.at).and_then(|_| {
+                    std::fs::File::options()
+                        .write(true)
+                        .open(&self.at)?
+                        .set_modified(*written)
+                });
             }
             None => {
                 let _ = std::fs::remove_file(&self.at);
