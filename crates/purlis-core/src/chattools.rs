@@ -506,8 +506,8 @@ impl CodexApprovals {
 pub fn acp_server(
     binary: &Path,
     chat_env: &[(std::ffi::OsString, std::ffi::OsString)],
-) -> agent_client_protocol::schema::v1::McpServer {
-    use agent_client_protocol::schema::v1::{EnvVariable, McpServer, McpServerStdio};
+) -> agent_client_protocol::v1::schema::McpServer {
+    use agent_client_protocol::v1::schema::{EnvVariable, McpServer, McpServerStdio};
     // Each name once, in `SCOPE_ENV`'s then `CONNECTION_ENV`'s order, with its last value: the
     // chat's own comes after what the app passed on, and an agent may read a repeated name
     // either way. A value that is not UTF-8 cannot be said in JSON, and is left out rather than
