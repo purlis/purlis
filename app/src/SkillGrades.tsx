@@ -715,7 +715,13 @@ export function GradesTab({
               {rows.map((row) => (
                 <TableRow key={row.grade} id={row.grade} textValue={row.graded}>
                   <TableCell>
-                    {row.after_edit ? `${row.graded} · after an edit` : row.graded}
+                    {[
+                      row.graded,
+                      row.after_edit ? "after an edit" : null,
+                      row.spent.resumed ? "resumed" : null,
+                    ]
+                      .filter((one) => one !== null)
+                      .join(" · ")}
                   </TableCell>
                   <TableCell>{row.version}</TableCell>
                   <TableCell>{row.ran_on}</TableCell>
@@ -868,6 +874,7 @@ export function GradingPage({
           grade={grading.grade}
           onChat={(chat) => onGrading({ at: "chat", grade: grading.grade, chat }, "go")}
           onGradeAgain={level === null ? undefined : () => onGrading({ at: "plan" }, "go")}
+          onResumed={(resumed) => onGrading({ at: "running", grade: resumed }, "go")}
           onGradedAt={onGradedAt}
         />
       );

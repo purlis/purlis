@@ -55,8 +55,17 @@ const PLAN: SkillGradesPlan = {
       limit_usd: 3,
       estimate: lastGrade(0.84),
       consent: "a",
+      resume: null,
     },
-    { level: PROJECT, name: "grilling", chats: 18, limit_usd: 3, estimate: null, consent: "b" },
+    {
+      level: PROJECT,
+      name: "grilling",
+      chats: 18,
+      limit_usd: 3,
+      estimate: null,
+      consent: "b",
+      resume: null,
+    },
     {
       level: PROJECT,
       name: "tdd",
@@ -64,6 +73,7 @@ const PLAN: SkillGradesPlan = {
       limit_usd: 3,
       estimate: lastGrade(0.61),
       consent: "c",
+      resume: null,
     },
   ],
   left_out: [{ level: PROJECT, name: "scratch-notes", why: "It has no tests." }],
@@ -121,6 +131,27 @@ const AT_THE_LIMIT: SkillGradesStep = {
   ended: "limit",
 };
 
+/** Resuming grilling's grade, stopped at the batch's limit, under one new limit (#5718). */
+const RESUME_PLAN: SkillGradesPlan = {
+  ...PLAN,
+  skills: [
+    {
+      level: PROJECT,
+      name: "grilling",
+      chats: 9,
+      limit_usd: 1.5,
+      estimate: { ...lastGrade(0.45), chats_then: 9 },
+      consent: "r",
+      resume: "g2",
+    },
+  ],
+  left_out: [],
+  known_usd: 0.45,
+  known: 1,
+  unknown: [],
+  most_usd: 1.5,
+};
+
 function Tab({ width }: { width: number; running: SkillGradesStep; answer: Studio }) {
   return <StudioInPanel width={width} height={560} />;
 }
@@ -134,6 +165,7 @@ const meta = {
       if (cmd === "skill_studio") return args.answer;
       if (cmd === "skill_deletes_cut_short") return { settled: [], unsettled: [] };
       if (cmd === "skill_grades_plan") return PLAN;
+      if (cmd === "skill_grades_resume_plan") return RESUME_PLAN;
       if (cmd === "skill_grades_start") {
         started = true;
         return "b1";
@@ -232,6 +264,32 @@ export const StoppedAtTheLimit: Story = {
       "The limit was reached first.",
     );
     await tabInto(() => within(page).getByRole("button", { name: "Back to the Library" }));
+    expectFocusInSight();
+  },
+};
+
+/**
+ * **A batch that stopped short offers Resume** (#5718): the grade the limit stopped is resumed
+ * under one new limit, from a review that counts only the chats it left.
+ */
+export const ResumeTheStopped: Story = {
+  args: { running: AT_THE_LIMIT },
+  play: async ({ canvas }) => {
+    const page = await start(canvas);
+    const resume = await within(page).findByRole("button", { name: "Resume them…" });
+    await tabInto(() => resume);
+    expectFocusInSight();
+    await userEvent.keyboard("{Enter}");
+    const shown = await canvas.findByTestId("grades-review");
+    await within(shown).findByTestId("grades-estimate");
+    await expect(within(shown).getByTestId("grades-going-grilling")).toHaveTextContent(
+      "9 chats left",
+    );
+    await expect(within(shown).getByRole("button", { name: "Resume them" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    await tabInto(() => within(shown).getByRole("textbox", { name: "Spending limit" }));
     expectFocusInSight();
   },
 };

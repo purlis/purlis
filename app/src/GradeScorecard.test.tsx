@@ -47,11 +47,20 @@ const CARD: GradeScorecard = {
   against: null,
   delta_without: null,
   after_edit: false,
+  resets_at: null,
   asked: 1,
   outcome: "graded",
   arms: { with: 100, without: 0, previous: null },
   outcome_arms: null,
-  spent: { chats: 5, tokens: 40000, cost_usd: 1.92, limit_usd: 3 },
+  spent: {
+    chats: 5,
+    tokens: 40000,
+    cost_usd: 1.92,
+    limit_usd: 3,
+    resumed: false,
+    earlier_tokens: null,
+    earlier_usd: null,
+  },
   evals: [],
   tests: [
     {

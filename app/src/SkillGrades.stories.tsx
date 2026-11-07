@@ -23,7 +23,13 @@ import { inWorkspace, skillRowId, type GradingAt } from "./skillStudio";
 import { skill, studio } from "./skillsListing.testkit";
 import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
 import { expectFocusInSight, untilFocusInSight, untilFocusWithin } from "./stories.testkit";
-import type { GradeRow, GradeScorecard, SkillDraft, SkillGradePlan } from "./bindings";
+import type {
+  GradeRow,
+  GradeScorecard,
+  SkillDraft,
+  SkillGradePlan,
+  SkillGradeResumePlan,
+} from "./bindings";
 
 const SCOPE = inWorkspace("smart-ide");
 
@@ -92,7 +98,15 @@ const row = (grade: string, over: Partial<GradeRow> = {}): GradeRow => ({
   outcome: "graded",
   arms: { with: 86, without: 68, previous: 80 },
   outcome_arms: null,
-  spent: { chats: 36, tokens: 300000, cost_usd: 1.92, limit_usd: 3 },
+  spent: {
+    chats: 36,
+    tokens: 300000,
+    cost_usd: 1.92,
+    limit_usd: 3,
+    resumed: false,
+    earlier_tokens: null,
+    earlier_usd: null,
+  },
   after_edit: false,
   ...over,
 });
@@ -106,7 +120,15 @@ const GRADES: GradeRow[] = [
     ended: "Stopped at its dollar limit",
     arms: { with: 80, without: 69, previous: null },
     outcome_arms: null,
-    spent: { chats: 22, tokens: 240000, cost_usd: 1.71, limit_usd: 1.71 },
+    spent: {
+      chats: 22,
+      tokens: 240000,
+      cost_usd: 1.71,
+      limit_usd: 1.71,
+      resumed: false,
+      earlier_tokens: null,
+      earlier_usd: null,
+    },
   }),
   row("01A", {
     graded: "2026-10-20 08:00 UTC",
@@ -116,7 +138,15 @@ const GRADES: GradeRow[] = [
     ended: "Interrupted: not scored",
     arms: { with: null, without: null, previous: null },
     outcome_arms: null,
-    spent: { chats: 2, tokens: null, cost_usd: 0.21, limit_usd: null },
+    spent: {
+      chats: 2,
+      tokens: null,
+      cost_usd: 0.21,
+      limit_usd: null,
+      resumed: false,
+      earlier_tokens: null,
+      earlier_usd: null,
+    },
   }),
 ];
 
@@ -147,10 +177,19 @@ const CARD: GradeScorecard = {
   against: "fedcba987654",
   delta_without: 18,
   after_edit: false,
+  resets_at: null,
   asked: 0,
   outcome: "graded",
   arms: { with: 86, without: 68, previous: 80 },
-  spent: { chats: 36, tokens: 300000, cost_usd: 1.92, limit_usd: 3 },
+  spent: {
+    chats: 36,
+    tokens: 300000,
+    cost_usd: 1.92,
+    limit_usd: 3,
+    resumed: false,
+    earlier_tokens: null,
+    earlier_usd: null,
+  },
   outcome_arms: null,
   evals: [],
   tests: TESTS.map((test, at) => ({
@@ -233,6 +272,8 @@ function Tab({
   evals?: number;
   /** The chats' drafts: one of deploy's checks waits on its Grades tab. */
   drafts?: SkillDraft[];
+  /** What resuming the scorecard's grade would run (#5718): none where nothing is kept. */
+  resume?: SkillGradeResumePlan | null;
 }) {
   return <StudioInPanel width={width} height={620} narrow={narrow} onOpenView={() => undefined} />;
 }
@@ -306,6 +347,10 @@ const meta = {
           return { profiles: [{ name: "work" }] };
         case "skill_grade_scorecard":
           return args.card;
+        case "skill_grade_resume_plan":
+          return args.resume ?? null;
+        case "skill_grade_resume":
+          return "01R";
         case "skill_grade_chat":
           return SCREEN;
         case "skill_updates":
@@ -581,6 +626,137 @@ export const ScorecardAtLimit: Story = {
     await expect(await canvas.findByTestId("grade-scorecard-about")).toHaveTextContent(
       "Stopped at its limit",
     );
+  },
+};
+
+/** What resuming deploy's grade stopped at its cap would run (#5718). */
+const RESUME: SkillGradeResumePlan = {
+  grade: "01B",
+  skill: "deploy",
+  ended: "Stopped at the token cap",
+  refused: null,
+  waits_until: null,
+  left: 14,
+  tokens_left: 40000,
+  usd_left: 0.3,
+  token_cap: 200000,
+  cap_set_here: true,
+  limit_usd: 1.5,
+  earlier_tokens: 240000,
+  earlier_usd: 1.71,
+  profile: "work",
+  model: "sonnet",
+  consent: "be5ume",
+  running: null,
+};
+
+/** A scorecard of a grade that stopped at its token cap, which can be resumed. */
+const STOPPED_CARD: GradeScorecard = {
+  ...CARD,
+  grade: "01B",
+  outcome: "at-limit",
+  ended: "Stopped at the token cap",
+};
+
+/**
+ * **A stopped grade offers Resume beside Grade again** (#5718): the press asks first, with the
+ * chats left, about what they spend, the cap that holds them and what the stopped run spent.
+ * Esc keeps everything as it was.
+ */
+export const ScorecardOffersResume: Story = {
+  args: { grading: { at: "scorecard", grade: "01B" }, card: STOPPED_CARD, resume: RESUME },
+  play: async ({ canvas }) => {
+    const resume = await canvas.findByRole("button", { name: "Resume" });
+    await expect(canvas.getByRole("button", { name: "Grade again" })).toBeInTheDocument();
+    await tabInto(() => resume);
+    expectFocusInSight();
+    await userEvent.keyboard("{Enter}");
+    const page = within(document.body);
+    const question = await page.findByRole("alertdialog", {
+      name: "Resume the grade of deploy?",
+    });
+    await expect(within(question).getByTestId("grade-resume-left")).toHaveTextContent(
+      "About 40,000 tokens left to run; cap 200,000.",
+    );
+    await expect(within(question).getByTestId("grade-resume-earlier")).toHaveTextContent(
+      "It spent 240,000 tokens, $1.71 so far.",
+    );
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(page.queryByRole("alertdialog")).toBeNull());
+  },
+};
+
+/** **A grade stopped at the program's usage limit**: Resume says when it can run, and waits. */
+export const ScorecardResumeWaitsForTheLimit: Story = {
+  args: {
+    grading: { at: "scorecard", grade: "01B" },
+    card: {
+      ...STOPPED_CARD,
+      outcome: "stopped",
+      ended: "Stopped: Claude Code's usage limit was reached",
+      resets_at: "2030-01-01T14:00:00Z",
+    },
+    resume: {
+      ...RESUME,
+      ended: "Stopped: Claude Code's usage limit was reached",
+      waits_until: "2030-01-01T14:00:00Z",
+    },
+  },
+  play: async ({ canvas }) => {
+    const resume = await canvas.findByRole("button", {
+      name: /^Resume after your limit resets at /,
+    });
+    await expect(resume).toHaveAttribute("aria-disabled", "true");
+    await tabInto(() => resume);
+    expectFocusInSight();
+  },
+};
+
+/** **A grade whose skill changed since it stopped**: Grade again alone, saying what changed. */
+export const ScorecardResumeNotOffered: Story = {
+  args: {
+    grading: { at: "scorecard", grade: "01B" },
+    card: { ...STOPPED_CARD, outcome: "stopped", ended: "Stopped by you" },
+    resume: {
+      ...RESUME,
+      ended: "Stopped by you",
+      refused:
+        "Resume is not offered: the skill's text changed since it stopped. Grade again runs it whole.",
+      consent: null,
+    },
+  },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByTestId("grade-scorecard-resume-refused")).toHaveTextContent(
+      "the skill's text changed since it stopped",
+    );
+    await expect(canvas.queryByRole("button", { name: "Resume" })).toBeNull();
+    await tabInto(() => canvas.getByRole("button", { name: "Grade again" }));
+    expectFocusInSight();
+  },
+};
+
+/** **A resumed grade's scorecard**: marked resumed, and its spend is both runs'. */
+export const ScorecardOfAResumedGrade: Story = {
+  args: {
+    grading: { at: "scorecard", grade: "01C" },
+    card: {
+      ...CARD,
+      spent: {
+        ...CARD.spent,
+        resumed: true,
+        earlier_tokens: 240000,
+        earlier_usd: 1.71,
+        cost_usd: 2.01,
+      },
+    },
+  },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByTestId("grade-scorecard-about")).toHaveTextContent(
+      ", resumed,",
+    );
+    await expect(
+      canvas.getByRole("group", { name: "Totals of the grade of deploy" }),
+    ).toHaveTextContent("both runs · this run $0.30");
   },
 };
 

@@ -112,21 +112,29 @@ export function GradeSetReview({
   plane,
   members,
   stays,
+  resume,
   onCancel,
   onStarted,
 }: {
   plane: string;
   members: readonly SkillSetMember[];
   stays: readonly Stays[];
+  /** **The stopped grades it resumes instead** (#5718), by their ids: each runs only what its
+   *  grade left, under the one limit set here. */
+  resume?: readonly string[];
   onCancel: () => void;
   /** A batch started, or one already running in the project that the person asked to see. */
   onStarted: (batch: string) => void;
 }) {
-  const { read, again } = useRead(members.map(memberKey).join("\u0001"), () =>
-    commands.skillGradesPlan(
-      plane,
-      members.map((one) => [one.level, one.name]),
-    ),
+  const { read, again } = useRead(
+    resume === undefined ? members.map(memberKey).join("\u0001") : `resume:${resume.join(",")}`,
+    () =>
+      resume === undefined
+        ? commands.skillGradesPlan(
+            plane,
+            members.map((one) => [one.level, one.name]),
+          )
+        : commands.skillGradesResumePlan(plane, [...resume]),
   );
   const plan = read?.data;
   const [typed, setTyped] = useState<string>();
@@ -135,14 +143,20 @@ export function GradeSetReview({
   const shown = typed ?? (plan === undefined ? "" : limitOffered(plan));
   const limit = limitTyped(shown);
   const skills = plan?.skills ?? [];
-  const title = `Grade ${counted(skills.length || members.length, "skill", "skills")}?`;
+  const title =
+    resume === undefined
+      ? `Grade ${counted(skills.length || members.length, "skill", "skills")}?`
+      : `Resume ${counted(skills.length || resume.length, "grade", "grades")}?`;
+  const press = resume === undefined ? "Start grading" : "Resume them";
   const unready =
     plan === undefined
       ? "Reading what it would spend…"
       : (plan.refused ??
         plan.running ??
         (skills.length === 0
-          ? "None of these has tests to grade."
+          ? resume === undefined
+            ? "None of these has tests to grade."
+            : "None of these can be resumed now: each says why below."
           : limit === undefined
             ? "Set a spending limit."
             : undefined));
@@ -153,7 +167,12 @@ export function GradeSetReview({
     void commands
       .skillGradesStart(
         plane,
-        skills.map((one) => ({ level: one.level, name: one.name, consent: one.consent })),
+        skills.map((one) => ({
+          level: one.level,
+          name: one.name,
+          consent: one.consent,
+          resume: one.resume,
+        })),
         limit,
       )
       .then((answer) => {
@@ -186,12 +205,12 @@ export function GradeSetReview({
       data-testid="grades-review"
       summary={
         atMost === undefined
-          ? "Nothing runs until you set a limit and press Start grading."
-          : `Nothing runs until you press Start grading. It stops at ${atMost}, keeping the grades done by then.`
+          ? `Nothing runs until you set a limit and press ${press}.`
+          : `Nothing runs until you press ${press}. It stops at ${atMost}, keeping the grades done by then.`
       }
       onCancel={onCancel}
       main={{
-        children: "Start grading",
+        children: press,
         isDisabled: busy || unready !== undefined,
         tooltip: unready,
         onPress: start,
@@ -199,7 +218,11 @@ export function GradeSetReview({
     >
       <GradingHeading
         name={title}
-        description={`They run ${plan?.at_once ?? 3} at a time${plan?.profile == null ? "" : ` on ${plan.profile}`}, each a grade of its own, as Grade on its Grades tab runs one, with its trigger tests. Each grade ends on its skill's Grades tab.`}
+        description={
+          resume === undefined
+            ? `They run ${plan?.at_once ?? 3} at a time${plan?.profile == null ? "" : ` on ${plan.profile}`}, each a grade of its own, as Grade on its Grades tab runs one, with its trigger tests. Each grade ends on its skill's Grades tab.`
+            : `They run ${plan?.at_once ?? 3} at a time, each only the cases its stopped grade did not finish, on that grade's profile and model, and keep what ran. Each resumed grade ends on its skill's Grades tab, with both runs' spend.`
+        }
       />
       {read?.refused !== undefined && (
         <NotRead
@@ -274,12 +297,16 @@ export function GradeSetReview({
             />
           </section>
           <section aria-labelledby="grades-going" className="skill-review">
-            <PanelSectionTitle id="grades-going">{`Will be graded (${skills.length})`}</PanelSectionTitle>
+            <PanelSectionTitle id="grades-going">
+              {resume === undefined
+                ? `Will be graded (${skills.length})`
+                : `Will be resumed (${skills.length})`}
+            </PanelSectionTitle>
             {skills.map((one) => (
               <NamedLine
                 key={batchKey(one)}
                 name={one.name}
-                said={`${counted(one.chats, "chat", "chats")}${ownEstimateSaid(one.estimate)}`}
+                said={`${counted(one.chats, "chat", "chats")}${resume === undefined ? "" : " left"}${ownEstimateSaid(one.estimate)}`}
                 testid={`grades-going-${one.name}`}
               />
             ))}
@@ -328,6 +355,8 @@ const ENDED_SAID: Record<GradeEnded, string> = {
   "over-limit": "Stopped at its own limit",
   "spend-not-reported": "Its chats did not say what they spent",
   failed: "A fault in purlis ended it",
+  "usage-limit": "Stopped at the program's usage limit",
+  unreachable: "Stopped: network unreachable",
 };
 
 /** **Where one skill of a batch is**, in a line. */
@@ -346,6 +375,29 @@ export function skillStepSaid(one: BatchSkillStep): string {
       return one.cost_usd === null ? said : `${said}, ${usdSaid(one.cost_usd)}`;
     }
   }
+}
+
+/** How a grade of a batch ended that a resume can go on from (#5718): it stopped short. */
+const STOPPED_SHORT: readonly GradeEnded[] = [
+  "stopped",
+  "chats-did-not-start",
+  "over-cap",
+  "over-limit",
+  "spend-not-reported",
+  "usage-limit",
+  "unreachable",
+];
+
+/** **The grades of a batch that stopped short**, by their ids: what its Resume goes on from. */
+export function stoppedShortOf(step: SkillGradesStep | undefined): string[] {
+  return (step?.skills ?? []).flatMap((one) =>
+    one.state.state === "ended" &&
+    one.grade !== null &&
+    one.ended !== null &&
+    STOPPED_SHORT.includes(one.ended)
+      ? [one.grade]
+      : [],
+  );
 }
 
 /** **How a batch ended**, in a sentence. */
@@ -373,11 +425,14 @@ export function GradesRunningPage({
   plane,
   batch,
   onOpen,
+  onResume,
   onBack,
 }: {
   plane: string;
   batch: string;
   onOpen: (one: BatchSkillStep) => void;
+  /** **Resumes the grades that stopped short** (#5718), by their ids, under one new limit. */
+  onResume?: (grades: string[]) => void;
   /** Back to the Library: the grades keep going. */
   onBack: () => void;
 }) {
@@ -446,6 +501,7 @@ export function GradesRunningPage({
     return <ReadingRows what="the grades running" testid="grades-running-reading" />;
   const over = step === undefined || step.ended !== null;
   const ended = step?.skills.filter((one) => one.state.state === "ended").length ?? 0;
+  const stoppedShort = over ? stoppedShortOf(step) : [];
   return (
     <ReviewPage
       label="Grading several skills"
@@ -518,6 +574,16 @@ export function GradesRunningPage({
             <p className="honest" data-testid="grades-ended">
               {batchEndedSaid(step)}
             </p>
+          )}
+          {onResume !== undefined && stoppedShort.length > 0 && (
+            <Notice
+              cause={`skill-grades-stopped-short:${batch}`}
+              tone="attention"
+              label="Stopped short"
+              fixes={[{ label: "Resume them…", onPress: () => onResume(stoppedShort) }]}
+            >
+              {`${counted(stoppedShort.length, "grade", "grades")} stopped before ${stoppedShort.length === 1 ? "it" : "they"} finished. Resume runs only what each left, under a new limit you set first.`}
+            </Notice>
           )}
           <Totals live aria-label="How far the grades are">
             <Tile

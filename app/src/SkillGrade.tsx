@@ -85,6 +85,10 @@ export function endSaid(
       return `Stopped at its dollar limit after ${chats}${spent}. ${step.said ?? "What ran is scored."}`;
     case "spend-not-reported":
       return `Stopped after ${chats}: ${step.said ?? "a chat did not say what it spent, so the grade could not be held to its cap."}`;
+    case "usage-limit":
+      return `Stopped after ${chats}: the program's usage limit was reached. ${step.said ?? "What ran is kept, and its scorecard says when Resume can run."}`;
+    case "unreachable":
+      return `Stopped after ${chats}: network unreachable. ${step.said ?? "What ran is kept, and Resume can go on from it."}`;
     case "failed":
       return step.said ?? "A fault in purlis ended the grade before it was scored.";
     default:

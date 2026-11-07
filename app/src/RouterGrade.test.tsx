@@ -777,7 +777,15 @@ function scorecard(over: Partial<RouterGradeScorecard> = {}): RouterGradeScoreca
     ended: "Finished",
     outcome: "graded",
     arms: { router: 50, built_in: 100 },
-    spent: { chats: 12, tokens: 12000, cost_usd: 0.12, limit_usd: 1.5 },
+    spent: {
+      chats: 12,
+      tokens: 12000,
+      cost_usd: 0.12,
+      limit_usd: 1.5,
+      resumed: false,
+      earlier_tokens: null,
+      earlier_usd: null,
+    },
     asked: 0,
     skills: [
       { skill: "deploy", tests: [scoredTest("deploy", false, true)] },

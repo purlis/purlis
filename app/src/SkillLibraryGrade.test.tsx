@@ -52,7 +52,15 @@ function lastGrade(cost_usd: number | null): GradeEstimate {
 }
 
 function graded(name: string, estimate: GradeEstimate | null): BatchSkill {
-  return { level: PROJECT, name, chats: 6, limit_usd: 3, estimate, consent: `c-${name}` };
+  return {
+    level: PROJECT,
+    name,
+    chats: 6,
+    limit_usd: 3,
+    estimate,
+    consent: `c-${name}`,
+    resume: null,
+  };
 }
 
 const PLAN: SkillGradesPlan = {

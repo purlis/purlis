@@ -20,6 +20,7 @@ import { ViewPageHeader } from "./ui/panel/ViewFrame";
 /** **What each kind is called**, as the page groups them, in the core's order. */
 export const NEED_KIND_NAMES: Record<NeedKind, string> = {
   review: "Changes to review",
+  resume: "Grades to resume",
   clash: "Clashes",
   problem: "Problems in a skill",
   pins: "Pins no chat reads",
@@ -68,7 +69,7 @@ export function NeedsYouList({
     return (
       <EmptyState
         headline="Nothing needs you"
-        body="Changes to review, clashes, problems in a skill, pins no chat reads and tidy-ups show up here."
+        body="Changes to review, grades to resume, clashes, problems in a skill, pins no chat reads and tidy-ups show up here."
         testid="skill-needs-none"
       />
     );
