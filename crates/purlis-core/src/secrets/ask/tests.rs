@@ -1135,6 +1135,35 @@ fn a_vault_the_persona_may_not_use_is_still_asked_and_never_answered_filled_at_o
     assert_eq!(asks.open().len(), 1, "still open");
 }
 
+/// #5246's review: a picked entry is held to the rule a typed value is. A chat that names a vault
+/// its persona may not use gets no link planted in it, which that vault's own persona's tools
+/// would read.
+#[test]
+fn a_link_into_a_vault_the_persona_may_not_use_is_refused_as_a_fill_is() {
+    let project = project_with_needs();
+    let root = project.path();
+    let asks = Asks::new(root);
+    raised_now(root, &asks, &line(7, "NEW", Some("others"))).expect("asked");
+    let refused = asks
+        .answer(
+            &ctx(root),
+            asks.open()[0].id,
+            Answer::Link(crate::secrets::links::Target {
+                vault: "team".into(),
+                key: "TOKEN".into(),
+            }),
+            window(),
+        )
+        .expect_err("not the persona's to use");
+    assert!(refused.contains("Allow it for devops first"), "{refused}");
+    assert_eq!(
+        crate::secrets::links::of(&ctx(root), "others", "NEW").unwrap(),
+        None,
+        "nothing linked"
+    );
+    assert_eq!(asks.open().len(), 1, "still open");
+}
+
 #[test]
 fn a_fill_never_replaces_a_value_a_vault_holds_already() {
     let project = project_with_needs();

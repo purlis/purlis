@@ -1148,6 +1148,30 @@ impl Asks {
         self.answer_as(ctx, id, answer, Named::as_asked(), by)
     }
 
+    /// Whether the person may link asked key `key` of vault `vault` to an entry: refused where
+    /// the vault is one the asking persona may not use, as [`fillable`] refuses a Fill. A vault the
+    /// project does not have yet is left to the link's own write, as before.
+    fn linkable(&self, ctx: &Ctx, vault: &str, key: &str) -> Result<(), String> {
+        let persona = self
+            .inner()
+            .open
+            .get(&(vault.to_owned(), key.to_owned()))
+            .map(|asked| asked.persona.clone())
+            .unwrap_or_default();
+        let doc = super::registry::load_registry(ctx).map_err(|e| e.message.to_string())?;
+        if super::registry::vault_in(&doc, vault).is_err() {
+            return Ok(());
+        }
+        super::brokered::authorise(ctx, Some(&persona), vault)
+            .map(|_| ())
+            .map_err(|why| {
+                format!(
+                    "{why} Allow it for {persona} first, or link the key into {persona}'s own \
+                     vault."
+                )
+            })
+    }
+
     /// **[`Self::answer`], storing a fill as `named`** (#5072): in another vault or under
     /// another key name, which the person chose before filling. Every chat that waits hears the
     /// name it is stored under. A vault the project does not have is made for the persona
@@ -1249,6 +1273,15 @@ impl Asks {
                         "an entry is linked under the asked name, {}",
                         vault_and_key(&vault, &key)
                     ));
+                }
+                // Only into a vault the persona may use, as a Fill is (#5246's review): a link
+                // planted in another persona's vault is read by that persona's tools. A replace
+                // was judged so as it was asked.
+                if reason.is_none()
+                    && let Err(why) = self.linkable(ctx, &vault, &key)
+                {
+                    still_open();
+                    return Err(why);
                 }
                 if let Err(e) = linked_to(ctx, &vault, &key, reason.as_ref(), to) {
                     still_open();
