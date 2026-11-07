@@ -116,17 +116,35 @@ async function point(over: boolean): Promise<void> {
   );
 }
 
-/** Waits until the window's base surface is `want`'s, or one of `want`. */
+/**
+ * Waits until the window's base surface is `want`'s, or one of `want`.
+ *
+ * Its failure says the last surface seen, read when it fails: a `timeoutMsg` is written before
+ * the wait, when nothing had been seen (#5586). With it go what puts a preview back unasked, the
+ * window's focus and visibility, and the theme the window says it draws.
+ */
 async function surfaceBecomes(want: string | readonly string[], why: string): Promise<void> {
   const wanted = typeof want === "string" ? [want] : want;
   let saw = "";
-  await browser.waitUntil(
-    async () => {
-      saw = await surface();
-      return wanted.includes(saw);
-    },
-    { timeout: 20_000, timeoutMsg: `${why}: the window drew ${saw}, not ${wanted.join(" or ")}` },
-  );
+  try {
+    await browser.waitUntil(
+      async () => {
+        saw = await surface();
+        return wanted.includes(saw);
+      },
+      { timeout: 20_000 },
+    );
+  } catch {
+    const window = await browser.execute(() => ({
+      focused: document.hasFocus(),
+      visibility: document.visibilityState,
+      theme: document.documentElement.dataset.theme ?? null,
+    }));
+    throw new Error(
+      `${why}: the window drew ${saw || "nothing"}, not ${wanted.join(" or ")} ` +
+        `(${JSON.stringify(window)})`,
+    );
+  }
 }
 
 describe("Settings › Theme's hover preview", function () {

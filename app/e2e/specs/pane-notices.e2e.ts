@@ -7,7 +7,7 @@ import { pressAndStart } from "../opening.js";
 import { roomForTwoPanes } from "../paneRoom.js";
 import { runFromThePalette } from "../reach.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
-import { openedSince } from "../reach.js";
+import { minimiseNoticesExpandedHere, openedSince } from "../reach.js";
 
 /**
  * **A Notice in a pane fits its pane, measured** (#1481), **in a row of its own above the
@@ -128,7 +128,11 @@ async function raise(
       if (!stack) return false;
       // The band open (#5215): folded, what it holds is one line, however it is marked.
       const bell = frames[at]?.querySelector('[aria-label^="Pane notices:"]');
-      if (bell?.getAttribute("aria-expanded") === "false") (bell as HTMLElement).click();
+      if (bell?.getAttribute("aria-expanded") === "false") {
+        (bell as HTMLElement).click();
+        // The window keeps this choice: `minimiseNoticesExpandedHere` undoes it (#5586).
+        (window as unknown as Record<string, boolean>).__e2eNoticesExpanded = true;
+      }
       // Held in a list, not bound by name: the spec's bundler wraps a named function in a
       // `__name` call the page does not have (`gauge.e2e.ts`, `view-tabs.e2e.ts`).
       const el = [
@@ -607,6 +611,8 @@ describe("a Notice in a pane", () => {
   // One app process serves the whole run: the window goes back to the size it had, and every
   // chat this file opened is ended (as `pane-fill.e2e.ts` ends its own).
   after(async () => {
+    // While its panes are still open: only a pane's bell sets the choice.
+    await minimiseNoticesExpandedHere();
     await browser.setWindowSize(was.width, was.height);
     // Each chat this file started, by the number the core gave it (#1796): a tab's name may be
     // one an older chat has too.
