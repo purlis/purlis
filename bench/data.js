@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794028755582,
+  "lastUpdate": 1794032041610,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -41748,6 +41748,48 @@ window.BENCHMARK_DATA = {
             "value": 101.9410825,
             "unit": "ms",
             "extra": "median of 5 runs: 101.388, 101.669, 101.941, 102.055, 103.435 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "eebaf91c1e6901c5a3af4ec60a7b52947c5e6975",
+          "message": "Scale: settle #5486's remaining misses — the run's order, and seven costs that grew with the project (#5587)\n\n* Curate menus read a big project once, not once a subject (#5486)\n\nThe window asks curation_offers for every subject at once: the plane, each of 1,000 workspaces and\neach of 100 personas. curation::resolve listed every workspace and persona, read every persona's\ncuration folder and the profiles again for each subject, so one answer took 1.4-1.6 s on the scale\nrun's macOS runner, and 35 s while the project opened.\n\ncuration::Offers reads the project once; resolve() is Offers::read(root).resolve(subject), and the\napp resolves every subject of one call, and its default harness, from one reading.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6SV5ZJJTVX0TSS49VDGNY8K\nPurlis-Persona: steward\n\n* The git standing reads only what moved, on a project nothing has saved too (#5486)\n\nTwo reasons each look read the whole tree at 200,000 files:\n\n- status_of passed '-- .' and the never-staged excludes as a pathspec, and git uses its untracked\n  cache only for a status of the whole tree: with any pathspec read_directory opened all ~4,300\n  folders again (trace2: 2.0 s vs 0.48 s on the generated project). The status now names no\n  pathspec, and the never-staged paths are dropped by kept_out, the rule they are spelled from.\n- Only a save writes the untracked cache and fsmonitor token into the index, so a plane purlis has\n  not saved (a fresh clone, a quiet project, the nightly's) had neither, and on macOS every read\n  asked the monitor and still scanned. planegit::prime runs that status once as auto-save starts,\n  under the save claim, so it never races a save.\n\nLocally (Apple git 2.39, no fsmonitor daemon in the sandbox) a look went 5.1 s -> 2.7 s.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6SV5ZJJTVX0TSS49VDGNY8K\nPurlis-Persona: steward\n\n* A chat start freezes every persona's tools reading each definition once (#5486)\n\npersonagate::snapshot runs at every SessionStart and computes effective_tools for every persona;\neach persona's tools, lineage and borrows read its definition (and its ancestors') again: 21 reads\nfor two personas in the new test. At 100 personas that was ~67 ms of a 156 ms hook on the\ngenerated project. It now runs inside personas::read_once (#4736), as the picker does.\n\nHook on the seed-5497 project with the index built, locally: 156 ms -> 89 ms.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6SV5ZJJTVX0TSS49VDGNY8K\nPurlis-Persona: steward\n\n* The briefing's other workspaces come from one seek per workspace (#5486)\n\nReader::workspaces grouped every item of kind workspace/todos/sessions (116k rows at the target\nsize) to count memories, todos and sessions and take MAX(mtime); item_owner does not hold mtime, so\neach row was a table lookup: 33 ms warm, 430 ms cold on the generated project's index, inside every\nchat start's 50 ms budget.\n\nThe briefing reads only each workspace's newest change and its todo count. The query now takes\nthose with correlated subqueries over a new covering index item_owner_mtime(kind, owner, mtime):\n2.7 ms on the same index. The unused memories/sessions counts are dropped. SCHEMA 1 -> 2, so an\nexisting index is discarded and rebuilt once (ADR 0079: a schema change is a rebuild).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6SV5ZJJTVX0TSS49VDGNY8K\nPurlis-Persona: steward\n\n* The project index's rules version names the rules without compiling them (#5486)\n\nReader::open and Writer::open compare the index's rules version, the hash of\nsecretshape::leak_rules()' ids and kinds, at every chat start. leak_rules read them through\ncompiled(), gitleaks() and pii(), which compile every pattern, so a fresh hook process paid the\nwhole compile to name the rules: Summaries::of took 13.5 ms of the hook on the generated project.\n\nleak_rules now reads checks(), GITLEAKS and pii_rules() (pii's table before its patterns are\ncompiled), in the same order, so the version is unchanged. Summaries::of: 13.5 ms -> 1.2 ms.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6SV5ZJJTVX0TSS49VDGNY8K\nPurlis-Persona: steward\n\n* A held memory store is listed with one lstat a file (#5486)\n\nholding::md_names listed a store with Store::files(), which lstat'd every entry to keep the regular\nfiles, then asked Store::entry() for each again for its link count and size. On the generated\nproject's persona stores that was 28 ms + 26 ms per 1,000 files, both lstat-bound.\n\nheld::listed() keeps each entry's lstat as an Entry; Store::file_entries() hands those to\nmd_names, and entries() derives its kinds from the same listing. A host-start sweep of the\n200,000-memory index went from 20.5 s to 15-18 s locally; every read_files of a held store (recall's\nscan, the briefing without an index) gains the same.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6SV5ZJJTVX0TSS49VDGNY8K\nPurlis-Persona: steward\n\n* Scale run: the index is built before the CLI rows, and the idle minute waits for it (#5486)\n\nThe nightly's misses on the hook (0.52 s Linux, 25 s macOS), recall --all-workspaces (22 s / 103 s)\nand idle CPU (90% / 68%) were mostly the measurement:\n\n- tools/scale-run.mjs timed the CLI before anything had built the project index, and the CLI never\n  writes one, so the briefing took its Files path (a git status of the whole project) and recall\n  scanned every file. On the seed-5497 project locally: hook 4.6 s and recall --all 49 s with no\n  index; 178 ms and 61 ms once it is built (47 ms and 42 ms with the other fixes on this branch).\n- The idle minute started 20 s after launch, while the host's keeper was building the first index\n  of 200,000 memories (95 s locally), so it measured the build.\n\nscale-project index builds the index as the keeper does (Writer::open, then the standing), and\nscale-run runs it first, recording its time as the index-rebuild row the report held pending on\n#5498. The keeper now says when the index is ready and how long it took (the app log had no index\nline at all), and the e2e's idle minute waits for that line, reporting it as index-ready.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6SV5ZJJTVX0TSS49VDGNY8K\nPurlis-Persona: steward\n\n* The status line's root alert asks git for no untracked files (#5486)\n\nalerts::tracked_dirty ran git status with untracked files listed, then dropped every '??' line:\nonly a tracked change is the root being worked in. --untracked-files=no gives the same answer\nwithout the untracked walk (1.5 s -> 1.0 s for that status on the generated project), as doctor\nalready asks it. The window's alerts read the shared standing instead and are unchanged.\n\nThe recorded statusline scenarios could not run in this sandbox (their fixture copy is refused);\nthe lines dropped are exactly the ones the filter discarded, so no recorded answer moves.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6SV5ZJJTVX0TSS49VDGNY8K\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aharon@easydmarc.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-07T05:06:06Z",
+          "tree_id": "60f92c423118ee38612ac9c3049fcdd4248a1bb7",
+          "url": "https://github.com/purlis/purlis/commit/eebaf91c1e6901c5a3af4ec60a7b52947c5e6975"
+        },
+        "date": 1794032029018,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6768615,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.665, 0.673, 0.677, 0.714, 0.732 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6613245,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.463, 16.542, 16.661, 16.708, 16.736 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.5753675,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.585, 102.039, 102.575, 102.921, 103.043 ms"
           }
         ]
       }
