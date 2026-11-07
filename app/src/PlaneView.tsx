@@ -1514,6 +1514,9 @@ export const PlaneView = memo(function PlaneView({
    * by a different chat.
    */
   const [startedIn, setStartedIn] = useState<Record<number, string>>({});
+  /** **Each chat this window started, as it was started** (#5308): what {@link nameOf} calls it
+   *  until its row arrives, and is never read after. Not pruned, as {@link startedIn} is not. */
+  const [startedAs, setStartedAs] = useState<ReadonlyMap<number, PressedChat>>(new Map());
   /** **Which chat each task the plane has listed was a task of**, kept once it lists it no more:
    *  the plane can be read again before a task's end arrives (#5106), and until then, and after,
    *  its tab stands where its asker is filed and its end keeps its pane. `askedByNow` is what
@@ -2613,6 +2616,8 @@ export const PlaneView = memo(function PlaneView({
   );
   const showStarted = useCallback(
     (chat: PressedChat, workspace: string, named = false, asked?: PaneAt) => {
+      // What it is called until its row arrives (#5308), drawn with its pane.
+      setStartedAs((was) => new Map(was).set(chat.session, chat));
       const land = () =>
         landOn((tabs) => openNew(tabs, chat, filedAs(chat.session, workspace), { named, asked }));
       if (asked !== undefined) land();
@@ -4306,17 +4311,17 @@ export const PlaneView = memo(function PlaneView({
       // the operator is looking at.
       const filed = filedIn ?? filedFor(cwd, focused);
       setStartedIn((was) => ({ ...was, [session]: filed }));
+      const pressed: PressedChat = {
+        session,
+        chat: name,
+        who: whoOf(persona, kind),
+        label: started.data.label ?? null,
+      };
       if ("tab" in where) {
         // **It opens by the one rule** (#5289), and replaces nothing. A start that names its
         // place, a directory or a strip the caller chose, keeps that place's strip.
-        const label = started.data.label ?? null;
         const named = where.in !== undefined || filedIn !== undefined;
-        showStarted(
-          { session, chat: name, who: whoOf(persona, kind), label },
-          filed,
-          named,
-          where.pane,
-        );
+        showStarted(pressed, filed, named, where.pane);
         return undefined;
       }
       // The tab that was to be split can have gone while the picker was open: the chat goes on
@@ -4324,6 +4329,8 @@ export const PlaneView = memo(function PlaneView({
       // Undo puts it back (#4763); its chat runs on in the sidebar. **Only the tab that was
       // split**: every strip keeps a tab (#4758), so another one, such as the empty tab left
       // where that one went, can be in front by now, and is not the tab the person split.
+      // What it is called until its row arrives (#5308), drawn with its pane.
+      setStartedAs((was) => new Map(was).set(session, pressed));
       change((tabs) =>
         inFrontTab === undefined || tabs.inFront !== inFrontTab
           ? tabs
@@ -5502,16 +5509,27 @@ export const PlaneView = memo(function PlaneView({
   const nameOfNow = useRef<(session: number) => string>((session) => String(session));
   /** What a chat the project lists is called now, or nothing for one it does not list. */
   const nameOfListed = useCallback((session: number) => chatNames.get(session), [chatNames]);
-  /** What a chat is called here: as its row names it (`shownName`); for a chat the project
-   *  does not list yet, the tab holding it; or its session number. */
+  /**
+   * What a chat is called here: as its row names it (`shownName`). **A chat the project does not
+   * list yet** (#5308) is named as `shownName` will name it once its row arrives: the name of the
+   * tab it is the own chat of; else, beside another chat, never that tab's name but what its row
+   * will say, from what the core said of it as it came back or what this window started it as;
+   * else its own name as its pane holds it; or its session number.
+   */
   const nameOf = useCallback(
     (session: number) => {
       const listed = chatNames.get(session);
       if (listed !== undefined) return listed;
-      const held = tabHolding(tabs, session);
-      return held !== undefined ? tabs.byId[held].name : String(session);
+      const own = ownTabOf(tabs, session);
+      if (own !== undefined) return tabs.byId[own].name;
+      const back = reopened.find((chat) => chat.session === session);
+      if (back !== undefined) return untabbedName(back);
+      const started = startedAs.get(session);
+      if (started !== undefined) return pressedName(started);
+      // Any other: its own name, as its pane holds it, never the tab's.
+      return paneChatName(tabs, session) ?? String(session);
     },
-    [chatNames, tabs],
+    [chatNames, reopened, startedAs, tabs],
   );
 
   useEffect(() => {
@@ -12970,8 +12988,27 @@ type StopAllAsking = StopAllAsked & { session: number; busy: boolean; trouble?: 
 
 /** What a chat with no tab is called: what its tab would say, were it opened (#1447). */
 function untabbedName(chat: OpenChat): string {
-  const who = whoOf(chat.persona, chat.harness);
-  return chat.label ?? (who ? `${who} ${chat.name}` : chat.name);
+  return pressedName({
+    session: chat.session,
+    chat: chat.name,
+    who: whoOf(chat.persona, chat.harness),
+    label: chat.label,
+  });
+}
+
+/** **What a chat is called by its own name, who runs it and its label** (#1447, #5308): the
+ *  label the person gave it, else its persona or program before its name. One answer for a
+ *  listed chat ({@link untabbedName}) and one this window started that is not listed yet. */
+function pressedName(chat: PressedChat): string {
+  return chat.label ?? (chat.who ? `${chat.who} ${chat.chat}` : chat.chat);
+}
+
+/** Chat `session`'s own name, as a pane showing it records it ({@link Content}'s `chat`). */
+function paneChatName(tabs: Tabs, session: number): string | undefined {
+  for (const id of tabs.order)
+    for (const { content } of contentsOf(tabs, id))
+      if (content.kind === "session" && content.session === session) return content.chat;
+  return undefined;
 }
 
 /** The tab chat `session` is the own chat of, where it has one: where it renames in place. */

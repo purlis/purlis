@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { recorded, undoLayout } from "./layoutUndo";
 import { dropOn, firstPaneNameOf, type DropContext } from "./paneDrop";
 import {
+  closeChat,
   closePane,
   focusPane,
   insertPane,
@@ -65,6 +66,16 @@ const table: readonly [string, () => Tabs, string][] = [
   ],
   ["the first chat leaving gives it the next one's", () => closed(split(), 1), "devops 2"],
   ["the second chat leaving keeps it", () => closed(split(), 2), "steward 1"],
+  [
+    // The core closed it (#5308): its pane goes as a closed pane's does.
+    "the first chat closing gives it the next one's",
+    () =>
+      named(
+        split(),
+        closeChat(split(), 1, () => "ops"),
+      ),
+    "devops 2",
+  ],
   [
     "a chat split in left of the first pane becomes first",
     () => {
