@@ -43,6 +43,11 @@ pub const REASON: &str = "branch-folder-git";
 /// reads it.
 const WORKTREES: &str = ".worktrees";
 
+/// The most folders [`found`] keeps the shell possibly in, after `cd`s that may each have
+/// failed. Each `cd` past a `;` can add one, so a line of many is left to the sandbox rather
+/// than read in time that grows faster than its length.
+const MOST_PLACES: usize = 8;
+
 /// What the chat is told, for `git <sub>`: the shape to retry, in a call of its own.
 pub fn said(sub: &str) -> String {
     format!(
@@ -166,6 +171,10 @@ fn found<T>(
                         if !if_a_move_failed.contains(&left) {
                             if_a_move_failed.push(left);
                         }
+                    }
+                    // More places than a line of a few moves has: out of sight.
+                    if here.len() + if_a_move_failed.len() > MOST_PLACES {
+                        return seen;
                     }
                     continue;
                 }

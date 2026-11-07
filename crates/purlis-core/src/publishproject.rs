@@ -417,7 +417,8 @@ fn branch_of(root: &Path) -> Result<String, String> {
 fn scanned(root: &Path, head: &str, branch: &str, url: &str) -> Result<(), String> {
     let theirs = "0".repeat(head.len().max(40));
     let updates = format!("HEAD {head} refs/heads/{branch} {theirs}\n");
-    let scan = crate::diffscan::pushed(root, "origin", url, &updates)
+    // The remote has nothing: no remote-tracking ref the project holds takes a commit out.
+    let scan = crate::diffscan::pushed_knowing(root, "origin", url, &updates, Some(&[]))
         .map_err(|why| format!("purlis could not scan what the push would send: {why}"))?;
     let found: Vec<String> = scan
         .refused
