@@ -368,11 +368,9 @@ fn sweep(
             .filter(|s| paths.iter().any(|p| related(p, &s.dir)))
             .collect(),
     };
-    for source in &targets {
-        let one = sweep_source(root, tx, source)?;
-        swept.written += one.written;
-        swept.deleted += one.deleted;
-    }
+    let one = sweep_sources(root, tx, &targets)?;
+    swept.written += one.written;
+    swept.deleted += one.deleted;
     let workspaces: BTreeSet<&str> = match touched {
         None => every
             .iter()
@@ -426,131 +424,299 @@ fn delete_row(tx: &rusqlite::Transaction<'_>, id: i64) -> Result<()> {
     Ok(())
 }
 
-/// One source brought up to date: listed through the gate, each file whose stat moved read
+/// How many sources are planned at once, while the rows of the ones before are written: enough
+/// to keep every thread busy, few enough that the planned rows of a batch stay small.
+const BATCH: usize = 16;
+
+/// Each source brought up to date: listed through the gate, each file whose stat moved read
 /// again, each file gone deleted.
-fn sweep_source(root: &Path, tx: &rusqlite::Transaction<'_>, source: &Source) -> Result<Swept> {
-    let Some(base) = relative(root, &source.dir) else {
-        return Ok(Swept::default());
-    };
+///
+/// **Planned in parallel, written in order** (#5486). Listing, reading, hashing and scanning a
+/// file need nothing from the database but the source's recorded rows, so each batch of sources
+/// is planned on every thread at once ([`plan`]) while the one connection writes the batch
+/// before it ([`apply`]). The writes are the ones a source-by-source sweep makes, in its order.
+fn sweep_sources(
+    root: &Path,
+    tx: &rusqlite::Transaction<'_>,
+    targets: &[&Source],
+) -> Result<Swept> {
     let mut swept = Swept::default();
-    let (files, unread) = crate::memstore::read_files(root, &source.dir);
-    tx.execute("DELETE FROM unread WHERE base = ?1", [&base])?;
-    for (path, code) in &unread {
-        tx.execute(
-            "INSERT INTO unread(base, kind, owner, path, code) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![
-                base,
-                source.kind.as_str(),
-                source.owner,
-                relative(root, path).unwrap_or_default(),
-                code
-            ],
-        )?;
+    let batches: Vec<Vec<(&Source, String)>> = targets
+        .chunks(BATCH)
+        .map(|chunk| {
+            chunk
+                .iter()
+                .filter_map(|s| Some((*s, relative(root, &s.dir)?)))
+                .collect()
+        })
+        .collect();
+    std::thread::scope(|scope| -> Result<()> {
+        let mut planning = None;
+        for (n, batch) in batches.iter().enumerate() {
+            let planned = match planning.take() {
+                Some(handle) => join(handle),
+                None => plan(root, batch, recorded(tx, batch)?),
+            };
+            if let Some(next) = batches.get(n + 1) {
+                let rows = recorded(tx, next)?;
+                planning = Some(scope.spawn(move || plan(root, next, rows)));
+            }
+            for (one, (source, _)) in planned.into_iter().zip(batch) {
+                let done = apply(root, tx, source, one)?;
+                swept.written += done.written;
+                swept.deleted += done.deleted;
+            }
+        }
+        Ok(())
+    })?;
+    Ok(swept)
+}
+
+fn join<T>(handle: std::thread::ScopedJoinHandle<'_, T>) -> T {
+    handle
+        .join()
+        .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+}
+
+/// The rows each source of `batch` recorded, by path.
+fn recorded(
+    tx: &rusqlite::Transaction<'_>,
+    batch: &[(&Source, String)],
+) -> Result<Vec<BTreeMap<String, Recorded>>> {
+    let mut stmt = tx.prepare("SELECT path, id, size, mtime, hash FROM item WHERE base = ?1")?;
+    batch
+        .iter()
+        .map(|(_, base)| {
+            stmt.query_map([base], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    Recorded {
+                        id: r.get(1)?,
+                        size: r.get(2)?,
+                        mtime: r.get(3)?,
+                        hash: r.get(4)?,
+                    },
+                ))
+            })?
+            .collect::<rusqlite::Result<_>>()
+            .map_err(Into::into)
+        })
+        .collect()
+}
+
+/// What one source's sweep writes, decided without the database.
+struct Planned {
+    base: String,
+    unread: crate::memstore::Unread,
+    changes: Vec<Change>,
+}
+
+/// One write of a sweep.
+enum Change {
+    /// The file's stat moved and its text did not.
+    Touch { id: i64, size: i64, mtime: i64 },
+    /// The file is gone, or no longer readable as text.
+    Delete(i64),
+    /// The file is new, or its text changed: the old row, if any, goes first.
+    Write { was: Option<i64>, row: Row },
+}
+
+/// A row as it is written: its text already scanned and split into words.
+struct Row {
+    rel: String,
+    title: String,
+    date: Option<String>,
+    size: i64,
+    mtime: i64,
+    hash: String,
+    title_words: String,
+    text_words: String,
+}
+
+/// Every source of `batch` planned, each against the rows it `recorded`, on every thread.
+fn plan(
+    root: &Path,
+    batch: &[(&Source, String)],
+    recorded: Vec<BTreeMap<String, Recorded>>,
+) -> Vec<Planned> {
+    let listed = in_parallel(batch, |(source, _)| {
+        crate::memstore::read_files(root, &source.dir)
+    });
+    let mut files: Vec<(usize, PathBuf, String, Option<Recorded>)> = Vec::new();
+    let mut gone: Vec<Vec<i64>> = Vec::new();
+    let mut unread_of = Vec::new();
+    for (at, ((found, unread), mut recorded)) in listed.into_iter().zip(recorded).enumerate() {
+        for path in found {
+            let Some(rel) = relative(root, &path) else {
+                continue;
+            };
+            let was = recorded.remove(&rel);
+            files.push((at, path, rel, was));
+        }
+        gone.push(recorded.into_values().map(|r| r.id).collect());
+        unread_of.push(unread);
     }
-    let mut recorded: BTreeMap<String, Recorded> = {
-        let mut stmt =
-            tx.prepare("SELECT path, id, size, mtime, hash FROM item WHERE base = ?1")?;
-        stmt.query_map([&base], |r| {
-            Ok((
-                r.get::<_, String>(0)?,
-                Recorded {
-                    id: r.get(1)?,
-                    size: r.get(2)?,
-                    mtime: r.get(3)?,
-                    hash: r.get(4)?,
-                },
-            ))
-        })?
-        .collect::<rusqlite::Result<_>>()?
+    let changes = in_parallel(&files, |(_, path, rel, was)| change(path, rel, was.as_ref()));
+    let mut planned: Vec<Planned> = batch
+        .iter()
+        .zip(unread_of)
+        .map(|((_, base), unread)| Planned {
+            base: base.clone(),
+            unread,
+            changes: Vec::new(),
+        })
+        .collect();
+    for ((at, ..), change) in files.iter().zip(changes) {
+        planned[*at].changes.extend(change);
+    }
+    for (one, gone) in planned.iter_mut().zip(gone) {
+        one.changes.extend(gone.into_iter().map(Change::Delete));
+    }
+    planned
+}
+
+/// What the sweep writes for the file at `path`, recorded as `was`: nothing when its stat has
+/// not moved.
+fn change(path: &Path, rel: &str, was: Option<&Recorded>) -> Option<Change> {
+    let Ok(meta) = std::fs::metadata(path) else {
+        return was.map(|was| Change::Delete(was.id));
     };
-    for path in files {
-        let Some(rel) = relative(root, &path) else {
-            continue;
-        };
-        let was = recorded.remove(&rel);
-        let Ok(meta) = std::fs::metadata(&path) else {
-            if let Some(was) = was {
-                delete_row(tx, was.id)?;
-                swept.deleted += 1;
-            }
-            continue;
-        };
-        let size = meta.len() as i64;
-        let mtime = meta
-            .modified()
-            .ok()
-            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map_or(0, |d| d.as_nanos() as i64);
-        if let Some(was) = &was
-            && was.size == size
-            && was.mtime == mtime
-        {
-            continue;
-        }
-        let Some(text) = std::fs::read(&path).ok().and_then(crate::memstore::text_of) else {
-            // Not readable as text: not a memory to the scan either.
-            if let Some(was) = was {
-                delete_row(tx, was.id)?;
-                swept.deleted += 1;
-            }
-            continue;
-        };
-        let hash = {
-            use sha2::Digest;
-            crate::extension::hex(&sha2::Sha256::digest(text.as_bytes()))
-        };
-        if let Some(was) = &was
-            && was.hash == hash
-        {
-            tx.execute(
-                "UPDATE item SET size = ?2, mtime = ?3 WHERE id = ?1",
-                params![was.id, size, mtime],
-            )?;
-            continue;
-        }
-        if let Some(was) = was {
-            delete_row(tx, was.id)?;
-        }
-        let title = crate::memstore::title_in(&path, &text);
-        let name = path.file_name().unwrap_or_default().to_string_lossy();
-        let date =
-            crate::memstore::memory_date(&text, &name).map(|d| d.format("%Y-%m-%d").to_string());
-        let shown = words::scanned(&title);
-        tx.execute(
-            "INSERT INTO item(path, base, kind, owner, audience, rank, basekey, pathkey, title,
-                              date, size, mtime, hash)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
-            params![
-                rel,
-                base,
-                source.kind.as_str(),
-                source.owner,
-                AUDIENCE,
-                sources::rank(source.kind, &source.owner),
-                sort_key(&base),
-                sort_key(&rel),
-                shown,
-                date,
-                size,
-                mtime,
-                hash
-            ],
-        )?;
-        let id = tx.last_insert_rowid();
-        tx.execute(
-            "INSERT INTO words(rowid, title, text, reach) VALUES (?1, ?2, ?3, ?4)",
-            params![
-                id,
-                words::indexed(&shown),
-                words::indexed(&words::scanned(&text)),
-                sources::reach_words(source.kind, &source.owner)
-            ],
-        )?;
-        swept.written += 1;
+    let size = meta.len() as i64;
+    let mtime = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |d| d.as_nanos() as i64);
+    if let Some(was) = was
+        && was.size == size
+        && was.mtime == mtime
+    {
+        return None;
     }
-    for (_, gone) in recorded {
-        delete_row(tx, gone.id)?;
-        swept.deleted += 1;
+    let Some(text) = std::fs::read(path).ok().and_then(crate::memstore::text_of) else {
+        // Not readable as text: not a memory to the scan either.
+        return was.map(|was| Change::Delete(was.id));
+    };
+    let hash = {
+        use sha2::Digest;
+        crate::extension::hex(&sha2::Sha256::digest(text.as_bytes()))
+    };
+    if let Some(was) = was
+        && was.hash == hash
+    {
+        return Some(Change::Touch {
+            id: was.id,
+            size,
+            mtime,
+        });
+    }
+    let title = words::scanned(&crate::memstore::title_in(path, &text));
+    let name = path.file_name().unwrap_or_default().to_string_lossy();
+    let date =
+        crate::memstore::memory_date(&text, &name).map(|d| d.format("%Y-%m-%d").to_string());
+    Some(Change::Write {
+        was: was.map(|was| was.id),
+        row: Row {
+            rel: rel.to_string(),
+            title_words: words::indexed(&title),
+            text_words: words::indexed(&words::scanned(&text)),
+            title,
+            date,
+            size,
+            mtime,
+            hash,
+        },
+    })
+}
+
+/// `work` done on each of `items` across the machine's threads, the answers in `items`' order.
+fn in_parallel<T: Sync, R: Send>(items: &[T], work: impl Fn(&T) -> R + Sync) -> Vec<R> {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let threads = std::thread::available_parallelism()
+        .map_or(1, std::num::NonZeroUsize::get)
+        .min(items.len());
+    if threads <= 1 {
+        return items.iter().map(work).collect();
+    }
+    let next = AtomicUsize::new(0);
+    let mut done: Vec<(usize, R)> = std::thread::scope(|scope| {
+        let workers: Vec<_> = (0..threads)
+            .map(|_| {
+                scope.spawn(|| {
+                    let mut mine = Vec::new();
+                    loop {
+                        let at = next.fetch_add(1, Ordering::Relaxed);
+                        let Some(item) = items.get(at) else {
+                            return mine;
+                        };
+                        mine.push((at, work(item)));
+                    }
+                })
+            })
+            .collect();
+        workers.into_iter().flat_map(join).collect()
+    });
+    done.sort_unstable_by_key(|(at, _)| *at);
+    done.into_iter().map(|(_, r)| r).collect()
+}
+
+/// One source's planned writes, made.
+fn apply(
+    root: &Path,
+    tx: &rusqlite::Transaction<'_>,
+    source: &Source,
+    planned: Planned,
+) -> Result<Swept> {
+    let base = planned.base;
+    let mut swept = Swept::default();
+    tx.execute("DELETE FROM unread WHERE base = ?1", [&base])?;
+    for (path, code) in &planned.unread {
+        tx.execute("INSERT INTO unread(base, kind, owner, path, code) VALUES (?1, ?2, ?3, ?4, ?5)", params![
+            base,
+            source.kind.as_str(),
+            source.owner,
+            relative(root, path).unwrap_or_default(),
+            code
+        ])?;
+    }
+    let rank = sources::rank(source.kind, &source.owner);
+    let basekey = sort_key(&base);
+    let reach = sources::reach_words(source.kind, &source.owner);
+    for change in planned.changes {
+        match change {
+            Change::Touch { id, size, mtime } => {
+                tx.execute("UPDATE item SET size = ?2, mtime = ?3 WHERE id = ?1", params![id, size, mtime])?;
+            }
+            Change::Delete(id) => {
+                delete_row(tx, id)?;
+                swept.deleted += 1;
+            }
+            Change::Write { was, row } => {
+                if let Some(was) = was {
+                    delete_row(tx, was)?;
+                }
+                tx.execute("INSERT INTO item(path, base, kind, owner, audience, rank, basekey, pathkey,
+                                      title, date, size, mtime, hash)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)", params![
+                    row.rel,
+                    base,
+                    source.kind.as_str(),
+                    source.owner,
+                    AUDIENCE,
+                    rank,
+                    basekey,
+                    sort_key(&row.rel),
+                    row.title,
+                    row.date,
+                    row.size,
+                    row.mtime,
+                    row.hash
+                ])?;
+                let id = tx.last_insert_rowid();
+                tx.execute("INSERT INTO words(rowid, title, text, reach) VALUES (?1, ?2, ?3, ?4)", params![id, row.title_words, row.text_words, reach])?;
+                swept.written += 1;
+            }
+        }
     }
     Ok(swept)
 }
