@@ -190,7 +190,7 @@ export function BrowserView({ plane, program }: { plane: string; program: string
   const [wentTo, setWentTo] = useState<string | null>(null);
   /** Where its page is, as its views are told (#2300); before a host says, where it went. */
   const told = useBrowserOrigin(program);
-  const origin = told === undefined ? wentTo : told;
+  const origin = told ?? wentTo;
   const [asking, setAsking] = useState<SitesAsked | null>(null);
   const [going, setGoing] = useState(false);
   /** The pool whose runner it runs on, as its view said (#2050), until it says: unknown. */

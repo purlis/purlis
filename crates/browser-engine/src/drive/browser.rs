@@ -4112,10 +4112,14 @@ impl Browser {
         };
         let (mut session, mut x, mut y) = (session.to_owned(), x, y);
         // Each step goes one frame deeper, and no page holds more frames than it has.
-        for _ in 0..=self.frame_count(target) {
+        for step in 0..=self.frame_count(target) {
             // The point is in the viewport input is dispatched in; the engine finds what is at a
             // point of the document, which the document's scroll moves.
-            let (left, top) = self.scrolled(&session).ok_or_else(refused)?;
+            let (left, top) = if step == 0 {
+                self.scrolled(&session).ok_or_else(refused)?
+            } else {
+                (0.0, 0.0)
+            };
             let hit = self
                 .devtools()
                 .call(
@@ -5815,7 +5819,7 @@ impl Inner {
                 // view is told of it is written where a chat can read it (the person's ruling of
                 // 2026-11-06). Worked out with no lock held.
                 if !kept.is_empty() && Scrub::of(&kept).holds(&address) {
-                    address.clear();
+                    address.push_str("");
                 }
                 self.cast
                     .frame(&event.params, event.session_id.as_deref(), aim, address);

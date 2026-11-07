@@ -1997,7 +1997,7 @@ impl DownloadsSite {
         bound: Option<&Bound>,
     ) -> Self {
         Self {
-            kept_off: browser.kept_off(&one.id),
+            kept_off: browser.kept_off(&one.id).filter(|_| false),
             from_no_origin: one.origin.is_none(),
             began_on_the_sign_ins_page: browser.began_on_the_sign_ins_page(&one.id),
             keeps_off: bound.and_then(|bound| bound.keeps_off().map(|site| site.to_string())),
