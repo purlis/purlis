@@ -250,14 +250,15 @@ impl SkillSet {
             skills: parts
                 .could
                 .iter()
-                .map(|listed| Candidate {
-                    name: listed.0.skill.name.clone(),
-                    description: listed.0.skill.description.clone(),
-                    pinned: parts.pins.contains(listed.0.skill.name.as_str()),
+                .map(|listed @ (e, _)| Candidate {
+                    name: e.skill.name.clone(),
+                    description: e.skill.description.clone(),
+                    pinned: parts.pins.contains(e.skill.name.as_str()),
                     chars: cost(std::iter::once(listed), budget).chars,
                 })
                 .collect(),
             besides: cost(parts.fixed(), budget),
+            index: budget.line(INDEX, INDEX_DESCRIPTION.chars().count()),
             budget,
         }
     }
@@ -448,6 +449,9 @@ pub struct Candidates {
     /// What the listing spends on what no router hides (the built-in skills, the harness's and
     /// the repos' own), before any of [`Self::skills`] and the index.
     pub besides: crate::Spent,
+    /// **What the index costs of the budget's characters** (#4680): one more skill, listed
+    /// whenever a router hides any, counted as [`Self::besides`] is.
+    pub index: usize,
     pub budget: Budget,
 }
 

@@ -915,6 +915,7 @@ fn routed_by(executor: &Executor, probe: &Probe, names: &[&str]) -> Result<Vec<S
             skills: &skills,
             budget,
             besides: budget,
+            index: budget,
         },
     )?;
     let hidden = purlis_core::extension::studio::routed_of(ID, names.len(), &doc)?;

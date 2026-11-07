@@ -42,11 +42,11 @@ the protocol its manifest names.
 | API version | Protocol | Recorded in | What changed |
 |---|---|---|---|
 | 1 | 4 | [`v1.json`](../tests/fixtures/extension-api/v1.json) | The first freeze. |
-| 2 | 5 | [`v2.json`](../tests/fixtures/extension-api/v2.json) | A route question gives each skill its `chars` (#4680). |
+| 2 | 5 | [`v2.json`](../tests/fixtures/extension-api/v2.json) | A route question gives each skill its `chars`, and the index's `index` (#4680). |
 
 purlis-core's tests hold each build to every one of those files, and none changes once recorded.
 The messages below are version 2's, under `"charter": 5`; a version 1 extension is asked the
-same messages under `"charter": 4`, with no `chars` on a route question's skills.
+same messages under `"charter": 4`, with no `chars` on a route question's skills and no `index`.
 
 ## The manifest
 
@@ -125,16 +125,18 @@ Asked with `ask` `panel`, naming `panel`, `skill` and the skill's text `files`, 
 ### A router
 
 **Which skills a chat's listing hides.** Asked with `ask` `route` at a chat's start: `skills`
-(each `name`, `description`, `pinned` and `chars`), the `budget`, and what the rest of the listing
-spends, `besides`, each in `skills` and `chars`. Answered with `hidden`, each a `skill` and a
+(each `name`, `description`, `pinned` and `chars`), the `budget`, what the rest of the listing
+spends, `besides`, and what the index costs, `index`, each in `skills` and `chars`. Answered with `hidden`, each a `skill` and a
 one-line `why`. It has 100 ms, from before its program starts. It never sees the prompt or the
 chat.
 
 A skill's `chars` is what it costs of the budget's `chars` on the chat's harness, counted as
 `besides` is. On a harness that counts whole lines, such as Claude Code, that is its name, its
 description, its `when_to_use` and the line around them, so a router that adds description lengths
-under-counts there. A router can add each listed skill's `chars` to `besides` and keep the total
-within `budget`. Protocol 4 has no `chars` on a skill: a router of version 1 is asked as it was.
+under-counts there. When a router hides any skill, purlis lists its index skill in their place,
+so that costs `index` too. A router keeps within `budget` when `besides`, the `chars` of each skill
+it leaves listed and, if it hides any, `index` add up to no more than it, and to no more skills.
+Protocol 4 has no `chars` on a skill and no `index`: a router of version 1 is asked as it was.
 
 **Which skills suit a prompt.** Asked with `ask` `prompt`, only of a router that declares
 `reads-prompts` and that the person has turned on for reading prompts on the Skill studio's

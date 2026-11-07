@@ -1420,6 +1420,10 @@ fn a_router_is_asked_the_skills_it_may_hide_the_budget_and_nothing_of_the_chat()
             skills: 1,
             chars: 40,
         },
+        index: RouteBudget {
+            skills: 1,
+            chars: 160,
+        },
     };
     assert_eq!(ask.capability(), Capability::SkillRouter);
     assert_eq!(
@@ -1429,6 +1433,7 @@ fn a_router_is_asked_the_skills_it_may_hide_the_budget_and_nothing_of_the_chat()
             "skills": [{ "name": "deploy", "description": "Deploys.", "pinned": false, "chars": 8 }],
             "budget": { "skills": 10, "chars": 2000 },
             "besides": { "skills": 1, "chars": 40 },
+            "index": { "skills": 1, "chars": 160 },
         })
     );
 }
@@ -1657,6 +1662,10 @@ fn a_router_that_reads_prompts_is_asked_the_prompt_and_the_skills_not_in_the_lis
             besides: RouteBudget {
                 skills: 0,
                 chars: 0
+            },
+            index: RouteBudget {
+                skills: 1,
+                chars: 1
             },
         }
         .unoffered("r", &reads(false))

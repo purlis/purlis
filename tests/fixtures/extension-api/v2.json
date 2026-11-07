@@ -120,6 +120,10 @@
         "besides": {
           "skills": 3,
           "chars": 300
+        },
+        "index": {
+          "skills": 1,
+          "chars": 197
         }
       },
       "writes": []

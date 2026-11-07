@@ -899,13 +899,16 @@ pub enum Ask<'a> {
         files: &'a [HandedFile],
     },
     /// **Which of a chat's `skills` its listing hides** (SK-15b, ADR 0102 §1), asked at its
-    /// start: each skill the router may hide, by name and description and whether the chat pins
-    /// it (never hidden), what the rest of the listing spends, and the budget. Never a prompt,
+    /// start: each skill the router may hide, by name and description, whether the chat pins it
+    /// (never hidden) and, from [`ROUTE_COSTS_SINCE`], what it costs; what the rest of the
+    /// listing spends, the budget, and, from [`ROUTE_COSTS_SINCE`], what the index costs, listed
+    /// whenever the router hides a skill. Never a prompt,
     /// the chat's id or anything else of the chat.
     Route {
         skills: &'a [RouteSkill],
         budget: RouteBudget,
         besides: RouteBudget,
+        index: RouteBudget,
     },
     /// **A grade of a skill** (protocol 4, #3236): the grade request, whose answer is run-chat
     /// requests and then the grade report, asked only by
@@ -988,8 +991,8 @@ pub struct RouteSkill {
     pub chars: usize,
 }
 
-/// **The protocol whose route question gives each skill its `chars`** (#4680; ADR 0101, amended
-/// 2026-11-07). A router of an earlier protocol is asked the question it was written for.
+/// **The protocol whose route question gives each skill its `chars`, and the index's cost**
+/// (#4680; ADR 0101, amended 2026-11-07). A router of an earlier protocol is asked the question it was written for.
 pub const ROUTE_COSTS_SINCE: u32 = 5;
 
 /// Skills and characters of what is listed of them: a chat's budget, or what part of its listing
@@ -1048,13 +1051,14 @@ impl Ask<'_> {
     }
 
     /// Its `ask` in the request line of `protocol`: a route question below
-    /// [`ROUTE_COSTS_SINCE`] is the one protocol 4 froze, with no skill's `chars`.
+    /// [`ROUTE_COSTS_SINCE`] is the one protocol 4 froze, with no skill's `chars` and no `index`.
     pub(crate) fn line(&self, protocol: u32) -> serde_json::Value {
         match self {
             Self::Route {
                 skills,
                 budget,
                 besides,
+                ..
             } if protocol < ROUTE_COSTS_SINCE => serde_json::to_value(FrozenRoute {
                 ask: "route",
                 skills: skills.iter().map(FrozenRouteSkill::of).collect(),

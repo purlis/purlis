@@ -145,8 +145,8 @@ use crate::skills::grade;
 ///   runs a chat the Grader has no deadline, and the question ends when the person stops the
 ///   grade ([`Executor::grade`]).
 /// - **5** (#4680, ADR 0101 as amended 2026-11-07) — a router's route question gives each skill
-///   `chars`, what it costs of the budget on the chat's harness
-///   ([`crate::extension::studio::ROUTE_COSTS_SINCE`]). Every other message is protocol 4's.
+///   `chars`, what it costs of the budget on the chat's harness, and `index`, what the index
+///   skill costs ([`crate::extension::studio::ROUTE_COSTS_SINCE`]). Every other message is protocol 4's.
 pub const PROTOCOL: u32 = 5;
 
 /// How long a program has, from being started to its answer's last byte.

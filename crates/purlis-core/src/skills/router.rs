@@ -745,6 +745,7 @@ fn asked_at_start(
         skills,
         budget: spent(budget.skills, budget.chars),
         besides: spent(candidates.besides.skills, candidates.besides.chars),
+        index: spent(1, candidates.index),
     };
     let (send, receive) = std::sync::mpsc::sync_channel(1);
     let asking = Arc::clone(asker);
@@ -920,6 +921,7 @@ struct Question {
     skills: Vec<RouteSkill>,
     budget: RouteBudget,
     besides: RouteBudget,
+    index: RouteBudget,
 }
 
 impl Question {
@@ -928,6 +930,7 @@ impl Question {
             skills: &self.skills,
             budget: self.budget,
             besides: self.besides,
+            index: self.index,
         }
     }
 }
