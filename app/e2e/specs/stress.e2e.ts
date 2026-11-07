@@ -95,6 +95,15 @@ const ROUND_BUDGET = 4 * 60_000;
 const OPEN_TARGET_BUDGET = 10 * 60_000;
 
 /**
+ * How long the picker may take to offer Start while the two hundred open. Its rows' details are
+ * read before it offers a button (#4736), and on a macOS runner on 2026-11-07 that took past
+ * the twenty seconds every other spec gives it once 190 chats were open (#5586, #5615). The time
+ * the opens take is `OPEN_TARGET_BUDGET`'s to judge; this only keeps one slow look from ending
+ * the run before it is measured.
+ */
+const PICKER_WITHIN = 2 * 60_000;
+
+/**
  * **Whether a time budget missed fails the test, or is reported and the test goes on** (#5586).
  * `STRESS_BUDGETS=report`, which the `stress` workflow sets: this spec is evidence only (V70),
  * and a runner's speed decided its result on every `main` run, which taught everyone to ignore
@@ -374,7 +383,7 @@ describe("fifty tabs over and over, then two hundred at once", function () {
     look(started, 0, `${OPEN_TARGET}: nothing open, started with a limit of ${startedWith}`, began);
 
     for (let opened = 0; opened < OPEN_TARGET; opened++) {
-      await pressAndStart("New tab");
+      await pressAndStart("New tab", PICKER_WITHIN);
       if ((opened + 1) % PROGRESS_EVERY === 0) {
         look(started, 0, `${opened + 1} of ${OPEN_TARGET} open`, began);
       }

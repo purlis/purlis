@@ -14,8 +14,11 @@ import { $, browser } from "@wdio/globals";
  * scenario. Whichever spec gets there first pays the approval; the rest see `Start`. Asking
  * for whichever button is present keeps the specs independent of their order, which matters
  * because WebdriverIO's Tauri service keeps ONE app process for the whole run.
+ *
+ * `within` is how long the picker may take to offer its button. Twenty seconds holds every
+ * spec; the stress run's two hundred chats pass more (#5586, #5615).
  */
-export async function pickAndStart(): Promise<void> {
+export async function pickAndStart(within = 20_000): Promise<void> {
   // The picker can take the palette's place, so it is looked for by its buttons at every look,
   // and nothing found before it is held (#2126).
   let pressing = "";
@@ -28,7 +31,7 @@ export async function pickAndStart(): Promise<void> {
       pressing = (await browser.execute(whatThePickerOffers, PICKER)) ?? "";
       return pressing !== "";
     },
-    { timeout: 20_000, timeoutMsg: "the picker never offered Start" },
+    { timeout: within, timeoutMsg: "the picker never offered Start" },
   );
   const start = await $(`button=${pressing}`);
   await start.waitForClickable({ timeout: 20_000 });
@@ -214,10 +217,10 @@ export async function pressOnly(name: string): Promise<void> {
  * picker. A spec that asks for it wants its chat in a tab of its own, so it is what the person
  * does for that: `+`, then the empty pane's own New chat, which opens the picker for that pane.
  */
-export async function pressAndStart(name: string): Promise<void> {
+export async function pressAndStart(name: string, within?: number): Promise<void> {
   await pressOnly(name);
   if (name === NEW_TAB) await pressTheEmptyPanesNewChat();
-  await pickAndStart();
+  await pickAndStart(within);
 }
 
 /** **Opens the picker for a chat in a tab of its own**: the strip's `+`, then the new tab's
