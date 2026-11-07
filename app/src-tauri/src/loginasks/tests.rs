@@ -449,14 +449,19 @@ fn a_vault_the_project_doesnt_have_is_never_asked_about() {
     assert!(judged(dir.path(), "qa", "shop-login", &unknown, &[]).is_err());
 }
 
+/// The person's ruling of 2026-11-07: Keep blocked counts for the persona until purlis restarts,
+/// so a new chat of the same persona starts no fresh tries.
 #[test]
-fn two_keep_blocked_end_a_chats_login_notices() {
+fn two_keep_blocked_end_a_personas_login_notices_for_this_run() {
     let grants = Grants::default();
-    grants.keep(7, "one", "https://a.example.test");
-    assert!(!grants.kept(7, "two", "https://b.example.test"));
-    grants.keep(7, "two", "https://b.example.test");
-    assert!(grants.kept(7, "three", "https://c.example.test"));
-    assert!(!grants.kept(8, "three", "https://c.example.test"));
+    grants.keep("qa", "one", "https://a.example.test");
+    assert!(!grants.kept("qa", "two", "https://b.example.test"));
+    grants.keep("qa", "two", "https://b.example.test");
+    assert!(grants.kept("qa", "three", "https://c.example.test"));
+    assert!(!grants.kept("ops", "three", "https://c.example.test"));
+    // A chat closing takes none of it with it.
+    grants.forget(7);
+    assert!(grants.kept("qa", "three", "https://c.example.test"));
 }
 
 #[test]
@@ -496,7 +501,7 @@ fn always_on_a_typed_site_shows_its_line_first() {
 }
 
 #[test]
-fn keep_blocked_is_not_asked_again_in_that_chat() {
+fn keep_blocked_is_not_asked_again_of_that_persona_in_any_chat() {
     let dir = project("");
     let grants = Grants::default();
     let (id, proposal, heard) = raised(dir.path(), &grants, "https://shop.example.test/");
@@ -511,8 +516,9 @@ fn keep_blocked_is_not_asked_again_in_that_chat() {
         heard.try_recv(),
         Ok(Heard::Kept(Some("not that site".to_owned())))
     );
-    assert!(grants.kept(7, "shop-login", "https://shop.example.test"));
-    assert!(!grants.kept(8, "shop-login", "https://shop.example.test"));
+    grants.forget(7);
+    assert!(grants.kept("qa", "shop-login", "https://shop.example.test"));
+    assert!(!grants.kept("ops", "shop-login", "https://shop.example.test"));
     assert!(audited.borrow().is_empty());
 }
 

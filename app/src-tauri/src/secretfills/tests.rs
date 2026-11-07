@@ -101,16 +101,63 @@ fn keep_blocked_tells_the_waiting_call_and_that_key_on_that_site_isnt_asked_agai
 
     assert_eq!(heard.try_recv(), Ok(Heard::Kept(None)));
     assert!(audited.into_inner().is_empty(), "nothing was allowed");
-    assert!(fills.kept(7, "qa", "dash-api-key", "https://dash.example.test"));
+    assert!(fills.kept(7, None, "qa", "dash-api-key", "https://dash.example.test"));
     assert!(
-        !fills.kept(7, "qa", "dash-api-key", "https://other.example.test"),
+        !fills.kept(7, None, "qa", "dash-api-key", "https://other.example.test"),
         "another site is asked about"
     );
-    assert!(!fills.kept(8, "qa", "dash-api-key", "https://dash.example.test"));
+    assert!(!fills.kept(8, None, "qa", "dash-api-key", "https://dash.example.test"));
+}
+
+/// The person's ruling of 2026-11-07: a persona's Keep blocked holds for all its chats until
+/// purlis restarts, so a new chat starts no fresh tries.
+#[test]
+fn keep_blocked_holds_for_every_chat_of_the_persona_after_its_chat_closes() {
+    let fills = Fills::default();
+    let shown = FillWait {
+        persona: Some("qa".into()),
+        ..wait("https://dash.example.test")
+    };
+    let (id, _heard) = fills.raise(shown.clone()).expect("raised");
+    answered(
+        &fills,
+        &Audited::default(),
+        &press(id, Press::Keep, &shown.digest()),
+    )
+    .expect("kept");
+    fills.forget(7);
+
+    let key = ("qa", "dash-api-key", "https://dash.example.test");
+    assert!(fills.kept(8, Some("qa"), key.0, key.1, key.2));
+    assert!(!fills.kept(8, Some("ops"), key.0, key.1, key.2));
+    assert!(!fills.kept(8, None, key.0, key.1, key.2));
 }
 
 #[test]
-fn two_kept_blocked_end_a_chats_fill_notices() {
+fn two_kept_blocked_end_a_personas_fill_notices_in_every_chat() {
+    let fills = Fills::default();
+    let audited = Audited::default();
+    for origin in ["https://a.example.test", "https://b.example.test"] {
+        let shown = FillWait {
+            persona: Some("qa".into()),
+            ..wait(origin)
+        };
+        let (id, _heard) = fills.raise(shown.clone()).expect("raised");
+        answered(&fills, &audited, &press(id, Press::Keep, &shown.digest())).expect("kept");
+    }
+    fills.forget(7);
+    assert!(fills.kept(9, Some("qa"), "qa", "another-key", "https://c.example.test"));
+    assert!(!fills.kept(
+        9,
+        Some("ops"),
+        "qa",
+        "another-key",
+        "https://c.example.test"
+    ));
+}
+
+#[test]
+fn two_kept_blocked_end_a_chats_fill_notices_where_it_runs_as_no_persona() {
     let fills = Fills::default();
     let audited = Audited::default();
     for origin in ["https://a.example.test", "https://b.example.test"] {
@@ -118,7 +165,8 @@ fn two_kept_blocked_end_a_chats_fill_notices() {
         let (id, _heard) = fills.raise(shown.clone()).expect("raised");
         answered(&fills, &audited, &press(id, Press::Keep, &shown.digest())).expect("kept");
     }
-    assert!(fills.kept(7, "qa", "another-key", "https://c.example.test"));
+    assert!(fills.kept(7, None, "qa", "another-key", "https://c.example.test"));
+    assert!(!fills.kept(8, None, "qa", "another-key", "https://c.example.test"));
 }
 
 #[test]
@@ -190,13 +238,13 @@ fn one_notice_waits_for_each_chat() {
 }
 
 #[test]
-fn a_chat_that_closes_takes_its_notice_and_its_kept_with_it() {
+fn a_chat_with_no_persona_that_closes_takes_its_notice_and_its_kept_with_it() {
     let fills = Fills::default();
     let (_, heard) = fills
         .raise(wait("https://dash.example.test"))
         .expect("raised");
     fills.lock().kept.push((
-        7,
+        Whose::Chat(7),
         "qa".into(),
         "k".into(),
         "https://dash.example.test".into(),
@@ -206,7 +254,7 @@ fn a_chat_that_closes_takes_its_notice_and_its_kept_with_it() {
 
     assert_eq!(heard.try_recv(), Ok(Heard::Gone));
     assert!(fills.waiting().is_empty());
-    assert!(!fills.kept(7, "qa", "k", "https://dash.example.test"));
+    assert!(!fills.kept(7, None, "qa", "k", "https://dash.example.test"));
 }
 
 #[test]

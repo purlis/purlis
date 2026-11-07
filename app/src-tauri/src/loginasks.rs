@@ -98,8 +98,10 @@ struct Inner {
     /// **Each Allow once a read took, until its login answers** (#5251): spent then, or the chat's
     /// again where the login was refused before it ran.
     taken: Vec<Grant>,
-    /// What the person kept blocked, by chat, login and origin: not asked of them again.
-    kept: Vec<(u32, String, String)>,
+    /// **What the person kept blocked, by persona, login and origin**: not asked of them again
+    /// until purlis restarts, whichever of the persona's chats asks (the person's ruling of
+    /// 2026-11-07), so a new chat starts no fresh tries.
+    kept: Vec<(String, String, String)>,
     /// Every login allowed from a notice since purlis started, used up or closed too: where a key
     /// went counts for a warning whatever became of the grant.
     filled: Vec<Tool>,
@@ -111,8 +113,9 @@ struct Inner {
 const ALREADY_ASKED: &str = "the person is already being asked about a browser login for this \
                              chat: wait for their answer before suggesting another";
 
-/// How many Keep blocked one chat is given before it's asked about no more logins, so a chat
-/// can't change a name or a subdomain until someone presses yes.
+/// How many Keep blocked one persona is given before its chats are asked about no more logins
+/// until purlis restarts, so a chat can't change a name or a subdomain, or a new chat start
+/// again, until someone presses yes.
 const KEPT_AT_MOST: usize = 2;
 
 /// **The logins a project's chats wait on the person for, and what they allowed.**
@@ -250,19 +253,19 @@ impl Grants {
         true
     }
 
-    /// Chat `session`'s login `login` kept blocked on `origin`.
-    fn keep(&self, session: u32, login: &str, origin: &str) {
+    /// `persona`'s login `login` kept blocked on `origin`.
+    fn keep(&self, persona: &str, login: &str, origin: &str) {
         self.lock()
             .kept
-            .push((session, login.to_owned(), origin.to_owned()));
+            .push((persona.to_owned(), login.to_owned(), origin.to_owned()));
     }
 
-    /// Whether the person kept this blocked for this chat, or kept enough blocked that it's
-    /// asked about no more.
-    fn kept(&self, session: u32, login: &str, origin: &str) -> bool {
+    /// Whether the person kept this blocked for `persona`, or kept enough of its logins blocked
+    /// that its chats are asked about no more, until purlis restarts.
+    fn kept(&self, persona: &str, login: &str, origin: &str) -> bool {
         let inner = self.lock();
-        let mine = || inner.kept.iter().filter(|(chat, _, _)| *chat == session);
-        mine().count() >= KEPT_AT_MOST || mine().any(|(_, name, on)| name == login && on == origin)
+        let its = || inner.kept.iter().filter(|(whose, _, _)| whose == persona);
+        its().count() >= KEPT_AT_MOST || its().any(|(_, name, on)| name == login && on == origin)
     }
 
     /// The login `name` the person allowed for chat `session`, whose id is `chat`, running as
@@ -361,7 +364,6 @@ impl Grants {
         let mut inner = self.lock();
         inner.grants.retain(|one| one.session != session);
         inner.taken.retain(|one| one.session != session);
-        inner.kept.retain(|(chat, _, _)| *chat != session);
         inner.waits.retain(|(one, tell)| {
             if one.session != session {
                 return true;
@@ -482,7 +484,7 @@ pub fn before_the_login(
         None => kept_said(login, None),
     };
     if let Ok((origin, _)) = loginask::site_of(&suggested.site)
-        && grants.kept(session, login, &origin)
+        && grants.kept(&persona, login, &origin)
     {
         return no(kept());
     }
@@ -504,7 +506,7 @@ pub fn before_the_login(
     ) {
         // The site the call names is the one declared: the declared login fills it.
         Ok(None) => return None,
-        Ok(Some(judged)) if grants.kept(session, login, &judged.proposal.origin) => {
+        Ok(Some(judged)) if grants.kept(&persona, login, &judged.proposal.origin) => {
             return no(kept());
         }
         Ok(Some(judged)) => LoginWait {
@@ -776,7 +778,11 @@ pub fn answer(
         return Err(CHANGED.to_owned());
     }
     if press == Press::Keep {
-        grants.keep(session, &wait.proposal.login, &wait.proposal.origin);
+        grants.keep(
+            &wait.proposal.persona,
+            &wait.proposal.login,
+            &wait.proposal.origin,
+        );
         grants.end(id, Heard::Kept(reason.map(str::to_owned)));
         let said = if wait.proposal.replaces.is_some() {
             "Kept the recorded site. Nothing changed or was filled."

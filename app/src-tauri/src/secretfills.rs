@@ -30,8 +30,9 @@
 //!   allowed the fill: the call waits on that too, and fills what they add.
 //! - **What's filled is what the person pressed on.** A press names the notice and carries its
 //!   digest ([`FillWait::digest`]); one waits for each chat, and another call is refused.
-//! - **Keep blocked fills nothing and tells the chat**, and the chat isn't asked about that key
-//!   on that site again; after [`KEPT_AT_MOST`] it's asked about nothing more.
+//! - **Keep blocked fills nothing and tells the chat**, and the persona's chats aren't asked about
+//!   that key on that site again until purlis restarts; after [`KEPT_AT_MOST`] they're asked about
+//!   nothing more (the person's ruling of 2026-11-07). A chat with no persona keeps its own.
 //! - **The engine judges again at the moment of filling**: the field's own frame must still be
 //!   on the approved origin, and the field one line. The window's read is only what it shows.
 //!
@@ -42,7 +43,8 @@
 //!   window, and the notice warns that the value goes to that runner. The fill and its hold run
 //!   there, through the runner's link, as a login's do.
 //!
-//! In memory only: a relaunch starts with none, and a chat's close takes its waits with it.
+//! In memory only: a relaunch starts with none, and a chat's close takes its waits and grants
+//! with it.
 
 use std::sync::{Mutex, MutexGuard, PoisonError, mpsc};
 
@@ -161,12 +163,30 @@ pub enum Heard {
 /// A key on an origin for one chat: by chat, vault, key and origin.
 type ForChat = (u32, String, String, String);
 
+/// **Whose Keep blocked it is** (the person's ruling of 2026-11-07): a persona's, for all its
+/// chats until purlis restarts, so a new chat starts no fresh tries. A chat that runs as no
+/// persona keeps its own, which goes when it closes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Whose {
+    Persona(String),
+    Chat(u32),
+}
+
+impl Whose {
+    fn of(session: u32, persona: Option<&str>) -> Self {
+        match persona {
+            Some(persona) if !persona.is_empty() => Self::Persona(persona.to_owned()),
+            _ => Self::Chat(session),
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 struct Inner {
     next: u32,
     waits: Vec<(FillWait, Option<mpsc::Sender<Heard>>)>,
-    /// What the person kept blocked.
-    kept: Vec<ForChat>,
+    /// What the person kept blocked, by whose it is, vault, key and origin.
+    kept: Vec<(Whose, String, String, String)>,
     /// What the person allowed for the chat (#5116): in memory, for the chat's life.
     granted: Vec<ForChat>,
     /// The 2FA codes the person allowed for the chat (#5118): a grant of its own, so neither a
@@ -174,8 +194,9 @@ struct Inner {
     codes_granted: Vec<ForChat>,
 }
 
-/// How many Keep blocked one chat is given before it's asked about no more fills, so a chat can't
-/// change a key's name or a field until someone presses yes.
+/// How many Keep blocked one persona is given before its chats are asked about no more fills until
+/// purlis restarts (a chat with no persona, that chat), so a chat can't change a key's name or a
+/// field, or a new chat start again, until someone presses yes.
 pub const KEPT_AT_MOST: usize = 2;
 
 /// What a chat is told while the person is being asked about another of its fills.
@@ -263,11 +284,19 @@ impl Fills {
         true
     }
 
-    /// Whether the person kept this blocked for this chat, or kept enough blocked that it's
-    /// asked about no more.
-    fn kept(&self, session: u32, vault: &str, key: &str, origin: &str) -> bool {
+    /// Whether the person kept this blocked for chat `session` running as `persona`, or kept
+    /// enough blocked that it's asked about no more ([`Whose`]).
+    fn kept(
+        &self,
+        session: u32,
+        persona: Option<&str>,
+        vault: &str,
+        key: &str,
+        origin: &str,
+    ) -> bool {
+        let whose = Whose::of(session, persona);
         let inner = self.lock();
-        let mine = || inner.kept.iter().filter(|(chat, ..)| *chat == session);
+        let mine = || inner.kept.iter().filter(|(one, ..)| *one == whose);
         mine().count() >= KEPT_AT_MOST
             || mine().any(|(_, v, k, o)| v == vault && k == key && o == origin)
     }
@@ -307,7 +336,9 @@ impl Fills {
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
         let mut inner = self.lock();
-        inner.kept.retain(|(chat, ..)| *chat != session);
+        inner
+            .kept
+            .retain(|(whose, ..)| *whose != Whose::Chat(session));
         inner.granted.retain(|(chat, ..)| *chat != session);
         inner.codes_granted.retain(|(chat, ..)| *chat != session);
         inner.waits.retain(|(one, tell)| {
@@ -458,12 +489,18 @@ pub fn asked(held: &Held, session: u32, asked: &FillAsked, now: u64) -> Result<A
         None => None,
     };
     let fills = held.secret_fills();
-    if fills.kept(session, &asked.vault, &asked.key, &origin) {
-        return Err(kept_said(&asked.key, &origin, None));
-    }
     // Whose grants it fills under, and whose tools Always writes in: a narrowed chat's are the
     // persona it was narrowed to (the decision of 2026-11-06).
     let persona = held.chats().secret_grants_of(session);
+    if fills.kept(
+        session,
+        persona.as_deref(),
+        &asked.vault,
+        &asked.key,
+        &origin,
+    ) {
+        return Err(kept_said(&asked.key, &origin, None));
+    }
     // A browser on a runner is asked about each time: a grant here holds this machine's
     // browsers (#5122).
     let asks_the_person = runner.is_some()
@@ -871,7 +908,7 @@ pub fn answer(
     let level = match asked.press {
         Press::Keep => {
             fills.lock().kept.push((
-                wait.session,
+                Whose::of(wait.session, wait.persona.as_deref()),
                 wait.vault.clone(),
                 wait.key.clone(),
                 wait.origin.clone(),
