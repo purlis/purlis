@@ -28,6 +28,16 @@
 //! line that takes a live profile's sign-in off a runner, so it asks nothing of a runner until
 //! the person says yes in the window, to that profile, that pool and that code. That yes lets no
 //! keep through: it answers only the question it was asked.
+//!
+//! **`purlis signing` asks the forge through it** ([`Asked::Signing`], #5625): the command holds
+//! no forge sign-in (ADR 0070 ruling 5), so the window asks GitHub with its own
+//! ([`crate::signingsetup::answered_in_the_window`]). Only reads go this way. Whether the account
+//! has a key the command names is read from GitHub's public list of its signing keys. A pushed
+//! commit's check is asked of GitHub only on the person's yes in the window, to that repository,
+//! that commit and that code, as the line's other asks are. What comes back is a yes or no, or
+//! GitHub's verdict and its reason; never a token, a key's private half, or anything a write
+//! needs. A key is added to the account only from the window's own setup, behind the person's
+//! click there.
 
 use std::io::{Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -46,6 +56,10 @@ const THE_WINDOW_SAYS_WITHIN: Duration = Duration::from_secs(10);
 const LONGEST_LINE: usize = 64 * 1024;
 /// How long the window waits for a peer's whole line, and to write its answer.
 const A_PEER_HAS: Duration = Duration::from_secs(2);
+
+/// What a command says of an answer to another question than its own: a window of another build.
+pub const OTHER_ANSWER: &str =
+    "the purlis window answered another question than this one: update purlis.";
 
 /// What the command asks of the window.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -75,6 +89,9 @@ pub enum Asked {
         code: String,
         config: PathBuf,
     },
+    /// A read of the person's signing key on their forge account, for `purlis signing` in their
+    /// own terminal, which holds no sign-in (#5625): the window asks with its own.
+    Signing(crate::signingsetup::Asked),
 }
 
 /// What the window says.
@@ -85,6 +102,8 @@ pub enum Said {
     Asked { note: Option<String> },
     /// Nothing was asked, for this reason.
     Refused { why: String },
+    /// What the forge told the window of a signing key or a commit ([`Asked::Signing`]).
+    Signing(crate::signingsetup::Heard),
 }
 
 /// How an ask of the window went.
@@ -113,6 +132,7 @@ pub fn answer(
     take_off: impl FnOnce(&str, &str, &str) -> Result<Option<String>, String>,
 ) -> Said {
     let name = match &asked {
+        Asked::Signing(_) => return not_a_profiles(),
         Asked::ForgetOffThePools { name }
         | Asked::KeepOnAPool { name, .. }
         | Asked::ApproveSignIn { name, .. }
@@ -128,6 +148,7 @@ pub fn answer(
         Err(why) => return Said::Refused { why },
     };
     let said = match &asked {
+        Asked::Signing(_) => return not_a_profiles(),
         Asked::ForgetOffThePools { .. } if has_it => {
             return Said::Refused {
                 why: format!(
@@ -176,6 +197,14 @@ pub fn answer(
     match said {
         Ok(note) => Said::Asked { note },
         Err(why) => Said::Refused { why },
+    }
+}
+
+/// [`answer`]'s word on a signing ask, which the window answers apart
+/// ([`crate::signingsetup::said_in_the_window`]).
+fn not_a_profiles() -> Said {
+    Said::Refused {
+        why: "a signing key is not a profile's".to_owned(),
     }
 }
 
@@ -253,6 +282,7 @@ pub fn approved(
             "the purlis window did not answer in time, so '{name}' was not signed in on pool \
              {pool} and nothing was started. Run this again."
         )),
+        Answered::Said(Said::Signing(_)) => Err(OTHER_ANSWER.to_owned()),
         Answered::Said(Said::Refused { why }) => Err(format!(
             "the purlis window did not confirm signing '{name}' in on pool {pool}: {}. Nothing \
              was started.",
@@ -290,6 +320,7 @@ pub fn taken_off(
             "the purlis window did not say in time whether it took '{name}' off pool {pool}. Run \
              purlis pool setup {pool} to see where it stands."
         )),
+        Answered::Said(Said::Signing(_)) => Err(OTHER_ANSWER.to_owned()),
         Answered::Said(Said::Refused { why }) => Err(format!(
             "the purlis window did not take '{name}' off pool {pool}: {}.",
             shown(&why)
@@ -324,6 +355,7 @@ pub fn kept_first<S>(
             "{not_kept}, and the purlis window did not say in time whether it put it there, so \
              nothing was started. Run this again."
         )),
+        Answered::Said(Said::Signing(_)) => Err(OTHER_ANSWER.to_owned()),
         Answered::Said(Said::Refused { why }) => Err(format!(
             "{not_kept}, and the purlis window did not put it there: {}. Nothing was started.",
             shown(&why)
@@ -373,6 +405,9 @@ pub fn reach_the_pools(config: &Path, name: &str, ask: impl FnOnce(&Asked) -> An
                  {at_the_next_tidy}\n"
             ));
         }
+        Answered::Said(Said::Signing(_)) => {
+            out.push_str(&format!("{OTHER_ANSWER} So {at_the_next_tidy}\n"));
+        }
         Answered::Said(Said::Refused { why }) => {
             out.push_str(&format!(
                 "the purlis window did not ask the runners ({}), so {at_the_next_tidy}\n",
@@ -419,6 +454,11 @@ pub fn ask(asked: &Asked) -> Answered {
         Asked::ApproveSignIn { .. } => THE_PERSON_HAS + THE_WINDOW_SAYS_WITHIN,
         // The person's answer, then the runner woken and asked to forget it.
         Asked::TakeOffAPool { .. } => THE_PERSON_HAS + THE_WINDOW_KEEPS_WITHIN,
+        // The person's answer first, then GitHub's.
+        Asked::Signing(crate::signingsetup::Asked::Check { .. }) => {
+            THE_PERSON_HAS + THE_WINDOW_ANSWERS_WITHIN
+        }
+        Asked::Signing(_) => THE_WINDOW_ANSWERS_WITHIN,
     };
     ask_on(&socket(), asked, within)
 }

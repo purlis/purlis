@@ -397,7 +397,7 @@ describe("every project setting there is, at the Project level", () => {
         "Mode",
         "Target branch",
         "Save branch",
-        "Sign commits",
+        "Sign saves with your own git setup",
         "Auto-save",
         "Auto-save after",
         "Assisted-by trailer",
@@ -494,7 +494,9 @@ describe("a change at the Project level", () => {
     await atProject();
     await open("Saving");
     // Off in force and not set here: turning the switch on writes the key (#1865).
-    await userEvent.click(await screen.findByRole("switch", { name: "Sign commits" }));
+    await userEvent.click(
+      await screen.findByRole("switch", { name: "Sign saves with your own git setup" }),
+    );
 
     await userEvent.click(await screen.findByRole("button", { name: "Undo" }));
 

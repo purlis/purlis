@@ -53,6 +53,7 @@ import { EndingChat } from "../EndingChat";
 import { AskFirst } from "../ExtensionAction";
 import { Extensions } from "../Extensions";
 import { ForgeDeviceSignIn } from "../ForgeDeviceSignIn";
+import { SigningSetupDialog } from "../SigningSetupDialog";
 import { ForgeGitLabSignIn } from "../ForgeGitLabSignIn";
 import { ForgeTokenSignIn } from "../ForgeTokenSignIn";
 import { AddDockerPoolHost } from "../AddDockerPool";
@@ -451,6 +452,18 @@ const SKILL: StudioSkill = {
 function dialogCore() {
   mockIPC((cmd) => {
     switch (cmd) {
+      case "signing_state":
+        return {
+          on: false,
+          title: "purlis · studio",
+          account: {
+            login: "octocat",
+            host: "github.com",
+            forge: "GitHub",
+            may_add: false,
+            verified_as: null,
+          },
+        };
       case "pool_sign_in_asked":
         return { id: 1, asks: "sign-in", profile: "work", pool: "team", code: "A1B2C3" };
       case "installed_extensions":
@@ -1051,6 +1064,14 @@ const DIALOGS: Opened[] = [
     open: async () => {
       render(<ForgeDeviceSignIn onSignedIn={nothing} onCancel={nothing} />);
       await screen.findByText("WDJB-MJHT");
+    },
+  },
+  {
+    name: "Set up signing, at its first step",
+    file: "SigningSetupDialog.tsx",
+    open: async () => {
+      render(<SigningSetupDialog onClose={nothing} />);
+      await screen.findByText(/macOS will ask next/);
     },
   },
   {

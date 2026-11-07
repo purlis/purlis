@@ -167,6 +167,17 @@ pub fn start(
     at: &Endpoints,
     registration: &Registration,
 ) -> Result<Started, String> {
+    start_asking(endpoint, at, registration, registration.scopes())
+}
+
+/// [`start`], asking for `scopes` in place of the registration's own: a step-up of an account
+/// signed in already ([`super::accounts::widened_scopes`], [`widen`]).
+pub fn start_asking<S: AsRef<str>>(
+    endpoint: &dyn Endpoint,
+    at: &Endpoints,
+    registration: &Registration,
+    scopes: &[S],
+) -> Result<Started, String> {
     let host = &at.host;
     let Some(url) = at
         .device_code
@@ -177,7 +188,11 @@ pub fn start(
             "purlis has no device sign-in on {host}. Sign in with a token instead."
         ));
     };
-    let scope = registration.scopes().join(" ");
+    let scope = scopes
+        .iter()
+        .map(AsRef::as_ref)
+        .collect::<Vec<_>>()
+        .join(" ");
     let mut answer = endpoint
         .post(
             url,
@@ -325,6 +340,37 @@ pub fn finish(
         Method::Device,
     )
     .map_err(Ended::Failed)
+}
+
+/// **Waits for the person to confirm a step-up of `account`** started with [`start_asking`], then
+/// keeps what the forge granted in place of the account's token, scopes and all
+/// ([`super::accounts::widened`]): only for the same login on the same host, and a grant that
+/// holds every one of `more`. The account as
+/// listed now, or how the flow ended; every way it ends but a grant leaves the account exactly as
+/// it was, its token included.
+#[allow(clippy::too_many_arguments)]
+pub fn widen(
+    host: &HostScope,
+    config_root: &Path,
+    keyring: &dyn Store,
+    reach: Reach<'_>,
+    endpoint: &dyn Endpoint,
+    at: &Endpoints,
+    registration: &Registration,
+    started: &Started,
+    pace: &dyn Pace,
+    account: &ForgeAccount,
+    more: &[&str],
+) -> Result<ForgeAccount, Ended> {
+    if at.host != account.host || registration.kind != account.kind {
+        return Err(Ended::Failed(format!(
+            "this permission was asked of {}, not {}, so nothing was changed.",
+            at.host, account.host
+        )));
+    }
+    let granted = wait(endpoint, at, registration, started, pace)?;
+    super::accounts::widened(host, config_root, keyring, reach, account, granted, more)
+        .map_err(Ended::Failed)
 }
 
 #[cfg(test)]

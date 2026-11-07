@@ -72,3 +72,8 @@ holds, which never reaches the chat.
 - **2026-11-07, ADR 0116**: setup moves into the window for people who never open a terminal,
   adds the key through the app's forge account rather than `gh`, and covers GitLab as fully as
   GitHub, its check included. This ADR's signing itself is unchanged.
+
+## Amendments
+
+The amendments to this decision are files of their own in [`0115/`](0115/), one per amendment,
+named `<yyyy-mm-dd>-<slug>.md`.

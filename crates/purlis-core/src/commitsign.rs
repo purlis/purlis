@@ -448,26 +448,6 @@ fn with_signature(payload: &[u8], header: &str, signature: &str) -> Vec<u8> {
     out
 }
 
-/// **Whether GitHub has `signer`'s key as a signing key**, from its answer to `GET
-/// /user/ssh_signing_keys`: a list of `{"key": "ssh-ed25519 AAAA…", …}`. Compared by the key's
-/// type and data, never its comment, which GitHub keeps apart as the title.
-pub fn listed_on_github(listed: &str, signer: &Signer) -> Result<bool, String> {
-    let keys: Vec<serde_json::Value> = serde_json::from_str(listed)
-        .map_err(|_| "GitHub's list of your signing keys did not read as a list".to_owned())?;
-    let line = signer.public_line();
-    let ours = key_of(&line);
-    Ok(keys.iter().any(|key| {
-        key.get("key")
-            .and_then(serde_json::Value::as_str)
-            .is_some_and(|line| key_of(line) == ours)
-    }))
-}
-
-/// A public key line's type and data, without its comment.
-fn key_of(line: &str) -> Vec<&str> {
-    line.split_whitespace().take(2).collect()
-}
-
 /// **What GitHub says of a commit's signature**, from its answer to `GET
 /// /repos/<owner>/<repo>/commits/<commit>`: whether it is verified, and GitHub's reason.
 pub fn verification(answer: &str) -> Result<(bool, String), String> {

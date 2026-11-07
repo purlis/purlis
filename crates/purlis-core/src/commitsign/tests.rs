@@ -298,21 +298,6 @@ fn an_item_that_is_not_a_key_is_refused() {
 }
 
 #[test]
-fn github_lists_the_key_by_its_type_and_data_whatever_its_title() {
-    let signer = Signer::generate().unwrap();
-    let data = signer.public_line();
-    let data: Vec<&str> = data.split(' ').collect();
-    let listed = format!(
-        r#"[{{"id": 1, "key": "ssh-ed25519 AAAAother", "title": "laptop"}},
-            {{"id": 2, "key": "{} {}", "title": "purlis"}}]"#,
-        data[0], data[1]
-    );
-    assert!(listed_on_github(&listed, &signer).unwrap());
-    assert!(!listed_on_github("[]", &signer).unwrap());
-    assert!(listed_on_github("not json", &signer).is_err());
-}
-
-#[test]
 fn githubs_check_of_a_commit_is_read_with_its_reason_in_plain_words() {
     let answer =
         r#"{"sha": "abc", "commit": {"verification": {"verified": true, "reason": "valid"}}}"#;

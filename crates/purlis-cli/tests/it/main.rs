@@ -116,6 +116,7 @@ mod save_pull;
 mod secrets;
 mod session;
 mod shell_guard;
+mod signing_asks_the_window_and_never_gh;
 mod status;
 mod statusline;
 mod steering_names_that_disagree;

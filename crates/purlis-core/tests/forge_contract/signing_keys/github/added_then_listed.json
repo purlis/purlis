@@ -1,0 +1,13 @@
+{
+  "source": "GitHub REST API version 2022-11-28, docs.github.com/en/rest/users/ssh-signing-keys (Create an SSH signing key: 201 Created, then List: 200). The key is the test's own, put in for @KEY@.",
+  "exchanges": [
+    {
+      "call": {"endpoint": {"rest": {"method": "POST", "path": "user/ssh_signing_keys"}}, "fields": [{"text": ["title", "purlis · studio"]}, {"text": ["key", "@KEY@"]}]},
+      "reply": {"code": 0, "out": "{\"id\": 4242, \"key\": \"@KEY@\", \"title\": \"purlis · studio\", \"created_at\": \"2026-11-07T19:00:00Z\"}", "err": "", "status": 201}
+    },
+    {
+      "call": {"endpoint": {"rest": {"method": null, "path": "user/ssh_signing_keys"}}, "fields": [{"typed": ["per_page", "100"]}]},
+      "reply": {"code": 0, "out": "[{\"id\": 17, \"key\": \"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOtherDeviceKeyOtherDeviceKeyOtherDev\", \"title\": \"purlis · laptop\", \"created_at\": \"2026-10-01T09:00:00Z\"}, {\"id\": 4242, \"key\": \"@KEY@\", \"title\": \"purlis · studio\", \"created_at\": \"2026-11-07T19:00:00Z\"}, {\"id\": 9, \"key\": \"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPersonalKeyPersonalKeyPersonalKeyPer\", \"title\": \"my own key\", \"created_at\": \"2025-01-01T09:00:00Z\"}]", "err": "", "status": 200}
+    }
+  ]
+}

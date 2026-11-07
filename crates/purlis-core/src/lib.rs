@@ -258,6 +258,7 @@ pub mod shellseg;
 pub mod shellsubst;
 pub mod shellwrap;
 pub mod shown;
+pub mod signingsetup;
 pub mod silence;
 pub mod skillprompt;
 pub mod skills;

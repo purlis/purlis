@@ -26,6 +26,7 @@ use purlis_core::forge::recorded::Recorded;
 use purlis_core::forge::refresh::Refresher;
 use purlis_core::forge::registration::{self, Registration};
 use purlis_core::forge::route::HostScope;
+use purlis_core::forge::signingkeys;
 use purlis_core::forge::transport::Transport;
 use purlis_core::forge::{Failure, Forge, ForgeError, Kind};
 use purlis_core::secrets::keyring::Store;
@@ -172,6 +173,39 @@ impl Machine {
             registration,
             &started,
             &AtOnce,
+        )
+    }
+
+    /// A step-up of `account` for signing setup (#5627), as the window runs it: a code asking for
+    /// the scopes it holds and signing's, then what the forge grants kept in its place. Whose
+    /// token the grant is, the forge answers from the account store's recording `case`.
+    fn widen(
+        &self,
+        forge: &Arc<Scripted>,
+        account: &ForgeAccount,
+        case: &str,
+    ) -> Result<ForgeAccount, Ended> {
+        let (registration, at) = github();
+        let scopes = accounts::widened_scopes(account, &signingkeys::GITHUB_SCOPES);
+        let started = device::start_asking(forge.as_ref(), &at, registration, &scopes)
+            .map_err(Ended::Failed)?;
+        let recorded = Machine::recorded(Kind::GitHub, case);
+        let reach =
+            |_: &Forge, _: Arc<dyn TokenSource>| -> Result<Arc<dyn Transport>, ForgeError> {
+                Ok(recorded.clone() as Arc<dyn Transport>)
+            };
+        device::widen(
+            &HostScope::for_a_test(),
+            self.config(),
+            self.keyring.as_ref(),
+            &reach,
+            forge.as_ref(),
+            &at,
+            registration,
+            &started,
+            &AtOnce,
+            account,
+            &signingkeys::GITHUB_SCOPES,
         )
     }
 
@@ -710,4 +744,169 @@ fn the_device_flow_and_a_refresh_go_over_http_to_a_stand_in_server() {
         assert!(!body.contains("client_secret"), "{body}");
     }
     rt.block_on(server.verify());
+}
+
+/// What a step-up's grant says it holds: a sign-in's scopes and signing's.
+fn grant_for_signing(access: &str, refresh: &str) -> (u16, String) {
+    (
+        200,
+        format!(
+            r#"{{"access_token": "{access}", "token_type": "bearer",
+                "scope": "repo,read:org,admin:ssh_signing_key,user:email",
+                "expires_in": 28800, "refresh_token": "{refresh}",
+                "refresh_token_expires_in": 15897600}}"#
+        ),
+    )
+}
+
+/// The form that asked GitHub for a code: its scopes.
+fn scopes_asked(forge: &Scripted) -> String {
+    forge.posted()[0]
+        .1
+        .iter()
+        .find(|(name, _)| name == "scope")
+        .map(|(_, scope)| scope.clone())
+        .unwrap()
+}
+
+#[test]
+fn signing_setup_asks_for_the_signing_scopes_and_the_account_keeps_its_own_beside_them() {
+    purlis_core::unsteered!();
+    let machine = Machine::new();
+    let signed_in = machine
+        .sign_in(&Scripted::answering(&[
+            codes("https://github.com/login/device"),
+            grant(ACCESS, REFRESH),
+        ]))
+        .unwrap();
+    assert!(!accounts::holds(&signed_in, &signingkeys::GITHUB_SCOPES));
+
+    let forge = Scripted::answering(&[
+        codes("https://github.com/login/device"),
+        pending(),
+        grant_for_signing(ACCESS_TWO, REFRESH_TWO),
+    ]);
+    let widened = machine
+        .widen(&forge, &signed_in, "token_check.signing")
+        .unwrap();
+    assert_eq!(
+        scopes_asked(&forge),
+        "repo read:org admin:ssh_signing_key user:email"
+    );
+    assert_eq!(widened.id, signed_in.id, "the same account, not a second");
+    assert_eq!(widened.login, "octocat");
+    assert_eq!(
+        widened.scopes.as_deref(),
+        Some(
+            &[
+                "repo".to_string(),
+                "read:org".to_string(),
+                "admin:ssh_signing_key".to_string(),
+                "user:email".to_string()
+            ][..]
+        )
+    );
+    // It holds them now, so setup does not ask again.
+    assert!(accounts::holds(&widened, &signingkeys::GITHUB_SCOPES));
+    assert_eq!(machine.token(&widened).as_deref(), Some(ACCESS_TWO));
+    assert_eq!(machine.list(), std::slice::from_ref(&widened));
+}
+
+#[test]
+fn a_grant_that_comes_back_without_the_signing_scopes_changes_nothing() {
+    purlis_core::unsteered!();
+    let machine = Machine::new();
+    let signed_in = machine
+        .sign_in(&Scripted::answering(&[
+            codes("https://github.com/login/device"),
+            grant(ACCESS, REFRESH),
+        ]))
+        .unwrap();
+    let forge = Scripted::answering(&[
+        codes("https://github.com/login/device"),
+        grant(ACCESS_TWO, REFRESH_TWO),
+    ]);
+    let Err(Ended::Failed(why)) = machine.widen(&forge, &signed_in, "token_check.signing") else {
+        panic!("a grant without the signing scopes is refused");
+    };
+    assert!(why.contains("did not allow admin:ssh_signing_key"), "{why}");
+    assert_eq!(machine.list(), std::slice::from_ref(&signed_in));
+    assert_eq!(machine.token(&signed_in).as_deref(), Some(ACCESS));
+}
+
+#[test]
+fn declining_the_signing_scopes_leaves_the_account_and_its_token_as_they_were() {
+    purlis_core::unsteered!();
+    let machine = Machine::new();
+    let signed_in = machine
+        .sign_in(&Scripted::answering(&[
+            codes("https://github.com/login/device"),
+            grant(ACCESS, REFRESH),
+        ]))
+        .unwrap();
+    let item_before = machine.item(&signed_in);
+
+    let forge = Scripted::answering(&[
+        codes("https://github.com/login/device"),
+        pending(),
+        (200, r#"{"error": "access_denied"}"#.to_string()),
+    ]);
+    let ended = machine
+        .widen(&forge, &signed_in, "token_check.signing")
+        .unwrap_err();
+    assert_eq!(ended, Ended::Denied);
+    assert_eq!(machine.list(), std::slice::from_ref(&signed_in));
+    assert_eq!(machine.item(&signed_in), item_before);
+    assert_eq!(machine.token(&signed_in).as_deref(), Some(ACCESS));
+}
+
+#[test]
+fn a_step_up_confirmed_as_another_login_changes_nothing() {
+    purlis_core::unsteered!();
+    let machine = Machine::new();
+    let signed_in = machine
+        .sign_in(&Scripted::answering(&[
+            codes("https://github.com/login/device"),
+            grant(ACCESS, REFRESH),
+        ]))
+        .unwrap();
+    let forge = Scripted::answering(&[
+        codes("https://github.com/login/device"),
+        grant_for_signing(ACCESS_TWO, REFRESH_TWO),
+    ]);
+    let Err(Ended::Failed(why)) = machine.widen(&forge, &signed_in, "token_check.another_login")
+    else {
+        panic!("a grant for another login is refused");
+    };
+    assert!(why.contains("not as octocat"), "{why}");
+    assert_eq!(machine.list(), std::slice::from_ref(&signed_in));
+    assert_eq!(machine.token(&signed_in).as_deref(), Some(ACCESS));
+}
+
+#[test]
+fn a_step_up_for_an_account_removed_while_github_waited_signs_nobody_in() {
+    purlis_core::unsteered!();
+    let machine = Machine::new();
+    let signed_in = machine
+        .sign_in(&Scripted::answering(&[
+            codes("https://github.com/login/device"),
+            grant(ACCESS, REFRESH),
+        ]))
+        .unwrap();
+    accounts::sign_out(
+        &HostScope::for_a_test(),
+        machine.config(),
+        machine.keyring.as_ref(),
+        &signed_in.id,
+    )
+    .unwrap();
+    let forge = Scripted::answering(&[
+        codes("https://github.com/login/device"),
+        grant_for_signing(ACCESS_TWO, REFRESH_TWO),
+    ]);
+    let Err(Ended::Failed(why)) = machine.widen(&forge, &signed_in, "token_check.signing") else {
+        panic!("a step-up for an account no longer here is refused");
+    };
+    assert!(why.contains("was removed from this machine"), "{why}");
+    assert!(machine.list().is_empty(), "{:?}", machine.list());
 }
