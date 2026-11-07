@@ -153,14 +153,24 @@ pub fn needed(kind: Kind) -> &'static [&'static str] {
     }
 }
 
-/// The scopes that also grant `scope` on `kind`: GitHub's organisation scopes are nested.
+/// The scopes that also grant `scope` on `kind`: GitHub's organisation scopes are nested, and
+/// so is `user`, which holds `user:email`.
 fn granted_by(kind: Kind, scope: &str) -> &'static [&'static str] {
     match (kind, scope) {
         (Kind::GitHub, "read:org") => &["read:org", "write:org", "admin:org"],
         (Kind::GitHub, "repo") => &["repo"],
+        (Kind::GitHub, "user:email") => &["user:email", "user"],
+        (Kind::GitHub, "admin:ssh_signing_key") => &["admin:ssh_signing_key"],
         (Kind::GitLab, "api") => &["api"],
         _ => &[],
     }
+}
+
+/// Whether `scopes` on `kind` hold `want`, itself or a scope that holds it.
+fn grants(kind: Kind, scopes: &[String], want: &str) -> bool {
+    granted_by(kind, want)
+        .iter()
+        .any(|by| scopes.iter().any(|have| have == by))
 }
 
 /// The needed scopes `scopes` lacks, in [`needed`]'s order.
@@ -168,11 +178,7 @@ pub fn missing(kind: Kind, scopes: &[String]) -> Vec<&'static str> {
     needed(kind)
         .iter()
         .copied()
-        .filter(|want| {
-            !granted_by(kind, want)
-                .iter()
-                .any(|by| scopes.iter().any(|have| have == by))
-        })
+        .filter(|want| !grants(kind, scopes, want))
         .collect()
 }
 
@@ -180,7 +186,11 @@ pub fn missing(kind: Kind, scopes: &[String]) -> Vec<&'static str> {
 pub fn wider(kind: Kind, scopes: &[String]) -> Vec<String> {
     scopes
         .iter()
-        .filter(|have| !needed(kind).contains(&have.as_str()))
+        .filter(|have| {
+            !needed(kind).contains(&have.as_str())
+                && !(kind == Kind::GitHub
+                    && super::signingkeys::GITHUB_SCOPES.contains(&have.as_str()))
+        })
         .cloned()
         .collect()
 }
@@ -983,13 +993,15 @@ pub fn holds(account: &ForgeAccount, scopes: &[&str]) -> bool {
     account
         .scopes
         .as_ref()
-        .is_some_and(|held| scopes.iter().all(|scope| held.iter().any(|h| h == scope)))
+        .is_some_and(|held| scopes.iter().all(|scope| grants(account.kind, held, scope)))
 }
 
 /// **`account`'s token and scopes replaced with what a step-up `granted`** (#5627, ADR 0116 §5):
-/// the device flow asked for the scopes it holds and more ([`widened_scopes`]), and the forge
-/// granted a new token. Kept only where the forge says that token is the same login's on the
-/// same host; otherwise refused with nothing changed. The account keeps its id. As listed now.
+/// the device flow asked for the scopes it holds and `more` ([`widened_scopes`]), and the forge
+/// granted a new token. Kept only on a GitHub account, where the grant holds every one of `more`
+/// and the forge says the token is the same login's on the same host; otherwise refused with
+/// nothing changed. The account keeps its id, and is a browser sign-in from then on: its token is
+/// the grant's, renewed as a device sign-in's is. As listed now.
 pub fn widened(
     _host: &HostScope,
     config_root: &Path,
@@ -997,12 +1009,35 @@ pub fn widened(
     reach: Reach<'_>,
     account: &ForgeAccount,
     granted: Granted,
+    more: &[&str],
 ) -> Result<ForgeAccount, String> {
+    if account.kind != Kind::GitHub {
+        return Err(format!(
+            "purlis asks {} for more permission only on GitHub, so nothing was changed.",
+            account.host
+        ));
+    }
     if granted.access.expose_secret().is_empty() {
         return Err(format!(
             "{} gave no token, so nothing was changed.",
             account.host
         ));
+    }
+    if let Some(scopes) = &granted.scopes {
+        let short: Vec<&str> = more
+            .iter()
+            .copied()
+            .filter(|want| !grants(account.kind, scopes, want))
+            .collect();
+        if !short.is_empty() {
+            return Err(format!(
+                "{} did not allow {}, so nothing was changed. Try again, and allow it on the \
+                 page {} shows.",
+                account.host,
+                short.join(" and "),
+                account.kind.display()
+            ));
+        }
     }
     keep(
         config_root,
@@ -1070,8 +1105,9 @@ fn keep(
     if let Some(login) = only_as.filter(|login| *login != checked.login) {
         return Err(format!(
             "The code was confirmed as {} on {}, not as {login}, so nothing was changed. Confirm \
-             it signed in as {login}.",
+             the code while signed in to {} as {login}.",
             checked.login,
+            forge.host,
             forge.kind.display()
         ));
     }

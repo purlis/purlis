@@ -344,7 +344,8 @@ pub fn finish(
 
 /// **Waits for the person to confirm a step-up of `account`** started with [`start_asking`], then
 /// keeps what the forge granted in place of the account's token, scopes and all
-/// ([`super::accounts::widened`]): only for the same login on the same host. The account as
+/// ([`super::accounts::widened`]): only for the same login on the same host, and a grant that
+/// holds every one of `more`. The account as
 /// listed now, or how the flow ended; every way it ends but a grant leaves the account exactly as
 /// it was, its token included.
 #[allow(clippy::too_many_arguments)]
@@ -359,9 +360,10 @@ pub fn widen(
     started: &Started,
     pace: &dyn Pace,
     account: &ForgeAccount,
+    more: &[&str],
 ) -> Result<ForgeAccount, Ended> {
     let granted = wait(endpoint, at, registration, started, pace)?;
-    super::accounts::widened(host, config_root, keyring, reach, account, granted)
+    super::accounts::widened(host, config_root, keyring, reach, account, granted, more)
         .map_err(Ended::Failed)
 }
 

@@ -205,6 +205,7 @@ impl Machine {
             &started,
             &AtOnce,
             account,
+            &signingkeys::GITHUB_SCOPES,
         )
     }
 
@@ -769,7 +770,7 @@ fn scopes_asked(forge: &Scripted) -> String {
 }
 
 #[test]
-fn signing_setup_asks_once_for_the_signing_scopes_and_the_account_keeps_its_own_beside_them() {
+fn signing_setup_asks_for_the_signing_scopes_and_the_account_keeps_its_own_beside_them() {
     purlis_core::unsteered!();
     let machine = Machine::new();
     let signed_in = machine
@@ -805,12 +806,32 @@ fn signing_setup_asks_once_for_the_signing_scopes_and_the_account_keeps_its_own_
             ][..]
         )
     );
+    // It holds them now, so setup does not ask again.
     assert!(accounts::holds(&widened, &signingkeys::GITHUB_SCOPES));
     assert_eq!(machine.token(&widened).as_deref(), Some(ACCESS_TWO));
     assert_eq!(machine.list(), std::slice::from_ref(&widened));
-    // Asked once: a second setup holds the scopes, and asks nothing.
-    let again = accounts::widened_scopes(&widened, &signingkeys::GITHUB_SCOPES);
-    assert_eq!(again.len(), 4);
+}
+
+#[test]
+fn a_grant_that_comes_back_without_the_signing_scopes_changes_nothing() {
+    purlis_core::unsteered!();
+    let machine = Machine::new();
+    let signed_in = machine
+        .sign_in(&Scripted::answering(&[
+            codes("https://github.com/login/device"),
+            grant(ACCESS, REFRESH),
+        ]))
+        .unwrap();
+    let forge = Scripted::answering(&[
+        codes("https://github.com/login/device"),
+        grant(ACCESS_TWO, REFRESH_TWO),
+    ]);
+    let Err(Ended::Failed(why)) = machine.widen(&forge, &signed_in, "token_check.signing") else {
+        panic!("a grant without the signing scopes is refused");
+    };
+    assert!(why.contains("did not allow admin:ssh_signing_key"), "{why}");
+    assert_eq!(machine.list(), std::slice::from_ref(&signed_in));
+    assert_eq!(machine.token(&signed_in).as_deref(), Some(ACCESS));
 }
 
 #[test]
