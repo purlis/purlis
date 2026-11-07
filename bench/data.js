@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794034667574,
+  "lastUpdate": 1794037772275,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -41832,6 +41832,48 @@ window.BENCHMARK_DATA = {
             "value": 102.2492555,
             "unit": "ms",
             "extra": "median of 5 runs: 100.794, 101.306, 102.249, 102.520, 102.715 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "74167766c126ca4613cf010f259800cc9eac1184",
+          "message": "Workspace file writes hold the checked folder through the write (#5551) (#5591)\n\n* Workspace file writes hold the checked folder through the write (#5551)\n\nNew file, new folder, rename and import name their entry relative to the\nfolder they checked, held open through no link (held::Store: openat,\nmkdirat, renameat NOREPLACE), so a link a chat swaps in after the check\nsends nothing elsewhere. Delete walks the path again just before the\nsystem Trash takes it, and is refused when the folder or entry moved.\n\nA rename onto another hard link of the same file is refused (it used to\nreport success and do nothing); a case-only rename goes through a spare\nname, never over anything. An import opens a picked file without\nwaiting, so a FIFO is refused at once, and one that stops partway names\nthe files already copied. On Linux, a delete is refused for an entry on\nanother disk than the home Trash, which trash 5.3 would copy into.\n\nCloses #5551, part of #5358.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6T4174ZBNNT0KQWRZH7Y42V\nPurlis-Persona: steward\n\n* Workspace writes: a disk's own Trash, a random spare name, no unsafe rename fallback (#5551)\n\nReview of #5591:\n\n- On Linux, a delete on another disk than the home Trash is refused\n  only when that disk's own Trash cannot be used, as trash 5.3 tries it\n  first (/.Trash/$uid, sticky and no link, or /.Trash-$uid,\n  made when missing; writable with its files/ and info/). The top is the\n  longest mount point in /proc/mounts the entry is in, as trash finds\n  it. An entry whose top is the home Trash's, or whose disk is unknown,\n  is still refused.\n- A case-only rename passes through a random .renaming-<uuid> name,\n  which purlis does not keep, taken without replacing anything and\n  another one drawn if it is taken.\n- Workspace renames use held::Store::rename_only_into_new, which is\n  refused on a filesystem with no no-replace rename (EINVAL, ENOSYS,\n  ENOTSUP). rename_into_new keeps its look-then-rename fallback for\n  memstore and closing a todo, which hold the store's lock.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6T8ZYRHKDGS3QNGNFQKTGDF\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aharon@easydmarc.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-07T06:45:42Z",
+          "tree_id": "f97a2f730a576ec3c2b20ddd28a5a98c85c2eef2",
+          "url": "https://github.com/purlis/purlis/commit/74167766c126ca4613cf010f259800cc9eac1184"
+        },
+        "date": 1794037767446,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6884520000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.666, 0.671, 0.688, 0.708, 0.710 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6871235,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.364, 16.656, 16.687, 16.692, 16.886 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.4848345,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.044, 102.157, 102.485, 103.680, 103.848 ms"
           }
         ]
       }
