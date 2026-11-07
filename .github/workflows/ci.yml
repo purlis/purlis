@@ -1841,19 +1841,9 @@ jobs:
         continue-on-error: true
         timeout-minutes: 2
         run: sudo mdutil -a -i off
-      # The `dev-release` build needs about 26 GB here, and an `ubuntu-24.04` runner has 16 of memory
-      # and 3 of swap. Out of both, the runner itself went: "The runner has received a shutdown
-      # signal", in the build on main since 2026-11-03, so no bar and no saved cache (#5277). Measured
-      # on 2026-11-05: `purlis_app_lib` alone takes it there, and `--jobs 2` and `--jobs 1` died the
-      # same way. The disk has 84 GB free, and the file is gone with the runner.
-      - name: More swap for the outcome bars' build
-        if: ${{ runner.os == 'Linux' && matrix.outcome }}
-        timeout-minutes: 2
-        run: |
-          sudo fallocate -l 32G /swapfile-build
-          sudo chmod 600 /swapfile-build
-          sudo mkswap /swapfile-build
-          sudo swapon /swapfile-build
+      # No swap file is added for the `dev-release` build: with the app crate at `opt-level = 1`
+      # (ADR 0092 amended 2026-11-07) it peaks at about 6.6 GB on an `ubuntu-24.04` runner, which
+      # has 16. At 3 it took one `rustc` to 14.4 GB and the runner shut down (#5277).
       - name: Build the app, the harness and the CLI for the scenario tests
         if: ${{ !matrix.sandbox }}
         # The outcome bars are judged on a release build (the operator's ruling of 2026-11-03,
@@ -2239,9 +2229,10 @@ jobs:
     steps: *scenario-steps
 
   # **The outcome bars' Linux leg, required** (#5277): what `outcome-bars` does, on Linux, with no
-  # `continue-on-error`. A runner shutdown cut it off until #5379 gave its build the swap it needs;
-  # it passed on all 14 of main's runs that finished it from #5379's merge to 2026-11-06, so it is
-  # required, as the person's ruling of 2026-11-05 said it would be once #5277 was fixed. It
+  # `continue-on-error`. A runner shutdown cut it off until #5379 gave its build a swap file, which
+  # the app crate's `opt-level = 1` made unneeded (#5277). It passed on all 14 of main's runs that
+  # finished it from #5379's merge to 2026-11-06, so it is required, as the person's ruling of
+  # 2026-11-05 said it would be once #5277 was fixed. It
   # judges L10's Linux guard (ADR 0086, amended 2026-11-06). It runs in the merge queue and
   # nightly too, which a required check needs; `outcome-bars-linux-checks` carries the check's name.
   outcome-bars-linux:
