@@ -6,6 +6,8 @@ import { mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "no
 import { dirname, join, relative, sep } from "node:path";
 import process from "node:process";
 import { copyFixturePlane } from "./harness.js";
+import { theRunsAppNow } from "./processes.js";
+import { endTheRunsApp, removeLeniently } from "./teardown.js";
 
 /**
  * **A machine as a charter from before the rename left it** (RN-10, #1268): the config home
@@ -174,10 +176,14 @@ export function anOldInstall(tree: string, home: string, shell: string): OldInst
 /**
  * Takes away what `anOldInstall` made: the project and the config home. The `$HOME` itself is
  * the run's and stays.
+ *
+ * **The app running `binary` is ended first, with its session host and their programs**
+ * (#5653): this runs in the config's `onComplete`, before the Tauri service's stops the app, so
+ * on macOS the app is still writing into the project here (`teardown.ts`). What still will not
+ * go is written down, and never fails a run whose specs passed.
  */
-export function removeTheOldInstall(old: OldInstall): void {
-  // The app may still be writing into these as it quits; Node retries ENOTEMPTY/EBUSY.
-  const gone = { recursive: true, force: true, maxRetries: 10, retryDelay: 200 };
-  rmSync(dirname(old.plane), gone);
-  rmSync(old.configRoot, gone);
+export async function removeTheOldInstall(old: OldInstall, binary: string): Promise<void> {
+  await endTheRunsApp(theRunsAppNow(binary));
+  await removeLeniently(dirname(old.plane));
+  await removeLeniently(old.configRoot);
 }
