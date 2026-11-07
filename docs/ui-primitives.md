@@ -976,7 +976,7 @@ for a run's one notice, in the Inbox's card. Only the wrapper writes `data-scope
 
 ## The chat mark family
 
-`ChatMark` (`app/src/ui/chat-mark`, ADR 0104 amended 2026-11-05, #5340) is a chat's mark on its tab, its row in the list, its pane's head and a folded pane's rail. A screen draws it through `ChatPersonaState`, which reads the chat's one state from `shownState`; `QuitWarning`'s list hands it a state directly.
+`ChatMark` (`app/src/ui/chat-mark`, ADR 0104 amended 2026-11-05, #5340) is a chat's mark on a tab that shows it, its row in the list, its pane's head and a folded pane's rail. A screen draws it through `ChatPersonaState`, which reads the chat's one state from `shownState`; `QuitWarning`'s list hands it a state directly.
 
 - **Props:** `state` (`needs`, `failed`, `working`, `waiting`, `idle`, `ended`, or nothing where none is known), `who`, `word`, `changed`.
 - **Parts:** `root` carries the state as its `data-variant`; `who`, `badge` and `word`. A glyph tells each state as well as its colour.
@@ -2359,10 +2359,11 @@ model and a select-on-`mousedown` this window's strips do not have:
   _Plane root_ and the tree is the whole project's files (the point above). A view's key gives
   the keyboard to the first tree drawn in the view, past the headings.
 - **Every other control says `tabIndex={0}`**, and a tab's `×` says `-1`: fifty closers would be
-  fifty stops again. **Delete on a focused project tab or tab presses the row its `×` presses**
-  (purlis#239, `closeOnDelete` in `app/src/tabKeys.ts`), and so does Backspace on a Mac,
-  whose key marked "delete" sends it: closing a tab ends nothing and asks nothing, since its
-  chats go on in the sidebar (#4756), a task's own tab sends the task back (#1489), closing a project with chats open now asks first too (`ClosingProject`, on
+  fifty stops again. **Delete on a focused project's tab or a workspace strip's tab presses
+  the row its `×` presses** (purlis#239, `closeOnDelete` in `app/src/tabKeys.ts`), and so does
+  Backspace on a Mac, whose key marked "delete" sends it: closing a tab ends nothing and asks
+  nothing, since its chats go on in the sidebar (#4756), a task's own tab sends the task back
+  (#1489), closing a project with chats open now asks first too (`ClosingProject`, on
   the row's verb, so the `×`, the menu and the palette ask it as well), and the keyboard lands
   back on the tab after a Cancel and on the strip's stop after a close. A new strip with a `×`
   (a vault tab's) calls it from its tab's `onKeyDown` with that `×`'s row. The palette and the

@@ -104,7 +104,7 @@ describe("the repo picker", () => {
       return heard;
     }
 
-    it("asks its project's window to type the login its CLI names in a shell", async () => {
+    it("asks its project's window to type the login its CLI names in a pane", async () => {
       answering([
         {
           said: "gh is not authenticated for github.com. Run: gh auth login",
@@ -123,10 +123,10 @@ describe("the repo picker", () => {
       );
 
       expect(await screen.findByRole("status")).toHaveTextContent("gh is not authenticated");
-      await userEvent.click(screen.getByRole("button", { name: "Type it in a shell" }));
+      await userEvent.click(screen.getByRole("button", { name: "Type it in a pane" }));
 
       expect(heard).toEqual([{ plane: "p1", line: "gh auth login --hostname github.com" }]);
-      // A dialog holding the picker closes, so the shell is not under it.
+      // A dialog holding the picker closes, so the login's pane is not under it.
       expect(onLeave).toHaveBeenCalledOnce();
     });
 
@@ -135,7 +135,7 @@ describe("the repo picker", () => {
       render(<RepoPicker plane={"p1" as PlaneId} picked={new Set()} onPicked={() => {}} />);
 
       expect(await screen.findByRole("status")).toHaveTextContent("could not find gh");
-      expect(screen.queryByRole("button", { name: "Type it in a shell" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Type it in a pane" })).not.toBeInTheDocument();
     });
   });
 });

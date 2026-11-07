@@ -145,7 +145,7 @@ export function RepoPicker({
                       onLeave?.();
                     }}
                   >
-                    Type it in a shell
+                    Type it in a pane
                   </Button>
                 </p>
               )}
