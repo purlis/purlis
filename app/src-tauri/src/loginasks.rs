@@ -29,6 +29,7 @@
 
 use std::path::Path;
 use std::sync::{Mutex, MutexGuard, PoisonError, mpsc};
+use std::time::Duration;
 
 use purlis_core::hookwire::{Answer, BrowseAsk, Browsing};
 use purlis_core::loginask::{self, FindsForm, Proposal, Suggested};
@@ -529,6 +530,7 @@ pub fn before_the_login(
     tracing::info!("purlis: chat {session}'s browser login asks the person about its site");
     held.chats().asks_may_have_moved();
     if let Some(pool) = pool {
+        let_go_unanswered(held, session, login, id, heard);
         return no(asked_on_a_runner_said(login, pool));
     }
     match heard.recv_timeout(loginask::THE_PERSON_IS_WAITED_FOR) {
@@ -548,6 +550,54 @@ pub fn before_the_login(
             held.chats().asks_may_have_moved();
             no(NOT_ANSWERED.to_owned())
         }
+    }
+}
+
+/// **A runner chat's notice lets go after as long as a waiting call waits** (the person's ruling
+/// of 2026-11-07): nothing waits on it, so where nobody answered by then it goes, and the chat is
+/// told so on its next turn. A press or the chat's close ends the watch.
+fn let_go_unanswered(
+    held: &Held,
+    session: u32,
+    login: &str,
+    id: u32,
+    heard: mpsc::Receiver<Heard>,
+) {
+    let held = held.weak();
+    let login = login.to_owned();
+    let watched = std::thread::Builder::new()
+        .name(format!("login notice {id}"))
+        .spawn(move || {
+            let went = went_unanswered(&heard, loginask::THE_PERSON_IS_WAITED_FOR, || {
+                held.upgrade()
+                    .filter(|held| held.login_grants().end(id, Heard::Gone))
+            });
+            if let Some(held) = went {
+                held.chats().asks_may_have_moved();
+                held.chats().tell_outcome(
+                    session,
+                    purlis_core::askoutcome::Outcome {
+                        about: purlis_core::askoutcome::About::BrowserLogin { login },
+                        answer: purlis_core::askoutcome::Answer::NotAnswered,
+                    },
+                );
+            }
+        });
+    if let Err(why) = watched {
+        tracing::warn!("purlis: login notice {id} has no time limit: {why}");
+    }
+}
+
+/// **What a notice nobody waits on went with**: `None` where it was answered or its chat closed
+/// within `at_most`; otherwise what `ends` answers, which ends it unless a press just did.
+fn went_unanswered<T>(
+    heard: &mpsc::Receiver<Heard>,
+    at_most: Duration,
+    ends: impl FnOnce() -> Option<T>,
+) -> Option<T> {
+    match heard.recv_timeout(at_most) {
+        Err(mpsc::RecvTimeoutError::Timeout) => ends(),
+        Ok(_) | Err(mpsc::RecvTimeoutError::Disconnected) => None,
     }
 }
 

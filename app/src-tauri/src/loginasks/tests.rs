@@ -1088,3 +1088,27 @@ fn allow_once_is_given_back_only_to_a_login_that_never_ran() {
     grants.answered(7, CHAT_7, Some("qa"), "shop-login", false);
     assert!(tool_of(&grants, "shop-login").is_none(), "answered once");
 }
+
+/// The person's ruling of 2026-11-07: a runner chat's notice, which no call waits on, goes after
+/// as long as a waiting call waits, unless it was answered or its chat closed by then.
+#[test]
+fn a_notice_nobody_waits_on_goes_unanswered_after_its_time_unless_answered() {
+    let dir = project("");
+    let grants = Grants::default();
+    let (id, _, heard) = raised(dir.path(), &grants, "https://shop.example.test/");
+    let went = went_unanswered(&heard, Duration::from_millis(20), || {
+        Some(&grants).filter(|grants| grants.end(id, Heard::Gone))
+    });
+    assert!(went.is_some(), "nobody answered, so it went");
+    assert!(grants.waiting().is_empty());
+
+    let (id, _, heard) = raised(dir.path(), &grants, "https://shop.example.test/");
+    grants.end(id, Heard::Allowed);
+    let went = went_unanswered(&heard, Duration::from_millis(20), || Some(()));
+    assert!(went.is_none(), "an answer ends the watch");
+
+    let (_, _, heard) = raised(dir.path(), &grants, "https://shop.example.test/");
+    grants.forget(7);
+    let went = went_unanswered(&heard, Duration::from_millis(20), || Some(()));
+    assert!(went.is_none(), "a close ends the watch");
+}
