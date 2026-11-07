@@ -161,7 +161,7 @@ describe("where a task is drawn, as rows of the catalogue (#1489, V100-38)", () 
     });
   });
 
-  it("gives a task beside its session a minimise on its pane, and leaves the session's pane its close", () => {
+  it("gives a task beside the chat that asked a minimise on its pane, and leaves the session's pane its close", () => {
     const tabs = openBeside(sessions(), 2, askedByOf(all), "talk");
     const id = tabOf(tabs, 1);
     const [own, beside] = panesOf(tabs, id);

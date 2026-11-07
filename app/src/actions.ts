@@ -1177,7 +1177,8 @@ export type Doing = {
   paneBack: () => void;
   /** Gives a task a tab of its own, in front. */
   ownTab: (session: number) => void;
-  /** Opens a task beside the chat that asked for it, split from its pane, with the keyboard in it. */
+  /** Opens a task beside the chat that asked for it, split from its pane, with the keyboard
+   *  in it. */
   beside: (session: number) => void;
   /** Takes a task's own tab or pane away. The task goes on, a row in the Chats list. */
   sendBack: (session: number) => void;
@@ -4981,8 +4982,8 @@ export const BRIEF_SAYS = "What this task was sent, as it was sent. Read-only.";
 /** The catalogue's id for opening the task in front beside the chat that asked for it. */
 export const BESIDE_ID = "chat.beside";
 
-/** The catalogue's id for the row that opens task `session` beside the chat that asked for it (#1489):
- *  what Space on its row in the Chats list presses. */
+/** The catalogue's id for the row that opens task `session` beside the chat that asked for it
+ *  (#1489): what Space on its row in the Chats list presses. */
 export function besideId(session: number): string {
   return `chat.beside:${session}`;
 }
@@ -5046,12 +5047,12 @@ export function backTitle(name: string): string {
 
 /**
  * **Where a task is drawn, as rows** (#1489, V100-38): for each task, a row that moves it to a
- * tab of its own, one that opens it beside its session, and, while it has a tab or a pane of
- * its own, one that sends it back. The rows a task's menu in the Chats list, its line in its
+ * tab of its own, one that opens it beside the chat that asked for it, and, while it has a tab
+ * or a pane of its own, one that sends it back. The rows a task's menu in the Chats list, its line in its
  * tab's menu and its pane's controls all press, and what the palette lists.
  *
  * A row that cannot run stays, with its reason: a task already in its own tab, one already
- * beside its session, one whose session has no tab to open it beside.
+ * beside it, one whose asker has no pane in this window to open it beside.
  */
 export function placeRows(
   tabs: Tabs,
@@ -5101,9 +5102,9 @@ export function placeRows(
 }
 
 /**
- * **Open the task in front beside the chat that asked for it** (`chat.beside`, #1499, #1489, #5679): the palette's
- * row for the task the focused pane shows. Space on a row of the Chats list presses that
- * row's own (`besideId`), so what opens is the row the key was pressed on.
+ * **Open the task in front beside the chat that asked for it** (`chat.beside`, #1499, #1489,
+ * #5679): the palette's row for the task the focused pane shows. Space on a row of the Chats
+ * list presses that row's own (`besideId`), so what opens is the row the key was pressed on.
  */
 function besideInFront(
   tabs: Tabs,

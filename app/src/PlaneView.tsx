@@ -10154,9 +10154,9 @@ export const PlaneView = memo(function PlaneView({
     [],
   );
 
-  /** Moves a task from its line in a tab's menu (#1489): to a tab of its own, beside its
-   *  session, or back. The catalogue's own rows, read as they stand when pressed, and held
-   *  as one function for the window's life, as {@link showFromChip} is. */
+  /** Moves a task from its line in a tab's menu (#1489): to a tab of its own, beside the
+   *  chat that asked for it, or back. The catalogue's own rows, read as they stand when
+   *  pressed, and held as one function for the window's life, as {@link showFromChip} is. */
   const placeNow = useRef<(session: number, where: TaskPlace) => void>(() => undefined);
   useEffect(() => {
     placeNow.current = (session, where) => {

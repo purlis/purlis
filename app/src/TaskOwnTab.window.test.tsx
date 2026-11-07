@@ -556,7 +556,7 @@ describe("moving a task to a tab of its own", () => {
     // The tab keeps its first chat's name (#5342): the session's, with talk beside it.
     expect(tabNames()).toEqual(["steward 1", "steward 2", "sweep"]);
 
-    // Alt+Enter is beside its session.
+    // Alt+Enter is beside the chat that asked for it.
     menu = await open();
     lineOf(menu, "sweep").focus();
     await userEvent.keyboard("{Alt>}{Enter}{/Alt}");
@@ -633,7 +633,7 @@ describe("moving a task to a tab of its own", () => {
   });
 });
 
-describe("opening a task beside its session", () => {
+describe("opening a task beside the chat that asked for it", () => {
   it("splits the pane of the chat that asked on Space, the session on one side and the task on the other", async () => {
     const { tree, asked } = await drawn(withTasks());
 
@@ -823,7 +823,7 @@ describe("the session's End…, the one way it ends (#4756)", () => {
 });
 
 describe("after a relaunch", () => {
-  it("puts a task's own tab back as a task's tab, and a task beside its session back beside it", async () => {
+  it("puts a task's own tab back as a task's tab, and a task beside the chat that asked back beside it", async () => {
     const open = withTasks();
     open[2].from = taskOf(1, { tab: true });
     open[3].beside = 1;

@@ -929,9 +929,11 @@ function TaskLine({
   // session's own chat is its tab, and an ended task is nowhere.
   const moves = onPlace !== undefined && row !== undefined && row.mode === "task" ? row : undefined;
   // Each button's words are its catalogue row's (#5679), read only for a line that moves.
-  const ownRow = moves === undefined ? undefined : placeOf?.(moves.session, "own");
-  const besideRow = moves === undefined ? undefined : placeOf?.(moves.session, "beside");
-  const backRow = moves === undefined ? undefined : placeOf?.(moves.session, "back");
+  const rowTo = (where: Place) =>
+    moves === undefined ? undefined : placeOf?.(moves.session, where);
+  const ownRow = rowTo("own");
+  const besideRow = rowTo("beside");
+  const backRow = rowTo("back");
   // **Its question, to answer** (#1551): an open task paused on a question to its asking chat.
   const answer: AnswerAsk | undefined =
     onAnswer !== undefined && row !== undefined && row.mode === "task" && question !== undefined
@@ -965,7 +967,7 @@ function TaskLine({
         }
         // **The keyboard's way to move a task from its line** (#1489): Enter goes to it, and
         // Enter with a modifier opens it elsewhere, as a link is opened in a new tab. ⌘ or
-        // Ctrl is a tab of its own; Alt is beside its session. Before the menu's own Enter.
+        // Ctrl is a tab of its own; Alt is beside the chat that asked. Before the menu's own Enter.
         aria-keyshortcuts={moves === undefined ? undefined : "Control+Enter Meta+Enter Alt+Enter"}
         onKeyDown={(event) => {
           const where: Place | undefined =
