@@ -13032,6 +13032,16 @@ fn a_runs_field_filled_with_a_picked_entry_is_a_link_and_allow_once_runs() {
     let id = planes.open(&plane.root);
     let held = planes.held(&id).expect("held");
     team_and_a_kept_entry(&plane);
+    // Every run grant is audited before it is given.
+    let logs = tempfile::tempdir().expect("a folder for the log");
+    {
+        use purlis_core::eventlog::{ArgsKey, Log, Recorder};
+        held.hooks()
+            .record_into(crate::hooks::Events::here(Recorder::new(
+                Log::open(logs.path(), "DEVICE").expect("a log"),
+                ArgsKey::open(logs.path()).expect("a key"),
+            )));
+    }
 
     let ran = held_while(&held, curl_lacking_token(&plane), |open| {
         crate::secretasks::run_grant_given(

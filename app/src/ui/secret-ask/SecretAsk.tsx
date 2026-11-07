@@ -54,8 +54,11 @@ function clearOfTheBar(event: FocusEvent<HTMLDivElement>) {
     foot.contains(focused)
   )
     return;
-  const covered = focused.getBoundingClientRect().bottom - foot.getBoundingClientRect().top;
-  if (covered > 0) scrollerOf(event.currentTarget).scrollBy({ top: covered + 8 });
+  const at = focused.getBoundingClientRect();
+  const bar = foot.getBoundingClientRect();
+  // Only a control the bar is drawn over, and only as far as clears it.
+  if (at.bottom > bar.top && at.top < bar.bottom)
+    scrollerOf(event.currentTarget).scrollBy({ top: at.bottom - bar.top + 8 });
 }
 
 /** **The body**: one notice's parts, in order. Named for a reader by `label`. */

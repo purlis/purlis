@@ -23,12 +23,15 @@ import { SecretAskNotice } from "./SecretAskNotice";
 import { expectFocusInSight, inAWindow, untilFocused } from "./stories.testkit";
 import { Card } from "./ui/card/Card";
 
-/** The card the Inbox draws an ask on, around the notice. */
+/** The card the Inbox draws an ask on, around the notice, as wide as the Inbox panel. */
 function OnTheCard(props: Parameters<typeof SecretAskNotice>[0]) {
   return (
-    <Card variant="ask" className="inbox-ask">
-      <SecretAskNotice {...props} />
-    </Card>
+    // The Inbox panel's width, as its own stories draw a card.
+    <div style={{ inlineSize: 420 }}>
+      <Card variant="ask" className="inbox-ask">
+        <SecretAskNotice {...props} />
+      </Card>
+    </div>
   );
 }
 
