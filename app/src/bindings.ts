@@ -1355,6 +1355,10 @@ export const commands = {
 	 * 
 	 *  The window's alone: what waits on the person, dispatches and refused hosts included, is
 	 *  never a link's to read, as `dispatch_grants_needed` is not.
+	 * 
+	 *  Read off the window's thread (#5582): it reads the project's files (its locks, sign-ins and
+	 *  removals, and each waiting persona's tools), and the window asks it on every burst of moves.
+	 *  Two reads may answer out of order, and the window draws only the newest (`asks.ts`).
 	 */
 	asksWaiting: (plane: PlaneId) => typedError<Asking, string>(__TAURI_INVOKE("asks_waiting", { plane })),
 	/**
