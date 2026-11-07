@@ -1031,7 +1031,7 @@ test("the outcome bars run on a pull request that touches what they measure, and
   );
 });
 
-test("Pool setup's walk on Docker runs on a pull request that touches it, and on main", () => {
+test("Pool setup's walk on Docker runs on a pull request that touches it, and in every other run; its required check is carried", () => {
   const on = (path) => gatesOf({ event: "pull_request", paths: [path] })["pool-setup"];
   for (const path of [
     "app/src/poolsetup/TryStep.tsx",
@@ -1055,13 +1055,23 @@ test("Pool setup's walk on Docker runs on a pull request that touches it, and on
     assert.equal(on(path), false, path);
 
   const ci = read(".github/workflows/ci.yml");
-  const job = ci.slice(ci.indexOf("\n  pool-setup-scenario:\n"), ci.indexOf("\n  scenario-linux-checks:\n"));
+  // Required since #5176, so it runs wherever a required check is read: every run but a pull
+  // request's, and a pull request its gate lets in.
+  const job = ci.slice(ci.indexOf("\n  pool-setup-scenario:\n"), ci.indexOf("\n  pool-setup-scenario-checks:\n"));
   assert.ok(
-    job.includes(
-      "github.event_name == 'push' || (github.event_name == 'pull_request' && needs.changes.outputs.pool-setup != 'false')",
-    ),
-    "main's push and a pull request its gate lets in, and not the merge group",
+    job.includes("(github.event_name != 'pull_request' || needs.changes.outputs.pool-setup != 'false')"),
+    "every run but a pull request's, and a pull request its gate lets in",
   );
+  assert.doesNotMatch(job, /continue-on-error/);
+  // The leg's own name is not the check's, so a skipped matrix leg never posts it unexpanded.
+  assert.doesNotMatch(job, /\n    name: scenario tests/);
+  // Its required check passes on a pull request only where its leg was skipped by that gate.
+  const checks = ci.slice(ci.indexOf("\n  pool-setup-scenario-checks:\n"), ci.indexOf("\n  scenario-linux-checks:\n"));
+  assert.match(checks, /\n    name: scenario tests \(ubuntu-24\.04, Pool setup on Docker\)\n/);
+  assert.match(checks, /\n    needs: \[changes, pool-setup-scenario\]\n/);
+  assert.match(checks, /\n    if: \$\{\{ !cancelled\(\) \}\}\n/);
+  assert.match(checks, /RESULT: \$\{\{ needs\.pool-setup-scenario\.result \}\}/);
+  assert.match(checks, /\n          if \[ "\$EVENT" = pull_request \] && \[ "\$SCOPE" = false \]; then want=skipped; fi\n/);
   assert.match(
     ci.slice(ci.indexOf("\n  changes:\n"), ci.indexOf("\n  rust:\n")),
     /\bpool-setup: \$\{\{ steps\.scope\.outputs\.pool-setup \}\}/,

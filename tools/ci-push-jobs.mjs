@@ -44,6 +44,9 @@ export const REQUIRED_CHECKS = [
   "rust (licences, advisories)",
   "scenario tests (macos-latest)",
   "scenario tests (ubuntu-24.04)",
+  // Required since #5176, by the person's ruling of 2026-11-07: Pool setup's run on Docker, carried
+  // by `pool-setup-scenario-checks`. It passed 12 of 12 of main's completed runs before.
+  "scenario tests (ubuntu-24.04, Pool setup on Docker)",
   "web (types, lint, format, test)",
 ];
 
