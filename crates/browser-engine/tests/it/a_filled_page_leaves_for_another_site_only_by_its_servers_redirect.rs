@@ -491,6 +491,116 @@ fn a_load_that_fails_ends_the_hold_and_shows_purlis_s_own_page() {
     );
 }
 
+/// A value with characters an address writes encoded.
+const RESERVED: &str = "p@ss+w/rd!";
+
+/// Whether `read` holds [`RESERVED`] or what its query was, as it is or as an address writes it.
+fn holds_the_value(read: &str) -> bool {
+    let lower = read.to_lowercase();
+    ["p@ss", "w/rd", "p%40ss", "%2bw%2frd", "key="]
+        .iter()
+        .any(|part| lower.contains(part))
+}
+
+/// Everything the chat can read of the browser now: the page, what it finds of the value's parts,
+/// and every page's address and title.
+fn every_read(browser: &Browser) -> String {
+    let mut read = snapshot(browser);
+    for words in ["ss", "rd", "key", "other.test"] {
+        read.push_str(&find(browser, words));
+    }
+    read.push_str(&format!("{:?}", call(browser, Call::Pages)));
+    read
+}
+
+/// A form sent by GET to another site, its query holding the value, reaches nothing: not as it is
+/// sent, and not from the history the person goes back through once the hold is over.
+#[test]
+fn a_form_sent_by_get_to_another_site_is_never_sent_later() {
+    for (label, line) in [
+        ("Key sent elsewhere", "button \"Send elsewhere\""),
+        ("Key sent over https", "button \"Send over https\""),
+    ] {
+        let Some((browser, _data, site)) = browser() else {
+            return;
+        };
+        the_app_sends_it_to_sign_in(&browser, "third.test");
+        let holder = Holder::on(&site, None);
+        filled_with(&browser, &holder, label, RESERVED);
+
+        let clicked = click(&browser, line);
+        // Whatever it was to do, and the hold's end where it ends, have had their moment.
+        std::thread::sleep(THE_HOLD_ENDS_AFTER * 3);
+        let back = call(&browser, Call::Back { page: None });
+        std::thread::sleep(Duration::from_millis(800));
+        let read = every_read(&browser);
+
+        assert!(
+            !site.heard_from(OTHER),
+            "{line}: {OTHER} was sent {:?}; the holder was told {:?}",
+            site.sent_to(OTHER),
+            holder.said()
+        );
+        for (what, said) in [
+            ("the click's answer", format!("{clicked:?}")),
+            ("going back", format!("{back:?}")),
+            ("a read", read),
+        ] {
+            assert!(!holds_the_value(&said), "{line}: {what} holds it: {said}");
+        }
+    }
+}
+
+/// A load that fails, its address holding the value, shows the chat nothing of that address: not
+/// on the page the person is shown, and not in any page's address.
+#[test]
+fn a_load_that_fails_says_nothing_of_the_address_it_failed_at() {
+    let Some((browser, _data, site)) = browser() else {
+        return;
+    };
+    the_app_sends_it_to_sign_in(&browser, OTHER);
+    let holder = Holder::on(&site, None);
+    filled_with(&browser, &holder, "Key failing", RESERVED);
+
+    let clicked = click(&browser, "button \"Send and fail\"");
+    let waited = call(
+        &browser,
+        Call::WaitForText {
+            page: None,
+            text: "Page not loaded".into(),
+            gone: false,
+            within: Duration::from_secs(10),
+        },
+    );
+    holder.released_within_ten_seconds();
+    let failing = || {
+        site.sent_to(HELD_SITE)
+            .iter()
+            .filter(|sent| sent.ends_with("/hangs-up"))
+            .count()
+    };
+    let sent_before = failing();
+    let back = call(&browser, Call::Back { page: None });
+    std::thread::sleep(Duration::from_millis(800));
+    let read = every_read(&browser);
+
+    assert_eq!(
+        failing(),
+        sent_before,
+        "going back sent it again: {:?}",
+        site.sent_to(HELD_SITE)
+    );
+    assert_eq!(waited.content, Content::Seen(true), "purlis's own page");
+    for (what, said) in [
+        ("the click's answer", format!("{clicked:?}")),
+        ("the wait's answer", format!("{waited:?}")),
+        ("going back", format!("{back:?}")),
+        ("a read", read),
+    ] {
+        assert!(!holds_the_value(&said), "{what} holds it: {said}");
+    }
+}
+
 /// The page the answer is on: what a chat goes back to.
 fn page_of(answer: &Answer) -> PageId {
     answer.page.as_ref().expect("a page").id.clone()
