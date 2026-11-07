@@ -203,9 +203,8 @@ impl Refused {
                              as its own persona in another workspace ('{workspace}'): a \
                              chat's own persona needs no grant, so none can stand for it, \
                              and with nobody here that rule does not carry a chat into \
-                             another workspace. The person can start it from this chat's \
-                             tab. Leave out `--in` and the new chat works in this chat's \
-                             folder."
+                             another workspace. The person can start it from this chat's menu. \
+                             Leave out `--in` and the new chat works in this chat's folder."
                         );
                     }
                     (Some(asking), Some(target)) => format!(

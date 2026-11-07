@@ -376,7 +376,7 @@ async fn blocking(
 /// `session_record`: the one operation `purlis session record` run in the chat performs
 /// ([`crate::session::write`]), so the app that started the chat writes it over the chat's hook
 /// socket where it can, and this server writes it where it cannot (#1332). Answered with what
-/// the command prints: the record, then what becomes of the tab.
+/// the command prints: the record, then what becomes of the chat.
 fn session_record(args: &serde_json::Map<String, serde_json::Value>) -> Result<String, String> {
     let (title, body, pieces) = chattools::record_args(args)?;
     let here = crate::Here::read()?;
@@ -387,7 +387,7 @@ fn session_record(args: &serde_json::Map<String, serde_json::Value>) -> Result<S
         Ok(saved) => {
             let mut said = vec![format!("Session record → {}", saved.shown)];
             said.extend(saved.warnings);
-            said.push(saved.tab);
+            said.push(saved.ends);
             Ok(said.join("\n"))
         }
         Err(crate::session::NotWritten::Refused(why) | crate::session::NotWritten::Failed(why)) => {

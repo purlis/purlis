@@ -175,7 +175,7 @@ over the appearance as its colours are.
 | `radius.xl` | px | 0–18 | 8 | 8 | the Welcome page's doors, nothing else |
 | `radius.full` | px | 0–9999 | 9999 | 9999 | pills: counts, toggle tracks |
 | `size.control` | px at 14px | 20–40 | 28 | 24 | buttons, fields, selects, menu rows, a list's rows, the workspace strip |
-| `size.chrome` | px at 14px | 16–32 | 21 | 18 | small buttons, the chat strip, pane and panel headers, a dense list's rows and every tree row |
+| `size.chrome` | px at 14px | 16–32 | 21 | 18 | small buttons, the tab strip, pane and panel headers, a dense list's rows and every tree row |
 | `window.gutter` | px | 0–16 | 0 | 0 | the gap between the window's regions, and around them inside the frame |
 | `panel.corner-radius` | px | 0–24 | 0 | 0 | a region panel's corners: the sides, the content and the bottom panel's halves |
 | `panel.border-width` | px | 0–2 | 1 | 1 | the hairline between two regions, drawn only while they sit flush (no gutter) |

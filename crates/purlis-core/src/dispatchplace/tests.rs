@@ -1367,8 +1367,8 @@ fn a_chat_nobody_is_at_crosses_into_another_workspace_only_under_a_standing_gran
          answer for it, and such a chat starts no chat as its own persona in another workspace \
          ('beta'): a chat's own persona needs no grant, so none can stand for it, and with \
          nobody here that rule does not carry a chat into another workspace. The person can \
-         start it from this chat's tab. Leave out `--in` and the new chat works in this \
-         chat's folder."
+         start it from this chat's menu. Leave out `--in` and the new chat works in this chat's \
+         folder."
     );
     // To another persona it names the pair, and where a grant for it is made.
     assert_eq!(

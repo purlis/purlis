@@ -6734,12 +6734,12 @@ fn the_list_holds_a_handoff_the_person_s_ask_and_the_persona_s_own_profile() {
         );
     }
 
-    // The person's ask from that chat's tab, in the person's words.
+    // The person's ask from that chat, in the person's words.
     let why = ask_from_the_tab(&held, &id, asking, "devops", "check prod")
         .expect_err("nothing is started");
     assert_eq!(
         why,
-        "This tab's chat runs on profile 'work', which this project does not list for \
+        "This chat runs on profile 'work', which this project does not list for \
              persona 'devops', so nothing was started. The project lists only 'cx' for that \
              persona. Ask from a chat on that one, or list 'work' for devops under \
              [dispatch.profiles] in the project's file."
@@ -7401,7 +7401,7 @@ fn the_person_s_ask_is_held_to_the_same_checks_and_limits_and_refused_in_the_per
     let shell = a_shell_chat(&held);
     let said = ask_from_the_tab(&held, &id, shell, "devops", "x y").unwrap_err();
     assert!(
-        said.starts_with("This tab is not on a harness profile"),
+        said.starts_with("This chat is not on a harness profile"),
         "{said}"
     );
     assert_eq!(held.chats().open_now().len(), before + 1, "only the shell");

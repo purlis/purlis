@@ -827,9 +827,9 @@ pub(crate) fn list_for_a_chat(listing: &super::brokered::Listing, io: &mut dyn I
 
 /// What `vault list` says under a vault this chat may not use (#1430).
 pub const NOT_ALLOWED_ROUTES: &str = "For a vault marked not allowed: run the command that \
-     needs it, and ask the operator to press Allow in the notice on this chat's tab; or, to \
-     have the vault's persona do the work, dispatch to it (`purlis dispatch --to <name>`). A \
-     chat's persona is fixed for its life.";
+     needs it, and ask the operator to press Allow on this chat's vault notice; or, to have the \
+     vault's persona do the work, dispatch to it (`purlis dispatch --to <name>`). A chat's persona \
+     is fixed for its life.";
 
 /// [`NOT_ALLOWED_ROUTES`] where an administrator's policy forbids the Allow: only the dispatch
 /// is named.

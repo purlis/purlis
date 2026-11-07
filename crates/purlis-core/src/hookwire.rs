@@ -2306,8 +2306,8 @@ pub enum Answer {
     Previewed {
         painted: Vec<crate::themepreview::Painted>,
     },
-    /// The session record is written (#1332): where, plane-relative, and whether the chat's
-    /// tab now closes, which it does only under a smart-close pass. `warnings` is what did not
+    /// The session record is written (#1332): where, plane-relative, and whether the chat now ends,
+    /// which it does only under a smart-close pass. `warnings` is what did not
     /// follow it ([`crate::sessionrecord::Recorded::warnings`]).
     Recorded {
         record: String,

@@ -145,13 +145,13 @@ A line must fit its box, in both densities: `font-size.base` × `line-height.bod
 tighter: `font-size.md` 14 fits comfortable (14 × 1.4 = 19.6, within 21) and fails compact
 (14 × 1.3 = 18.2, over 18). The check reports each line that does not fit, with its density.
 
-**Corners are a family's parts.** The rail's project buttons (`rail.*`), the title bar's
-workspace chips (`titlebar.*`) and the session tabs (chats, views, files) and their `×`
-(`tabs.*`, below) are rounded through their parts, a list's rows by `radius.control` and the
-`list` family's parts, and the Changes view's tree rows by `radius.control` and the `tree`
+**Corners are a family's parts.** The rail's project buttons (`rail.*`), the title bar's workspace
+chips (`titlebar.*`) and the strip's tabs (each a layout of panes holding chats, views or files) and
+their `×` (`tabs.*`, below) are rounded through their parts, a list's rows by `radius.control` and
+the `list` family's parts, and the Changes view's tree rows by `radius.control` and the `tree`
 family's. The Explorer's and the Chats list's tree rows join when they move to the tree family
-(#2911): until then no key reaches their corners, so tell the person that when they ask for
-rounder ones. The focus ring tokens reach every focus ring, the closer's among them.
+(#2911): until then no key reaches their corners, so tell the person that when they ask for rounder
+ones. The focus ring tokens reach every focus ring, the closer's among them.
 
 **One part of one control** is a component part, in a top-level `parts` object:
 `"button.root.corner-radius": "full"` rounds every button to a pill, and

@@ -1571,8 +1571,7 @@ fn a_profile_not_signed_in_is_one_ask_about_no_chat_that_signs_it_in() {
         }
     );
     assert!(
-        ask.says
-            .contains("Claude Code's own sign-in in a shell tab"),
+        ask.says.contains("Claude Code's own sign-in in a shell"),
         "{}",
         ask.says
     );

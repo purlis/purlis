@@ -405,7 +405,7 @@ describe("Restart chat on a chat's tab", () => {
 
   it("says why on the chat's pane when the restart is refused", async () => {
     const refused =
-      "purlis did not restart chat 4: it has no conversation to resume. If it has only just started, send it a message and restart it again. Start fresh on its tab's menu starts it again without a conversation.";
+      "purlis did not restart chat 4: it has no conversation to resume. If it has only just started, send it a message and restart it again. Start fresh on its menu starts it again without a conversation.";
     const { asked } = await aChat({ refused });
     await act(() => moved(WAITING));
 

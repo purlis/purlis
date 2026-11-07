@@ -9,7 +9,7 @@ same steps for GitLab are in [Getting started with GitLab](gitlab.md).
 - At least one harness, the coding agent a chat runs: Claude Code (`claude`), Codex or
   opencode. Each one signs in with its own login, the first time a chat starts it. With none
   installed, purlis lists each one's official installer once your repo is open, and
-  **Install** runs it in a shell tab.
+  **Install** runs it in a shell.
 - GitHub's own command-line tool, [`gh`](https://cli.github.com/), signed in with
   `gh auth login`. purlis lists your repos, clones them and opens pull requests through `gh`,
   as you: it keeps no GitHub token of its own.
@@ -96,7 +96,8 @@ server. The window's GitHub work then uses your sign-in, with no `gh` needed: th
 picker, discover, saves and the pull requests they open, and each workspace's pull request and
 checks. The page also shows whether `gh` and `glab` are installed and signed in: a host you
 have not signed in to through purlis still uses `gh`, and chats always do. If `gh` is
-installed but not signed in, **Sign in to GitHub** opens a shell tab running `gh auth login`.
+installed but not signed in, **Sign in to GitHub** runs `gh auth login` in a split beside the pane
+you are in, which goes when you're signed in.
 If `gh` is already signed in to github.com, the page also offers **Use my gh login**. It says
 first what it does: the token `gh` keeps is copied into purlis's own keychain item, which purlis
 never hands to a chat. A chat that runs `gh` itself can still use `gh`'s own stored login; sign
@@ -165,6 +166,7 @@ purlis has five concepts, and every other word belongs to one of them
 - **Project:** the git repository that holds your workspaces, personas, memory and settings. A
   code repo is never a project.
 - **Workspace:** a named piece of work, with its own `workspace.md`, memory, todos and repos.
-- **Chat:** one conversation with an agent, in a tab.
+- **Chat:** one conversation with an agent. It's listed in the sidebar, and you show it in a pane by
+  picking it.
 - **Persona:** a role a chat can take, with its own instructions, memory and vault.
 - **Memory:** what purlis keeps so that the next chat knows what earlier ones learned.

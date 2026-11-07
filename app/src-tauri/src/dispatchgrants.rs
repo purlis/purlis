@@ -270,8 +270,10 @@ pub enum Uncovered {
 }
 
 /// What a chat that runs on another chat's grants is told when it asks to dispatch.
-pub const HELD_DISPATCHES_TO_NO_ONE: &str = "this chat runs on another chat's grants until the person allows its own on its tab, so it \
-     dispatches to no one yet. Ask the person to press Allow on this chat's tab.";
+pub const HELD_DISPATCHES_TO_NO_ONE: &str = "this chat runs on another chat's grants until the \
+                                             person allows its own, so it dispatches to no one \
+                                             yet. Ask the person to allow this chat its own \
+                                             grants.";
 
 /// **What the task a held dispatch would start is** (#1456): what its Notice names besides
 /// the pair and the brief.
@@ -3514,7 +3516,7 @@ pub(crate) fn add_grant(
     if level == Level::Chat {
         return Err(
             "A grant made here is for you on this machine or for everyone in this project. A \
-             grant for one chat is made on that chat's tab, when it asks."
+             grant for one chat is made when it asks, in the Inbox."
                 .to_owned(),
         );
     }
