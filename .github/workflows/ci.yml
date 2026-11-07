@@ -2232,9 +2232,9 @@ jobs:
   # `continue-on-error`. A runner shutdown cut it off until #5379 gave its build a swap file, which
   # the app crate's `opt-level = 1` made unneeded (#5277). It passed on all 14 of main's runs that
   # finished it from #5379's merge to 2026-11-06, so it is required, as the person's ruling of
-  # 2026-11-05 said it would be once #5277 was fixed. It
-  # judges L10's Linux guard (ADR 0086, amended 2026-11-06). It runs in the merge queue and
-  # nightly too, which a required check needs; `outcome-bars-linux-checks` carries the check's name.
+  # 2026-11-05 said it would be once #5277 was fixed. It judges L10's Linux guard (ADR 0086,
+  # amended 2026-11-06). It runs in the merge queue and nightly too, which a required check needs;
+  # `outcome-bars-linux-checks` carries the check's name.
   outcome-bars-linux:
     name: outcome bars run (ubuntu-24.04)
     needs: changes

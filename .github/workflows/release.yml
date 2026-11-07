@@ -496,12 +496,13 @@ jobs:
         timeout-minutes: 9
         run: tools/linux-packages.sh install --tauri
 
-      # The `dev-release` build, and `release` since it links the same way (ADR 0092), needs about
-      # 26 GB at its peak, and an `ubuntu-24.04` runner has 16 of memory and 3 of swap. Out of
-      # both, the runner itself goes: "The runner has received a shutdown signal", in every dev
-      # build on main from 2026-11-05T21:36Z, while it compiled `purlis-app`. `ci.yml` measured
-      # it and gives its outcome bars' build the same swap file (#5277, #5379). The file is gone
-      # with the runner.
+      # With the app crate at `opt-level = 3`, the `dev-release` build, and `release` since it links
+      # the same way (ADR 0092), outgrew an `ubuntu-24.04` runner's 16 GB of memory and 3 of swap:
+      # the runner itself went ("The runner has received a shutdown signal"), in every dev build on
+      # main from 2026-11-05T21:36Z, while it compiled `purlis-app`. At `opt-level = 1` (ADR 0092
+      # amended 2026-11-07) it peaks at about 6.6 GB, and `ci.yml` and `scale.yml` dropped their
+      # swap file (#5277). This one stays until a stable build at level 1 has shipped. The file is
+      # gone with the runner.
       - name: More swap for the build
         if: runner.os == 'Linux'
         timeout-minutes: 2
