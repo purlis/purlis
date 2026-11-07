@@ -148,12 +148,14 @@ _Avoid_: task, slot, branch (for the directory), worktree (on screen)
 
 **Finished folder**:
 A branch folder whose removal loses nothing and takes nothing from under anyone: no uncommitted
-changes; every commit on its base, or carried there by a squash merge; no ignored files beyond
-the folders only a build or the harness writes, and links; its task, if any, ended (done,
-failed, blocked, cancelled, stopped or ended without a report; working, needs you, asking and
-idle are not ended); no open chat that has declared neither `done` nor `abandoned` holds it; and
-no other remaining folder links into it. `purlis worktree remove` takes one without `--force`,
-a task's folder too, and `purlis worktree prune` removes every one (ADR 0110).
+changes; every commit on its base, or carried there by a squash merge, or inside the head of a
+pull request the forge says merged; no ignored files beyond the folders only a build or the
+harness writes, and links; its task, if any, ended (done, failed, blocked, cancelled, stopped or
+ended without a report; working, needs you, asking and idle are not ended); no open chat that
+has declared neither `done` nor `abandoned` holds it; and no other remaining folder links into
+it. `purlis worktree remove` takes one without `--force`, a task's folder too, and `purlis
+worktree prune` removes every one, and deletes each branch purlis cut whose folder is gone
+where that loses nothing (ADR 0110, amended 2026-11-06).
 _Avoid_: landed (for a branch: that is a change member's word; say *on its base* or *carried*),
 merged (git's `-d` does not find a carried branch merged), clean (that is only its files)
 
@@ -231,6 +233,23 @@ GHES or a self-managed GitLab needs one made on that host, and until then it sig
 token. It mints nothing for an agent. It is a setting of the **Project**, like the forge account
 that uses it (ADR 0072 §2, ADR 0077 as amended 2026-10-12).
 _Avoid_: OAuth app (unqualified), GitHub App (for purlis's sign-in), integration, client
+
+**Signed commits**:
+The commits the app makes for a chat carrying a signature the forge shows as Verified. Opt-in,
+and on while this device has a signing key; then it holds in every repo. Set up and removed
+only from the window, never by a chat (ADR 0115, ADR 0116).
+_Avoid_: commit signing (in the window), GPG, verified commits (for the setting)
+
+**Signing key**:
+The one key per device the app signs chat commits with, kept in the **Keyring** tier and never
+exported. It is added to each forge account that needs it; a new device makes its own
+(ADR 0115 §1, ADR 0116 §7).
+_Avoid_: SSH key (in the window), GPG key, deploy key
+
+**Sign and retry**:
+What the window offers on work a forge refused for unsigned commits, once signing is set up:
+re-sign the branch's commits and send it again, for one lane or every waiting one (ADR 0116 §4).
+_Avoid_: resign, re-push
 
 **Forge capability**:
 One thing a forge may or may not do for one repo, such as a merge queue, judged per forge, host
@@ -1081,8 +1100,8 @@ _Avoid_: tab bar, scroller
 **Tab** (on a workspace's strip):
 A layout of **panes**, kept as a tree: each split holds two parts, side by side or one above
 the other, and each pane holds a chat, a view or nothing. A tab is made when the person asks for
-one: the strip's `+` (a tab with an empty pane), **Open in new tab** on a chat, or opening a
-view. It is made too when a chat the person opens has nowhere to go that replaces nothing they
+one: the strip's `+` (a tab with an empty pane, ⌘T) or a row of its list, **Open in new tab**
+on a chat, or opening a view. It is made too when a chat the person opens has nowhere to go that replaces nothing they
 built (the rule under **Pane**). A chat never gets a tab by a dispatch or by a handoff, and a
 launch draws only the tabs the record keeps. A tab knows which strip it is on. Closing it ends
 no chat: its chats keep running in the sidebar (ADR 0043 as amended, #4587, #4758).
@@ -1129,10 +1148,12 @@ anything (ADR 0111, #5202, #5204).
 _Avoid_: footer, status bar, gauge row
 
 **Empty pane**:
-A pane that holds nothing. It says "Nothing in this pane", how many chats are running in the
-workspace, and offers **New chat**. A strip's last tab keeps one when its last pane closes, so
+A pane that holds nothing. It says "Nothing in this pane yet", offers **New chat** and **New shell**, and,
+while chats run in the workspace, says one can be dragged in from the sidebar and how many are
+running. Splitting a pane gives one, and the strip's `+` opens a tab of one, an **Empty tab**,
+named so until it holds something. A strip's last tab keeps one when its last pane closes, so
 a strip always has a pane for a sidebar pick. In a plane with no workspace it says
-"No workspaces yet" and offers **Create a workspace**.
+"No workspaces yet" and offers **Create a workspace** (ADR 0043 as amended 2026-11-06).
 _Avoid_: blank tab, empty window
 
 **Side**:

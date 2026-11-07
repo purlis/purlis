@@ -304,6 +304,11 @@ fn isolated_answer(
                             piece,
                             false,
                             *delete_branch,
+                            crate::finished::Forge::asking(&crate::finished::merged::of_the_plane(
+                                root,
+                                &ask.workspace,
+                                &crate::forge::Caller::command(),
+                            )),
                             &mut say,
                         )
                     });
@@ -357,6 +362,11 @@ fn isolated_answer(
                     repo: repo.as_deref(),
                     dry_run: *dry_run,
                     keep_branches: *keep_branches,
+                    forge: crate::finished::Forge::asking(&crate::finished::merged::of_the_plane(
+                        root,
+                        &ask.workspace,
+                        &crate::forge::Caller::command(),
+                    )),
                 },
                 &crate::prune::Asker {
                     who: &who(asker),

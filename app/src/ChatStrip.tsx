@@ -53,6 +53,8 @@ import { faceOf, type Naming, type TabFace } from "./tabFace";
 import type { Ref } from "./fits";
 import type { RefObject } from "react";
 import { Doer, ShowMore, Pin, Closer } from "./StripMarks";
+import { NewTabButton } from "./NewTabButton";
+import type { NewTabRow } from "./newTabList";
 import { TIPS_BELOW } from "./ui/tooltip/Tooltip";
 
 /** What a tab with no tasks hands its chip, the same lists every time. */
@@ -94,6 +96,7 @@ function tabTip(from: string | undefined, workItem: string | undefined): string 
  */
 export function ChatStrip({
   by,
+  newTabRows,
   found,
   press,
   tabs,
@@ -435,9 +438,15 @@ export function ChatStrip({
                 **`New tab` stays on the strip and did not move onto a pane**, where the
                 splits and the close went: it acts on the strip, and there is one. **It
                 opens a tab with one empty pane** (#4758; spec story 13), which New chat
-                then fills: a chat is never a tab of its own. */}
+                then fills, and **a rest on it or Down shows the list of what else opens in
+                a new tab** (#5292), from the catalogue (`NewTabButton`). */}
             <span className="strip-doing" ref={chatControls}>
-              <Doer offer={by("tab.new")} onPress={press} iconOnly />
+              <NewTabButton
+                offer={by("tab.new")}
+                rows={newTabRows}
+                onPress={press}
+                dragging={() => draggingRef.current}
+              />
             </span>
           </TabStripRow>
         </SortableContext>
@@ -571,6 +580,8 @@ function useFollowedPointer() {
 /** Each is `PlaneView`'s own value of the same name: the strip reads them and holds none. */
 type ChatStripProps = {
   by: (id: string) => Offer | undefined;
+  /** The `+` list's rows, from the catalogue (#5292). */
+  newTabRows: readonly NewTabRow[];
   found: Catalogued;
   press: (offer: Offer) => void;
   tabs: Tabs;

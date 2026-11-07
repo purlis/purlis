@@ -27,8 +27,8 @@
 //! **Each entry says two things of itself**: whether purlis keeps it ([`managed`]), which the
 //! window marks and opens read-only, with its own view where it has one ([`view_of`]); and whether
 //! it is a dotfile, which the window draws only with Show hidden. In a LIVE workspace it says a
-//! third: where it is kept ([`Kept`], #5377), This machine only or Saved with the project, read
-//! from the LIVE block by [`crate::wscmd::saved`]. **Save with the project**
+//! third: where it is kept ([`Kept`], #5377), This machine only or Saved with the project, as
+//! the plane's git decides it ([`crate::wscmd::saved::Marks`], #5552). **Save with the project**
 //! ([`Files::save_with_the_project`]) is the one write here, and it writes the plane's
 //! `.gitignore`, never the workspace's folder.
 
@@ -166,10 +166,32 @@ pub enum NotWritten {
          in your file manager or a terminal."
     )]
     NotAFileToImport(String),
+    #[error("purlis copied in {}, and then stopped: {why}", quoted(copied))]
+    PartlyImported {
+        /// The paths the files copied before it stopped were given, in order.
+        copied: Vec<String>,
+        why: Box<NotWritten>,
+    },
+    #[error(
+        "purlis did not delete '{0}': it, or a folder it is in, was moved or replaced while \
+         purlis was checking it, so purlis left everything where it is. Look again, and try \
+         again."
+    )]
+    Moved(String),
     #[error(
         "purlis could not {what}: {why}. Try again, or do it in your file manager or a terminal."
     )]
     Failed { what: String, why: String },
+}
+
+/// `paths`, each in quotes, as a sentence lists them: `'a'`, `'a' and 'b'`, `'a', 'b' and 'c'`.
+fn quoted(paths: &[String]) -> String {
+    let quoted: Vec<String> = paths.iter().map(|path| format!("'{path}'")).collect();
+    match quoted.split_last() {
+        Some((last, [])) => last.clone(),
+        Some((last, rest)) => format!("{} and {last}", rest.join(", ")),
+        None => String::new(),
+    }
 }
 
 /// Whether `path`, a path of the workspace files, is one purlis keeps: a reserved workspace name
@@ -365,15 +387,27 @@ impl Files {
         });
         let more = listed.len().saturating_sub(super::SHOWN);
         listed.truncate(super::SHOWN);
-        let entries = listed
-            .into_iter()
+        let paths: Vec<String> = listed
+            .iter()
             .map(|one| {
-                let name = one.name.to_string_lossy().into_owned();
-                let path = if top {
-                    name.clone()
+                let name = one.name.to_string_lossy();
+                if top {
+                    name.into_owned()
                 } else {
                     format!("{relative}/{name}")
-                };
+                }
+            })
+            .collect();
+        // One question to git for the whole folder; no answer marks none.
+        let kept = self.marks.as_ref().and_then(|marks| {
+            marks.of_paths(&paths.iter().map(String::as_str).collect::<Vec<_>>())
+        });
+        let entries = listed
+            .into_iter()
+            .zip(paths)
+            .enumerate()
+            .map(|(at, (one, path))| {
+                let name = one.name.to_string_lossy().into_owned();
                 let refused = if one.name.to_str().is_none() {
                     Some("purlis opens only a file whose name is UTF-8".to_string())
                 } else {
@@ -391,10 +425,7 @@ impl Files {
                 Entry {
                     managed: managed(&path, extension_folders),
                     hidden: name.starts_with('.'),
-                    kept: self
-                        .marks
-                        .as_ref()
-                        .map(|marks| marks.of_path(&path, one.kind == Kind::Folder)),
+                    kept: kept.as_ref().map(|kept| kept[at]),
                     name,
                     kind: one.kind,
                     refused,

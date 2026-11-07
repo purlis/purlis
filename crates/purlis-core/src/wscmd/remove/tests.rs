@@ -79,6 +79,32 @@ fn an_empty_workspace_is_removed() {
 }
 
 #[test]
+fn removing_a_workspace_drops_its_saved_lines_and_a_new_one_of_its_name_starts_with_none() {
+    let dir = plane();
+    let root = dir.path();
+    for ws in ["beta", "gamma"] {
+        std::fs::create_dir_all(root.join("workspaces").join(ws).join("notes")).unwrap();
+        crate::wscmd::set_live(root, ws, true).unwrap();
+        crate::wscmd::saved::add(root, ws, "notes").unwrap();
+    }
+
+    let (code, said) = run(root, "beta", false);
+
+    assert_eq!(code, 0, "{said:?}");
+    let ignore = std::fs::read_to_string(root.join(".gitignore")).unwrap();
+    assert!(!ignore.contains("!/workspaces/beta/notes"), "{ignore}");
+    assert!(
+        ignore.contains("!/workspaces/gamma/notes"),
+        "another workspace keeps its own: {ignore}"
+    );
+    std::fs::create_dir_all(root.join("workspaces/beta/notes")).unwrap();
+    assert!(
+        crate::wscmd::saved::saved(root, "beta").is_empty(),
+        "a new workspace of the same name shares nothing unasked"
+    );
+}
+
+#[test]
 fn a_workspace_a_chat_runs_in_is_refused_forced_or_not_and_kept() {
     // V27d (ADR 0076 §10): a removal must not leave a program running in a deleted folder.
     let dir = plane();
@@ -626,4 +652,66 @@ fn an_exclude_block_with_a_line_purlis_cannot_account_for_is_left_whole_and_name
                 && l.contains("worktree repair")),
         "{said:?}"
     );
+}
+
+#[test]
+fn removing_a_workspace_untracks_its_committed_files_so_a_new_one_of_its_name_tracks_none() {
+    let dir = plane();
+    let root = dir.path();
+    std::fs::write(
+        root.join(".gitignore"),
+        "/.charter/\n/workspaces/*/*\n!/workspaces/.gitkeep\n",
+    )
+    .unwrap();
+    for ws in ["beta", "gamma"] {
+        let notes = root.join("workspaces").join(ws).join("notes");
+        std::fs::create_dir_all(&notes).unwrap();
+        std::fs::write(notes.join("x.md"), "x\n").unwrap();
+        crate::wscmd::set_live(root, ws, true).unwrap();
+        crate::wscmd::saved::add(root, ws, "notes").unwrap();
+    }
+    git(root, &["init", "-q", "-b", "main"]);
+    git(root, &["add", "-A"]);
+    git(
+        root,
+        &[
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "commit",
+            "-qm",
+            "saved",
+        ],
+    );
+
+    let (code, said) = run(root, "beta", false);
+    assert_eq!(code, 0, "{said:?}");
+
+    std::fs::create_dir_all(root.join("workspaces/beta/notes")).unwrap();
+    std::fs::write(root.join("workspaces/beta/notes/x.md"), "new\n").unwrap();
+    git(root, &["add", "-A"]);
+    let tracked = crate::testgit::run(root, &["ls-files", "--", "workspaces"]);
+    assert!(tracked.ok(), "{}", tracked.err);
+    assert!(
+        !tracked.out.contains("workspaces/beta/"),
+        "the new workspace's file is not tracked: {}",
+        tracked.out
+    );
+    assert!(
+        tracked.out.contains("workspaces/gamma/notes/x.md"),
+        "another workspace keeps its files: {}",
+        tracked.out
+    );
+}
+
+#[test]
+fn removing_a_workspace_of_a_plane_that_is_no_git_repo_says_nothing_of_git() {
+    let dir = plane();
+    let root = dir.path();
+    std::fs::create_dir_all(root.join("workspaces/beta/notes")).unwrap();
+    crate::wscmd::set_live(root, "beta", true).unwrap();
+    let (code, said) = run(root, "beta", false);
+    assert_eq!(code, 0, "{said:?}");
+    assert_eq!(said, vec!["✓ Removed workspace 'beta' and its clones."]);
 }

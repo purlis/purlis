@@ -91,6 +91,22 @@ const TABLE: { opening: string; of: Opening; rows: Row[] }[] = [
     ],
   },
   {
+    // **The strip's `+` list means a new tab** (#5292, the call from #5297): each of its rows
+    // says "a new tab with this", even where the front tab has an empty pane.
+    opening: "a new chat from the strip's + list",
+    of: { kind: "new", ownTab: true },
+    rows: [
+      ["one pane, a chat", "new-tab"],
+      ["one pane, empty", "new-tab"],
+      ["one pane, a view", "new-tab"],
+      ["one pane, a one-job program", "new-tab"],
+      ["split, two chats", "new-tab"],
+      ["split, a chat and an empty pane", "new-tab"],
+      ["split, a chat and a one-job program", "new-tab"],
+      ["split, a chat and a view", "new-tab"],
+    ],
+  },
+  {
     opening: "a pressed chat that's off screen",
     of: { kind: "pressed", session: 3 },
     rows: [
@@ -294,6 +310,17 @@ describe("what opening leaves (#5289)", () => {
       session(1),
       { kind: "session", session: 3, chat: "3" },
     ]);
+    expect(focusedChat(next)).toBe(3);
+  });
+
+  it("a new chat from the + list gets a tab of its own, and leaves an empty pane empty", () => {
+    const tabs = beside(onePane(), nothing);
+    const split = tabs.inFront as number;
+
+    const { tabs: next } = openNew(tabs, pressed(3), pressing(), { ownTab: true });
+
+    expect(next.order).toHaveLength(2);
+    expect(contentsOf(next, split)).toEqual(contentsOf(tabs, split));
     expect(focusedChat(next)).toBe(3);
   });
 

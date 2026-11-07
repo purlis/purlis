@@ -2034,3 +2034,28 @@ fn adopting_into_a_plane_whose_workspaces_folder_leads_out_of_it_refuses_rather_
         .expect_err("no workspace can be made through a link out of the plane");
     assert!(refused.contains("cannot adopt"), "{refused}");
 }
+
+/// **A first clone that fails leaves no `repos/` of its own behind** (#5534), and its error
+/// claims nothing it did not check.
+#[test]
+fn a_first_clone_that_fails_leaves_no_repos_folder_and_says_only_what_is_true() {
+    let (dir, root) = empty_plane();
+    let not_a_repo = dir.path().join("widget");
+    std::fs::create_dir_all(&not_a_repo).unwrap();
+    let mut run = Run::default();
+
+    let said = firstclone::into_workspace(
+        &mut run,
+        &root,
+        &not_a_repo,
+        "widget",
+        "widget",
+        chrono::Utc::now(),
+    )
+    .unwrap_err();
+
+    assert!(said.starts_with("could not clone "), "{said}");
+    assert!(!said.contains("nothing else was changed"), "{said}");
+    assert!(root.join("workspaces/widget").is_dir(), "{said}");
+    assert!(!root.join("workspaces/widget/repos").exists(), "{said}");
+}

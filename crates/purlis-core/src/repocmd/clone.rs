@@ -343,8 +343,23 @@ fn workspace_dir(request: &Request, say: Sink) -> Result<PathBuf, String> {
     }
 }
 
-/// Clone every target, [`WORKERS`] at a time, answering in the order asked.
+/// Clone every target, [`WORKERS`] at a time, answering in the order asked. A `repos/` that was
+/// not there before and holds nothing after, every clone in it having failed, is taken away
+/// again (#5534): it is the run's to judge, not one clone's, as clones land in it side by side.
 fn clone_all(request: &Request, targets: &[Value]) -> Vec<Outcome> {
+    let new_repos = confine::workspace_dir(request.root, request.ws)
+        .ok()
+        .map(|dir| dir.join(repofolder::REPOS))
+        .filter(|repos| std::fs::symlink_metadata(repos).is_err());
+    let outcomes = clone_each(request, targets);
+    if let Some(repos) = new_repos {
+        // Only an empty folder goes.
+        let _ = std::fs::remove_dir(repos);
+    }
+    outcomes
+}
+
+fn clone_each(request: &Request, targets: &[Value]) -> Vec<Outcome> {
     let slots: Mutex<Vec<Option<Outcome>>> = Mutex::new((0..targets.len()).map(|_| None).collect());
     let next = AtomicUsize::new(0);
     // A brokered clone's isolation is held per thread, so each worker takes it on (#1335), the
@@ -386,14 +401,15 @@ fn clone_all(request: &Request, targets: &[Value]) -> Vec<Outcome> {
 
 /// **The folder `dest` goes in**, `repos/`, made where it is not there yet: only by the clone that
 /// needs it (ADR 0114, decision 5), and with `mkdir` alone, which follows no link. What is there
-/// is checked again as the landing folder is claimed in it.
-pub fn make_repos_folder(dest: &Path) -> Result<(), String> {
+/// is checked again as the landing folder is claimed in it. Answers whether this made it, so a
+/// clone that fails can take it away again (#5534).
+pub fn make_repos_folder(dest: &Path) -> Result<bool, String> {
     let Some(folder) = dest.parent() else {
-        return Ok(());
+        return Ok(false);
     };
     match std::fs::create_dir(folder) {
-        Ok(()) => Ok(()),
-        Err(why) if why.kind() == std::io::ErrorKind::AlreadyExists => Ok(()),
+        Ok(()) => Ok(true),
+        Err(why) if why.kind() == std::io::ErrorKind::AlreadyExists => Ok(false),
         Err(why) => Err(format!("could not make {} ({why})", folder.display())),
     }
 }
@@ -435,14 +451,6 @@ pub fn destination(root: &Path, ws: &str, name: &str) -> Result<PathBuf, String>
             crate::shown::escaped(name)
         ));
     }
-    if name.eq_ignore_ascii_case(repofolder::REPOS) {
-        return Err(format!(
-            "purlis will not clone '{}' under that name: '{}' is the folder a workspace's repos \
-             go in. Clone it under another name",
-            crate::shown::escaped(name),
-            repofolder::REPOS
-        ));
-    }
     // A clone's directory is named in `workspace.json` and that manifest is committed, so the
     // name travels (charter-app#96). The alphabet above admits `nul` and `alpha.`, and a
     // forge may honestly hold a repo called either.
@@ -453,8 +461,18 @@ pub fn destination(root: &Path, ws: &str, name: &str) -> Result<PathBuf, String>
             crate::shown::escaped(name)
         ));
     }
+    // An old clone of that name is found first, whatever the name: one named `repos`, from
+    // before structure version 6, is as much the workspace's as any other (#5534).
     let dest = match already_there(root, ws, name) {
         Some(dest) => dest,
+        None if name.eq_ignore_ascii_case(repofolder::REPOS) => {
+            return Err(format!(
+                "purlis will not clone '{}' under that name: '{}' is the folder a workspace's \
+                 repos go in. Clone it under another name",
+                crate::shown::escaped(name),
+                repofolder::REPOS
+            ));
+        }
         None if !repofolder::name_ok(name) => {
             return Err(format!(
                 "purlis will not clone '{}' under that name: a workspace keeps a folder of that \

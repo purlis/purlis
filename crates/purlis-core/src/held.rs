@@ -86,6 +86,9 @@ pub(crate) struct Store {
     /// What a link in it reaches outside of, as a sentence names it: `its workspace`, or
     /// `the persona store` for a persona's memory held from the project's root.
     within: String,
+    /// Whether this store holds its own lock for as long as it is held ([`Store::open`]): a
+    /// [`Store::lock`] of it then takes nothing more.
+    kept: bool,
 }
 
 /// The sentence for a store reached through a link, or holding one at `inside`. Never the
@@ -150,21 +153,29 @@ impl Entry {
     }
 }
 
-/// The store's lock, let go when it is dropped.
-pub(crate) struct Locked<'a>(&'a Store);
+/// The store's lock, let go when it is dropped: held on an open file of the store's directory
+/// of its own ([`Store::lock`]), `None` where the filesystem can't lock.
+pub(crate) struct Locked<'a>(Option<OwnedFd>, std::marker::PhantomData<&'a Store>);
 
 impl Drop for Locked<'_> {
     fn drop(&mut self) {
-        let _ = rustix::fs::flock(&self.0.fd, FlockOperation::Unlock);
+        if let Some(held) = self.0.take() {
+            let _ = rustix::fs::flock(&held, FlockOperation::Unlock);
+        }
     }
 }
 
 /// A store kept locked ([`Store::locked`]), let go when it is dropped.
-pub(crate) struct LockedStore(Store);
+pub(crate) struct LockedStore {
+    _store: Store,
+    held: Option<OwnedFd>,
+}
 
 impl Drop for LockedStore {
     fn drop(&mut self) {
-        let _ = rustix::fs::flock(&self.0.fd, FlockOperation::Unlock);
+        if let Some(held) = self.held.take() {
+            let _ = rustix::fs::flock(&held, FlockOperation::Unlock);
+        }
     }
 }
 
@@ -244,7 +255,8 @@ impl Store {
             return Ok(None);
         };
         // Best effort, as `rewrite::Lock` is: released when the descriptor closes.
-        let _ = rustix::fs::flock(&held.fd, FlockOperation::LockExclusive);
+        let mut held = held;
+        held.kept = rustix::fs::flock(&held.fd, FlockOperation::LockExclusive).is_ok();
         held.refuse_anything_odd()?;
         Ok(Some(held))
     }
@@ -277,6 +289,7 @@ impl Store {
             below: String::new(),
             said: said.clone(),
             within,
+            kept: false,
         };
         let Some(mut held) = below.sub(store, make != Make::Nothing)? else {
             return Ok(None);
@@ -311,6 +324,7 @@ impl Store {
             below: format!("workspaces/{ws}"),
             said,
             within: "its workspace".to_owned(),
+            kept: false,
         }))
     }
 
@@ -324,6 +338,7 @@ impl Store {
             below: String::new(),
             said: "the project".to_owned(),
             within: "the project".to_owned(),
+            kept: false,
         })
     }
 
@@ -386,6 +401,7 @@ impl Store {
             below,
             said: self.said.clone(),
             within: self.within.clone(),
+            kept: false,
         }))
     }
 
@@ -394,26 +410,38 @@ impl Store {
     ///
     /// **Waited for a bounded time, never for ever.** The lock is an flock on the store's own
     /// directory, which a chat can take too, and keep: waited for without a bound, that wedged
-    /// the operator's command or the window on the chat's store. Asked again every few
-    /// milliseconds for [`LOCK_WAIT`], then refused in a sentence. A filesystem that cannot
-    /// lock at all is written without one, as `rewrite::Lock` writes.
+    /// the operator's command or the window on the chat's store. Waited for in turn behind
+    /// whoever waited first ([`crate::rewrite::in_turn`]) for [`LOCK_WAIT`], then refused in a
+    /// sentence. A filesystem that cannot lock at all is written without one, as
+    /// `rewrite::Lock` writes.
     pub(crate) fn lock(&self) -> Result<Locked<'_>, String> {
-        let gave_up = std::time::Instant::now() + LOCK_WAIT;
-        loop {
-            match rustix::fs::flock(&self.fd, FlockOperation::NonBlockingLockExclusive) {
-                Ok(()) => return Ok(Locked(self)),
-                Err(rustix::io::Errno::WOULDBLOCK | rustix::io::Errno::INTR) => {}
-                Err(_) => return Ok(Locked(self)),
-            }
-            if std::time::Instant::now() >= gave_up {
-                return Err(format!(
-                    "{} is busy: another process has held its lock for over {} seconds, so \
-                     nothing was done. Try again once it lets go",
-                    self.said,
-                    LOCK_WAIT.as_secs()
-                ));
-            }
-            std::thread::sleep(std::time::Duration::from_millis(20));
+        self.lock_within(LOCK_WAIT)
+    }
+
+    /// [`Self::lock`], waiting `most`. **On an open file of the store's directory of its own**,
+    /// never on the store's own descriptor: a wait that gave up leaves its thread queued on the
+    /// file it waited on ([`crate::rewrite::in_turn`]), and one this store asked again on would
+    /// be the very file that thread is then granted, and lets go of, under its new holder.
+    fn lock_within(&self, most: std::time::Duration) -> Result<Locked<'_>, String> {
+        use crate::rewrite::Waited;
+        // Held whole already, by this holder ([`Store::open`]): taken again on another open file
+        // it would wait on itself (#5572), and let go it would end the hold early.
+        if self.kept {
+            return Ok(Locked(None, std::marker::PhantomData));
+        }
+        let dir = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC;
+        let Ok(own) = rustix::fs::openat(&self.fd, ".", dir, Mode::empty()) else {
+            return Ok(Locked(None, std::marker::PhantomData));
+        };
+        match crate::rewrite::in_turn(own.as_fd(), most) {
+            Waited::Taken => Ok(Locked(Some(own), std::marker::PhantomData)),
+            Waited::Unlockable => Ok(Locked(None, std::marker::PhantomData)),
+            Waited::Busy => Err(format!(
+                "{} is busy: another process has held its lock for over {} seconds, so nothing \
+                 was done. Try again once it lets go",
+                self.said,
+                most.as_secs()
+            )),
         }
     }
 
@@ -422,9 +450,8 @@ impl Store {
     /// copy of it until its exec, and a close alone would leave the lock held by that copy
     /// (#1316).
     pub(crate) fn locked(self) -> Result<LockedStore, String> {
-        // The guard would let go at once; the store's own guard lets go when it is dropped.
-        std::mem::forget(self.lock()?);
-        Ok(LockedStore(self))
+        let held = self.lock()?.0.take();
+        Ok(LockedStore { _store: self, held })
     }
 
     /// Refuse the store whole when it holds a link, a file with more than one name, anything
@@ -620,6 +647,25 @@ impl Store {
         Ok(true)
     }
 
+    /// A new, empty file `name`, opened to write, never through a link and never over
+    /// anything already there (`EXIST`): for a writer that streams into it, as an import does.
+    pub(crate) fn create_new(&self, name: &str) -> rustix::io::Result<std::fs::File> {
+        let flags =
+            OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC;
+        rustix::fs::openat(&self.fd, name, flags, new_file()).map(std::fs::File::from)
+    }
+
+    /// A new, empty directory `name`, never over anything already there (`EXIST`).
+    pub(crate) fn create_dir_new(&self, name: &str) -> rustix::io::Result<()> {
+        rustix::fs::mkdirat(&self.fd, name, new_dir())
+    }
+
+    /// The directory this store holds, as its own descriptor sees it: which one it is, by its
+    /// device and inode, whatever name it has by now.
+    pub(crate) fn itself(&self) -> rustix::io::Result<Entry> {
+        Ok(Entry::of(&rustix::fs::fstat(&self.fd)?))
+    }
+
     /// Add `bytes` to the end of `name`, making it with `first` in front when it is not there.
     pub(crate) fn append(&self, name: &str, first: &str, bytes: &[u8]) -> Result<(), String> {
         self.append_at(name, first, bytes, new_file())
@@ -755,38 +801,69 @@ impl Store {
     /// The kernel's no-replace rename where there is one (`renameat2(RENAME_NOREPLACE)` on
     /// Linux, `renameatx_np(RENAME_EXCL)` on macOS), so a file a writer that does not take the
     /// store's lock planted at `to` after the caller looked is refused rather than replaced. A
-    /// filesystem that does not have it is renamed onto plainly, after a look (`renameat`).
+    /// filesystem that does not have it is renamed onto plainly, after a look (`renameat`):
+    /// only exclusive under the store's lock, which every caller holds. A writer with no lock
+    /// to take, such as the person's own workspace files, uses [`Store::rename_only_into_new`].
     pub(crate) fn rename_into_new(
         &self,
         name: &str,
         into: &Store,
         to: &str,
     ) -> Result<bool, String> {
-        #[cfg(any(
-            target_os = "linux",
-            target_os = "android",
-            target_os = "macos",
-            target_os = "ios"
-        ))]
-        match rustix::fs::renameat_with(
-            &self.fd,
-            name,
-            &into.fd,
-            to,
-            rustix::fs::RenameFlags::NOREPLACE,
-        ) {
-            Ok(()) => return Ok(true),
-            Err(rustix::io::Errno::EXIST) => return Ok(false),
-            Err(
-                rustix::io::Errno::INVAL | rustix::io::Errno::NOSYS | rustix::io::Errno::NOTSUP,
-            ) => {}
-            Err(e) => return Err(self.failed(e)),
+        if let Some(moved) = self.renamed_into_new(name, into, to)? {
+            return Ok(moved);
         }
         if into.entry(to)?.is_some() {
             return Ok(false);
         }
         self.rename_into(name, into, to)?;
         Ok(true)
+    }
+
+    /// As [`Store::rename_into_new`], and refused, moving nothing, on a filesystem with no
+    /// no-replace rename (NFS, some FUSE and SMB mounts): a look and a rename could replace
+    /// what another writer put at `to` between the two.
+    pub(crate) fn rename_only_into_new(
+        &self,
+        name: &str,
+        into: &Store,
+        to: &str,
+    ) -> Result<bool, String> {
+        self.renamed_into_new(name, into, to)?.ok_or_else(|| {
+            self.failed(
+                "its disk cannot rename without the chance of replacing a file, so nothing \
+                 was renamed",
+            )
+        })
+    }
+
+    /// The kernel's no-replace rename of `name` to `to` in `into`: whether it moved, or `None`
+    /// when the filesystem (or the system) has none.
+    fn renamed_into_new(&self, name: &str, into: &Store, to: &str) -> Result<Option<bool>, String> {
+        #[cfg(any(
+            target_os = "linux",
+            target_os = "android",
+            target_os = "macos",
+            target_os = "ios"
+        ))]
+        match no_replace_rename(&self.fd, name, &into.fd, to) {
+            Ok(()) => Ok(Some(true)),
+            Err(rustix::io::Errno::EXIST) => Ok(Some(false)),
+            Err(
+                rustix::io::Errno::INVAL | rustix::io::Errno::NOSYS | rustix::io::Errno::NOTSUP,
+            ) => Ok(None),
+            Err(e) => Err(self.failed(e)),
+        }
+        #[cfg(not(any(
+            target_os = "linux",
+            target_os = "android",
+            target_os = "macos",
+            target_os = "ios"
+        )))]
+        {
+            let _ = (name, into, to);
+            Ok(None)
+        }
     }
 
     /// Move `name` from this store to `to` in `into`, another store held the same way.
@@ -838,6 +915,42 @@ impl Store {
     fn failed(&self, e: impl std::fmt::Display) -> String {
         format!("{} could not be used: {e}", self.said)
     }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Whether a test has this thread's no-replace rename answer as a filesystem without one.
+    static NO_NOREPLACE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Run `f` with this thread's no-replace renames answered as by a filesystem that has none
+/// (`ENOTSUP`, as NFS and some FUSE and SMB mounts answer): a test's fault.
+#[cfg(test)]
+pub(crate) fn without_no_replace_rename<T>(f: impl FnOnce() -> T) -> T {
+    NO_NOREPLACE.with(|on| on.set(true));
+    let done = f();
+    NO_NOREPLACE.with(|on| on.set(false));
+    done
+}
+
+/// `renameat2(RENAME_NOREPLACE)` on Linux, `renameatx_np(RENAME_EXCL)` on macOS.
+#[cfg(any(
+    target_os = "linux",
+    target_os = "android",
+    target_os = "macos",
+    target_os = "ios"
+))]
+fn no_replace_rename(
+    from: &OwnedFd,
+    name: &str,
+    into: &OwnedFd,
+    to: &str,
+) -> rustix::io::Result<()> {
+    #[cfg(test)]
+    if NO_NOREPLACE.with(std::cell::Cell::get) {
+        return Err(rustix::io::Errno::NOTSUP);
+    }
+    rustix::fs::renameat_with(from, name, into, to, rustix::fs::RenameFlags::NOREPLACE)
 }
 
 /// The directory `place` names in the project at `root`: the root itself, opened as it is
@@ -1030,6 +1143,51 @@ mod tests {
         let _ = child.wait();
 
         assert!(next.is_ok(), "the lock outlived its store: {next:?}");
+    }
+
+    /// **A store's lock is held on an open file of its own** (#5559), not on the store's
+    /// descriptor: a wait it gave up leaves a thread queued on the file it waited on, which
+    /// must never be the one a later lock of the same store is taken on.
+    #[test]
+    fn a_stores_lock_is_held_on_a_file_of_its_own_not_the_stores() {
+        let root = tempfile::tempdir().unwrap();
+        let place = Place::Workspace("alpha".to_owned());
+        let store = Store::hold(root.path(), &place, "memory", Make::All, Who::Operator)
+            .unwrap()
+            .expect("the store");
+        let held = store.lock().expect("locked");
+
+        let asked_on_the_store =
+            rustix::fs::flock(&store.fd, FlockOperation::NonBlockingLockExclusive);
+        assert!(
+            asked_on_the_store.is_err(),
+            "the store's own file holds the lock"
+        );
+        drop(held);
+        assert!(rustix::fs::flock(&store.fd, FlockOperation::NonBlockingLockExclusive).is_ok());
+    }
+
+    /// **A store held whole is locked again at once, and stays held** (#5572): the chat tools
+    /// hold a store locked for as long as they use it ([`Store::open`]), and a write within
+    /// takes its lock again ([`Store::lock`]). On an open file of its own, that waited on its
+    /// own holder and was refused as busy after 5 s.
+    #[test]
+    fn a_store_held_whole_is_locked_again_at_once_and_stays_held() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(root.path().join("workspaces/alpha")).unwrap();
+        let place = Place::Workspace("alpha".to_owned());
+        let store = Store::open(root.path(), &place, "todos", true)
+            .unwrap()
+            .expect("the store");
+
+        let again = store.lock_within(std::time::Duration::from_millis(100));
+        assert!(again.is_ok(), "{:?}", again.err());
+        drop(again);
+        let other = std::fs::File::open(root.path().join("workspaces/alpha/todos")).unwrap();
+        assert!(
+            rustix::fs::flock(&other, FlockOperation::NonBlockingLockExclusive).is_err(),
+            "the hold ended with the lock taken within it"
+        );
     }
 
     /// An entry the listing named and that went before it was looked at (an edit's temporary

@@ -143,7 +143,7 @@ describe("a pane shows nothing (#4755)", () => {
     });
   });
 
-  it("comes back as a tab of its own when it is all the tab holds, called New chat", () => {
+  it("comes back as a tab of its own when it is all the tab holds, called Empty tab", () => {
     const { tabs, second } = twoTabs();
     const cleared = showIn(tabs, second, onlyPane(tabs, second), EMPTY);
 
@@ -152,7 +152,7 @@ describe("a pane shows nothing (#4755)", () => {
     expect(back.tabs.order).toHaveLength(2);
     const last = back.tabs.byId[back.tabs.order[1]];
     expect(last.layout).toMatchObject({ kind: "pane", content: EMPTY });
-    expect(last.name).toBe("New chat");
+    expect(last.name).toBe("Empty tab");
   });
 });
 

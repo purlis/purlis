@@ -11,7 +11,7 @@
 
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Condvar, Mutex, PoisonError};
 
 use purlis_core::sandbox::arrived;
 
@@ -19,15 +19,21 @@ use crate::planes::Held;
 
 /// **Chat `id` is starting**: what is in `watched` now is recorded before its program starts,
 /// unless that takes longer than a start may wait. Then it is finished beside the chat's first
-/// moments, and the app's start goes on: a very large folder must not hold a chat up. What can't be
-/// recorded is told to the log: a chat with no record is not told of.
+/// moments, and the app's start goes on: a very large folder must not hold a chat up. What the
+/// chat makes meanwhile is not taken as there at its start ([`arrived::begin_since`]), and its
+/// looks wait for the record ([`recorded`]). What can't be recorded is told to the log: a chat
+/// with no record is not told of.
 pub fn began(root: &Path, id: &str, name: &str, watched: arrived::Watched) {
+    let since = std::time::SystemTime::now();
     let (done, finished) = std::sync::mpsc::channel();
     let (root, thread_id, name) = (root.to_path_buf(), id.to_owned(), name.to_owned());
+    let recording = Recording::of(id);
     let spawned = std::thread::Builder::new()
         .name("arrived-begin".to_owned())
         .spawn(move || {
-            if let Err(why) = arrived::begin(&root, &thread_id, Some(&name), &watched) {
+            let _recording = recording;
+            if let Err(why) = arrived::begin_since(&root, &thread_id, Some(&name), &watched, since)
+            {
                 tracing::warn!("purlis: chat {thread_id}'s folders were not recorded ({why})");
             }
             let _ = done.send(());
@@ -37,6 +43,52 @@ pub fn began(root: &Path, id: &str, name: &str, watched: arrived::Watched) {
             let _ = finished.recv_timeout(arrived::BEGIN_WAITS_AT_MOST);
         }
         Err(why) => tracing::warn!("purlis: no thread to record chat {id}'s folders ({why})"),
+    }
+}
+
+/// The chats whose start is still recording their folders ([`began`]), by id.
+static RECORDING: Mutex<Vec<String>> = Mutex::new(Vec::new());
+static RECORDED: Condvar = Condvar::new();
+
+/// One chat's start recording, until this is dropped: when its record is written, or it can't be.
+struct Recording(String);
+
+impl Recording {
+    fn of(id: &str) -> Self {
+        RECORDING
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(id.to_owned());
+        Self(id.to_owned())
+    }
+}
+
+impl Drop for Recording {
+    fn drop(&mut self) {
+        let mut recording = RECORDING.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(at) = recording.iter().position(|id| *id == self.0) {
+            recording.swap_remove(at);
+        }
+        RECORDED.notify_all();
+    }
+}
+
+/// How long a look waits for its chat's start to record ([`recorded`]): a walk held up past it,
+/// on a filesystem that stopped answering, says so in the log, and the look goes on without.
+const RECORD_WAITS_AT_MOST: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// **Once chat `id`'s start has recorded its folders**, or found it can't (#5555): a look before
+/// then would find no record, and say nothing of what the chat's first moments made. Waited
+/// for [`RECORD_WAITS_AT_MOST`] at most.
+pub fn recorded(id: &str) {
+    let recording = RECORDING.lock().unwrap_or_else(PoisonError::into_inner);
+    let (_done, waited) = RECORDED
+        .wait_timeout_while(recording, RECORD_WAITS_AT_MOST, |recording| {
+            recording.iter().any(|one| one == id)
+        })
+        .unwrap_or_else(PoisonError::into_inner);
+    if waited.timed_out() {
+        tracing::warn!("purlis: chat {id}'s folders are still being recorded; looked without");
     }
 }
 
@@ -95,6 +147,7 @@ pub fn turn_ended(held: &Arc<Held>, chat: u32) {
             let id = id.clone();
             move || {
                 loop {
+                    recorded(&id);
                     let Some(held) = weak.upgrade() else {
                         one_ended(&id);
                         return;
@@ -130,6 +183,25 @@ fn look(held: &Held, chat: u32, id: &str, name: Option<&str>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_look_waits_for_its_chats_start_to_record_and_no_other_chats() {
+        let (chat, other) = ("01M6M3VNN8GNE85XEV3194WJE8", "01M6M3VNN8GNE85XEV3194WJE9");
+        let recording = Recording::of(chat);
+        let _other_still = Recording::of(other);
+        let let_go = std::time::Instant::now() + std::time::Duration::from_millis(200);
+        let start = std::thread::spawn(move || {
+            std::thread::sleep(let_go.saturating_duration_since(std::time::Instant::now()));
+            drop(recording);
+        });
+        recorded(chat);
+        assert!(
+            std::time::Instant::now() >= let_go,
+            "looked before the record"
+        );
+        start.join().expect("the start");
+        recorded(chat);
+    }
 
     #[test]
     fn turns_that_end_while_a_look_runs_cost_one_more_look() {

@@ -339,7 +339,7 @@ fn a_new_clone_goes_to_repos_beside_old_clones_at_the_root_and_an_old_one_is_sti
 }
 
 #[test]
-fn a_clone_named_repos_is_refused_and_so_is_any_while_an_old_clone_named_repos_stands() {
+fn an_old_clone_named_repos_is_found_a_new_one_refused_and_no_other_cloned_beside_it() {
     let (_dir, root) = plane();
     let ws = root.join("workspaces/alpha");
     for named in ["repos", "Repos"] {
@@ -354,10 +354,11 @@ fn a_clone_named_repos_is_refused_and_so_is_any_while_an_old_clone_named_repos_s
     let refused = destination(&root, "alpha", "widget").unwrap_err();
     assert!(refused.contains("has a repo named 'repos'"), "{refused}");
     assert!(refused.contains("rename"), "{refused}");
-    let refused = destination(&root, "alpha", "repos").unwrap_err();
-    assert!(
-        refused.contains("folder a workspace's repos go in"),
-        "{refused}"
+    // The old clone itself is found where it is, as every other old clone is (#5534).
+    assert_eq!(
+        destination(&root, "alpha", "repos").unwrap(),
+        ws.join("repos"),
+        "an old clone named repos is already there, not refused"
     );
 }
 

@@ -26,6 +26,7 @@ import { fileURLToPath } from "node:url";
 import { storybookTest } from "@storybook/addon-vitest/vitest-plugin";
 import { playwright } from "@vitest/browser-playwright";
 import type { TestProjectInlineConfiguration } from "vitest/config";
+import type { BrowserCommand } from "vitest/node";
 import { cellsOf, type BuiltInThemes, type Cell } from "./matrix.ts";
 import { imageMonospace } from "./monospace.ts";
 
@@ -44,6 +45,14 @@ const json = (file: string): unknown => JSON.parse(readFileSync(here(file), "utf
 export function cells(): Cell[] {
   return cellsOf(json("built-in-themes.json") as BuiltInThemes, json("pictured.json") as string[]);
 }
+
+/**
+ * **Playwright's own box of a story's element** (#5463), as its element picture is cut by it,
+ * asked from the page by `screenshots.setup.ts` when a picture comes out another size than its
+ * baseline: in the page's CSS pixels, the iframe the story runs in included.
+ */
+const pictureBox: BrowserCommand<[selector: string]> = async (context, selector) =>
+  context.iframe.locator(selector).boundingBox();
 
 export function stories(): TestProjectInlineConfiguration[] {
   const pictures = process.env[PICTURES] === "1";
@@ -71,6 +80,7 @@ export function stories(): TestProjectInlineConfiguration[] {
         enabled: true,
         headless: true,
         provider: playwright({}),
+        commands: { pictureBox },
         // The engine purlis ships in on macOS and Linux (WKWebView, WebKitGTK), and the one
         // Windows' WebView2 is.
         //

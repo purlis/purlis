@@ -499,6 +499,9 @@ pub(super) struct Runs {
     given: Vec<Given>,
     /// What each chat was not allowed: by chat, program and vault, for the chat's life.
     refused: std::collections::HashSet<(u32, PathBuf, String)>,
+    /// The vaults the person kept blocked for each chat (#5424), for the chat's life: no ask
+    /// that would open one opens, whatever the gate read before.
+    kept_blocked: std::collections::HashSet<(u32, String)>,
 }
 
 impl Runs {
@@ -542,6 +545,7 @@ impl Runs {
         self.open.retain(|asked| keep(asked.open.bound.chat));
         self.given.retain(|given| keep(given.bound.chat));
         self.refused.retain(|(chat, _, _)| keep(*chat));
+        self.kept_blocked.retain(|(chat, _)| keep(*chat));
     }
 
     /// The highest number any kept ask holds.
@@ -637,6 +641,14 @@ fn refused_said(bound: &Bound) -> String {
 }
 
 /// What a second run of one command hears where Allow once went to the first.
+fn kept_blocked_said(bound: &Bound) -> String {
+    format!(
+        "the person kept vault {} blocked for this chat, so {} did not run: don't try it again",
+        bound.vault,
+        bound.program_name()
+    )
+}
+
 fn taken_said(bound: &Bound) -> String {
     format!(
         "the person allowed {} with vault {} for one run, and another run of this command took \
@@ -686,6 +698,17 @@ impl Asks {
                     line: super::declined_said(&bound.vault, key),
                 };
             }
+            // Kept blocked since the gate read it (#5424): the run hears what the gate says.
+            if not_its_vault
+                && inner
+                    .runs
+                    .kept_blocked
+                    .contains(&(bound.chat, bound.vault.clone()))
+            {
+                return RunHeld::Refused {
+                    line: kept_blocked_said(&bound),
+                };
+            }
             if offer == Offer::Program
                 && inner.runs.refused.contains(&(
                     bound.chat,
@@ -712,7 +735,11 @@ impl Asks {
                     && (!ahead || fill_keys(&asked.open.fills) == fill_keys(&fills))
             }) {
                 asked.waiters.push(waiter);
-                asked.open.id
+                let id = asked.open.id;
+                // Traced before the lock goes, as a Secret ask's is (#5220, #5509): an answer is
+                // traced only once the ask is taken, under the lock.
+                self.trace_run_said(&bound, id, "joined");
+                id
             } else {
                 let open_here = inner
                     .runs
@@ -745,6 +772,7 @@ impl Asks {
                     stored: Vec::new(),
                 });
                 self.save(&inner);
+                self.trace_run_said(&bound, id, "raised");
                 id
             };
             (answered, n, id)
@@ -791,6 +819,32 @@ impl Asks {
                 }
             }
         }
+    }
+
+    /// **The person kept `vault` blocked for chat `chat`** (#5424): from now on, for the chat's
+    /// life, an ask that only the vault's own Allow would answer is refused as it would open,
+    /// under the lock it opens under, so a run the gate let past just before cannot raise one.
+    /// A grant the chat was given on the vault goes with it, so a run the gate let past is not
+    /// covered either. The asks open on it already are returned, for the window to answer Don't
+    /// allow.
+    pub fn keep_vault_blocked(&self, chat: u32, vault: &str) -> Vec<u32> {
+        let mut inner = self.inner();
+        inner.runs.kept_blocked.insert((chat, vault.to_owned()));
+        inner
+            .runs
+            .given
+            .retain(|given| given.bound.chat != chat || given.bound.vault != vault);
+        inner
+            .runs
+            .open
+            .iter()
+            .filter(|asked| {
+                asked.open.not_its_vault
+                    && asked.open.bound.chat == chat
+                    && asked.open.bound.vault == vault
+            })
+            .map(|asked| asked.open.id)
+            .collect()
     }
 
     /// **Records that policy refused a run of `program`** (ADR 0112, #5243): closed words in the
@@ -1204,22 +1258,29 @@ impl Asks {
 
     /// Records the answer in the chat's trace: names, never a value.
     fn trace_run(&self, bound: &Bound, id: u32, answer: RunAnswer) {
+        self.trace_run_said(
+            bound,
+            id,
+            match answer {
+                RunAnswer::Once => "allowed once",
+                RunAnswer::ForChat => "allowed for this chat",
+                RunAnswer::Always => "always allowed",
+                RunAnswer::Refuse => "not allowed",
+                RunAnswer::AllowVault => "vault allowed",
+                RunAnswer::Fill => "filled",
+            },
+        );
+    }
+
+    /// Records `what` of Run grant ask `id` in the chat's trace (#5509): raised, joined or its
+    /// answer, by names, never a value.
+    fn trace_run_said(&self, bound: &Bound, id: u32, what: &str) {
         crate::trace::record_values(
             &self.root,
             &bound.chat.to_string(),
             super::TRACED_AS,
             &[
-                (
-                    "what",
-                    Value::from(match answer {
-                        RunAnswer::Once => "allowed once",
-                        RunAnswer::ForChat => "allowed for this chat",
-                        RunAnswer::Always => "always allowed",
-                        RunAnswer::Refuse => "not allowed",
-                        RunAnswer::AllowVault => "vault allowed",
-                        RunAnswer::Fill => "filled",
-                    }),
-                ),
+                ("what", Value::from(what)),
                 ("ask", Value::from(id)),
                 ("vault", Value::from(bound.vault.as_str())),
                 ("program", Value::from(bound.program.display().to_string())),

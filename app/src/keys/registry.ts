@@ -551,6 +551,35 @@ export const SHORTCUTS: readonly Shortcut[] = [
     rows: ["shell.new"],
     matches: opensAShell,
   },
+  // **⌘T is an empty tab and ⌘N a new chat** (#5292; spec #5288 story 82), so the keys say what
+  // they do: the strip's `+` and its list's second row. ⌘⇧T stays New shell (story 83). xterm.js
+  // sends nothing for a ⌘ chord, so a Mac's chat loses neither. Off a Mac, Ctrl+T and Ctrl+N
+  // are a shell's transpose and next line, so a chat's terminal keeps them there, as it keeps
+  // ⌘1–⌘9's Ctrl chords.
+  {
+    id: "tab.new",
+    does: "Open an empty tab",
+    group: "Tabs and chats",
+    where: "window",
+    kind: "key",
+    chords: { mac: [cmd("t")], other: [ctl("t")] },
+    said: (mac) => (mac ? "⌘T" : "Ctrl+T"),
+    yields: ["modal", "palette", "terminal-off-mac"],
+    rows: ["tab.new"],
+    matches: (e, mac) => isChord(e, mac ? cmd("t") : ctl("t")),
+  },
+  {
+    id: "chat.new",
+    does: "Start a new chat",
+    group: "Tabs and chats",
+    where: "window",
+    kind: "key",
+    chords: { mac: [cmd("n")], other: [ctl("n")] },
+    said: (mac) => (mac ? "⌘N" : "Ctrl+N"),
+    yields: ["modal", "palette", "terminal-off-mac"],
+    rows: ["chat.new"],
+    matches: (e, mac) => isChord(e, mac ? cmd("n") : ctl("n")),
+  },
   {
     id: "chat.useSkill",
     does: "Use one of the chat's skills: Use skill…",

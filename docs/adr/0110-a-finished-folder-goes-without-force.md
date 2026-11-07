@@ -74,3 +74,8 @@ folder is removed by the app*) applied it. It adds a term, **finished folder**, 
 - **Read a closed chat's folders from the terminal as free.** The terminal cannot ask the app
   which chats are open, so `prune` there keeps a folder a chat holds and says so; the holder's
   `done`, or a `prune` from a chat or the window, lets it go.
+
+## Amendments
+
+The amendments to this decision are files of their own in [`0110/`](0110/), one per
+amendment.

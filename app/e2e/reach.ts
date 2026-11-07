@@ -144,16 +144,16 @@ export async function endTheSessionsStartedSince(before: readonly number[]): Pro
 }
 
 /** What the strip's kept empty tab is called (`tabs.EMPTY_TAB`, #4755). */
-export const KEPT_EMPTY = "New chat";
+export const KEPT_EMPTY = "Empty tab";
 
 /**
  * **The tabs on `now` that were not on `before`**: by name, and as many times as each was added,
  * so a second tab of a name the strip already had is one. **One kept empty tab is never one**
- * (#4756): closing a strip's last tab keeps one empty pane, named "New chat", and a fresh strip
- * starts with one, so one "New chat" is always the strip's own. **Past that one, or past as many
- * as the strip began with, a "New chat" is a tab left open** (#5586): the strip's `+`, or a chat's pane
- * emptied, leaves an unnamed tab, and a file that leaves them fills the strip of every file
- * after it. The one rule both a spec's own `after` and `tabsLeft.ts`'s guard use.
+ * (#4756): closing a strip's last tab keeps one empty pane, named "Empty tab", and a fresh strip
+ * starts with one, so one "Empty tab" is always the strip's own. **Past that one, or past as many
+ * as the strip began with, an "Empty tab" is a tab left open** (#5586): the strip's `+`, or a
+ * chat's pane emptied, leaves an unnamed tab, and a file that leaves them fills the strip of
+ * every file after it. The one rule both a spec's own `after` and `tabsLeft.ts`'s guard use.
  */
 export function openedSince(before: readonly string[], now: readonly string[]): string[] {
   const had = new Map<string, number>();
@@ -170,7 +170,7 @@ export function openedSince(before: readonly string[], now: readonly string[]): 
 
 /**
  * Presses each named tab's own `Close <name>` on the strip in front, from the page: a name
- * called twice presses two tabs of that name, the strip's last ones, since unnamed "New chat"
+ * called twice presses two tabs of that name, the strip's last ones, since unnamed "Empty tab"
  * tabs share one name.
  */
 export async function pressClose(names: readonly string[]): Promise<void> {

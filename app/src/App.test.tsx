@@ -673,7 +673,7 @@ describe("App", () => {
     expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(screen.queryAllByTestId("pane")).toEqual([]);
     // The strip's last tab keeps one empty pane.
-    expect(await screen.findByText("Nothing in this pane")).toBeInTheDocument();
+    expect(await screen.findByText("Nothing in this pane yet")).toBeInTheDocument();
     expect(asked.filter(({ cmd }) => cmd === "close_session")).toEqual([]);
   });
 
@@ -682,7 +682,7 @@ describe("App", () => {
     render(<App />);
     await openAChat();
     await userEvent.click(screen.getByRole("button", { name: "Close steward 1" }));
-    await screen.findByText("Nothing in this pane");
+    await screen.findByText("Nothing in this pane yet");
 
     await openAChat();
 
@@ -727,7 +727,7 @@ describe("App", () => {
 
       await userEvent.click(screen.getByRole("button", { name: "Close steward 1" }));
 
-      expect(await screen.findByText("Nothing in this pane")).toBeInTheDocument();
+      expect(await screen.findByText("Nothing in this pane yet")).toBeInTheDocument();
       expect(tabs()).toHaveLength(1);
     });
 
@@ -1046,7 +1046,7 @@ describe("App", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "New tab" }));
 
-    await waitFor(() => expect(tabs()).toEqual(["steward 1", "steward 2", "New chat"]));
+    await waitFor(() => expect(tabs()).toEqual(["steward 1", "steward 2", "Empty tab"]));
   });
 
   it("draws its empty pane when the plane's sidebar cannot be read (#4758)", async () => {

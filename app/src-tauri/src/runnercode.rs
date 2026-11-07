@@ -294,7 +294,7 @@ pub(crate) fn move_workspace_back(
         match moved {
             Ok(came) => came_back
                 .watch
-                .extend(came.into_iter().map(|path| in_clone(&rel, &path))),
+                .extend(came.into_iter().map(|path| in_clone(root, &repo, &path))),
             Err(why) => {
                 return Err(format!(
                     "the work in {} did not come back from the runner: {why}",
@@ -304,7 +304,7 @@ pub(crate) fn move_workspace_back(
         }
     }
     for (rel, origin) in only_there {
-        let made = codelink::repo_in(root, &rel)
+        let made = codelink::new_repo_in(root, &rel)
             .map_err(|why| why.to_string())
             .and_then(|repo| {
                 let scratch = scratch()?;
@@ -322,16 +322,17 @@ pub(crate) fn move_workspace_back(
                     None if link.names_clone_origins() => Err(NO_ORIGIN_NAMED.to_owned()),
                     None => Err(NO_ORIGIN_SAID.to_owned()),
                 };
-                Ok((came, remote))
+                Ok((repo, came, remote))
             });
         match made {
-            Ok((came, remote)) => {
+            Ok((repo, came, remote)) => {
                 came_back
                     .watch
-                    .extend(came.into_iter().map(|path| in_clone(&rel, &path)));
-                came_back
-                    .made
-                    .push(crate::host::MadeHere { clone: rel, remote });
+                    .extend(came.into_iter().map(|path| in_clone(root, &repo, &path)));
+                came_back.made.push(crate::host::MadeHere {
+                    clone: in_clone(root, &repo, ""),
+                    remote,
+                });
             }
             Err(why) => {
                 return Err(format!(
@@ -344,21 +345,21 @@ pub(crate) fn move_workspace_back(
     Ok(came_back)
 }
 
-/// **Whether a fresh clone at `rel` can be made here** (#3811): its folder in the project is
-/// reached through no link and holds nothing of that name yet. [`codelink::take_work_fresh`]
-/// holds it to that again as it makes it.
+/// **Whether a fresh clone at `rel` can be made here** (#3811): where a new clone goes
+/// ([`codelink::new_repo_in`], `repos/<repo>`, #5534) is reached through no link and holds
+/// nothing of that name yet, in a workspace whose folder is here. [`codelink::take_work_fresh`]
+/// holds it to that again as it makes it, and makes `repos/` where it is not there yet.
 fn room_for(root: &Path, rel: &str) -> Result<(), String> {
     let refused = |why: &str| {
         format!("{rel}, which the runner's chat cloned, did not come back from the runner: {why}")
     };
-    let repo = codelink::repo_in(root, rel).map_err(|why| refused(&why.to_string()))?;
+    let repo = codelink::new_repo_in(root, rel).map_err(|why| refused(&why.to_string()))?;
     if std::fs::symlink_metadata(&repo).is_ok() {
         return Err(refused("something of that name is here already"));
     }
-    if !repo
-        .parent()
-        .is_some_and(|parent| std::fs::symlink_metadata(parent).is_ok_and(|meta| meta.is_dir()))
-    {
+    let folder = |path: &Path| std::fs::symlink_metadata(path).is_ok_and(|meta| meta.is_dir());
+    let repos = repo.parent();
+    if !repos.is_some_and(|repos| folder(repos) || repos.parent().is_some_and(folder)) {
         return Err(refused("its workspace's folder is not here"));
     }
     Ok(())
@@ -754,7 +755,7 @@ fn comes_here_whole(
     runner: &str,
 ) -> Result<(), String> {
     room_for(root, rel)?;
-    let repo = codelink::repo_in(root, rel).map_err(|why| why.to_string())?;
+    let repo = codelink::new_repo_in(root, rel).map_err(|why| why.to_string())?;
     let scratch = scratch()?;
     let into = scratch.path().join("work.bundle");
     let (heads, wrote) = link.fetch_work(project, rel, Vec::new(), &into)?;
@@ -768,13 +769,15 @@ fn comes_here_whole(
     .map_err(|why| why.to_string())
 }
 
-/// `path` in the clone at `rel`, by its path in the project: the clone itself for an empty one,
-/// what [`codelink::take_work_back`] names where what came could not be listed.
-fn in_clone(rel: &str, path: &str) -> String {
-    if path.is_empty() {
-        rel.to_owned()
-    } else {
-        format!("{rel}/{path}")
+/// `path` in the clone at `repo`, by its path in the project, wherever this machine holds the
+/// clone (#5534): the clone itself for an empty one, what [`codelink::take_work_back`] names
+/// where what came could not be listed.
+fn in_clone(root: &Path, repo: &Path, path: &str) -> String {
+    let rel = repo.strip_prefix(root).unwrap_or(repo).to_string_lossy();
+    match (rel.is_empty(), path.is_empty()) {
+        (_, true) => rel.into_owned(),
+        (true, false) => path.to_owned(),
+        (false, false) => format!("{rel}/{path}"),
     }
 }
 
