@@ -339,9 +339,8 @@ pub fn left_on(config: &std::path::Path, pool: &str) -> Vec<String> {
         .collect()
 }
 
-/// What a runner listed: every repository it holds, and what it could not look through.
 #[cfg(unix)]
-pub type Held = (Vec<purlis_core::codelink::held::Held>, Vec<String>);
+pub use crate::runnerlinks::Held;
 
 #[cfg(unix)]
 fn lock_left() -> std::sync::MutexGuard<'static, std::collections::BTreeMap<Waiting, Vec<String>>> {

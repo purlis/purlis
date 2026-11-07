@@ -683,14 +683,15 @@ pub fn unpair(to: &ToARunner) -> Result<(), String> {
     .map_err(|why| crate::devices::shown_safely(&why))
 }
 
+/// What a runner listed: every repository it holds, and what it could not look through.
+pub type Held = (Vec<purlis_core::codelink::held::Held>, Vec<String>);
+
 /// **Every repository the runner `to` holds in the projects it keeps**, with what it could not
 /// look through, as a draining runner is checked before it goes (ruled 2026-11-07): one link,
 /// waiting as long as a fresh runner's proof does for the list. `None` from a runner too old to
 /// list them (before 1.69), which a drain lets go of as it did before. Why not, shown safely,
 /// where it did not list.
-pub fn repos_held_on(
-    to: &ToARunner,
-) -> Result<Option<(Vec<purlis_core::codelink::held::Held>, Vec<String>)>, String> {
+pub fn repos_held_on(to: &ToARunner) -> Result<Option<Held>, String> {
     use purlis_session_protocol::session::{Answer, Command, KNOWS_REPOS_HELD};
     let within = purlis_core::codelink::held::LOOK_WITHIN + ANSWER_WITHIN;
     on_one_link_within(to, within, async |linked| {
