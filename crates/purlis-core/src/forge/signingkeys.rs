@@ -34,6 +34,10 @@ const PAGE: &str = "100";
 /// devices' keys from the keys they added themselves: `purlis · <device>`.
 pub const TITLED: &str = "purlis · ";
 
+/// What the title of a key `purlis signing setup` had the person add by hand started with
+/// before #5625: `purlis on <machine>`. Still purlis's.
+const TITLED_BEFORE: &str = "purlis on ";
+
 /// **The title this device's key is added under**: `purlis · <device>`, the device being this
 /// machine's host name ([`crate::dispatch::host`]).
 pub fn title() -> String {
@@ -58,7 +62,7 @@ impl Key {
 
     /// Whether purlis added it, on some device: its title is [`TITLED`] and a name.
     pub fn purlis_made(&self) -> bool {
-        self.title.starts_with(TITLED)
+        self.title.starts_with(TITLED) || self.title.starts_with(TITLED_BEFORE)
     }
 }
 
@@ -78,14 +82,20 @@ pub struct Listed {
 impl Listed {
     /// This device's key, `signer`'s, where the account has it.
     pub fn this_device(&self, signer: &Signer) -> Option<&Key> {
-        self.keys.iter().find(|key| key.is(signer))
+        self.has(&signer.public_line())
+    }
+
+    /// The key whose public line is `line`, where the account has it.
+    pub fn has(&self, line: &str) -> Option<&Key> {
+        self.keys.iter().find(|key| same_key(&key.key, line))
     }
 
     /// The keys purlis added on the person's other devices: purlis's title, and not `signer`'s.
     pub fn other_devices(&self, signer: &Signer) -> Vec<&Key> {
+        let line = signer.public_line();
         self.keys
             .iter()
-            .filter(|key| key.purlis_made() && !key.is(signer))
+            .filter(|key| key.purlis_made() && !same_key(&key.key, &line))
             .collect()
     }
 }
@@ -287,6 +297,19 @@ pub fn check_over(
 /// over, the caller is not that person, or no account is signed in on `forge`'s host.
 pub fn window(forge: &Forge, caller: &Caller) -> Result<Arc<dyn Transport>, ForgeError> {
     super::signin::signed_in_transport(forge, caller, crate::netlog::Feature::Forge)
+}
+
+/// The forge contract's recording `case` of GitHub's signing keys, `signer`'s public line put in
+/// for `@KEY@`: a key is made afresh by each test, so a recording names it by that mark.
+#[cfg(test)]
+pub(crate) fn recording(case: &str, signer: &Signer) -> super::recorded::Recorded {
+    let file = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/forge_contract/signing_keys/github")
+        .join(format!("{case}.json"));
+    let text = std::fs::read_to_string(&file)
+        .unwrap_or_else(|why| panic!("{}: {why}", file.display()))
+        .replace("@KEY@", &signer.public_line());
+    super::recorded::Recorded::parse(&text).unwrap_or_else(|why| panic!("{case}: {why}"))
 }
 
 #[cfg(test)]

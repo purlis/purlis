@@ -253,21 +253,7 @@ pub fn signed_in_backend(
     caller: &Caller,
     feature: crate::netlog::Feature,
 ) -> Result<Box<dyn super::ForgeBackend>, ForgeError> {
-    let host = handed()
-        .filter(|host| the_person_in_the_window(caller) && signed_in(host, forge).is_some());
-    let Some(host) = host else {
-        return Err(ForgeError::of(
-            Failure::Auth,
-            format!(
-                "purlis sends this only with its own sign-in to {} on {}, which is the app's, \
-                 for the person in its window ({SIGN_IN_AT})",
-                forge.kind.display(),
-                forge.host
-            ),
-        ));
-    };
-    let refused: Arc<dyn Transport> = Arc::new(NoCliRoute);
-    Ok(forge.backend_for(window_over(&host, forge, Some(refused), feature)))
+    Ok(forge.backend_for(signed_in_transports(forge, caller, feature)?))
 }
 
 /// [`signed_in_backend`]'s transport itself, for a forge module whose calls are not a backend's
@@ -278,6 +264,16 @@ pub(super) fn signed_in_transport(
     caller: &Caller,
     feature: crate::netlog::Feature,
 ) -> Result<Arc<dyn Transport>, ForgeError> {
+    signed_in_transports(forge, caller, feature)?.for_caller(caller)
+}
+
+/// The window's transports for `forge` with its CLI route refusing every call, for `caller`
+/// alone where it is the person in the window and an account is signed in on `forge`'s host.
+fn signed_in_transports(
+    forge: &Forge,
+    caller: &Caller,
+    feature: crate::netlog::Feature,
+) -> Result<Arc<dyn Transports>, ForgeError> {
     let host = handed()
         .filter(|host| the_person_in_the_window(caller) && signed_in(host, forge).is_some());
     let Some(host) = host else {
@@ -292,7 +288,7 @@ pub(super) fn signed_in_transport(
         ));
     };
     let refused: Arc<dyn Transport> = Arc::new(NoCliRoute);
-    window_over(&host, forge, Some(refused), feature).for_caller(caller)
+    Ok(window_over(&host, forge, Some(refused), feature))
 }
 
 /// The CLI route of [`signed_in_backend`]: every call and login check refused, unsent.

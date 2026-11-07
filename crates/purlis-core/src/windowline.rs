@@ -28,6 +28,14 @@
 //! line that takes a live profile's sign-in off a runner, so it asks nothing of a runner until
 //! the person says yes in the window, to that profile, that pool and that code. That yes lets no
 //! keep through: it answers only the question it was asked.
+//!
+//! **`purlis signing` asks the forge through it** ([`Asked::Signing`], #5625): the command holds
+//! no forge sign-in (ADR 0070 ruling 5), so the window asks GitHub with its own, as the person in
+//! it ([`crate::signingsetup::answered_in_the_window`]). Only reads go this way: whether the
+//! account has a public key the command names, and what GitHub says of a commit. What comes back
+//! is a yes or no, or GitHub's verdict and its reason; never a token, a key's private half, or
+//! anything a write needs. A key is added to the account only from the window's own setup,
+//! behind the person's click there.
 
 use std::io::{Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -122,11 +130,7 @@ pub fn answer(
     take_off: impl FnOnce(&str, &str, &str) -> Result<Option<String>, String>,
 ) -> Said {
     let name = match &asked {
-        Asked::Signing(_) => {
-            return Said::Refused {
-                why: "a signing key is not a profile's".to_owned(),
-            };
-        }
+        Asked::Signing(_) => return not_a_profiles(),
         Asked::ForgetOffThePools { name }
         | Asked::KeepOnAPool { name, .. }
         | Asked::ApproveSignIn { name, .. }
@@ -142,11 +146,7 @@ pub fn answer(
         Err(why) => return Said::Refused { why },
     };
     let said = match &asked {
-        Asked::Signing(_) => {
-            return Said::Refused {
-                why: "a signing key is not a profile's".to_owned(),
-            };
-        }
+        Asked::Signing(_) => return not_a_profiles(),
         Asked::ForgetOffThePools { .. } if has_it => {
             return Said::Refused {
                 why: format!(
@@ -195,6 +195,14 @@ pub fn answer(
     match said {
         Ok(note) => Said::Asked { note },
         Err(why) => Said::Refused { why },
+    }
+}
+
+/// [`answer`]'s word on a signing ask, which the window answers apart
+/// ([`crate::signingsetup::said_in_the_window`]).
+fn not_a_profiles() -> Said {
+    Said::Refused {
+        why: "a signing key is not a profile's".to_owned(),
     }
 }
 

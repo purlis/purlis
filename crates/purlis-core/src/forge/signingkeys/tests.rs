@@ -1,21 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-use std::path::Path;
-
 use super::*;
 use crate::forge::recorded::Recorded;
-
-/// The recording `case`, with this test's own key put in for `@KEY@`.
-fn recording(case: &str, signer: &Signer) -> Recorded {
-    let file = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/forge_contract/signing_keys/github")
-        .join(format!("{case}.json"));
-    let text = std::fs::read_to_string(&file)
-        .unwrap()
-        .replace("@KEY@", &signer.public_line());
-    Recorded::parse(&text).unwrap()
-}
 
 fn github() -> Forge {
     Forge::default_of(Kind::GitHub)
@@ -120,4 +107,16 @@ fn two_lines_are_one_key_by_type_and_data_whatever_their_comments() {
     assert!(same_key("ssh-ed25519 AAAA x", "ssh-ed25519 AAAA y z"));
     assert!(!same_key("ssh-ed25519 AAAA", "ssh-ed25519 BBBB"));
     assert!(!same_key("", ""));
+}
+
+#[test]
+fn a_key_setup_had_the_person_add_before_is_still_purlis_made() {
+    let key = |title: &str| Key {
+        id: 1,
+        title: title.to_owned(),
+        key: "ssh-ed25519 AAAA".to_owned(),
+    };
+    assert!(key("purlis · studio").purlis_made());
+    assert!(key("purlis on studio").purlis_made());
+    assert!(!key("my laptop").purlis_made());
 }

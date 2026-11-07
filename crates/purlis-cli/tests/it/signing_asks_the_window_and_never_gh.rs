@@ -158,13 +158,7 @@ fn status_asks_the_window_whether_github_has_this_devices_key() {
     let machine = a_machine();
     let config = machine.path();
     assert!(purlis(config, &["signing", "setup"], &[]).status.success());
-    let window = AWindow::answering(
-        config,
-        Said::Signing(Heard::KeyOnAccount {
-            on: true,
-            other_devices: 0,
-        }),
-    );
+    let window = AWindow::answering(config, Said::Signing(Heard::KeyOnAccount { on: true }));
     let out = purlis(config, &["signing", "status"], &[]);
     assert!(out.status.success(), "{}", said(&out));
     assert!(
@@ -182,16 +176,59 @@ fn status_asks_the_window_whether_github_has_this_devices_key() {
 }
 
 #[test]
-fn a_window_whose_sign_in_may_not_read_signing_keys_sends_the_person_to_its_setup() {
+fn a_window_whose_sign_in_may_not_read_signing_keys_says_github_was_not_asked() {
     let machine = a_machine();
     let config = machine.path();
     assert!(purlis(config, &["signing", "setup"], &[]).status.success());
     let _window = AWindow::answering(config, Said::Signing(Heard::NeedsPermission));
     let out = purlis(config, &["signing", "status"], &[]);
     assert!(
-        said(&out).contains("Settings › You › Accounts › Signed commits"),
+        said(&out).contains("may not read your signing keys yet"),
         "{}",
         said(&out)
+    );
+    gh_never_ran(config);
+}
+
+#[test]
+fn setup_goes_straight_to_its_check_where_github_has_the_key_already() {
+    let machine = a_machine();
+    let config = machine.path();
+    let window = AWindow::answering(config, Said::Signing(Heard::KeyOnAccount { on: true }));
+    let out = purlis(config, &["signing", "setup"], &[]);
+    assert!(out.status.success(), "{}", said(&out));
+    let text = said(&out);
+    assert!(text.contains("GitHub already has this key"), "{text}");
+    assert!(text.contains("signed from now on"), "{text}");
+    assert!(!text.contains(signingsetup::NEW_KEY_PAGE), "{text}");
+    // Step 2 asks, and step 3 checks: twice, and nothing else.
+    assert_eq!(window.asked().len(), 2, "{:?}", window.asked());
+    gh_never_ran(config);
+}
+
+#[test]
+fn remove_takes_the_key_off_this_machine_and_says_to_remove_it_from_github() {
+    let machine = a_machine();
+    let config = machine.path();
+    assert!(purlis(config, &["signing", "setup"], &[]).status.success());
+    let out = purlis(config, &["signing", "remove"], &[]);
+    assert!(out.status.success(), "{}", said(&out));
+    assert!(
+        said(&out).contains("Remove it from GitHub too"),
+        "{}",
+        said(&out)
+    );
+    let status = purlis(config, &["signing", "status"], &[]);
+    assert!(
+        said(&status).contains("has no signing key"),
+        "{}",
+        said(&status)
+    );
+    let again = purlis(config, &["signing", "remove"], &[]);
+    assert!(
+        said(&again).contains("nothing to remove"),
+        "{}",
+        said(&again)
     );
     gh_never_ran(config);
 }

@@ -1,5 +1,5 @@
 {
-  "source": "GitHub REST API version 2022-11-28, docs.github.com/en/rest/users/ssh-signing-keys (Create an SSH signing key needs the admin:ssh_signing_key or write:ssh_signing_key scope; an OAuth token without it is answered 404 Not Found, as GitHub answers a private resource it will not name)",
+  "source": "GitHub REST API version 2022-11-28, docs.github.com/en/rest/users/ssh-signing-keys (Create an SSH signing key needs the admin:ssh_signing_key or write:ssh_signing_key scope; an OAuth token without it is answered 404 Not Found, as GitHub answers a private resource it will not name). The key is the test's own, put in for @KEY@.",
   "exchanges": [
     {
       "call": {"endpoint": {"rest": {"method": "POST", "path": "user/ssh_signing_keys"}}, "fields": [{"text": ["title", "purlis · studio"]}, {"text": ["key", "@KEY@"]}]},

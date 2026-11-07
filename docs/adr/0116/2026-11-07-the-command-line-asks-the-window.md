@@ -8,9 +8,13 @@ here is how the two fit.
 - **`purlis signing` holds no sign-in and never runs `gh`.** Its reads (whether the account has
   this device's key, whether a pushed commit shows as Verified) go to the running window over
   the window line (`purlisd-window.sock`, #4141). The window asks the forge with its own sign-in,
-  as the person in it, and answers with what the forge said (`purlis_core::signingsetup`).
+  as itself, the person in it, and answers with what the forge said
+  (`purlis_core::signingsetup`). Only reads go this way, and what comes back is a yes or no, or
+  the forge's verdict on a commit and its reason; never a token. Adding or removing a key goes
+  only from the window's own setup, behind the person's click there.
 - **From the command line, the key is added by hand**: the steps name the forge's page, the
-  title and the key type, and the window's check confirms the key is there. Only the window's
+  title and the key type, and setup goes on by itself once the window hears the forge has the
+  key (or on Enter). Only the window's
   own setup adds the key through the account (#5627, #5628).
 - **With no window running**, setup gives the by-hand steps and says to open purlis, and
   `status` and `check` say the same. `setup --by-hand` is gone, since by hand is the only way

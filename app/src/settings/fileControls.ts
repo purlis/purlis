@@ -567,7 +567,7 @@ const PLANE_KEYS: readonly SaveKey[] = [
     key: "sign",
     label: "Sign saves with your own git setup",
     kind: "bool",
-    hint: "Sign the commits a save makes, the way your own git signs. Signed commits, in You › Accounts, signs what chats commit.",
+    hint: "Sign the commits a save makes, the way your own git signs. Not the key the app signs chats' commits with.",
   },
   {
     key: "refuse_unsandboxed_commit",

@@ -3,18 +3,8 @@
 
 use super::*;
 use crate::forge::recorded::Recorded;
+use crate::forge::signingkeys::recording;
 use crate::secrets::keyring;
-
-/// The recording `case` of GitHub's signing keys, `signer`'s key put in for `@KEY@`.
-fn recording(case: &str, signer: &Signer) -> Recorded {
-    let file = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/forge_contract/signing_keys/github")
-        .join(format!("{case}.json"));
-    let text = std::fs::read_to_string(&file)
-        .unwrap()
-        .replace("@KEY@", &signer.public_line());
-    Recorded::parse(&text).unwrap()
-}
 
 fn on_account(signer: &Signer) -> Asked {
     Asked::KeyOnAccount {
@@ -48,21 +38,15 @@ fn no_key_then_made_then_added_then_listed_then_verified() {
 
     let none = recording("none_listed", &signer);
     assert_eq!(
-        answered_over(&none, &forge(), &on_account(&signer)).unwrap(),
-        Heard::KeyOnAccount {
-            on: false,
-            other_devices: 0
-        }
+        answered_over(&none, &github(), &on_account(&signer)).unwrap(),
+        Heard::KeyOnAccount { on: false }
     );
 
     let added = recording("added_then_listed", &signer);
-    signingkeys::add_over(&added, &forge(), &signer, "purlis · studio").unwrap();
+    signingkeys::add_over(&added, &github(), &signer, "purlis · studio").unwrap();
     assert_eq!(
-        answered_over(&added, &forge(), &on_account(&signer)).unwrap(),
-        Heard::KeyOnAccount {
-            on: true,
-            other_devices: 1
-        }
+        answered_over(&added, &github(), &on_account(&signer)).unwrap(),
+        Heard::KeyOnAccount { on: true }
     );
     assert!(added.unspent().is_empty());
 
@@ -71,7 +55,7 @@ fn no_key_then_made_then_added_then_listed_then_verified() {
         repo: "octo/hello".to_owned(),
         commit: "0123abc".to_owned(),
     };
-    let Heard::Checked(checked) = answered_over(&verified, &forge(), &asked).unwrap() else {
+    let Heard::Checked(checked) = answered_over(&verified, &github(), &asked).unwrap() else {
         panic!("a check is answered with what the forge said of the commit");
     };
     assert!(checked.verified);
@@ -82,7 +66,7 @@ fn a_sign_in_that_may_not_read_signing_keys_is_heard_as_needing_permission() {
     let signer = Signer::generate().unwrap();
     let recorded = recording("list_needs_permission", &signer);
     assert_eq!(
-        answered_over(&recorded, &forge(), &on_account(&signer)).unwrap(),
+        answered_over(&recorded, &github(), &on_account(&signer)).unwrap(),
         Heard::NeedsPermission
     );
 }
@@ -100,7 +84,7 @@ fn what_is_not_one_public_key_is_refused_before_anything_is_sent() {
             key: key.to_owned(),
         };
         assert!(
-            answered_over(&recorded, &forge(), &asked).is_err(),
+            answered_over(&recorded, &github(), &asked).is_err(),
             "{key:?}"
         );
     }
@@ -113,12 +97,12 @@ fn the_key_is_removed_from_the_keychain() {
     crate::machine::device_id(config.path()).unwrap();
     let store = keyring::FileStore::at(keys.path().join("keyring.json"));
     key_made(config.path(), &store).unwrap();
-    assert!(crate::commitsign::forget(config.path(), &store).unwrap());
+    assert!(key_removed(config.path(), &store).unwrap());
     assert_eq!(
         crate::commitsign::kept(config.path(), &store).unwrap(),
         None
     );
-    assert!(!crate::commitsign::forget(config.path(), &store).unwrap());
+    assert!(!key_removed(config.path(), &store).unwrap());
 }
 
 #[cfg(unix)]
@@ -131,7 +115,7 @@ mod over_the_window_line {
     /// The command asks over the line; the window answers with its own transport (here a
     /// recording); the command hears what the forge said, and holds no sign-in of its own.
     #[test]
-    fn the_command_hears_what_the_window_asked_the_forge() {
+    fn the_command_hears_what_the_window_asked_github() {
         let dir = tempfile::tempdir().unwrap();
         let socket = dir.path().join("purlis").join("window.sock");
         let signer = Signer::generate().unwrap();
@@ -140,7 +124,7 @@ mod over_the_window_line {
         let theirs = std::sync::Arc::clone(&recorded);
         windowline::serve_on(&socket, move |asked| match asked {
             windowline::Asked::Signing(asked) => {
-                match answered_over(theirs.as_ref(), &forge(), &asked) {
+                match answered_over(theirs.as_ref(), &github(), &asked) {
                     Ok(heard) => Said::Signing(heard),
                     Err(why) => Said::Refused { why },
                 }
@@ -151,31 +135,26 @@ mod over_the_window_line {
         })
         .unwrap();
         // The add is the window's alone, so it is spent here before the command asks.
-        signingkeys::add_over(recorded.as_ref(), &forge(), &signer, "purlis · studio").unwrap();
+        signingkeys::add_over(recorded.as_ref(), &github(), &signer, "purlis · studio").unwrap();
 
         let within = Duration::from_secs(10);
         let reached = reach(Asked::KeyOnAccount { key: line }, |asked| {
             windowline::ask_on(&socket, asked, within)
         });
-        assert_eq!(
-            reached,
-            Reached::Heard(Heard::KeyOnAccount {
-                on: true,
-                other_devices: 1
-            })
-        );
+        assert_eq!(reached, Reached::Heard(Heard::KeyOnAccount { on: true }));
     }
 
     #[test]
-    fn no_window_is_said_as_none_and_an_old_windows_answer_as_no_answer() {
+    fn no_window_no_answer_and_another_questions_answer_are_told_apart() {
         let asked = || Asked::Check {
             repo: "octo/hello".to_owned(),
             commit: "0123abc".to_owned(),
         };
         assert_eq!(reach(asked(), |_| Answered::NoWindow), Reached::NoWindow);
+        assert_eq!(reach(asked(), |_| Answered::NoAnswer), Reached::NoAnswer);
         assert_eq!(
             reach(asked(), |_| Answered::Said(Said::Asked { note: None })),
-            Reached::NoAnswer
+            Reached::OtherAnswer
         );
         assert_eq!(
             reach(asked(), |_| Answered::Said(Said::Refused {
