@@ -2088,7 +2088,47 @@ _Avoid_: eval engine, judge
 
 **Trigger test**:
 A fixture of a skill's that tests whether a harness picks the skill when it should and leaves it
-alone when it should not. A **grade** runs each one as real chats.
+alone when it should not. A **grade** runs each one as real chats, and the **CI grader** runs a
+built-in skill's headless.
+
+**Trigger bar**:
+What a built-in skill's trigger tests must reach in the **CI grader**, declared beside its tests.
+**Strict** is at least 95% recall and at most 5% false triggers, for the skills where a miss leaks
+a secret, loses work or loses context; **standard** is at least 85% and at most 5%, for the rest.
+Changing a skill's bar is a reviewed change.
+_Avoid_: threshold, pass mark, tier (alone)
+
+**CI grader**:
+How CI grades purlis's built-in skills: each harness started headless with purlis's plugin, the
+session-start briefing and purlis's MCP tools, its skill starts read from the harness's own
+output and scored by the rules a **grade** scores skill runs by (ADR 0105, amended 2026-11-08).
+It measures only what a harness chooses given the listing, runs on CI's keys, and keeps no
+**eval record**. Distinct from a grade in the window, which runs on the person's press and
+account and is unchanged by it.
+_Avoid_: headless grade, CI grade (for a grade in the window), eval job
+
+**Crowd fixture**:
+About forty synthetic skills, written by us and committed with the **CI grader**, among which
+every built-in skill is graded, so a score is not flattered by an empty listing. Modelled on
+commonly installed kinds of skills, near-duplicates included, with no third-party text. A bare
+run without it is reported beside the crowded one.
+_Avoid_: distractor skills, noise skills, decoys
+
+**Miss**:
+A built-in skill that should have started in a turn and did not: a query it should trigger on
+that the harness left alone, or gave to another skill. In the **CI grader** it is a failing
+trigger test's run; in a person's chat it is recorded as `skill.missed` (the skill, harness and
+its version, persona and signal, never the prompt) on a **correction**, or on a filed Report
+(spec #5683) that a purlis skill should have triggered. A wrong built-in started is a miss for
+the skill the query belongs to and a false trigger for the one that started.
+_Avoid_: non-trigger, false negative
+
+**Correction**:
+The person starting a built-in skill themselves (a slash command or **Use skill…**) in the prompt
+right after an agent turn that did not start it. It records a **miss** as a signal, never with the
+prompt. Not on a chat's first prompt, and not when the agent started that skill in the turn
+before.
+_Avoid_: override, manual trigger, retry
 
 **Outcome eval**:
 A fixture of a skill's that tests how well the skill does its job on a task. A **grade** runs one

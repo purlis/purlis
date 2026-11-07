@@ -64,7 +64,7 @@ purlis persona remove <name>
 Each one guards what it would destroy: `workspace remove` refuses while a clone or a piece holds
 work nothing else has (exit 2), and `persona remove` refuses while another persona extends or
 uses the one being removed. A refusal is the answer: relay it in its own words and stop.
-`--force` belongs to the operator, and you pass it only when they say so.
+`--force` belongs to the operator, and you pass it only when they say so in this chat.
 
 **In a chat purlis started under its sandbox, the last step is the operator's press in the
 purlis window.** Neither command deletes anything there, because the sandbox would stop a
