@@ -316,6 +316,11 @@ pub struct Kit<'a> {
     /// (`skills::verbs::drafts::outcome_piece`): it may write and edit inside its own piece,
     /// where the harness can be told so. Anything else still asks, and ends it.
     pub writes_its_piece: bool,
+    /// **And one that has a shell** (#4476), as its piece says
+    /// (`skills::verbs::drafts::shell_piece`): its commands run unasked under its sandbox, which
+    /// its start held to its piece and to no host (`sandbox::policy::holding_to_its_folder`), with
+    /// its temporary files in its piece. Only ever with [`Self::writes_its_piece`].
+    pub runs_a_shell: bool,
     /// The set's folder the host laid out before arming the chat
     /// ([`crate::skills::lay_out_for_chat`]): the plane's skills of its set. `None` where it laid
     /// out none: a harness that needs the folder is then handed none of what it holds.

@@ -1409,6 +1409,7 @@ fn outcome_row() -> Graded {
         }],
         arms: ARMS.to_vec(),
         runs: 3,
+        shell: false,
     };
     let report = grade::grade(&request, &mut Judged, None);
     let mut row = uncommitted_row();
@@ -1906,4 +1907,53 @@ fn a_failure_reason_is_masked_before_it_is_recorded() {
         .as_deref()
         .unwrap();
     assert!(!why.contains(&["AK", "IA"].concat()), "{why}");
+}
+
+/// #4476: a skill whose `allowed-tools` names Bash has its evals graded with a shell. The plan
+/// says so before anything is ticked, the request carries it once one is, and the consent covers
+/// it, so a skill that starts or stops asking for one is seen again before it runs.
+#[test]
+fn a_skill_that_asks_for_a_shell_has_its_evals_planned_with_one_and_consented_to() {
+    let plane = plane();
+    let root = plane.path();
+    let skill = |front: &str| {
+        std::fs::write(
+            root.join("skills/deploy/SKILL.md"),
+            format!("---\nname: deploy\ndescription: Ships.\n{front}---\n\nRun scripts/ship.sh.\n"),
+        )
+        .unwrap();
+    };
+    std::fs::write(
+        root.join("skills/deploy/evals/evals.json"),
+        r#"{"skill_name": "deploy", "evals": [{"id": 1, "prompt": "ship v2", "expectations": ["It ships"]}]}"#,
+    )
+    .unwrap();
+    skill("allowed-tools: Read, Bash(sh scripts/ship.sh)\n");
+    let offered = planned_with(root, &Level::project(), "deploy", None, &[]).unwrap();
+    assert!(offered.shell, "the plan says it before a tick");
+    assert_eq!(offered.offered.len(), 1);
+    assert!(
+        offered
+            .request
+            .as_ref()
+            .is_none_or(|request| !request.shell),
+        "nothing ticked runs no shell"
+    );
+    let ticked = planned_with(root, &Level::project(), "deploy", None, &[1]).unwrap();
+    assert!(ticked.request.as_ref().is_some_and(|request| request.shell));
+    skill("allowed-tools: Read\n");
+    let without = planned_with(root, &Level::project(), "deploy", None, &[1]).unwrap();
+    assert!(!without.shell);
+    assert!(
+        without
+            .request
+            .as_ref()
+            .is_some_and(|request| !request.shell)
+    );
+    assert_ne!(ticked.consent, without.consent);
+    assert_ne!(
+        after_edit::outcomes_of(&ticked),
+        after_edit::outcomes_of(&without),
+        "an opt-in to grading after each edit sees it again"
+    );
 }

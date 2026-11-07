@@ -461,6 +461,35 @@ describe("Grade, cost first", () => {
     );
   });
 
+  it("says an outcome eval uses a shell before it is ticked, and what that shell may do (#4476)", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "skill_grade_plan")
+        return plan({
+          evals: [
+            {
+              id: "4",
+              prompt: "Ship v2",
+              hides: false,
+              files: [],
+              not_text: [],
+              shell: true,
+              expectations: 1,
+              on: false,
+              chats: 12,
+            },
+          ],
+          outcomes_left_out: [],
+        });
+      if (cmd === "start_options") return { profiles: [{ name: "work" }] };
+      return null;
+    });
+    renderPlan();
+    const row = await screen.findByTestId("skill-grade-eval");
+    expect(row.textContent).toBe(
+      "Ship v2 · 12 more chats · 1 expectation a judge checks · uses a shell, which writes only in its own folders and reaches no network",
+    );
+  });
+
   it("counts each outcome eval's chats and its judges' before anything runs (SK-55)", async () => {
     mockIPC((cmd) => {
       if (cmd === "skill_grade_plan")
@@ -473,6 +502,7 @@ describe("Grade, cost first", () => {
               hides: false,
               files: ["evals/files/form.txt"],
               not_text: [],
+              shell: false,
               expectations: 2,
               on: true,
               chats: 12,
@@ -497,6 +527,7 @@ describe("Grade, cost first", () => {
     expect(screen.getByTestId("skill-grade-eval").textContent).toBe(
       "Fill in the form · 12 more chats · 2 expectations a judge checks · with evals/files/form.txt",
     );
+    expect(screen.queryByTestId("skill-grade-eval-shell")).toBeNull();
     const totals = screen.getByRole("group", { name: "What a grade of deploy runs and spends" });
     expect(totals).toHaveTextContent("Chats24");
     expect(totals).toHaveTextContent("2 tests and 1 outcome eval × 3 × 2 arms, judges among them");
@@ -514,6 +545,7 @@ describe("Grade, cost first", () => {
               hides: false,
               files: ["evals/files/form.txt", "evals/files/sample1.pdf"],
               not_text: ["evals/files/sample1.pdf"],
+              shell: false,
               expectations: 2,
               on: false,
               chats: 12,
@@ -541,6 +573,7 @@ describe("Grade, cost first", () => {
               hides: false,
               files: ["a.pdf", "b.pdf"],
               not_text: ["a.pdf", "b.pdf"],
+              shell: false,
               expectations: 2,
               on: false,
               chats: 12,
@@ -565,6 +598,7 @@ describe("Grade, cost first", () => {
       hides: false,
       files: [],
       not_text: [],
+      shell: false,
       expectations: 2,
       chats: 12,
     };
@@ -609,6 +643,7 @@ describe("Grade, cost first", () => {
               hides: false,
               files: [],
               not_text: [],
+              shell: false,
               expectations: 2,
               chats: 12,
               on: evals.includes("4"),

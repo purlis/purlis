@@ -2694,6 +2694,7 @@ fn every_question_of_version_one_is_asked_as_the_contract_records_it() {
         outcomes: Vec::new(),
         arms: vec![Arm::With, Arm::Without],
         runs: 1,
+        shell: false,
     };
     let panel = || Ask::Panel {
         panel: "checks",

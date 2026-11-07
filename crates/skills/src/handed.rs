@@ -164,9 +164,19 @@ impl Frontmatter {
     /// The tools its `disallowed-tools` takes away, as written: one comma-separated line, or a
     /// list.
     pub fn tools_taken(&self) -> Vec<String> {
+        self.tools_of(Field::DisallowedTools)
+    }
+
+    /// The tools its `allowed-tools` pre-approves, as written, each rule whole (`Bash(git:*)`).
+    pub fn tools_allowed(&self) -> Vec<String> {
+        self.tools_of(Field::AllowedTools)
+    }
+
+    /// The tools `field` lists: one comma-separated line, or a list.
+    fn tools_of(&self, field: Field) -> Vec<String> {
         let mut out = Vec::new();
         for (key, node) in &self.entries {
-            if Field::of(key) != Some(Field::DisallowedTools) {
+            if Field::of(key) != Some(field) {
                 continue;
             }
             let items: Vec<&str> = match node {
@@ -357,6 +367,19 @@ fn folded(key: &str) -> String {
         .filter(|c| !matches!(c, '-' | '_') && !c.is_whitespace())
         .flat_map(char::to_lowercase)
         .collect()
+}
+
+/// **Whether the skill `text` asks for a shell** (#4476): its `allowed-tools` names Claude Code's
+/// shell, `Bash`, bare or as a rule (`Bash(python scripts/run.py:*)`). What an outcome eval of it
+/// is graded with: a shell, held to its own folder and reaching no host. A frontmatter purlis does
+/// not read asks for nothing, as a grade leaves such a skill out.
+pub fn asks_for_a_shell(text: &str) -> bool {
+    parse(text).is_ok_and(|front| {
+        front
+            .tools_allowed()
+            .iter()
+            .any(|tool| tool == "Bash" || tool.starts_with("Bash("))
+    })
 }
 
 /// **Reads `text`'s frontmatter as YAML**, failing closed ([`Refusal`]): the one reader of a
