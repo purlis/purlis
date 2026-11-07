@@ -9232,7 +9232,7 @@ of 2026-11-01). A purlis from before it refuses a file holding it, as it refuses
   Claude Code makes its sandbox's sockets there, and hands a command `claude-<uid>/` in it only
   where that path is 44 bytes at most (`drafts::CLAUDE_CODE_TEMP_MOST`), its shared
   `/tmp/claude-<uid>` otherwise; on macOS the system's temp folder alone is longer (#5655).
-- **Status:** **internal**, **experimental** behind the `skill-studio` flag.
+- **Status:** **internal**, **experimental**.
 - **Tier:** Machine, device-bound, transient — it lasts as long as its chat.
 - **Written by:** that chat's commands, under its sandbox. No other chat can write it.
 - **Removed by:** `drafts::end_try`, with its piece, and only a folder named so, in
