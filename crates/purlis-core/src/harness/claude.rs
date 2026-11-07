@@ -164,22 +164,6 @@ impl HarnessAdapter for ClaudeCode {
                     cwd.display().to_string(),
                 )
             }))
-            // An outcome eval's shell keeps its temporary files in its piece (#4476): Claude
-            // Code's temp folder, the one its sandbox lets a command write wherever it is and
-            // hands each command as its `TMPDIR`. The program's own `TMPDIR` is left as it is:
-            // on Linux its sandbox makes its proxy's sockets there, and a socket's path past a
-            // hundred-odd bytes cannot be made (measured on CI, #5589).
-            .chain(
-                cwd.filter(|_| kit.writes_its_piece && kit.runs_a_shell)
-                    .map(|cwd| {
-                        (
-                            crate::sandbox::claude_wrap::TMP_ENV.to_owned(),
-                            crate::skills::verbs::drafts::temp_of(cwd)
-                                .display()
-                                .to_string(),
-                        )
-                    }),
-            )
             // What `skill_load` may send it to `skills:<name>` for (#4510): that folder alone.
             .chain(linked.map(|linked| {
                 (

@@ -604,7 +604,7 @@ export function GradePlanPage({
                 {one.shell && (
                   <span data-testid="skill-grade-eval-shell">
                     {" "}
-                    · uses a shell, which writes only in its own folder and reaches no network
+                    · uses a shell, which writes only in its own folders and reaches no network
                   </span>
                 )}
                 {one.hides && (

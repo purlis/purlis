@@ -748,18 +748,65 @@ pub fn shell_piece(root: &Path, cwd: &Path) -> bool {
 /// What an outcome eval's piece's mark says where its chat has a shell (#4476).
 const SHELL: &str = "shell";
 
-/// **The folder for temporary files of the outcome eval's chat in `piece`** (#4476): inside its
-/// piece, so its shell writes nowhere else. A dot-name, so what the chat left for its judge never
-/// lists it ([`outcome_of`]).
-pub fn temp_of(piece: &Path) -> PathBuf {
-    piece.join(".tmp")
+/// A grade's arm's file that names the temp folder of its outcome eval's chat that has a shell
+/// (#4476).
+const TEMP: &str = "temp";
+
+/// How the name of a shell eval's temp folder starts: short, as on Linux Claude Code's sandbox
+/// makes its proxy's sockets in it, and a socket's path holds 108 bytes at most.
+const TEMP_PREFIX: &str = "purlis-g-";
+
+/// **The temp folder of the outcome eval's chat that has a shell, in the piece `cwd`** (#4476,
+/// the person's choice of 2026-11-07): a folder of its own in the system's temp folder, `0700`,
+/// made as its piece was staged and removed with it ([`end_try`]), which its chat is given as its
+/// `TMPDIR`. Its shell writes its piece and this folder, and nowhere else. Not in the piece, as a
+/// socket's path there would be too long on Linux (measured on CI, #5589). `None` for any other
+/// piece. Only this machine's state names it, and no chat writes it.
+pub fn temp_of(root: &Path, cwd: &Path) -> Option<PathBuf> {
+    if !shell_piece(root, cwd) {
+        return None;
+    }
+    let id = try_of(root, cwd)?;
+    let state = crate::appstate::dir(root)?;
+    read_at(&state, &format!("{TRIES_DIR}/{id}/{TEMP}"))
+        .ok()
+        .flatten()
+        .map(|text| PathBuf::from(text.trim_end()))
+        .filter(|path| one_of_ours(path))
+}
+
+/// Whether `path` is a temp folder [`stage`] made: in the system's temp folder, named so, and a
+/// folder itself, never a link to one. Only such a folder is handed to a chat or removed.
+fn one_of_ours(path: &Path) -> bool {
+    path.parent() == Some(std::env::temp_dir().as_path())
+        && path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.starts_with(TEMP_PREFIX))
+        && std::fs::symlink_metadata(path).is_ok_and(|meta| meta.is_dir())
+}
+
+/// Removes the temp folder the try `id` names, where it has one of [`stage`]'s.
+fn remove_temp(state: &Path, id: &str) {
+    let Some(path) = read_at(state, &format!("{TRIES_DIR}/{id}/{TEMP}"))
+        .ok()
+        .flatten()
+        .map(|text| PathBuf::from(text.trim_end()))
+    else {
+        return;
+    };
+    if one_of_ours(&path)
+        && let Err(why) = std::fs::remove_dir_all(&path)
+    {
+        tracing::warn!("purlis: a grade's temp folder was not removed ({why})");
+    }
 }
 
 /// **Stages an outcome eval's input files into the throwaway piece of `laid`** (SK-55, #3235):
 /// each of `files` (paths in the skill's folder, as the eval names them) at the same path in the
 /// piece, from `inputs`, what the grade read of them once. A file it did not read refuses the
 /// chat, as the eval would not be the one the plan showed. With `shell` (#4476) the piece is
-/// marked as one whose chat has a shell, and its folder for temporary files is made in it.
+/// marked as one whose chat has a shell, and a temp folder of its own is made ([`temp_of`]).
 pub fn stage(
     root: &Path,
     laid: &Try,
@@ -782,13 +829,25 @@ pub fn stage(
     )
     .map_err(|why| super::not_written("the grade's record of its folder", why))?;
     if shell {
-        // Made before the chat starts, in the piece purlis made, so nothing stands in its place.
-        let mut made = std::fs::DirBuilder::new();
-        #[cfg(unix)]
-        std::os::unix::fs::DirBuilderExt::mode(&mut made, 0o700);
-        made.create(temp_of(&laid.piece)).map_err(|why| {
-            format!("the chat's folder for temporary files could not be made ({why})")
-        })?;
+        // Made before the chat starts, a new name of its own, `0700` as tempfile makes it.
+        let made = tempfile::Builder::new()
+            .prefix(TEMP_PREFIX)
+            .rand_bytes(8)
+            .tempdir_in(std::env::temp_dir())
+            .map_err(|why| {
+                format!("the chat's folder for temporary files could not be made ({why})")
+            })?
+            .keep();
+        if let Err(why) = write_at(
+            &app_state(root)?,
+            &format!("{TRIES_DIR}/{}/{TEMP}", laid.id),
+            None,
+            &made.display().to_string(),
+            usize::MAX,
+        ) {
+            let _ = std::fs::remove_dir_all(&made);
+            return Err(super::not_written("the grade's record of its folder", why));
+        }
     }
     hand_on_what_narrows(root, laid)?;
     for path in files {
@@ -1643,7 +1702,10 @@ fn started_by_these_words(skills: &Path, name: &str) -> bool {
 /// Ends the try `id`: [`end_try_at`] by its id.
 pub fn end_try(root: &Path, id: &str) -> Result<(), String> {
     remove_piece(root, id)?;
-    remove_in(&app_state(root)?, TRIES_DIR, id)
+    let state = app_state(root)?;
+    // A shell eval's temp folder goes with its piece (#4476).
+    remove_temp(&state, id);
+    remove_in(&state, TRIES_DIR, id)
 }
 
 #[cfg(test)]

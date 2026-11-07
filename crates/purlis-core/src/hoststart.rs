@@ -1403,10 +1403,24 @@ pub fn armed(arming: &Arming<'_>) -> Result<Armed, String> {
     // a router that reads prompts was chosen for it, and its list leaves skills out.
     let prompt_router =
         points.then(|| (crate::skills::PROMPT_ROUTER_ENV.to_owned(), "1".to_owned()));
+    // An outcome eval's shell has a temp folder of its own (#4476), its program's and Claude
+    // Code's, which its sandbox lets its commands write and which goes with its piece.
+    let temp = graded
+        .then(|| cwd.and_then(|cwd| crate::skills::verbs::drafts::temp_of(root, cwd)))
+        .flatten()
+        .map(|temp| temp.display().to_string());
+    let temp = temp.into_iter().flat_map(|temp| {
+        [
+            ("TMPDIR".to_owned(), temp.clone()),
+            (crate::sandbox::claude_wrap::TMP_ENV.to_owned(), temp),
+        ]
+    });
     match harness.state_hooks(armed, cwd, plugins, sandbox) {
         StateHooks::ThisSessionOnly { args, mut env, .. } => {
             env.extend(held);
             env.extend(prompt_router);
+            env.retain(|(key, _)| key != "TMPDIR" && key != crate::sandbox::claude_wrap::TMP_ENV);
+            env.extend(temp);
             Ok((args, env))
         }
         // A grade's chat is never started without its limits.

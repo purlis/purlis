@@ -2306,7 +2306,7 @@ fn grade_plan_said(
         };
         // #4476: its chats' shell, in the words of the Skill studio's plan.
         let shell = if planned.shell {
-            ", uses a shell, which writes only in its own folder and reaches no network"
+            ", uses a shell, which writes only in its own folders and reaches no network"
         } else {
             ""
         };

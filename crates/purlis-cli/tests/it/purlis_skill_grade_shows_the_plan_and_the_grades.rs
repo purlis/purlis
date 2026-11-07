@@ -340,7 +340,9 @@ fn skill_grade_says_an_outcome_eval_uses_a_shell_where_its_skill_asks_for_one() 
         .find(|line| line.contains("Outcome eval 1. "))
         .unwrap_or_else(|| panic!("{text}"));
     assert!(
-        line.contains(", uses a shell, which writes only in its own folder and reaches no network"),
+        line.contains(
+            ", uses a shell, which writes only in its own folders and reaches no network"
+        ),
         "{line}"
     );
 }

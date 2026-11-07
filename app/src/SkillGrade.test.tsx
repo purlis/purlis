@@ -486,7 +486,7 @@ describe("Grade, cost first", () => {
     renderPlan();
     const row = await screen.findByTestId("skill-grade-eval");
     expect(row.textContent).toBe(
-      "Ship v2 · 12 more chats · 1 expectation a judge checks · uses a shell, which writes only in its own folder and reaches no network",
+      "Ship v2 · 12 more chats · 1 expectation a judge checks · uses a shell, which writes only in its own folders and reaches no network",
     );
   });
 

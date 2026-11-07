@@ -1,9 +1,10 @@
-# Amended 2026-11-07: an outcome eval's chat may use a shell, held to its folder and to no host
+# Amended 2026-11-07: an outcome eval's chat may use a shell, held to its folders and to no host
 
 Ticket #4476 (M65.1), the follow-up the outcome evals' amendment of 2026-10-31 named ("Outcome
 chats have no shell in v1"), from spec #2762's grading sections. The person's ruling of
 2026-11-07, given on the three questions the ticket left open (relayed by the chat that asked
-for the work): **1a, 2a, and 3 as proposed.**
+for the work): **1a, 2a, and 3 as proposed**. And a second ruling the same day, once CI had
+measured 2a on Linux (below): **(a), its piece and a temp folder of its own.**
 
 ## Where purlis was
 
@@ -24,7 +25,7 @@ compares with asks for a shell, so does the grade.
   without it and the previous version's arm. Each arm runs the same task with the same tools, so
   the baseline is not judged with less. A judge never has a shell (§3 as amended 2026-10-31).
 - **The plan says it before anything runs.** Each eval the plan offers reads "uses a shell,
-  which writes only in its own folder and reaches no network", in the window and at a terminal,
+  which writes only in its own folders and reaches no network", in the window and at a terminal,
   before it is ticked. The grade request carries it (`shell`, said on the wire only where it is
   so), and so does each eval chat's run-chat request (`kind` `outcome`, `shell` `true`). The
   consent's digest covers it, and so does the digest an opt-in to grading after each edit keeps,
@@ -49,15 +50,27 @@ now refuses such a connection instead. An Allow made elsewhere is never taken li
 chat either, as only a proxy that asks live takes one. The hold above also sets
 `no_live_asks`, so the decision says the same.
 
-**The shell writes only its own folder** (ruling 2a). That same decision gives it none of the
-project's package caches: they are shared with the person's own chats, and a graded skill could
-leave something there for one of them to run. Its temporary files, and Claude Code's own, go in
-`.tmp/` inside its piece: Claude Code's temp folder is put there (`CLAUDE_CODE_TMPDIR`), and
-Claude Code gives each command its `TMPDIR` inside it. The program's own `TMPDIR` is left as it
-is, because on Linux its sandbox makes its proxy's sockets there, and a socket path inside a
-piece can be too long to make (measured on CI). It writes nowhere else: not the
-project outside its piece, not the home, not the system's temp folder. Writes by Write and Edit
-stay held to its piece by their guard, as before.
+**The shell writes only its piece and a temp folder of its own** (ruling 2a, and the second
+ruling). That same decision gives it none of the project's package caches: they are shared with
+the person's own chats, and a graded skill could leave something there for one of them to run.
+
+Ruling 2a first put its temp folder inside its piece. On Linux that cannot be built, as measured
+on CI with the Claude Code purlis pins. Its sandbox makes its proxy's unix sockets in the
+program's own `TMPDIR`, and a path inside a piece goes past a socket path's 108 bytes, so the
+sandbox does not start. It also ignores `CLAUDE_CODE_TMPDIR` there, and hands each command
+`<the program's TMPDIR>/claude-<uid>` as its `TMPDIR`, writable. So, as the person chose, each
+such chat is given a temp folder of its own (`drafts::temp_of`):
+
+- **Short and new.** It is `purlis-g-` and sixteen random hex characters, made in the system's
+  temp folder as its piece is staged, `0700`.
+- **Its chat's alone.** Its record is in this machine's state, which no chat writes, and it is
+  handed to that chat alone as its `TMPDIR` and `CLAUDE_CODE_TMPDIR`.
+- **Gone with its piece** (`drafts::end_try`).
+
+Another grading chat's temp folder is not one it can write, nor is another's piece. The judge
+never reads either temp folder. It writes nowhere else: not the project outside its piece, not
+the home, not the rest of the system's temp folder. Writes by Write and Edit stay held to its
+piece by their guard, as before.
 
 **The same sandbox and consent as any chat, and no new bypass.** The shell runs under the chat's
 full sandbox, in Claude Code's default permission mode with its prompts kept. Its commands run
@@ -71,11 +84,16 @@ purlis's.
 starts the real Claude Code that CI pins, against a stand-in model and on what purlis compiles
 for such a chat, with purlis's own proxy carrying its connections. Its one command writes its
 piece and its temp folder. It is refused a write in the project outside the piece, in the home,
-in the system's temp folder and in Claude Code's own, and is refused a connection to a host the
-project lists for its other chats. On the same project, a grade's other chats are given that host
-and the project's caches, so the hold is what takes them away.
+in the system's temp folder, in Claude Code's own, and in a second shell eval's piece and temp
+folder. It is also refused a connection to a host the project lists for its other chats. On the
+same project, a grade's other chats are given that host and the project's caches, so the hold is
+what takes them away.
 
 ## Rejected
+
+- **A temp folder inside the piece** (2a as first written). It cannot be built on Linux, as above.
+- **Failing a shell eval's run where its piece's path is too long, or leaving shell evals off on
+  Linux.** The first fails most projects on Linux; the second leaves those skills ungraded there.
 
 - **The project's hosts and caches, as any chat in the project has them** (1b and 2b). These
   are the same sandbox, but the grade's limits would not hold over what the shell spends, and a

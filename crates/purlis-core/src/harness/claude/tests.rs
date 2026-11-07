@@ -1745,14 +1745,13 @@ fn a_chat_whose_pins_are_past_its_budget_is_handed_a_limit_that_holds_them() {
     assert_eq!(limit, "41940");
 }
 
-/// #4476: an outcome eval's chat whose skill asked for a shell is not asked about each command,
-/// and Claude Code's temp folder, which its commands write theirs in, is in its piece; one whose
-/// skill did not still asks at its first command, and has no temp folder named.
+/// #4476: an outcome eval's chat whose skill asked for a shell is not asked about each command;
+/// one whose skill did not still asks at its first command.
 #[test]
-fn an_outcome_chat_with_a_shell_runs_it_and_keeps_its_temp_files_in_its_piece() {
+fn an_outcome_chat_with_a_shell_runs_it_unasked_and_one_without_asks() {
     let piece = tempfile::tempdir().expect("a directory");
     let armed = |runs_a_shell: bool| {
-        let StateHooks::ThisSessionOnly { args, env, .. } = adapter().arm(
+        let StateHooks::ThisSessionOnly { args, .. } = adapter().arm(
             Kit {
                 skills: None,
                 laid_out: None,
@@ -1774,32 +1773,15 @@ fn an_outcome_chat_with_a_shell_runs_it_and_keeps_its_temp_files_in_its_piece() 
             .iter()
             .position(|arg| arg == "--settings")
             .expect("settings");
-        let settings: serde_json::Value = serde_json::from_str(&args[at + 1]).expect("JSON");
-        (settings, env)
+        serde_json::from_str::<serde_json::Value>(&args[at + 1]).expect("JSON")
     };
     let asks_for_bash = |settings: &serde_json::Value| {
         settings["permissions"]["ask"]
             .as_array()
             .is_some_and(|rules| rules.contains(&serde_json::json!("Bash")))
     };
-    let temp = |env: &[(String, String)], var: &str| {
-        env.iter()
-            .find(|(key, _)| key == var)
-            .map(|(_, value)| value.clone())
-    };
-    let inside = crate::skills::verbs::drafts::temp_of(piece.path())
-        .display()
-        .to_string();
-    let (settings, env) = armed(true);
+    let settings = armed(true);
     assert!(!asks_for_bash(&settings), "{settings}");
-    assert_eq!(
-        temp(&env, "CLAUDE_CODE_TMPDIR").as_deref(),
-        Some(inside.as_str())
-    );
-    // The program's own is left alone: its sandbox's sockets on Linux are made there.
-    assert_eq!(temp(&env, "TMPDIR"), None);
-    let (settings, env) = armed(false);
+    let settings = armed(false);
     assert!(asks_for_bash(&settings), "{settings}");
-    assert_eq!(temp(&env, "TMPDIR"), None);
-    assert_eq!(temp(&env, "CLAUDE_CODE_TMPDIR"), None);
 }

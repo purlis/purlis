@@ -1462,10 +1462,11 @@ fn try_it_starts_the_drafted_skill_unless_it_cannot_be_started_by_its_name() {
     }
 }
 
-/// #4476: an outcome eval's piece says whether its chat has a shell, as this machine's state
-/// alone says it, and one that has gets a folder of its own for temporary files inside it.
+/// #4476 (the person's choice of 2026-11-07): an outcome eval's piece says whether its chat has a
+/// shell, as this machine's state alone says it, and one that has gets a temp folder of its own in
+/// the system's, private to it, which goes with its piece; a second shell eval's is another.
 #[test]
-fn an_outcome_piece_says_whether_its_chat_has_a_shell_and_keeps_its_temp_folder_inside() {
+fn a_shell_evals_piece_has_a_private_temp_folder_of_its_own_that_goes_with_it() {
     let tmp = tempfile::tempdir().unwrap();
     let root = &std::fs::canonicalize(tmp.path()).unwrap();
     std::fs::write(root.join("charter.toml"), "schema = 1\n").unwrap();
@@ -1473,16 +1474,34 @@ fn an_outcome_piece_says_whether_its_chat_has_a_shell_and_keeps_its_temp_folder_
     let with = lay_out_arm(root, None).unwrap();
     stage(root, &with, &[], &inputs, true).unwrap();
     assert!(outcome_piece(root, &with.piece) && shell_piece(root, &with.piece));
-    let temp = temp_of(&with.piece);
-    assert!(temp.starts_with(&with.piece) && temp.is_dir(), "{temp:?}");
+    let temp = temp_of(root, &with.piece).expect("a temp folder");
+    assert!(temp.is_dir() && !temp.starts_with(&with.piece), "{temp:?}");
+    assert_eq!(temp.parent(), Some(std::env::temp_dir().as_path()));
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let mode = std::fs::metadata(&temp).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o700, "{mode:o}");
+    }
+    let other = lay_out_arm(root, None).unwrap();
+    stage(root, &other, &[], &inputs, true).unwrap();
+    let theirs = temp_of(root, &other.piece).expect("a temp folder");
+    assert_ne!(temp, theirs, "each shell eval's chat has its own");
     let without = lay_out_arm(root, None).unwrap();
     stage(root, &without, &[], &inputs, false).unwrap();
     assert!(outcome_piece(root, &without.piece));
     assert!(!shell_piece(root, &without.piece));
-    assert!(!temp_of(&without.piece).exists());
+    assert_eq!(temp_of(root, &without.piece), None);
     // A piece of no outcome eval, and a judge's, have none.
     let trigger = lay_out_arm(root, None).unwrap();
     assert!(!shell_piece(root, &trigger.piece));
     let judge = lay_out_judge(root, &[], None, "{}\n").unwrap();
     assert!(!shell_piece(root, &judge.piece));
+    assert_eq!(temp_of(root, &judge.piece), None);
+    // It goes with its piece, and only its own does.
+    end_try(root, &with.id).unwrap();
+    assert!(!temp.exists());
+    assert!(theirs.is_dir());
+    end_try(root, &other.id).unwrap();
+    assert!(!theirs.exists());
 }

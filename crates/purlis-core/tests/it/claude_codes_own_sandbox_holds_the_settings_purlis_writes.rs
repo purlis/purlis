@@ -637,13 +637,13 @@ fn a_chat_at_the_floor_makes_its_tools_folders_in_a_bare_home() {
 }
 
 /// **An outcome eval's shell, run by Claude Code's own sandbox on what purlis compiles for it**
-/// (#4476, the person's ruling of 2026-11-07): a command writes its piece and the temp folder in
-/// it, and is refused a write anywhere else, in the project, the home and the system's temp
-/// folder, and a connection to a host the project lists for its other chats, which purlis's own
-/// proxy refuses. The same project's other grade chats are given that host and its package
-/// caches, so the hold is what takes them away.
+/// (#4476, the person's rulings of 2026-11-07): a command writes its piece and its own temp
+/// folder, and is refused a write anywhere else, in the project, the home, the system's temp
+/// folder and another shell eval's piece and temp folder, and a connection to a host the project
+/// lists for its other chats, which purlis's own proxy refuses. The same project's other grade
+/// chats are given that host and its package caches, so the hold is what takes them away.
 #[test]
-fn an_outcome_evals_shell_writes_only_its_piece_and_reaches_no_host() {
+fn an_outcome_evals_shell_writes_only_its_own_folders_and_reaches_no_host() {
     purlis_core::unsteered!();
     use purlis_core::sandbox::egress;
     use purlis_core::skills::verbs::drafts;
@@ -667,10 +667,25 @@ fn an_outcome_evals_shell_writes_only_its_piece_and_reaches_no_host() {
         home: Some(home.clone()),
         os: Os::this(),
     };
+    // Two shell evals' chats of one grade, each with its piece and its temp folder; both go,
+    // temp folders and all, however the test ends.
+    struct Ended<'a>(&'a Path, Vec<String>);
+    impl Drop for Ended<'_> {
+        fn drop(&mut self) {
+            for id in &self.1 {
+                let _ = drafts::end_try(self.0, id);
+            }
+        }
+    }
     let arm = drafts::lay_out_arm(&root, None).expect("an arm's piece");
-    drafts::stage(&root, &arm, &[], &Default::default(), true).expect("staged with a shell");
+    let second = drafts::lay_out_arm(&root, None).expect("another arm's piece");
+    let _ended = Ended(&root, vec![arm.id.clone(), second.id.clone()]);
+    for one in [&arm, &second] {
+        drafts::stage(&root, one, &[], &Default::default(), true).expect("staged with a shell");
+    }
     let piece = arm.piece.clone();
-    let temp = drafts::temp_of(&piece);
+    let temp = drafts::temp_of(&root, &piece).expect("its temp folder");
+    let other_temp = drafts::temp_of(&root, &second.piece).expect("the other's temp folder");
     let decide = || {
         let decided = sandbox::decide(Harness::ClaudeCode, &root, &machine, &|_| true, None, None)
             .expect("decided")
@@ -741,28 +756,27 @@ fn an_outcome_evals_shell_writes_only_its_piece_and_reaches_no_host() {
         .to_string(),
     )
     .expect("the settings");
-    // The program's own temp folder, as a start leaves it: outside the piece.
-    let own_tmp = at.join("tmp");
-    fs::create_dir_all(&own_tmp).expect("a temp folder");
     let command = format!(
         "w() {{ if (mkdir -p \"$(dirname \"$1\")\" && echo x > \"$1\") 2>/dev/null; \
          then echo \"wrote $2\"; else echo \"refused $2\"; fi; }}; \
          w '{piece}/made.txt' piece; w \"$TMPDIR/made.txt\" temp; echo \"temp at $TMPDIR\"; \
          w '{root}/outside.txt' project; w '{home}/outside.txt' home; \
-         w '{own_tmp}/outside.txt' program-tmp; \
+         w '{other_piece}/made.txt' other-piece; w '{other_temp}/made.txt' other-temp; \
          w /tmp/purlis-4476-$$ tmp; w /tmp/claude/purlis-4476-$$ claude-tmp; \
          if curl -sS -m 20 -o /dev/null https://example.com/ 2>/dev/null; \
          then echo 'reached example.com'; else echo 'refused example.com'; fi",
         piece = piece.display(),
         root = root.display(),
         home = home.display(),
-        own_tmp = own_tmp.display(),
+        other_piece = second.piece.display(),
+        other_temp = other_temp.display(),
     );
     let what = "an outcome eval's shell";
+    // As its start hands it its temp folder: the program's and Claude Code's.
     let said = ran_with(
         &program,
         &home,
-        &own_tmp,
+        &temp,
         &piece,
         &file,
         &["--setting-sources".to_owned(), String::new()],
@@ -775,7 +789,8 @@ fn an_outcome_evals_shell_writes_only_its_piece_and_reaches_no_host() {
         ("wrote temp", "it writes its temp folder"),
         ("refused project", "the project outside its piece"),
         ("refused home", "the home"),
-        ("refused program-tmp", "the program's own temp folder"),
+        ("refused other-piece", "another shell eval's piece"),
+        ("refused other-temp", "another shell eval's temp folder"),
         ("refused tmp", "the system's temp folder"),
         ("refused claude-tmp", "Claude Code's own temp folder"),
         ("refused example.com", "a host the project lists"),
@@ -785,15 +800,16 @@ fn an_outcome_evals_shell_writes_only_its_piece_and_reaches_no_host() {
             "{what}: {why}:\n{said}"
         );
     }
-    // Claude Code hands each command a temp folder of its own inside the one it was given.
+    // Claude Code hands each command a temp folder inside the one the chat was given.
     assert!(
         said.lines().any(|line| line
             .trim()
             .strip_prefix("temp at ")
             .is_some_and(|at| Path::new(at).starts_with(&temp))),
-        "{what}: its temp folder is in its piece:\n{said}"
+        "{what}: its commands' temp folder is its own:\n{said}"
     );
     assert!(!root.join("outside.txt").exists() && !home.join("outside.txt").exists());
+    assert!(!second.piece.join("made.txt").exists() && !other_temp.join("made.txt").exists());
     // Refused by purlis's proxy, where this Claude Code hands its connections to one.
     let refused = refusals.refused();
     assert!(
