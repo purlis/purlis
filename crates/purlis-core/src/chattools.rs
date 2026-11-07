@@ -729,8 +729,7 @@ pub static TOOLS: [Tool; 29] = [
         name: SESSION_RECORD,
         description: "Write this chat's session record: a summary of this session, never the \
                       transcript, that the next chat reads to pick up where this one stopped. \
-                      purlis writes it where this chat works and says whether the tab now \
-                      closes, which it does when the person started a smart close. The body is \
+                      purlis writes it where this chat works and says whether the chat now ends, which it does when the person started a smart close. The body is \
                       exactly the sections ## Goal, ## Done, ## Decisions, ## Open and \
                       ## How to resume, in that order. Never a secret.",
         schema: || {
@@ -967,8 +966,7 @@ pub static TOOLS: [Tool; 29] = [
         name: DISPATCH_LIST,
         description: "List the tasks this chat dispatched: each one's chat number, name, \
                       persona, where it works, its state and how long ago it started. A task \
-                      ends at its report, and stays listed as finished until its row is cleared \
-                      or this chat closes.",
+                      ends at its report, and stays listed as finished until its row is cleared or this chat ends.",
         schema: || json!({"type": "object", "properties": {}, "additionalProperties": false}),
         read_only: true,
     },

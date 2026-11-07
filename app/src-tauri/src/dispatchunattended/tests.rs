@@ -296,7 +296,7 @@ fn a_chat_still_holding_another_s_grants_dispatches_to_nobody_unattended() {
             Requested::Refused(
                 "this chat still runs on the grants of the chat that opened it, and it runs \
                  with its harness's permission prompts off, so nobody is here to allow it its \
-                 own. It dispatches to nobody until a person allows them on its tab."
+                 own. It dispatches to nobody until a person allows them."
                     .to_owned()
             ),
             "{target}"

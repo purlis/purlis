@@ -5,9 +5,9 @@ description: Close this chat by writing its session record — a summary of this
 
 # Smart close
 
-The chat is closing. Leave behind a **session record**: a summary the next chat reads to pick up
-where this one stopped. A summary, never the transcript. The last command below is what closes
-the tab, so run it last, once.
+The chat is ending. Leave behind a **session record**: a summary the next chat reads to pick up
+where this one stopped. A summary, never the transcript. The last command below is what ends this
+chat, so run it last, once.
 
 ## 1. Review the session
 
@@ -75,6 +75,6 @@ RECORD
 ```
 
 A refusal says what to fix: fix it and write the record again. Done when the answer names the
-record's path. Then stop: when the operator started this close, the app closes this tab once this
-turn ends. When the answer says the tab will not close by itself, tell the operator the record is
-written and the tab is theirs to close.
+record's path. Then stop: when the operator started this close, the app ends this chat once this
+turn ends, and its pane keeps the last screen. When the answer says the chat will not end by itself,
+tell the operator the record is written and the chat is theirs to end.

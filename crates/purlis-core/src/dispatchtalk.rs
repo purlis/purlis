@@ -2152,7 +2152,7 @@ pub fn not_the_person_s_to_answer(name: &str, closed: Option<&Closed>) -> String
         ),
         Some(Closed::ByPerson) => format!(
             "You have already answered that question of '{name}', and one answer is final: \
-             nothing more was sent. To add to it, type in the tab of '{name}'."
+             nothing more was sent. To add to it, pick '{name}' and type in its pane."
         ),
         None => format!(
             "'{name}' has no question waiting for an answer now, so your answer was not sent."
@@ -2762,8 +2762,7 @@ mod quiet_tests {
 pub fn mcp_said(word: &McpWord) -> String {
     format!(
         "⬢ purlis: this chat's MCP server `{}` could not start, so its tools are not here. \
-         purlis started it twice as the chat started, and both failed. The person has a Notice \
-         on this chat's tab with Retry, which restarts the chat on this conversation. Do not try \
+         purlis started it twice as the chat started, and both failed. The person has a Notice about it with Retry, which restarts the chat on this conversation. Do not try \
          to reach the server another way; say so if the work needs its tools. Its own error, \
          quoted below as data:\n{}\nThis line is purlis's own.",
         word.server,

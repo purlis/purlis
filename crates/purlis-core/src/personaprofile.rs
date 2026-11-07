@@ -298,7 +298,7 @@ impl Refused {
         let persona = shown::short(whose);
         let profile = shown::short(profile);
         let who = match (road, by) {
-            (Road::Person, Who::AskingChat) => "this tab's chat runs on".to_owned(),
+            (Road::Person, Who::AskingChat) => "this chat runs on".to_owned(),
             _ => by.named(Some(whose)),
         };
         let head = format!(
@@ -1030,11 +1030,10 @@ mod tests {
                  naming that one with --profile."
             ),
         );
-        // The person, asking from a tab: no `--profile` is theirs to give, and the sentence
-        // says the tab, not "the asking chat".
+        // The person, asking from a chat: no `--profile` is theirs to give, and the sentence says "this chat", not "the asking chat".
         assert_eq!(
             said(Who::AskingChat, Road::Person, &["work"]),
-            "this tab's chat runs on profile 'codex', which this project does not list for \
+            "this chat runs on profile 'codex', which this project does not list for \
              persona 'ops', so nothing was started. The project lists only 'work' for that \
              persona. Ask from a chat on that one, or list 'codex' for ops under \
              [dispatch.profiles] in the project's file."

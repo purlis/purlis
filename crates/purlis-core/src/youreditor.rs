@@ -453,7 +453,7 @@ fn exited_at_once(program: &str, status: std::process::ExitStatus, printed: &[u8
         None => format!(
             "{program} exited at once, {how}: a terminal editor needs a terminal, and purlis \
              opens only the terminal editors it knows (vi, vim, nvim, nano, emacs -nw, hx, \
-             micro, kak and others) in a shell tab. Set $VISUAL to one of those or to an editor \
+             micro, kak and others) beside the pane you are in. Set $VISUAL to one of those or to an editor \
              that opens its own window, or choose VS Code, Zed or a JetBrains IDE in Settings"
         ),
     }

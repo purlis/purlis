@@ -96,7 +96,7 @@ pub(crate) fn tab_chat(program: String, args: Vec<OsString>, cwd: PathBuf) -> Re
         .map(|arg| {
             arg.into_string().map_err(|arg| {
                 format!(
-                    "{} is not UTF-8, and a terminal editor's tab records its words as text, \
+                    "{} is not UTF-8, and a terminal editor's pane records its words as text, \
                      so nothing was opened. Choose VS Code, Zed or a JetBrains IDE in Settings \
                      to open it",
                     Path::new(&arg).display()

@@ -2785,7 +2785,7 @@ pub fn sign_in(wait: &purlis_core::profilestore::sign_in::Wait) -> Shown {
         ask: format!("sign-in:{name}"),
         says: said_inertly(&format!(
             "{name} is not signed in on {}: a chat on it does not start until it is. Sign in \
-             runs {}'s own sign-in in a shell tab",
+             runs {}'s own sign-in in a shell",
             purlis_core::profilestore::this_device(),
             wait.harness
         )),
@@ -2903,7 +2903,7 @@ pub fn sandbox_only(_wait: &purlis_core::profilestore::sandbox_only::Wait) -> Sh
         says: said_inertly(&format!(
             "{ASK}: a sandboxed Codex chat runs only on a profile for sandboxed chats only, so \
              your own Codex is never written by one. Make one makes it and runs Codex's own \
-             sign-in in a shell tab"
+             sign-in in a shell"
         )),
         options: vec![
             Offered {

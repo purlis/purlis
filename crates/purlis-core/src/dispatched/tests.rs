@@ -1191,7 +1191,7 @@ fn the_list_says_persona_task_where_state_and_age_for_each() {
     assert_eq!(
         list_text(&[]),
         "This chat has no dispatched tasks to list. A task is listed from its dispatch until \
-         its finished row is cleared or this chat closes."
+         its finished row is cleared or this chat ends."
     );
 
     // #1453: a task given a worktree of its own is listed with the branch purlis cut and

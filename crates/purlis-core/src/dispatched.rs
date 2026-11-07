@@ -2449,7 +2449,7 @@ pub const STARTED_BY_THE_PERSON: &str = " · started by the person from this cha
 pub fn list_text(rows: &[Row]) -> String {
     if rows.is_empty() {
         return "This chat has no dispatched tasks to list. A task is listed from its dispatch \
-                until its finished row is cleared or this chat closes."
+                until its finished row is cleared or this chat ends."
             .to_owned();
     }
     // A task the person started from this chat is listed, and said to be theirs.

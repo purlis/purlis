@@ -2452,7 +2452,7 @@ fn list(held: &Held, asker: u32) -> Vec<Row> {
         })
         .collect();
     // Then the ones that have finished, whose programs purlis ended (#1485): from their
-    // dispatch records, until their rows are cleared or this chat closes. With them the ones
+    // dispatch records, until their rows are cleared or this chat ends. With them the ones
     // orphaned by a restart (#3900), marked so.
     rows.extend(crate::finished::listed_for(held, asker));
     rows

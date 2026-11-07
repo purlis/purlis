@@ -246,12 +246,12 @@ export const whereYouAnswerSetting: LiveSetting = {
             {
               value: "top",
               label: "From the top",
-              says: "One question at a time, in the session's tab.",
+              says: "One question at a time, on the chat you started.",
             },
             {
               value: "each",
               label: "From each session",
-              says: "Each question waits in its task's own tab.",
+              says: "Each question waits on its own task.",
             },
           ]}
           value={answer}

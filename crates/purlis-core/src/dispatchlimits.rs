@@ -224,11 +224,11 @@ impl Limit {
             }
             Self::QuietNoteMinutes => {
                 "Minutes a task at work may go without a word from its harness before purlis \
-                 says so to the chat that asked and on the task's tab. It never ends the task."
+                 says so to the chat that asked and in a Notice on the task. It never ends the task."
             }
             Self::OneCommandNoteMinutes => {
                 "Minutes one command of a task may run before purlis says so, naming its \
-                 program, to the chat that asked and on the task's tab. It never ends the task."
+                 program, to the chat that asked and in a Notice on the task. It never ends the task."
             }
         }
     }

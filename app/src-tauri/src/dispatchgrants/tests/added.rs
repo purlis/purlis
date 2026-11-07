@@ -162,7 +162,7 @@ fn every_rule_an_allow_is_held_to_refuses_it_with_nothing_audited() {
     let (store, _) = store();
     let refused = |asked: Result<String, String>| asked.expect_err("refused");
 
-    // Never for one chat: that is the chat's tab.
+    // Never for one chat: that is asked in the Inbox.
     assert!(
         refused(add(
             &world,
@@ -171,7 +171,7 @@ fn every_rule_an_allow_is_held_to_refuses_it_with_nothing_audited() {
             Level::Chat,
             None
         ))
-        .contains("chat's tab")
+        .contains("when it asks, in the Inbox")
     );
     // A persona's dispatch to itself needs no grant, so none is kept.
     assert_eq!(

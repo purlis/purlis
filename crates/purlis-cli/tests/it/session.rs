@@ -243,7 +243,7 @@ fn a_line_the_socket_refused_is_passed_on_by_the_chats_next_stop_once() {
 }
 
 #[test]
-fn with_no_app_to_tell_the_record_is_still_written_and_the_operator_is_told_what_becomes_of_the_tab()
+fn with_no_app_to_tell_the_record_is_still_written_and_the_operator_is_told_what_becomes_of_the_chat()
  {
     let tmp = daily();
     let gone = tmp.path().join("gone.sock");
@@ -266,9 +266,9 @@ fn with_no_app_to_tell_the_record_is_still_written_and_the_operator_is_told_what
         // With no socket at all this is no chat the app started; with one that did not answer,
         // the line waits for the chat's Stop hook, and the operator is told either way.
         let said = if env.len() == 1 {
-            "will not close by itself"
+            "will not end by itself"
         } else {
-            "close it yourself"
+            "end it yourself"
         };
         assert!(err(&ran).contains(said), "{}", err(&ran));
     }
@@ -503,7 +503,7 @@ fn in_a_chat_the_app_started_the_app_writes_the_record_and_the_command_writes_no
 
     assert!(ran.status.success(), "{}", err(&ran));
     assert_eq!(out(&ran).trim(), shown);
-    assert!(err(&ran).contains("closes this tab"), "{}", err(&ran));
+    assert!(err(&ran).contains("ends this chat"), "{}", err(&ran));
     let hookwire::Ask::SessionRecord(ask) = asked.recv_timeout(Duration::from_secs(5)).unwrap()
     else {
         panic!("the app was not asked for a record");
@@ -519,7 +519,7 @@ fn in_a_chat_the_app_started_the_app_writes_the_record_and_the_command_writes_no
 }
 
 #[test]
-fn with_no_smart_close_started_the_command_says_the_tab_is_the_operators() {
+fn with_no_smart_close_started_the_command_says_the_chat_is_the_operators_to_end() {
     let tmp = daily();
     let socket = tmp.path().join("app").join("hooks.sock");
     let (_reading, token, _asked) = an_app_answering(
