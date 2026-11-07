@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794089564945,
+  "lastUpdate": 1794091490265,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -42672,6 +42672,48 @@ window.BENCHMARK_DATA = {
             "value": 106.072371,
             "unit": "ms",
             "extra": "median of 5 runs: 102.259, 104.898, 106.072, 106.202, 107.641 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "03dbe74a3e02718f99b212203dad14a34c2de3ce",
+          "message": "Opening a task beside names the chat it opens beside (#5679) (#5705)\n\n* Opening a task beside names the chat it opens beside (#5679)\n\nThe button on a task's line in a chat's tasks menu says its catalogue row's\ntitle (\"Open talk beside steward 1\"), as the palette and the task's menus\ndo, read through the same row it presses. The palette's row for the task in\nfront says \"beside the chat that asked for it\", not \"beside its session\".\n\nbackTitle keeps naming no chat; its doc says why.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6VMK6V25PC49G9C5A58DQT5\nPurlis-Persona: steward\n\n* Changelog fragment for #5679\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6VMK6V25PC49G9C5A58DQT5\nPurlis-Persona: steward\n\n* Review follow-ups for #5679: the chat that asked, in the comments and tests this change touches\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6VMK6V25PC49G9C5A58DQT5\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-07T21:49:44Z",
+          "tree_id": "777127e691cd3be1ebbf4515ad4b27d7d9bb1ef5",
+          "url": "https://github.com/purlis/purlis/commit/03dbe74a3e02718f99b212203dad14a34c2de3ce"
+        },
+        "date": 1794091485046,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5112285,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.509, 0.509, 0.511, 0.518, 0.530 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.280026999999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.197, 16.260, 16.280, 16.365, 16.611 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.3011945,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.114, 100.319, 101.301, 101.833, 101.948 ms"
           }
         ]
       }
