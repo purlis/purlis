@@ -268,6 +268,5 @@ export const OverARealTerminal: StoryObj<typeof OverATerminal> = {
     // settle, so its picture is the same on every run (#4771's second run caught it mid-fade).
     await new Promise((settled) => setTimeout(settled, 1500));
     await Promise.all(host.getAnimations({ subtree: true }).map((fading) => fading.finished));
-    expectFrameOnItsLine(canvasElement, "settled");
   },
 };

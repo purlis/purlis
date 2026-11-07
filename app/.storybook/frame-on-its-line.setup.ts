@@ -6,7 +6,8 @@
  * browsers, after every story: the frame is what a picture is taken of (`screenshots.setup.ts`),
  * and one standing a fraction of a pixel low comes out a row taller. Checked where no picture is
  * taken too, so a frame that moves is caught in the run that moves it, not in the run whose
- * picture happens to miss.
+ * picture happens to miss. In both browsers, unlike the faded-words and parts checks: where a
+ * frame stands is the engine's own layout, and the miss that found it was WebKit's alone.
  */
 import { afterEach, expect } from "vitest";
 import { framesOffTheirLine } from "../src/stories.testkit";
