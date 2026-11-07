@@ -1,0 +1,3 @@
+# The studio capabilities need no flag
+
+**Amends [ADR 0053](../0053-an-extension-is-granted-capabilities-one-at-a-time.md), 2026-11-04**, ticket #2786 (SK-23). [The 2026-10-20 amendment](2026-10-20-six-studio-capabilities-experimental-until-the-finish-line.md) said the six studio capabilities are experimental while the `skill-studio` flag is on. The flag is gone ([ADR 0101 as amended 2026-11-04](../0101/2026-11-04-the-studio-words-are-known-on-every-machine.md)), so every machine knows all six words. Which are version 1 and which stay experimental is [the 2026-11-02 amendment](2026-11-02-three-studio-capabilities-are-version-one.md)'s, unchanged.

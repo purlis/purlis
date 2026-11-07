@@ -60,6 +60,7 @@ describe("the + list's rows (#5292)", () => {
       "Shared memory",
       "Dispatches",
       "Browsers",
+      "Skill studio",
     ]);
   });
 
@@ -78,7 +79,7 @@ describe("the + list's rows (#5292)", () => {
   });
 
   it("grow with the catalogue: a view it offers is a row", () => {
-    const rows = newTabRows(catalogue(now({ plane: PLANE, skillStudio: true })));
+    const rows = newTabRows(catalogue(now({ plane: PLANE })));
 
     expect(rows.map((row) => row.said)).toContain("Skill studio");
   });

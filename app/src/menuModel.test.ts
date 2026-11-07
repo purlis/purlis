@@ -468,6 +468,7 @@ describe("a chat's list (#4753)", () => {
     expect(said(menu)).toEqual([
       [
         "Rename…",
+        "Use skill…",
         `Ask ▸ [${PERSONAS.map((one) => `${one}…`).join(", ")}]`,
         "Link to work item…",
         "Unlink work item",
@@ -476,7 +477,7 @@ describe("a chat's list (#4753)", () => {
       [
         "Go to qa 12",
         "Move…",
-        "Open ▸ [Focus workspace beta, Activity, Network]",
+        "Open ▸ [Focus workspace beta, Skills, Activity, Network]",
         "Ignore until it asks again",
       ],
       ["Restart"],
@@ -493,6 +494,7 @@ describe("a chat's list (#4753)", () => {
     const none = world({ ask: { personas: [], locked: null } });
     expect(said(menuOf({ on: "chat", session: 7 }, none.offers))[0]).toEqual([
       "Rename…",
+      "Use skill…",
       "Link to work item…",
       "Unlink work item",
     ]);
@@ -676,13 +678,18 @@ describe("the other tabs' menus", () => {
 
   it("a task's list, which has its own two ends and no End…", () => {
     expect(said(menuOf({ on: "chat", session: 11 }, offers))).toEqual([
-      ["Rename…", `Ask ▸ [${PERSONAS.map((one) => `${one}…`).join(", ")}]`, "Link to work item…"],
+      [
+        "Rename…",
+        "Use skill…",
+        `Ask ▸ [${PERSONAS.map((one) => `${one}…`).join(", ")}]`,
+        "Link to work item…",
+      ],
       [
         "Move to its own tab",
         "Open beside console-developer 16",
         "Move…",
         "Brief",
-        "Open ▸ [Focus workspace beta, Go to console-developer 16, Activity, Network]",
+        "Open ▸ [Focus workspace beta, Go to console-developer 16, Skills, Activity, Network]",
       ],
       ["Restart"],
       ["Start fresh", "Stop and get its report", "Close now"],

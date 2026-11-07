@@ -7,8 +7,7 @@ import { endEveryChat, pressAndStart } from "../opening.js";
 import { USED_SKILL } from "../harness.js";
 
 /**
- * **Use skill… on a Codex chat** (SK-12, #2775), in the built app against the real core, with the
- * `skill-studio` flag on for the run (`wdio.state.conf.ts`).
+ * **Use skill… on a Codex chat** (SK-12, #2775), in the built app against the real core.
  *
  * The base run cannot start a Codex chat on macOS and Linux (a Codex chat runs only on the
  * sandbox-only profile, #2037); this run's profile is one, and its reporting harness says it waits

@@ -3,7 +3,7 @@
 
 //! `purlis skill pin` on a temporary project (SK-15, #2778; ADR 0102 §4): past the budget the
 //! router hides every plane skill that is not pinned, and `purlis skill list` says which are
-//! pinned and why each other one is hidden. Behind the `skill-studio` flag.
+//! pinned and why each other one is hidden.
 
 use crate::support;
 
@@ -40,7 +40,6 @@ fn run(at: &Path, args: &[&str]) -> Output {
         .env("CHARTER_ROOT", &root)
         .env("HOME", at.join("home"))
         .env("PURLIS_CONFIG_HOME", at.join("home/config"))
-        .env("PURLIS_SKILL_STUDIO", "1")
         .env("NO_COLOR", "1");
     // Run from a terminal, even where this test runs inside a chat.
     crate::support::at_a_terminal(&mut command);

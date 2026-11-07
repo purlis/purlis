@@ -23,6 +23,7 @@ import type {
 } from "../bindings";
 import { pickIn, querySelectNamed } from "../ui/select/select.testkit";
 import { tipOf } from "../ui/tooltip/tooltip.testkit";
+import { skill, studio } from "../skillsListing.testkit";
 
 /**
  * **The Settings tab at the Project level** (SE-17, #1167; the spec on #558, V89b, V89e, V89h):
@@ -193,6 +194,9 @@ function core({
       switch (cmd) {
         case "project_chats_run_on":
           return { pool: null, pools: [] };
+        // The Skills group reads the studio, which is always on since #2786.
+        case "skill_studio":
+          return studio([skill("deploy")]);
         case "project_settings":
           reads += 1;
           return { shared: files.shared, local: files.local };
@@ -326,6 +330,7 @@ describe("the Project level", () => {
         "Saving",
         "Harness & profiles",
         "work",
+        "Skills",
         "Sandbox",
         "Your hosts",
         "Your level",

@@ -84,7 +84,7 @@ impl ServerHandler for Server {
         _context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, ErrorData> {
         // The skill tools (SK-13), only where the project's skills reach this chat: the
-        // `skill-studio` flag, or a project that requires them (#2784).
+        // start's word, or a project that requires them (#2784).
         let skills: &[chattools::Tool] = if skills_reach_here() {
             &purlis_core::skilltools::TOOLS
         } else {
@@ -272,11 +272,11 @@ impl ServerHandler for Server {
 }
 
 /// Whether the project's skills reach this chat ([`purlis_core::skills::reach_chats_here`]): the
-/// skill tools are listed and answered only then. Outside a plane, as the flag says.
+/// skill tools are listed and answered only then. Outside a plane, as its start said.
 fn skills_reach_here() -> bool {
     match crate::Here::read() {
         Ok(here) => purlis_core::skills::reach_chats_here(here.plane.root()),
-        Err(_) => purlis_core::skills::studio_on_here(),
+        Err(_) => purlis_core::skills::started_with(&|name| std::env::var(name).ok()),
     }
 }
 

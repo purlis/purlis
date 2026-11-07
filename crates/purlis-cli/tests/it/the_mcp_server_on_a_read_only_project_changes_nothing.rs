@@ -299,6 +299,12 @@ fn arguments(tool: &str, todo: &str) -> Value {
         browser if purlis_core::browsertools::is_one(browser) => json!({}),
         // The theme specimen (#2330) is the app's to draw, from its own fixture.
         "theme_preview" => json!({ "theme": "purlis-classic" }),
+        // The skill tools (SK-13), listed in every chat since the Skill studio's flag went
+        // (#2786). A load of a skill no chat has opens no run, so it writes nothing either.
+        "skill_list" => json!({}),
+        "skill_runs" => json!({}),
+        "skill_find" => json!({ "query": "deploy" }),
+        "skill_load" => json!({ "name": "no-such-skill" }),
         other => panic!("no arguments for {other}: add it to this test"),
     }
 }
@@ -329,6 +335,7 @@ fn every_tool_leaves_every_file_of_a_read_only_project_as_it_was() {
         .iter()
         .chain(purlis_core::browsertools::TOOLS.iter())
         .chain(purlis_core::themepreview::TOOLS.iter())
+        .chain(purlis_core::skilltools::TOOLS.iter())
         .map(|tool| tool.name)
         .collect();
     assert_eq!(listed, every, "the server lists every tool");

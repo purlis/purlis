@@ -156,9 +156,9 @@ function core(
       if (cmd === "asks_waiting") return { plane: PLANE, asks: [] };
       if (cmd === "mcp_failures") return [];
       if (cmd === "smart_closing") return [];
-      if (cmd === "skill_studio_on") return true;
       if (cmd === "skill_drafts") return [];
-      if (cmd === "skill_studio") return { on: false };
+      // The studio chip opens its tab; what that tab reads is not what these tests look at.
+      if (cmd === "skill_studio") return new Promise(() => {});
       if (cmd === "chat_skills") return skillsOf;
       if (cmd === "open_view") return { kind: "gone", why: "Not read in this test." };
       return null;

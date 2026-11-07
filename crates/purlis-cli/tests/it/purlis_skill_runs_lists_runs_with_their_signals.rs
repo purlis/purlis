@@ -3,7 +3,7 @@
 
 //! `purlis skill runs` on a temporary project (SK-3, #2766): every skill run the plane's skill
 //! log holds, newest first, with its signals and never a verdict, and the rows written before
-//! runs read as runs, behind the `skill-studio` flag.
+//! runs read as runs.
 
 use crate::support;
 
@@ -43,7 +43,7 @@ impl Project {
         Project { _tmp: tmp, at }
     }
 
-    fn run(&self, args: &[&str], studio: &str) -> Output {
+    fn run(&self, args: &[&str]) -> Output {
         let root = self.at.join("plane");
         support::purlis()
             .args(args)
@@ -51,7 +51,6 @@ impl Project {
             .env("CHARTER_ROOT", &root)
             .env("HOME", self.at.join("home"))
             .env("PURLIS_CONFIG_HOME", self.at.join("home/config"))
-            .env("PURLIS_SKILL_STUDIO", studio)
             .env("NO_COLOR", "1")
             .output()
             .unwrap()
@@ -66,7 +65,7 @@ fn stdout(out: &Output) -> String {
 fn skill_runs_lists_every_run_newest_first_with_its_signals_and_never_a_verdict() {
     let p = Project::new();
 
-    let out = p.run(&["skill", "runs"], "1");
+    let out = p.run(&["skill", "runs"]);
 
     assert!(
         out.status.success(),
@@ -98,7 +97,7 @@ fn skill_runs_lists_every_run_newest_first_with_its_signals_and_never_a_verdict(
 fn skill_runs_of_one_skill_matches_it_with_or_without_its_namespace_and_answers_json() {
     let p = Project::new();
 
-    let out = p.run(&["skill", "runs", "purlis-secrets", "--json"], "1");
+    let out = p.run(&["skill", "runs", "purlis-secrets", "--json"]);
 
     assert!(out.status.success());
     let runs: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
@@ -108,18 +107,10 @@ fn skill_runs_of_one_skill_matches_it_with_or_without_its_namespace_and_answers_
     assert_eq!(runs[0]["started_by"], serde_json::Value::Null);
     assert_eq!(runs[0]["device"], "laptop");
 
-    let deploy = p.run(&["skill", "runs", "deploy", "--json"], "1");
+    let deploy = p.run(&["skill", "runs", "deploy", "--json"]);
     let deploy: serde_json::Value = serde_json::from_slice(&deploy.stdout).unwrap();
     assert_eq!(deploy["runs"][0]["end"]["tool_calls"], 7);
     assert_eq!(deploy["runs"][0]["end"]["tokens"], 5300);
-}
-
-#[test]
-fn skill_runs_waits_for_the_skill_studio_flag() {
-    let p = Project::new();
-    let out = p.run(&["skill", "runs"], "0");
-    assert_eq!(out.status.code(), Some(1));
-    assert!(stdout(&out).is_empty());
 }
 
 /// SK-47: SIGNALS is the last column of `skill runs`, which nothing pads, and it names the skills
@@ -143,7 +134,7 @@ fn skill_runs_shows_a_nested_skill_s_name_escaped_in_every_column() {
     )
     .unwrap();
 
-    let out = p.run(&["skill", "runs"], "1");
+    let out = p.run(&["skill", "runs"]);
 
     assert!(
         out.status.success(),

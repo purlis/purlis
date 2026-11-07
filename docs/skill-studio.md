@@ -8,10 +8,6 @@ install, change, grade and share them.
 This page is for people who use purlis and want their chats to work their way. You don't need
 to know how any chat program reads its skills: purlis hands each chat its skills itself.
 
-> **The Skill studio is a preview.** Turn it on in **Settings › You › Previews**, with the
-> **Skill studio** switch. The switch is kept on this machine. Previews are features still being
-> built, so a few things on this page may change before the studio is finished.
-
 ## What a skill is
 
 A skill is a folder with a `SKILL.md` file in it. The file starts with the skill's **name** and a

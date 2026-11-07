@@ -68,8 +68,7 @@ fn here() -> Here {
     }
 }
 
-/// What the host does before an adapter arms the persona's chat in the workspace, with the flag
-/// on: lay out the folder of links, then arm the chat with it.
+/// What the host does before an adapter arms the persona's chat in the workspace: lay out the folder of links, then arm the chat with it.
 fn host_armed(harness: Harness, here: &Here) -> (Vec<String>, Vec<(String, String)>) {
     let host = purlis_core::hoststart::Kit {
         binary: Some(PathBuf::from("/bin/purlis")),
