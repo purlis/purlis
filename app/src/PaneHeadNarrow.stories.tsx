@@ -8,13 +8,18 @@
  * each state's glyph is drawn once at every width. Its word is still heard, from the mark.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect } from "storybook/test";
+import { expect, waitFor } from "storybook/test";
+import { mockIPC } from "@tauri-apps/api/mocks";
+import type { ChatBrowser } from "./bindings";
+import { PaneBrowsers } from "./ChatBrowsersShown";
+import { SkillRunChip } from "./SkillRunChip";
+import { SkillRunsHere, fixedRuns } from "./skillRuns";
 import { expectFocusInSight, untilFocused } from "./stories.testkit";
 import { ChatPersonaState } from "./ChatPersonaState";
 import { ChatsHere, fixedChats, nothingKnown, type ChatStates } from "./chatState";
 import { PaneHead, PaneTasksWord, type TasksOn } from "./LayoutPanes";
 import type { ChatHead } from "./paneHead";
-import { paneLinesOf } from "./paneHead";
+import { HEAD_DROPS, paneLinesOf } from "./paneHead";
 import { QuestionsHere } from "./QuestionsHere";
 import type { QuestionsHeld } from "./taskQuestions";
 import type { ChatRow } from "./chatsTree";
@@ -215,5 +220,130 @@ export const TasksButtonWithNoWord: Story = {
     await userEvent.tab();
     await untilFocused(() => button, "Tab onto the head's tasks button");
     expectFocusInSight();
+  },
+};
+
+/** A chat that uses something now: a skill's run open, and two browsers (#5524). */
+const USING = listed(21, "using things");
+
+/** The run open in {@link USING}, as the core tells it. */
+const RUN = {
+  skill: "deploy",
+  name: "deploy",
+  id: "01RUN",
+  tool_calls: 2,
+  tokens: null,
+  level: null,
+};
+
+/** One browser of {@link USING}'s, as the core lists it. */
+function aBrowser(name: string): ChatBrowser {
+  return {
+    session: USING.session,
+    name,
+    program: `browser-${name}`,
+    unended: false,
+    pinned: false,
+    was: null,
+    login: null,
+    driver: null,
+    pool: null,
+    secrets: [],
+  };
+}
+
+const BROWSERS = [aBrowser("b1"), aBrowser("b2")].map((browser) => ({
+  browser,
+  chat: USING.name,
+}));
+
+/** **The widths the head is drawn at**: either side of where the state's word and what the chat
+ *  uses go, then where the button's word and the mark do (`HEAD_DROPS`). */
+const WIDTHS = [470, 450, 449, 379] as const;
+
+/** {@link USING}'s head in a pane `width` pixels wide, drawing what that width leaves it. */
+function UsingHead({ width }: { width: number }) {
+  const line = new Set(paneLinesOf("chat", width, { using: true }).head);
+  return (
+    <div className="pane-frame pane-headed" style={{ inlineSize: width, blockSize: 56 }}>
+      <div className="pane-top">
+        <PaneHead grip={false} doing={null}>
+          <div className="pane-chips" data-width={width}>
+            <span className="pane-persona">
+              <ChatPersonaState
+                persona={USING.persona}
+                session={USING.session}
+                shell={USING.shell}
+                report={USING.report}
+                outcome={USING.outcome}
+                harness={USING.harness}
+              />
+            </span>
+            <span className="pane-name">{USING.name}</span>
+            <PaneTasksWord
+              session={USING.session}
+              at={undefined}
+              word={line.has("mark")}
+              markWord={line.has("markWord")}
+              chat={USING}
+            />
+            {line.has("using") && (
+              <span className="pane-using">
+                <SkillRunChip session={USING.session} onOpen={() => undefined} />
+                <PaneBrowsers browsers={BROWSERS} onOpen={() => undefined} />
+              </span>
+            )}
+          </div>
+        </PaneHead>
+      </div>
+    </div>
+  );
+}
+
+/** {@link USING}'s head at each of {@link WIDTHS}. */
+function UsingHeads() {
+  return (
+    <ChatsHere.Provider value={fixedChats({ ...STATES, bySession: { 21: "running" } })}>
+      <SkillRunsHere.Provider value={fixedRuns({ [USING.session]: RUN })}>
+        <div style={{ display: "grid", gap: "var(--space-3)" }}>
+          {WIDTHS.map((width) => (
+            <UsingHead key={width} width={width} />
+          ))}
+        </div>
+      </SkillRunsHere.Provider>
+    </ChatsHere.Provider>
+  );
+}
+
+/**
+ * **What the chat uses, in the head's narrow order** (#5614): its skill run and its browsers go
+ * together after the state's word and before the button's word and the mark, so a narrow pane
+ * keeps its name and mark. One head per width, either side of where each goes.
+ */
+export const UsingDropsInOrder: Story = {
+  render: () => <UsingHeads />,
+  beforeEach: () => {
+    mockIPC((cmd) => (cmd === "skill_studio_on" ? true : null));
+  },
+  play: async ({ canvasElement }) => {
+    const at = (width: number) =>
+      canvasElement.querySelector<HTMLElement>(`[data-width="${width}"]`);
+    const goes = (part: string) => HEAD_DROPS.find((drop) => drop.part === part)?.below ?? 0;
+    // What the studio says is on before the chip is drawn: wait for it, so the picture never races it.
+    await waitFor(() => expect(at(450)?.querySelector(".pane-skill-run") ?? null).not.toBeNull());
+    for (const width of WIDTHS) {
+      const chips = at(width);
+      const uses = width >= goes("using");
+      await expect(chips?.querySelector(".pane-skill-run") ?? null, `${width}`).toSatisfy(
+        (chip: Element | null) => (chip !== null) === uses,
+      );
+      await expect(chips?.querySelectorAll(".pane-browser").length, `${width}`).toBe(uses ? 2 : 0);
+      // The name and the chat's mark stay at every width.
+      await expect(chips?.querySelector(".pane-name"), `${width}`).toHaveTextContent(USING.name);
+      await expect(
+        chips?.querySelector('.pane-persona [data-scope="chat-mark"]') ?? null,
+        `${width}`,
+      ).not.toBeNull();
+    }
   },
 };

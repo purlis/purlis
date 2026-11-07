@@ -114,7 +114,7 @@ let usage: unknown = null;
 
 function core(chat: typeof CHAT | typeof SHELL = CHAT, listed: Promise<void> = Promise.resolve()) {
   mockIPC(
-    (cmd) => {
+    (cmd, args) => {
       if (cmd === "chat_usage") return usage;
       if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
       if (cmd === "opened_chats") return [chat];
@@ -135,6 +135,7 @@ function core(chat: typeof CHAT | typeof SHELL = CHAT, listed: Promise<void> = P
       if (cmd === "asks_waiting") return { plane: PLANE, asks: [] };
       if (cmd === "mcp_failures") return [];
       if (cmd === "smart_closing") return [];
+      if (cmd === "set_skill_studio_on") return (args as { on: boolean }).on;
       return null;
     },
     { shouldMockEvents: true },
@@ -443,6 +444,54 @@ describe("a narrow pane's head", () => {
     expect(more).toBe(`More for ${NAME}`);
     expect(right).toBe("Split right");
     expect(rest).toEqual([]);
+  });
+
+  describe("what the chat uses now (#5614)", () => {
+    afterEach(async () => {
+      await setSkillStudioOn(false);
+    });
+
+    /** Chat 4 has the `deploy` skill's run open, with the studio on to say it. */
+    async function aSkillRunOpen() {
+      await setSkillStudioOn(true);
+      await act(() =>
+        emit(
+          ...onTheWire("chat-skill-run", {
+            plane: PLANE,
+            session: 4,
+            run: {
+              skill: "deploy",
+              name: "deploy",
+              id: "01RUN",
+              tool_calls: 2,
+              tokens: null,
+              level: null,
+            },
+          }),
+        ),
+      );
+    }
+
+    it("keeps its skill run where the head has room for it, after the state's word has gone", async () => {
+      await aPaneOf(450);
+      await aSkillRunOpen();
+
+      expect(await within(head()).findByTestId("pane-skill-run")).toBeInTheDocument();
+    });
+
+    it("drops its skill run next, keeping the chat's name and mark", async () => {
+      await aPaneOf(449);
+      await aSkillRunOpen();
+      // The run is heard as at 450px, which draws it.
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      expect(within(head()).queryByTestId("pane-skill-run")).toBeNull();
+      expect(head().querySelector(".pane-using")).toBeNull();
+      expect(within(head()).getByText(NAME)).toHaveClass("pane-name");
+      expect(head().querySelector('.pane-persona [data-scope="chat-mark"]')).not.toBeNull();
+    });
   });
 
   /** The glyphs drawn on the head's chat side, by their lucide names, in order. */
