@@ -17,41 +17,6 @@ use rusqlite::{Connection, OptionalExtension, params};
 use super::sources::{self, Kind, Source};
 use super::{CURRENT, DB, LOCK, Result, SCHEMA, words};
 
-// [DEBUG-5672] phase timers, temporary.
-pub mod dbg5672 {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    pub static EVERY: AtomicU64 = AtomicU64::new(0);
-    pub static RECORDED: AtomicU64 = AtomicU64::new(0);
-    pub static LIST: AtomicU64 = AtomicU64::new(0);
-    pub static CHANGE_WALL: AtomicU64 = AtomicU64::new(0);
-    pub static STAT: AtomicU64 = AtomicU64::new(0);
-    pub static READ: AtomicU64 = AtomicU64::new(0);
-    pub static SCAN: AtomicU64 = AtomicU64::new(0);
-    pub static APPLY: AtomicU64 = AtomicU64::new(0);
-    pub static WAIT: AtomicU64 = AtomicU64::new(0);
-    pub static COMMIT: AtomicU64 = AtomicU64::new(0);
-    pub static CLOSE: AtomicU64 = AtomicU64::new(0);
-    pub static WS: AtomicU64 = AtomicU64::new(0);
-    pub static WHOLE: AtomicU64 = AtomicU64::new(0);
-    pub static LINES: AtomicU64 = AtomicU64::new(0);
-    pub fn add(at: &AtomicU64, since: std::time::Instant) {
-        at.fetch_add(since.elapsed().as_nanos() as u64, Ordering::Relaxed);
-    }
-    pub fn threads() -> usize {
-        std::env::var("PURLIS_DEBUG_5672_THREADS")
-            .ok()
-            .and_then(|t| t.parse().ok())
-            .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get))
-    }
-    pub fn report() -> String {
-        let ms = |a: &AtomicU64| a.load(Ordering::Relaxed) as f64 / 1e6;
-        format!(
-            "[DEBUG-5672] threads={} every={:.0} recorded={:.0} list_wall={:.0} change_wall={:.0} stat_sum={:.0} read_sum={:.0} scan_sum={:.0} apply={:.0} wait_plan={:.0} ws_rows={:.0} commit={:.0} close={:.0} scan_whole={:.0} scan_lines={:.0}",
-            threads(), ms(&EVERY), ms(&RECORDED), ms(&LIST), ms(&CHANGE_WALL), ms(&STAT), ms(&READ), ms(&SCAN), ms(&APPLY), ms(&WAIT), ms(&WS), ms(&COMMIT), ms(&CLOSE), ms(&WHOLE), ms(&LINES)
-        )
-    }
-}
-
 /// The tables of one generation.
 const TABLES: &str = "
 CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -270,8 +235,8 @@ fn valid(db: &Path) -> Option<Connection> {
 }
 
 fn configure(conn: &Connection) -> Result<()> {
-    conn.pragma_update(None, "journal_mode", std::env::var("PURLIS_DEBUG_5672_JOURNAL").unwrap_or_else(|_| "WAL".into()))?; // [DEBUG-5672]
-    conn.pragma_update(None, "synchronous", std::env::var("PURLIS_DEBUG_5672_SYNC").unwrap_or_else(|_| "NORMAL".into()))?; // [DEBUG-5672]
+    conn.pragma_update(None, "journal_mode", "WAL")?;
+    conn.pragma_update(None, "synchronous", "NORMAL")?;
     conn.pragma_update(None, "secure_delete", "ON")?;
     conn.busy_timeout(std::time::Duration::from_secs(5))?;
     Ok(())
@@ -299,16 +264,12 @@ fn build(root: &Path, home: &Path) -> Result<Connection> {
         set(&conn, "built", &super::now().to_string())?;
         let tx = conn.transaction()?;
         sweep(root, &tx, None)?;
-        let t = std::time::Instant::now(); // [DEBUG-5672]
         tx.commit()?;
-        dbg5672::add(&dbg5672::COMMIT, t); // [DEBUG-5672]
         set(&conn, "pending", "0")?;
         set(&conn, "as_of", &super::now().to_string())?;
         // Closing checkpoints the WAL and removes it, so the generation is one file when
         // `current` first names it.
-        let t = std::time::Instant::now(); // [DEBUG-5672]
         conn.close().map_err(|(_, e)| e)?;
-        dbg5672::add(&dbg5672::CLOSE, t); // [DEBUG-5672]
     }
     let staged = home.join(format!("{CURRENT}.{name}"));
     std::fs::write(&staged, &name)?;
@@ -381,9 +342,7 @@ fn sweep(
     tx: &rusqlite::Transaction<'_>,
     touched: Option<&[PathBuf]>,
 ) -> Result<Swept> {
-    let t = std::time::Instant::now(); // [DEBUG-5672]
     let every = sources::every(root);
-    dbg5672::add(&dbg5672::EVERY, t); // [DEBUG-5672]
     let mut swept = Swept::default();
     // Rows of a source that is no longer one: a workspace or persona removed, a refs folder gone.
     let bases: BTreeSet<String> = every
@@ -439,11 +398,9 @@ fn sweep(
         )
         .unwrap_or_default()],
     )?;
-    let t = std::time::Instant::now(); // [DEBUG-5672]
     for name in workspaces {
         workspace_row(root, tx, name)?;
     }
-    dbg5672::add(&dbg5672::WS, t); // [DEBUG-5672]
     Ok(swept)
 }
 
@@ -496,25 +453,19 @@ fn sweep_sources(
     std::thread::scope(|scope| -> Result<()> {
         let mut planning = None;
         for (n, batch) in batches.iter().enumerate() {
-            let t = std::time::Instant::now(); // [DEBUG-5672]
             let planned = match planning.take() {
                 Some(handle) => join(handle),
                 None => plan(root, batch, recorded(tx, batch)?),
             };
-            dbg5672::add(&dbg5672::WAIT, t); // [DEBUG-5672]
             if let Some(next) = batches.get(n + 1) {
-                let t = std::time::Instant::now(); // [DEBUG-5672]
                 let rows = recorded(tx, next)?;
-                dbg5672::add(&dbg5672::RECORDED, t); // [DEBUG-5672]
                 planning = Some(scope.spawn(move || plan(root, next, rows)));
             }
-            let t = std::time::Instant::now(); // [DEBUG-5672]
             for (one, (source, _)) in planned.into_iter().zip(batch) {
                 let done = apply(root, tx, source, one)?;
                 swept.written += done.written;
                 swept.deleted += done.deleted;
             }
-            dbg5672::add(&dbg5672::APPLY, t); // [DEBUG-5672]
         }
         Ok(())
     })?;
@@ -588,11 +539,9 @@ fn plan(
     batch: &[(&Source, String)],
     recorded: Vec<BTreeMap<String, Recorded>>,
 ) -> Vec<Planned> {
-    let t = std::time::Instant::now(); // [DEBUG-5672]
     let listed = in_parallel(batch, |(source, _)| {
         crate::memstore::read_files(root, &source.dir)
     });
-    dbg5672::add(&dbg5672::LIST, t); // [DEBUG-5672]
     let mut files: Vec<(usize, PathBuf, String, Option<Recorded>)> = Vec::new();
     let mut gone: Vec<Vec<i64>> = Vec::new();
     let mut unread_of = Vec::new();
@@ -607,11 +556,9 @@ fn plan(
         gone.push(recorded.into_values().map(|r| r.id).collect());
         unread_of.push(unread);
     }
-    let t = std::time::Instant::now(); // [DEBUG-5672]
     let changes = in_parallel(&files, |(_, path, rel, was)| {
         change(path, rel, was.as_ref())
     });
-    dbg5672::add(&dbg5672::CHANGE_WALL, t); // [DEBUG-5672]
     let mut planned: Vec<Planned> = batch
         .iter()
         .zip(unread_of)
@@ -633,7 +580,6 @@ fn plan(
 /// What the sweep writes for the file at `path`, recorded as `was`: nothing when its stat has
 /// not moved.
 fn change(path: &Path, rel: &str, was: Option<&Recorded>) -> Option<Change> {
-    let t = std::time::Instant::now(); // [DEBUG-5672]
     let Ok(meta) = std::fs::metadata(path) else {
         return was.map(|was| Change::Delete(was.id));
     };
@@ -649,12 +595,7 @@ fn change(path: &Path, rel: &str, was: Option<&Recorded>) -> Option<Change> {
     {
         return None;
     }
-    dbg5672::add(&dbg5672::STAT, t); // [DEBUG-5672]
-    let t = std::time::Instant::now(); // [DEBUG-5672]
-    let read = std::fs::read(path); // [DEBUG-5672]
-    dbg5672::add(&dbg5672::READ, t); // [DEBUG-5672]
-    let t = std::time::Instant::now(); // [DEBUG-5672]
-    let Some(text) = read.ok().and_then(crate::memstore::text_of) else {
+    let Some(text) = std::fs::read(path).ok().and_then(crate::memstore::text_of) else {
         // Not readable as text: not a memory to the scan either.
         return was.map(|was| Change::Delete(was.id));
     };
@@ -674,14 +615,12 @@ fn change(path: &Path, rel: &str, was: Option<&Recorded>) -> Option<Change> {
     let title = words::scanned(&crate::memstore::title_in(path, &text));
     let name = path.file_name().unwrap_or_default().to_string_lossy();
     let date = crate::memstore::memory_date(&text, &name).map(|d| d.format("%Y-%m-%d").to_string());
-    let (title_words, text_words) = (words::indexed(&title), words::indexed(&words::scanned(&text))); // [DEBUG-5672]
-    dbg5672::add(&dbg5672::SCAN, t); // [DEBUG-5672]
     Some(Change::Write {
         was: was.map(|was| was.id),
         row: Row {
             rel: rel.to_string(),
-            title_words,
-            text_words,
+            title_words: words::indexed(&title),
+            text_words: words::indexed(&words::scanned(&text)),
             title,
             date,
             size,
@@ -694,7 +633,9 @@ fn change(path: &Path, rel: &str, was: Option<&Recorded>) -> Option<Change> {
 /// `work` done on each of `items` across the machine's threads, the answers in `items`' order.
 fn in_parallel<T: Sync, R: Send>(items: &[T], work: impl Fn(&T) -> R + Sync) -> Vec<R> {
     use std::sync::atomic::{AtomicUsize, Ordering};
-    let threads = dbg5672::threads().min(items.len()); // [DEBUG-5672]
+    let threads = std::thread::available_parallelism()
+        .map_or(1, std::num::NonZeroUsize::get)
+        .min(items.len());
     if threads <= 1 {
         return items.iter().map(work).collect();
     }

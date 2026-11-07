@@ -102,7 +102,7 @@
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Condvar, LazyLock, Mutex, OnceLock, PoisonError, Weak, mpsc};
+use std::sync::{Arc, Condvar, LazyLock, Mutex, OnceLock, PoisonError, RwLock, Weak, mpsc};
 use std::time::{Duration, Instant, SystemTime};
 
 use purlis_core::planechange::{self, Answer, Change, Kind};
@@ -717,9 +717,7 @@ impl<W: notify::Watcher + Send + 'static> Watch<W> {
     ) -> notify::Result<Self> {
         // The platform reports paths as the disk spells them, which a root opened through a
         // link (`/var` for `/private/var` on macOS) is not.
-        let t0 = std::time::Instant::now(); // [DEBUG-5672]
         let spelled = root.canonicalize().ok();
-        let t_canon = t0.elapsed(); // [DEBUG-5672]
         let listened = Listened {
             folders: Arc::default(),
             root: root.to_path_buf(),
@@ -747,30 +745,19 @@ impl<W: notify::Watcher + Send + 'static> Watch<W> {
             };
             notify::EventHandler::handle_event(&mut send, event);
         };
-        let t = std::time::Instant::now(); // [DEBUG-5672]
         let watcher = W::new(heard, config)?;
-        let t_new = t.elapsed(); // [DEBUG-5672]
         let inner = Arc::new(Mutex::new(Inner {
             watcher: Some(watcher),
             mode,
             watched: HashSet::new(),
-            listened: listened.clone(),
+            listened,
             unwatched: HashSet::new(),
             lapsed: false,
             rewatch: Rewatch::default(),
         }));
-        let t = std::time::Instant::now(); // [DEBUG-5672]
         let first = {
             let mut inner = inner.lock().unwrap_or_else(PoisonError::into_inner);
-            // On one stream, only the stream: the folders its events are kept to are listed on
-            // the watch's thread, below. At 1,000 workspaces that listing is some 5,000 folders
-            // and 12,000 calls to the disk, which a project's open would otherwise wait for
-            // (#5672).
-            match mode {
-                Mode::PerFolder => inner.follow(root),
-                Mode::OneStream => inner.stream(root),
-            }
-            tracing::info!("[DEBUG-5672] follow total {} ms", t.elapsed().as_millis());
+            inner.follow(root);
             // The root is where a workspace or a persona arriving is heard: without it the
             // watch could never become whole, so it is no watch.
             if inner.unwatched.contains(root) {
@@ -826,14 +813,9 @@ impl<W: notify::Watcher + Send + 'static> Watch<W> {
         let tell: Arc<dyn Fn(Burst) + Send + Sync> = Arc::new(tell);
         {
             let tell = Arc::clone(&tell);
-            let listing = (mode == Mode::OneStream).then(|| (listened.clone(), at.clone()));
             std::thread::Builder::new()
                 .name("charter-plane-watch".into())
                 .spawn(move || {
-                    // Before any burst, whose own follow lists them again.
-                    if let Some((listened, root)) = listing {
-                        listened.set(wanted(&root));
-                    }
                     for burst in
                         crate::watchset::trailing_bursts(events, QUIET_FOR, LONGEST, MOST_PATHS)
                     {
@@ -842,17 +824,10 @@ impl<W: notify::Watcher + Send + 'static> Watch<W> {
                 })
                 .map_err(notify::Error::io)?;
         }
-        let t = std::time::Instant::now(); // [DEBUG-5672]
         if mode == Mode::OneStream {
             covering(root, true);
         }
-        let t_cover = t.elapsed(); // [DEBUG-5672]
-        let t = std::time::Instant::now(); // [DEBUG-5672]
         windows.watching(root);
-        tracing::info!(
-            "[DEBUG-5672] watch phases: canonicalize {:?} new {:?} cover {:?} windows {:?} total-so-far {:?}",
-            t_canon, t_new, t_cover, t.elapsed(), t0.elapsed()
-        );
         // The focus count the first look stands at, read here and not on the look's thread: a
         // focus between this start and that thread's first read would otherwise be counted as
         // already seen, and wait out a whole `every` (#1731).
@@ -990,42 +965,21 @@ impl<W: notify::Watcher> Inner<W> {
         let Some(watcher) = self.watcher.as_mut() else {
             return;
         };
-        let t = std::time::Instant::now(); // [DEBUG-5672]
         let wanted = wanted(root);
-        tracing::info!("[DEBUG-5672] wanted {} folders in {:?}", wanted.len(), t.elapsed());
-        let t = std::time::Instant::now(); // [DEBUG-5672]
-        match self.mode {
-            Mode::PerFolder => {
-                self.unwatched = crate::watchset::follow(watcher, &mut self.watched, wanted);
-                if !self.unwatched.is_empty() {
-                    self.lapsed = true;
-                }
-            }
+        self.unwatched = match self.mode {
+            Mode::PerFolder => crate::watchset::follow(watcher, &mut self.watched, wanted),
             Mode::OneStream => {
-                self.stream(root);
+                let stream = wanted.iter().filter(|dir| *dir == root).cloned().collect();
+                let unwatched = crate::watchset::follow_as(
+                    watcher,
+                    &mut self.watched,
+                    stream,
+                    notify::RecursiveMode::Recursive,
+                );
                 self.listened.set(wanted);
+                unwatched
             }
-        }
-        tracing::info!("[DEBUG-5672] platform watch calls in {:?}", t.elapsed());
-    }
-
-    /// The one recursive watch of `root`, while it is a folder ([`Mode::OneStream`]): all the
-    /// platform is asked for. Which of its folders' events are kept is [`Listened`]'s.
-    fn stream(&mut self, root: &Path) {
-        let Some(watcher) = self.watcher.as_mut() else {
-            return;
         };
-        let stream = if a_dir(root) {
-            HashSet::from([root.to_path_buf()])
-        } else {
-            HashSet::new()
-        };
-        self.unwatched = crate::watchset::follow_as(
-            watcher,
-            &mut self.watched,
-            stream,
-            notify::RecursiveMode::Recursive,
-        );
         if !self.unwatched.is_empty() {
             self.lapsed = true;
         }
@@ -1124,14 +1078,9 @@ impl GitTree {
 /// The folders a watch on [`Mode::OneStream`] tells the changes of, shared with the handler the
 /// platform calls: one recursive stream hears the whole project, clones and their build trees
 /// with it, and only what a watch of each of these folders would have reported is kept.
-///
-/// **Until the folders are first listed, an event waits for them** (#5672): the stream is started
-/// before they are, and an event it hears then is kept or dropped as it would be once they are,
-/// never told unfiltered and never lost.
 #[derive(Clone)]
 struct Listened {
-    /// `None` until first listed.
-    folders: Arc<(Mutex<Option<HashSet<PathBuf>>>, Condvar)>,
+    folders: Arc<RwLock<HashSet<PathBuf>>>,
     root: PathBuf,
     /// The root as the disk spells it, where that is another spelling.
     spelled: Option<PathBuf>,
@@ -1139,9 +1088,7 @@ struct Listened {
 
 impl Listened {
     fn set(&self, folders: HashSet<PathBuf>) {
-        let (listed, ready) = &*self.folders;
-        *listed.lock().unwrap_or_else(PoisonError::into_inner) = Some(folders);
-        ready.notify_all();
+        *self.folders.write().unwrap_or_else(PoisonError::into_inner) = folders;
     }
 
     /// `event` with only the paths a watch of each listened folder would have reported: the
@@ -1151,16 +1098,7 @@ impl Listened {
         if event.need_rescan() || event.paths.is_empty() {
             return Some(event);
         }
-        let (listed, ready) = &*self.folders;
-        let listed = ready
-            .wait_while(
-                listed.lock().unwrap_or_else(PoisonError::into_inner),
-                |folders| folders.is_none(),
-            )
-            .unwrap_or_else(PoisonError::into_inner);
-        let Some(folders) = listed.as_ref() else {
-            return Some(event);
-        };
+        let folders = self.folders.read().unwrap_or_else(PoisonError::into_inner);
         event.paths.retain(|path| {
             let path = self.respelled(path);
             folders.contains(path.as_ref())
@@ -1207,17 +1145,14 @@ fn small(folder: &Path) -> bool {
         .is_ok_and(|entries| entries.take(PLAIN_FOLDER_MOST + 1).count() <= PLAIN_FOLDER_MOST)
 }
 
-/// Whether `path` is a folder, a link to one not followed.
-fn a_dir(path: &Path) -> bool {
-    std::fs::symlink_metadata(path).is_ok_and(|found| found.file_type().is_dir())
-}
-
 /// The directories the panels and the sidebar read, as they are on disk now. See the module's
 /// header for why these and not the plane recursively.
 ///
 /// **A link is not followed.** charter refuses a store that is a link out of the plane, and a
 /// watch through one would be charter listening to a directory it will not read.
 fn wanted(root: &Path) -> HashSet<PathBuf> {
+    let a_dir =
+        |path: &Path| std::fs::symlink_metadata(path).is_ok_and(|found| found.file_type().is_dir());
     let mut wanted = HashSet::new();
     if a_dir(root) {
         wanted.insert(root.to_path_buf());

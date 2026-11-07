@@ -23,11 +23,8 @@ pub(crate) const VERSION: &str = "words-1";
 
 /// `text` with every span the shape scanner flags replaced by its kind, as `[kind]`.
 pub(crate) fn scanned(text: &str) -> String {
-    let t = std::time::Instant::now(); // [DEBUG-5672]
     let mut spans: Vec<(std::ops::Range<usize>, &'static str)> =
         crate::secretshape::leak_spans(text);
-    super::writer::dbg5672::add(&super::writer::dbg5672::WHOLE, t); // [DEBUG-5672]
-    let t = std::time::Instant::now(); // [DEBUG-5672]
     let mut at = 0;
     for line in text.split_inclusive('\n') {
         spans.extend(
@@ -37,7 +34,6 @@ pub(crate) fn scanned(text: &str) -> String {
         );
         at += line.len();
     }
-    super::writer::dbg5672::add(&super::writer::dbg5672::LINES, t); // [DEBUG-5672]
     if spans.is_empty() {
         return text.to_string();
     }

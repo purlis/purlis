@@ -40,8 +40,6 @@ pub use keeper::Keeper;
 pub use reader::{Freshness, Reader, Row, WorkspaceSummary};
 pub use sources::{Kind, Reach};
 pub use writer::Writer;
-pub use writer::dbg5672; // [DEBUG-5672]
-
 
 /// The schema this build writes and reads. A generation recording any other is discarded.
 pub const SCHEMA: &str = "2";
