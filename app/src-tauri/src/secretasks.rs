@@ -862,12 +862,12 @@ pub fn asked(
     };
     // A chat on a pool's runner runs its commands there, where no Run grant reaches: a program
     // it names ahead is asked about as any Secret ask is, by the link the line came over.
-    let on_a_runner = crate::hooks::heard_from_a_pool().is_some();
+    let _on_a_runner = crate::hooks::heard_from_a_pool().is_some();
     let chat = purlis_core::secrets::ask::Chat {
         chat: asked.chat,
         persona: open.persona.as_deref(),
         harness: open.harness,
-        asker: (!on_a_runner).then_some(&asker),
+        asker: Some(&asker), // RED ON PURPOSE (#5246): D-5244-4 taken out
     };
     match purlis_core::secrets::ask::raised(&ctx, held.secret_asks(), chat, asked, &|| {
         held.chats().asks_may_have_moved();
