@@ -23,6 +23,12 @@ use super::transport::{Call, Field, Method, Reply, Transport};
 use super::{Caller, Failure, Forge, ForgeError, Kind};
 use crate::commitsign::{self, Signer};
 
+/// **The scopes a GitHub sign-in needs for signing setup**, beyond a sign-in's own (ADR 0116 §5):
+/// adding, reading and removing this device's signing key, and reading the account's email
+/// addresses for the Check step. Asked for at that moment, never at sign-in
+/// ([`super::device::start_asking`]).
+pub const GITHUB_SCOPES: [&str; 2] = ["admin:ssh_signing_key", "user:email"];
+
 /// How long one call may take.
 const WITHIN: Duration = Duration::from_secs(30);
 
