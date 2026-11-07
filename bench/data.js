@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794082637221,
+  "lastUpdate": 1794085435726,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -42546,6 +42546,48 @@ window.BENCHMARK_DATA = {
             "value": 101.87212199999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.833, 101.386, 101.872, 101.876, 102.464 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "260140d2bb235eac9431e37b18138e3ac7a7ec32",
+          "message": "Files dropped from Finder onto a workspace's own files are imported (#5378) (#5668)\n\n* Files dropped from Finder onto a workspace's own files are imported (#5378)\n\nA drop from the file manager onto Explorer's workspace tree imports as\nImport files... does: onto a folder of the person's own into it, onto a\nfile of theirs into its folder, onto no row into the workspace's top.\nA drop on what purlis keeps, a repo or repos/ is refused with why.\n\nThe files never cross the window's seam: the app holds what the system\ndropped on each webview (Dropped, heard from Tauri's webview drag\nevents), and workspace_files_import_dropped imports those, the window\nnaming only the folder. The window hit-tests Tauri's drag position\nagainst the tree's rows and marks the target with the tree family's\ndata-drop-target, now drawn on the tree itself too.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6VC30MBWDCN0R905019SRJ2\nPurlis-Persona: steward\n\n* The drop's hook, its window tests and its changelog fragment (#5378)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6VC30MBWDCN0R905019SRJ2\nPurlis-Persona: steward\n\n* The DropTargets story's baselines, drawn by #5668's stories run (#5378)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6VC30MBWDCN0R905019SRJ2\nPurlis-Persona: steward\n\n* A drop is heard from the window, at the page's point, and only with files (#5378)\n\nReview fixes on #5668:\n\n- The core held a drop from on_webview_event, which tauri-runtime-wry never\n  calls for a webview window's own webview without the unstable feature: it\n  tells the drag to the window (SynthesizedWindowEvent::DragDrop then\n  WindowEvent::DragDrop). It is now held from on_window_event, by the\n  window's label, through workspacewrites::window_event, which a test drives.\n- The drop's point is the page's on macOS (points) and Linux (GTK logical\n  pixels); only Windows (ScreenToClient physical pixels) is divided by the\n  page's scale (wry 0.57).\n- A drag that carries no files, as one inside the window does, draws no\n  target and imports or refuses nothing.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6VKY9KXPVP8A8EAFW2FMYBG\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aharon@easydmarc.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-07T19:22:23Z",
+          "tree_id": "09a4f3e8e7d3342202cade7081276d4492c4ce3d",
+          "url": "https://github.com/purlis/purlis/commit/260140d2bb235eac9431e37b18138e3ac7a7ec32"
+        },
+        "date": 1794085431782,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5563065,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.544, 0.547, 0.556, 0.566, 0.567 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.1770275,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.086, 16.168, 16.177, 16.211, 16.257 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.015533,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.002, 100.707, 102.016, 102.605, 102.634 ms"
           }
         ]
       }
