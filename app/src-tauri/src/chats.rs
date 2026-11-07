@@ -6941,7 +6941,8 @@ impl Chats {
     /// `pool`'s runner says it started or ended, logged in this project's skill log as a local
     /// run is, with this window's own word for where the chat ran: the persona it runs as, its
     /// harness and its workspace. Only for a chat open here that runs on that pool's runner, by
-    /// its id; any other line names no chat of this window's, and nothing is logged.
+    /// its id, or one still coming back as the window puts its chats back (#4219), whose record
+    /// says where it ran; any other line names no chat of this window's, and nothing is logged.
     pub fn skill_run_heard(
         &self,
         pool: Option<&str>,
@@ -6963,14 +6964,34 @@ impl Chats {
                     )
                 })
         };
-        let Some((number, persona, harness, workspace)) = ran_as else {
-            return;
+        let (persona, harness, workspace) = match ran_as {
+            Some((number, persona, harness, workspace)) => {
+                // Its pool, also where it was heard from a chat's own runner (#3818).
+                let of = pool.split_once("/fresh-").map_or(pool, |(pool, _)| pool);
+                if self.sessions.pool_of(number).as_deref() != Some(of) {
+                    return;
+                }
+                (persona, harness, workspace)
+            }
+            // **One still coming back** (#4219): a runner's lines come as the link comes up,
+            // before the chats put back are open, and its pool is known only once it is: its
+            // line came from the runner that keeps this project, under its id. Its record says
+            // where it ran.
+            None => {
+                let coming = lock(&self.coming);
+                let Some(one) = coming
+                    .iter()
+                    .find(|one| one.chat.identity.id.as_deref() == Some(run.chat.as_str()))
+                else {
+                    return;
+                };
+                (
+                    one.chat.persona.clone(),
+                    one.chat.harness().map(Harness::name),
+                    one.workspace.clone(),
+                )
+            }
         };
-        // Its pool, also where it was heard from a chat's own runner (#3818).
-        let of = pool.split_once("/fresh-").map_or(pool, |(pool, _)| pool);
-        if self.sessions.pool_of(number).as_deref() != Some(of) {
-            return;
-        }
         // Under this machine's own device, as a run of its own is: the runner keeps its own file
         // under its device in its checkout, which this machine sends it.
         let device = self

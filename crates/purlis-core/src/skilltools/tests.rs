@@ -445,6 +445,7 @@ fn ran(plane: &Path, id: &str, skill: &str, workspace: Option<&str>, level: Opti
             workspace,
             level,
             harness: None,
+            ran: None,
         },
         None,
         chrono::Utc::now(),

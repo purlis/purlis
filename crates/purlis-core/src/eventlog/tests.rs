@@ -4166,3 +4166,52 @@ fn a_runs_end_names_its_own_run_though_the_prompt_that_ended_it_opened_another()
         .collect();
     assert_eq!(started, [interrupted.clone(), opened]);
 }
+
+/// **#4219: a run's `skill.started` says what it ran**, read off this machine's own copy of the
+/// plane, as its row in the skill log does: a desktop that logs a runner chat's runs from these
+/// lines logs the runner's word, not what its own plane holds of the skill by then.
+#[test]
+fn a_runs_start_says_the_tree_it_ran_as_its_log_row_does() {
+    use crate::state::Event::UserPromptSubmit;
+    use std::time::Instant;
+    let dir = tempfile::tempdir().unwrap();
+    let plane = a_plane();
+    let git = |args: &[&str]| {
+        let mut git = std::process::Command::new("git");
+        git.args(args).current_dir(plane.path());
+        let out = crate::forklock::output(&mut git).unwrap();
+        assert!(out.status.success(), "{out:?}");
+    };
+    git(&["init", "-q"]);
+    std::fs::create_dir_all(plane.path().join("skills/deploy")).unwrap();
+    std::fs::write(
+        plane.path().join("skills/deploy/SKILL.md"),
+        "---\nname: deploy\ndescription: Ships it.\n---\n",
+    )
+    .unwrap();
+    let mut host = recorder(dir.path());
+    host.report(plane.path(), &report(3, UserPromptSubmit), Followed::No)
+        .unwrap();
+    let mut load = loading(3, "deploy");
+    if let Some(skill) = load.skill.as_mut() {
+        skill.workspace = None;
+        skill.level = Some(purlis_skills::runs::Level {
+            origin: purlis_skills::Origin::Project,
+            local: false,
+        });
+    }
+    host.tool(plane.path(), &load, Instant::now()).unwrap();
+
+    let events = read(dir.path()).unwrap();
+    let started = events
+        .iter()
+        .find(|e| e.kind == "skill.started")
+        .expect("the run's start");
+    assert_eq!(started.body["tree"], "uncommitted", "{started:#?}");
+    let runs = crate::skilluse::runs(plane.path());
+    assert_eq!(
+        runs[0].content,
+        Some(crate::skilluse::Content::Uncommitted),
+        "its row says the same"
+    );
+}

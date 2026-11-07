@@ -94,8 +94,11 @@ pub struct RunnerLog {
     /// The runner's device, once its host said where its log ends: none for a runner before
     /// 1.41, which says none of its log.
     device: Option<String>,
-    /// The last `seq` held of it.
+    /// The last `seq` read of it.
     cursor: u64,
+    /// Where its log ended as the link came up: only a run that ended after it is drawn, though
+    /// the link reads on from where this window last logged its project's skill runs (#4219).
+    began_at: u64,
     lines: VecDeque<RunEndLine>,
     bytes: usize,
     /// Whether some of its lines were not kept for the window to read (#940's retention, or
@@ -133,13 +136,21 @@ impl RunnerLogNow {
 }
 
 impl RunnerLog {
-    /// The runner's host said its log is `device`'s and ends at `seq`: read on from there.
-    pub fn starts_at(&mut self, device: String, seq: u64) {
+    /// The runner's host said its log is `device`'s and ends at `seq`: read on from `from`, where
+    /// this window last logged a project's skill runs of it (#4219), else from there. A `from`
+    /// past the end is a log begun again, read on from its end.
+    pub fn starts_at(&mut self, device: String, seq: u64, from: Option<u64>) {
         if device.is_empty() || device.len() > MOST_ID {
             return;
         }
         self.device = Some(device);
-        self.cursor = seq;
+        self.cursor = from.filter(|from| *from <= seq).unwrap_or(seq);
+        self.began_at = seq;
+    }
+
+    /// Where the runner's log ended as the link came up.
+    pub fn began_at(&self) -> u64 {
+        self.began_at
     }
 
     /// Whether the runner's host has said where its log ends.
@@ -164,7 +175,7 @@ impl RunnerLog {
             return false;
         }
         self.cursor = event.seq;
-        let Some(line) = RunEndLine::of(event) else {
+        let Some(line) = RunEndLine::of(event).filter(|_| event.seq > self.began_at) else {
             return true;
         };
         self.bytes += line.bytes();
@@ -279,7 +290,7 @@ mod tests {
     #[test]
     fn lines_are_kept_after_the_cursor_once_each_and_the_cursor_follows_them() {
         let mut log = RunnerLog::default();
-        log.starts_at(RUNNER.into(), 4);
+        log.starts_at(RUNNER.into(), 4, None);
         let read: Vec<bool> = [3, 5, 5, 6]
             .into_iter()
             .map(|seq| log.heard(&line(RUNNER, seq)))
@@ -294,7 +305,7 @@ mod tests {
     #[test]
     fn only_a_top_level_runs_end_of_a_known_word_is_kept_and_the_rest_moves_the_cursor() {
         let mut log = RunnerLog::default();
-        log.starts_at(RUNNER.into(), 0);
+        log.starts_at(RUNNER.into(), 0, None);
         let mut hook = line(RUNNER, 1);
         hook.kind = "hook.stop".into();
         let mut child = line(RUNNER, 2);
@@ -317,7 +328,7 @@ mod tests {
     #[test]
     fn a_gap_is_said_and_read_on_from_where_the_log_resumes() {
         let mut log = RunnerLog::default();
-        log.starts_at(RUNNER.into(), 2);
+        log.starts_at(RUNNER.into(), 2, None);
         log.missed(RUNNER, 10);
         assert!(log.now().missed);
         assert_eq!(log.since(), Since::from([(RUNNER.to_owned(), 9)]));
@@ -327,7 +338,7 @@ mod tests {
     #[test]
     fn it_holds_the_last_lines_alone_within_its_bounds_and_says_it_let_the_first_go() {
         let mut log = RunnerLog::default();
-        log.starts_at(RUNNER.into(), 0);
+        log.starts_at(RUNNER.into(), 0, None);
         for seq in 1..=(MOST_LINES as u64 + 2) {
             log.heard(&line(RUNNER, seq));
         }
@@ -336,6 +347,37 @@ mod tests {
         assert_eq!(now.lines[0].ulid, line(RUNNER, 3).ulid);
         assert!(now.missed);
         assert!(log.bytes <= MOST_BYTES);
+    }
+
+    /// **#4219: a link reads on from where this window last logged its project's skill runs**,
+    /// so the lines written while no window read the log are read again, once each; of those,
+    /// only what ended once the link came up is drawn, as before.
+    #[test]
+    fn it_reads_on_from_a_kept_cursor_and_draws_only_what_ended_since_the_link_came_up() {
+        let mut log = RunnerLog::default();
+        log.starts_at(RUNNER.into(), 5, Some(2));
+        assert_eq!(log.since(), Since::from([(RUNNER.to_owned(), 2)]));
+        assert_eq!(log.began_at(), 5);
+
+        let read: Vec<bool> = [3, 5, 6]
+            .into_iter()
+            .map(|seq| log.heard(&line(RUNNER, seq)))
+            .collect();
+
+        assert_eq!(read, [true, true, true], "each read");
+        assert_eq!(
+            seqs(&log),
+            vec![line(RUNNER, 6).ulid],
+            "only the one after it came up"
+        );
+
+        let mut reset = RunnerLog::default();
+        reset.starts_at(RUNNER.into(), 5, Some(9));
+        assert_eq!(
+            reset.since(),
+            Since::from([(RUNNER.to_owned(), 5)]),
+            "a cursor past the log's end is a log begun again: read on from its end"
+        );
     }
 
     #[test]

@@ -9660,6 +9660,7 @@ fn a_runner_chats_skill_run_is_logged_here_with_where_this_window_says_it_ran_30
         skill: "review".to_owned(),
         started_by: purlis_core::skills::runs::StartedBy::SkillTool,
         level: None,
+        tree: None,
     };
     let ended = Line::Ended {
         ended: purlis_core::skills::runs::Ended::Turn,
@@ -10705,4 +10706,58 @@ fn a_runners_chat_has_the_skills_its_runner_said_it_armed_it_with_4218() {
         "once reattached"
     );
     let _ = chats.close(3);
+}
+
+/// #4219 (SK-20c): a runner's lines come as the link comes up, before a chat the window puts back
+/// is open: a skill run of one still coming back is logged here with the window's word for it
+/// from its record (its persona, harness and workspace). A chat neither open nor coming back is
+/// none of this window's, and logs nothing.
+#[test]
+fn a_skill_run_of_a_runner_chat_still_coming_back_is_logged_from_its_record_4219() {
+    use purlis_core::skilluse::relayed::{Line, Relayed};
+    let plane = tempfile::tempdir().expect("a plane");
+    std::fs::write(plane.path().join(purlis_core::plane::MANIFEST), "").expect("charter.toml");
+    let host = Pretend::default();
+    host.on_a_runner();
+    let mut chats = Chats::on_host(
+        Box::new(|_| {}),
+        Box::new(host.clone()),
+        plane.path().to_path_buf(),
+    );
+    chats.on_device(Some(DEVICE.to_owned()));
+    let record = left_running_in(
+        plane.path(),
+        Chat {
+            persona: Some("steward".to_owned()),
+            ..a_resumable_chat_in(plane.path())
+        },
+    );
+    chats.begin_put_back(&record, &|_| None);
+    let started = |chat: &str, run: &str| Relayed {
+        chat: chat.to_owned(),
+        run: run.to_owned(),
+        at_ms: 1_793_440_800_000,
+        line: Line::Started {
+            skill: "review".to_owned(),
+            started_by: purlis_core::skills::runs::StartedBy::SkillTool,
+            level: None,
+            tree: None,
+        },
+    };
+
+    chats.skill_run_heard(
+        Some("builds"),
+        &started(CHAT_ID, "01K6RUNA00000000000000000A"),
+    );
+    chats.skill_run_heard(
+        Some("builds"),
+        &started("01K6NOTHERE00000000000000D", "01K6RUND00000000000000000D"),
+    );
+
+    let runs = purlis_core::skilluse::runs(plane.path());
+    assert_eq!(runs.len(), 1, "{runs:?}");
+    assert_eq!(runs[0].id.as_deref(), Some("01K6RUNA00000000000000000A"));
+    assert_eq!(runs[0].persona.as_deref(), Some("steward"));
+    assert_eq!(runs[0].harness.as_deref(), Some(Harness::ClaudeCode.name()));
+    assert_eq!(runs[0].device, DEVICE);
 }
