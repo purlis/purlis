@@ -319,6 +319,7 @@ export function SecretAskNotice({
           listed={listed}
           named={named}
           onNamed={secret && !start ? setNamed : undefined}
+          handedIn={start?.variable}
           chat={chat}
         />
       ))}
@@ -582,6 +583,7 @@ function OneField({
   named,
   onNamed,
   chat,
+  handedIn,
 }: {
   fieldKey: string;
   persona: string;
@@ -597,6 +599,9 @@ function OneField({
   named: { vault: string; key: string } | undefined;
   onNamed: ((to: { vault: string; key: string } | undefined) => void) | undefined;
   chat: string;
+  /** A start's variable (#5137): the chat is handed the value in it, so it is never said to be
+   *  kept from the chat. */
+  handedIn?: string;
 }) {
   const [changing, setChanging] = useState(false);
   const at = named ?? { vault, key: fieldKey };
@@ -703,7 +708,9 @@ function OneField({
             help={
               secret?.reads != null
                 ? `Stored in ${secret.reads.vault}/${secret.reads.key}, which ${fieldKey} reads.`
-                : `Stored in vault ${at.vault} on this machine. Never shown to the chat.`
+                : handedIn !== undefined
+                  ? `Stored in vault ${at.vault} on this machine, and handed to the chat in ${handedIn}.`
+                  : `Stored in vault ${at.vault} on this machine. Never shown to the chat.`
             }
           />
         ) : (

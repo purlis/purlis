@@ -130,5 +130,10 @@ describe("a start's ask, in the Start dialog (#5137)", () => {
     expect(
       within(body).queryByRole("button", { name: "Change where STRIPE_API_KEY is stored" }),
     ).toBeNull();
+    // A start hands the value to its chat, so the field never says it is not shown to it.
+    expect(body).toHaveTextContent(
+      "Stored in vault devops on this machine, and handed to the chat in STRIPE_API_KEY.",
+    );
+    expect(body).not.toHaveTextContent("Never shown to the chat");
   });
 });
