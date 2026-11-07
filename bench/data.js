@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794061750440,
+  "lastUpdate": 1794063286642,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -42168,6 +42168,48 @@ window.BENCHMARK_DATA = {
             "value": 102.2045635,
             "unit": "ms",
             "extra": "median of 5 runs: 102.170, 102.190, 102.205, 102.306, 102.331 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "2420887172df7794d1f911e3852c8a2f3ea2eaa5",
+          "message": "Tests: a click in a scrolled frame over a kept frame, a download's facts, a page named by no site (#5612)\n\n* Tests for a click in a scrolled frame over a kept frame, a download's gathered facts, and a page named by no site\n\nA real-Chrome test follows a click into a frame of another site, in a\nprocess of its own, on a page scrolled down, whose own document is\nscrolled too: a frame of the site the agent is kept off, drawn over that\ndocument's button, refuses the click, and a button drawn clear of it is\npressed.\n\nsave_download gathers what decides a download through DownloadsSite::of,\ntested against a stand-in browser and a login's real Bound.\n\nEnd to end through the host and the window, a page whose address holds\nwhat a login filled is told to the window with no site, and a page of the\nsame site is named again; the window's chip then reads the device alone.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6TGT5JCJNM13541ZSGPJ3WZ\nPurlis-Persona: steward\n\n* Fixture pages for a click in a scrolled frame over a kept frame\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6TGT5JCJNM13541ZSGPJ3WZ\nPurlis-Persona: steward\n\n* The window's chip test also holds a page told with no site over where it was sent\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6TGT5JCJNM13541ZSGPJ3WZ\nPurlis-Persona: steward\n\n* Mutation run: revert what the new tests guard, to see each go red (to be reverted)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6TGT5JCJNM13541ZSGPJ3WZ\nPurlis-Persona: steward\n\n* Revert the mutation run\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6TGT5JCJNM13541ZSGPJ3WZ\nPurlis-Persona: steward\n\n* Each window test starts from no page origin, and a refused click says what was found\n\nThe window tests of a browser's view forget where each browser's page is\nafter each test, as the chats' browsers' tests do, so one test's origin is\nnot read by the next.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6TGT5JCJNM13541ZSGPJ3WZ\nPurlis-Persona: steward\n\n* The scrolled frame's fixture keeps a point that missed its scroll inside the frame\n\nScrolled 60 rather than 300, a point read as if the frame's document were\nnot scrolled still lands inside the frame, on its own text: missing the\nscroll would let the click under the provider's frame through, which the\ntest then catches.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6TGT5JCJNM13541ZSGPJ3WZ\nPurlis-Persona: steward\n\n* Mutation run: drop the scroll of each frame past the first, to see the scrolled-frame test go red (to be reverted)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6TGT5JCJNM13541ZSGPJ3WZ\nPurlis-Persona: steward\n\n* Revert the second mutation run\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6TGT5JCJNM13541ZSGPJ3WZ\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-07T13:23:23Z",
+          "tree_id": "cdccae769a0ce3e94ae79a6244a65b56c9120306",
+          "url": "https://github.com/purlis/purlis/commit/2420887172df7794d1f911e3852c8a2f3ea2eaa5"
+        },
+        "date": 1794063281682,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5555805,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.545, 0.555, 0.556, 0.559, 0.594 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.199192500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.166, 16.176, 16.199, 16.212, 16.446 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.454932,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.170, 100.352, 100.455, 100.531, 103.111 ms"
           }
         ]
       }
