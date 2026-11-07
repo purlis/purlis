@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Scrolled under a frame</title>
+<style>
+  body { margin: 0; font: 24px sans-serif; }
+  .room { height: 400px; }
+  button { display: block; width: 300px; height: 40px; margin: 0; }
+  .between { height: 80px; }
+  .after { height: 2000px; }
+  iframe { position: fixed; left: 0; top: 80px; width: 600px; height: 60px; border: 0; }
+</style></head>
+<body>
+  <div class="room">The other site's own text, above its buttons</div>
+  <button type="button">Press under the frame</button>
+  <div class="between"></div>
+  <button type="button" onclick="this.textContent = 'Pressed beside the frame'">Press beside the frame</button>
+  <div class="after"></div>
+  <iframe title="Provider frame" src="http://auth.fixture.test/frame.html"></iframe>
+  <script>
+    // Scrolled 300 down: the first button, laid out 400 down this document, is drawn 100 down
+    // this frame, under the provider's frame (80 to 140); the second, laid out 520 down, is
+    // drawn 220 down, clear of it. Unscrolled, 100 down is this document's own text.
+    window.scrollTo(0, 300);
+  </script>
+</body></html>

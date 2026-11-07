@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>A scrolled frame over a scrolled page</title>
+<style>
+  body { margin: 0; font: 24px sans-serif; }
+  .room { height: 400px; }
+  iframe { display: block; width: 600px; height: 300px; border: 0; margin: 0; }
+  .after { height: 2000px; }
+</style></head>
+<body>
+  <div class="room">The app's own page, above the other site's frame</div>
+  <iframe title="Other site's frame" src="http://other.test/scrolled-over-a-kept-frame.html"></iframe>
+  <div class="after"></div>
+  <script>
+    // Scrolled 200 down: the other site's frame, laid out 400 down the document, is drawn 200
+    // down the window.
+    window.scrollTo(0, 200);
+  </script>
+</body></html>
