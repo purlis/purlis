@@ -5,7 +5,13 @@ import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { FIRST_ASK, aDialogOffers, showsTheQuestion, whatThePickerOffers } from "./opening";
+import {
+  FIRST_ASK,
+  aDialogOffers,
+  showsTheQuestion,
+  whatCameInsteadOfThePicker,
+  whatThePickerOffers,
+} from "./opening";
 
 /**
  * **The trust question is waited for by what it says, read again at every look** (#2126).
@@ -168,6 +174,45 @@ describe("what the picker offers to press, as a spec chooses it", () => {
   it("is Start chat once the rows are checked and nothing asks", () => {
     picker(false, "Start chat");
     expect(whatThePickerOffers("Start a chat")).toBe("Start chat");
+  });
+});
+
+/**
+ * **What came instead of the picker** (#5580). In a project where no harness can start, New chat
+ * opens the Set up a harness tab and never draws the picker (FR-29). On macOS in the merge queue a
+ * spec before the palette's left the window on such a project, and the palette's first test
+ * waited 20 s for a Start that could never come, then said only "the picker never offered Start".
+ */
+describe("what a press of New chat opened in the picker's place", () => {
+  /** The tab strip as `PlaneView` draws it, with `names` on it and `front` selected. */
+  function strip(names: string[], front: string): void {
+    const tabs = document.createElement("div");
+    tabs.setAttribute("data-strip", "Tabs");
+    for (const name of names) {
+      const tab = document.createElement("div");
+      tab.setAttribute("role", "tab");
+      tab.setAttribute("aria-selected", String(name === front));
+      const said = document.createElement("span");
+      said.className = "tab-name";
+      said.textContent = name;
+      tab.append(said);
+      tabs.append(tab);
+    }
+    document.body.append(tabs);
+  }
+
+  it("is the Set up a harness tab when it is the one in front", () => {
+    strip(["New chat", "Set up a harness · forges-hub"], "Set up a harness · forges-hub");
+    expect(whatCameInsteadOfThePicker()).toBe("Set up a harness · forges-hub");
+  });
+
+  it("is nothing while a chat's tab is in front", () => {
+    strip(["Set up a harness · forges-hub", "New chat"], "New chat");
+    expect(whatCameInsteadOfThePicker()).toBeNull();
+  });
+
+  it("is nothing with no strip drawn", () => {
+    expect(whatCameInsteadOfThePicker()).toBeNull();
   });
 });
 
