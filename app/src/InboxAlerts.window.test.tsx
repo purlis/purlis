@@ -221,12 +221,12 @@ const row = (open: HTMLElement, cause: string) => {
 const listed = (cause: string) =>
   document.querySelector(`[data-scope=notice-list] [data-cause="${cause}"]`) !== null;
 
-describe("a chat's arrived files in the Inbox (#5702)", () => {
-  it("are read again when the Inbox opens, and say when the look found them", async () => {
+describe("a chat's arrived files in the Notices (#5702)", () => {
+  it("are read again when the Notices view opens, and say when the look found them", async () => {
     rows = [];
     render(<App />);
     await screen.findByRole("tab", { name: /plane/ });
-    await userEvent.click(await screen.findByRole("button", { name: "Close Inbox" }));
+    // The right half opens on Memory: the Notices are not open yet.
     await waitFor(() => expect(calls("alerts_everywhere").length).toBeGreaterThan(0));
     const before = calls("alerts_everywhere").length;
     // A turn ends, and its look finds a file that can run later, two hours ago by its record.
@@ -242,9 +242,9 @@ describe("a chat's arrived files in the Inbox (#5702)", () => {
       },
     ];
     // Opened from its own button on the activity bar, not the status line's Notices.
-    await userEvent.click(screen.getByRole("tab", { name: "Inbox" }));
+    await userEvent.click(screen.getByRole("tab", { name: "Notices" }));
     await waitFor(() => expect(calls("alerts_everywhere").length).toBeGreaterThan(before));
-    const open = await screen.findByRole("tabpanel", { name: "Inbox" });
+    const open = await screen.findByRole("tabpanel", { name: "Notices" });
     await waitFor(() => expect(listed("arrived-files:01M6M3VNN8GNE85XEV3194WJE6")).toBe(true));
     expect(row(open, "arrived-files:01M6M3VNN8GNE85XEV3194WJE6")).toHaveTextContent("2h");
   });
