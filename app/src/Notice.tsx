@@ -344,6 +344,7 @@ export function Notice(props: NoticeProps) {
         persona={persona}
         whose={of ?? undefined}
         quiet={quiet}
+        since={(props as { since?: number | null }).since}
         consent={
           props.consent === true ||
           (props as { waits?: boolean }).waits === true ||
@@ -543,8 +544,9 @@ function stateSaid({
  * is quiet.
  *
  * **Its title is the one thing it may not lack**: what it names (a card's title, whose it is, its
- * label), or else its state, which then is not said again under it. Its age is how long it has
- * stood in this window: a Notice holds no time of its own, so a relaunch starts it again.
+ * label), or else its state, which then is not said again under it. Its age is from when what it
+ * says began where its caller knows that (`since`, #5702); else it is how long it has stood in this
+ * window, so a relaunch starts it again.
  */
 function CentreCard({
   cause,
@@ -555,6 +557,7 @@ function CentreCard({
   persona,
   whose,
   quiet,
+  since: given,
   consent,
   fixes,
   link,
@@ -573,12 +576,15 @@ function CentreCard({
   persona?: string | null;
   whose?: { whose: string; onGo: () => void };
   quiet?: boolean;
+  /** When what it says began, in seconds, where its caller knows (#5702). */
+  since?: number | null;
   consent: boolean;
   mayAct: (target: Element) => boolean;
   under?: ReactNode;
   children: ReactNode;
 }) {
-  const [since] = useState(() => Date.now());
+  const [drawn] = useState(() => Date.now());
+  const since = given == null ? drawn : given * 1000;
   const now = useNow();
   const toChat = fixes?.find((fix) => fix.go === true);
   const others = fixes?.filter((fix) => fix !== toChat) ?? [];
@@ -931,8 +937,8 @@ function BandRow({
 }
 
 /**
- * **How important a Notice is, by the family of its cause** (V91i): trouble, then attention, then
- * news ({@link TONE_ORDER}), then
+ * **How important a Notice is, by the family of its cause** (V91i): after the families listed
+ * {@link AHEAD} of all, trouble, then attention, then news ({@link TONE_ORDER}), then
  * this order, then the one drawn first. A family is the cause up to its first `:`; one not in
  * the list comes after every one that is.
  *
@@ -971,6 +977,16 @@ const DISMISS = ':scope > [role="status"] :is(.notice-dismiss, [data-way="dismis
 
 /** A cause's family: what it is up to the first `:` (`pin-dormant:ide` is a `pin-dormant`). */
 export const familyOf = (cause: string): string => cause.split(":", 1)[0];
+
+/**
+ * **The families listed before every other Notice, whatever its tone** (#5702): what has appeared
+ * in a chat's folders and can run later (ADR 0067 §5). It is told after the turn that caused it,
+ * and the person has to find it then, before they or a tool work in that folder: listed by its
+ * tone, it stood below the project's older Notices, out of sight.
+ */
+export const AHEAD: ReadonlySet<string> = new Set(["arrived-files"]);
+
+const ahead = (cause: string) => (AHEAD.has(familyOf(cause)) ? 0 : 1);
 
 const rank = (cause: string) => {
   const at = IMPORTANCE.indexOf(familyOf(cause));
@@ -1078,7 +1094,10 @@ export function NoticeList({
     () =>
       [...entries.values()].sort(
         (a, b) =>
-          TONE_ORDER[a.tone] - TONE_ORDER[b.tone] || rank(a.cause) - rank(b.cause) || a.seq - b.seq,
+          ahead(a.cause) - ahead(b.cause) ||
+          TONE_ORDER[a.tone] - TONE_ORDER[b.tone] ||
+          rank(a.cause) - rank(b.cause) ||
+          a.seq - b.seq,
       ),
     [entries],
   );
