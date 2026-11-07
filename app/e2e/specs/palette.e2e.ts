@@ -12,7 +12,8 @@ import {
   whereTheKeyboardIs,
 } from "../opening.js";
 import { chatsRunning, endTheChatsStartedSince, leftOver, type Running } from "../chatsLeft.js";
-import { KEPT_EMPTY, closeTheViewTabsOpenedSince, openedSince } from "../reach.js";
+import { KEPT_EMPTY, closeTheViewTabsOpenedSince, openedSince, projectInFront } from "../reach.js";
+import { paneInFront } from "../started.js";
 
 /**
  * The command palette against the real app, driven by the keyboard and nothing else.
@@ -178,7 +179,12 @@ describe("the command palette", () => {
   // the profile picker on screen, and because WebdriverIO's Tauri service keeps ONE app
   // process for the whole run, every spec after it failed on a modal it never opened.
   afterEach(async function () {
-    for (const selector of [PALETTE, '[role="dialog"][aria-labelledby="start-chat"]']) {
+    // A question left up by a failed test too, or the cleanup below meets it (#5580).
+    for (const selector of [
+      PALETTE,
+      '[role="dialog"][aria-labelledby="start-chat"]',
+      '[role="alertdialog"]',
+    ]) {
       const dialog = await $(selector);
       if (await dialog.isDisplayed().catch(() => false)) {
         await browser.keys(["Escape"]);
@@ -192,7 +198,11 @@ describe("the command palette", () => {
     if (this.currentTest?.state === "failed") await backToHowTheFileFoundIt();
   });
 
-  /** Ends this file's chats, clears their ended panes and closes the tabs it opened. */
+  /**
+   * Ends this file's chats, clears their ended panes and closes the tabs it opened. Each step is
+   * best effort, since the test has already failed: what it could not undo is said by the file's
+   * `after` ("left a chat open") and the tabs guard.
+   */
   async function backToHowTheFileFoundIt(): Promise<void> {
     await endTheChatsStartedSince(chatsBefore).catch(() => undefined);
     await clearEndedPanes().catch(() => undefined);
@@ -205,13 +215,11 @@ describe("the command palette", () => {
    * that ends or asks about the chat in front stands on its own this way.
    */
   async function aChatOfThisFileInFront(): Promise<void> {
-    const front = await browser.execute(() => {
-      const pane = [...document.querySelectorAll<HTMLElement>('[data-testid="pane"]')].find(
-        (one) => one.getBoundingClientRect().width > 0,
-      );
-      return Number(pane?.getAttribute("data-session") ?? -1);
-    });
-    const ours = leftOver(chatsBefore, await chatsRunning()).some((one) => one.session === front);
+    const front = await paneInFront();
+    const plane = await projectInFront();
+    const ours = leftOver(chatsBefore, await chatsRunning()).some(
+      (one) => one.session === front && one.plane === plane,
+    );
     if (!ours) await pressAndStart("New tab");
   }
 
@@ -278,7 +286,6 @@ describe("the command palette", () => {
     await expect($(PALETTE)).not.toBeDisplayed();
     await answerThePicker();
     await expect($('[data-testid="pane"]')).toBeDisplayed();
-    throw new Error("TEMPORARY (#5580): forced failure, to show the tests after it stand alone");
   });
 
   it("raises the question from a keyboard-only press, and Escape answers it with no", async () => {
@@ -340,8 +347,8 @@ describe("the command palette", () => {
   it("ends the chat once the question is answered yes", async () => {
     // The pane the test above opened (or the one opened here, #5580) is that tab's only one, so
     // ending its chat and clearing the ended band it leaves (#5019) closes the tab with it —
-    // which is what makes this checkable without counting panes across tabs. Its End…, the one row that ends a chat: Close pane
-    // ends nothing (#4756).
+    // which is what makes this checkable without counting panes across tabs. Its End…, the one
+    // row that ends a chat: Close pane ends nothing (#4756).
     //
     // **The yes is a click here, and only because a scenario cannot press a button by
     // keyboard at all** — see the spec above for the trace that measured it. What this proves

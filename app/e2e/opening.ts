@@ -82,6 +82,10 @@ export function whatThePickerOffers(text: string): string | null {
  * (#5580). Only while no picker is up: from that tab, its own Start a chat draws one.
  */
 export function whatCameInsteadOfThePicker(): string | null {
+  const pickerUp = [...document.querySelectorAll('[role="dialog"]')].some((dialog) =>
+    (dialog.textContent ?? "").includes("Start a chat"),
+  );
+  if (pickerUp) return null;
   const front = document
     .querySelector('[data-strip="Tabs"] [role="tab"][aria-selected="true"]')
     ?.querySelector(".tab-name")
@@ -447,6 +451,7 @@ export async function closeProject(button: string): Promise<void> {
  */
 export async function closingByTheWindow(plane: string): Promise<unknown> {
   if (plane === "") return undefined;
+  // `switching.ts`'s PROJECTS, written out: that module imports this one.
   const closer = `[data-strip="Projects"] [role="tab"][aria-label="${basename(plane)}"]`;
   try {
     if (await $(closer).isExisting()) await closeProject(closer);

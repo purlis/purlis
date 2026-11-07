@@ -211,6 +211,19 @@ describe("what a press of New chat opened in the picker's place", () => {
     expect(whatCameInsteadOfThePicker()).toBeNull();
   });
 
+  it("is nothing while a picker is up in front of it, though still checking its rows", () => {
+    // The setup tab's own Start a chat draws the picker over it (#4736: rows busy at first).
+    strip(["Set up a harness · forges-hub"], "Set up a harness · forges-hub");
+    const dialog = document.createElement("div");
+    dialog.setAttribute("role", "dialog");
+    dialog.append("Start a chat");
+    const rows = document.createElement("div");
+    rows.setAttribute("aria-busy", "true");
+    dialog.append(rows);
+    document.body.append(dialog);
+    expect(whatCameInsteadOfThePicker()).toBeNull();
+  });
+
   it("is nothing with no strip drawn", () => {
     expect(whatCameInsteadOfThePicker()).toBeNull();
   });
