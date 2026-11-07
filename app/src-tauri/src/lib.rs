@@ -219,6 +219,7 @@ mod windowprefs;
 mod windows;
 mod worklinks;
 mod workspaces;
+mod workspacewrites;
 mod worktrees;
 mod yoursandbox;
 
@@ -990,15 +991,18 @@ fn with_task_standing(
     drawn
 }
 
-/// One workspace as the sidebar draws it: what it is for, what it still means to do, and the
-/// chats working in it.
+/// One workspace as the sidebar draws it: what it is for, how many todos it still means to do,
+/// and the chats working in it.
 #[derive(serde::Serialize, specta::Type)]
 struct SidebarWorkspace {
     name: String,
     /// Where the workspace is, so a chat can be started in it.
     path: String,
     vision: String,
-    todos: Vec<String>,
+    /// How many open todos it has. A count, never their titles: the sidebar is every
+    /// workspace's summary, and its answer must not grow with every workspace's todos (#5501).
+    /// The titles are the workspace's panels' (`workspace_panels`), read for the one in front.
+    open_todos: u32,
     chats: Vec<OpenChat>,
     /// Its colour as its `workspace.json` holds it — a palette name or `#rrggbb` — or `null`
     /// (charter-app#281). Here because every workspace tab draws its own, whether or not it is
@@ -1120,7 +1124,7 @@ fn sidebar_of(held: &planes::Held) -> Result<Sidebar, String> {
         .map(|row| SidebarWorkspace {
             path: row.path.display().to_string(),
             vision: row.vision.clone(),
-            todos: row.todos.clone(),
+            open_todos: u32::try_from(row.todos.len()).unwrap_or(u32::MAX),
             chats: filed.remove(&row.name).unwrap_or_default(),
             colour: row.colour.clone(),
             live: model.is_live(&row.name),
@@ -4194,6 +4198,7 @@ pub fn run() {
             }
             app.manage(Quitting::default());
             app.manage(updates::Installed::default());
+            app.manage(skillset::SetUpdateUndos::default());
             // The extension executor (ADR 0041 stage 2). Managed for the table of
             // programs it is running, which `Exit` below empties. It starts the app's own
             // built-in extensions, found here in its resources and nowhere else
@@ -4396,17 +4401,18 @@ pub fn run() {
             // What a project's chats tell its window, sent as one event about every 100 ms
             // rather than one each (#4746): managed before any plane is opened, as the
             // notifier is, since the first chat to move tells the window.
-            let batches = chatevents::Batches::start(chatevents::INTERVAL, {
-                let window = app.handle().clone();
-                move |batch: chatevents::ChatEvents| {
-                    windows::emit_for_plane(
-                        &window,
-                        &batch.plane.clone(),
-                        chatevents::EVENT,
-                        &batch,
-                    );
-                }
-            });
+            let batches =
+                chatevents::Batches::start(chatevents::interval(purlis_core::envvar::var), {
+                    let window = app.handle().clone();
+                    move |batch: chatevents::ChatEvents| {
+                        windows::emit_for_plane(
+                            &window,
+                            &batch.plane.clone(),
+                            chatevents::EVENT,
+                            &batch,
+                        );
+                    }
+                });
             app.manage(batches.clone());
             // The registry is managed BEFORE a plane is opened, because opening one starts
             // programs, and a program that dies at once tells the board, which tells the

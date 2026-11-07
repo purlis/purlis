@@ -1728,23 +1728,15 @@ body {
   --chat-mark-size: var(--space-6);
 }
 
-/* **`⊟+N`, a split's other panes** (#4762): after the name, and never cut. The name gives way
-   first, so it keeps the tab's floor. */
+/* **A split tab's picture of its layout** (#5342, `ui/tabs`' picture part): after the name, and
+   never cut. The name gives way first, so it keeps the tab's floor. */
 .tabs .tab-split-more {
   display: inline-flex;
   flex: none;
   align-items: center;
-  gap: var(--space-1);
-  color: var(--text-quiet);
-  font-variant-numeric: tabular-nums;
 }
 
-.tabs .tab-split-more > svg {
-  inline-size: var(--space-5);
-  block-size: var(--space-5);
-}
-
-/* **A zoomed pane's mark** (#4765): after `⊟+N`, quiet like it, and never cut. */
+/* **A zoomed pane's mark** (#4765): after a split tab's picture, quiet like it, and never cut. */
 .tabs .tab-zoomed {
   display: inline-flex;
   flex: none;
@@ -9015,30 +9007,4 @@ nav.piece-files-head {
   padding: var(--space-3) var(--space-4);
   border-inline-start: 2px solid;
   font-size: var(--font-size-sm);
-}
-
-/* **A chat row's Place…** (#4764): under the pointer only, over the row's end on the row's own
-   ground, so nothing on the row moves as it comes and goes. The keyboard's way is ⌘⇧M. */
-.chats-section .chat-row-place {
-  display: none;
-  position: absolute;
-  inset-block: 0;
-  inset-inline-end: 0;
-  align-items: center;
-  padding-inline: var(--space-2);
-  color: var(--text-secondary);
-  background-color: var(--surface-hover);
-  cursor: pointer;
-}
-
-@media (hover: hover) {
-  .chats-section .chat:hover .chat-row-place {
-    display: flex;
-  }
-}
-
-.chats-section .chat-row-place > svg {
-  flex: none;
-  inline-size: var(--ui-tree-step);
-  block-size: var(--ui-tree-step);
 }

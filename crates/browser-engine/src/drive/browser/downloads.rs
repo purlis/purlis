@@ -45,11 +45,13 @@ pub(super) struct Downloads {
     refused_going: std::collections::HashSet<String>,
     /// How many of those were told.
     refused_told: usize,
+    /// The page each began on, by its id, where its frame was known: what it is judged by.
+    began_on: std::collections::HashMap<String, String>,
 }
 
 impl Downloads {
-    /// Download `guid` began at `address`, its page suggesting `suggested`, on a page whose
-    /// document is at `page_address`. One past `limits`' most downloads is listed nowhere,
+    /// Download `guid` began at `address`, its page suggesting `suggested`, on page `page` in a
+    /// frame whose document is at `page_address`. One past `limits`' most downloads is listed nowhere,
     /// only counted, and answered to be discarded. One the browser has already is not begun
     /// again.
     pub(super) fn began(
@@ -57,6 +59,7 @@ impl Downloads {
         guid: &str,
         address: &str,
         suggested: &str,
+        page: Option<&str>,
         page_address: Option<&str>,
         limits: &Limits,
     ) -> Option<Discard> {
@@ -74,6 +77,9 @@ impl Downloads {
         let own = address.strip_prefix("blob:").unwrap_or(address);
         let origin = origin_of(own).or_else(|| page_address.and_then(origin_of));
         let id = format!("d{}", self.all.len() + 1);
+        if let Some(page) = page {
+            self.began_on.insert(id.clone(), page.to_owned());
+        }
         self.all.push(DownloadInfo {
             id: id.clone(),
             name: plain_file_name(suggested),
@@ -166,6 +172,13 @@ impl Downloads {
         let since = self.refused - self.refused_told;
         self.refused_told = self.refused;
         (since > 0).then_some(since)
+    }
+
+    /// Download `id`'s origin, and the page it began on where that is known, where the browser
+    /// has it.
+    pub(super) fn whence(&self, id: &str) -> Option<(Option<String>, Option<String>)> {
+        let one = self.all.iter().find(|one| one.id == id)?;
+        Some((one.origin.clone(), self.began_on.get(id).cloned()))
     }
 
     /// Every one.

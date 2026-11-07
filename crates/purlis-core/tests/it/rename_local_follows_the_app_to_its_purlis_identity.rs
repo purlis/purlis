@@ -642,8 +642,12 @@ fn the_update_restart_from_the_old_app_is_not_stopped_by_the_old_app() {
     let old = std::fs::File::create(dir.path().join("dev.charter.app.lock")).unwrap();
     old.lock().unwrap();
 
-    // Started by the old app's own program: the update's restart, let through.
+    // Started by the app's own program, under its name or the one it had before #1309: the
+    // update's restart, let through. An update from 0.5.x is restarted by `charter-app`.
     for parent in [
+        "/Applications/purlis.app/Contents/MacOS/purlis-app",
+        "/usr/bin/purlis-app",
+        "purlis-app",
         "/Applications/charter.app/Contents/MacOS/charter-app",
         "charter-app",
     ] {

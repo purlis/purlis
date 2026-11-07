@@ -108,19 +108,20 @@ pub fn report(
         return Err(unread);
     }
 
-    // Exact duplicates: one normalised body, grouped in listing order.
-    let mut by_body: Vec<(String, Vec<String>)> = Vec::new();
+    // Exact duplicates: one normalised body, grouped by a hash map, not a search of the groups
+    // so far (#5504).
+    let mut by_body: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
     for found in &ents {
-        let key = memstore::body(&found.text);
-        match by_body.iter_mut().find(|(k, _)| *k == key) {
-            Some((_, names)) => names.push(name_of(found)),
-            None => by_body.push((key, vec![name_of(found)])),
-        }
+        by_body
+            .entry(memstore::body(&found.text))
+            .or_default()
+            .push(name_of(found));
     }
     let mut exact: Vec<Vec<String>> = by_body
-        .into_iter()
-        .filter(|(_, names)| names.len() > 1)
-        .map(|(_, mut names)| {
+        .into_values()
+        .filter(|names| names.len() > 1)
+        .map(|mut names| {
             names.sort();
             names
         })

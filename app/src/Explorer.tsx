@@ -19,10 +19,13 @@ import {
   ArrowUpRight,
   ChevronRight,
   ChevronsDownUp,
+  FileInput,
+  FilePlus,
   Files,
   FileSymlink,
   FileX,
   FolderGit2,
+  FolderPlus,
   Folders,
   GitBranch,
   ListFilter,
@@ -33,6 +36,7 @@ import type {
   FileScope,
   FolderEntry,
   FoundFile,
+  KeptMark,
   OpenChat,
   Piece,
   PlaneId,
@@ -58,11 +62,12 @@ import {
 } from "./branchStatus";
 import { PLANE_ROOT, isPlaneRoot, type Place } from "./pieceViews";
 import { Badge } from "./ui/badge/Badge";
-import { catalogueMenu } from "./Menus";
+import { CatalogueMenu, catalogueMenu } from "./Menus";
 import { NotClonedHere, notClonedRows, type Cloning } from "./NotCloned";
 import { stopRepoClones } from "./repoClones";
 import { WorktreeMark } from "./Worktree";
 import { OUTSIDE_TITLE } from "./actions";
+import { fileRows as fileRowsOf } from "./actions";
 import type { BranchPath, Catalogued, FileOn, FileRef, Offer } from "./actions";
 import { setSectionOpen, useClosedSections, type SectionId } from "./explorerSections";
 import { keepTreeFolds, keptTreeFolds } from "./explorerFolds";
@@ -199,8 +204,11 @@ import { onAMac } from "./tabKeys";
  *
  * **A file or folder row has a menu that changes nothing** (FM-10, #1113): copy its path,
  * relative or absolute, reveal it in the file manager, your editor for a file and a shell tab
- * for a folder (`actions.fileRows`). Never create, rename, move or delete (ADR 0081, V86 F8):
- * charter does not race an agent writing the same tree. Each row names the branch and the path
+ * for a folder (`actions.fileRows`). Never create, rename, move or delete in a repo or a branch's
+ * folder (ADR 0081, V86 F8): charter does not race an agent writing the same tree. The person's
+ * own workspace files are the one exception (#5376, ADR 0081 amended 2026-11-05): their rows, and
+ * the view's head with the workspace's folder showing, also offer New file…, New folder…, Import
+ * files…, Rename… and Delete…, never on what purlis keeps there. Each row names the branch and the path
  * inside it; the core places it (`files::place`), so no path the window joined leaves it.
  *
  * **Focused on one branch, it is that branch's cockpit** (FM-5, #1108; V86 F2): a breadcrumb
@@ -497,6 +505,10 @@ export function Explorer({
   // draw again. Each row reads its own mark, worked out once per touch for each branch read here.
   const touchStore = useTouches(plane);
   const touching = touchingOf(touchStore, plane, (touches, key) => {
+    // The workspace's own files (#5376): a chat working in the workspace's folder marks what it
+    // touches there, so a rename or delete of it asks first. Its folder as `tabs.ts` spells it.
+    if (onWs && key === branchKey(WS_TOP) && plane !== undefined && workspace !== undefined)
+      return touchingIn(touches, chats, `${plane}/workspaces/${workspace}`);
     const ref = touches.length === 0 ? undefined : branches.find((one) => branchKey(one) === key);
     if (ref === undefined) return undefined;
     const folder =
@@ -1171,14 +1183,19 @@ export function Explorer({
                 beside={beside}
                 marks={topMarks}
                 actions={
-                  <IconButton
-                    size="sm"
-                    variant="ghost"
-                    aria-label="Collapse all folders"
-                    tooltip="Collapse all folders"
-                    onPress={collapseAll}
-                    icon={<ChevronsDownUp className="node-icon" aria-hidden="true" />}
-                  />
+                  <>
+                    {onWs && workspace !== undefined && (
+                      <WorkspaceWriteButtons workspace={workspace} onPress={onPress} />
+                    )}
+                    <IconButton
+                      size="sm"
+                      variant="ghost"
+                      aria-label="Collapse all folders"
+                      tooltip="Collapse all folders"
+                      onPress={collapseAll}
+                      icon={<ChevronsDownUp className="node-icon" aria-hidden="true" />}
+                    />
+                  </>
                 }
               />
               {(repos.length > 0 || onWs) && (
@@ -2021,6 +2038,8 @@ export type Child = {
   repo?: string;
   /** In a workspace's own folder, whether purlis keeps it: marked *managed*, opened read-only. */
   managed?: boolean;
+  /** In a LIVE workspace's own folder (#5377), where it is kept; nothing in a LOCAL one. */
+  kept?: KeptMark;
   /** `repos/` in a workspace's own folder, drawn from the top's read: no menu, no drag. */
   reposFolder?: boolean;
 };
@@ -2167,6 +2186,7 @@ function wsChildren(files: FilesOf, ref: BranchFolderRef): Child[] | Level {
       always: false,
       marked: undefined,
       managed: entry.managed === true,
+      kept: entry.kept ?? undefined,
     }));
   if (!top) return listed;
   const inside = new Set(repos.filter((one) => one.inside_repos).map((one) => one.name));
@@ -2248,10 +2268,12 @@ function rowSaid(
   folder: boolean,
   refused?: string,
   managed?: boolean,
+  kept?: KeptMark,
 ): string {
   return [
     name,
     ...(managed === true ? [MANAGED_SAID] : []),
+    ...(kept === undefined ? [] : [KEPT_SAID[kept].toLowerCase()]),
     ...(marked === undefined ? [] : [markSaid(marked, folder)]),
     ...(refused === undefined ? [] : [refused]),
   ].join(" ");
@@ -2268,6 +2290,41 @@ function ManagedMark() {
       <Badge className="managed-mark">{MANAGED_SAID}</Badge>
     </Tooltip>
   );
+}
+
+/** What each mark of where a LIVE workspace's file is kept says (#5377). */
+const KEPT_SAID: Record<KeptMark, string> = {
+  "this-machine-only": "This machine only",
+  "with-the-project": "Saved with the project",
+};
+
+/** What each mark of where a file is kept means, on hover and to the keyboard. */
+const KEPT_TIP: Record<KeptMark, string> = {
+  "this-machine-only": "Kept in this clone: a save leaves it out",
+  "with-the-project": "In the workspace's LIVE allowlist: a save shares it with the project",
+};
+
+/** **Where a LIVE workspace's file is kept** (#5377): This machine only, or Saved with the
+ *  project. Drawn by no row of a LOCAL workspace, whose files are all this machine's. */
+function KeptBadge({ kept }: { kept: KeptMark | undefined }) {
+  if (kept === undefined) return null;
+  return (
+    <Tooltip tip={KEPT_TIP[kept]}>
+      <Badge
+        className="kept-mark"
+        data-kept={kept}
+        variant={kept === "with-the-project" ? "accent" : "neutral"}
+      >
+        {KEPT_SAID[kept]}
+      </Badge>
+    </Tooltip>
+  );
+}
+
+/** Whether a row offers Save with the project (#5377): an entry at the top of a LIVE
+ *  workspace's folder, kept on this machine only, that purlis does not keep. */
+function saveable(path: string, kept: KeptMark | undefined, managed: boolean): boolean {
+  return kept === "this-machine-only" && !managed && !path.includes("/");
 }
 
 /** The live mark on `path` of the branch `branch` names, drawn again only when it changes. */
@@ -2341,11 +2398,30 @@ function fileMenu(on: FileOn, at: FileRows, line?: number): RowMenu | undefined 
   // them all when it is one of them (`actions.fileRows`).
   const picks = at.pick?.picks ?? [];
   const picked = picks.length > 1 ? { picked: picks.map(refOf) } : {};
-  return catalogueMenu(
-    on.kind === "file" ? { ...on, line, ...picked } : { ...on, ...picked },
-    NO_CATALOGUE,
-    at.onPress,
-  );
+  const whole: FileOn = on.kind === "file" ? { ...on, line, ...picked } : { ...on, ...picked };
+  const menu = catalogueMenu(whole, NO_CATALOGUE, at.onPress);
+  if (menu === undefined || typeof menu === "function" || !isWsRef(on.at)) return menu;
+  // In the workspace's own files (#5376), the chats writing the row are read as its menu opens,
+  // so a rename or delete of it asks first, and no row draws again for a touch.
+  const onPress = at.onPress;
+  return {
+    ...menu,
+    menu: () => <TouchedFileMenu on={whole} touching={at.files.touching} onPress={onPress} />,
+  };
+}
+
+/** A file row's menu, with the chats writing it right now (#5376): read while it is open. */
+function TouchedFileMenu({
+  on,
+  touching,
+  onPress,
+}: {
+  on: FileOn;
+  touching: TouchingOf | undefined;
+  onPress: (offer: Offer) => void;
+}) {
+  const touchedBy = useTouchedBy(touching, branchKey(on.at), on.at.path);
+  return <CatalogueMenu on={{ ...on, touchedBy }} offers={NO_CATALOGUE} onPress={onPress} />;
 }
 
 /**
@@ -2421,6 +2497,7 @@ function FilesRow({
   always = false,
   repo = false,
   managed = false,
+  kept,
   bare = false,
   trail,
   at,
@@ -2429,6 +2506,8 @@ function FilesRow({
   branch: BranchFolderRef;
   /** In a workspace's own folder, a folder purlis keeps (#5375): marked so. */
   managed?: boolean;
+  /** In a LIVE workspace's own folder (#5377), where it is kept. */
+  kept?: KeptMark;
   /** No menu and no drag: `repos/` in a workspace's own folder, whose rows are each repo's. */
   bare?: boolean;
   /** At the row's end: a repo's branch (#3343). */
@@ -2459,7 +2538,7 @@ function FilesRow({
       {...press}
       {...pickedAs(at, picked)}
       id={id}
-      textValue={rowSaid(name, marked, true, undefined, managed)}
+      textValue={rowSaid(name, marked, true, undefined, managed, kept)}
       className="file-node"
       data-row={id}
       data-mark={marked?.mark}
@@ -2471,7 +2550,16 @@ function FilesRow({
       menu={
         bare
           ? undefined
-          : fileMenu({ on: "file", at: pathOn(at, branch.folder), kind: "folder" }, at)
+          : fileMenu(
+              {
+                on: "file",
+                at: pathOn(at, branch.folder),
+                kind: "folder",
+                managed,
+                saveable: saveable(branch.folder, kept, managed),
+              },
+              at,
+            )
       }
       carries={bare ? undefined : carriedBy(at, branch.folder, true)}
       content={
@@ -2496,6 +2584,7 @@ function FilesRow({
           />
           <ChangeBadge marked={marked} folder />
           {managed && <ManagedMark />}
+          <KeptBadge kept={kept} />
           {trail}
         </>
       }
@@ -2634,6 +2723,7 @@ function folderItems(branch: BranchFolderRef, level: Level, at: FileRows): React
           name={entry.name}
           always={entry.always}
           managed={entry.managed}
+          kept={entry.kept}
           bare={entry.reposFolder}
           at={at}
           data-ignored={entry.ignored ? "" : undefined}
@@ -2751,7 +2841,7 @@ function FileRow({ branch, entry, at }: { branch: BranchFolderRef; entry: Child;
       {...press}
       {...(at.shown === undefined ? pickedAs(at, picked) : { chosen: path === at.shown })}
       id={id}
-      textValue={rowSaid(entry.name, entry.marked, false, refused, entry.managed)}
+      textValue={rowSaid(entry.name, entry.marked, false, refused, entry.managed, entry.kept)}
       className="file-node"
       data-row={id}
       data-managed={entry.managed === true ? "" : undefined}
@@ -2763,7 +2853,18 @@ function FileRow({ branch, entry, at }: { branch: BranchFolderRef; entry: Child;
       // is the pointer's alone, so no arrow step pops it and no Esc is spent on it.
       tip={refused ?? path}
       tipToPointer={refused === undefined}
-      menu={fileMenu({ on: "file", at: pathOn(at, path), kind: entry.kind, refused }, at, line)}
+      menu={fileMenu(
+        {
+          on: "file",
+          at: pathOn(at, path),
+          kind: entry.kind,
+          refused,
+          managed: entry.managed,
+          saveable: saveable(path, entry.kept, entry.managed === true),
+        },
+        at,
+        line,
+      )}
       carries={carriedBy(at, path, false, refused)}
       content={
         <>
@@ -2776,6 +2877,7 @@ function FileRow({ branch, entry, at }: { branch: BranchFolderRef; entry: Child;
           <TouchMarkOf touching={at.files.touching} branch={branchKey(branch)} path={path} />
           <ChangeBadge marked={entry.marked} folder={false} />
           {entry.managed === true && <ManagedMark />}
+          <KeptBadge kept={entry.kept} />
           {/* Why it does not open, said beside it — an ignored file's too, which is drawn only
               once the operator asked to see what git ignores. */}
           {refused !== undefined && <span className="spot-what ui-text-secondary">{refused}</span>}
@@ -2886,6 +2988,46 @@ export function childOf(
 const WS_TOP: BranchFolderRef = { repo: "", piece: null, folder: "" };
 /** The folder a workspace's repos are in from structure version 6 on (ADR 0114). */
 const REPOS_FOLDER = "repos";
+/**
+ * **New file…, New folder… and Import files… at the top of the workspace's folder** (#5376), in
+ * the view's head beside Collapse all, as icon buttons: the catalogue's own rows for the folder
+ * itself (`actions.fileRows` at the empty path), pressed as a menu's are.
+ */
+function WorkspaceWriteButtons({
+  workspace,
+  onPress,
+}: {
+  workspace: string;
+  onPress: ((offer: Offer) => void) | undefined;
+}) {
+  if (onPress === undefined) return null;
+  const at: BranchPath = { workspace, repo: "", piece: null, path: "" };
+  const rows = fileRowsOf({ on: "file", at, kind: "folder" });
+  const icons = { newfile: FilePlus, newfolder: FolderPlus, import: FileInput } as const;
+  return (
+    <>
+      {(Object.keys(icons) as (keyof typeof icons)[]).map((kind) => {
+        const row = rows.find((one) => one.id.startsWith(`file.${kind}:`));
+        if (row === undefined) return null;
+        const Icon = icons[kind];
+        // The row's words without the ellipsis a menu row carries: the tooltip names the act.
+        const said = row.title.replace(/…$/, "");
+        return (
+          <IconButton
+            key={kind}
+            size="sm"
+            variant="ghost"
+            aria-label={said}
+            tooltip={said}
+            onPress={() => onPress(row)}
+            icon={<Icon className="node-icon" aria-hidden="true" />}
+          />
+        );
+      })}
+    </>
+  );
+}
+
 /** Whether `ref` is a folder of a workspace's own files. */
 function isWsRef(ref: { repo: string; piece: string | null }): boolean {
   return ref.repo === "" && ref.piece === null;

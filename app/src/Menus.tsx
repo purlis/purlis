@@ -263,7 +263,7 @@ export function moreForSaid(name: string | undefined): string {
  * open**: the context menu draws it only then, and `menuOf` scans the catalogue for the Ask,
  * Curate and Move to rows, which a strip of fifty tabs must not pay per render.
  */
-function CatalogueMenu({
+export function CatalogueMenu({
   on,
   offers,
   onPress,

@@ -121,11 +121,65 @@ pub enum Hosts {
     Every,
 }
 
-/// **What a run of an undeclared program asks of the person** (module docs). Every field is the
-/// app's but `command`, which is the chat's words made inert
+/// **A key the run misses, as its notice's value field** (#5242): the vault holds no value under
+/// it, or it is a link whose entry is gone. Names only, never a value.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Fill {
+    pub key: String,
+    /// What the persona's definition says the key is for, where it declares it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub declared: Option<String>,
+    /// Why it is asked though the vault has it: a link whose entry is gone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<super::Reason>,
+}
+
+/// **What a run's one notice offers** (#5242, ADR 0112): an Allow for the program, or, where it has
+/// none, the vault's own Allow, or only its value fields.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Offer {
+    /// Allow once, for this chat or always, and Don't allow: a program no tool declares.
+    #[default]
+    Program,
+    /// **No program Allow, and a vault the persona may not use** (a declared tool, or a lock):
+    /// the vault's line has its own Allow, as a refused vault's notice has (#5160), which gives
+    /// the persona the vault; and Keep blocked. `no_allow` says why, where policy locks the run.
+    Vault {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        no_allow: Option<String>,
+    },
+    /// **Its value fields alone**: Fill and Not now. `no_allow` says why, where policy locks it.
+    Fill {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        no_allow: Option<String>,
+    },
+}
+
+impl Offer {
+    /// Why the notice offers no Allow for the program, where policy is why.
+    pub fn no_allow(&self) -> Option<&str> {
+        match self {
+            Self::Program => None,
+            Self::Vault { no_allow } | Self::Fill { no_allow } => no_allow.as_deref(),
+        }
+    }
+}
+
+/// **What a run asks of the person** (module docs): one notice for every gate it hit. Every field
+/// is the app's but `command`, which is the chat's words made inert
 /// ([`crate::secrets::brokered::command_shown`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunNeed {
+    /// **Asked ahead of its run** (#5244, ADR 0112 amended 2026-11-06): a chat's `secret_ask`
+    /// naming a reviewed program, with no command yet. Only Allow for this chat is offered, and
+    /// its grant binds the chat, program, vault and exactly [`Self::fills`]' keys; the first run
+    /// it covers fixes the variables they are handed by.
+    pub ahead: bool,
+    /// The keys the run misses, one value field each (#5242).
+    pub fills: Vec<Fill>,
+    /// What the notice offers (#5242).
+    pub offer: Offer,
     /// **The vault is not one the persona may use** (ADR 0112): an Allow opens it for that grant's
     /// scope alone, and only Always allow gives it to the persona.
     pub not_its_vault: bool,
@@ -141,6 +195,15 @@ pub struct RunNeed {
 /// **An open ask to allow a program, as the window shows it**: names only, never a value.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct OpenRun {
+    /// Asked ahead of its run ([`RunNeed::ahead`]).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub ahead: bool,
+    /// The keys the run misses ([`RunNeed::fills`]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fills: Vec<Fill>,
+    /// What the notice offers ([`RunNeed::offer`]).
+    #[serde(default)]
+    pub offer: Offer,
     /// The vault is not one the persona may use ([`RunNeed::not_its_vault`]).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub not_its_vault: bool,
@@ -156,10 +219,22 @@ pub struct OpenRun {
 }
 
 impl OpenRun {
-    /// Each key its command hands over, once, in order.
+    /// Each key its command hands over, once, sorted: asked ahead of its run, with no variables
+    /// yet, its fields' keys, which its grant would cover (#5244).
     pub fn keys(&self) -> Vec<String> {
-        keys_of(&self.bound)
+        if !self.ahead {
+            return keys_of(&self.bound);
+        }
+        fill_keys(&self.fills)
     }
+}
+
+/// Each key `fills` names, once, sorted.
+fn fill_keys(fills: &[Fill]) -> Vec<String> {
+    let mut keys: Vec<String> = fills.iter().map(|fill| fill.key.clone()).collect();
+    keys.sort();
+    keys.dedup();
+    keys
 }
 
 /// Each key `bound` hands over, once, sorted.
@@ -184,8 +259,42 @@ pub enum RunAnswer {
     ForChat,
     /// As [`Self::ForChat`], the caller having declared it as the persona's tool (#5245).
     Always,
-    /// Don't allow: this chat is not asked about this program and vault again.
+    /// Don't allow: this chat is not asked about this program and vault again. On a notice with
+    /// no program Allow, Keep blocked or Not now.
     Refuse,
+    /// The vault's own Allow, on a notice with no program Allow (#5242): the caller has given the
+    /// persona the vault, as a refused vault's Allow does.
+    AllowVault,
+    /// Fill, on a notice of value fields alone (#5242).
+    Fill,
+}
+
+impl RunAnswer {
+    /// Whether a notice offering `offer` offers it.
+    pub fn is_offered_by(self, offer: &Offer) -> bool {
+        match offer {
+            Offer::Program => matches!(
+                self,
+                Self::Once | Self::ForChat | Self::Always | Self::Refuse
+            ),
+            Offer::Vault { .. } => matches!(self, Self::AllowVault | Self::Refuse),
+            Offer::Fill { .. } => matches!(self, Self::Fill | Self::Refuse),
+        }
+    }
+
+    /// Whether the run goes on, so every field must be filled first.
+    pub fn goes_on(self) -> bool {
+        self != Self::Refuse
+    }
+}
+
+/// What a chat is told of an Allow at `scope`, where values were stored or not.
+fn allowed(filled: bool, scope: Scope) -> Answer {
+    if filled {
+        Answer::FilledAndAllowed { scope }
+    } else {
+        Answer::Allowed { scope }
+    }
 }
 
 /// The audit's kind for a Run grant the person gave.
@@ -203,18 +312,37 @@ pub struct Audited<'a> {
     kind: &'static str,
     level: &'static str,
     bound: &'a Bound,
+    /// The keys it covers where its bound has no variables yet ([`Self::handing`]).
+    keys: Option<&'a [String]>,
 }
 
 impl<'a> Audited<'a> {
-    /// The person's `answer` on an ask for `bound`.
-    pub fn granted(bound: &'a Bound, answer: RunAnswer) -> Self {
+    /// The person's `answer` on an ask for `bound`, where it is a Run grant's: none for the vault's
+    /// own Allow, audited as a vault's, or a Fill, which grants nothing.
+    pub fn granted(bound: &'a Bound, answer: RunAnswer) -> Option<Self> {
         let (kind, level) = match answer {
             RunAnswer::Once => (GRANT_AUDITED, "once"),
             RunAnswer::ForChat => (GRANT_AUDITED, "chat"),
             RunAnswer::Always => (GRANT_AUDITED, "project"),
             RunAnswer::Refuse => (REFUSE_AUDITED, "chat"),
+            RunAnswer::AllowVault | RunAnswer::Fill => return None,
         };
-        Self { kind, level, bound }
+        Some(Self {
+            kind,
+            level,
+            bound,
+            keys: None,
+        })
+    }
+
+    /// The same, naming `keys` as what it covers: a grant asked ahead of its run (#5244), whose
+    /// bound has no variables until its first run fixes them ([`OpenRun::keys`]).
+    #[must_use]
+    pub fn handing(self, keys: &'a [String]) -> Self {
+        Self {
+            keys: Some(keys),
+            ..self
+        }
     }
 
     /// The person took back `bound`'s grant, which was good `once` or for the chat.
@@ -223,6 +351,7 @@ impl<'a> Audited<'a> {
             kind: REVOKE_AUDITED,
             level: if once { "once" } else { "chat" },
             bound,
+            keys: None,
         }
     }
 
@@ -232,6 +361,7 @@ impl<'a> Audited<'a> {
             kind: REVOKE_AUDITED,
             level: "project",
             bound,
+            keys: None,
         }
     }
 
@@ -248,7 +378,7 @@ impl<'a> Audited<'a> {
             "scope": "local-ui",
             "level": self.level,
             "program": self.bound.program.display().to_string(),
-            "keys": keys_of(self.bound),
+            "keys": self.keys.map_or_else(|| keys_of(self.bound), <[String]>::to_vec),
             "vault": self.bound.vault,
             "chat": self.bound.chat,
         })
@@ -273,11 +403,23 @@ pub struct RunAnswered {
     pub told: Outcome,
 }
 
+/// What [`Asks::fill_run`] stored: the keys, and each chat that stopped waiting on a Secret ask
+/// for one of them, with what it is told.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RunFilled {
+    pub stored: Vec<String>,
+    pub nudge: Vec<(u32, Outcome)>,
+}
+
 /// What a run of an undeclared program comes to ([`Asks::allowed_or_held`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RunHeld {
-    /// A grant covers it, or the person just gave one: it runs.
+    /// A grant covers it, or the person just gave one: it runs, once [`Asks::granted`] still
+    /// says so as it starts.
     Allowed,
+    /// The person filled its values, on a notice that offered no program Allow: it goes on where
+    /// nothing else stops it.
+    Filled,
     /// It was not allowed: nothing ran, and `line` says so.
     Refused { line: String },
     /// Nobody answered before the hold ran out, or the chat has as many open as it may: the
@@ -289,6 +431,12 @@ pub enum RunHeld {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RunSettled {
     Allowed,
+    /// Its values are stored, and nothing was to be allowed.
+    Filled,
+    /// Its values are stored, and the person did not allow the program.
+    FilledNotAllowed,
+    /// Not now: nothing stored, nothing allowed.
+    Declined,
     /// Allow once went to another run of the same command.
     TakenByAnother,
     Refused,
@@ -305,6 +453,8 @@ struct RunWaiter {
 pub(super) struct RunAsked {
     open: OpenRun,
     waiters: Vec<RunWaiter>,
+    /// The keys of its fields the person stored a value under ([`Asks::fill_run`]).
+    stored: Vec<String>,
 }
 
 /// One grant the person gave.
@@ -313,9 +463,33 @@ struct Given {
     /// What Revoke is sent by: numbered with the asks, so never one of theirs.
     id: u32,
     bound: Bound,
+    /// **Given ahead of its run** (#5244): the keys it covers, by any variables, until the first
+    /// run it covers fixes them into [`Self::bound`]. None once fixed, or for any other grant.
+    ahead_keys: Option<Vec<String>>,
     /// Good for one run of exactly its arguments; otherwise for any, for the chat's life.
     once: bool,
     at: u64,
+}
+
+impl Given {
+    /// Whether it covers `bound`: Allow once exactly; a grant ahead its keys, by any variables;
+    /// any other whatever the arguments.
+    fn covers(&self, bound: &Bound) -> bool {
+        if let Some(keys) = &self.ahead_keys {
+            // The same program, vault and chat, handing exactly those keys, by any variables.
+            (
+                &self.bound.chat,
+                &self.bound.name,
+                &self.bound.program,
+                &self.bound.vault,
+            ) == (&bound.chat, &bound.name, &bound.program, &bound.vault)
+                && keys_of(bound) == *keys
+        } else if self.once {
+            self.bound == *bound
+        } else {
+            self.bound.same_but_args(bound)
+        }
+    }
 }
 
 /// The Run grants half of [`Inner`].
@@ -330,13 +504,7 @@ pub(super) struct Runs {
 impl Runs {
     /// Where the grant that covers `bound` is held, if one does.
     fn covers(&self, bound: &Bound) -> Option<usize> {
-        self.given.iter().position(|given| {
-            if given.once {
-                given.bound == *bound
-            } else {
-                given.bound.same_but_args(bound)
-            }
-        })
+        self.given.iter().position(|given| given.covers(bound))
     }
 
     /// Takes what covers `bound`, where a grant does: Allow once goes as it is taken.
@@ -346,6 +514,10 @@ impl Runs {
         };
         if self.given[at].once {
             self.given.remove(at);
+        } else if self.given[at].ahead_keys.take().is_some() {
+            // The first run fixes how the values are handed: from now on, only those variables.
+            self.given[at].bound.env.clone_from(&bound.env);
+            self.given[at].bound.file.clone_from(&bound.file);
         }
         true
     }
@@ -361,6 +533,7 @@ impl Runs {
         self.open.push(RunAsked {
             open,
             waiters: Vec::new(),
+            stored: Vec::new(),
         });
     }
 
@@ -381,15 +554,57 @@ impl Runs {
     }
 }
 
-/// What a chat hears as its command starts to wait.
-fn asked_said(bound: &Bound, within: Duration) -> String {
+/// What a chat hears as its command starts to wait: what it was asked about, but which keys a
+/// vault its persona may not use lacks, which it is not told.
+fn asked_said(
+    bound: &Bound,
+    offer: &Offer,
+    keys: &[String],
+    not_its_vault: bool,
+    within: Duration,
+) -> String {
+    let fill = match (keys, not_its_vault) {
+        ([], _) => String::new(),
+        (_, true) => " and to fill what it lacks".to_owned(),
+        (keys, false) => format!(" and to fill {}", keys.join(", ")),
+    };
+    let what = match offer {
+        Offer::Program => format!(
+            "to allow {} with vault {}{fill}",
+            bound.program_name(),
+            bound.vault
+        ),
+        Offer::Vault { .. } => format!("to let it use vault {}{fill}", bound.vault),
+        Offer::Fill { .. } => format!("to fill {} in vault {}", keys.join(", "), bound.vault),
+    };
     format!(
-        "purlis asked the person in its window to allow {} with vault {}: this command waits for \
-         their answer for up to {} seconds",
-        bound.program_name(),
-        bound.vault,
+        "purlis asked the person in its window {what}: this command waits for their answer for \
+         up to {} seconds",
         within.as_secs()
     )
+}
+
+/// What a chat hears whose values the person stored and whose program they did not allow.
+fn filled_not_allowed_said(bound: &Bound) -> String {
+    format!(
+        "the person filled what this command lacked in vault {}, but did not allow {} in this \
+         chat, so nothing ran: don't run it again or work around it",
+        bound.vault,
+        bound.program_name()
+    )
+}
+
+/// What a chat hears where the person chose Not now.
+fn declined_all_said(bound: &Bound, keys: &[String]) -> String {
+    match keys {
+        [key] => super::declined_said(&bound.vault, key),
+        _ => format!(
+            "the person declined to fill {} in vault {} for this chat, so nothing ran: don't ask \
+             for them again in this chat; go on without them",
+            keys.join(", "),
+            bound.vault
+        ),
+    }
 }
 
 /// What a chat hears whose command stopped waiting.
@@ -442,6 +657,9 @@ impl Asks {
         say: &mut dyn FnMut(&str),
     ) -> RunHeld {
         let RunNeed {
+            ahead,
+            fills,
+            offer,
             not_its_vault,
             bound,
             persona,
@@ -449,17 +667,32 @@ impl Asks {
             caution,
             command,
         } = need;
+        let keys: Vec<String> = fills.iter().map(|fill| fill.key.clone()).collect();
         let (answered, n, id) = {
             let mut inner = self.inner();
             // A grant comes first: a Don't allow given later takes it away ([`Self::answer_run`]).
-            if inner.runs.take(&bound) {
+            // It is used only as the run starts ([`Self::granted`]), so a run that stops short of
+            // that, for a full slot or a value it waits on, leaves Allow once for its retry.
+            if offer == Offer::Program && inner.runs.covers(&bound).is_some() {
                 return RunHeld::Allowed;
             }
-            if inner.runs.refused.contains(&(
-                bound.chat,
-                bound.program.clone(),
-                bound.vault.clone(),
-            )) {
+            // Not now on a key is a decline, as a Secret ask's is: not asked again in this chat.
+            if let Some(key) = keys.iter().find(|key| {
+                inner
+                    .declined
+                    .contains(&(bound.chat, bound.vault.clone(), (*key).clone()))
+            }) {
+                return RunHeld::Refused {
+                    line: super::declined_said(&bound.vault, key),
+                };
+            }
+            if offer == Offer::Program
+                && inner.runs.refused.contains(&(
+                    bound.chat,
+                    bound.program.clone(),
+                    bound.vault.clone(),
+                ))
+            {
                 return RunHeld::Refused {
                     line: refused_said(&bound),
                 };
@@ -471,12 +704,13 @@ impl Asks {
                 tell: Some(tell),
                 n,
             };
-            let id = if let Some(asked) = inner
-                .runs
-                .open
-                .iter_mut()
-                .find(|asked| asked.open.bound == bound)
-            {
+            let id = if let Some(asked) = inner.runs.open.iter_mut().find(|asked| {
+                // Ahead of its run a bound names no variables: its fields say which keys.
+                asked.open.bound == bound
+                    && asked.open.offer == offer
+                    && asked.open.ahead == ahead
+                    && (!ahead || fill_keys(&asked.open.fills) == fill_keys(&fills))
+            }) {
                 asked.waiters.push(waiter);
                 asked.open.id
             } else {
@@ -495,6 +729,9 @@ impl Asks {
                 let id = inner.next;
                 inner.runs.open.push(RunAsked {
                     open: OpenRun {
+                        ahead,
+                        fills,
+                        offer: offer.clone(),
                         not_its_vault,
                         id,
                         persona,
@@ -505,15 +742,23 @@ impl Asks {
                         since: now_secs(),
                     },
                     waiters: vec![waiter],
+                    stored: Vec::new(),
                 });
                 self.save(&inner);
                 id
             };
             (answered, n, id)
         };
-        say(&asked_said(&bound, within));
+        say(&asked_said(&bound, &offer, &keys, not_its_vault, within));
         let settled_as = |settled: RunSettled| match settled {
             RunSettled::Allowed => RunHeld::Allowed,
+            RunSettled::Filled => RunHeld::Filled,
+            RunSettled::FilledNotAllowed => RunHeld::Refused {
+                line: filled_not_allowed_said(&bound),
+            },
+            RunSettled::Declined => RunHeld::Refused {
+                line: declined_all_said(&bound, &keys),
+            },
             RunSettled::TakenByAnother => RunHeld::Refused {
                 line: taken_said(&bound),
             },
@@ -572,6 +817,26 @@ impl Asks {
         );
     }
 
+    /// **Drops an Allow once given for exactly `bound`**, unused: a check after the Allow
+    /// refused its run, so no retry may use it (the person's ruling, #5242). A run that only
+    /// waited keeps it.
+    pub fn drop_once(&self, bound: &Bound) {
+        self.inner()
+            .runs
+            .given
+            .retain(|given| !(given.once && given.bound == *bound));
+    }
+
+    /// **Whether the person did not allow `bound`'s program with its vault in its chat**, which
+    /// is not asked about again (#5244).
+    pub fn refused_run(&self, bound: &Bound) -> bool {
+        self.inner().runs.refused.contains(&(
+            bound.chat,
+            bound.program.clone(),
+            bound.vault.clone(),
+        ))
+    }
+
     /// **Whether a grant covers `bound`**, with nothing asked and nothing used up.
     pub fn covers(&self, bound: &Bound) -> bool {
         self.inner().runs.covers(bound).is_some()
@@ -583,12 +848,7 @@ impl Asks {
             .runs
             .given
             .iter()
-            .any(|given| !given.once && given.bound.same_but_args(bound))
-    }
-
-    /// **Whether a grant covers `bound`**, with nothing asked: Allow once goes as it is taken.
-    pub fn granted(&self, bound: &Bound) -> bool {
-        self.inner().runs.take(bound)
+            .any(|given| !given.once && given.covers(bound))
     }
 
     /// **Every Run grant given and not used up**, oldest first, for the Granted list.
@@ -637,10 +897,12 @@ impl Asks {
         open
     }
 
-    /// **The person answers the ask to allow a program `id`**, from `by`: refused from anywhere
-    /// but the window, leaving it open. A run that holds on it goes on, or is told; one whose
-    /// command stopped waiting is nudged. Allow once is given to the first run holding on it, or
-    /// kept for the chat's next run of exactly that command.
+    /// **The person answers run ask `id`**, from `by`: refused from anywhere but the window, leaving
+    /// it open, and refused for an answer its notice does not offer. A run that holds on it goes
+    /// on, or is told; one whose command stopped waiting is nudged. Allow once is kept for the
+    /// chat's next run of exactly that command, and the first run holding on it is told to take it
+    /// ([`Self::granted`]). The values its fields ask for are stored first ([`Self::fill_run`]):
+    /// whatever the person answers, what they stored stays, and the chat is told so.
     pub fn answer_run(
         &self,
         id: u32,
@@ -654,6 +916,19 @@ impl Asks {
         let Some(at) = inner.runs.open.iter().position(|asked| asked.open.id == id) else {
             return Err("This ask has already been answered, or its chat has closed.".to_owned());
         };
+        if !answer.is_offered_by(&inner.runs.open[at].open.offer) {
+            return Err("That answer isn't offered on this notice.".to_owned());
+        }
+        // Ahead of its run there is no command to bind: no Allow once, and no Always allow.
+        if inner.runs.open[at].open.ahead
+            && !matches!(answer, RunAnswer::ForChat | RunAnswer::Refuse)
+        {
+            return Err(
+                "Ahead of its run, a program is allowed for this chat or not at all: there is no \
+                 command yet to allow once."
+                    .to_owned(),
+            );
+        }
         if matches!(answer, RunAnswer::ForChat | RunAnswer::Always)
             && !inner.runs.open[at].open.bound.reviewed_for_any_arguments()
         {
@@ -663,8 +938,29 @@ impl Asks {
                 inner.runs.open[at].open.bound.program_name()
             ));
         }
+        // Every field filled before anything is allowed or filled: the run reads them all.
+        if answer.goes_on() {
+            let asked = &inner.runs.open[at];
+            if let Some(fill) = asked
+                .open
+                .fills
+                .iter()
+                .find(|fill| !asked.stored.contains(&fill.key))
+            {
+                return Err(format!(
+                    "Type a value for {}, or choose {}.",
+                    fill.key,
+                    match asked.open.offer {
+                        Offer::Program => "Don't allow",
+                        Offer::Vault { .. } => "Keep blocked",
+                        Offer::Fill { .. } => "Not now",
+                    }
+                ));
+            }
+        }
         let asked = inner.runs.open.remove(at);
         let bound = asked.open.bound.clone();
+        let filled = !asked.stored.is_empty();
         let mut held = false;
         let reach = |settled: RunSettled, waiter: RunWaiter| {
             waiter.tell.is_some_and(|tell| tell.send(settled).is_ok())
@@ -678,24 +974,36 @@ impl Asks {
                         held = reach(RunSettled::Allowed, waiter);
                     }
                 }
-                if !held {
-                    inner.next += 1;
-                    let id = inner.next;
-                    inner.runs.given.push(Given {
-                        id,
-                        bound: bound.clone(),
-                        once: true,
-                        at: now_secs(),
-                    });
-                }
-                Answer::Allowed { scope: Scope::Once }
+                // Kept until a run takes it as it starts: the run told it may still stop short.
+                inner.next += 1;
+                let id = inner.next;
+                inner.runs.given.push(Given {
+                    id,
+                    bound: bound.clone(),
+                    ahead_keys: None,
+                    once: true,
+                    at: now_secs(),
+                });
+                allowed(filled, Scope::Once)
             }
             RunAnswer::ForChat | RunAnswer::Always => {
+                let ahead_keys: Option<Vec<String>> = asked.open.ahead.then(|| {
+                    asked
+                        .open
+                        .fills
+                        .iter()
+                        .map(|fill| fill.key.clone())
+                        .collect()
+                });
                 // Every run holding on this ask goes on, and every other this grant covers.
                 let mut covered = asked.waiters;
                 let mut at = 0;
                 while at < inner.runs.open.len() {
-                    if inner.runs.open[at].open.bound.same_but_args(&bound) {
+                    let other = &inner.runs.open[at];
+                    if other.open.offer == Offer::Program
+                        && other.open.fills.is_empty()
+                        && other.open.bound.same_but_args(&bound)
+                    {
                         covered.extend(inner.runs.open.remove(at).waiters);
                     } else {
                         at += 1;
@@ -709,42 +1017,92 @@ impl Asks {
                 inner.runs.given.push(Given {
                     id,
                     bound: bound.clone(),
+                    ahead_keys,
                     once: false,
                     at: now_secs(),
                 });
                 // Always allow too: this chat is what it promises the chat, since each machine
                 // and every other chat stands on its own Allow.
-                Answer::Allowed { scope: Scope::Chat }
+                allowed(filled, Scope::Chat)
             }
-            RunAnswer::Refuse => {
-                // Not asked again of this program and vault: its other commands open now close too.
-                let mut refused = asked.waiters;
-                let mut at = 0;
-                while at < inner.runs.open.len() {
-                    let one = &inner.runs.open[at].open.bound;
-                    if one.chat == bound.chat
-                        && one.program == bound.program
-                        && one.vault == bound.vault
-                    {
-                        refused.extend(inner.runs.open.remove(at).waiters);
+            RunAnswer::AllowVault => {
+                for waiter in asked.waiters {
+                    held |= reach(RunSettled::Allowed, waiter);
+                }
+                allowed(
+                    filled,
+                    Scope::Persona {
+                        persona: asked.open.persona.clone(),
+                    },
+                )
+            }
+            RunAnswer::Fill => {
+                for waiter in asked.waiters {
+                    held |= reach(RunSettled::Filled, waiter);
+                }
+                Answer::Filled
+            }
+            RunAnswer::Refuse => match asked.open.offer {
+                Offer::Program => {
+                    let settled = if filled {
+                        RunSettled::FilledNotAllowed
                     } else {
-                        at += 1;
+                        RunSettled::Refused
+                    };
+                    // Not asked again of this program and vault: its other commands open now
+                    // close too.
+                    let mut refused = asked.waiters;
+                    let mut at = 0;
+                    while at < inner.runs.open.len() {
+                        let one = &inner.runs.open[at].open;
+                        if one.offer == Offer::Program
+                            && one.bound.chat == bound.chat
+                            && one.bound.program == bound.program
+                            && one.bound.vault == bound.vault
+                        {
+                            refused.extend(inner.runs.open.remove(at).waiters);
+                        } else {
+                            at += 1;
+                        }
+                    }
+                    for waiter in refused {
+                        held |= reach(settled, waiter);
+                    }
+                    inner.runs.refused.insert((
+                        bound.chat,
+                        bound.program.clone(),
+                        bound.vault.clone(),
+                    ));
+                    inner.runs.given.retain(|one| {
+                        one.bound.chat != bound.chat
+                            || one.bound.program != bound.program
+                            || one.bound.vault != bound.vault
+                    });
+                    if filled {
+                        Answer::FilledNotAllowed
+                    } else {
+                        Answer::KeptBlocked { reason: None }
                     }
                 }
-                for waiter in refused {
-                    held |= reach(RunSettled::Refused, waiter);
+                Offer::Vault { .. } => {
+                    for waiter in asked.waiters {
+                        held |= reach(RunSettled::Refused, waiter);
+                    }
+                    Answer::KeptBlocked { reason: None }
                 }
-                inner
-                    .runs
-                    .refused
-                    .insert((bound.chat, bound.program.clone(), bound.vault.clone()));
-                inner.runs.given.retain(|one| {
-                    one.bound.chat != bound.chat
-                        || one.bound.program != bound.program
-                        || one.bound.vault != bound.vault
-                });
-                Answer::KeptBlocked { reason: None }
-            }
+                // Not now, as on a Secret ask: this chat is not asked for these keys again.
+                Offer::Fill { .. } => {
+                    for waiter in asked.waiters {
+                        held |= reach(RunSettled::Declined, waiter);
+                    }
+                    for fill in &asked.open.fills {
+                        inner
+                            .declined
+                            .insert((bound.chat, bound.vault.clone(), fill.key.clone()));
+                    }
+                    Answer::Declined
+                }
+            },
         };
         self.save(&inner);
         drop(inner);
@@ -761,6 +1119,89 @@ impl Asks {
         })
     }
 
+    /// **Stores what the person typed in run ask `id`'s value fields** (#5242), from `by`, in the
+    /// project `ctx` is of: each through the vault's provider, as a Secret ask's fill is, and
+    /// never over a value that came to be there meanwhile. Every chat waiting on a Secret ask for
+    /// the same key is settled as filled. Answers the keys it stored. No value is held past its
+    /// write, and none is in what it answers.
+    pub fn fill_run(
+        &self,
+        ctx: &super::Ctx,
+        id: u32,
+        values: Vec<(String, super::Zeroizing<String>)>,
+        by: Answerer,
+    ) -> Result<RunFilled, String> {
+        if by.scope() != HumanScope::LocalUi {
+            return Err("a secret ask is answered in purlis's window only".to_owned());
+        }
+        let (vault, fills) = {
+            let inner = self.inner();
+            let Some(asked) = inner.runs.open.iter().find(|asked| asked.open.id == id) else {
+                return Err(
+                    "This ask has already been answered, or its chat has closed.".to_owned(),
+                );
+            };
+            (asked.open.bound.vault.clone(), asked.open.fills.clone())
+        };
+        let mut stored = Vec::new();
+        for (key, value) in values {
+            let Some(fill) = fills.iter().find(|fill| fill.key == key) else {
+                return Err(format!("{key} is not a value this notice asks for"));
+            };
+            if value.is_empty() {
+                continue;
+            }
+            let v = super::cmd::provider(ctx, &vault).map_err(|e| e.message.to_string())?;
+            let now = super::cmd::get_value(ctx, &v, &key);
+            match now {
+                // Filled meanwhile, elsewhere: what is there stays.
+                Ok(_) => {}
+                Err(e)
+                    if matches!(
+                        e.kind,
+                        crate::secrets::Kind::NotFound | crate::secrets::Kind::BrokenLink
+                    ) =>
+                {
+                    super::filled_with(ctx, &vault, &key, fill.reason.as_ref(), &value)
+                        .map_err(|e| e.message.to_string())?;
+                }
+                Err(e) => return Err(e.message.to_string()),
+            }
+            stored.push(key);
+        }
+        let mut inner = self.inner();
+        if let Some(asked) = inner.runs.open.iter_mut().find(|asked| asked.open.id == id) {
+            for key in &stored {
+                if !asked.stored.contains(key) {
+                    asked.stored.push(key.clone());
+                }
+            }
+        }
+        drop(inner);
+        let mut nudge = Vec::new();
+        for key in &stored {
+            for chat in self.settle_filled(&vault, key) {
+                nudge.push((
+                    chat,
+                    Outcome {
+                        about: About::Secret {
+                            vault: vault.clone(),
+                            key: key.clone(),
+                        },
+                        answer: Answer::Filled,
+                    },
+                ));
+            }
+        }
+        Ok(RunFilled { stored, nudge })
+    }
+
+    /// **Takes what covers `bound`, as its run starts** (#5242): Allow once goes as it is taken, so
+    /// it is used by the run it was for and no earlier.
+    pub fn granted(&self, bound: &Bound) -> bool {
+        self.inner().runs.take(bound)
+    }
+
     /// Records the answer in the chat's trace: names, never a value.
     fn trace_run(&self, bound: &Bound, id: u32, answer: RunAnswer) {
         crate::trace::record_values(
@@ -775,6 +1216,8 @@ impl Asks {
                         RunAnswer::ForChat => "allowed for this chat",
                         RunAnswer::Always => "always allowed",
                         RunAnswer::Refuse => "not allowed",
+                        RunAnswer::AllowVault => "vault allowed",
+                        RunAnswer::Fill => "filled",
                     }),
                 ),
                 ("ask", Value::from(id)),

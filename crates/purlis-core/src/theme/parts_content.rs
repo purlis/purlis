@@ -179,8 +179,8 @@ pub(super) const NOTICE: Family = Family {
         Part {
             name: "mark",
             since: 13,
-            description: "A card's mark before its title (#3478): the shape that says what kind of \
-                          notice it is, in its colour.",
+            description: "Its mark before its words, on a card and on a band's row (#3478, \
+                          #5215): the shape that says what kind of notice it is, in its colour.",
             properties: &[Prop::Text],
         },
         Part {
@@ -192,13 +192,8 @@ pub(super) const NOTICE: Family = Family {
         Part {
             name: "sub",
             since: super::NEXT,
-            description: "A Notices centre card's state and age, under its title (#5217).",
-            properties: &[Prop::Text, Prop::FontSize],
-        },
-        Part {
-            name: "chat-words",
-            since: super::NEXT,
-            description: "A chat's own words on a Notices centre card (#5217).",
+            description: "The line under what it says: a Notices centre card's state and age \
+                          under its title (#5217), and a band row's sub-line (#5215).",
             properties: &[Prop::Text, Prop::FontSize],
         },
     ],
@@ -238,7 +233,10 @@ pub(super) const NOTICE: Family = Family {
     // is its variant's (`notice.css`: success, danger, attention), which one default cannot say,
     // so it names none: a theme's own mark colour is held as a mark, at 3:1. A card's `under`,
     // the room its Details open in, is no part: it paints nothing and its words are the
-    // Notice's own.
+    // Notice's own. Nor are a band row's layout-only pieces (#5215, #5311): `words` (its message
+    // and sub-line together), `ways` and `way-slot` (where its buttons stand, each the button
+    // family's) and the band's `folded` line (a button of that family): each only places what
+    // other parts and families paint.
     words: &[("title", "text.primary")],
     corner_most: None,
     around: &[],

@@ -3079,24 +3079,24 @@ fn a_split_windows_label_is_never_one_already_in_use() {
 fn a_restart_to_update_puts_the_window_set_back_even_under_no_restore() {
     // Tauri restarts with the old process's arguments, and the projects held a moment ago
     // are what Restart to update is to reopen.
-    let args = || ["charter-app".to_owned(), NO_RESTORE.to_owned()];
+    let args = || ["purlis-app".to_owned(), NO_RESTORE.to_owned()];
 
     assert!(Restoring::after(args(), true).wanted());
     assert!(!Restoring::after(args(), false).wanted());
-    assert!(Restoring::after(["charter-app".to_owned()], false).wanted());
+    assert!(Restoring::after(["purlis-app".to_owned()], false).wanted());
 }
 
 #[test]
 fn a_launch_told_not_to_restore_is_told_by_its_own_arguments_and_nothing_else() {
-    assert!(Restoring::from_args(["charter-app".to_owned()]).wanted());
+    assert!(Restoring::from_args(["purlis-app".to_owned()]).wanted());
     assert!(
-        !Restoring::from_args(["charter-app".to_owned(), NO_RESTORE.to_owned()]).wanted(),
+        !Restoring::from_args(["purlis-app".to_owned(), NO_RESTORE.to_owned()]).wanted(),
         "--no-restore was read as a request to restore"
     );
     // Not a prefix and not a substring: `--no-restore-really` is not this flag, and a
     // window that treated it as one would silently throw away the operator's tabs.
     assert!(
-        Restoring::from_args(["charter-app".to_owned(), "--no-restore-really".to_owned()]).wanted()
+        Restoring::from_args(["purlis-app".to_owned(), "--no-restore-really".to_owned()]).wanted()
     );
 }
 

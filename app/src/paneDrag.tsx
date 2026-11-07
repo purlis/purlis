@@ -20,7 +20,6 @@ import {
   ArrowLeftRight,
   ArrowRight,
   ArrowUp,
-  GripVertical,
   SquareArrowOutUpRight,
 } from "lucide-react";
 import { keySaid, pressed } from "./keys/registry";
@@ -58,6 +57,7 @@ import { canUndoLayout, recorded, undoLayout } from "./layoutUndo";
 import { UNDO_MS } from "./MemoryEdits";
 import { contentsOf, focusPane, type LayoutUndo, selectTab, type Tabs } from "./tabs";
 import { Button, IconButton } from "./ui/button/Button";
+import { Grip } from "./ui/grip/Grip";
 import { onTooltipEscape } from "./ui/tooltip/Tooltip";
 
 /**
@@ -1019,28 +1019,38 @@ const boxStyle = (box: Box) => ({
 });
 
 /**
- * **A pane's grip, as a control** (#4764): its press, or Enter or Space on it, picks the pane up
- * for placement mode, and a drag from it moves the pane as a drag from its head does (#4763).
- * Drawn only where the window can place a pane ({@link PlacingHere}).
+ * **A pane's grip, as a control** (#4764, #5290): the pane's mark in its head, which turns into the
+ * grip's dots (`ui/grip`) under the pointer and the keyboard. Its press, or Enter or Space on it,
+ * picks the pane up for placement mode, and a drag from it moves the pane as a drag from its head
+ * does (#4763). Drawn only where the window can place a pane ({@link PlacingHere}); elsewhere the
+ * mark alone.
  */
-export function PaneGrip({ tab, pane }: { tab: number; pane: number }) {
+export function PaneGrip({
+  tab,
+  pane,
+  children,
+}: {
+  tab: number;
+  pane: number;
+  children: ReactNode;
+}) {
   const pickUp = useContext(PickUpHere);
   const gripName = useContext(GripNamesHere);
-  const self = useRef<HTMLButtonElement>(null);
-  if (pickUp === undefined || gripName === undefined) return null;
+  const self = useRef<HTMLElement>(null);
+  if (pickUp === undefined || gripName === undefined) return children;
   return (
-    <IconButton
-      ref={self}
-      size="sm"
-      variant="ghost"
-      icon={<GripVertical aria-hidden="true" />}
-      aria-label={gripName(tab, pane)}
-      tooltip={`Drag it, or press to place it with the keys (${keySaid("pane.place")})`}
+    <Grip
+      gripRef={self}
+      label={gripName(tab, pane)}
+      // The key that does the same, which its tooltip said before it was the mark (#5290).
+      description={`Drag it, or press it or ${keySaid("pane.place")} to move it with the keys`}
       // F6 into the editor passes over it to the pane's own controls, as over the strip; Tab
       // still stops on it.
-      {...{ [GRIP_HANDLE]: "", [REGION_CHROME]: "" }}
+      marks={{ [GRIP_HANDLE]: "", [REGION_CHROME]: "" }}
       onPress={() => pickUp({ kind: "pane", tab, pane }, self.current)}
-    />
+    >
+      {children}
+    </Grip>
   );
 }
 

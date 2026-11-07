@@ -22,7 +22,8 @@ import type { WorkspaceState } from "./workspaceState";
  * **With the workspace picked, Explorer shows its folder** (#5375, ADR 0038 as amended
  * 2026-11-05): the workspace's own files as on disk, its repos as rows where they stand — in
  * `repos/`, or at the top for a clone made before structure version 6 — what purlis keeps
- * marked *managed*, and dotfiles only with Show hidden. Read-only: no row writes.
+ * marked *managed*, and dotfiles only with Show hidden. What purlis keeps is never written; the
+ * person's own rows' writes are `Explorer.writes.test.tsx`'s (#5376).
  */
 
 afterEach(() => {
@@ -304,16 +305,15 @@ describe("Explorer, the workspace's own folder (#5375)", () => {
     expect(within(repo).getByRole("row", { name: /^plan\.md/ })).toHaveTextContent("docs");
   });
 
-  it("offers no row that writes: no new file, rename or Trash", async () => {
+  it("offers no write on what purlis keeps, a file or a folder (#5376)", async () => {
     core();
     draw(["api", "svc"]);
     await row(/^notes/);
 
     const writes = [/new file/i, /new folder/i, /rename/i, /trash/i, /import/i, /delete/i];
-    for (const name of writes) expect(screen.queryByRole("button", { name })).toBeNull();
 
-    // Nor does a row's menu, of a file or of a folder.
-    for (const name of [/^workspace\.md/, /^notes/]) {
+    // The person's own rows are written from `Explorer.writes.test.tsx`; these are purlis's.
+    for (const name of [/^workspace\.md/, /^memory/]) {
       fireEvent.contextMenu(await row(name));
       const menu = await screen.findByRole("menu");
       const items = within(menu)

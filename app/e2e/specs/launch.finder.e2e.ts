@@ -173,7 +173,7 @@ describe("an app opened from Finder", () => {
     const home = given("CHARTER_FINDER_HOME");
     // FIRST: nothing the app ships runs on a Python fallback (ADR 0025), so a bare `charter`
     // in a chat is the one this app was built with (the next test).
-    expect(path[0]).toBe(dirname(built("charter-app")));
+    expect(path[0]).toBe(dirname(built("purlis-app")));
     // Then strictly additive: what the app inherited, in its own order.
     expect(path.slice(1, 5).join(":")).toBe(A_FINDER_LAUNCHS_PATH);
     // `programs::USER_BIN` and `SYSTEM_BIN` — the list that found the harness is the list the

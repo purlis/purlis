@@ -78,6 +78,7 @@ fn asker(held: &Held, chat: u32) -> Result<Asker, Answer> {
             why: format!("chat {chat} is not one this app has open"),
         });
     };
+    let confines = held.chats().confines_of(chat);
     Ok(Asker {
         chat,
         cwd: open.cwd,
@@ -86,6 +87,17 @@ fn asker(held: &Held, chat: u32) -> Result<Asker, Answer> {
         // Started without the sandbox by the record of how its run started (#2692): a run with
         // no record is held as sandboxed here, where a chat with no sandbox is let reach more.
         unsandboxed: held.chats().started_unsandboxed(chat),
+        // The project's git is held whole only where this window compiled the chat's sandbox
+        // and the chat runs in it.
+        roots_git_held: held.chats().runs_sandboxed(chat)
+            && confines.as_ref().and_then(|c| c.roots_git.as_deref())
+                == Some(held.root().join(".git").as_path()),
+        unreadable: confines
+            .map(|c| c.denied)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|denial| denial.access == purlis_core::sandbox::Access::ReadWrite)
+            .collect(),
         config: held.config().map(std::path::Path::to_path_buf),
         id: held.chats().id_of(chat),
         live: Some(live_chats(held)),
@@ -186,6 +198,7 @@ pub fn answer(held: &Held, ask: &GitAsk) -> Answer {
             None => "worktree prune".to_owned(),
         },
         GitWork::RootUpdate {} => "worktree update at the project root".to_owned(),
+        GitWork::RootSave { .. } => "save the project".to_owned(),
         // Its own git's claim on a branch folder, asked by the chat's Bash guard (#3931).
         GitWork::WorktreeClaim { repo, piece, act } => {
             format!("hold {repo} {piece} for its own git's {act:?}")
@@ -202,15 +215,18 @@ pub fn answer(held: &Held, ask: &GitAsk) -> Answer {
         )
     };
     let root_update = matches!(ask.work, GitWork::RootUpdate {});
+    let root_save = matches!(ask.work, GitWork::RootSave { .. });
     // The root's update is the window's own Update (#3831), fetched as the window fetches it:
-    // its sign-in, offered to the remote recorded for the project alone.
-    let answered = if root_update {
+    // its sign-in, offered to the remote recorded for the project alone. A chat's save of the
+    // project pushes as the window's automatic save does, held to that same remote.
+    let answered = if root_update || root_save {
         crate::forgeaccounts::window_git(run)
     } else {
         run()
     };
-    // The tree moved under every reader, as after the window's own Update.
-    if root_update && matches!(answered.answer, Answer::Said { code: 0, .. }) {
+    // The tree, or what is saved of it, moved under every reader, as after the window's own
+    // Update and Save.
+    if (root_update || root_save) && matches!(answered.answer, Answer::Said { code: 0, .. }) {
         held.tree_moved();
     }
     let answer = told(held, ask.chat, answered);

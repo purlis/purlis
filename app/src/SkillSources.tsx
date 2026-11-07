@@ -11,7 +11,6 @@ import {
   type OfferedSkill,
   type OfferedSource,
   type ReviewSkill,
-  type ReviewSummary,
   type SkillChanged,
   type SkillGrant,
   type SkillLevel,
@@ -23,8 +22,8 @@ import {
   type SkillSetMember,
   type SkillUpdates,
   type SkillWidening,
+  type StudioBudget,
   type StudioLevel,
-  type UpdateFile,
   type UpdateReview,
 } from "./bindings";
 import { counted } from "./dispatches";
@@ -38,7 +37,10 @@ import { NotRead } from "./SkillPanels";
 import { sourceKey, type SourcesAt } from "./skillStudio";
 import type { Change as StudioChange } from "./SkillPage";
 import { SetChoosePage, SetReviewPage, applySet, memberKey, setTitle } from "./SkillSetReview";
+import { SetUpdateReviewPage, applySetUpdate } from "./SkillSetUpdateReview";
+import { installGoesOver } from "./makeRoom";
 import { Badge } from "./ui/badge/Badge";
+import { Changes, LOOK_CLOSELY, Summary } from "./SkillChangesShown";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { Card, CardTitle } from "./ui/card/Card";
 import { Checkbox } from "./ui/choice/Checkbox";
@@ -249,8 +251,11 @@ export function SkillSourcesPage({
   change,
   changed,
   workspace = null,
+  room,
 }: {
   plane: string;
+  /** What an install would cost the studio's chats, and Make room (#5355). */
+  room?: InstallRoom;
   /** The workspace the studio shows, which is what a skill is turned off or on in. */
   workspace?: string | null;
   /** The page inside Sources, or none for Sources itself. */
@@ -368,6 +373,26 @@ export function SkillSourcesPage({
         }
       />
     );
+  else if (at.at === "set-update")
+    page = (
+      <SetUpdateReviewPage
+        plane={plane}
+        title={`Review updates from ${sourceAt.label}`}
+        members={(updates?.offers ?? [])
+          .filter((one) => sourceKey(one.remote) === at.source)
+          .map((one) => ({ level: one.level, name: one.name, label: one.label }))}
+        busy={busy}
+        onCancel={() => onGo(toSource(at))}
+        onApply={(chosen) =>
+          applySetUpdate({
+            plane,
+            updates: chosen,
+            change: (label, run, then) => changeThen(label, run, toSource(at), then),
+            undo: change,
+          })
+        }
+      />
+    );
   else if (at.at === "set-review")
     page = (
       <SetReviewPage
@@ -433,6 +458,7 @@ export function SkillSourcesPage({
         plane={plane}
         source={sourceAt}
         named={at.skills}
+        room={room}
         levels={levels}
         workspaces={workspaces}
         start={start}
@@ -897,6 +923,15 @@ function SourcePage({
   const openSet = (act: SkillSetAct) =>
     onGo({ at: "set-choose", act, source: key, label: source.label });
   const unconfirmed = updates?.unconfirmed.some((one) => sourceKey(one.remote) === key) === true;
+  /** Why Review updates… cannot be pressed: the updates are not read yet, or none waits here. */
+  const updatesWhy =
+    updates === undefined
+      ? "The updates are being read."
+      : updates.offers.some((one) => sourceKey(one.remote) === key)
+        ? busy
+          ? BUSY
+          : undefined
+        : "No update is waiting from this source.";
   const at = (skill: string) => ({ source: key, label: source.label, skill });
   const offered = (skill: OfferedSkill) => offerFor(updates, key, skill.name);
   /** Why Install all… cannot be pressed: the skills are not read yet, or none is left. */
@@ -940,6 +975,14 @@ function SourcePage({
             onPress={() => onGo({ at: "choose", source: key, label: source.label })}
           >
             Install all…
+          </Button>
+          <Button
+            size="sm"
+            isDisabled={updatesWhy !== undefined}
+            tooltip={updatesWhy}
+            onPress={() => onGo({ at: "set-update", source: key, label: source.label })}
+          >
+            Review updates…
           </Button>
           <Button
             size="sm"
@@ -1195,57 +1238,6 @@ function SetChooseRead({
       onCancel={onCancel}
       onReview={onReview}
     />
-  );
-}
-
-/** The mark of a risky item and of a risky file: in the waiting tone, never a colour alone. */
-const LOOK_CLOSELY = <Badge variant="waiting">Look closely</Badge>;
-
-/** A summary, risky items marked, as the core reads and marks it. */
-export function Summary({ summary, testid }: { summary: ReviewSummary; testid?: string }) {
-  if (summary.empty)
-    return (
-      <p className="honest" data-testid={testid}>
-        Instructions only: no scripts, network hosts, ! commands or writes outside the workspace.
-      </p>
-    );
-  const mark = (risky: boolean) => (risky ? LOOK_CLOSELY : null);
-  return (
-    <ul className="skill-summary" data-testid={testid}>
-      {summary.scripts.map((one) => (
-        <li key={`s${one.path}`} data-risky={one.risks.length > 0}>
-          {mark(one.risks.length > 0)} Script <code>{one.path}</code> runs with {one.runs}
-          {one.risks.length > 0 && `: ${one.risks.map((risk) => risk.said).join(", ")}`}
-        </li>
-      ))}
-      {summary.hosts.map((one) => (
-        <li key={`h${one.host}`} data-risky={one.risky}>
-          {mark(one.risky)} Network host <code>{one.host}</code>, named in {one.files.join(", ")}
-        </li>
-      ))}
-      {summary.commands.map((one) => (
-        <li key={`c${one.path}${one.line}${one.text}`} data-risky={true}>
-          {mark(true)} ! command <code>{one.text}</code> ({one.path}, line {one.line})
-        </li>
-      ))}
-      {summary.outside.map((one) => (
-        <li key={`o${one.path}${one.line}${one.text}`} data-risky={true}>
-          {mark(true)} Writes outside the workspace: <code>{one.text}</code> ({one.path}, line{" "}
-          {one.line})
-        </li>
-      ))}
-      {summary.unseen.map((one) => (
-        <li key={`u${one.path}${one.line}`} data-risky={true}>
-          {mark(true)} Hidden text in {one.path}, line {one.line}:{" "}
-          {one.kinds.map((kind) => kind.said).join(", ")}
-        </li>
-      ))}
-      {summary.not_text.map((path) => (
-        <li key={`n${path}`}>
-          <code>{path}</code> is not text, so it is not shown
-        </li>
-      ))}
-    </ul>
   );
 }
 
@@ -1807,6 +1799,96 @@ function firstPart(n: number): string {
   return n === 1 ? "the first skill" : `the first ${n} skills`;
 }
 
+/** **What an install would cost the studio's chats** (#5355): their budget on each program,
+ *  whose chats they are, and Make room. */
+export type InstallRoom = {
+  workspace: string | null;
+  persona: string | null;
+  budget: readonly StudioBudget[];
+  /** Opens the Library's Select, least used first. */
+  onMakeRoom: () => void;
+};
+
+/**
+ * **An install past the budget** (#5355): which programs these skills would take past the most
+ * skills a chat lists, counted as the core counts a chat's list now (`skill_budget_preview` at
+ * the numbers in force), and Make room…. Nothing is drawn while it fits.
+ */
+function InstallOver({
+  plane,
+  room,
+  adding,
+}: {
+  plane: string;
+  room: InstallRoom;
+  adding: number;
+}) {
+  const { read } = useRead(
+    JSON.stringify([room.workspace, room.persona, room.budget.map((one) => one.key)]),
+    async () => ({
+      status: "ok" as const,
+      data: await Promise.all(
+        room.budget.map(async (program) => {
+          const answer = await commands.skillBudgetPreview(
+            plane,
+            room.workspace,
+            room.persona,
+            program.key,
+            program.skills_here,
+            program.chars_here,
+          );
+          return answer.status === "ok"
+            ? { program, counted: answer.data }
+            : { program, refused: answer.error };
+        }),
+      ),
+    }),
+  );
+  const programs = read?.data ?? [];
+  const over = installGoesOver(
+    programs.flatMap((one) =>
+      one.counted === undefined ? [] : [{ program: one.program, counted: one.counted }],
+    ),
+    adding,
+  );
+  // What could not be worked out is said, so it never reads as fitting.
+  const unknown = programs.flatMap((one) =>
+    one.refused !== undefined
+      ? [
+          `purlis could not work out whether this goes past ${one.program.program}'s skill budget: ${one.refused}`,
+        ]
+      : [],
+  );
+  if (over.length + unknown.length === 0) return null;
+  return (
+    <section
+      aria-labelledby="install-all-over-head"
+      className="skill-review"
+      data-testid="install-all-over"
+    >
+      <h3 id="install-all-over-head" className="ui-text-small ui-text-strong">
+        Past the skill budget
+      </h3>
+      {[...over, ...unknown].map((line) => (
+        <p key={line} className="honest">
+          {line}
+        </p>
+      ))}
+      {over.length > 0 && (
+        <p className="honest">
+          Past it, the router moves what it can into an index skill. Make room first, or install
+          them and choose after.
+        </p>
+      )}
+      {over.length > 0 && (
+        <ButtonRow size="sm">
+          <Button onPress={room.onMakeRoom}>Make room…</Button>
+        </ButtonRow>
+      )}
+    </section>
+  );
+}
+
 /** How many risky items `review` marks, over all its skills. */
 function riskyIn(review: InstallReview): number {
   return review.skills.reduce((n, skill) => n + skill.summary.marked, 0);
@@ -1824,6 +1906,7 @@ function InstallSetReviewPage({
   plane,
   source,
   named,
+  room,
   levels,
   workspaces,
   start,
@@ -1835,6 +1918,7 @@ function InstallSetReviewPage({
   source: SkillSource;
   /** The skills ticked on the list, in its order. */
   named: readonly string[];
+  room?: InstallRoom;
   levels: readonly StudioLevel[];
   workspaces: readonly string[];
   start: SkillLevel;
@@ -1983,6 +2067,9 @@ function InstallSetReviewPage({
                   read from the files: a script can do more when it runs, and the chat&apos;s
                   sandbox bounds that. Installing copies all of them or none.
                 </p>
+                {room !== undefined && data.review.skills.length > 0 && (
+                  <InstallOver plane={plane} room={room} adding={data.review.skills.length} />
+                )}
                 {data.review.skills.map((skill) => (
                   <SkillReviewed
                     key={skill.name}
@@ -2059,27 +2146,6 @@ function InstallSetReviewPage({
         </section>
       )}
     </ReviewPage>
-  );
-}
-
-/** Each file's change, folded, its kind of change after its path. */
-function Changes({ files, open = false }: { files: readonly UpdateFile[]; open?: boolean }) {
-  return (
-    <>
-      {files.map((file) => (
-        <Disclosure
-          key={file.path}
-          size="sm"
-          defaultExpanded={open}
-          label={file.path}
-          trail={<Badge>{file.change}</Badge>}
-        >
-          <pre className="skill-review-file">
-            {file.diff === "" ? "Not text, so not shown." : file.diff}
-          </pre>
-        </Disclosure>
-      ))}
-    </>
   );
 }
 

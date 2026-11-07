@@ -351,6 +351,7 @@ fn a_folder_of_a_branch_crosses_one_level_deep_with_each_entrys_kind() {
                 workspace: None,
                 managed: false,
                 hidden: false,
+                kept: None,
             },
             FolderEntry {
                 name: "README.md".to_string(),
@@ -360,6 +361,7 @@ fn a_folder_of_a_branch_crosses_one_level_deep_with_each_entrys_kind() {
                 workspace: None,
                 managed: false,
                 hidden: false,
+                kept: None,
             },
         ]
     );
@@ -645,7 +647,11 @@ fn a_refusal_crosses_as_the_cores_sentence() {
 /// workspace with no repo and no piece names them, never a branch.
 #[test]
 fn a_workspaces_own_files_are_the_windows_alone_and_named_by_no_repo() {
-    for command in ["workspace_tree", "workspace_file"] {
+    for command in [
+        "workspace_tree",
+        "workspace_file",
+        "workspace_save_with_the_project",
+    ] {
         assert!(
             purlis_session_protocol::ui::WINDOW_ONLY.contains(&command),
             "{command}"
@@ -741,4 +747,44 @@ fn copy_path_and_reveal_place_a_workspace_file_and_never_a_repos() {
     );
     assert!(placed_of(&reader, &root, files, "svc").is_err());
     assert!(path_text(&reader, &root, files, "repos/api", true).is_err());
+}
+
+/// #5377: in a LIVE workspace each entry says where it is kept, and Save with the project moves
+/// the one entry pressed; a LOCAL workspace's entries carry no mark.
+#[test]
+fn a_live_workspaces_entries_say_where_they_are_kept_and_a_save_moves_one() {
+    let (_dir, root) = workspace();
+    std::fs::write(
+        root.join(".gitignore"),
+        "/workspaces/*/*\n!/workspaces/.gitkeep\n",
+    )
+    .unwrap();
+    let kept = |root: &Path| -> Vec<(String, Option<KeptMark>)> {
+        workspace_tree_of(root, "alpha", "", &[])
+            .unwrap()
+            .entries
+            .into_iter()
+            .filter(|one| !one.hidden)
+            .map(|one| (one.name, one.kept))
+            .collect()
+    };
+    assert!(kept(&root).iter().all(|(_, mark)| mark.is_none()), "LOCAL");
+    assert!(workspace_save_of(&root, "alpha", "notes", &[]).is_err());
+
+    purlis_core::wscmd::set_live(&root, "alpha", true).unwrap();
+    assert_eq!(
+        kept(&root),
+        [
+            ("memory".to_string(), Some(KeptMark::WithTheProject)),
+            ("notes".to_string(), Some(KeptMark::ThisMachineOnly)),
+        ]
+    );
+    assert_eq!(workspace_save_of(&root, "alpha", "notes", &[]), Ok(true));
+    assert_eq!(
+        kept(&root),
+        [
+            ("memory".to_string(), Some(KeptMark::WithTheProject)),
+            ("notes".to_string(), Some(KeptMark::WithTheProject)),
+        ]
+    );
 }

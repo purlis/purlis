@@ -34,6 +34,7 @@ import { QuizPlaces } from "./QuizBand";
 import { standingOf, waitingOnYou, type QuestionsHeld } from "./taskQuestions";
 import { machineChanged } from "./settings/thisMachine";
 import { MAIN, thisWindow } from "./windows";
+import { clearedHere, keptOutside, letGoHere } from "./notesClearedEverywhere";
 import { frontTabIs } from "./slowLog";
 import { createPortal } from "react-dom";
 import {
@@ -131,6 +132,7 @@ import { FORGE_LOGIN, typableLogin, type LoginAsk } from "./RepoPicker";
 import { NewBranch } from "./NewBranch";
 import { LinkWorkItem } from "./LinkWorkItem";
 import { RenameChat } from "./RenameChat";
+import { useWorkspaceWrites } from "./WorkspaceWrites";
 import { RenameWorkspace } from "./RenameWorkspace";
 import { AddVision } from "./AddVision";
 import { failedNotNamed } from "./NotCloned";
@@ -161,11 +163,13 @@ import {
   type OpenUseSkill,
 } from "./UseSkill";
 import { Explorer, type SearchKeyHere, type Spot } from "./Explorer";
+import { keptChanged } from "./branchFolders";
 import {
   pieceFileTitle,
   pieceFileView,
   pieceFilesTitle,
   pieceFilesView,
+  workspaceFiles,
   type Place,
 } from "./pieceViews";
 import { searchFromFocus, searchOf, searchView } from "./contentSearch";
@@ -367,8 +371,11 @@ import {
   type AskedBy,
   type Pinned,
   type Tabs,
+  type TabName,
   type ViewRef,
   sessionOf,
+  namedForFirstPanes,
+  tabNameOf,
 } from "./tabs";
 import { tileAll, zoomedLayout, zoomFocusedPane } from "./tiling";
 import { recorded } from "./layoutUndo";
@@ -483,7 +490,7 @@ import { usePlaneEdits } from "./PlaneEdits";
 import { MemoryStores, useMemoryEdits, useMemoryStores } from "./MemoryEdits";
 import { PlacingHere, usePaneDrag } from "./paneDrag";
 import { PANES_ROOM } from "./paneHeld";
-import type { DropContext } from "./paneDrop";
+import { firstPaneNameOf, type DropContext } from "./paneDrop";
 import type { MemoryTargets } from "./memoryMoves";
 import { AddToAChat } from "./AddToAChat";
 import { handReferences } from "./referencesMany";
@@ -1021,7 +1028,8 @@ export const PlaneView = memo(function PlaneView({
 }) {
   const [tabs, setTabs] = useState<Tabs>(noTabs);
   // The tab in front of the project in front, for what the stall log writes (`slowLog.ts`).
-  const frontTabName = tabs.inFront === undefined ? undefined : tabs.byId[tabs.inFront]?.name;
+  const inFrontTab = tabs.inFront === undefined ? undefined : tabs.byId[tabs.inFront];
+  const frontTabName = inFrontTab === undefined ? undefined : tabNameOf(inFrontTab);
   useEffect(() => (inFront ? frontTabIs(frontTabName) : undefined), [inFront, frontTabName]);
   const signingOutIn = useSignOutTerminals(tabs, plane);
   // **A pane closed for good lets its band's memory go** (#3167): a pane's number is never
@@ -1566,13 +1574,7 @@ export const PlaneView = memo(function PlaneView({
   /** **A note cleared here is cleared in every window of the project** (#5225): each hears what
    *  its chats say, so another may hold it for the chat coming back to it. */
   const noteCleared = useCallback(
-    (session: number, note: NoteCleared["note"]) =>
-      void emit(NOTE_CLEARED, {
-        plane,
-        session,
-        note,
-        from: thisWindow(),
-      } satisfies NoteCleared).catch(() => undefined),
+    (session: number, note: NoteCleared["note"]) => clearedHere(plane, session, note),
     [plane],
   );
   /** A block put away. */
@@ -1839,9 +1841,17 @@ export const PlaneView = memo(function PlaneView({
     },
     [tabWindow],
   );
+  /** What a tab is called when a content is its first pane (`paneDrop.firstPaneNameOf`), as the
+   *  drop context below names it, once it is made: nothing renames a tab before then. */
+  const firstPaneNameNow = useRef<(content: Content, before: Tabs) => TabName>(undefined);
   const change = useCallback(
     (how: (tabs: Tabs) => Tabs): Tabs => {
-      const done = how(now.current);
+      // **A tab whose first pane is another is named for it** (#5342, #5308): its first chat
+      // closed or moved out, so it takes the next one's name. One rule, for every change.
+      const changed = how(now.current);
+      const nameOf = firstPaneNameNow.current;
+      const done =
+        nameOf === undefined ? changed : namedForFirstPanes(now.current, changed, nameOf);
       // **The pane in front was used** (#4757): what a press with a view focused goes by.
       const next = done === now.current ? done : noteUsed(done);
       // **A chat given a new pane keeps what its band remembered** (#3271): its Notices were
@@ -3983,6 +3993,19 @@ export const PlaneView = memo(function PlaneView({
       },
       revealPath: (at: BranchPath) =>
         answered(commands.revealBranchPath(plane, at.workspace, at.repo, at.piece, at.path)),
+      // A LIVE workspace's own entry (#5377): its mark is read from the project's `.gitignore`,
+      // which no folder watch sees, so the trees showing the workspace read it again.
+      saveWithTheProject: async (at: BranchPath): Promise<Ran> => {
+        const said = await answered(
+          commands.workspaceSaveWithTheProject(plane, at.workspace, at.path),
+        );
+        if (!said.ok) return said;
+        keptChanged(plane, at.workspace);
+        return {
+          ok: true,
+          said: `${at.path} is saved with the project. Your next save shares it.`,
+        };
+      },
       openInEditor: async (at: BranchPath, line: number): Promise<Ran> => {
         const editor = yourEditor();
         // The refusal names a setting, so it carries the way to it (#1201, #1244).
@@ -4938,6 +4961,13 @@ export const PlaneView = memo(function PlaneView({
     },
     [plane, present],
   );
+  /** A write on the person's own workspace files (#5376), while it asks; a new file opens in
+   *  its file tab once made. */
+  const workspaceWrites = useWorkspaceWrites(plane, (does, path) => {
+    if (does.verb !== "newWorkspaceEntry" || does.folder) return;
+    const place = workspaceFiles(does.at.workspace);
+    showView(pieceFileView(place, path), pieceFileTitle(place, path));
+  });
 
   /** A browser in the session host, opened in a view tab of its own (#2012); a refusal (Stop
    *  all, no host) is said on the window's trouble line. */
@@ -5472,6 +5502,9 @@ export const PlaneView = memo(function PlaneView({
     }),
     [filedIn, isPinned, nameOf, pressedOf, tabs],
   );
+  useEffect(() => {
+    firstPaneNameNow.current = (content, before) => firstPaneNameOf(content, before, dropContext);
+  }, [dropContext]);
   /**
    * A tab a drag brings forward, drawn and not told (#5294), until {@link holdOver}; and the one
    * that was in front, drawn again as it is put back. Not a `change`: no pane is noted as used
@@ -7464,6 +7497,8 @@ export const PlaneView = memo(function PlaneView({
       // Every window hears it, this one too, which has cleared it already.
       if (cleared.plane !== plane || cleared.from === thisWindow()) return;
       const { session, note } = cleared;
+      // One a store of this window's own keeps (#5363).
+      if (keptOutside(note)) letGoHere(plane, session, note);
       if (note.kind === "start") dropStartNote(session);
       if (note.kind === "by-hand") dropByHand(session);
       if (note.kind === "block") letBlockGo(session, note.block);
@@ -7483,42 +7518,54 @@ export const PlaneView = memo(function PlaneView({
    */
   const notesHeldElsewhere = useRef(new Map<number, string>());
   const handNotes = useCallback(
-    (session: number, start: StartNotes | undefined, blocks: readonly HeldBlock[]) =>
+    (session: number, held: Omit<NotesHanded, "plane" | "session" | "from">) =>
       void emit(NOTES_HANDED, {
         plane,
         session,
-        start,
-        blocks,
+        ...held,
         from: thisWindow(),
       } satisfies NotesHanded).catch(() => undefined),
     [plane],
   );
   const handAgain = useRef<() => void>(() => undefined);
   useEffect(() => {
+    // Its start's notes, its blocks, and its by-hand banner and restart line (#5363). A restart
+    // not yet made is not handed: the window that owes it says why at the chat's next move.
+    const heldOf = (session: number) => ({
+      start: startNotes[session],
+      blocks: sandboxBlocks[session] ?? [],
+      byHand: byHand[session],
+      restart: restartTrouble[session],
+    });
     const holding = new Map<number, string>();
     for (const session of shownElsewhere) {
-      const start = startNotes[session];
-      const blocks = sandboxBlocks[session] ?? [];
-      if (start === undefined && blocks.length === 0) continue;
-      const said = JSON.stringify([start, blocks]);
+      const held = heldOf(session);
+      const { start, blocks, byHand: banner, restart } = held;
+      const none = start === undefined && blocks.length === 0 && banner === undefined;
+      if (none && restart === undefined) continue;
+      const said = JSON.stringify(held);
       holding.set(session, said);
-      if (notesHeldElsewhere.current.get(session) !== said) handNotes(session, start, blocks);
+      if (notesHeldElsewhere.current.get(session) !== said) handNotes(session, held);
     }
     notesHeldElsewhere.current = holding;
     handAgain.current = () => {
-      for (const session of holding.keys())
-        handNotes(session, startNotes[session], sandboxBlocks[session] ?? []);
+      for (const session of holding.keys()) handNotes(session, heldOf(session));
     };
-  }, [handNotes, sandboxBlocks, shownElsewhere, startNotes]);
+  }, [byHand, handNotes, restartTrouble, sandboxBlocks, shownElsewhere, startNotes]);
   const askedForNotes = useRef(false);
   useEffect(() => {
     const listening = Promise.all([
       listen<NotesHanded>(NOTES_HANDED, ({ payload: handed }) => {
         if (handed.plane !== plane || handed.from === thisWindow()) return;
-        const { session, start, blocks } = handed;
+        const { session, start, blocks, byHand: banner, restart } = handed;
         if (start !== undefined)
           setStartNotes((was) => ({ ...was, [session]: withStartHanded(was[session], start) }));
         takeBlocks(session, blocks);
+        // What this window heard itself stands: it is the same chat's, and newer or the same.
+        if (banner !== undefined)
+          setByHand((was) => (session in was ? was : { ...was, [session]: banner }));
+        if (restart !== undefined)
+          setRestartTrouble((was) => (session in was ? was : { ...was, [session]: restart }));
       }),
       listen<NotesAsked>(NOTES_ASKED, ({ payload: asked }) => {
         if (asked.plane === plane && asked.from !== thisWindow()) handAgain.current();
@@ -8497,6 +8544,7 @@ export const PlaneView = memo(function PlaneView({
       // A region's row in focus mode leaves it first (D-2921-19).
       showSideView: showSideViewSeen,
       editVision: (workspace: string) => setAddingVision({ workspace, busy: false }),
+      askWorkspaceWrite: workspaceWrites.ask,
       toggleRegion: toggleRegionSeen,
       moveView: moveSideView,
       // F6 and Shift+F6 from the palette (#1751): once the palette has closed and given the
@@ -8533,6 +8581,7 @@ export const PlaneView = memo(function PlaneView({
     }),
     [
       studioChats,
+      workspaceWrites.ask,
       studioLinks,
       beginRename,
       showSideViewSeen,
@@ -8847,6 +8896,21 @@ export const PlaneView = memo(function PlaneView({
     }
     return { frontCrumbs: crumbs, frontEndedPanes: ended, frontUnread: unread };
   }, [chatsByNumber, frontShown, liveCrumbs, recalled, sidebar, tabs.inFront]);
+  /** **The chat each ended task a pane shows was asked by** (#5366), by the task: the last but
+   *  one of the path its pane last had. */
+  const endedAskers = useMemo(() => {
+    const askers = new Map<number, number>();
+    // **In every tab, not the front one's alone** (#5543): the palette lists a task a pane
+    // behind still shows, and the path each pane last had is remembered for every tab.
+    // Until the list is read every chat would look gone, so none is taken for ended yet.
+    if (sidebar === undefined) return askers;
+    for (const said of recalled.values()) {
+      const [asker, task] = said.path.slice(-2);
+      if (task !== undefined && !chatsByNumber.has(task.session))
+        askers.set(task.session, asker.session);
+    }
+    return askers;
+  }, [chatsByNumber, recalled, sidebar]);
   /**
    * **The finished row of each task a pane was left on when it ended**, by pane (#1485 under
    * #1486's ended view): its report is drawn on the pane, and the pane says how it ended in
@@ -9455,6 +9519,9 @@ export const PlaneView = memo(function PlaneView({
             wrappingUp: [...wrapping],
             restoring: [...restoringChats],
             endedHere: [...endedHere.keys()],
+            // An ended task's `↳ from` (#5366): the chat that asked it, off the path its pane
+            // last had.
+            endedAskedBy: endedAskers,
             // Close other tabs skips the pinned ones (#4762).
             otherTabs: (tab) => otherTabsToClose(tabs, tab, filedIn, isPinned),
             // Move to window ▸ lists every other window of the project (#4768).
@@ -9535,6 +9602,7 @@ export const PlaneView = memo(function PlaneView({
       wrapping,
       restoringChats,
       endedHere,
+      endedAskers,
       isPinned,
       windowsHere,
       tabWindow,
@@ -11913,6 +11981,8 @@ export const PlaneView = memo(function PlaneView({
                     onCancel={() => setPickingVault(false)}
                   />
                 )}
+
+                {workspaceWrites.dialog}
 
                 {renamingChat && (
                   <RenameChat

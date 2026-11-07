@@ -883,6 +883,31 @@ fn a_branch_folder_chats_look_takes_its_clones_git_as_held_and_no_other() {
     );
 }
 
+/// On Linux, a Claude Code chat's look is told which names its sandbox makes a placeholder for:
+/// those held by path that aren't there as it starts. On macOS none is made.
+#[test]
+fn on_linux_a_chats_look_lists_the_names_it_holds_that_are_not_there() {
+    let dir = tempfile::tempdir().expect("a project");
+    let root = dir.path().canonicalize().expect("real");
+    std::fs::write(root.join(".envrc"), "x\n").expect("one that is there");
+    let watch_on = |os: Os| {
+        let on = Machine { os, ..machine() };
+        let applied = applied_of(
+            Harness::ClaudeCode,
+            compiler(Harness::ClaudeCode).expect("a compiler"),
+            &compiled_at(&root, None, &Grants::default()),
+            &root,
+            &on,
+        )
+        .expect("compiles");
+        applied.arrived_watch(Some(&root), &on).placeholders
+    };
+    let linux = watch_on(Os::Linux);
+    assert!(linux.contains(&root.join(".husky")), "{linux:?}");
+    assert!(!linux.contains(&root.join(".envrc")), "it is there");
+    assert!(watch_on(Os::MacOs).is_empty());
+}
+
 /// #3316: a Claude Code chat allowed to listen on a port compiles the very settings it would
 /// without the grant, `allowLocalBinding` off among them: its server dials in to its door
 /// through the hook socket it already reaches, and nothing of Claude Code's own sandbox changes.

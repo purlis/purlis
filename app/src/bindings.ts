@@ -785,7 +785,7 @@ export const commands = {
 	 *  **The person answers the ask to allow a program `id`** (ADR 0112, #5239): the run that waits
 	 *  on it goes on, or hears it was not allowed, and a chat whose command stopped waiting is nudged.
 	 */
-	answerRunGrant: (plane: PlaneId, id: number, press: RunGrantPress) => typedError<null, string>(__TAURI_INVOKE("answer_run_grant", { plane, id, press })),
+	answerRunGrant: (plane: PlaneId, id: number, press: RunGrantPress, values: RunValue[]) => typedError<null, string>(__TAURI_INVOKE("answer_run_grant", { plane, id, press, values })),
 	/**
 	 *  **The person fills Secret ask `id` with an entry they keep** (#5073): the asked key becomes a
 	 *  Linked entry reading `key` in `vault`, never a copy, and every command that waits on it runs
@@ -2097,6 +2097,12 @@ export const commands = {
 	 */
 	skillStats: (plane: PlaneId, skill: string) => typedError<SkillStats, string>(__TAURI_INVOKE("skill_stats", { plane, skill })),
 	/**
+	 *  **How much each skill was used lately** (#5355): its runs in the last 30 days, which Make room
+	 *  sorts the Library by, least used first. None while the flag is off. On a blocking thread, as
+	 *  it reads the project's skill log.
+	 */
+	skillUses: (plane: PlaneId) => typedError<SkillRunsLately[], string>(__TAURI_INVOKE("skill_uses", { plane })),
+	/**
 	 *  **The panels on skill `skill`'s tab** (ADR 0101 §6): purlis's Runs panel, which lists every
 	 *  run of the skill, newest first, then each extension's. A skill's grades are no panel: its
 	 *  Grades tab reads them whole ([`crate::skillgrade::skill_grades`]). None while the flag is off.
@@ -2279,6 +2285,16 @@ export const commands = {
 	 *  undo. Refused whole where one is no longer listed.
 	 */
 	skillSetDeleteNow: (plane: PlaneId, ids: string[]) => typedError<SkillSetGone, string>(__TAURI_INVOKE("skill_set_delete_now", { plane, ids })),
+	/**
+	 *  **Accepts every update of `updates` as one change** (#5354): one commit, all or nothing, and
+	 *  one where a skill gains a kind of capability it was not ticked with is refused whole.
+	 */
+	skillSetUpdate: (plane: PlaneId, updates: SkillSetUpdating[]) => typedError<SkillSetUpdated, string>(__TAURI_INVOKE("skill_set_update", { plane, updates })),
+	/**
+	 *  **Takes back the set's update `undo` names**: each copy as it was and the pins back, as one
+	 *  commit. Refused whole where one changed since.
+	 */
+	skillSetUpdateUndo: (plane: PlaneId, undo: number) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_set_update_undo", { plane, undo })),
 	/**  **What an export of the skills `members` would write** (#5332), each once with what they name. */
 	skillSetExportReview: (plane: PlaneId, members: SkillSetMember[]) => typedError<ExportReview, string>(__TAURI_INVOKE("skill_set_export_review", { plane, members })),
 	/**
@@ -3429,6 +3445,35 @@ export const commands = {
 	 *  keeps it. Refused for a path that leaves the folder or is a repo's, and through a link.
 	 */
 	workspaceFile: (plane: PlaneId, workspace: string, path: string) => typedError<WorkspaceFile, string>(__TAURI_INVOKE("workspace_file", { plane, workspace, path })),
+	/**
+	 *  A new empty file `name` in `folder` of a workspace's own files (`""` for its top): its path.
+	 *  Refused where the files are not the person's, and for a name already taken.
+	 */
+	workspaceFilesNewFile: (plane: PlaneId, workspace: string, folder: string, name: string) => typedError<string, string>(__TAURI_INVOKE("workspace_files_new_file", { plane, workspace, folder, name })),
+	/**  A new empty folder `name` in `folder` of a workspace's own files: its path. */
+	workspaceFilesNewFolder: (plane: PlaneId, workspace: string, folder: string, name: string) => typedError<string, string>(__TAURI_INVOKE("workspace_files_new_folder", { plane, workspace, folder, name })),
+	/**
+	 *  A file or folder of a workspace's own files renamed to `name`, in its folder: its new path.
+	 *  Never over anything that has the name already.
+	 */
+	workspaceFilesRename: (plane: PlaneId, workspace: string, path: string, name: string) => typedError<string, string>(__TAURI_INVOKE("workspace_files_rename", { plane, workspace, path, name })),
+	/**
+	 *  A file or folder of a workspace's own files sent to the system's Trash. Refused, and left
+	 *  where it is, when the Trash will not take it: never deleted for good.
+	 */
+	workspaceFilesTrash: (plane: PlaneId, workspace: string, path: string) => typedError<null, string>(__TAURI_INVOKE("workspace_files_trash", { plane, workspace, path })),
+	/**
+	 *  Import files…: the system's file picker, then each file picked copied into `folder` of a
+	 *  workspace's own files, a name already taken given a ` (2)` suffix. The paths they were given;
+	 *  none when the picker was cancelled.
+	 */
+	workspaceFilesImport: (plane: PlaneId, workspace: string, folder: string) => typedError<string[], string>(__TAURI_INVOKE("workspace_files_import", { plane, workspace, folder })),
+	/**
+	 *  **Save with the project** (#5377): one file or folder at the top of a LIVE workspace's folder
+	 *  gets one line in the workspace's LIVE allowlist, so the next save shares it. `true` when the
+	 *  line was added, `false` when it was there already.
+	 */
+	workspaceSaveWithTheProject: (plane: PlaneId, workspace: string, path: string) => typedError<boolean, string>(__TAURI_INVOKE("workspace_save_with_the_project", { plane, workspace, path })),
 	/**
 	 *  What a branch changed against the branch it was cut from, committed or not, file by file and
 	 *  rolled up onto its folders: the explorer's markers and its "Changed only" (FM-4).
@@ -4767,6 +4812,12 @@ export const commands = {
 	 *  On a blocking thread, as [`plane_doctor`] is: a fix writes files and takes the plane's lock.
 	 */
 	planeDoctorFix: (plane: PlaneId, fix: string) => typedError<DoctorFixed, string>(__TAURI_INVOKE("plane_doctor_fix", { plane, fix })),
+	/**
+	 *  What **Move into repos/** would do in the plane the window names, workspace by workspace,
+	 *  for its confirmation: the core's [`purlis_core::doctor::fix::move_into_repos::plan`], with the
+	 *  chats this window has open in each.
+	 */
+	planeDoctorMoveIntoReposPlan: (plane: PlaneId) => typedError<MoveIntoReposPlan[], string>(__TAURI_INVOKE("plane_doctor_move_into_repos_plan", { plane })),
 	/**
 	 *  Apply the `git-identity` fix with the name and email the Doctor's form was given (FX-3):
 	 *  the core checks both, then writes them to git's global config, as `charter doctor --fix
@@ -8642,6 +8693,11 @@ export type FolderEntry_Deserialize = {
 	 *  out where it is not.
 	 */
 	hidden: boolean,
+	/**
+	 *  In a LIVE workspace's own files (#5377), where it is kept. Left out everywhere else, a
+	 *  LOCAL workspace's files included: they carry no mark.
+	 */
+	kept: KeptMark | null,
 };
 
 /**  One entry of a branch's folder, as the explorer's tree draws it (FM-1). */
@@ -8668,6 +8724,11 @@ export type FolderEntry_Serialize = {
 	 *  out where it is not.
 	 */
 	hidden?: boolean,
+	/**
+	 *  In a LIVE workspace's own files (#5377), where it is kept. Left out everywhere else, a
+	 *  LOCAL workspace's files included: they carry no mark.
+	 */
+	kept?: KeptMark | null,
 };
 
 /**  One folder of a branch, one level deep: its first entries, and how many more it holds. */
@@ -9695,6 +9756,13 @@ export type KeptBlocked = {
 	at: number,
 };
 
+/**  Where a LIVE workspace's file is kept (#5377). */
+export type KeptMark = 
+/**  Ignored by the project's git: it stays on this machine. */
+"this-machine-only" | 
+/**  In the workspace's LIVE allowlist: a save shares it with the project. */
+"with-the-project";
+
 /**  What the person's key did (#2014). */
 export type KeyAct = "down" | "up";
 
@@ -10220,6 +10288,26 @@ export type MouseAct = "moved" | "pressed" | "released" | "wheel";
 
 /**  A mouse button (#2014). */
 export type MouseButton = "none" | "left" | "middle" | "right";
+
+/**
+ *  One workspace **Move into repos/** would move (#5374): what its confirmation shows before
+ *  anything moves.
+ */
+export type MoveIntoReposPlan = {
+	workspace: string,
+	/**  The repos at its root that move, by name. */
+	repos: string[],
+	/**
+	 *  The chats started in one of them that their harness can no longer resume afterwards, by
+	 *  their session record's title. Their records still open.
+	 */
+	unresumable: string[],
+	/**
+	 *  The chats open in it now, by the name each is shown under: while there are any, this
+	 *  workspace is left as it is.
+	 */
+	open: string[],
+};
 
 /**  What the window is told of a move it asked for to switch now. */
 export type MoveNow = {
@@ -13836,6 +13924,15 @@ export type RunEndedOnARunner = {
 	device: string,
 };
 
+/**  **A key a run lacks, as its notice's value field** (#5242). Names only. */
+export type RunFillShown = {
+	key: string,
+	/**  What the persona's definition says it is for, where it declares it. */
+	declared?: string | null,
+	/**  The entry a link read, which is gone, where the key is such a link. */
+	gone?: SecretEntryShown | null,
+};
+
 /**  **What the person pressed on an ask to allow a program** (ADR 0112). */
 export type RunGrantPress = 
 /**  One run of exactly this command. */
@@ -13844,8 +13941,15 @@ export type RunGrantPress =
 "chat" | 
 /**  As [`Self::Chat`], and write its line to the persona's tools (#5245). */
 "always" | 
-/**  Don't allow. */
-"refuse";
+/**  Don't allow; on a notice with no program Allow, Keep blocked or Not now. */
+"refuse" | 
+/**
+ *  The vault's own Allow, on a notice with no program Allow (#5242): the persona is given the
+ *  vault, as a refused vault's Allow gives it (#5160).
+ */
+"allow-vault" | 
+/**  Fill, on a notice of value fields alone (#5242). */
+"fill";
 
 /**
  *  **An ask to allow a program, as its row draws it** (ADR 0112, #5239). Every field is the app's
@@ -13874,6 +13978,20 @@ export type RunShown = {
 	cwd: string,
 	/**  What Always allow would write, where it is offered (#5245). */
 	always?: AlwaysShown | null,
+	/**  **The keys the run lacks**, one value field each (#5242). */
+	fills: RunFillShown[],
+	/**
+	 *  **What the notice asks of the program** (#5242): `program` for an Allow; `vault` where it
+	 *  has none and the vault's line has its own Allow; `fill` for its value fields alone.
+	 */
+	offer: string,
+	/**  Why it offers no Allow for the program, where policy is why: the app's own words. */
+	no_allow?: string | null,
+	/**
+	 *  **Asked ahead of its run** (#5244): no command yet; only Allow for this chat is offered,
+	 *  and the first run fixes how the values are handed.
+	 */
+	ahead: boolean,
 };
 
 /**  What started a skill run, as the Runs panel draws it. */
@@ -13894,6 +14012,15 @@ export type RunStart =
 "grade" | 
 /**  A start a newer purlis wrote. */
 "unknown";
+
+/**
+ *  **A value the person typed in a run's notice** (#5242): for one of its fields, by key. Never
+ *  printed, and wiped as it is dropped.
+ */
+export type RunValue = {
+	key: string,
+	value: SecretValue,
+};
 
 /**  One value a run asks to hand its program ([`RunShown`]). */
 export type RunValueShown = {
@@ -15116,15 +15243,20 @@ export type Sidebar = {
 };
 
 /**
- *  One workspace as the sidebar draws it: what it is for, what it still means to do, and the
- *  chats working in it.
+ *  One workspace as the sidebar draws it: what it is for, how many todos it still means to do,
+ *  and the chats working in it.
  */
 export type SidebarWorkspace = {
 	name: string,
 	/**  Where the workspace is, so a chat can be started in it. */
 	path: string,
 	vision: string,
-	todos: string[],
+	/**
+	 *  How many open todos it has. A count, never their titles: the sidebar is every
+	 *  workspace's summary, and its answer must not grow with every workspace's todos (#5501).
+	 *  The titles are the workspace's panels' (`workspace_panels`), read for the one in front.
+	 */
+	open_todos: number,
 	chats: OpenChat[],
 	/**
 	 *  Its colour as its `workspace.json` holds it — a palette name or `#rrggbb` — or `null`
@@ -15370,6 +15502,12 @@ export type SkillFolderEntry = {
 	/**  Why it does not open, in the core's sentence; `null` for a file that opens and a folder. */
 	refused: string | null,
 };
+
+/**
+ *  **One kind of thing an update newly lets a skill do** (#5354), as the core reads it
+ *  (`purlis_core::skills::source::update::Gained`).
+ */
+export type SkillGained = "script" | "command" | "hook" | "tool" | "network" | "writes-outside" | "hidden" | "not-shown" | "unread";
 
 /**  A version's grade, once grading lands (SK-16): always null for now. */
 export type SkillGrade = {
@@ -15751,6 +15889,12 @@ export type SkillRouting = {
 	last_prompt?: SkillPromptRouting | null,
 };
 
+/**  **One skill's runs in the last [`USES_DAYS`] days**, by its own name (#5355). */
+export type SkillRunsLately = {
+	skill: string,
+	runs: number,
+};
+
 /**  What is asked of a set. */
 export type SkillSetAct = "delete" | "turn-off" | "turn-on" | "pin" | "unpin" | "archive" | "unarchive" | "move" | "export";
 
@@ -15836,6 +15980,25 @@ export type SkillSetTurned = {
 	notes: string[],
 	/**  Those it changed: one that already was so is not among them. */
 	changed: string[],
+};
+
+/**  What a set's update did, and the Undo that takes it back. */
+export type SkillSetUpdated = {
+	notes: string[],
+	/**  What [`skill_set_update_undo`] is handed. */
+	undo: number,
+};
+
+/**
+ *  One update of a set, as the window accepted it: the skill, what its review was accepted as,
+ *  the grant it showed, and each kind of new capability the person ticked it with.
+ */
+export type SkillSetUpdating = {
+	level: SkillLevel,
+	name: string,
+	reviewed: Reviewed,
+	grant: SkillGrant | null,
+	allowed: SkillGained[],
 };
 
 /**  A skill source as the studio shows and adds one. */
@@ -17342,6 +17505,11 @@ export type UpdateReview = {
 	 */
 	widenings: SkillWidening[],
 	accepted: Reviewed,
+	/**
+	 *  What the update newly lets the skill do, beyond an edit of its text (#5354): a review of
+	 *  several updates leaves one that gains any of it unticked until it is opened.
+	 */
+	gained: SkillGained[],
 };
 
 /**  What the person did with updates: Mark read, or Dismiss. */

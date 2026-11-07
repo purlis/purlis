@@ -665,6 +665,17 @@ pub const WINDOW_ONLY: &[&str] = &[
     // purlis keeps there, listed and opened in the person's window alone.
     "workspace_tree",
     "workspace_file",
+    // Writing a workspace's own files (#5376): new file, new folder, rename, delete to the
+    // Trash and import, each the person's own press in their window. An import's picker is the
+    // system's, opened by the command itself.
+    "workspace_files_new_file",
+    "workspace_files_new_folder",
+    "workspace_files_rename",
+    "workspace_files_trash",
+    "workspace_files_import",
+    // Save with the project (#5377): it shares one of the person's workspace files with the
+    // project, which a script holding a token would make a leak, so only their press asks it.
+    "workspace_save_with_the_project",
     // A skill's folder, for its page's Files tab (#5183): listed, a file of it opened, and the
     // folder opened in the file manager. A built-in or third-party skill's folder is outside
     // the project, so only the person's own window reads it.
@@ -732,6 +743,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     "skill_set_lifecycle",
     "skill_set_move",
     "skill_set_delete_now",
+    // Several updates accepted as one commit, and their Undo (#5354): the person's own press,
+    // each new capability ticked on its own.
+    "skill_set_update",
+    "skill_set_update_undo",
     "skill_set_export_review",
     "skill_set_export",
     "skill_grant",
@@ -1328,6 +1343,7 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "plane_at_launch",
     "plane_doctor",
     "plane_doctor_identity",
+    "plane_doctor_move_into_repos_plan",
     "plane_fetch",
     "plane_pin",
     "plane_pins",
@@ -1419,6 +1435,8 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "skill_templates",
     "skill_text",
     "skill_users",
+    // Each skill's runs of the last 30 days, which Make room sorts by (#5355): read only.
+    "skill_uses",
     "skills_deleted",
     "smart_close_offer",
     "smart_closing",

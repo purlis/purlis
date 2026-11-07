@@ -139,6 +139,7 @@ impl Fixture {
             no_push: false,
             cwd: &self.root,
             provenance: None,
+            for_a_chat: false,
         })
     }
 
@@ -222,6 +223,7 @@ fn what_is_about_to_be_committed_is_broken_down_by_directory_before_it_is() {
         no_push: true,
         cwd: &fixture.root,
         provenance: None,
+        for_a_chat: false,
     });
 
     assert_eq!(code, 0, "{said}");
@@ -272,6 +274,7 @@ fn a_save_never_commits_a_levels_local_skills_even_where_nothing_ignores_them() 
         no_push: true,
         cwd: &fixture.root,
         provenance: None,
+        for_a_chat: false,
     });
 
     assert_eq!(code, 0, "{said}");
@@ -344,6 +347,7 @@ fn a_save_of_named_paths_commits_each_new_file_it_names() {
             no_push: true,
             cwd: root,
             provenance: None,
+            for_a_chat: false,
         },
         Trigger::Skill(crate::skills::verbs::By::Window),
         &paths,
@@ -403,6 +407,7 @@ fn an_unbounded_stage_from_a_linked_worktree_of_the_plane_is_refused() {
         no_push: true,
         cwd: &worktree,
         provenance: None,
+        for_a_chat: false,
     });
 
     assert_eq!(code, 1, "{said}");
@@ -449,6 +454,7 @@ fn a_scoped_stage_from_a_linked_worktree_is_still_allowed() {
             no_push: true,
             cwd: &worktree,
             provenance: None,
+            for_a_chat: false,
         },
         &crate::planesave::Settings::read(&fixture.root).plane,
         super::Staging::Add(&["add", "--", "personas/steward/memory/m.md"]),
@@ -477,6 +483,7 @@ fn an_unbounded_stage_from_a_plane_nested_in_the_workspaces_is_refused() {
         no_push: true,
         cwd: &inner,
         provenance: None,
+        for_a_chat: false,
     });
 
     assert_eq!(code, 1, "{said}");
@@ -516,6 +523,7 @@ fn a_held_index_lock_is_a_refusal_and_the_word_clean_never_appears() {
         no_push: true,
         cwd: &fixture.root,
         provenance: None,
+        for_a_chat: false,
     });
 
     assert_eq!(code, 1, "{said}");
@@ -538,6 +546,7 @@ fn a_clean_tree_says_there_is_nothing_to_save_and_commits_nothing() {
         no_push: true,
         cwd: &fixture.root,
         provenance: None,
+        for_a_chat: false,
     });
 
     assert_eq!(code, 0, "{said}");
@@ -568,6 +577,7 @@ fn a_project_this_purlis_may_not_write_is_not_saved() {
                 no_push: true,
                 cwd: &fixture.root,
                 provenance: None,
+                for_a_chat: false,
             },
             trigger,
             &mut |line: Say| said.push_str(&format!("{line}\n")),
@@ -598,6 +608,7 @@ fn a_plane_that_is_not_a_git_repository_is_told_so_rather_than_reported_saved() 
             no_push: true,
             cwd: &root,
             provenance: None,
+            for_a_chat: false,
         },
         &mut say,
     );
@@ -628,6 +639,7 @@ fn a_secret_shaped_value_in_a_memory_file_stops_the_save_and_is_never_echoed() {
         no_push: true,
         cwd: &fixture.root,
         provenance: None,
+        for_a_chat: false,
     });
 
     assert_eq!(code, 1, "{said}");
@@ -654,6 +666,7 @@ impl Fixture {
             no_push: true,
             cwd: &self.root,
             provenance: None,
+            for_a_chat: false,
         })
     }
 }
@@ -959,6 +972,7 @@ fn a_memory_file_that_leads_out_of_the_plane_is_refused_rather_than_read_through
         no_push: true,
         cwd: &fixture.root,
         provenance: None,
+        for_a_chat: false,
     });
 
     assert_eq!(code, 1, "{said}");
@@ -991,6 +1005,7 @@ fn a_memory_file_that_is_a_link_is_refused_even_when_it_lands_back_inside_the_pl
         no_push: true,
         cwd: &fixture.root,
         provenance: None,
+        for_a_chat: false,
     });
 
     assert_eq!(code, 1, "{said}");
@@ -1034,6 +1049,7 @@ fn a_secret_staged_and_then_cleaned_out_of_the_working_tree_is_still_refused() {
         no_push: true,
         cwd: &fixture.root,
         provenance: None,
+        for_a_chat: false,
     });
 
     assert_eq!(code, 1, "{said}");
@@ -1067,6 +1083,7 @@ fn a_staged_path_git_would_quote_is_examined_rather_than_skipped() {
         no_push: true,
         cwd: &fixture.root,
         provenance: None,
+        for_a_chat: false,
     });
 
     assert_eq!(code, 1, "{said}");
@@ -1092,6 +1109,7 @@ fn a_staged_memory_file_that_is_not_utf8_is_examined_rather_than_skipped() {
         no_push: true,
         cwd: &fixture.root,
         provenance: None,
+        for_a_chat: false,
     });
 
     assert_eq!(code, 1, "{said}");
@@ -1133,6 +1151,7 @@ fn the_signer_is_never_asked_even_when_the_operator_signs_every_commit() {
         no_push: true,
         cwd: &fixture.root,
         provenance: None,
+        for_a_chat: false,
     });
 
     assert_eq!(code, 0, "{said}");
@@ -1401,6 +1420,7 @@ fn a_save_asked_to_sign_that_has_to_rebase_signs_the_commit_it_replays() {
             no_push: false,
             cwd: &fixture.root,
             provenance: None,
+            for_a_chat: false,
         });
 
         assert_eq!(code, 0, "{said}");
@@ -1446,7 +1466,14 @@ fn push_within(
         said.push_str(&line.to_string());
         said.push('\n');
     };
-    let pushed = push_head_within(&fixture.root, None, sign, deadline, &mut say);
+    let pushed = push_head_within(
+        &fixture.root,
+        None,
+        sign,
+        TheirCommits::BroughtIn,
+        deadline,
+        &mut say,
+    );
     (pushed, said)
 }
 
@@ -2193,6 +2220,7 @@ fn a_commit_left_unpushed_is_pushed_by_the_next_save_even_with_nothing_new_to_co
         no_push: false,
         cwd: &fixture.root,
         provenance: None,
+        for_a_chat: false,
     });
 
     assert_eq!(code, 0, "{said}");
@@ -2248,6 +2276,7 @@ fn a_plane_that_says_sign_asks_the_signer_without_being_told_on_the_command_line
             no_push: true,
             cwd: &fixture.root,
             provenance: None,
+            for_a_chat: false,
         });
 
         assert_eq!(code, 0, "{said}");
@@ -2303,6 +2332,7 @@ fn a_save_with_no_message_says_what_changed_in_the_planes_own_words() {
         no_push: true,
         cwd: &fixture.root,
         provenance: None,
+        for_a_chat: false,
     });
 
     assert_eq!(code, 0, "{said}");
@@ -2324,6 +2354,7 @@ fn one_file_is_one_file() {
         no_push: true,
         cwd: &fixture.root,
         provenance: None,
+        for_a_chat: false,
     });
     assert_eq!(
         fixture.head_subject(),
@@ -2468,6 +2499,7 @@ fn a_refusal_is_journalled_in_its_own_words() {
             no_push: false,
             cwd: &root,
             provenance: None,
+            for_a_chat: false,
         },
         &mut say,
     );
@@ -2837,6 +2869,7 @@ fn pressed_save(fixture: &Fixture) -> (u8, String) {
             no_push: false,
             cwd: &fixture.root,
             provenance: None,
+            for_a_chat: false,
         },
         Trigger::Manual,
         &mut |line: Say| {
@@ -3819,6 +3852,7 @@ fn once_the_merge_is_finished_the_save_goes_ahead() {
         no_push: true,
         cwd: &fixture.root,
         provenance: None,
+        for_a_chat: false,
     });
 
     assert_eq!(code, 0, "{said}");
@@ -4114,6 +4148,93 @@ fn a_save_leaves_the_index_carrying_gits_untracked_cache() {
     );
 }
 
+/// How many directories a read of every untracked file in `root` opened, read as the shared
+/// standing reads (with the monitor where git has one), as git's own trace
+/// says (`read_directory`'s `opendir`, which git reports only when it read through its
+/// untracked cache), or `None` when the read did not use the cache at all.
+fn directories_opened_by_a_read(root: &Path) -> Option<u64> {
+    let trace = tempfile::NamedTempFile::new().unwrap();
+    let out = crate::forklock::output(
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args(git::Tuning::here().for_a_read())
+            .args([
+                "--no-optional-locks",
+                "status",
+                "--porcelain",
+                "--untracked-files=all",
+            ])
+            .env("GIT_TRACE2_EVENT", trace.path())
+            // `read_directory`'s counts are nested deeper than the event target's default.
+            .env("GIT_TRACE2_EVENT_NESTING", "10"),
+    )
+    .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    std::fs::read_to_string(trace.path())
+        .unwrap()
+        .lines()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .find(|event| event["key"] == "opendir")
+        .and_then(|event| event["value"].as_str()?.parse().ok())
+}
+
+#[test]
+fn after_a_save_a_read_of_every_untracked_file_opens_none_of_the_folders_it_did_not_touch() {
+    // #5505: the shared standing reads with `--untracked-files=all`, which git serves from
+    // its untracked cache only when the cache was written for that mode. The save, which
+    // writes the index anyway, leaves one that is; a read then opens no folder it left alone.
+    let fixture = Fixture::plane();
+    fixture.with_settings("[plane]\nmode = \"commit\"\n");
+    for n in 0..20 {
+        let dir = fixture.root.join(format!("notes/{n}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("note.md"), "note").unwrap();
+    }
+    // Past git's racy window: a folder modified in the second the index is written is never
+    // trusted to the cache, and is opened again by every read.
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+
+    let (code, said) = fixture.just_save();
+
+    assert_eq!(code, 0, "{said}");
+    // A read without the cache opens every folder, more than twenty here. The root may be
+    // opened: the save's journal, written after the index, moves it the first time.
+    let opened = directories_opened_by_a_read(&fixture.root);
+    assert!(opened.is_some_and(|n| n <= 1), "{opened:?}");
+}
+
+#[test]
+fn after_a_save_the_standing_still_sees_every_file_added_edited_or_removed_since() {
+    // The caches a save leaves are an answer about the tree when it was written: a file new
+    // in a folder the cache remembers as clean, a deep new folder, an edit and a removal are
+    // each still in the standing.
+    let fixture = Fixture::plane();
+    fixture.with_settings("[plane]\nmode = \"commit\"\n");
+    std::fs::create_dir_all(fixture.root.join("notes/a")).unwrap();
+    std::fs::write(fixture.root.join("notes/a/kept.md"), "kept").unwrap();
+    std::fs::write(fixture.root.join("notes/gone.md"), "gone").unwrap();
+    let (code, said) = fixture.just_save();
+    assert_eq!(code, 0, "{said}");
+    assert!(standing(&fixture.root).changed.is_empty());
+
+    std::fs::write(fixture.root.join("notes/a/new.md"), "new").unwrap();
+    std::fs::create_dir_all(fixture.root.join("notes/b/c")).unwrap();
+    std::fs::write(fixture.root.join("notes/b/c/deep.md"), "deep").unwrap();
+    std::fs::write(fixture.root.join("README.md"), "edited\n").unwrap();
+    std::fs::remove_file(fixture.root.join("notes/gone.md")).unwrap();
+
+    assert_eq!(
+        standing(&fixture.root).changed,
+        [
+            "README.md",
+            "notes/a/new.md",
+            "notes/b/c/deep.md",
+            "notes/gone.md"
+        ]
+    );
+}
+
 #[test]
 fn the_untracked_cache_is_asked_for_only_where_the_operators_config_says_nothing() {
     // A `-c` on the command line beats every config file, so charter passes one only when no
@@ -4155,6 +4276,7 @@ impl Fixture {
             no_push: true,
             cwd: &self.root,
             provenance,
+            for_a_chat: false,
         });
         assert_eq!(code, 0, "{said}");
         code
@@ -4695,6 +4817,7 @@ fn an_empty_message_is_no_message_and_the_save_says_what_changed_itself() {
         no_push: true,
         cwd: &fixture.root,
         provenance: None,
+        for_a_chat: false,
     });
     assert_eq!(code, 0, "{said}");
     assert_eq!(
@@ -5517,6 +5640,7 @@ fn saved_paths(root: &Path, paths: &[&str]) -> (u8, String) {
             no_push: true,
             cwd: root,
             provenance: None,
+            for_a_chat: false,
         },
         Trigger::Skill(crate::skills::verbs::By::Command),
         &paths,
@@ -5538,6 +5662,7 @@ fn saved_as(root: &Path, trigger: Trigger) -> (u8, String) {
             no_push: true,
             cwd: root,
             provenance: None,
+            for_a_chat: false,
         },
         trigger,
         &mut |line: Say| {
@@ -5966,4 +6091,143 @@ fn a_file_changed_as_continue_stages_it_puts_the_conflict_back_and_its_blob_out(
         resolve::Settled::Replayed
     );
     assert_eq!(scene.at("a.md"), b"written after the check\n");
+}
+
+#[test]
+fn a_save_for_a_chat_leaves_a_remote_that_moved_on_the_remote() {
+    let fixture = Fixture::plane();
+    let bare = fixture.with_a_remote_that_moved();
+    std::fs::write(fixture.root.join("mine.md"), "mine").unwrap();
+
+    let (code, said) = fixture.save(Request {
+        root: &fixture.root,
+        message: Some("a chat's save"),
+        sign: false,
+        no_push: false,
+        cwd: &fixture.root,
+        provenance: None,
+        for_a_chat: true,
+    });
+
+    assert_eq!(code, 0, "{said}");
+    assert!(!said.contains("remote moved"), "it rebased: {said}");
+    assert!(said.contains(MOVED_FOR_A_CHAT), "{said}");
+    assert_eq!(fixture.head_subject(), "a chat's save");
+    assert_eq!(
+        ask(&fixture.root, &["log", "-1", "--format=%s", "HEAD~1"]).trim(),
+        "one"
+    );
+    assert!(
+        !fixture.root.join("theirs.md").exists(),
+        "the remote's commit came in"
+    );
+    assert_eq!(
+        ask(&bare, &["log", "-1", "--format=%s", "main"]).trim(),
+        "theirs"
+    );
+    assert_eq!(push_record(&fixture.root).unwrap()["outcome"], "failed");
+}
+
+#[test]
+fn a_save_for_a_chat_pushes_unsigned_where_the_project_signs_every_push() {
+    let fixture = Fixture::plane();
+    let bare = fixture.with_a_remote();
+    // A remote that takes signed pushes, so git asks the signer whenever a push is signed.
+    run(&bare, &["config", "receive.certNonceSeed", "fixture"]);
+    let ran = fixture.root.parent().unwrap().join("push-signer-ran");
+    let signer = stand_in::program(
+        fixture.root.parent().unwrap(),
+        "gpg",
+        &format!("#!/bin/sh\ntouch '{}'\nexit 1\n", ran.display()),
+    );
+    run(&fixture.root, &["config", "push.gpgSign", "true"]);
+    run(
+        &fixture.root,
+        &["config", "gpg.program", &signer.display().to_string()],
+    );
+    std::fs::write(fixture.root.join("mine.md"), "mine").unwrap();
+
+    let (code, said) = fixture.save(Request {
+        root: &fixture.root,
+        message: Some("a chat's save"),
+        sign: false,
+        no_push: false,
+        cwd: &fixture.root,
+        provenance: None,
+        for_a_chat: true,
+    });
+
+    assert_eq!(code, 0, "{said}");
+    assert!(!ran.exists(), "the signer was run: {said}");
+    assert_eq!(
+        ask(&bare, &["log", "-1", "--format=%s", "main"]).trim(),
+        "a chat's save",
+        "{said}"
+    );
+}
+
+#[test]
+fn a_save_for_a_chat_in_a_project_that_saves_through_a_request_commits_and_pushes_nothing() {
+    let fixture = Fixture::plane();
+    let bare = fixture.with_a_remote_that_moved();
+    fixture.with_settings("[plane]\nmode = \"pr\"\n");
+    std::fs::write(fixture.root.join("mine.md"), "mine").unwrap();
+
+    let (code, said) = fixture.save(Request {
+        root: &fixture.root,
+        message: Some("a chat's save"),
+        sign: false,
+        no_push: false,
+        cwd: &fixture.root,
+        provenance: None,
+        for_a_chat: true,
+    });
+
+    assert_eq!(code, 0, "{said}");
+    assert!(said.contains(REQUEST_FOR_A_CHAT), "{said}");
+    assert_eq!(fixture.head_subject(), "a chat's save");
+    assert!(
+        !fixture.root.join("theirs.md").exists(),
+        "the remote's commit came in"
+    );
+    let branches = ask(&bare, &["for-each-ref", "--format=%(refname)"]);
+    assert_eq!(branches.trim(), "refs/heads/main", "{branches}");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_save_refuses_a_project_whose_commit_message_file_is_a_link() {
+    let fixture = Fixture::plane();
+    let outside = fixture.root.parent().unwrap().join("outside");
+    std::fs::write(&outside, "untouched\n").unwrap();
+    let message = fixture.root.join(".git/COMMIT_EDITMSG");
+    let _ = std::fs::remove_file(&message);
+    std::os::unix::fs::symlink(&outside, &message).unwrap();
+    std::fs::write(fixture.root.join("work.md"), "work").unwrap();
+
+    let (code, said) = fixture.just_save();
+
+    assert_eq!(code, 1, "{said}");
+    assert!(said.contains(&message.display().to_string()), "{said}");
+    assert_eq!(fixture.head_subject(), "one");
+    assert_eq!(std::fs::read_to_string(&outside).unwrap(), "untouched\n");
+}
+
+#[cfg(unix)]
+#[test]
+fn an_update_refuses_a_project_whose_orig_head_has_a_second_name() {
+    let fixture = Fixture::plane();
+    fixture.with_a_remote_that_moved();
+    let outside = fixture.root.parent().unwrap().join("outside");
+    std::fs::write(&outside, "untouched\n").unwrap();
+    std::fs::hard_link(&outside, fixture.root.join(".git/ORIG_HEAD")).unwrap();
+
+    let got = update(&fixture.root, &mut |_| {});
+
+    let Updated::Left(Left::Linked(why)) = &got else {
+        panic!("{got:?}");
+    };
+    assert!(why.contains("ORIG_HEAD"), "{why}");
+    assert_eq!(fixture.head_subject(), "one");
+    assert_eq!(std::fs::read_to_string(&outside).unwrap(), "untouched\n");
 }

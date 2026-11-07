@@ -148,6 +148,8 @@ fn asker(cwd: Option<&Path>) -> Asker {
         persona: Some("steward".to_owned()),
         harnessed: true,
         unsandboxed: false,
+        roots_git_held: false,
+        unreadable: Vec::new(),
         config: None,
         id: None,
         live: None,

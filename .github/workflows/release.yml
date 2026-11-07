@@ -881,7 +881,7 @@ jobs:
           else
             echo "### what the .deb ships"
             dpkg -c dist/*.deb | grep -E 'usr/bin/|\.desktop' || true
-            echo; echo "ldd of the app:"; ldd "target/$PROFILE/charter-app" || true
+            echo; echo "ldd of the app:"; ldd "target/$PROFILE/purlis-app" || true
           fi
 
       # The plugin every Claude Code chat loads (`purlis_core::plugin`), and the shim every

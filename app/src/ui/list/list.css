@@ -38,6 +38,23 @@
   outline: none;
 }
 
+/* **A list of thousands drawn in part** (#5501, `virtualRows.tsx`): it keeps the whole list's
+   height, and each row it draws stands at its own place in it, inside the list's padding. */
+[data-scope="list"][data-part="body"][data-partly] {
+  position: relative;
+}
+
+[data-scope="list"][data-part="body"][data-partly]::before {
+  content: "";
+  flex: none;
+  block-size: var(--list-rows-size);
+}
+
+[data-scope="list"][data-part="body"][data-partly] > [data-placed] {
+  position: absolute;
+  inset-inline: var(--space-2);
+}
+
 /* A list laid out as a grid of cards (`layout="grid"`): its columns are its view's. */
 [data-scope="list"][data-part="body"][data-layout="grid"] {
   display: grid;

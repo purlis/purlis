@@ -10,11 +10,11 @@ use super::*;
 #[test]
 fn the_window_starts_its_own_binary_as_its_session_host_holding_its_input() {
     let command = command(Path::new(
-        "/Applications/purlis.app/Contents/MacOS/charter-app",
+        "/Applications/purlis.app/Contents/MacOS/purlis-app",
     ));
     assert_eq!(
         command.get_program(),
-        "/Applications/purlis.app/Contents/MacOS/charter-app"
+        "/Applications/purlis.app/Contents/MacOS/purlis-app"
     );
     let args: Vec<_> = command.get_args().collect();
     assert_eq!(args, ["purlis-serve-for-the-window"]);

@@ -335,6 +335,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`app/reopen.json`](#appreopenjson)
   - [`app/worktree-updates/<id>/`](#appworktree-updatesid)
   - [`app/dispatches/<id>.json` — a dispatch's record](#appdispatchesidjson--a-dispatchs-record)
+  - [`app/dispatches/ended.json` — the summary of ended dispatches](#appdispatchesendedjson--the-summary-of-ended-dispatches)
   - [`app/dispatches/refused-while-away.json`](#appdispatchesrefused-while-awayjson)
   - [`app/spend/<chat>.json` — what a chat's harness says its session has cost](#appspendchatjson--what-a-chats-harness-says-its-session-has-cost)
   - [`app/arrived/<chat>.json` — what can run later and has appeared in a chat's folders](#apparrivedchatjson--what-can-run-later-and-has-appeared-in-a-chats-folders)
@@ -1190,6 +1191,29 @@ key refuses.
     one rename, under the same `flock` on the plane root as `charter.toml`; a `.gitignore`
     that cannot be read as UTF-8 text is refused rather than rewritten from nothing. The
     same holds for `.gitattributes`.
+
+#### The LIVE block's saved entries — Save with the project
+
+- **Format:** one line per entry inside the managed LIVE block, `!/workspaces/<ws>/<entry>`,
+  after that workspace's own lines, sorted. `<entry>` is one name at the top of the workspace's
+  folder: no `/`, nothing git reads as a pattern (`*`, `?`, `[`, `]`, `\`, `!`), and no trailing
+  whitespace. A file or folder; a folder's contents follow it, because `/workspaces/*/*` ignores
+  only the entries at a workspace's top.
+- **Status:** **stable** — **purlis only** (ADR 0038, amended 2026-11-05; #5377).
+- **Tier:** Plane — committed, as the rest of `.gitignore` is; it shares the entry it names, which
+  is then Plane too while the workspace is LIVE.
+- **Written by:** `purlis_core::wscmd::saved::add`, reached only from the window's Save with the
+  project on one of a LIVE workspace's own entries (`workspace_save_with_the_project`, window
+  only). Nothing else adds one, since a script in a workspace may hold a token. Every rewrite of
+  the block keeps a LIVE workspace's lines: `refresh_live_block` (so `reinit`), `rename`, and
+  another workspace made LIVE or LOCAL. Making the workspace itself LOCAL drops them with its
+  other lines, and `live --off` untracks the entries they named with its other shared paths
+  (`wscmd::meta_paths`).
+- **Read by:** `wscmd::saved::saved_in`: a line of that shape inside the block that the block
+  does not write for every LIVE workspace (`workspace.json`, `memory`, `skills` and the rest) is
+  a saved entry. Explorer's marks (*This machine only*, *Saved with the project*) are read from
+  the whole `.gitignore` as git reads it (`wscmd::saved::Marks`), for a LIVE workspace only.
+- **Git:** committed.
 
 ---
 
@@ -6422,10 +6446,19 @@ down rather than read off the code.
   <n>, "reason"?: {"kind": "replace", "said", "reads"?: {"vault", "key"}} | {"kind":
   "broken_link", "was": {"vault", "key"}}}], "runs"?: [{"id", "persona", "bound": {"chat",
   "program", "vault", "env"?, "file"?, "args"?}, "hosts": {"reach": "listed", "hosts": [...]} |
-  {"reach": "every"}, "caution"?, "command", "since"}]}`: `runs` the open asks to allow a program
-  a persona does not declare (ADR 0112), absent for none: `bound` is what the grant would bind,
-  and `command` the chat's words as they were shown, mask-clean or never raised. A Run grant
-  itself is never written. `asked` is the last number an ask was given, so one
+  {"reach": "every"}, "caution"?, "command", "fills"?: [{"key", "declared"?, "reason"?}],
+  "offer"?: {"kind": "program"} | {"kind": "vault", "no_allow"?} | {"kind": "fill", "no_allow"?},
+  "ahead"?, "since"}]}`: `runs` each run's one open notice (ADR 0112, #5242), absent for none: `bound` is
+  what the grant would bind, and `command` the chat's words as they were shown, mask-clean or
+  never raised; `fills` the keys the run lacks, one value field each, with what the persona
+  declares each for and, for a link whose entry is gone, `reason` as above, absent for none;
+  `offer` what the notice offers: `program`, an Allow for a program a persona does not declare
+  (absent means this, as an earlier purlis wrote it); `vault`, no program Allow and the vault's
+  own Allow, for a run on a vault its persona may not use; `fill`, its value fields alone; with
+  `no_allow` policy's words on why no program Allow is offered, absent for none; `ahead` true
+  for a Secret ask that named a reviewed program and has no command yet (#5244), whose notice
+  offers Allow for this chat alone, absent for false. A Run grant
+  itself, and any value, is never written. `asked` is the last number an ask was given, so one
   is never given twice; `since` is seconds since 1970; `chats` the chats that wait on it, by
   the app's number, which a restart keeps (`app/reopen.json`'s `chats[].number`), the first to
   ask first; `cannot_receive` the chats on a pool's runner that cannot receive a value, which
@@ -7021,6 +7054,30 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   open`, with no duration: it is not running, and runs again when its chat is opened.
 - **Tier:** Clone state — session data, not readable by a sandboxed chat: collected 30 days after its dispatch ended (one that has not ended, whose end does not read as a time, or that still owes its asking chat a report, 30 days after it was last written), unless the chat that asked or the chat that worked is one the reopen record brings back (`retention::on_open`, `dispatchrecord::aged_from`). What the two chats said to each other is kept in it for 30 days after the dispatch ended, and for no longer where the record lives on (`dispatchrecord::expire_talk`). Deleting one costs its row in the Dispatches tab and its lines in the Activity tab of the chat that asked (the dispatch, what was said, the report), and nothing else: a task still running loses its record and reports to its asking chat as before.
 - **Git:** gitignored (under `/.charter/`).
+
+### `app/dispatches/ended.json` — the summary of ended dispatches
+- **What:** one small index of the dispatches in this store that have ended (#5502, spec
+  #5486), so what needs only the running tasks (the sidebar's task status, each turn's list of
+  open tasks, ending the dispatches of chats that are gone) reads the running records and this
+  file, and not every record in full. **It holds only what never changes once a dispatch has
+  ended**: a dispatch ends once and never runs again, and an entry names it, the chat that
+  worked it and whether that was never a chat. Its report and everything else are read from
+  its record where a caller needs them, so the summary is never kept in step with a record's
+  later writes. Nothing a chat wrote is in it.
+- **Format:** JSON on one line, trailing `\n`, mode 0600, replaced whole
+  (`rewrite::replace`). Not a ULID, so never read as a record.
+- **Keys:** `v` — `1`; `ended` — newest first, a list of `{"id", "chat", "chat_id"?,
+  "never_a_chat"?}`: `id`, the record's id; `chat`, the worker chat's number when the
+  dispatch started; `chat_id`, its ULID, absent for a chat given none; `never_a_chat`,
+  `true` for a task that did not start and was never a chat, absent otherwise.
+- **Read and written by the reads it serves** (`dispatchrecord::ledger`): a read lists the
+  store's names, takes the summary's entry for each name it holds, reads every other record,
+  and writes the summary again where it found an ended dispatch it did not hold or holds one
+  whose record is gone. A summary of another version, or one that does not read, is read as
+  none. When `retention` collects ended records, it drops their entries
+  (`dispatchrecord::ended::in_step`).
+- **Tier:** Clone state, rebuildable — derived from the records beside it. Deleting it costs
+  one full read of the store, which writes it again; nothing else is lost.
 
 ### `app/dispatches/refused-while-away.json`
 - **What:** the dispatches a chat nobody was at was refused **for lack of a standing grant**
@@ -8160,36 +8217,54 @@ semantics below.
 
 ### `index/<clone-key>/` — the project's search index
 
-- **Format:** **decided, not yet written** ([ADR 0079](adr/0079-search-runs-on-derived-sqlite-indexes-one-per-project-clone-and-one-per-machine.md)).
+- **Format:** ([ADR 0079](adr/0079-search-runs-on-derived-sqlite-indexes-one-per-project-clone-and-one-per-machine.md),
+  [as amended 2026-11-06](adr/0079/2026-11-06-scale-targets-one-stream-and-the-scans-words.md)).
   `<clone-key>` is the first 16 hex characters of the SHA-256 of the clone's canonical root path, so
   two clones sharing a state directory through `$CHARTER_HOME` never share an index. Inside it:
-  `current`, a plain-text file naming the live generation, and one directory per generation
-  holding `search.sqlite` (SQLite in WAL mode, with its `-wal` and `-shm`): an item table (path,
-  kind, owner, audience, approval state, workspace, persona, content hash, size, modification
-  time), an FTS5 contentless table (`detail=full`: each term with its row, column and position,
-  enough to reconstruct much of the wording, but no text as written), and a `meta` table (schema
-  version, redaction rules version, the commit last reconciled, the time built). A span the
-  shape scanner flags is indexed as its kind. A deleted item's rows stop answering at once, and
-  its terms leave the file at the next FTS5 `optimize` plus `wal_checkpoint(TRUNCATE)` with
-  `secure_delete` on; an unlinked old generation is not overwritten. A chat is answered only
-  from its own `<clone-key>`
+  `current`, a plain-text file naming the live generation (a name of letters, digits and `-`), and
+  one directory per generation holding `search.sqlite` (SQLite in WAL mode, with its `-wal` and
+  `-shm`):
+  - `item`: one row per indexed file (path and the source folder it was listed from, both
+    relative to the root; kind, one of `workspace`, `persona`, `shared`, `refs`, `sessions`,
+    `todos`; owner, the workspace or persona, `_shared` for the shared store and `""` for the
+    root's sessions; audience, `project` for every row until V4's audience settings land; its
+    title after the shape scanner; its recorded date; size, modification time and content hash);
+  - `words`: an FTS5 contentless table (`content=''`, `contentless_delete=1`, `detail=full`, the
+    `ascii` tokeniser with `_` a token character, prefix indexes of 2 and 3) of each row's title,
+    text and reach. Title and text are handed in as purlis's own word split, the one the file scan
+    matches by. Each term is kept with its row, column and position, enough to reconstruct much of
+    the wording, but no text as written;
+  - `unread`: each folder or entry the last sweep could not look at, by source;
+  - `workspace`: each workspace's summary for the briefing (the first line of its vision, after
+    the shape scanner, and its own files' newest modification time);
+  - `meta`: schema version, rules version (the shape scanner's rules and the word split), the
+    commit last reconciled, when it was built, whether work is queued (`pending`), when the
+    writer last finished (`as_of`), and `unshared`: how many persona and workspace memory or ref
+    files the project's git standing last had uncommitted, as two numbers, for the briefing's
+    unshared-memory line (#5503).
+
+  A span the shape scanner flags is indexed as its kind. A deleted item's rows stop answering at
+  once, and its terms leave the file at the next FTS5 `optimize` plus `wal_checkpoint(TRUNCATE)`
+  with `secure_delete` on (at the writer's start, and after ten idle minutes); an unlinked old
+  generation is not overwritten. A chat is answered only from its own `<clone-key>`
 - **Status:** **internal**. Derived from the project's memory bases, session records and todos,
-  read through `memstore::read_files`' gate. Deleted ⇒ `recall` and the briefing scan the files
-  until `purlisd` has rebuilt it. A version it did not write is discarded and rebuilt, never
-  migrated
+  read through `memstore::read_files`' gate. Deleted ⇒ `recall` scans the files until `purlisd`
+  has rebuilt it. A version it did not write is discarded and rebuilt, never migrated
 - **Tier:** Clone state, rebuildable
-- **Written by:** `purlisd`, its only writer (KN-2). A full rebuild writes a new generation and
-  swaps `current` in one rename
-- **Read by:** the app's panels, the hooks, the CLI and the palette, read-only
+- **Written by:** `purlisd`, its only writer (`purlis_core::projectindex::Keeper`, #5498), for each
+  project it saves. A full rebuild writes a new generation and swaps `current` in one rename
+- **Read by:** `recall` in the CLI and the SessionStart briefing (#5503), read-only
+  (`SQLITE_OPEN_READ_ONLY`, `query_only`); the panels and the palette next
 - **Git:** gitignored, with the rest of `.charter/`
 
 ### `index/<clone-key>/writer.lock`
 
-- **Format:** an empty file, held with an advisory `flock` by the index's writer. **Decided, not
-  yet written** (ADR 0079)
+- **Format:** an empty file, held with an advisory `flock` by the index's writer. A reader takes a
+  shared lock for a moment to tell whether a writer holds it, and says an answer may be behind
+  when none does
 - **Status:** **internal**. A second writer waits on it rather than writing alongside
 - **Tier:** Clone state, transient
-- **Written by:** `purlisd` (KN-2)
+- **Written by:** `purlisd` (#5498)
 - **Git:** gitignored
 
 ---

@@ -803,7 +803,7 @@ ADR 0104), each one wrapper under `app/src/ui/` and its own lint rule at error
 | Family | Wrapper | Parts | Variants |
 | --- | --- | --- | --- |
 | Card | `Card` (as a `div`, `li`, `p`, `section` or `article`), `CardTitle` (`ui/card/Card.tsx`); `Facts`, `Fact` (`Facts.tsx`); `Totals`, `Tile` (`Totals.tsx`); `CardButton`, a card pressed whole (`CardButton.tsx`, #3655), its own family `card-button` (#3885) | `root`, `title`; `facts-label`, `facts-value`, `tile`, `tile-value`; a pressed card's `root`, `mark`, `press`, `title`, `more`, `line` | `raised`, `ask`; a pressed card's `door`, `pick` |
-| Notice | `Notice`, `NoticeList`, `NoticePaneRow` (`src/Notice.tsx`), drawn through `ui/notice/Notice.tsx` | `root`, `message`, `whose`, `title`, `mark`, `sub` (a card's state and age), `chat-words` (a chat's own words on one), `head`, `heading` and `end` (a card's head, layout only), and `under` (what a way out opened); `notice-card`'s `said` holds a card's live region | `news`, `trouble`, `attention` |
+| Notice | `Notice`, `NoticeList`, `NoticePaneRow` (`src/Notice.tsx`), drawn through `ui/notice/Notice.tsx` | `root`, `message`, `whose`, `title`, `mark`, `sub` (a card's state and age), `head`, `heading` and `end` (a card's head, layout only), and `under` (what a way out opened); `notice-card`'s `said` holds a card's live region | `news`, `trouble`, `attention` |
 | Badge | `Badge`, `HostStatus` (`ui/badge/Badge.tsx`) | `root` | `neutral`, `accent`, `waiting`, `ok` |
 | Count | `Count`, `CountGroup` (`ui/badge/Badge.tsx`) | `root`, `group` | `neutral`, `accent`, `waiting`, `hot` |
 | Separator | `Separator` (`ui/separator/Separator.tsx`, on React Aria's) | `root` | none |
@@ -841,13 +841,14 @@ ADR 0104), each one wrapper under `app/src/ui/` and its own lint rule at error
 - **A Notice in the Notices centre is a card in the Inbox card's style** (#5217). A one-line
   `head`: its mark, its `title` (what it names, whose it is, its label, or else its state), its
   state and age muted beneath (`sub`), Go to chat a quiet link and its ×. Under it, what it says at
-  the card's size; a chat's own words only through `ChatText` (`chatWords`), purlis's in plain
-  text; and its ways. One primary, where it has an answer, every other way a quiet link. **A
-  consent takes no primary** (ADR 0097 §6): Allow keeps `grants`, what stands beside it stays
-  `secondary`, and its card keeps its full waiting edge (`data-consent`), where any other Notice's
-  outline is softer, in its kind's colour. A sandbox block says it is one (`consent`), as an
-  answer that `allows` says it of itself, and says "Waiting on you" only where it has something
-  to answer. A pane's band and a Notice alone on a page do not take this layout.
+  the card's size, in purlis's plain words (no Notice in the centre carries a chat's own prose;
+  `chatWords` went for want of a caller, #5363); and its ways. One primary, where it has an
+  answer, every other way a quiet link. **A consent takes no primary** (ADR 0097 §6): Allow keeps
+  `grants`, what stands beside it stays `secondary`, and its card keeps its full waiting edge
+  (`data-consent`), where any other Notice's outline is softer, in its kind's colour. A sandbox
+  block says it is one (`consent`), as an answer that `allows` says it of itself, and says
+  "Waiting on you" only where it has something to answer. A pane's band and a Notice alone on a
+  page do not take this layout.
 - **Three tones** (#3678): `news` (nothing is wrong, the person is being told), `attention`
   (nothing is wrong, but the person must decide: a change a chat made to review, a grade plan
   that changed under them, a draft out of date) and `trouble` (something failed, and only then).
@@ -952,7 +953,17 @@ Only the wrapper writes `data-scope="pane-preview"`: `purlis/pane-preview-family
 - **Props:** `state` (`needs`, `failed`, `working`, `waiting`, `idle`, `ended`, or nothing where none is known), `who`, `word`, `changed`.
 - **Parts:** `root` carries the state as its `data-variant`; `who`, `badge` and `word`. A glyph tells each state as well as its colour.
 - **The place sets** `--chat-mark-size` and `--chat-mark-ground`, nothing else.
-- **`who` is its own part** so a later control can stand in it (the grip, #5290), with the badge left beside it.
+- **`who` is its own part** so a control can stand in it (the grip, #5290), with the badge left beside it. `ChatPersonaState`'s `grip` puts one there.
+
+## The grip family
+
+`Grip` (`app/src/ui/grip`, ADR 0104 amended 2026-11-06, #5290, spec #5288) is what a pane or a chat is picked up by: the persona's mark in a chat's row and its pane's head, and a view's mark at the head of a view in a split. At rest it is the mark; under the pointer, or with the keyboard on it or on the row it stands in, six dots in three rows of two take the mark's place in the same box. Only the grip under the pointer changes, so a list keeps its marks.
+
+- **Props:** `children` (the mark), `onPress`, and `label` ("Move" and what it moves), which makes it a control of its own, a React Aria `Button`: Tab reaches it, and a press, Enter or Space picks up (WCAG 2.5.7). With no `label` it stands inside a control that is pressable itself (a chat's row): it is no control and not heard, and its press picks up without the row's press. A drag from it is its row's or its head's drag either way.
+- **Parts:** `root`, `mark`, `dots` and each `dot`. Only `dot` has a property (`fill`), in the states `hover` and `focused`, which are keyed on `:hover` and on the keyboard on it or what holds it.
+- **No button ground**, in any state, in any stylesheet: `controls.guard.test.ts` holds it, and the root has no property a theme could set. The cursor is an open hand, closed while pressed and while a drag holds it.
+- **The place sets** `--grip-mark` and `--grip-reach` (a pane's head: the mark's size and the 24px target, which reaches past the mark and moves nothing), or neither.
+- **Where none is drawn:** a one-job program, an empty pane and a view alone in its tab, which moves by its tab. The row's menu, the tab's menu and the palette keep **Move…**, and ⌘⇧M picks up what has the keyboard.
 
 ## The pane foot family
 
@@ -1160,7 +1171,8 @@ old `.ui-list` class: `eslint.config.js` refuses both (`purlis/list-family`, an 
 | `RowLead`, `RowLabel`, `RowDescription`, `RowTrail`, `RowBelow` (`Row.tsx`) | A row's slots, the same in a list, a tree and a table: its marks, its words (one line, cut with an ellipsis), the one line about it in the quiet tier, its end (a count, its own actions), and a line under its words inside it (what a search matched in its body, why the core refused it). **In an option, its words are its name and its one line its description** (React Aria's `label` and `description` slots), so a reader hears the name alone and then what it is, never the row's content run together. **A `RowBelow` with `clamp` and `tipWhenCut` says its whole words in its row's tooltip while the clamp cuts them** (#4711), under the pointer and while the keyboard is on the row, and nothing while they fit, the tooltip being the row's description while it is shown (a list's row is named by its `textValue` alone). One to a row, and a list's row's alone (`ListRow`, `ListOption`) |
 | `ListCardRow`, `RowMenuButton` (`CardRow.tsx`); `RowSummary`, `RowActions` (`Row.tsx`) | **A card row** (#3669, the sidebar Skills view's variant C): a row of a `List` drawn as a small card (`variant="card"`), as tall as its lines. Its first line is its name, its tag, its own actions (Use) and its **⋯**, which opens the row's own menu (`menu`), the one a right-click and Shift+F10 open; then **two lines about it** (`RowSummary`), its description cut cleanly after the second line, or a reason in its place in the waiting colour (it needs the person) or the quiet tier (it is left out); then its **action line** (`RowActions`), its one fix. The whole of its summary is its tooltip. ← and → reach Use, the ⋯ and the fix; a press on it runs it. A state changes a fill or a ring, never its height; it fits a 260 px side view |
 | `ListFoldSection`, `ListRun` (`Fold.tsx`) | **What folds** (#3670, in a `List`): a group whose name folds its rows, and a run of rows folded to one quiet line. A group's name is a row the keyboard reaches, with the tree's twist (`TwistMark`), its count at its end and an optional `waiting` tone (Needs you); Enter, Space, → and ← fold and unfold it, `aria-expanded` on its cell says which (a grid's row takes none), and it may start folded, its owner holding what is folded (`folded`, `onFoldedChange`). A run (`ListRun`, folded by default) is one row in the quiet tier, a mark and "N …"; pressing it unfolds its rows in place, then its closing line ("They ship with purlis…", with what may be done). A row of the run that must show (`standsOut`: it needs the person, it clashes, it matches the filter) is drawn on its own, outside the fold. Folding moves only what is under it, and a fold's row runs nothing of the list's `onAction` |
-| `AimedList`, `AimedOption` (`AimedList.tsx`) | **A list a field aims at**: a combobox's list drawn in place, the palette's actions, projects and files. The field keeps the keyboard and moves the aim (`aria-activedescendant`); the aimed row wears the keyboard's ring inside it and the aim's fill (`control.aimed`); a press runs a row |
+| `AimedList`, `AimedOption` (`AimedList.tsx`) | **A list a field aims at**: a combobox's list drawn in place, the palette's actions, projects and files. The field keeps the keyboard and moves the aim (`aria-activedescendant`); the aimed row wears the keyboard's ring inside it and the aim's fill (`control.aimed`); a press runs a row. Its owner gives it `count` and draws each option with `option(index)`: past 250 rows (`DRAWN_WHOLE`) it draws only the rows in sight and the aimed one, each with `aria-posinset` of `aria-setsize` (#5501) |
+| `useDrawnRows`, `useRowPlace` (`virtualRows.tsx`) | **A long list draws only the rows in sight** (#5501): the one wrapper of `@tanstack/react-virtual`. A list past `DRAWN_WHOLE` rows keeps the whole list's height and places each drawn row in it; the aimed row is always drawn, so `aria-activedescendant` names an element that is there, and each row says its place in the whole. Its geometry (padding, gap, row height) is read from the list's CSS. `AimedList` and the title bar's `SwitcherList` stand on it |
 | `ListFilter`, `useListFilter`, `noMatchSaid` (`ListFilter.tsx`) | **A list over about seven items gets a filter** (R164): from eight, a field at the large size over the list, the total in its placeholder ("Filter 28 personas"), a case-insensitive part of each name, and "No persona is called “x”." where nothing matches. What is typed is the caller's, so drawing the list again keeps the field, its focus and its caret (R168) |
 | `useRowDrag` (`drag.ts`) | What a dragged row carries, by type, to a drop target outside the window's collections (a file's reference onto a chat) |
 

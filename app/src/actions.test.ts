@@ -18,6 +18,7 @@ import {
   ONE_CHAT_GOES_ON,
   PANE_CLOSE,
   FILE_VERBS,
+  WORKSPACE_WRITE_VERBS,
   fileRows,
   KEEPS_THE_BRANCH,
   matches,
@@ -345,6 +346,10 @@ function doing(): Doing & { calls: string[] } {
     }),
     revealPath: vi.fn(async (at: BranchPath) => {
       calls.push(`revealPath:${at.repo}/${at.piece ?? ""}:${at.path}`);
+      return { ok: true as const };
+    }),
+    saveWithTheProject: vi.fn(async (at: BranchPath) => {
+      calls.push(`saveWithTheProject:${at.workspace}:${at.path}`);
       return { ok: true as const };
     }),
     openInEditor: vi.fn(async (at: BranchPath, line: number) => {
@@ -2736,10 +2741,16 @@ describe("the palette at fifty chats", () => {
    * different is the shape: the scan's cost is the catalogue's length, and #174 is the change
    * that grew it — a third more comparisons for the same fifty menus, before anything is
    * added next. A millisecond assertion would be flaky on a shared runner, so what is pinned
-   * below is the work itself, which is the standard #133 set: 350 lookups (150 before a chat
+   * below is the work itself, which is the standard #133 set: 450 lookups (150 before a chat
    * could be renamed, charter-app#254; 200 before a wrapping-up tab could cancel its smart
    * close, ADR 0064; 250 before a tab could move to a window of its own, #4768; 300 before
-   * Place…, #4764), and the same 350 whichever catalogue it is.
+   * Place…, #4764; 350 before a lone view's two splits, #5318), and the same 450 whichever
+   * catalogue it is.
+   *
+   * **The 450 measured again** (#5444), on the same machine, min of ten batches of a hundred:
+   * a fifty-tab strip's `menuRows` and `menuIsEmpty` for every tab, against the 1,224-row
+   * catalogue of fifty chats, cost **0.050 ms** a render (median 0.054 ms). That is about 1/300
+   * of a 60 Hz frame, so the nine ids per tab stay as they are.
    */
   describe("what a menu on the chat strip costs (charter-app#174)", () => {
     /** A catalogue that counts what is asked of it. `Map` and not a stand-in, so what is
@@ -3352,12 +3363,21 @@ describe("a branch's file and folder rows (FM-10)", () => {
     expect(revealSaid("Linux x86_64")).toBe("Reveal in Files");
   });
 
-  it("offers no row that creates, renames, moves or deletes, on any row (V86 F8, ADR 0081)", () => {
+  it("offers no write action on repo, branch or managed rows, and still refuses them there (V86 F8, ADR 0081 as amended 2026-11-05)", () => {
+    const repo = (path: string): BranchPath => ({ ...at(path), piece: null });
+    const own = (path: string): BranchPath => ({ workspace: "alpha", repo: "", piece: null, path });
     const every = [
       ...file,
       ...folder,
       ...link,
       ...fileRows({ on: "file", at: at("x"), kind: "file", refused: "ignored" }),
+      // A repo's own folder, and what purlis keeps in a workspace: read-only as a branch is.
+      ...fileRows({ on: "file", at: repo("src"), kind: "folder" }),
+      ...fileRows({ on: "file", at: repo("src/lib.rs"), kind: "file" }),
+      ...fileRows({ on: "file", at: own("memory"), kind: "folder", managed: true }),
+      ...fileRows({ on: "file", at: own("workspace.md"), kind: "file", managed: true }),
+      // A link among the person's own files is never written through.
+      ...fileRows({ on: "file", at: own("notes/link.md"), kind: "link" }),
     ];
     const writes = /creat|new|renam|mov|delet|remov|trash|archiv|discard|writ|save|edit\b/i;
 
@@ -3378,6 +3398,19 @@ describe("a branch's file and folder rows (FM-10)", () => {
     }
     for (const kind of ["file", "folder", "link"] as const)
       expect(menuOn({ on: "file", at: at("a"), kind }).below).toEqual([]);
+  });
+
+  it("offers Save with the project last, only on a row that is saveable (#5377)", async () => {
+    const own = { workspace: "alpha", repo: "", piece: null, path: "notes" };
+    const rows = fileRows({ on: "file", at: own, kind: "folder", saveable: true });
+    expect(titles(rows).at(-1)).toBe("Save with the project");
+    expect(titles(fileRows({ on: "file", at: own, kind: "folder" }))).not.toContain(
+      "Save with the project",
+    );
+    const hands = doing();
+    for (const row of rows.filter((one) => one.does.verb === "saveWithTheProject"))
+      await perform(row, hands);
+    expect(hands.calls).toEqual(["saveWithTheProject:alpha:notes"]);
   });
 
   it("draws a file row's menu from its own rows, not from the catalogue", () => {
@@ -4834,5 +4867,71 @@ describe("a chat's browser timeline (#2017)", () => {
 
   it("is no row for a chat with no id, which keeps no timeline", () => {
     expect(by(catalogue(now({ browsers: [browser(null)] })), "browser.timeline:3")).toBeUndefined();
+  });
+});
+
+describe("a workspace's own file and folder rows (#5376)", () => {
+  const own = (path: string): BranchPath => ({ workspace: "alpha", repo: "", piece: null, path });
+  const titles = (rows: readonly Offer[]) => rows.map((row) => row.title);
+  const writes = (rows: readonly Offer[]) =>
+    rows.filter((row) => (WORKSPACE_WRITE_VERBS as readonly string[]).includes(row.does.verb));
+
+  it("offers the person's own folder New file…, New folder…, Import files…, Rename… and Delete…", () => {
+    const rows = fileRows({ on: "file", at: own("notes"), kind: "folder" });
+
+    expect(titles(writes(rows))).toEqual([
+      "New file…",
+      "New folder…",
+      "Import files…",
+      "Rename…",
+      "Delete…",
+    ]);
+    expect(titles(rows).slice(0, 4)).toEqual(
+      titles(rows.filter((row) => !writes(rows).includes(row))).slice(0, 4),
+    );
+  });
+
+  it("offers the person's own file Rename… and Delete…, after what every file row offers", () => {
+    const rows = fileRows({ on: "file", at: own("notes/plan.md"), kind: "file" });
+
+    expect(titles(rows).slice(-2)).toEqual(["Rename…", "Delete…"]);
+    expect(titles(writes(rows))).toEqual(["Rename…", "Delete…"]);
+  });
+
+  it("offers the workspace's folder itself only what makes or brings in an entry", () => {
+    const rows = fileRows({ on: "file", at: own(""), kind: "folder" });
+
+    expect(titles(writes(rows))).toEqual(["New file…", "New folder…", "Import files…"]);
+  });
+
+  it("offers no write on a managed row or a link", () => {
+    for (const on of [
+      { at: own("memory"), kind: "folder", managed: true },
+      { at: own("workspace.md"), kind: "file", managed: true },
+      { at: own("notes/link.md"), kind: "link" },
+    ] as const)
+      expect(writes(fileRows({ on: "file", ...on }))).toEqual([]);
+  });
+
+  it("carries out each write with the workspace, the path and the chats writing it", async () => {
+    const asked: unknown[] = [];
+    const hands = { ...doing(), askWorkspaceWrite: (does: unknown) => asked.push(does) };
+    const touchedBy = ["console-developer 16"];
+    const rows = [
+      ...writes(fileRows({ on: "file", at: own("notes"), kind: "folder" })),
+      ...writes(fileRows({ on: "file", at: own("notes/plan.md"), kind: "file", touchedBy })),
+    ];
+
+    for (const row of rows) await perform(row, hands);
+
+    expect(asked).toEqual([
+      { verb: "newWorkspaceEntry", at: own("notes"), folder: false },
+      { verb: "newWorkspaceEntry", at: own("notes"), folder: true },
+      { verb: "importWorkspaceFiles", at: own("notes") },
+      { verb: "renameWorkspaceEntry", at: own("notes"), folder: true, touchedBy: [] },
+      { verb: "trashWorkspaceEntry", at: own("notes"), folder: true, touchedBy: [] },
+      { verb: "renameWorkspaceEntry", at: own("notes/plan.md"), folder: false, touchedBy },
+      { verb: "trashWorkspaceEntry", at: own("notes/plan.md"), folder: false, touchedBy },
+    ]);
   });
 });

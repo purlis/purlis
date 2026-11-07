@@ -53,8 +53,8 @@ default. `purlis persona list` says so and names the way out: `purlis persona us
 2. Take credentials from its vault and nowhere else, and never print them. See the `secrets`
    skill.
 3. Stay in role. **A chat's persona does not change.** In a chat purlis started, `purlis
-   persona use` is refused and says the two ways forward: the operator allows the vault on
-   this chat's tab, or you dispatch to the persona that owns the work.
+   persona use` is refused and says the two ways forward: the operator allows the vault, in
+   the Inbox or on this chat's pane, or you dispatch to the persona that owns the work.
 
 ## Give work to another persona: dispatch
 

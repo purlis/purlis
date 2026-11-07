@@ -529,7 +529,11 @@ export function runningSaid(running: number): string | undefined {
 
 /** What a split tab says on hover: every pane, in reading order. Nothing for one pane. */
 function splitTip(face: TabFace): string | undefined {
-  return face.more > 0 ? face.panes.join(" · ") : undefined;
+  // How many panes, then which (#5342): the picture after the name says the shape, and hovering
+  // says the rest.
+  return face.picture !== undefined
+    ? `${face.picture.panes} panes: ${face.panes.join(" · ")}`
+    : undefined;
 }
 
 /**

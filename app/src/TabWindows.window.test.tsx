@@ -16,8 +16,10 @@ import userEvent from "@testing-library/user-event";
 import { clearMocks, mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import App, { TAB_WINDOW } from "./App";
 import type { LaidOut, LaidTab, OpenChat } from "./bindings";
+import { forgetInputRefused, heardInputRefused } from "./inputRefused";
 import { chatsOf } from "./laidOut";
 import { LAYOUT_MOVED, PRESS_HERE } from "./tabWindows";
+import { stripNamed } from "./test-strips";
 
 /**
  * **Tab windows, as the window draws them** (#4768): a tab torn off into a bare window of its
@@ -92,6 +94,8 @@ function core(over: {
   pressed?: string;
   /** Chats filed under a workspace, by its name; every other chat is in none. */
   filed?: Record<string, number[]>;
+  /** What the board says of the chats, as `chat_states` answers it. */
+  states?: unknown[];
 }) {
   const asked: { cmd: string; args: Record<string, unknown> }[] = [];
   const listeners = new Map<string, number[]>();
@@ -133,7 +137,7 @@ function core(over: {
     if (cmd === "show_window_holding") return "main";
     if (cmd === "opened_chats") return over.chats.map(chat);
     if (cmd === "reopened_layout") return over.layout;
-    if (cmd === "chat_states") return [];
+    if (cmd === "chat_states") return over.states ?? [];
     if (cmd === "chats_that_would_not_start") return [];
     if (cmd === "recent_planes") return { planes: [], dropped: [], forgetful: null };
     if (cmd === "extensions_on") return [];
@@ -157,6 +161,56 @@ function core(over: {
 /** Every chat each tab a layout names, with its window. */
 const shape = (laid: LaidOut | undefined) =>
   laid?.tabs.map((one) => [one.window, chatsOf(one.tree)]) ?? [];
+
+describe("a split tab in a tab window (#5342)", () => {
+  it("draws the same face: its first chat's name, the mark of the pane that needs you, its picture", async () => {
+    mockWindows("window-1");
+    const split: LaidTab = {
+      ...tab(1, true, 2),
+      focused: "a",
+      tree: {
+        kind: "split",
+        direction: "row",
+        share: 500,
+        a: { kind: "chat", chat: 2 },
+        b: { kind: "chat", chat: 3 },
+      },
+    };
+    const moved = (session: number, needsYou: boolean) => ({
+      plane: ONE,
+      session,
+      state: "waiting",
+      needs_you: needsYou,
+      queue: needsYou ? [session] : [],
+      sequence: 1,
+      moved_at: 1,
+      reports: [],
+      refusals: [],
+      children: [],
+    });
+    core({
+      tabWindow: 1,
+      layout: { strip: null, tabs: [tab(0, true, 1), split] },
+      chats: [1, 2, 3],
+      states: [moved(2, false), moved(3, true)],
+    });
+    render(<App />);
+
+    await screen.findByText("session 3");
+    const only = within(stripNamed("Tabs")).getByRole("tab");
+    expect(only.querySelector(".tab-name")?.textContent).toBe("2");
+    await waitFor(() =>
+      expect(
+        only
+          .querySelector('[data-scope="chat-mark"][data-part="root"]')
+          ?.getAttribute("data-variant"),
+      ).toBe("needs"),
+    );
+    // And its picture of the layout in place of `+1`: two side by side.
+    expect(only.querySelectorAll('[data-scope="tabs"][data-part="picture"] line')).toHaveLength(1);
+    expect(only).toHaveTextContent("2, split, 2 panes");
+  });
+});
 
 describe("a tab window (#4768)", () => {
   it("draws only its own tabs, with no sidebar and no project strip, and says only those", async () => {
@@ -643,6 +697,67 @@ describe("a note of a chat shown only in a tab window (#5225)", () => {
     await screen.findByText("session 2");
     expect(screen.queryByText(/The sandbox blocked a write/)).toBeNull();
     expect(project.sent("forget_sandbox_block")).toEqual([]);
+  });
+
+  it("hands over the by-hand banner and the restart line it held before the tear-off (#5363)", async () => {
+    const project = await windowOf(undefined, 1);
+    project.fire("harness-by-hand", { plane: ONE, session: 3, harness: "codex", cwd: null });
+    project.fire("chat-project-settings-changed", {
+      plane: ONE,
+      session: 3,
+      chat: null,
+      ended: "It would not start again.",
+      notices: [],
+    });
+
+    project.fire("layout-reported", {
+      plane: ONE,
+      layout: { strip: null, tabs: [tab(0, true, 1), tab(1, true, 3)] },
+    });
+    await waitFor(() =>
+      expect(told(project, "notes-handed")).toContainEqual({
+        plane: ONE,
+        session: 3,
+        from: "main",
+        start: undefined,
+        blocks: [],
+        byHand: { harness: "codex", cwd: null },
+        restart: "It would not start again.",
+      }),
+    );
+  });
+
+  it("says the by-hand banner and the restart line it was handed, on the chat's pane (#5363)", async () => {
+    const shows = await windowOf(1, 2);
+    shows.fire("notes-handed", {
+      plane: ONE,
+      session: 2,
+      from: "main",
+      blocks: [],
+      byHand: { harness: "codex", cwd: null },
+      restart: "It would not start again.",
+    });
+    const banner = await screen.findByText(/codex runs outside purlis/);
+    expect(banner.closest('[data-placement="pane"]')).not.toBeNull();
+    expect(screen.getByText("It would not start again.")).toBeInTheDocument();
+  });
+
+  it("a note kept in a store of the window's own, cleared in another window, is let go here (#5363)", async () => {
+    try {
+      const project = await windowOf(undefined, 1);
+      heardInputRefused({ plane: ONE, session: 2, why: "the runner is reconnecting" });
+      project.fire("note-cleared", {
+        plane: ONE,
+        session: 2,
+        note: { kind: "input-refused" },
+        from: "window-1",
+      });
+      project.fire(LAYOUT_MOVED, { plane: ONE, layout: BACK });
+      await screen.findByText("session 2");
+      expect(screen.queryByText(/could not send/)).toBeNull();
+    } finally {
+      forgetInputRefused(ONE, 2);
+    }
   });
 
   it("a note cleared in another project's window stays here", async () => {

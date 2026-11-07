@@ -139,6 +139,7 @@ import {
   type Tabs,
   type ViewRef,
   type Tab,
+  tabNameOf,
 } from "./tabs";
 import { canTileAll, isSplit, zoomedOf } from "./tiling";
 import { canUndoLayout } from "./layoutUndo";
@@ -622,6 +623,11 @@ export type Does =
   /** Opens the editor of a workspace's vision (#3344): what `workspace.md` opened from the
    *  workspace's own files links to (#5375). */
   | { verb: "editVision"; workspace: string }
+  /** **A write on the person's own workspace files** (#5376, ADR 0081 amended 2026-11-05),
+   *  each asked first: the name of a new file or folder, a rename's new name, a delete's one
+   *  confirmation, or the system's file picker. Only ever on a row of the person's own (never
+   *  a repo's, a branch's or one purlis keeps), and refused there too by the core. */
+  | WorkspaceWrite
   /** Puts a region away or brings it back, as its status-line toggle and ⌘B do. */
   | { verb: "toggleRegion"; region: Toggled }
   /** Moves the keyboard to the next region drawn, or with `back` the one before, as F6 and
@@ -699,6 +705,10 @@ export type Does =
   /** Shows a branch file or folder in the operating system's file manager (FM-10). The core
    *  places it, inside the branch and through no link, and reveals it. */
   | { verb: "revealPath"; at: BranchPath }
+  /** Saves one file or folder at the top of a LIVE workspace's own folder with the project
+   *  (#5377): one line in the workspace's LIVE allowlist, so the next save shares it. Only this
+   *  press adds one, since a script may hold a token. */
+  | { verb: "saveWithTheProject"; at: BranchPath }
   /** Opens a branch file in the operator's editor at `line` (RC-20). */
   | { verb: "openInEditor"; at: BranchPath; line: number }
   /** Opens a shell tab whose working directory is a folder of a branch (FM-10). The core
@@ -973,6 +983,10 @@ export type Now = {
    *  has closed them, so they have no rows, and the band's Resume and Clear pane are their ways
    *  out. */
   endedHere?: readonly number[];
+  /** **The chat each ended task a pane still shows was asked by** (#5366), by the task: the last
+   *  but one of the path its pane last had (#4757). The core lists the task no more, so its
+   *  `↳ from` row is had from here, while the chat that asked is listed. */
+  endedAskedBy?: ReadonlyMap<number, number>;
   /** The tabs Close other tabs on tab `tab` would close (#4762): every other tab on its strip
    *  but the pinned ones (`tabs.otherTabsToClose`). None where the window does not say. */
   otherTabs?: (tab: number) => readonly number[];
@@ -1256,6 +1270,9 @@ export type Doing = {
   showSideView: (view: ViewId) => void;
   /** The vision editor of `workspace` (#3344). Absent where no project is open. */
   editVision?: (workspace: string) => void;
+  /** Asks what a write on the person's own workspace files needs, then makes it (#5376). Absent
+   *  where no project is open. */
+  askWorkspaceWrite?: (does: WorkspaceWrite) => void;
   toggleRegion: (region: Toggled) => void;
   /** `SAID.toPanel` or `SAID.toSidebar` (#1740). Absent where no project is open, and so no
    *  side has views to move: its row is never offered there. */
@@ -1299,6 +1316,8 @@ export type Doing = {
    *  branch, a link, a file gone meanwhile — and says so in its own sentence. */
   copyPath: (at: BranchPath, absolute: boolean) => Promise<Ran>;
   revealPath: (at: BranchPath) => Promise<Ran>;
+  /** The core checks the entry is the person's and the workspace LIVE, and says why not. */
+  saveWithTheProject: (at: BranchPath) => Promise<Ran>;
   /** Refused, rather than guessed, while no editor is chosen in Settings. */
   openInEditor: (at: BranchPath, line: number) => Promise<Ran>;
   /** A shell tab in that folder; a refusal is said the way a shell tab's is. */
@@ -1725,7 +1744,7 @@ export const placeChatId = (session: number) => `chat.place:${session}`;
 export const placeTabId = (tab: number) => `tab.place:${tab}`;
 /** What a Place… row says it does (#4764). */
 export const PLACE_NOTE =
-  "Picked up to place with the keys: the arrows choose a side, Tab the next pane, Enter drops.";
+  "Picked up to move with the keys: the arrows choose a side, Tab the next pane, Enter drops.";
 /** Tile all's row for tab `tab` (#4765). */
 export function tileAllId(tab: number): string {
   return `tab.tile:${tab}`;
@@ -2249,7 +2268,7 @@ export function catalogue(now: Now): Offer[] {
   const pinned = now.pinned ?? { workspaces: [], projects: [] };
 
   for (const tab of now.tabs.order) {
-    const name = now.tabs.byId[tab].name;
+    const name = tabNameOf(now.tabs.byId[tab]);
     const title = `Switch to tab ${name}`;
     offers.push(
       tab === now.tabs.inFront
@@ -2263,7 +2282,7 @@ export function catalogue(now: Now): Offer[] {
   // pin is a deliberate, occasional act — which is what the palette is for. What a pinned
   // thing gets on its strip is a mark, and pressing the mark runs this same row.
   for (const tab of now.tabs.order) {
-    const name = now.tabs.byId[tab].name;
+    const name = tabNameOf(now.tabs.byId[tab]);
     // **The one pin is the tab's** (#4762, #4935): its own, whatever its panes hold, so a tab
     // whose only pane is empty is pinned as any other.
     const held = now.tabs.byId[tab].pinned === true;
@@ -2281,7 +2300,7 @@ export function catalogue(now: Now): Offer[] {
   // **Tile all** (#4765): one row per tab, as Pin tab's, so the tab menu of a tab behind has its
   // own; it evens only that tab's panes, and a tab of one pane has nothing to even.
   for (const tab of now.tabs.order) {
-    const name = now.tabs.byId[tab].name;
+    const name = tabNameOf(now.tabs.byId[tab]);
     const id = tileAllId(tab);
     const title = `Tile all in ${name}`;
     offers.push(
@@ -2299,7 +2318,7 @@ export function catalogue(now: Now): Offer[] {
   // tab's, so a tab's menu has its own; the palette lists the tab in front's. Nothing ends.
   const windows = now.otherWindows ?? [];
   for (const tab of now.tabs.order) {
-    const name = now.tabs.byId[tab].name;
+    const name = tabNameOf(now.tabs.byId[tab]);
     const behind = tab !== now.tabs.inFront ? { menuOnly: true as const } : {};
     const holds = contentsOf(now.tabs, tab).some(
       (one) => one.content.kind === "session" || one.content.kind === "view",
@@ -2334,11 +2353,11 @@ export function catalogue(now: Now): Offer[] {
   // **Place…** (#4764): the keyboard's drag of a tab, from its right-click, onto the strip or
   // another tab's pane. The palette lists the tab in front's alone, as Close other tabs'.
   for (const tab of now.tabs.order) {
-    const name = now.tabs.byId[tab].name;
+    const name = tabNameOf(now.tabs.byId[tab]);
     offers.push({
       ...can(
         placeTabId(tab),
-        `Place tab ${name}…`,
+        `Move tab ${name}…`,
         { verb: "place", source: { kind: "tab", tab } },
         name,
       ),
@@ -2363,7 +2382,7 @@ export function catalogue(now: Now): Offer[] {
   for (const tab of now.tabs.order) {
     const lead = contentsOf(now.tabs, tab)[0]?.content;
     if (lead?.kind !== "view" || !lead.preview) continue;
-    const name = now.tabs.byId[tab].name;
+    const name = tabNameOf(now.tabs.byId[tab]);
     offers.push({
       ...can(`tab.keep:${tab}`, `Keep tab ${name} open`, { verb: "keepTab", tab }, name),
       note: "The next memory you click opens in a tab of its own instead of replacing this one.",
@@ -3208,7 +3227,7 @@ export function catalogue(now: Now): Offer[] {
   // on in the sidebar, so nothing is asked and nothing is drawn in the danger colour. It used
   // to end them (charter-app#130), which is why the chat's own End… exists apart (#4753).
   for (const tab of now.tabs.order) {
-    const name = now.tabs.byId[tab].name;
+    const name = tabNameOf(now.tabs.byId[tab]);
     const chats = panesOf(now.tabs, tab).length;
     // **A task's own tab has no close** (#1489, V100-38): the row its `−` runs sends the task
     // back into its session's tab, and ends nothing. The same id, so the tab's key, its menu
@@ -3771,6 +3790,12 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
     case "editVision":
       doing.editVision?.(does.workspace);
       return DID;
+    case "newWorkspaceEntry":
+    case "renameWorkspaceEntry":
+    case "trashWorkspaceEntry":
+    case "importWorkspaceFiles":
+      doing.askWorkspaceWrite?.(does);
+      return DID;
     case "toggleRegion":
       doing.toggleRegion(does.region);
       return DID;
@@ -3860,6 +3885,8 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
       return doing.copyPath(does.at, does.absolute);
     case "revealPath":
       return doing.revealPath(does.at);
+    case "saveWithTheProject":
+      return doing.saveWithTheProject(does.at);
     case "openInEditor":
       return doing.openInEditor(does.at, does.line);
     case "shellInFolder":
@@ -4468,7 +4495,7 @@ function chatRows(now: Now): Offer[] {
     offers.push({
       ...can(
         placeChatId(session),
-        `Place chat ${name}…`,
+        `Move chat ${name}…`,
         { verb: "place", source: { kind: "chat", session } },
         name,
       ),
@@ -4536,6 +4563,12 @@ function chatRows(now: Now): Offer[] {
     // **Its Activity** (#1495) and **its Network** (#1662), each in a tab of its own. They only
     // read, so they sit above the line.
     if (harnessed) offers.push(...footRows(now, session, name));
+    // **An ended task's `↳ from`** (#5366): the core lists it no more, so no harness is asked of
+    // it, but the chat that asked it is still there to go to.
+    else if (now.endedAskedBy?.has(session)) {
+      const asker = askerRow(now, session, name, now.endedAskedBy.get(session));
+      if (asker !== undefined) offers.push(asker);
+    }
     offers.push(...readingRows(session, name));
 
     // **Restart**: the chat's program ends and starts again on the same conversation, with the
@@ -4666,19 +4699,18 @@ function footRows(now: Now, session: number, name: string): Offer[] {
           ),
     );
   }
-  const asker = now.listed?.find((chat) => chat.session === listed?.parent);
-  if (asker !== undefined)
-    offers.push(
-      can(
-        askerId(session),
-        `Go to ${asker.name} (${name} came from it)`,
-        { verb: "showChat", session: asker.session },
-        asker.name,
-      ),
-    );
+  // A listed chat says its own lineage; only one the core lists no more is had from its pane.
+  const parent = listed === undefined ? now.endedAskedBy?.get(session) : listed.parent;
+  const asker = askerRow(now, session, name, parent);
+  if (asker !== undefined) offers.push(asker);
   if (now.skillStudio)
     offers.push(
-      can(chatSkillsId(session), `Skills of ${name}`, { verb: "showChatSkills", session }, name),
+      can(
+        chatSkillsId(session),
+        `Show skills of ${name}`,
+        { verb: "showChatSkills", session },
+        name,
+      ),
     );
   if (now.studioOf?.(session) !== undefined)
     offers.push(
@@ -4690,6 +4722,25 @@ function footRows(now: Now, session: number, name: string): Offer[] {
       ),
     );
   return offers;
+}
+
+/** **`↳ from`'s row**: the chat `session` came from, `parent`, while it is listed; none once it
+ *  has closed, and the foot says it in words. */
+function askerRow(
+  now: Now,
+  session: number,
+  name: string,
+  parent: number | null | undefined,
+): Offer | undefined {
+  const asker = now.listed?.find((chat) => chat.session === parent);
+  return asker === undefined
+    ? undefined
+    : can(
+        askerId(session),
+        `Go to ${asker.name} (${name} came from it)`,
+        { verb: "showChat", session: asker.session },
+        asker.name,
+      );
 }
 
 /** **A chat's Activity (#1495) and Network (#1662) rows**: each opens a view in a tab of its
@@ -6067,13 +6118,103 @@ export type FileOn = {
   /** The rows picked in the tree (#1151), in the order it draws them: *Add to a chat's context*
    *  on one of them hands them all, as the picked rows' own button does. */
   picked?: readonly FileRef[];
+  /** In a workspace's own files (#5375), whether purlis keeps it: then no write is offered. */
+  managed?: boolean;
+  /** The chats writing it right now (FM-6), by name: a rename or delete of it asks first. */
+  touchedBy?: readonly string[];
+  /** In a LIVE workspace's own folder (#5377), an entry at its top that is kept on this machine
+   *  only and that purlis does not keep: it offers Save with the project. */
+  saveable?: boolean;
 };
 
+/** A write on the person's own workspace files, as a row carries it (#5376). */
+export type WorkspaceWrite =
+  /** New file… or New folder… in the folder at `at` (`""` for the workspace's own). */
+  | { verb: "newWorkspaceEntry"; at: BranchPath; folder: boolean }
+  /** Import files… into the folder at `at`, through the system's file picker. */
+  | { verb: "importWorkspaceFiles"; at: BranchPath }
+  | {
+      verb: "renameWorkspaceEntry";
+      at: BranchPath;
+      folder: boolean;
+      touchedBy: readonly string[];
+    }
+  /** Delete…, to the system's Trash after one confirmation. */
+  | {
+      verb: "trashWorkspaceEntry";
+      at: BranchPath;
+      folder: boolean;
+      touchedBy: readonly string[];
+    };
+
 /**
- * Every verb a file or folder row offers, and nothing else (FM-10, V86 F8).
+ * **Every verb that writes the person's own workspace files** (#5376), and nothing else: ADR
+ * 0081's amendment of 2026-11-05 allows these on the workspace's own files and no other row.
+ * {@link FILE_VERBS} stays every other file row's whole list.
+ */
+export const WORKSPACE_WRITE_VERBS = [
+  "newWorkspaceEntry",
+  "importWorkspaceFiles",
+  "renameWorkspaceEntry",
+  "trashWorkspaceEntry",
+] as const;
+
+/** Whether `what` is a row of the person's own workspace files: in a workspace's folder (no
+ *  repo, no branch), none purlis keeps, and no link, which nothing writes through. */
+function personsOwn(what: FileOn): boolean {
+  const { at } = what;
+  return (
+    at.workspace !== "" &&
+    at.repo === "" &&
+    at.piece === null &&
+    what.managed !== true &&
+    what.kind !== "link"
+  );
+}
+
+/** The writes a row of the person's own workspace files offers (#5376): into a folder, a new
+ *  file, a new folder or an import; on any entry but the folder itself, a rename and a delete. */
+function workspaceWriteRows(what: FileOn, key: string): Offer[] {
+  if (!personsOwn(what)) return [];
+  const { at } = what;
+  const folder = what.kind === "folder";
+  const touchedBy = what.touchedBy ?? [];
+  const into = folder
+    ? [
+        can(`file.newfile:${key}`, SAID.newFile, { verb: "newWorkspaceEntry", at, folder: false }),
+        can(`file.newfolder:${key}`, SAID.newFolder, {
+          verb: "newWorkspaceEntry",
+          at,
+          folder: true,
+        }),
+        can(`file.import:${key}`, SAID.importFiles, { verb: "importWorkspaceFiles", at }),
+      ]
+    : [];
+  if (at.path === "") return into;
+  return [
+    ...into,
+    can(`file.rename:${key}`, SAID.rename, {
+      verb: "renameWorkspaceEntry",
+      at,
+      folder,
+      touchedBy,
+    }),
+    can(`file.trash:${key}`, SAID.deleteAsks, {
+      verb: "trashWorkspaceEntry",
+      at,
+      folder,
+      touchedBy,
+    }),
+  ];
+}
+
+/**
+ * Every verb a file or folder row offers, and nothing else (FM-10, V86 F8), but the writes on
+ * the person's own workspace files ({@link WORKSPACE_WRITE_VERBS}, #5376).
  *
  * **Each changes nothing in the branch**: charter never creates, renames, moves or deletes a
- * file (ADR 0081), so it never races an agent writing the same tree. A copy, a reveal, your
+ * file in a repo or a branch's folder (ADR 0081), so it never races an agent writing the same
+ * tree. A copy, a reveal, your
  * editor and a shell are where a person changes files, and each is theirs. A test holds this
  * list to exactly these verbs, so a row that writes cannot be added to it quietly.
  */
@@ -6166,6 +6307,7 @@ export function fileRows(what: FileOn): Offer[] {
       }),
       can(`file.reveal:${key}`, REVEAL_SAID, { verb: "revealPath", at }),
       can(`file.shell:${key}`, SAID.shellHere, { verb: "shellInFolder", at }),
+      ...workspaceWriteRows(what, key),
     ];
   const placed = (id: string, title: string, does: Does): Offer =>
     kind === "link" ? cannot(id, title, NO_LINK_FOLLOWED) : can(id, title, does);
@@ -6215,5 +6357,16 @@ export function fileRows(what: FileOn): Offer[] {
           rows: together,
         }),
   );
+  // The person's own workspace files are also written here (#5376), after every row above.
+  rows.push(...workspaceWriteRows(what, key));
+  // A LIVE workspace's own entry (#5377): the one row that shares it, and only on its press. It
+  // writes the project's `.gitignore`, never the branch, so it is no verb of FILE_VERBS.
+  if (what.saveable === true)
+    rows.push(
+      can(`file.savewithproject:${key}`, SAID.saveWithTheProject, {
+        verb: "saveWithTheProject",
+        at,
+      }),
+    );
   return rows;
 }

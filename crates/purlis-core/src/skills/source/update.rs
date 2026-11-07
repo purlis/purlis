@@ -31,6 +31,11 @@ use super::{Commit, Remote, Source, listed, write};
 use crate::skills::Grant;
 use crate::skills::verbs::{self, Ctx, Level};
 
+mod gained;
+pub mod set;
+
+pub use gained::Gained;
+
 /// **A newer commit for an installed skill**, offered, never applied by itself.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Offer {
@@ -326,6 +331,9 @@ pub struct UpdateReview {
     /// leave as they are (#4172, #4186): each grant the update widens, and each workspace that
     /// turned one off.
     pub widenings: Vec<Widening>,
+    /// What the update newly lets the skill do, beyond an edit of its text (#5354): a review of
+    /// several updates leaves one that gains any of it unticked.
+    pub gained: Vec<Gained>,
 }
 
 impl UpdateReview {
@@ -470,7 +478,9 @@ pub fn update_review(plane: &Path, level: &Level, name: &str) -> Result<UpdateRe
         grant.as_ref(),
         std::iter::once(&review).chain(&brought),
     );
+    let gained = gained::gained(&was, &now, &brought);
     Ok(UpdateReview {
+        gained,
         name: name.to_owned(),
         level: level.clone(),
         pinned: locked.commit.clone(),
@@ -487,23 +497,142 @@ pub fn update_review(plane: &Path, level: &Level, name: &str) -> Result<UpdateRe
     })
 }
 
-/// **Accepts an update** of the installed skill `name` at `level` to what `accepted` says: the
-/// newer commit fetched again and checked against the reviewed digests; the skills it brings
-/// along installed beside it, granted as the updated skill is (#4186); each project skill it relies
-/// on widened to reach there too; each of its files written over the copy, each file the old
-/// commit had and the newer one does not removed; and the pins moved, as one commit. `grant` is
-/// the grant the review showed ([`UpdateReview::grant`]): where the skill's grant changed since,
-/// nothing is written. Where a skill it
-/// brings along or the lockfile cannot be written, what this update made is taken back.
-pub fn update(
-    cx: &mut Ctx<'_>,
+/// A skill an update brings along: its name, its folder in the source, and its files.
+struct Bringing {
+    name: String,
+    folder: String,
+    files: Vec<SourceFile>,
+}
+
+/// **An update checked and ready to write** ([`plan`]): everything accepting it reads, nothing
+/// written yet.
+pub(super) struct Planned {
+    pub(super) level: Level,
+    pub(super) name: String,
+    /// Its lockfile entry as it is now.
+    pub(super) locked: Locked,
+    /// The commit it moves to.
+    pub(super) newer: Commit,
+    /// What it newly lets the skill do (#5354), read against the pinned commit as its review is.
+    pub(super) gained: Vec<Gained>,
+    files: Vec<SourceFile>,
+    brought: Vec<Bringing>,
+    grant: Option<Grant>,
+    widenings: Vec<Widening>,
+}
+
+impl Planned {
+    /// The level's folder parts and the copy's.
+    fn parts(&self) -> Result<(Vec<String>, Vec<String>), String> {
+        let level_dir = level_parts(&self.level)?;
+        let mut parts = level_dir.clone();
+        parts.push(self.name.clone());
+        Ok((level_dir, parts))
+    }
+
+    /// Its lockfile entry once it is written.
+    pub(super) fn entry(&self) -> Locked {
+        let mut entry = self.locked.clone();
+        let files_wrote = if self.locked.source_name.is_some() {
+            super::review::wrote_renamed(&self.files)
+        } else {
+            wrote(&self.files)
+        };
+        entry.commit = self.newer.clone();
+        entry.digest = digest_of(&files_wrote);
+        entry.files = files_wrote;
+        entry
+    }
+
+    /// The lockfile entries of the skills it brings along.
+    pub(super) fn brought_entries(&self) -> Vec<Locked> {
+        self.brought
+            .iter()
+            .map(|skill| {
+                let their_wrote = wrote(&skill.files);
+                Locked {
+                    name: skill.name.clone(),
+                    source_name: None,
+                    level: lock::AtLevel(self.level.clone()),
+                    source: self.locked.source.clone(),
+                    folder: skill.folder.clone(),
+                    commit: self.newer.clone(),
+                    digest: digest_of(&their_wrote),
+                    files: their_wrote,
+                    brought_by: Some(self.name.clone()),
+                }
+            })
+            .collect()
+    }
+
+    /// The names of the skills it brings along.
+    pub(super) fn brought_names(&self) -> Vec<String> {
+        self.brought.iter().map(|one| one.name.clone()).collect()
+    }
+
+    /// What its grant widens.
+    pub(super) fn widenings(&self) -> &[Widening] {
+        &self.widenings
+    }
+}
+
+/// **What one update wrote**, to take back whole: the skills it brought along, their grants and
+/// what it widened, and the copy's files as they were before.
+pub(super) struct Wrote {
+    written: Written,
+    copy: Vec<String>,
+    before: Vec<write::HeldFile>,
+    /// What it wrote into the copy that the copy did not hold before.
+    added: Vec<Vec<String>>,
+    /// Every path the change wrote, for its commit.
+    pub(super) paths: Vec<String>,
+}
+
+impl Wrote {
+    /// Whether every grant it widened still reads as it left it: an Undo that put back the grant
+    /// it had before would lose a change made since.
+    pub(super) fn grants_as_left(&self) -> bool {
+        self.written
+            .widened_to
+            .iter()
+            .all(|(folder, to)| crate::skills::grant_of(folder).is_ok_and(|now| now == *to))
+    }
+
+    /// Takes back everything it wrote: the copy's files as they were, and what it brought along.
+    /// What could not be, in words.
+    pub(super) fn take_back(&self) -> Option<String> {
+        let files: Vec<write::File<'_>> = self
+            .before
+            .iter()
+            .map(|file| write::File {
+                parts: &file.parts,
+                executable: file.executable,
+                bytes: &file.bytes,
+            })
+            .collect();
+        let back = write::replace(&self.written.plane, &self.copy, &files, &self.added);
+        self.written.take_back();
+        back.err().map(|why| {
+            format!(
+                "{} could not be put back as it was ({why})",
+                self.copy.last().map_or("", String::as_str)
+            )
+        })
+    }
+}
+
+/// **Checks an update** of the installed skill `name` at `level` to what `accepted` says,
+/// writing nothing: the newer commit fetched again and checked against the reviewed digests,
+/// every skill it brings along free where it lands, and `grant` the grant the review showed
+/// ([`UpdateReview::grant`]).
+pub(super) fn plan(
+    cx: &Ctx<'_>,
     level: &Level,
     name: &str,
     accepted: &Accepted,
     grant: Option<&Grant>,
-) -> Result<PathBuf, String> {
+) -> Result<Planned, String> {
     let plane = cx.plane;
-    crate::settings::writable(plane)?;
     let (held, at) = locked_at(plane, level, name)?;
     let locked = held.lock.skills[at].clone();
     let at_source = locked.at_source().to_owned();
@@ -557,24 +686,73 @@ pub fn update(
         ));
     }
     let level_dir = level_parts(level)?;
-    let files = fetched.files_of(&one.dir)?;
-    paths_fit(&level_dir, name, &files)?;
-    let renamed = locked
-        .source_name
-        .is_some()
-        .then(|| super::install::under_new_name(&files, name))
-        .transpose()?;
-    let files = renamed.as_ref().map_or(&files, |renamed| renamed);
-    let mut lock = held.lock.clone();
-    // The skills it brings along, first: each a new copy this update can take back.
-    let mut written = Written::none(plane, level_dir.clone());
-    let mut paths: Vec<String> = Vec::new();
+    let now = fetched.files_of(&one.dir)?;
+    paths_fit(&level_dir, name, &now)?;
+    let files = match locked.source_name.is_some() {
+        true => super::install::under_new_name(&now, name)?,
+        false => now.clone(),
+    };
+    let mut brought = Vec::new();
     for skill in reviewed.skills.iter().skip(1) {
         let other = find(&skill.name)?;
         let their = fetched.files_of(&other.dir)?;
-        let fits = verbs::free_at(plane, level, &skill.name, &skill.name)
-            .and_then(|_| paths_fit(&level_dir, &skill.name, &their));
-        let writes: Vec<write::File<'_>> = their
+        verbs::free_at(plane, level, &skill.name, &skill.name)
+            .and_then(|_| paths_fit(&level_dir, &skill.name, &their))
+            .map_err(|why| format!("{why}, so nothing was updated"))?;
+        brought.push(Bringing {
+            name: skill.name.clone(),
+            folder: other.folder.clone(),
+            files: their,
+        });
+    }
+    let widenings = widenings_of(plane, level, grant, &reviewed.skills);
+    // What it gains is read as its review read it: from the pinned commit, or the copy here where
+    // the source no longer holds that.
+    let was = match fetched.files_at(plane, &locked.commit, &locked.folder)? {
+        Some(pinned) => pinned,
+        None => {
+            let mut parts = level_dir.clone();
+            parts.push(name.to_owned());
+            write::read_all(plane, &parts, tree::MOST_FILE_BYTES, tree::MOST_FILES)
+                .ok_or_else(|| format!("{name}'s copy here could not be read"))?
+                .into_iter()
+                .map(|file| SourceFile {
+                    bytes: named_at_source(&file.parts, file.bytes, &locked),
+                    parts: file.parts,
+                    executable: file.executable,
+                })
+                .collect()
+        }
+    };
+    let gained = gained::gained(&was, &now, &reviewed.skills[1..]);
+    Ok(Planned {
+        level: level.clone(),
+        name: name.to_owned(),
+        newer: fetched.commit.clone(),
+        locked,
+        gained,
+        files,
+        brought,
+        grant: grant.cloned(),
+        widenings,
+    })
+}
+
+/// **Writes what `planned` checked**: the skills it brings along, granted as the updated skill is
+/// (#4186); each project skill it relies on widened to reach there too; and each of its files
+/// written over the copy, each the lockfile says the install wrote and the newer commit lacks
+/// removed. The lockfile is the caller's. Where any of it fails, what it wrote is taken back.
+pub(super) fn write_planned(plane: &Path, planned: &Planned) -> Result<Wrote, String> {
+    let name = &planned.name;
+    let level = &planned.level;
+    let (level_dir, parts) = planned.parts()?;
+    let before = write::read_all(plane, &parts, tree::MOST_FILE_BYTES, tree::MOST_FILES)
+        .ok_or_else(|| format!("{name}'s copy here could not be read, so nothing was updated"))?;
+    let mut written = Written::none(plane, level_dir.clone());
+    let mut paths: Vec<String> = Vec::new();
+    for skill in &planned.brought {
+        let writes: Vec<write::File<'_>> = skill
+            .files
             .iter()
             .map(|file| write::File {
                 parts: &file.parts,
@@ -582,66 +760,52 @@ pub fn update(
                 bytes: &file.bytes,
             })
             .collect();
-        let made = fits.and_then(|()| {
-            write::new_skill(plane, &level_dir, level.depth(), &skill.name, &writes)
-                .map_err(|why| format!("{} could not be installed ({why})", skill.name))
-        });
-        match made {
+        match write::new_skill(plane, &level_dir, level.depth(), &skill.name, &writes) {
             Ok(made) => written.skills.push((skill.name.clone(), made)),
             Err(why) => {
                 written.take_back();
-                return Err(format!("{why}, so nothing was updated"));
+                return Err(format!(
+                    "{} could not be installed ({why}), so nothing was updated",
+                    skill.name
+                ));
             }
         }
-        let their_wrote = wrote(&their);
-        lock.skills.push(Locked {
-            name: skill.name.clone(),
-            source_name: None,
-            level: lock::AtLevel(level.clone()),
-            source: locked.source.clone(),
-            folder: other.folder.clone(),
-            commit: fetched.commit.clone(),
-            digest: digest_of(&their_wrote),
-            files: their_wrote,
-            brought_by: Some(name.to_owned()),
-        });
         paths.push(format!("{}/{}", level_dir.join("/"), skill.name));
     }
-    // Each lands where the skill that brings it reaches, and a project skill they rely on
-    // reaches there too (#4186), as an install with that grant does (#4172).
-    let brought: Vec<String> = written.skills.iter().map(|(n, _)| n.clone()).collect();
-    if let Some(grant) = grant {
-        for skill in &brought {
-            let folder = plane.join(level_dir.join("/")).join(skill);
+    if let Some(grant) = &planned.grant {
+        for skill in &planned.brought {
+            let folder = plane.join(level_dir.join("/")).join(&skill.name);
             if let Err(why) = crate::skills::set_grant(&folder, grant) {
                 written.take_back();
                 return Err(format!(
-                    "{skill} could not be granted to {grant} ({why}), so nothing was updated"
+                    "{} could not be granted to {grant} ({why}), so nothing was updated",
+                    skill.name
                 ));
             }
-            written.grants.push(skill.clone());
+            written.grants.push(skill.name.clone());
             paths.push(verbs::rel(plane, &crate::skills::beside(&folder)));
         }
     }
-    let widenings = widenings_of(plane, level, grant, &reviewed.skills);
-    if let Err(why) = written.widen(&widenings, &mut paths) {
+    if let Err(why) = written.widen(&planned.widenings, &mut paths) {
         written.take_back();
         return Err(format!("{why}, so nothing was updated"));
     }
-    let files_wrote = if locked.source_name.is_some() {
-        super::review::wrote_renamed(files)
-    } else {
-        wrote(files)
-    };
-    let mut parts = level_dir.clone();
-    parts.push(name.to_owned());
-    let gone: Vec<Vec<String>> = locked
+    let entry = planned.entry();
+    let gone: Vec<Vec<String>> = planned
+        .locked
         .files
         .iter()
-        .filter(|was| !files_wrote.iter().any(|now| now.path == was.path))
+        .filter(|was| !entry.files.iter().any(|now| now.path == was.path))
         .filter_map(|was| tree::folder_parts(&was.path))
         .collect();
-    let writes: Vec<write::File<'_>> = files
+    let added: Vec<Vec<String>> = planned
+        .files
+        .iter()
+        .filter(|file| !before.iter().any(|old| old.parts == file.parts))
+        .map(|file| file.parts.clone())
+        .collect();
+    let writes: Vec<write::File<'_>> = planned
+        .files
         .iter()
         .map(|file| write::File {
             parts: &file.parts,
@@ -649,31 +813,59 @@ pub fn update(
             bytes: &file.bytes,
         })
         .collect();
-    if let Err(why) = write::replace(plane, &parts, &writes, &gone) {
-        written.take_back();
-        return Err(format!(
-            "{name} could not be updated ({why}): what was written of it is in its folder, and \
-             the pin is where it was"
-        ));
+    paths.push(verbs::rel(plane, &plane.join(parts.join("/"))));
+    let wrote = Wrote {
+        written,
+        copy: parts,
+        before,
+        added,
+        paths,
+    };
+    if let Err(why) = write::replace(plane, &wrote.copy, &writes, &gone) {
+        let left = wrote.take_back();
+        return Err(match left {
+            None => format!("{name} could not be updated ({why}), so nothing was updated"),
+            Some(left) => format!("{name} could not be updated ({why}), and {left}"),
+        });
     }
-    let entry = &mut lock.skills[at];
-    entry.commit = fetched.commit.clone();
-    entry.digest = digest_of(&files_wrote);
-    entry.files = files_wrote;
+    Ok(wrote)
+}
+
+/// **Accepts an update** of the installed skill `name` at `level` to what `accepted` says
+/// ([`plan`], then [`write_planned`]), and moves the pins, as one commit. `grant` is the grant
+/// the review showed ([`UpdateReview::grant`]): where the skill's grant changed since, nothing
+/// is written. Where the lockfile cannot be written, what this update made is taken back.
+pub fn update(
+    cx: &mut Ctx<'_>,
+    level: &Level,
+    name: &str,
+    accepted: &Accepted,
+    grant: Option<&Grant>,
+) -> Result<PathBuf, String> {
+    let plane = cx.plane;
+    crate::settings::writable(plane)?;
+    let planned = plan(cx, level, name, accepted, grant)?;
+    let (held, at) = locked_at(plane, level, name)?;
+    let wrote = write_planned(plane, &planned)?;
+    let mut lock = held.lock.clone();
+    lock.skills[at] = planned.entry();
+    lock.skills.extend(planned.brought_entries());
     let kept = Kept::of(level);
     if let Err(why) = lock::write(plane, kept, held.was.as_deref(), &lock) {
-        written.take_back();
+        wrote.take_back();
         return Err(why);
     }
+    let brought = planned.brought_names();
     // Each skill it brought is a new one: the grades of one that had its name before are none of
     // its own (#4104).
     for skill in &brought {
         verbs::earlier_dropped(cx, level, skill);
     }
+    let (_, parts) = planned.parts()?;
     let folder = plane.join(parts.join("/"));
     cx.done(format!(
         "{name} is updated at {level}, pinned to {}",
-        fetched.commit.short()
+        planned.newer.short()
     ));
     if let Some(grant) = grant.filter(|_| !brought.is_empty()) {
         let are = if brought.len() == 1 { "is" } else { "are" };
@@ -682,9 +874,9 @@ pub fn update(
             brought.join(", ")
         ));
     }
-    widen::said_done(cx, &widenings, "what was updated");
+    widen::said_done(cx, &planned.widenings, "what was updated");
     if kept == Kept::Shared {
-        paths.push(verbs::rel(plane, &folder));
+        let mut paths = wrote.paths.clone();
         paths.push(lock::FILE.to_owned());
         cx.commit(&paths, &format!("skill update {name}"));
     }

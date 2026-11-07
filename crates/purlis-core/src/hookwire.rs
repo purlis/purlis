@@ -1984,6 +1984,20 @@ pub enum GitWork {
     /// window's own Update run for the chat, only on a clean tree, and refused where it would
     /// write a file the chat's sandbox denies. The ask's workspace is empty and unread.
     RootUpdate {},
+    /// `purlis save [-m <message>] [--sign] [--no-push] [--pull]`, standing anywhere in the
+    /// project: the project saved by the app, as the terminal's `purlis save` saves it, with the
+    /// chat's provenance from the app's own record of it. The ask's workspace is empty and
+    /// unread. A kind of its own, so an app that does not know it answers nothing.
+    RootSave {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        message: Option<String>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        sign: bool,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        no_push: bool,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        pull: bool,
+    },
     /// `purlis worktree push [--force-with-lease]` (qw387): the branch of folder
     /// `<repo>/<piece>` pushed to its remote, under its own name and nothing else.
     WorktreePush {
@@ -4237,6 +4251,13 @@ const A_FRAME_WRITE_TAKES_AT_MOST: std::time::Duration = std::time::Duration::fr
 
 /// What an app with no answerer says to an ask, so an asker never waits on a silence.
 pub const NOTHING_ANSWERS: &str = "this app does not open chats on request";
+
+/// What the app answers a chat's save or update of the project where the chat's own sandbox
+/// does not keep it from writing the project's git ([`crate::gitbroker::Asker::roots_git_held`]):
+/// the chat's own `purlis` runs it, as it does outside a chat, and an asker reads it as no app
+/// having taken the ask.
+pub const LEFT_TO_THE_CHAT: &str =
+    "this chat writes the project's git itself, so the app leaves its save and update to it";
 
 /// What the app answers a line it cannot read (#1333): one from a newer purlis, whose kind it
 /// does not know. An asker can tell an older app from a refusal by it.

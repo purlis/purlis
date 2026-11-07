@@ -1100,11 +1100,16 @@ jobs:
         run: |
           kept="$RUNNER_TEMP/coldstart"
           mkdir -p "$kept"
-          cp target/debug/charter-app "$kept/change"
+          mv target/debug/purlis-app "$kept/change"
           git worktree add --detach "$RUNNER_TEMP/main" "$BASE"
           if (cd "$RUNNER_TEMP/main/app" && npm ci \
                 && CARGO_TARGET_DIR="$GITHUB_WORKSPACE/target" npx tauri build --debug --no-bundle); then
-            cp target/debug/charter-app "$kept/main"
+            # A base from before #1309 built the app as `charter-app`.
+            if [ -x target/debug/purlis-app ]; then
+              cp target/debug/purlis-app "$kept/main"
+            else
+              cp target/debug/charter-app "$kept/main"
+            fi
             echo "app=$kept/main" >> "$GITHUB_OUTPUT"
             # The change is launched from its copy beside main's, not from target/debug: the
             # app finds the `purlis` beside it and arms hooks and shims at start, so two builds
@@ -1113,7 +1118,7 @@ jobs:
           else
             node tools/coldstart-no-baseline.mjs "$BASE"
           fi
-          cp "$kept/change" target/debug/charter-app
+          cp "$kept/change" target/debug/purlis-app
       # Cold start on Linux (charter-app#24, program map FR-8). This runner IS the issue's machine:
       # its session bus is up and can activate a desktop portal that cannot start, which cost
       # 26-31 s before the app asked the portal first (`portal.rs`). A debug build on a shared
@@ -1288,7 +1293,7 @@ jobs:
       - name: The app starts and draws a window
         run: |
           runuser -u ci -- env HOME=/home/ci PATH="/home/ci/.cargo/bin:$PATH" \
-            APP=/home/ci/target/debug/charter-app LIMIT_MS=20000 CEILING_MS=30000 \
+            APP=/home/ci/target/debug/purlis-app LIMIT_MS=20000 CEILING_MS=30000 \
             dbus-run-session -- tools/coldstart-linux.sh bare
 
   # The core's and the app's tests on macOS, under the orphan check (#965). The leaks #923

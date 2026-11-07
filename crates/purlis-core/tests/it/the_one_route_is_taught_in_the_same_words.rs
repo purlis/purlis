@@ -188,6 +188,11 @@ fn the_persona_skill_teaches_the_dispatch_tools_before_the_command() {
 fn the_secrets_skill_the_tool_and_the_briefing_say_the_secret_ask_in_the_same_words() {
     purlis_core::unsteered!();
     let said = words(purlis_core::chattools::SECRET_ASK_SAID);
+    // Running the command is the way first, and asking ahead second (#5244).
+    assert!(
+        said.contains("Prefer simply running the command"),
+        "the way first: {said}"
+    );
     let tool = purlis_core::chattools::TOOLS
         .iter()
         .find(|tool| tool.name == purlis_core::chattools::SECRET_ASK)

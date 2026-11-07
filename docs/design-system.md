@@ -767,7 +767,11 @@ appearance and option values, and no option value can bring a consent surface be
   workspace);
 - **the state marks meet the mark floor**: every pair of `PAIRS` whose front is a `state.*`
   token or `needs-you.base`, the title bar's needs-you hand on its hovered `control.hover`
-  included.
+  included, but for those on the terminal's fill (`floors::CHECKED_ONLY`, #5262): the pane
+  foot's warning number in `state.waiting` or `state.failed` on `terminal.background` is held by
+  the check alone, as the text tiers are there. A theme that falls short is warned of the pair and
+  drawn as written, so its terminal, and its state colours everywhere else, are never drawn as
+  purlis's for a number in the foot.
 
 Each contrast floor is the pair's own floor in `PAIRS`, held as the theme is and tinted by every
 workspace palette colour. When a theme breaks one, purlis draws Purlis Classic's values of the same

@@ -55,7 +55,7 @@ import { join, resolve } from "node:path";
 import { annotations, checkLine, linesWritten, stepTimer, stopLine } from "./relaunch-report.mjs";
 
 const ROOT = resolve(import.meta.dirname, "..");
-const APP = join(process.env.CHARTER_TARGET_DIR ?? join(ROOT, "target", "debug"), "charter-app");
+const APP = join(process.env.CHARTER_TARGET_DIR ?? join(ROOT, "target", "debug"), "purlis-app");
 /** The conversation the chat is under. The stand-in harness only has to echo it back. */
 const CONVERSATION = "11111111-2222-4333-8444-555555555555";
 /**

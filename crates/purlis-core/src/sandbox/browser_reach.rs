@@ -645,6 +645,15 @@ impl Bound {
             .flatten()
     }
 
+    /// **The site a sign-in is open on now, wherever it is** (the person's ruling of 2026-11-06):
+    /// the site its login signs in on, while a sign-in is open. What can't be placed on a site,
+    /// begun anywhere but the sign-in's own page, may be of that one.
+    pub fn signing_on(&self) -> Option<Site> {
+        let bound = self.lock();
+        let holding = bound.login.as_ref()?;
+        holding.sign_in.as_ref().and(holding.form.clone())
+    }
+
     /// **The site the agent is kept off at `host` on `port`, now** (#5152, the person's ruling
     /// of 2026-11-04): the site its login signs in on, where that is `host` on `port`, while no
     /// sign-in is open. The browser loads that site's documents (the page's own redirects,

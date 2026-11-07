@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! **The workspace files** (CONTEXT.md; ADR 0038 and ADR 0081, both amended 2026-11-05): a
-//! workspace's own folder as Explorer draws it with the workspace picked, read here and written
-//! nowhere (#5375).
+//! workspace's own folder as Explorer draws it with the workspace picked, read here (#5375), and
+//! written where the files are the person's own ([`write`], #5376).
 //!
 //! **What they are.** Everything in `workspaces/<ws>/` but its repos and their branches' folders:
 //! `repos/`, `.worktrees/`, and each folder at the top that [`crate::repofolder::holdings`] names
@@ -26,13 +26,19 @@
 //!
 //! **Each entry says two things of itself**: whether purlis keeps it ([`managed`]), which the
 //! window marks and opens read-only, with its own view where it has one ([`view_of`]); and whether
-//! it is a dotfile, which the window draws only with Show hidden.
+//! it is a dotfile, which the window draws only with Show hidden. In a LIVE workspace it says a
+//! third: where it is kept ([`Kept`], #5377), This machine only or Saved with the project, read
+//! from the LIVE block by [`crate::wscmd::saved`]. **Save with the project**
+//! ([`Files::save_with_the_project`]) is the one write here, and it writes the plane's
+//! `.gitignore`, never the workspace's folder.
 
 use std::path::{Path, PathBuf};
 
-use super::{Kept, Kind, Opened, Placed, Refused};
+use super::{Kind, Opened, Placed, Refused};
 use crate::repofolder::{self, Layout};
 use crate::worktree::confine::{self, Outside};
+pub use crate::wscmd::saved::Kept;
+use crate::wscmd::saved::{self, Marks, NotSaved};
 use crate::youreditor::{self, Editor, Launch};
 
 /// The folder of the branches' folders, never one of the workspace files.
@@ -57,6 +63,9 @@ pub struct Entry {
     pub managed: bool,
     /// Whether its name starts with a dot.
     pub hidden: bool,
+    /// Where it is kept, in a LIVE workspace; `None` in a LOCAL one, whose files are all this
+    /// machine's and carry no mark.
+    pub kept: Option<Kept>,
     /// Why it does not open, as the sentence the window shows; `None` for a file that opens and
     /// a folder that expands.
     pub refused: Option<String>,
@@ -114,6 +123,53 @@ pub enum NotHere {
          in the workspace's files. Open the file the link points to from where it is kept."
     )]
     ThroughALink(String),
+    #[error(
+        "purlis keeps '{0}' itself, and shares it with the project as the workspace's LIVE \
+         switch says. Save with the project is for your own files."
+    )]
+    KeptByPurlis(String),
+    #[error(transparent)]
+    NotSaved(#[from] NotSaved),
+}
+
+/// Why a write to the workspace files was not made, as the sentence the window shows.
+#[derive(Debug, thiserror::Error)]
+pub enum NotWritten {
+    #[error(transparent)]
+    Here(#[from] NotHere),
+    #[error(
+        "purlis does not change '{0}': it is one of the files kept by purlis in the workspace. \
+         Change it from its own view, or leave it as it is."
+    )]
+    Managed(String),
+    #[error(
+        "purlis does not change '{0}': it is a link, and purlis writes through no link in the \
+         workspace's files. Change it in your file manager or a terminal."
+    )]
+    ALink(String),
+    #[error("purlis does not change the workspace's folder itself. Choose a file or folder in it.")]
+    TheFolderItself,
+    #[error("'{0}' is not a name a file can have here: {1}. Choose another name.")]
+    BadName(String, &'static str),
+    #[error("'{0}' is a name kept by purlis for itself in the workspace. Choose another name.")]
+    Reserved(String),
+    #[error("'{0}' is already taken in this folder. Choose another name.")]
+    Taken(String),
+    #[error(
+        "purlis did not delete '{path}': the system would not put it in the Trash ({why}). \
+         purlis never deletes a file for good, so it is still there. Delete it in Finder or a \
+         terminal if you mean to."
+    )]
+    NoTrash { path: String, why: String },
+    #[error(
+        "purlis imports files, and '{0}' is not one. Pick the files themselves, or copy a folder \
+         in your file manager or a terminal."
+    )]
+    NotAFileToImport(String),
+    #[error(
+        "purlis could not {what}: {why}. Try again, or do it in your file manager or a terminal."
+    )]
+    Failed { what: String, why: String },
 }
 
 /// Whether `path`, a path of the workspace files, is one purlis keeps: a reserved workspace name
@@ -123,13 +179,24 @@ pub enum NotHere {
 /// managed folder holds is managed too.
 pub fn managed(path: &str, extension_folders: &[String]) -> bool {
     let first = path.split('/').next().unwrap_or("");
-    let lower = first.to_lowercase();
-    crate::contain::workspace_keeps(first)
+    let lower = folded(first);
+    crate::contain::workspace_keeps(&lower)
         || ALSO_KEPT.contains(&lower.as_str())
         || generated().any(|prefix| lower == prefix || lower.starts_with(&format!("{prefix}-")))
         || extension_folders
             .iter()
-            .any(|folder| folder.eq_ignore_ascii_case(first))
+            .any(|folder| folded(folder) == lower)
+}
+
+/// **`name` as a disk that ignores case and Unicode's forms reads it** (#5513's review): its
+/// decomposed form, each letter's case folded through its capital, so `ſ` (U+017F) is `s` and
+/// the Kelvin sign (U+212A) is `k`, as APFS takes them. Rust's lowercase alone keeps both, so a
+/// name such as `repoſ` would pass for the person's and reach `repos/` on the disk. Every name
+/// purlis keeps, and every repo's at the top, is told by this.
+pub(crate) fn folded(name: &str) -> String {
+    use unicode_normalization::UnicodeNormalization as _;
+    let decomposed: String = name.nfd().collect();
+    decomposed.to_uppercase().to_lowercase().nfd().collect()
 }
 
 /// The view a managed file at `path` has of its own, if the window has one.
@@ -156,7 +223,12 @@ pub struct Files {
     /// every clone there that `holdings` names.
     outside: Vec<String>,
     repos: Vec<Repo>,
-    kept: Kept,
+    kept: super::Kept,
+    /// The project's folder and the workspace's name, which Save with the project writes by.
+    plane: PathBuf,
+    ws: String,
+    /// Where each file is kept, for a LIVE workspace alone.
+    marks: Option<Marks>,
 }
 
 impl Files {
@@ -177,7 +249,20 @@ impl Files {
             .chain(&holdings.shadowed)
             .chain(&holdings.others)
             .filter(|row| row.layout == Layout::Root);
-        outside.extend(at_root.map(|row| row.repo.name.to_lowercase()));
+        outside.extend(at_root.map(|row| folded(&row.repo.name)));
+        // A folder with a `.git` whose name purlis takes for no repo's (`My Tool`), or whose
+        // `.git` could not be read, is still a repo to git, and never the person's own file.
+        // `refused` also names a link, which is listed as one, so only one holding a `.git`.
+        let refused = holdings
+            .refused
+            .iter()
+            .filter(|said| dir.join(&said.name).join(".git").symlink_metadata().is_ok());
+        outside.extend(
+            refused
+                .chain(&holdings.unreadable)
+                .filter(|said| said.layout == Layout::Root && !said.name.is_empty())
+                .map(|said| folded(&said.name)),
+        );
         let repos = holdings
             .repos
             .iter()
@@ -186,13 +271,16 @@ impl Files {
                 layout: row.layout,
             })
             .collect();
-        let kept = Kept::in_a_branch(plane, &dir, &crate::sandbox::Machine::this());
+        let kept = super::Kept::in_a_branch(plane, &dir, &crate::sandbox::Machine::this());
         kept.whole()?;
         Ok(Self {
             dir,
             outside,
             repos,
             kept,
+            plane: plane.to_path_buf(),
+            ws: ws.to_string(),
+            marks: Marks::of(plane, ws),
         })
     }
 
@@ -211,7 +299,7 @@ impl Files {
         let spelled = super::spelled_inside(path)?;
         let first = spelled.split('/').next().unwrap_or("");
         if self.is_outside(first) {
-            return Err(if first.eq_ignore_ascii_case(WORKTREES) {
+            return Err(if folded(first) == WORKTREES {
                 NotHere::OfABranch(path.to_string())
             } else {
                 NotHere::OfARepo(path.to_string())
@@ -223,8 +311,7 @@ impl Files {
 
     /// Whether `name`, at the top, is a repo's or the branches' folders.
     fn is_outside(&self, name: &str) -> bool {
-        let lower = name.to_lowercase();
-        self.outside.contains(&lower)
+        self.outside.contains(&folded(name))
     }
 
     /// `relative`, judged, resolved as the disk spells it and required to be that very path: no
@@ -304,6 +391,10 @@ impl Files {
                 Entry {
                     managed: managed(&path, extension_folders),
                     hidden: name.starts_with('.'),
+                    kept: self
+                        .marks
+                        .as_ref()
+                        .map(|marks| marks.of_path(&path, one.kind == Kind::Folder)),
                     name,
                     kind: one.kind,
                     refused,
@@ -315,6 +406,27 @@ impl Files {
             more,
             repos: if top { self.repos.clone() } else { Vec::new() },
         })
+    }
+
+    /// **Save one entry with the project** (#5377): a file or folder at the top of a LIVE
+    /// workspace's folder, which purlis does not keep, gets one line in the LIVE block. Only the
+    /// person's press calls this. `true` when the line was added, `false` when the entry was
+    /// saved already. Refused for a path below the top, one purlis keeps, a link, one not there,
+    /// and in a workspace that is not LIVE.
+    pub fn save_with_the_project(
+        &self,
+        path: &str,
+        extension_folders: &[String],
+    ) -> Result<bool, NotHere> {
+        let spelled = self.judged(path)?;
+        if !saved::one_entry(&spelled) {
+            return Err(NotSaved::NotOneEntry(path.to_string()).into());
+        }
+        if managed(&spelled, extension_folders) {
+            return Err(NotHere::KeptByPurlis(path.to_string()));
+        }
+        self.resolved(&spelled, path)?;
+        Ok(saved::add(&self.plane, &self.ws, &spelled)?)
     }
 
     /// **One file**, by its path: refused as [`Self::tree`] refuses a folder, and when a link is
@@ -473,6 +585,14 @@ impl Files {
     }
 }
 
+#[path = "workspace/write.rs"]
+mod write;
+pub use write::{SystemTrash, Trash};
+
 #[cfg(test)]
 #[path = "workspace/tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "workspace/kept_tests.rs"]
+mod kept_tests;

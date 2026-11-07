@@ -893,6 +893,7 @@ pub fn request_to_look_at(root: &Path) -> Option<(Option<u64>, String)> {
 /// `Err` when a save of the plane is running, or the target could not be fetched from.
 pub fn look(root: &Path, caller: &forge::Caller, say: Sink) -> Result<Looked, String> {
     let _claim = Claim::of(root).ok_or(ALREADY_SAVING)?;
+    git_files_refused(root)?;
     let plane = crate::planesave::Settings::read(root).plane;
     use crate::planesave::Mode;
     if !matches!(plane.mode.value, Some(Mode::Pr | Mode::PrMerge)) {
@@ -960,6 +961,7 @@ fn merge_as_it_stands(
     say: Sink,
 ) -> Result<MergedAsItStands, String> {
     let _claim = Claim::of(root).ok_or(ALREADY_SAVING)?;
+    git_files_refused(root)?;
     let plane = crate::planesave::Settings::read(root).plane;
     let here = git::run(root, &["rev-parse", "--abbrev-ref", "HEAD"], git::READ)
         .map(|r| r.line().trim().to_string())
@@ -994,6 +996,27 @@ static PLANES: std::sync::LazyLock<crate::standings::Shared<Standing>> =
 /// decided from the tree as it is at that moment, never from a shared answer.
 pub fn shared_standing(root: &Path) -> Standing {
     PLANES.get(root, || standing(root))
+}
+
+/// A watch now hears every move in the plane at `root`'s working tree (`true`) and says so
+/// through [`tree_moved`], or no longer does (`false`). While it does, the plane's shared
+/// standing is read again on what moved and its git files, not on [`SHARED_FOR`]'s clock
+/// (#5505): only on the long backstop a covered repo keeps for a watch that went quiet
+/// ([`crate::standings::WATCHED_FOR`]).
+pub fn cover(root: &Path, covered: bool) {
+    PLANES.cover(root, covered);
+}
+
+/// Whether a watch covers the plane at `root` now ([`cover`]).
+pub fn covered(root: &Path) -> bool {
+    PLANES.covered(root)
+}
+
+/// Something in the plane at `root`'s working tree moved that its git status may show: the
+/// plane's next shared standing reads git again. Its clones are not touched: a move in the
+/// plane is not one in them.
+pub fn tree_moved(root: &Path) {
+    PLANES.touch(root);
 }
 
 /// Something at or under `dir` changed — a plane its watcher saw move, a plane or a clone a save
@@ -1112,6 +1135,7 @@ impl Held {
 pub fn fetch(root: &Path, fast_forward: bool) -> Result<Incoming, String> {
     // A fetch moves refs and may move the tree: never while a save of the plane runs.
     let _claim = Claim::of(root).ok_or(ALREADY_SAVING)?;
+    git_files_refused(root)?;
     let plane = crate::planesave::Settings::read(root).plane;
     let here = git::run(root, &["rev-parse", "--abbrev-ref", "HEAD"], git::READ)
         .map(|r| r.line().trim().to_string())
@@ -1180,7 +1204,7 @@ fn fetch_branch(root: &Path, branch: &str) -> Result<(), String> {
         &[
             "fetch",
             "--no-recurse-submodules",
-            // A save's rebase reads FETCH_HEAD; a fetch of charter's own leaves it alone.
+            // What came is in the remote-tracking branch: nothing of purlis's reads FETCH_HEAD.
             "--no-write-fetch-head",
             &https,
             &format!("+refs/heads/{branch}:refs/remotes/origin/{branch}"),
@@ -1321,6 +1345,14 @@ pub(crate) fn said_sandbox_stops(files: &[String]) -> String {
     )
 }
 
+/// Why the app's git does not write in the project at `root` now, or `Ok`: a file it writes in
+/// the project's git directory is a link, a file with a second name, or cannot be read
+/// ([`crate::worktree::git_files_refused`]). **Fails closed**: where git cannot name the git
+/// directory, the `.git` beside `root` is the one looked at.
+pub fn git_files_refused(root: &Path) -> Result<(), String> {
+    crate::worktree::git_files_refused(&git_dir_of(root))
+}
+
 /// The repository's own directory, which is a file's target for a worktree plane.
 fn git_dir_of(root: &Path) -> PathBuf {
     git::run(root, &["rev-parse", "--absolute-git-dir"], git::READ)
@@ -1392,7 +1424,10 @@ pub(crate) fn changed_paths(root: &Path) -> Vec<String> {
 /// [`changed_paths`], and whether any of them is a file git tracks (any entry but `??`).
 fn status_of(root: &Path) -> (Vec<String>, bool) {
     // What a save stages ([`save_stages`]): never what is [`never_staged`].
-    let mut args = vec![
+    // git's own file system monitor, where the installed git has one (#5505): the index a
+    // save left says which files can have moved since, and only those are `lstat`ed.
+    let mut args = git::Tuning::here().for_a_read();
+    args.extend([
         "--no-optional-locks",
         "status",
         "--porcelain=v1",
@@ -1400,7 +1435,7 @@ fn status_of(root: &Path) -> (Vec<String>, bool) {
         "--untracked-files=all",
         "--",
         ".",
-    ];
+    ]);
     let excluded = never_staged();
     args.extend(excluded.iter().map(String::as_str));
     let Ok(run) = git::run(
@@ -1408,8 +1443,8 @@ fn status_of(root: &Path) -> (Vec<String>, bool) {
         // `--no-optional-locks`, as `profiles.rs` and `guest.rs` ask: a plain `status`
         // refreshes the index and takes `index.lock`, and the title bar asks this every ten
         // seconds — a save's `git add -A` landing inside that window failed on the lock.
-        // No `-c core.untrackedCache`: a read-only status uses a cache the index holds without
-        // it, and git never consults one under `--untracked-files=all` (FD-11, measured).
+        // No `-c core.untrackedCache`: a read-only status uses the cache the index holds, which
+        // a save writes for this mode (`git::run_status_writing_index`, #5505).
         &args,
         git::READ,
     ) else {
@@ -1870,6 +1905,21 @@ fn push_for_a_request(
     prsave::push(root, plane, sign, caller, say)
 }
 
+/// What a save the app makes for a chat says where it was asked to sign, by `--sign` or by
+/// `[plane] sign`: it is left unsigned.
+pub const SIGN_LEFT_FOR_A_CHAT: &str = "This save is left unsigned: purlis does not sign a save it \
+     makes for a chat. The person signs a save by saving from the window, or with \
+     `purlis save --sign` in their own terminal.";
+
+/// What a save the app makes for a chat says when the remote moved: what brings it in.
+pub const MOVED_FOR_A_CHAT: &str = "Run `purlis worktree update` to bring them in, then \
+     `purlis save` to push this commit.";
+
+/// What a save the app makes for a chat says in a project that saves through a request.
+pub const REQUEST_FOR_A_CHAT: &str = "Committed, not pushed: this project saves through a pull \
+     request, and opening or settling one may bring the remote's commits in, which purlis does \
+     only for the person. The window's save pushes it.";
+
 /// Push the plane root's HEAD to its own branch on origin — **the one pusher**.
 ///
 /// **The branch is never predicted.** Nothing here asks the forge whether the branch is
@@ -1883,7 +1933,24 @@ fn push_for_a_request(
 ///
 /// `target` is the branch to advance: `[plane] branch`, or `None` for the one HEAD is on.
 pub fn push_head(root: &Path, target: Option<&str>, sign: bool, say: Sink) -> PushResult {
-    let res = push_head_within(root, target, sign, WRITE, say);
+    let res = push_head_within(root, target, sign, TheirCommits::BroughtIn, WRITE, say);
+    said_if_unrecorded(res, say)
+}
+
+/// What a push does with the commits of a remote that moved under it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TheirCommits {
+    /// Fetched and rebased onto, then the push is tried again: every save but a chat's.
+    BroughtIn,
+    /// Left on the remote, and the commit here: a save the app makes for a chat brings nothing
+    /// of the remote's into the project. The chat's `purlis worktree update` does, as judged
+    /// for that chat, and the next save pushes.
+    LeftThere,
+}
+
+/// [`push_head`] for a save the app makes for a chat: a remote that moved is not brought in.
+fn push_head_for_a_chat(root: &Path, target: Option<&str>, sign: bool, say: Sink) -> PushResult {
+    let res = push_head_within(root, target, sign, TheirCommits::LeftThere, WRITE, say);
     said_if_unrecorded(res, say)
 }
 
@@ -1893,9 +1960,17 @@ fn push_head_within(
     root: &Path,
     target: Option<&str>,
     sign: bool,
+    incoming: TheirCommits,
     deadline: Duration,
     say: Sink,
 ) -> PushResult {
+    if let Err(why) = git_files_refused(root) {
+        say(Say::Warn(format!("Not pushed: {why}.").into()));
+        return PushResult {
+            detail: why,
+            ..PushResult::of(Outcome::Blocked, target.unwrap_or_default())
+        };
+    }
     let branch = match target {
         Some(target) => target.to_string(),
         None => git::run(root, &["rev-parse", "--abbrev-ref", "HEAD"], git::READ)
@@ -1950,9 +2025,15 @@ fn push_head_within(
             .filter(|run| run.ok() && run.line().starts_with("refs/heads/"))
             .map_or_else(|| "HEAD".to_owned(), |run| run.line().trim().to_owned()),
     };
+    // A push for a chat is never signed, whatever `push.gpgSign` says: the person's key signs
+    // only what the person pushes.
+    let options: &[&str] = match incoming {
+        TheirCommits::LeftThere => &["--no-signed"],
+        TheirCommits::BroughtIn => &[],
+    };
     // The commit scanned, by its id: one landing since sends nothing unscanned.
     let push = |root: &Path, head: &str| {
-        git::push_commit(root, Some(helper.as_str()), &[], &https, head, &to)
+        git::push_commit(root, Some(helper.as_str()), options, &https, head, &to)
     };
 
     let mut run = match push(root, &head) {
@@ -1985,8 +2066,8 @@ fn push_head_within(
         // prints its own `! [remote rejected]` line above a server-side hook decline, so the
         // word "rejected" in the retry test below matches a protected branch too. Measured
         // against a real bare remote with a pre-receive hook refusing `refs/heads/main`:
-        // taking the retry first fetched an unreachable origin, which REMOVES FETCH_HEAD, so
-        // the rebase failed and the outcome was recorded as `conflict` — the pull-request path
+        // taking the retry first fetched an unreachable origin, so the rebase had nothing to
+        // go onto and the outcome was recorded as `conflict` — the pull-request path
         // never reached and charter telling the operator to resolve a conflict that did not
         // exist.
         return record_push(
@@ -1996,6 +2077,24 @@ fn push_head_within(
         );
     }
     let moved = ["fetch first", "non-fast-forward", "rejected"];
+    if !run.ok()
+        && moved.iter().any(|s| run.err.contains(*s))
+        && incoming == TheirCommits::LeftThere
+    {
+        say(Say::Warn(
+            "Committed locally, but not pushed: the remote has commits this project does not."
+                .into(),
+        ));
+        say(Say::Info(MOVED_FOR_A_CHAT.into()));
+        return record_push(
+            root,
+            PushResult {
+                detail: format!("the remote has commits this project does not. {MOVED_FOR_A_CHAT}"),
+                ..PushResult::of(Outcome::Failed, &branch)
+            },
+            &head,
+        );
+    }
     if !run.ok() && moved.iter().any(|s| run.err.contains(*s)) {
         say(Say::Info(
             "remote moved — fetching + rebasing, then retrying …".into(),
@@ -2300,6 +2399,11 @@ pub struct Request<'a> {
     /// The agent run this save is for, when a chat's `charter save` asked for it: its trailers
     /// go on the commit (GL-8, V67). `None` for every save the operator or the app made.
     pub provenance: Option<&'a crate::provenance::Provenance>,
+    /// The app saves for a chat that left the project's git to it: the save commits and pushes
+    /// what the chat made, and brings nothing of the remote's in. A remote that moved, and a
+    /// project that saves through a request, leave the commit here for the chat's
+    /// `purlis worktree update` or the person's own save.
+    pub for_a_chat: bool,
 }
 
 /// `charter save`: [`save_as`] started from the command line.
@@ -2697,6 +2801,30 @@ pub fn save_claimed(request: &Request, trigger: Trigger, claim: &Claim, say: Sin
     save_staging(request, trigger, claim, Staging::Add(&stages), say)
 }
 
+/// **[`save`], staging nothing at or below any of `kept_out`**: each a path relative to the
+/// plane, `/` between its parts, with whether it is held under every spelling of its case. A
+/// save the app makes for a chat leaves out what the chat's sandbox keeps it from reading, so
+/// git never reads it back to the chat.
+pub fn save_keeping_out(request: &Request, kept_out: &[(String, bool)], say: Sink) -> u8 {
+    let Some(claim) = Claim::of(request.root) else {
+        say(Say::Fail(ALREADY_SAVING.into()));
+        return 1;
+    };
+    let stages: Vec<String> = save_stages()
+        .into_iter()
+        .chain(kept_out.iter().map(|(path, any_case)| {
+            let magic = if *any_case {
+                "exclude,literal,icase"
+            } else {
+                "exclude,literal"
+            };
+            format!(":({magic}){path}")
+        }))
+        .collect();
+    let stages: Vec<&str> = stages.iter().map(String::as_str).collect();
+    save_staging(request, Trigger::Cli, &claim, Staging::Add(&stages), say)
+}
+
 /// What a save of exactly some paths says when something else is staged already.
 pub const OTHERS_STAGED: &str = "Not saved: other changes are staged in this project, and this \
      save commits only its own files. Commit or unstage them, and the next save takes this one \
@@ -2871,6 +2999,10 @@ fn save_staging(
         say(Say::Fail(format!("nothing was written: {why}").into()));
         attempt.outcome = "blocked";
         1
+    } else if let Err(why) = git_files_refused(request.root) {
+        say(Say::Fail(format!("Not saved: {why}.").into()));
+        attempt.outcome = "blocked";
+        1
     } else if plane.mode.value == Some(crate::planesave::Mode::Off) {
         say(Say::Info(
             format!(
@@ -2883,14 +3015,18 @@ fn save_staging(
         attempt.outcome = "skipped";
         0
     } else {
-        commit_push(
+        let code = commit_push(
             request,
             &plane,
             staging,
             &trigger.caller(),
             &mut attempt,
             say,
-        )
+        );
+        // Under the claim, where the save's own `add` and `commit` just wrote the index: the
+        // one `status` that may write it too, so the reads after it are cheap (#5505).
+        let _ = git::run_status_writing_index(request.root, git::Tuning::here());
+        code
     };
     if attempt.detail.is_empty()
         && let Some(refused) = refused
@@ -3211,7 +3347,13 @@ fn commit_push(
 ) -> u8 {
     let root = request.root;
     // `--sign` asks for it this once; `[plane] sign` asks for it every time.
-    let sign = request.sign || plane.sign.value;
+    // A save for a chat is never signed, whatever `--sign` or `[plane] sign` says: the
+    // person's key signs only the person's own saves, from the window or a terminal.
+    let asked_to_sign = request.sign || plane.sign.value;
+    let sign = asked_to_sign && !request.for_a_chat;
+    if asked_to_sign && request.for_a_chat {
+        say(Say::Info(SIGN_LEFT_FOR_A_CHAT.into()));
+    }
     if let Staging::Add(add_cmd) = staging
         && stages_the_whole_tree(add_cmd)
     {
@@ -3819,8 +3961,18 @@ fn carry(
             return 0;
         }
     }
+    if pr_mode && request.for_a_chat {
+        // A request's save may bring the target in, or move onto a merged request: both bring
+        // the remote's commits into the project, which a save for a chat never does.
+        say(Say::Info(REQUEST_FOR_A_CHAT.into()));
+        attempt.outcome = "committed";
+        attempt.detail = REQUEST_FOR_A_CHAT.into();
+        return 0;
+    }
     let pushed = if pr_mode {
         push_for_a_request(root, plane, sign, caller, say)
+    } else if request.for_a_chat {
+        push_head_for_a_chat(root, target, sign, say)
     } else {
         push_head(root, target, sign, say)
     };

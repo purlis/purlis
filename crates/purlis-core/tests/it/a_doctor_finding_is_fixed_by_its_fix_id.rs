@@ -238,7 +238,8 @@ fn a_fix_id_is_spelled_one_way_and_read_back_the_same() {
             "workspace-reinit",
             "handoff-rule",
             "project-skills",
-            "live-skills"
+            "live-skills",
+            "move-into-repos"
         ]
     );
     for id in FixId::ALL {

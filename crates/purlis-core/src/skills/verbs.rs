@@ -276,6 +276,7 @@ impl Ctx<'_> {
                 no_push: false,
                 cwd: self.plane,
                 provenance: None,
+                for_a_chat: false,
             },
             crate::planegit::Trigger::Skill(self.by),
             &unique,
@@ -1471,7 +1472,7 @@ fn tracked(plane: &Path, rel_path: &str) -> bool {
 }
 
 /// The commit the plane's `HEAD` names, or empty.
-fn head(plane: &Path) -> String {
+pub(in crate::skills) fn head(plane: &Path) -> String {
     git(plane, &["rev-parse", "HEAD"])
         .map(|out| out.trim().to_owned())
         .unwrap_or_default()

@@ -52,6 +52,15 @@ pub struct Asker {
     pub harnessed: bool,
     /// Whether a person started this run of it without the sandbox (ruling V78 a).
     pub unsandboxed: bool,
+    /// **Whether the chat's sandbox, as its start compiled it, keeps the chat from writing
+    /// anything in the project root's `.git`** ([`crate::sandbox::Confines::roots_git`]): only
+    /// then does the app save or update the project for it. False for a chat with no sandbox,
+    /// one whose harness holds that folder by its name alone, and one whose start this app did
+    /// not compile.
+    pub roots_git_held: bool,
+    /// The paths the chat's sandbox keeps it from reading ([`crate::sandbox::Access::ReadWrite`]),
+    /// as its start compiled them: a save the app makes for it stages nothing below them.
+    pub unreadable: Vec<crate::sandbox::Denial>,
     /// The machine store the app holds, whose device id names the piece log (FD-25), as the
     /// window's own pieces are named (`worktrees::window`); `None` on a machine that keeps none.
     pub config: Option<PathBuf>,
@@ -147,6 +156,8 @@ fn isolated_answer(
         GitWork::WorktreePrune { .. } => bound(root, asker.cwd.as_deref(), &ask.workspace),
         // The project root: only for the chat whose place it is.
         GitWork::RootUpdate {} => at_the_root(root, asker.cwd.as_deref()),
+        // The project itself: any chat that stands in it.
+        GitWork::RootSave { .. } => saved_from(root, asker.cwd.as_deref()),
         // A clone's own checkout: the chat stands in it, or above it in its workspace.
         GitWork::CloneUpdate { repo, .. } => bound(root, asker.cwd.as_deref(), &ask.workspace)
             .and_then(|()| at_or_above_clone(root, asker.cwd.as_deref(), &ask.workspace, repo)),
@@ -154,6 +165,16 @@ fn isolated_answer(
     };
     if let Err(why) = placed {
         return no(why);
+    }
+    if matches!(ask.work, GitWork::RootSave { .. } | GitWork::RootUpdate {}) {
+        // The app writes the project's git for a chat only where the chat cannot: elsewhere
+        // the chat's own git does, as it does outside a chat.
+        if !asker.roots_git_held || !crate::worktree::is_own_git_dir(&root.join(".git")) {
+            return no(crate::hookwire::LEFT_TO_THE_CHAT.to_owned());
+        }
+        if let Err(why) = crate::worktree::git_files_refused(&root.join(".git")) {
+            return no(why);
+        }
     }
     let hosts = match hosts(root, asker) {
         Ok(hosts) => hosts,
@@ -201,6 +222,7 @@ fn isolated_answer(
             let reach = crate::pieceupdate::Reach {
                 hosts: hosts.as_deref(),
                 sandboxed_at: asker.cwd.as_deref().filter(|_| sandboxed),
+                for_a_chat: true,
             };
             let at = crate::pieceupdate::Piece {
                 root,
@@ -366,6 +388,41 @@ fn isolated_answer(
                 0
             }
         }
+        GitWork::RootSave {
+            message,
+            sign,
+            no_push,
+            pull,
+        } => {
+            // A save for a chat brings nothing of the remote's in: the chat's update does, as
+            // judged for that chat. So `--pull` is refused before anything is staged.
+            if *pull {
+                say(Say::Fail(SAVE_PULL_FOR_A_CHAT.into()));
+                1
+            } else {
+                // The chat's own trailers, from the app's record of the chat that asked.
+                let provenance = crate::provenance::Provenance::of_the_chat_the_app_commits_for(
+                    root, asker.chat,
+                );
+                // The trailers are the app's to write: lines of the chat's message spelled as
+                // one are left out.
+                let message = message.as_deref().map(without_trailers);
+                crate::planegit::save_keeping_out(
+                    &crate::planegit::Request {
+                        root,
+                        message: message.as_deref(),
+                        // Never signed for a chat ([`crate::planegit::SIGN_LEFT_FOR_A_CHAT`]).
+                        sign: *sign,
+                        no_push: *no_push,
+                        cwd: asker.cwd.as_deref().unwrap_or(root),
+                        provenance: provenance.as_ref(),
+                        for_a_chat: true,
+                    },
+                    &unread_below(root, &asker.unreadable),
+                    &mut say,
+                )
+            }
+        }
         GitWork::CloneUpdate { repo, step } => {
             let sandboxed = match commit::sandboxed(root, asker) {
                 Ok(sandboxed) => sandboxed,
@@ -374,6 +431,7 @@ fn isolated_answer(
             let reach = crate::pieceupdate::Reach {
                 hosts: hosts.as_deref(),
                 sandboxed_at: asker.cwd.as_deref().filter(|_| sandboxed),
+                for_a_chat: true,
             };
             let at = crate::pieceupdate::CloneAt {
                 root,
@@ -643,6 +701,88 @@ pub fn at_the_root(root: &Path, cwd: Option<&Path>) -> Result<(), String> {
     }
 }
 
+/// Whether a chat standing at `cwd` may have the app save the project at `root` for it: it
+/// stands at the root or anywhere below it.
+pub fn saved_from(root: &Path, cwd: Option<&Path>) -> Result<(), String> {
+    let Some(cwd) = cwd else {
+        return Err(
+            "the app has no record of where this chat stands, so it will not save the project \
+             for it"
+                .to_owned(),
+        );
+    };
+    let real = |path: &Path| std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    if real(cwd).starts_with(real(root)) {
+        Ok(())
+    } else {
+        Err(
+            "this chat stands outside the project, so the app will not save it for it: run \
+             `purlis save` from a chat in the project"
+                .to_owned(),
+        )
+    }
+}
+
+/// The trailers the app writes on a commit it makes for a chat ([`crate::provenance`]), and the
+/// one a harness adds: a line of a chat's message that starts with one of them, in any case, is
+/// not the chat's to write.
+const TRAILERS_THE_APP_WRITES: [&str; 5] = [
+    "purlis-chat",
+    "purlis-persona",
+    "purlis-change",
+    "co-authored-by",
+    "assisted-by",
+];
+
+/// `message` without its lines spelled as a trailer the app writes ([`TRAILERS_THE_APP_WRITES`]):
+/// the token before the first `:`, with any spaces or tabs around it, read the way git reads a
+/// trailer's ([`crate::provenance`]) and in any case.
+pub fn without_trailers(message: &str) -> String {
+    message
+        .lines()
+        .filter(|line| {
+            let Some((token, _)) = line.split_once(':') else {
+                return true;
+            };
+            let token = token.trim();
+            !TRAILERS_THE_APP_WRITES
+                .iter()
+                .any(|trailer| token.eq_ignore_ascii_case(trailer))
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// What a chat's `purlis save --pull` is told: a save for a chat brings nothing in.
+pub const SAVE_PULL_FOR_A_CHAT: &str = "Not saved: a save the app makes for a chat brings \
+     nothing of the remote's in. Run `purlis worktree update` first, then `purlis save` without \
+     --pull.";
+
+/// The paths below `root` of `unreadable`, relative to it with `/` between their parts: what a
+/// save the app makes for a chat leaves unstaged. Each is held whole, whatever its reach.
+pub fn unread_below(root: &Path, unreadable: &[crate::sandbox::Denial]) -> Vec<(String, bool)> {
+    let real_root = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
+    let mut out: Vec<(String, bool)> = unreadable
+        .iter()
+        .filter(|denial| denial.access == crate::sandbox::Access::ReadWrite)
+        .filter_map(|denial| {
+            let below = denial
+                .path
+                .strip_prefix(root)
+                .or_else(|_| denial.path.strip_prefix(&real_root))
+                .ok()?;
+            let parts: Vec<String> = below
+                .components()
+                .map(|part| part.as_os_str().to_string_lossy().into_owned())
+                .collect();
+            (!parts.is_empty()).then(|| (parts.join("/"), denial.any_case))
+        })
+        .collect();
+    out.sort();
+    out.dedup();
+    out
+}
+
 /// Whether a chat standing at `cwd` stands in clone `repo` of workspace `ws`, or above it: at
 /// the project root or the workspace's own folder (#3831). A chat in a branch folder, or in
 /// another folder of the workspace, is refused: the app updates the clone a chat works in.
@@ -852,9 +992,10 @@ fn touched(root: &Path, ws: &str, work: &GitWork) -> Vec<PathBuf> {
                     .collect()
             })
             .unwrap_or_default(),
+        // The project itself, whose git the app runs for the chat.
+        GitWork::RootUpdate {} | GitWork::RootSave { .. } => vec![root.to_path_buf()],
         // A workspace that is not there yet holds no clone; one that is there is refused.
-        // The root is the window's own Update's to check, as it checks it for the person.
-        GitWork::Create { .. } | GitWork::RootUpdate {} => Vec::new(),
+        GitWork::Create { .. } => Vec::new(),
         // Runs no git.
         GitWork::WorktreeClaim { .. } => Vec::new(),
     }
