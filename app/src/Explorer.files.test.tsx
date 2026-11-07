@@ -630,13 +630,13 @@ describe("a file or folder row's menu (FM-10)", () => {
     expect(folder).toEqual({ ...branch, path: "src", folder: true });
   });
 
-  it("offers a folder a shell tab there, and hands back the row with the branch and path", async () => {
+  it("offers a folder a shell there, and hands back the row with the branch and path", async () => {
     core({ "one:": [entry("src", { kind: "folder" })] });
     const pressed: Offer[] = [];
     draw(vi.fn(), (offer) => pressed.push(offer));
 
-    expect(await menuOf("src")).toContain("Open a shell tab here");
-    await userEvent.click(screen.getByRole("menuitem", { name: "Open a shell tab here" }));
+    expect(await menuOf("src")).toContain("Open a shell here");
+    await userEvent.click(screen.getByRole("menuitem", { name: "Open a shell here" }));
 
     expect(pressed.map((offer) => offer.does)).toEqual([
       {
@@ -661,9 +661,9 @@ describe("a file or folder row's menu (FM-10)", () => {
     expect(rows).toEqual([
       "Copy absolute path",
       expect.stringMatching(/^Reveal in /),
-      "Open a shell tab here",
+      "Open a shell here",
     ]);
-    await userEvent.click(within(menu).getByRole("menuitem", { name: "Open a shell tab here" }));
+    await userEvent.click(within(menu).getByRole("menuitem", { name: "Open a shell here" }));
     expect(pressed.map((offer) => offer.does)).toEqual([
       { verb: "shellInFolder", at: { workspace: "alpha", repo: "svc", piece: null, path: "" } },
     ]);

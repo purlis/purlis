@@ -461,7 +461,7 @@ export function SignInStrip(props: SignInStripProps) {
           <Button
             size="sm"
             variant="link"
-            tooltip="Opens a shell tab on the runner with the harness's own sign-in typed in"
+            tooltip="Opens a shell on the runner with the harness's own sign-in typed in"
             onPress={onTerminal}
           >
             Open in terminal

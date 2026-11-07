@@ -689,7 +689,7 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
     expect(within(opened).getByRole("status")).toHaveTextContent(/device code/);
   });
 
-  it("keeps another harness's sign-in in a shell tab", async () => {
+  it("keeps another harness's sign-in in a shell", async () => {
     const heard: ProfileSignInAsk[] = [];
     const hear = (event: Event) => heard.push((event as CustomEvent<ProfileSignInAsk>).detail);
     window.addEventListener(PROFILE_SIGN_IN, hear);

@@ -547,7 +547,7 @@ describe("a piece row's menu", () => {
       // The branch's own folder (#1143).
       "Copy absolute path",
       expect.stringMatching(/^Reveal in /),
-      "Open a shell tab here",
+      "Open a shell here",
       // The repo it merges into is another thing than the branch, so the row names it.
       "Merge into svc",
       "Remove folder",

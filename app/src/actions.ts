@@ -6327,7 +6327,7 @@ function branchFolderRows(cut: Cut, what: string): Offer[] {
       absolute: true,
     }),
     can(`worktree.reveal:${id}`, `Reveal ${what} in ${FILE_MANAGER}`, { verb: "revealPath", at }),
-    can(`worktree.shell:${id}`, `Open a shell tab in ${what}`, { verb: "shellInFolder", at }),
+    can(`worktree.shell:${id}`, `Open a shell in ${what}`, { verb: "shellInFolder", at }),
   ];
 }
 

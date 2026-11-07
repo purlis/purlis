@@ -24,7 +24,8 @@ empty state and error copy follow it.
 - **No exclamation marks**, and no emoji.
 - **Plain words for the result, not the mechanism.** *Its value is gone from the vault for good.*
   If the reader needs a mechanism to decide, name it in one clause: *It needs sudo, so purlis
-  types it in a shell tab and leaves running it to you.*
+  types it in a shell and leaves running it to you.* A shell is shown in a pane like a chat, so
+  the window says *shell*, never *shell tab* (#5637).
 
 ## Case
 
