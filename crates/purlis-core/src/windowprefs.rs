@@ -560,9 +560,12 @@ pub fn seen_on_this_machine(config_root: &Path, cause: &str) -> bool {
 /// before. A file purlis cannot read or use says no.
 pub fn keeps_project(config_root: &Path, project: &str) -> bool {
     read_layout(config_root).document.is_some_and(|document| {
-        [PROJECTS, DISMISSED]
-            .iter()
-            .any(|field| document.get(field).and_then(|held| held.get(project)).is_some())
+        [PROJECTS, DISMISSED].iter().any(|field| {
+            document
+                .get(field)
+                .and_then(|held| held.get(project))
+                .is_some()
+        })
     })
 }
 

@@ -176,7 +176,13 @@ fn a_project_the_layout_file_keeps_views_for_is_not_baselined() {
     });
     crate::windowprefs::write_layout(&config, &layout.to_string()).expect("a layout");
 
-    assert!(!store.with_layout(&config).first_open(&root, NOW).expect("opened").fresh);
+    assert!(
+        !store
+            .with_layout(&config)
+            .first_open(&root, NOW)
+            .expect("opened")
+            .fresh
+    );
 }
 
 /// Another project's entry in the layout file says nothing of this one: its first open is one.
@@ -188,7 +194,13 @@ fn another_project_s_layout_entry_leaves_a_first_open_fresh() {
     crate::windowprefs::set_dismissed(&config, "/somewhere/else", &["x".to_owned()])
         .expect("another project's dismissal");
 
-    assert!(store.with_layout(&config).first_open(&root, NOW).expect("opened").fresh);
+    assert!(
+        store
+            .with_layout(&config)
+            .first_open(&root, NOW)
+            .expect("opened")
+            .fresh
+    );
 }
 
 /// A chat snoozed in the project is a record this machine kept of it.
@@ -196,10 +208,7 @@ fn another_project_s_layout_entry_leaves_a_first_open_fresh() {
 fn a_project_with_snoozed_chats_is_not_baselined() {
     let (_dir, root, store) = project("");
     store
-        .snooze(
-            &root,
-            [(3, vec!["ask-1".to_owned()])].into_iter().collect(),
-        )
+        .snooze(&root, [(3, vec!["ask-1".to_owned()])].into_iter().collect())
         .expect("snoozed");
 
     assert!(!store.first_open(&root, NOW).expect("opened").fresh);
