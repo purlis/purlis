@@ -256,7 +256,11 @@ export function SecretAskNotice({
 
   const hears = (() => {
     const whom = `${chat} hears`;
-    if (secret && start) return `${chat} starts with the value in ${start.variable}.`;
+    // A start's chat is handed the value; any running chat that joined the ask hears as ever.
+    if (secret && start)
+      return secret.waiting > 1
+        ? `${chat} starts with the value in ${start.variable}. Each other chat waiting on it hears filled or declined and the key's name, never the value.`
+        : `${chat} starts with the value in ${start.variable}.`;
     if (secret) {
       return `${whom} filled or declined${secret.no_allow != null ? ", why no Allow is offered," : ""} and the key's name. Never the value.`;
     }

@@ -4644,11 +4644,12 @@ impl Chats {
         // (#2036). Set on the harness's program as it starts; the commands, hooks and tools it
         // starts inherit them.
         // One its vault holds none of is a Secret ask (#5074, ADR 0109), raised and waited on
-        // by nothing: the start is refused, saying so, and the ask stays in the Inbox, where the
-        // person fills it and starts the chat again, which reads the value filled. No start
-        // waits, as none waits on a sign-in (ADR 0095 §3): the Start dialog is modal, so the
-        // person could not reach the ask while it waited, and any other start (a relaunch, a
-        // dispatch's) may run under a lock the window's commands wait on.
+        // by nothing: the start is refused, saying so, and names the ask beside its refusal
+        // (`profilesignin::attempt`). The Start dialog draws that ask, and once it is filled
+        // there it starts again, which reads the value filled (#5137). Any other start is
+        // pointed to the ask in the Inbox. No start waits, as none waits on a sign-in (ADR 0095
+        // §3): a relaunch or a dispatch's start may run under a lock the window's commands
+        // wait on.
         let secret_asks = lock(&self.secret_asks).clone();
         let moved = || self.asks_may_have_moved();
         let missing = secret_asks

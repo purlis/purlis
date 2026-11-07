@@ -636,6 +636,7 @@ import { panelRoot } from "./ui/panel/Panel";
 import { oneChatMidTurn, type Ending } from "./QuitWarning";
 import { answerTaken, asksMoved, secretAskEntries } from "./asks";
 import type { SecretAskGiven } from "./SecretAskNotice";
+import type { SecretAskEnded } from "./StartChat";
 import { useTextSizes } from "./textSize";
 import { focusStands } from "./Cockpit";
 import {
@@ -727,18 +728,6 @@ const OPENING_KEYS = ["shell.new", "tab.new", "chat.new"] as const;
  *  split of the pane in front. `prefer` is the harness (a profile's `kind`) the picker starts
  *  on, where something already knows which one is wanted: a harness started by hand in a shell
  *  tab, opened as a chat instead (ADR 0062). */
-/** A picker's start, as `startPicked` takes it: what a start goes on with once its Secret ask
- *  is filled (#5137). */
-type StartArgs = [
-  profile: string,
-  persona: string | null,
-  showFooter: boolean,
-  label: string | null,
-  newBranch: boolean,
-  withoutSandbox: WithoutSandbox | null,
-  runsOn: RunsOnPick | null,
-];
-
 type Where =
   | {
       tab: true;
@@ -1196,12 +1185,11 @@ export const PlaneView = memo(function PlaneView({
    *  signed in here (#2035), with that refusal: the picker offers Sign in beside it, and beside
    *  no other. */
   const [pickerSignIn, setPickerSignIn] = useState<{ profile: string; refused: string }>();
-  /** **The Secret ask a start was refused on** (#5137), with that refusal and the start it
-   *  goes on with once filled: the picker draws the ask beside it, and beside no other. */
+  /** **The Secret ask a start was refused on** (#5137), with that refusal: the picker draws the
+   *  ask beside it, and beside no other. */
   const [pickerSecret, setPickerSecret] = useState<{
     asked: StartSecretAskNamed;
     refused: string;
-    again: StartArgs;
   }>();
   /** Whether the picker's Secret ask is being answered, and what its last press was told. */
   const [pickerSecretBusy, setPickerSecretBusy] = useState(false);
@@ -4483,15 +4471,7 @@ export const PlaneView = memo(function PlaneView({
         // the refusal's words: the picker fills it, and this start goes on.
         const asked = started.secret_ask ?? undefined;
         setPickerSecretSaid(undefined);
-        setPickerSecret(
-          asked === undefined
-            ? undefined
-            : {
-                asked,
-                refused,
-                again: [profile, persona, showFooter, label, newBranch, withoutSandbox, runsOn],
-              },
-        );
+        setPickerSecret(asked === undefined ? undefined : { asked, refused });
         // A pool that is gone, stopped or not reached, as the core found it (#4536).
         const gone = started.pool_unavailable ?? undefined;
         setPickerPoolGone(gone === undefined ? undefined : { pool: gone, refused });
@@ -4565,47 +4545,48 @@ export const PlaneView = memo(function PlaneView({
         )
       : undefined;
   /** **Answers the picker's Secret ask** (#5137): through the one ask for that vault and key, as
-   *  the Inbox answers it, so it closes there too. Filled, the start goes on with no second
-   *  press; Not now cancels it in the core's words for a declined start. */
+   *  the Inbox answers it, so it closes there too, and every list of this project's asks is read
+   *  again. Answers how it ended: the picker starts again with what it shows now, never what it
+   *  showed at the refusal, and only while it is open. Not now says the core's words for a start
+   *  whose credential was declined. */
   const answerPickerAsk = useCallback(
-    (option: Offered, given: () => SecretAskGiven) => {
-      if (pickerAsk === undefined || pickerSecret === undefined || pickerSecretBusy) return;
-      const { asked, again } = pickerSecret;
+    async (option: Offered, given: () => SecretAskGiven): Promise<SecretAskEnded> => {
+      if (pickerAsk === undefined || pickerSecret === undefined || pickerSecretBusy)
+        return "refused";
+      const { asked } = pickerSecret;
       setPickerSecretBusy(true);
       setPickerSecretSaid(undefined);
       // The value is read from its box only now, and the box emptied.
       const got = given();
-      void answerTaken(
-        plane,
-        pickerAsk,
-        option.id,
-        undefined,
-        got.typed,
-        got.picked,
-        got.remember,
-        undefined,
-        got.named,
-      )
-        .then(async ({ refused }) => {
-          if (refused !== undefined) {
-            setPickerSecretSaid(refused);
-            return;
-          }
-          setPickerSecret(undefined);
-          if (option.id === "keep") {
-            setPickerTrouble(asked.declined);
-            return;
-          }
-          setPickerTrouble(undefined);
-          await startPicked(...again);
-        })
-        .finally(() => {
-          setPickerSecretBusy(false);
-          // Whatever it answered, every list of this project's asks is read again.
-          asksMoved(plane);
-        });
+      try {
+        const { refused } = await answerTaken(
+          plane,
+          pickerAsk,
+          option.id,
+          undefined,
+          got.typed,
+          got.picked,
+          got.remember,
+          undefined,
+          got.named,
+        );
+        if (refused !== undefined) {
+          setPickerSecretSaid(refused);
+          return "refused";
+        }
+        setPickerSecret(undefined);
+        if (option.id === "keep") {
+          setPickerTrouble(asked.declined);
+          return "declined";
+        }
+        setPickerTrouble(undefined);
+        return "filled";
+      } finally {
+        setPickerSecretBusy(false);
+        asksMoved(plane);
+      }
     },
-    [pickerAsk, pickerSecret, pickerSecretBusy, plane, startPicked],
+    [pickerAsk, pickerSecret, pickerSecretBusy, plane],
   );
 
   const split = useCallback((direction: Direction) => void ask({ split: direction }), [ask]);

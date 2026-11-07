@@ -46,6 +46,9 @@ import type { Offered, Shown } from "./bindings";
 import { SecretAskNotice, type SecretAskGiven } from "./SecretAskNotice";
 import type { VaultEntries } from "./VaultEntryPicker";
 
+/** How the picker's Secret ask's answer ended (#5137). */
+export type SecretAskEnded = "filled" | "declined" | "refused";
+
 /**
  * **The Secret ask a start was refused on, as the Start dialog fills it** (#5137): the open ask
  * for the profile's credential, its answer, and what is said beside it.
@@ -59,7 +62,8 @@ export type StartSecretAsk = {
   busy: boolean;
   /** Why the last press sent nothing, or how its answer was refused. */
   said?: string;
-  onAnswer: (option: Offered, given: () => SecretAskGiven) => void;
+  /** Answers it: filled, the dialog starts again with what it shows now. */
+  onAnswer: (option: Offered, given: () => SecretAskGiven) => Promise<SecretAskEnded>;
   onSaid: (said: string) => void;
 };
 
@@ -519,6 +523,35 @@ export function StartChat({
   // approval or a start without the sandbox (ADR 0097 §6), and nothing while one is running.
   const [savingLimit, setSavingLimit] = useState(false);
   const byKey = !approves && withoutSandbox === null && !unavailable && !starting && !savingLimit;
+  // **A filled Secret ask goes on where ⏎ would** (#5137): with what the dialog shows when the
+  // answer comes back, read then, and never an approval or a start without the sandbox, which
+  // stay a press of their own (ADR 0097 §6).
+  // The key the last answer filled, and which fill it was: the render it lands in decides,
+  // so it reads what the dialog shows then, never what it showed at the press.
+  const [filled, setFilled] = useState<{ key: string; fill: number }>();
+  const wentOn = useRef(0);
+  const answerAsk = (option: Offered, given: () => SecretAskGiven) => {
+    if (secretAsk === undefined) return;
+    const key = secretAsk.ask.secret?.key ?? "";
+    setFilled(undefined);
+    void secretAsk.onAnswer(option, given).then((ended) => {
+      if (ended === "filled" && open.current) setFilled({ key, fill: wentOn.current + 1 });
+    });
+  };
+  useEffect(() => {
+    if (filled === undefined || wentOn.current >= filled.fill) return;
+    wentOn.current = filled.fill;
+    if (byKey) plainStart(runsOnPick);
+  });
+  const filledSaid =
+    filled === undefined
+      ? undefined
+      : approves || withoutSandbox !== null
+        ? `Filled ${filled.key}. ${approves ? "Approving this profile" : "Starting without the sandbox"} takes a press of its own.`
+        : `Filled ${filled.key}.`;
+  // What the one alert says: a refusal, or, where the start's Secret ask is drawn below, only what
+  // its last press was told, since the refusal's own words point to the Inbox and the ask is here.
+  const refusalSaid = secretAsk !== undefined ? secretAsk.said : (trouble ?? filledSaid);
   // Once the details are in, a Start pressed early goes, where it is a plain start; an approval
   // or a start without the sandbox is shown instead, and is a press of its own (ADR 0097 §6).
   const wentEarly = useRef(false);
@@ -754,7 +787,8 @@ export function StartChat({
       main={startAnswer({
         approves,
         withoutSandbox: withoutSandbox !== null,
-        starting: starting || savingLimit || (pending && pressedEarly),
+        // An answer to the start's Secret ask holds Start too (#5137): the fill goes on with it.
+        starting: starting || savingLimit || (pending && pressedEarly) || secretAsk?.busy === true,
         unavailable: unavailable || holding,
         reach,
         onPress: () => start(),
@@ -848,11 +882,9 @@ export function StartChat({
             refusal, its way to the Inbox, the command to approve and what the harness lacks the
             first time. Below them the pane would scroll them out of sight. */}
           <div ref={told} className="start-chat-told">
-            {/* The refusal, or, where it is the start's Secret ask drawn below (#5137), only what
-              its last press was told: its own words point to the Inbox, and the ask is here. */}
-            {(secretAsk === undefined ? trouble : secretAsk.said) && (
+            {refusalSaid && (
               <p className="honest mid-turn" role="alert">
-                {secretAsk === undefined ? trouble : secretAsk.said}
+                {refusalSaid}
               </p>
             )}
             {/* The start's missing credential (#5137): the Secret ask's own body, whose Fill
@@ -863,7 +895,7 @@ export function StartChat({
                 chat="The chat"
                 entries={secretAsk.entries}
                 busy={secretAsk.busy || starting}
-                onAnswer={secretAsk.onAnswer}
+                onAnswer={answerAsk}
                 onSaid={secretAsk.onSaid}
                 start={{ variable: secretAsk.variable }}
               />

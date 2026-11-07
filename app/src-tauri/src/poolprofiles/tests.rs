@@ -1252,12 +1252,12 @@ fn a_start_refused_on_its_secret_ask_names_it_beside_its_own_refusal_alone() {
     .unwrap_err();
     assert_eq!(
         refused.secret_ask,
-        Some(StartSecretAsk {
+        Some(Box::new(StartSecretAsk {
             variable: "ANTHROPIC_API_KEY".to_owned(),
             vault: "providers".to_owned(),
             key: "anthropic".to_owned(),
             declined: "declined providers/anthropic, so nothing was started".to_owned(),
-        })
+        }))
     );
 
     let got_past = offering_limits(|| -> Result<(), String> {

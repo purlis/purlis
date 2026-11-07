@@ -331,7 +331,8 @@ mod at_start {
         assert_eq!(
             asked.declined,
             "this chat's profile names ANTHROPIC_API_KEY as 'elsewhere' in vault 'providers', \
-             and it could not be read (declined providers/elsewhere), so nothing was started"
+             and it could not be read (declined providers/elsewhere), so nothing was started; start the chat again to \
+             be asked for it again"
         );
     }
 

@@ -111,3 +111,24 @@ describe("a secret's one notice", () => {
     expect(quote).toHaveTextContent("⟦U+0041⟧ and ⟦U+FFFFFF⟧");
   });
 });
+
+describe("a start's ask, in the Start dialog (#5137)", () => {
+  it("says what the start does with the value, and what each other chat waiting on it hears", () => {
+    render(
+      <SecretAskNotice
+        {...props}
+        chat="The chat"
+        ask={secretAsk({ waiting: 2 })}
+        start={{ variable: "STRIPE_API_KEY" }}
+      />,
+    );
+    const body = screen.getByTestId("secret-ask");
+    expect(body).toHaveTextContent("The chat starts with the value in STRIPE_API_KEY.");
+    expect(body).toHaveTextContent(
+      "Each other chat waiting on it hears filled or declined and the key's name, never the value.",
+    );
+    expect(
+      within(body).queryByRole("button", { name: "Change where STRIPE_API_KEY is stored" }),
+    ).toBeNull();
+  });
+});

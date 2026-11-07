@@ -299,10 +299,13 @@ pub fn read(
                                 vault: reference.vault.clone(),
                                 key: reference.key.clone(),
                                 said: said.clone(),
-                                declined: refused(&crate::secrets::ask::declined_said(
-                                    &reference.vault,
-                                    &reference.key,
-                                )),
+                                declined: format!(
+                                    "{}; start the chat again to be asked for it again",
+                                    refused(&crate::secrets::ask::declined_said(
+                                        &reference.vault,
+                                        &reference.key,
+                                    ))
+                                ),
                             });
                             said
                         }

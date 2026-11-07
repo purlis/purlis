@@ -41,9 +41,18 @@ const OPTIONS = {
       is_default: true,
       approval: null,
     },
+    // A profile approved by no one yet: starting on it is an approval, a press of its own.
+    {
+      name: "codex-new",
+      kind: "codex",
+      shown: "codex",
+      source: "charter.local.toml",
+      is_default: false,
+      approval: "new",
+    },
   ],
   refused: [],
-  personas: ["devops"],
+  personas: ["devops", "steward"],
   persona: "devops",
   persona_profiles: {},
   ignore_fix: null,
@@ -56,7 +65,8 @@ const REFUSED =
   "started; fill it from the Secret ask in the Inbox, then start the chat again";
 const DECLINED =
   "this chat's profile names ANTHROPIC_API_KEY as 'anthropic' in vault 'providers', and it could " +
-  "not be read (declined providers/anthropic), so nothing was started";
+  "not be read (declined providers/anthropic), so nothing was started; start the chat again " +
+  "to be asked for it again";
 
 /** The start's ask, as the registry lists it: a start has no chat yet (D-5074-1). */
 const ASK = (() => {
@@ -65,16 +75,27 @@ const ASK = (() => {
 })();
 
 /** The window's core: the first start is refused on the ask while it is open; once it is
- *  answered, the ask is gone from the list and a start starts. */
-function core() {
+ *  answered, the ask is gone from the list and a start starts. `hold` keeps the answer, or the
+ *  start after it, waiting until `release` is called; `refuse` refuses the answer in its words. */
+function core(how: { hold?: "answer" | "start"; refuse?: string } = {}) {
   const asked: { cmd: string; args: Record<string, unknown> }[] = [];
   let open = false;
   let opened = 0;
-  mockIPC((cmd, args) => {
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  mockIPC(async (cmd, args) => {
     asked.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
     if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
     if (cmd === "plane_sidebar")
-      return { root: PLANE, workspaces: [], personas: ["devops"], persona: "devops", unfiled: [] };
+      return {
+        root: PLANE,
+        workspaces: [],
+        personas: ["devops", "steward"],
+        persona: "devops",
+        unfiled: [],
+      };
     if (cmd === "running_sessions") return [];
     if (cmd === "opened_chats") return [];
     if (cmd === "chat_states") return [];
@@ -83,11 +104,13 @@ function core() {
     if (cmd === "start_options" || cmd === "start_options_first") return OPTIONS;
     if (cmd === "asks_waiting") return { plane: PLANE, asks: open ? [ASK] : [] };
     if (cmd === "answer_secret_ask") {
+      if (how.hold === "answer") await held;
+      if (how.refuse !== undefined) throw how.refuse;
       open = false;
       return null;
     }
     if (cmd === "start_chat") {
-      if (opened === 0 && !answered()) {
+      if (!answered()) {
         open = true;
         throw {
           words: REFUSED,
@@ -100,13 +123,14 @@ function core() {
           },
         };
       }
+      if (how.hold === "start") await held;
       return { session: ++opened };
     }
     return null;
   });
   const answered = () => asked.some(({ cmd }) => cmd === "answer_secret_ask");
   const of = (cmd: string) => asked.filter((one) => one.cmd === cmd);
-  return { asked, of };
+  return { asked, of, release: () => release() };
 }
 
 async function startRefused() {
@@ -182,5 +206,85 @@ describe("a start missing its profile credential, in the Start dialog (#5137)", 
     expect(of("answer_secret_ask")[0].args).toMatchObject({ id: 4, value: null });
     expect(of("start_chat")).toHaveLength(1);
     expect(within(dialog).queryByTestId("secret-ask")).toBeNull();
+  });
+
+  it("filled, starts with what the dialog shows now, not what it showed at the refusal", async () => {
+    const { of } = core();
+    render(<App />);
+
+    const { user, dialog, body } = await startRefused();
+    await user.click(within(dialog).getByRole("option", { name: "steward" }));
+    await user.type(within(body).getByLabelText("Value of anthropic"), "fr3sh-anthropic");
+    await user.click(within(body).getByRole("button", { name: "Fill" }));
+
+    await waitFor(() => expect(of("start_chat")).toHaveLength(2));
+    expect(of("start_chat")[1].args).toMatchObject({ persona: "steward" });
+  });
+
+  it("filled, never approves a profile picked since: that stays a press of its own", async () => {
+    const { of } = core();
+    render(<App />);
+
+    const { user, dialog, body } = await startRefused();
+    await user.click(within(dialog).getByRole("radio", { name: /codex/ }));
+    await user.type(within(body).getByLabelText("Value of anthropic"), "fr3sh-anthropic");
+    await user.click(within(body).getByRole("button", { name: "Fill" }));
+
+    expect(
+      await within(dialog).findByText(
+        "Filled anthropic. Approving this profile takes a press of its own.",
+      ),
+    ).toHaveAttribute("role", "alert");
+    expect(of("approve_profile")).toEqual([]);
+    expect(of("start_chat")).toHaveLength(1);
+  });
+
+  it("cancelled while its answer is sent, starts nothing", async () => {
+    const { of, release } = core({ hold: "answer" });
+    render(<App />);
+
+    const { user, dialog, body } = await startRefused();
+    await user.type(within(body).getByLabelText("Value of anthropic"), "fr3sh-anthropic");
+    await user.click(within(body).getByRole("button", { name: "Fill" }));
+    await waitFor(() => expect(of("answer_secret_ask")).toHaveLength(1));
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Start a chat" })).toBeNull());
+    release();
+
+    await new Promise((settle) => setTimeout(settle, 100));
+    expect(of("start_chat")).toHaveLength(1);
+    expect(screen.queryByTestId("pane")).toBeNull();
+  });
+
+  it("an answer the core refuses says why, keeps the ask, and starts nothing", async () => {
+    const { of } = core({ refuse: "the vault providers is locked: unlock it, then fill again" });
+    render(<App />);
+
+    const { user, dialog, body } = await startRefused();
+    await user.type(within(body).getByLabelText("Value of anthropic"), "fr3sh-anthropic");
+    await user.click(within(body).getByRole("button", { name: "Fill" }));
+
+    await waitFor(() =>
+      expect(within(dialog).getByRole("alert")).toHaveTextContent(
+        "the vault providers is locked: unlock it, then fill again",
+      ),
+    );
+    expect(within(dialog).getByTestId("secret-ask")).toBeTruthy();
+    expect(of("start_chat")).toHaveLength(1);
+  });
+
+  it("answered, every list of the project's asks is read again before the start comes back", async () => {
+    const { asked } = core({ hold: "start" });
+    render(<App />);
+
+    const { user, body } = await startRefused();
+    await user.type(within(body).getByLabelText("Value of anthropic"), "fr3sh-anthropic");
+    await user.click(within(body).getByRole("button", { name: "Fill" }));
+
+    await waitFor(() => {
+      const at = asked.findIndex(({ cmd }) => cmd === "answer_secret_ask");
+      expect(at).toBeGreaterThan(-1);
+      expect(asked.slice(at).some(({ cmd }) => cmd === "asks_waiting")).toBe(true);
+    });
   });
 });

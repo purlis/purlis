@@ -916,7 +916,7 @@ pub struct LimitRefused {
     /// credential, which the Start dialog fills so the start goes on. Only where the core named
     /// it beside this refusal ([`purlis_core::profilesignin::attempt`]), never read from words.
     #[specta(optional)]
-    pub secret_ask: Option<StartSecretAsk>,
+    pub secret_ask: Option<Box<StartSecretAsk>>,
 }
 
 /// **A start's Secret ask, as the Start dialog finds it** (#5137): the ask it draws is the one
@@ -1002,11 +1002,13 @@ pub(crate) fn offering_limits<T>(
             .map(|(pool, _)| pool);
         let secret_ask = asked
             .filter(|asked| words.contains(asked.said.as_str()))
-            .map(|asked| StartSecretAsk {
-                variable: asked.variable,
-                vault: asked.vault,
-                key: asked.key,
-                declined: asked.declined,
+            .map(|asked| {
+                Box::new(StartSecretAsk {
+                    variable: asked.variable,
+                    vault: asked.vault,
+                    key: asked.key,
+                    declined: asked.declined,
+                })
             });
         LimitRefused {
             words,

@@ -104,7 +104,8 @@ const MISSING_REFUSED =
   "started; fill it from the Secret ask in the Inbox, then start the chat again";
 const MISSING_DECLINED =
   "this chat's profile names ANTHROPIC_API_KEY as 'anthropic' in vault 'providers', and it could " +
-  "not be read (declined providers/anthropic), so nothing was started";
+  "not be read (declined providers/anthropic), so nothing was started; start the chat again " +
+  "to be asked for it again";
 /** Its ask, as the registry lists it: a start has no chat and no purpose of its own. */
 const MISSING_ASK = secretAsk({
   persona: "steward",
@@ -156,15 +157,16 @@ function Window({
         busy: false,
         said: askSaid,
         onSaid: setAskSaid,
+        // As the window answers it: Not now says the core's words; filled, the dialog starts.
         onAnswer: (option, given) => {
           given();
           setAsking(false);
           if (option.id === "keep") {
             setRefused(MISSING_DECLINED);
-            return;
+            return Promise.resolve("declined" as const);
           }
-          setSaid("Filled anthropic, and started steward as steward on claude");
-          setOpen(false);
+          setRefused(undefined);
+          return Promise.resolve("filled" as const);
         },
       }
     : undefined;
@@ -665,7 +667,7 @@ export const MissingCredential: Story = {
     await userEvent.keyboard("{Enter}");
     await waitFor(() =>
       expect(page.getByRole("status", { hidden: true })).toHaveTextContent(
-        "Filled anthropic, and started steward as steward on claude",
+        "Started steward as steward on claude",
       ),
     );
   },
