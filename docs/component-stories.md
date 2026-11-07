@@ -17,6 +17,7 @@ Its siblings: [`ui-primitives.md`](ui-primitives.md) says what the window is bui
 | **Keyboard** | Its `play` function fails: a key that does not move the focus or the value it should, Esc that does not dismiss, a focus that ends up out of sight. | the story's `play` |
 | **Accessibility** | Any axe violation of a rule tagged `wcag2a`, `wcag2aa`, `wcag21a`, `wcag21aa` or `wcag22aa`, with `target-size` (WCAG 2.5.8) switched on, which axe leaves off by default. | `app/.storybook/preview.tsx` |
 | **Faded words** | In Chromium, a word that an `opacity` or `filter: opacity()`, on its own box or any box above it, takes under 4.5:1 (3:1 for large text) on its ground, measured as drawn. Disabled controls, words hidden from assistive technology and moving opacities are not measured (#3790). | `app/.storybook/faded.setup.ts`, `app/src/theme/fadedWords.ts` |
+| **Frame on its line** | Its frame, `[data-story-frame]`, does not stand at the top of the line it is drawn on, on a whole pixel, in either browser: a frame a fraction of a pixel low comes out a row taller in its picture (#5463). | `app/.storybook/frame-on-its-line.setup.ts`, `app/src/stories.testkit.ts` |
 | **Screenshot** | Its picture is not its baseline, or it has no baseline. | `app/.storybook/screenshots.setup.ts` |
 
 Both browsers run every story: WebKit is the engine purlis ships in on macOS and Linux
