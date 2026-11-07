@@ -316,6 +316,47 @@ fn a_string_too_much_to_read_is_said_as_blanked_whole() {
     assert!(scrub.text(&plain) == plain, "a plain long string changed");
 }
 
+/// The same limit, small enough that a string past it is quick to read whole: a string past it
+/// must be said as blanked, whole, and not read.
+#[test]
+fn a_string_past_the_reading_limit_is_said_as_blanked_whole_and_one_within_it_is_read() {
+    use super::{Within, holds_in_a_reading, needle, taken_out};
+    let needles = [needle("abc-value")];
+    let within = Within {
+        read: 64,
+        looked_at: 1_000,
+    };
+    let past = "x".repeat(65);
+    let short = "x".repeat(64);
+
+    assert_eq!(
+        taken_out(past.clone(), &needles, false, within),
+        "(blanked)"
+    );
+    assert!(holds_in_a_reading(&past, &needles, false, within));
+    assert_eq!(taken_out(short.clone(), &needles, false, within), short);
+    assert!(!holds_in_a_reading(&short, &needles, false, within));
+
+    // Read in a layer of its encoding too: `%2541` reads as `%41`, then `A`.
+    let layered = format!("%2541{}", "x".repeat(40));
+    assert_eq!(
+        taken_out(layered.clone(), &needles, false, within),
+        "(blanked)"
+    );
+    assert!(holds_in_a_reading(&layered, &needles, false, within));
+
+    // And past what is looked through, for as many needles as are looked for.
+    let many = [needle("abc-value"), needle("def-value")];
+    let looked = Within {
+        read: 1_000,
+        looked_at: 100,
+    };
+    let half = "x".repeat(51);
+    assert_eq!(taken_out(half.clone(), &needles, false, looked), half);
+    assert_eq!(taken_out(half.clone(), &many, false, looked), "(blanked)");
+    assert!(holds_in_a_reading(&half, &many, false, looked));
+}
+
 #[test]
 fn a_value_kept_in_two_cases_is_found_in_the_hex_and_base64_of_each() {
     let scrub = scrub_of(&["hunter2abc", "Hunter2ABC"]);
