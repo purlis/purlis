@@ -1308,8 +1308,9 @@ pub enum DrainLook {
     /// Its removal began once no chat was left: it goes without being woken.
     NoChat,
     /// **It had stopped before its drain began and starts none since**, so no chat runs on it:
-    /// it goes without being woken, unless its home holds a conversation a stop before ended
-    /// ([`held_for_its_conversations`], #4633).
+    /// it is not woken, and is held where its home holds a conversation a stop before ended
+    /// ([`held_for_its_conversations`], #4633). Otherwise it stays unchecked for work a fetch
+    /// does not bring until it runs again or the person lets it go (ADR 0089, amended 2026-11-07).
     StoppedBefore,
     /// **It stopped during its drain, or it may have**, so it stays with its home until the
     /// person brings its chats' conversations back ([`bring_back`]) or discards them
