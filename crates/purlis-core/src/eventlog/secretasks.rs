@@ -12,6 +12,11 @@
 //! chat's purpose, so neither the audit nor telemetry can hold one: **telemetry is counts
 //! only**. The names of what was asked stay in the chat's own trace (`secret.ask`,
 //! [`crate::secrets::ask::TRACED_AS`]), with the purpose masked.
+//!
+//! **An ask's steps are written in the order of its life** (#5220, #5509): the asks tell each
+//! step under their lock, and the window writes them in that order, never under it, holding any
+//! told before the log opens until it does. A raise that is not written takes its ask's later
+//! steps with it, so no answer is written without its raise.
 
 use std::io;
 use std::path::Path;

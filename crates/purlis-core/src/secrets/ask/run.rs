@@ -735,7 +735,11 @@ impl Asks {
                     && (!ahead || fill_keys(&asked.open.fills) == fill_keys(&fills))
             }) {
                 asked.waiters.push(waiter);
-                asked.open.id
+                let id = asked.open.id;
+                // Traced before the lock goes, as a Secret ask's is (#5220, #5509): an answer is
+                // traced only once the ask is taken, under the lock.
+                self.trace_run_said(&bound, id, "joined");
+                id
             } else {
                 let open_here = inner
                     .runs
@@ -768,6 +772,7 @@ impl Asks {
                     stored: Vec::new(),
                 });
                 self.save(&inner);
+                self.trace_run_said(&bound, id, "raised");
                 id
             };
             (answered, n, id)
@@ -1247,22 +1252,29 @@ impl Asks {
 
     /// Records the answer in the chat's trace: names, never a value.
     fn trace_run(&self, bound: &Bound, id: u32, answer: RunAnswer) {
+        self.trace_run_said(
+            bound,
+            id,
+            match answer {
+                RunAnswer::Once => "allowed once",
+                RunAnswer::ForChat => "allowed for this chat",
+                RunAnswer::Always => "always allowed",
+                RunAnswer::Refuse => "not allowed",
+                RunAnswer::AllowVault => "vault allowed",
+                RunAnswer::Fill => "filled",
+            },
+        );
+    }
+
+    /// Records `what` of Run grant ask `id` in the chat's trace (#5509): raised, joined or its
+    /// answer, by names, never a value.
+    fn trace_run_said(&self, bound: &Bound, id: u32, what: &str) {
         crate::trace::record_values(
             &self.root,
             &bound.chat.to_string(),
             super::TRACED_AS,
             &[
-                (
-                    "what",
-                    Value::from(match answer {
-                        RunAnswer::Once => "allowed once",
-                        RunAnswer::ForChat => "allowed for this chat",
-                        RunAnswer::Always => "always allowed",
-                        RunAnswer::Refuse => "not allowed",
-                        RunAnswer::AllowVault => "vault allowed",
-                        RunAnswer::Fill => "filled",
-                    }),
-                ),
+                ("what", Value::from(what)),
                 ("ask", Value::from(id)),
                 ("vault", Value::from(bound.vault.as_str())),
                 ("program", Value::from(bound.program.display().to_string())),

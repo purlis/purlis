@@ -543,3 +543,68 @@ fn keep_blocked_names_the_open_asks_that_would_open_the_vault_and_ends_with_the_
     );
 }
 
+/// What chat `chat`'s trace says of its Run grant asks, `(what, ask)`, in the order it was written.
+fn runs_traced(root: &std::path::Path, chat: u32) -> Vec<(String, u64)> {
+    let file = crate::trace::file(root, &chat.to_string());
+    std::fs::read_to_string(&file)
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .filter(|line| line["event"] == super::super::TRACED_AS && line["program"].is_string())
+        .map(|line| {
+            (
+                line["what"].as_str().unwrap_or_default().to_owned(),
+                line["ask"].as_u64().unwrap_or_default(),
+            )
+        })
+        .collect()
+}
+
+/// #5509, as #5220 holds for a Secret ask: a Run grant's ask is traced raised, and joined, before
+/// any answer to it, however soon the person answers. One thread raises and another joins while
+/// a third answers the moment the ask is listed, many times over.
+#[test]
+fn a_run_grants_raise_is_traced_before_its_answer_however_soon_it_is_answered() {
+    let tmp = tempfile::tempdir().unwrap();
+    let asks = Asks::new(tmp.path());
+    for round in 0..100 {
+        let args = [format!("round-{round}")];
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        std::thread::scope(|scope| {
+            let runs = [0, 1].map(|_| {
+                let (asks, bound) = (&asks, bound(7, &args));
+                scope.spawn(move || hold(asks, bound, Duration::from_secs(60)))
+            });
+            while !runs.iter().all(std::thread::ScopedJoinHandle::is_finished) {
+                if let Some(open) = asks
+                    .open_runs()
+                    .into_iter()
+                    .find(|open| open.bound.args == args)
+                {
+                    let _ = asks.answer_run(open.id, RunAnswer::Once, window());
+                }
+                std::thread::yield_now();
+            }
+        });
+    }
+    let traced = runs_traced(tmp.path(), 7);
+    let mut answered = std::collections::HashSet::new();
+    let mut raised = std::collections::HashSet::new();
+    for (what, ask) in &traced {
+        match what.as_str() {
+            "raised" => assert!(raised.insert(*ask), "raised twice: {traced:?}"),
+            "joined" => assert!(
+                raised.contains(ask) && !answered.contains(ask),
+                "joined {ask} out of turn: {traced:?}"
+            ),
+            _ => {
+                assert!(
+                    raised.contains(ask),
+                    "{what} for {ask} before its raise: {traced:?}"
+                );
+                answered.insert(*ask);
+            }
+        }
+    }
+    assert!(!answered.is_empty(), "{traced:?}");
+}
