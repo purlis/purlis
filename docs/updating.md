@@ -65,7 +65,7 @@ manifest instead, which is how purlis counts weekly users without an identifier 
 installing restarts purlis and purlis owns every running session.
 
 On macOS and Linux an installed update waits in place, and the title bar says **Restart to
-update**. That writes down every chat and view tab each open project holds, ends the chats, and
+update**. That writes down every chat and tab each open project holds, ends the chats, and
 restarts into the new version, which asks whether to reopen every session or start fresh, says
 that it restarted to install an update, and has **Reopen all** as the answer in front. A chat
 that is mid-turn, or one that reports no state, is named first, and the operator chooses to

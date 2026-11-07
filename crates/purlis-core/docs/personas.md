@@ -142,8 +142,8 @@ every pointer. Selecting a persona opens no vault.
 
 Inside a chat the app started, `purlis persona use` is refused and writes nothing: a chat's
 persona is fixed for its life (ADR 0090). The refusal names the two ways forward. To use
-another persona's vault in this chat, run the command that needs it and ask the operator to
-allow the vault on the chat's tab. To have another persona do the work, dispatch to it.
+another persona's vault in this chat, run the command that needs it and ask the operator to press
+Allow on the chat's vault notice. To have another persona do the work, dispatch to it.
 `purlis persona create --use` is refused there for the same reason.
 
 ### The front door
@@ -203,7 +203,7 @@ nothing changed, and a chat moving between running and waiting is not a change.
 When a task the chat asked for stops on a prompt only the person answers (a permission its
 harness asks for, or a question), the chat's next turn is told so in one more line, once for
 each prompt: which task, and whether it is a permission. It is told that only the person
-answers it, in the task's own tab, so that it says so where the person is; nothing it does
+answers it, from the Inbox, so that it says so where the person is; nothing it does
 answers the prompt. The window says the same on the session's row in the sidebar: it wears the
 hand from the moment the prompt is held, and its pane, when it is shown, names the task, with
 **Show the task**, until the task gets past the prompt, its turn ends or it ends. While purlis
@@ -353,8 +353,8 @@ sandboxed, the harness's values reach the server as before.
 exec` asks the app for the server's run again, after two seconds, when the first run ended
 before the server answered or the chat was not yet open; the second run is handed what Claude
 Code had already sent the first. A refusal that would be the same every time (the vault, the
-command) is not asked again. When the second fails too, the chat's tab shows a Notice naming the
-server, with its own error (its last words, bounded, every vault value masked) and **Retry**,
+command) is not asked again. When the second fails too, the person has a Notice naming the server,
+with its own error (its last words, bounded, every vault value masked) and **Retry**,
 which restarts the chat on its conversation once its turn has ended, since Claude Code takes no
 outside word to reconnect one server. The chat is told at its next turn, in purlis's words,
 that the server could not start and why, so it does not guess. A server that answered is never

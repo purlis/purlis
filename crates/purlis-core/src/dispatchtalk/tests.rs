@@ -931,7 +931,8 @@ fn a_question_is_answered_exactly_once_whoever_asks_again() {
         the_person_answers(&mut talk, "No, the first."),
         Err(
             "You have already answered that question of 'check the queue', and one answer \
-             is final: nothing more was sent. To add to it, pick 'check the queue' and type in its pane."
+             is final: nothing more was sent. To add to it, pick 'check the queue' and type in its \
+             pane."
                 .to_owned()
         )
     );

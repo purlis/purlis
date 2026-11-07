@@ -404,8 +404,8 @@ rule while one who reads a bare refusal files an issue.
   worktree commit`, `update` and `push` are refused in. **A guard with no answer lets the call
   through**: with no app, one that does not answer within the guard's wait, or any answer but
   that another live chat holds the folder, the git runs, since this keeps chats from colliding
-  by accident and is not a wall. Your own terminal, a harness you start yourself, and a shell
-  tab are never held to it. Dry runs and `--abort` run.
+  by accident and is not a wall. Your own terminal, a harness you start yourself, and a purlis shell
+  are never held to it. Dry runs and `--abort` run.
 - **One credential.** SSH to a forge, `GIT_SSH_COMMAND`, `-S`/`--gpg-sign`, and the
   `core.sshCommand` family that reaches the same transport by another road (`-c`,
   `--config-env`, `GIT_CONFIG_KEY_n`, and a `git config` write of it). This one *is*
@@ -945,8 +945,9 @@ because one of them was wrong once. It is an uninstall.
 of a handed-off chat that reopened empty. `UserPromptSubmit` injects the commitment gate
 and nothing else of its own: no persona roster (`routing:` is retired — work for another
 persona goes to a chat of its own, by dispatch), no placement advice, and no "control plane updated" note — a chat
-running on instructions that changed after it started is marked on its tab in the window
-instead. The skill log is kept; nothing writes the dispatch log (a handoff's row is retired, #1457); no
+running on instructions that changed after it started is marked on its sidebar row in the window
+instead. The skill log is kept; nothing writes the dispatch log (a handoff's row is retired, #1457);
+no
 hook logs a sub-agent call, keeps a tally of routing advice, or writes a trace of verdicts.
 
 ## When a hook fails

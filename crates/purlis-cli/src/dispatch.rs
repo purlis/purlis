@@ -561,15 +561,16 @@ fn who_asks(from: Option<&str>) -> String {
 }
 
 /// What a chat is told where its dispatch waits on the person for a dispatch grant: nothing
-/// has started, the person is being asked in the Inbox, and on this chat's pane when it is on screen, and what happens next.
+/// has started, the person is being asked in the Inbox, and on this chat's pane when it is on
+/// screen, and what happens next.
 fn held_for_the_person(from: Option<&str>, to: &str, task: &str) -> String {
     let one = purlis_core::personas::one_line;
     format!(
         "{SAYS} held for the person. {} may not dispatch to '{}' yet, so the person is \
-         being asked in the Inbox, and on this chat's pane when it is on screen, with this brief in front of them. Nothing has started. \
-         If they allow it, '{}' starts then and its report reaches this chat as context on a \
-         later turn; if they keep it blocked, this chat is told on its next turn. Carry on \
-         with other work, and do not dispatch it again.",
+         being asked in the Inbox, and on this chat's pane when it is on screen, with this brief \
+         in front of them. Nothing has started. If they allow it, '{}' starts then and its report \
+         reaches this chat as context on a later turn; if they keep it blocked, this chat is told \
+         on its next turn. Carry on with other work, and do not dispatch it again.",
         who_asks(from),
         one(to),
         one(task)

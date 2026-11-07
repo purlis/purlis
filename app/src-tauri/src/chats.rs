@@ -1256,7 +1256,8 @@ fn nothing_to_resume_on(session: u32) -> String {
 fn no_conversation(session: u32) -> String {
     format!(
         "purlis did not restart chat {session}: it has no conversation to resume. If it has \
-         only just started, send it a message and restart it again. Start fresh on its ⋯ menu starts it again without a conversation."
+         only just started, send it a message and restart it again. Start fresh on its ⋯ menu \
+         starts it again without a conversation."
     )
 }
 

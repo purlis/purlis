@@ -42,7 +42,8 @@
 //! **The app decides it, as it decides any dispatch** (#1444): a handoff is a dispatch in
 //! handoff mode, and its consent is the dispatch grant, never the harness's permission
 //! prompt. To the asking chat's own persona it opens at once. To another, the app holds it
-//! and asks the person for the pair in the Inbox, and on this chat's pane when it is on screen, with the brief in front of them;
+//! and asks the person for the pair in the Inbox, and on this chat's pane when it is on screen,
+//! with the brief in front of them;
 //! this command says so and exits 0, because a held handoff was accepted, not refused
 //! ([`held_for_the_person`]). A second one across a pair the person is already being asked
 //! about is dropped, and that is a refusal ([`not_held`]). Nobody approves the brief.
@@ -445,7 +446,8 @@ fn who_asks(from: Option<&str>) -> String {
 }
 
 /// What a chat is told where its handoff waits on the person for a dispatch grant: nothing
-/// has opened, the person is being asked in the Inbox, and on this chat's pane when it is on screen, and what happens next. A
+/// has opened, the person is being asked in the Inbox, and on this chat's pane when it is on
+/// screen, and what happens next. A
 /// dispatch's own sentence (`crate::dispatch`), in a handoff's words.
 fn held_for_the_person(from: Option<&str>, to: &str, ws: &str, creates: bool) -> String {
     let created = if creates {
@@ -455,10 +457,10 @@ fn held_for_the_person(from: Option<&str>, to: &str, ws: &str, creates: bool) ->
     };
     format!(
         "{HANDOFF_SAYS} held for the person. {} may not dispatch to '{}' yet, so the person \
-         is being asked in the Inbox, and on this chat's pane when it is on screen, with this brief in front of them. Nothing has been \
-         opened. If they allow it, the chat opens in workspace '{ws}' then, started on the \
-         brief;{created} if they keep it blocked, this chat is told on its next turn. Carry on \
-         with other work, and do not hand it off again.",
+         is being asked in the Inbox, and on this chat's pane when it is on screen, with this \
+         brief in front of them. Nothing has been opened. If they allow it, the chat opens in \
+         workspace '{ws}' then, started on the brief;{created} if they keep it blocked, this chat \
+         is told on its next turn. Carry on with other work, and do not hand it off again.",
         who_asks(from),
         purlis_core::personas::one_line(to)
     )

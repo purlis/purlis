@@ -263,8 +263,8 @@ fn refuse_in_chat(name: &str, env: Option<&str>, say: Sink) -> u8 {
     ));
     say(Say::Info(format!(
         "To use a vault of '{name}' here, run the command that needs it and ask the operator to \
-         press Allow on this chat's vault notice. To have '{name}' do the work, dispatch \
-         to it: `purlis dispatch --to {name}`."
+         press Allow on this chat's vault notice. To have '{name}' do the work, dispatch to it: \
+         `purlis dispatch --to {name}`."
     ).into()));
     1
 }
