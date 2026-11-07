@@ -44,19 +44,30 @@ export const SkillRunChip = memo(function SkillRunChip({
           className="skill-run-counts"
           data-testid="pane-skill-run"
           tooltip={`Using the skill ${run.name}: ${sofar} so far. Open its runs.`}
-          aria-label={`Using the skill ${run.name}, ${sofar} so far. Open its runs`}
           onPress={() => session !== undefined && onOpen(run.name, run.id, session, run.level)}
         >
-          <span className="count">
-            <Sparkles aria-hidden="true" />
-            <span className="skill-run-name">{run.name}</span>
-          </span>
-          <span className="count">{run.tool_calls}</span>
-          {tokens !== undefined && (
-            <span className="count skill-run-tokens" data-testid="pane-skill-run-tokens">
-              {tokens}
+          {/* **Named by what it shows** (#5614): the words a sighted person reads stay in its
+              name, which the rest of the sentence, heard and not drawn, completes (WCAG 2.5.3).
+              One run of text laid out as if it were not there, so its spaces are heard between
+              the pills and never drawn. */}
+          <span className="skill-run-said">
+            <span className="count">
+              <Sparkles aria-hidden="true" />
+              <span className="sr-only">Using the skill</span>{" "}
+              <span className="skill-run-name">{run.name}</span>
             </span>
-          )}
+            <span className="sr-only">,</span> <span className="count">{run.tool_calls}</span>{" "}
+            <span className="sr-only">{run.tool_calls === 1 ? "tool call" : "tool calls"}</span>{" "}
+            {tokens !== undefined && (
+              <>
+                <span className="sr-only">and</span>{" "}
+                <span className="count skill-run-tokens" data-testid="pane-skill-run-tokens">
+                  {tokens}
+                </span>{" "}
+              </>
+            )}
+            <span className="sr-only">so far. Open its runs</span>
+          </span>
         </Button>
       </span>
     </span>

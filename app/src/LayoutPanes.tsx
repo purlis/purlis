@@ -399,6 +399,7 @@ export function PaneFrame({
     studio: startedByStudio,
     workItem: Boolean(workItem),
     sandbox: lastHead?.sandbox?.level != null,
+    using: usingOn !== undefined,
     closes,
     alone,
   });
@@ -549,8 +550,8 @@ export function PaneFrame({
                 </span>
               )}
               {/* **What it uses now** (#5524): its skill run and its browsers, which left its
-              tab, beside its state. */}
-              {head && usingOn !== undefined && (
+              tab, beside its state; a narrow pane drops them after the state's word (#5614). */}
+              {head && usingOn !== undefined && line.has("using") && (
                 <span className="pane-using">{usingOn(session)}</span>
               )}
               {/* **harness · workspace on a pane with no foot** (spec #5191): a shell's and a

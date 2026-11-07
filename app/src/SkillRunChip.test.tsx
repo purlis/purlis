@@ -55,9 +55,7 @@ describe("the skill run chip on a chat's pane head", () => {
     );
 
     const chip = await screen.findByTestId("pane-skill-run");
-    expect(chip.getAttribute("aria-label")).toBe(
-      "Using the skill deploy, 3 tool calls so far. Open its runs",
-    );
+    expect(chip).toHaveAccessibleName("Using the skill deploy, 3 tool calls so far. Open its runs");
     expect(screen.getAllByTestId("pane-skill-run")).toHaveLength(1);
     fireEvent.click(chip);
     expect(onOpen).toHaveBeenCalledWith("deploy", RUN, 4, null);
@@ -112,7 +110,7 @@ describe("the skill run chip on a chat's pane head", () => {
     );
 
     const chip = await screen.findByTestId("pane-skill-run");
-    expect(chip.getAttribute("aria-label")).toBe(
+    expect(chip).toHaveAccessibleName(
       "Using the skill deploy, 3 tool calls and 12k tokens so far. Open its runs",
     );
     expect(screen.getByTestId("pane-skill-run-tokens")).toHaveTextContent("12k tokens");
@@ -136,7 +134,7 @@ describe("the skill run chip on a chat's pane head", () => {
       </SkillRunsHere.Provider>,
     );
     const chip = await screen.findByTestId("pane-skill-run");
-    expect(chip.getAttribute("aria-label")).not.toMatch(/token/);
+    expect(chip).not.toHaveAccessibleName(/token/);
     expect(screen.queryByTestId("pane-skill-run-tokens")).toBeNull();
   });
 
