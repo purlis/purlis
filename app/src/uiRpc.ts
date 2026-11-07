@@ -341,6 +341,8 @@ export const commands = {
 	installDeveloperTools: __WINDOW_ONLY_RESULT,
 	onboardingProgress: __WINDOW_ONLY_RESULT,
 	keepOnboardingProgress: __WINDOW_ONLY_RESULT,
+	reportConsent: __WINDOW_ONLY_RESULT,
+	keepReportConsent: __WINDOW_ONLY_RESULT,
 	/**
 	 *  The project's sandbox, for the offer notice and Settings.
 	 * 
@@ -10957,6 +10959,16 @@ export type RepoStates_Serialize = {
 	 *  listing rather than repeated on every row.
 	 */
 	cache_refused: string | null,
+};
+
+/**
+ *  The person's answers: `None` is unanswered, which purlis reads as no. `asked` is whether the
+ *  first-run question was answered, by Save or by Not now.
+ */
+export type ReportConsent = {
+	crash_reports: boolean | null,
+	agent_drafts: boolean | null,
+	asked: boolean,
 };
 
 /**

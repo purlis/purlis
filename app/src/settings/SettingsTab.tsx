@@ -658,7 +658,7 @@ function landsOn(
 
 /**
  * **The groups and settings a filter leaves** (SE-21, V89c): a group whose own label or help
- * holds the words keeps every setting; any other group keeps the settings whose label or help
+ * holds the words, or one of its other words (`also`, #5688), keeps every setting; any other group keeps the settings whose label or help
  * holds them, and is left out when none does. Case is ignored, and so is space around the
  * words; with none, every group is left as it is.
  */
@@ -668,7 +668,7 @@ function narrowed(groups: readonly SettingsGroup[], filter: string): readonly Se
   const holds = (...texts: string[]) =>
     texts.some((text) => text.toLocaleLowerCase().includes(words));
   return groups.flatMap((one) => {
-    if (holds(one.label, one.help)) return [one];
+    if (holds(one.label, one.help, ...(one.also ?? []))) return [one];
     // Where a value is kept is said once in its group's header (DS-8), and still finds it.
     const settings = one.settings.filter((setting) =>
       holds(setting.label, setting.help, (inAFile(setting) && setting.kept) || ""),

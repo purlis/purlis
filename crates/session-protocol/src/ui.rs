@@ -621,6 +621,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     // setting up this machine is the window's, never a link's.
     "onboarding_progress",
     "keep_onboarding_progress",
+    // The person's answers about reports (#5688): whether this machine sends crash reports and
+    // lets agents draft them is the person's to say, never a chat's or a link's.
+    "report_consent",
+    "keep_report_consent",
     // Create a project on GitHub or GitLab (#1819): whom the person's account can make a repo
     // for, the folder a name goes into, and the person's Cancel of the creation (the creation
     // itself takes a channel). It makes a repo on their forge account and a folder on this

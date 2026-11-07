@@ -164,6 +164,7 @@ mod references;
 mod remotequestion;
 mod removalasks;
 mod repolist;
+mod reportconsent;
 mod restored;
 mod restoring;
 #[cfg(unix)]

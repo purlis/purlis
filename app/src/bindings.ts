@@ -476,6 +476,13 @@ export const commands = {
 	/**  Keeps where the person is in the guided steps, for the next launch. The window's alone. */
 	keepOnboardingProgress: (progress: OnboardingProgress) => typedError<null, string>(__TAURI_INVOKE("keep_onboarding_progress", { progress })),
 	/**
+	 *  What this machine keeps of the person's answers about reports: nothing answered and not yet
+	 *  asked on a machine with no config home, or a file purlis cannot read. On a blocking thread.
+	 */
+	reportConsent: () => typedError<ReportConsent, string>(__TAURI_INVOKE("report_consent")),
+	/**  Keeps the person's answers about reports, replacing what was kept. The window's alone. */
+	keepReportConsent: (consent: ReportConsent) => typedError<null, string>(__TAURI_INVOKE("keep_report_consent", { consent })),
+	/**
 	 *  The project's sandbox, for the offer notice and Settings.
 	 * 
 	 *  Off the window's thread (#1949): it reads the project's manifests and the administrator's
@@ -583,10 +590,10 @@ export const commands = {
 	/**
 	 *  Files the Report the window showed (#1338), on the person's press and never otherwise: by the
 	 *  app, as the person, with purlis's own sign-in to GitHub and never `gh` or a token from the
-	 *  environment ([`purlis_core::report::file`], #806), not by anything inside a chat's sandbox.
-	 *  Only the draft whose digest is `digest` is filed; one that changed since it was shown is
-	 *  refused unsent. Answers the new issue's address, or why it was not filed with the link that
-	 *  files it in a browser.
+	 *  environment (the Reports module, [`purlis_core::report::Reports::file`], #806), not by
+	 *  anything inside a chat's sandbox. Only the draft whose digest is `digest` is filed; one that
+	 *  changed since it was shown is refused unsent. Answers the new issue's address, or why it was
+	 *  not filed with the link that files it in a browser.
 	 * 
 	 *  **The window's alone** (`WINDOW_ONLY`): it files as the person, so no link makes it.
 	 */
@@ -13671,6 +13678,16 @@ export type RepoStates_Serialize = {
 	 *  listing rather than repeated on every row.
 	 */
 	cache_refused: string | null,
+};
+
+/**
+ *  The person's answers: `None` is unanswered, which purlis reads as no. `asked` is whether the
+ *  first-run question was answered, by Save or by Not now.
+ */
+export type ReportConsent = {
+	crash_reports: boolean | null,
+	agent_drafts: boolean | null,
+	asked: boolean,
 };
 
 /**
