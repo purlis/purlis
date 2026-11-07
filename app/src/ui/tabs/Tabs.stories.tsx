@@ -575,8 +575,8 @@ export const MarksOnTheTabsLine: Story = {
 
 /**
  * **A split tab's small picture of its layout** (#5342, spec #5339), after its name in place of
- * `+1`: two side by side, three with the right half split again, four in a quad, and past four
- * the quad. Each picture is the tab's own shape, in the quiet tier, and never cut: a name gives way
+ * `+1`: a tile for each pane (#5577), two side by side, three with the right half split again,
+ * four in a quad, and past four a 3 × 3 grid. Each picture is the tab's own shape, in the quiet tier, and never cut: a name gives way
  * first. A screen reader hears how many panes in words.
  */
 export const SplitPictures: Story = {
@@ -604,7 +604,8 @@ export const SplitPictures: Story = {
       ...canvasElement.querySelectorAll<SVGElement>('[data-scope="tabs"][data-part="picture"]'),
     ];
     // One per split tab, none on the tab of one pane, each its own shape.
-    await expect(pictures.map((one) => one.querySelectorAll("line").length)).toEqual([1, 2, 3, 2]);
+    // A tile for each pane (#5577), and past four the 3 × 3 grid, which no quad draws.
+    await expect(pictures.map((one) => one.querySelectorAll("rect").length)).toEqual([2, 3, 4, 9]);
     for (const [name, panes] of [
       ["steward 1", 2],
       ["talk", 3],

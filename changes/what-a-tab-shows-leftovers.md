@@ -18,3 +18,7 @@
   head, and each browser is still a row under its chat (#5524).
 - **A head with no room for its state's word shows its tasks' button as a list,** not a second
   copy of the state's glyph beside the chat's mark (#5524).
+- **A split tab's picture draws a tile for each pane,** so three panes no longer look like four,
+  and past four it is a 3 × 3 grid (#5577).
+- **A view beside a chat is named by its own title,** such as its file's name, in its tab's hover,
+  and the tab takes that title when the view becomes its first pane (#5577).

@@ -9,6 +9,7 @@ import {
   openTab,
   openView,
   openViewBeside,
+  openViewBesidePane,
   pinsOf,
   selectTab,
   setPinned,
@@ -92,6 +93,27 @@ describe("the window's tabs as the core holds them (#4751)", () => {
     expect(layout.kind === "split" && layout.children[1]).toMatchObject({
       kind: "pane",
       content: { kind: "view", view: PERSONA, workspace: "ops", waits: true },
+    });
+  });
+
+  it("a view beside a chat comes back under its own title, not its view's word (#5577)", () => {
+    const file: ViewRef = { from: null, view: "file", key: "/repo/notes.md" };
+    const before = openViewBesidePane(
+      openTab(noTabs(), 3, "3", "steward"),
+      1,
+      file,
+      "notes.md",
+      "ops",
+      "row",
+    );
+
+    const laid = layoutOf(before, onOps);
+    const tree = laid.tabs[0].tree;
+    expect(tree.kind === "split" && tree.b.kind === "view" && tree.b.view.title).toBe("notes.md");
+    const back = tabsOf(laid, noTabs(), allBack);
+    const layout = back.tabs.byId[back.tabs.order[0]].layout;
+    expect(layout.kind === "split" && layout.children[1]).toMatchObject({
+      content: { kind: "view", view: file, title: "notes.md" },
     });
   });
 

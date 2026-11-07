@@ -193,17 +193,18 @@ describe("a split tab's mark (#5342)", () => {
 
 describe("a split tab's picture (#5342)", () => {
   /** The lines the tab's picture draws between its panes, each as `x1 y1 x2 y2`. */
+  /** The tiles the tab's picture draws, one for each pane, each as `x y width height`. */
   const pictureLines = () =>
-    [...theTab().querySelectorAll('[data-scope="tabs"][data-part="picture"] line')].map((line) =>
-      ["x1", "y1", "x2", "y2"].map((at) => line.getAttribute(at)).join(" "),
+    [...theTab().querySelectorAll('[data-scope="tabs"][data-part="picture"] rect')].map((rect) =>
+      ["x", "y", "width", "height"].map((at) => rect.getAttribute(at)).join(" "),
     );
 
-  it("is drawn after the name in place of +1: one line down the middle of two side by side", async () => {
+  it("is drawn after the name in place of +1: two tiles side by side for two side by side", async () => {
     core([chat(1), chat(2)], twoPanes("a"));
     render(<App />);
     await waitFor(() => expect(focusedSession()).toBe("1"));
 
-    expect(pictureLines()).toEqual(["8 2.5 8 13.5"]);
+    expect(pictureLines()).toEqual(["2 2 5.25 12", "8.75 2 5.25 12"]);
     expect(theTab()).not.toHaveTextContent("+1");
     // To a screen reader the picture is words: how many panes the tab holds.
     expect(theTab()).toHaveTextContent("ide.1, split, 2 panes");

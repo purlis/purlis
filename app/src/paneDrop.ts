@@ -256,7 +256,9 @@ export function firstPaneNameOf(content: Content, tabs: Tabs, ctx: DropContext):
       const { name, defaultName } = tabs.byId[at.tab];
       return { name, defaultName };
     }
-    return { name: content.view.view, defaultName: content.view.view };
+    // **Its own title** (#5577), where it was opened with one: never its view's word.
+    const title = content.title ?? content.view.view;
+    return { name: title, defaultName: title };
   }
   const named = ctx.tabName?.(content);
   if (named !== undefined) return named;

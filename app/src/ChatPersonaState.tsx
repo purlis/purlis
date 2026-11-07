@@ -18,7 +18,7 @@ import { shownState, urgentOf, type RowFacts, type Shown } from "./shownState";
 import { useQuestionStanding, useQuestionsHere } from "./QuestionsHere";
 import { NONE_BELOW, tasksAtWorkOf, type TasksBelow } from "./sessionTasks";
 import { standingOf, type QuestionStanding } from "./taskQuestions";
-import { useEveryTasksBelow, useTasksBelow } from "./TasksBelow";
+import { useTasksBelow, useTasksBelowOf } from "./TasksBelow";
 import { ChatMark } from "./ui/chat-mark/ChatMark";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 
@@ -97,7 +97,8 @@ function shownFrom(
  * them has a state. Drawn again only when which chat it is changes.
  */
 export function useUrgentChat(chats: readonly ShownOf[]): number | undefined {
-  const below = useEveryTasksBelow();
+  // Its own chats' tasks only, so a change to another tab's chat never draws it again (#5577).
+  const below = useTasksBelowOf(chats.map((one) => one.session));
   const questions = useQuestionsHere();
   return useChatsSelect(
     useChatsHere(),

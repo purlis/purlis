@@ -649,7 +649,12 @@ describe("a tab that shows a view (ADR 0043, as amended 2026-09-23)", () => {
     expect(chatOf(tabs, id)).toBeUndefined();
     expect(panesOf(tabs, id)).toEqual([]);
     expect(visibleSessions(tabs)).toEqual([]);
-    expect(focusedContent(tabs)).toEqual({ kind: "view", view: STEWARD, workspace: "alpha" });
+    expect(focusedContent(tabs)).toEqual({
+      kind: "view",
+      view: STEWARD,
+      workspace: "alpha",
+      title: "steward",
+    });
   });
 
   it("is brought forward, not opened twice, when the same view is opened again", () => {

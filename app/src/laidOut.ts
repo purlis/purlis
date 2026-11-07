@@ -111,7 +111,8 @@ function nodeOf(tabs: Tabs, tab: Tab, layout: Layout, say: Saying): LaidNode {
       from: content.view.from,
       view: content.view.view,
       key: content.view.key,
-      title: lead ? tab.name : content.view.view,
+      // **A view beside another keeps its own title** (#5577), never its view's word.
+      title: lead ? tab.name : (content.title ?? content.view.view),
       workspace: stripName(content.workspace),
       at: 0,
       active: false,
@@ -226,7 +227,7 @@ export function tabsOf(laid: LaidOut, tabs: Tabs, reopening: Reopening, window =
         content = { kind: "session", session: node.chat, chat: chat.name };
       } else {
         const now = reopening.view(refOf(node.view), node.view.title);
-        content = { kind: "view", view: now.view, workspace, waits: true };
+        content = { kind: "view", view: now.view, workspace, waits: true, title: now.title };
         titles.set(panes + 1, now.title);
         if (node.view.split !== null && node.view.split !== undefined)
           splits.push([now.view, node.view.split]);

@@ -55,7 +55,7 @@ pub(super) const TABS: Family = Family {
             name: "picture",
             since: super::NEXT,
             description: "A split tab's small picture of its layout's shape, after its name: \
-                      its box and the lines between its panes.",
+                      a tile for each pane, and past four a 3 × 3 grid.",
             properties: &[Prop::Text],
         },
         Part {

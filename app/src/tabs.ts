@@ -307,6 +307,13 @@ export type Content =
        */
       waits?: boolean;
       /**
+       * **Its own title** (#5577): what it was opened as, such as a file's name or a settings
+       * page's, which names it in a split, where the tab's name is its first pane's, and names
+       * the tab once it is first. None where it was opened with none, as DevTools beside its
+       * browser, which is then called what its tab is.
+       */
+      title?: string;
+      /**
        * **The strip's preview tab** (SI-9b, ADR 0065 Q1), VS Code's model: what a single click
        * on a memory row shows, replaced in place by the next single click. A double-click or
        * starting an edit keeps it ({@link keepView}), and a kept tab is an ordinary tab. Drawn
@@ -639,7 +646,7 @@ export function openView(tabs: Tabs, view: ViewRef, name: string, workspace: str
       inFront: tab.id,
     };
   }
-  return withTab(tabs, name, { kind: "view", view, workspace }, tabs.order.length);
+  return withTab(tabs, name, { kind: "view", view, workspace, title: name }, tabs.order.length);
 }
 
 /**
@@ -650,7 +657,12 @@ export function openView(tabs: Tabs, view: ViewRef, name: string, workspace: str
  */
 export function offerView(tabs: Tabs, view: ViewRef, name: string, workspace: string): Tabs {
   if (findView(tabs, view)) return tabs;
-  const opened = withTab(tabs, name, { kind: "view", view, workspace }, tabs.order.length);
+  const opened = withTab(
+    tabs,
+    name,
+    { kind: "view", view, workspace, title: name },
+    tabs.order.length,
+  );
   return tabs.inFront === undefined ? opened : { ...opened, inFront: tabs.inFront };
 }
 
@@ -668,12 +680,17 @@ export function openPreview(tabs: Tabs, view: ViewRef, name: string, workspace: 
   if (findView(tabs, view)) return openView(tabs, view, name, workspace);
   const reused = previewOf(tabs, workspace);
   if (reused === undefined) {
-    return withTab(tabs, name, { kind: "view", view, workspace, preview: true }, tabs.order.length);
+    return withTab(
+      tabs,
+      name,
+      { kind: "view", view, workspace, title: name, preview: true },
+      tabs.order.length,
+    );
   }
   const tab = tabs.byId[reused];
   const layout = replace(tab.layout, tab.focused, (found) => ({
     ...found,
-    content: { kind: "view", view, workspace, preview: true },
+    content: { kind: "view", view, workspace, title: name, preview: true },
   }));
   return {
     ...tabs,
@@ -759,7 +776,12 @@ export function putViewBack(
   split?: number,
 ): Tabs {
   if (findView(tabs, view)) return tabs;
-  const opened = withTab(tabs, name, { kind: "view", view, workspace, waits: true }, at);
+  const opened = withTab(
+    tabs,
+    name,
+    { kind: "view", view, workspace, title: name, waits: true },
+    at,
+  );
   const back = { ...opened, inFront: tabs.inFront };
   return split === undefined ? back : setSplit(back, view, split);
 }
@@ -2505,7 +2527,10 @@ export function openViewBesidePane(
   const layout = replace(tab.layout, pane, (found) => ({
     kind: "split",
     direction,
-    children: [found, { kind: "pane", pane: made, content: { kind: "view", view, workspace } }],
+    children: [
+      found,
+      { kind: "pane", pane: made, content: { kind: "view", view, workspace, title: name } },
+    ],
   }));
   return {
     ...tabs,

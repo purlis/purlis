@@ -215,7 +215,7 @@ describe("a split tab in a tab window (#5342)", () => {
       ).toBe("needs"),
     );
     // And its picture of the layout in place of `+1`: two side by side.
-    expect(only.querySelectorAll('[data-scope="tabs"][data-part="picture"] line')).toHaveLength(1);
+    expect(only.querySelectorAll('[data-scope="tabs"][data-part="picture"] rect')).toHaveLength(2);
     expect(only).toHaveTextContent("2, split, 2 panes");
   });
 });
