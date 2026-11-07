@@ -734,15 +734,41 @@ pub fn outcome_piece(root: &Path, cwd: &Path) -> bool {
         })
 }
 
+/// **Whether `cwd` is the piece of an outcome eval's chat that has a shell** (#4476): an
+/// [`outcome_piece`] staged with one. Only this machine's state says so, and no chat writes it.
+pub fn shell_piece(root: &Path, cwd: &Path) -> bool {
+    graded_piece(root, cwd)
+        && try_of(root, cwd).is_some_and(|id| {
+            crate::appstate::dir(root).is_some_and(|state| {
+                read_at(&state, &format!("{TRIES_DIR}/{id}/{OUTCOME}"))
+                    .ok()
+                    .flatten()
+                    .is_some_and(|said| said == SHELL)
+            })
+        })
+}
+
+/// What an outcome eval's piece's mark says where its chat has a shell (#4476).
+const SHELL: &str = "shell";
+
+/// **The folder for temporary files of the outcome eval's chat in `piece`** (#4476): inside its
+/// piece, so its shell writes nowhere else. A dot-name, so what the chat left for its judge never
+/// lists it ([`outcome_of`]).
+pub fn temp_of(piece: &Path) -> PathBuf {
+    piece.join(".tmp")
+}
+
 /// **Stages an outcome eval's input files into the throwaway piece of `laid`** (SK-55, #3235):
 /// each of `files` (paths in the skill's folder, as the eval names them) at the same path in the
 /// piece, from `inputs`, what the grade read of them once. A file it did not read refuses the
-/// chat, as the eval would not be the one the plan showed.
+/// chat, as the eval would not be the one the plan showed. With `shell` (#4476) the piece is
+/// marked as one whose chat has a shell, and its folder for temporary files is made in it.
 pub fn stage(
     root: &Path,
     laid: &Try,
     files: &[String],
     inputs: &BTreeMap<String, Vec<u8>>,
+    shell: bool,
 ) -> Result<(), String> {
     if let Some(path) = files.iter().find(|path| !inputs.contains_key(*path)) {
         return Err(format!(
@@ -754,10 +780,19 @@ pub fn stage(
         &app_state(root)?,
         &format!("{TRIES_DIR}/{}/{OUTCOME}", laid.id),
         None,
-        "",
+        if shell { SHELL } else { "" },
         usize::MAX,
     )
     .map_err(|why| super::not_written("the grade's record of its folder", why))?;
+    if shell {
+        // Made before the chat starts, in the piece purlis made, so nothing stands in its place.
+        let mut made = std::fs::DirBuilder::new();
+        #[cfg(unix)]
+        std::os::unix::fs::DirBuilderExt::mode(&mut made, 0o700);
+        made.create(temp_of(&laid.piece)).map_err(|why| {
+            format!("the chat's folder for temporary files could not be made ({why})")
+        })?;
+    }
     hand_on_what_narrows(root, laid)?;
     for path in files {
         let bytes = inputs.get(path).ok_or_else(|| {

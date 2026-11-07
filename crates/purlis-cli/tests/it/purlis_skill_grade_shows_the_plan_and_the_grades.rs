@@ -310,3 +310,37 @@ fn skill_grade_names_every_eval_file_that_is_not_text() {
         "{text}"
     );
 }
+
+/// #4476: a skill whose `allowed-tools` names Bash has its outcome evals offered with a shell, and
+/// the plan says so, in the Skill studio's words, before any is named.
+#[test]
+fn skill_grade_says_an_outcome_eval_uses_a_shell_where_its_skill_asks_for_one() {
+    let p = Project::new();
+    let root = p.at.join("plane");
+    std::fs::write(
+        root.join("skills/deploy/SKILL.md"),
+        "---\nname: deploy\ndescription: Ships the build to production.\n\
+         allowed-tools: Bash(sh scripts/ship.sh)\n---\n\nRun scripts/ship.sh.\n",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("skills/deploy/evals/evals.json"),
+        r#"{"evals": [{"id": 1, "prompt": "ship v2", "expectations": ["It ships"]}]}"#,
+    )
+    .unwrap();
+    let out = p.run(&["skill", "grade", "deploy"]);
+    let text = String::from_utf8_lossy(&out.stdout).into_owned();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let line = text
+        .lines()
+        .find(|line| line.contains("Outcome eval 1. "))
+        .unwrap_or_else(|| panic!("{text}"));
+    assert!(
+        line.contains(", uses a shell, which writes only in its own folder and reaches no network"),
+        "{line}"
+    );
+}

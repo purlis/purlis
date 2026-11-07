@@ -79,6 +79,7 @@ fn a_sandbox_compiled_for_another_harness_arms_no_claude_code_chat() {
             graded: false,
             judging: false,
             writes_its_piece: false,
+            runs_a_shell: false,
         },
         Some(plane.path()),
         &crate::harness_plugin::Chosen::new(),
@@ -105,6 +106,7 @@ fn the_claude_code_adapter_arms_a_chat_with_the_bundled_plugin_for_that_chat_alo
             graded: false,
             judging: false,
             writes_its_piece: false,
+            runs_a_shell: false,
         },
         Some(empty.path()),
         &crate::harness_plugin::Chosen::new(),
@@ -143,6 +145,7 @@ fn a_grades_chat_loads_purlis_s_server_alone_with_its_read_tools() {
                 graded,
                 judging: false,
                 writes_its_piece: false,
+                runs_a_shell: false,
             },
             Some(empty.path()),
             &crate::harness_plugin::Chosen::new(),
@@ -247,6 +250,7 @@ fn denied_in(cwd: &std::path::Path, graded: bool, judging: bool) -> Vec<serde_js
             graded,
             judging,
             writes_its_piece: false,
+            runs_a_shell: false,
         },
         Some(cwd),
         &crate::harness_plugin::Chosen::new(),
@@ -278,6 +282,7 @@ fn a_claude_code_chat_is_handed_charter_s_mcp_server_for_that_chat_alone() {
             graded: false,
             judging: false,
             writes_its_piece: false,
+            runs_a_shell: false,
         },
         None,
         &crate::harness_plugin::Chosen::new(),
@@ -318,6 +323,7 @@ fn armed_as(
             graded: false,
             judging: false,
             writes_its_piece: false,
+            runs_a_shell: false,
         },
         Some(plane.root()),
         &crate::harness_plugin::Chosen::new(),
@@ -480,6 +486,7 @@ fn a_task_chat_runs_the_read_only_purlis_commands_its_brief_runs_without_asking(
             graded: false,
             judging: false,
             writes_its_piece: false,
+            runs_a_shell: false,
         },
         Some(empty.path()),
         &crate::harness_plugin::Chosen::new(),
@@ -568,6 +575,7 @@ fn allowed_to(graded: bool) -> Vec<serde_json::Value> {
             graded,
             judging: false,
             writes_its_piece: false,
+            runs_a_shell: false,
         },
         Some(empty.path()),
         &crate::harness_plugin::Chosen::new(),
@@ -752,6 +760,7 @@ fn a_persona_chat_in_a_workspace_is_handed_the_rules_that_name_them() {
             graded: false,
             judging: false,
             writes_its_piece: false,
+            runs_a_shell: false,
         },
         Some(&folder),
         &crate::harness_plugin::Chosen::new(),
@@ -854,6 +863,7 @@ fn started_in(manifest: &str, project: Option<&str>) -> (Vec<String>, serde_json
             graded: false,
             judging: false,
             writes_its_piece: false,
+            runs_a_shell: false,
         },
         Some(&root),
         &crate::harness_plugin::Chosen::new(),
@@ -1354,6 +1364,7 @@ fn a_judges_chat_starts_with_the_tools_that_read_and_no_other() {
                 graded: true,
                 judging,
                 writes_its_piece: false,
+                runs_a_shell: false,
             },
             Some(empty.path()),
             &crate::harness_plugin::Chosen::new(),
@@ -1397,6 +1408,7 @@ fn an_outcome_chats_writes_are_allowed_by_its_guard_alone() {
             graded: true,
             judging: false,
             writes_its_piece: true,
+            runs_a_shell: false,
         },
         Some(empty.path()),
         &crate::harness_plugin::Chosen::new(),
@@ -1491,6 +1503,7 @@ fn an_outcome_chat_starts_with_its_own_tools_and_no_settings_file() {
                 graded: true,
                 judging: false,
                 writes_its_piece,
+                runs_a_shell: false,
             },
             Some(empty.path()),
             &crate::harness_plugin::Chosen::new(),
@@ -1562,6 +1575,7 @@ fn an_outcome_chat_holds_no_tool_of_a_server() {
             graded: true,
             judging: false,
             writes_its_piece: true,
+            runs_a_shell: false,
         },
         Some(empty.path()),
         &crate::harness_plugin::Chosen::new(),
@@ -1610,6 +1624,7 @@ fn listing_limit_handed(skills: Option<crate::skills::PlaneSkills<'_>>) -> Strin
             graded: false,
             judging: false,
             writes_its_piece: false,
+            runs_a_shell: false,
         },
         None,
         &crate::harness_plugin::Chosen::new(),
@@ -1728,4 +1743,62 @@ fn a_chat_whose_pins_are_past_its_budget_is_handed_a_limit_that_holds_them() {
     }));
     // 20 descriptions cut at 1,536, each name and line, Claude Code's own 6,848, and a tenth.
     assert_eq!(limit, "41940");
+}
+
+/// #4476: an outcome eval's chat whose skill asked for a shell is not asked about each command,
+/// and keeps its temporary files, and Claude Code's, in its piece; one whose skill did not still
+/// asks at its first command, and has no temp folder named.
+#[test]
+fn an_outcome_chat_with_a_shell_runs_it_and_keeps_its_temp_files_in_its_piece() {
+    let piece = tempfile::tempdir().expect("a directory");
+    let armed = |runs_a_shell: bool| {
+        let StateHooks::ThisSessionOnly { args, env, .. } = adapter().arm(
+            Kit {
+                skills: None,
+                laid_out: None,
+                binary: std::path::Path::new("/bin/charter"),
+                plugin: Some(std::path::Path::new("/app/plugin")),
+                persona: None,
+                graded: true,
+                judging: false,
+                writes_its_piece: true,
+                runs_a_shell,
+            },
+            Some(piece.path()),
+            &crate::harness_plugin::Chosen::new(),
+            None,
+        ) else {
+            panic!("armed per session");
+        };
+        let at = args
+            .iter()
+            .position(|arg| arg == "--settings")
+            .expect("settings");
+        let settings: serde_json::Value = serde_json::from_str(&args[at + 1]).expect("JSON");
+        (settings, env)
+    };
+    let asks_for_bash = |settings: &serde_json::Value| {
+        settings["permissions"]["ask"]
+            .as_array()
+            .is_some_and(|rules| rules.contains(&serde_json::json!("Bash")))
+    };
+    let temp = |env: &[(String, String)], var: &str| {
+        env.iter()
+            .find(|(key, _)| key == var)
+            .map(|(_, value)| value.clone())
+    };
+    let inside = crate::skills::verbs::drafts::temp_of(piece.path())
+        .display()
+        .to_string();
+    let (settings, env) = armed(true);
+    assert!(!asks_for_bash(&settings), "{settings}");
+    assert_eq!(temp(&env, "TMPDIR").as_deref(), Some(inside.as_str()));
+    assert_eq!(
+        temp(&env, "CLAUDE_CODE_TMPDIR").as_deref(),
+        Some(inside.as_str())
+    );
+    let (settings, env) = armed(false);
+    assert!(asks_for_bash(&settings), "{settings}");
+    assert_eq!(temp(&env, "TMPDIR"), None);
+    assert_eq!(temp(&env, "CLAUDE_CODE_TMPDIR"), None);
 }

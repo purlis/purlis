@@ -2304,8 +2304,14 @@ fn grade_plan_said(
                 purlis_core::skills::review::escaped_line(&many.join(", "))
             ),
         };
+        // #4476: its chats' shell, in the words of the Skill studio's plan.
+        let shell = if planned.shell {
+            ", uses a shell, which writes only in its own folder and reaches no network"
+        } else {
+            ""
+        };
         text.push_str(&format!(
-            "  Outcome eval {}. {}  ({state}; {} a judge checks{files}{hides}{not_text})\n",
+            "  Outcome eval {}. {}  ({state}; {} a judge checks{files}{shell}{hides}{not_text})\n",
             eval.id,
             purlis_core::skills::review::escaped_line(&eval.prompt),
             counted(eval.expectations.len(), "expectation", "expectations"),

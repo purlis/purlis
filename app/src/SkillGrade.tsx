@@ -601,6 +601,12 @@ export function GradePlanPage({
                 · {counted(one.chats, "more chat", "more chats")} ·{" "}
                 {counted(one.expectations, "expectation", "expectations")} a judge checks
                 {one.files.length > 0 && ` · with ${one.files.join(", ")}`}
+                {one.shell && (
+                  <span data-testid="skill-grade-eval-shell">
+                    {" "}
+                    · uses a shell, which writes only in its own folder and reaches no network
+                  </span>
+                )}
                 {one.hides && (
                   <span className="honest"> · holds a character no reader would see</span>
                 )}

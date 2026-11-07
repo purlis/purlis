@@ -1060,6 +1060,7 @@ fn grade_of(skill: &str) -> purlis_skills::grade::GradeRequest {
         outcomes: Vec::new(),
         arms: vec![Arm::With, Arm::Without],
         runs: purlis_skills::grade::RUNS,
+        shell: false,
     }
 }
 

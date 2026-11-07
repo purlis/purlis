@@ -1387,6 +1387,9 @@ pub fn armed(arming: &Arming<'_>) -> Result<Armed, String> {
             && cwd.is_some_and(|cwd| crate::skills::verbs::drafts::judge_piece(root, cwd)),
         writes_its_piece: graded
             && cwd.is_some_and(|cwd| crate::skills::verbs::drafts::outcome_piece(root, cwd)),
+        // And of those, one whose skill asked for a shell, held to its piece (#4476).
+        runs_a_shell: graded
+            && cwd.is_some_and(|cwd| crate::skills::verbs::drafts::shell_piece(root, cwd)),
         laid_out: linked.as_deref(),
     };
     // Which folder the chat is handed, for its terminal to note while it runs (SK-24).

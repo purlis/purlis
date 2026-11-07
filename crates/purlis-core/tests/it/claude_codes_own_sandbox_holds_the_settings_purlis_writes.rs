@@ -352,6 +352,32 @@ fn ran(
     what: &str,
     command: String,
 ) -> String {
+    ran_with(
+        program,
+        home,
+        tmp,
+        root,
+        settings,
+        sources,
+        what,
+        command,
+        &[],
+    )
+}
+
+/// [`ran`], with `env` set besides, as a chat's arming sets it.
+#[allow(clippy::too_many_arguments)]
+fn ran_with(
+    program: &Path,
+    home: &Path,
+    tmp: &Path,
+    root: &Path,
+    settings: &Path,
+    sources: &[String],
+    what: &str,
+    command: String,
+    env: &[(&str, &Path)],
+) -> String {
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -376,6 +402,7 @@ fn ran(
     let log = tmp.join("claude.log");
     let out = fs::File::create(&log).expect("a log");
     let mut command = claude(program, home, tmp);
+    command.envs(env.iter().copied());
     command
         .current_dir(root)
         .env("ANTHROPIC_BASE_URL", server.uri())
@@ -607,4 +634,160 @@ fn a_chat_at_the_floor_makes_its_tools_folders_in_a_bare_home() {
             "{gone} stayed once the chat ended"
         );
     }
+}
+
+/// **An outcome eval's shell, run by Claude Code's own sandbox on what purlis compiles for it**
+/// (#4476, the person's ruling of 2026-11-07): a command writes its piece and the temp folder in
+/// it, and is refused a write anywhere else, in the project, the home and the system's temp
+/// folder, and a connection to a host the project lists for its other chats, which purlis's own
+/// proxy refuses. The same project's other grade chats are given that host and its package
+/// caches, so the hold is what takes them away.
+#[test]
+fn an_outcome_evals_shell_writes_only_its_piece_and_reaches_no_host() {
+    use purlis_core::sandbox::egress;
+    use purlis_core::skills::verbs::drafts;
+
+    purlis_core::unsteered!();
+    let program = std::env::var_os("PURLIS_CLAUDE_CODE").map(PathBuf::from);
+    let scratch = tempfile::tempdir().expect("a folder");
+    let at = scratch.path().canonicalize().expect("a real folder");
+    let home = at.join("home");
+    let bin = at.join("bin");
+    let root = at.join("project");
+    for folder in [&home.join(".claude"), &bin, &root] {
+        fs::create_dir_all(folder).expect("a folder");
+    }
+    fs::write(
+        root.join("charter.toml"),
+        "[sandbox]\nmode = \"on\"\negress = [\"model-providers\", \"forge\", \"toolchains\"]\n\
+         hosts = [\"example.com\"]\n",
+    )
+    .expect("the manifest");
+    let machine = Machine {
+        env: purlis_core::secrets::Env::of(&[("PATH", &bin.display().to_string())]),
+        home: Some(home.clone()),
+        os: Os::this(),
+    };
+    let arm = drafts::lay_out_arm(&root, None).expect("an arm's piece");
+    drafts::stage(&root, &arm, &[], &Default::default(), true).expect("staged with a shell");
+    let piece = arm.piece.clone();
+    let temp = drafts::temp_of(&piece);
+    let decide = || {
+        let decided = sandbox::decide(Harness::ClaudeCode, &root, &machine, &|_| true, None, None)
+            .expect("decided")
+            .expect("a sandbox in force");
+        let Decided::Sandboxed(applied) = decided else {
+            panic!("not sandboxed: {decided:?}");
+        };
+        applied
+    };
+    let settings_of = |applied: &sandbox::Applied| {
+        let Form::ClaudeCode(compiled) = applied.form_in(Some(&piece)) else {
+            panic!("not Claude Code's settings");
+        };
+        compiled
+    };
+    // Not vacuous: without the hold, a grade's chat here is given the host and the caches.
+    let other = sandbox::policy::holding_no_kept_grants(decide);
+    assert!(
+        other
+            .confines()
+            .hosts
+            .iter()
+            .any(|host| host == "example.com"),
+        "{:?}",
+        other.confines().hosts
+    );
+    assert!(
+        settings_of(&other).sandbox["filesystem"]
+            .get("allowWrite")
+            .is_some(),
+        "the project's package caches"
+    );
+    let held =
+        sandbox::policy::holding_no_kept_grants(|| sandbox::policy::holding_to_its_folder(decide));
+    assert_eq!(held.level(), Level::Full);
+    assert!(
+        held.confines().hosts.is_empty(),
+        "{:?}",
+        held.confines().hosts
+    );
+    let compiled = settings_of(&held);
+    assert_eq!(compiled.sandbox["network"]["allowedDomains"], json!([]));
+    assert!(
+        compiled.sandbox["filesystem"].get("allowWrite").is_none(),
+        "{}",
+        compiled.sandbox
+    );
+    let Some(program) = program else {
+        return;
+    };
+    // purlis's own proxy, carrying what the chat was compiled with, as a start runs it.
+    let refusals = egress::Refusals::default();
+    let proxy = egress::Proxy::start_keeping(held.confines().hosts.clone(), refusals.clone())
+        .expect("the chat's proxy");
+    compiled.make_empty();
+    let reporting = compiled
+        .reporting_on(None)
+        .through([proxy.port(), proxy.socks_port()]);
+    let file = at.join("claude.json");
+    fs::write(
+        &file,
+        json!({
+            "sandbox": reporting.sandbox,
+            "permissions": { "deny": reporting.deny },
+        })
+        .to_string(),
+    )
+    .expect("the settings");
+    let command = format!(
+        "w() {{ if (mkdir -p \"$(dirname \"$1\")\" && echo x > \"$1\") 2>/dev/null; \
+         then echo \"wrote $2\"; else echo \"refused $2\"; fi; }}; \
+         w '{piece}/made.txt' piece; w \"$TMPDIR/made.txt\" temp; echo \"temp at $TMPDIR\"; \
+         w '{root}/outside.txt' project; w '{home}/outside.txt' home; \
+         w /tmp/purlis-4476-$$ tmp; w /tmp/claude/purlis-4476-$$ claude-tmp; \
+         if curl -sS -m 20 -o /dev/null https://example.com/ 2>/dev/null; \
+         then echo 'reached example.com'; else echo 'refused example.com'; fi",
+        piece = piece.display(),
+        root = root.display(),
+        home = home.display(),
+    );
+    let what = "an outcome eval's shell";
+    let said = ran_with(
+        &program,
+        &home,
+        &temp,
+        &piece,
+        &file,
+        &["--setting-sources".to_owned(), String::new()],
+        what,
+        command,
+        &[("CLAUDE_CODE_TMPDIR", &temp)],
+    );
+    for (line, why) in [
+        ("wrote piece", "it writes its piece"),
+        ("wrote temp", "it writes its temp folder"),
+        ("refused project", "the project outside its piece"),
+        ("refused home", "the home"),
+        ("refused tmp", "the system's temp folder"),
+        ("refused claude-tmp", "Claude Code's own temp folder"),
+        ("refused example.com", "a host the project lists"),
+    ] {
+        assert!(
+            said.lines().any(|said| said.trim() == line),
+            "{what}: {why}:\n{said}"
+        );
+    }
+    assert!(
+        said.lines()
+            .any(|line| line.trim() == format!("temp at {}", temp.display())),
+        "{what}: its temp folder is in its piece:\n{said}"
+    );
+    assert!(!root.join("outside.txt").exists() && !home.join("outside.txt").exists());
+    // Refused by purlis's proxy, where this Claude Code hands its connections to one.
+    let refused = refusals.refused();
+    assert!(
+        refused.is_empty() || refused.iter().any(|one| one.starts_with("example.com")),
+        "{refused:?}"
+    );
 }

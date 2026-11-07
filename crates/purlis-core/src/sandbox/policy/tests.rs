@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use super::super::grant::{self, Grants, What};
 use super::super::hosts::Host;
 use super::super::{Compiled, Machine, Os, Plane, Policy, Preset};
-use super::{Locks, Seen, TEST_LOCKS, holding_no_kept_grants, judge};
+use super::{Locks, Seen, TEST_LOCKS, holding_no_kept_grants, holding_to_its_folder, judge};
 
 const FILE: &str = "/etc/purlis/policy.json";
 
@@ -1576,5 +1576,31 @@ fn a_grades_chat_keeps_no_allow_of_any_scope_and_only_while_it_is_decided() {
         levels
             .iter()
             .all(|level| Locks::of(plane.path()).keeps_scope(*level))
+    );
+}
+
+/// #4476 (the person's ruling of 2026-11-07): an outcome eval's chat that has a shell is decided
+/// as though policy fixed no preset and no host, so it reaches no host and writes no package
+/// cache; it keeps no Allow either, and every other decision is as policy leaves it.
+#[test]
+fn a_shell_held_to_its_folder_is_decided_with_no_preset_and_no_host_and_only_while_it_is() {
+    let plane = tempfile::tempdir().unwrap();
+    let open = Locks::of(plane.path());
+    assert!(!open.fixes_presets() && open.allowed_hosts().is_none());
+    let held = holding_to_its_folder(|| Locks::of(plane.path()));
+    assert!(
+        Preset::ALL
+            .iter()
+            .all(|preset| !held.allows_preset(*preset))
+    );
+    assert_eq!(held.allowed_hosts(), Some(&[][..]));
+    assert!(held.forbids_personal_hosts() && held.forbids_persona_hosts());
+    assert!(held.forbids_socket_grants() && held.forbids_write_grants());
+    assert!(!held.keeps_scope(crate::sandbox::grant::Level::Chat));
+    assert!(held.relayed_internal().is_empty());
+    assert_eq!(
+        Locks::of(plane.path()),
+        open,
+        "held only while it is decided"
     );
 }

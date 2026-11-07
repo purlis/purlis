@@ -8634,6 +8634,14 @@ of 2026-11-01). A purlis from before it refuses a file holding it, as it refuses
   of the built-in router has no `router`. Both arms hold `pins`, the pins of the workspace or persona that chose
   the router, one name a line (absent for none), which the chat's set is routed with
   (`drafts::pins_of_arm`).
+  And `drafts::stage`, for an outcome eval's chat (SK-55, #3235): a file `outcome` beside
+  `graded`, which arms its chat as one that may write its piece (`drafts::outcome_piece`). It is
+  empty, or holds `shell` where the skill's `allowed-tools` names Bash (#4476): its chat then has
+  a shell (`drafts::shell_piece`), its start held to its piece and to no host
+  (`sandbox::policy::holding_to_its_folder`), and its piece holds `.tmp/`, made `0700` before the
+  chat starts, which its `TMPDIR` and `CLAUDE_CODE_TMPDIR` name (`drafts::temp_of`). A dot-name,
+  so what the chat left for its judge never lists it. `drafts::lay_out_judge` writes `judge` in
+  its place for a judge's chat, held to reading (`drafts::judge_piece`).
 - **Removed by:** with its [throwaway piece](#workspacesthrowawaypurlis-try-id), the same way and
   at the same moments. What is left is the skill run the chat recorded, under the skill's name.
 - **Git:** outside every project, in the data home; the piece is ignored and never staged.
