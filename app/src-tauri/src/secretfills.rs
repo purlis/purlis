@@ -291,7 +291,11 @@ impl Fills {
 
     /// Ends the wait numbered `id` with `heard`: answers whether it waited.
     fn end(&self, id: u32, heard: Heard) -> bool {
-        let mut inner = self.lock();
+        Self::ended(&mut self.lock(), id, heard)
+    }
+
+    /// [`Self::end`], under a lock already held.
+    fn ended(inner: &mut Inner, id: u32, heard: Heard) -> bool {
         let Some(at) = inner.waits.iter().position(|(one, _)| one.id == id) else {
             return false;
         };
@@ -917,13 +921,24 @@ pub fn answer(
     }
     let level = match asked.press {
         Press::Keep => {
-            fills.lock().kept.push((
+            // Counted only with the wait it ends, in one step: a Keep that lost to the time
+            // running out is never counted.
+            let mut inner = fills.lock();
+            if !inner.waits.iter().any(|(one, _)| one.id == wait.id) {
+                return Err(NO_MORE.to_owned());
+            }
+            inner.kept.push((
                 Whose::of(wait.session, wait.persona.as_deref()),
                 wait.vault.clone(),
                 wait.key.clone(),
                 wait.origin.clone(),
             ));
-            fills.end(wait.id, Heard::Kept(asked.reason.map(str::to_owned)));
+            Fills::ended(
+                &mut inner,
+                wait.id,
+                Heard::Kept(asked.reason.map(str::to_owned)),
+            );
+            drop(inner);
             return Ok(Pressed::Done {
                 said: "Kept blocked. Nothing was filled.".to_owned(),
             });

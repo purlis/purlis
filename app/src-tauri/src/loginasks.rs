@@ -243,7 +243,11 @@ impl Grants {
 
     /// Ends the wait numbered `id` with `heard`: answers whether it waited.
     fn end(&self, id: u32, heard: Heard) -> bool {
-        let mut inner = self.lock();
+        Self::ended(&mut self.lock(), id, heard)
+    }
+
+    /// [`Self::end`], under a lock already held.
+    fn ended(inner: &mut Inner, id: u32, heard: Heard) -> bool {
         let Some(at) = inner.waits.iter().position(|(one, _)| one.id == id) else {
             return false;
         };
@@ -255,10 +259,29 @@ impl Grants {
     }
 
     /// `persona`'s login `login` kept blocked on `origin`.
+    #[cfg(test)]
     fn keep(&self, persona: &str, login: &str, origin: &str) {
         self.lock()
             .kept
             .push((persona.to_owned(), login.to_owned(), origin.to_owned()));
+    }
+
+    /// **The wait numbered `id` kept blocked, in one step**: counted for its persona and its call
+    /// told, or nothing where it waits no more, so a Keep that lost to the time running out or
+    /// the call ending is never counted.
+    fn keep_wait(&self, id: u32, reason: Option<String>) -> bool {
+        let mut inner = self.lock();
+        let Some((wait, _)) = inner.waits.iter().find(|(one, _)| one.id == id) else {
+            return false;
+        };
+        let proposal = &wait.proposal;
+        let kept = (
+            proposal.persona.clone(),
+            proposal.login.clone(),
+            proposal.origin.clone(),
+        );
+        inner.kept.push(kept);
+        Self::ended(&mut inner, id, Heard::Kept(reason))
     }
 
     /// Whether the person kept this blocked for `persona`, or kept enough of its logins blocked
@@ -887,12 +910,9 @@ pub fn answer(
         return Err(CHANGED.to_owned());
     }
     if press == Press::Keep {
-        grants.keep(
-            &wait.proposal.persona,
-            &wait.proposal.login,
-            &wait.proposal.origin,
-        );
-        grants.end(id, Heard::Kept(reason.map(str::to_owned)));
+        if !grants.keep_wait(id, reason.map(str::to_owned)) {
+            return Err(NO_MORE.to_owned());
+        }
         let said = if wait.proposal.replaces.is_some() {
             "Kept the recorded site. Nothing changed or was filled."
         } else {
