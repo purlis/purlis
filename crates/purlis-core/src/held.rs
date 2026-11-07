@@ -647,6 +647,25 @@ impl Store {
         Ok(true)
     }
 
+    /// A new, empty file `name`, opened to write, never through a link and never over
+    /// anything already there (`EXIST`): for a writer that streams into it, as an import does.
+    pub(crate) fn create_new(&self, name: &str) -> rustix::io::Result<std::fs::File> {
+        let flags =
+            OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC;
+        rustix::fs::openat(&self.fd, name, flags, new_file()).map(std::fs::File::from)
+    }
+
+    /// A new, empty directory `name`, never over anything already there (`EXIST`).
+    pub(crate) fn create_dir_new(&self, name: &str) -> rustix::io::Result<()> {
+        rustix::fs::mkdirat(&self.fd, name, new_dir())
+    }
+
+    /// The directory this store holds, as its own descriptor sees it: which one it is, by its
+    /// device and inode, whatever name it has by now.
+    pub(crate) fn itself(&self) -> rustix::io::Result<Entry> {
+        Ok(Entry::of(&rustix::fs::fstat(&self.fd)?))
+    }
+
     /// Add `bytes` to the end of `name`, making it with `first` in front when it is not there.
     pub(crate) fn append(&self, name: &str, first: &str, bytes: &[u8]) -> Result<(), String> {
         self.append_at(name, first, bytes, new_file())
@@ -782,38 +801,69 @@ impl Store {
     /// The kernel's no-replace rename where there is one (`renameat2(RENAME_NOREPLACE)` on
     /// Linux, `renameatx_np(RENAME_EXCL)` on macOS), so a file a writer that does not take the
     /// store's lock planted at `to` after the caller looked is refused rather than replaced. A
-    /// filesystem that does not have it is renamed onto plainly, after a look (`renameat`).
+    /// filesystem that does not have it is renamed onto plainly, after a look (`renameat`):
+    /// only exclusive under the store's lock, which every caller holds. A writer with no lock
+    /// to take, such as the person's own workspace files, uses [`Store::rename_only_into_new`].
     pub(crate) fn rename_into_new(
         &self,
         name: &str,
         into: &Store,
         to: &str,
     ) -> Result<bool, String> {
-        #[cfg(any(
-            target_os = "linux",
-            target_os = "android",
-            target_os = "macos",
-            target_os = "ios"
-        ))]
-        match rustix::fs::renameat_with(
-            &self.fd,
-            name,
-            &into.fd,
-            to,
-            rustix::fs::RenameFlags::NOREPLACE,
-        ) {
-            Ok(()) => return Ok(true),
-            Err(rustix::io::Errno::EXIST) => return Ok(false),
-            Err(
-                rustix::io::Errno::INVAL | rustix::io::Errno::NOSYS | rustix::io::Errno::NOTSUP,
-            ) => {}
-            Err(e) => return Err(self.failed(e)),
+        if let Some(moved) = self.renamed_into_new(name, into, to)? {
+            return Ok(moved);
         }
         if into.entry(to)?.is_some() {
             return Ok(false);
         }
         self.rename_into(name, into, to)?;
         Ok(true)
+    }
+
+    /// As [`Store::rename_into_new`], and refused, moving nothing, on a filesystem with no
+    /// no-replace rename (NFS, some FUSE and SMB mounts): a look and a rename could replace
+    /// what another writer put at `to` between the two.
+    pub(crate) fn rename_only_into_new(
+        &self,
+        name: &str,
+        into: &Store,
+        to: &str,
+    ) -> Result<bool, String> {
+        self.renamed_into_new(name, into, to)?.ok_or_else(|| {
+            self.failed(
+                "its disk cannot rename without the chance of replacing a file, so nothing \
+                 was renamed",
+            )
+        })
+    }
+
+    /// The kernel's no-replace rename of `name` to `to` in `into`: whether it moved, or `None`
+    /// when the filesystem (or the system) has none.
+    fn renamed_into_new(&self, name: &str, into: &Store, to: &str) -> Result<Option<bool>, String> {
+        #[cfg(any(
+            target_os = "linux",
+            target_os = "android",
+            target_os = "macos",
+            target_os = "ios"
+        ))]
+        match no_replace_rename(&self.fd, name, &into.fd, to) {
+            Ok(()) => Ok(Some(true)),
+            Err(rustix::io::Errno::EXIST) => Ok(Some(false)),
+            Err(
+                rustix::io::Errno::INVAL | rustix::io::Errno::NOSYS | rustix::io::Errno::NOTSUP,
+            ) => Ok(None),
+            Err(e) => Err(self.failed(e)),
+        }
+        #[cfg(not(any(
+            target_os = "linux",
+            target_os = "android",
+            target_os = "macos",
+            target_os = "ios"
+        )))]
+        {
+            let _ = (name, into, to);
+            Ok(None)
+        }
     }
 
     /// Move `name` from this store to `to` in `into`, another store held the same way.
@@ -865,6 +915,42 @@ impl Store {
     fn failed(&self, e: impl std::fmt::Display) -> String {
         format!("{} could not be used: {e}", self.said)
     }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Whether a test has this thread's no-replace rename answer as a filesystem without one.
+    static NO_NOREPLACE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Run `f` with this thread's no-replace renames answered as by a filesystem that has none
+/// (`ENOTSUP`, as NFS and some FUSE and SMB mounts answer): a test's fault.
+#[cfg(test)]
+pub(crate) fn without_no_replace_rename<T>(f: impl FnOnce() -> T) -> T {
+    NO_NOREPLACE.with(|on| on.set(true));
+    let done = f();
+    NO_NOREPLACE.with(|on| on.set(false));
+    done
+}
+
+/// `renameat2(RENAME_NOREPLACE)` on Linux, `renameatx_np(RENAME_EXCL)` on macOS.
+#[cfg(any(
+    target_os = "linux",
+    target_os = "android",
+    target_os = "macos",
+    target_os = "ios"
+))]
+fn no_replace_rename(
+    from: &OwnedFd,
+    name: &str,
+    into: &OwnedFd,
+    to: &str,
+) -> rustix::io::Result<()> {
+    #[cfg(test)]
+    if NO_NOREPLACE.with(std::cell::Cell::get) {
+        return Err(rustix::io::Errno::NOTSUP);
+    }
+    rustix::fs::renameat_with(from, name, into, to, rustix::fs::RenameFlags::NOREPLACE)
 }
 
 /// The directory `place` names in the project at `root`: the root itself, opened as it is
