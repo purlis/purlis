@@ -865,9 +865,11 @@ fn a_clone_the_app_says_it_made_is_not_told_and_what_it_holds_is_where_the_chat_
     // Its `.git` and what it held as the app made it are the app's (#5702); the other clone's
     // branches, in the chat's folder, are the chat's to write, so they vouch for nothing.
     assert_eq!(fix.look(), ["other/.git", "other/.vscode"]);
-    // Replaced by the chat, a name the app made is told.
+    // Replaced by the chat, a name the app made is told: another folder moved into its place.
+    // Made while the first is there, as a disk may give a freed number to the next thing made.
+    file(&fix.folder.join("new/tasks.json"), "the chat's\n");
     fs::remove_dir_all(fix.folder.join("made/.vscode")).expect("gone");
-    file(&fix.folder.join("made/.vscode/tasks.json"), "the chat's\n");
+    fs::rename(fix.folder.join("new"), fix.folder.join("made/.vscode")).expect("moved");
     assert_eq!(fix.look(), ["made/.vscode"]);
 }
 
@@ -909,8 +911,8 @@ fn a_branch_folder_the_app_made_is_not_told_where_the_chat_may_write_its_clone()
     file(&made.join(".envrc"), "x\n");
     assert_eq!(fix.look(), [".worktrees/made/.envrc"]);
     let words = fs::read_to_string(made.join(".git")).expect("its .git");
-    fs::remove_file(made.join(".git")).expect("gone");
-    file(&made.join(".git"), &words);
+    file(&fix.folder.join("another"), &words);
+    fs::rename(fix.folder.join("another"), made.join(".git")).expect("moved over it");
     assert_eq!(fix.look(), [".worktrees/made/.git"]);
 }
 
