@@ -25,7 +25,7 @@ import {
 import { keySaid, pressed } from "./keys/registry";
 import { Notice } from "./Notice";
 import { type Over, PaneDragLayer, PaneDragStore } from "./paneDragLayer";
-import { boxOfRect, PANE, STRIP, stripTab, TAB } from "./paneHeld";
+import { boxOfRect, PANE, RAIL, STRIP, stripTab, TAB } from "./paneHeld";
 import { REGION_CHROME } from "./RegionFrame";
 import {
   type Box,
@@ -384,6 +384,7 @@ export function usePaneDrag({
         }
         store.moveTo(at.clientX, at.clientY);
         const over = hit(at.clientX, at.clientY);
+        store.overRail(over === undefined && railUnder(at.clientX, at.clientY));
         // Resting on another tab brings it forward (#5294); the one in front is where it is.
         const under = tabUnder(at.clientX, at.clientY);
         const tab = under === now.current.tabs.inFront ? undefined : under;
@@ -624,7 +625,7 @@ export function usePaneDrag({
   useEffect(() => {
     if (!active) return;
     const heard = (event: KeyboardEvent) => {
-      if (pressed(event, ["pane.place"]) === undefined) return;
+      if (pressed(event, ["pane.move"]) === undefined) return;
       event.preventDefault();
       event.stopPropagation();
       if (event.repeat || now.current.held !== undefined) return;
@@ -1043,7 +1044,7 @@ export function PaneGrip({
       gripRef={self}
       label={gripName(tab, pane)}
       // The key that does the same, which its tooltip said before it was the mark (#5290).
-      description={`Drag it, or press it or ${keySaid("pane.place")} to move it with the keys`}
+      description={`Drag it, or press it or ${keySaid("pane.move")} to move it with the keys`}
       // F6 into the editor passes over it to the pane's own controls, as over the strip; Tab
       // still stops on it.
       marks={{ [GRIP_HANDLE]: "", [REGION_CHROME]: "" }}
@@ -1151,6 +1152,11 @@ function stripPlace(strip: Element, x: number, tabs: Tabs): { at: number; line: 
 function tabUnder(x: number, y: number): number | undefined {
   const tab = document.elementFromPoint(x, y)?.closest(`[${TAB}]`);
   return tab?.closest(`[${STRIP}]`) == null ? undefined : Number(tab.getAttribute(TAB));
+}
+
+/** Whether the point is over a side folded to a rail (#5415), which takes no drop. */
+function railUnder(x: number, y: number): boolean {
+  return document.elementFromPoint(x, y)?.closest(`[${RAIL}]`) != null;
 }
 
 /** Ends an event where it is heard, so nothing further up hears it. */

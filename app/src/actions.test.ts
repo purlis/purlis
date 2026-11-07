@@ -58,7 +58,7 @@ import {
   type Doing,
   type Now,
   type Offer,
-  type PlacedFrom,
+  type MovedFrom,
   type Ran,
   RESTART_NOTE,
   MOVE_HERE_NOTE,
@@ -124,8 +124,8 @@ function doing(): Doing & { calls: string[] } {
       note("moveToWindow")(...args);
       return { ok: true };
     },
-    place: vi.fn((source: PlacedFrom) => {
-      calls.push(`place:${JSON.stringify(source)}`);
+    moveTo: vi.fn((source: MovedFrom) => {
+      calls.push(`moveTo:${JSON.stringify(source)}`);
     }),
     zoomPane: note("zoomPane"),
     undoLayout: note("undoLayout"),
@@ -1986,11 +1986,11 @@ describe("carrying out a row", () => {
         // Three pin verbs and not one, because they are three stores (ADR 0040).
         "pinTab:1,true",
         "pinTab:2,true",
-        // Place… (#4764): each tab's, and each chat's.
-        `place:${JSON.stringify({ kind: "tab", tab: 1 })}`,
-        `place:${JSON.stringify({ kind: "tab", tab: 2 })}`,
-        `place:${JSON.stringify({ kind: "chat", session: 7 })}`,
-        `place:${JSON.stringify({ kind: "chat", session: 8 })}`,
+        // Move… (#4764): each tab's, and each chat's.
+        `moveTo:${JSON.stringify({ kind: "tab", tab: 1 })}`,
+        `moveTo:${JSON.stringify({ kind: "tab", tab: 2 })}`,
+        `moveTo:${JSON.stringify({ kind: "chat", session: 7 })}`,
+        `moveTo:${JSON.stringify({ kind: "chat", session: 8 })}`,
         "pinWorkspace:alpha,true",
         "pinWorkspace:beta,true",
         "pinProject:/plane,true",
@@ -2325,9 +2325,9 @@ describe("the catalogue as the tabs change", () => {
       // Move to new window, per tab, as Tile all is (#4768): its tab menu's row.
       "tab.newWindow:1",
       "tab.newWindow:2",
-      // Place… (#4764), each tab's.
-      "tab.place:1",
-      "tab.place:2",
+      // Move… (#4764), each tab's.
+      "tab.moveto:1",
+      "tab.moveto:2",
       "tab.close:1",
       "tab.close:2",
       // Close other tabs on each tab's right-click (#4760); the palette lists the tab in
@@ -2339,7 +2339,7 @@ describe("the catalogue as the tabs change", () => {
     // arrangements and reads, above the line; End… ends it, and is its own row.
     expect(offers.filter((id) => id.startsWith("chat.") && id.endsWith(":7"))).toEqual([
       "chat.rename:7",
-      "chat.place:7",
+      "chat.moveto:7",
       "chat.activity:7",
       "chat.network:7",
       "chat.end:7",
@@ -2712,7 +2712,7 @@ describe("the palette at fifty chats", () => {
     // forty-nine are menu-only rows, so the palette still lists one.
     // 1123 since #4768: Move to new window, each of the fifty tabs' own row (+50), and the
     // focused pane's (+1). 1124 since #4484: Add a cluster pool…. 1125 since #4758: New tab,
-    // the strip's `+`, apart from New chat. 1225 since #4764: Place…, each of the fifty chats'
+    // the strip's `+`, apart from New chat. 1225 since #4764: Move…, each of the fifty chats'
     // own row, and each of the fifty tabs' right-click, whose forty-nine behind are menu-only,
     // as Close other tabs' are. 1224 since #5318: no Close pane row, the tab in front having one
     // pane.
@@ -2720,7 +2720,7 @@ describe("the palette at fifty chats", () => {
     expect(inPalette(offers).filter((row) => row.id.startsWith("tab.closeOthers:"))).toHaveLength(
       1,
     );
-    expect(inPalette(offers).filter((row) => row.id.startsWith("tab.place:"))).toHaveLength(1);
+    expect(inPalette(offers).filter((row) => row.id.startsWith("tab.moveto:"))).toHaveLength(1);
   });
 
   /**
@@ -2744,7 +2744,7 @@ describe("the palette at fifty chats", () => {
    * below is the work itself, which is the standard #133 set: 450 lookups (150 before a chat
    * could be renamed, charter-app#254; 200 before a wrapping-up tab could cancel its smart
    * close, ADR 0064; 250 before a tab could move to a window of its own, #4768; 300 before
-   * Place…, #4764; 350 before a lone view's two splits, #5318), and the same 450 whichever
+   * Move…, #4764; 350 before a lone view's two splits, #5318), and the same 450 whichever
    * catalogue it is.
    *
    * **The 450 measured again** (#5444), on the same machine, min of ten batches of a hundred:
@@ -2773,7 +2773,7 @@ describe("the palette at fifty chats", () => {
       const offers = new Counting(loaded().map((offer) => [offer.id, offer]));
 
       // 50 tabs × the nine ids a tab's menu lists: Pin, a lone view's two splits (#5318), Tile all
-      // (#4765), Place… (#4764), Keep open, Move to new window (#4768), Close other tabs and Close
+      // (#4765), Move… (#4764), Keep open, Move to new window (#4768), Close other tabs and Close
       // (#4760). A
       // chat's rows are its own list's since #4753, which a strip never draws.
       // **Not fifty scans of 291 rows**, which is
@@ -3927,7 +3927,7 @@ describe("stopping a chat (#1448)", () => {
   });
 
   describe("a tab's right-click and a pane's rows (#4760)", () => {
-    it("holds Pin tab, Tile all, Place…, Keep open, Move to new window, Close other tabs and Close tab, and nothing else", () => {
+    it("holds Pin tab, Tile all, Move…, Keep open, Move to new window, Close other tabs and Close tab, and nothing else", () => {
       expect(menuOn({ on: "tab", tab: 7 })).toEqual({
         // Move to new window (#4768): the tab into a tab window of its project.
         // A lone view's splits (#5318): no other tab's catalogue has their rows.
@@ -3936,7 +3936,7 @@ describe("stopping a chat (#1448)", () => {
           "tab.split.right:7",
           "tab.split.down:7",
           "tab.tile:7",
-          "tab.place:7",
+          "tab.moveto:7",
           "tab.keep:7",
           "tab.newWindow:7",
         ],

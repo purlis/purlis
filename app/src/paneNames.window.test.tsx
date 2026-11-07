@@ -298,4 +298,44 @@ describe("resting on a tab during a drag is a preview too (#5294)", () => {
     });
     expect(layouts()).toBe(before);
   });
+
+  it("tells the core the keyboard's place once, on a drop after the rest (#5523)", async () => {
+    const told = core(aTabForEachChat([COPY, { ...PERFORMANCE, in_front: false }], () => "alpha"));
+    render(<App />);
+    await waitFor(() => expect(heads()).toEqual(["copy-past-crash"]));
+    await waitFor(() => expect(row(1)).toContain("codeql-issues"));
+    await act(async () => {
+      await new Promise((done) => setTimeout(done, 100));
+    });
+    const layouts = () => told.asked.filter((cmd) => cmd === "window_layout").length;
+    const before = layouts();
+    const from = document.querySelector('[data-drag-chat="1"]');
+    if (from === null) throw new Error("no row for chat 1");
+    fireEvent.pointerDown(from, at(10, 1035));
+    fireEvent.pointerMove(document, at(150, 10));
+    fireEvent.pointerMove(document, at(151, 10));
+    await act(async () => {
+      await new Promise((done) => setTimeout(done, HOLD_MS + 50));
+    });
+    await waitFor(() => expect(heads()).toEqual(["performance"]));
+    fireEvent.pointerMove(document, at(790, 340));
+    fireEvent.pointerMove(document, at(791, 340));
+    await screen.findByText("codeql-issues right of performance.");
+    act(() => {
+      fireEvent.pointerUp(document, at(791, 340));
+    });
+    await splitDrawn([2, 1]);
+    await act(async () => {
+      await new Promise((done) => setTimeout(done, 100));
+    });
+    expect(layouts()).toBe(before + 1);
+    const laid = told.laid() as { tabs: { front: boolean; focused: string; tree: unknown }[] };
+    const front = laid.tabs.find(
+      (tab) => tab.front && JSON.stringify(tab.tree).includes('"chat":2'),
+    );
+    expect(front?.tree).toMatchObject({ a: { chat: 2 }, b: { chat: 1 } });
+    // The keyboard's place is the pane the drop made, on the tab the rest brought forward.
+    expect(front?.focused).toBe("b");
+    expect(told.asked).not.toContain("pane_used");
+  });
 });

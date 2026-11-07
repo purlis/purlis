@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import { paneLinesOf } from "./paneHead";
 import type { BandHolds } from "./paneNotices";
 import { Button } from "./ui/button/Button";
+import { RAIL } from "./paneHeld";
 
 /**
  * **A folded side of a split** (#4766, spec #4750 stories 81 to 83; `prototype/narrow-window`
@@ -60,7 +61,13 @@ export function PaneRail({
   const marked = lines.head.includes("persona");
   const belled = lines.actions.includes("bell");
   return (
-    <div className="pane-rail" data-fold={as} role="group" aria-label="Folded panes">
+    <div
+      className="pane-rail"
+      data-fold={as}
+      {...{ [RAIL]: "" }}
+      role="group"
+      aria-label="Folded panes"
+    >
       {panes.map((one) => {
         const notes = belled ? one.holds.notes : 0;
         return (
