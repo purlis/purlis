@@ -488,6 +488,13 @@ export const commands = {
 	 */
 	reportsSent: () => typedError<SentReport[], string>(__TAURI_INVOKE("reports_sent")),
 	/**
+	 *  Hands an error the window did not catch to the core's Reports, as a panic is handed: whether
+	 *  it may go, what of it goes and where are the core's to say, so without a yes to Crash reports
+	 *  nothing leaves. Answered at once; the send is on a thread of its own, so the window never
+	 *  waits on the network. The window's alone.
+	 */
+	reportWindowError: (error: WindowErrorSeen) => typedError<null, string>(__TAURI_INVOKE("report_window_error", { error })),
+	/**
 	 *  The project's sandbox, for the offer notice and Settings.
 	 * 
 	 *  Off the window's thread (#1949): it reads the project's manifests and the administrator's
@@ -18614,6 +18621,22 @@ export type WindowDraft = {
 	 *  Review and allow on it, waits until the draft is reverted, and the strip says so.
 	 */
 	kept_refused: boolean,
+};
+
+/**
+ *  An error the window did not catch (#5690), as its JavaScript saw it: thrown and not caught, or
+ *  a promise rejected with nobody to handle it.
+ */
+export type WindowErrorSeen = {
+	/**  The error's name (`TypeError`), or the window's word for a reason that is no error. */
+	name: string,
+	message: string,
+	/**  The address of the script it was thrown in, when the window knows it. */
+	source: string | null,
+	line: number | null,
+	column: number | null,
+	/**  A promise rejected with nobody to handle it, rather than an error thrown. */
+	rejection: boolean,
 };
 
 /**  One face of a font. */
