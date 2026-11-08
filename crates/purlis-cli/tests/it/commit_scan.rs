@@ -725,6 +725,54 @@ fn a_secret_already_on_the_remote_does_not_refuse_the_next_push() {
     );
 }
 
+/// #5822: a push from a bare repository, to the remote's address, asks the remote what it has
+/// as a push from a clone does, so a value already on the remote's `main` is not read again.
+#[test]
+fn a_push_by_address_from_a_bare_repository_leaves_out_what_the_remote_has() {
+    let chat = Chat::new();
+    std::fs::write(chat.repo.join("old.sh"), format!("TOKEN={}\n", key())).unwrap();
+    chat.operator_git(&["add", "old.sh"]);
+    chat.operator_git(&["commit", "-q", "-m", "long ago"]);
+    let origin = chat.dir.path().join("origin.git");
+    chat.operator_git(&["init", "-q", "--bare", &origin.display().to_string()]);
+    let published = chat.operator_git(&["push", "-q", &origin.display().to_string(), "main"]);
+    assert!(published.status.success(), "{published:?}");
+    let bare = chat.dir.path().join("side.git");
+    let bare_path = bare.display().to_string();
+    let cloned = chat.operator_git(&["clone", "-q", "--bare", ".", &bare_path]);
+    assert!(cloned.status.success(), "{cloned:?}");
+    let tree = String::from_utf8_lossy(&chat.git(&["rev-parse", "HEAD^{tree}"]).stdout)
+        .trim()
+        .to_owned();
+    let head = chat.head();
+    let made = chat.git(&[
+        "-C",
+        &bare_path,
+        "commit-tree",
+        "-p",
+        head.trim(),
+        "-m",
+        "on top",
+        &tree,
+    ]);
+    assert!(made.status.success(), "{made:?}");
+    let tip = String::from_utf8_lossy(&made.stdout).trim().to_owned();
+
+    let ran = chat.git(&[
+        "-C",
+        &bare_path,
+        "push",
+        "-q",
+        &origin.display().to_string(),
+        &format!("{tip}:refs/heads/side"),
+    ]);
+
+    assert!(
+        ran.status.success(),
+        "only what the push sends is its to answer for: {ran:?}"
+    );
+}
+
 #[test]
 fn a_chat_cannot_push_an_allowlist_change_even_one_the_operator_committed() {
     let chat = Chat::new();

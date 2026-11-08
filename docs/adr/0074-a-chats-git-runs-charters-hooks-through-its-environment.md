@@ -268,6 +268,10 @@ made in their own terminal, which is not armed, or one `cherry-pick`, `rebase` o
   the remote already has it for each ref, never the checkout's: the remote's commit, or for a new
   ref the pushed tip, which the range then leaves unchanged. Refs whose files differ get
   purlis's own entries alone.
+  *Note, 2026-11-08, for issue 5822:* a range "changes the allowlist" when a commit of its own
+  changes the file, or a merge holds one none of its parents holds. A merge that takes one
+  side's file brings that side's commits, which are read as they are; a side branch cut before
+  the file existed no longer makes its merge a change.
 - **A finding refuses the push**, names each hit by path, line and kind with the value masked,
   says that the value is in history and a live credential needs revoking, and puts the chat in
   the needs-you queue with the same `CommitRefused` line, worded "push refused".

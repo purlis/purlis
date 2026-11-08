@@ -1932,6 +1932,36 @@ fn standing_alone(line: &str, hit: &regex::Match<'_>) -> bool {
     !joined(line[..hit.start()].chars(), true) && !joined(line[hit.end()..].chars(), false)
 }
 
+/// Whether a number found on `line` is a piece of something else, which no card or ID number
+/// written for a person to read is (#5822):
+///
+/// - **a name's part**: joined by `-` or `_` to a letter or digit on either side, as in a file's
+///   or branch's slug (a session file named for the issues it closed, a branch named for a PR list);
+/// - **a decimal's part**: after a digit and `.`, or before `.` and a digit, as in a float's
+///   fraction (a cost in dollars);
+/// - **an issue or PR number**: straight after `#` (a list of PR numbers).
+///
+/// A card or ID in prose stands behind a space, a colon or a bracket, so it is still found.
+fn part_of_something_else(line: &str, hit: &regex::Match<'_>) -> bool {
+    let mut before = line[..hit.start()].chars().rev();
+    let mut after = line[hit.end()..].chars();
+    let joined = |sep: Option<char>, next: Option<char>| match (sep, next) {
+        (Some('-' | '_'), Some(c)) => c.is_ascii_alphanumeric(),
+        (Some('.'), Some(c)) => c.is_ascii_digit(),
+        _ => false,
+    };
+    let (b1, b2) = (before.next(), before.next());
+    let (a1, a2) = (after.next(), after.next());
+    b1 == Some('#') || joined(b1, b2) || joined(a1, a2)
+}
+
+/// Whether `caps` matched a rule's named form, the number behind the name it is written after
+/// (`Aadhaar: …`): a rule with two groups holds its bare form in the first and its named form in
+/// the second.
+fn named_form(caps: &regex::Captures<'_>) -> bool {
+    caps.len() > 2 && caps.get(1).is_none()
+}
+
 /// The digits of `candidate`, its separators left out.
 fn digits_of(candidate: &str) -> Vec<u32> {
     candidate.chars().filter_map(|c| c.to_digit(10)).collect()
@@ -2261,20 +2291,30 @@ fn every_leak_of(line: &str, prefiltered: bool) -> Vec<Leak> {
         }
         all.extend(
             rx.captures_iter(line)
-                .map(|caps| the_finding(&caps))
-                .filter(|hit| match check {
-                    Personal::Email => !names_nobody(hit.as_str()),
-                    Personal::Card => a_card(hit.as_str()),
-                    Personal::Ssn => an_ssn(hit.as_str()),
-                    Personal::Iban => an_iban(hit.as_str()),
-                    Personal::UkNino => a_nino(hit.as_str()),
-                    Personal::CaSin => standing_alone(line, hit) && a_sin(hit.as_str()),
-                    Personal::InAadhaar => standing_alone(line, hit) && an_aadhaar(hit.as_str()),
-                    Personal::DeSteuerId => standing_alone(line, hit) && a_steuer_id(hit.as_str()),
-                    Personal::EsDni => a_dni(hit.as_str()),
-                    Personal::ItCodiceFiscale => a_codice_fiscale(hit.as_str()),
-                    Personal::BrCpf => standing_alone(line, hit) && a_cpf(hit.as_str()),
-                    Personal::NlBsn => standing_alone(line, hit) && a_bsn(hit.as_str()),
+                .filter_map(|caps| {
+                    let hit = the_finding(&caps);
+                    // A bare number of digits only, not a piece of a name or a decimal (#5822).
+                    let bare = || !named_form(&caps) && !part_of_something_else(line, &hit);
+                    let id = |valid: fn(&str) -> bool| {
+                        standing_alone(line, &hit)
+                            && (named_form(&caps) || bare())
+                            && valid(hit.as_str())
+                    };
+                    let found = match check {
+                        Personal::Email => !names_nobody(hit.as_str()),
+                        Personal::Card => bare() && a_card(hit.as_str()),
+                        Personal::Ssn => an_ssn(hit.as_str()),
+                        Personal::Iban => an_iban(hit.as_str()),
+                        Personal::UkNino => a_nino(hit.as_str()),
+                        Personal::CaSin => id(a_sin),
+                        Personal::InAadhaar => id(an_aadhaar),
+                        Personal::DeSteuerId => id(a_steuer_id),
+                        Personal::EsDni => a_dni(hit.as_str()),
+                        Personal::ItCodiceFiscale => a_codice_fiscale(hit.as_str()),
+                        Personal::BrCpf => id(a_cpf),
+                        Personal::NlBsn => id(a_bsn),
+                    };
+                    found.then_some(hit)
                 })
                 .map(|hit| Leak {
                     rule: id,
@@ -2862,6 +2902,81 @@ mod leak_tests {
             kinds("at 1727712000123 ms, id 9876543210123456"),
             Vec::<&str>::new()
         );
+    }
+
+    /// The rules `line` trips.
+    fn rules(line: &str) -> Vec<&'static str> {
+        leaks(line).into_iter().map(|l| l.rule).collect()
+    }
+
+    #[test]
+    fn issue_numbers_versions_and_costs_purlis_writes_are_not_cards_or_aadhaar_numbers() {
+        // Each text #5822 measured a plane save refused on, split so this file trips no scan.
+        for line in [
+            // A branch folder's name holding a PR list, in a session record and its index.
+            ["branch folder signing-5239", "-5241-5243-5245, now landed"].concat(),
+            [
+                "- 2026-11-08 · [signing](20261108-signing-5239",
+                "-5241-5243-5245.md)",
+            ]
+            .concat(),
+            // A session index line whose file name holds `#4127 (1.54), #4125 (1.55), #4144`.
+            [
+                "- [R6b landed: #4127 (1.54), #4125 (1.55), #4144 (1.56)]",
+                "(20261031-025422-r6b-protocol-chain-landed-4127-1-54",
+                "-4125-1-55-41.md)",
+            ]
+            .concat(),
+            // `#4956, #5059, #3260` in a session's file name.
+            [
+                "- [M66.1 CI and tools: #4956, #5059, #3260 in PR #5783]",
+                "(20261108-101923-m66-1-ci-and-tools-4956",
+                "-5059-3260-in-pr-5783.md)",
+            ]
+            .concat(),
+            // A grade's cost, a float's fraction.
+            [r#"{"cost_usd":1.5515"#, r#"847999999999,"turns":3}"#].concat(),
+        ] {
+            assert_eq!(rules(&line), Vec::<&str>::new(), "{line}");
+        }
+    }
+
+    #[test]
+    fn a_number_list_after_a_hash_and_a_decimal_are_not_cards() {
+        for line in [
+            // Luhn-valid digits, so only where they stand keeps them from being a card.
+            ["landing #4111 1111 ", "1111 1111 in order"].concat(),
+            ["cost 41111111", "11111111.25 tokens"].concat(),
+            ["ratio 0.41111111", "11111111"].concat(),
+            ["piece-4111-1111-", "1111-1111"].concat(),
+            ["a-2341 2341 ", "2346-b"].concat(),
+            ["(2341-2341-", "2346-rc)"].concat(),
+        ] {
+            assert_eq!(rules(&line), Vec::<&str>::new(), "{line}");
+        }
+    }
+
+    #[test]
+    fn a_card_or_aadhaar_number_written_for_a_person_is_still_found() {
+        for (line, rule) in [
+            (["card 4111 1111 ", "1111 1111"].concat(), "card-number"),
+            (["card: 4111-1111-", "1111-1111."].concat(), "card-number"),
+            (["(4111", "111111111111)"].concat(), "card-number"),
+            (
+                ["paid with 5500 0000 ", "0000 0004, thanks"].concat(),
+                "card-number",
+            ),
+            (["\"4111", "111111111111\","].concat(), "card-number"),
+            (["amex 3782 822463 ", "10005"].concat(), "card-number"),
+            (["- 4111 1111 ", "1111 1111"].concat(), "card-number"),
+            (["id 2341 2341 ", "2346 on file"].concat(), "in-aadhaar"),
+            (["id: 2341-2341-", "2346."].concat(), "in-aadhaar"),
+            // The named form keeps reading a number written right after its name.
+            (["aadhaar-2341", "23412346"].concat(), "in-aadhaar"),
+            (["Aadhaar no. 2341", "23412346"].concat(), "in-aadhaar"),
+        ] {
+            assert_eq!(rules(&line), vec![rule], "{line}");
+        }
     }
 
     #[test]

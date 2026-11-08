@@ -592,10 +592,16 @@ fn address_has(dir: &Path, helper: Option<&str>, url: &str) -> Option<Vec<String
     if url.is_empty() || url.starts_with('-') || !an_address_anywhere(url) {
         return None;
     }
-    let names = git::run(dir, &["remote"], git::READ)
+    // Asked as the hook's own git sees the repository (#5822): in a bare one, only the
+    // `GIT_DIR` git handed the hook finds it, and a `git remote` that could not was a push to
+    // an address scanning all the remote already had.
+    let names = git::run_in_hook(dir, &["remote"], git::READ)
         .ok()
-        .filter(git::Run::ok)?;
-    if names.out.lines().any(|name| name.trim() == url) {
+        .filter(|run| run.code == Some(0))?;
+    if String::from_utf8_lossy(&names.out)
+        .lines()
+        .any(|name| name.trim() == url)
+    {
         return None;
     }
     address_asked_from(Path::new("/"), helper, url)
@@ -853,7 +859,16 @@ fn pushed_within(
             Some(_) => Err(String::from_utf8_lossy(&run.err).trim().to_owned()),
         }
     };
-    let changes_the_allowlist = !ask(&["rev-list", "--full-history"])?.trim().is_empty();
+    // A commit of its own that changes the allowlist, or a merge whose resolution writes one
+    // neither side had. A merge that takes a side's file brings no change of its own: what it
+    // brings is that side's commits, read above (#5822: a side branch from before the file
+    // existed made every merge of it look like a change).
+    let changes_the_allowlist = !ask(&["rev-list", "--full-history", "--no-merges"])?
+        .trim()
+        .is_empty()
+        || ask(&["rev-list", "--full-history", "--min-parents=2", "--parents"])?
+            .lines()
+            .any(|line| merge_writes_its_own_allowlist(repo, line));
     // Which commit each diff is, so the lines around a change are read from its files.
     let marker = format!("--format={COMMIT_MARKER}%H");
     fn log<'a>(verb: &'a str, merges: &'a str, marker: &'a str, more: &[&'a str]) -> Vec<&'a str> {
@@ -931,6 +946,39 @@ fn pushed_within(
     let mut scan = through(text, read);
     scan.changes_the_allowlist = changes_the_allowlist;
     Ok(scan)
+}
+
+/// Whether the merge `line` names (`<merge> <parent>…`, as `rev-list --parents` writes it) holds
+/// an allowlist, under any of its names, that none of its parents holds: a resolution of its own.
+/// A line this cannot read is taken as one, so the push is refused rather than let by.
+fn merge_writes_its_own_allowlist(repo: &Path, line: &str) -> bool {
+    let mut ids = line.split_whitespace();
+    let Some(merge) = ids.next() else {
+        return false;
+    };
+    let parents: Vec<&str> = ids.collect();
+    if parents.len() < 2 {
+        return true;
+    }
+    let blob = |commit: &str, path: &str| {
+        git::run_in_hook(
+            repo,
+            &[
+                "rev-parse",
+                "--verify",
+                "--quiet",
+                &format!("{commit}:{path}"),
+            ],
+            git::READ,
+        )
+        .ok()
+        .filter(|run| run.code == Some(0))
+        .map(|run| String::from_utf8_lossy(&run.out).trim().to_owned())
+    };
+    scanallow::spellings().any(|path| {
+        let own = blob(merge, path);
+        parents.iter().all(|parent| blob(parent, path) != own)
+    })
 }
 
 /// How many commits `range` (revisions as `rev-list` takes them) holds in `repo`.
@@ -1752,7 +1800,8 @@ pub const RUNS_UNDER_REFUSAL: &str = "purlis: commit refused — it stages a ver
 
 /// What a chat's push of a range that changes the allowlist is refused with.
 pub const PUSH_ALLOWLIST_REFUSAL: &str = "purlis: push refused — it would publish a change to \
-     .charter-scan-allow.toml, the scan's allowlist. The operator pushes an allowlist change \
+     the scan's allowlist (.purlis-scan-allow.toml, or .charter-scan-allow.toml as it was \
+     once named) beyond what the remote already has. The operator pushes an allowlist change \
      themselves. Do not use --no-verify; the operator has been told.\n";
 
 /// The most findings a refusal lists; the rest are counted.
@@ -2895,6 +2944,58 @@ mod tests {
                 .changes_the_allowlist,
             "a range that does not touch the file"
         );
+    }
+
+    #[test]
+    fn merging_a_branch_from_before_the_allowlist_does_not_change_it() {
+        // #5822: a side branch cut before the allowlist existed, merged into a main that has it.
+        let (_dir, repo) = repo();
+        std::fs::write(repo.join("README"), "x\n").unwrap();
+        let before = commit_all(&repo, "before the allowlist");
+        allowlist_at_head(&repo, DOCS_EMAIL);
+        let published = testgit::run(&repo, &["rev-parse", "HEAD"])
+            .out
+            .trim()
+            .to_owned();
+        testgit::run(&repo, &["checkout", "-q", "-b", "side", &before]);
+        std::fs::write(repo.join("notes"), "side\n").unwrap();
+        let side = commit_all(&repo, "side");
+        for (ours, theirs) in [(&published, &side), (&side, &published)] {
+            testgit::run(&repo, &["checkout", "-q", "--detach", ours]);
+            testgit::run(&repo, &["merge", "-q", "--no-edit", "--no-ff", theirs]);
+            let merge = testgit::run(&repo, &["rev-parse", "HEAD"])
+                .out
+                .trim()
+                .to_owned();
+
+            let known = std::slice::from_ref(&published);
+            let scan = pushed_knowing(&repo, &update(&merge, NOTHING), known).unwrap();
+
+            assert!(!scan.changes_the_allowlist, "merged onto {ours}");
+        }
+    }
+
+    #[test]
+    fn a_merge_whose_resolution_writes_its_own_allowlist_changes_it() {
+        let (_dir, repo) = repo();
+        std::fs::write(repo.join("README"), "x\n").unwrap();
+        let published = commit_all(&repo, "published");
+        testgit::run(&repo, &["checkout", "-q", "-b", "side"]);
+        std::fs::write(repo.join("notes"), "side\n").unwrap();
+        let side = commit_all(&repo, "side");
+        testgit::run(&repo, &["checkout", "-q", "--detach", &published]);
+        testgit::run(&repo, &["merge", "-q", "--no-commit", "--no-ff", &side]);
+        std::fs::write(repo.join(scanallow::FILE), DOCS_EMAIL).unwrap();
+        testgit::run(&repo, &["add", scanallow::FILE]);
+        testgit::run(&repo, &["commit", "-q", "--no-edit"]);
+        let merge = testgit::run(&repo, &["rev-parse", "HEAD"])
+            .out
+            .trim()
+            .to_owned();
+
+        let scan = pushed_knowing(&repo, &update(&merge, NOTHING), &[published]).unwrap();
+
+        assert!(scan.changes_the_allowlist);
     }
 
     #[test]
