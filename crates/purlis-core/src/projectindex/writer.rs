@@ -238,10 +238,6 @@ fn configure(conn: &Connection) -> Result<()> {
     conn.pragma_update(None, "journal_mode", "WAL")?;
     conn.pragma_update(None, "synchronous", "NORMAL")?;
     conn.pragma_update(None, "secure_delete", "ON")?;
-    // DIAGNOSTIC (#5672), to be reverted.
-    if std::env::var_os("SCRATCH_CACHE").is_some() {
-        conn.pragma_update(None, "cache_size", -65536)?;
-    }
     conn.busy_timeout(std::time::Duration::from_secs(5))?;
     Ok(())
 }
@@ -454,11 +450,9 @@ fn sweep_sources(
                 .collect()
         })
         .collect();
-    let (mut t_wait, mut t_apply) = (std::time::Duration::ZERO, std::time::Duration::ZERO);
     std::thread::scope(|scope| -> Result<()> {
         let mut planning = None;
         for (n, batch) in batches.iter().enumerate() {
-            let w0 = std::time::Instant::now();
             let planned = match planning.take() {
                 Some(handle) => join(handle),
                 None => plan(root, batch, recorded(tx, batch)?),
@@ -467,18 +461,14 @@ fn sweep_sources(
                 let rows = recorded(tx, next)?;
                 planning = Some(scope.spawn(move || plan(root, next, rows)));
             }
-            t_wait += w0.elapsed();
-            let a0 = std::time::Instant::now();
             for (one, (source, _)) in planned.into_iter().zip(batch) {
                 let done = apply(root, tx, source, one)?;
                 swept.written += done.written;
                 swept.deleted += done.deleted;
             }
-            t_apply += a0.elapsed();
         }
         Ok(())
     })?;
-    eprintln!("SCRATCH wait-for-plan {t_wait:?} apply {t_apply:?}");
     Ok(swept)
 }
 

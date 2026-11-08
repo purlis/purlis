@@ -33,14 +33,6 @@ struct Args {
 
 #[derive(Subcommand)]
 enum Command {
-    /// DIAGNOSTIC (#5672), to be reverted: the syscalls of reading every memory.
-    #[command(hide = true)]
-    Readbench {
-        #[arg(long)]
-        project: PathBuf,
-        #[arg(long)]
-        mode: String,
-    },
     /// Write a project into an empty (or absent) directory.
     Generate {
         #[arg(long)]
@@ -134,10 +126,6 @@ fn main() -> ExitCode {
             );
             ExitCode::SUCCESS
         }
-        Command::Readbench { project, mode } => {
-            readbench(&project, &mode);
-            ExitCode::SUCCESS
-        }
         Command::Look { project, times } => {
             // What the app does once as auto-save starts (`planegit::prime`), before any look
             // a person meets: without it every look reads the whole tree, a state the app
@@ -160,50 +148,4 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
     }
-}
-
-/// DIAGNOSTIC (#5672), to be reverted.
-fn readbench(root: &std::path::Path, mode: &str) {
-    use std::io::Read;
-    fn walk(d: &std::path::Path, out: &mut Vec<PathBuf>) {
-        for e in std::fs::read_dir(d).into_iter().flatten().flatten() {
-            let p = e.path();
-            if e.file_type().is_ok_and(|t| t.is_dir()) {
-                walk(&p, out)
-            } else if p.extension().is_some_and(|x| x == "md") {
-                out.push(p)
-            }
-        }
-    }
-    let mut files = Vec::new();
-    walk(root, &mut files);
-    let started = Instant::now();
-    let next = std::sync::atomic::AtomicUsize::new(0);
-    let threads = std::thread::available_parallelism().map_or(1, |n| n.get());
-    std::thread::scope(|s| {
-        for _ in 0..threads {
-            s.spawn(|| loop {
-                let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                let Some(p) = files.get(i) else { break };
-                match mode {
-                    "stat" => {
-                        let _ = std::fs::metadata(p);
-                    }
-                    "stat+read" => {
-                        let _ = std::fs::metadata(p);
-                        let _ = std::fs::read(p);
-                    }
-                    "open+read" => {
-                        if let Ok(mut f) = std::fs::File::open(p) {
-                            let _ = f.metadata();
-                            let mut v = Vec::new();
-                            let _ = f.read_to_end(&mut v);
-                        }
-                    }
-                    _ => {}
-                }
-            });
-        }
-    });
-    println!("{mode}: {} files in {:?} on {threads} threads", files.len(), started.elapsed());
 }
