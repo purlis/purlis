@@ -63,3 +63,10 @@ or as a fact. What it did not need was for the file to go.
 - The index header a new todo store is written with still says *"done removes it"*. It is about the
   index, whose lines are the open todos, and a done todo's line does go; it is left as it was so a
   store written before and after this reads the same.
+
+## Amendments
+
+The amendments to this decision are files of their own in [`0106/`](0106/), one per
+amendment, named `<yyyy-mm-dd>-<slug>.md`. A new amendment is a new file there and never a
+section added to this record, so two pull requests that amend it do not touch the same lines
+(#1982).
