@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794111723391,
+  "lastUpdate": 1794114234305,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -43050,6 +43050,48 @@ window.BENCHMARK_DATA = {
             "value": 102.36526,
             "unit": "ms",
             "extra": "median of 5 runs: 101.004, 101.151, 102.365, 103.053, 103.297 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "2ef8b56b9d9bff86f12ca05b7165943f96ce6e11",
+          "message": "A fill whose call ends while its Secret ask waits takes the ask with it (#5766)\n\n* Tests first: a fill whose call ends while its Secret ask waits\n\nThe Secret ask's hold gains hold_while, which takes whether its caller is\ngone, and the wait login and fill notices share moves into purlis-core so\nthe ask waits on it too. Here hold_while is reverted on purpose so that it\nnever looks: the new tests show red. The next commit puts the look in.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6WH1C2VYAESDJ5N64R3RJ16\nPurlis-Persona: steward\n\n* A fill whose call ends while its Secret ask waits takes the ask with it\n\nThe Secret ask's hold looks every second whether its caller hung up,\nthrough the wait login and fill notices share. When the caller has hung\nup, its waiter leaves the ask under the same lock that ends the wait, so\nno answer in between counts it as a chat to nudge, and an ask nobody else\nneeds goes from the window. A secret fill's call is answered as a hung-up\nfill notice is.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6WH1C2VYAESDJ5N64R3RJ16\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-08T04:21:24Z",
+          "tree_id": "d868e95e5f7031829be6bca6033f895cbfaf8169",
+          "url": "https://github.com/purlis/purlis/commit/2ef8b56b9d9bff86f12ca05b7165943f96ce6e11"
+        },
+        "date": 1794114229283,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5613695,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.547, 0.552, 0.561, 0.563, 0.566 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.175036,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.129, 16.147, 16.175, 16.210, 16.265 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.80628,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.231, 101.541, 101.806, 102.053, 102.503 ms"
           }
         ]
       }
