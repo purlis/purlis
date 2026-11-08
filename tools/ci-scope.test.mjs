@@ -215,10 +215,12 @@ test("a doc that code reads runs everything", () => {
   for (const path of [
     "CHANGELOG.md",
     "docs/ui-primitives.md",
+    // Read by the title bar's test too (#3196).
+    "docs/schema/theme.v2.schema.json",
   ]) {
     assert.deepEqual(of([path]), all, path);
   }
-  for (const path of ["docs/plane-format.md", "docs/schema/theme.v2.schema.json"]) {
+  for (const path of ["docs/plane-format.md"]) {
     assert.deepEqual(of([path]), ["app", "docs", "rust", "scenario", "tools"], path);
   }
 });

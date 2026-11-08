@@ -110,6 +110,9 @@ export const READ_BY_CODE = [
   "docs/ui-primitives.md",
   "docs/design-system.md",
   "docs/adr/0076-a-run-moves-only-by-a-named-cause-and-a-chats-state-is-read-from-its-runs.md",
+  // The published theme schema: Rust writes and checks it, and the title bar's test reads every
+  // part a theme can set from it (#3196).
+  "docs/schema/",
 ];
 
 // Docs that Rust's tests read and no window file does, so a change to one needs what a change to
@@ -119,7 +122,6 @@ export const READ_BY_CODE = [
 // when a window file comes to read one.
 export const DOCS_READ_BY_RUST = [
   "docs/plane-format.md",
-  "docs/schema/",
   "docs/adr/0083/2026-11-02-a-task-question-is-counted-from-its-steps-and-never-read.md",
 ];
 
