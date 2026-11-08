@@ -301,7 +301,10 @@ jobs:
         with:
           packages: bubblewrap socat
       - uses: ./.github/actions/rust-toolchain
+      # Saved by a run on `main` alone (#5858): a run dispatched on a branch restores and saves none.
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       # Every crate the workspace's lock names, and not only purlis-core's: the gitoxide
       # guard reads `cargo metadata --offline` over the whole workspace, which a
       # `--package purlis-core` build never downloads.
@@ -359,7 +362,10 @@ jobs:
         with:
           packages: bubblewrap socat
       - uses: ./.github/actions/rust-toolchain
+      # Saved by a run on `main` alone (#5858): a run dispatched on a branch restores and saves none.
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       # Every crate the workspace's lock names, and not only purlis-core's: the gitoxide
       # guard reads `cargo metadata --offline` over the whole workspace, which a
       # `--package purlis-core` build never downloads.

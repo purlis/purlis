@@ -148,6 +148,41 @@ events busy chats send the window) is `npm run e2e:scale` in `app/`, on a releas
 `app/e2e/wdio.scale.conf.ts` says what it needs. A missed budget fails nothing: the nightly run
 keeps one issue labelled `scale-regression` open while any is missed.
 
+## CI's caches
+
+The repository may hold 10 GB of Actions cache. Past that, GitHub evicts the least recently used
+entries, so a cache that does not fit pushes out one a gate reads. **Only `main` saves a cache.** A
+pull request or a merge queue branch restores what `main` saved and saves nothing.
+`the_workflows_run_only_what_they_pinned.rs` (`release-manifest`) fails on any step, in a workflow
+or a `.github/actions/` action, that could save on another ref:
+
+- rust-cache needs `save-if: ${{ github.ref == 'refs/heads/main' }}` or `save-if: false`.
+- actions/cache needs to be `actions/cache/restore` followed by an `actions/cache/save` under
+  `if: github.ref == 'refs/heads/main'`.
+- For npm, use `./.github/actions/npm-ci`. setup-node's own cache saves on every ref, so every
+  setup-node says `package-manager-cache: false`.
+- sccache writes only as `github.ref == 'refs/heads/main' && 'READ_WRITE' || 'READ_ONLY'`.
+
+What `main` keeps, measured on 2026-11-08 (#5858):
+
+| Cache | Size | Who restores it |
+| --- | --- | --- |
+| rust-cache `rust` (Linux) | 1.45 GB | `rust`, `rust-doctests`, `git-lfs`, `recorded`, `stress` |
+| rust-cache `scenario-linux` | 1.05 GB | the Linux scenario legs, Pool setup's run, `stress` |
+| rust-cache `app` (Linux, macOS) | 0.90 + 0.67 GB | `app` |
+| rust-cache `lint` | 0.73 GB | `lint` |
+| rust-cache `scenario` (macOS) | 0.49 GB | the macOS scenario legs, `stress` |
+| rust-cache `dev-release` (outcome bars) | 0.76 GB a platform | `outcome-bars`, `outcome-bars-linux` |
+| rust-cache `bench` | 0.21 GB | `bench` |
+| sccache (macOS) | about 1 GB, new entries every merge | the macOS builds |
+| npm (`npm-ci`) | 0.1 GB a lockfile and OS | the web, app, scenario, stories and docs jobs |
+| Linux packages | 0.06 GB a package list | every Linux job |
+| CodeQL's overlay base | 0.26 GB a merge | CodeQL |
+
+A job that builds what another already caches restores that one by `shared-key` and saves none,
+rather than taking a cache of its own. Measure with
+`gh cache list -R purlis/purlis --limit 1000 --json key,ref,sizeInBytes,lastAccessedAt`.
+
 ## A build you can run
 
 CI builds the app but never bundles it, so nothing in a PR is installable. The `release`
