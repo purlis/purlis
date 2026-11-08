@@ -616,3 +616,24 @@ fn ssh_with_a_jump_and_a_destination_a_shell_would_read_is_offered_no_run_grant(
         ],
     );
 }
+
+// The sixth review of #5876.
+
+#[test]
+fn scp_and_sftp_with_a_jump_and_a_host_a_shell_would_read_are_offered_no_run_grant() {
+    refused(
+        "scp",
+        "a destination a shell would read",
+        &[&["-J", "b", "h$(x):f", "."], &["-J", "b", ".", "u@[h;x]:f"]],
+    );
+    refused(
+        "sftp",
+        "a destination a shell would read",
+        &[&["-J", "b", "h|x"], &["-o", "ProxyJump=b", "u@h;x:dir"]],
+    );
+    offered(
+        "scp",
+        &["-J b ~/a.txt deploy@host:~/b.txt", "-J b host:a ./my;file"],
+    );
+    offered("sftp", &["-J b deploy@host", "-J b host:dir"]);
+}

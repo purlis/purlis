@@ -8,5 +8,6 @@
   `--rsh` and `--rsync-path`; `kubectl --kubeconfig` and kustomize's plugin flags; `psql -f`, `-o`
   and a backslash command in `-c`; `mysql --pager`, `--defaults-file` and a shell command in `-e`;
   `zip -TT`; and `wget --use-askpass`, `-e` and `--config`. The chat is told to leave the flag
-  out. `sed`, `aria2c`, `kustomize`, `sshpass`, `autossh`, `mosh` and `lftp` get no Allow at all.
-  A persona can still declare any of them as a tool (#5799).
+  out. `sed`, `aria2c`, `kustomize`, `sshpass`, `autossh`, `mosh`, `lftp` and mysql's
+  server-side and shell-like tools get no Allow at all. A persona can still declare any of them
+  as a tool (#5799).

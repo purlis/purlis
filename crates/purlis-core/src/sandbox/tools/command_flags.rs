@@ -44,9 +44,22 @@ struct Flags {
     /// Whether an operand's host is handed to ssh as a word of its own (rsync's `host:path`), so
     /// one starting with `-` would be an option of ssh's, even after a `--`.
     operands_reach_ssh: bool,
-    /// Whether a jump host has ssh paste its destination into a command its shell runs, so the
-    /// destination is read as a jump's value is.
-    jump_pastes_destination: bool,
+    /// Which hosts a jump has ssh paste into a command its shell runs, read as a jump's value
+    /// is (#5876's fifth and sixth reviews).
+    jump_pastes: Jumped,
+}
+
+/// The hosts a jump pastes into the command ssh's shell runs.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Jumped {
+    /// None: the program makes no jump.
+    Nothing,
+    /// ssh's destination, its first operand.
+    Destination,
+    /// sftp's destination: its first operand's remote part, or the whole of it.
+    FirstOperand,
+    /// scp's: the remote part of every operand that has one.
+    RemoteOperands,
 }
 
 /// The options of ssh's own configuration that run a command or load code (`ssh_config(5)`).
@@ -110,14 +123,14 @@ fn ssh_option(flag: &str, value: &str) -> Option<String> {
 /// `ProxyCommand`, whose `%h` and `%r` are the host and user).
 const PASTED: &[&str] = &["ProxyJump", "Hostname", "User"];
 
-/// Whether `value` holds anything but what a host, a user, a port and a list of jumps are
-/// spelled with, which a shell might read.
 /// Whether `part`, a user or a host, starts with `-` once IPv6 brackets are taken off, as ssh
 /// and rsync take them off before they use it (#5876's fifth review).
 fn dash_first(part: &str) -> bool {
     part.trim_start_matches('[').starts_with('-')
 }
 
+/// Whether `value` holds anything but what a host, a user, a port and a list of jumps are
+/// spelled with, which a shell might read, or a user or host starting with `-`.
 fn shell_would_read(value: &str) -> bool {
     // A jump list's user or host starting with `-` would be an option of the ssh it runs.
     let dashed = value
@@ -178,7 +191,7 @@ const PROGRAMS: &[Flags] = &[
         long_valued: &[],
         mysql_spelling: false,
         operands_reach_ssh: false,
-        jump_pastes_destination: false,
+        jump_pastes: Jumped::Nothing,
     },
     Flags {
         attached: "",
@@ -193,7 +206,7 @@ const PROGRAMS: &[Flags] = &[
         long_valued: &[],
         mysql_spelling: false,
         operands_reach_ssh: false,
-        jump_pastes_destination: false,
+        jump_pastes: Jumped::Nothing,
     },
     Flags {
         attached: "",
@@ -208,7 +221,7 @@ const PROGRAMS: &[Flags] = &[
         long_valued: &[],
         mysql_spelling: false,
         operands_reach_ssh: false,
-        jump_pastes_destination: true,
+        jump_pastes: Jumped::Destination,
     },
     Flags {
         attached: "",
@@ -223,7 +236,7 @@ const PROGRAMS: &[Flags] = &[
         long_valued: &[],
         mysql_spelling: false,
         operands_reach_ssh: false,
-        jump_pastes_destination: false,
+        jump_pastes: Jumped::RemoteOperands,
     },
     Flags {
         attached: "",
@@ -238,7 +251,7 @@ const PROGRAMS: &[Flags] = &[
         long_valued: &[],
         mysql_spelling: false,
         operands_reach_ssh: false,
-        jump_pastes_destination: false,
+        jump_pastes: Jumped::FirstOperand,
     },
     Flags {
         attached: "",
@@ -252,7 +265,7 @@ const PROGRAMS: &[Flags] = &[
         long_valued: &[],
         mysql_spelling: false,
         operands_reach_ssh: true,
-        jump_pastes_destination: false,
+        jump_pastes: Jumped::Nothing,
     },
     Flags {
         attached: "",
@@ -265,7 +278,7 @@ const PROGRAMS: &[Flags] = &[
         long_valued: &[],
         mysql_spelling: false,
         operands_reach_ssh: false,
-        jump_pastes_destination: false,
+        jump_pastes: Jumped::Nothing,
     },
     Flags {
         attached: "",
@@ -287,7 +300,7 @@ const PROGRAMS: &[Flags] = &[
         long_valued: &[],
         mysql_spelling: false,
         operands_reach_ssh: false,
-        jump_pastes_destination: false,
+        jump_pastes: Jumped::Nothing,
     },
     Flags {
         attached: "",
@@ -307,7 +320,7 @@ const PROGRAMS: &[Flags] = &[
         long_valued: &[],
         mysql_spelling: false,
         operands_reach_ssh: false,
-        jump_pastes_destination: false,
+        jump_pastes: Jumped::Nothing,
     },
     Flags {
         attached: "",
@@ -321,7 +334,7 @@ const PROGRAMS: &[Flags] = &[
         long_valued: &["command"],
         mysql_spelling: false,
         operands_reach_ssh: false,
-        jump_pastes_destination: false,
+        jump_pastes: Jumped::Nothing,
     },
     // mysql's and mariadb's own tools, before the client's row, which their names' first part
     // would reach. No letter is taken to have a value: each word after one is read.
@@ -358,7 +371,7 @@ const PROGRAMS: &[Flags] = &[
         long_valued: &[],
         mysql_spelling: true,
         operands_reach_ssh: false,
-        jump_pastes_destination: false,
+        jump_pastes: Jumped::Nothing,
     },
     Flags {
         attached: "p",
@@ -377,7 +390,7 @@ const PROGRAMS: &[Flags] = &[
         long_valued: &["execute"],
         mysql_spelling: true,
         operands_reach_ssh: false,
-        jump_pastes_destination: false,
+        jump_pastes: Jumped::Nothing,
     },
 ];
 
@@ -415,9 +428,14 @@ pub fn names_a_command(name: &str, args: &[String]) -> Option<String> {
 /// starting with `-`: rsync passes the user as `-l user` and the host as a word of its own, each
 /// of which would then be an option of ssh's (#5876's fourth review).
 fn hands_ssh_a_dash(operand: &str) -> bool {
-    // The first `:` outside brackets ends the remote part: `[::1]:path` is host `::1`.
+    remote_part(operand).is_some_and(|remote| remote.split('@').any(dash_first))
+}
+
+/// `operand`'s `[user@]host` before the first `:` outside brackets (`[::1]:path` is host `::1`),
+/// where it has one.
+fn remote_part(operand: &str) -> Option<&str> {
     let mut inside = false;
-    let Some(end) = operand.char_indices().find_map(|(at, c)| {
+    let end = operand.char_indices().find_map(|(at, c)| {
         match c {
             '[' => inside = true,
             ']' => inside = false,
@@ -425,10 +443,8 @@ fn hands_ssh_a_dash(operand: &str) -> bool {
             _ => {}
         }
         None
-    }) else {
-        return false;
-    };
-    operand[..end].split('@').any(dash_first)
+    })?;
+    Some(&operand[..end])
 }
 
 /// Whether ssh's `-o` value names a ProxyJump, whatever its case and quotes.
@@ -448,24 +464,33 @@ fn names_a_jump(value: &str) -> bool {
 fn refused_form(program: &Flags, args: &[String]) -> Option<String> {
     let mut words = args.iter();
     let mut jumped = false;
-    let mut destination: Option<&str> = None;
+    let mut operands: Vec<&str> = Vec::new();
     // ssh pastes a jump's destination into the command its shell runs (#5876's fifth review).
-    let destination_refused = |jumped: bool, destination: Option<&str>| {
-        (program.jump_pastes_destination && jumped && destination.is_some_and(shell_would_read))
+    let destination_refused = |jumped: bool, operands: &[&str]| {
+        let pasted: Vec<&str> = match program.jump_pastes {
+            Jumped::Nothing => Vec::new(),
+            Jumped::Destination => operands.iter().take(1).copied().collect(),
+            Jumped::FirstOperand => operands
+                .iter()
+                .take(1)
+                .map(|one| remote_part(one).unwrap_or(one))
+                .collect(),
+            Jumped::RemoteOperands => operands.iter().filter_map(|one| remote_part(one)).collect(),
+        };
+        (jumped && pasted.into_iter().any(shell_would_read))
             .then(|| "a destination a shell would read".to_owned())
     };
     while let Some(word) = words.next() {
         if word == "--" {
             // rsync hands an operand's host to ssh as a word of its own.
-            let mut rest = words.peekable();
-            if destination.is_none() {
-                destination = rest.peek().map(|one| one.as_str());
-            }
-            if let Some(said) = destination_refused(jumped, destination) {
+            operands.extend(words.map(String::as_str));
+            if let Some(said) = destination_refused(jumped, &operands) {
                 return Some(said);
             }
             let reaches = program.operands_reach_ssh
-                && rest.any(|operand| operand.starts_with('-') || hands_ssh_a_dash(operand));
+                && operands
+                    .iter()
+                    .any(|operand| operand.starts_with('-') || hands_ssh_a_dash(operand));
             return reaches.then(|| "an operand starting with -".to_owned());
         }
         if let Some(long) = word.strip_prefix("--") {
@@ -506,7 +531,7 @@ fn refused_form(program: &Flags, args: &[String]) -> Option<String> {
             if program.operands_reach_ssh && hands_ssh_a_dash(word) {
                 return Some("an operand starting with -".to_owned());
             }
-            destination.get_or_insert(word.as_str());
+            operands.push(word.as_str());
             continue;
         };
         if let Some(one) = program
@@ -538,5 +563,5 @@ fn refused_form(program: &Flags, args: &[String]) -> Option<String> {
             }
         }
     }
-    destination_refused(jumped, destination)
+    destination_refused(jumped, &operands)
 }

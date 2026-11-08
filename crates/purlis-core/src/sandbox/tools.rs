@@ -1927,6 +1927,21 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "autossh",
     "mosh",
     "lftp",
+    // mysql's and mariadb's server-side and shell-like tools (#5876's sixth review): a server
+    // start runs the server program and scripts its flags name, an install runs what its folders
+    // hold, `mysqlslap --pre-system` and a test file run a shell command, and `mysqlsh` runs code.
+    "mysql.server",
+    "mariadb.server",
+    "mysqld_safe",
+    "mariadbd-safe",
+    "mysqld_multi",
+    "mysql_install_db",
+    "mariadb-install-db",
+    "mysqlslap",
+    "mariadb-slap",
+    "mysqltest",
+    "mariadb-test",
+    "mysqlsh",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused

@@ -2650,3 +2650,26 @@ fn locked_a_command_whose_flag_names_a_command_asks_for_no_key() {
     assert!(asks.open_runs().is_empty(), "{frames:?}");
     assert_ne!(refusal(&frames).1, WAITING_ON_THE_PERSON, "{frames:?}");
 }
+
+// The sixth review of #5876: mysql's and mariadb's server-side and shell-like tools run what
+// their flags or files name, and none is a usual reason to hand a chat a key.
+
+#[test]
+fn mysql_server_side_and_shell_like_tools_run_what_they_name_so_they_are_offered_no_run_grant() {
+    for name in [
+        "mysql.server",
+        "mariadb.server",
+        "mysqld_safe",
+        "mariadbd-safe",
+        "mysqld_multi",
+        "mysql_install_db",
+        "mariadb-install-db",
+        "mysqlslap",
+        "mariadb-slap",
+        "mysqltest",
+        "mariadb-test",
+        "mysqlsh",
+    ] {
+        refused_as_running_others(name);
+    }
+}
