@@ -1745,7 +1745,7 @@ pub fn dispatch_report_args(
 pub fn question(args: &Map<String, Value>) -> Result<String, String> {
     let asked = string(args, "question")?.trim();
     if asked.is_empty() {
-        return Err("a question for the operator needs some words".to_owned());
+        return Err("a question for the person needs some words".to_owned());
     }
     Ok(asked.to_owned())
 }

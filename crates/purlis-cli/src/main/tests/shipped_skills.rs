@@ -1477,6 +1477,25 @@ fn the_briefing_and_every_tool_description_use_the_glossary_s_words() {
             format!("{} {}", tool.description, (tool.schema)()),
         ));
     }
+    // What the MCP server tells the harness it is for, and what its tools return in purlis's
+    // own words.
+    said.push((
+        "the MCP server's instructions".to_owned(),
+        crate::mcp::INSTRUCTIONS.to_owned(),
+    ));
+    for text in crate::mcp::ASK_RESULTS {
+        said.push(("an `ask_operator` result".to_owned(), text.to_owned()));
+    }
+    let unasked = purlis_core::chattools::question(&serde_json::Map::new()).expect_err("no question");
+    let blank = purlis_core::chattools::question(
+        serde_json::json!({ "question": " " })
+            .as_object()
+            .expect("an object"),
+    )
+    .expect_err("a blank question");
+    for text in [unasked, blank] {
+        said.push(("an `ask_operator` result".to_owned(), text));
+    }
     let wrong: Vec<String> = said
         .iter()
         .flat_map(|(what, text)| {

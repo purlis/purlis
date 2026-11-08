@@ -496,7 +496,7 @@ fn ask_operator_puts_the_question_to_the_person_through_the_harness() {
     assert_eq!(answer["id"], 99, "{answer}");
     assert_eq!(
         text(&answer["result"]),
-        "The operator answered: yes, after CI",
+        "The person answered: yes, after CI",
         "{answer}"
     );
 }
@@ -624,7 +624,7 @@ fn at_2026_07_28_ask_operator_asks_by_returning_input_required_and_reads_the_ret
         .clone();
     assert_eq!(
         text(&answered),
-        "The operator declined to answer.",
+        "The person declined to answer.",
         "{answered}"
     );
 }
@@ -799,7 +799,7 @@ mod claude_code_says_it {
         let answered = answer(&mut server, &asked, "yes, after CI");
         assert_eq!(
             text(&answered["result"]),
-            "The operator answered: yes, after CI"
+            "The person answered: yes, after CI"
         );
         hear(
             &mut board,
