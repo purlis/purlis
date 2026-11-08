@@ -807,72 +807,139 @@ fn text_above(side: &str, header: &str) -> String {
 }
 
 /// A memory store's index rebuilt from its files, as a merge of two sides leaves them (#5824 F4):
-/// one line for each of `files` (file name and text), and none for a file no longer there, so a
-/// memory either side forgot stays forgotten and one both sides added is listed once.
+/// a line for each of `files` (file name and text) that a side listed and neither side took off
+/// since `base`, and none for a file no longer there. So a memory either side forgot stays
+/// forgotten, one both sides added is listed once, and a file no side listed is left for
+/// `optimize` to report rather than hidden by a line.
 ///
 /// Each file keeps the line one side wrote for it: `ours`'s, unless `ours` left it as `base` had
-/// it and `theirs` changed it, so a retitle on either side holds. A file neither side has a line
-/// for gets one from its heading. `by_name` orders the lines by file name, which is the order
-/// they were written in a store whose files start with the time; otherwise they keep `ours`'s
-/// order, with `theirs`'s new lines after them in its order, and the rest by name. The text
-/// above the first line is `ours`'s, or `header`.
+/// it and `theirs` changed it, so a retitle on either side holds, and a retitle outlasts the other
+/// side's drop. Every line that is not a memory's (the header, a heading between lines, a link
+/// to another folder) stays where `ours` had it, unless `theirs` took it out since `base`. A line
+/// `theirs` added goes after the line it follows there: in a store whose files start with the
+/// time (`by_name`), in the order of their names, and otherwise after this machine's own new
+/// lines. A side that left the index as `base` had it lends no order, and with no index at all
+/// the text starts with `header`.
 pub(crate) fn index_merged(
     header: &str,
     [base, ours, theirs]: [&str; 3],
     files: &[(String, String)],
     by_name: bool,
 ) -> String {
-    let above = text_above(ours, header);
-    let lines = |text: &str| -> Vec<(String, String)> {
-        text.lines()
-            .filter_map(|line| Some((leading_link(line)?.1.to_owned(), line.to_owned())))
-            .collect()
+    use std::collections::BTreeSet;
+    let (ours, theirs) = if ours == base {
+        (theirs, ours)
+    } else {
+        (ours, theirs)
     };
-    let (base, ours, theirs) = (lines(base), lines(ours), lines(theirs));
-    let find = |side: &[(String, String)], name: &str| {
-        side.iter()
-            .find(|(file, _)| file == name)
-            .map(|(_, line)| line.clone())
-    };
-    let line_for = |name: &str, body: &str| {
-        let (b, o, t) = (find(&base, name), find(&ours, name), find(&theirs, name));
-        match (o, t) {
-            (Some(o), Some(t)) if Some(&o) == b.as_ref() => t,
-            (Some(o), _) => o,
-            (None, Some(t)) => t,
-            (None, None) => {
-                let title = body
-                    .lines()
-                    .find_map(|line| line.strip_prefix("# "))
-                    .unwrap_or_else(|| name.trim_end_matches(".md"));
-                index_line(title, name)
-            }
+    let held: BTreeSet<&str> = files.iter().map(|(name, _)| name.as_str()).collect();
+    let (b, o, t) = (
+        lines_by_memory(base),
+        lines_by_memory(ours),
+        lines_by_memory(theirs),
+    );
+    let line_for = |name: &str| -> Option<String> {
+        if !held.contains(name) {
+            return None;
+        }
+        let was = b.get(name);
+        match (o.get(name), t.get(name)) {
+            (Some(o), Some(t)) => Some(if Some(o) == was { t } else { o }.clone()),
+            // The other side's drop holds against a line this side left as it was.
+            (Some(kept), None) | (None, Some(kept)) => (Some(kept) != was).then(|| kept.clone()),
+            (None, None) => None,
         }
     };
-    let mut names: Vec<&(String, String)> = files.iter().collect();
-    names.sort_by(|a, b| a.0.cmp(&b.0));
-    if !by_name {
-        let at = |name: &str| {
-            ours.iter()
-                .position(|(file, _)| file == name)
-                .map(|at| (0, at))
-                .or_else(|| {
-                    theirs
-                        .iter()
-                        .position(|(file, _)| file == name)
-                        .map(|at| (1, at))
-                })
-                .unwrap_or((2, 0))
-        };
-        // Stable: the files neither side lists stay in the order of their names.
-        names.sort_by_key(|(name, _)| at(name));
+    let hand: BTreeSet<&str> = base
+        .lines()
+        .filter(|line| memory_of(line).is_none())
+        .collect();
+    let theirs_lines: Vec<&str> = theirs.lines().collect();
+    let skeleton = if ours.is_empty() { header } else { ours };
+    let mut out: Vec<(Option<String>, String)> = Vec::new();
+    for line in skeleton.lines() {
+        match memory_of(line) {
+            Some(name) => {
+                if out.iter().any(|(at, _)| at.as_deref() == Some(name)) {
+                    continue;
+                }
+                if let Some(kept) = line_for(name) {
+                    out.push((Some(name.to_owned()), kept));
+                }
+            }
+            // A line of a person's own that the other side took out since the base goes.
+            None if !line.trim().is_empty()
+                && hand.contains(line)
+                && !theirs_lines.contains(&line) => {}
+            None => out.push((None, line.to_owned())),
+        }
     }
-    let mut text = above;
-    for (name, body) in names {
-        text.push_str(&line_for(name, body));
-        text.push('\n');
+    for (i, line) in theirs_lines.iter().enumerate() {
+        let new = match memory_of(line) {
+            Some(name) if !out.iter().any(|(at, _)| at.as_deref() == Some(name)) => {
+                match line_for(name) {
+                    Some(kept) => (Some(name.to_owned()), kept),
+                    None => continue,
+                }
+            }
+            Some(_) => continue,
+            None if line.trim().is_empty()
+                || hand.contains(line)
+                || out.iter().any(|(_, text)| text == line) =>
+            {
+                continue;
+            }
+            None => (None, (*line).to_owned()),
+        };
+        let found = |prev: &&str| match memory_of(prev) {
+            Some(name) => out.iter().position(|(at, _)| at.as_deref() == Some(name)),
+            None if prev.trim().is_empty() => None,
+            None => out
+                .iter()
+                .rposition(|(at, text)| at.is_none() && text == prev),
+        };
+        let mut at = theirs_lines[..i]
+            .iter()
+            .rev()
+            .find_map(found)
+            .map_or(0, |at| at + 1);
+        while let Some((Some(here), _)) = out.get(at) {
+            let past = match &new.0 {
+                Some(name) if by_name => here < name,
+                // This machine's own new lines stay together, before the other's.
+                _ => o.contains_key(here.as_str()) && !b.contains_key(here.as_str()),
+            };
+            if !past {
+                break;
+            }
+            at += 1;
+        }
+        out.insert(at, new);
+    }
+    let mut text: String = out.iter().map(|(_, line)| format!("{line}\n")).collect();
+    if text.is_empty() {
+        text = header.to_owned();
     }
     text
+}
+
+/// The memory of this store a line of its index lists: the file its leading link names, where
+/// that is a file of the store itself and not one in another folder.
+fn memory_of(line: &str) -> Option<&str> {
+    leading_link(line)
+        .map(|(_, file)| file)
+        .filter(|file| !file.contains('/') && !file.contains('\\'))
+}
+
+/// The line `text` has for each memory it lists, the first where it lists one twice.
+fn lines_by_memory(text: &str) -> std::collections::BTreeMap<&str, String> {
+    let mut lines = std::collections::BTreeMap::new();
+    for line in text.lines() {
+        if let Some(name) = memory_of(line) {
+            lines.entry(name).or_insert_with(|| line.to_owned());
+        }
+    }
+    lines
 }
 
 /// One index line, `- [title](file)`, with `\\`, `[` and `]` in the title escaped (SI-9d): a

@@ -77,7 +77,10 @@ fn a_conflict_in_a_charters_own_words_is_a_persons_and_nothing_moves() {
 
     assert_eq!(
         bring_in(&two.mine, "release", false, When::Moved),
-        BroughtIn::Conflict(vec![path.clone()])
+        BroughtIn::Conflict(Conflicted {
+            files: vec![path.clone()],
+            keys: BTreeMap::new(),
+        })
     );
 
     assert_eq!(two.head(), before);
@@ -660,7 +663,10 @@ fn a_key_both_machines_changed_in_charter_toml_is_a_persons_conflict_named_by_it
 
     assert_eq!(
         bring_in(&two.mine, "release", false, When::Needed),
-        BroughtIn::Conflict(vec!["charter.toml (sandbox.mode)".to_owned()])
+        BroughtIn::Conflict(Conflicted {
+            files: vec!["charter.toml".to_owned()],
+            keys: BTreeMap::from([("charter.toml".to_owned(), vec!["sandbox.mode".to_owned()])]),
+        })
     );
 
     assert_eq!(two.head(), before);
@@ -668,4 +674,240 @@ fn a_key_both_machines_changed_in_charter_toml_is_a_persons_conflict_named_by_it
     assert!(!read(&two.mine, "charter.toml").contains("<<<<<<<"));
     let planned = plan(&two.mine, "refs/remotes/origin/release", None).unwrap();
     assert!(!planned.marked.contains_key("charter.toml"));
+}
+
+/// What a save records of a conflict and the window reads back, by way of the push record.
+fn as_a_save_records_it(two: &Two, conflict: Conflicted) -> super::super::Standing {
+    let head = two.head();
+    super::super::record_push(
+        &two.mine,
+        super::super::PushResult::conflicted("release", conflict),
+        &head,
+    );
+    super::super::standing(&two.mine)
+}
+
+fn quiet() -> impl FnMut(crate::repocmd::Say) {
+    |_| {}
+}
+
+/// **Continue settles a `charter.toml` key conflict** (#5824 F6 review): the save names the key
+/// beside the file, never inside the path, so the files the window hands Continue are the ones
+/// git stopped in, and Continue carries the merge on once the person has settled the key.
+#[test]
+fn continue_settles_a_key_conflict_in_charter_toml_that_a_save_named() {
+    let two = Two::new(&[("charter.toml", "[sandbox]\nmode = \"on\"\n")]);
+    write(&two.mine, "charter.toml", "[sandbox]\nmode = \"off\"\n");
+    commit(&two.mine, "mine");
+    write(&two.theirs, "charter.toml", "[sandbox]\nmode = \"ask\"\n");
+    two.land_theirs("theirs");
+    let _the_window = crate::sandbox::held::stand_in(&[]);
+
+    let BroughtIn::Conflict(conflict) = bring_in(&two.mine, "release", false, When::Needed) else {
+        panic!("a key both machines changed is a conflict");
+    };
+    assert_eq!(conflict.files, vec!["charter.toml".to_owned()]);
+    assert_eq!(
+        conflict.keys,
+        BTreeMap::from([("charter.toml".to_owned(), vec!["sandbox.mode".to_owned()])])
+    );
+    let standing = as_a_save_records_it(&two, conflict);
+    assert_eq!(standing.conflicts, vec!["charter.toml".to_owned()]);
+    assert_eq!(
+        standing.conflict_keys,
+        BTreeMap::from([("charter.toml".to_owned(), vec!["sandbox.mode".to_owned()])])
+    );
+
+    let stopped = super::super::resolve::start_merge(
+        &two.mine,
+        "release",
+        "refs/remotes/origin/release",
+        false,
+        &mut quiet(),
+    );
+    assert_eq!(
+        stopped,
+        super::super::resolve::Settled::Stopped(vec!["charter.toml".to_owned()])
+    );
+    write(&two.mine, "charter.toml", "[sandbox]\nmode = \"off\"\n");
+    // What SavingResolve hands Continue: the files the stop named and the standing's.
+    let shown = standing.conflicts;
+
+    assert_eq!(
+        super::super::resolve::carry_on(&two.mine, &shown, &mut quiet()),
+        super::super::resolve::Settled::Replayed
+    );
+    assert_eq!(
+        run(&two.mine, &["log", "-1", "--format=%P"])
+            .split(' ')
+            .count(),
+        2
+    );
+}
+
+/// **A key conflict is said as one** (#5824 F6 review, docs/ui-copy.md): both machines changed a
+/// key, not "the same lines".
+#[test]
+fn a_key_conflict_is_said_as_both_machines_changing_that_key() {
+    let said = said_conflict(
+        "release",
+        &Conflicted {
+            files: vec!["charter.toml".into(), "notes.md".into()],
+            keys: BTreeMap::from([(
+                "charter.toml".to_owned(),
+                vec!["sandbox.mode".to_owned(), "theme.name".to_owned()],
+            )]),
+        },
+    );
+
+    assert_eq!(
+        said,
+        "release on the remote and this machine both changed `sandbox.mode` and `theme.name` in \
+         charter.toml, and the same lines in notes.md. Nothing was changed here: press Resolve \
+         in the Saving view to settle them"
+    );
+    assert_eq!(
+        said_conflict(
+            "release",
+            &Conflicted {
+                files: vec!["notes.md".into()],
+                keys: BTreeMap::new(),
+            },
+        ),
+        "release on the remote changed the same lines as this machine in notes.md. Nothing was \
+         changed here: press Resolve in the Saving view to settle it"
+    );
+}
+
+/// **A memory a person deleted at Resolve has no line** (#5824 F4 review): this machine forgot
+/// a memory the other retitled and edited, so the file is the person's to settle. Once they
+/// keep the deletion and press Continue, the index follows the tree they settled.
+#[test]
+fn continue_rebuilds_the_memory_index_from_the_tree_the_person_settled() {
+    let store = "personas/devops/memory";
+    let index = format!("{store}/MEMORY.md");
+    let two = Two::new(&[
+        (&index, "# M\n- [Alpha](alpha.md)\n- [Kept](kept.md)\n"),
+        (&format!("{store}/alpha.md"), "# Alpha\n"),
+        (&format!("{store}/kept.md"), "# Kept\n"),
+    ]);
+    std::fs::remove_file(two.mine.join(store).join("alpha.md")).unwrap();
+    write(&two.mine, &index, "# M\n- [Kept](kept.md)\n");
+    commit(&two.mine, "mine: alpha forgotten");
+    write(
+        &two.theirs,
+        &format!("{store}/alpha.md"),
+        "# Alpha\n\nMore.\n",
+    );
+    write(
+        &two.theirs,
+        &index,
+        "# M\n- [Alpha, more](alpha.md)\n- [Kept](kept.md)\n",
+    );
+    two.land_theirs("theirs: alpha edited");
+    let alpha = format!("{store}/alpha.md");
+    assert_eq!(
+        bring_in(&two.mine, "release", false, When::Needed),
+        BroughtIn::Conflict(Conflicted {
+            files: vec![alpha.clone()],
+            keys: BTreeMap::new(),
+        })
+    );
+
+    let stopped = super::super::resolve::start_merge(
+        &two.mine,
+        "release",
+        "refs/remotes/origin/release",
+        false,
+        &mut quiet(),
+    );
+    assert_eq!(
+        stopped,
+        super::super::resolve::Settled::Stopped(vec![alpha.clone()])
+    );
+    run(&two.mine, &["rm", "-q", "--", &alpha]);
+
+    assert_eq!(
+        super::super::resolve::carry_on(&two.mine, &[alpha], &mut quiet()),
+        super::super::resolve::Settled::Replayed
+    );
+    assert_eq!(read(&two.mine, &index), "# M\n- [Kept](kept.md)\n");
+    assert_eq!(run(&two.mine, &["status", "--porcelain"]), "");
+}
+
+/// **A store only the other machine changed is rebuilt too** (#5824 F4 review: never merged
+/// by lines): its index is written from the merged tree's memories, so a line for a memory no
+/// longer there is gone, whatever git's merge of the index would have left.
+#[test]
+fn a_memory_index_only_the_other_machine_changed_is_rebuilt() {
+    let store = "personas/devops/memory";
+    let index = format!("{store}/MEMORY.md");
+    let two = Two::new(&[
+        (&index, "# M\n- [Alpha](alpha.md)\n"),
+        (&format!("{store}/alpha.md"), "# Alpha\n"),
+    ]);
+    write(&two.mine, "notes.md", "mine\n");
+    commit(&two.mine, "mine: elsewhere");
+    // The other machine lost the file and not its line, as a hand edit leaves it.
+    std::fs::remove_file(two.theirs.join(store).join("alpha.md")).unwrap();
+    two.land_theirs("theirs: alpha gone");
+
+    assert_eq!(
+        bring_in(&two.mine, "release", false, When::Moved),
+        BroughtIn::Moved(1)
+    );
+
+    assert_eq!(read(&two.mine, &index), "# M\n");
+}
+
+/// The memory files a store holds, each with a heading.
+fn held(names: &[&str]) -> Vec<(String, String)> {
+    names
+        .iter()
+        .map(|name| ((*name).to_owned(), format!("# {name}\n")))
+        .collect()
+}
+
+/// **A rebuild indexes only what a side listed** (#5824 F4 review): a memory file no side ever
+/// put on its index is the state `optimize` reports, and a rebuild does not hide it by listing
+/// it. A line either side took off since the base stays off, this machine's own drop included.
+#[test]
+fn a_merged_index_lists_only_what_a_side_listed_and_neither_dropped() {
+    let base = "# M\n- [A](a.md)\n- [Mine dropped](mine-dropped.md)\n\
+                - [Theirs dropped](theirs-dropped.md)\n";
+    let ours = "# M\n- [A](a.md)\n- [Theirs dropped](theirs-dropped.md)\n- [New](new.md)\n";
+    let theirs = "# M\n- [A](a.md)\n- [Mine dropped](mine-dropped.md)\n";
+    let files = held(&[
+        "a.md",
+        "mine-dropped.md",
+        "theirs-dropped.md",
+        "new.md",
+        "unlisted.md",
+    ]);
+
+    let text = crate::memstore::index_merged("# fallback\n", [base, ours, theirs], &files, false);
+
+    assert_eq!(text, "# M\n- [A](a.md)\n- [New](new.md)\n");
+}
+
+/// **A rebuild keeps what a person wrote by hand** (#5824 F4 review): a heading between the
+/// lines and a link to another folder are not a memory's line, and stay where they were. The
+/// other machine's new line goes where it wrote it.
+#[test]
+fn a_merged_index_keeps_a_heading_between_lines_and_a_link_to_another_folder() {
+    let base = "# M\n\n## Projects\n- [A](a.md)\n\n## People\n- [B](b.md)\n\
+                - [Shared](../../_shared/memory/x.md)\n";
+    let ours = "# M\n\n## Projects\n- [A](a.md)\n- [C](c.md)\n\n## People\n- [B](b.md)\n\
+                - [Shared](../../_shared/memory/x.md)\n";
+    let theirs = "# M\n\n## Projects\n- [A, retitled](a.md)\n\n## People\n- [B](b.md)\n\
+                  - [D](d.md)\n- [Shared](../../_shared/memory/x.md)\n";
+    let files = held(&["a.md", "b.md", "c.md", "d.md"]);
+
+    let text = crate::memstore::index_merged("# fallback\n", [base, ours, theirs], &files, false);
+
+    assert_eq!(
+        text,
+        "# M\n\n## Projects\n- [A, retitled](a.md)\n- [C](c.md)\n\n## People\n- [B](b.md)\n\
+         - [D](d.md)\n- [Shared](../../_shared/memory/x.md)\n"
+    );
 }

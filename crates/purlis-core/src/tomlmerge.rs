@@ -1,12 +1,18 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **List-shaped settings are sets** (#5824 F5, D4): the keys of the project's settings file that hold a list
-//! every machine adds to, such as the hosts each Always allow appends, are written one item per
-//! line, sorted and once each ([`as_set`]), and two machines' changes to them are merged as sets
-//! ([`merged`]): both sides' items, less any either side removed since the two parted.
+//! **The project's settings file, merged by its structure** (#5824 F5, F6).
 //!
-//! [`SETS`] is the one list of which keys those are. A key not in it is merged as a whole value.
+//! **List-shaped settings are sets** (F5, D4): the keys that hold a list every machine adds to,
+//! such as the hosts each Always allow adds, are written one item per line, sorted and once each
+//! ([`as_set`]), and two machines' changes to them are merged as sets: both sides' items, less
+//! any either side removed since the two parted. [`SETS`] is the one list of which keys those
+//! are.
+//!
+//! **Every other key merges by itself** (F6): a key only one side changed (added, removed or
+//! given a new value) takes that side, written as that side wrote it; a table both sides changed
+//! is merged key by key inside it; and a key both changed, each its own way, is a conflict,
+//! named by its dotted path for the person to settle ([`merged`]).
 //!
 //! Everything is done on the parsed TOML, with `toml_edit` keeping this machine's comments and
 //! layout, so a merge never writes a conflict marker into the file.
@@ -86,47 +92,71 @@ pub enum Merged {
 /// compared as TOML reads them, so a change of spacing alone is no change. `Err` where a side is
 /// not TOML.
 pub fn merged(base: &str, ours: &str, theirs: &str) -> Result<Merged, String> {
-    let parsed = |side: &str, text: &str| {
+    let read = |side: &str, text: &str| {
         text.parse::<toml::Table>()
             .map(toml::Value::Table)
-            .map_err(|e| format!("{side} is not TOML: {}", crate::shown::short(e.message())))
+            .map_err(|e| not_toml(side, e.message()))
     };
-    let (b, o, t) = (
-        parsed("the merge base", base)?,
-        parsed("this machine's", ours)?,
-        parsed("the remote's", theirs)?,
+    let (base, ours_read, theirs_read) = (
+        read("the merge base", base)?,
+        read("this machine's", ours)?,
+        read("the remote's", theirs)?,
     );
-    let mut edits = Vec::new();
-    let mut conflicts = Vec::new();
+    let mut found = Found::default();
     walk(
         &mut Vec::new(),
-        Some(&b),
-        Some(&o),
-        Some(&t),
-        &mut edits,
-        &mut conflicts,
+        Sides {
+            base: Some(&base),
+            ours: Some(&ours_read),
+            theirs: Some(&theirs_read),
+        },
+        &mut found,
     );
-    if !conflicts.is_empty() {
-        return Ok(Merged::Conflict(conflicts));
+    if !found.conflicts.is_empty() {
+        return Ok(Merged::Conflict(found.conflicts));
     }
     let document = |side: &str, text: &str| {
         text.parse::<toml_edit::DocumentMut>()
-            .map_err(|e| format!("{side} is not TOML: {}", crate::shown::short(e.message())))
+            .map_err(|e| not_toml(side, e.message()))
     };
     let mut doc = document("this machine's", ours)?;
     let from = document("the remote's", theirs)?;
-    for edit in edits {
+    for edit in found.edits {
         apply(&mut doc, &from, edit)?;
     }
     Ok(Merged::Clean(doc.to_string()))
 }
 
+/// Why a side of the merge could not be read: `side` is not TOML, in the parser's words.
+fn not_toml(side: &str, message: &str) -> String {
+    format!("{side} is not TOML: {}", crate::shown::short(message))
+}
+
 /// A change [`walk`] found the merge needs in this machine's document.
 enum Edit {
-    /// The set at this path is now these items.
-    Set(Vec<String>, Vec<String>),
+    /// The set at `path` is now `items`.
+    Set {
+        path: Vec<String>,
+        items: Vec<String>,
+    },
     /// The key at this path is the remote's, as it wrote it, or gone where it has none.
     Theirs(Vec<String>),
+}
+
+/// What [`walk`] found: the changes the merge makes in this machine's document, and the keys
+/// both sides changed, each its own way.
+#[derive(Default)]
+struct Found {
+    edits: Vec<Edit>,
+    conflicts: Vec<String>,
+}
+
+/// One key's value on each side of the merge, `None` where that side has no such key.
+#[derive(Clone, Copy)]
+struct Sides<'a> {
+    base: Option<&'a toml::Value>,
+    ours: Option<&'a toml::Value>,
+    theirs: Option<&'a toml::Value>,
 }
 
 /// The strings of a list, `None` where `value` is not a list of strings. An absent key is an
@@ -142,69 +172,64 @@ fn strings(value: Option<&toml::Value>) -> Option<Vec<String>> {
     }
 }
 
-/// Walk the three sides at `path`, noting what the merge changes in ours and where it conflicts.
-fn walk(
-    path: &mut Vec<String>,
-    b: Option<&toml::Value>,
-    o: Option<&toml::Value>,
-    t: Option<&toml::Value>,
-    edits: &mut Vec<Edit>,
-    conflicts: &mut Vec<String>,
-) {
+/// Walk the three sides at `path`, noting in `found` what the merge changes in this machine's
+/// document and where it conflicts.
+fn walk(path: &mut Vec<String>, sides: Sides<'_>, found: &mut Found) {
+    let Sides { base, ours, theirs } = sides;
     if is_set(path)
-        && let (Some(b), Some(o), Some(t)) = (strings(b), strings(o), strings(t))
+        && let (Some(was), Some(mine), Some(remote)) =
+            (strings(base), strings(ours), strings(theirs))
     {
-        let (b, o_set, t): (BTreeSet<String>, BTreeSet<String>, BTreeSet<String>) = (
-            b.into_iter().collect(),
-            o.iter().cloned().collect(),
-            t.into_iter().collect(),
-        );
-        let gone: BTreeSet<&String> = b
+        let was: BTreeSet<String> = was.into_iter().collect();
+        let mine: BTreeSet<String> = mine.into_iter().collect();
+        let remote: BTreeSet<String> = remote.into_iter().collect();
+        let gone: BTreeSet<&String> = was
             .iter()
-            .filter(|x| !o_set.contains(*x) || !t.contains(*x))
+            .filter(|item| !mine.contains(*item) || !remote.contains(*item))
             .collect();
-        let set: BTreeSet<String> = o_set
-            .union(&t)
-            .filter(|x| !gone.contains(x))
+        let set: BTreeSet<String> = mine
+            .union(&remote)
+            .filter(|item| !gone.contains(item))
             .cloned()
             .collect();
-        if set != o_set {
-            edits.push(Edit::Set(path.clone(), set.into_iter().collect()));
+        if set != mine {
+            found.edits.push(Edit::Set {
+                path: path.clone(),
+                items: set.into_iter().collect(),
+            });
         }
         return;
     }
-    if o == t || t == b {
+    if ours == theirs || theirs == base {
         return;
     }
-    if o == b {
-        edits.push(Edit::Theirs(path.clone()));
+    if ours == base {
+        found.edits.push(Edit::Theirs(path.clone()));
         return;
     }
-    if let (Some(toml::Value::Table(o)), Some(toml::Value::Table(t))) = (o, t) {
-        let b = match b {
-            Some(toml::Value::Table(b)) => Some(b),
+    if let (Some(toml::Value::Table(mine)), Some(toml::Value::Table(remote))) = (ours, theirs) {
+        let was = match base {
+            Some(toml::Value::Table(was)) => Some(was),
             _ => None,
         };
-        let keys: BTreeSet<&String> = o
+        let keys: BTreeSet<&String> = mine
             .keys()
-            .chain(t.keys())
-            .chain(b.into_iter().flat_map(|b| b.keys()))
+            .chain(remote.keys())
+            .chain(was.into_iter().flat_map(|was| was.keys()))
             .collect();
         for key in keys {
             path.push(key.clone());
-            walk(
-                path,
-                b.and_then(|b| b.get(key)),
-                o.get(key),
-                t.get(key),
-                edits,
-                conflicts,
-            );
+            let below = Sides {
+                base: was.and_then(|was| was.get(key)),
+                ours: mine.get(key),
+                theirs: remote.get(key),
+            };
+            walk(path, below, found);
             path.pop();
         }
         return;
     }
-    conflicts.push(dotted(path));
+    found.conflicts.push(dotted(path));
 }
 
 /// A key's path as TOML writes it, dotted, each key quoted where it has to be.
@@ -229,6 +254,26 @@ fn unplace(table: &mut toml_edit::Table) {
     }
 }
 
+/// The table at `parents` in `doc`, and whether it is an inline table. It is there: [`walk`]
+/// only goes into a table both sides have.
+fn parent_of<'d>(
+    doc: &'d mut toml_edit::DocumentMut,
+    parents: &[String],
+) -> Result<(&'d mut dyn toml_edit::TableLike, bool), String> {
+    let mut table: &mut dyn toml_edit::TableLike = doc.as_table_mut();
+    let mut inline = false;
+    for parent in parents {
+        let item = table
+            .get_mut(parent)
+            .ok_or_else(|| format!("{} is not a table here", dotted(parents)))?;
+        inline = inline || item.is_inline_table();
+        table = item
+            .as_table_like_mut()
+            .ok_or_else(|| format!("{} is not a table here", dotted(parents)))?;
+    }
+    Ok((table, inline))
+}
+
 /// Make `edit` in `doc`, taking what the remote wrote from `from`.
 fn apply(
     doc: &mut toml_edit::DocumentMut,
@@ -245,19 +290,20 @@ fn apply(
                     .and_then(toml_edit::Item::as_table_like);
             }
             let item = theirs.and_then(|table| table.get(key)).cloned();
-            // The tables above it are in both: [`walk`] only goes into a table both sides have.
-            let mut table: &mut dyn toml_edit::TableLike = doc.as_table_mut();
-            for parent in parents {
-                table = table
-                    .get_mut(parent)
-                    .and_then(toml_edit::Item::as_table_like_mut)
-                    .ok_or_else(|| format!("{} is not a table here", dotted(parents)))?;
-            }
+            let (table, inline) = parent_of(doc, parents)?;
             match item {
                 Some(mut item) => {
                     // A table the remote added goes after this machine's, not where it stood there.
                     if let toml_edit::Item::Table(added) = &mut item {
                         unplace(added);
+                    }
+                    // Inside an inline table, a `[header]` table cannot stand: it goes in as the
+                    // inline table it reads as, never left to the table to drop or refuse.
+                    if inline && !item.is_value() {
+                        item =
+                            toml_edit::Item::Value(item.into_value().map_err(|_| {
+                                format!("{} cannot be written inline", dotted(&path))
+                            })?);
                     }
                     table.insert(key, item);
                 }
@@ -266,16 +312,9 @@ fn apply(
                 }
             }
         }
-        Edit::Set(path, items) => {
+        Edit::Set { path, items } => {
             let (key, parents) = path.split_last().ok_or("a set with no key")?;
-            let mut table: &mut dyn toml_edit::TableLike = doc.as_table_mut();
-            for parent in parents {
-                table = table
-                    .entry(parent)
-                    .or_insert_with(|| toml_edit::Item::Table(toml_edit::Table::new()))
-                    .as_table_like_mut()
-                    .ok_or_else(|| format!("{} is not a table", dotted(parents)))?;
-            }
+            let (table, _) = parent_of(doc, parents)?;
             if items.is_empty() {
                 table.remove(key);
                 return Ok(());

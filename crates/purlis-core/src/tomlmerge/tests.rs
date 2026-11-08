@@ -112,3 +112,50 @@ fn spacing_alone_is_no_change_and_each_conflicting_key_is_named() {
         Merged::Conflict(vec!["\"odd key\".x".to_owned(), "sandbox.mode".to_owned()])
     );
 }
+
+/// What `text` reads as, for comparing merges whose layout is toml_edit's.
+fn read_as(text: &str) -> toml::Table {
+    text.parse().unwrap()
+}
+
+/// **A table the remote added inside an inline table is kept** (#5824 F6 review): it goes in
+/// as an inline table, where a `[header]` table would be lost from the line it cannot be on.
+#[test]
+fn a_table_the_remote_added_inside_an_inline_table_is_kept_inline() {
+    let base = "[plane]\nui = { theme = \"dark\" }\n";
+    let ours = "[plane]\nui = { theme = \"light\" }\n";
+    let theirs = "[plane]\n\n[plane.ui]\ntheme = \"dark\"\n\n[plane.ui.colors]\nbg = \"black\"\n";
+
+    let Ok(Merged::Clean(text)) = merged(base, ours, theirs) else {
+        panic!("only the remote added colors");
+    };
+
+    assert_eq!(
+        read_as(&text),
+        read_as("[plane]\nui = { theme = \"light\", colors = { bg = \"black\" } }\n"),
+        "{text}"
+    );
+    assert!(!text.contains("[plane.ui"), "{text}");
+}
+
+/// A set inside an inline table merges as any set does, and stays inside it.
+#[test]
+fn a_set_inside_an_inline_table_merges_in_place() {
+    let base = "sandbox = { personas = { devops = { hosts = [\"x.example\"] } } }\n";
+    let ours = "sandbox = { personas = { devops = { hosts = [\"x.example\", \"a.example\"] } } }\n";
+    let theirs =
+        "sandbox = { personas = { devops = { hosts = [\"x.example\", \"b.example\"] } } }\n";
+
+    let Ok(Merged::Clean(text)) = merged(base, ours, theirs) else {
+        panic!("sets do not conflict");
+    };
+
+    assert_eq!(
+        read_as(&text),
+        read_as(
+            "sandbox = { personas = { devops = { hosts = [\"a.example\", \"b.example\", \
+             \"x.example\"] } } }\n"
+        ),
+        "{text}"
+    );
+}
