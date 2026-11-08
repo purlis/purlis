@@ -163,20 +163,6 @@ row("index-rebuild", {
   quiet: settled.quiet,
 });
 
-// DIAGNOSTIC (#5672), to be reverted: does reading on more threads than cores help?
-{
-  const { rmSync } = await import("node:fs");
-  for (const threads of ["3", "6", "12", "24", "3", "12"]) {
-    const ran = spawnSync("/usr/bin/time", [resolve(values["scale-project"]), "readbench", "--project", project, "--mode", "open+read"], { cwd: project, env: { ...env, SCRATCH_THREADS: threads }, encoding: "utf8" });
-    console.log(`scale-run | diag read | ${ran.stdout.trim()} | ${ran.stderr.replace(/\n\s*/g, " ").trim()}`);
-  }
-  for (const threads of ["3", "6", "12", "3", "6", "12"]) {
-    rmSync(join(project, ".charter", "index"), { recursive: true, force: true });
-    const ran = spawnSync("/usr/bin/time", [resolve(values["scale-project"]), "index", "--project", project], { cwd: project, env: { ...env, SCRATCH_THREADS: threads }, encoding: "utf8" });
-    console.log(`scale-run | diag index ${threads} threads | ${ran.stdout.trim()} | ${ran.stderr.replace(/\n\s*/g, " ").trim().slice(0, 200)}`);
-  }
-}
-
 row("hook", {
   samples: samples([purlis, "hook", "sessionstart"], {
     input: (n) => JSON.stringify({ session_id: `scale-${n}`, hook_event_name: "SessionStart", cwd: inWorkspace }),

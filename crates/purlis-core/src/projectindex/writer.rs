@@ -657,11 +657,8 @@ fn opened(path: &Path) -> Option<(std::fs::Metadata, Vec<u8>)> {
 /// `work` done on each of `items` across the machine's threads, the answers in `items`' order.
 fn in_parallel<T: Sync, R: Send>(items: &[T], work: impl Fn(&T) -> R + Sync) -> Vec<R> {
     use std::sync::atomic::{AtomicUsize, Ordering};
-    // DIAGNOSTIC (#5672), to be reverted.
-    let threads = std::env::var("SCRATCH_THREADS")
-        .ok()
-        .and_then(|t| t.parse().ok())
-        .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get))
+    let threads = std::thread::available_parallelism()
+        .map_or(1, std::num::NonZeroUsize::get)
         .min(items.len());
     if threads <= 1 {
         return items.iter().map(work).collect();
