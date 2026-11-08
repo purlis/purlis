@@ -26,7 +26,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "../App";
@@ -57,6 +57,8 @@ import { SigningSetupDialog } from "../SigningSetupDialog";
 import { ForgeGitLabSignIn } from "../ForgeGitLabSignIn";
 import { ForgeTokenSignIn } from "../ForgeTokenSignIn";
 import { AddDockerPoolHost } from "../AddDockerPool";
+import { ReportConsentDialog, WhatReportsSend } from "../ReportConsent";
+import { SentReports } from "../settings/SentReports";
 import { startAddingAPool } from "../pools";
 import { ReplaceRunner } from "../settings/PoolLimits";
 import { DiscardHeldRunner, RemovePool } from "../settings/pools";
@@ -1142,6 +1144,42 @@ const DIALOGS: Opened[] = [
       startAddingAPool();
       render(<AddDockerPoolHost />);
       await screen.findByRole("dialog", { name: "Add a pool" });
+    },
+  },
+  {
+    name: "the first-run question about reports",
+    file: "ReportConsent.tsx",
+    open: async () => render(<ReportConsentDialog onSave={nothing} onNotNow={nothing} />),
+  },
+  {
+    name: "what a report sends",
+    file: "ReportConsent.tsx",
+    open: async () => {
+      render(<WhatReportsSend ids={{ id: "what", labelledBy: "what-label" }} />);
+      fireEvent.click(screen.getByRole("button", { name: "See exactly what's sent…" }));
+      await screen.findByRole("dialog", { name: "What a report sends" });
+    },
+  },
+  {
+    name: "the bytes of a report this machine sent",
+    file: "settings/SentReports.tsx",
+    open: async () => {
+      mockIPC((cmd) =>
+        cmd === "reports_sent"
+          ? [
+              {
+                at: "2026-11-08T03:19:00Z",
+                title: "purlis panicked at src/plane.rs:12:5",
+                to: "purlis's report service",
+                address: "purlis's report service, event 9f1c",
+                bytes: '{"level":"fatal"}\n',
+              },
+            ]
+          : null,
+      );
+      render(<SentReports ids={{ id: "sent", labelledBy: "sent-label" }} />);
+      fireEvent.click(await screen.findByRole("row", { name: /purlis panicked/ }));
+      await screen.findByRole("dialog", { name: "purlis panicked at src/plane.rs:12:5" });
     },
   },
   {

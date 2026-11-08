@@ -101,8 +101,13 @@ function built(level: "project" | "workspace"): Map<string, string> {
 }
 
 describe("the catalogue of Settings groups", () => {
-  it("holds the You level's groups, in its order", () => {
-    expect(SETTINGS_GROUPS.you).toEqual(youGroups().map(({ id, label }) => ({ id, label })));
+  it("holds the You level's groups, in its order, with the other words each is found by", () => {
+    // The palette reads `also` here and the Settings filter reads the builder's: one list.
+    expect(SETTINGS_GROUPS.you).toEqual(
+      youGroups().map(({ id, label, also }) =>
+        also === undefined ? { id, label } : { id, label, also },
+      ),
+    );
   });
 
   it.each(["project", "workspace"] as const)(

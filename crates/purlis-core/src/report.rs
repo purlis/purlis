@@ -5,11 +5,20 @@
 //! tracker under the reporter's own account (#363), through the forge seam's work-item area
 //! (#806).
 //!
+//! # The interface: evidence from a source in, an outcome out
+//!
+//! Every report passes through [`Reports`] (#5686, spec #5683). A caller hands it [`Evidence`]
+//! and the source it came from (a [`Caller`]), and reads back an [`Outcome`]. The caller never
+//! decides how a report is scrubbed, where it goes or whether it may go: [`Reports::take`] drafts
+//! and names the route, [`Reports::file`] files only the draft whose digest was shown, and
+//! [`Reports::duplicates`] is the one search sent before a yes. The evidence kinds not built yet
+//! are named and hold [`NotYet`], which has no value, so nothing can hand one in.
+//!
 //! # What this module promises
 //!
 //! **Nothing leaves before it has been shown.** A [`Draft`] is built, scrubbed and rendered
 //! ([`Draft::preview`]) with no network at all. The one thing sent before a yes is the
-//! duplicate search's query ([`Draft::query`]): words of the scrubbed title, printed first. Filing it ([`file`]) is a separate call, and the
+//! duplicate search's query ([`Draft::query`]): words of the scrubbed title, printed first. Filing it ([`Reports::file`]) is a separate call, and the
 //! command line reaches it only with the reporter's "yes": a prompt on a terminal, or
 //! `--yes <digest>` where the digest ([`Draft::digest`]) is the one the preview printed. A digest
 //! is over the repository, the title and the body, so a `--yes` can only file the exact bytes
@@ -38,19 +47,27 @@
 //! # A saved panic becomes a draft bug
 //!
 //! The app appends every panic to `panics.log` in its log directory (`app/src-tauri/src/panics.rs`).
-//! [`latest_panic`] reads the newest block back, and [`Draft::of_panic`] keeps a closed set of
+//! [`latest_panic`] reads the newest block back, and [`Evidence::Panic`] keeps a closed set of
 //! its fields: where it panicked, its message (scrubbed, and flagged as free text), and the
 //! charter version the record names. The thread and the backtrace are dropped — a backtrace
 //! carries the reporter's paths, and without symbols it is only addresses.
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use regex::Regex;
 use sha2::{Digest, Sha256};
 
 use crate::forge::backend::{Caller, NewWorkItem, WorkItems};
 use crate::forge::{self, Forge, ForgeError, Kind as ForgeKind};
+
+mod consent;
+mod crash;
+pub use consent::{Consent, Stream};
+pub mod intake;
+mod sent;
+pub use sent::{Sent, SentList, SentTo};
 
 /// The repository reports are filed on (RN-9: the product's repository since 2026-10-05).
 pub const UPSTREAM: &str = "purlis/purlis";
@@ -361,6 +378,19 @@ fn names_in(plane: &Path) -> Vec<(String, &'static str)> {
     out
 }
 
+/// The names a plane's folder and its contents carry: the plane's own folder name, as the
+/// project's, and [`names_in`].
+fn names_of_a_plane(plane: &Path) -> Vec<(String, &'static str)> {
+    let mut out = names_in(plane);
+    if let Some(name) = plane.file_name().map(|n| n.to_string_lossy().into_owned())
+        && name.chars().count() >= 3
+        && !OWN_WORDS.contains(&name.as_str())
+    {
+        out.push((name, "[project]"));
+    }
+    out
+}
+
 fn subdirs(dir: &Path) -> Vec<String> {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return Vec::new();
@@ -386,11 +416,11 @@ pub struct Draft {
 
 /// Why a draft could not be made.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Refused(pub String);
+struct Refused(String);
 
 impl Draft {
     /// A report the reporter described in prose. `title` overrides the first line.
-    pub fn described(
+    fn described(
         kind: Kind,
         text: &str,
         title: Option<&str>,
@@ -417,7 +447,7 @@ impl Draft {
     }
 
     /// A draft bug from a saved panic, with the reporter's own words in front of it if any.
-    pub fn of_panic(record: &Panic, words: Option<&str>, known: &Known) -> Result<Draft, Refused> {
+    fn of_panic(record: &Panic, words: Option<&str>, known: &Known) -> Result<Draft, Refused> {
         let place = short_place(&record.place);
         let (place, mut scrubbed) = known.scrub(&place);
         let (message, more) = known.scrub(&record.message);
@@ -455,7 +485,7 @@ impl Draft {
     /// words or phrases, a harness kind, or a version, so no path, argument, host or output can
     /// be in it, and there is nothing for [`Known::scrub`] to find. The harness's version is
     /// taken only in a version's shape (`a_version`), else it reads "not known".
-    pub fn of_sandbox_block(
+    fn of_sandbox_block(
         block: &crate::sandboxblock::Block,
         harness: Option<crate::harness::Harness>,
         harness_version: Option<&str>,
@@ -537,7 +567,7 @@ impl Draft {
             .collect()
     }
 
-    /// The draft as the reporter reads it: exactly what [`file`] would send, and where.
+    /// The draft as the reporter reads it: exactly what [`Reports::file`] would send, and where.
     pub fn preview(&self) -> String {
         let mut out = format!(
             "Draft {} for {UPSTREAM} — nothing has been filed.\n\n\
@@ -667,13 +697,13 @@ pub fn tracker() -> Forge {
 /// The tracker's backend for `caller`, if a report may be searched and filed as them: the
 /// person in the window, with purlis's own sign-in to GitHub. Anyone else is refused before
 /// anything is sent, in words that say where to file instead.
-pub fn as_the_reporter(caller: &Caller) -> Result<Box<dyn forge::ForgeBackend>, ForgeError> {
+fn as_the_reporter(caller: &Caller) -> Result<Box<dyn forge::ForgeBackend>, ForgeError> {
     forge::signin::signed_in_backend(&tracker(), caller, crate::netlog::Feature::Report)
 }
 
 /// Candidate duplicates on [`UPSTREAM`], for the reporter to judge: a keyword search cannot
 /// tell two failures of one command apart. Through the work-item area's search, as `caller`.
-pub fn search_duplicates(
+fn search_duplicates(
     tracker: &dyn WorkItems,
     caller: &Caller,
     draft: &Draft,
@@ -709,7 +739,7 @@ fn number_of(item: &crate::work::WorkItem) -> u64 {
 
 /// Opens the issue on [`UPSTREAM`] as `caller`, through the work-item area, and returns its
 /// URL. It carries no label: a workspace's label is a project's, and this is purlis's tracker.
-pub fn file(tracker: &dyn WorkItems, caller: &Caller, draft: &Draft) -> Result<String, ForgeError> {
+fn file(tracker: &dyn WorkItems, caller: &Caller, draft: &Draft) -> Result<String, ForgeError> {
     let item = tracker.create(
         caller,
         UPSTREAM,
@@ -721,6 +751,412 @@ pub fn file(tracker: &dyn WorkItems, caller: &Caller, draft: &Draft) -> Result<S
     )?;
     // The forge's answer is keyed by its page, so an issue with no address is never `Ok`.
     Ok(item.url)
+}
+
+/// What a report is made from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Evidence {
+    /// A person's own words: `purlis report bug|feature`. `title` overrides the first line.
+    PersonDraft {
+        kind: Kind,
+        text: String,
+        title: Option<String>,
+    },
+    /// A panic the app saved, with the person's own words in front of it if any.
+    Panic {
+        record: Panic,
+        words: Option<String>,
+    },
+    /// A failure of purlis's own, caught where it happened.
+    PurlisFailure(PurlisFailure),
+    /// An agent's draft, written through the `purlis-report` skill. Not built yet.
+    AgentDraft(NotYet),
+    /// A native crash the crash handler recorded. Not built yet.
+    NativeCrash(NotYet),
+    /// An uncaught error in the window. Not built yet.
+    WindowError(NotYet),
+}
+
+/// The value an evidence kind that is not built yet holds: none, so it cannot be handed in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NotYet {}
+
+/// A failure of purlis's own that becomes evidence.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PurlisFailure {
+    /// The sandbox blocked an operation purlis itself ran in a chat (#1338), from the chat running
+    /// `harness`, whose version is `harness_version` as the app heard it (#1353).
+    SandboxBlock {
+        block: crate::sandboxblock::Block,
+        harness: Option<crate::harness::Harness>,
+        harness_version: Option<String>,
+    },
+}
+
+/// What became of a report.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Outcome {
+    /// Drafted and shown, nothing sent, and how it would be filed.
+    Drafted { draft: Draft, route: Route },
+    /// Filed, at `address`.
+    Sent { address: String },
+    /// Not sent: the same report was sent before from this machine in the same purlis version,
+    /// and is now counted `repeats` times after it (#5693, Q15).
+    Counted { repeats: u32 },
+    /// Not sent yet: the Report intake gave no answer, and it waits on this machine to go when it
+    /// answers again (#5693, Q24), listed as waiting to send.
+    Queued,
+    /// Not filed, and why.
+    Refused(Refusal),
+}
+
+/// Where a draft would go on the reporter's yes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Route {
+    /// On [`UPSTREAM`] as the reporter, with purlis's own sign-in: only the person in the window.
+    AsTheReporter,
+    /// Nowhere purlis can send it from here, for `why`; `link` files it in the reporter's browser,
+    /// with the body in it when `whole`, else the body is pasted from the draft.
+    ByHand {
+        why: ForgeError,
+        link: String,
+        whole: bool,
+    },
+}
+
+/// Why a report was not filed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Refusal {
+    /// The evidence makes no report, in words the reporter can act on.
+    Unusable(String),
+    /// The digest named is not the draft's, whose digest is `digest`: nothing was sent.
+    NotTheShownDraft { digest: String },
+    /// The route refused or failed, for `why`; `link` files it in a browser, as in
+    /// [`Route::ByHand`].
+    NotFiled {
+        why: ForgeError,
+        link: String,
+        whole: bool,
+    },
+    /// The person has not said yes to the stream this report belongs to: nothing was drafted
+    /// and nothing sent (#5688).
+    NoConsent(Stream),
+    /// A Crash report this build has no Report intake to send to (it was built without its
+    /// address): nothing was sent.
+    NoIntake,
+    /// The Report intake did not take a Crash report, for the reason given: nothing was listed.
+    NotSent(String),
+    /// Five drafts were sent unread today: this one is not sent, and falls back to asking
+    /// (#5693, Q2b). Crash reports are never capped: they cannot ask, and their fingerprint
+    /// bounds them instead.
+    CapReached,
+}
+
+/// The one module every report passes through: evidence from a source in, an outcome out.
+#[derive(Clone)]
+pub struct Reports {
+    known: Known,
+    /// The answers it is held to, or `None` for this machine's, read only when a report belongs
+    /// to a stream: a person's own report never reaches for the machine's store.
+    consent: Option<Consent>,
+    /// Where a Crash report goes, and the config root whose sent list records it (#5689). None
+    /// in a build with no Report intake.
+    intake: Option<(Arc<dyn intake::Intake>, PathBuf)>,
+}
+
+impl std::fmt::Debug for Reports {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Reports")
+            .field("known", &self.known)
+            .field("consent", &self.consent)
+            .field("intake", &self.intake.as_ref().map(|(_, root)| root))
+            .finish()
+    }
+}
+
+impl Default for Reports {
+    /// Knowing nothing of this machine, and no stream with a yes.
+    fn default() -> Self {
+        Reports::new(Known::default())
+    }
+}
+
+impl Reports {
+    /// Reports that scrub what `known` names.
+    /// No stream has a yes: only a person's own report is drafted ([`Reports::with_consent`]).
+    pub fn new(known: Known) -> Reports {
+        Reports {
+            known,
+            consent: Some(Consent::default()),
+            intake: None,
+        }
+    }
+
+    /// Reports that scrub what this process can identify, inside `plane` when there is one, held
+    /// to the answers this machine keeps ([`Consent::here`]).
+    pub fn here(plane: Option<&Path>) -> Reports {
+        Reports {
+            known: Known::here(plane),
+            consent: None,
+            intake: None,
+        }
+        .sending_to_the_built_in_intake()
+    }
+
+    /// Reports for a crash in the app, which knows no one plane: what this process can identify,
+    /// and the names in every plane this machine opened, held to this machine's answers. The
+    /// planes are read only with a yes to Crash reports: without one nothing is sent, and a
+    /// panicking app has no time to spend on folders.
+    pub fn for_a_crash() -> Reports {
+        let consent = Consent::here();
+        let mut known = Known::here(None);
+        if consent.allows(Stream::CrashReports)
+            && let Some(root) = crate::machine::config_root()
+        {
+            for recent in crate::machine::read(&root).store.recents {
+                known.names.extend(names_of_a_plane(&recent.plane));
+            }
+        }
+        Reports {
+            known,
+            consent: Some(consent),
+            intake: None,
+        }
+        .sending_to_the_built_in_intake()
+    }
+
+    /// The same Reports, sending Crash reports to the Report intake built into this binary,
+    /// listed under this machine's config root, when it has both.
+    fn sending_to_the_built_in_intake(self) -> Reports {
+        match (intake::built_in(), crate::machine::config_root()) {
+            (Some(dsn), Some(root)) => self.sending_to(
+                Arc::new(intake::Sentry::new(dsn, intake::Https::default())),
+                &root,
+            ),
+            _ => self,
+        }
+    }
+
+    /// The same Reports, sending Crash reports to `intake` and listing each in the sent list
+    /// under `config_root`.
+    pub fn sending_to(self, intake: Arc<dyn intake::Intake>, config_root: &Path) -> Reports {
+        Reports {
+            intake: Some((intake, config_root.to_path_buf())),
+            ..self
+        }
+    }
+
+    /// The same Reports, held to `consent`.
+    pub fn with_consent(self, consent: Consent) -> Reports {
+        Reports {
+            consent: Some(consent),
+            ..self
+        }
+    }
+
+    /// Refused when `evidence` from `source` belongs to a stream the person has not said yes to.
+    fn consented(&self, evidence: &Evidence, source: &Caller) -> Result<(), Refusal> {
+        match stream_of(evidence, source) {
+            Some(stream) if !self.consent.unwrap_or_else(Consent::here).allows(stream) => {
+                Err(Refusal::NoConsent(stream))
+            }
+            _ => Ok(()),
+        }
+    }
+
+    /// `evidence` from `source`, scrubbed and drafted, with the route it would take. Nothing is
+    /// sent.
+    pub fn take(&self, evidence: Evidence, source: &Caller) -> Outcome {
+        if let Err(refused) = self.consented(&evidence, source) {
+            return Outcome::Refused(refused);
+        }
+        if stream_of(&evidence, source) == Some(Stream::CrashReports) {
+            return self.send_crash(&evidence);
+        }
+        match self.draft(evidence) {
+            Ok(draft) => {
+                let route = match as_the_reporter(source) {
+                    Ok(_) => Route::AsTheReporter,
+                    Err(why) => {
+                        let (link, whole) = draft.fallback_url();
+                        Route::ByHand { why, link, whole }
+                    }
+                };
+                Outcome::Drafted { draft, route }
+            }
+            Err(refused) => Outcome::Refused(refused),
+        }
+    }
+
+    /// Candidate duplicates of `draft` on [`UPSTREAM`], searched as `source`: the one request
+    /// sent before a yes, its words ([`Draft::query`]) shown first.
+    pub fn duplicates(&self, draft: &Draft, source: &Caller) -> Result<Vec<Hit>, ForgeError> {
+        search_duplicates(as_the_reporter(source)?.as_ref(), source, draft)
+    }
+
+    /// Files the draft of `evidence` from `source`, only if its digest is `shown`: the digest
+    /// the reporter was shown. Anything else is refused unsent.
+    pub fn file(&self, evidence: Evidence, source: &Caller, shown: &str) -> Outcome {
+        if let Err(refused) = self.consented(&evidence, source) {
+            return Outcome::Refused(refused);
+        }
+        let draft = match self.draft(evidence) {
+            Ok(draft) => draft,
+            Err(refused) => return Outcome::Refused(refused),
+        };
+        let digest = draft.digest();
+        if digest != shown {
+            return Outcome::Refused(Refusal::NotTheShownDraft { digest });
+        }
+        match as_the_reporter(source).and_then(|tracker| file(tracker.as_ref(), source, &draft)) {
+            Ok(address) => Outcome::Sent { address },
+            Err(why) => {
+                let (link, whole) = draft.fallback_url();
+                Outcome::Refused(Refusal::NotFiled { why, link, whole })
+            }
+        }
+    }
+
+    /// A Crash report of `evidence`, its fixed fields scrubbed, sent to the Report intake and
+    /// listed with its exact bytes. Nobody is there to be shown it: the yes to its stream is
+    /// the person's word that it may go.
+    fn send_crash(&self, evidence: &Evidence) -> Outcome {
+        let Evidence::Panic { record, .. } = evidence else {
+            return Outcome::Refused(Refusal::Unusable(
+                "only a panic is sent as a Crash report yet".to_string(),
+            ));
+        };
+        let Some((intake, root)) = &self.intake else {
+            return Outcome::Refused(Refusal::NoIntake);
+        };
+        let crash = crash::CrashReport::of_panic(record, &self.known, intake.dsn());
+        if let Some(repeats) = SentList::count_repeat(root, &crash.fingerprint) {
+            return Outcome::Counted { repeats };
+        }
+        // The reports that waited go first, so the intake hears them oldest first.
+        self.send_waiting();
+        let told = SentList::untold_repeats(root);
+        let bytes = crash::with_repeats(&crash.bytes, &told);
+        let listed = |address: String, bytes: String| Sent {
+            at: now(),
+            title: crash.title.clone(),
+            to: SentTo::Intake,
+            address,
+            bytes,
+            fingerprint: Some(crash.fingerprint.clone()),
+            repeats: 0,
+            repeats_sent: 0,
+            unread_draft: false,
+            waiting: false,
+        };
+        match intake.send(bytes.as_bytes(), &crash.event_id) {
+            Ok(address) => {
+                // The report has left: a list that cannot be written does not unsend it.
+                let _ = SentList::add_telling(root, listed(address.clone(), bytes), &told);
+                Outcome::Sent { address }
+            }
+            // It waits without the counts: they ride on whatever leaves first.
+            Err(intake::Failed::NoAnswer(why)) => {
+                match SentList::wait(root, listed(String::new(), crash.bytes.clone())) {
+                    Ok(true) => Outcome::Queued,
+                    Ok(false) => Outcome::Refused(Refusal::NotSent(format!(
+                        "{why}, and {} reports already wait to send",
+                        sent::WAITING_AT_MOST
+                    ))),
+                    Err(err) => Outcome::Refused(Refusal::NotSent(format!(
+                        "{why}, and it could not be kept to send later: {err}"
+                    ))),
+                }
+            }
+            Err(intake::Failed::Refused(why)) => Outcome::Refused(Refusal::NotSent(why)),
+        }
+    }
+
+    /// Sends the reports that wait on this machine (#5693, Q24), oldest first, until the intake
+    /// gives no answer or does not take one, and answers how many left. Each carries the counts of
+    /// repeats not yet told, as any report that leaves does. Nothing is sent without a yes to
+    /// Crash reports: a person who said no since keeps theirs here until they go stale.
+    pub fn send_waiting(&self) -> usize {
+        let Some((intake, root)) = &self.intake else {
+            return 0;
+        };
+        if !self
+            .consent
+            .unwrap_or_else(Consent::here)
+            .allows(Stream::CrashReports)
+        {
+            return 0;
+        }
+        let mut left = 0;
+        for waited in SentList::waiting(root) {
+            let told = SentList::untold_repeats(root);
+            let bytes = crash::with_repeats(&waited.bytes, &told);
+            let Ok(address) = intake.send(bytes.as_bytes(), &crash::event_id_of(&waited.bytes))
+            else {
+                break;
+            };
+            let _ = SentList::left(
+                root,
+                &waited.bytes,
+                Sent {
+                    at: now(),
+                    address,
+                    bytes,
+                    ..waited.clone()
+                },
+                &told,
+            );
+            left += 1;
+        }
+        left
+    }
+
+    fn draft(&self, evidence: Evidence) -> Result<Draft, Refusal> {
+        let made = match evidence {
+            Evidence::PersonDraft { kind, text, title } => {
+                Draft::described(kind, &text, title.as_deref(), &self.known)
+            }
+            Evidence::Panic { record, words } => {
+                Draft::of_panic(&record, words.as_deref(), &self.known)
+            }
+            Evidence::PurlisFailure(PurlisFailure::SandboxBlock {
+                block,
+                harness,
+                harness_version,
+            }) => Draft::of_sandbox_block(&block, harness, harness_version.as_deref()),
+            Evidence::AgentDraft(never)
+            | Evidence::NativeCrash(never)
+            | Evidence::WindowError(never) => match never {},
+        };
+        made.map_err(|Refused(said)| Refusal::Unusable(said))
+    }
+}
+
+/// Now, UTC, RFC 3339 to the second, as the sent list keeps it.
+fn now() -> String {
+    chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string()
+}
+
+/// The stream `evidence` from `source` belongs to, or none for a person's own report.
+///
+/// A chat's draft is an agent's, whatever it holds. A person at the window or at a command they
+/// typed writes their own and needs no yes, except for evidence only a machine makes. With nobody
+/// at the keyboard (a trigger), a crash is a Crash report and anything else an Agent draft.
+fn stream_of(evidence: &Evidence, source: &Caller) -> Option<Stream> {
+    use crate::forge::backend::Surface;
+    if source.is_a_chat() {
+        return Some(Stream::AgentDrafts);
+    }
+    let crash = matches!(
+        evidence,
+        Evidence::Panic { .. } | Evidence::NativeCrash(_) | Evidence::WindowError(_)
+    );
+    match (evidence, source.surface()) {
+        (Evidence::NativeCrash(_) | Evidence::WindowError(_), _) => Some(Stream::CrashReports),
+        (_, Surface::Window | Surface::Command) => None,
+        (_, Surface::Trigger | Surface::Mcp) if crash => Some(Stream::CrashReports),
+        (_, Surface::Trigger | Surface::Mcp) => Some(Stream::AgentDrafts),
+    }
 }
 
 /// A panic the app wrote down, as `panics.rs` writes it.
