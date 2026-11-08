@@ -417,6 +417,24 @@ impl WorkItems for GitLab {
             .map(|issue| item_of(issue, None, &doing))
             .collect()
     }
+
+    fn add_comment(
+        &self,
+        caller: &Caller,
+        path: &str,
+        number: u64,
+        body: &str,
+    ) -> Result<String, ForgeError> {
+        let api = format!("projects/{}/issues/{number}/notes", quote(path));
+        let doing = format!("commenting on issue #{number} in {path}");
+        let call = Call::write(Method::Post, api, vec![Field::text("body", body)]);
+        let record = self.0.ask(caller, &call, &doing)?;
+        // A note's answer names no page of its own, so it is named by its issue and its id.
+        match record["id"].as_u64() {
+            Some(id) => Ok(format!("{path}#{number}, note {id}")),
+            None => Err(ForgeError::new(format!("{doing}: the answer named no id"))),
+        }
+    }
 }
 
 /// GitLab's answer for an issue, in the neutral model: its key, ids, title, state, labels and

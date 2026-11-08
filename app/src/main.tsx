@@ -25,6 +25,12 @@ import { fetchFace } from "./theme/faces";
 import { firstFollowsSystem, firstFrameOnce } from "./windowprefs";
 import { drawNatively } from "./theme/native";
 import { partsLand } from "./theme/partsLater";
+import { watchWindowErrors } from "./windowErrors";
+
+// An error the window does not catch is handed to the core, which sends it as a Crash report
+// only with the person's yes (`windowErrors.ts`, #5690). First, so an error on the way to the
+// first frame is caught too.
+watchWindowErrors(window);
 
 // The window's colours, before anything is rendered and therefore before anything is painted:
 // the theme the levels choose for the project and workspace the window was created on (#2602),

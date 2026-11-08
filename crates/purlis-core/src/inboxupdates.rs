@@ -4,7 +4,7 @@
 //! **The Inbox's updates** (#1693, spec #1688, I-6, I-8, I-10): what happened that the person
 //! may want to know and need not answer — a task that finished or failed, a doctor finding, a
 //! chat that resumed, a sandbox change, a dispatch refused while nobody was there, a Smart close
-//! that stopped, a report with nowhere to go, a commit refused — kept **per machine for a day**
+//! that stopped, a report with nowhere to go, a commit refused, a report the person filed — kept **per machine for a day**
 //! in purlis's data home and never in a project, so it survives a relaunch, is never committed
 //! and is never sent.
 //!
@@ -88,6 +88,9 @@ pub enum Kind {
     /// A chat another chat started arrived in no pane, and was announced (#4759): a handoff,
     /// or a task that can't report asks.
     Arrived,
+    /// The person filed a report a chat drafted (#5694): sent to purlis/purlis or to purlis's
+    /// report service.
+    ReportSent,
 }
 
 /// One update, as it is kept.

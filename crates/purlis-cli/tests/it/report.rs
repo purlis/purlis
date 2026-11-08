@@ -244,3 +244,28 @@ fn a_bug_with_no_description_and_no_panic_is_refused() {
     assert!(err(&o).contains("needs a description"), "{}", err(&o));
     assert!(w.calls().is_empty(), "{}", w.calls());
 }
+
+/// **In a chat the app started, the words go to the person's Inbox, never to a draft here**
+/// (#5694): with no app to take them, the command says so, shows no draft and no link to file it
+/// with, and asks `gh` nothing.
+#[test]
+fn in_a_chat_whose_app_is_gone_nothing_is_drafted_here_and_it_says_so() {
+    let w = World::new();
+    let gone = w.home.join("no-app.sock");
+    let o = w.charter(
+        &["report", "bug", "The status line is wrong\n\nIt says 3."],
+        &[
+            ("PURLIS_CHAT", "7"),
+            ("PURLIS_HOOK_SOCKET", gone.to_str().unwrap()),
+        ],
+    );
+    assert!(!o.status.success(), "{}", out(&o));
+    assert!(
+        err(&o).contains("did not take the draft") && err(&o).contains("Nothing was sent"),
+        "{}",
+        err(&o)
+    );
+    assert!(!out(&o).contains("Title:"), "{}", out(&o));
+    assert!(!out(&o).contains("issues/new"), "{}", out(&o));
+    assert!(w.calls().is_empty(), "gh was asked: {}", w.calls());
+}
