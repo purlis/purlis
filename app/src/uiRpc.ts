@@ -348,6 +348,8 @@ export const commands = {
 	editReportDraft: __WINDOW_ONLY_RESULT,
 	fileReportDraft: __WINDOW_ONLY_RESULT,
 	dismissReportDraft: __WINDOW_ONLY_RESULT,
+	alwaysSendReportDraft: __WINDOW_ONLY_RESULT,
+	undoReportDraft: __WINDOW_ONLY_RESULT,
 	reportWindowError: __WINDOW_ONLY_RESULT,
 	/**
 	 *  The project's sandbox, for the offer notice and Settings.
@@ -11200,6 +11202,11 @@ export type RepoStates_Serialize = {
 export type ReportConsent = {
 	crash_reports: boolean | null,
 	agent_drafts: boolean | null,
+	/**
+	 *  Always send (#5695): drafts go to purlis's report service unread, held first with Undo.
+	 *  Meant only while Agent drafts is allowed.
+	 */
+	always_send: boolean | null,
 	asked: boolean,
 	/**
 	 *  Whether purlis asks again after a crash (#5700): `due` once a crash was caught after Not
@@ -11227,6 +11234,11 @@ export type ReportDraft = {
 	edited: boolean,
 	/**  What File must name for exactly these words to be filed. */
 	digest: string,
+	/**
+	 *  When Always send sends it (#5695), UTC, RFC 3339: shown as "Sent a report" with Undo
+	 *  until then, not as a card. `None` waits for the person.
+	 */
+	sends_at: string | null,
 };
 
 /**

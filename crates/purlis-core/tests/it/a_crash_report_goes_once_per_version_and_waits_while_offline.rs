@@ -73,6 +73,7 @@ fn reports(line: &Arc<Line>, home: &std::path::Path) -> Reports {
         .with_consent(Consent {
             crash_reports: Some(true),
             agent_drafts: None,
+            always_send: None,
             asked: true,
             crash_notice: None,
         })

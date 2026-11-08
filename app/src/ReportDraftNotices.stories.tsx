@@ -34,6 +34,7 @@ const DRAFT: ReportDraft = {
   session: 4,
   edited: false,
   digest: "0a1b2c3d4e5f",
+  sends_at: null,
 };
 
 /** What the faked core answers File with, and every command it was sent. */
@@ -150,6 +151,11 @@ export const ReadOpensTheDraft: Story = {
     await userEvent.tab();
     await untilFocused(() => canvas.getByRole("button", { name: "File" }), "Tab reaches File");
     await userEvent.tab();
+    await untilFocused(
+      () => canvas.getByRole("button", { name: "Always send" }),
+      "Tab reaches Always send",
+    );
+    await userEvent.tab();
     const title = canvas.getByRole("textbox", { name: "Title" });
     await untilFocused(() => title, "Tab reaches the draft's title");
     expectFocusInSight();
@@ -183,6 +189,30 @@ export const FiledToTheReportService: Story = {
       how: { how: "check" },
     });
     await waitFor(() => expect(canvas.queryByText(`Report draft: ${TITLE}`)).toBeNull());
+  },
+};
+
+/**
+ * **Always send, asked once** (#5695): pressed while the person has not said yes, it asks first,
+ * saying where drafts will go and where to see and stop them. Return answers neither, and
+ * nothing is sent while it asks. Pictured with the question open.
+ */
+export const AlwaysSendAsksOnce: Story = {
+  beforeEach: () => fake([]),
+  play: async ({ canvasElement }) => {
+    const canvas = await theCard(canvasElement);
+    canvas.getByRole("button", { name: "Always send" }).focus();
+    await userEvent.keyboard("{Enter}");
+    const body = within(document.body);
+    const dialog = await body.findByRole("dialog", { name: "Always send report drafts?" });
+    await expect(dialog).toHaveTextContent(/private report service/);
+    await expect(dialog).toHaveTextContent(/never go to GitHub/);
+    await expect(dialog).toHaveTextContent(/Settings › You › Reports/);
+    await userEvent.keyboard("{Enter}");
+    await expect(sentTo("always_send_report_draft")).toEqual([]);
+    await userEvent.tab();
+    expectFocusInSight();
+    await expect(body.getByRole("dialog")).toBeVisible();
   },
 };
 
@@ -237,6 +267,53 @@ const SENT: InboxUpdate = {
   chain: ["steward 4"],
   says: `Sent a report on GitHub: ${TITLE}`,
   read: false,
+};
+
+/**
+ * **Sent a report, held with Undo** (#5695): a draft Always send sends says so from the start of
+ * its hold, with Undo while it lasts.
+ */
+export const SentWithUndo: Story = {
+  beforeEach: () => fake([]),
+  render: ({ onGo }) => (
+    <div style={{ inlineSize: 460 }}>
+      <Inbox
+        plane="/plane"
+        asks={[]}
+        onGo={() => undefined}
+        onLeave={() => undefined}
+        onIgnore={() => undefined}
+        updates={{
+          rows: [
+            {
+              update: { ...SENT, says: `Sent a report: ${TITLE}` },
+              go: () => onGo(4),
+              dismiss: () => undefined,
+              answers: [
+                {
+                  label: "Undo",
+                  name: `Undo: don't send ${TITLE}`,
+                  title: "Don't send it. The draft comes back for you to read.",
+                  press: () => onGo(-1),
+                },
+              ],
+            },
+          ],
+          onMarkAllRead: () => undefined,
+          onDismissAll: () => undefined,
+        }}
+      />
+    </div>
+  ),
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement);
+    await waitFor(() => expect(canvas.getByText(`Sent a report: ${TITLE}`)).toBeVisible());
+    const undo = canvas.getByRole("button", { name: `Undo: don't send ${TITLE}` });
+    undo.focus();
+    expectFocusInSight();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(args.onGo).toHaveBeenCalledWith(-1));
+  },
 };
 
 /** **The update a filed draft leaves**: on the chat it came from, with Go to chat. */

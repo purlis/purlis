@@ -16,6 +16,9 @@ use purlis_core::report::{Consent, CrashNotice};
 pub struct ReportConsent {
     pub crash_reports: Option<bool>,
     pub agent_drafts: Option<bool>,
+    /// Always send (#5695): drafts go to purlis's report service unread, held first with Undo.
+    /// Meant only while Agent drafts is allowed.
+    pub always_send: Option<bool>,
     pub asked: bool,
     /// Whether purlis asks again after a crash (#5700): `due` once a crash was caught after Not
     /// now, `settled` once its Notice was dismissed or answered, `None` while neither.
@@ -55,6 +58,7 @@ impl From<Consent> for ReportConsent {
         Self {
             crash_reports: kept.crash_reports,
             agent_drafts: kept.agent_drafts,
+            always_send: kept.always_send,
             asked: kept.asked,
             crash_notice: kept.crash_notice.map(Into::into),
         }
@@ -66,6 +70,7 @@ impl From<ReportConsent> for Consent {
         Self {
             crash_reports: sent.crash_reports,
             agent_drafts: sent.agent_drafts,
+            always_send: sent.always_send,
             asked: sent.asked,
             crash_notice: sent.crash_notice.map(Into::into),
         }
@@ -198,7 +203,10 @@ mod tests {
     #[test]
     fn what_the_window_sends_is_what_the_core_keeps_and_reads_back() {
         for crash_reports in [None, Some(true), Some(false)] {
-            for agent_drafts in [None, Some(true), Some(false)] {
+            for (agent_drafts, always_send) in [None, Some(true), Some(false)]
+                .into_iter()
+                .flat_map(|one| [(one, None), (one, Some(true)), (one, Some(false))])
+            {
                 for asked in [false, true] {
                     for crash_notice in [
                         None,
@@ -208,6 +216,7 @@ mod tests {
                         let sent = ReportConsent {
                             crash_reports,
                             agent_drafts,
+                            always_send,
                             asked,
                             crash_notice,
                         };

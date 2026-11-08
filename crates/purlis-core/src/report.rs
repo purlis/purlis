@@ -73,6 +73,20 @@ pub mod intake;
 mod sent;
 pub use sent::{Sent, SentList, SentTo};
 
+/// How long a draft Always send sends is held first, with Undo (#5695, Q2b): "Sent a report"
+/// says it, and it leaves only once this has passed.
+pub const HOLD_SECS: u32 = 10;
+
+/// Taken by every change of whether a held draft is sent (#5695): the send after the hold and
+/// Undo, so an Undo either comes before the send and nothing leaves, or after it and is refused.
+static HOLDING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn holding() -> std::sync::MutexGuard<'static, ()> {
+    HOLDING
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 /// The repository reports are filed on (RN-9: the product's repository since 2026-10-05).
 pub const UPSTREAM: &str = "purlis/purlis";
 
@@ -1290,7 +1304,9 @@ impl Reports {
     }
 
     /// Holds a chat's `evidence` for the person's Inbox, naming the chat it came `from`: only
-    /// with the yes to its stream, and nothing is sent (#5694).
+    /// with the yes to its stream, and nothing is sent (#5694). With the yes to Always send too,
+    /// and room in today's cap, it is held to send instead (#5695): its `sends_at` says when the
+    /// hold ends, and [`Reports::send_held_due`] sends it to the Report intake after.
     pub fn hold(
         &self,
         evidence: Evidence,
@@ -1301,6 +1317,13 @@ impl Reports {
         let root = self.kept_under()?;
         let line = line_of(&evidence, &self.known);
         let draft = self.draft(evidence)?;
+        let _turn = holding();
+        let mut all = HeldDrafts::read(&root);
+        // With Always send it is held to send, not to read, while today has room (#5695).
+        let sends_at = self
+            .may_send_unread(held_to_send(&all, None))
+            .is_ok()
+            .then(hold_ends);
         let one = Held {
             id: held::new_id(),
             at: now(),
@@ -1311,8 +1334,8 @@ impl Reports {
             scrubbed: draft.scrubbed,
             from,
             edited: false,
+            sends_at,
         };
-        let mut all = HeldDrafts::read(&root);
         all.push(one.clone());
         HeldDrafts::write(&root, all).map_err(|e| Refusal::NotKept(e.to_string()))?;
         Ok(one)
@@ -1409,7 +1432,7 @@ impl Reports {
                     Err(why) => return Filing::Refused(not_filed(&draft, why)),
                 }
             }
-            Err(_) => return self.file_held_to_the_intake(id, &draft, one.edited),
+            Err(_) => return self.draft_to_the_intake(id, &draft, one.edited, true),
         };
         let to = sent.to;
         let address = sent.address.clone();
@@ -1423,13 +1446,14 @@ impl Reports {
 
     /// Files `draft`, held as `id`, to the Report intake, the way #5693 sends any report there:
     /// the reports that wait go first, it carries the counts of repeats not yet told, and it
-    /// waits on this machine when the intake gives no answer. The person read it and chose to
-    /// file it, so it has no fingerprint to be counted away by, and is not an unread send.
-    fn file_held_to_the_intake(&self, id: &str, draft: &Draft, edited: bool) -> Filing {
+    /// waits on this machine when the intake gives no answer. It has no fingerprint to be counted
+    /// away by. Read and filed by the person when `reviewed`; sent unread by Always send, and
+    /// counted against the daily cap, when not (#5695).
+    fn draft_to_the_intake(&self, id: &str, draft: &Draft, edited: bool, reviewed: bool) -> Filing {
         let Some((intake, root)) = &self.intake else {
             return Filing::Refused(Refusal::NoIntake);
         };
-        let report = crash::CrashReport::of_draft(draft, edited, intake.dsn());
+        let report = crash::CrashReport::of_draft(draft, edited, reviewed, intake.dsn());
         self.send_waiting();
         let crashes = self
             .consent
@@ -1446,7 +1470,7 @@ impl Reports {
             fingerprint: None,
             repeats: 0,
             repeats_sent: 0,
-            unread_draft: false,
+            unread_draft: !reviewed,
             waiting: false,
         };
         match intake.send(bytes.as_bytes(), &report.event_id) {
@@ -1476,6 +1500,78 @@ impl Reports {
             }
             Err(intake::Failed::Refused(why)) => Filing::Refused(Refusal::NotSent(why)),
         }
+    }
+
+    /// Refused unless a draft may go to the Report intake unread now, with `holding` more held
+    /// to send (#5695): the yes to Always send, an intake to send to, and room in today's cap.
+    fn may_send_unread(&self, holding: usize) -> Result<(), Refusal> {
+        if !self.consent.unwrap_or_else(Consent::here).always_sends() {
+            return Err(Refusal::NoConsent(Stream::AgentDrafts));
+        }
+        let Some((_, root)) = &self.intake else {
+            return Err(Refusal::NoIntake);
+        };
+        SentList::within_the_daily_cap(root, chrono::Utc::now(), holding)
+    }
+
+    /// **Always send, pressed on a draft in the Inbox** (#5695): the held draft `id` is held to
+    /// send, as a chat's draft is when Always send is on. Refused, and left in the Inbox, without
+    /// the standing yes (the window asks for it first), without an intake, or past today's cap.
+    pub fn always_send_held(&self, id: &str) -> Result<Held, Refusal> {
+        let root = self.kept_under()?;
+        let _turn = holding();
+        let all = HeldDrafts::read(&root);
+        if !all.iter().any(|one| one.id == id) {
+            return Err(Refusal::NotHeld);
+        }
+        self.may_send_unread(held_to_send(&all, Some(id)))?;
+        self.change_held(id, |one| one.sends_at = Some(hold_ends()))
+    }
+
+    /// **Undo, within the hold** (#5695): the held draft `id` is not sent, and waits in the Inbox
+    /// for the person to read. Refused as [`Refusal::NotHeld`] once it has left.
+    pub fn undo_held(&self, id: &str) -> Result<Held, Refusal> {
+        let _turn = holding();
+        self.change_held(id, |one| one.sends_at = None)
+    }
+
+    /// Sends every held draft whose hold ended by `now` to the Report intake, unread, and never
+    /// anywhere else (ADR 0118), and answers how many left the Inbox: sent, or waiting on this
+    /// machine for the intake to answer. One that may no longer go unread (Always send was
+    /// turned off, today's cap was reached, the intake did not take it) falls back to asking: it
+    /// waits in the Inbox.
+    pub fn send_held_due(&self, now: chrono::DateTime<chrono::Utc>) -> usize {
+        let Some(root) = self.root.as_deref() else {
+            return 0;
+        };
+        let _turn = holding();
+        let due = HeldDrafts::read(root).into_iter().filter(|one| {
+            one.sends_at.as_deref().is_some_and(|at| {
+                chrono::DateTime::parse_from_rfc3339(at).map_or(true, |at| at <= now)
+            })
+        });
+        let mut left = 0;
+        for one in due {
+            let filed = match self.may_send_unread(0) {
+                Ok(()) => {
+                    let draft = Draft {
+                        kind: one.report_kind(),
+                        title: one.title.clone(),
+                        body: one.body.clone(),
+                        scrubbed: Vec::new(),
+                    };
+                    self.draft_to_the_intake(&one.id, &draft, one.edited, false)
+                }
+                Err(refused) => Filing::Refused(refused),
+            };
+            match filed {
+                Filing::Sent { .. } | Filing::Queued => left += 1,
+                _ => {
+                    let _ = self.change_held(&one.id, |one| one.sends_at = None);
+                }
+            }
+        }
+        left
     }
 
     fn change_held(&self, id: &str, change: impl FnOnce(&mut Held)) -> Result<Held, Refusal> {
@@ -1523,6 +1619,20 @@ impl Reports {
         };
         made.map_err(|Refused(said)| Refusal::Unusable(said))
     }
+}
+
+/// How many of `all` are held to send, leaving out `but`.
+fn held_to_send(all: &[Held], but: Option<&str>) -> usize {
+    all.iter()
+        .filter(|one| one.sends_at.is_some() && Some(one.id.as_str()) != but)
+        .count()
+}
+
+/// When a hold that starts now ends.
+fn hold_ends() -> String {
+    (chrono::Utc::now() + chrono::Duration::seconds(i64::from(HOLD_SECS)))
+        .format("%Y-%m-%dT%H:%M:%SZ")
+        .to_string()
 }
 
 /// Now, UTC, RFC 3339 to the second, as the sent list and the held drafts keep a time.

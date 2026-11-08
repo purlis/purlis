@@ -640,6 +640,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     "edit_report_draft",
     "file_report_draft",
     "dismiss_report_draft",
+    // Always send (#5695): only the person lets a draft go unread, or takes it back.
+    "always_send_report_draft",
+    "undo_report_draft",
     // An error this window did not catch (#5690): the window's own, never a link's, which could
     // send a Crash report of anything in its name.
     "report_window_error",

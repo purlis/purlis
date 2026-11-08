@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   commands,
   REPORT_DRAFTS_CHANGED,
@@ -13,6 +13,8 @@ import {
 } from "./bindings";
 import { listen } from "./here";
 import { Notice } from "./Notice";
+import { AlwaysSendDialog } from "./ReportConsent";
+import { answerReports, useReportConsent } from "./reportAnswers";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { TextArea, TextField } from "./ui/field/Field";
 import { List, ListRow } from "./ui/list/List";
@@ -34,6 +36,8 @@ export type SentDraft = {
   to: string;
   /** When it left, in ms. */
   at: number;
+  /** Held by Always send, with Undo, until it leaves (#5695). */
+  holding?: boolean;
 };
 
 /**
@@ -46,24 +50,49 @@ export type SentDraft = {
  * to purlis's report service where they are not. Dismiss lets it go, unsent.
  *
  * Each draft filed is handed to `onSent`, for the Inbox's update that says it was sent.
+ *
+ * **Always send** (#5695): a draft Always send holds to send is no card. It is handed to
+ * `onSent` as holding, for the update "Sent a report" with Undo; once it has left the list it is
+ * handed again as sent, and if it comes back as a draft (undone, or past the day's cap) to
+ * `onUnsent`. Always send on a card asks once, then holds that draft to send.
  */
 export function ReportDraftNotices({
   plane,
   onGo,
   onSent,
+  onUnsent,
 }: {
   plane: PlaneId;
   onGo: (session: number) => void;
   onSent: (sent: SentDraft) => void;
+  onUnsent?: (id: string) => void;
 }) {
   const [drafts, setDrafts] = useState<ReportDraft[]>([]);
+  /** The drafts last seen held to send, by id. */
+  const holding = useRef(new Map<string, ReportDraft>());
+  const told = useRef({ onSent, onUnsent });
+  useEffect(() => {
+    told.current = { onSent, onUnsent };
+  }, [onSent, onUnsent]);
 
   const read = useCallback(() => {
     void commands
       .reportDrafts(plane)
       .then((answer) => {
         // A core that answers no list (an older build, a test's) holds no drafts.
-        if (answer.status === "ok") setDrafts(Array.isArray(answer.data) ? answer.data : []);
+        if (answer.status !== "ok") return;
+        const all = Array.isArray(answer.data) ? answer.data : [];
+        const was = holding.current;
+        const now = new Map(all.filter((one) => one.sends_at).map((one) => [one.id, one]));
+        for (const [id, one] of now)
+          if (!was.has(id)) told.current.onSent(sentOf(one, "intake", true));
+        for (const [id, one] of was) {
+          if (now.has(id)) continue;
+          if (all.some((still) => still.id === id)) told.current.onUnsent?.(id);
+          else told.current.onSent(sentOf(one, "intake", false));
+        }
+        holding.current = now;
+        setDrafts(all.filter((one) => !one.sends_at));
       })
       .catch(() => undefined);
   }, [plane]);
@@ -100,6 +129,26 @@ export function ReportDraftNotices({
   );
 }
 
+/** A draft as the Inbox's update says it. */
+const sentOf = (one: ReportDraft, to: string, holding: boolean): SentDraft => ({
+  id: one.id,
+  title: one.title,
+  session: one.session,
+  chat: one.chat,
+  to,
+  at: Date.now(),
+  holding,
+});
+
+/**
+ * **Undo, within the hold** (#5695): the draft is not sent, and comes back as a card. The
+ * core's refusal (it already left) is the answer's error.
+ */
+export async function undoAlwaysSend(id: string): Promise<string | undefined> {
+  const undone = await commands.undoReportDraft(id);
+  return undone.status === "error" ? undone.error : undefined;
+}
+
 /** What stands under a card: nothing, the draft to read, or the issues it may duplicate. */
 type Under =
   { what: "nothing" } | { what: "read" } | { what: "duplicates"; issues: PossibleDuplicate[] };
@@ -122,6 +171,8 @@ function DraftNotice({
   const [body, setBody] = useState(draft.body);
   const [busy, setBusy] = useState(false);
   const [refused, setRefused] = useState<string | undefined>(undefined);
+  const [asking, setAsking] = useState(false);
+  const { consent } = useReportConsent();
   const changed = title !== draft.title || body !== draft.body;
   const readId = `report-draft-read-${draft.id}`;
 
@@ -171,6 +222,21 @@ function DraftNotice({
     onGone();
   };
 
+  /** Always send, once the person's standing yes is kept: held to send, and gone from here. */
+  const alwaysSend = () => {
+    if (busy) return;
+    setBusy(true);
+    setRefused(undefined);
+    void shown()
+      .then(async (now) => {
+        if (now === undefined) return;
+        const held = await commands.alwaysSendReportDraft(now.id);
+        if (held.status === "error") setRefused(held.error);
+      })
+      .catch((err: unknown) => setRefused(String(err)))
+      .finally(() => setBusy(false));
+  };
+
   const dismiss = () => {
     onGone();
     void commands.dismissReportDraft(draft.id).catch(() => undefined);
@@ -192,6 +258,10 @@ function DraftNotice({
           onPress: () => setUnder(reading ? { what: "nothing" } : { what: "read" }),
         },
         { label: "File", busy, onPress: () => file({ how: "check" }) },
+        {
+          label: "Always send",
+          onPress: () => (consent.always_send === true ? alwaysSend() : setAsking(true)),
+        },
         ...(session === null
           ? []
           : [{ label: "Go to chat", go: true, onPress: () => onGo(session) }]),
@@ -246,6 +316,15 @@ function DraftNotice({
     >
       {/* A refusal is said in the card's own sentence, its live region, until the next press. */}
       {refused ?? draft.line}
+      {asking && (
+        <AlwaysSendDialog
+          onCancel={() => setAsking(false)}
+          onYes={() => {
+            setAsking(false);
+            void answerReports({ always_send: true }).then(alwaysSend);
+          }}
+        />
+      )}
     </Notice>
   );
 }

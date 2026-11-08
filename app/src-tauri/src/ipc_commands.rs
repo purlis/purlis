@@ -84,6 +84,8 @@ macro_rules! app_commands {
                 reportdrafts::edit_report_draft,
                 reportdrafts::file_report_draft,
                 reportdrafts::dismiss_report_draft,
+                reportdrafts::always_send_report_draft,
+                reportdrafts::undo_report_draft,
                 reportconsent::report_window_error,
                 sandboxing::sandbox_state,
                 sandboxing::answer_sandbox_offer,

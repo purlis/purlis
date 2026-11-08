@@ -9,12 +9,17 @@
 //! **A chat only drafts.** It holds no sign-in (ADR 0070), so its line is held, never filed, and
 //! held only with the person's yes to Agent drafts. **The window's commands are the window's
 //! alone** (`WINDOW_ONLY`): File files as the person.
+//!
+//! **Always send** (#5695, ADR 0118): with the person's standing yes, a draft is held to send
+//! instead, for `HOLD_SECS` with Undo in the "Sent a report" update, then sent by the core to
+//! the Report intake only. This module only keeps time: a thread wakes when the hold ends and asks
+//! the core to send what is due, and the app's start sends what a quit left due.
 
 use purlis_core::forge::Caller;
 use purlis_core::hookwire::{Answer, ReportDraftAsk};
 use purlis_core::report::{
-    AgentDraft, CameFrom, Evidence, Filing, Held as HeldDraft, HeldKind, How, Kind, Refusal,
-    Reports, SentTo, Stream,
+    AgentDraft, CameFrom, Evidence, Filing, HOLD_SECS, Held as HeldDraft, HeldKind, How, Kind,
+    Refusal, Reports, SentTo, Stream,
 };
 
 use crate::planes::{Held, PlaneId, Planes};
@@ -29,6 +34,31 @@ static APP: std::sync::OnceLock<tauri::AppHandle> = std::sync::OnceLock::new();
 /// Has a held draft tell the windows of `app` from here on.
 pub fn tells_through(app: tauri::AppHandle) {
     let _ = APP.set(app);
+    // A draft whose hold ended while the app was not running goes now (#5695), off the start.
+    let _ = std::thread::Builder::new()
+        .name("reports-always-send".into())
+        .spawn(send_due);
+}
+
+/// Sends, when the hold that starts now ends, every draft due by then (#5695), and tells the
+/// windows what became of them. A thread of its own, so nothing waits on it; an Undo before it
+/// wakes leaves nothing due.
+fn send_after_the_hold() {
+    let _ = std::thread::Builder::new()
+        .name("reports-always-send".into())
+        .spawn(|| {
+            std::thread::sleep(std::time::Duration::from_secs(u64::from(HOLD_SECS) + 1));
+            send_due();
+        });
+}
+
+/// Sends every held draft whose hold ended, and tells the windows if one left or came back.
+pub fn send_due() {
+    let before = Reports::here(None).held();
+    Reports::here(None).send_held_due(chrono::Utc::now());
+    if Reports::here(None).held() != before {
+        changed();
+    }
 }
 
 fn changed() {
@@ -40,6 +70,11 @@ fn changed() {
 /// What a chat is told when its draft was held.
 pub const HELD_SAID: &str = "The draft is in the person's Inbox. They read it there, and file it \
                              or dismiss it. Nothing was sent.";
+
+/// What a chat is told when the person lets drafts go unread (#5695).
+pub const SENDING_SAID: &str = "The person lets drafts go unread to purlis's report service: \
+                                this one leaves in a few seconds unless they undo it. It never \
+                                goes to a public tracker.";
 
 /// What a chat is told when the person has not allowed Agent drafts.
 pub const NOT_ALLOWED: &str = "The person has not allowed Agent drafts (Settings › You › \
@@ -77,10 +112,16 @@ pub fn asked(held: &Held, ask: &ReportDraftAsk) -> Answer {
         &Caller::chat(&ask.chat.to_string()),
         from,
     ) {
-        Ok(_) => {
+        Ok(one) => {
             changed();
+            let said = if one.sends_at.is_some() {
+                send_after_the_hold();
+                SENDING_SAID
+            } else {
+                HELD_SAID
+            };
             Answer::Said {
-                lines: vec![purlis_core::repocmd::Say::Done(HELD_SAID.into())],
+                lines: vec![purlis_core::repocmd::Say::Done(said.into())],
                 code: 0,
             }
         }
@@ -109,6 +150,9 @@ pub struct ReportDraft {
     pub edited: bool,
     /// What File must name for exactly these words to be filed.
     pub digest: String,
+    /// When Always send sends it (#5695), UTC, RFC 3339: shown as "Sent a report" with Undo
+    /// until then, not as a card. `None` waits for the person.
+    pub sends_at: Option<String>,
 }
 
 impl From<HeldDraft> for ReportDraft {
@@ -125,6 +169,7 @@ impl From<HeldDraft> for ReportDraft {
             chat: one.from.chat,
             session: one.from.session,
             edited: one.edited,
+            sends_at: one.sends_at,
         }
     }
 }
@@ -299,6 +344,56 @@ pub async fn dismiss_report_draft(id: String) -> Result<(), String> {
     Ok(())
 }
 
+/// **Always send, on a draft** (#5695): held to send to purlis's report service, unread, with
+/// Undo until the hold ends. The window asks for the standing yes first, the first time.
+#[tauri::command]
+#[specta::specta]
+pub async fn always_send_report_draft(id: String) -> Result<ReportDraft, String> {
+    let held = off_the_window(move || {
+        Reports::here(None)
+            .always_send_held(&id)
+            .map(ReportDraft::from)
+            .map_err(|refused| always_send_said(&refused))
+    })
+    .await?;
+    changed();
+    send_after_the_hold();
+    Ok(held)
+}
+
+/// **Undo, within the hold** (#5695): the draft is not sent, and waits in the Inbox.
+#[tauri::command]
+#[specta::specta]
+pub async fn undo_report_draft(id: String) -> Result<ReportDraft, String> {
+    let undone = off_the_window(move || {
+        Reports::here(None)
+            .undo_held(&id)
+            .map(ReportDraft::from)
+            .map_err(|refused| match refused {
+                Refusal::NotHeld => "It was already sent, so it cannot be undone. Settings › \
+                                     You › Reports lists exactly what left."
+                    .to_owned(),
+                other => said_of(&other),
+            })
+    })
+    .await?;
+    changed();
+    Ok(undone)
+}
+
+/// What the window says when Always send could not hold a draft to send.
+fn always_send_said(refused: &Refusal) -> String {
+    match refused {
+        Refusal::NoConsent(_) => "Always send is off, so the draft stays here. Turn it on in \
+                                  Settings › You › Reports."
+            .to_owned(),
+        Refusal::NoIntake => "This build has no report service to send it to, so the draft \
+                              stays here. Read it, then File."
+            .to_owned(),
+        other => said_of(other),
+    }
+}
+
 /// What the window says of a refusal: what happened and what to do.
 fn said_of(refused: &Refusal) -> String {
     match refused {
@@ -323,7 +418,7 @@ fn said_of(refused: &Refusal) -> String {
         Refusal::NotSent(why) => format!("It was not sent: {why}. Try File again later."),
         Refusal::NotKept(why) | Refusal::Unusable(why) => why.clone(),
         Refusal::NoConsent(_) => NOT_ALLOWED.to_owned(),
-        // A draft the person files is never capped (#5693): only an unread send is.
+        // A draft the person files is never capped (#5693): only an unread send is (#5695).
         Refusal::CapReached => "Five reports were already sent unread today, so this one was \
                                 not sent. Read it, then File."
             .to_owned(),

@@ -55,6 +55,11 @@ pub struct Consent {
     /// Agent drafts: `Some(true)` is Allow.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_drafts: Option<bool>,
+    /// Always send (#5695, Q2b): `Some(true)` is the person's standing yes for drafts to go to
+    /// the Report intake unread, held first with Undo. It means nothing without the yes to Agent
+    /// drafts, and is asked the first time the person presses Always send on a draft.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub always_send: Option<bool>,
     /// Whether the first-run question was answered, by Save or by Not now.
     #[serde(default)]
     pub asked: bool,
@@ -92,6 +97,12 @@ impl Consent {
             Stream::AgentDrafts => self.agent_drafts,
         };
         said == Some(true)
+    }
+
+    /// Whether drafts go to the Report intake unread (#5695): the yes to Agent drafts and to
+    /// Always send, both.
+    pub fn always_sends(&self) -> bool {
+        self.allows(Stream::AgentDrafts) && self.always_send == Some(true)
     }
 
     /// Whether a crash caught now should raise the crash Notice (#5700): the first-run question

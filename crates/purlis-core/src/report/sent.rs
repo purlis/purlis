@@ -226,15 +226,12 @@ impl SentList {
     }
 
     /// Refused as [`super::Refusal::CapReached`] when [`DRAFTS_A_DAY`] drafts were sent unread,
-    /// or wait to be, on `now`'s UTC day. #5695 asks it before Always send sends a draft, and
-    /// shows the draft instead when it is refused.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "#5695 wires the cap into Always send")
-    )]
+    /// or wait to be, on `now`'s UTC day, counting `holding` more that Always send holds to send
+    /// (#5695): the next one falls back to asking.
     pub(super) fn within_the_daily_cap(
         config_root: &Path,
         now: chrono::DateTime<chrono::Utc>,
+        holding: usize,
     ) -> Result<(), super::Refusal> {
         let today = now.date_naive();
         let drafts = SentList::read(config_root)
@@ -245,7 +242,7 @@ impl SentList {
                     .is_ok_and(|at| at.with_timezone(&chrono::Utc).date_naive() == today)
             })
             .count();
-        if drafts < DRAFTS_A_DAY {
+        if drafts + holding < DRAFTS_A_DAY {
             Ok(())
         } else {
             Err(super::Refusal::CapReached)
@@ -302,12 +299,26 @@ mod tests {
         for _ in 0..DRAFTS_A_DAY - 1 {
             SentList::add(home.path(), entry(now, true)).unwrap();
         }
-        assert_eq!(SentList::within_the_daily_cap(home.path(), now), Ok(()));
+        assert_eq!(SentList::within_the_daily_cap(home.path(), now, 0), Ok(()));
 
         SentList::add(home.path(), entry(now, true)).unwrap();
 
         assert_eq!(
-            SentList::within_the_daily_cap(home.path(), now),
+            SentList::within_the_daily_cap(home.path(), now, 0),
+            Err(Refusal::CapReached)
+        );
+    }
+
+    #[test]
+    fn drafts_held_to_send_count_against_the_cap() {
+        let home = tempfile::tempdir().unwrap();
+        let now = chrono::Utc::now();
+        for _ in 0..DRAFTS_A_DAY - 2 {
+            SentList::add(home.path(), entry(now, true)).unwrap();
+        }
+        assert_eq!(SentList::within_the_daily_cap(home.path(), now, 1), Ok(()));
+        assert_eq!(
+            SentList::within_the_daily_cap(home.path(), now, 2),
             Err(Refusal::CapReached)
         );
     }
@@ -322,6 +333,6 @@ mod tests {
         }
         SentList::add(home.path(), entry(now, true)).unwrap();
 
-        assert_eq!(SentList::within_the_daily_cap(home.path(), now), Ok(()));
+        assert_eq!(SentList::within_the_daily_cap(home.path(), now, 0), Ok(()));
     }
 }
