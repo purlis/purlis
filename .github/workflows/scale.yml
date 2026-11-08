@@ -94,12 +94,20 @@ jobs:
         working-directory: app
       - name: The generator, purlis, and the harness the app's panes run, in release
         run: cargo build --release --locked -p scale-project -p purlis-cli -p fake-harness
-      # The `e2e` feature puts WebdriverIO's embedded WebDriver server inside the app; it is in no
-      # build anyone is given. Release, with no bundle, as the timings need.
-      - name: The app, in release, for the window's measurements
-        id: built
-        run: npx tauri build --no-bundle --features e2e --config src-tauri/tauri.e2e.conf.json
-        working-directory: app
+      # Spotlight kept off the project (#5672): the index row timed right after the project was
+      # written swung from 42 to 95 s on macOS runners that build it in 19 to 31 s once quiet,
+      # waiting on the disk. Indexing is turned off for every volume where the runner allows
+      # it, and the run's tree carries the marker that keeps Spotlight out where it does not.
+      - name: Spotlight kept off the run's tree
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          mkdir -p "$CHARTER_SCENARIO_RUN"
+          touch "$CHARTER_SCENARIO_RUN/.metadata_never_index"
+          sudo mdutil -a -i off || echo "::notice::Spotlight indexing could not be turned off here"
+          mdutil -a -s || true
+      # Written before the app is built, so the disk has the build's length to write it out before
+      # the index row: `tools/scale-run.mjs` then waits for it to go quiet as well (#5672).
       - name: The project at the target size, from seed 5497, committed
         shell: bash
         run: |
@@ -112,6 +120,12 @@ jobs:
           git -C "$PURLIS_SCALE_PLANE" -c user.name="scale run" -c user.email=scale@purlis.invalid \
             commit -q -m "The generated project"
           echo "PURLIS_SCALE_WORKSPACES=$(node -p 'require("./generated.json").workspaces')" >> "$GITHUB_ENV"
+      # The `e2e` feature puts WebdriverIO's embedded WebDriver server inside the app; it is in no
+      # build anyone is given. Release, with no bundle, as the timings need.
+      - name: The app, in release, for the window's measurements
+        id: built
+        run: npx tauri build --no-bundle --features e2e --config src-tauri/tauri.e2e.conf.json
+        working-directory: app
       - name: The hook, recall and one git standing look
         run: node tools/scale-run.mjs --project "$PURLIS_SCALE_PLANE" --os "$OS_WORD" --out scale-rows.jsonl
       # Each window run is its own app launch: WebdriverIO keeps one app for a run, and the two

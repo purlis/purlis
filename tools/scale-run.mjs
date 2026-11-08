@@ -23,9 +23,17 @@
 // read every file instead (the CLI never writes an index), which measured the scan the index
 // replaces, not purlis: the hook took 25 s on macOS for a `git status` the index answers. A command that fails, or a hook that answers no briefing, fails the run:
 // a timing of a broken answer is no evidence.
+//
+// **The index is built on a settled disk** (#5672). Right after `scale-project generate` writes
+// its 217,000 files and the run commits them, the runner's disk is still writing them out, and a
+// build timed then waited on it: 42 to 95 s on macOS runners that build in 19 to 31 s once quiet.
+// So the row waits first: `sync`, then until the disk has moved less than `--quiet-mb` a second
+// for `--quiet-for` seconds in a row, at most `--settle-cap` seconds. A person's host meets a
+// project already on disk, not one being written. How long it waited, and whether it went quiet,
+// is on the row.
 
 import { spawnSync } from "node:child_process";
-import { appendFileSync, mkdtempSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import process from "node:process";
@@ -42,6 +50,9 @@ const { values } = parseArgs({
     workspace: { type: "string", default: "ws-0001" },
     persona: { type: "string", default: "persona-001" },
     query: { type: "string", default: "migration" },
+    "quiet-mb": { type: "string", default: "1" },
+    "quiet-for": { type: "string", default: "5" },
+    "settle-cap": { type: "string", default: "300" },
   },
 });
 for (const name of ["project", "os", "out"]) {
@@ -93,9 +104,64 @@ const row = (budget, measured) => {
   console.log(`scale-run | ${budget} | ${JSON.stringify(measured)}`);
 };
 
+/**
+ * Bytes this machine's disks have read and written since boot, or `undefined` where it cannot
+ * tell. Linux sums `/proc/diskstats` over the whole disks in `/sys/block` (a partition's count is
+ * in its disk's already); macOS sums the megabytes column of `iostat -Id`.
+ */
+function diskBytes() {
+  if (process.platform === "linux") {
+    let sectors = 0;
+    for (const line of readFileSync("/proc/diskstats", "utf8").split("\n")) {
+      const f = line.trim().split(/\s+/);
+      if (f.length < 10 || /^(loop|ram|zram)/.test(f[2]) || !existsSync(`/sys/block/${f[2]}`)) continue;
+      sectors += Number(f[5]) + Number(f[9]);
+    }
+    return sectors * 512;
+  }
+  if (process.platform === "darwin") {
+    const ran = spawnSync("iostat", ["-Id", "-c", "1"], { encoding: "utf8" });
+    const last = ran.stdout?.trim().split("\n").at(-1)?.trim().split(/\s+/).map(Number) ?? [];
+    let mb = 0;
+    for (let i = 2; i < last.length; i += 3) mb += last[i];
+    return Number.isFinite(mb) && last.length >= 3 ? mb * 1024 * 1024 : undefined;
+  }
+  return undefined;
+}
+
+/** `sync`, then waits until the disks are quiet, at most `--settle-cap` seconds. */
+function settle() {
+  const started = Date.now();
+  spawnSync("sync");
+  const synced = Date.now() - started;
+  const quietBytes = Number(values["quiet-mb"]) * 1024 * 1024;
+  const quietFor = Number(values["quiet-for"]);
+  const cap = started + Number(values["settle-cap"]) * 1000;
+  const rates = [];
+  let quiet = 0;
+  let before = diskBytes();
+  if (before === undefined) return { settled_ms: synced, synced_ms: synced, quiet: false, mb_per_s: [] };
+  while (quiet < quietFor && Date.now() < cap) {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1000);
+    const now = diskBytes();
+    const moved = now - before;
+    before = now;
+    rates.push(Math.round((moved / 1024 / 1024) * 10) / 10);
+    quiet = moved < quietBytes ? quiet + 1 : 0;
+  }
+  return { settled_ms: Date.now() - started, synced_ms: synced, quiet: quiet >= quietFor, mb_per_s: rates };
+}
+
+const settled = settle();
+console.log(`scale-run | settle | ${JSON.stringify(settled)}`);
+
 // A full build, as `scale-project index` takes it on a project with none: the host's first.
 const indexed = timed([resolve(values["scale-project"]), "index", "--project", project], { cwd: project });
-row("index-rebuild", { samples: [Math.round(JSON.parse(indexed.stdout).built_ms * 10) / 10] });
+row("index-rebuild", {
+  samples: [Math.round(JSON.parse(indexed.stdout).built_ms * 10) / 10],
+  settled_ms: settled.settled_ms,
+  quiet: settled.quiet,
+});
 
 row("hook", {
   samples: samples([purlis, "hook", "sessionstart"], {
