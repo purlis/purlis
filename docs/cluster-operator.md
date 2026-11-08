@@ -637,7 +637,9 @@ made before then is never acted on: it says `MadeBeforePolicy`; delete it and ma
 time is the later of the policy's and its binding's (#3854), so a policy made again under a binding
 that stayed counts as made again. A binding changed since it was made (its `generation` is not 1)
 counts as no binding, since a cluster keeps no time for the change: Claims say `PolicyNotInForce`
-until a cluster admin makes it again, as the same rules hold for runner namespaces.
+until a cluster admin makes it again, as the same rules hold for runner namespaces. So does a
+binding whose `matchResources` narrows what the policy matches (a namespace or object selector
+that picks some, a resource rule, or an exact match policy): it holds the policy only somewhere.
 So wait 30 seconds after installing before making the first Claims.
 
 Making the binding again, by reinstalling the policy or recreating the binding by hand, refuses

@@ -7,10 +7,10 @@
 //! on at all.
 
 use k8s_openapi::api::admissionregistration::v1::{
-    ValidatingAdmissionPolicy, ValidatingAdmissionPolicyBinding,
-    ValidatingAdmissionPolicyBindingSpec,
+    MatchResources, NamedRuleWithOperations, ValidatingAdmissionPolicy,
+    ValidatingAdmissionPolicyBinding, ValidatingAdmissionPolicyBindingSpec,
 };
-use k8s_openapi::apimachinery::pkg::apis::meta::v1::Time;
+use k8s_openapi::apimachinery::pkg::apis::meta::v1::{LabelSelector, Time};
 use k8s_openapi::jiff::Timestamp;
 use kube::api::ObjectMeta;
 use purlis_cluster_operator::{
@@ -230,6 +230,74 @@ fn a_binding_changed_since_it_was_made_is_not_in_force() {
             in_force_since(Some(&policy), Some(&changed), POLICY),
             None,
             "{generation:?}"
+        );
+    }
+}
+
+/// A binding that names what it matches the way the API server would leave it unnamed.
+fn matching_everything() -> MatchResources {
+    MatchResources {
+        namespace_selector: Some(LabelSelector::default()),
+        object_selector: Some(LabelSelector::default()),
+        match_policy: Some("Equivalent".into()),
+        ..MatchResources::default()
+    }
+}
+
+#[test]
+fn a_binding_that_narrows_what_it_matches_is_not_in_force() {
+    let narrowed = |change: fn(&mut MatchResources)| {
+        let mut resources = matching_everything();
+        change(&mut resources);
+        let mut binding = in_force("2026-10-17T10:00:00Z");
+        binding.spec.match_resources = Some(resources);
+        binding
+    };
+    let some_namespaces = LabelSelector {
+        match_labels: Some([("team".to_owned(), "a".to_owned())].into()),
+        ..LabelSelector::default()
+    };
+    let one_rule = vec![NamedRuleWithOperations {
+        resources: Some(vec!["claims".into()]),
+        ..NamedRuleWithOperations::default()
+    }];
+    let bindings = [
+        ("a namespace selector", {
+            let mut b = narrowed(|_| {});
+            b.spec.match_resources.as_mut().unwrap().namespace_selector = Some(some_namespaces.clone());
+            b
+        }),
+        ("an object selector", {
+            let mut b = narrowed(|_| {});
+            b.spec.match_resources.as_mut().unwrap().object_selector = Some(some_namespaces.clone());
+            b
+        }),
+        ("resource rules", {
+            let mut b = narrowed(|_| {});
+            b.spec.match_resources.as_mut().unwrap().resource_rules = Some(one_rule.clone());
+            b
+        }),
+        ("excluded resource rules", {
+            let mut b = narrowed(|_| {});
+            b.spec.match_resources.as_mut().unwrap().exclude_resource_rules = Some(one_rule.clone());
+            b
+        }),
+        ("an exact match policy", narrowed(|r| r.match_policy = Some("Exact".into()))),
+    ];
+    for (what, binding) in bindings {
+        assert_eq!(since(&binding), None, "a binding narrowed by {what} is in force");
+    }
+}
+
+#[test]
+fn a_binding_that_names_what_it_matches_as_everything_is_in_force() {
+    for resources in [MatchResources::default(), matching_everything()] {
+        let mut binding = in_force("2026-10-17T10:00:00Z");
+        binding.spec.match_resources = Some(resources.clone());
+        assert_eq!(
+            since(&binding),
+            Some(at("2026-10-17T10:00:00Z").0.checked_add(SETTLE).unwrap()),
+            "{resources:?}"
         );
     }
 }
