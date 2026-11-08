@@ -2452,3 +2452,51 @@ fn the_folder_above_a_name_lifted_for_a_claude_code_chat_stays_pinned() {
         assert!(!rules.contains(&home.join(name).display().to_string()), "{name}");
     }
 }
+
+/// Where `$XDG_CONFIG_HOME` or `$XDG_DATA_HOME` moves `~/.config` or `~/.local/share`, every
+/// later-code name the floor holds there is held where it moved: fish, Neovim, git and the rest
+/// load from there. What else is in those folders stays the chat's.
+#[test]
+fn later_code_names_moved_by_xdg_folders_are_held_where_they_moved() {
+    use super::tests::writes;
+    let (_dir, root) = project();
+    let home_dir = tempfile::tempdir().expect("a home");
+    let elsewhere_dir = tempfile::tempdir().expect("a folder outside the home");
+    let home = real(home_dir.path());
+    let elsewhere = real(elsewhere_dir.path());
+    let config = elsewhere.join("cfg");
+    let data = elsewhere.join("data");
+    let (config_said, data_said) = (config.display().to_string(), data.display().to_string());
+    let machine = homed(
+        &home,
+        &[
+            ("XDG_CONFIG_HOME", config_said.as_str()),
+            ("XDG_DATA_HOME", data_said.as_str()),
+        ],
+    );
+    for harness in [Harness::Codex, Harness::Opencode] {
+        let profile = wrapped_floor(harness, &root, &machine, &[4040], None);
+        for not in [
+            data.join("fish/vendor_conf.d/x.fish"),
+            data.join("nvim/site/plugin/x.lua"),
+            data.join("dbus-1/services/x.service"),
+            data.join("applications/x.desktop"),
+            config.join("git/config"),
+            config.join("fish/config.fish"),
+            config.join("autostart/x.desktop"),
+        ] {
+            assert!(
+                !writes(&profile, &not),
+                "{harness:?}: {} is writable",
+                not.display()
+            );
+        }
+        for still in [data.join("other/x"), config.join("other/x")] {
+            assert!(
+                writes(&profile, &still),
+                "{harness:?}: {} is not writable",
+                still.display()
+            );
+        }
+    }
+}

@@ -1683,7 +1683,16 @@ impl Denied {
         // …and gh's and glab's own folders where the person's environment moves them: the
         // settings, extensions and aliases their next run loads, as it does from `~/.config/gh`
         // ([`PLANTED`]), which names only the folders at their usual place.
-        for folder in forge_folders_moved(root, machine) {
+        // So too every other later-code name below `~/.config` or `~/.local/share`, where
+        // `$XDG_CONFIG_HOME` or `$XDG_DATA_HOME` moves it: fish, Neovim, git, systemd and the
+        // rest load from there.
+        let mut moved = forge_folders_moved(root, machine);
+        for folder in xdg_later_code_moved(root, machine) {
+            if !moved.contains(&folder) {
+                moved.push(folder);
+            }
+        }
+        for folder in moved {
             paths.push(Denial {
                 class: Class::LaterCode,
                 path: folder,
@@ -2429,6 +2438,50 @@ fn podman_folders(machine: &Machine) -> Vec<(PathBuf, Reach)> {
     for folder in folders {
         if !out.iter().any(|(one, _)| *one == folder) {
             out.push((folder, Reach::AndBelow));
+        }
+    }
+    out
+}
+
+/// **Each later-code name below `~/.config` or `~/.local/share` where `machine`'s environment
+/// moves those folders**: every [`PLANTED`] name there, at `$XDG_CONFIG_HOME` or `$XDG_DATA_HOME`
+/// in its place, which the programs that load it read instead. A variable that names no absolute
+/// folder, or names the usual one, names nothing; a folder that is the home or above it, or holds
+/// the project at `root`, is never one, as for gh's ([`forge_folders_moved`]).
+fn xdg_later_code_moved(root: &Path, machine: &Machine) -> Vec<PathBuf> {
+    let Some(home) = machine.home.as_deref() else {
+        return Vec::new();
+    };
+    let named = |name: &str| {
+        machine
+            .env
+            .get(name)
+            .map(PathBuf::from)
+            .filter(|folder| folder.is_absolute())
+    };
+    let moves = [
+        (".config/", named("XDG_CONFIG_HOME"), home.join(".config")),
+        (
+            ".local/share/",
+            named("XDG_DATA_HOME"),
+            home.join(".local/share"),
+        ),
+    ];
+    let holds_the_work =
+        |folder: &Path| root.starts_with(folder) || home.starts_with(folder);
+    let mut out: Vec<PathBuf> = Vec::new();
+    for (usual, moved, usual_folder) in moves {
+        let Some(moved) = moved.filter(|moved| *moved != usual_folder) else {
+            continue;
+        };
+        for planted in PLANTED.iter().filter(|planted| !planted.path.contains("**")) {
+            let Some(rest) = planted.path.strip_prefix(usual) else {
+                continue;
+            };
+            let folder = moved.join(rest);
+            if !out.contains(&folder) && !holds_the_work(&folder) {
+                out.push(folder);
+            }
         }
     }
     out
