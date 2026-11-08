@@ -73,6 +73,7 @@ function theCore({
     repo: "octocat/hello",
   },
   waitRefused,
+  shownRefused,
   emails = EMAILS,
 }: {
   state: SigningState;
@@ -80,6 +81,8 @@ function theCore({
   added?: "added" | "needs_permission";
   checked?: SigningCheck;
   waitRefused?: string;
+  /** Why the Keychain wouldn't give the key, where macOS was told no. */
+  shownRefused?: string;
   emails?: SigningEmails;
 }) {
   mockIPC((cmd) => {
@@ -106,6 +109,7 @@ function theCore({
       case "signing_key_listed":
         return false;
       case "signing_key_shown":
+        if (shownRefused) throw shownRefused;
         return {
           fingerprint: "SHA256:q3VbT1sMk2pQ1",
           public_key:
@@ -231,6 +235,34 @@ export const ByHand: Story = {
     const added = within(dialog).getByRole("button", { name: "I've added it" });
     added.focus();
     await expect(added).toHaveFocus();
+    expectFocusInSight();
+  },
+};
+
+/** **Add it yourself, the key unread** (#5681): the Keychain wouldn't give the key, so the step
+ *  says so and offers Try again, with no box for a key that wasn't read. */
+export const ByHandKeyUnread: Story = {
+  beforeEach: () => {
+    theCore({
+      state: ON,
+      waitRefused:
+        "You didn't allow it on GitHub, so nothing changed. You can add the key yourself instead.",
+      shownRefused: "macOS said no, so purlis couldn't read the key.",
+    });
+    return () => clearMocks();
+  },
+  play: async () => {
+    const dialog = await theDialog();
+    await userEvent.click(
+      await within(dialog).findByRole("button", { name: "Continue to GitHub" }),
+    );
+    await userEvent.click(
+      await within(dialog).findByRole("button", { name: "I'll add it myself" }),
+    );
+    await within(dialog).findByText(/couldn't read the key from the Keychain/);
+    const again = within(dialog).getByRole("button", { name: "Try again" });
+    again.focus();
+    await expect(again).toHaveFocus();
     expectFocusInSight();
   },
 };

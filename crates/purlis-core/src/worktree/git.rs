@@ -1596,6 +1596,9 @@ pub struct Isolated {
     /// one up. Never a `-c` key: git is told to sign nothing, and purlis signs what git made
     /// ([`crate::commitsign`]).
     signer: Option<crate::commitsign::Signer>,
+    /// The email chosen for chat commits per forge host (#5788), host in lower case: a commit
+    /// made in a clone whose `origin` is on that host is made as it ([`Isolated::for_host`]).
+    emails_on: Vec<(String, String)>,
 }
 
 /// One pinned work tree: its git directory, and **which directory that was** when it was
@@ -1643,6 +1646,7 @@ impl Isolated {
             config,
             pins: Vec::new(),
             signer: None,
+            emails_on: Vec::new(),
         }
     }
 
@@ -1656,6 +1660,31 @@ impl Isolated {
         self.config.retain(|key| !key.starts_with("user.email="));
         self.config.push(format!("user.email={email}"));
         self
+    }
+
+    /// The same, committing as `email` in a clone whose `origin` is on `host` (#5788): the
+    /// address chosen for the forge account there. It takes effect through [`Self::for_host`].
+    #[must_use]
+    pub fn as_email_on(mut self, host: &str, email: &str) -> Self {
+        let host = host.to_ascii_lowercase();
+        self.emails_on.retain(|(was, _)| *was != host);
+        self.emails_on.push((host, email.to_owned()));
+        self
+    }
+
+    /// The same, as it commits in a clone whose `origin` is on `host`: as the email chosen for
+    /// that host where one was ([`Self::as_email_on`]), else as it was.
+    #[must_use]
+    pub fn for_host(&self, host: &str) -> Self {
+        let chosen = self
+            .emails_on
+            .iter()
+            .find(|(on, _)| on.eq_ignore_ascii_case(host))
+            .map(|(_, email)| email.clone());
+        match chosen {
+            Some(email) => self.clone().as_email(&email),
+            None => self.clone(),
+        }
     }
 
     /// The identity the operator's global git config gives, read through this module's

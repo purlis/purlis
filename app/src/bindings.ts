@@ -1681,6 +1681,11 @@ export const commands = {
 	pool: string,
 	/**  What the terminal of the command that asks shows. */
 	code: string,
+	/**
+	 *  The forge a signing check asks, as a sentence names it (`GitHub`, `GitLab on
+	 *  gitlab.example.org`, #5793); none for the other questions.
+	 */
+	on?: string | null,
 } | null>("pool_sign_in_asked"),
 	/**
 	 *  **The person's answer to the question `id`**: only their press in the window calls this. One
@@ -1877,9 +1882,10 @@ export const commands = {
 	 */
 	signingEmails: (forge: SigningForge) => typedError<SigningEmails, string>(__TAURI_INVOKE("signing_emails", { forge })),
 	/**
-	 *  **Sign chat commits on this Mac as `email`** (#5631): one of the account on `forge`'s
-	 *  verified addresses, asked again of the forge, so nothing else is taken. Chat commits made
-	 *  from now on carry it, and Check is run again by the dialog.
+	 *  **Sign the account on `forge`'s chat commits on this Mac as `email`** (#5631, #5788): one of
+	 *  its verified addresses, asked again of the forge, so nothing else is taken. Chat commits made
+	 *  from now on in its forge's repositories carry it; another account keeps its own. Check is run
+	 *  again by the dialog.
 	 */
 	signingUseEmail: (forge: SigningForge, email: string) => typedError<null, string>(__TAURI_INVOKE("signing_use_email", { forge, email })),
 	/**
@@ -12875,6 +12881,11 @@ export type PoolSignInAsk = {
 	pool: string,
 	/**  What the terminal of the command that asks shows. */
 	code: string,
+	/**
+	 *  The forge a signing check asks, as a sentence names it (`GitHub`, `GitLab on
+	 *  gitlab.example.org`, #5793); none for the other questions.
+	 */
+	on?: string | null,
 };
 
 /**
@@ -16005,7 +16016,11 @@ export type SigningWaiting = {
 	path: string,
 	/**  The commit whose push was refused. */
 	commit: string,
-	/**  The app's number for the chat that pushed, while it is open. */
+	/**
+	 *  The app's number now for the chat that pushed, while it is open: looked up by the chat's
+	 *  lasting id each time it is read, so a number given to another chat since never shows it
+	 *  there (#5789).
+	 */
 	chat?: number | null,
 	/**  Signed and sent since: shown as done until the window has shown it. */
 	sent: boolean,

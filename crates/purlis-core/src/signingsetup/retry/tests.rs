@@ -65,7 +65,7 @@ fn refused(piece: &str, at: i64) -> Waiting {
         host: "github.com".to_owned(),
         path: "octo/widget".to_owned(),
         commit: "0123abc".to_owned(),
-        chat: Some(4),
+        chat_id: Some("01JCHATALPHA".to_owned()),
         at,
         sent: false,
         why: None,
@@ -104,4 +104,25 @@ remote: - GITHUB PUSH PROTECTION\n\
 remote:     - Push cannot contain secrets\n\
 remote:       path: docs/commits must have verified signatures.txt:3";
     assert!(!refused_unsigned(Kind::GitHub, push_protection));
+}
+
+/// #5789: a waiting lane names its chat by the chat's lasting id. A record kept before that,
+/// which named it by the app's number, reads with no chat: a number reused since a restart would
+/// put its prompt on another chat.
+#[test]
+fn a_lane_names_its_chat_by_its_lasting_id_and_an_old_number_names_none() {
+    let root = tempfile::tempdir().unwrap();
+    note_refused(root.path(), refused("p1", 1)).unwrap();
+    assert_eq!(
+        waiting(root.path())[0].chat_id.as_deref(),
+        Some("01JCHATALPHA")
+    );
+
+    let old = r#"[{"ws":"alpha","repo":"widget","piece":"p2","branch":"p2","kind":"github",
+        "host":"github.com","path":"octo/widget","commit":"0123abc","chat":4,"at":2}]"#;
+    std::fs::write(waiting_file(root.path()), old).unwrap();
+    let read = waiting(root.path());
+    assert_eq!(read.len(), 1, "an old record still waits");
+    assert_eq!(read[0].piece, "p2");
+    assert_eq!(read[0].chat_id, None);
 }

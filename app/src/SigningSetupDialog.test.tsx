@@ -89,6 +89,8 @@ let listed: boolean;
 let checked: SigningCheck;
 /** The account's verified addresses. */
 let emails: SigningEmails;
+/** Why reading the key from the Keychain is refused, where macOS was told no. */
+let shownRefused: string | undefined;
 /** What each account holds of the person's keys. */
 let accountsKeys: SigningAccountKeys[];
 
@@ -118,6 +120,7 @@ beforeEach(() => {
   sent = [];
   makeRefused = undefined;
   addAnswers = "added";
+  shownRefused = undefined;
   listed = false;
   checked = VERIFIED;
   emails = {
@@ -167,6 +170,7 @@ beforeEach(() => {
       case "signing_key_listed":
         return listed;
       case "signing_key_shown":
+        if (shownRefused !== undefined) throw shownRefused;
         return { fingerprint: "SHA256:q3VbT1sM", public_key: PUBLIC };
       case "signing_check":
         return checked;
@@ -288,6 +292,32 @@ describe("SigningSetupDialog", () => {
     listed = true;
     await userEvent.click(within(dialog).getByRole("button", { name: "I've added it" }));
     expect(await within(dialog).findByText("Verified on GitHub ✓")).toBeTruthy();
+  });
+
+  it("by hand, where the Keychain wouldn't give the key, says so and reads it again on Try again", async () => {
+    state = structuredClone(ON);
+    addAnswers = "needs_permission";
+    shownRefused = "macOS said no, so purlis couldn't read the key.";
+    render(<SigningSetupDialog onClose={vi.fn()} />);
+    const dialog = await theDialog();
+    await userEvent.click(
+      await within(dialog).findByRole("button", { name: "I'll add it myself" }),
+    );
+    const said = await within(dialog).findByRole("alert");
+    expect(said.textContent).toContain("couldn't read the key from the Keychain");
+    // The Keychain's own reason, not a guess at it.
+    expect(said.textContent).toContain("macOS said no");
+    expect(said.textContent).toContain("Always Allow");
+    // No box is promised, and none is drawn: no key was read.
+    expect(dialog).not.toHaveTextContent("box below");
+    expect(within(dialog).queryByLabelText("This Mac's public signing key")).toBeNull();
+    expect(navigator.clipboard.writeText).not.toHaveBeenCalled();
+
+    shownRefused = undefined;
+    await userEvent.click(within(dialog).getByRole("button", { name: "Try again" }));
+    expect(await within(dialog).findByText("The key is copied.", { exact: false })).toBeTruthy();
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(PUBLIC);
+    expect(within(dialog).queryByRole("alert")).toBeNull();
   });
 
   it("a key added by hand before, and listed on GitHub, goes straight to Check with no permission asked", async () => {

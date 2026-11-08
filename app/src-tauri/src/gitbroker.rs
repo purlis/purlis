@@ -52,12 +52,15 @@ fn signing_isolation(held: &Held) -> purlis_core::worktree::git::Isolated {
         };
         let keyring = purlis_core::commitsign::this_builds_keyring(&config);
         match purlis_core::commitsign::kept(&config, &*keyring) {
-            // Signed as the email the person chose for chat commits, where they chose one
-            // (#5631): one the forge verifies, so the signature shows as Verified.
-            Ok(Some(signer)) => match purlis_core::signingsetup::commit_email(&config) {
-                Some(email) => isolation.signing(Some(signer)).as_email(&email),
-                None => isolation.signing(Some(signer)),
-            },
+            // Signed as the email the person chose for the forge account of the clone's host,
+            // where they chose one (#5631, #5788): one that forge verifies, so the signature
+            // shows as Verified there.
+            Ok(Some(signer)) => purlis_core::signingsetup::commit_emails_by_host(&config)
+                .into_iter()
+                .fold(
+                    isolation.signing(Some(signer)),
+                    |isolation, (host, email)| isolation.as_email_on(&host, &email),
+                ),
             Ok(None) => isolation,
             Err(why) => {
                 tracing::warn!("purlis: a chat's commits are made unsigned: {why}");

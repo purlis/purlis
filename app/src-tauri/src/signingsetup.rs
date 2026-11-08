@@ -192,6 +192,11 @@ fn note_verified(account: &ForgeAccount, email: Option<String>) {
     };
 }
 
+/// `account`, as its chosen commit email is kept by (#5788).
+fn account_ref(account: &ForgeAccount) -> signingsetup::AccountRef {
+    signingsetup::AccountRef::new(account.kind, &account.host, &account.login)
+}
+
 /// The scopes an account needs to add a signing key: GitHub's step-up, GitLab's `api`.
 fn may_add(account: &ForgeAccount) -> bool {
     match account.kind {
@@ -360,7 +365,7 @@ pub async fn signing_check(
         let root = config_root()?;
         let key = the_key(&root)?;
         let account = the_account(&root, &forge)?;
-        let who = signingsetup::who_commits_here(&root)?;
+        let who = signingsetup::who_commits_as(&root, &account_ref(&account))?;
         let transport = transport(&forge)?;
         let shown = forge.kind.display();
         let (checked, repo) = match forge.kind {
@@ -442,7 +447,9 @@ pub struct SigningWaiting {
     pub path: String,
     /// The commit whose push was refused.
     pub commit: String,
-    /// The app's number for the chat that pushed, while it is open.
+    /// The app's number now for the chat that pushed, while it is open: looked up by the chat's
+    /// lasting id each time it is read, so a number given to another chat since never shows it
+    /// there (#5789).
     #[specta(optional)]
     pub chat: Option<u32>,
     /// Signed and sent since: shown as done until the window has shown it.
@@ -489,26 +496,36 @@ pub async fn signing_waiting(
     plane: crate::planes::PlaneId,
 ) -> Result<Vec<SigningWaiting>, String> {
     let root = root_of(&planes, &plane)?;
+    let held = planes.held(&plane)?;
     blocking(move || {
         Ok(signingsetup::retry::waiting_here(&root)
             .into_iter()
-            .map(|one| SigningWaiting {
-                forge: one.kind.display().to_string(),
-                kind: one.kind.word().to_string(),
-                ws: one.ws,
-                repo: one.repo,
-                piece: one.piece,
-                branch: one.branch,
-                host: one.host,
-                path: one.path,
-                commit: one.commit,
-                chat: one.chat,
-                sent: one.sent,
-                why: one.why,
-            })
+            .map(|one| shown(one, |id| held.chats().session_of_id(id)))
             .collect())
     })
     .await
+}
+
+/// `one` as the window shows it, its chat named by the number `session_of` gives its lasting id
+/// now: none where that chat is not open.
+fn shown(
+    one: signingsetup::retry::Waiting,
+    session_of: impl Fn(&str) -> Option<u32>,
+) -> SigningWaiting {
+    SigningWaiting {
+        forge: one.kind.display().to_string(),
+        kind: one.kind.word().to_string(),
+        chat: one.chat_id.as_deref().and_then(session_of),
+        ws: one.ws,
+        repo: one.repo,
+        piece: one.piece,
+        branch: one.branch,
+        host: one.host,
+        path: one.path,
+        commit: one.commit,
+        sent: one.sent,
+        why: one.why,
+    }
 }
 
 /// **Sign and retry** (#5630, ADR 0116 §4), for each of `lanes` that waits on signing: the
@@ -572,7 +589,7 @@ fn retried(
                 root,
                 one,
                 key,
-                signingsetup::commit_email(config).as_deref(),
+                signingsetup::commit_email_on(config, one.kind, &one.host).as_deref(),
                 &mut |_| {},
             )
         })
@@ -657,16 +674,17 @@ pub async fn signing_emails(forge: SigningForge) -> Result<SigningEmails, String
     .await
 }
 
-/// **Sign chat commits on this Mac as `email`** (#5631): one of the account on `forge`'s
-/// verified addresses, asked again of the forge, so nothing else is taken. Chat commits made
-/// from now on carry it, and Check is run again by the dialog.
+/// **Sign the account on `forge`'s chat commits on this Mac as `email`** (#5631, #5788): one of
+/// its verified addresses, asked again of the forge, so nothing else is taken. Chat commits made
+/// from now on in its forge's repositories carry it; another account keeps its own. Check is run
+/// again by the dialog.
 #[tauri::command]
 #[specta::specta]
 pub async fn signing_use_email(forge: SigningForge, email: String) -> Result<(), String> {
     blocking(move || {
         let forge = forge.forge()?;
         let root = config_root()?;
-        the_account(&root, &forge)?;
+        let account = the_account(&root, &forge)?;
         let transport = transport(&forge)?;
         let verified = signingsetup::verified_emails(transport.as_ref(), &forge)?;
         if !verified
@@ -678,7 +696,7 @@ pub async fn signing_use_email(forge: SigningForge, email: String) -> Result<(),
                 forge.kind.display()
             ));
         }
-        signingsetup::set_commit_email(&root, Some(&email))
+        signingsetup::set_commit_email_of(&root, &account_ref(&account), Some(&email))
     })
     .await
 }
@@ -935,7 +953,7 @@ mod tests {
             host: "github.com".to_owned(),
             path: "purlis/purlis".to_owned(),
             commit: "0123abc".to_owned(),
-            chat: Some(3),
+            chat_id: Some("01JCHATTHREE".to_owned()),
             at: 1,
             sent: false,
             why: None,
@@ -1008,5 +1026,92 @@ mod tests {
         assert_eq!(labels(&all_sent), ["Dismiss"]);
         retry::forget_sent(root.path()).unwrap();
         assert!(crate::asking::signing_waiting(root.path(), || true).is_none());
+    }
+
+    /// #5789: a lane shows on the chat whose lasting id pushed it, by whatever number that chat
+    /// has now, and on no chat once it is closed: never on another chat given its old number.
+    #[test]
+    fn a_lane_shows_on_the_chat_that_pushed_it_by_its_lasting_id() {
+        let open = |id: &str| match id {
+            "01JCHATTHREE" => Some(12),
+            _ => None,
+        };
+        assert_eq!(super::shown(refused("p1"), open).chat, Some(12));
+        let closed = |_: &str| None;
+        assert_eq!(super::shown(refused("p1"), closed).chat, None);
+        let unnamed = Waiting {
+            chat_id: None,
+            ..refused("p1")
+        };
+        assert_eq!(super::shown(unnamed, |_| Some(3)).chat, None);
+    }
+
+    /// #5790: lanes refused on GitHub and on GitLab get Set up signing for each forge, each its
+    /// own answer, before signing is on and after (the key may not be on the other forge yet).
+    /// Lanes on one forge keep the one Set up signing.
+    #[test]
+    fn lanes_on_two_forges_offer_setup_for_each() {
+        let root = tempfile::tempdir().unwrap();
+        let lane = |piece: &str, kind: Kind, host: &str| {
+            let folder =
+                purlis_core::worktree::path_for(root.path(), "smart-ide", "purlis", piece).unwrap();
+            std::fs::create_dir_all(folder).unwrap();
+            retry::note_refused(
+                root.path(),
+                Waiting {
+                    kind,
+                    host: host.to_owned(),
+                    ..refused(piece)
+                },
+            )
+            .unwrap();
+        };
+        lane("tab-names", Kind::GitHub, "github.com");
+        lane("empty-tab", Kind::GitLab, "gitlab.example.org");
+        lane("pane-foot", Kind::GitHub, "github.com");
+        let options = |on: bool| -> Vec<(String, String)> {
+            crate::asking::signing_waiting(root.path(), || on)
+                .unwrap()
+                .options
+                .into_iter()
+                .map(|one| (one.id, one.label))
+                .collect()
+        };
+        let pair = |id: &str, label: &str| (id.to_owned(), label.to_owned());
+        assert_eq!(
+            options(false),
+            [
+                pair("set-up:github:github.com", "Set up signing on GitHub"),
+                pair(
+                    "set-up:gitlab:gitlab.example.org",
+                    "Set up signing on GitLab"
+                ),
+                pair("dismiss", "Dismiss"),
+            ]
+        );
+        assert_eq!(
+            options(true),
+            [
+                pair("retry-all", "Sign and retry all 3"),
+                pair("set-up:github:github.com", "Set up signing on GitHub"),
+                pair(
+                    "set-up:gitlab:gitlab.example.org",
+                    "Set up signing on GitLab"
+                ),
+                pair("dismiss", "Dismiss"),
+            ]
+        );
+        // Two GitLabs are told apart by their host.
+        lane("pane-foot", Kind::GitLab, "gitlab.com");
+        let labels: Vec<String> = options(false).into_iter().map(|(_, label)| label).collect();
+        assert_eq!(
+            labels,
+            [
+                "Set up signing on GitHub",
+                "Set up signing on GitLab (gitlab.com)",
+                "Set up signing on GitLab (gitlab.example.org)",
+                "Dismiss",
+            ]
+        );
     }
 }

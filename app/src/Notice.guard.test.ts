@@ -538,15 +538,15 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
   },
   "UnsavedWorkQuestion.tsx": { count: 1, why: ACTION },
   "SigningSetupDialog.tsx": {
-    count: 18,
+    count: 19,
     why:
       ACTION +
       ". Set up signing's own lines (#5628, #5629, #5631), inside its dialog: each step's progress " +
       "while it runs by itself (reading, making the key, asking GitHub for a code, adding the " +
       "key, the wait on GitHub's page, the watch for a key added by hand, the check), each " +
       "step's refusal in the core's or the forge's words, the Verified line, GitLab's wait for a " +
-      "first signed push, and the email step's reading, its no-verified-email sentence and its " +
-      "refusal; its Try again, Check again, Use this email, Done and Cancel are the way out",
+      "first signed push, the by-hand step's key the Keychain wouldn't give (#5681), and the email " +
+      "step's reading, its no-verified-email sentence and its refusal; its Try again, Check again, Use this email, Done and Cancel are the way out",
   },
   "SkillBudget.tsx": {
     count: 3,

@@ -11,6 +11,7 @@ import {
   laneOf,
   SIGNING_SETUP_ASKED,
   SIGNING_WAITING_CHANGED,
+  type SigningSetupAskedDetail,
   signAndRetry,
   signAndRetryAll,
 } from "./signingAsked";
@@ -209,18 +210,30 @@ export function SigningRefusalNotice({ plane, session }: { plane: PlaneId; sessi
 /**
  * **Set up signing, from the one Ask about waiting lanes** (#5633): opened when that Ask is
  * answered Set up signing, in this project's window, for the forge that refused the lanes; its
- * last step is **Sign and retry all N**, which sends every waiting lane again.
+ * last step is **Sign and retry all N**, which sends every waiting lane again. Where the lanes
+ * wait on more than one forge, the answer names one (#5790): setup is for that forge's account,
+ * and its last step sends that forge's lanes only.
  */
 export function SigningSetupAsked({ plane }: { plane: PlaneId }) {
   const [lanes, setLanes] = useState<readonly SigningWaiting[]>();
+  /** Whether the lanes are one forge's of several: its Sign and retry sends those alone. */
+  const [oneForge, setOneForge] = useState(false);
   useEffect(() => {
     const asked = (event: Event) => {
-      const wanted = (event as CustomEvent<{ plane: string }>).detail;
+      const wanted = (event as CustomEvent<SigningSetupAskedDetail>).detail;
       if (wanted.plane !== plane) return;
+      const forge = wanted.forge;
       void commands.signingWaiting(plane).then((read) => {
         if (read.status !== "ok") return;
-        const still = read.data.filter((one) => !one.sent);
-        if (still.length > 0) setLanes(still);
+        const still = read.data.filter(
+          (one) =>
+            !one.sent &&
+            (forge === undefined || (one.kind === forge.kind && one.host === forge.host)),
+        );
+        if (still.length > 0) {
+          setOneForge(forge !== undefined);
+          setLanes(still);
+        }
       });
     };
     window.addEventListener(SIGNING_SETUP_ASKED, asked);
@@ -235,7 +248,7 @@ export function SigningSetupAsked({ plane }: { plane: PlaneId }) {
       commit={null}
       finish={{
         label: lanes.length === 1 ? "Sign and retry" : `Sign and retry all ${lanes.length}`,
-        onFinish: () => void signAndRetryAll(plane),
+        onFinish: () => void (oneForge ? signAndRetry(plane, lanes) : signAndRetryAll(plane)),
       }}
       onClose={() => {
         setLanes(undefined);

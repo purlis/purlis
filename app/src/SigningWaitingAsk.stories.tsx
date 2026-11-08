@@ -16,12 +16,16 @@ import { expectFocusInSight } from "./stories.testkit";
 const LANES =
   "- purlis · tab-names (tab-names)\n- purlis · empty-tab (empty-tab)\n- purlis · pane-foot (pane-foot)";
 
-function notice(says: string, id: string, label: string): Shown {
+function notice(says: string, id: string, label: string, more: [string, string][] = []): Shown {
   return {
     session: 0,
     ask: "signing-waiting",
     says,
-    options: [{ id, label, allows: false }],
+    options: [[id, label] as [string, string], ...more].map(([one, named]) => ({
+      id: one,
+      label: named,
+      allows: false,
+    })),
     source: "signing",
     chain: ["purlis"],
     answer: { via: "signing" },
@@ -37,6 +41,12 @@ const AFTER = notice(
   `3 lanes can't merge: purlis/purlis only accepts signed commits\n${LANES}`,
   "retry-all",
   "Sign and retry all 3",
+);
+const TWO_FORGES = notice(
+  "2 lanes can't merge: purlis/purlis, team/purlis only accepts signed commits\n- purlis · tab-names (tab-names)\n- purlis · empty-tab (empty-tab)",
+  "set-up:github:github.com",
+  "Set up signing on GitHub",
+  [["set-up:gitlab:gitlab.example.org", "Set up signing on GitLab"]],
 );
 const DONE = notice("3 lanes signed and sent ✓", "dismiss", "Dismiss");
 
@@ -78,6 +88,17 @@ export const AfterSetup: Story = {
   args: { ask: AFTER },
   play: async ({ canvasElement }) => {
     await reached(canvasElement, "Sign and retry all 3");
+  },
+};
+
+/** **Two forges** (#5790): lanes on GitHub and GitLab, each forge set up on its own. */
+export const TwoForges: Story = {
+  args: { ask: TWO_FORGES },
+  play: async ({ canvasElement }) => {
+    await reached(canvasElement, "Set up signing on GitLab");
+    await expect(
+      within(canvasElement).getByRole("button", { name: "Set up signing on GitHub" }),
+    ).toBeEnabled();
   },
 };
 

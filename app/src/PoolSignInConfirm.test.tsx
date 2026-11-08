@@ -79,6 +79,23 @@ describe("a pool sign-in confirmed in the window", () => {
     expect(state.answers).toEqual([{ id: 4, yes: true }]);
   });
 
+  it("names the GitLab a `purlis signing check` asks, never GitHub (#5793)", async () => {
+    core({
+      ...ASK,
+      asks: "signing-check",
+      profile: "team/billing",
+      pool: "0123abc",
+      on: "GitLab on gitlab.example.org",
+    });
+    render(<PoolSignInConfirm />);
+    expect(await screen.findByRole("alertdialog")).toBeTruthy();
+    expect(
+      screen.getByText("Check 0123abc in team/billing on GitLab on gitlab.example.org?"),
+    ).toBeTruthy();
+    expect(screen.getByText(/ask GitLab on gitlab.example.org, with your/)).toBeTruthy();
+    expect(document.body.textContent).not.toContain("GitHub");
+  });
+
   it("draws nothing while nothing is asked", async () => {
     const state = core(null);
     render(<PoolSignInConfirm />);

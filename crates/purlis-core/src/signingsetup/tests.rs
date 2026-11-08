@@ -9,6 +9,7 @@ use crate::secrets::keyring;
 fn on_account(signer: &Signer) -> Asked {
     Asked::KeyOnAccount {
         key: signer.public_line(),
+        on: None,
     }
 }
 
@@ -39,7 +40,7 @@ fn no_key_then_made_then_added_then_listed_then_verified() {
     // Whether the account has it is read from GitHub's public list of its signing keys.
     let none = recording("publicly_none", &signer);
     assert_eq!(
-        answered_over(&none, &github(), "octocat", &on_account(&signer)).unwrap(),
+        answered_over(&none, &github(), "octocat", &on_account(&signer), None).unwrap(),
         Heard::KeyOnAccount { on: false }
     );
 
@@ -54,7 +55,7 @@ fn no_key_then_made_then_added_then_listed_then_verified() {
     assert!(added.unspent().is_empty());
     let public = recording("publicly_listed", &signer);
     assert_eq!(
-        answered_over(&public, &github(), "octocat", &on_account(&signer)).unwrap(),
+        answered_over(&public, &github(), "octocat", &on_account(&signer), None).unwrap(),
         Heard::KeyOnAccount { on: true }
     );
 
@@ -63,8 +64,10 @@ fn no_key_then_made_then_added_then_listed_then_verified() {
         repo: "octo/hello".to_owned(),
         commit: "0123abc".to_owned(),
         code: "A1B2C3".to_owned(),
+        on: None,
     };
-    let Heard::Checked(checked) = answered_over(&verified, &github(), "octocat", &asked).unwrap()
+    let Heard::Checked(checked) =
+        answered_over(&verified, &github(), "octocat", &asked, None).unwrap()
     else {
         panic!("a check is answered with what the forge said of the commit");
     };
@@ -82,9 +85,10 @@ fn what_is_not_one_public_key_is_refused_before_anything_is_sent() {
     ] {
         let asked = Asked::KeyOnAccount {
             key: key.to_owned(),
+            on: None,
         };
         assert!(
-            answered_over(&recorded, &github(), "octocat", &asked).is_err(),
+            answered_over(&recorded, &github(), "octocat", &asked, None).is_err(),
             "{key:?}"
         );
     }
@@ -124,7 +128,7 @@ mod over_the_window_line {
         let theirs = std::sync::Arc::clone(&recorded);
         windowline::serve_on(&socket, move |asked| match asked {
             windowline::Asked::Signing(asked) => {
-                match answered_over(theirs.as_ref(), &github(), "octocat", &asked) {
+                match answered_over(theirs.as_ref(), &github(), "octocat", &asked, None) {
                     Ok(heard) => Said::Signing(heard),
                     Err(why) => Said::Refused { why },
                 }
@@ -135,9 +139,13 @@ mod over_the_window_line {
         })
         .unwrap();
         let within = Duration::from_secs(10);
-        let reached = reach(Asked::KeyOnAccount { key: line }, |asked| {
-            windowline::ask_on(&socket, asked, within)
-        });
+        let reached = reach(
+            Asked::KeyOnAccount {
+                key: line,
+                on: None,
+            },
+            |asked| windowline::ask_on(&socket, asked, within),
+        );
         assert_eq!(reached, Reached::Heard(Heard::KeyOnAccount { on: true }));
     }
 
@@ -147,6 +155,7 @@ mod over_the_window_line {
             repo: "octo/hello".to_owned(),
             commit: "0123abc".to_owned(),
             code: "A1B2C3".to_owned(),
+            on: None,
         };
         assert_eq!(reach(asked(), |_| Answered::NoWindow), Reached::NoWindow);
         assert_eq!(reach(asked(), |_| Answered::NoAnswer), Reached::NoAnswer);
@@ -168,7 +177,10 @@ mod over_the_window_line {
         let dir = tempfile::tempdir().unwrap();
         let said = windowline::answer(
             dir.path(),
-            windowline::Asked::Signing(Asked::KeyOnAccount { key: "k".into() }),
+            windowline::Asked::Signing(Asked::KeyOnAccount {
+                key: "k".into(),
+                on: None,
+            }),
             |_| panic!("no forget"),
             |_, _| panic!("no keep"),
             |_, _, _| panic!("no approve"),
@@ -350,14 +362,41 @@ fn a_pushed_commit_signed_with_another_key_says_nothing_of_this_one() {
     assert_eq!(checked.reason, "other_key");
 }
 
+/// #5788: the email chosen for chat commits is kept per forge account, so a person whose GitHub
+/// and GitLab addresses differ is Verified on both.
 #[test]
-fn the_email_chosen_for_chat_commits_is_kept_until_it_is_cleared() {
+fn the_email_chosen_for_chat_commits_is_kept_per_forge_account_until_it_is_cleared() {
     let config = tempfile::tempdir().unwrap();
-    assert_eq!(commit_email(config.path()), None);
-    set_commit_email(config.path(), Some("sam@example.com")).unwrap();
+    let octocat = AccountRef::new(Kind::GitHub, "github.com", "octocat");
+    let sam = AccountRef::new(Kind::GitLab, "GitLab.Example.org", "sam");
+    assert_eq!(commit_email_of(config.path(), &octocat), None);
+    set_commit_email_of(
+        config.path(),
+        &octocat,
+        Some("1+octocat@users.noreply.github.com"),
+    )
+    .unwrap();
+    set_commit_email_of(config.path(), &sam, Some("sam@example.org")).unwrap();
     assert_eq!(
-        commit_email(config.path()).as_deref(),
-        Some("sam@example.com")
+        commit_email_of(config.path(), &octocat).as_deref(),
+        Some("1+octocat@users.noreply.github.com")
+    );
+    assert_eq!(
+        commit_email_of(
+            config.path(),
+            &AccountRef::new(Kind::GitLab, "gitlab.example.org", "sam")
+        )
+        .as_deref(),
+        Some("sam@example.org"),
+        "a host is the same in any case"
+    );
+    // Another login on the same host chose nothing.
+    assert_eq!(
+        commit_email_of(
+            config.path(),
+            &AccountRef::new(Kind::GitHub, "github.com", "hubot")
+        ),
+        None
     );
     for bad in [
         "",
@@ -367,17 +406,50 @@ fn the_email_chosen_for_chat_commits_is_kept_until_it_is_cleared() {
         "x@y.z\nuser.name=evil",
     ] {
         assert!(
-            set_commit_email(config.path(), Some(bad)).is_err(),
+            set_commit_email_of(config.path(), &sam, Some(bad)).is_err(),
             "{bad:?}"
         );
     }
     assert_eq!(
-        commit_email(config.path()).as_deref(),
-        Some("sam@example.com")
+        commit_email_of(config.path(), &sam).as_deref(),
+        Some("sam@example.org")
     );
-    set_commit_email(config.path(), None).unwrap();
-    assert_eq!(commit_email(config.path()), None);
-    set_commit_email(config.path(), None).unwrap();
+    set_commit_email_of(config.path(), &sam, None).unwrap();
+    assert_eq!(commit_email_of(config.path(), &sam), None);
+    assert!(
+        commit_email_of(config.path(), &octocat).is_some(),
+        "the other stays"
+    );
+    set_commit_email_of(config.path(), &sam, None).unwrap();
+    forget_records(config.path()).unwrap();
+    assert_eq!(commit_email_of(config.path(), &octocat), None);
+}
+
+/// #5788: an address chosen before choices were per account was chosen for the device: it stays
+/// in use for any account that has not chosen its own since.
+#[test]
+fn an_email_chosen_for_the_whole_device_before_stands_for_an_account_with_none_of_its_own() {
+    let config = tempfile::tempdir().unwrap();
+    let folder = config.path().join("signing");
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::write(folder.join("commit-email"), "old@example.com\n").unwrap();
+    let octocat = AccountRef::new(Kind::GitHub, "github.com", "octocat");
+    let sam = AccountRef::new(Kind::GitLab, "gitlab.com", "sam");
+    assert_eq!(
+        commit_email_of(config.path(), &sam).as_deref(),
+        Some("old@example.com")
+    );
+    set_commit_email_of(config.path(), &octocat, Some("new@example.com")).unwrap();
+    assert_eq!(
+        commit_email_of(config.path(), &octocat).as_deref(),
+        Some("new@example.com")
+    );
+    assert_eq!(
+        commit_email_of(config.path(), &sam).as_deref(),
+        Some("old@example.com")
+    );
+    forget_records(config.path()).unwrap();
+    assert_eq!(commit_email_of(config.path(), &sam), None);
 }
 
 #[test]
@@ -448,4 +520,112 @@ fn a_commit_gitlab_verified_without_naming_this_devices_key_gets_no_tick() {
         check_a_pushed_commit(&recorded, &gitlab(), &signer, "platform/billing", "0123abc")
             .unwrap();
     assert!(!checked.verified);
+}
+
+/// #5793: an ask names the forge and host of the account it is about; one that names none, as
+/// a command of an older build sends it, is about GitHub on github.com. The window answers a
+/// GitLab account's from GitLab's public list of its keys.
+#[test]
+fn an_ask_names_its_forge_and_one_naming_none_is_about_github() {
+    let old: Asked =
+        serde_json::from_str(r#"{"key_on_account":{"key":"ssh-ed25519 AAAA"}}"#).unwrap();
+    assert_eq!(old.forge(), github());
+    let signer = Signer::generate().unwrap();
+    let asked = Asked::KeyOnAccount {
+        key: signer.public_line(),
+        on: Some(OnForge {
+            kind: Kind::GitLab,
+            host: "GitLab.com".to_owned(),
+        }),
+    };
+    assert_eq!(asked.forge(), gitlab());
+    let recorded = gitlab_recording("publicly_listed", &signer);
+    assert_eq!(
+        answered_over(&recorded, &asked.forge(), "sam", &asked, None).unwrap(),
+        Heard::KeyOnAccount { on: true }
+    );
+    assert_eq!(forge_said(&gitlab()), "GitLab");
+    assert_eq!(
+        forge_said(&forge_of(Kind::GitLab, "gitlab.example.org")),
+        "GitLab on gitlab.example.org"
+    );
+    assert_eq!(
+        new_key_page(&forge_of(Kind::GitLab, "gitlab.example.org")),
+        "https://gitlab.example.org/-/user_settings/ssh_keys"
+    );
+}
+
+/// #5793: `purlis signing check` on GitLab is held to this device's key, as the window's own
+/// Check is: a commit GitLab verified with another key is not Verified for this device, and
+/// with no key here nothing is asked of it.
+#[test]
+fn a_gitlab_check_from_the_command_is_held_to_this_devices_key() {
+    let signer = Signer::generate().unwrap();
+    let other = Signer::generate().unwrap();
+    let asked = Asked::Check {
+        repo: "platform/billing".to_owned(),
+        commit: "0123abc".to_owned(),
+        code: "A1B2C3".to_owned(),
+        on: Some(OnForge::of(&gitlab())),
+    };
+    let mine = gitlab_recording("commit_verified", &signer);
+    let Heard::Checked(checked) =
+        answered_over(&mine, &gitlab(), "sam", &asked, Some(&signer)).unwrap()
+    else {
+        panic!("a verdict");
+    };
+    assert!(checked.verified);
+    let theirs = gitlab_recording("commit_verified", &other);
+    let Heard::Checked(checked) =
+        answered_over(&theirs, &gitlab(), "sam", &asked, Some(&signer)).unwrap()
+    else {
+        panic!("a verdict");
+    };
+    assert!(!checked.verified);
+    assert_eq!(checked.reason, "other_key");
+    assert!(crate::commitsign::reason_said_on(&checked.reason, "GitLab").contains("another key"));
+    let nothing = gitlab_recording("commit_verified", &signer);
+    assert!(answered_over(&nothing, &gitlab(), "sam", &asked, None).is_err());
+}
+
+/// #5788: chat commits on a host carry the email of the first account signed in there, the one
+/// bound to it, and never another account's on the same host in its place.
+#[test]
+fn a_hosts_commit_email_is_its_first_accounts_or_none() {
+    let config = tempfile::tempdir().unwrap();
+    let file = crate::forge::accounts::path(config.path());
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    let account = |id: &str, kind: &str, host: &str, login: &str| {
+        serde_json::json!({"id": id, "kind": kind, "host": host, "login": login,
+            "method": "pat", "state": "signed-in"})
+    };
+    std::fs::write(
+        &file,
+        serde_json::json!({"version": 1, "accounts": [
+            account("01A", "github", "github.com", "octocat"),
+            account("01B", "github", "github.com", "hubot"),
+            account("01C", "gitlab", "gitlab.example.org:8443", "sam"),
+        ]})
+        .to_string(),
+    )
+    .unwrap();
+    let hubot = AccountRef::new(Kind::GitHub, "github.com", "hubot");
+    set_commit_email_of(config.path(), &hubot, Some("hubot@example.com")).unwrap();
+    let sam = AccountRef::new(Kind::GitLab, "gitlab.example.org:8443", "sam");
+    set_commit_email_of(config.path(), &sam, Some("sam@example.org")).unwrap();
+    assert_eq!(
+        commit_emails_by_host(config.path()),
+        [(
+            "gitlab.example.org:8443".to_owned(),
+            "sam@example.org".to_owned()
+        )]
+    );
+    assert_eq!(
+        commit_email_on(config.path(), Kind::GitHub, "github.com"),
+        None
+    );
+    assert_eq!(
+        commit_email_on(config.path(), Kind::GitLab, "gitlab.example.org:8443").as_deref(),
+        Some("sam@example.org")
+    );
 }

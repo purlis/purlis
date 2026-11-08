@@ -140,6 +140,57 @@ describe("the one notice for lanes waiting on signing", () => {
     });
   });
 
+  it("with lanes on two forges, Set up signing on GitLab sets up GitLab's account and retries its lanes only", async () => {
+    state = {
+      ...state,
+      accounts: [
+        ...state.accounts,
+        {
+          kind: "gitlab",
+          login: "sam",
+          host: "gitlab.example.org",
+          forge: "GitLab",
+          may_add: true,
+          verified_as: null,
+          verifies: true,
+        },
+      ],
+    };
+    waiting = [
+      lane("tab-names"),
+      {
+        ...lane("empty-tab"),
+        kind: "gitlab",
+        forge: "GitLab",
+        host: "gitlab.example.org",
+        path: "team/purlis",
+      },
+    ];
+    render(<SigningSetupAsked plane={PLANE} />);
+    const answered = await answerTaken(
+      PLANE,
+      ask(
+        [
+          { id: "set-up:github:github.com", label: "Set up signing on GitHub" },
+          { id: "set-up:gitlab:gitlab.example.org", label: "Set up signing on GitLab" },
+        ],
+        THREE,
+      ),
+      "set-up:gitlab:gitlab.example.org",
+    );
+    expect(answered.opened).toBe(true);
+    const dialog = await screen.findByRole("dialog", { name: "Set up signing" });
+    await userEvent.click(await within(dialog).findByRole("button", { name: "Make my key" }));
+    await userEvent.click(await within(dialog).findByRole("button", { name: "Sign and retry" }));
+    await waitFor(() => expect(commandsSent("signing_sign_and_retry").length).toBe(1));
+    expect(commandsSent("signing_add_key")[0]?.args).toMatchObject({
+      forge: { kind: "gitlab", host: "gitlab.example.org" },
+    });
+    expect(commandsSent("signing_sign_and_retry")[0]?.args).toMatchObject({
+      lanes: [{ ws: "smart-ide", repo: "purlis", piece: "empty-tab" }],
+    });
+  });
+
   it("Sign and retry all sends every lane still waiting, and none already sent", async () => {
     waiting = [lane("tab-names"), { ...lane("empty-tab"), sent: true }];
     const answered = await answerTaken(
