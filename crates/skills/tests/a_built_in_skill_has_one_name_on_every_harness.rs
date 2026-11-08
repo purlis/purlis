@@ -231,3 +231,54 @@ fn a_bare_old_name_without_the_prefix_stays_an_ordinary_name() {
         Some(Reference::Named("building-purlis-ui".to_owned()))
     );
 }
+
+/// Four built-in skills took clearer names (#5724, spec #5714 Q32): each old name, bare or under
+/// either prefix, reads as the new one, so a persona's list, a run and a miss carry over.
+const RENAMED_BY_5724: [(&str, &str); 4] = [
+    ("purlis-compact", "purlis-tidy-memory"),
+    ("purlis-working-in-a-clone", "purlis-repo-work"),
+    ("purlis-update", "purlis-upgrade"),
+    ("purlis-add-curation-action", "purlis-curation-action"),
+];
+
+#[test]
+fn every_old_name_of_the_four_renamed_skills_reads_as_its_name_now_5724() {
+    for (old, new) in RENAMED_BY_5724 {
+        let short = old.strip_prefix("purlis-").unwrap();
+        for written in [
+            old.to_owned(),
+            format!("purlis:{old}"),
+            format!("purlis:{short}"),
+            format!("charter:{short}"),
+            format!("charter:{old}"),
+        ] {
+            assert_eq!(
+                Reference::parse(&written),
+                Some(Reference::BuiltIn(new.to_owned())),
+                "{written}"
+            );
+            assert_eq!(purlis_skills::run_name(&written), new, "{written}");
+            assert_eq!(
+                Reference::written_renamed(&written),
+                Some((old, new)),
+                "{written}"
+            );
+        }
+        assert_eq!(purlis_skills::name_now(old), new);
+        assert_eq!(purlis_skills::name_now(new), new);
+        assert_eq!(Reference::written_renamed(&format!("purlis:{new}")), None);
+    }
+    assert_eq!(purlis_skills::name_now("deploy"), "deploy");
+}
+
+#[test]
+fn an_old_name_in_a_prompt_is_found_only_as_a_whole_name_5724() {
+    assert_eq!(
+        purlis_skills::old_names_in("Use the purlis-compact skill, then purlis:update."),
+        vec![
+            ("purlis-compact", "purlis-tidy-memory"),
+            ("purlis-update", "purlis-upgrade"),
+        ]
+    );
+    assert!(purlis_skills::old_names_in("Use purlis-updater and purlis-tidy-memory.").is_empty());
+}
