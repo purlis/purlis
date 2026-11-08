@@ -102,6 +102,11 @@ export async function readSetUpdates(
       else stays("No update is waiting.");
       continue;
     }
+    // Each update from an extension's source copies what its own review read (#3089).
+    if (offer.source.kind === "extension") {
+      stays("It comes from an extension, so it's updated on its own: review it from its source.");
+      continue;
+    }
     asked.push(
       commands.skillUpdateReview(plane, offer.level, offer.name).then((review) => {
         if (review.status === "ok") return { member, offer, review: review.data };

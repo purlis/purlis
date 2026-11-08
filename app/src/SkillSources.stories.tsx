@@ -17,6 +17,7 @@ import { PROJECT } from "./skillChanges";
 import { memberKey } from "./SkillSetReview";
 import { studio } from "./skillsListing.testkit";
 import { updateOffer, updateReview } from "./skillUpdates.testkit";
+import { extensionKey } from "./studioSources";
 import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
 import { expectFocusInSight, tabInto, untilFocusWithin } from "./stories.testkit";
 
@@ -160,7 +161,7 @@ const OFFER = {
   name: "brainstorming",
   level: PROJECT,
   label: "project",
-  remote: SUPERPOWERS.remote,
+  source: { kind: "git", remote: SUPERPOWERS.remote, label: SUPERPOWERS.remote.label },
   pinned: commit("3"),
   newer: commit("8"),
   edited: true,
@@ -193,8 +194,11 @@ function core({
   tooMuch = false,
   twoUpdates = false,
   overBudget = false,
+  extension = false,
 }: {
   tooMuch?: boolean;
+  /** An extension that declares `skill-source` too, listed beside the git sources (#3092). */
+  extension?: boolean;
   /** A second update waiting from Superpowers, for Review updates… (#5354). */
   twoUpdates?: boolean;
   overBudget?: boolean;
@@ -275,6 +279,30 @@ function core({
           offers: twoUpdates ? [OFFER, updateOffer("writing-plans", SUPERPOWERS.remote)] : [OFFER],
           unasked: [],
           unconfirmed: [{ remote: PLATFORM.remote, skills: ["deploy-checks"] }],
+        };
+      case "skill_extension_sources":
+        return extension ? [ACME] : [];
+      case "skill_extension_source_browse":
+        return {
+          commit: { id: "2026.11.3", short: "2026.11.3" },
+          checked: secondsAgo(30),
+          skills: [
+            {
+              name: "release-notes",
+              description: "Drafts the release notes from what merged since the last tag.",
+              folder: "release-notes",
+              installed: [],
+              marks: null,
+            },
+            {
+              name: "incident-review",
+              description: "Walks a blameless incident review, timeline first.",
+              folder: "incident-review",
+              installed: ["project"],
+              marks: null,
+            },
+          ],
+          not_skills: [],
         };
       case "skill_source_browse":
         return {
@@ -409,17 +437,29 @@ function core({
 }
 
 /** The studio tab, `width` by 560 px, opened on Sources at `at`. */
-function Tab({ width, narrow }: { width: number; narrow?: boolean; at?: SourcesAt }) {
+function Tab({
+  width,
+  narrow,
+}: {
+  width: number;
+  narrow?: boolean;
+  at?: SourcesAt;
+  /** Whether an extension's source is listed too. */
+  extension?: boolean;
+}) {
   return <StudioInPanel width={width} height={560} narrow={narrow} />;
 }
 
 const SOURCE = sourceKey(SUPERPOWERS.remote);
 
+/** An extension that declares `skill-source` (#3092). */
+const ACME = { id: "acme-registry", label: "Acme skill registry", installed: 1 };
+
 const meta = {
   component: Tab,
   args: { width: 1000 },
   beforeEach: ({ args }) => {
-    core({ twoUpdates: args.at?.at === "set-update" });
+    core({ twoUpdates: args.at?.at === "set-update", extension: args.extension === true });
     openViewAt(HISTORY, {
       page: "sources",
       scope: AT_THE_ROOT,
@@ -454,6 +494,38 @@ export const Sources: Story = {
     for (let step = 0; step < 30 && document.activeElement !== review; step++)
       await userEvent.tab();
     await untilFocusWithin(() => review, "Tab reaches Review update");
+    expectFocusInSight();
+  },
+};
+
+/** **Sources with an extension's source** (#3092): listed beside the git ones, its row saying
+ *  which extension it is. */
+export const WithAnExtensionsSource: Story = {
+  args: { extension: true },
+  play: async ({ canvas }) => {
+    await waitFor(() => expect(canvas.getAllByTestId("skill-source")).toHaveLength(3));
+    await expect(canvas.getAllByTestId("skill-source")[2]).toHaveTextContent(
+      "The extension acme-registry · 1 installed",
+    );
+  },
+};
+
+/** **An extension's source's page** (#3092): its skills at its revision, browsed through the same
+ *  page, with no Remove source…, and Review updates… saying why it waits. */
+export const ExtensionSourcePage: Story = {
+  args: {
+    extension: true,
+    at: { at: "source", source: extensionKey(ACME.id), label: ACME.label },
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByTestId("offered-release-notes");
+    const page = canvas.getByTestId("skill-source-page");
+    await expect(page).toHaveTextContent("at revision 2026.11.3");
+    await expect(canvas.queryByRole("button", { name: "Remove source…" })).toBeNull();
+    const review = canvas.getByRole("button", { name: "Review install: release-notes" });
+    for (let step = 0; step < 30 && document.activeElement !== review; step++)
+      await userEvent.tab();
+    await untilFocusWithin(() => review, "Tab reaches Review install");
     expectFocusInSight();
   },
 };

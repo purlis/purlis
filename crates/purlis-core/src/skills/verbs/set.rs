@@ -109,13 +109,17 @@ fn names_skill(text: &str, name: &str) -> bool {
             .any(|quote| text.contains(&format!("{quote}{name}{quote}")))
 }
 
-/// Every copy the lockfiles hold that was installed from `remote`, with what it is now.
-pub fn installed_from(plane: &Path, remote: &Remote, workspace: Option<&str>) -> Vec<Installed> {
+/// Every copy the lockfiles hold that was installed from `origin`, with what it is now.
+pub fn installed_from(
+    plane: &Path,
+    origin: &source::Origin,
+    workspace: Option<&str>,
+) -> Vec<Installed> {
     let (locked, _) = lock::every(plane);
     let off = workspace.map(|ws| crate::skills::turned_off(plane, ws));
     locked
         .into_iter()
-        .filter(|(_, one)| one.source == *remote)
+        .filter(|(_, one)| one.source == *origin)
         .map(|(_, one)| {
             let member = Member {
                 level: one.level.0.clone(),

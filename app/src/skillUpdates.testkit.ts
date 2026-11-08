@@ -32,7 +32,7 @@ export const updateOffer = (name: string, remote: SourceRemote = REMOTE) => ({
   level: PROJECT,
   name,
   label: "project",
-  remote,
+  source: { kind: "git" as const, remote, label: remote.label },
   pinned: commit("1"),
   newer: commit("2"),
   edited: false,

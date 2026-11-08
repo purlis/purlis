@@ -119,6 +119,131 @@ impl std::fmt::Display for Commit {
     }
 }
 
+/// **A revision an extension's source names what it holds by** (ADR 0100 §8): opaque, checked,
+/// at most [`crate::extension::studio::MOST_REVISION_BYTES`] letters, digits and `.-_:+`. What
+/// takes a commit's place in the pin of a skill copied from it.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct Revision(String);
+
+impl Revision {
+    /// `text` as a revision, or `None` where it cannot be one.
+    pub fn parse(text: &str) -> Option<Revision> {
+        (!text.is_empty()
+            && text.len() <= crate::extension::studio::MOST_REVISION_BYTES
+            && text
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | ':' | '+')))
+        .then(|| Revision(text.to_owned()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFrom<String> for Revision {
+    type Error = String;
+    fn try_from(text: String) -> Result<Self, Self::Error> {
+        Revision::parse(&text).ok_or_else(|| format!("{text:?} is not a revision purlis reads"))
+    }
+}
+
+impl From<Revision> for String {
+    fn from(revision: Revision) -> String {
+        revision.0
+    }
+}
+
+impl std::fmt::Display for Revision {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+/// **What a copy is pinned to**: a git source's commit, or the revision an extension's source
+/// named what it held by (ADR 0100 §8).
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Pin {
+    Commit(Commit),
+    Revision(Revision),
+}
+
+impl Pin {
+    /// Its whole name.
+    pub fn as_str(&self) -> &str {
+        match self {
+            Pin::Commit(commit) => commit.as_str(),
+            Pin::Revision(revision) => revision.as_str(),
+        }
+    }
+
+    /// As a sentence shows it: a commit's first twelve digits, a revision whole.
+    pub fn short(&self) -> &str {
+        match self {
+            Pin::Commit(commit) => commit.short(),
+            Pin::Revision(revision) => revision.as_str(),
+        }
+    }
+
+    /// The commit, where it is a git source's pin.
+    pub fn commit(&self) -> Option<&Commit> {
+        match self {
+            Pin::Commit(commit) => Some(commit),
+            Pin::Revision(_) => None,
+        }
+    }
+}
+
+impl std::fmt::Display for Pin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// **Where an installed skill was copied from** (ADR 0100 §8): a git repository and its branch,
+/// or the extension whose SkillSource answered it, by id. What a pin is kept by, and what the
+/// skills installed from one source are found by.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Origin {
+    Git(Remote),
+    Extension(String),
+}
+
+impl Origin {
+    /// **The short word a person knows it by** ([`Remote::label`]); an extension's id, spelled
+    /// as a skill's name may start.
+    pub fn label(&self) -> String {
+        match self {
+            Origin::Git(remote) => remote.label(),
+            Origin::Extension(id) => spelled(id),
+        }
+    }
+
+    /// The git source, where it is one.
+    pub fn remote(&self) -> Option<&Remote> {
+        match self {
+            Origin::Git(remote) => Some(remote),
+            Origin::Extension(_) => None,
+        }
+    }
+
+    /// Whether it is the git source `remote`.
+    pub fn is(&self, remote: &Remote) -> bool {
+        self.remote() == Some(remote)
+    }
+}
+
+/// `origin` as a person reads it: a git source's URL and branch, or `the extension '<id>'`.
+impl std::fmt::Display for Origin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Origin::Git(remote) => write!(f, "{remote}"),
+            Origin::Extension(id) => write!(f, "the extension '{id}'"),
+        }
+    }
+}
+
 /// **A repository and the branch read from it**: what a pin and a confirmation are kept by.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct Remote {

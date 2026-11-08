@@ -1366,6 +1366,13 @@ export const commands = {
 	skillUpdates: __WINDOW_ONLY_RESULT,
 	skillUpdateReview: __WINDOW_ONLY_RESULT,
 	skillUpdate: __WINDOW_ONLY_RESULT,
+	skillExtensionSources: __WINDOW_ONLY_RESULT,
+	skillExtensionSourceBrowse: __WINDOW_ONLY_RESULT,
+	skillExtensionInstallReview: __WINDOW_ONLY_RESULT,
+	skillExtensionInstallSetReview: __WINDOW_ONLY_RESULT,
+	skillExtensionInstall: __WINDOW_ONLY_RESULT,
+	skillExtensionUpdateReview: __WINDOW_ONLY_RESULT,
+	skillExtensionUpdate: __WINDOW_ONLY_RESULT,
 	skillStudioSwitch: __WINDOW_ONLY_RESULT,
 	/**
 	 *  **The skills chat `session` has, as Use skill… offers them, and its skill budget**: nothing
@@ -5650,6 +5657,16 @@ export type ExtensionRow = {
 	refused: string | null,
 	/**  The question to ask about it, when there is one to ask. */
 	ask: ExtensionAsk | null,
+};
+
+/**
+ *  **An extension's skill source**, as the studio lists one: the extension's id, the name it
+ *  gives itself, and how many skills are installed from it here.
+ */
+export type ExtensionSkillSource = {
+	id: string,
+	label: string,
+	installed: number,
 };
 
 /**  One theme an approved extension is contributing, as the window receives it. */
@@ -13595,12 +13612,12 @@ export type SkillTemplate = {
  */
 export type SkillTemplateId = { kind: "blank" } | { kind: "steps" } | { kind: "extension"; extension: string; template: string };
 
-/**  One newer commit offered for an installed skill. */
+/**  One newer commit, or an extension's newer revision, offered for an installed skill. */
 export type SkillUpdateOffer = {
 	name: string,
 	level: SkillLevel,
 	label: string,
-	remote: SourceRemote,
+	source: SourceOrigin,
 	pinned: SourceCommit,
 	newer: SourceCommit,
 	edited: boolean,
@@ -13808,6 +13825,12 @@ export type SourceOffering =
 "catalogue" | 
 /**  A collection someone else keeps that people use widely. */
 "well-known";
+
+/**
+ *  **Where an installed skill came from** (#3092): a git source, by its repository and branch,
+ *  or an extension's source, by the extension's id; `label` as a person reads it either way.
+ */
+export type SourceOrigin = { kind: "git"; remote: SourceRemote; label: string } | { kind: "extension"; id: string; label: string };
 
 /**  A repository and the branch read from it. */
 export type SourceRemote = {
