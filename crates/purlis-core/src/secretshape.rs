@@ -2233,9 +2233,58 @@ fn kept(mut all: Vec<Leak>) -> Vec<Leak> {
 /// keeps the earlier of two overlapping hits whole, which can leave the tail of the later one
 /// outside every span.
 pub fn leak_spans(line: &str) -> Vec<(std::ops::Range<usize>, &'static str)> {
-    // Every rule is asked of the line once: what the escaped readings are measured against is
-    // the same hits, kept as [`leaks`] keeps them.
-    let mut all = every_leak(line);
+    spans_of(line, every_leak(line))
+}
+
+/// [`leak_spans`] of `text`, then of each of its lines (split after each `\n`), each line's
+/// spans moved to where the line sits in `text`: what a caller that masks a text the way a save
+/// reads it, whole and a line at a time, asks.
+///
+/// The answer is that of asking [`leak_spans`] each time, span for span and in the same order,
+/// and is cheaper: the personal-data rules are asked of each line only, and their hits on the
+/// whole text are read from the lines' ([`personal_leaks`] says why that is the same). Over a
+/// whole text those rules cost the most of all: their `\b` is Unicode's, which `regex`'s fast
+/// engine gives up on at the first character that is not ASCII, so a text of a few hundred lines
+/// was read by its slowest engine from end to end (#5672).
+pub fn leak_spans_whole_and_by_line(text: &str) -> Vec<(std::ops::Range<usize>, &'static str)> {
+    let mut by_line: Vec<Vec<(std::ops::Range<usize>, &'static str)>> = Vec::new();
+    let mut whole_personal: Vec<(usize, Leak)> = Vec::new();
+    let mut at = 0;
+    for line in text.split_inclusive('\n') {
+        let personal = personal_leaks(line, true);
+        whole_personal.extend(personal.iter().map(|(rule, leak)| {
+            (
+                *rule,
+                Leak {
+                    span: leak.span.start + at..leak.span.end + at,
+                    ..leak.clone()
+                },
+            )
+        }));
+        let mut all = impersonal_leaks(line, true);
+        all.extend(personal.into_iter().map(|(_, leak)| leak));
+        by_line.push(
+            spans_of(line, all)
+                .into_iter()
+                .map(|(span, kind)| (span.start + at..span.end + at, kind))
+                .collect(),
+        );
+        at += line.len();
+    }
+    // In the order the whole text's own search finds them: by rule, then along the text. The sort
+    // is stable, and each line's hits are already in that order.
+    whole_personal.sort_by_key(|(rule, _)| *rule);
+    let mut whole = impersonal_leaks(text, true);
+    whole.extend(whole_personal.into_iter().map(|(_, leak)| leak));
+    let mut spans = spans_of(text, whole);
+    spans.extend(by_line.into_iter().flatten());
+    spans
+}
+
+/// [`leak_spans`] of `line`, given every hit of every rule on it ([`every_leak`]).
+fn spans_of(line: &str, mut all: Vec<Leak>) -> Vec<(std::ops::Range<usize>, &'static str)> {
+    // What the escaped readings are measured against is the same hits, kept as [`leaks`]
+    // keeps them, so no rule is asked of the line twice.
     let escaped = escaped_leaks_beside(line, || kept(all.clone()));
     all.extend(escaped.into_iter().map(|(leak, _)| leak));
     joined(all)
@@ -2264,6 +2313,18 @@ fn every_leak(line: &str) -> Vec<Leak> {
 /// it matches; otherwise every rule is asked of every line, which is what a test holds the
 /// prefilter to.
 fn every_leak_of(line: &str, prefiltered: bool) -> Vec<Leak> {
+    let mut all = impersonal_leaks(line, prefiltered);
+    all.extend(
+        personal_leaks(line, prefiltered)
+            .into_iter()
+            .map(|(_, leak)| leak),
+    );
+    all
+}
+
+/// The hits on `line` of every rule but the personal-data ones ([`personal_leaks`]): the
+/// credential shapes, the forge prefixes and the vendor shapes, in that order.
+fn impersonal_leaks(line: &str, prefiltered: bool) -> Vec<Leak> {
     let mut all: Vec<Leak> = Vec::new();
     for (rule, kind, rx, _) in compiled() {
         if rule.is_a_key() {
@@ -2301,6 +2362,19 @@ fn every_leak_of(line: &str, prefiltered: bool) -> Vec<Leak> {
             span: the_finding(&caps).range(),
         }));
     }
+    all
+}
+
+/// The hits of [`pii`]'s rules on `line`, each beside the index of its rule, in the order of
+/// the rules and, within one, of the line. The rest of [`every_leak_of`].
+///
+/// **No hit of these rules holds a line break**, which is what lets a caller read a text's hits
+/// from its lines' ([`leak_spans_whole_and_by_line`]): no pattern has a class or a literal that
+/// takes `\n`, an `^` or a `$`, and a `\b` at either end of a line reads a line break or the
+/// end of the text, neither of them a word character; [`standing_alone`] reads no further than
+/// that break either. `every_personal_rule_stops_at_a_line_break` holds the patterns to it.
+fn personal_leaks(line: &str, prefiltered: bool) -> Vec<(usize, Leak)> {
+    let mut all: Vec<(usize, Leak)> = Vec::new();
     let held = prefiltered.then(|| pii_set().matches(line));
     for (at, (id, kind, rx, check)) in pii().iter().enumerate() {
         if held.as_ref().is_some_and(|held| !held.matched(at)) {
@@ -2333,10 +2407,15 @@ fn every_leak_of(line: &str, prefiltered: bool) -> Vec<Leak> {
                     };
                     found.then_some(hit)
                 })
-                .map(|hit| Leak {
-                    rule: id,
-                    kind,
-                    span: hit.range(),
+                .map(|hit| {
+                    (
+                        at,
+                        Leak {
+                            rule: id,
+                            kind,
+                            span: hit.range(),
+                        },
+                    )
                 }),
         );
     }
@@ -4973,6 +5052,238 @@ mod wider_rule_tests {
             let digits: String = value.chars().filter(char::is_ascii_alphanumeric).collect();
             let kept: String = shown.chars().filter(char::is_ascii_alphanumeric).collect();
             assert!(kept.len() <= 4 && digits.len() > kept.len(), "{shown}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod whole_and_by_line_tests {
+    //! [`leak_spans_whole_and_by_line`] is a cheaper way to ask what a masking caller asked
+    //! before (#5672): [`leak_spans`] of the whole text, then of each line. A masked span that
+    //! moved would let a credential into the project index, so it is held to the same answer,
+    //! span for span and kind for kind, over every sample this module's tests write, over those
+    //! samples joined into texts of many lines, and over texts made at random from the shapes the
+    //! rules look for.
+
+    use proptest::prelude::*;
+
+    use super::{leak_spans, leak_spans_whole_and_by_line, mapped_readings, pii_rules, with_joins};
+
+    /// What was asked before: [`leak_spans`] over the whole text, then over each line.
+    fn asked_each_time(text: &str) -> Vec<(std::ops::Range<usize>, &'static str)> {
+        let mut spans = leak_spans(text);
+        let mut at = 0;
+        for line in text.split_inclusive('\n') {
+            spans.extend(
+                leak_spans(line)
+                    .into_iter()
+                    .map(|(span, kind)| (span.start + at..span.end + at, kind)),
+            );
+            at += line.len();
+        }
+        spans
+    }
+
+    /// Every string literal in this file — each test's sample — with its escapes read.
+    fn samples() -> Vec<String> {
+        let source = include_str!("secretshape.rs");
+        let quoted = regex::Regex::new(r#"r(#*)"|"((?:[^"\\]|\\.)*)""#).expect("a test pattern");
+        let mut out = Vec::new();
+        let mut from = 0;
+        while let Some(caps) = quoted.captures_at(source, from) {
+            let whole = caps.get(0).expect("group 0");
+            if let Some(hashes) = caps.get(1) {
+                let close = format!("\"{}", hashes.as_str());
+                let Some(end) = source[whole.end()..].find(&close) else {
+                    break;
+                };
+                out.push(source[whole.end()..whole.end() + end].to_owned());
+                from = whole.end() + end + close.len();
+            } else {
+                if let Some(read) = rust_unescaped(&caps[2]) {
+                    out.push(read);
+                }
+                from = whole.end();
+            }
+        }
+        out
+    }
+
+    /// A Rust string literal's body read as Rust reads it; `None` for an escape this does not
+    /// know, which only drops that sample.
+    fn rust_unescaped(body: &str) -> Option<String> {
+        let mut out = String::new();
+        let mut chars = body.chars();
+        while let Some(c) = chars.next() {
+            if c != '\\' {
+                out.push(c);
+                continue;
+            }
+            match chars.next()? {
+                'n' => out.push('\n'),
+                't' => out.push('\t'),
+                'r' => out.push('\r'),
+                '0' => out.push('\0'),
+                '\\' => out.push('\\'),
+                '"' => out.push('"'),
+                '\'' => out.push('\''),
+                'x' => {
+                    let hex: String = chars.by_ref().take(2).collect();
+                    out.push(char::from_u32(u32::from_str_radix(&hex, 16).ok()?)?);
+                }
+                'u' => {
+                    let braced: String = chars.by_ref().take_while(|c| *c != '}').collect();
+                    let hex = braced.strip_prefix('{')?;
+                    out.push(char::from_u32(u32::from_str_radix(hex, 16).ok()?)?);
+                }
+                '\n' => {
+                    let rest: String = chars.collect();
+                    out.push_str(&rust_unescaped(rest.trim_start())?);
+                    return Some(out);
+                }
+                _ => return None,
+            }
+        }
+        Some(out)
+    }
+
+    #[test]
+    fn every_sample_this_module_tests_is_masked_as_asking_each_time_masked_it() {
+        let samples = samples();
+        assert!(samples.len() > 1_000, "{} samples read", samples.len());
+        for text in &samples {
+            assert_eq!(
+                leak_spans_whole_and_by_line(text),
+                asked_each_time(text),
+                "{text:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_samples_joined_into_texts_of_many_lines_are_masked_as_before() {
+        // Neighbours joined, so a sample's tail meets the next one's head across a line break, as
+        // in a memory: an assignment whose value is on the next line, an escape that joins two.
+        let samples = samples();
+        for width in [2, 3, 5, 8] {
+            for group in samples.chunks(width) {
+                for joint in ["\n", "\\\n", "\r\n", " \n\n"] {
+                    let text = group.join(joint);
+                    assert_eq!(
+                        leak_spans_whole_and_by_line(&text),
+                        asked_each_time(&text),
+                        "{text:?}"
+                    );
+                }
+            }
+        }
+        let all = samples.join("\n");
+        assert_eq!(leak_spans_whole_and_by_line(&all), asked_each_time(&all));
+    }
+
+    /// Pieces of what the rules look for, and of what stands around it. Every value is put
+    /// together at run time, so none is written in this file.
+    fn piece() -> impl Strategy<Value = String> {
+        let token = ["ghp", "_", "Zq7Xw3Vb9Nc5Mk1Lp8Rt2Ys6Ud4Fh0Gj3Ka5"].concat();
+        let aws = ["AKIA", "IOSFODNN7EXAMPLE"].concat();
+        prop_oneof![
+            Just("\n".to_owned()),
+            Just("\r\n".to_owned()),
+            Just("\\\n".to_owned()),
+            Just("\\n".to_owned()),
+            Just("\\u0041".to_owned()),
+            Just("\\\\".to_owned()),
+            Just(" ".to_owned()),
+            Just("-".to_owned()),
+            Just(".".to_owned()),
+            Just("/".to_owned()),
+            Just(": ".to_owned()),
+            Just("é".to_owned()),
+            Just("—".to_owned()),
+            Just("⚠️".to_owned()),
+            Just("İ".to_owned()),
+            Just("token".to_owned()),
+            Just("password = ".to_owned()),
+            Just("hunter2is".to_owned()),
+            Just(["ada", "@lovelace.dev"].concat()),
+            Just(["4111 1111", " 1111 1111"].concat()),
+            Just(["123-45", "-6789"].concat()),
+            Just(["GB82", "WEST1234", "5698765432"].concat()),
+            Just(["QQ 12", " 34 56 C"].concat()),
+            Just(["SIN 046", " 454 286"].concat()),
+            Just(["BSN: 111", "222333"].concat()),
+            Just(["1234", "5678Z"].concat()),
+            Just(["RSSMRA85", "T10A562S"].concat()),
+            Just(["CPF 529.982", ".247-25"].concat()),
+            Just(["aadhaar 2345", " 6789 0123"].concat()),
+            Just(["steuer-id 12 345", " 678 903"].concat()),
+            Just(token),
+            Just(aws),
+            "[0-9]{1,12}",
+            "[A-Za-z0-9_]{1,20}",
+        ]
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(2_000))]
+
+        #[test]
+        fn a_text_made_of_the_shapes_the_rules_read_is_masked_as_before(
+            pieces in proptest::collection::vec(piece(), 1..40),
+        ) {
+            let text = pieces.concat();
+            prop_assert_eq!(leak_spans_whole_and_by_line(&text), asked_each_time(&text));
+        }
+    }
+
+    #[test]
+    fn every_personal_rule_stops_at_a_line_break() {
+        use regex_syntax::hir::{Class, Hir, HirKind, Look};
+
+        /// Whether `hir` can match a line break, or asks of where a line starts or ends.
+        fn reads_a_line_break(hir: &Hir) -> bool {
+            match hir.kind() {
+                HirKind::Empty => false,
+                HirKind::Literal(literal) => literal.0.contains(&b'\n'),
+                HirKind::Class(Class::Unicode(class)) => class
+                    .ranges()
+                    .iter()
+                    .any(|r| r.start() <= '\n' && '\n' <= r.end()),
+                HirKind::Class(Class::Bytes(class)) => class
+                    .ranges()
+                    .iter()
+                    .any(|r| r.start() <= b'\n' && b'\n' <= r.end()),
+                // Only a word boundary, which a line break and the end of a text answer alike.
+                HirKind::Look(look) => !matches!(
+                    look,
+                    Look::WordUnicode
+                        | Look::WordAscii
+                        | Look::WordUnicodeNegate
+                        | Look::WordAsciiNegate
+                ),
+                HirKind::Repetition(repetition) => reads_a_line_break(&repetition.sub),
+                HirKind::Capture(capture) => reads_a_line_break(&capture.sub),
+                HirKind::Concat(all) | HirKind::Alternation(all) => {
+                    all.iter().any(reads_a_line_break)
+                }
+            }
+        }
+
+        for (id, _, pattern, _) in pii_rules() {
+            let hir = regex_syntax::parse(&pattern).expect("a pattern this module wrote");
+            assert!(!reads_a_line_break(&hir), "{id} can read past a line break");
+        }
+    }
+
+    #[test]
+    fn a_text_with_no_backslash_has_no_reading_but_itself() {
+        // Why a line with no backslash is not asked for its escaped readings at all.
+        for text in samples().iter().filter(|text| !text.contains('\\')) {
+            assert!(
+                mapped_readings(text, true, super::Joins::Kept).is_empty(),
+                "{text:?}"
+            );
+            assert!(with_joins(text, true).is_empty(), "{text:?}");
         }
     }
 }
