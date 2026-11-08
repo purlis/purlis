@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794159533169,
+  "lastUpdate": 1794162522129,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -43764,6 +43764,48 @@ window.BENCHMARK_DATA = {
             "value": 102.41451850000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.697, 102.411, 102.415, 102.461, 102.512 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "0af329aa01ce384d18ac68bf7521242fe5429ad7",
+          "message": "Keep blocked flake: wait for Keep blocked to finish before reading its refusal's audit (#5859) (#5866)\n\nalways_allow_gives_no_vault_once_keep_blocked_is_pressed_during_its_audit read\nthe audit after the Always allow returned but before Keep blocked's own thread\nended. Keep blocked waits for the answers the Always allow holds, and only then\nanswers its ask Don't allow and journals the refusal, so the read could come\nfirst. keep_blocked_pressed writes the line before it returns, so no caller sees\nit missing: the test now joins Keep blocked before it reads the audit.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6Y256YRNWD7X68M5TQAXFV4\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-08T17:50:17Z",
+          "tree_id": "bd82f282965e250cf7c8cdd88e521f33b99f764f",
+          "url": "https://github.com/purlis/purlis/commit/0af329aa01ce384d18ac68bf7521242fe5429ad7"
+        },
+        "date": 1794162515139,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.779035,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.743, 0.755, 0.779, 0.783, 0.788 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5660715,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.349, 16.540, 16.566, 16.583, 16.614 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.933577,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.505, 101.780, 101.934, 102.198, 103.642 ms"
           }
         ]
       }
