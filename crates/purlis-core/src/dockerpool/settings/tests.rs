@@ -182,7 +182,8 @@ fn an_engine_is_on_this_machine_only_where_it_is_a_trusted_local_socket() {
         "npipe:////./pipe/docker_engine",
     ] {
         let refused = engine_on_this_machine(Some(remote), &places).unwrap_err();
-        assert!(refused.contains(remote), "{refused}");
+        let scheme = remote.split_once("://").unwrap().0;
+        assert!(refused.contains(&format!("a {scheme}:// address")), "{refused}");
         assert!(
             refused.contains("cannot tell is on this machine"),
             "{refused}"
@@ -196,6 +197,34 @@ fn an_engine_is_on_this_machine_only_where_it_is_a_trusted_local_socket() {
     socket_at(&home.join("projects/docker.sock"));
     let writable = format!("unix://{}", home.join("projects/docker.sock").display());
     assert!(engine_on_this_machine(Some(&writable), &places).is_err());
+}
+
+/// **A refused engine is named by its scheme alone**: a `DOCKER_HOST` may hold a user and a
+/// password, and the refusal reaches the stderr of whoever prints it, so neither it nor any
+/// other part of the address past the scheme is in the sentence. A value with no scheme, or
+/// one that is not a plain word, is not quoted at all.
+#[test]
+fn a_refused_docker_host_is_named_by_its_scheme_alone() {
+    let system_dir = tempfile::tempdir().unwrap();
+    let system = system_dir.path().join("docker.sock");
+    let places = Places {
+        home: None,
+        tmp: None,
+        runtime: None,
+        system: &system,
+    };
+    let refused =
+        engine_on_this_machine(Some("tcp://me:hunter2@build-box.example:2376"), &places)
+            .unwrap_err();
+    assert!(refused.contains("a tcp:// address"), "{refused}");
+    for part in ["me:", "hunter2", "build-box", "2376"] {
+        assert!(!refused.contains(part), "{part} is in: {refused}");
+    }
+    for unread in ["hunter2@build-box.example", "x y://hunter2", "h\u{1b}[2J://hunter2"] {
+        let refused = engine_on_this_machine(Some(unread), &places).unwrap_err();
+        assert!(!refused.contains("hunter2"), "{refused}");
+        assert!(refused.contains("not a unix:// address"), "{refused}");
+    }
 }
 
 #[test]
