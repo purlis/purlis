@@ -49,9 +49,9 @@ Neighbours: purlis-browser
 ";
 
 /// Where the recordings' runner checkout had purlis's plugin.
-const RECORDED_PLUGIN: &str = "/home/runner/work/purlis/purlis/app/src-tauri/plugin";
+pub const RECORDED_PLUGIN: &str = "/home/runner/work/purlis/purlis/app/src-tauri/plugin";
 
-fn recorded(harness: Harness, name: &str) -> PathBuf {
+pub fn recorded(harness: Harness, name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../skills/src/grade/ci/recorded")
         .join(harness.word())

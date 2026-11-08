@@ -16,7 +16,8 @@ pub fn passed(card: &Scorecard) -> bool {
     })
 }
 
-fn rate(rate: Rate) -> String {
+/// A rate as the summary says it: `50% (1 of 2)`.
+pub fn rate(rate: Rate) -> String {
     format!(
         "{}% ({} of {})",
         rate.percent().unwrap_or(0),
