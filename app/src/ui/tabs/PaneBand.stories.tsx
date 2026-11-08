@@ -30,6 +30,7 @@ import { useTabIds, StripTablist } from "../../StripTablist";
 import { panelRoot } from "../panel/Panel";
 import { TabCell, tabPart, tabsPart } from "./Tabs";
 import { expectFocusInSight, untilFocused } from "../../stories.testkit";
+import { Button } from "../button/Button";
 
 /** One warning the band can hold, as `ChatNotices` draws it. */
 type Warning =
@@ -212,10 +213,13 @@ function Pane({
   warnings,
   focused,
   band,
+  round = 0,
 }: {
   name: string;
   warnings: readonly Warning[];
   focused: boolean;
+  /** Each new round raises the pane's warnings again, every one put away before standing anew. */
+  round?: number;
   /** The pane the band is (`paneBand`), so it reads on from where it was when drawn anew. */
   band?: string;
 }) {
@@ -257,7 +261,7 @@ function Pane({
             focus: () => bellAt.current?.focus(),
           }}
         >
-          <Warnings shown={warnings} />
+          <Warnings key={round} shown={warnings} />
         </NoticePaneRow>
       </div>
       <div className="pane-body">
@@ -292,8 +296,11 @@ function PaneBand({
   width = 760,
   height = 460,
   split = false,
+  round = 0,
 }: {
   warnings: readonly Warning[];
+  /** The warnings raised again this many times (`Pane`'s `round`). */
+  round?: number;
   /** Minimised or expanded, for every pane (#4754): set before the story is drawn. */
   shown?: PaneNoticesShown;
   width?: number;
@@ -362,7 +369,7 @@ function PaneBand({
             <Fragment key={pane.name}>
               {at > 0 && <div data-separator="" aria-hidden="true" />}
               <div style={{ flex: "1 1 0", minInlineSize: 0, blockSize: "100%" }}>
-                <Pane {...pane} />
+                <Pane {...pane} round={round} />
               </div>
             </Fragment>
           ))}
@@ -831,6 +838,68 @@ export const ConsentMoved: Story = {
 /** Two frames: whatever the last change asked to read again has been read. */
 const twoFrames = () =>
   new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done())));
+
+/** The band, with a way to raise its warnings again once they are put away. */
+function RaisedAgain(props: Parameters<typeof PaneBand>[0]) {
+  const [round, setRound] = useState(0);
+  return (
+    <div style={{ display: "grid", gap: "var(--space-3)", justifyItems: "start" }}>
+      <Button size="sm" onPress={() => setRound((was) => was + 1)}>
+        Raise the warnings again
+      </Button>
+      <PaneBand {...props} round={round} />
+    </div>
+  );
+}
+
+/**
+ * **The band put away in one fit** (#3437): Dismiss all takes the last notes, and the band's head
+ * and room go in the same layout as they do, so the terminal is fitted once, to its full room,
+ * and its chat's harness is told one size. Raised again, the band starts at its top, though it
+ * was scrolled to its end when it went.
+ */
+export const PutAwayInOneFit: Story = {
+  args: { warnings: ["sandbox-long", "mcp-failed", "stale-clone", "skills-missing"], height: 320 },
+  render: (args) => <RaisedAgain {...args} />,
+  // No picture: what it holds is a count of fits and a scroll; the band at rest is pictured in
+  // its other stories.
+  parameters: { screenshot: false },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    const all = await canvas.findByRole("button", { name: "Dismiss all 4" });
+    await heldInThePane(canvasElement);
+    const { band, terminal } = rowsOf(canvasElement);
+    const stack = band?.querySelector<HTMLElement>('[data-part="stack"]');
+    if (!band || !terminal || !stack) throw new Error("no band, stack or terminal drawn");
+    // Scrolled to its end, as a person who read the last note leaves it.
+    stack.scrollTop = stack.scrollHeight;
+    await waitFor(() => expect(stack.scrollTop).toBeGreaterThan(0));
+
+    // Every size the terminal is laid out at, one a frame, as its fit reads it.
+    const fits: number[] = [];
+    const sizes = new ResizeObserver((entries) => {
+      for (const entry of entries) fits.push(entry.contentRect.height);
+    });
+    sizes.observe(terminal);
+    await twoFrames();
+    // The first is where it stands now.
+    fits.splice(0);
+    await userEvent.click(all);
+    await waitFor(() => expect(band).toHaveAttribute("data-empty"));
+    await twoFrames();
+    await twoFrames();
+    sizes.disconnect();
+    // One fit, not one a row short and then another.
+    expect(fits).toHaveLength(1);
+
+    await userEvent.click(canvas.getByRole("button", { name: "Raise the warnings again" }));
+    const first = await canvas.findByRole("status", { name: "Sandbox block" });
+    expect(stack.scrollTop).toBe(0);
+    expect(first.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      stack.getBoundingClientRect().top - 1,
+    );
+    atRest();
+  },
+};
 
 /**
  * **A consent whose Allow its words moved holds it** (#3167): the window is narrowed, the

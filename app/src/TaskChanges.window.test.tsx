@@ -26,6 +26,7 @@ import { forgetThisLaunch } from "./regions";
 import { stripNamed } from "./test-strips";
 import { findResult } from "./actionResult.testkit";
 import { aTabForEachChat } from "./laidOut.testkit";
+import { PANE_NOTICES } from "./paneNoticesPref";
 
 /**
  * **What a task changed, against the whole window** (#1511): Changes on a finished task's row
@@ -285,6 +286,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   clearMocks();
+  PANE_NOTICES.forget();
 });
 
 describe("what a task changed", () => {
@@ -542,6 +544,9 @@ describe("what a task changed", () => {
         },
       ],
     });
+    // A note on the pane, folded into the bell while the band is minimised (#4754): read on the
+    // band, expanded. Minimised, the band folds it in the commit that draws it (#3437).
+    PANE_NOTICES.keep("expanded");
     render(<App />);
 
     const notice = await screen.findByRole("status", { name: "Tasks sharing workspaces/alpha" });

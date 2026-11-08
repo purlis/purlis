@@ -194,8 +194,11 @@
   max-block-size: none;
 }
 
-.pane-top
-  :is(.notice-pane-box:has(> .notice-trouble), [data-scope="notice"][data-variant="trouble"]) {
+/* **Each tone's rule is the base's own part with its tone added** (#4875): one step more specific
+   than the base, so every tone outranks it, and among the tones the file's order decides:
+   trouble, then what needs a decision, then a consent, which is a question whatever its tone.
+   Trouble's rule was once less specific than the base's, and drew as a warning. */
+.pane-top [data-scope="notice"][data-part="root"][data-placement="pane"][data-variant="trouble"] {
   background-color: var(--danger-wash);
 }
 
@@ -209,7 +212,7 @@
 /* **A consent is a question, not trouble**: an answer that grants (Allow) is on it. The warning
    wash, and the lock in the accent. */
 .pane-top
-  :is(.notice-pane-box, [data-scope="notice"][data-placement="pane"]):has([data-variant="grants"]) {
+  [data-scope="notice"][data-part="root"][data-placement="pane"]:has([data-variant="grants"]) {
   background-color: var(--wash-warning);
 }
 
@@ -228,10 +231,7 @@
 }
 
 .pane-top
-  :is(
-    .notice-pane-box:has(> .notice-trouble),
-    [data-scope="notice"][data-variant="trouble"]
-  )::before {
+  [data-scope="notice"][data-part="root"][data-placement="pane"][data-variant="trouble"]::before {
   mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7.9 2h8.2L22 7.9v8.2L16.1 22H7.9L2 16.1V7.9z'/%3E%3Cpath d='M12 8v4M12 16h.01'/%3E%3C/svg%3E");
   background-color: var(--danger-base);
 }
@@ -243,7 +243,7 @@
 }
 
 .pane-top
-  :is(.notice-pane-box, [data-scope="notice"][data-placement="pane"]):has(
+  [data-scope="notice"][data-part="root"][data-placement="pane"]:has(
     [data-variant="grants"]
   )::before {
   mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='4' y='11' width='16' height='10' rx='2'/%3E%3Cpath d='M8 11V7a4 4 0 0 1 8 0v4'/%3E%3C/svg%3E");

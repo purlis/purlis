@@ -1127,14 +1127,11 @@ const CLASSLESS: readonly string[] = [
  */
 const WITHIN: readonly string[] = [
   ".chats-section li:has(> .ui-row[data-revealed])",
-  // A pane's warning by its tone (`paneFrame.css`, #3142): a consent (it holds an Allow) on the
-  // warning wash, trouble on the danger wash. Each is a translucent wash over the terminal's
-  // fill, which the button family lists.
-  '.pane-top\n  :is(.notice-pane-box, [data-scope="notice"][data-placement="pane"]):has([data-variant="grants"])',
-  '.pane-top\n  :is(.notice-pane-box:has(> .notice-trouble), [data-scope="notice"][data-variant="trouble"])',
-  // And each one's mark, a pseudo-element no button is drawn on.
-  '.pane-top\n  :is(\n    .notice-pane-box:has(> .notice-trouble),\n    [data-scope="notice"][data-variant="trouble"]\n  )::before',
-  '.pane-top\n  :is(.notice-pane-box, [data-scope="notice"][data-placement="pane"]):has(\n    [data-variant="grants"]\n  )::before',
+  // A pane's consent (`paneFrame.css`, #3142): it holds an Allow, and is on the warning wash
+  // whatever its tone, a translucent wash over the terminal's fill, which the button family lists.
+  '.pane-top\n  [data-scope="notice"][data-part="root"][data-placement="pane"]:has([data-variant="grants"])',
+  // And its mark, a pseudo-element no button is drawn on.
+  '.pane-top\n  [data-scope="notice"][data-part="root"][data-placement="pane"]:has(\n    [data-variant="grants"]\n  )::before',
 ];
 
 // --- The tests ------------------------------------------------------------------------------
@@ -1777,7 +1774,7 @@ const PAINTED: ReadonlyMap<string, Painted> = new Map<string, Painted>([
   // A pane's warnings (`paneFrame.css`), over the terminal's fill under the pane's top: trouble,
   // a warning, and a consent, each a Notice the pane's band places.
   [
-    'danger.wash .pane-top :is(.notice-pane-box:has(> .notice-trouble), [data-scope="notice"][data-variant="trouble"])',
+    'danger.wash .pane-top [data-scope="notice"][data-part="root"][data-placement="pane"][data-variant="trouble"]',
     { on: ["terminal.background"], at: ".pane-top" },
   ],
   [
@@ -1785,7 +1782,7 @@ const PAINTED: ReadonlyMap<string, Painted> = new Map<string, Painted>([
     { on: ["terminal.background"], at: ".pane-top" },
   ],
   [
-    'wash.warning .pane-top :is(.notice-pane-box, [data-scope="notice"][data-placement="pane"]):has([data-variant="grants"])',
+    'wash.warning .pane-top [data-scope="notice"][data-part="root"][data-placement="pane"]:has([data-variant="grants"])',
     { on: ["terminal.background"], at: ".pane-top" },
   ],
   // A part's own fill, its words and marks the family's own parts on it.
