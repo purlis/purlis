@@ -4,6 +4,7 @@
 import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render as renderBare,
@@ -12,6 +13,7 @@ import {
   within,
 } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
+import { emit } from "@tauri-apps/api/event";
 import { menuNames } from "./menus.testkit";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
@@ -99,6 +101,9 @@ function core(
     stillAbsent?: string[];
     /** The core's sentence `workspace_starts_fresh` answers with. */
     startsFresh?: string;
+    /** `pin_workspace` answers only once this settles, and the store holds what it pinned:
+     *  for a disk watcher's read that lands before the pin does (#1926). */
+    pinLands?: Promise<void>;
   } = {},
 ) {
   const asked: { cmd: string; args: Record<string, unknown> }[] = [];
@@ -107,127 +112,136 @@ function core(
   const refusesOver = over.refusesOver ?? atRisk;
   const gone: string[] = [];
   const made: string[] = [];
-  mockIPC((cmd, args) => {
-    const got = (args ?? {}) as Record<string, unknown>;
-    asked.push({ cmd, args: got });
-    if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
-    if (cmd === "opened_chats") return [];
-    if (cmd === "chats_that_would_not_start") return [];
-    if (cmd === "running_sessions") return [];
-    if (cmd === "chat_states") return [];
-    // beta is pinned, so it is on the strip beside alpha, the workspace you are in: the strip
-    // draws what is pinned and the one you are in (ADR 0054). alpha is left unpinned so its
-    // own menu offers to pin it.
-    if (cmd === "plane_pins")
-      return {
-        project: false,
-        workspaces: ["beta"].filter((name) => !gone.includes(name)),
-        missing: [],
-      };
-    if (cmd === "plane_sidebar")
-      return {
-        root: PLANE,
-        personas: ["steward"],
-        persona: "steward",
-        unfiled: [],
-        workspaces: [...(over.workspaces ?? ["alpha", "beta"]), ...made]
-          .filter((name) => !gone.includes(name))
-          .map((name) => ({
-            name,
-            path: `${PLANE}/workspaces/${name}`,
-            vision: "",
-            todos: [],
-            chats: [],
-          })),
-      };
-    if (cmd === "workspace_at_risk") return atRisk;
-    if (cmd === "project_extensions") return { extensions: [], local_left_out: null };
-    if (cmd === "extensions_on") return [];
-    if (cmd === "workspace_settings")
-      return {
-        workspace: got.workspace,
-        file: `workspaces/${String(got.workspace)}/workspace.json`,
-        exists: true,
-        text: "{}\n",
-        refusals: [],
-        parsed: true,
-        fields: [],
-        live: false,
-      };
-    if (cmd === "workspace_remove") {
-      if (refuses && got.force !== true)
-        throw { said: refusalOver(refusesOver), at_risk: refusesOver };
-      gone.push(String(got.workspace));
-      return [`✓ Removed workspace '${String(got.workspace)}' and its clones.`];
-    }
-    if (cmd === "reachable_repos")
-      return {
-        repos: [
-          { name: "api", path: "acme/api", description: "" },
-          { name: "web", path: "acme/web", description: "" },
-        ],
-        trouble: over.loggedOut
-          ? ["gh is not authenticated for github.com. Run: gh auth login"]
-          : [],
-      };
-    if (cmd === "take_repos") return null;
-    if (cmd === "workspace_repos")
-      return { workspace: got.workspace, repos: [{ name: "api" }], cache_refused: null };
-    if (cmd === "drop_repo")
-      throw {
-        said: "Refusing to remove 'api' — this would discard work: api: uncommitted changes. Push or commit first.",
-        at_risk: [{ what: "api", said: "api: uncommitted changes" }],
-      };
-    if (cmd === "workspace_panels" && over.stillAbsent)
-      return {
-        workspace: got.workspace,
-        repos: [],
-        paths: {},
-        absent: over.stillAbsent,
-        refused: [],
-        todos: [],
-        todos_refused: null,
-        personas: ["steward"],
-        persona: "steward",
-        sessions: [],
-        contributed: [],
-      };
-    if (cmd === "clone_repo") {
-      const fails = over.cloneFails?.[String(got.repo)];
-      if (fails !== undefined) throw fails;
-      return [`✓ ${String(got.repo)} cloned`];
-    }
-    if (cmd === "workspace_starts_fresh") return over.startsFresh ?? null;
-    if (cmd === "workspace_rename") {
-      const name = String(got.name);
-      if (name === "beta")
-        throw "workspace 'beta' already exists — pick another name or remove it first.";
-      gone.push(String(got.workspace));
-      made.push(name);
-      return [`✓ Renamed workspace '${String(got.workspace)}' to '${name}'.`];
-    }
-    if (cmd === "workspace_vision") {
-      if (String(got.vision).startsWith("##"))
-        throw "a line of a vision starts with `## `, which would start a section of its own in workspace.md: nothing was written";
-      return `${String(got.workspace)} has a vision now.`;
-    }
-    if (cmd === "workspace_create") {
-      const name = String(got.name);
-      if (name.includes("/"))
-        throw `invalid workspace name '${name}' (use letters, digits, '.', '_', '-'; must not start with a dot)`;
-      // Made, so the plane lists it when it is read again, as the core's does.
-      made.push(name);
-      const ready = `✓ Workspace '${name}' ready (LOCAL) → workspaces/${name}/`;
-      // As `wscmd/create.rs` says it with no vision: a line written for an agent (#3344).
-      return got.vision == null
-        ? [
-            ready,
-            '⬢ No vision yet — ask the developer what this workspace is for, then record it: purlis workspace vision "<the goal>"',
-          ]
-        : [ready];
-    }
-    return null;
-  });
+  const pinned = ["beta"];
+  mockIPC(
+    async (cmd, args) => {
+      const got = (args ?? {}) as Record<string, unknown>;
+      asked.push({ cmd, args: got });
+      if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
+      if (cmd === "opened_chats") return [];
+      if (cmd === "chats_that_would_not_start") return [];
+      if (cmd === "running_sessions") return [];
+      if (cmd === "chat_states") return [];
+      // beta is pinned, so it is on the strip beside alpha, the workspace you are in: the strip
+      // draws what is pinned and the one you are in (ADR 0054). alpha is left unpinned so its
+      // own menu offers to pin it.
+      if (cmd === "plane_pins")
+        return {
+          project: false,
+          workspaces: pinned.filter((name) => !gone.includes(name)),
+          missing: [],
+        };
+      if (cmd === "pin_workspace" && over.pinLands !== undefined) {
+        await over.pinLands;
+        if (got.pinned === true) pinned.push(String(got.workspace));
+        return null;
+      }
+      if (cmd === "plane_sidebar")
+        return {
+          root: PLANE,
+          personas: ["steward"],
+          persona: "steward",
+          unfiled: [],
+          workspaces: [...(over.workspaces ?? ["alpha", "beta"]), ...made]
+            .filter((name) => !gone.includes(name))
+            .map((name) => ({
+              name,
+              path: `${PLANE}/workspaces/${name}`,
+              vision: "",
+              todos: [],
+              chats: [],
+            })),
+        };
+      if (cmd === "workspace_at_risk") return atRisk;
+      if (cmd === "project_extensions") return { extensions: [], local_left_out: null };
+      if (cmd === "extensions_on") return [];
+      if (cmd === "workspace_settings")
+        return {
+          workspace: got.workspace,
+          file: `workspaces/${String(got.workspace)}/workspace.json`,
+          exists: true,
+          text: "{}\n",
+          refusals: [],
+          parsed: true,
+          fields: [],
+          live: false,
+        };
+      if (cmd === "workspace_remove") {
+        if (refuses && got.force !== true)
+          throw { said: refusalOver(refusesOver), at_risk: refusesOver };
+        gone.push(String(got.workspace));
+        return [`✓ Removed workspace '${String(got.workspace)}' and its clones.`];
+      }
+      if (cmd === "reachable_repos")
+        return {
+          repos: [
+            { name: "api", path: "acme/api", description: "" },
+            { name: "web", path: "acme/web", description: "" },
+          ],
+          trouble: over.loggedOut
+            ? ["gh is not authenticated for github.com. Run: gh auth login"]
+            : [],
+        };
+      if (cmd === "take_repos") return null;
+      if (cmd === "workspace_repos")
+        return { workspace: got.workspace, repos: [{ name: "api" }], cache_refused: null };
+      if (cmd === "drop_repo")
+        throw {
+          said: "Refusing to remove 'api' — this would discard work: api: uncommitted changes. Push or commit first.",
+          at_risk: [{ what: "api", said: "api: uncommitted changes" }],
+        };
+      if (cmd === "workspace_panels" && over.stillAbsent)
+        return {
+          workspace: got.workspace,
+          repos: [],
+          paths: {},
+          absent: over.stillAbsent,
+          refused: [],
+          todos: [],
+          todos_refused: null,
+          personas: ["steward"],
+          persona: "steward",
+          sessions: [],
+          contributed: [],
+        };
+      if (cmd === "clone_repo") {
+        const fails = over.cloneFails?.[String(got.repo)];
+        if (fails !== undefined) throw fails;
+        return [`✓ ${String(got.repo)} cloned`];
+      }
+      if (cmd === "workspace_starts_fresh") return over.startsFresh ?? null;
+      if (cmd === "workspace_rename") {
+        const name = String(got.name);
+        if (name === "beta")
+          throw "workspace 'beta' already exists — pick another name or remove it first.";
+        gone.push(String(got.workspace));
+        made.push(name);
+        return [`✓ Renamed workspace '${String(got.workspace)}' to '${name}'.`];
+      }
+      if (cmd === "workspace_vision") {
+        if (String(got.vision).startsWith("##"))
+          throw "a line of a vision starts with `## `, which would start a section of its own in workspace.md: nothing was written";
+        return `${String(got.workspace)} has a vision now.`;
+      }
+      if (cmd === "workspace_create") {
+        const name = String(got.name);
+        if (name.includes("/"))
+          throw `invalid workspace name '${name}' (use letters, digits, '.', '_', '-'; must not start with a dot)`;
+        // Made, so the plane lists it when it is read again, as the core's does.
+        made.push(name);
+        const ready = `✓ Workspace '${name}' ready (LOCAL) → workspaces/${name}/`;
+        // As `wscmd/create.rs` says it with no vision: a line written for an agent (#3344).
+        return got.vision == null
+          ? [
+              ready,
+              '⬢ No vision yet — ask the developer what this workspace is for, then record it: purlis workspace vision "<the goal>"',
+            ]
+          : [ready];
+      }
+      return null;
+    },
+    { shouldMockEvents: over.pinLands !== undefined },
+  );
   return { asked, calls: (cmd: string) => asked.filter((one) => one.cmd === cmd) };
 }
 
@@ -649,6 +663,40 @@ describe("making a workspace", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: "Create workspace" }));
 
     await vi.waitFor(() => expect(calls("plane_sidebar").length).toBeGreaterThan(before));
+  });
+
+  it("draws the new workspace pinned when the disk watcher's read lands before its pin (#1926)", async () => {
+    // The window hears of a made workspace twice: the watcher's read of the plane and the pin
+    // `makeWorkspace` asks the store for. Here the read comes first and the pin's answer waits,
+    // so a window that waits for the store would draw gamma unpinned, or not at all, until it
+    // lands: the flash ADR 0054's strip must not have.
+    let land = () => {};
+    const pinLands = new Promise<void>((settle) => (land = settle));
+    const { calls } = core({ pinLands });
+    render(<App />);
+    await settled();
+    const dialog = await askToCreate();
+    await userEvent.type(within(dialog).getByLabelText("Name"), "gamma");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Create workspace" }));
+    await vi.waitFor(() => expect(calls("pin_workspace")).toHaveLength(1));
+
+    const read = calls("plane_sidebar").length;
+    await act(() =>
+      emit("plane-changed", {
+        plane: PLANE,
+        changes: [{ kind: "workspaces", workspace: "gamma", persona: null, path: "" }],
+        answers: [{ answer: "sidebar" }],
+      }),
+    );
+    await vi.waitFor(() => expect(calls("plane_sidebar").length).toBeGreaterThan(read));
+
+    // Pinned from the moment it is made: among the pins, never the dashed chip that offers one.
+    await waitFor(() => expect(strip()).toEqual(["beta", "gamma", "alpha"]));
+    expect(screen.queryByRole("button", { name: "Pin gamma" })).toBeNull();
+
+    land();
+    await waitFor(() => expect(workspaceInFront()).toBe("gamma"));
+    expect(strip()).toEqual(["beta", "gamma"]);
   });
 });
 
