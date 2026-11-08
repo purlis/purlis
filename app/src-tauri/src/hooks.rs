@@ -3393,6 +3393,23 @@ impl Hooks {
         .moved
     }
 
+    /// [`Self::hear`], and then whoever is told every report on this socket
+    /// ([`Self::when_reported`]), as the socket tells them: a test's report reaches what a
+    /// harness's line reaches.
+    #[cfg(test)]
+    pub(crate) fn hear_as_the_socket_does(&self, report: &Report) -> Option<Moved> {
+        let moved = self.hear(report);
+        let listener = self
+            .all_reports
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        if let Some(listener) = listener {
+            listener(report);
+        }
+        moved
+    }
+
     /// Who is told every report on this socket from now on, after the board has had it, whether
     /// or not it moved anything.
     pub fn when_reported(&self, heard: Heard) {

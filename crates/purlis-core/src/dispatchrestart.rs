@@ -87,15 +87,27 @@ pub struct AtLaunch {
     /// The tasks listed under an asking chat the record brings back, by chat id: the ones
     /// that are reported for where their start is refused.
     listed: Vec<String>,
+    /// The chats with own work the session host kept running across the restart (#3900), by
+    /// chat id: their work never stopped, so they are told nothing of it.
+    kept: Vec<String>,
 }
 
 impl AtLaunch {
-    /// What `chat` is told as it is started at this launch: [`CARRY_ON`] for a task that
-    /// still owes its report and is brought back on its conversation, and nothing for every
-    /// other chat.
-    pub fn told(&self, chat: &Chat) -> Option<&'static str> {
+    /// What `chat` is told as it is started at this launch: its **wake line**
+    /// ([`crate::wakeline`], #5747), or nothing.
+    ///
+    /// A task that still owes its report and is brought back on its conversation is told to
+    /// carry on ([`CARRY_ON`]). A chat brought back on its conversation that had work of its
+    /// own left running ([`Chat::own_work`]) is told the restart ended it, unless the session
+    /// host kept its program running (#3900), when nothing of it ended. A task that is both
+    /// gets the two in one line. Every other chat is told nothing.
+    pub fn told(&self, chat: &Chat) -> Option<String> {
         let id = chat.identity.id.as_ref()?;
-        self.carry_on.contains(id).then_some(CARRY_ON)
+        let own_work = chat
+            .own_work
+            .as_ref()
+            .filter(|_| chat.resume.is_some() && !self.kept.contains(id));
+        crate::wakeline::of(own_work, self.carry_on.contains(id))
     }
 
     /// Whether the chat with the id `id` is a task that still owes its report to a chat the
@@ -233,8 +245,15 @@ pub fn at_launch_beside(
     let mut listed = Vec::new();
     let mut not_resumed = Vec::new();
     let mut back = Vec::new();
+    let mut kept = Vec::new();
     let mut seen = std::collections::HashSet::new();
     for chat in &record.chats {
+        if chat.own_work.is_some()
+            && let Some(id) = &chat.identity.id
+            && left_running(chat)
+        {
+            kept.push(id.clone());
+        }
         let first = chat
             .identity
             .id
@@ -279,6 +298,7 @@ pub fn at_launch_beside(
         not_resumed,
         carry_on,
         listed,
+        kept,
     }
 }
 
