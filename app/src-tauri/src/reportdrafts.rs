@@ -422,7 +422,25 @@ fn said_of(refused: &Refusal) -> String {
         Refusal::CapReached => "Five reports were already sent unread today, so this one was \
                                 not sent. Read it, then File."
             .to_owned(),
+        Refusal::ProjectForbids => PROJECT_FORBIDS_SAID.to_owned(),
     }
+}
+
+/// What the window says when the project's rule keeps a draft from going unread (#5696).
+pub const PROJECT_FORBIDS_SAID: &str = "Your project turns off sending without asking, so the \
+                                        draft stays here. Read it, then File.";
+
+/// **Whether the project lets its members send drafts without asking** (#5696, spec #5683,
+/// Q12): `[reports].always_send` in its shared settings file, which the team sees, on unless
+/// that file turns it off. Settings › You › Reports holds Always send off while it is off.
+#[tauri::command]
+#[specta::specta]
+pub async fn members_may_always_send(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+) -> Result<bool, String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    off_the_window(move || Ok(purlis_core::report::members_may_always_send(&root))).await
 }
 
 #[cfg(test)]

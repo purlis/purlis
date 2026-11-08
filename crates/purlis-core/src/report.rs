@@ -928,6 +928,9 @@ pub enum Refusal {
     NotHeld,
     /// This machine has no config home to hold a draft in, or it could not be written.
     NotKept(String),
+    /// The project the draft was written in turns off sending without asking for its members
+    /// (#5696, Q12): it waits in the Inbox for the person to File.
+    ProjectForbids,
 }
 
 /// The one module every report passes through: evidence from a source in, an outcome out.
@@ -1321,7 +1324,7 @@ impl Reports {
         let mut all = HeldDrafts::read(&root);
         // With Always send it is held to send, not to read, while today has room (#5695).
         let sends_at = self
-            .may_send_unread(held_to_send(&all, None))
+            .may_send_unread(held_to_send(&all, None), &from.project)
             .is_ok()
             .then(hold_ends);
         let one = Held {
@@ -1502,11 +1505,15 @@ impl Reports {
         }
     }
 
-    /// Refused unless a draft may go to the Report intake unread now, with `holding` more held
-    /// to send (#5695): the yes to Always send, an intake to send to, and room in today's cap.
-    fn may_send_unread(&self, holding: usize) -> Result<(), Refusal> {
+    /// Refused unless a draft written in `project` may go to the Report intake unread now, with
+    /// `holding` more held to send (#5695): the yes to Always send, a project whose rule lets its
+    /// members (#5696), an intake to send to, and room in today's cap.
+    fn may_send_unread(&self, holding: usize, project: &str) -> Result<(), Refusal> {
         if !self.consent.unwrap_or_else(Consent::here).always_sends() {
             return Err(Refusal::NoConsent(Stream::AgentDrafts));
+        }
+        if !members_may_always_send(Path::new(project)) {
+            return Err(Refusal::ProjectForbids);
         }
         let Some((_, root)) = &self.intake else {
             return Err(Refusal::NoIntake);
@@ -1521,10 +1528,10 @@ impl Reports {
         let root = self.kept_under()?;
         let _turn = holding();
         let all = HeldDrafts::read(&root);
-        if !all.iter().any(|one| one.id == id) {
+        let Some(one) = all.iter().find(|one| one.id == id) else {
             return Err(Refusal::NotHeld);
-        }
-        self.may_send_unread(held_to_send(&all, Some(id)))?;
+        };
+        self.may_send_unread(held_to_send(&all, Some(id)), &one.from.project)?;
         self.change_held(id, |one| one.sends_at = Some(hold_ends()))
     }
 
@@ -1552,7 +1559,7 @@ impl Reports {
         });
         let mut left = 0;
         for one in due {
-            let filed = match self.may_send_unread(0) {
+            let filed = match self.may_send_unread(0, &one.from.project) {
                 Ok(()) => {
                     let draft = Draft {
                         kind: one.report_kind(),
@@ -1620,6 +1627,28 @@ impl Reports {
         made.map_err(|Refused(said)| Refusal::Unusable(said))
     }
 }
+
+/// **Whether the project at `project` lets its members send drafts without asking** (#5696,
+/// spec #5683, Q12): `[reports].always_send` in its shared settings file, which the team sees,
+/// on unless that file turns it off. Only that file decides: this machine's own file cannot
+/// turn a team's rule back on, and a member's You level cannot override it. A project with no
+/// file, or one that does not parse, turns nothing off.
+pub fn members_may_always_send(project: &Path) -> bool {
+    let shared = crate::settings::layer_text(project, crate::settings::Which::Shared);
+    shared
+        .text()
+        .and_then(|text| text.parse::<toml::Table>().ok())
+        .and_then(|top| {
+            top.get(PROJECT_RULE.0)?
+                .as_table()?
+                .get(PROJECT_RULE.1)?
+                .as_bool()
+        })
+        .unwrap_or(true)
+}
+
+/// Where the project's rule is kept in its shared settings file: `[reports].always_send`.
+pub const PROJECT_RULE: (&str, &str) = ("reports", "always_send");
 
 /// How many of `all` are held to send, leaving out `but`.
 fn held_to_send(all: &[Held], but: Option<&str>) -> usize {

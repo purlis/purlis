@@ -350,6 +350,7 @@ export const commands = {
 	dismissReportDraft: __WINDOW_ONLY_RESULT,
 	alwaysSendReportDraft: __WINDOW_ONLY_RESULT,
 	undoReportDraft: __WINDOW_ONLY_RESULT,
+	membersMayAlwaysSend: __WINDOW_ONLY_RESULT,
 	reportWindowError: __WINDOW_ONLY_RESULT,
 	/**
 	 *  The project's sandbox, for the offer notice and Settings.

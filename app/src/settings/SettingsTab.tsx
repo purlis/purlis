@@ -799,8 +799,9 @@ function ShownBy({ useShown, children }: { useShown: () => boolean; children: Re
   return useShown() ? children : null;
 }
 
-function LiveRow({ setting }: { setting: LiveSetting }) {
-  const { control, reset, grouped, error, undo } = setting.useControl();
+/** A live setting's row, badged by the level that holds it, if one does (#5696). */
+export function LiveRow({ setting }: { setting: LiveSetting }) {
+  const { control, reset, grouped, error, undo, heldBy } = setting.useControl();
   return (
     <SettingRow
       setting={setting.id}
@@ -810,6 +811,8 @@ function LiveRow({ setting }: { setting: LiveSetting }) {
       grouped={grouped}
       error={error}
       undo={undo}
+      badge={heldBy}
+      origin={heldBy?.says}
       control={control}
     />
   );

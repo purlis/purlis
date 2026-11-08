@@ -374,6 +374,44 @@ const WITH_EXTENSIONS: SettingsFile = {
   ],
 };
 
+describe("the team's rule over Always send, in General (#5696)", () => {
+  const NAME = "Members may let agents send reports without asking";
+
+  it("is on while the file does not set it, and turned off writes false to the shared file", async () => {
+    const { sent } = core();
+    await at("General");
+
+    const rule = screen.getByRole("switch", { name: NAME });
+    expect(rule).toBeChecked();
+    await userEvent.click(rule);
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toMatchObject({
+      which: "shared",
+      edits: [
+        {
+          path: [{ key: "reports" }, { key: "always_send" }],
+          value: { kind: "bool", value: false },
+        },
+      ],
+    });
+  });
+
+  it("shows off where the shared file turns it off", async () => {
+    core({
+      shared: {
+        ...SHARED,
+        text: `${SHARED.text}\n[reports]\nalways_send = false\n`,
+        fields: [
+          ...SHARED.fields,
+          field(["reports", "always_send"], { kind: "bool", value: false }),
+        ],
+      },
+    });
+    await at("General");
+    expect(screen.getByRole("switch", { name: NAME })).not.toBeChecked();
+  });
+});
+
 describe("the Extensions group (charter-app#253)", () => {
   it("lists every extension with what it is in this project and where that comes from", async () => {
     core({ shared: WITH_EXTENSIONS, extensions: EXTENSIONS });

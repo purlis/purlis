@@ -643,6 +643,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Always send (#5695): only the person lets a draft go unread, or takes it back.
     "always_send_report_draft",
     "undo_report_draft",
+    // The project's rule over Always send (#5696): read for the person's own Settings.
+    "members_may_always_send",
     // An error this window did not catch (#5690): the window's own, never a link's, which could
     // send a Crash report of anything in its name.
     "report_window_error",

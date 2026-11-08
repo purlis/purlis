@@ -4,7 +4,8 @@
 /**
  * **You › Reports** (#5688, spec #5683): the two answers as Settings holds them, unanswered,
  * all on and all off, with "See exactly what's sent…", and Always send drawn only while Agent
- * drafts is allowed (#5695). Drawn, held to axe, walked by the keyboard
+ * drafts is allowed (#5695), and held off by a project that turns it off for its members (#5696).
+ * Drawn, held to axe, walked by the keyboard
  * and pictured in every pictured theme cell (`docs/component-stories.md`). The core is faked at
  * its command boundary, keeping what it is told.
  */
@@ -14,8 +15,8 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { ReportConsent, SentReport } from "../bindings";
 import { forgetReportConsent, UNANSWERED } from "../reportAnswers";
 import { expectFocusInSight, untilFocused } from "../stories.testkit";
-import { SettingGroup, SettingRow } from "./components";
-import { ShownWhile } from "./SettingsTab";
+import { SettingGroup } from "./components";
+import { LiveRow, ShownWhile } from "./SettingsTab";
 import type { LiveSetting } from "./groups";
 import { reportsGroup } from "./reports";
 
@@ -36,29 +37,14 @@ const SENT: SentReport = {
   waiting: false,
 };
 
-/** One row, as the Settings tab draws a live setting. */
-function Row({ setting }: { setting: LiveSetting }) {
-  const { control, grouped, error } = setting.useControl();
-  return (
-    <SettingRow
-      setting={setting.id}
-      label={setting.label}
-      help={setting.help}
-      grouped={grouped}
-      error={error}
-      control={control}
-    />
-  );
-}
-
-/** The Reports group as Settings › You draws it. */
+/** The Reports group as Settings › You draws it, in the project `p1`. */
 function Reports() {
-  const group = reportsGroup();
+  const group = reportsGroup("p1");
   return (
     <SettingGroup label={group.label} help={group.help}>
       {group.settings.map((one) => (
         <ShownWhile key={one.id} useShown={(one as LiveSetting).useShown}>
-          <Row setting={one as LiveSetting} />
+          <LiveRow setting={one as LiveSetting} />
         </ShownWhile>
       ))}
     </SettingGroup>
@@ -71,10 +57,13 @@ const meta = {
   beforeEach: ({ parameters }) => {
     kept = (parameters.consent as ReportConsent | undefined) ?? UNANSWERED;
     const sent = (parameters.sent as SentReport[] | undefined) ?? [];
+    // Whether the project lets its members send without asking: yes unless a story says no.
+    const may = (parameters.membersMayAlwaysSend as boolean | undefined) ?? true;
     forgetReportConsent();
     mockIPC((cmd, args) => {
       if (cmd === "report_consent") return kept;
       if (cmd === "reports_sent") return sent;
+      if (cmd === "members_may_always_send") return may;
       if (cmd === "keep_report_consent") kept = (args as { consent: ReportConsent }).consent;
       return null;
     });
@@ -166,6 +155,43 @@ export const AllOff: Story = {
     await waitFor(() => expect(kept.agent_drafts).toBe(true));
     for (const radio of await waitFor(() => radios(group, "Always send drafts")))
       await expect(radio).not.toBeChecked();
+  },
+};
+
+/**
+ * **Held by the project** (#5696): the project turns sending without asking off, so Always send
+ * is shown off and out of reach, badged Project; Tab passes from Agent drafts to the badge,
+ * whose tooltip says why.
+ */
+export const HeldByProject: Story = {
+  parameters: {
+    consent: {
+      ...UNANSWERED,
+      crash_reports: true,
+      agent_drafts: true,
+      always_send: true,
+      asked: true,
+    },
+    membersMayAlwaysSend: false,
+  },
+  play: async ({ canvas, userEvent }) => {
+    const group = await canvas.findByRole("region", { name: "Reports" });
+    const always = () => within(group).getByRole("radiogroup", { name: "Always send drafts" });
+    await waitFor(() =>
+      expect(within(always()).getByRole("radio", { name: "Ask me first" })).toBeChecked(),
+    );
+    for (const radio of within(always()).getAllByRole("radio")) await expect(radio).toBeDisabled();
+    within(group).getByRole("radio", { name: "Allow" }).focus();
+    await userEvent.tab();
+    await untilFocused(
+      () => within(group).getByText("Project").closest("[tabindex]"),
+      "Tab reaches the Project badge",
+    );
+    expectFocusInSight();
+    await expect(await within(document.body).findByRole("tooltip")).toHaveTextContent(
+      /Your project turns this off/,
+    );
+    await userEvent.keyboard("{Escape}");
   },
 };
 

@@ -12,6 +12,7 @@ import {
   WhatReportsSend,
 } from "../ReportConsent";
 import { answerReports, useReportConsent } from "../reportAnswers";
+import { useMembersMayAlwaysSend } from "../reportProjectRule";
 import { REPORTS_ALSO } from "./catalogue";
 import { SentReports } from "./SentReports";
 import type { LiveSetting, SettingsGroup } from "./groups";
@@ -20,7 +21,8 @@ import type { LiveSetting, SettingsGroup } from "./groups";
  * **You › Reports** (#5688, spec #5683): whether purlis sends its crash reports, and whether
  * agents may write report drafts, as the person answered them at first run, changed here
  * whenever they want; and, while drafts are allowed, whether they go unread by Always send
- * (#5695). Kept on this machine by the core (`<config>/reports.json`), which refuses
+ * (#5695), unless the project in front turns that off for its members, which holds the row off
+ * and says so (#5696). Kept on this machine by the core (`<config>/reports.json`), which refuses
  * every draft and send of a stream without its yes. Found by the palette and the filter by what
  * else a person calls it ({@link REPORTS_ALSO}): telemetry, error reporting.
  */
@@ -29,13 +31,14 @@ export const REPORTS_GROUP = "you.reports";
 /** The Crash reports row, where the crash Notice's link lands (#5700). */
 export const CRASH_REPORTS_SETTING = "you.reports.crash";
 
-export function reportsGroup(): SettingsGroup {
+/** `plane` is the project the window is in, whose rule may hold Always send off (#5696). */
+export function reportsGroup(plane?: string): SettingsGroup {
   return {
     id: REPORTS_GROUP,
     label: "Reports",
     help: "Crash reports, and report drafts agents write, which help fix purlis. Nothing is sent before you choose.",
     also: REPORTS_ALSO,
-    settings: [crashReports, agentDrafts, alwaysSend, whatIsSent, sentList],
+    settings: [crashReports, agentDrafts, alwaysSend(plane), whatIsSent, sentList],
   };
 }
 
@@ -83,28 +86,43 @@ const agentDrafts: LiveSetting = {
 /** The Always send row (#5695): drawn only while Agent drafts is allowed. */
 export const ALWAYS_SEND_SETTING = "you.reports.always";
 
-const alwaysSend: LiveSetting = {
-  id: ALWAYS_SEND_SETTING,
-  label: "Always send drafts",
-  help: ALWAYS_SEND_SAYS,
-  writes: "this machine",
-  useShown: function useDraftsAllowed() {
-    return useReportConsent().consent.agent_drafts === true;
-  },
-  useControl: function useAlwaysSend() {
-    const { consent } = useReportConsent();
-    return {
-      grouped: true,
-      control: (ids) => (
-        <AlwaysSendChoice
-          ids={ids}
-          value={consent.always_send}
-          onChange={(always) => void answerReports({ always_send: always })}
-        />
-      ),
-    };
-  },
+/** Why the row is held, where the project in front turns sending without asking off (#5696). */
+export const HELD_BY_PROJECT = {
+  label: "Project",
+  says: "Your project turns this off: drafts written in it always ask first. Kept in the project's settings, which your team sees.",
 };
+
+/**
+ * Always send, for the project `plane`: drawn only while Agent drafts is allowed, and held off,
+ * read-only, while that project's rule turns it off for its members (#5696).
+ */
+function alwaysSend(plane: string | undefined): LiveSetting {
+  return {
+    id: ALWAYS_SEND_SETTING,
+    label: "Always send drafts",
+    help: ALWAYS_SEND_SAYS,
+    writes: "this machine",
+    useShown: function useDraftsAllowed() {
+      return useReportConsent().consent.agent_drafts === true;
+    },
+    useControl: function useAlwaysSend() {
+      const { consent } = useReportConsent();
+      const held = !useMembersMayAlwaysSend(plane);
+      return {
+        grouped: true,
+        ...(held ? { heldBy: HELD_BY_PROJECT } : {}),
+        control: (ids) => (
+          <AlwaysSendChoice
+            ids={ids}
+            value={held ? false : consent.always_send}
+            disabled={held}
+            onChange={(always) => void answerReports({ always_send: always })}
+          />
+        ),
+      };
+    },
+  };
+}
 
 const whatIsSent: LiveSetting = {
   id: "you.reports.what",

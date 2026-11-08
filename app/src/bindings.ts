@@ -514,6 +514,12 @@ export const commands = {
 	/**  **Undo, within the hold** (#5695): the draft is not sent, and waits in the Inbox. */
 	undoReportDraft: (id: string) => typedError<ReportDraft, string>(__TAURI_INVOKE("undo_report_draft", { id })),
 	/**
+	 *  **Whether the project lets its members send drafts without asking** (#5696, spec #5683,
+	 *  Q12): `[reports].always_send` in its shared settings file, which the team sees, on unless
+	 *  that file turns it off. Settings › You › Reports holds Always send off while it is off.
+	 */
+	membersMayAlwaysSend: (plane: PlaneId) => typedError<boolean, string>(__TAURI_INVOKE("members_may_always_send", { plane })),
+	/**
 	 *  Hands an error the window did not catch to the core's Reports, as a panic is handed: whether
 	 *  it may go, what of it goes and where are the core's to say, so without a yes to Crash reports
 	 *  nothing leaves. Answered at once; the send is on a thread of its own, so the window never

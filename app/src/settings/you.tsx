@@ -90,7 +90,7 @@ export function youGroups(plane?: string): SettingsGroup[] {
       settings: [chatsGrouped, awaySummary, browsersBeside, whereYouAnswerSetting],
     },
     notificationsGroup(),
-    reportsGroup(),
+    reportsGroup(plane),
     thisMachineGroup(),
     browserLimitsGroup(),
     poolsGroup(plane),

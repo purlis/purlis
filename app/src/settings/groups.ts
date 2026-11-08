@@ -4,7 +4,7 @@
 import type { ReactNode } from "react";
 import type { SettingsEdit, SettingsStep, SettingsWhich } from "../bindings";
 import type { Entry, Shown } from "./fileControls";
-import type { Option, Reset, RowIds } from "./components";
+import type { Badge, Option, Reset, RowIds } from "./components";
 
 /**
  * **Settings groups are data** (V89b, the spec on #558): each group is declared once, with a
@@ -260,6 +260,13 @@ export type LiveSetting = Named & {
     error?: readonly string[];
     /** Puts back what the last thing done here changed, while that is the one Undo on offer. */
     undo?: () => void;
+    /**
+     * **Held by another level** (#5696): the level whose value this row cannot change, in a word
+     * or two (`label`: Project), and why, in a sentence (`says`). Drawn as the row's badge, with
+     * the sentence in its tooltip and as the control's description; the control is drawn
+     * read-only. Absent, nothing holds the row.
+     */
+    heldBy?: Badge;
   };
 };
 

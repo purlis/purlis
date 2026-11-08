@@ -109,16 +109,20 @@ export const ALWAYS_SEND_SAYS =
 export function AlwaysSendChoice({
   ids,
   value,
+  disabled = false,
   onChange,
 }: {
   ids: RowIds;
   value: boolean | null;
+  /** Held by another level (#5696): shown, and out of reach. */
+  disabled?: boolean;
   onChange: (always: boolean) => void;
 }) {
   return (
     <Choice
       kind="radio"
       ids={ids}
+      disabled={disabled}
       options={[
         { value: "always", label: "Send without asking" },
         { value: "ask", label: "Ask me first" },
