@@ -304,6 +304,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [2c. Git config purlis sets](#2c-git-config-purlis-sets)
   - [`<git dir>/purlis-save.lock`](#git-dirpurlis-savelock)
   - [`<git dir>/purlis-op.json`](#git-dirpurlis-opjson)
+  - [`<git dir>/purlis-resolve.json`](#git-dirpurlis-resolvejson)
   - [2d. purlis-private caches in this area](#2d-purlis-private-caches-in-this-area)
   - [`.charter/cache/harness-wiring.json`](#chartercacheharness-wiringjson)
   - [`.charter/unrecorded/<sha256[:32]>.json`](#charterunrecordedsha25632json)
@@ -355,6 +356,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`plane-push.json`](#plane-pushjson)
   - [`save-branch.json`](#save-branchjson)
   - [`save-journal.jsonl`](#save-journaljsonl)
+  - [`resolve/` — a save's resolve folder](#resolve--a-saves-resolve-folder)
   - [`skills-deleted/<stamp>-<name>/`](#skills-deletedstamp-name)
   - [`skills-deleted-gone/<commit>-<digest>`](#skills-deleted-gonecommit-digest)
   - [`skills-deleting/<stamp>-<folder>`](#skills-deletingstamp-folder)
@@ -5667,6 +5669,26 @@ always does. Two differences show (#1413):
 - **Written by:** `purlis_core::planegit::recover` (`crates/purlis-core/src/planegit/recover.rs`).
 - **Git:** inside the git directory, so never tracked.
 
+### `<git dir>/purlis-resolve.json`
+
+- **Format:** JSON object: `target` (the branch the plane saves into), `ours` and `theirs` (the
+  commits merged: the plane's HEAD when Resolve was pressed, and the remote's target), `tree`
+  (the tree the [resolve folder](#resolve--a-saves-resolve-folder) was cut with, conflict
+  markers included), `conflicted` (every path left in conflict, sorted), `by_hand` (those git
+  could not mark), `keys` (for a settings file, `charter.toml`, whose keys both sides changed
+  each their own way: the path, then each key's dotted name with this machine's value and the
+  remote's, as TOML; empty otherwise) and `at` (epoch seconds).
+- **Status:** **internal** — what the window's Resolve holds about the resolve folder it cut
+  (#5824 F7, D2). Written once the folder is ready, read by the standing, Continue, Skip and
+  Abort, and removed with the folder. It is what lets a resolve outlive a quit: the next look
+  finds it and the folder, and the Saving view shows the same files to settle. Never written
+  by a chat.
+- **Tier:** Clone state, transient — exists only while a resolve is open; deleted ⇒ the
+  folder is an orphan the next Resolve removes, and nothing at the plane root changes.
+- **Written by:** `purlis_core::planegit::resolvefolder`
+  (`crates/purlis-core/src/planegit/resolvefolder.rs`).
+- **Git:** inside the git directory, so never tracked.
+
 ### 2d. purlis-private caches in this area
 
 ### `.charter/cache/harness-wiring.json`
@@ -7938,6 +7960,10 @@ rewritten.
     sign-in for the forge). Read back, every one of these is held to that shape again
   - `held`: `true` only while a request this clone forgot without seeing it end may still be
     open on a save branch from before the rename (V93j)
+  - `stale`: only while a fetch of the target failed while the request was open (#5824 F8):
+    `since` (epoch seconds, the first failure of the run) and `why` (a sentence fragment, at
+    most 600 bytes). The standing says it and the Saving badge shows it; the next look retries,
+    and a fetch that succeeds removes it
 
 ### `skills-deleted/<stamp>-<name>/`
 - **Format:** one folder per deleted skill whose delete could not be a commit: one git does not
@@ -8134,6 +8160,34 @@ rewritten.
   - `outcome`: one of `saved`, `committed`, `pushed`, `pr-open`, `blocked`, `offline`,
     `skipped`, `failed`
   - `detail`: git's or the forge's own words
+
+### `resolve/` — a save's resolve folder
+
+- **Format:** a linked git worktree of the plane (`git worktree add`), on the temporary branch
+  `purlis-resolve`, at the state folder's `resolve/` (`names::state`, never `$PURLIS_HOME`: it
+  is a checkout of this plane and lives inside it). Its files are the merge of the plane's
+  commits and the remote's target as `git merge-tree` writes it, with what purlis generates
+  already rebuilt; each file a person wrote that conflicts holds git's markers, and its index
+  holds that file's three sides as unmerged entries, so `git checkout --ours`/`--theirs` and
+  `git ls-files -u` work in it as in any stopped merge. A `charter.toml` whose keys conflict is
+  written with this machine's values standing in and no marker; the window asks for each key.
+  What purlis holds about it is [`<git dir>/purlis-resolve.json`](#git-dirpurlis-resolvejson).
+- **Status:** **internal** — Resolve off to the side (#5824 F7, D2): the window cuts it when a
+  save's conflict is resolved, the person or a Fix chat settles the marked files in it, and
+  Continue commits the merge there (`commit-tree`, signed as the plane's saves are) and moves
+  the plane root onto it with one `reset --keep`, then pushes as a save does and removes the
+  folder. Abort removes it and changes nothing at the root. A quit at any point leaves the
+  root untouched, and the folder is found again on the next start. Chats go on writing at the
+  root meanwhile; `reset --keep` refuses rather than overwrite a file one changed, and says
+  which.
+- **Tier:** Clone state, transient — exists only while a resolve is open; deleted by hand ⇒
+  that resolve is gone (the next Resolve cuts a new one), and nothing at the plane root
+  changes. A save never stages it.
+- **Written by:** `purlis_core::planegit::resolvefolder`
+  (`crates/purlis-core/src/planegit/resolvefolder.rs`); its marked files by the person or a
+  chat.
+- **Git:** gitignored (under the state folder); its own git directory is
+  `<git dir>/worktrees/<name>/`.
 
 ### `ws-edit-nudge/<sid>-<workspace>`
 - **Format:** one byte, `1`
