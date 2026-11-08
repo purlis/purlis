@@ -2707,6 +2707,26 @@ fn a_keep_takes_out_the_mcp_servers_a_chat_added_to_a_project() {
         doc["mcpServers"]["docs"]["command"], "npx",
         "user scope stays"
     );
+
+    // A keep that sends no settings at all, as a sandbox-only profile's never does.
+    planted();
+    let bare = keep(Kept::of(&desktop).unwrap()).profile;
+    assert!(bare.settings_staged.is_none() && bare.settings.is_none());
+    kept_for_the_desktop(
+        &runner,
+        &runner_home(dir.path()),
+        DESKTOP,
+        bare,
+        &Answers(Some(0)),
+        8,
+    )
+    .expect("kept with no settings");
+    let doc = read();
+    assert_eq!(doc["projects"]["/work/a"].get("mcpServers"), None, "{doc}");
+    assert_eq!(
+        doc["mcpServers"]["docs"]["command"], "npx",
+        "user scope stays"
+    );
 }
 
 /// **A runner before 1.66 is sent no such file**, which it would refuse with all the settings.

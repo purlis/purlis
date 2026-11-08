@@ -976,8 +976,12 @@ pub fn kept_for_the_desktop(
     let record = keep(homes, home, &Kept::from(&sent), desktop, now)?;
     if let Some(checked) = &checked {
         super::made::settings_kept(homes, &record, checked)?;
-        keep_mcp_servers_of(&record, checked.files());
     }
+    // Every keep, with settings or none (a sandbox-only profile's never has any).
+    keep_mcp_servers_of(
+        &record,
+        checked.as_ref().map_or(&[], |checked| checked.files()),
+    );
     super::made::loaded_unsent_cleared(&record)?;
     Ok(standing_for_the_wire(standing(&record, look)))
 }
