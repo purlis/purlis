@@ -46,25 +46,26 @@ fn ahead_and_behind() -> (Two, String) {
 /// `git rebase --onto origin/release <base>` stopped after its second pick, as a quit cuts one
 /// off: the rebase's folder, a detached HEAD, and nothing to say it stopped for a person.
 fn rebase_cut_off_after_two_picks(root: &Path, base: &str) {
-    let out = std::process::Command::new("git")
-        .current_dir(root)
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .args([
-            "-c",
-            "core.hooksPath=/dev/null",
-            "-c",
-            "commit.gpgsign=false",
-            "-c",
-            "sequence.editor=perl -pi -e 'print qq(break\\n) if $. == 3'",
-            "rebase",
-            "-q",
-            "-i",
-            "--onto",
-            "refs/remotes/origin/release",
-            base,
-        ])
-        .output()
-        .unwrap();
+    let out = crate::forklock::output(
+        std::process::Command::new("git")
+            .current_dir(root)
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .args([
+                "-c",
+                "core.hooksPath=/dev/null",
+                "-c",
+                "commit.gpgsign=false",
+                "-c",
+                "sequence.editor=perl -pi -e 'print qq(break\\n) if $. == 3'",
+                "rebase",
+                "-q",
+                "-i",
+                "--onto",
+                "refs/remotes/origin/release",
+                base,
+            ]),
+    )
+    .unwrap();
     assert!(
         root.join(".git/rebase-merge").is_dir(),
         "the rebase stopped part-way: {out:?}"

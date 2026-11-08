@@ -4118,6 +4118,8 @@ mod prsave;
 pub mod recover;
 pub mod resolve;
 #[cfg(test)]
+mod soak;
+#[cfg(test)]
 mod twoclones;
 mod update;
 pub use merging::{MergeState, Merging, Seen, changed_since};
