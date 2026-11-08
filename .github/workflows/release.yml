@@ -676,6 +676,30 @@ jobs:
             echo "APPLE_SIGNING_IDENTITY: '-' (ad-hoc; no Developer ID configured)"
           fi
 
+      # The AppImage bundler's two tools, put where `tauri build` looks before it downloads them
+      # (tauri-bundler 2.12 `linuxdeploy.rs`: `~/.cache/tauri`, names as there). Through the API,
+      # asked up to four times: on 2026-11-08 its own fetch of AppRun got `http status: 504` from
+      # github.com in two dev releases running, with no retry. A CLI that wants other files
+      # downloads them itself, as before.
+      - name: The AppImage bundler's tools, fetched ahead
+        if: runner.os == 'Linux'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tools="${XDG_CACHE_HOME:-$HOME/.cache}/tauri"
+          mkdir -p "$tools"
+          fetch() {
+            for try in 1 2 3 4; do
+              gh release download "$1" --repo tauri-apps/binary-releases --pattern "$2" --output "$tools/$3" --clobber && break
+              [ "$try" = 4 ] && exit 1
+              echo "::warning::try $try of 4 to fetch $2 failed"; sleep $((try * 15))
+            done
+            chmod +x "$tools/$3"
+          }
+          fetch apprun-old AppRun-x86_64 AppRun-x86_64
+          fetch linuxdeploy-07333c6 linuxdeploy-x86_64.AppImage linuxdeploy-07333c6-x86_64.AppImage
+
       # No `--debug`, and the profile is named: `-- --profile` hands it to Cargo, and Tauri
       # reads the same words to find the binary under `target/<profile>/` and put the bundles
       # in `target/<profile>/bundle/`. No `--features e2e`: that feature puts a WebDriver server
@@ -1252,11 +1276,18 @@ jobs:
       # `syft_<version>_checksums.txt`. Moving to a new syft is both lines, by hand.
       - name: syft, at one version and checksum, reads each platform's bundle
         env:
+          GH_TOKEN: ${{ github.token }}
           SYFT_VERSION: 1.52.0
           SYFT_SHA256: caeedb81fb0491615f1ebd1761e4145d41ee86dd2cc7bf80669f9f5ad9d6133d
         run: |
           set -euo pipefail
-          curl -fsSL --proto '=https' -o "$RUNNER_TEMP/syft.tar.gz" "https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/syft_${SYFT_VERSION}_linux_amd64.tar.gz"
+          # Through the API, asked up to four times: github.com's release download links answered
+          # Actions runners with 5xx for hours on 2026-11-08 while the API served the same file.
+          for try in 1 2 3 4; do
+            gh release download "v${SYFT_VERSION}" --repo anchore/syft --pattern "syft_${SYFT_VERSION}_linux_amd64.tar.gz" --output "$RUNNER_TEMP/syft.tar.gz" --clobber && break
+            [ "$try" = 4 ] && exit 1
+            echo "::warning::try $try of 4 to fetch syft_${SYFT_VERSION}_linux_amd64.tar.gz failed"; sleep $((try * 15))
+          done
           echo "$SYFT_SHA256  $RUNNER_TEMP/syft.tar.gz" | sha256sum -c -
           tar -xzf "$RUNNER_TEMP/syft.tar.gz" -C "$RUNNER_TEMP" syft
           "$RUNNER_TEMP/syft" version
