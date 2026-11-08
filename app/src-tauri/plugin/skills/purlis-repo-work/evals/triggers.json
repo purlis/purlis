@@ -164,11 +164,11 @@
     "should_trigger": false
   },
   {
-    "query": "Write a regex for UK postcodes.",
+    "query": "Bump the api repo's client version and update the web and mobile repos that use it, as one change.",
     "should_trigger": false
   },
   {
-    "query": "Translate this paragraph into French.",
+    "query": "Which of the three pull requests in my cross-repo change should merge first?",
     "should_trigger": false
   },
   {

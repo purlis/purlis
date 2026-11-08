@@ -8,7 +8,7 @@ values. Session records are summaries, not transcripts, so no prompt is quoted w
 filed miss Report replaces a plausible phrasing through a reviewed change.
 
 Trigger bar: standard
-Neighbours: purlis-persona, purlis-secrets
+Neighbours: purlis-persona, purlis-secrets, purlis-change
 
 ## Should start purlis-repo-work
 
@@ -56,6 +56,6 @@ Neighbours: purlis-persona, purlis-secrets
 39. plausible phrasing a person types: unrelated.
 40. plausible phrasing a person types: unrelated.
 41. plausible phrasing a person types: unrelated.
-42. plausible phrasing a person types: unrelated.
-43. plausible phrasing a person types: unrelated.
+42. Near miss (purlis-change): its description, "an API bump and the repos that consume it".
+43. Near miss (purlis-change): its description, "land them in order".
 44. plausible phrasing a person types: unrelated.
