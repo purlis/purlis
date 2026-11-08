@@ -670,8 +670,8 @@ fn refused_where_a_token_is_near(_kind: ProgramKind) -> Result<(), String> {
 
 /// What a runner says to a harness's launch by its words, which no sandbox of its making holds.
 pub const NO_HARNESS_BY_ITS_WORDS: &str = "this chat would start without the sandbox, and on a \
-     runner every chat starts only inside purlis's sandbox, so nothing was started. Start it from \
-     the window again: the runner composes it sandboxed.";
+     runner every chat starts only inside purlis's sandbox, so nothing was started. Start it as a \
+     chat on one of the pool's profiles, which the runner starts sandboxed.";
 
 /// **Refuses a harness's launch by its words on a runner** (`on_a_runner`; ruled 2026-11-08): the
 /// runner composes every chat it starts, sandboxed or not at all ([`crate::start::profile_refusal`]),
