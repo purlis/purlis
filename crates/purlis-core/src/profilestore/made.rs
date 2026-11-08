@@ -1614,8 +1614,7 @@ pub fn loaded_unsent_cleared(record: &MachineProfile) -> Result<(), String> {
                 .take_while(|above| above.starts_with(config)),
         )
         .find(|at| std::fs::symlink_metadata(at).is_ok_and(|found| found.file_type().is_symlink()));
-    if let Some(linked) = linked.filter(|_| allowed.loaded_unsent.is_empty()) {
-        // RED
+    if let Some(linked) = linked {
         return Err(format!(
             "this runner did not keep the profile '{}': {} is a link to another folder, and \
              purlis clears a profile's settings only in a folder of its own, so what the link \
@@ -1629,14 +1628,7 @@ pub fn loaded_unsent_cleared(record: &MachineProfile) -> Result<(), String> {
     allowed
         .loaded_unsent
         .iter()
-        .try_for_each(|name| {
-            if linked.is_some() {
-                return Err(io::Error::other(
-                    "the settings folder is reached through a link",
-                ));
-            }
-            remove_within(&dest, &dest.join(name)) // RED
-        })
+        .try_for_each(|name| remove_within(&dest, &dest.join(name)))
         .map_err(|e| {
             format!(
                 "this runner could not clear the profile '{}''s folder {} ({})",
