@@ -16,7 +16,7 @@ import { BADGE_VARIANTS, COUNT_VARIANTS, Badge, Count, CountGroup, HostStatus } 
 function Every() {
   const row = { display: "flex", gap: "var(--space-3)", alignItems: "center", flexWrap: "wrap" };
   return (
-    <div style={{ display: "grid", gap: "var(--space-5)", inlineSize: "28rem" }}>
+    <div style={{ display: "grid", gap: "var(--space-4)", inlineSize: "28rem" }}>
       {(["--surface-base", "--surface-raised"] as const).map((ground) => (
         <div
           key={ground}
