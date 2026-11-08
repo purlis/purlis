@@ -663,33 +663,14 @@ fn a_family_s_default_that_breaks_on_the_surface_s_default_too_keeps_the_fill() 
 }
 
 /// **What a switcher's part breaks on the popover's fill `chart.4`, as `theme` draws it**, through
-/// the reading the hold passes it: as written alone, with no tints given.
-fn apart_breaks_as_written(theme: &ResolvedTheme) -> bool {
-    let alone = untinted(theme);
-    let mut drawn_in = vec![alone.clone()];
-    let popover = family("popover").unwrap();
-    let rules = rules(&alone.parts);
-    apart_held_on(
-        &alone,
-        &[],
-        &mut drawn_in,
-        &rules,
-        popover,
-        "popover",
-        "chart.4",
-    )
-    .is_some()
-}
-
-/// The same, in the coarse tints and every degree as the hold passes them.
-fn apart_falls_in_the_tints(theme: &ResolvedTheme) -> Option<String> {
+/// the reading the hold passes it, in `coarse` and every degree where one comes near a floor.
+fn apart_reading(theme: &ResolvedTheme, coarse: &[ResolvedTheme]) -> Option<String> {
     let mut drawn_in = vec![theme.clone()];
     let popover = family("popover").unwrap();
     let rules = rules(&theme.parts);
-    let coarse = coarsely_tinted(theme);
     apart_held_on(
         theme,
-        &coarse,
+        coarse,
         &mut drawn_in,
         &rules,
         popover,
@@ -697,6 +678,16 @@ fn apart_falls_in_the_tints(theme: &ResolvedTheme) -> Option<String> {
         "chart.4",
     )
     .map(|(_, floor, _)| floor)
+}
+
+/// The same, as written alone.
+fn apart_breaks_as_written(theme: &ResolvedTheme) -> bool {
+    apart_reading(&untinted(theme), &[]).is_some()
+}
+
+/// The same, in the coarse tints and every degree as the hold passes them.
+fn apart_falls_in_the_tints(theme: &ResolvedTheme) -> Option<String> {
+    apart_reading(theme, &coarsely_tinted(theme))
 }
 
 #[test]

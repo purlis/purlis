@@ -485,15 +485,16 @@ surfaces and the strips' layers, and a Notice's danger surface and wash among th
 read laid over the surface under it. `app/src/theme/grounds.test.ts` finds them from the components, and fails until the
 manifest lists a new one.
 
-**A see-through surface is read in the tints too.** A surface's see-through fill (`popover.root.fill`
-with alpha) shows the turned colour under it, so what another family draws on it (a button or a
-menu in a popover, the title bar's switcher rows) is held to the reading floors in every workspace
-tint as well as written. Words that fall only in a tint make the surface draw its family default,
-said as `what a button draws on it`. An opaque fill is read in the tints too where a look drawn on
-it is see-through, a family default's wash included, and so is one under a switcher's row or pin
-that draws its fill or its words see-through, the title bar's own defaults included (the row Enter
-would go to on `list.selected`); an opaque fill under opaque looks is read as written alone. Each set of states that hold at once is read on the fill as well as each state alone.
-A `card` or `notice` fill needs none of this: the load refuses one that is not a ground the button
+**A see-through surface is read in the tints too.** A surface's see-through fill
+(`popover.root.fill` with alpha) shows the turned colour under it, so what another family draws on
+it (a button or a menu in a popover, the title bar's switcher rows) is held to the reading floors in
+every workspace tint as well as written. Words that fall only in a tint make the surface draw its
+family default, said as `what a button draws on it`. An opaque fill is read in the tints too where a
+look drawn on it is see-through, a family default's wash included, and so is one under a switcher's
+row or pin that draws its fill or its words see-through, the title bar's own defaults included (the
+row Enter would go to on `list.selected`); an opaque fill under opaque looks is read as written
+alone. Each set of states that hold at once is read on the fill as well as each state alone. A
+`card` or `notice` fill needs none of this: the load refuses one that is not a ground the button
 family is held on, and on those a button is read already.
 
 **States that hold at once are held as one.** A button can be hovered and pressed, or focused and

@@ -2780,12 +2780,12 @@ fn alike(theme: &ResolvedTheme, a: &str, b: &str, least: f64) -> bool {
 /// either is not drawn, or nothing is under it.
 fn near_the_hot(theme: &ResolvedTheme, under: &[String], fill: &str, least: f64) -> bool {
     let hot = super::floors::HOT_COUNT;
-    let (Some(plain), Some(hot_drawn)) = (hex(theme, fill), hex(theme, hot)) else {
+    // Not drawn, or nothing to lay them on: the colours as written.
+    let (Some(plain), Some(hot_drawn), false) =
+        (hex(theme, fill), hex(theme, hot), under.is_empty())
+    else {
         return alike(theme, fill, hot, least);
     };
-    if under.is_empty() {
-        return alike(theme, fill, hot, least);
-    }
     under.iter().any(|ground| {
         let laid = |colour: &str| tint::oklab_of(&onto(colour, ground));
         laid(plain)
@@ -4135,15 +4135,16 @@ pub(super) fn apart_breaks_on(
         .map(|(family, floor, ratio)| (family.name, floor, ratio))
 }
 
-/// A part drawn apart from its root as it is drawn on a surface: its family, its name, and its fill
-/// and words while one of its sets of states holds.
-type ApartOn = (
-    &'static Family,
-    &'static str,
-    usize,
-    &'static str,
-    &'static str,
-);
+/// A part drawn apart from its root as it is drawn on a surface, while one of its sets of states
+/// holds.
+struct ApartOn {
+    family: &'static Family,
+    part: &'static str,
+    /// Where the part is in its family's parts.
+    at: usize,
+    fill: &'static str,
+    words: &'static str,
+}
 
 /// **Each part drawn apart from its root that stands on `surface`'s default fill in `variant`**
 /// ([`APART_STANDS_ON`], #4000), in each set of states it is measured in, with its fill and words
@@ -4174,7 +4175,13 @@ fn apart_on<'r>(
                                 .unwrap_or(own.fill);
                             let words = set_colour(rules, family, at, &states, Prop::Text)
                                 .unwrap_or(own.words);
-                            (family, part, at, fill, words)
+                            ApartOn {
+                                family,
+                                part,
+                                at,
+                                fill,
+                                words,
+                            }
                         })
                     })
                 })
@@ -4194,7 +4201,14 @@ fn apart_broken_on(
     margin: f64,
 ) -> Option<(&'static Family, String, f64)> {
     let on = surface_ground(theme, surface, set);
-    apart_on(rules, surface, variant).find_map(|(family, part, at, fill, words)| {
+    apart_on(rules, surface, variant).find_map(|one| {
+        let ApartOn {
+            family,
+            part,
+            at,
+            fill,
+            words,
+        } = one;
         let floor = theme.least.floor(floor_of(family, &family.parts[at]));
         let ratio = lowest(theme, &on, fill, words)?;
         (ratio < floor + margin).then(|| {
@@ -4220,7 +4234,7 @@ fn apart_tints_reach(
     let see_through = |token: &str| hex(theme, token).is_some_and(|one| !is_opaque(one));
     shows_a_tint(theme, set)
         || apart_on(rules, surface, variant)
-            .any(|(_, _, _, fill, words)| see_through(fill) || see_through(words))
+            .any(|one| see_through(one.fill) || see_through(one.words))
 }
 
 /// The states `family` names but disabled, in the order the stylesheet writes them.

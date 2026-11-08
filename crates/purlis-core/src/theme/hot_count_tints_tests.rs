@@ -134,7 +134,7 @@ fn bar(theme: &ResolvedTheme) -> Vec<String> {
 }
 
 #[test]
-fn a_rule_drawn_as_a_see_through_hot_count_is_laid_draws_its_default() {
+fn a_rule_in_the_colour_a_see_through_hot_count_comes_out_draws_its_default() {
     // The hot count see-through: the rule is the colour it comes out on the bar, opaque. Far
     // apart as the two are written, the same as the screen draws them.
     let hot = "#8f7dff40";
