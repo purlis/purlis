@@ -96,7 +96,7 @@ impl Drop for OwnConfigHome {
 
 /// The config home this machine's files go under: the person's, or, in a fenced build (the
 /// app's tests, e2e) whose fence it is outside, one of the build's own in the temporary folder.
-fn config_home() -> Option<PathBuf> {
+pub(crate) fn config_home() -> Option<PathBuf> {
     #[cfg(test)]
     {
         if let Some(home) = TEST_CONFIG_HOME.with(|home| home.borrow().clone()) {
