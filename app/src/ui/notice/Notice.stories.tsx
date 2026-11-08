@@ -247,6 +247,94 @@ export const NeedsADecision: Story = {
   },
 };
 
+/** The octagon trouble's mark is drawn with (`paneFrame.css`), by the start of its path. */
+const OCTAGON = "M7.9 2h8.2";
+
+/**
+ * **Trouble in a pane's top is drawn as trouble** (#4875): a band with no bell (a browser's
+ * pane) draws each Notice as a box, and trouble's is on `danger.wash` with the octagon, a
+ * warning's on `wash.warning` with the triangle, and a consent on `wash.warning` with the lock
+ * whatever its tone. The base rule once outranked trouble's, and "MCP server figma did not
+ * start" drew as a warning. Held in each engine and appearance against a box painted with the
+ * token itself.
+ */
+export const TroubleInAPaneTop: Story = {
+  render: () => (
+    <div
+      className="pane-frame pane-headed"
+      style={{ inlineSize: "36rem", blockSize: "22rem", background: "var(--terminal-background)" }}
+    >
+      <div className="pane-top">
+        <NoticePaneRow>
+          <Notice
+            cause="mcp-failed:7:figma"
+            at="pane"
+            tone="trouble"
+            label="MCP server"
+            onDismiss={() => undefined}
+          >
+            MCP server figma did not start.
+          </Notice>
+          <Notice cause="chat-fresh:7" at="pane" label="Fresh" onDismiss={() => undefined}>
+            This chat started fresh: its harness kept no conversation.
+          </Notice>
+          <Notice
+            cause="sandbox-blocked:7:network:connect:chat"
+            at="pane"
+            tone="trouble"
+            label="Sandbox block"
+            fixes={[
+              { label: "Allow for this chat", onPress: () => undefined, allows: true },
+              { label: "Keep blocked", onPress: () => undefined },
+            ]}
+          >
+            steward 4 tried to reach api.github.com, and the sandbox refused it.
+          </Notice>
+        </NoticePaneRow>
+      </div>
+    </div>
+  ),
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    const boxOf = async (name: string) => {
+      const box = (await canvas.findByRole("status", { name })).closest<HTMLElement>(
+        '[data-scope="notice"][data-part="root"]',
+      );
+      if (box === null) throw new Error(`${name}: no notice box`);
+      return box;
+    };
+    const trouble = await boxOf("MCP server");
+    const warning = await boxOf("Fresh");
+    const consent = await boxOf("Sandbox block");
+    /** What `token` resolves to here, as a box painted with it draws it. */
+    const painted = (token: string) => {
+      const probe = document.createElement("div");
+      probe.style.backgroundColor = `var(${token})`;
+      canvasElement.querySelector(".pane-top")?.append(probe);
+      const colour = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      return colour;
+    };
+    const mark = (box: HTMLElement) => getComputedStyle(box, "::before").maskImage;
+    await expect(painted("--danger-wash")).not.toBe(painted("--wash-warning"));
+    await expect(getComputedStyle(trouble).backgroundColor).toBe(painted("--danger-wash"));
+    await expect(mark(trouble)).toContain(OCTAGON);
+    await expect(getComputedStyle(warning).backgroundColor).toBe(painted("--wash-warning"));
+    await expect(mark(warning)).not.toContain(OCTAGON);
+    // A consent is a question, not trouble, whatever its tone.
+    await expect(getComputedStyle(consent).backgroundColor).toBe(painted("--wash-warning"));
+    await expect(mark(consent)).not.toContain(OCTAGON);
+    // The keyboard reaches trouble's Dismiss first, in sight.
+    await userEvent.tab();
+    await untilFocused(
+      () => canvas.getAllByRole("button", { name: "Dismiss" })[0],
+      "Trouble in a pane's top: Tab lands on its Dismiss",
+    );
+    expectFocusInSight();
+    // The picture is of the Notices at rest.
+    (document.activeElement as HTMLElement).blur();
+  },
+};
+
 /** No chat's row to tell. */
 const heldNowhere = () => undefined;
 
