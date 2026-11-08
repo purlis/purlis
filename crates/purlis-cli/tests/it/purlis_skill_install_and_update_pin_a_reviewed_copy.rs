@@ -661,12 +661,15 @@ fn an_install_names_its_source_or_an_extension() {
     assert!(!out.status.success(), "{}", text(&out));
     assert!(text(&out).contains("<URL>"), "{}", text(&out));
     let out = project.run(
+        // A git source's own options are not an extension's.
         &[
             "skill",
             "install",
-            &project.url(),
             "--extension",
             "acme-registry",
+            "deploy",
+            "--branch",
+            "main",
         ],
         "",
     );

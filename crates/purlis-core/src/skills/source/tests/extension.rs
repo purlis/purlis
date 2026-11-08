@@ -405,7 +405,10 @@ fn an_extensions_browse_marks_what_each_skills_files_do_and_where_it_is_installe
             .clone()
     };
     let deploy = marks(&before, "deploy");
-    assert_eq!(deploy.marks, Some(vec!["runs a script".to_owned()]));
+    // `scripts/ship.sh` runs, fetching from a host: marked as a git source's page marks it.
+    let marked = deploy.marks.expect("its files were read");
+    assert!(marked.contains(&"runs a script".to_owned()), "{marked:?}");
+    assert!(marked.contains(&"reaches 1 host".to_owned()), "{marked:?}");
     assert!(deploy.installed.is_empty());
     assert_eq!(marks(&before, "notify").marks, Some(Vec::new()));
     installed(root);
@@ -433,10 +436,8 @@ fn an_extensions_browse_leaves_a_skill_it_could_not_read_unmarked_and_marks_the_
     )
     .browse(root);
     assert_eq!(browse.skills[0].marks, None);
-    assert_eq!(
-        browse.skills[1].marks,
-        Some(vec!["runs a script".to_owned()])
-    );
+    let marked = browse.skills[1].marks.clone().expect("its files were read");
+    assert!(marked.contains(&"runs a script".to_owned()), "{marked:?}");
 }
 
 #[test]

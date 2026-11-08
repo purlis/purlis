@@ -263,7 +263,8 @@ pub enum SkillCommand {
     /// from the skill source an extension adds, pinned to the revision it names: asked at your own
     /// terminal each time, never with `--yes`, and the copy is what the review read (#5760).
     Install {
-        /// The source: an https:// URL, or a folder on this machine by its full path.
+        /// The source: an https:// URL, or a folder on this machine by its full path. With
+        /// `--extension`, there is none: every word is a skill's name.
         #[arg(required_unless_present = "extension")]
         url: Option<String>,
         /// Install from the skill source of this extension, by its id: one this machine approved,
@@ -271,7 +272,7 @@ pub enum SkillCommand {
         #[arg(
             long,
             value_name = "ID",
-            conflicts_with_all = ["url", "branch", "folder", "vault", "key"]
+            conflicts_with_all = ["branch", "folder", "vault", "key"]
         )]
         extension: Option<String>,
         /// The skills to install, by name.
@@ -1479,6 +1480,15 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             yes,
             at,
         } => {
+            // With `--extension` there is no source to name, so the first word is a skill's.
+            let names: Vec<String> = match &extension {
+                Some(_) => url.iter().cloned().chain(names).collect(),
+                None => names,
+            };
+            if all && !names.is_empty() {
+                voice::err("--all takes no skill's name: name skills, or use --all.");
+                return Ok(2);
+            }
             let named = if all {
                 Named::All
             } else {

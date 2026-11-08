@@ -2846,7 +2846,10 @@ export const commands = {
 	 *  the lockfiles: no extension is asked.
 	 */
 	skillExtensionSources: (plane: PlaneId) => typedError<ExtensionSkillSource[], string>(__TAURI_INVOKE("skill_extension_sources", { plane })),
-	/**  **Browses an extension's skill source** at the revision it names now: its listing alone. */
+	/**
+	 *  **Browses an extension's skill source** at the revision it names now: its listing, and each
+	 *  skill's files read for its marks (#5760).
+	 */
 	skillExtensionSourceBrowse: (plane: PlaneId, id: string) => typedError<SourceBrowse, string>(__TAURI_INVOKE("skill_extension_source_browse", { plane, id })),
 	/**
 	 *  **The install review** of `names` from an extension's source into `level`: the git source's
