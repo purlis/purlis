@@ -2809,13 +2809,14 @@ const ON_A_GROUND_OF_THEIR_OWN: &[(&str, &str)] = &[("titlebar", "count"), ("tab
 /// variant's stands on `on` alone. A part with a fill of a theme's own over what its parent paints
 /// ([`Family::under`]) is laid over that too (#4406): a tab's count over the tasks menu it sums up (#5341). A
 /// part drawn on fewer grounds than its family stands on those in place of `on` (#3384). On a
-/// surface's fill a theme sets (`surface`, the default fill it takes the place of, #3268), such a
-/// part stands on that fill where the surface's default is one of its grounds, and is drawn
-/// nowhere on it where it is not: a field's help is read on a dialog's fill, never a pane's.
+/// surface's fill a theme sets (`surface`, the grounds of the default it takes the place of, #3268), such a
+/// part stands on that fill where a ground the surface's default stands for ([`defaults_under`])
+/// is one of its grounds, and is drawn nowhere on it where none is: a field's help is read on a
+/// dialog's fill, never a pane's or a table's.
 fn under_part(
     theme: &ResolvedTheme,
     on: &[String],
-    surface: Option<&str>,
+    surface: Option<&[&str]>,
     family: &Family,
     at: usize,
     variant: &str,
@@ -2835,7 +2836,9 @@ fn under_part(
     }
     let several = stands_on.filter(|grounds| grounds.len() > 1);
     let fewer = match (several, surface) {
-        (Some(grounds), Some(default)) if !grounds.contains(&default) => return Vec::new(),
+        (Some(grounds), Some(defaults)) if !defaults.iter().any(|one| grounds.contains(one)) => {
+            return Vec::new();
+        }
         (Some(grounds), None) => Some(laid(theme, grounds)),
         _ => None,
     };
@@ -2852,13 +2855,14 @@ fn under_part(
 }
 
 /// **What a look breaks of the reading floors, or comes within `margin` of breaking**, on `on`: the
-/// family's grounds, or a surface's fill a theme sets in place of `surface`, its default (#3268).
+/// family's grounds, or a surface's fill a theme sets in place of the default whose grounds are
+/// `surface` (#3268).
 #[allow(clippy::too_many_arguments)]
 fn unreadable_by(
     margin: f64,
     theme: &ResolvedTheme,
     on: &[String],
-    surface: Option<&str>,
+    surface: Option<&[&str]>,
     rules: &[Rule],
     family: &Family,
     variant: &str,
@@ -3501,7 +3505,10 @@ type SurfaceSet = (&'static Family, &'static str, &'static str, &'static str);
 
 /// **The fills a theme's parts set on the surfaces other families are drawn on**: each surface's
 /// look whose root draws, at rest, another fill than its family default's, with that default and
-/// the fill drawn in its place. A family drawn on the default is drawn on the fill set.
+/// the fill drawn in its place. A family drawn on the default is drawn on the fill set. A look
+/// whose default draws no fill (a tree's row, a table's) stands on its parent's ground until a
+/// theme fills it (#5863): its default is `transparent`, which stands for each ground the
+/// surface is drawn on ([`defaults_under`]).
 fn surfaces_set(rules: &[Rule]) -> Vec<SurfaceSet> {
     let mut found = Vec::new();
     for surface in MANIFEST {
@@ -3513,12 +3520,22 @@ fn surfaces_set(rules: &[Rule]) -> Vec<SurfaceSet> {
         for variant in surface.looks() {
             let default = (surface.defaults)(variant, &[]).fill;
             let set = drawn(rules, surface, variant, &[]).fill;
-            if default != TRANSPARENT && set != TRANSPARENT && set != default {
+            if set != TRANSPARENT && set != default {
                 found.push((surface, variant, default, set));
             }
         }
     }
     found
+}
+
+/// **The grounds a surface's `default` fill stands for** (#5863): that fill, or, for a surface
+/// that draws no fill of its own, each ground it is drawn on, which shows through it.
+fn defaults_under<'a>(surface: &'a Family, default: &'a &'a str) -> &'a [&'a str] {
+    if *default == TRANSPARENT {
+        surface.grounds
+    } else {
+        std::slice::from_ref(default)
+    }
 }
 
 /// **The families drawn on each surface a theme can fill** (#3083, #3268): by the surface, each
@@ -3527,9 +3544,9 @@ fn surfaces_set(rules: &[Rule]) -> Vec<SurfaceSet> {
 /// can be more than one surface's (the overlay is a popover's and a dialog's), so where a family
 /// stands is said here, not read from its grounds. `app/src/theme/grounds.test.ts` finds it from
 /// the components and holds this table to them, exactly: a family drawn on a new surface fails
-/// there until it is named here. A surface drawn with no fill of its own in every look (a table, a
-/// tree) is named too, though nothing on it is measured on a fill a theme sets there
-/// ([`surfaces_set`]).
+/// there until it is named here. A surface drawn with no fill of its own (a table's row, a
+/// tree's) leaves its parent's ground showing, so what stands in it is named on that parent too;
+/// once a theme fills it, what stands in it is measured on that fill ([`surfaces_set`], #5863).
 const STANDS_ON: &[(&str, &[&str])] = &[
     (
         "card",
@@ -3715,7 +3732,7 @@ const STANDS_ON: &[(&str, &[&str])] = &[
 /// **The families drawn on `surface` that a fill `set` in place of its `default` brings a new
 /// ground under** (#3268): each [`STANDS_ON`] says is drawn there, whose grounds do not name `set`
 /// already, or one of whose parts read on grounds of their own ([`Family::under`]) is drawn on
-/// `default` and not read on `set`.
+/// a ground `default` stands for ([`defaults_under`]) and not read on `set`.
 fn drawn_on(
     surface: &'static Family,
     default: &str,
@@ -3726,10 +3743,13 @@ fn drawn_on(
         .find(|(name, _)| *name == surface.name)
         .map_or(&[], |(_, families)| *families);
     MANIFEST.iter().filter(move |family| {
+        let defaults = defaults_under(surface, &default);
         on.contains(&family.name)
             && (!family.grounds.contains(&set)
                 || family.under.iter().any(|(_, grounds)| {
-                    grounds.len() > 1 && grounds.contains(&default) && !grounds.contains(&set)
+                    grounds.len() > 1
+                        && defaults.iter().any(|one| grounds.contains(one))
+                        && !grounds.contains(&set)
                 }))
     })
 }
@@ -3842,6 +3862,7 @@ fn broken_on(
 ) -> Option<(String, Option<f64>)> {
     let sets = sets_read(rules, family);
     let looks = looks_in(rules, family, &sets);
+    let defaults = defaults_under(surface, &default);
     // What the fill set breaks, which a default broken on the default too is not (#3268).
     let reads = |margin: f64, one: &ResolvedTheme, on: &[String], look: &LookOn<'_>| {
         let (variant, states, look) = (look.0, look.1, &look.2);
@@ -3849,7 +3870,7 @@ fn broken_on(
             margin,
             one,
             on,
-            Some(default),
+            Some(defaults),
             rules,
             family,
             variant,
@@ -3912,7 +3933,9 @@ fn broken_on(
 
 /// **Whether `look` is `family`'s default and breaks on `surface`'s default fill too** (#3268): the
 /// family default's, as the floors never hold a default look against a theme ([`held_from`]), and
-/// no reason for the surface to draw its default.
+/// no reason for the surface to draw its default. A surface with no fill of its own stands on
+/// each of its grounds ([`defaults_under`]), so the look must break on every one of them: where
+/// it reads on one, the fill set breaks it there (#5863).
 #[allow(clippy::too_many_arguments)]
 fn a_default_broken_on_the_default_too(
     theme: &ResolvedTheme,
@@ -3924,21 +3947,21 @@ fn a_default_broken_on_the_default_too(
     states: &[State],
     look: &Drawn,
 ) -> bool {
-    *look == drawn(&[], family, variant, states) && {
-        let was = surface_ground(theme, surface, default);
-        unreadable_by(
-            0.0,
-            theme,
-            &was,
-            Some(default),
-            rules,
-            family,
-            variant,
-            states,
-            look,
-        )
-        .is_some()
-    }
+    *look == drawn(&[], family, variant, states)
+        && defaults_under(surface, &default).iter().all(|was| {
+            unreadable_by(
+                0.0,
+                theme,
+                &surface_ground(theme, surface, was),
+                Some(std::slice::from_ref(was)),
+                rules,
+                family,
+                variant,
+                states,
+                look,
+            )
+            .is_some()
+        })
 }
 
 /// A family read on a surface's fill: the family, the surface, its default fill, the fill set and
