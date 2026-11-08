@@ -31,9 +31,14 @@ export function useRepoChanges(
   workspace: string | undefined,
   repos: readonly string[],
 ): ReadonlyMap<string, RepoChanged> {
-  const [held, setHeld] = useState<{ key?: string; changed: ReadonlyMap<string, RepoChanged> }>({
-    changed: EMPTY,
-  });
+  // Held by project and workspace, not by which rows are closed: a row opened or closed keeps
+  // every other row's count drawn until the next answer, rather than blinking them all away.
+  const [held, setHeld] = useState<{
+    place?: string;
+    changed: ReadonlyMap<string, RepoChanged>;
+  }>({ changed: EMPTY });
+  const place =
+    plane === undefined || workspace === undefined ? undefined : `${plane}\0${workspace}`;
   const names = repos.join("\0");
   const key = plane === undefined || workspace === undefined ? undefined : `${workspace}\0${names}`;
   /** The ask: whether one is running, and whether another is wanted after it. */
@@ -56,12 +61,15 @@ export function useRepoChanges(
       const told = (changed?: RepoChanged[]) => {
         if (flight.current === now) flight.current = undefined;
         if (changed !== undefined && asked.current === key)
-          setHeld({ key, changed: new Map(changed.map((one) => [one.repo, one])) });
+          setHeld({ place, changed: new Map(changed.map((one) => [one.repo, one])) });
         if (now.again && asked.current === key) ask.current();
       };
       void commands
         .reposChanged(plane, workspace, names.split("\0"))
-        .then((said) => told(said.status === "ok" && Array.isArray(said.data) ? said.data : []))
+        // A refused ask keeps what the rows last said: one failure never wipes every count.
+        .then((said) =>
+          told(said.status === "ok" && Array.isArray(said.data) ? said.data : undefined),
+        )
         .catch(() => told());
     };
   });
@@ -121,7 +129,7 @@ export function useRepoChanges(
     };
   }, [names, plane, workspace]);
 
-  return held.key === key ? held.changed : EMPTY;
+  return held.place === place ? held.changed : EMPTY;
 }
 
 const EMPTY: ReadonlyMap<string, RepoChanged> = new Map();

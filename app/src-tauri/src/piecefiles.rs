@@ -368,8 +368,8 @@ pub struct RepoChanged {
 // Each repo's answer is kept per clone in the core (`purlis_core::files::repo_changes`), on the
 // store the save standings share and the one watch per repo touches, so an ask with nothing moved
 // reads no status at all, and one after a write reads only the repo it was in. A repo that is
-// read is read by the bounded reader, as `branch_status` is, each on a thread of its own whose
-// reads the reader's own line bounds. Not a doc comment, because the generated bindings carry
+// read is read by the bounded reader, as `branch_status` is, a few at a time on threads of their
+// own (`AT_ONCE`). Not a doc comment, because the generated bindings carry
 // those.
 #[tauri::command]
 #[specta::specta]
@@ -397,13 +397,27 @@ fn changed_in(
     repos: &[String],
     read: impl Fn(Branch<'_>) -> Result<files::Status, files::Refused> + Sync,
 ) -> Vec<RepoChanged> {
+    // At most `AT_ONCE` threads at a time, whatever the workspace holds: a kept answer costs a
+    // lookup, and a read waits for the bounded reader's line anyway.
+    repos
+        .chunks(AT_ONCE)
+        .flat_map(|some| changed_at_once(plane, workspace, some, &read))
+        .collect()
+}
+
+/// How many repos [`changed_in`] asks the core about at once.
+const AT_ONCE: usize = 8;
+
+fn changed_at_once(
+    plane: &Path,
+    workspace: &str,
+    repos: &[String],
+    read: &(impl Fn(Branch<'_>) -> Result<files::Status, files::Refused> + Sync),
+) -> Vec<RepoChanged> {
     std::thread::scope(|scope| {
         let asked: Vec<_> = repos
             .iter()
-            .map(|repo| {
-                let read = &read;
-                scope.spawn(move || files::repo_changes(plane, workspace, repo, read))
-            })
+            .map(|repo| scope.spawn(move || files::repo_changes(plane, workspace, repo, read)))
             .collect();
         repos
             .iter()
