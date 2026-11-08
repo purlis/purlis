@@ -86,6 +86,7 @@ import { RenameChat } from "../RenameChat";
 import { WorkspaceWriteDialog } from "../WorkspaceWrites";
 import { RenameWorkspace } from "../RenameWorkspace";
 import { AddVision } from "../AddVision";
+import { ResumeQuestion } from "../GradeResume";
 import { DeprecateDialog, OwnersDialog } from "../SkillPage";
 import { NewSkillDialog } from "../NewSkillDialog";
 import { DeleteDialog, MoveDialog, RenameDialog } from "../SkillChangeDialogs";
@@ -1440,6 +1441,37 @@ const DIALOGS: Opened[] = [
           renaming={false}
           onRename={nothing}
           onCancel={nothing}
+        />,
+      ),
+  },
+  {
+    name: "resuming a stopped grade, from its scorecard (#5718)",
+    file: "GradeResume.tsx",
+    open: async () =>
+      render(
+        <ResumeQuestion
+          plane={PLANE}
+          plan={{
+            grade: "01STOPPED",
+            skill: "deploy",
+            ended: "Stopped at the token cap",
+            refused: null,
+            waits_until: null,
+            left: 14,
+            tokens_left: 40000,
+            usd_left: 0.3,
+            token_cap: 200000,
+            cap_set_here: true,
+            limit_usd: 1.5,
+            earlier_tokens: 240000,
+            earlier_usd: 1.71,
+            profile: "work",
+            model: "sonnet",
+            consent: "be5ume",
+            running: null,
+          }}
+          onClose={nothing}
+          onResumed={nothing}
         />,
       ),
   },

@@ -203,14 +203,14 @@ fn needs_you_says_when_each_stopped_grade_can_resume_and_leaves_the_persons_own_
     assert!(
         items[0]
             .reason
-            .starts_with("Its grade stopped: Claude Code's usage limit was reached. Resume can run after your limit resets at "),
+            .starts_with("Stopped: Claude Code's usage limit was reached. Resume can run after your limit resets at "),
         "{}",
         items[0].reason
     );
     assert_eq!(
         items[1].reason,
-        "Its grade stopped: network unreachable. Resume can run now. It runs the 4 chats left and \
-         keeps what ran."
+        "Stopped: network unreachable. Resume can run now. It runs the 4 chats left and keeps what \
+         ran."
     );
     assert_eq!(
         items[1].fix,

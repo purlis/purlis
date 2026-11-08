@@ -325,8 +325,7 @@ fn needs_of(
                 title: stopped.skill.clone(),
                 tag: stopped.draft.as_ref().map(|_| "its draft".to_owned()),
                 reason: format!(
-                    "Its grade stopped: {}. {when} It runs {} left and keeps what ran.",
-                    lowered(&ended),
+                    "{ended}. {when} It runs {} left and keeps what ran.",
                     match stopped.left() {
                         1 => "the 1 chat".to_owned(),
                         many => format!("the {many} chats"),
@@ -343,16 +342,6 @@ fn needs_of(
             }
         })
         .collect()
-}
-
-/// `ended`, a stop's sentence (`Stopped: network unreachable`), as the middle of another.
-fn lowered(ended: &str) -> String {
-    let ended = ended.strip_prefix("Stopped: ").unwrap_or(ended);
-    let mut chars = ended.chars();
-    match chars.next() {
-        Some(first) => first.to_lowercase().chain(chars).collect(),
-        None => String::new(),
-    }
 }
 
 /// The RFC 3339 time `at` on this machine's clock, as a person reads it: `14:00`, or with its day

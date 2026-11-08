@@ -285,7 +285,11 @@ export const ResumeTheStopped: Story = {
     await expect(within(shown).getByTestId("grades-going-grilling")).toHaveTextContent(
       "9 chats left",
     );
-    await expect(within(shown).getByRole("button", { name: "Resume them" })).toHaveAttribute(
+    // Every stopped grade's remainder has an estimate, so the limit is offered from it.
+    await expect(within(shown).getByRole("textbox", { name: "Spending limit" })).not.toHaveValue(
+      "",
+    );
+    await expect(within(shown).getByRole("button", { name: "Resume them" })).not.toHaveAttribute(
       "aria-disabled",
       "true",
     );
