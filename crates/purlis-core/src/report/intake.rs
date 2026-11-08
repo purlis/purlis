@@ -22,7 +22,14 @@ use std::time::{Duration, Instant};
 use serde::Deserialize;
 
 /// The DSN this build sends to, if it was built with one (#5687 wires it into release builds).
+///
+/// A fenced build (a scenario test's) reads `PURLIS_REPORT_INTAKE_DSN` at run time first, so a
+/// test sends to a recording of its own (`tools/crash-relaunch.mjs`). No shipped build is fenced.
 pub fn built_in() -> Option<Dsn> {
+    #[cfg(feature = "fenced")]
+    if let Some(said) = crate::envvar::var_os("PURLIS_REPORT_INTAKE_DSN") {
+        return Dsn::parse(&said.to_string_lossy()).ok();
+    }
     option_env!("PURLIS_REPORT_INTAKE_DSN").and_then(|said| Dsn::parse(said).ok())
 }
 

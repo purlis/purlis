@@ -64,7 +64,9 @@ use crate::forge::{self, Forge, ForgeError, Kind as ForgeKind};
 
 mod consent;
 mod crash;
+pub mod native;
 pub use consent::{Consent, Stream};
+pub use native::NativeCrash;
 pub mod intake;
 mod sent;
 pub use sent::{Sent, SentList, SentTo};
@@ -771,8 +773,9 @@ pub enum Evidence {
     PurlisFailure(PurlisFailure),
     /// An agent's draft, written through the `purlis-report` skill. Not built yet.
     AgentDraft(NotYet),
-    /// A native crash the crash handler recorded. Not built yet.
-    NativeCrash(NotYet),
+    /// A native crash the crash handler kept a minidump of, handed in on the next launch. Only
+    /// ever a Crash report: it is sent to the Report intake alone, never filed on a tracker.
+    NativeCrash(NativeCrash),
     /// An uncaught error in the window. Not built yet.
     WindowError(NotYet),
 }
@@ -1011,16 +1014,23 @@ impl Reports {
     /// listed with its exact bytes. Nobody is there to be shown it: the yes to its stream is
     /// the person's word that it may go.
     fn send_crash(&self, evidence: &Evidence) -> Outcome {
-        let Evidence::Panic { record, .. } = evidence else {
-            return Outcome::Refused(Refusal::Unusable(
-                "only a panic is sent as a Crash report yet".to_string(),
-            ));
-        };
         let Some((intake, root)) = &self.intake else {
             return Outcome::Refused(Refusal::NoIntake);
         };
-        let crash = crash::CrashReport::of_panic(record, &self.known, intake.dsn());
-        match intake.send(crash.bytes.as_bytes(), &crash.event_id) {
+        let crash = match evidence {
+            Evidence::Panic { record, .. } => {
+                crash::CrashReport::of_panic(record, &self.known, intake.dsn())
+            }
+            Evidence::NativeCrash(native) => {
+                crash::CrashReport::of_native_crash(native, intake.dsn())
+            }
+            _ => {
+                return Outcome::Refused(Refusal::Unusable(
+                    "only a panic or a native crash is sent as a Crash report yet".to_string(),
+                ));
+            }
+        };
+        match intake.send(&crash.envelope, &crash.event_id) {
             Ok(address) => {
                 // The report has left: a list that cannot be written does not unsend it.
                 let _ = SentList::add(
@@ -1030,7 +1040,7 @@ impl Reports {
                         title: crash.title,
                         to: SentTo::Intake,
                         address: address.clone(),
-                        bytes: crash.bytes,
+                        bytes: crash.shown,
                     },
                 );
                 Outcome::Sent { address }
@@ -1052,9 +1062,11 @@ impl Reports {
                 harness,
                 harness_version,
             }) => Draft::of_sandbox_block(&block, harness, harness_version.as_deref()),
-            Evidence::AgentDraft(never)
-            | Evidence::NativeCrash(never)
-            | Evidence::WindowError(never) => match never {},
+            Evidence::NativeCrash(_) => Err(Refused(
+                "a native crash is sent only to purlis's report service, as a Crash report"
+                    .to_string(),
+            )),
+            Evidence::AgentDraft(never) | Evidence::WindowError(never) => match never {},
         };
         made.map_err(|Refused(said)| Refusal::Unusable(said))
     }

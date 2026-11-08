@@ -9,11 +9,19 @@
 //! Crash report before it leaves: every absolute path goes whole, as `[path]`, before
 //! [`Known::scrub`] takes out what it can identify (environment values, and the names of the
 //! person's projects, workspaces, repos, personas and vaults).
+//!
+//! **A native crash** (#5691) is sent with the same fixed fields, no message and no place (the
+//! process could say neither), and its minidump as the envelope's attachment, which Sentry reads
+//! for the crashing thread's stack. Ruling O9 sends the minidump to the Report intake as it was
+//! written; nothing else ever sees it. The sent list names it by its size and its SHA-256 in
+//! place of its bytes: they are not text, and a list kept 90 days holds no memory of the app's.
 
 use regex::Regex;
 use serde_json::json;
 
-use super::{Known, Panic, short_place};
+use sha2::{Digest, Sha256};
+
+use super::{Known, NativeCrash, Panic, short_place};
 
 /// A Crash report, ready to send.
 pub(super) struct CrashReport {
@@ -21,7 +29,9 @@ pub(super) struct CrashReport {
     /// What the sent list calls it.
     pub title: String,
     /// The envelope, exactly as it is sent.
-    pub bytes: String,
+    pub envelope: Vec<u8>,
+    /// What the sent list shows: the envelope, with a minidump named in place of its bytes.
+    pub shown: String,
 }
 
 impl CrashReport {
@@ -30,44 +40,86 @@ impl CrashReport {
         let (place, _) = known.scrub(&without_paths(&short_place(&record.place)));
         let (message, _) = known.scrub(&without_paths(&record.message));
         let event_id = uuid::Uuid::new_v4().simple().to_string();
-        let now = chrono::Utc::now();
-        let timestamp = record
-            .at
-            .and_then(|at| chrono::DateTime::from_timestamp(i64::try_from(at).ok()?, 0))
-            .unwrap_or(now)
-            .format("%Y-%m-%dT%H:%M:%SZ")
-            .to_string();
-        let channel = channel();
-        let event = json!({
-            "event_id": event_id,
-            "timestamp": timestamp,
-            "platform": "native",
-            "level": "fatal",
-            "release": format!("purlis@{}", crate::adopt::release_version()),
-            "environment": channel,
-            "tags": {"channel": channel},
-            "contexts": {"os": {"name": std::env::consts::OS, "version": os_version()}},
-            "exception": {"values": [{
-                "type": "panic",
-                "value": message,
-                "mechanism": {"type": "panic", "handled": false},
-            }]},
-            "culprit": place,
-        })
-        .to_string();
-        let header = json!({
-            "event_id": event_id,
-            "sent_at": now.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
-            "dsn": dsn,
-        });
-        let item =
-            json!({"type": "event", "length": event.len(), "content_type": "application/json"});
+        let mut event = fixed_fields(&event_id, record.at);
+        event["exception"] = json!({"values": [{
+            "type": "panic",
+            "value": message,
+            "mechanism": {"type": "panic", "handled": false},
+        }]});
+        event["culprit"] = json!(place);
+        let text = format!("{}{}", header(&event_id, dsn), event_item(&event));
         CrashReport {
             title: format!("purlis panicked at {place}"),
-            bytes: format!("{header}\n{item}\n{event}\n"),
+            envelope: text.clone().into_bytes(),
+            shown: text,
             event_id,
         }
     }
+
+    /// The Crash report of a native crash, with its minidump, for the intake at `dsn`.
+    pub fn of_native_crash(crash: &NativeCrash, dsn: &str) -> CrashReport {
+        let event_id = uuid::Uuid::new_v4().simple().to_string();
+        let event = fixed_fields(&event_id, crash.at);
+        let text = format!("{}{}", header(&event_id, dsn), event_item(&event));
+        let attachment = json!({
+            "type": "attachment",
+            "length": crash.minidump.len(),
+            "filename": "purlis.dmp",
+            "attachment_type": "event.minidump",
+        });
+        let mut envelope = format!("{text}{attachment}\n").into_bytes();
+        envelope.extend_from_slice(&crash.minidump);
+        envelope.push(b'\n');
+        let digest = Sha256::digest(&crash.minidump);
+        let digest: String = digest.iter().map(|b| format!("{b:02x}")).collect();
+        CrashReport {
+            title: "purlis crashed".to_string(),
+            envelope,
+            shown: format!(
+                "{text}{attachment}\n[a minidump of {} bytes, sha256 {digest}]\n",
+                crash.minidump.len()
+            ),
+            event_id,
+        }
+    }
+}
+
+/// The fields every Crash report carries, and nothing else: when, which purlis on which channel,
+/// and which operating system. `at` is in seconds since 1970; none is now.
+fn fixed_fields(event_id: &str, at: Option<u64>) -> serde_json::Value {
+    let timestamp = at
+        .and_then(|at| chrono::DateTime::from_timestamp(i64::try_from(at).ok()?, 0))
+        .unwrap_or_else(chrono::Utc::now)
+        .format("%Y-%m-%dT%H:%M:%SZ")
+        .to_string();
+    let channel = channel();
+    json!({
+        "event_id": event_id,
+        "timestamp": timestamp,
+        "platform": "native",
+        "level": "fatal",
+        "release": format!("purlis@{}", crate::adopt::release_version()),
+        "environment": channel,
+        "tags": {"channel": channel},
+        "contexts": {"os": {"name": std::env::consts::OS, "version": os_version()}},
+    })
+}
+
+/// The envelope's header line.
+fn header(event_id: &str, dsn: &str) -> String {
+    let header = json!({
+        "event_id": event_id,
+        "sent_at": chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+        "dsn": dsn,
+    });
+    format!("{header}\n")
+}
+
+/// The event's item: its header line and the event.
+fn event_item(event: &serde_json::Value) -> String {
+    let event = event.to_string();
+    let item = json!({"type": "event", "length": event.len(), "content_type": "application/json"});
+    format!("{item}\n{event}\n")
 }
 
 /// The channel this build is for: `stable` for a release build, `dev` for a dev channel build,

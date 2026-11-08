@@ -25,7 +25,8 @@
 //! **Then it hands the panic to Reports** (#5689, spec #5683): with the person's yes to Crash
 //! reports, the core sends it to purlis's Report intake with its fixed fields only, and lists
 //! the bytes in Settings › You › Reports. Without one, the core refuses it and nothing leaves.
-//! The log is written first, so a send that fails or hangs loses nothing it had.
+//! The log is written first, so a send that fails or hangs loses nothing it had, and the hand-off
+//! comes before the hook that was there first: in a shipped build that one aborts.
 
 use std::backtrace::Backtrace;
 use std::fs::OpenOptions;
@@ -51,6 +52,8 @@ pub fn record() {
 /// Hands a panic to the core's Reports, as a trigger: nobody is at the keyboard. Whether it may
 /// go, what of it goes and where are the core's to say.
 fn report(place: Option<&str>, message: &str) {
+    // First, so the abort that follows is not reported a second time as a native crash.
+    crate::nativecrash::panicked();
     let record = purlis_core::report::Panic {
         at: Some(now()),
         place: place.unwrap_or("an unknown place").to_owned(),
@@ -103,9 +106,11 @@ fn install(
         if let Some(file) = log() {
             write_down(file, &said);
         }
-        before(info);
-        // Last: the panic is already written down and said, whatever the send does.
+        // Before the hook that was there first: in a shipped build that is `panicend`'s, which
+        // aborts, and nothing after it runs. The panic is already written down and said,
+        // whatever the send does.
         report(place.as_deref(), message);
+        before(info);
     }));
 }
 
@@ -238,6 +243,41 @@ mod tests {
                 .as_deref()
                 .is_some_and(|place| place.starts_with("app/src-tauri/src/panics.rs:")),
             "{ours:?}"
+        );
+    }
+    #[test]
+    fn a_panic_is_handed_to_reports_before_the_hook_that_ends_the_process_runs() {
+        // In a shipped build the hook before this one is `panicend`'s, which aborts: whatever
+        // runs after it never runs. So the panic is handed on, and the crash handler told,
+        // first.
+        const MESSAGE: &str = "a panic in a build that aborts";
+        let order: &'static std::sync::Mutex<Vec<&'static str>> = Box::leak(Box::default());
+        let earlier = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            if info.payload_as_str() == Some(MESSAGE)
+                && let Ok(mut order) = order.lock()
+            {
+                order.push("the hook that ends the process");
+            }
+            earlier(info);
+        }));
+        install(
+            || None,
+            move |_, message| {
+                if message == MESSAGE
+                    && let Ok(mut order) = order.lock()
+                {
+                    order.push("handed to Reports");
+                }
+            },
+        );
+
+        let died = std::thread::spawn(|| panic!("{MESSAGE}")).join();
+
+        assert!(died.is_err());
+        assert_eq!(
+            *order.lock().expect("the hooks let go of the list"),
+            ["handed to Reports", "the hook that ends the process"]
         );
     }
 }

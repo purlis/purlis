@@ -130,6 +130,7 @@ mod live;
 mod loginasks;
 mod mcpfailed;
 mod memories;
+pub mod nativecrash;
 mod nativewindow;
 mod navguard;
 mod network;
@@ -3776,6 +3777,9 @@ pub fn run() {
     // Before anything opens a descriptor: an app launchd started (the Finder, the Dock) has a
     // soft limit of 256, and 200 chats hold more than that (ADR 0068 §9, SC-15).
     let raised = purlis_core::openfiles::raise();
+    // The crash handler, in the process that is the app (not the one that only waited for it
+    // above), before the panic hook, which tells it of a panic it reported (#5691).
+    nativecrash::watch();
     // Before anything that can panic: a panic that ends the app is written down on its way
     // out, where one that went to a standard error nobody reads was lost (charter-app#16).
     panics::record();
@@ -4199,6 +4203,14 @@ pub fn run() {
             .on_new_window(navguard::no_new_window)
             .build()?;
             reached("the window is built");
+            // What the crash handler kept of a native crash, sent now that the app is up, on a
+            // thread of its own (#5691).
+            let watch = format!("the crash handler: {}", nativecrash::state());
+            tracing::info!("{watch}");
+            reached(&watch);
+            nativecrash::report_waiting(|| reached("the native crashes that waited are reported"));
+            #[cfg(feature = "e2e")]
+            nativecrash::crash_if_asked();
             // Where a panic is kept, now that the app can be told where its logs belong. An app
             // with no log directory still has standard error, which is all it had before.
             // Tauri's folder for this identifier, or the purlis one rename-local moved it to.
