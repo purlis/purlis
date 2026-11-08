@@ -28,6 +28,7 @@ fn reports(root: &Path, agent_drafts: Option<bool>) -> Reports {
         agent_drafts,
         asked: true,
         crash_notice: None,
+        always_send: None,
     })
     .sending_to(
         Arc::new(Sentry::new(

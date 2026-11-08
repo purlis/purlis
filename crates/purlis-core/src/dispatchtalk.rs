@@ -2704,8 +2704,9 @@ pub fn person_said(said: &PersonSaid) -> String {
 pub fn drafted_said(word: &DraftedWord) -> String {
     format!(
         "⬢ purlis: `{}` failed inside purlis, so purlis drafted a report of the failure for the \
-         person's Inbox, with the call, its exit and its scrubbed error. Nothing was sent: the \
-         person reads it and files or dismisses it. Add what you were doing and what you \
+         person, with the call, its exit and its scrubbed error. What becomes of it is the \
+         person's: they read it in their Inbox, or let drafts go to purlis's private report \
+         service, never a public tracker. Add what you were doing and what you \
          expected, in a few sentences, with `purlis report bug --adds {} \"<what you were \
          doing>\"`. Do not draft another report of the same failure. This line is purlis's \
          own.",
