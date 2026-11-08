@@ -15,8 +15,10 @@
 //!
 //! **A host that stops answering holds a bounded number of steps** (#5618). The writer waits on
 //! the session host's answer to each write, and the queue to it holds at most [`MOST_QUEUED`]
-//! steps: one told past that is not written, and takes its ask's later steps with it, as a raise
-//! the log refused does. Telling never waits, since the asks tell under their lock.
+//! steps: one told past that is not written, and takes with it every step of its ask not written
+//! yet, those queued before it and those told after, so nothing is written without its raise.
+//! Telling never waits, since the asks tell under their lock. The asks so dropped are remembered
+//! for the plane's life, one number each.
 //!
 //! Best effort, as before: a step still waiting as the app quits is not written, and the steps of
 //! an ask raised then and answered after a restart are written without a raise. The chat's own
@@ -315,7 +317,7 @@ mod tests {
 
         let written = written.lock().unwrap_or_else(PoisonError::into_inner);
         assert!(
-            written.len() <= MOST_WAITING + 2,
+            written.len() <= MOST_QUEUED + 2,
             "{} steps were held for a stalled host",
             written.len()
         );
