@@ -1252,11 +1252,25 @@ mod tests {
     }
 
     /// **What a creation takes with a heavy theme** (#4337), printed, in this process's cold state:
-    /// `cargo test -p purlis-app --lib creation_with_a_heavy_theme_timed -- --ignored --nocapture`.
-    /// Everything but opening the window and loading the page; each run measures nothing kept.
+    /// `cargo test --release -p purlis-app --lib windowprefs::tests::creation_with_a_heavy_theme_timed
+    /// -- --exact --ignored --nocapture`, in a release build as a launch is. Everything but opening
+    /// the window and loading the page; each run measures nothing kept. Each test runs alone, in a
+    /// process of its own (`--exact`), or the second finds the measure the first kept.
     #[test]
     #[ignore = "a timing to read, not a check"]
     fn creation_with_a_heavy_theme_timed() {
+        creation_with_a_heavy_theme_timed_waiting(FIRST_FRAME_WAITS);
+    }
+
+    /// [`creation_with_a_heavy_theme_timed`], its first frame waiting for every measure, as each
+    /// creation did before #4385: what the wait saves.
+    #[test]
+    #[ignore = "a timing to read, not a check"]
+    fn creation_with_a_heavy_theme_waiting_for_every_measure_timed() {
+        creation_with_a_heavy_theme_timed_waiting(std::time::Duration::from_secs(3600));
+    }
+
+    fn creation_with_a_heavy_theme_timed_waiting(wait: std::time::Duration) {
         let recipe = r#"["surface.base","surface.sunken","surface.deep","surface.raised",
             "surface.overlay","surface.hover","control.base","control.hover","tab.active",
             "list.selected"]"#;
@@ -1273,18 +1287,13 @@ mod tests {
         assert!(drawn.theme.is_some());
 
         let started = std::time::Instant::now();
-        let created = created_within(
-            FIRST_FRAME_WAITS,
-            &TheirsKept::new(),
-            Some(home.path()),
-            None,
-            None,
-        );
+        let created = created_within(wait, &TheirsKept::new(), Some(home.path()), None, None);
         let took = started.elapsed();
         let at = defined(&created.script);
         let frames = at["first"]["frames"].as_array().unwrap();
         println!(
-            "one draw (both holds) {holds:?}; created_within {took:?}; {} frames; parts later: {}",
+            "waiting {wait:?}: one draw (both holds) {holds:?}; created_within {took:?}; {} frames; \
+             parts later: {}",
             frames.len(),
             at["theme"]["parts_later"],
         );

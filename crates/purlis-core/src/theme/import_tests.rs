@@ -729,9 +729,22 @@ fn a_property_list_nested_deeper_than_a_preset_is_refused_before_it_is_parsed() 
     assert!(refused.contains("deep"), "{refused}");
     assert!(very_deep.len() as u64 <= MOST_SOURCE_BYTES);
     assert!(very.expect_err("refused").contains("deep"));
+    // A preset nests two: its dictionary, and each colour's. One colour is enough to say so, and
+    // leaves the import nothing to tune (#3597).
+    let two = b"<?xml version=\"1.0\"?>\n<plist version=\"1.0\">\n<dict>\
+        <key>Background Color</key><dict><key>Red Component</key><real>0.1</real>\
+        <key>Green Component</key><real>0.1</real><key>Blue Component</key><real>0.1</real></dict>\
+        </dict>\n</plist>\n";
     assert!(
-        import(SourceKind::Iterm, "tide.itermcolors", TIDE).is_ok(),
+        import(SourceKind::Iterm, "two.itermcolors", two).is_ok(),
         "a preset nests two"
+    );
+    let refused_for = |source: &[u8]| {
+        import(SourceKind::Iterm, "edge.itermcolors", source).is_err_and(|why| why.contains("deep"))
+    };
+    assert!(
+        !refused_for(&nested_plist(8)),
+        "eight deep is as deep as it may"
     );
 }
 

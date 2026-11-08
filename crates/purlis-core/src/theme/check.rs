@@ -1691,25 +1691,58 @@ fn ratio_by<'v>(value: &dyn Fn(&str) -> &'v str, pair: &Pair) -> Option<f64> {
     Some(two_places(contrast(&front, &back)))
 }
 
-/// **Whether `colour`, drawn as `token`, keeps every pair `token` is in**: each at its floor, or
-/// no lower than `was` has it. What follows an accent is held to this
+/// **What a colour drawn as `token` must keep of every pair `token` is in**: each at its floor, or
+/// no lower than the pair as `was` draws it. What follows an accent is held to this
 /// ([`super::vocabulary::follow_kin`]), because a theme's own accent has no person layer to leave
 /// a colour out, and a hard floor broken refuses the whole theme (#5157).
-pub(super) fn keeps_contrast<'v>(
-    token: &str,
-    colour: &str,
-    is: &dyn Fn(&str) -> &'v str,
-    was: &dyn Fn(&str) -> &'v str,
-) -> bool {
-    let now = |one: &str| if one == token { colour } else { is(one) };
-    PAIRS
-        .iter()
-        .filter(|pair| pair.tokens().any(|one| one == token))
-        .all(|pair| {
-            ratio_by(&now, pair).is_none_or(|ratio| {
-                ratio >= pair.floor || ratio_by(was, pair).is_some_and(|was| ratio >= was)
-            })
+///
+/// The pairs and what `was` has each at are found once, so a search that asks of thousands of
+/// colours ([`super::tint::nudged`]) measures only the colour it asks of (#3597).
+pub(super) struct KeepsContrast<'t> {
+    token: &'t str,
+    /// Each pair `token` is in, and its ratio as `was` draws it.
+    pairs: Vec<(&'static Pair, Option<f64>)>,
+}
+
+impl<'t> KeepsContrast<'t> {
+    pub(super) fn of<'v>(token: &'t str, was: &dyn Fn(&str) -> &'v str) -> Self {
+        let pairs = pairs_naming(token)
+            .iter()
+            .map(|pair| (*pair, ratio_by(was, pair)))
+            .collect();
+        Self { token, pairs }
+    }
+
+    /// Whether `colour`, drawn as the token with the rest as `is` draws it, keeps every pair.
+    pub(super) fn keeps<'c, 'v: 'c>(&self, colour: &'c str, is: &dyn Fn(&str) -> &'v str) -> bool {
+        let now = |one: &str| -> &'c str { if one == self.token { colour } else { is(one) } };
+        self.pairs.iter().all(|(pair, was)| {
+            ratio_by(&now, pair)
+                .is_none_or(|ratio| ratio >= pair.floor || was.is_some_and(|was| ratio >= was))
         })
+    }
+}
+
+/// **Every pair of [`PAIRS`] that names `token`**, as [`Pair::tokens`] does, in their order, each
+/// once. Found once for each token and kept: a search that asks [`KeepsContrast`] of thousands of
+/// colours for one token ([`super::tint::nudged`]) reads its few pairs, not every pair (#3597).
+pub(super) fn pairs_naming(token: &str) -> &'static [&'static Pair] {
+    static NAMING: std::sync::LazyLock<
+        std::collections::HashMap<&'static str, Vec<&'static Pair>>,
+    > = std::sync::LazyLock::new(|| {
+        let mut naming: std::collections::HashMap<&'static str, Vec<&'static Pair>> =
+            std::collections::HashMap::new();
+        for pair in PAIRS {
+            for token in pair.tokens() {
+                let pairs = naming.entry(token).or_default();
+                if !pairs.last().is_some_and(|last| std::ptr::eq(*last, pair)) {
+                    pairs.push(pair);
+                }
+            }
+        }
+        naming
+    });
+    NAMING.get(token).map_or(&[], Vec::as_slice)
 }
 
 /// `pair`'s two colours as the screen draws them, opaque: its back laid over what it is laid on,
