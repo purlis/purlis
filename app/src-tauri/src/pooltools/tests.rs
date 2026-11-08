@@ -1161,3 +1161,32 @@ fn a_runner_chats_key_out_of_reach_is_refused_before_anything_is_asked() {
     assert!(asks.open().is_empty(), "no Secret ask");
     assert!(tools.waiting().is_empty(), "no Allow");
 }
+
+/// What a runner chat's gate judges up front is the core's judge on the tool's keys (#5795).
+#[test]
+fn a_runner_chats_gate_judges_the_tools_keys_by_the_cores_judge() {
+    let desktop = a_desktop_missing_the_key();
+    let root = desktop.path();
+    std::fs::write(
+        root.join("vaults.json"),
+        serde_json::json!({ "vaults": {
+            "team": {"provider": "plain-file", "config": {"file": "team.json"}, "persona": "devops"},
+            "other": {"provider": "plain-file", "config": {"file": "other.json"}},
+        }})
+        .to_string(),
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("other.json"),
+        serde_json::json!({"kubeconfig": "n0t-yours"}).to_string(),
+    )
+    .unwrap();
+    let ctx = ctx_of(root);
+    assert_eq!(super::out_of_reach(&ctx, "devops", &kubectl()), None);
+    let team = purlis_core::secrets::cmd::provider(&ctx, "team").unwrap();
+    purlis_core::secrets::links::link(&ctx, &team, "kubeconfig", "other", "kubeconfig").unwrap();
+
+    let why = super::out_of_reach(&ctx, "devops", &kubectl()).expect("refused");
+
+    assert!(why.contains("may not use"), "{why}");
+}

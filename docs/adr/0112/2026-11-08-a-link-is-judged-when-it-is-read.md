@@ -36,7 +36,11 @@ through is still refused up front.
 
 It fails closed. A link that can't be read is refused. So is this machine's grants file where it
 is there and can't be read, an empty file included, which counts as a refusal here and not as no
-grants. Why it can't be read goes to purlis's log, since the file holds other vaults' names. The chat hears
-which key, in which of its own vaults, reads an entry of a vault its persona may not use. It never
-hears the other vault's name (D-5246-8). Nothing is asked of the person, because a refusal of this
-kind raises no Secret ask.
+grants. Why it can't be read goes to purlis's log, since the file holds other vaults' names.
+
+The chat hears which key, in which of its own vaults, reads an entry of a vault its persona may not
+use. It never hears the other vault's name (D-5246-8). The refusal raises no Secret ask.
+
+A fill's or a login's own notice is not judged yet. It is raised as before, and its Allow or
+Always is pressed as before, and the read that follows is refused. Judging a link before that
+notice is a follow-up: #5831.

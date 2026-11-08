@@ -269,3 +269,18 @@ fn a_run_with_a_key_out_of_reach_is_refused_before_its_notice_asks_for_another()
         "nothing granted"
     );
 }
+
+/// The up-front judge sees every key a run hands over, a `--dotenv` entry's too (#5795).
+#[test]
+fn every_key_a_run_hands_over_is_one_the_up_front_judge_sees() {
+    let project = project();
+    let mut want = wanted(project.path(), "team", sh("true"));
+    want.env = vec!["X=ONE".into()];
+    want.file = vec!["F=TWO".into()];
+    want.dotenv = vec!["D=NAME:THREE".into()];
+
+    assert_eq!(
+        keys_handed(&want).collect::<Vec<_>>(),
+        ["ONE", "TWO", "THREE"]
+    );
+}

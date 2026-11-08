@@ -2379,13 +2379,16 @@ fn read_for_fill(
     if let Some(why) = read_out_of_reach(&ctx, persona, vault, &[key]) {
         return Err(why);
     }
-    let got = cmd::get_value(&ctx, &provider, key);
+    let got = cmd::get_value(&ctx, &provider, key).map(zeroize::Zeroizing::new);
     // And again once read: a link written meanwhile is seen, and what was read goes unused.
     if let Some(why) = read_out_of_reach(&ctx, persona, vault, &[key]) {
         return Err(why);
     }
     match got {
-        Ok(value) => Ok(Some(purlis_session_protocol::browsing::Secret::new(value))),
+        // Moved out whole: what is left behind is wiped as it is dropped.
+        Ok(mut value) => Ok(Some(purlis_session_protocol::browsing::Secret::new(
+            std::mem::take(&mut *value),
+        ))),
         // A key the vault holds no value under is the person's to add (#5116, #5054): told by
         // the provider's kind of failure, never by its sentence.
         Err(e) if e.kind == super::Kind::NotFound => Ok(None),
