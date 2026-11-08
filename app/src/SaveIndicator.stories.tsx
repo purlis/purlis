@@ -25,6 +25,7 @@ const WAITING: PlaneSaving = {
   pushFailed: null,
   live: [],
   conflicts: [],
+  conflictKeys: {},
   notice: null,
   mode: "pr",
   modeFrom: "charter.toml",
