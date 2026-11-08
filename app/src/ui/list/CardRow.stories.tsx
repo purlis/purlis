@@ -195,6 +195,13 @@ export const SkillsViewCards: Story = {
     await expect(canvas.getByRole("status")).toHaveTextContent("Reviewing the change");
     await userEvent.keyboard("{ArrowLeft}{ArrowUp}{ArrowUp}");
     await untilFocused(() => grilling, "Cards: Up walks back to the first card");
+    // Its tooltip, taken down by Esc on the way in, is back with the keyboard (#5038): waited for,
+    // so the picture never catches it on its way.
+    await waitFor(() =>
+      expect(screen.getByRole("tooltip")).toHaveTextContent(
+        "Changed by a chat on 28 Oct. This chat keeps the version you accepted.",
+      ),
+    );
     expectFocusInSight();
   },
 };
