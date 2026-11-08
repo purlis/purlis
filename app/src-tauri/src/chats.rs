@@ -1009,8 +1009,9 @@ pub struct Chats {
     /// is cleared as a turn begins, because the record holds the work until a turn's end says it
     /// is gone: a restart that ends the program then tells the chat brought back what it ended.
     /// Forgotten as a new program starts and as the chat closes; a chat reattached from the
-    /// session host keeps what its record said ([`Self::begin_put_back`]).
-    own_work: Mutex<HashMap<u32, purlis_core::ownwork::OwnWork>>,
+    /// session host keeps what its record said ([`Self::begin_put_back`]). With it, each piece
+    /// by name and whether a turn is under way (#5750, [`Own`]).
+    own_work: Mutex<HashMap<u32, Own>>,
     /// **What a chat's harness named while its start was under way** (#5170), by the chat's
     /// number, with the run a `/clear` began: an entry from the moment the start is announced, so
     /// before its program runs, until the chat is listed as open and takes what it holds. The
@@ -6694,34 +6695,101 @@ impl Chats {
     }
 
     /// **What a chat's own harness said, in `report`, it left running of its own as its turn
-    /// ended** (#5747, spec #5743), kept for the record's `own_work`.
+    /// ended** (#5747, spec #5743), kept for the record's `own_work`; and whether a turn is under
+    /// way, from its start to its end (#5750), which a restart then cut mid-way. `/clear` clears
+    /// all of it: the conversation it began has nothing of the old one's running.
     ///
     /// **What the `Stop` said, never the board's reading of it**: the board holds no wait while
     /// the chat shows a prompt or raised a notice, and drops it at the hour's lapse, and none of
-    /// those ends the work. **Only the chat's own harness** ([`its_own_turn_end`]): `now` is the
+    /// those ends the work. **Only the chat's own harness** ([`its_own_word`]): `now` is the
     /// conversation the board holds for the chat, so a harness nested in the chat, a `claude -p`
     /// in its shell, never clears it. Stamped on the app's clock, as the board stamps it.
     pub fn heard_own_work(&self, report: &purlis_core::hookwire::Report, now: Option<&str>) {
-        let Some(said) = its_own_turn_end(report, now) else {
+        let Some(said) = its_own_word(report, now) else {
             return;
         };
-        self.holds_own_work(report.chat, said.at(chrono::Utc::now().timestamp()));
+        let now_at = chrono::Utc::now().timestamp();
+        self.own_changed(report.chat, |own| match said {
+            Heard::Ended(said) => {
+                own.work = said
+                    .at(now_at)
+                    .and_then(purlis_core::ownwork::OwnWork::in_flight);
+                own.mid_turn = false;
+            }
+            Heard::Failed => own.mid_turn = false,
+            Heard::Began => {
+                own.mid_turn = true;
+                // A wake-up whose time has come has fired, and may be what began this turn: its
+                // harness drops it, and it is not missed (#5751).
+                own.pieces.retain(|piece| {
+                    piece.kind != purlis_core::ownwork::pieces::Kind::WakeUp
+                        || piece.due_at.is_none_or(|due| due > now_at)
+                });
+                if let Some(work) = own.work.as_mut()
+                    && work.wakes_at.is_some_and(|due| due <= now_at)
+                {
+                    work.wakes_at = None;
+                }
+                own.work = own.work.and_then(purlis_core::ownwork::OwnWork::in_flight);
+            }
+            Heard::Idle => own.mid_turn = false,
+            Heard::Cleared => *own = Own::default(),
+        });
+    }
+
+    /// **What a chat's own tool hook or turn's end said of each piece of its own work**
+    /// (#5750), from `output`, a line the board has judged the chat's own run's: a piece its
+    /// tool started is recorded at once, and what a turn's end says is in flight replaces the
+    /// record. Every piece is held to its shape first.
+    pub fn heard_own_output(&self, output: &purlis_core::hookwire::TurnOutput) {
+        use purlis_core::hookwire::Output;
+        use purlis_core::ownwork::pieces;
+        match &output.turn_output {
+            Output::OwnWorkStarted { piece } => {
+                let Some(piece) = piece.clone().sound() else {
+                    return;
+                };
+                self.own_changed(output.chat, |own| pieces::started(&mut own.pieces, piece));
+            }
+            Output::OwnWorkInFlight { pieces: said } => {
+                let said: Vec<_> = said
+                    .iter()
+                    .cloned()
+                    .filter_map(pieces::Piece::sound)
+                    .collect();
+                self.own_changed(output.chat, |own| {
+                    own.pieces = pieces::at_stop(&own.pieces, said);
+                });
+            }
+            _ => {}
+        }
+    }
+
+    /// Chat `session`'s own work, changed by `change`, written down if that changed it.
+    fn own_changed(&self, session: u32, change: impl FnOnce(&mut Own)) {
+        let mut held = lock(&self.own_work);
+        let before = held.get(&session).cloned().unwrap_or_default();
+        let mut now = before.clone();
+        change(&mut now);
+        if now == before {
+            return;
+        }
+        if now == Own::default() {
+            held.remove(&session);
+        } else {
+            held.insert(session, now);
+        }
+        drop(held);
+        self.write_it_down();
     }
 
     /// Chat `session` has `now` left running of its own, or nothing. The turn's end is the
     /// authority on what still runs, so it replaces what was held. Written down whenever it
     /// changes, and not only at a quit: a crash writes nothing as it goes.
+    #[cfg(test)]
     pub(crate) fn holds_own_work(&self, session: u32, now: Option<purlis_core::ownwork::OwnWork>) {
         let now = now.and_then(purlis_core::ownwork::OwnWork::in_flight);
-        let mut held = lock(&self.own_work);
-        let before = match now {
-            Some(work) => held.insert(session, work),
-            None => held.remove(&session),
-        };
-        drop(held);
-        if before != now {
-            self.write_it_down();
-        }
+        self.own_changed(session, |own| own.work = now);
     }
 
     /// **The model chat `session`'s harness said it runs on** (ADR 0087 §6, #1021), where it
@@ -7504,7 +7572,12 @@ impl Chats {
                 model: models.get(&session).cloned(),
                 // What it had left running of its own as its turn last ended (#5747), and
                 // nothing a record put back carried from an earlier program: that was told.
-                own_work: own_work.get(&session).copied(),
+                own_work: own_work.get(&session).and_then(|own| own.work),
+                own_pieces: own_work
+                    .get(&session)
+                    .map(|own| own.pieces.clone())
+                    .unwrap_or_default(),
+                mid_turn: own_work.get(&session).is_some_and(|own| own.mid_turn),
                 ..chat.clone()
             }))
         }));
@@ -7689,11 +7762,14 @@ impl Chats {
         // **What each had left running of its own is held under the number it starts as**
         // (#5747): a chat the session host still runs keeps it, as its work runs on, and every
         // other is told it as it starts and forgets it then.
-        lock(&self.own_work).extend(
-            coming
-                .iter()
-                .filter_map(|one| one.chat.own_work.map(|work| (one.number, work))),
-        );
+        lock(&self.own_work).extend(coming.iter().filter_map(|one| {
+            let own = Own {
+                work: one.chat.own_work,
+                pieces: one.chat.own_pieces.clone(),
+                mid_turn: one.chat.mid_turn,
+            };
+            (own != Own::default()).then_some((one.number, own))
+        }));
         lock(&self.coming).extend(coming);
     }
 
@@ -8333,21 +8409,57 @@ fn its_own_model<'a>(
         .map(purlis_core::state::Model::as_str)
 }
 
-/// **What the chat's own harness said it left running at its turn's end** (#5747), where
-/// `report` is that: a `Stop` of the chat's own harness, not a helper's, under the conversation
-/// the board holds for the chat now (`now`), as [`its_own_model`] judges a model.
-fn its_own_turn_end(
-    report: &purlis_core::hookwire::Report,
-    now: Option<&str>,
-) -> Option<purlis_core::ownwork::Said> {
+/// **What a chat had of its own as a restart would end it** (#5747, #5750): what its last turn's
+/// end said it left running, each piece by name, and whether a turn was under way. What the
+/// record of open chats keeps of it, so a chat brought back is told what the restart ended.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct Own {
+    work: Option<purlis_core::ownwork::OwnWork>,
+    pieces: Vec<purlis_core::ownwork::pieces::Piece>,
+    mid_turn: bool,
+}
+
+/// What a report of the chat's own harness says of its own work and its turn (#5747, #5750).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Heard {
+    /// The turn ended, leaving this running.
+    Ended(purlis_core::ownwork::Said),
+    /// The turn ended on an error, in place of its `Stop`.
+    Failed,
+    /// A turn began.
+    Began,
+    /// It sits idle at its prompt: no turn is under way, though none ended with a `Stop` (an
+    /// interrupt fires none).
+    Idle,
+    /// `/clear` began a new conversation: nothing of the old one is told to it.
+    Cleared,
+}
+
+/// **What the chat's own harness said of its own work and its turn** (#5747, #5750), where
+/// `report` is a report of the chat's own harness, not a helper's, under the conversation the
+/// board holds for the chat now (`now`), as [`its_own_model`] judges a model. `/clear` moves the
+/// board onto the conversation it began before this is asked, so its `SessionStart` is judged
+/// under that one.
+fn its_own_word(report: &purlis_core::hookwire::Report, now: Option<&str>) -> Option<Heard> {
     use purlis_core::hookwire::Conversation;
-    if report.event != purlis_core::state::Event::Stop || report.agent.is_some() {
+    use purlis_core::state::{Event, Started};
+    if report.agent.is_some() {
         return None;
     }
     let Conversation::Named(said) = &report.conversation else {
         return None;
     };
-    (now == Some(said.as_str())).then_some(report.detail.own_work)
+    if now != Some(said.as_str()) {
+        return None;
+    }
+    match report.event {
+        Event::Stop => Some(Heard::Ended(report.detail.own_work)),
+        Event::StopFailure => Some(Heard::Failed),
+        Event::UserPromptSubmit => Some(Heard::Began),
+        Event::Notification if report.detail.idle => Some(Heard::Idle),
+        Event::SessionStart if report.detail.started == Started::Cleared => Some(Heard::Cleared),
+        _ => None,
+    }
 }
 
 /// Told, by chat, how many hosts its proxy refused past the ones it names (#1353).

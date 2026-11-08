@@ -324,6 +324,17 @@ pub struct Chat {
     /// own in flight, and every record written before this field — not a format change, for
     /// [`Self::pinned`]'s reason.
     pub own_work: Option<crate::ownwork::OwnWork>,
+    /// **Each piece of its own work by name** (#5750): recorded as its tool starts it, and
+    /// replaced by what each turn's end says is in flight ([`crate::ownwork::pieces`]). What the
+    /// wake line names, where [`Self::own_work`] holds counts. Empty for a chat with none, and
+    /// every record written before this field — not a format change, for [`Self::pinned`]'s
+    /// reason.
+    pub own_pieces: Vec<crate::ownwork::pieces::Piece>,
+    /// **Whether a turn of the chat's own was under way** (#5750): from its prompt to its end, so
+    /// a restart that ended the program then cut that turn mid-way, and the chat brought back is
+    /// told so. `false` for every record written before this field, for [`Self::pinned`]'s
+    /// reason.
+    pub mid_turn: bool,
 }
 
 impl Chat {
@@ -1793,6 +1804,39 @@ struct ChatOnDisk {
         deserialize_with = "lenient"
     )]
     own_work: Option<crate::ownwork::OwnWork>,
+    /// Each piece of its own work, or absent — see [`Chat::own_pieces`]. A piece that does not
+    /// read whole, or is not of its shape, is left out, and so is any past
+    /// [`crate::ownwork::pieces::MOST_PIECES`].
+    #[serde(
+        default,
+        skip_serializing_if = "Vec::is_empty",
+        deserialize_with = "sound_pieces"
+    )]
+    own_pieces: Vec<crate::ownwork::pieces::Piece>,
+    /// Whether a turn was under way — see [`Chat::mid_turn`].
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    mid_turn: bool,
+}
+
+/// The pieces of own work a record holds, each that reads whole and is of its shape, the latest
+/// [`crate::ownwork::pieces::MOST_PIECES`] of them: a record a chat's line wrote into is read
+/// leniently, as its other keys are.
+fn sound_pieces<'de, D>(de: D) -> Result<Vec<crate::ownwork::pieces::Piece>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let read: Vec<serde_json::Value> =
+        lenient::<_, Vec<serde_json::Value>>(de)?.unwrap_or_default();
+    let mut kept = Vec::new();
+    for one in read {
+        if let Some(piece) = serde_json::from_value::<crate::ownwork::pieces::Piece>(one)
+            .ok()
+            .and_then(crate::ownwork::pieces::Piece::sound)
+        {
+            crate::ownwork::pieces::started(&mut kept, piece);
+        }
+    }
+    Ok(kept)
 }
 
 fn is_zero(n: &u32) -> bool {
@@ -2039,6 +2083,8 @@ impl From<&Record> for OnDisk {
                     routing: chat.routing.clone(),
                     studio: chat.studio.as_ref().map(studio::StudioOnDisk::of),
                     own_work: chat.own_work.and_then(crate::ownwork::OwnWork::in_flight),
+                    own_pieces: chat.own_pieces.clone(),
+                    mid_turn: chat.mid_turn,
                 })
                 .collect(),
             dealt: highest_dealt(record),
@@ -2138,6 +2184,8 @@ impl From<ChatOnDisk> for Chat {
             unrecorded: false,
             studio: chat.studio.and_then(studio::StudioOnDisk::sound),
             own_work: chat.own_work.and_then(crate::ownwork::OwnWork::in_flight),
+            own_pieces: chat.own_pieces,
+            mid_turn: chat.mid_turn,
         }
     }
 }

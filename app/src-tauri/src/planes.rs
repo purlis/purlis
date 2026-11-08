@@ -3548,6 +3548,9 @@ impl Planes {
                     if let purlis_core::hookwire::Output::Final { text } = &output.turn_output {
                         held.hooks.skill_runs().said(output.chat, text.clone());
                     }
+                    // Each piece of its own work, as its tool starts it and as its turn's end
+                    // says it, kept in the record as it changes (#5750).
+                    held.chats().heard_own_output(&output);
                     crate::dispatched::said(&held, output);
                 }
             })

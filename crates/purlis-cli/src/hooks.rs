@@ -141,6 +141,9 @@ pub fn handler(name: &str) -> Option<Handler> {
         "posttooluse-skill" => toolhooks::posttooluse_skill,
         "userpromptexpansion" => says_nothing,
         "posttooluse-dispatch" => toolhooks::posttooluse_dispatch,
+        // What the call started is told the app beside its line (#5750); the harness is told
+        // nothing.
+        OWN_WORK => says_nothing,
         // What these hooks find goes to the app ([`blocks`]); the chat is told of what the app
         // took once it has ([`told_after`]), never from here.
         BLOCKED | BLOCKED_ON_FAILURE => says_nothing,
@@ -166,6 +169,9 @@ fn says_nothing(_: &Hook) -> Answer {
 /// output read back by another tool (#1683), which `sandboxblock` reads only of such a file.
 pub const BLOCKED: &str = "posttooluse-blocked";
 pub const BLOCKED_ON_FAILURE: &str = "posttoolusefailure-blocked";
+
+/// The hook word that hears a tool that only starts own work come back (#5750).
+pub const OWN_WORK: &str = "posttooluse-ownwork";
 
 /// What a block word found in a call's result, as the chat is told of it.
 #[derive(Debug, Default)]
