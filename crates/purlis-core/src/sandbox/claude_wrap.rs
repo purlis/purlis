@@ -475,7 +475,6 @@ pub fn keep_mcp_servers(state: &Path, servers: Option<&serde_json::Value>) {
     }
     if let Some(projects) = doc
         .get_mut("projects")
-        .filter(|_| servers.is_some() && servers.is_none()) // RED
         .and_then(serde_json::Value::as_object_mut)
     {
         for project in projects.values_mut() {
