@@ -104,11 +104,17 @@ impl AtLaunch {
     /// gets the two in one line. Every other chat is told nothing.
     pub fn told(&self, chat: &Chat) -> Option<String> {
         let id = chat.identity.id.as_ref()?;
-        let ended = if chat.resume.is_some() && !self.kept.contains(id) {
+        let conversation = chat.resume.as_ref().map(ToString::to_string);
+        let last = |piece: &crate::ownwork::pieces::Piece| {
+            crate::ownwork::last::of(piece, conversation.as_deref().unwrap_or_default())
+        };
+        let ended = if conversation.is_some() && !self.kept.contains(id) {
             crate::wakeline::Ended {
                 own_work: chat.own_work.as_ref(),
                 pieces: &chat.own_pieces,
                 mid_turn: chat.mid_turn,
+                now: chrono::Utc::now().timestamp(),
+                last: &last,
             }
         } else {
             crate::wakeline::Ended::default()

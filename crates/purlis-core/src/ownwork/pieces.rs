@@ -58,7 +58,7 @@ pub struct Piece {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub what: String,
     /// Where the harness writes its output, as the harness named it: read only at a reopen, and
-    /// only where it is that chat's own.
+    /// only where it is that chat's own ([`super::last`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output: Option<String>,
     /// A cron's five-field schedule.
@@ -126,10 +126,10 @@ pub fn an_id(id: &str) -> bool {
 /// bytes.
 pub fn cut(text: &str, most: usize) -> String {
     let line: String = text
-        .trim()
         .chars()
         .map(|ch| if ch.is_control() { ' ' } else { ch })
         .collect();
+    let line = line.trim();
     let mut end = line.len().min(most);
     while !line.is_char_boundary(end) {
         end -= 1;

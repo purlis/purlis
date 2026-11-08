@@ -29,6 +29,7 @@
 
 use chrono::Duration;
 
+pub mod last;
 pub mod pieces;
 
 /// **How long a background shell, or the wait for a recurring wake-up's next run, holds a

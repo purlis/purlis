@@ -1066,7 +1066,6 @@ fn a_chat_waiting_on_its_own_shell_is_told_after_a_restart_that_the_shell_was_cu
 /// purlis was down: the harness that would have fired it is gone, so the chat brought back must
 /// be told the wake-up was missed.
 #[test]
-#[ignore = "a missed wake-up in the wake line is #5751's: the tracer (#5747) names work in flight only"]
 fn a_chat_whose_own_wake_up_came_due_while_purlis_was_down_is_told_after_the_restart() {
     let plane = a_plane_with_personas();
     let host = Pretend::default();
@@ -1170,5 +1169,57 @@ fn a_chat_killed_mid_turn_after_starting_a_shell_is_told_both_after_the_restart(
     assert!(
         said.iter().any(|line| line.contains("mid-way")),
         "chat {steward} was not told its turn was cut mid-way: {said:#?}"
+    );
+}
+
+/// #5751: the steward chat's background shell had printed two lines when purlis quit. The chat
+/// brought back is told those lines, quoted as data, and where the whole of its output is.
+#[test]
+fn a_chat_is_told_what_its_shell_last_printed_and_where_the_rest_is_after_a_restart() {
+    let plane = a_plane_with_personas();
+    let host = Pretend::default();
+    let (planes, id, steward) = a_steward_chat(&host, &plane);
+    let held = planes.held(&id).expect("held");
+    let conversation = held
+        .board()
+        .conversation(steward)
+        .expect("precondition: the chat is under a conversation");
+    let tmp = tempfile::tempdir().expect("a folder");
+    let tasks = tmp.path().join("-proj").join(&conversation).join("tasks");
+    std::fs::create_dir_all(&tasks).expect("made");
+    let output = tasks.join("b5ul9gyit.output");
+    std::fs::write(
+        &output,
+        "Compiling purlis-core\ntest result: ok. 46 passed\n",
+    )
+    .expect("written");
+    its_tool_starts(
+        &held,
+        steward,
+        purlis_core::ownwork::pieces::Piece {
+            output: Some(output.to_str().expect("utf-8").to_owned()),
+            ..purlis_core::ownwork::pieces::Piece::new(
+                purlis_core::ownwork::pieces::Kind::Shell,
+                "b5ul9gyit",
+                "cargo test",
+            )
+            .expect("a piece")
+        },
+    );
+    let at_quit = quits(&held);
+
+    let (relaunched, _planes, _again, _held, _opened) =
+        launches_again(&plane, (host, planes, held), &at_quit);
+
+    let (told, said) = told_of_its_lost_work(&relaunched, steward, "test result: ok. 46 passed");
+    assert!(
+        told,
+        "within {TOLD_WITHIN:?} of the relaunch, chat {steward} was never told what its shell \
+         last printed; it was given only {said:#?}"
+    );
+    assert!(
+        said.iter()
+            .any(|line| line.contains(output.to_str().expect("utf-8"))),
+        "chat {steward} was not told where the rest of the output is: {said:#?}"
     );
 }
