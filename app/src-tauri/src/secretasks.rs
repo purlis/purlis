@@ -360,10 +360,10 @@ pub fn run_grant_given(
         let read_through = |vault: &str| {
             purlis_core::secrets::brokered::read_through_by(&ctx, &open.bound.vault, vault)
         };
-        if let Some(why) = links
-            .iter()
-            .find_map(|link| picked_refused(&handed, &may_use, &read_through, &open, link))
-        {
+        let its_own_vault = allows_its_own_vault(held.root(), &open);
+        if let Some(why) = links.iter().find_map(|link| {
+            picked_refused(&handed, &may_use, &read_through, its_own_vault, &open, link)
+        }) {
             return Err(why);
         }
     }
@@ -559,6 +559,7 @@ fn picked_refused(
     handed: &purlis_core::secrets::brokered::NoProgram,
     may_use: &dyn Fn(&str) -> bool,
     read_through: &dyn Fn(&str) -> Option<String>,
+    its_own_vault: bool,
     open: &purlis_core::secrets::ask::run::OpenRun,
     link: &RunLink,
 ) -> Option<String> {
@@ -581,7 +582,7 @@ fn picked_refused(
     }
     // The broker's own rule, which fails closed: no persona, an unreadable registry or a vault
     // it can't read are none the persona may use.
-    let its_own = link.vault == open.bound.vault && allows_its_own_vault(open);
+    let its_own = link.vault == open.bound.vault && its_own_vault;
     if !its_own && !may_use(&link.vault) {
         return Some(format!(
             "{} can't use vault {}, so its entries can't fill this notice. Pick another \
@@ -593,14 +594,19 @@ fn picked_refused(
 }
 
 /// **Whether `open`'s notice may take an entry of its own vault where the persona may not use
-/// it** (#5744's review): only where its Allow is the vault's own and not locked, which gives the
-/// persona the vault before the run reads it, and its other answer, Keep blocked, stores nothing
-/// there (D-5242-3).
-fn allows_its_own_vault(open: &purlis_core::secrets::ask::run::OpenRun) -> bool {
+/// it** (#5744's review): only where it offers the vault's own Allow, which gives the persona the
+/// vault before the run reads it, and its other answer, Keep blocked, stores nothing there
+/// (D-5242-3). That Allow is the window's while policy lets the person give a vault and the chat
+/// runs as a persona; `no_allow` locks the program's Allow, not the vault's.
+fn allows_its_own_vault(
+    root: &std::path::Path,
+    open: &purlis_core::secrets::ask::run::OpenRun,
+) -> bool {
     matches!(
         open.offer,
-        purlis_core::secrets::ask::run::Offer::Vault { no_allow: None }
-    )
+        purlis_core::secrets::ask::run::Offer::Vault { .. }
+    ) && !open.persona.is_empty()
+        && !purlis_core::sandbox::policy::Locks::of(root).forbids_vault_grants()
 }
 
 /// **Writes the line Always allow showed to the persona's tools** (#5245).
@@ -711,6 +717,7 @@ pub fn run_entries_for(held: &crate::planes::Held, id: u32) -> Result<Vec<Entrie
         purlis_core::secrets::brokered::read_through_by(&ctx, &open.bound.vault, vault)
     };
     let listed = |_: &str| -> Option<String> { None };
+    let its_own_vault = allows_its_own_vault(held.root(), &open);
     Ok(links::pickable(&ctx, None)
         .map_err(|e| e.message.to_string())?
         .into_iter()
@@ -718,7 +725,7 @@ pub fn run_entries_for(held: &crate::planes::Held, id: u32) -> Result<Vec<Entrie
         // vault's own Allow, and one every persona of the run's vault may use: what a pick is
         // held to.
         .filter(|one| {
-            (may_use(&one.vault) || (one.vault == open.bound.vault && allows_its_own_vault(&open)))
+            (may_use(&one.vault) || (one.vault == open.bound.vault && its_own_vault))
                 && read_through(&one.vault).is_none()
         })
         .map(|one| match one.keys {
@@ -727,8 +734,15 @@ pub fn run_entries_for(held: &crate::planes::Held, id: u32) -> Result<Vec<Entrie
                     .into_iter()
                     .filter(|key| !fields(&one.vault, key))
                     .filter(|key| {
-                        picked_refused(&handed, &may_use, &listed, &open, &link(&one.vault, key))
-                            .is_none()
+                        picked_refused(
+                            &handed,
+                            &may_use,
+                            &listed,
+                            its_own_vault,
+                            &open,
+                            &link(&one.vault, key),
+                        )
+                        .is_none()
                     })
                     .collect(),
                 vault: one.vault,

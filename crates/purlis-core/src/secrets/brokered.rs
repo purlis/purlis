@@ -1454,7 +1454,8 @@ pub fn vaults_of(ctx: &Ctx, persona: &str) -> Result<Vec<String>, String> {
 }
 
 /// **The personas that may use `vault`** (#5745), by name and sorted: the one the registry tags
-/// it for, and each you let use it on this machine, which is whom [`authorise`] opens it for.
+/// it for, and each you let use it on this machine, which is whom [`authorise`] opens it for, and
+/// each let use it while policy's lock holds the grant dormant, since lifting it opens the vault.
 /// None for a vault the registry does not hold. An error where the registry, or the vault's own
 /// entry in it, does not read, so "which is not known" is never said as "none".
 pub fn personas_of(ctx: &Ctx, vault: &str) -> Result<Vec<String>, String> {
@@ -1464,11 +1465,10 @@ pub fn personas_of(ctx: &Ctx, vault: &str) -> Result<Vec<String>, String> {
     }
     let registered = registry::vault_in(&doc, vault).map_err(|e| e.message.to_string())?;
     let mut out: Vec<String> = registered.persona.into_iter().collect();
-    if !crate::sandbox::policy::Locks::of(&ctx.root).forbids_vault_grants() {
-        for one in crate::sandbox::local::granted_vaults(&ctx.root) {
-            if one.vault == vault {
-                out.push(one.persona);
-            }
+    // A grant policy's lock holds dormant counts too: lifting the lock lets it read again.
+    for one in crate::sandbox::local::granted_vaults(&ctx.root) {
+        if one.vault == vault {
+            out.push(one.persona);
         }
     }
     out.retain(|one| !one.is_empty());
@@ -1490,7 +1490,7 @@ pub fn read_through_by(ctx: &Ctx, vault: &str, to: &str) -> Option<String> {
         Err(why) => {
             return Some(format!(
                 "purlis could not read which personas may use vault {vault}, so nothing is \
-                 linked there ({why}). Check the vault with `purlis vault verify`, or type a \
+                 linked there ({why}). Check it with `purlis vault verify {vault}`, or type a \
                  value."
             ));
         }

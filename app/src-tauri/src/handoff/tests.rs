@@ -13220,6 +13220,18 @@ fn a_runs_field_picked_from_its_own_refused_vault_is_not_offered_or_runs() {
 /// pick of one is linked on that Allow: the gate then opens the vault for the persona.
 #[test]
 fn a_refused_vaults_own_allow_still_takes_an_entry_of_that_vault() {
+    own_allow_takes_an_entry_of_its_vault(None);
+}
+
+/// As [`a_refused_vaults_own_allow_still_takes_an_entry_of_that_vault`], where policy locks the
+/// program's Allow (`no_allow`): the vault's own Allow is still offered, and gives the vault.
+#[test]
+fn a_refused_vaults_own_allow_takes_an_entry_of_that_vault_where_the_programs_allow_is_locked() {
+    own_allow_takes_an_entry_of_its_vault(Some("policy locks run grants for curl".to_owned()));
+}
+
+/// A run on `finance`, which `ops` may not use, whose notice offers the vault's own Allow.
+fn own_allow_takes_an_entry_of_its_vault(no_allow: Option<String>) {
     let plane = Plane::new().a_persona("ops", "");
     let host = Pretend::default();
     let planes = planes_on(&host);
@@ -13238,7 +13250,7 @@ fn a_refused_vaults_own_allow_still_takes_an_entry_of_that_vault() {
     let mut need = curl_lacking_token(&plane);
     need.bound.vault = "finance".to_owned();
     need.not_its_vault = true;
-    need.offer = purlis_core::secrets::ask::run::Offer::Vault { no_allow: None };
+    need.offer = purlis_core::secrets::ask::run::Offer::Vault { no_allow };
 
     held_while(&held, need, |open| {
         let listed = crate::secretasks::run_entries_for(&held, open.id).expect("listed");
@@ -13330,24 +13342,9 @@ fn a_runs_field_is_not_linked_to_an_entry_another_persona_of_its_vault_may_not_u
     );
 }
 
-/// **D-5246-1** (the person's ruling, amending D-5080-11): a plain Secret ask's picker lists what
-/// a run's does, only vaults its persona may use and no entry a browser login fills, since the link
-/// it makes is read by every later run of that key, whose notice names only the persona's vault.
-#[test]
-fn a_secret_asks_picker_lists_only_entries_its_persona_may_hand_on() {
-    let plane = Plane::new().a_persona("ops", "");
-    let host = Pretend::default();
-    let planes = planes_on(&host);
-    let id = planes.open(&plane.root);
-    let held = planes.held(&id).expect("held");
-    team_and_a_kept_entry(&plane);
-    let manifest = plane.root.join(purlis_core::plane::MANIFEST);
-    let mut file = std::fs::read_to_string(&manifest).unwrap_or_default();
-    file.push_str(
-        "\n[sandbox.personas.qa.tools.shop]\nvault = \"keep\"\nbrowser = \
-         \"https://shop.example.test/login\"\nkey = \"SHOP_PW\"\n",
-    );
-    std::fs::write(&manifest, &file).expect("a teammate's login line");
+/// What a Secret ask's picker lists for chat 3, as `ops`, asking for `DEPLOY_TOKEN` in `team`,
+/// declined once listed.
+fn secret_ask_listed(held: &Held, plane: &Plane) -> Vec<crate::secretasks::EntriesOf> {
     let ctx =
         purlis_core::secrets::Ctx::new(&plane.root, purlis_core::secrets::Env::from_process());
     let line = purlis_core::secrets::ask::SecretAsk {
@@ -13365,7 +13362,7 @@ fn a_secret_asks_picker_lists_only_entries_its_persona_may_hand_on() {
         asker: None,
     };
 
-    let listed = std::thread::scope(|scope| {
+    std::thread::scope(|scope| {
         let asks = held.secret_asks();
         let asking = scope.spawn(|| {
             purlis_core::secrets::ask::raised_within(
@@ -13387,7 +13384,7 @@ fn a_secret_asks_picker_lists_only_entries_its_persona_may_hand_on() {
             );
             std::thread::yield_now();
         };
-        let listed = crate::secretasks::entries_for(&held, open.id).expect("listed");
+        let listed = crate::secretasks::entries_for(held, open.id).expect("listed");
         held.secret_asks()
             .answer(
                 &ctx,
@@ -13401,7 +13398,48 @@ fn a_secret_asks_picker_lists_only_entries_its_persona_may_hand_on() {
             .expect("Not now");
         asking.join().expect("it ends").expect("declined");
         listed
-    });
+    })
+}
+
+/// **#5745**: a Secret ask's picker offers no entry another persona of the asked vault may not
+/// use, as its press refuses one: where `billing` may use `team` too and not `keep`, none of
+/// `keep`'s entries is listed, though `ops` may use them.
+#[test]
+fn a_secret_asks_picker_lists_no_entry_another_persona_of_its_vault_may_not_use() {
+    let plane = Plane::new().a_persona("ops", "");
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    team_and_a_kept_entry(&plane);
+    purlis_core::sandbox::local::grant_vault(&plane.root, "team", "billing")
+        .expect("billing may use team here");
+    let listed = secret_ask_listed(&held, &plane);
+    assert!(
+        listed.iter().all(|one| one.vault != "keep"),
+        "keep is not offered: {listed:?}"
+    );
+}
+
+/// **D-5246-1** (the person's ruling, amending D-5080-11): a plain Secret ask's picker lists what
+/// a run's does, only vaults its persona may use and no entry a browser login fills, since the link
+/// it makes is read by every later run of that key, whose notice names only the persona's vault.
+#[test]
+fn a_secret_asks_picker_lists_only_entries_its_persona_may_hand_on() {
+    let plane = Plane::new().a_persona("ops", "");
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    team_and_a_kept_entry(&plane);
+    let manifest = plane.root.join(purlis_core::plane::MANIFEST);
+    let mut file = std::fs::read_to_string(&manifest).unwrap_or_default();
+    file.push_str(
+        "\n[sandbox.personas.qa.tools.shop]\nvault = \"keep\"\nbrowser = \
+         \"https://shop.example.test/login\"\nkey = \"SHOP_PW\"\n",
+    );
+    std::fs::write(&manifest, &file).expect("a teammate's login line");
+    let listed = secret_ask_listed(&held, &plane);
 
     let names: Vec<_> = listed
         .iter()
