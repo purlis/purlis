@@ -1910,7 +1910,7 @@ pub async fn pool_sign_in_start(
         if terminal.is_none() {
             driven::follows(&record.harness, provider.as_deref(), true)?;
         }
-        let started = started_on(&yours, &config, &pool, &name, provider.as_deref(), typed)?;
+        let login = started_on(&yours, &config, &pool, &name, provider.as_deref(), typed)?;
         let carry: callback::Carry = {
             let (config, pool, yours) = (config.clone(), pool.clone(), yours.clone());
             Arc::new(move |target: &str| {
@@ -1933,9 +1933,9 @@ pub async fn pool_sign_in_start(
             }
         };
         let driving = Arc::new(match terminal {
-            Some(_) => driven::in_a_terminal_started(started, longest, check),
+            Some(_) => driven::in_a_terminal_started(login, longest, check),
             None => driven::drive_started(
-                started,
+                login,
                 &record.harness,
                 provider.as_deref(),
                 Some(carry),

@@ -1075,7 +1075,7 @@ fn serve(suspends_after: Option<std::time::Duration>) -> ExitCode {
                     .to_owned()
             })?;
             let kept = purlis_core::profilestore::onrunner::kept_for(&homes, &desktop.device)?;
-            if !kept.iter().any(|name| *name == start.profile) {
+            if !kept.contains(&start.profile) {
                 return Err(format!(
                     "this runner keeps no profile named '{}' for your desktop, so nothing was \
                      signed in",
