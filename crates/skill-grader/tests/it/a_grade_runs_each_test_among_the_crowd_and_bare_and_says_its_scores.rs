@@ -11,7 +11,10 @@ use skill_grader::{Graded, grade};
 #[test]
 fn a_skill_that_starts_where_it_should_meets_its_bar_and_the_summary_says_so() {
     let fixture = fixture(true, true);
-    let Graded::Done { passed, summary } = grade(&fixture.ask(Some("sk-test"))) else {
+    let Graded::Done {
+        passed, summary, ..
+    } = grade(&fixture.ask(Some("sk-test")))
+    else {
         panic!("it graded nothing");
     };
     assert!(passed, "{summary}");
@@ -38,7 +41,10 @@ fn a_skill_that_starts_where_it_should_meets_its_bar_and_the_summary_says_so() {
 #[test]
 fn a_skill_the_crowd_hides_is_below_its_bar_and_the_bare_score_shows_it_is_crowding() {
     let fixture = fixture(false, true);
-    let Graded::Done { passed, summary } = grade(&fixture.ask(Some("sk-test"))) else {
+    let Graded::Done {
+        passed, summary, ..
+    } = grade(&fixture.ask(Some("sk-test")))
+    else {
         panic!("it graded nothing");
     };
     assert!(!passed, "{summary}");

@@ -10,6 +10,12 @@
 //! the build, and no command prints it. Those jobs restore no cache. Without its key (not
 //! provisioned, or a fork's pull request) a job says so in the run's summary and runs nothing
 //! else, green. It starts on a pull request only for the paths that can move a grade.
+//!
+//! Each night on main (#5729) it grades every built-in on the latest version of each harness
+//! and keeps each harness's scorecard. One job of its own, holding no key, reads them and
+//! opens, rewrites or closes one `skill-triggers` issue per skill and harness, and on a night
+//! that is green everywhere proposes those versions as the pins on one branch, so one pull
+//! request carries them however many nights stay green. Only that job may write to the repo.
 
 use crate::workflow;
 
@@ -23,6 +29,9 @@ const GRADES: [(&str, &str, &str); 3] = [
     ("grade-codex", "codex", "OPENAI_API_KEY"),
     ("grade-opencode", "opencode", "ANTHROPIC_API_KEY"),
 ];
+
+/// The job that carries the nightly's decisions out.
+const NIGHTLY: &str = "nightly";
 
 fn secret(name: &str) -> String {
     format!("${{{{ secrets.{name} }}}}")
@@ -77,7 +86,7 @@ fn the_only_secret_each_grading_job_names_is_its_own_key_in_its_own_environment(
         GRADES.map(|(name, _, _)| name),
         "the jobs holding a key"
     );
-    for job in jobs.iter() {
+    for job in jobs.iter().filter(|job| job.name != NIGHTLY) {
         assert_eq!(
             job.permissions(),
             Some(vec![("contents".to_owned(), "read".to_owned())]),
@@ -250,4 +259,139 @@ fn a_pull_request_starts_it_only_for_paths_that_can_move_a_grade() {
         );
     }
     assert!(!on.contains("\"**\""), "every path starts it");
+}
+
+fn said_by(job: &workflow::Job) -> String {
+    job.steps()
+        .iter()
+        .flat_map(|step| run_lines(step))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[test]
+fn each_night_every_harness_is_graded_on_its_latest_version_and_keeps_its_scorecard() {
+    let (text, jobs) = workflow();
+    let on = &text[text.find("\non:\n").expect("an `on:`")..text.find("\npermissions:").unwrap()];
+    assert!(
+        on.contains("\n  schedule:\n    - cron: "),
+        "no nightly: {on}"
+    );
+    let select = said_by(job_named(&jobs, "select", FILE));
+    assert!(
+        select.contains("if [ \"$EVENT\" = pull_request ]"),
+        "only a pull request grades less than every built-in: {select}"
+    );
+    for (name, harness, _) in GRADES {
+        let grade = job_named(&jobs, name, FILE);
+        let install = grade
+            .steps()
+            .into_iter()
+            .find(|step| run_lines(step).join(" ").contains("npm install --global"))
+            .unwrap_or_else(|| panic!("{name} installs no harness"));
+        assert_eq!(
+            step_value(&install, "env", "EVENT"),
+            Some("${{ github.event_name }}")
+        );
+        let said = run_lines(&install).join("\n");
+        assert!(
+            said.contains("if [ \"$EVENT\" = schedule ]; then version=latest; else"),
+            "{name}: the nightly does not install the latest: {said}"
+        );
+        let said = said_by(grade);
+        assert!(
+            said.contains(&format!(
+                "--scorecard \"$RUNNER_TEMP/scorecard/{harness}.json\""
+            )),
+            "{name} writes no scorecard: {said}"
+        );
+        let kept = grade
+            .steps()
+            .into_iter()
+            .find(|step| {
+                step_value(step, "with", "name")
+                    == Some(format!("skill-grades-scorecard-{harness}").as_str())
+            })
+            .unwrap_or_else(|| panic!("{name} keeps no scorecard"));
+        assert!(
+            kept.iter()
+                .any(|l| l.trim() == "if: always() && steps.provisioned.outputs.ready == 'true'"),
+            "{name}: a red grade keeps its scorecard too"
+        );
+    }
+}
+
+#[test]
+fn the_nightly_job_files_one_issue_per_skill_and_harness_and_one_pin_bump_and_holds_no_key() {
+    let (_, jobs) = workflow();
+    let nightly = job_named(&jobs, NIGHTLY, FILE);
+    assert_eq!(
+        nightly.needs(),
+        GRADES.map(|(name, _, _)| name.to_owned()),
+        "it reads every harness's grade"
+    );
+    assert_eq!(
+        nightly.condition(),
+        Some("always() && github.event_name == 'schedule' && github.ref == 'refs/heads/main'"),
+        "it runs every night, red or green, and never on a pull request"
+    );
+    assert_eq!(nightly.environment(), None);
+    assert!(!nightly.reads_a_secret(), "it holds no key");
+    assert_eq!(
+        nightly.permissions(),
+        Some(vec![
+            ("contents".to_owned(), "write".to_owned()),
+            ("issues".to_owned(), "write".to_owned()),
+            ("pull-requests".to_owned(), "write".to_owned()),
+        ])
+    );
+    for step in nightly.steps() {
+        let action = step_uses(&step).unwrap_or_default();
+        assert!(
+            ![
+                "Swatinem/rust-cache@",
+                "actions/cache",
+                "actions/setup-node@"
+            ]
+            .iter()
+            .any(|a| action.starts_with(a)),
+            "the job that writes to the repo restores no cache: {action}"
+        );
+        if action.starts_with("actions/checkout@") {
+            assert_eq!(
+                step_value(&step, "with", "persist-credentials"),
+                Some("false")
+            );
+        }
+        if action.starts_with("actions/download-artifact@") {
+            assert_eq!(
+                step_value(&step, "with", "pattern"),
+                Some("skill-grades-scorecard-*")
+            );
+        }
+    }
+    let said = said_by(nightly);
+    for words in [
+        // The decisions are the grader's, which has tests; the job only carries them out.
+        "skill-grader nightly",
+        // Every open issue of the label, every page of them.
+        "gh api --paginate \"repos/$GH_REPO/issues?state=open&labels=skill-triggers&per_page=100\"",
+        "gh issue create --title \"$title\" --label skill-triggers --body-file \"$file\"",
+        "gh issue edit \"$number\" --body-file \"$file\"",
+        "gh issue close \"$number\"",
+        // One branch, so one pull request, however many nights stay green.
+        "BRANCH=skill-grades/pins",
+        "push --force origin \"HEAD:refs/heads/$BRANCH\"",
+        "gh pr list --head \"$BRANCH\"",
+        "gh pr edit \"$existing\"",
+        "gh pr create --head \"$BRANCH\"",
+    ] {
+        assert!(said.contains(words), "no {words:?} in:\n{said}");
+    }
+    for line in said.lines().filter(|l| l.contains("push")) {
+        assert!(
+            line.contains("http.https://github.com/.extraheader=AUTHORIZATION: basic $auth"),
+            "the token reaches git only for the push: {line}"
+        );
+    }
 }

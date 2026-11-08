@@ -5,9 +5,11 @@
 //! a harness headless on built-in skills' trigger tests, among the crowd fixture and bare, and
 //! puts the scores in the run's summary. What a run started, and how a skill scores against its
 //! trigger bar, is [`purlis_skills::grade::ci`]'s; this crate decides what to grade
-//! ([`select`]), starts the harness ([`launch`]) and says the result ([`summary`]).
+//! ([`select`]), starts the harness ([`launch`]), says the result ([`summary`]) and, each
+//! night, decides which issues to file and whether to propose new pins ([`nightly`]).
 
 pub mod launch;
+pub mod nightly;
 pub mod select;
 pub mod summary;
 
@@ -46,8 +48,13 @@ pub struct Ask<'a> {
 pub enum Graded {
     /// Nothing ran, and the line says why.
     Skipped(String),
-    /// Every run ran: `passed` when every skill met its bar, and the summary in Markdown.
-    Done { passed: bool, summary: String },
+    /// Every run ran: `passed` when every skill met its bar, the summary in Markdown, and the
+    /// scorecard the nightly ([`nightly`]) reads.
+    Done {
+        passed: bool,
+        summary: String,
+        card: Box<ci::Scorecard>,
+    },
 }
 
 /// **The `skill-grades` environment's secret a harness runs on** (spec #5714, decision Q10):
@@ -101,5 +108,6 @@ pub fn grade(ask: &Ask<'_>) -> Graded {
     Graded::Done {
         passed: summary::passed(&card),
         summary: summary::markdown(&card, ask.pinned),
+        card: Box::new(card),
     }
 }

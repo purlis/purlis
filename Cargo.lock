@@ -7554,6 +7554,7 @@ dependencies = [
  "clap",
  "purlis-core",
  "purlis-skills",
+ "serde",
  "serde_json",
  "stand-in",
  "tempfile",

@@ -21,7 +21,10 @@ fn words(fixture: &crate::fixture::Fixture) -> Vec<String> {
 #[test]
 fn codex_is_started_headless_with_the_session_flags_and_briefing_a_chat_in_the_window_gets() {
     let fixture = fixture_on(Harness::Codex, true, true);
-    let Graded::Done { passed, summary } = grade(&fixture.ask(Some("sk-openai"))) else {
+    let Graded::Done {
+        passed, summary, ..
+    } = grade(&fixture.ask(Some("sk-openai")))
+    else {
         panic!("it graded nothing");
     };
     assert!(passed, "{summary}");
@@ -67,7 +70,10 @@ fn codex_is_started_headless_with_the_session_flags_and_briefing_a_chat_in_the_w
 #[test]
 fn codex_scores_its_reads_of_a_briefed_skill_md_and_says_it_ran_on_codex() {
     let fixture = fixture_on(Harness::Codex, false, true);
-    let Graded::Done { passed, summary } = grade(&fixture.ask(Some("sk-openai"))) else {
+    let Graded::Done {
+        passed, summary, ..
+    } = grade(&fixture.ask(Some("sk-openai")))
+    else {
         panic!("it graded nothing");
     };
     assert!(!passed, "{summary}");
@@ -107,7 +113,10 @@ fn codex_s_crowd_is_its_own_skills_in_a_home_of_each_run_s_own() {
 #[test]
 fn opencode_is_started_headless_with_purlis_s_config_and_the_crowd_among_its_skill_paths() {
     let fixture = fixture_on(Harness::Opencode, false, true);
-    let Graded::Done { passed, summary } = grade(&fixture.ask(Some("sk-ant"))) else {
+    let Graded::Done {
+        passed, summary, ..
+    } = grade(&fixture.ask(Some("sk-ant")))
+    else {
         panic!("it graded nothing");
     };
     assert!(!passed, "{summary}");
