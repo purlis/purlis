@@ -1,0 +1,6 @@
+{"source": "Sentry developer docs: Envelopes (develop.sentry.dev/sdk/data-model/envelopes/), 'Authentication' and 'Envelope Endpoint'; the store answers 200 with the event's id",
+ "exchanges": [
+   {"path": "/api/4508/envelope/",
+    "headers": [["content-type", "application/x-sentry-envelope"]],
+    "status": 200}
+ ]}
