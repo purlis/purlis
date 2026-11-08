@@ -300,8 +300,11 @@ export function gather(
  * within {@link LIMITS}' bytes; what it writes and deletes must be within the rest of them.
  * Nothing in `app` read, written or deleted may be a link or be reached through one, `app`
  * included. Unless all of it holds, nothing is written or deleted.
+ *
+ * A `partial` take is of some of the baselines alone, the pictures a run drew again (#5791): it
+ * writes them as a whole take would, and deletes nothing.
  */
-export function take(drawn, app, within = LIMITS) {
+export function take(drawn, app, within = LIMITS, { partial = false } = {}) {
   const limits = { ...LIMITS, ...within };
   if (lstatSync(app).isSymbolicLink())
     throw new Error(`not a baseline, so nothing was taken: ${app} is a link`);
@@ -346,7 +349,7 @@ export function take(drawn, app, within = LIMITS) {
     taken.push({ path, bytes });
   }
   const drew = new Set(all);
-  const removed = baselinesIn(app).filter((path) => !drew.has(path));
+  const removed = partial ? [] : baselinesIn(app).filter((path) => !drew.has(path));
   if (taken.length + removed.length > limits.files)
     throw new Error(
       `not a baseline, so nothing was taken: more than ${limits.files} files written or deleted`,
