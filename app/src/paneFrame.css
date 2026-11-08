@@ -194,9 +194,10 @@
   max-block-size: none;
 }
 
-/* **Each tone's rule takes the base's whole selector** (#4875), so the file's order alone decides:
-   the base, then trouble, then what needs a decision, then a consent, which is a question
-   whatever its tone. A shorter selector here lost to the base's, and trouble drew as a warning. */
+/* **Each tone's rule is the base's own part with its tone added** (#4875): one step more specific
+   than the base, so every tone outranks it, and among the tones the file's order decides:
+   trouble, then what needs a decision, then a consent, which is a question whatever its tone.
+   Trouble's rule was once less specific than the base's, and drew as a warning. */
 .pane-top [data-scope="notice"][data-part="root"][data-placement="pane"][data-variant="trouble"] {
   background-color: var(--danger-wash);
 }

@@ -5,8 +5,8 @@
  * **A pane's warning box draws its own tone** (#4875): trouble on `danger.wash`, what needs a
  * decision on `attention.surface`, a consent on `wash.warning` whatever its tone, and any other
  * on `wash.warning`. The base rule once outranked trouble's by specificity (0,4,0 against
- * 0,3,0), so "MCP server figma did not start" drew as a warning. Each tone's rule now takes the
- * base's whole selector, and the file's order decides: base, trouble, attention, consent.
+ * 0,3,0), so "MCP server figma did not start" drew as a warning. Each tone's rule is now the base's
+ * part with its tone added, so it outranks the base, and the file's order decides among the tones.
  *
  * vitest applies no stylesheet, so the cascade is asked of the window's sheets
  * (`cascade.testkit.ts`). The mark, a `::before` the testkit cannot match, is held in the real
