@@ -90,8 +90,9 @@ fn a_chat_holds_at_most_eight_and_its_close_takes_them() {
         held.note(Some("builds"), None, a_task(4, "t", "b"), 100),
         Err(NotHeld::Full)
     );
+    // Another chat holds its own eight: on another pool, since a pool's chats share eight.
     assert!(
-        held.note(Some("builds"), None, a_task(5, "t", "b"), 100)
+        held.note(Some("tests"), None, a_task(5, "t", "b"), 100)
             .is_ok()
     );
     held.forget(4);

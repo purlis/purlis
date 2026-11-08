@@ -1038,7 +1038,7 @@ pub fn expire_in(
     let due = |record: &Record| {
         talk_is_due(record, now) && record.talk.iter().any(|said| !said.text.is_empty())
     };
-    if !records.iter().any(|record| due(record)) {
+    if !records.iter().any(&due) {
         return Vec::new();
     }
     // One lock for them all: a folder held past the wait keeps every record's words until the
