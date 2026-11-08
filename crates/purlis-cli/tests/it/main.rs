@@ -28,6 +28,7 @@
 mod support;
 
 mod a_brokered_run_is_held_on_linux;
+mod a_chats_ssh_reaches_a_listed_host_through_its_route;
 mod a_file_tool_names_its_path_to_the_app_and_nowhere_else;
 mod a_finder_launch_finds_the_harness;
 mod a_guard_decides_within_its_budget;

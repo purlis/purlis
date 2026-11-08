@@ -5134,11 +5134,15 @@ impl Confinement {
         let asks = serving.asks.clone();
         let proxy = egress::Proxy::serving(serving)?;
         let tmp = tempfile::Builder::new().prefix("charter-chat-").tempdir()?;
-        let ssh = tunnel::SshRoute::write(tmp.path(), proxy.socks_port())
-            .inspect_err(|err| {
-                tracing::warn!("purlis: a chat's ssh route was not written ({err})");
-            })
-            .ok();
+        let ssh = tunnel::SshRoute::write(
+            tmp.path(),
+            proxy.socks_port(),
+            tools::purlis_binary().as_deref(),
+        )
+        .inspect_err(|err| {
+            tracing::warn!("purlis: a chat's ssh route was not written ({err})");
+        })
+        .ok();
         Ok(Self {
             proxy: Proxied::Here(Box::new(proxy)),
             tmp: Some(Folder::Own(tmp)),
@@ -5179,7 +5183,11 @@ impl Confinement {
     /// logged.
     pub fn proxy_only_routed(serving: egress::Serving, within: &Path) -> std::io::Result<Self> {
         let mut confinement = Self::proxy_only(serving)?;
-        match tunnel::routed_in(within, confinement.socks_port()) {
+        match tunnel::routed_in(
+            within,
+            confinement.socks_port(),
+            tools::purlis_binary().as_deref(),
+        ) {
             Ok((dir, route)) => {
                 confinement.ssh = Some(route);
                 confinement.routed = Some(Folder::Own(dir));
@@ -7770,6 +7778,7 @@ pub mod reach;
 pub mod seatbelt;
 pub mod services;
 pub mod signin;
+pub mod sshproxy;
 pub mod team;
 pub mod tools;
 pub mod tunnel;
@@ -7797,6 +7806,8 @@ mod persona_tests;
 mod reach_tests;
 #[cfg(test)]
 mod signin_tests;
+#[cfg(all(test, unix))]
+mod sshproxy_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
