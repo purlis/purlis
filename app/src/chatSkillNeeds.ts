@@ -128,7 +128,8 @@ export function chatNeedsOf(said: ChatSkillsSaid, scope: StudioScope): ChatNeed[
     });
   const missing = said.missing;
   if (missing !== null) {
-    // A repo's own copy of a built-in skill is one the chat got, beside purlis's: not counted.
+    // A repo's own copy of a built-in skill is one the chat got, beside purlis's, and so is each
+    // of two differing copies of a skill (#5737): not counted.
     const count =
       missing.missing.length +
       missing.no_built_in.length +
@@ -136,7 +137,8 @@ export function chatNeedsOf(said: ChatSkillsSaid, scope: StudioScope): ChatNeed[
       missing.by_a_repo.length;
     // Only its listing past Claude Code's own limit (#5736): fixed where its program's own skills
     // and plugins are turned off.
-    const crowdedAlone = count === 0 && missing.beside_a_built_in.length === 0;
+    const crowdedAlone =
+      count === 0 && missing.beside_a_built_in.length === 0 && missing.differing.length === 0;
     needs.push({
       id: "missing",
       title:
@@ -144,7 +146,9 @@ export function chatNeedsOf(said: ChatSkillsSaid, scope: StudioScope): ChatNeed[
           ? `Started without ${counted(count, "skill", "skills")}`
           : crowdedAlone
             ? "Claude Code drops descriptions"
-            : "A repo copies a built-in skill",
+            : missing.beside_a_built_in.length > 0
+              ? "A repo copies a built-in skill"
+              : "Two copies of a skill differ",
       says: missingSays("This chat", missing),
       fix:
         crowdedAlone && missing.crowded !== null

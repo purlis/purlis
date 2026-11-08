@@ -19,6 +19,7 @@ const MISSING = {
   broken: [],
   by_a_repo: [],
   beside_a_built_in: [],
+  differing: [],
   crowded: null,
 };
 
@@ -88,6 +89,7 @@ describe("a chat's missing skills", () => {
         ],
         by_a_repo: [],
         beside_a_built_in: [],
+        differing: [],
         crowded: null,
       }),
     ).toBe(
@@ -119,6 +121,7 @@ describe("a chat's missing skills", () => {
           },
         ],
         beside_a_built_in: [],
+        differing: [],
         crowded: null,
       }),
     ).toBe(
@@ -138,6 +141,7 @@ describe("a chat's missing skills", () => {
         broken: [],
         by_a_repo: [],
         beside_a_built_in: names,
+        differing: [],
         crowded: null,
       });
     expect(said(["secrets"])).toBe(
@@ -149,6 +153,26 @@ describe("a chat's missing skills", () => {
         "purlis's and may use instead: secrets, browser.",
     );
   });
+
+  it("names each pair of same-named copies whose content differs, picking neither (#5737)", () => {
+    const said = (pairs: string[]) =>
+      missingSays("This chat", {
+        persona: null,
+        missing: [],
+        no_built_in: [],
+        broken: [],
+        by_a_repo: [],
+        beside_a_built_in: [],
+        differing: pairs,
+        crowded: null,
+      });
+    expect(said(["review (the project copy and your own)"])).toBe(
+      "This chat gets two copies of 1 skill whose content differs, and purlis does not pick one " +
+        "for it: review (the project copy and your own).",
+    );
+    expect(said([])).toBe("");
+  });
+
   it("names who takes the most room where Claude Code would drop descriptions (#5736)", () => {
     expect(
       missingSays("This chat", {

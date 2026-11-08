@@ -64,6 +64,7 @@ describe("a chat's needs as a whole", () => {
           broken: [{ name: "half", level: "project", local: false, label: "project", why: "x" }],
           by_a_repo: [],
           beside_a_built_in: [],
+          differing: [],
           crowded: null,
         },
         changed: CHANGED,
@@ -147,6 +148,7 @@ describe("a chat's needs as a whole", () => {
           broken: [],
           by_a_repo: [],
           beside_a_built_in: [],
+          differing: [],
           crowded: null,
         },
       },
@@ -196,6 +198,7 @@ describe("a chat's needs as a whole", () => {
           broken: [],
           by_a_repo: [],
           beside_a_built_in: [],
+          differing: [],
           crowded: {
             needs: 120000,
             most: 100000,
@@ -221,11 +224,32 @@ describe("a chat's needs as a whole", () => {
           broken: [],
           by_a_repo: [],
           beside_a_built_in: ["secrets", "browser"],
+          differing: [],
           crowded: null,
         },
       },
       AT_THE_ROOT,
     );
     expect(need.title).toBe("A repo copies a built-in skill");
+  });
+
+  it("count no pair of differing copies as a skill the chat started without (#5737)", () => {
+    const [need] = chatNeedsOf(
+      {
+        ...NOTHING,
+        missing: {
+          persona: null,
+          missing: [],
+          no_built_in: [],
+          broken: [],
+          by_a_repo: [],
+          beside_a_built_in: [],
+          differing: ["review (the project copy and your own)"],
+          crowded: null,
+        },
+      },
+      AT_THE_ROOT,
+    );
+    expect(need.title).toBe("Two copies of a skill differ");
   });
 });

@@ -618,6 +618,10 @@ pub struct SkillsMissing {
     /// The repo's own skills named like one of purlis's built-in skills, which the chat's
     /// program loads beside purlis's (SK-37).
     pub beside_a_built_in: Vec<String>,
+    /// Each pair of same-named copies whose content differs, both of which the chat's program
+    /// loads, in the core's words (`purlis_core::skills::pair_said`, #5737): purlis never picks
+    /// a winner, so the tab names the pair.
+    pub differing: Vec<String>,
     /// **Where Claude Code would still drop skills' descriptions** (#5736): the limit the chat's
     /// listing needs is past Claude Code's own, with who takes the most room.
     pub crowded: Option<ListingCrowded>,
@@ -4967,6 +4971,7 @@ impl Chats {
                     broken: not.broken.into_iter().map(SkillBroken::from).collect(),
                     by_a_repo: not.by_a_repo.into_iter().map(SkillBroken::from).collect(),
                     beside_a_built_in: not.beside_a_built_in,
+                    differing: not.differing,
                     crowded,
                 }
             })

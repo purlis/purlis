@@ -41,6 +41,7 @@ mod beside;
 pub mod budget;
 pub mod change;
 pub mod compat;
+mod copies;
 mod declared;
 pub mod fence;
 pub mod grade;
@@ -66,6 +67,7 @@ pub use compat::{Compat, Field, Fit, Honours, ManualOnly, compat, handed_text, w
 pub use declared::{Argument, Declared, Given, declared};
 pub use grant::{Grant, grant_file, grant_of, set_grant};
 pub use handed::{Frontmatter, MOST_BYTES, Refusal, read_skill_md, read_skill_md_of};
+use held::Follow;
 pub use lifecycle::{About, Deprecated, Lifecycle, about_of, set_lifecycle, set_owners};
 pub use lint::{
     BuiltInLints, Finding, Lint, MOST_LINT_BYTES, MOST_LIST_BYTES, ReadBudget, Severity,
@@ -363,6 +365,13 @@ pub enum Reason {
         /// The clone's name.
         repo: String,
     },
+    /// A plane skill identical to a copy from outside the plane that the chat's harness loads
+    /// anyway (#5737, [`SkillSet::with_copies_of`]): left out so the name takes one slot of the
+    /// listing, named by whose copy loads in its place.
+    SameAs {
+        /// Whose the copy that loads is.
+        owner: Owner,
+    },
     /// A plane skill its project archived (SK-19, decision 62): it never loads, takes no name
     /// from another copy, and is restored by making it active again.
     Archived,
@@ -478,6 +487,17 @@ impl std::fmt::Display for Reason {
             Self::HiddenByRepo { repo } => {
                 write!(f, "hidden by the skill of this name in the repo {repo}")
             }
+            Self::SameAs { owner } => match owner {
+                Owner::You => f.write_str("identical to your own copy, which loads in its place"),
+                Owner::Plugin(plugin) => write!(
+                    f,
+                    "identical to the copy of the plugin {plugin}, which loads in its place"
+                ),
+                Owner::Repo(repo) => write!(
+                    f,
+                    "identical to the copy in the repo {repo}, which loads in its place"
+                ),
+            },
             Self::Archived => {
                 f.write_str("archived: it never loads until it is restored from its tab")
             }
@@ -862,6 +882,78 @@ impl SkillSet {
         }
         self.effective
             .sort_by(|a, b| a.skill.name.cmp(&b.skill.name));
+        widest_first(&mut self.left_out);
+        self.clashes.sort_by(|a, b| a.name.cmp(&b.name));
+        self
+    }
+
+    /// **The set, with the copies from outside the plane its harness loads anyway weighed
+    /// against what purlis hands** (#5737, spec #5714 decision Q6): `copies` are the person's own
+    /// skills and the repo skills of the chat's clone, each by the name its harness knows it by.
+    /// Where one has the name of a plane skill purlis still hands the chat and holds the same
+    /// files ([`copies::same`]), purlis leaves its own copy out ([`Reason::SameAs`]), so the
+    /// name takes one slot of the listing. Where the files differ, both load and the pair is a
+    /// [`Clash`] ([`Outcome::BothLoad`]), once: purlis never picks a winner between them. Which
+    /// plane copy is handed is settled before this, narrowest first, and a built-in skill is
+    /// never weighed (SK-37). A copy turned off, or one purlis did not read, is weighed against
+    /// nothing.
+    #[must_use]
+    pub fn with_copies_of<'a>(
+        mut self,
+        copies: impl IntoIterator<Item = &'a OutsideSkill>,
+    ) -> Self {
+        for one in copies {
+            if one.off || one.unread.is_some() {
+                continue;
+            }
+            let Some(at) = self.effective.iter().position(|e| {
+                e.route != Route::Own && e.origin.of_the_plane() && e.skill.name == one.id
+            }) else {
+                continue;
+            };
+            let the_pair = |clash: &Clash| {
+                clash.name == one.id && clash.outside == one.origin && clash.owner == one.owner
+            };
+            let plane = &self.effective[at];
+            let follow = if one.origin == Origin::Harness {
+                Follow::Link
+            } else {
+                Follow::NoLink
+            };
+            let identical = match (plane.skill.path.parent(), one.skill.path.parent()) {
+                (Some(mine), Some(theirs)) => copies::same(mine, (theirs, follow)),
+                _ => false,
+            };
+            if identical {
+                let left = self.effective.remove(at);
+                self.clashes.retain(|clash| !the_pair(clash));
+                self.left_out.push(LeftOut {
+                    folder: left
+                        .skill
+                        .path
+                        .parent()
+                        .map(Path::to_path_buf)
+                        .unwrap_or_default(),
+                    name: left.skill.name,
+                    origin: left.origin,
+                    local: left.local,
+                    reason: Reason::SameAs {
+                        owner: one.owner.clone(),
+                    },
+                });
+            } else if !self.clashes.iter().any(the_pair) {
+                self.clashes.push(Clash {
+                    name: one.id.clone(),
+                    plane: At {
+                        origin: plane.origin,
+                        local: plane.local,
+                    },
+                    outside: one.origin,
+                    owner: one.owner.clone(),
+                    outcome: Outcome::BothLoad,
+                });
+            }
+        }
         widest_first(&mut self.left_out);
         self.clashes.sort_by(|a, b| a.name.cmp(&b.name));
         self

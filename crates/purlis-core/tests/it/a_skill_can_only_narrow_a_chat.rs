@@ -81,6 +81,7 @@ fn host_armed(harness: Harness, here: &Here) -> (Vec<String>, Vec<(String, Strin
             plane: &here.plane,
             workspace: None,
             repo: &[],
+            own: &[],
             routed: None,
         }),
         graded: false,

@@ -1266,6 +1266,7 @@ fn a_repo_skill_with_a_reserved_name_one_never_replaces_it_on_codex_and_is_anoth
                 plane: &plane,
                 workspace: Some("alpha"),
                 repo: &repo,
+                own: &[],
                 routed: None,
             }),
             None,
@@ -1904,6 +1905,7 @@ fn a_repo_skills_folder_purlis_could_not_list_leaves_the_plane_skills_out_of_a_c
                 plane: &plane,
                 workspace: Some("alpha"),
                 repo,
+                own: &[],
                 routed: None,
             },
             None,
@@ -3299,4 +3301,80 @@ fn a_set_its_runner_said_is_offered_and_typed_as_one_armed_here() {
     assert_eq!(held.workspace.as_deref(), Some("smart-ide"));
     assert_eq!(held.level.map(|level| level.origin), Some(Origin::Project));
     assert!(chat.typed("someday", &[], &salt).is_err());
+}
+
+/// **#5737 (spec #5714 decision Q6): a chat's start weighs the plane's copies against the
+/// person's own.** A project skill identical to the person's own Claude Code copy takes one slot
+/// of the chat's listing, the person's, and the set says which copy loads; one whose content
+/// differs loads beside the person's, and the chat's tab names the pair.
+#[test]
+fn identical_copies_take_one_slot_of_a_chats_listing_and_differing_ones_are_named_on_its_tab() {
+    let tmp = tempfile::tempdir().unwrap();
+    let plane = tmp.path().join("plane");
+    let config = tmp.path().join("cfg");
+    for (name, mine, theirs) in [
+        ("tdd", "Red, green.", "Red, green."),
+        ("review", "Read it.", "Read it twice."),
+    ] {
+        for (dir, body) in [
+            (plane.join("skills"), mine),
+            (config.join("skills"), theirs),
+        ] {
+            std::fs::create_dir_all(dir.join(name)).unwrap();
+            std::fs::write(
+                dir.join(name).join("SKILL.md"),
+                format!("---\nname: {name}\ndescription: Does {name}.\n---\n{body}\n"),
+            )
+            .unwrap();
+        }
+    }
+    let env = vec![("CLAUDE_CONFIG_DIR".to_owned(), config.display().to_string())];
+    let harness = Harness::ClaudeCode;
+    let start = crate::hoststart::ChatSkills::read(true, &plane, Some(harness), None, None)
+        .plugins_read(Some(harness), None, true, &env);
+    let running = Running {
+        plane: &plane,
+        workspace: None,
+        persona: None,
+        harness,
+        built_in: None,
+        plane_skills: true,
+        start: Some(&start),
+    };
+
+    let chat = for_use_skill(&running);
+
+    let plane_copies: Vec<&str> = chat
+        .offered
+        .iter()
+        .filter(|one| one.effective.origin.of_the_plane())
+        .map(|one| one.effective.skill.name.as_str())
+        .collect();
+    assert_eq!(
+        plane_copies,
+        ["review"],
+        "the identical tdd is the person's alone"
+    );
+    let own: Vec<&str> = chat
+        .program
+        .iter()
+        .map(|one| one.effective.skill.name.as_str())
+        .collect();
+    assert_eq!(own, ["tdd"], "listed once, the copy that loads");
+    let set = running.set();
+    let left = set.left_out.iter().find(|left| left.name == "tdd").unwrap();
+    assert_eq!(
+        left.reason.to_string(),
+        "identical to your own copy, which loads in its place"
+    );
+
+    let kit = crate::hoststart::Kit {
+        binary: None,
+        plugin: None,
+        git_hooks: None,
+        skill_sets: None,
+        chat_settings: None,
+    };
+    let said = crate::hoststart::skills_not_here(&start, &kit, Some(harness), &env).unwrap();
+    assert_eq!(said.differing, ["review (the project copy and your own)"]);
 }
