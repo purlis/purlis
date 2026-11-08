@@ -29,6 +29,7 @@ import type { TestProjectInlineConfiguration } from "vitest/config";
 import type { BrowserCommand } from "vitest/node";
 import { cellsOf, type BuiltInThemes, type Cell } from "./matrix.ts";
 import { imageMonospace } from "./monospace.ts";
+import { PICTURE_COMPARISON } from "./pictures.ts";
 
 /** Chromium's flag for greyscale text, which draws the same whatever ran before it. */
 const LCD_OFF = ["--disable-lcd-text"];
@@ -82,6 +83,8 @@ export function stories(): TestProjectInlineConfiguration[] {
         headless: true,
         provider: playwright({}),
         commands: { pictureBox },
+        // What a picture is compared with its baseline by (`pictures.ts`, #3178).
+        expect: { toMatchScreenshot: PICTURE_COMPARISON },
         // The engine purlis ships in on macOS and Linux (WKWebView, WebKitGTK), and the one
         // Windows' WebView2 is.
         //
