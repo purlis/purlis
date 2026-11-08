@@ -60,6 +60,9 @@ const CUT_MID_WAY: &str = "The restart ended this chat's last turn mid-way: chec
 /// How the wake-ups missed are introduced.
 const MISSED: &str = "These came due while purlis was down, and were missed:";
 
+/// How the wake-ups missed are introduced to a chat restarted while purlis ran on (#5753).
+const MISSED_BEFORE_THE_RESTART: &str = "These came due before the restart, and were missed:";
+
 /// What the chat is told to do of what it missed.
 const DO_WHAT_WAS_MISSED: &str = "Do now what each was for, if it is still wanted.";
 
@@ -124,19 +127,47 @@ pub fn of(ended: &Ended<'_>, carry_on: bool) -> Option<String> {
     if !carry_on && !ended.mid_turn && parts.ran.is_empty() && parts.missed.is_empty() {
         return None;
     }
-    let mut line = if carry_on {
-        CARRY_ON.to_owned()
+    let opening = if carry_on {
+        CARRY_ON
     } else {
         "purlis: purlis was restarted, and this is this chat's conversation brought back."
-            .to_owned()
     };
+    Some(told(opening, ended, &parts, carry_on, MISSED))
+}
+
+/// **The wake line for a chat restarted on its own while purlis runs on** (#5753): Restart
+/// now, a restart without the sandbox, a restart that contains its project's settings, or its
+/// move to or from a runner, each of which ends its program with what it had left running.
+/// It says what [`of`] says of what the restart ended, each piece by name with what it last put
+/// out (#5751), and the turn it cut mid-way (#5750), under its own opening, since purlis was
+/// not down. None where the restart ended nothing of the chat's own; the rest of what the
+/// restart tells it is the restart's own.
+pub fn of_the_chat_restarted(ended: &Ended<'_>) -> Option<String> {
+    let parts = Parts::of(ended);
+    if !ended.mid_turn && parts.ran.is_empty() && parts.missed.is_empty() {
+        return None;
+    }
+    Some(told(
+        "purlis: this chat was restarted on its conversation.",
+        ended,
+        &parts,
+        false,
+        MISSED_BEFORE_THE_RESTART,
+    ))
+}
+
+/// The line that opens with `opening` and says `parts` of `ended`: the turn cut mid-way, what
+/// ended, what was missed (introduced by `missed`) and what the harness sets again. `also` where
+/// the opening already told the chat something else of the restart.
+fn told(opening: &str, ended: &Ended<'_>, parts: &Parts, also: bool, missed: &str) -> String {
+    let mut line = opening.to_owned();
     if ended.mid_turn {
         line.push(' ');
         line.push_str(CUT_MID_WAY);
     }
     let room = |line: &str| MOST_BYTES.saturating_sub(line.len() + CLOSING);
     if !parts.ran.is_empty() {
-        let also = if carry_on { " also" } else { "" };
+        let also = if also { " also" } else { "" };
         line.push_str(&format!(
             " The restart{also} ended what this chat had left running in the background: "
         ));
@@ -144,7 +175,7 @@ pub fn of(ended: &Ended<'_>, carry_on: bool) -> Option<String> {
         line.push_str(&format!("{listed}. {NONE_OF_IT_RUNS}"));
     }
     if !parts.missed.is_empty() {
-        line.push_str(&format!(" {MISSED} "));
+        line.push_str(&format!(" {missed} "));
         let listed = fitted(&parts.missed, room(&line));
         line.push_str(&format!("{listed}. {DO_WHAT_WAS_MISSED}"));
     }
@@ -153,7 +184,7 @@ pub fn of(ended: &Ended<'_>, carry_on: bool) -> Option<String> {
         let listed = fitted(&parts.again, room(&line));
         line.push_str(&format!("{listed}."));
     }
-    Some(line)
+    line
 }
 
 /// One thing the line lists: in full, and short, without what it put out.

@@ -211,7 +211,9 @@ async function chatMenu() {
 }
 
 const ASKED = [{ plane: PLANE, session: 4 }];
-const RESTARTED = [{ plane: PLANE, session: 4, columns: 80, rows: 24 }];
+const RESTARTED = [{ plane: PLANE, session: 4, columns: 80, rows: 24, now: false }];
+/** Restart now (#5753): the core goes ahead while the chat waits on its own work. */
+const RESTARTED_NOW = [{ ...RESTARTED[0], now: true }];
 
 // The Notices are the Inbox's (#1695): the side opens on it, as a person would open it.
 beforeEach(() => inboxOpenAtLaunch());
@@ -295,7 +297,7 @@ describe("Restart chat on a chat's tab", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Restart now" }));
 
-    await waitFor(() => expect(asked("restart_chat")).toEqual(RESTARTED));
+    await waitFor(() => expect(asked("restart_chat")).toEqual(RESTARTED_NOW));
     expect(await screen.findByText("session 9")).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByText(RESTART_WAITS_FOR_THE_TURN)).toBeNull());
   });
@@ -460,7 +462,9 @@ describe("Restart chat on a task's row in the Chats list, for a task with no tab
     await waitFor(() => expect(asked("ask_chat_restart")).toEqual([{ plane: PLANE, session: 6 }]));
     // It reports no state here, so it restarts at once: the person pressed for it.
     await waitFor(() =>
-      expect(asked("restart_chat")).toEqual([{ plane: PLANE, session: 6, columns: 80, rows: 24 }]),
+      expect(asked("restart_chat")).toEqual([
+        { plane: PLANE, session: 6, columns: 80, rows: 24, now: false },
+      ]),
     );
   });
 
