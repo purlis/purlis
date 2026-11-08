@@ -12382,6 +12382,8 @@ export type PlaneSaving = {
 	live: string[],
 	/**  The files to settle, when conflicts are why the save is blocked. */
 	conflicts: string[],
+	/**  Of `conflicts`, the settings file with the keys both machines changed (#5824). */
+	conflictKeys: { [key in string]: string[] },
 	/**  What a save cannot do here that is not a block (a request mode with no forge to open it on). */
 	notice: string | null,
 	/**  `[plane] mode`, or `null` when the plane names none. */

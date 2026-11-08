@@ -67,6 +67,7 @@ const STANDING: PlaneSaving = {
   pushFailed: null,
   live: [],
   conflicts: [],
+  conflictKeys: {},
   notice: null,
   mode: "push",
   modeFrom: "charter.toml",

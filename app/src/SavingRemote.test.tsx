@@ -35,6 +35,7 @@ function standing(over: Partial<PlaneSaving> = {}): PlaneSaving {
     pushFailed: null,
     live: [],
     conflicts: [],
+    conflictKeys: {},
     notice: null,
     mode: "push",
     modeFrom: "charter.toml",

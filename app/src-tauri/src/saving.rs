@@ -141,6 +141,8 @@ pub struct PlaneSaving {
     pub live: Vec<String>,
     /// The files to settle, when conflicts are why the save is blocked.
     pub conflicts: Vec<String>,
+    /// Of `conflicts`, the settings file with the keys both machines changed (#5824).
+    pub conflict_keys: std::collections::BTreeMap<String, Vec<String>>,
     /// What a save cannot do here that is not a block (a request mode with no forge to open it on).
     pub notice: Option<String>,
     /// `[plane] mode`, or `null` when the plane names none.
@@ -311,6 +313,7 @@ pub fn saving_of(root: &Path) -> PlaneSaving {
             .into_iter()
             .collect(),
         conflicts: standing.conflicts,
+        conflict_keys: standing.conflict_keys,
         notice: standing.notice,
         mode: plane.mode.value.map(|m| m.as_str().to_owned()),
         mode_from,

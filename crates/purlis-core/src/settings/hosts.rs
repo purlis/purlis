@@ -120,18 +120,19 @@ fn list_in(
     list.as_array_mut().ok_or_else(|| not_a_list(which))
 }
 
-/// `text`, as `which`, with `host` last in its `[sandbox] hosts`: every other line kept, and the
-/// list written in one spacing however its entries were written.
+/// `text`, as `which`, with `host` in its `[sandbox] hosts`: every other line kept, and the list
+/// written as a set, one host per line in order ([`crate::tomlmerge::as_set`]), so two machines
+/// that each add one change different lines (#5824 F5).
 fn with(which: Which, text: &str, host: &Host) -> Result<String, Refusal> {
     let mut doc = document(which, text)?;
     let list = list_in(which, &mut doc)?;
     list.push(host.to_string());
-    list.fmt();
+    crate::tomlmerge::as_set(list);
     Ok(doc.to_string())
 }
 
-/// `text`, as `which`, without entry `at` of its `[sandbox] hosts`: the key goes with its last
-/// host, and this machine's `[sandbox]` table with it once it is empty.
+/// `text`, as `which`, without entry `at` of its `[sandbox] hosts`, the rest written as a set: the
+/// key goes with its last host, and this machine's `[sandbox]` table with it once it is empty.
 fn without(which: Which, text: &str, at: usize) -> Result<String, Refusal> {
     let mut doc = document(which, text)?;
     let list = list_in(which, &mut doc)?;
@@ -139,7 +140,7 @@ fn without(which: Which, text: &str, at: usize) -> Result<String, Refusal> {
         return Err(not_a_list(which));
     }
     list.remove(at);
-    list.fmt();
+    crate::tomlmerge::as_set(list);
     if list.is_empty()
         && let Some(table) = doc.get_mut(TABLE).and_then(|it| it.as_table_like_mut())
     {
@@ -215,8 +216,10 @@ fn added(root: &Path, which: Which, base: Option<&str>, typed: &str) -> Result<S
             )])
         })?;
     }
+    // Where the set put it.
     listed(&after)
-        .pop()
+        .into_iter()
+        .find(|one| one.label == host.to_string())
         .map(|one| one.id)
         .ok_or_else(|| Refusal::file(vec!["the host was written, and is not read back".into()]))
 }
@@ -448,5 +451,4 @@ pub fn revoke(root: &Path, which: Which, host: &Host) -> Result<(), String> {
 }
 
 #[cfg(test)]
-#[path = "hosts_tests.rs"]
 mod tests;
