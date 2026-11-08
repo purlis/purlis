@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794148054393,
+  "lastUpdate": 1794150229222,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -43554,6 +43554,48 @@ window.BENCHMARK_DATA = {
             "value": 101.11221850000001,
             "unit": "ms",
             "extra": "median of 5 runs: 99.903, 100.623, 101.112, 101.812, 102.232 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "a66fb157dd4e6d1628b85be6f0c9722b158c7b22",
+          "message": "A link is judged when it is read: declared tools, fills and logins (#5795) (#5807)\n\n* Tests: a link is judged when it is read (#5795), red before the fix\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6X377XZ2C7RVZFSQGGMSSQ1\nPurlis-Persona: steward\n\n* Judge a link when it is read: declared tools, fills and logins (#5795)\n\nThe core's read_out_of_reach refuses a read through a link into a vault\nthe reading persona may not use, and an unreadable grants file. Tests for\nthe pool-tools read and a profile's sign-in, red before their judge.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6X377XZ2C7RVZFSQGGMSSQ1\nPurlis-Persona: steward\n\n* Judge the pool-tools read and a profile's sign-in too; amend ADR 0112 (#5795)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6X377XZ2C7RVZFSQGGMSSQ1\nPurlis-Persona: steward\n\n* Review fixes (#5795): judge again after the read, keep the grants file's words out of the chat, a chat on no persona said so; fix a test the judge left waiting and the profile test's setup\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6X377XZ2C7RVZFSQGGMSSQ1\nPurlis-Persona: steward\n\n* TEMPORARY: the #5795 judge off, so CI shows each new test red (reverted next commit)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6X377XZ2C7RVZFSQGGMSSQ1\nPurlis-Persona: steward\n\n* Revert the temporary switch: the #5795 judge is on\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6X377XZ2C7RVZFSQGGMSSQ1\nPurlis-Persona: steward\n\n* Review 2 fixes (#5795): a link inside its own vault is not judged, as the press does not judge it; a run's keys are judged before anything is read or asked\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6X377XZ2C7RVZFSQGGMSSQ1\nPurlis-Persona: steward\n\n* Review 3 fixes (#5795): a runner chat's keys are judged before any ask or Allow, --dotenv keys are judged up front, and a test pins the up-front judge\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6X377XZ2C7RVZFSQGGMSSQ1\nPurlis-Persona: steward\n\n* TEMPORARY: review 2 and 3's pieces off, so CI shows their tests red (reverted next commit)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6X377XZ2C7RVZFSQGGMSSQ1\nPurlis-Persona: steward\n\n* Revert the temporary switch: review 2 and 3's pieces are on\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6X377XZ2C7RVZFSQGGMSSQ1\nPurlis-Persona: steward\n\n* Review 4 fixes (#5795): the fill's value is wiped once read, tests of keys_handed and the runner gate's judge, and the ADR says a fill's or login's notice is left to #5831\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6X377XZ2C7RVZFSQGGMSSQ1\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-08T13:10:22Z",
+          "tree_id": "d79f6994e957b56f27f11f7283c81db5901fcbd3",
+          "url": "https://github.com/purlis/purlis/commit/a66fb157dd4e6d1628b85be6f0c9722b158c7b22"
+        },
+        "date": 1794150221714,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5613445,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.555, 0.558, 0.561, 0.572, 0.582 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.281328000000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.185, 16.265, 16.281, 16.297, 16.320 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.124212,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.386, 99.965, 100.124, 100.418, 101.939 ms"
           }
         ]
       }
