@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794124326604,
+  "lastUpdate": 1794126304880,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -43260,6 +43260,48 @@ window.BENCHMARK_DATA = {
             "value": 101.21796900000001,
             "unit": "ms",
             "extra": "median of 5 runs: 100.907, 100.989, 101.218, 101.368, 102.188 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "89e7ba261ab49266a73b824025cb9c29e8d3895e",
+          "message": "Judge every git that may write a branch folder, not only the porcelain that commits (#5775)\n\nThe guard of a chat started without the sandbox now holds to a branch\nfolder's claim every git that may move a branch or HEAD, or write the\nindex or the working tree. What only reads is an allow-list; a\nsubcommand it does not know counts as a write. -C, --git-dir,\n--work-tree, GIT_DIR and GIT_WORK_TREE place a git where they point,\nand one pointed where the line does not spell out is named unplaced.\n\nA corpus of everyday read-only git in the tests must pass unjudged.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6WKHA9NSVPJ2CXZHKRZ61WC\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-08T07:24:34Z",
+          "tree_id": "4f0d7c0472b398dff2d5e788dd8bdbbff56c8d6f",
+          "url": "https://github.com/purlis/purlis/commit/89e7ba261ab49266a73b824025cb9c29e8d3895e"
+        },
+        "date": 1794126297973,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.43522799999999995,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.421, 0.426, 0.435, 0.446, 0.448 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.656046500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.586, 16.638, 16.656, 16.729, 16.754 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.577268,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.026, 101.283, 101.577, 102.218, 102.510 ms"
           }
         ]
       }
