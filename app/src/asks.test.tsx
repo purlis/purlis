@@ -14,9 +14,10 @@ import { REMOVE_WORKSPACE_ASK } from "./removeWorkspaceAsk";
 import { OPEN_RUNNER_WRITE_ASK } from "./runnerWriteOpen";
 import { OPEN_RUNNER_DISPATCH_ASK } from "./runnerDispatchOpen";
 import { PROFILE_SIGN_IN } from "./settings/links";
-import { useSandboxCommands } from "./sandboxAsked";
+import { useRunGrantsMoved, useSandboxCommands } from "./sandboxAsked";
 import { onTheWire } from "./chatEvents.testkit";
 import { askOfVault } from "./test-asks";
+import { VAULTS_OWN, runAsk } from "./secretAsk.testkit";
 
 /**
  * The asks registry's window side (#1690): each ask is answered through the command its own
@@ -540,6 +541,31 @@ describe("answering through the path an ask names", () => {
       ["allow_refused_vault", { plane: PLANE, session: 7, vault: "devops" }],
       ["keep_vault_blocked", { plane: PLANE, session: 7, vault: "devops", reason: "not for this" }],
     ]);
+  });
+
+  it("tells what reads the Allowed list to read it again once Keep blocked on a refused vault returns, which takes back the chat's Run grants on it (#5617)", async () => {
+    sent({ keep_vault_blocked: null });
+    const vault = askOfVault({
+      plane: PLANE,
+      session: 7,
+      vault: "devops",
+      persona: "steward",
+      tagged_for: "devops",
+      dispatch_to: null,
+      locked: null,
+    });
+    const { result } = renderHook(() => useRunGrantsMoved());
+    const before = result.current;
+    await act(() => answerTaken(PLANE, vault, "keep"));
+    expect(result.current).toBeGreaterThan(before);
+  });
+
+  it("tells what reads the Allowed list to read it again once a run's notice is answered, whose Keep blocked takes back the chat's Run grants and whose Allow gives one (#5617)", async () => {
+    sent({ answer_run_grant: null });
+    const { result } = renderHook(() => useRunGrantsMoved());
+    const before = result.current;
+    await act(() => answerTaken(PLANE, runAsk({ offer: "vault" }, VAULTS_OWN), "keep"));
+    expect(result.current).toBeGreaterThan(before);
   });
 
   it("sends no Allow for a refused vault whose grant policy locks (#5160)", async () => {

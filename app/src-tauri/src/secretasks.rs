@@ -174,21 +174,20 @@ pub async fn answer_run_grant(
     .await
 }
 
-/// [`run_grant_answered`] with no values: the window's own answers that store nothing, such as
-/// Keep blocked on a refused vault answering a Run grant's ask on it.
+/// [`run_grant_given`] with nothing given, carried out under
+/// [`crate::planes::Held::run_answers`], which its caller holds: Keep blocked on a refused vault
+/// answering a Run grant's ask on it.
 pub fn run_grant_answered(
     held: &crate::planes::Held,
     network: Option<&purlis_core::sandboxblock::record::Record>,
     id: u32,
     press: RunGrantPress,
 ) -> Result<(), String> {
-    run_grant_filled(held, network, id, press, Vec::new())
+    run_grant_carried_out(held, network, id, press, RunGiven::default())
 }
 
-/// [`answer_run_grant`]'s work: the checks first, then the values stored, then the grant audited
-/// and given (#5242). The values stay stored whatever the person answers, but on Keep blocked and
-/// Not now, which store nothing, and on Don't allow for a vault the persona may not use, which is
-/// not this persona's to fill.
+/// [`run_grant_given`] with typed values alone, as the tests press.
+#[cfg(test)]
 pub fn run_grant_filled(
     held: &crate::planes::Held,
     network: Option<&purlis_core::sandboxblock::record::Record>,
@@ -208,13 +207,33 @@ pub fn run_grant_filled(
     )
 }
 
-/// [`run_grant_filled`], with an entry picked for a field where the person used one (#5080), and
-/// the needs to remember. **A picked entry is held to every check a typed value is**, and more,
+/// [`answer_run_grant`]'s work: the values typed, an entry picked for a field where the person
+/// used one (#5080), and the needs to remember. **A picked entry is held to every check a typed value is**, and more,
 /// whatever is pressed and before anything is stored: the entry it reads is judged as the key is,
 /// so no program and no tool is handed a browser's or a minter's key through a link; it is one in
 /// a vault the persona may use, or the run's own on the vault's own Allow (#5744); and one every
 /// persona of the run's vault may use (#5745). See `picked_refused`.
+///
+/// **One answer at a time, Keep blocked's among them** ([`crate::planes::Held::run_answers`],
+/// #5617): Always allow writes its tool line before its ask is answered, so a Keep blocked
+/// carried out in between would close the ask and leave the line. Held, a press made as Keep
+/// blocked lands finds its ask answered before anything is written.
 pub fn run_grant_given(
+    held: &crate::planes::Held,
+    network: Option<&purlis_core::sandboxblock::record::Record>,
+    id: u32,
+    press: RunGrantPress,
+    given: RunGiven,
+) -> Result<(), String> {
+    let _one = held.run_answers();
+    run_grant_carried_out(held, network, id, press, given)
+}
+
+/// [`run_grant_given`]'s work, with [`crate::planes::Held::run_answers`] held by its caller: the
+/// checks first, then the values stored, then the grant audited and given (#5242). The values
+/// stay stored whatever the person answers, but on Keep blocked and Not now, which store nothing,
+/// and on Don't allow for a vault the persona may not use, which is not this persona's to fill.
+fn run_grant_carried_out(
     held: &crate::planes::Held,
     network: Option<&purlis_core::sandboxblock::record::Record>,
     id: u32,

@@ -316,6 +316,9 @@ pub struct Held {
     pool_tools: crate::pooltools::PoolTools,
     /// The Secret asks the chats' brokered runs wait on (#5068, ADR 0109).
     secret_asks: Arc<purlis_core::secrets::ask::Asks>,
+    /// Held while the person's answer to a Run grant's ask, or their Keep blocked on a vault, is
+    /// carried out ([`Self::run_answers`], #5617).
+    run_answers: Mutex<()>,
     /// Where the chats' browsers run: the window's session host, where it has one.
     browser_driver: Option<Arc<dyn crate::chatbrowsers::Driver>>,
     /// Told each time a browser is added to its chats' or taken from them (#2024).
@@ -767,6 +770,16 @@ impl Held {
     /// The Secret asks the chats' brokered runs wait on (#5068, ADR 0109).
     pub fn secret_asks(&self) -> &purlis_core::secrets::ask::Asks {
         &self.secret_asks
+    }
+
+    /// **One of the person's answers about Run grants at a time** (#5617): a Run grant's press and
+    /// Keep blocked on a vault each hold this while they are carried out. Always allow writes its
+    /// tool line before its ask is answered, so a Keep blocked carried out in between would leave
+    /// that line behind the ask it closed; held, the press after it finds its ask answered first.
+    pub fn run_answers(&self) -> std::sync::MutexGuard<'_, ()> {
+        self.run_answers
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// Where the chats' browsers run: none where the window has no session host.
@@ -5155,6 +5168,7 @@ impl Planes {
             browser_driver: self.browser_driver.clone(),
             pool_tools: crate::pooltools::PoolTools::default(),
             secret_asks,
+            run_answers: Mutex::new(()),
             browsers_listed,
             browser_timeline,
             proposals: crate::proposals::Proposals::default(),

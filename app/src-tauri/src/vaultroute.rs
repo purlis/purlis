@@ -701,7 +701,11 @@ pub async fn keep_vault_blocked(
     // Off the window's thread (#5424): a Run grant's ask open on the vault is answered Don't
     // allow, and that answer is audited on disk.
     crate::off_the_window("keeping the vault blocked", move || {
-        vault_kept_blocked(&held, network.as_ref(), session, &vault);
+        {
+            // Not between an Always allow's tool line and its answer (#5617).
+            let _one = held.run_answers();
+            vault_kept_blocked(&held, network.as_ref(), session, &vault);
+        }
         crate::askoutcome::kept_blocked(
             held.chats(),
             session,
@@ -716,14 +720,25 @@ pub async fn keep_vault_blocked(
 /// What Keep blocked does to what the app holds for chat `session` and `vault`: its later tries
 /// raise nothing, and a Run grant's ask already open on the vault is answered Don't allow, since
 /// its Allow would open what the person just kept blocked. The asks hold it too, so a run the
-/// gate let past before it raises no ask after it (#5424).
+/// gate let past before it raises no ask after it (#5424). Carried out with
+/// [`crate::planes::Held::run_answers`] held, by its caller (#5617). Answers which of those asks
+/// stayed up, and why: one a Keep blocked answered in its turn, through a vault's own ask, is not
+/// one of them.
+///
+/// **An Always allow pressed before it stays** (#5617, accepted): its tool line is committed for
+/// the persona, and the vault given to it, by the person's own earlier press, for every chat and
+/// every teammate. Keep blocked is for one chat on a vault its persona may not use, and has never
+/// taken back what a persona holds; removing the tool, or the vault in the Allowed list, does
+/// (ADR 0112, amended 2026-11-05). One pressed while Keep blocked is carried out waits for it,
+/// and finds its ask answered before it writes anything.
 pub(crate) fn vault_kept_blocked(
     held: &crate::planes::Held,
     network: Option<&purlis_core::sandboxblock::record::Record>,
     session: u32,
     vault: &str,
-) {
+) -> Vec<(u32, String)> {
     held.vault_refusals().keep_blocked(session, vault);
+    let mut stayed = Vec::new();
     for id in held.secret_asks().keep_vault_blocked(session, vault) {
         let answered = crate::secretasks::run_grant_answered(
             held,
@@ -731,10 +746,22 @@ pub(crate) fn vault_kept_blocked(
             id,
             crate::secretasks::RunGrantPress::Refuse,
         );
-        if let Err(why) = answered {
+        // Keep blocked through a vault's own ask keeps the vault blocked in its turn, and that
+        // answers the rest: an ask closed by then did not stay up.
+        let still_open = || {
+            held.secret_asks()
+                .open_runs()
+                .iter()
+                .any(|one| one.id == id)
+        };
+        if let Err(why) = answered
+            && still_open()
+        {
             tracing::warn!("purlis: a run grant's ask stayed up after Keep blocked: {why}");
+            stayed.push((id, why));
         }
     }
+    stayed
 }
 
 /// **Puts a refused vault's Notice away, and tells the chat nothing** (#1987): Dispatch to
