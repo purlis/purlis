@@ -603,6 +603,26 @@ pub fn forget_chat_on_pool(config_root: &Path, plane: &Path, number: u32) -> Res
     .map_err(|why| why.to_string())
 }
 
+/// **Whether every chat the plane at `plane` starts on a pool has a record** (ruled
+/// 2026-11-08): a restart took back the chats from before records already, so one with none is
+/// never taken back on a pool's word ([`crate::machine::Recent::pool_chats_recorded`]).
+pub fn pool_chats_recorded(config_root: &Path, plane: &Path) -> bool {
+    crate::machine::read(config_root)
+        .store
+        .pool_chats_recorded(plane)
+}
+
+/// A restart of the plane at `plane` has taken back its chats from before records: from now on,
+/// [`pool_chats_recorded`]. Written only where it is not so already.
+pub fn mark_pool_chats_recorded(config_root: &Path, plane: &Path) -> Result<(), String> {
+    if pool_chats_recorded(config_root, plane) {
+        return Ok(());
+    }
+    crate::machine::update(config_root, |store| store.mark_pool_chats_recorded(plane))
+        .map(|_| ())
+        .map_err(|why| why.to_string())
+}
+
 /// `workspace`'s branches of `pool` came back with no failure (#4590).
 pub fn branches_fetched(
     config_root: &Path,

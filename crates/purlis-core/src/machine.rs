@@ -1088,6 +1088,11 @@ pub struct Recent {
     /// what a chat that left [`Self::chats_on_pools`] did there, until a fetch of it has no
     /// failure. Never asked for a chat.
     pub branches_to_fetch: BTreeMap<String, BTreeSet<String>>,
+    /// **Every chat this plane starts on a pool here has a record in
+    /// [`Self::chats_on_pools`]** (ruled 2026-11-08, amending D-4683-1): set once a window's
+    /// restart has taken back the chats from before records. From then on a chat with no record
+    /// is never taken back on a pool's word.
+    pub pool_chats_recorded: bool,
 }
 
 impl Recent {
@@ -1478,6 +1483,7 @@ impl Store {
                 project_chats_run_on: None,
                 chats_on_pools: BTreeMap::new(),
                 branches_to_fetch: BTreeMap::new(),
+                pool_chats_recorded: false,
             },
         };
         self.recents.insert(0, entry);
@@ -1719,6 +1725,21 @@ impl Store {
         {
             entry.owes_the_branches_of(chat);
         }
+    }
+
+    /// **Every chat `plane` starts on a pool has a record from now on** (ruled 2026-11-08):
+    /// [`Recent::pool_chats_recorded`].
+    pub fn mark_pool_chats_recorded(&mut self, plane: &Path) {
+        if let Some(entry) = self.recents.iter_mut().find(|one| one.plane == plane) {
+            entry.pool_chats_recorded = true;
+        }
+    }
+
+    /// Whether [`Self::mark_pool_chats_recorded`] holds for `plane`: never for a plane not
+    /// remembered.
+    pub fn pool_chats_recorded(&self, plane: &Path) -> bool {
+        self.recent(plane)
+            .is_some_and(|entry| entry.pool_chats_recorded)
     }
 
     /// Forgets chat `number` of `plane`, which never started where it was kept (#4590).
@@ -2868,6 +2889,12 @@ fn load(doc: &serde_json::Value, dropped: &mut Vec<Dropped>) -> Store {
             project_chats_run_on: project_chats_run_on_of(raw.get("projectChatsRunOn"), dropped),
             chats_on_pools: chats_on_pools_of(raw.get("chatsOnPools")),
             branches_to_fetch: branches_to_fetch_of(raw.get("branchesToFetch")),
+            // Anything but `true` is not yet, which takes back the chats from before records once
+            // more: what this mark guards was the rule before it.
+            pool_chats_recorded: raw
+                .get("poolChatsRecorded")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false),
         };
         if !room.fits(recent.held()) {
             dropped.push(Dropped::Recent {
@@ -3306,6 +3333,8 @@ struct RecentOnDisk {
     /// Left out while no branches are still to come back (#4590).
     #[serde(rename = "branchesToFetch", skip_serializing_if = "BTreeMap::is_empty")]
     branches_to_fetch: BTreeMap<String, BTreeSet<String>>,
+    #[serde(rename = "poolChatsRecorded", skip_serializing_if = "is_false")]
+    pool_chats_recorded: bool,
 }
 
 #[derive(serde::Serialize)]
@@ -3402,6 +3431,7 @@ impl From<&Store> for OnDisk {
                         project_chats_run_on: entry.project_chats_run_on.clone(),
                         chats_on_pools: entry.chats_on_pools.clone(),
                         branches_to_fetch: entry.branches_to_fetch.clone(),
+                        pool_chats_recorded: entry.pool_chats_recorded,
                         trust: entry.trust.as_ref().map(|trust| TrustOnDisk {
                             approved: trust.approved,
                             plugins: trust.contributed.plugins.clone(),

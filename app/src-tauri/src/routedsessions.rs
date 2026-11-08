@@ -1404,6 +1404,11 @@ impl SessionHost for RoutedSessions {
         if let Some(chat) = kept {
             return self.found_on(number, chat.pool);
         }
+        // With no record, taken back on its pool's word at the first restart alone (ruled
+        // 2026-11-08): every chat started on a pool since has one.
+        if self.chats_kept.all_recorded() {
+            return false;
+        }
         let Ok(Some(pool)) = self.route(workspace, start) else {
             return false;
         };
@@ -1509,8 +1514,10 @@ impl SessionHost for RoutedSessions {
     /// only those kept there: what else that pool holds of this project is not this window's to
     /// end (#4590).
     fn close_what_was_not_reattached(&self) {
-        // A chat found with no record and not taken back by now never is (#4683).
+        // A chat found with no record and not taken back by now never is (#4683), and none is
+        // asked for again (ruled 2026-11-08).
         lock(&self.shared.unkept).clear();
+        self.chats_kept.mark_all_recorded();
         self.settle_what_was_kept();
         let routed = self.routed_pools();
         for (pool, host) in self.named_pools() {

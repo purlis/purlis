@@ -3128,3 +3128,20 @@ fn a_store_that_did_not_parse_is_kept_beside_before_it_is_replaced() {
         "a store that parses leaves the kept copy as it was"
     );
 }
+
+/// **That every chat on a pool has a record is kept per plane** (ruled 2026-11-08), and read back
+/// as it was written; a plane not remembered has no such mark.
+#[test]
+fn that_a_planes_pool_chats_are_all_recorded_is_written_and_read_back() {
+    let machine = machine();
+    let mut store = remembering(&["/planes/a", "/planes/b"]);
+    store.mark_pool_chats_recorded(Path::new("/planes/a"));
+    store.mark_pool_chats_recorded(Path::new("/planes/elsewhere"));
+
+    write(machine.path(), &store).unwrap();
+    let back = read(machine.path()).store;
+
+    assert!(back.pool_chats_recorded(Path::new("/planes/a")));
+    assert!(!back.pool_chats_recorded(Path::new("/planes/b")));
+    assert!(!back.pool_chats_recorded(Path::new("/planes/elsewhere")));
+}
