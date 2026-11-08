@@ -587,6 +587,20 @@ pub struct Standing {
     /// is open, or the mode does not merge it. Never a block: a red request stays open, and a
     /// later save pushes onto it (ADR 0051, amended 2026-10-13).
     pub merge: Option<Merging>,
+    /// A fetch of the target failed while a request is open, and none has gone through since
+    /// (#5824 F8): the plane may be behind the remote by more than [`Standing::behind`] says.
+    /// Never a block: the next look tries again. `None` with no request open.
+    pub stale: Option<Stale>,
+}
+
+/// **The plane is stale** (#5824 F8): since when a fetch of its target has failed while a
+/// request is open, and why, in the latest failure's words.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Stale {
+    /// When the first failure of the run was, in seconds since the epoch.
+    pub since: u64,
+    /// Why the latest one failed, as a sentence fragment of at most 600 bytes.
+    pub why: String,
 }
 
 impl Standing {
@@ -625,6 +639,7 @@ pub fn standing(root: &Path) -> Standing {
             rebase_by_hand: false,
             stopped_by: None,
             merge: None,
+            stale: None,
             // An unborn branch is a repository with nothing to count against, and what is
             // staged in it is still the root being worked in (FD-11: the alerts read this).
             tracked: status_of(root).1,
@@ -798,6 +813,8 @@ pub fn standing(root: &Path) -> Standing {
     };
     let mut conflict_keys = conflict_keys;
     conflict_keys.retain(|path, _| conflicts.contains(path));
+    // Kept only while a request is open ([`prsave::fetched`]).
+    let stale = prsave::known_stale(root);
     Standing {
         stage,
         changed,
@@ -818,8 +835,10 @@ pub fn standing(root: &Path) -> Standing {
         rebase_by_hand,
         stopped_by,
         merge,
+        stale,
     }
 }
+
 
 /// Where a look at a save's open request is run from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

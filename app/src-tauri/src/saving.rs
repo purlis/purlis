@@ -172,6 +172,20 @@ pub struct PlaneSaving {
     /// `revert`, `bisect`, or `conflicts` for unmerged files alone; `null` when it is not.
     #[specta(optional)]
     pub stopped_by: Option<String>,
+    /// Since when a fetch of the target has failed while a request is open, and why (#5824 F8):
+    /// the project may be further behind than `behind` says; `null` when it is not.
+    #[specta(optional)]
+    pub stale: Option<SaveStale>,
+}
+
+/// A project that could not be fetched while its request is open (#5824 F8).
+#[derive(Debug, Clone, PartialEq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveStale {
+    /// When the first failed fetch of the run was, in seconds since the epoch.
+    pub since: f64,
+    /// Why the latest one failed, as a sentence fragment.
+    pub why: String,
 }
 
 /// The plane's save standing.
@@ -293,6 +307,10 @@ pub fn saving_of(root: &Path) -> PlaneSaving {
             .rebase_by_hand
             .then(|| planegit::BY_HAND.to_owned()),
         stopped_by: standing.stopped_by.map(str::to_owned),
+        stale: standing.stale.clone().map(|stale| SaveStale {
+            since: stale.since as f64,
+            why: stale.why,
+        }),
         merge: standing
             .merge
             .clone()

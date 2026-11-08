@@ -10,6 +10,7 @@ import {
   type ProjectUpdate,
   type RepoSaving,
   type SaveEntry,
+  type SaveStale,
 } from "./bindings";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import { StatusItem } from "./ui/status/StatusItem";
@@ -364,6 +365,11 @@ export function SavingView({
           )}
           {saving.pushFailed !== null && (
             <p className="saving-note">{`The last push did not land: ${saving.pushFailed}`}</p>
+          )}
+          {saving.stale != null && (
+            <p className="saving-note" data-testid="saving-stale">
+              {`${staleSaid(saving.stale)}. The next look tries again.`}
+            </p>
           )}
           {saving.mode === null && <ModeQuestion plane={plane} branch={saving.branch} />}
           {saving.pr !== null && (
@@ -781,7 +787,12 @@ export function SaveIndicator(props: SaveShown | SaveStillReading) {
     );
   const { saving, repos, busy, onOpen, onSave, onUpdate, off } = props;
 
-  const { stage, said, words, incoming, red } = furthestBack(saving, repos ?? []);
+  const back = furthestBack(saving, repos ?? []);
+  const { stage, incoming, red } = back;
+  // A project that could not be fetched while its request is open (#5824 F8) says so in the
+  // pill, and since when and why in its name and tooltip.
+  const words = saving.stale != null ? `${back.words} · stale` : back.words;
+  const said = saving.stale != null ? `${back.said} · ${staleSaid(saving.stale)}` : back.said;
   // A red request is not a block, and it is still something wrong the bar must not draw as
   // "waiting": the mark is the alert, in the failed colour (ADR 0051, amended 2026-10-13).
   const Mark =
@@ -888,6 +899,18 @@ export function furthestBack(
   const [one, many] = phrases[stage] ?? [stage, stage];
   const words = n === 1 ? `1 repo ${one}` : `${n} repos ${many}`;
   return { stage, said: withIncoming(words, incoming), words, incoming, red: false };
+}
+
+/** Since when, and why, a project could not be fetched while its request is open (#5824 F8):
+ *  the time alone today, the day with it before. */
+export function staleSaid(stale: SaveStale, now: Date = new Date()): string {
+  const since = new Date(stale.since * 1000);
+  const time = since.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const when =
+    since.toDateString() === now.toDateString()
+      ? time
+      : `${since.toLocaleDateString([], { day: "numeric", month: "short" })}, ${time}`;
+  return `Stale since ${when}: ${stale.why}`;
 }
 
 /** What git stopped part-way that a chat may not finish in the project's root: continuing

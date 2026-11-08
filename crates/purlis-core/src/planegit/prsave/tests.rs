@@ -206,6 +206,7 @@ fn kept_open_on(root: &Path, branch: &str) {
             merge: None,
         }),
         held: false,
+        stale: None,
     }
     .write(root);
 }
@@ -412,6 +413,7 @@ fn where_a_request_stands_is_kept_beside_it_and_read_back() {
             merge: Some(red.clone()),
         }),
         held: false,
+        stale: None,
     };
     kept.write(&root);
     assert_eq!(Kept::read(&root), kept);
@@ -470,6 +472,7 @@ fn kept_for_the_person(merge: Merging, head: &str) -> (tempfile::TempDir, PathBu
             merge: Some(merge),
         }),
         held: false,
+        stale: None,
     }
     .write(&root);
     (dir, root, plane)
@@ -537,4 +540,49 @@ fn the_merge_as_it_stands_refuses_a_request_that_turned_red_after_the_look() {
                 .to_string()
         )
     );
+}
+
+/// **A fetch that fails while a request is open is said** (#5824 F8): the standing says since when
+/// and why, a later failure keeps the first time, and the next fetch that goes through clears it.
+#[test]
+fn a_fetch_that_fails_while_a_request_is_open_is_said_in_the_standing() {
+    let (_dir, root, bare) = plane_and_remote();
+    run(&root, &["push", "-q", bare.to_str().unwrap(), "main"]);
+    let gone = root.parent().unwrap().join("gone.git");
+    let gone = gone.to_str().unwrap();
+
+    // With no request open, a failure is nobody's to hear.
+    assert!(!fetch_target(&root, gone, "", "main"));
+    assert_eq!(Kept::read(&root).stale, None);
+
+    kept_open_on(&root, SAVE);
+    assert!(!fetch_target(&root, gone, "", "main"));
+    let stale = known_stale(&root).expect("the failure is kept");
+    assert!(stale.why.starts_with("main could not be fetched"), "{}", stale.why);
+    assert!(stale.since > 0);
+    // A second failure keeps the first one's time.
+    let first = stale.since;
+    Kept {
+        stale: Some(super::super::Stale {
+            since: first - 60,
+            ..stale.clone()
+        }),
+        ..Kept::read(&root)
+    }
+    .write(&root);
+    assert!(!fetch_target(&root, gone, "", "main"));
+    assert_eq!(known_stale(&root).map(|s| s.since), Some(first - 60));
+
+    // The standing says it, once a request is known open there.
+    let standing = super::super::standing(&root);
+    assert_eq!(
+        standing.stale.as_ref().map(|s| s.since),
+        Some(first - 60),
+        "{standing:?}"
+    );
+
+    // The next fetch that goes through clears it.
+    assert!(fetch_target(&root, bare.to_str().unwrap(), "", "main"));
+    assert_eq!(known_stale(&root), None);
+    assert_eq!(super::super::standing(&root).stale, None);
 }

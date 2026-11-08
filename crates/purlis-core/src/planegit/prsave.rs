@@ -212,6 +212,9 @@ pub(super) struct Kept {
     /// plane was moved off its commit by hand — so it may still be open, and a pre-rename save
     /// branch carries on until a settle sees it end ([`save_branch`], V93j).
     pub held: bool,
+    /// A fetch of the target failed while the request was open, and none has gone through
+    /// since (#5824 F8): what the standing says, until the next look's fetch goes through.
+    pub stale: Option<super::Stale>,
 }
 
 /// The PR a save last opened or updated.
@@ -307,6 +310,12 @@ impl Kept {
             pushed: text(&doc, "pushed").filter(|h| is_object_name(h)),
             pr,
             held: doc.get("held").and_then(serde_json::Value::as_bool) == Some(true),
+            stale: doc.get("stale").and_then(|stale| {
+                Some(super::Stale {
+                    since: stale.get("since").and_then(serde_json::Value::as_u64)?,
+                    why: super::merging::bounded(&text(stale, "why").filter(|why| !why.is_empty())?),
+                })
+            }),
         }
     }
 
@@ -338,6 +347,12 @@ impl Kept {
         let mut doc = doc;
         if self.held {
             doc["held"] = serde_json::Value::Bool(true);
+        }
+        if let Some(stale) = &self.stale {
+            doc["stale"] = serde_json::json!({
+                "since": stale.since,
+                "why": super::merging::bounded(&stale.why),
+            });
         }
         if let Some(dir) = path.parent()
             && crate::profiletrust::private_dir(dir).is_ok()
@@ -642,9 +657,10 @@ fn push_unsaid(root: &Path, plane: &Plane, sign: bool, caller: &Caller, say: Sin
     )
 }
 
-/// `target` of the origin, into its remote-tracking ref. Answers whether it was.
+/// `target` of the origin, into its remote-tracking ref. Answers whether it was; a failure
+/// while a request is open is kept for the standing to say ([`fetched`]).
 fn fetch_target(root: &Path, https: &str, helper: &str, target: &str) -> bool {
-    git::run_network(
+    let ran = git::run_network(
         root,
         Some(helper),
         &[
@@ -654,8 +670,45 @@ fn fetch_target(root: &Path, https: &str, helper: &str, target: &str) -> bool {
             https,
             &format!("+refs/heads/{target}:refs/remotes/origin/{target}"),
         ],
-    )
-    .is_ok_and(|run| run.ok())
+    );
+    let failed = match &ran {
+        Ok(run) if run.ok() => None,
+        Ok(run) => Some(format!("{target} could not be fetched: {}", one_line(&tail(run)))),
+        Err(unavailable) => Some(format!("{target} could not be fetched: {unavailable}")),
+    };
+    let ok = failed.is_none();
+    fetched(root, failed);
+    ok
+}
+
+/// **What a fetch of the target came to, kept while a request is open** (#5824 F8): a failure
+/// is kept as stale since the first failure of its run, with the latest words, and a fetch that
+/// went through clears it. Nothing is kept with no request open.
+pub(super) fn fetched(root: &Path, failed: Option<String>) {
+    let mut kept = Kept::read(root);
+    let stale = match failed {
+        None => None,
+        Some(_) if kept.pr.is_none() => None,
+        Some(why) => Some(super::Stale {
+            since: kept.stale.as_ref().map_or_else(now_secs, |was| was.since),
+            why: super::merging::bounded(&why),
+        }),
+    };
+    if kept.stale != stale {
+        kept.stale = stale;
+        kept.write(root);
+    }
+}
+
+/// [`Kept::stale`], while a request is open.
+pub(super) fn known_stale(root: &Path) -> Option<super::Stale> {
+    let kept = Kept::read(root);
+    kept.pr.as_ref()?;
+    kept.stale
+}
+
+fn one_line(said: &str) -> String {
+    said.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// When a save or a look brings a moved target in: where the request needs it, or whenever it
@@ -1166,11 +1219,18 @@ pub(super) fn settle(
                 &format!("+refs/heads/{target}:refs/remotes/origin/{target}"),
             ],
         );
-        if !fetched.is_ok_and(|run| run.ok()) {
-            return Settled::Unknown(format!(
-                "{request} merged, but {target} could not be fetched to move onto it"
-            ));
+        if !fetched.as_ref().is_ok_and(git::Run::ok) {
+            let why = format!("{request} merged, but {target} could not be fetched to move onto it");
+            self::fetched(
+                root,
+                Some(match &fetched {
+                    Ok(run) => format!("{why}: {}", one_line(&tail(run))),
+                    Err(unavailable) => format!("{why}: {unavailable}"),
+                }),
+            );
+            return Settled::Unknown(why);
         }
+        self::fetched(root, None);
     }
     let theirs = format!("refs/remotes/origin/{target}");
     if !is_ancestor(root, &head, &theirs) {

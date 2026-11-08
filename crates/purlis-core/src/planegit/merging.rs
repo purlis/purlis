@@ -351,7 +351,7 @@ fn failed_said(failed: &[FailedCheck]) -> String {
 }
 
 /// `text` on one line, cut at [`WHY_LIMIT`] on a character boundary.
-fn bounded(text: &str) -> String {
+pub(super) fn bounded(text: &str) -> String {
     let mut out: String = text
         .chars()
         .map(|c| if c.is_control() { ' ' } else { c })

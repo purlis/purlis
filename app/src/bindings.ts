@@ -12436,6 +12436,11 @@ export type PlaneSaving = {
 	 *  `revert`, `bisect`, or `conflicts` for unmerged files alone; `null` when it is not.
 	 */
 	stoppedBy?: string | null,
+	/**
+	 *  Since when a fetch of the target has failed while a request is open, and why (#5824 F8):
+	 *  the project may be further behind than `behind` says; `null` when it is not.
+	 */
+	stale?: SaveStale | null,
 };
 
 /**
@@ -15154,6 +15159,14 @@ export type SaveSettled = {
 };
 
 /**  The record a smart close ended on, as its view tab opens it (SI-8d). */
+/**  A project that could not be fetched while its request is open (#5824 F8). */
+export type SaveStale = {
+	/**  When the first failed fetch of the run was, in seconds since the epoch. */
+	since: number,
+	/**  Why the latest one failed, as a sentence fragment. */
+	why: string,
+};
+
 export type SavedRecord = {
 	/**  Plane-relative, as `session_record` reads it. */
 	path: string,

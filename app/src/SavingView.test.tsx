@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { chatMaySettle, SaveIndicator, SavingView } from "./SavingView";
+import { chatMaySettle, SaveIndicator, SavingView, staleSaid } from "./SavingView";
 import { ReadOnlySaid } from "./ReadOnlyLine";
 import type { PlaneSaving, RepoSaving, SaveEntry } from "./bindings";
 import { tipOf } from "./ui/tooltip/tooltip.testkit";
@@ -817,5 +817,46 @@ describe("saving a read-only project (#826)", () => {
     const save = screen.getByRole("button", { name: "Save the project" });
     expect(save).toHaveAttribute("aria-disabled", "true");
     expect(tipOf(save)).toEqual(SENTENCE);
+  });
+});
+
+describe("a project that could not be fetched while its request is open (#5824 F8)", () => {
+  const WHY = "main could not be fetched: Could not resolve host: github.com";
+  const stale = { since: new Date(2026, 10, 8, 14, 2).getTime() / 1000, why: WHY };
+  const open = standing({ stage: "pr-open", pr: "https://github.com/acme/plane/pull/7", stale });
+
+  it("says since when, and why, in the title bar's pill and its name", () => {
+    render(<SaveIndicator saving={open} busy={false} onOpen={() => {}} onSave={vi.fn()} />);
+    const pill = screen.getByTestId("save-indicator-where");
+    expect(pill.textContent).toContain("· stale");
+    expect(pill.getAttribute("aria-label")).toContain(`Stale since `);
+    expect(pill.getAttribute("aria-label")).toContain(WHY);
+  });
+
+  it("says it in the Saving tab, and that the next look tries again", async () => {
+    core([open]);
+    render(<SavingView plane={PLANE} />);
+    const said = await screen.findByTestId("saving-stale");
+    expect(said.textContent).toMatch(
+      /^Stale since .+: main could not be fetched: .+\. The next look tries again\.$/,
+    );
+  });
+
+  it("names the time alone today, and the day with it before", () => {
+    const today = new Date(2026, 10, 8, 18, 0);
+    expect(staleSaid(stale, today)).not.toMatch(/Nov/);
+    expect(staleSaid(stale, new Date(2026, 10, 9, 9, 0))).toMatch(/8/);
+  });
+
+  it("says nothing of it once a fetch goes through", () => {
+    render(
+      <SaveIndicator
+        saving={{ ...open, stale: null }}
+        busy={false}
+        onOpen={() => {}}
+        onSave={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId("save-indicator-where").textContent).not.toContain("stale");
   });
 });
