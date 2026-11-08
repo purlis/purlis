@@ -7,10 +7,78 @@
 //! code before its page, and reads a code from its input, line by line, when one is asked for.
 //! Anything but signed in is an `Err` that says what to do, which the command exits non-zero on.
 
+use std::io::{Read, Write};
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::Duration;
 
+use super::Login;
 use super::driven::{Driving, Event};
+
+/// **Runs `login` in this terminal, for the person to drive**, its input this terminal's own, and
+/// answers how it exited: `purlis profile sign-in --pool --in-terminal`, the line Open in terminal
+/// types ([`super::pool_line`]). Where it is held to a pin ([`super::Pin`]), nothing it printed is
+/// shown before its pin held on the first thing it printed, so nothing it asks for is typed to a
+/// login that did not; where it does not, the login is ended and this answers why.
+pub fn in_this_terminal(login: &Login) -> Result<Option<i32>, String> {
+    in_this_terminal_to(login, &mut std::io::stdout())
+}
+
+/// [`in_this_terminal`], what a pinned login prints written to `out`.
+pub fn in_this_terminal_to(login: &Login, out: &mut dyn Write) -> Result<Option<i32>, String> {
+    let mut command = std::process::Command::new(&login.program);
+    command
+        .args(&login.args)
+        .envs(login.env.iter().map(|(n, v)| (n, v)));
+    for name in &login.cleared {
+        command.env_remove(name);
+    }
+    let could_not_run = |e: std::io::Error| format!("{} could not be run: {e}", login.program);
+    let Some(pin) = &login.pin else {
+        let status = crate::forklock::spawn(&mut command)
+            .and_then(|mut child| child.wait())
+            .map_err(could_not_run)?;
+        return Ok(status.code());
+    };
+    command.stdout(std::process::Stdio::piped());
+    let mut child = crate::forklock::spawn(&mut command).map_err(could_not_run)?;
+    let end = |child: &mut std::process::Child| {
+        let _ = child.kill();
+        let _ = child.wait();
+    };
+    let Some(mut printed) = child.stdout.take() else {
+        end(&mut child);
+        return Err("the sign-in's output could not be read".to_owned());
+    };
+    let mut buffer = [0u8; 4096];
+    let mut heard = false;
+    loop {
+        let read = match printed.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(read) => read,
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(_) => break,
+        };
+        if !heard {
+            heard = true;
+            if let Err(why) = pin.holds() {
+                end(&mut child);
+                return Err(why);
+            }
+        }
+        if out
+            .write_all(&buffer[..read])
+            .and_then(|()| out.flush())
+            .is_err()
+        {
+            end(&mut child);
+            return Err("what the sign-in printed could not be shown here".to_owned());
+        }
+    }
+    child
+        .wait()
+        .map(|status| status.code())
+        .map_err(|e| format!("the sign-in's end could not be read: {e}"))
+}
 
 /// How long a step is waited for before the terminal's input is looked at.
 const LOOK_EVERY: Duration = Duration::from_millis(100);

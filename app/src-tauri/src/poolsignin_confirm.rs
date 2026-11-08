@@ -26,6 +26,8 @@ const THE_NEXT_WAITS: Duration = Duration::from_secs(5);
 const A_YES_LASTS: Duration = Duration::from_secs(300);
 /// How often the wait looks at whether the command hung up.
 const LOOKS_EVERY: Duration = Duration::from_millis(250);
+/// How long a line this window typed for a pool's sign-in stands for the person's yes to it.
+const A_TYPED_LINE_LASTS: Duration = Duration::from_secs(60);
 
 /// Which command's question it is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, specta::Type)]
@@ -62,6 +64,9 @@ struct Slot {
     ended_without_a_yes: Option<Instant>,
     /// The profile and pool of the last yes, and when.
     yes: Option<(String, String, Instant)>,
+    /// The profile and pool of the last sign-in line this window typed, and when
+    /// ([`the_window_typed`]).
+    typed: Option<(String, String, Instant)>,
 }
 
 static SLOT: Mutex<Option<Slot>> = Mutex::new(None);
@@ -102,6 +107,21 @@ fn asking(
 ) -> Result<Option<String>, String> {
     let (answer, answered) = channel();
     let id = LAST_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+    let typed_here = with_slot(|slot| {
+        let typed = slot.typed.take_if(|(said_profile, said_pool, when)| {
+            asks == Asks::SignIn
+                && said_profile == profile
+                && said_pool == pool
+                && when.elapsed() < A_TYPED_LINE_LASTS
+        });
+        if typed.is_some() {
+            slot.yes = Some((profile.to_owned(), pool.to_owned(), Instant::now()));
+        }
+        typed.is_some()
+    });
+    if typed_here {
+        return Ok(None);
+    }
     with_slot(|slot| {
         if slot.waiting.is_some() {
             return Err(
@@ -158,6 +178,16 @@ fn asking(
         Ok(false) => Err("it was declined in the window".to_owned()),
         Err(why) => Err(why),
     }
+}
+
+/// **This window just typed the line that signs `profile` in on `pool`** (Open in terminal): the
+/// person's click there is their yes to it. The command that line runs asks this window as any
+/// does, and is answered with that yes, once, within [`A_TYPED_LINE_LASTS`], with no dialog. The
+/// same line run again later, from a shell's history, is asked of the person.
+pub fn the_window_typed(profile: &str, pool: &str) {
+    with_slot(|slot| {
+        slot.typed = Some((profile.to_owned(), pool.to_owned(), Instant::now()));
+    });
 }
 
 /// **Whether the person just said yes to `profile` on `pool`**, and uses that yes up: what lets
@@ -348,5 +378,31 @@ mod tests {
         answer_pool_sign_in(question.id, true);
         assert!(asker.join().unwrap().is_ok());
         assert!(!take_the_yes("work", "team"), "no keep on this yes");
+
+        // A line this window just typed is the person's yes to its own sign-in, once, with no
+        // dialog; it lets that profile be kept there once, as a yes does.
+        the_window_typed("work", "team");
+        assert!(ask(&soon, || panic!("nobody is asked")).is_ok());
+        assert!(take_the_yes("work", "team"));
+        // The same line run again, from a shell's history, is asked of the person.
+        assert!(ask(&soon, || true).unwrap_err().contains("in time"));
+        // A line typed for another profile, or for a pool's taking off, stands for nothing.
+        let after = waits(Duration::from_millis(10), STAYS);
+        the_window_typed("other", "team");
+        assert!(ask(&after, || true).is_err());
+        the_window_typed("work", "team");
+        assert!(
+            asking(
+                Asks::TakeOff,
+                "work",
+                "team",
+                "D4E5F6",
+                &soon,
+                || true,
+                || ()
+            )
+            .unwrap_err()
+            .contains("in time")
+        );
     }
 }

@@ -1543,6 +1543,12 @@ enum ProfileCommand {
         /// puts a profile there that the runner does not keep.
         #[arg(long, value_name = "POOL", conflicts_with = "check")]
         pool: Option<String>,
+        /// With --pool, run the runner's own sign-in in this terminal instead, through its
+        /// harness's own flow, which you drive here: what Open in terminal in Settings › Pools
+        /// types. It checks the pool as the window does each time it runs, and asks the running
+        /// purlis window first.
+        #[arg(long, requires = "pool")]
+        in_terminal: bool,
         /// Ends the sign-in when this command's input closes: how a desktop drives it on a
         /// runner, where ending `docker exec` ends nothing in the container.
         #[arg(long, hide = true, conflicts_with_all = ["check", "pool"])]
@@ -1557,8 +1563,8 @@ enum ProfileCommand {
         )]
         in_own_terminal: Option<String>,
         /// Which of the harness's own flows to run, `browser` or `device`: how a desktop asks
-        /// for one on a runner.
-        #[arg(long, hide = true, conflicts_with_all = ["check", "pool"])]
+        /// for one on a runner. Beside --pool, only `device`, with --in-terminal.
+        #[arg(long, hide = true, conflicts_with = "check")]
         way: Option<String>,
     },
     /// Sign a profile of this machine's out on this device, through its harness's own sign-out:
@@ -4319,12 +4325,27 @@ fn machine_profile(verb: &ProfileCommand) -> ExitCode {
             no_fetch,
             provider,
             pool,
+            in_terminal,
             until_input_ends,
             in_own_terminal,
             way,
         } => {
             if let Some(pool) = pool {
-                return match pool_sign_in(&store, name, pool, provider.as_deref()) {
+                let signed_in = match (*in_terminal, way.as_deref()) {
+                    (true, None | Some("device")) => pool_sign_in_in_terminal(
+                        &store,
+                        name,
+                        pool,
+                        provider.as_deref(),
+                        way.is_some(),
+                    ),
+                    (true, Some(_)) => return refused("with --pool, --way is device"),
+                    (false, Some(_)) => {
+                        return refused("--way goes with --pool only beside --in-terminal");
+                    }
+                    (false, None) => pool_sign_in(&store, name, pool, provider.as_deref()),
+                };
+                return match signed_in {
                     Ok(()) => {
                         // Signed in there, as its harness said: a drain carries it again.
                         let carries =
@@ -4515,35 +4536,10 @@ fn pool_sign_in(
     provider: Option<&str>,
 ) -> Result<(), String> {
     use purlis_core::dockerpool::Docker;
-    use purlis_core::profilestore::{self, sign_in};
+    use purlis_core::profilestore::sign_in;
     use purlis_core::runners;
     let config = store.config_root();
-    if purlis_core::runnertaint::pool_ran_unsandboxed(config, pool) {
-        return Err(purlis_core::runnertaint::signs_nothing_in_on(pool));
-    }
-    let record = profilestore::list(config)?
-        .into_iter()
-        .find(|p| p.name == name)
-        .ok_or_else(|| {
-            format!(
-                "this machine has no profile named '{}'. purlis profile list names the ones it \
-                 has.",
-                shown::short(name)
-            )
-        })?;
-    sign_in::plan_named(&record.harness, provider)?;
-    let plans = sign_in::providers(&record.harness);
-    if provider.is_none() && !plans.is_empty() {
-        let named: Vec<String> = plans
-            .iter()
-            .map(|p| format!("--provider {} ({})", p.provider, p.title))
-            .collect();
-        return Err(format!(
-            "'{}' signs in to the plan you name: add {}.",
-            record.name,
-            named.join(" or ")
-        ));
-    }
+    let record = pool_profile(config, name, pool, provider)?;
     // A login approved in the browser waits for an answer only the window carries (#4044).
     if sign_in::driven::waits_for_the_browser(&record.harness, provider) {
         let said = "purlis follows only Claude Code's and opencode's Copilot sign-in on a pool \
@@ -4638,6 +4634,131 @@ fn pool_sign_in(
         }
         Ok(())
     })
+}
+
+/// **This machine's profile `name`, to be signed in on pool `pool`** to `provider`'s plan: refused
+/// where a chat ran on the pool without the sandbox, where there is no such profile, and where its
+/// harness serves several plans and none, or another, is named.
+fn pool_profile(
+    config: &std::path::Path,
+    name: &str,
+    pool: &str,
+    provider: Option<&str>,
+) -> Result<purlis_core::profilestore::MachineProfile, String> {
+    use purlis_core::profilestore::{self, sign_in};
+    if purlis_core::runnertaint::pool_ran_unsandboxed(config, pool) {
+        return Err(purlis_core::runnertaint::signs_nothing_in_on(pool));
+    }
+    let record = profilestore::list(config)?
+        .into_iter()
+        .find(|p| p.name == name)
+        .ok_or_else(|| {
+            format!(
+                "this machine has no profile named '{}'. purlis profile list names the ones it \
+                 has.",
+                shown::short(name)
+            )
+        })?;
+    sign_in::plan_named(&record.harness, provider)?;
+    let plans = sign_in::providers(&record.harness);
+    if provider.is_none() && !plans.is_empty() {
+        let named: Vec<String> = plans
+            .iter()
+            .map(|p| format!("--provider {} ({})", p.provider, p.title))
+            .collect();
+        return Err(format!(
+            "'{}' signs in to the plan you name: add {}.",
+            record.name,
+            named.join(" or ")
+        ));
+    }
+    Ok(record)
+}
+
+/// **`purlis profile sign-in <name> --pool <pool> --in-terminal`**: the line Open in terminal
+/// types ([`purlis_core::profilestore::sign_in::pool_line`]). The runner's own sign-in of `name`,
+/// to `provider`'s plan where one is named, by the harness's device-code flow with `device`, run
+/// in this terminal for the person to drive. It passes the gate the window's own sign-in passes,
+/// here, each time it runs, so a line run again from a shell's history is checked as the first
+/// was; and it asks the running window first, which answers a line it just typed with the click
+/// that typed it and asks the person of any other. A cluster runner's is held to the pod it had
+/// right before its exec, and shows nothing before that held. `Ok` once the runner says it is
+/// signed in.
+fn pool_sign_in_in_terminal(
+    store: &purlis_core::profilestore::Homes,
+    name: &str,
+    pool: &str,
+    provider: Option<&str>,
+    device: bool,
+) -> Result<(), String> {
+    use purlis_core::dockerpool::{Docker, Typed};
+    use purlis_core::profilestore::sign_in;
+    use purlis_core::{pools, runners};
+    let config = store.config_root();
+    pool_profile(config, name, pool, provider)?;
+    let typed = if device {
+        Typed::DeviceInATerminal
+    } else {
+        Typed::InATerminal
+    };
+    confirmed_in_the_window(config, pool, name)?;
+    let standing = if let Some((cluster, kept)) =
+        runners::cluster_runner_for(config, pool).map_err(|why| why.to_string())?
+    {
+        let judged =
+            pools::cluster_runner_yours(config, pool, &cluster, &kept, &pools::vouched_now)?;
+        pools::cluster_runner_still_yours(config, pool, &judged)?;
+        let kubectl = pools::kubectl_here(config)?.within(pools::VOUCHED_NOW_WITHIN);
+        eprintln!("asking pool {pool}'s runner whether it keeps '{name}'…");
+        kept_first(pool, name, || {
+            pools::cluster_standing(config, &kubectl, pool, &judged, name)
+                .map_err(|why| not_asked(pool, name, &why))
+        })?;
+        // The standing may have taken a while, as long as the runner chose: the whole gate again.
+        let (cluster, kept) = pools::cluster_runner_still_yours(config, pool, &judged)?;
+        pools::cluster_runner_yours(config, pool, &cluster, &kept, &pools::vouched_now)?;
+        let login = pools::cluster_sign_in(config, &kubectl, pool, &judged, name, provider, typed)
+            .map_err(|why| shown::short(&why))?;
+        sign_in::terminal::in_this_terminal(&login)?;
+        pools::cluster_runner_still_yours(config, pool, &judged)?;
+        pools::cluster_standing(config, &kubectl, pool, &judged, name)
+            .ok()
+            .flatten()
+    } else {
+        // Nothing reaches a runner, nor is read of one, before its engine is shown to be yours.
+        let engine = Docker::engine_on_this_machine();
+        purlis_core::poollogins::owned(engine.clone())?;
+        let engine = engine?;
+        let runner = runners::runner_for(config, pool)
+            .map_err(|why| format!("{why}. Settings › Pools lists this machine's pools."))?;
+        let path = purlis_core::envvar::var("PATH");
+        let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+        let docker =
+            Docker::on_this_machine(path.as_deref(), home.as_deref()).map_err(|why| why.0)?;
+        eprintln!("asking pool {pool}'s runner whether it keeps '{name}'…");
+        kept_first(pool, name, || {
+            docker
+                .standing_on_runner(&runner.made, &engine, name)
+                .map_err(|why| not_asked(pool, name, &why))
+        })?;
+        if purlis_core::runnertaint::pool_ran_unsandboxed(config, pool) {
+            return Err(purlis_core::runnertaint::signs_nothing_in_on(pool));
+        }
+        let login = docker.checked_sign_in(&runner.made, &engine, name, provider, typed)?;
+        sign_in::terminal::in_this_terminal(&login)?;
+        docker
+            .standing_on_runner(&runner.made, &engine, name)
+            .ok()
+            .flatten()
+    };
+    if standing == Some(sign_in::Standing::SignedIn) {
+        eprintln!("'{name}' is signed in on pool {pool}.");
+        return Ok(());
+    }
+    Err(format!(
+        "pool {pool}'s runner does not say '{name}' is signed in there. Run this again to try \
+         once more."
+    ))
 }
 
 /// The person's yes, in their running window, to signing `name` in on pool `pool` from here.

@@ -281,3 +281,28 @@ fn a_sign_in_out_of_its_wait_names_double_it_and_where_to_change_it() {
     assert!(at_the_most.contains("the most it can be"), "{at_the_most}");
     assert!(!at_the_most.contains("Settings"), "{at_the_most}");
 }
+
+/// **A pinned login run in this terminal shows nothing before its pin held** on the first thing
+/// it printed; where it does not hold, the login is ended, nothing of it is shown, and why is
+/// said.
+#[cfg(unix)]
+#[test]
+fn a_pinned_login_in_this_terminal_shows_nothing_before_its_pin_held() {
+    let mut login = claude("exec sleep 600");
+    login.pin = Some(super::super::Pin::new(|| {
+        Err("the runner's pod changed".to_owned())
+    }));
+    let mut shown = Vec::new();
+
+    assert_eq!(
+        in_this_terminal_to(&login, &mut shown),
+        Err("the runner's pod changed".to_owned())
+    );
+    assert!(shown.is_empty(), "{}", String::from_utf8_lossy(&shown));
+
+    let mut login = claude("exit 4");
+    login.pin = Some(super::super::Pin::new(|| Ok(())));
+    let mut shown = Vec::new();
+    assert_eq!(in_this_terminal_to(&login, &mut shown), Ok(Some(4)));
+    assert!(String::from_utf8_lossy(&shown).contains("Paste code here"));
+}

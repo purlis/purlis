@@ -1571,11 +1571,13 @@ fn config_root() -> Result<PathBuf, String> {
 }
 
 /// **The line a shell here runs to sign `name` in on pool `pool`'s runner** (#2049), to
-/// `provider`'s plan where its harness serves several: the runner's own `purlis profile
-/// sign-in`, through this machine's `docker` with settings of purlis's own, on the engine shown
-/// to be the person's own, in the container as it was made, checked first. Only one of this
-/// machine's profiles that goes to a runner, kept there first, so the runner has it to sign in.
-/// With `device`, by the harness's device-code flow (#4044).
+/// `provider`'s plan where its harness serves several: this machine's own `purlis profile sign-in
+/// --pool --in-terminal`, which checks the pool as this does each time it runs, a line run again
+/// from the shell's history too, and then runs the runner's own sign-in in that terminal
+/// ([`profilestore::sign_in::pool_line`]). Only one of this machine's profiles that goes to a
+/// runner, kept there first, so the runner has it to sign in. With `device`, by the harness's
+/// device-code flow (#4044). The line's own ask of this window is answered by this click
+/// ([`crate::poolsignin_confirm::the_window_typed`]).
 pub fn sign_in_line(
     pool: &str,
     name: &str,
@@ -1596,17 +1598,31 @@ pub fn sign_in_line(
         })?;
     profilestore::sign_in::plan_named(&record.harness, provider)?;
     let kept = onrunner::Kept::of(&record)?;
-    if keep_on_as(Ok(yours.clone()), &config, pool, &kept, Waking::No)?.is_none() {
+    if keep_on_as(Ok(yours), &config, pool, &kept, Waking::No)?.is_none() {
         return Err(format!(
             "Pool {pool}: {OLDER_RUNNER}. No sign-in was typed."
         ));
     }
-    let typed = if device {
-        Typed::DeviceInATerminal
-    } else {
-        Typed::InATerminal
-    };
-    login_on(&yours, &config, pool, name, provider, typed)?.line()
+    let binary = crate::charter_binary().ok_or_else(|| {
+        "purlis could not find its own command beside the app, so no sign-in was typed. \
+         Reinstall purlis, then try again."
+            .to_owned()
+    })?;
+    let binary = binary.to_str().ok_or_else(|| {
+        "the path of purlis's own command is not text a shell can be given, so no sign-in was \
+         typed."
+            .to_owned()
+    })?;
+    let line = profilestore::sign_in::pool_line(
+        binary,
+        name,
+        pool,
+        provider,
+        device,
+        purlis_core::sandbox::Os::this(),
+    )?;
+    crate::poolsignin_confirm::the_window_typed(name, pool);
+    Ok(line)
 }
 
 /// **The line a shell here runs to sign `name` out on pool `pool`'s Docker runner** (#4124), for a

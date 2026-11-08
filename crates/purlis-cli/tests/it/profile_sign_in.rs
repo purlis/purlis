@@ -379,7 +379,9 @@ impl Drop for AWindow {
 }
 
 /// **A pool's sign-in from the command is confirmed in the window**: with none running, and on a
-/// no, it says so and reaches neither engine nor runner, on either kind of pool.
+/// no, it says so and reaches neither engine nor runner, on either kind of pool. So is one in this
+/// terminal (`--in-terminal`), what Open in terminal types: a line run again from a shell's
+/// history asks again.
 #[cfg(unix)]
 #[test]
 fn a_sign_in_on_a_pool_goes_on_only_on_the_windows_yes() {
@@ -399,8 +401,16 @@ fn a_sign_in_on_a_pool_goes_on_only_on_the_windows_yes() {
         );
     }
 
-    for pool in ["team", "builds"] {
-        let args = ["profile", "sign-in", "work", "--pool", pool];
+    for (pool, in_terminal) in [
+        ("team", false),
+        ("builds", false),
+        ("team", true),
+        ("builds", true),
+    ] {
+        let mut args = vec!["profile", "sign-in", "work", "--pool", pool];
+        if in_terminal {
+            args.push("--in-terminal");
+        }
         let none = machine.purlis(&args);
         assert!(!none.status.success());
         let said = String::from_utf8_lossy(&none.stderr);
@@ -418,7 +428,7 @@ fn a_sign_in_on_a_pool_goes_on_only_on_the_windows_yes() {
 }
 
 /// **Only a pool shown to be the person's own is signed in on**: an engine elsewhere is refused
-/// before anything else, and says why.
+/// before anything else, and says why, in this terminal too.
 #[cfg(unix)]
 #[test]
 fn an_engine_not_shown_to_be_on_this_machine_is_refused() {
@@ -426,14 +436,46 @@ fn an_engine_not_shown_to_be_on_this_machine_is_refused() {
     machine.said(&["profile", "create", "work", "--harness", "claude"]);
 
     let _window = a_window(&machine, Ok(()));
-    let out = machine.purlis_with(
-        &[("DOCKER_HOST", "tcp://10.0.0.1:2375")],
-        &["profile", "sign-in", "work", "--pool", "builds"],
-    );
+    for in_terminal in [false, true] {
+        let mut args = vec!["profile", "sign-in", "work", "--pool", "builds"];
+        if in_terminal {
+            args.push("--in-terminal");
+        }
+        let out = machine.purlis_with(&[("DOCKER_HOST", "tcp://10.0.0.1:2375")], &args);
 
-    assert!(!out.status.success());
-    let said = String::from_utf8_lossy(&out.stderr);
-    assert!(said.contains("not known to be yours"), "{said}");
+        assert!(!out.status.success());
+        let said = String::from_utf8_lossy(&out.stderr);
+        assert!(said.contains("not known to be yours"), "{said}");
+    }
+    assert_eq!(machine.ran(), None);
+}
+
+/// **A flow is named on a pool only for a sign-in in this terminal**, and only the device-code
+/// one; `--in-terminal` is only of a pool.
+#[test]
+fn a_pools_flow_is_named_only_for_a_sign_in_in_this_terminal() {
+    let machine = Machine::new(1);
+    machine.said(&["profile", "create", "work", "--harness", "claude"]);
+
+    for args in [
+        &[
+            "profile", "sign-in", "work", "--pool", "builds", "--way", "device",
+        ][..],
+        &[
+            "profile",
+            "sign-in",
+            "work",
+            "--pool",
+            "builds",
+            "--in-terminal",
+            "--way",
+            "browser",
+        ][..],
+        &["profile", "sign-in", "work", "--in-terminal"][..],
+    ] {
+        let out = machine.purlis(args);
+        assert!(!out.status.success(), "{args:?}");
+    }
     assert_eq!(machine.ran(), None);
 }
 

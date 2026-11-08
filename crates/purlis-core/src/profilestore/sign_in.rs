@@ -640,23 +640,75 @@ impl Login {
         words.extend(self.env.iter().map(|(n, v)| format!("{n}={v}")));
         words.push(self.program.clone());
         words.extend(self.args.iter().cloned());
-        if let Some(bad) = words
-            .iter()
-            .find(|w| w.chars().any(|c| c.is_control() || c == '\'' || c == '\\'))
-        {
-            return Err(format!(
-                "{} has a control character, a quote or a backslash in it, so purlis types no \
-                 sign-in with it. Run purlis profile sign-in in your own terminal instead.",
-                crate::shown::short(bad)
-            ));
-        }
-        let quoted: Vec<String> = words
-            .iter()
-            .map(|w| crate::shellseg::shell_quote(w))
-            .collect();
-        Ok(format!("{}\n", quoted.join(" ")))
+        typed(&words)
     }
 }
+
+/// **`words` as one line a shell runs**, each quoted for the shell, and a line break. A word with
+/// a control character, a quote or a backslash in it is refused, so every shell reads each word as
+/// one, and nothing typed can break the line in two.
+fn typed(words: &[String]) -> Result<String, String> {
+    if let Some(bad) = words
+        .iter()
+        .find(|w| w.chars().any(|c| c.is_control() || c == '\'' || c == '\\'))
+    {
+        return Err(format!(
+            "{} has a control character, a quote or a backslash in it, so purlis types no \
+             sign-in with it. Run purlis profile sign-in in your own terminal instead.",
+            crate::shown::short(bad)
+        ));
+    }
+    let quoted: Vec<String> = words
+        .iter()
+        .map(|w| crate::shellseg::shell_quote(w))
+        .collect();
+    Ok(format!("{}\n", quoted.join(" ")))
+}
+
+/// **The line Open in terminal types to sign `name` in on pool `pool`'s runner**: this machine's
+/// own `purlis` at `binary`, which checks the pool as the window does each time it runs, a line
+/// run again from a shell's history too, and then runs the runner's own sign-in in that terminal
+/// (`purlis profile sign-in --pool --in-terminal`), to `provider`'s plan where one is named, by
+/// the harness's device-code flow with `device`. Nothing of the runner is on the line. None is
+/// typed on Windows, whose shells purlis types no sign-in into.
+pub fn pool_line(
+    binary: &str,
+    name: &str,
+    pool: &str,
+    provider: Option<&str>,
+    device: bool,
+    os: crate::sandbox::Os,
+) -> Result<String, String> {
+    if os == crate::sandbox::Os::Windows {
+        return Err(format!(
+            "purlis types no sign-in into a shell on Windows yet. Run purlis profile sign-in \
+             {name} --pool {pool} --in-terminal in your own terminal."
+        ));
+    }
+    let mut words: Vec<String> = [
+        binary,
+        "profile",
+        "sign-in",
+        name,
+        "--pool",
+        pool,
+        IN_TERMINAL,
+    ]
+    .iter()
+    .map(|word| (*word).to_owned())
+    .collect();
+    if let Some(provider) = provider {
+        words.extend(["--provider".to_owned(), provider.to_owned()]);
+    }
+    if device {
+        words.extend(["--way".to_owned(), "device".to_owned()]);
+    }
+    typed(&words)
+}
+
+/// The flag that has `purlis profile sign-in --pool` run the runner's own sign-in in the terminal
+/// it runs in, for the person to drive.
+pub const IN_TERMINAL: &str = "--in-terminal";
 
 /// The sign-in of `profile`, with `program` as its program, to `provider` where its harness
 /// serves several: one of [`providers`], and none for a harness that serves one; by `way` where

@@ -439,10 +439,10 @@ fn signing_in_here(profile: purlis_core::profiles::Profile) -> crate::signinwatc
 /// project root, the one the window opened for it, never into a chat's pane. An adopted
 /// profile is refused: it is signed in by the person's own sign-in.
 ///
-/// **With `pool`, it is signed in on that pool's runner** (#2049): the line is the runner's own
-/// `purlis profile sign-in`, run there through this machine's `docker`, in the runner's folder
-/// for the profile ([`crate::poolprofiles::sign_in_line`]); nothing of this machine's sign-in
-/// goes there. The runner is asked again until it says the profile is signed in there or the
+/// **With `pool`, it is signed in on that pool's runner** (#2049): the line is this machine's
+/// own `purlis profile sign-in --pool --in-terminal`, which checks the pool each time it runs and
+/// then runs the runner's own sign-in in that tab, in the runner's folder for the profile
+/// ([`crate::poolprofiles::sign_in_line`]); nothing of this machine's sign-in goes there. The runner is asked again until it says the profile is signed in there or the
 /// person closes the shell (#4009). With `device`, by the harness's device-code flow there
 /// (#4044).
 #[tauri::command]
