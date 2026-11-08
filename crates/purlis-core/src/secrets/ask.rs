@@ -799,8 +799,15 @@ impl Asks {
             asked.cannot_receive.retain(|chat| back.contains(chat));
             asked.needed()
         });
+        let before = inner.runs.given_count();
         inner.runs.retain_chats(|chat| back.contains(&chat));
+        let moved = inner.runs.given_count() != before;
         self.save(&inner);
+        drop(inner);
+        // The Allowed list may have read them before the launch settled (#5876's review).
+        if moved {
+            self.run_grants_moved();
+        }
     }
 
     fn inner(&self) -> MutexGuard<'_, Inner> {

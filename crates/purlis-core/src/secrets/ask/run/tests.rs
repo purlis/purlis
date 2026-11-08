@@ -784,3 +784,16 @@ fn what_is_told_of_moved_grants_may_read_them_again_at_once() {
     assert!(asks.granted(&bound(1, &["get"])));
     assert_eq!(*read.lock().unwrap(), Some(0), "told off the asks' lock");
 }
+
+#[test]
+fn grants_of_chats_a_launch_did_not_bring_back_tell_that_the_run_grants_moved() {
+    let asks = Asks::new(std::path::Path::new("/nowhere"));
+    stopped(&asks, bound(7, &["get"]));
+    answer_open(&asks, RunAnswer::Once);
+    let told = counting(&asks);
+    asks.only_these_came_back(&[7]);
+    assert_eq!(times(&told), 0, "chat 7 came back with its grant");
+    asks.only_these_came_back(&[8]);
+    assert!(asks.given_runs().is_empty());
+    assert_eq!(times(&told), 1);
+}

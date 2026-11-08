@@ -551,6 +551,11 @@ impl Runs {
         });
     }
 
+    /// How many grants are held.
+    pub(super) fn given_count(&self) -> usize {
+        self.given.len()
+    }
+
     /// Every open ask of a chat in `back`, or none of `gone`'s, stays.
     pub(super) fn retain_chats(&mut self, keep: impl Fn(u32) -> bool) {
         self.open.retain(|asked| keep(asked.open.bound.chat));
