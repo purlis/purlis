@@ -295,6 +295,65 @@ fn a_narrowing_skill_the_router_keeps_for_its_pin_is_started_by_the_harness_s_ow
 }
 
 #[test]
+fn a_handed_manual_only_narrowing_skill_the_person_named_is_loaded_never_sent_to_a_refused_start_5880()
+ {
+    // #5880: Claude Code reads `disable-model-invocation` itself, so its Skill tool refuses
+    // `skills:audit` when the model starts it, even after the person named it in prose.
+    let (tmp, bundle) = a_plane_of(1);
+    let root = tmp.path();
+    write(
+        &root.join("skills/audit"),
+        "---\nname: audit\ndescription: Looks, never touches.\ncontext: fork\n\
+         disable-model-invocation: true\n---\n\nbody\n",
+    );
+    std::fs::write(root.join("skills/audit.toml"), "grant = \"all\"\n").unwrap();
+    let handed = the_folder(root, &bundle, None);
+    assert!(
+        laid_out(root, &bundle, None).contains(&"audit".to_owned()),
+        "the harness was handed it"
+    );
+    let asking = crate::skilltools::Asking {
+        plane: root,
+        workspace: Some("smart-ide"),
+        persona: None,
+        harness: Some("claude-code"),
+        route: Some(crate::skills::Route::Plugin),
+        built_in: Some(&bundle),
+        handed: Some(&handed),
+    };
+    let mut args = serde_json::Map::new();
+    args.insert("name".to_owned(), serde_json::Value::from("audit"));
+    args.insert("person_asked".to_owned(), serde_json::Value::Bool(true));
+    let started = std::cell::RefCell::new(Vec::new());
+    let loaded = crate::skilltools::call(&asking, "skill_load", &args, &|name| {
+        started.borrow_mut().push(name.to_owned());
+    })
+    .unwrap();
+    assert!(
+        loaded.starts_with("Loaded the skill `audit` (project)."),
+        "{loaded}"
+    );
+    assert!(
+        loaded.contains("Narrowing not applied: this skill runs in a fork of the chat"),
+        "{loaded}"
+    );
+    assert!(!loaded.contains("skills:audit"), "{loaded}");
+    assert_eq!(*started.borrow(), ["audit"]);
+
+    // Unasked, it is still not loaded, and still not sent to the harness's start.
+    args.remove("person_asked");
+    let unasked = crate::skilltools::call(&asking, "skill_load", &args, &|_| {
+        panic!("a manual-only skill the person did not name opens no run")
+    })
+    .unwrap();
+    assert!(
+        unasked.contains("manual-only, so it was not loaded"),
+        "{unasked}"
+    );
+    assert!(!unasked.contains("skills:audit"), "{unasked}");
+}
+
+#[test]
 fn a_workspaces_pin_and_a_personas_pin_are_never_hidden() {
     let (tmp, bundle) = a_plane_of(MOST + 5);
     let root = tmp.path();
