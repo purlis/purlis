@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794104793960,
+  "lastUpdate": 1794107163045,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -42924,6 +42924,48 @@ window.BENCHMARK_DATA = {
             "value": 101.7623005,
             "unit": "ms",
             "extra": "median of 5 runs: 101.214, 101.392, 101.762, 102.145, 102.192 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "25fb258e17aa27ea48d4759dd1a5acf03c9c7d02",
+          "message": "Stories: It Warns waits for its warning lines to be visible (#5762) (#5763)\n\nThe dialog's scrim fades in from opacity 0, and WebKit can start that\nfade after the line is drawn, so a one-shot toBeVisible right after\nfindByTestId failed now and then. untilVisible, new in stories.testkit,\nwaits for it and names the step when it fails.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6WDG56FF20RQ6Q800FMRSGX\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-08T02:25:47Z",
+          "tree_id": "fad71027109c6d7f5b3a69e59befa3f3813f39d5",
+          "url": "https://github.com/purlis/purlis/commit/25fb258e17aa27ea48d4759dd1a5acf03c9c7d02"
+        },
+        "date": 1794107158036,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.341936,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.327, 0.334, 0.342, 0.343, 0.345 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.548021,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.106, 16.524, 16.548, 16.809, 16.844 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.024699,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.117, 101.559, 102.025, 102.111, 102.584 ms"
           }
         ]
       }
