@@ -52,8 +52,8 @@ pub fn of(own_work: Option<&OwnWork>, carry_on: bool) -> Option<String> {
 }
 
 /// **The wake line for a chat restarted on its own while purlis runs on** (#5753): Restart
-/// now, a restart without the sandbox, its project's settings contained, or its move to or from
-/// a runner, each of which ends its program with what it had left running. Only where it had
+/// now, a restart without the sandbox, a restart that contains its project's settings, or its
+/// move to or from a runner, each of which ends its program with what it had left running. Only where it had
 /// something of its own running; the rest of what the restart tells it is the restart's own.
 pub fn of_the_chat_restarted(own_work: Option<&OwnWork>) -> Option<String> {
     own_work.and_then(ended).map(|ended| {

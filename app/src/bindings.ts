@@ -1611,8 +1611,9 @@ export const commands = {
 	 *  first message, what was allowed where something was (#1342). The one restart: a sandbox
 	 *  grant, the persona grants a person allowed (#1362) and Restart chat (#1428) all come here.
 	 *  The window asks once the chat's turn has ended; a chat owed no restart is refused, and one
-	 *  waiting on a permission prompt is not restarted yet. The answer is the new one as the
-	 *  window draws it, in the old one's place.
+	 *  waiting on a permission prompt, being stopped, or (at a pause) waiting on work of its own is
+	 *  not restarted yet, with why. The answer is the new one as the window draws it, in the old
+	 *  one's place.
 	 * 
 	 *  **`now` is the person's Restart now** (#5753): it goes ahead while the chat waits on work
 	 *  of its own, which a restart at a pause waits for, and the chat brought back is told what

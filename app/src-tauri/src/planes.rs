@@ -89,13 +89,17 @@ pub enum Restarted {
     NotYet(&'static str),
 }
 
-/// Why a restart waits while the chat shows a permission prompt (or is being stopped).
+/// Why a restart waits while the chat shows a permission prompt.
 pub const WAITS_ON_A_PERMISSION_PROMPT: &str =
     "It is waiting on a permission prompt, so it restarts once that is answered.";
 
+/// Why a restart waits while the person is stopping the chat (#1448).
+pub const WAITS_WHILE_YOU_STOP_IT: &str =
+    "You are stopping this chat, so it is not restarted while that runs.";
+
 /// Why a restart at a pause waits while the chat waits on its own work (#5753).
-pub const WAITS_ON_ITS_OWN_WORK: &str = "It is waiting on work of its own running in the background, so it restarts once that \
-     work wakes it and its turn ends. Restart now ends that work.";
+pub const WAITS_ON_ITS_OWN_WORK: &str = "It has work of its own running in the background. It restarts once that work is done and \
+     its turn ends.";
 
 #[cfg(test)]
 impl PlaneId {
@@ -1633,7 +1637,7 @@ impl Held {
         // Nor while the person is stopping it (#1448): the window asks this on its own when a
         // turn ends, which is when a stop sends its prompt, and the stop is the later word.
         if self.stopping.is_stopping(session) {
-            return Ok(Restarted::NotYet(WAITS_ON_A_PERMISSION_PROMPT));
+            return Ok(Restarted::NotYet(WAITS_WHILE_YOU_STOP_IT));
         }
         if when == When::AtAPause && self.board().glance(session).own_work {
             return Ok(Restarted::NotYet(WAITS_ON_ITS_OWN_WORK));

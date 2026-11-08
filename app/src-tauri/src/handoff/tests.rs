@@ -3619,7 +3619,7 @@ fn a_chat_being_stopped_is_not_started_again_under_a_new_number() {
     assert_eq!(
         held.restart_chat(child, STARTING, crate::planes::When::Now),
         Ok(crate::planes::Restarted::NotYet(
-            crate::planes::WAITS_ON_A_PERMISSION_PROMPT
+            crate::planes::WAITS_WHILE_YOU_STOP_IT
         ))
     );
     assert_eq!(held.stopping().now(), vec![child], "still being stopped");
