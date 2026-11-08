@@ -2097,6 +2097,9 @@ async fn an_adopted_claim_holds_its_shape(client: &Client, name: &str) {
     let operators = Api::<DynamicObject>::namespaced_with(as_operator, &runners(), &resource);
     let shape = "nothing added to the pod";
     let marks = "only its own mark on a claim";
+    // What reaches the pod is refused for every writer too, by the policy on claims, so the
+    // operator's write may be refused in either policy's words.
+    let added = "sets no env, lifecycle, or pod labels or annotations";
     for (what, change, words) in [
         (
             "a pod label",
@@ -2145,12 +2148,14 @@ async fn an_adopted_claim_holds_its_shape(client: &Client, name: &str) {
         ),
     ] {
         let refused = operators.patch(name, &dry, &Patch::Merge(&change)).await;
-        assert!(refused_saying(&refused, words), "{what}: {refused:?}");
+        assert!(
+            refused_saying(&refused, words) || (words == shape && refused_saying(&refused, added)),
+            "{what}: {refused:?}"
+        );
     }
     // Nor by anyone else, the cluster admin included, for the one label and for what would reach
     // the pod or end the runner on a time of its own.
     let admins = Api::<DynamicObject>::namespaced_with(client.clone(), &runners(), &resource);
-    let added = "sets no env, lifecycle, or pod labels or annotations";
     for (what, change, words) in [
         (
             "the created-by label",
