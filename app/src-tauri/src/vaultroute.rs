@@ -705,6 +705,11 @@ pub async fn allow_refused_vault(
 /// **Keep blocked** on a refused vault's Notice: puts it away, and grants nothing. The chat's
 /// next turn is told in one line not to retry, with `reason`, what the person typed for it, if
 /// anything (#1987). Its next try at the vault raises nothing, for as long as the chat is open.
+///
+/// **On a vault its persona already holds** (#5801), the chat's runs on it are not held, so
+/// neither the chat nor the person is told it was kept blocked: the chat hears that its persona
+/// may use the vault and not to use it unless the person says to, and the press answers what
+/// the person reads beside it, which says where the vault is held. None otherwise.
 #[tauri::command]
 #[specta::specta]
 pub async fn keep_vault_blocked(
@@ -713,20 +718,41 @@ pub async fn keep_vault_blocked(
     session: u32,
     vault: String,
     reason: Option<String>,
-) -> Result<(), String> {
+) -> Result<Option<VaultAnswered>, String> {
     let held = planes.held(&plane)?;
     let network = planes.network().cloned();
     // Off the window's thread (#5424): a Run grant's ask open on the vault is answered Don't
     // allow, and that answer is audited on disk.
     crate::off_the_window("keeping the vault blocked", move || {
         keep_blocked_pressed(&held, network.as_ref(), session, &vault);
+        let persona = held
+            .chats()
+            .open_now()
+            .into_iter()
+            .find(|open| open.session == session)
+            .and_then(|open| open.persona);
+        if let Some(kept) = kept_blocked_but_held(held.root(), persona.as_deref(), &vault) {
+            held.chats().tell_outcome(
+                session,
+                purlis_core::askoutcome::Outcome {
+                    about: purlis_core::askoutcome::About::Vault {
+                        vault: vault.clone(),
+                    },
+                    answer: purlis_core::askoutcome::Answer::KeptBlockedButHeld {
+                        persona: kept.persona,
+                        by: kept.by,
+                    },
+                },
+            );
+            return Ok(Some(VaultAnswered { said: kept.said }));
+        }
         crate::askoutcome::kept_blocked(
             held.chats(),
             session,
             (crate::sandboxing::GrantWhat::Vault, &vault),
             reason.as_deref(),
         );
-        Ok(())
+        Ok(None)
     })
     .await
 }
@@ -824,6 +850,60 @@ pub(crate) fn vault_kept_blocked(
         }
     }
     stayed
+}
+
+/// **Keep blocked on a vault the chat's persona already holds** (#5801): what the person and
+/// the chat are told instead of "kept blocked".
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct KeptButHeld {
+    pub persona: String,
+    pub by: purlis_core::askoutcome::HeldBy,
+    /// What the person reads beside the press.
+    pub said: String,
+}
+
+/// **Where Keep blocked holds nothing, since `persona` may already use `vault`** (#5801; ADR
+/// 0112, amended 2026-11-08): its tag, or a row of the Allowed list an Always allow or a refused
+/// vault's Allow made, by the broker's own rule ([`brokered::authorise`]). Says how, and how to
+/// take it back. None where the persona may not use it, or the chat runs as none.
+pub(crate) fn kept_blocked_but_held(
+    root: &std::path::Path,
+    persona: Option<&str>,
+    vault: &str,
+) -> Option<KeptButHeld> {
+    use purlis_core::askoutcome::HeldBy;
+    let persona = persona.filter(|p| !p.is_empty())?;
+    brokered::authorise(&Ctx::new(root, Env::from_process()), Some(persona), vault).ok()?;
+    let allowed = sandbox::local::granted_vaults(root)
+        .iter()
+        .any(|one| one.vault == vault && one.persona == persona);
+    let by = if allowed {
+        HeldBy::AllowedList
+    } else {
+        HeldBy::Tag
+    };
+    let mut said = format!(
+        "You kept vault {vault} blocked for this chat, but {persona} can already use it, so this \
+         chat's runs on it still go."
+    );
+    said.push_str(&match by {
+        HeldBy::AllowedList => {
+            " Remove it in Settings › Sandbox › Allowed to stop them.".to_owned()
+        }
+        HeldBy::Tag => {
+            format!(" The project's vaults tag it for {persona}: change that tag to stop them.")
+        }
+    });
+    if brokered::declares_a_tool_with(root, persona, vault) {
+        said.push_str(&format!(
+            " {persona}'s tools name it too: remove that tool line to stop its runs."
+        ));
+    }
+    Some(KeptButHeld {
+        persona: persona.to_owned(),
+        by,
+        said,
+    })
 }
 
 /// **Puts a refused vault's Notice away, and tells the chat nothing** (#1987): Dispatch to

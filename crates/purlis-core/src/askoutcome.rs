@@ -238,6 +238,20 @@ pub enum Answer {
     /// went after as long as a waiting call waits. Nothing was allowed, and the chat may ask
     /// again.
     NotAnswered,
+    /// **Kept blocked for this chat, on a vault its persona already holds** (#5801, ADR 0112,
+    /// amended 2026-11-08): Keep blocked holds no run on a vault its persona may use, so the
+    /// chat is told the person's wish and that purlis does not enforce it.
+    KeptBlockedButHeld { persona: String, by: HeldBy },
+}
+
+/// How a persona already holds a vault (#5801).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HeldBy {
+    /// You let it use the vault on this machine: a row of the Allowed list.
+    AllowedList,
+    /// The project's registry tags the vault for it.
+    Tag,
 }
 
 /// One Ask's answer, as the chat it was the Ask of is told it.
@@ -289,6 +303,15 @@ impl Outcome {
             Answer::FilledNotAllowed => "Filled by the person, but the program was not allowed \
                                          — don't retry or work around it."
                 .to_owned(),
+            Answer::KeptBlockedButHeld { persona, by } => format!(
+                "Kept blocked by the person, but {} may already use it, {}, so purlis does not \
+                 stop your runs on it — don't use it unless the person says to.",
+                code(persona),
+                match by {
+                    HeldBy::AllowedList => "from the Allowed list",
+                    HeldBy::Tag => "by the vault's tag",
+                }
+            ),
             Answer::NotAnswered => "Nobody answered in time, so nothing was allowed and the ask \
                                     went — tell the person what needs it, or ask again when \
                                     they're back."

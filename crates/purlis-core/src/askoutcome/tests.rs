@@ -132,6 +132,22 @@ fn every_answer() -> Vec<(Answer, &'static str)> {
             "Kept blocked by the person — don't retry or work around it; no reason given.",
         ),
         (
+            Answer::KeptBlockedButHeld {
+                persona: "devops".to_owned(),
+                by: HeldBy::AllowedList,
+            },
+            "Kept blocked by the person, but `devops` may already use it, from the Allowed list, \
+             so purlis does not stop your runs on it — don't use it unless the person says to.",
+        ),
+        (
+            Answer::KeptBlockedButHeld {
+                persona: "devops".to_owned(),
+                by: HeldBy::Tag,
+            },
+            "Kept blocked by the person, but `devops` may already use it, by the vault's tag, so \
+             purlis does not stop your runs on it — don't use it unless the person says to.",
+        ),
+        (
             Answer::NotAnswered,
             "Nobody answered in time, so nothing was allowed and the ask went — tell the person \
              what needs it, or ask again when they're back.",

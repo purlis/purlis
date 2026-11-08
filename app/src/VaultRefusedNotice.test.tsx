@@ -465,6 +465,20 @@ describe("the refused vault Notice", () => {
     ]);
   });
 
+  it("says beside Keep blocked where the persona already holds the vault, as the core answers (#5801)", async () => {
+    const said =
+      "You kept vault devops blocked for this chat, but steward can already use it, so this chat's runs on it still go. Remove it in Settings › Sandbox › Allowed to stop them.";
+    mockIPC((cmd) => {
+      if (cmd === "vault_refusals") return [DEVOPS];
+      if (cmd === "keep_vault_blocked") return { said };
+      return null;
+    });
+    show();
+    await userEvent.setup().click(await screen.findByRole("button", { name: "Keep blocked" }));
+
+    expect(await notice()).toHaveTextContent(said);
+  });
+
   it("offers no Allow where policy forbids it, and says who set the policy", async () => {
     const locked =
       "Policy forbids allowing a persona a vault it is not tagged for. Locked by policy, set by Platform team in /etc/purlis/policy.json.";
