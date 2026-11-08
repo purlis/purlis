@@ -30,8 +30,9 @@ type Watched = (usize, Option<String>, String);
 /// often Sign in is pressed.
 static WATCHED: Mutex<Option<HashMap<Watched, Vec<u32>>>> = Mutex::new(None);
 
-/// How many sign-outs of each pool's profile, by pool and profile, this window has begun. A
-/// watcher's lift and a sign-out's hold are each taken under it, so one or the other is last.
+/// How many sign-outs of each pool's profile, by pool and profile, this window has begun. Held
+/// only to count and to read, never across a file or a command: a carry holds the runners' lock
+/// for minutes, and Sign in takes this one on the window's thread.
 static SIGN_OUTS: Mutex<Option<HashMap<(String, String), u64>>> = Mutex::new(None);
 
 /// Tells the windows of the open projects at some roots that their Asks changed.
@@ -64,9 +65,10 @@ pub struct SignIn {
     pub signed_in: Box<dyn FnMut() -> bool + Send>,
     /// Lets the waits for it go: the projects whose wait went, as far as it can say.
     pub let_go: Box<dyn Fn(Whose<'_>) -> Vec<PathBuf> + Send>,
-    /// Lets a drain of its pool carry it again, once it is signed in there: nothing on this
+    /// Lets a drain of its pool carry it again (`true`) once it is signed in there, or holds it
+    /// from every carry again (`false`) where a sign-out began as it did: nothing on this
     /// machine.
-    pub carries_again: Box<dyn FnOnce() + Send>,
+    pub carries: Box<dyn FnMut(bool) + Send>,
 }
 
 /// Whose waits a sign-in lets go.
@@ -137,7 +139,7 @@ pub fn watch(sign_in: SignIn, session: u32, project: Project) {
             there,
             mut signed_in,
             let_go,
-            carries_again,
+            carries,
         } = sign_in;
         let (mut ended, last_open) = watched_until(
             Pace {
@@ -157,7 +159,7 @@ pub fn watch(sign_in: SignIn, session: u32, project: Project) {
         );
         // Signed in on a pool: a drain carries it again, unless a sign-out began since.
         if let (Watch::SignedIn, Some(pool)) = (ended, &pool)
-            && !lifted_unless_signed_out(pool, &name, began, carries_again)
+            && !lifted_unless_signed_out(pool, &name, began, carries)
         {
             ended = Watch::SignedOut;
         }
@@ -177,10 +179,10 @@ pub fn watch(sign_in: SignIn, session: u32, project: Project) {
     });
 }
 
-/// **Begins a sign-out of `name` on pool `pool`**: `hold`, which holds its sign-in from every
-/// carry, runs under the lock a watcher's lift takes, so a watcher that began before it lifts
-/// nothing ([`lifted_unless_signed_out`]). Every watcher of it gives up its claim now, so a Sign in
-/// after it has a watcher of its own, and ends at its next look.
+/// **Begins a sign-out of `name` on pool `pool`**: counted first, then `hold`, which holds its
+/// sign-in from every carry, so a watcher that began before it lifts nothing that stays lifted
+/// ([`lifted_unless_signed_out`]). Every watcher of it gives up its claim now, so a Sign in after
+/// it has a watcher of its own, and ends at its next look.
 pub fn signing_out<T>(pool: &str, name: &str, hold: impl FnOnce() -> T) -> T {
     sign_outs(|counts| {
         *counts
@@ -189,20 +191,30 @@ pub fn signing_out<T>(pool: &str, name: &str, hold: impl FnOnce() -> T) -> T {
         watched_now(|watched| {
             watched.retain(|(_, of, named), _| !(of.as_deref() == Some(pool) && named == name));
         });
-        hold()
-    })
+    });
+    hold()
 }
 
-/// Runs `lift` where no sign-out of `name` on `pool` began since `began` sign-outs were counted,
-/// under the lock [`signing_out`] holds: whether it ran.
-fn lifted_unless_signed_out(pool: &str, name: &str, began: u64, lift: impl FnOnce()) -> bool {
-    sign_outs(|counts| {
-        let since = sign_outs_of(counts, Some(pool), name) != began;
-        if !since {
-            lift();
-        }
-        !since
-    })
+/// **Lets a drain carry `name` on `pool` again, unless a sign-out began since `began` sign-outs
+/// were counted**: whether the lift stands. Read before the lift, and again after it: a sign-out
+/// counted by then holds it again here (`carry(false)`), and one counted after holds it itself,
+/// later than the lift. Either way the hold is last, and no lock is held across either.
+fn lifted_unless_signed_out(
+    pool: &str,
+    name: &str,
+    began: u64,
+    mut carry: impl FnMut(bool),
+) -> bool {
+    let since = || sign_outs(|counts| sign_outs_of(counts, Some(pool), name)) != began;
+    if since() {
+        return false;
+    }
+    carry(true);
+    if since() {
+        carry(false);
+        return false;
+    }
+    true
 }
 
 /// How many sign-outs of `name` on `pool` were begun: none for this machine's.
@@ -313,6 +325,11 @@ fn watched_until(
         if now >= next_ask {
             if signed_in() {
                 return (Watch::SignedIn, last_open);
+            }
+            // The harness may have taken long to answer, and a sign-out may have begun, and a
+            // new Sign in claimed the shells since: they are not this watcher's to look at.
+            if signed_out() {
+                return (Watch::SignedOut, last_open);
             }
             if now.duration_since(started) >= pace.for_ {
                 next_ask = now + pace.later_every;

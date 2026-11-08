@@ -69,27 +69,64 @@ fn a_sign_out_ends_the_watch_before_the_harness_is_asked() {
     assert_eq!(asked.get(), 0);
 }
 
-/// **A watcher that began before a sign-out lifts no hold** (ruled 2026-11-08): the lift and the
-/// sign-out's hold are taken under one lock, so a drain never carries what the person signed out.
-/// One that began after it lifts as before, and another pool or profile is not held to it.
+/// **A watcher that began before a sign-out leaves no hold lifted** (ruled 2026-11-08): it lifts
+/// nothing where the sign-out was counted first, and where one is counted as it lifts, it holds
+/// again itself; one counted later holds after it. So a drain never carries what the person
+/// signed out. One that began after the sign-out lifts as before, and another pool or profile is
+/// not held to it.
 #[test]
-fn a_watcher_that_began_before_a_sign_out_lifts_no_hold() {
+fn a_watcher_that_began_before_a_sign_out_leaves_no_hold_lifted() {
     let (pool, name) = ("lifts-pool", "lifts-work");
-    let began = sign_outs(|counts| sign_outs_of(counts, Some(pool), name));
+    let count = || sign_outs(|counts| sign_outs_of(counts, Some(pool), name));
     let held = std::cell::Cell::new(false);
+    let carry = |again: bool| held.set(!again);
+
+    // Counted before the watcher's look: nothing is lifted.
+    let began = count();
     signing_out(pool, name, || held.set(true));
-    assert!(held.get(), "the hold ran");
+    assert!(!lifted_unless_signed_out(pool, name, began, carry));
+    assert!(held.get());
 
-    let lifted = std::cell::Cell::new(false);
-    assert!(!lifted_unless_signed_out(pool, name, began, || lifted.set(true)));
-    assert!(!lifted.get());
+    // Counted while it lifts: it holds again.
+    let began = count();
+    let racing = |again: bool| {
+        held.set(!again);
+        if again {
+            signing_out(pool, name, || ());
+        }
+    };
+    assert!(!lifted_unless_signed_out(pool, name, began, racing));
+    assert!(held.get(), "held again after the lift");
 
-    let since = sign_outs(|counts| sign_outs_of(counts, Some(pool), name));
-    assert!(lifted_unless_signed_out(pool, name, since, || lifted.set(true)));
-    assert!(lifted.get());
+    // No sign-out since: the lift stands.
+    let began = count();
+    assert!(lifted_unless_signed_out(pool, name, began, carry));
+    assert!(!held.get());
 
     let other = sign_outs(|counts| sign_outs_of(counts, Some("lifts-other"), name));
-    assert!(lifted_unless_signed_out("lifts-other", name, other, || ()));
+    assert!(lifted_unless_signed_out("lifts-other", name, other, |_| ()));
+}
+
+/// **A sign-out that began while the harness answered ends the watch before it looks at the
+/// shells**: a Sign in since may have claimed them for a watcher of its own.
+#[test]
+fn a_sign_out_while_the_harness_answers_ends_the_watch_before_the_shells_are_looked_at() {
+    let begun = std::cell::Cell::new(false);
+    let looked = std::cell::Cell::new(false);
+    let (ended, _) = watched_until(
+        NO_WAIT,
+        || begun.get(),
+        || {
+            begun.set(true);
+            false
+        },
+        || {
+            looked.set(true);
+            true
+        },
+    );
+    assert_eq!(ended, Watch::SignedOut);
+    assert!(!looked.get());
 }
 
 /// **A sign-out gives up every claim of its pool and profile**, in every project, so a Sign in

@@ -2030,6 +2030,18 @@ fn carries_again_after_a_sign_in(pool: &str, name: &str) {
     }
 }
 
+/// `name` was being signed out of pool `pool` as a watcher lifted its hold: held again, on every
+/// runner of the pool, as the sign-out holds it.
+fn held_again_after_a_sign_out(pool: &str, name: &str) {
+    let held = config_root().and_then(|config| {
+        purlis_core::runners::hold_every_runner_from_carrying(&config, pool, name)
+            .map_err(|why| why.to_string())
+    });
+    if let Err(why) = held {
+        tracing::warn!("purlis: a drain of pool {pool} may carry {name}: {why}");
+    }
+}
+
 /// Pool `pool`'s runner may be signed in on, or why not: no chat ran there without the sandbox,
 /// on a pool of either kind.
 fn may_sign_in_on(config: &Path, pool: &str) -> Result<(), String> {
@@ -2398,7 +2410,13 @@ pub fn watched_sign_in(pool: String, name: String) -> Option<crate::signinwatch:
         }),
         // Signed in in a shell, as by the driven sign-in: a drain carries it again (ruled
         // 2026-11-08), unless a sign-out began since the watch did.
-        carries_again: Box::new(move || carries_again_after_a_sign_in(&pool_again, &name_again)),
+        carries: Box::new(move |again| {
+            if again {
+                carries_again_after_a_sign_in(&pool_again, &name_again);
+            } else {
+                held_again_after_a_sign_out(&pool_again, &name_again);
+            }
+        }),
     })
 }
 
