@@ -1968,7 +1968,12 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             if json {
                 println!(
                     "{}",
-                    json!({ "uses": node.uses, "used_by": node.used_by, "cut": node.cut })
+                    json!({
+                        "uses": node.uses,
+                        "used_by": node.used_by,
+                        "hinted_by": node.hinted_by,
+                        "cut": node.cut
+                    })
                 );
                 return Ok(0);
             }
@@ -2041,20 +2046,35 @@ fn uses_lines(name: &str, node: &purlis_core::skills::graph::UsesOf) -> Vec<Mark
         let line = Markup::new().own("uses ").text(&one.said);
         lines.push(if one.broken {
             line.own("  (no skill has this name)")
+        } else if one.hint {
+            line.own("  (a hint: named bare, not as skills:")
+                .text(&one.name)
+                .own(")")
         } else {
             line
         });
     }
     if node.used_by.is_empty() {
-        lines.push(
-            Markup::new()
-                .own("No skill of the project names ")
-                .text(name)
-                .own("."),
-        );
+        let line = Markup::new()
+            .own("No skill of the project names ")
+            .text(name);
+        lines.push(if node.hinted_by.is_empty() {
+            line.own(".")
+        } else {
+            line.own(" as skills:").text(name).own(".")
+        });
     }
     for other in &node.used_by {
         lines.push(Markup::new().own("used by ").text(other));
+    }
+    // A skill whose text names this one only bare (#4510).
+    for other in &node.hinted_by {
+        lines.push(
+            Markup::new()
+                .own("hinted at by ")
+                .text(other)
+                .own("  (named bare)"),
+        );
     }
     lines
 }
@@ -3337,6 +3357,16 @@ fn grade_text(grade: Option<&source::SourceGrade>) -> String {
     }
 }
 
+/// Why a skill of an install's review comes along: `by` refers to it, or, where `hinted`, only
+/// names it bare (#4510).
+fn comes_along(by: &str, hinted: bool) -> String {
+    if hinted {
+        format!(" (comes along: {by} names it bare, read as a hint)")
+    } else {
+        format!(" (comes along: {by} refers to it)")
+    }
+}
+
 /// The review of installing `skills` from `from` at `at` (a commit or a revision), as the
 /// terminal prints it, for any kind of source (#5760).
 fn skills_review_text(
@@ -3355,7 +3385,7 @@ fn skills_review_text(
         let brought = skill
             .brought_by
             .as_deref()
-            .map(|by| format!(" (comes along: {by} refers to it)"))
+            .map(|by| comes_along(by, skill.hinted))
             .unwrap_or_default();
         out.push_str(&format!(
             "\n{}{}: {}\n",

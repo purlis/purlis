@@ -312,6 +312,44 @@ fn the_review_leads_with_the_summary_and_brings_referenced_skills_along() {
     assert!(review.skills[1].summary.hosts.iter().all(|h| !h.risky));
 }
 
+/// #4510: a skill that names a sibling bare, beside the word "skill", hints at it. The review
+/// brings a hinted skill the source holds along, marked as come by a hint, and leaves one the
+/// level has as it is; a quoted word that names no skill there is nothing.
+#[test]
+fn the_review_brings_a_skill_named_bare_along_as_a_hint() {
+    let remote = Upstream::new();
+    let plan = b"---\nname: plan\ndescription: Plans the work.\n---\n\nUse the Skill tool with \
+                 \"grilling\", then the `notify` skill. The skill \"roasting\" is not one.\n";
+    let grilling = b"---\nname: grilling\ndescription: Asks hard questions.\n---\n\nAsk.\n";
+    let tree = remote.tree(&[
+        ("skills/plan/SKILL.md", "100644", plan),
+        ("skills/grilling/SKILL.md", "100644", grilling),
+        ("skills/notify/SKILL.md", "100644", NOTIFY),
+    ]);
+    remote.commit(&tree, None);
+    let tmp = plane();
+    let root = tmp.path();
+    std::fs::create_dir_all(root.join("skills/notify")).unwrap();
+    std::fs::write(root.join("skills/notify/SKILL.md"), NOTIFY).unwrap();
+    let source = remote.source();
+
+    let review = review(root, &source, &["plan".to_owned()], &Level::project()).unwrap();
+    let names: Vec<&str> = review.skills.iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(names, ["plan", "grilling"]);
+    let (plan, grilling) = (&review.skills[0], &review.skills[1]);
+    assert!(plan.refers.is_empty(), "{:?}", plan.refers);
+    assert_eq!(plan.hints, ["grilling", "notify"]);
+    assert_eq!(plan.already, ["notify"]);
+    assert!(
+        plan.lint.iter().all(|line| !line.contains("roasting")),
+        "{:?}",
+        plan.lint
+    );
+    assert!(!plan.hinted);
+    assert_eq!(grilling.brought_by.as_deref(), Some("plan"));
+    assert!(grilling.hinted);
+}
+
 #[test]
 fn an_install_lands_a_pinned_copy_and_a_lockfile_entry() {
     let (remote, commit) = good_remote();

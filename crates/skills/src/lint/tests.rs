@@ -146,6 +146,27 @@ fn a_reference_to_a_skill_there_is_none_of_warns_once() {
     );
 }
 
+/// #4510: a skill written for every harness names its siblings bare. The lint says so, once each,
+/// as a hint, and never of the skill itself, a quoted word that names no skill, or a name it
+/// also references.
+#[test]
+fn a_bare_quoted_skill_name_beside_the_word_skill_warns_as_a_hint() {
+    let text = skill(
+        "",
+        "Use the Skill tool with \"review\", then `review` again. This skill, `deploy`, \
+         ships. The skill \"roasting\" is not one.",
+    );
+    assert_eq!(
+        says(&found(&text, &[], true)),
+        [
+            "it names \"review\" bare, which purlis reads only as a hint at the skill review: \
+             write skills:review to make it a reference purlis checks and renames",
+        ]
+    );
+    let both = skill("", "Use skills:review, the skill \"review\".");
+    assert!(says(&found(&both, &[], true)).is_empty());
+}
+
 #[test]
 fn a_tool_an_injected_command_calls_that_this_machine_lacks_warns() {
     let text = skill(

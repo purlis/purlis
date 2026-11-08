@@ -40,15 +40,18 @@ fn skill_uses_shows_each_said_name_escaped() {
                 name: HOSTILE.into(),
                 project: true,
                 broken: true,
+                hint: false,
             },
             Use {
                 said: format!("purlis:{HOSTILE}"),
                 name: HOSTILE.into(),
                 project: false,
                 broken: false,
+                hint: false,
             },
         ],
         used_by: vec![HOSTILE.into()],
+        hinted_by: vec![],
         cut: false,
     };
     let lines: Vec<String> = uses_lines(HOSTILE, &node)
@@ -66,6 +69,7 @@ fn skill_uses_shows_each_said_name_escaped() {
     let none = UsesOf {
         uses: vec![],
         used_by: vec![],
+        hinted_by: vec![],
         cut: false,
     };
     let lines: Vec<String> = uses_lines(HOSTILE, &none)
@@ -78,6 +82,47 @@ fn skill_uses_shows_each_said_name_escaped() {
             format!("{SHOWN} names no other skill."),
             format!("No skill of the project names {SHOWN}."),
         ]
+    );
+}
+
+/// #4510: a skill named bare is a hint, and `skill uses` says so from both ends.
+#[test]
+fn skill_uses_marks_a_hint_from_both_ends() {
+    let node = UsesOf {
+        uses: vec![Use {
+            said: format!("\"{HOSTILE}\""),
+            name: HOSTILE.into(),
+            project: true,
+            broken: false,
+            hint: true,
+        }],
+        used_by: vec![],
+        hinted_by: vec![HOSTILE.into()],
+        cut: false,
+    };
+    let lines: Vec<String> = uses_lines(HOSTILE, &node)
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    assert_eq!(
+        lines,
+        [
+            format!("uses \"{SHOWN}\"  (a hint: named bare, not as skills:{SHOWN})"),
+            format!("No skill of the project names {SHOWN} as skills:{SHOWN}."),
+            format!("hinted at by {SHOWN}  (named bare)"),
+        ]
+    );
+}
+
+#[test]
+fn an_install_review_says_a_skill_comes_along_by_a_reference_or_a_hint() {
+    assert_eq!(
+        comes_along("deploy", false),
+        " (comes along: deploy refers to it)"
+    );
+    assert_eq!(
+        comes_along("plan", true),
+        " (comes along: plan names it bare, read as a hint)"
     );
 }
 

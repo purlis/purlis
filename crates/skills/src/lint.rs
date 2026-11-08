@@ -61,6 +61,9 @@ pub enum Lint {
         name: String,
         project: bool,
     },
+    /// It names a skill of the project bare, as written, not as `skills:<name>`: a hint
+    /// ([`crate::uses::hints_in`], #4510), which nothing checks or renames.
+    Hint { said: String, name: String },
     /// A harness or repo skill with a name of purlis's own ([`crate::name_reserved`], SK-37): its
     /// program loads it, beside any built-in skill of that name, and purlis cannot stop it.
     ReservedName,
@@ -173,6 +176,10 @@ impl Finding {
                 } else {
                     "purlis has"
                 }
+            ),
+            Lint::Hint { said, name } => format!(
+                "it names {said} bare, which purlis reads only as a hint at the skill {name}: \
+                 write skills:{name} to make it a reference purlis checks and renames"
             ),
             Lint::ReservedName => {
                 "a name starting with purlis- is purlis's own, so a chat may get \
@@ -291,6 +298,7 @@ impl SkillLint for BuiltInLints<'_> {
         out.extend(reserved_name(skill));
         out.extend(keys(skill));
         out.extend(references(skill, self));
+        out.extend(hints(skill, self));
         out.extend(tools_missing(skill, self.has));
         out.extend(scripts_missing(skill));
         out
@@ -384,6 +392,26 @@ fn references(skill: &SkillFiles<'_>, lints: &BuiltInLints<'_>) -> Vec<Finding> 
         })
     })
     .collect()
+}
+
+/// Each skill of the project the skill's text names bare, once each, that it does not also
+/// reference: the hints of [`crate::uses::hints_in`] (#4510).
+fn hints(skill: &SkillFiles<'_>, lints: &BuiltInLints<'_>) -> Vec<Finding> {
+    let referenced = crate::uses::uses_in(skill.text, lints.namespace, &|_| true, &|_| true);
+    crate::uses::hints_in(skill.text, skill.name, &|one| lints.plane.contains(one))
+        .into_iter()
+        .filter(|hint| {
+            !referenced
+                .iter()
+                .any(|one| one.project && one.name == hint.name)
+        })
+        .map(|one| {
+            warns(Lint::Hint {
+                said: one.said,
+                name: one.name,
+            })
+        })
+        .collect()
 }
 
 /// Each program a `` !`command` `` in the skill's text or one of its scripts calls that this

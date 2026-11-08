@@ -214,6 +214,11 @@ pub fn gather_set(
         let text = skill_text(&skill);
         out.skills.push(skill);
         for used in graph::uses_of_copy(plane, built_in, &name, &text).uses {
+            // A hint (#4510) is told to the person by `skill uses`, the lint and an install's
+            // review; what a publish sends follows only a reference.
+            if used.hint {
+                continue;
+            }
             if used.broken {
                 if !out.broken.contains(&used.name) {
                     out.broken.push(used.name);

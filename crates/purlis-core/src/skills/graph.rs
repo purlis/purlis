@@ -4,7 +4,8 @@
 //! **The uses / used-by graph of the project's skills** (SK-19, #2782; spec #2762 decision 57):
 //! each skill's text read by the one reader of skill references ([`purlis_skills::uses`]), which
 //! the lint of broken references reads by too, so a reference the graph draws broken is one the
-//! editor warns of. The skill's tab draws one skill's node.
+//! editor warns of. The skill's tab draws one skill's node. A skill named bare beside the word
+//! "skill" is a hint ([`purlis_skills::uses::hints_in`], #4510), marked as one.
 
 use std::path::Path;
 
@@ -21,6 +22,8 @@ pub struct UsesOf {
     pub uses: Vec<Use>,
     /// The project's skills whose text names it, by name.
     pub used_by: Vec<String>,
+    /// The project's skills whose text names it only bare, as a hint (#4510), by name.
+    pub hinted_by: Vec<String>,
     /// Whether the project holds more skills than the graph reads, so some were left out.
     pub cut: bool,
 }
@@ -65,6 +68,7 @@ fn uses_with(plane: &Path, built_in: Option<&Path>, name: &str, copy: Option<&st
     UsesOf {
         uses: node.uses,
         used_by: node.used_by,
+        hinted_by: node.hinted_by,
         cut,
     }
 }
