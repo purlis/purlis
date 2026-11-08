@@ -298,8 +298,15 @@ const NO_ANSWER: &str = "the person accepted but gave no answer";
 const DECLINED: &str = "The person declined to answer.";
 const DISMISSED: &str = "The person dismissed the question.";
 /// Every text an `ask_operator` call returns in purlis's own words, for the vocabulary test.
-pub(crate) const ASK_RESULTS: [&str; 6] =
-    [CANNOT_ASK, NOT_ASKED, ANSWERED_PREFIX, NO_ANSWER, DECLINED, DISMISSED];
+#[cfg(test)]
+pub(crate) const ASK_RESULTS: [&str; 6] = [
+    CANNOT_ASK,
+    NOT_ASKED,
+    ANSWERED_PREFIX,
+    NO_ANSWER,
+    DECLINED,
+    DISMISSED,
+];
 
 /// What the server tells the harness it is for: its tools, and the one line about its skills
 /// ([`purlis_core::skilltools::briefing`]): how they are reached on the `Mcp` route, and on a

@@ -1486,7 +1486,8 @@ fn the_briefing_and_every_tool_description_use_the_glossary_s_words() {
     for text in crate::mcp::ASK_RESULTS {
         said.push(("an `ask_operator` result".to_owned(), text.to_owned()));
     }
-    let unasked = purlis_core::chattools::question(&serde_json::Map::new()).expect_err("no question");
+    let unasked =
+        purlis_core::chattools::question(&serde_json::Map::new()).expect_err("no question");
     let blank = purlis_core::chattools::question(
         serde_json::json!({ "question": " " })
             .as_object()
