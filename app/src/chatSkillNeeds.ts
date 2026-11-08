@@ -134,19 +134,27 @@ export function chatNeedsOf(said: ChatSkillsSaid, scope: StudioScope): ChatNeed[
       missing.no_built_in.length +
       missing.broken.length +
       missing.by_a_repo.length;
+    // Only its listing past Claude Code's own limit (#5736): fixed where its program's own skills
+    // and plugins are turned off.
+    const crowdedAlone = count === 0 && missing.beside_a_built_in.length === 0;
     needs.push({
       id: "missing",
       title:
-        count === 0
-          ? "A repo copies a built-in skill"
-          : `Started without ${counted(count, "skill", "skills")}`,
+        count > 0
+          ? `Started without ${counted(count, "skill", "skills")}`
+          : crowdedAlone
+            ? "Claude Code drops descriptions"
+            : "A repo copies a built-in skill",
       says: missingSays("This chat", missing),
-      fix: {
-        act: "studio",
-        label: "Open in Skill studio",
-        scope: missing.persona === null ? AT_THE_ROOT : asPersona(missing.persona),
-        page: "library",
-      },
+      fix:
+        crowdedAlone && missing.crowded !== null
+          ? { act: "studio", label: "Open Harness skills", scope, page: "harness" }
+          : {
+              act: "studio",
+              label: "Open in Skill studio",
+              scope: missing.persona === null ? AT_THE_ROOT : asPersona(missing.persona),
+              page: "library",
+            },
     });
   }
   if (said.changed?.skills === true)
