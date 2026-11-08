@@ -142,6 +142,26 @@ fn a_codex_command_that_edits_a_skill_md_does_not_start_it() {
 }
 
 #[test]
+fn a_codex_shell_line_is_unwrapped_as_a_shell_reads_its_quotes() {
+    assert_eq!(
+        unwrapped(r"/bin/bash -lc 'cat '\''a b'\''/SKILL.md'"),
+        "cat 'a b'/SKILL.md"
+    );
+    assert_eq!(
+        unwrapped("/bin/zsh  -lc  'cat x/SKILL.md'"),
+        "cat x/SKILL.md"
+    );
+    assert_eq!(
+        unwrapped(r#"bash -c "cat \"x/SKILL.md\"""#),
+        r#"cat "x/SKILL.md""#
+    );
+    // Not a shell's `-c`, or not one word after it: the command as it came.
+    assert_eq!(unwrapped("cat x/SKILL.md"), "cat x/SKILL.md");
+    assert_eq!(unwrapped("bash -lc 'cat x' y"), "bash -lc 'cat x' y");
+    assert_eq!(unwrapped("bash -lc 'cat x"), "bash -lc 'cat x");
+}
+
+#[test]
 fn a_line_that_is_not_json_is_left_out_not_a_failure() {
     let skills = briefed_skills();
     let briefed = Briefed {

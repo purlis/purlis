@@ -11,10 +11,12 @@
 pub const BUILT_INS: &str = "app/src-tauri/plugin/skills/";
 
 /// The paths that touch every built-in, each with what it is: a path equal to one, or under one
-/// that ends in `/`.
+/// that ends in `/`. With [`BUILT_INS`], the one list of what can move a grade: the workflow's
+/// `pull_request` paths are [`workflow_paths`], and a test holds them to it.
 const EVERY: &[(&str, &str)] = &[
     ("app/src-tauri/plugin/.claude-plugin/", "the plugin wiring"),
     ("app/src-tauri/plugin/hooks/", "the plugin wiring"),
+    ("app/src-tauri/plugin/opencode/", "the plugin wiring"),
     ("crates/purlis-core/src/plugin.rs", "the plugin wiring"),
     ("crates/purlis-core/src/chattools.rs", "the plugin wiring"),
     (
@@ -31,6 +33,10 @@ const EVERY: &[(&str, &str)] = &[
         "the plugin wiring",
     ),
     ("crates/purlis-core/src/opencode.rs", "the plugin wiring"),
+    // How a chat's skills are listed: Claude Code's listing limit and what it counts, and the
+    // order Codex's briefing lists them in (#5736).
+    ("crates/purlis-core/src/skills.rs", "the skill listing"),
+    ("crates/purlis-core/src/hoststart.rs", "the skill listing"),
     (
         "crates/purlis-core/src/briefing.rs",
         "the session-start briefing",
@@ -45,6 +51,22 @@ const EVERY: &[(&str, &str)] = &[
     ("crates/skills/src/grade/ci/", "the CI grader"),
     (".github/workflows/skill-grades.yml", "the CI grader"),
 ];
+
+/// **The paths a pull request is graded for**, as `.github/workflows/skill-grades.yml`'s
+/// `pull_request` filter writes them: every built-in's folder and each of [`EVERY`], a folder as
+/// `<folder>/**`.
+pub fn workflow_paths() -> Vec<String> {
+    std::iter::once(BUILT_INS)
+        .chain(EVERY.iter().map(|(path, _)| *path))
+        .map(|path| {
+            if path.ends_with('/') {
+                format!("{path}**")
+            } else {
+                path.to_owned()
+            }
+        })
+        .collect()
+}
 
 /// What a change's paths grade.
 #[derive(Debug, Clone, PartialEq, Eq)]

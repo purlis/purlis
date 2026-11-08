@@ -57,6 +57,9 @@ changelog.workspace = true
 # The shipped-skill check (#5721): a skill's frontmatter and the description lint, as the studio
 # reads them.
 purlis-skills.workspace = true
+# A command line in a shipped skill split into words as a shell splits them (#5714). Already in
+# this workspace's lockfile through purlis-core, so it adds no crate.
+shell-words = "1"
 stand-in.workspace = true
 tempfile.workspace = true
 tokio = { version = "1", default-features = false, features = ["rt", "net"] }

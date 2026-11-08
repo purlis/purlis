@@ -247,17 +247,9 @@ fn a_pull_request_starts_it_only_for_paths_that_can_move_a_grade() {
         on.contains("pull_request:\n    paths:"),
         "pull requests are filtered by path: {on}"
     );
-    for path in [
-        "app/src-tauri/plugin/**",
-        "crates/purlis-core/src/briefing.rs",
-        "ci/skill-grades/**",
-        "crates/skill-grader/**",
-    ] {
-        assert!(
-            on.contains(&format!("\"{path}\"")),
-            "{path} does not start it"
-        );
-    }
+    // Which paths, exactly, is `skill-grader`'s to say: its test
+    // `the_workflow_starts_on_exactly_the_paths_that_grade_a_built_in` holds this list to
+    // `select::workflow_paths()`.
     assert!(!on.contains("\"**\""), "every path starts it");
 }
 

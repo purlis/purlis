@@ -80,3 +80,41 @@ fn the_plugin_wiring_the_briefing_or_the_grader_grades_every_built_in_and_says_w
         );
     }
 }
+
+/// The paths `.github/workflows/skill-grades.yml` starts on for a pull request, as written.
+fn workflow_paths() -> Vec<String> {
+    let file = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../.github/workflows/skill-grades.yml");
+    let text = std::fs::read_to_string(&file).expect("the workflow");
+    let (_, after) = text
+        .split_once("  pull_request:\n    paths:\n")
+        .expect("pull requests filtered by path");
+    after
+        .lines()
+        .map_while(|line| line.strip_prefix("      - "))
+        .map(|path| path.trim_matches('"').to_owned())
+        .collect()
+}
+
+#[test]
+fn the_workflow_starts_on_exactly_the_paths_that_grade_a_built_in() {
+    let mut written = workflow_paths();
+    written.sort();
+    let mut grading = skill_grader::select::workflow_paths();
+    grading.sort();
+    assert_eq!(written, grading);
+}
+
+#[test]
+fn the_listing_and_how_a_chat_is_armed_grade_every_built_in() {
+    for path in [
+        "crates/purlis-core/src/hoststart.rs",
+        "crates/purlis-core/src/skills.rs",
+        "app/src-tauri/plugin/opencode/purlis.ts",
+    ] {
+        assert!(
+            matches!(touched(&[path], &graded()), Touched::Every { .. }),
+            "{path}"
+        );
+    }
+}

@@ -47,15 +47,22 @@ name: skill-grades
 # holds this file to those rules.
 
 on:
+  # The paths are exactly `skill-grader`'s `select::workflow_paths()`, which a test holds this
+  # list to: a path that starts this workflow is one that grades a built-in.
   pull_request:
     paths:
-      - "app/src-tauri/plugin/**"
+      - "app/src-tauri/plugin/skills/**"
+      - "app/src-tauri/plugin/.claude-plugin/**"
+      - "app/src-tauri/plugin/hooks/**"
+      - "app/src-tauri/plugin/opencode/**"
       - "crates/purlis-core/src/plugin.rs"
       - "crates/purlis-core/src/chattools.rs"
       - "crates/purlis-core/src/harness/claude.rs"
       - "crates/purlis-core/src/harness/codex.rs"
       - "crates/purlis-core/src/harness/opencode.rs"
       - "crates/purlis-core/src/opencode.rs"
+      - "crates/purlis-core/src/skills.rs"
+      - "crates/purlis-core/src/hoststart.rs"
       - "crates/purlis-core/src/briefing.rs"
       - "crates/purlis-core/src/briefing/**"
       - "crates/skills/src/grade/ci.rs"

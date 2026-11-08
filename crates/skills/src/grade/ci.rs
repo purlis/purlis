@@ -246,9 +246,9 @@ fn codex(event: &serde_json::Value, briefed: &Briefed<'_>, parsed: &mut Parsed) 
                         return;
                     };
                     let command = unwrapped(command);
-                    if crate::runs::is_a_plain_read(command)
+                    if crate::runs::is_a_plain_read(&command)
                         && let Some(skill) =
-                            crate::runs::started_by_a_read(command, briefed.cwd, briefed.skills)
+                            crate::runs::started_by_a_read(&command, briefed.cwd, briefed.skills)
                     {
                         parsed.start(&skill.name);
                     }
@@ -270,27 +270,18 @@ fn codex(event: &serde_json::Value, briefed: &Briefed<'_>, parsed: &mut Parsed) 
     }
 }
 
-/// The command a Codex command line runs in its shell: `bash -lc '<command>'` is `<command>`, so
-/// the program that reads or edits is the one held to [`crate::runs::is_a_plain_read`].
-fn unwrapped(command: &str) -> &str {
-    let mut words = command.trim_start().splitn(3, ' ');
-    let (Some(shell), Some(flag), Some(rest)) = (words.next(), words.next(), words.next()) else {
-        return command;
-    };
-    let shell = shell.rsplit('/').next().unwrap_or(shell);
-    if !matches!(shell, "bash" | "sh" | "zsh") || !matches!(flag, "-c" | "-lc") {
-        return command;
+/// The command a Codex command line runs in its shell: `bash -lc '<command>'` is `<command>`, its
+/// words split and unquoted as the shell would (`shell-words`), so the program that reads or edits
+/// is the one held to [`crate::runs::is_a_plain_read`]. Anything else is the command as it came.
+fn unwrapped(command: &str) -> std::borrow::Cow<'_, str> {
+    if let Ok(words) = shell_words::split(command)
+        && let [shell, flag, inner] = words.as_slice()
+        && matches!(shell.rsplit('/').next(), Some("bash" | "sh" | "zsh"))
+        && matches!(flag.as_str(), "-c" | "-lc")
+    {
+        return inner.clone().into();
     }
-    let rest = rest.trim();
-    for quote in ['\'', '"'] {
-        if let Some(inner) = rest
-            .strip_prefix(quote)
-            .and_then(|rest| rest.strip_suffix(quote))
-        {
-            return inner;
-        }
-    }
-    rest
+    command.into()
 }
 
 /// opencode's `run --format json`: each `tool_use`, its `skill` tool's `name` or purlis's

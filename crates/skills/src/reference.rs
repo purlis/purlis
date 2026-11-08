@@ -18,7 +18,7 @@ pub const OLD_BUILT_IN_PREFIX: &str = BUILT_IN_PREFIXES[1];
 /// the prefix is, so it means this skill even bare. The four of #5724 (spec #5714 Q32, Q33) took
 /// names that say what each is for; their runs, grades and misses carry over by this table, and
 /// no stub keeps an old name in the bundle.
-pub const RENAMED: [(&str, &str); 5] = [
+pub const RENAMED: &[(&str, &str)] = &[
     ("purlis-building-purlis-ui", "purlis-building-ui"),
     ("purlis-compact", "purlis-tidy-memory"),
     ("purlis-working-in-a-clone", "purlis-repo-work"),

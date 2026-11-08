@@ -234,6 +234,7 @@ fn code(page: &str) -> Vec<String> {
     let mut fenced: Option<char> = None;
     let mut prose = String::new();
     let mut out = Vec::new();
+    let mut continued = false;
     for line in page.lines() {
         if let Some(mark) = fence(line) {
             match fenced {
@@ -247,7 +248,17 @@ fn code(page: &str) -> Vec<String> {
             continue;
         }
         if fenced.is_some() {
-            out.push(uncommented(line).to_owned());
+            // A line ending in `\` goes on on the next, as a shell reads it.
+            let line = uncommented(line).trim_end();
+            match out.last_mut() {
+                Some(last) if continued => {
+                    last.pop();
+                    last.push(' ');
+                    last.push_str(line.trim_start());
+                }
+                _ => out.push(line.to_owned()),
+            }
+            continued = line.ends_with('\\');
         } else if line.trim().is_empty() {
             // A blank line ends a paragraph, and a code span never crosses one.
             spans(&mut prose, &mut out);
@@ -384,46 +395,64 @@ fn commands(code: &str) -> Vec<Vec<String>> {
     out
 }
 
-/// The words of a shell command, quotes kept on a quoted word so it reads as a value, up to the
-/// command's end.
+/// The words of a shell command up to its end, as a shell splits and unquotes them
+/// (`shell-words`). A quoted value comes back as its text, so a placeholder still reads as one by
+/// what it holds.
 fn words(text: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut word = String::new();
-    let mut quote: Option<char> = None;
-    let mut chars = text.chars().peekable();
-    while let Some(c) = chars.next() {
+    shell_words::split(command_of(text)).unwrap_or_default()
+}
+
+/// `text` up to the end of its first command: a pipe, `;`, `&`, `)`, a newline, a comment or a
+/// redirect, outside quotes. A `<placeholder>`, a `<` with no space before its `>`, is a word the
+/// reader fills in, not a redirect. A quote left open is a value cut off, and says nothing, so the
+/// command ends where it opens.
+fn command_of(text: &str) -> &str {
+    let mut quote: Option<(char, usize)> = None;
+    let mut chars = text.char_indices().peekable();
+    let mut word_starts = true;
+    while let Some((at, c)) = chars.next() {
         match quote {
-            Some(open) => {
-                word.push(c);
+            Some((open, _)) => {
                 if c == open {
                     quote = None;
+                } else if open == '"' && c == '\\' {
+                    chars.next();
                 }
             }
-            None if c == '"' || c == '\'' => {
-                word.push(c);
-                quote = Some(c);
-            }
-            None if c.is_whitespace() => {
-                if !word.is_empty() {
-                    out.push(std::mem::take(&mut word));
+            None => match c {
+                '\'' | '"' => quote = Some((c, at)),
+                '\\' => {
+                    chars.next();
                 }
-            }
-            None if "|;&<>)".contains(c) || (c == '#' && word.is_empty()) => break,
-            None if c == '\\' && chars.peek().is_none_or(|n| n.is_whitespace()) => {}
-            None => word.push(c),
+                '<' => match placeholder_ends(&text[at..]) {
+                    Some(len) => while chars.next_if(|&(next, _)| next < at + len).is_some() {},
+                    None => return &text[..at],
+                },
+                '|' | ';' | '&' | ')' | '>' | '\n' => return &text[..at],
+                '#' if word_starts => return &text[..at],
+                _ => {}
+            },
         }
+        word_starts = c.is_whitespace();
     }
-    // A quote left open is a value cut off, and says nothing.
-    if !word.is_empty() && quote.is_none() {
-        out.push(word);
-    }
-    out
+    quote.map_or(text, |(_, at)| &text[..at])
+}
+
+/// Where the `<placeholder>` that `text` starts with ends (just past its `>`), if it is one: a
+/// `<` and a `>` with no space or other `<` between.
+fn placeholder_ends(text: &str) -> Option<usize> {
+    let inner = text.strip_prefix('<')?;
+    let close = inner.find(|c: char| c == '>' || c == '<' || c.is_whitespace())?;
+    (close > 0 && inner[close..].starts_with('>')).then_some(close + 2)
 }
 
 /// Whether `word` stands for a value the reader fills in, so says nothing of the parser: a
-/// `<placeholder>`, a quoted or `$` value, an ellipsis, an `[optional]` or `{a,b}` part.
+/// `<placeholder>`, a `$` value, a value that was quoted around spaces, an ellipsis, an
+/// `[optional]` or `{a,b}` part.
 fn placeholder(word: &str) -> bool {
-    word.contains(['<', '[', '{', '$', '"', '\'', '…', '*']) || word.contains("...")
+    word.contains(['<', '[', '{', '$', '"', '\'', '…', '*'])
+        || word.contains("...")
+        || word.contains(char::is_whitespace)
 }
 
 /// What is wrong with `purlis <words>` as this parser reads it: a subcommand it does not have,
@@ -902,6 +931,38 @@ fn a_flag_the_command_does_not_take_is_named_with_its_command() {
             "purlis-example: `purlis worktree commit` takes no flag `-Q` (names a command purlis has)"
         ]
     );
+}
+
+#[test]
+fn a_placeholder_is_a_word_and_the_check_goes_on_past_it() {
+    let page = format!("{GOOD}Run `purlis dispatch report <id> --verdict done`.\n");
+    assert_eq!(
+        problems(&page),
+        [
+            "purlis-example: `purlis dispatch report` takes no flag `--verdict` (names a command purlis has)"
+        ]
+    );
+    let page = format!(
+        "{GOOD}```sh\npurlis dispatch report \"<what you did>\" \\\n  --verdict done\n```\n"
+    );
+    assert_eq!(
+        problems(&page),
+        [
+            "purlis-example: `purlis dispatch report` takes no flag `--verdict` (names a command purlis has)"
+        ]
+    );
+    // A redirect still ends the command.
+    for page in [
+        "Run `purlis dispatch report done < notes.txt --verdict`.",
+        "Run `purlis dispatch report done > out.txt --verdict`.",
+        "Run `purlis dispatch report done | tee --verdict`.",
+    ] {
+        assert_eq!(
+            problems(&format!("{GOOD}{page}\n")),
+            Vec::<String>::new(),
+            "{page}"
+        );
+    }
 }
 
 #[test]
