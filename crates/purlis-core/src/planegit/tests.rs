@@ -2757,6 +2757,88 @@ fn a_rebase_stopped_on_a_conflict(fixture: &Fixture) {
     assert!(!stopped.ok(), "the rebase stops on the conflict");
 }
 
+/// A merge of `side` into `main` stopped at the root on README.md, as a build from before
+/// #5824 F7 left one.
+fn a_merge_stopped_on_a_conflict(fixture: &Fixture) {
+    run(&fixture.root, &["checkout", "-q", "-b", "side"]);
+    std::fs::write(fixture.root.join("README.md"), "side\n").unwrap();
+    run(&fixture.root, &["commit", "-q", "-am", "side"]);
+    run(&fixture.root, &["checkout", "-q", "main"]);
+    std::fs::write(fixture.root.join("README.md"), "main\n").unwrap();
+    run(&fixture.root, &["commit", "-q", "-am", "main"]);
+    let stopped = crate::testgit::run(&fixture.root, &["merge", "--no-edit", "side"]);
+    assert!(!stopped.ok(), "the merge stops on the conflict");
+    assert!(fixture.root.join(".git/MERGE_HEAD").exists());
+}
+
+/// **A stop an older build left at the root is never carried on from the window** (#5824 F7):
+/// Continue and Skip refuse and say why, and the stop is left exactly as it was.
+#[test]
+fn continue_and_skip_refuse_a_rebase_or_merge_an_older_build_left_at_the_root() {
+    for stopped in [
+        a_rebase_stopped_on_a_conflict,
+        a_merge_stopped_on_a_conflict,
+    ] {
+        let fixture = Fixture::plane();
+        stopped(&fixture);
+        let head = ask(&fixture.root, &["rev-parse", "HEAD"]);
+        let before = gitstate::stopped(&fixture.root);
+
+        for refused in [
+            resolve_continue(&fixture, &["README.md"]),
+            resolve::skip(&fixture.root),
+        ] {
+            assert!(
+                refused_with(
+                    &refused,
+                    "from before purlis settled conflicts off to the side"
+                ),
+                "{refused:?}"
+            );
+        }
+
+        assert_eq!(
+            gitstate::stopped(&fixture.root),
+            before,
+            "the stop was touched"
+        );
+        assert_eq!(ask(&fixture.root, &["rev-parse", "HEAD"]), head);
+    }
+}
+
+/// **Abort puts a stop an older build left at the root away, in one step** (#5824 F7): `rebase
+/// --abort` for a rebase, `merge --abort` for a merge, and the project is as it was before it.
+#[test]
+fn abort_puts_away_a_rebase_or_merge_an_older_build_left_at_the_root() {
+    for stopped in [
+        a_rebase_stopped_on_a_conflict,
+        a_merge_stopped_on_a_conflict,
+    ] {
+        let fixture = Fixture::plane();
+        stopped(&fixture);
+
+        assert_eq!(resolve::abort(&fixture.root), resolve::Settled::Aborted);
+
+        assert!(gitstate::stopped(&fixture.root).is_none());
+        assert_eq!(
+            run(&fixture.root, &["symbolic-ref", "HEAD"]).trim(),
+            "refs/heads/main"
+        );
+        assert_eq!(
+            ask(&fixture.root, &["log", "-1", "--format=%s"]).trim(),
+            "main"
+        );
+        assert_eq!(
+            std::fs::read_to_string(fixture.root.join("README.md")).unwrap(),
+            "main\n"
+        );
+        assert!(matches!(
+            resolve::abort(&fixture.root),
+            resolve::Settled::Refused(_)
+        ));
+    }
+}
+
 #[test]
 fn a_rebase_stopped_with_every_file_added_is_still_said_to_be_a_rebase() {
     // Review of qw382: with nothing left unmerged, the window offered a chat, which may not
