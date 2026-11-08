@@ -800,10 +800,18 @@ pub(crate) fn uncased(glob: &str) -> String {
     out
 }
 
-/// The names [`names_of`] writes a rule on `path` under.
+/// The names [`names_of`] writes a rule on `path` under: as written, as the kernel names it,
+/// the link itself where its last part is one, and as spelled through each link on the way to
+/// it. Claude Code pins every folder above a denied path as it is spelled, so the spellings
+/// through each link are what keep each link above it, and the folder that link is in, where
+/// they are: replaced by a link pointing elsewhere, the path would no longer lead to what is
+/// denied.
 fn names_for(path: &Path) -> Vec<std::path::PathBuf> {
     let mut names = vec![path.to_path_buf()];
-    for name in super::seatbelt::held_names(path) {
+    for name in super::seatbelt::held_names(path)
+        .into_iter()
+        .chain(super::seatbelt::spelled_through_links(path))
+    {
         if !names.contains(&name) {
             names.push(name);
         }
