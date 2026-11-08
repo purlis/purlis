@@ -4312,6 +4312,24 @@ impl Applied {
             self.confines.denied.push(denial.clone());
             self.denied.push(denial);
         }
+        // A wrapped opencode keeps its files in its profile's folders (ruled 2026-11-08), and out
+        // of opencode's default data folder where that is another, whose sign-in a pool's next
+        // runner may be given.
+        if let Form::Opencode(wrap) = &mut *self.form
+            && let Some(default) = wrap.on_profile(folders)
+        {
+            let denial = Denial {
+                class: Class::HumanPowers,
+                path: default,
+                access: Access::ReadWrite,
+                named: None,
+                reach: Reach::AndBelow,
+                any_case: false,
+            };
+            wrap.denied.push(denial.clone());
+            self.confines.denied.push(denial.clone());
+            self.denied.push(denial);
+        }
         if !matches!(*self.form, Form::ClaudeCode(_) | Form::ClaudeWrapped(_)) {
             return;
         }

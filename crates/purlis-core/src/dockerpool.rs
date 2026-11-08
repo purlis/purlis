@@ -70,7 +70,8 @@ pub const PURLIS: &str = "/usr/local/bin/purlis";
 /// the old home is carried, never a link or what a folder linked out of it holds. An image that
 /// names its data home or Codex's by a variable carries nothing, since the runner reads it
 /// elsewhere. A harness's default folder is carried only from a runner that left
-/// [`crate::profilestore::DEFAULTS_HELD`]. What
+/// [`crate::profilestore::DEFAULTS_HELD`], and opencode's only from one that left
+/// [`crate::profilestore::OPENCODE_DEFAULT_HELD`] too. What
 /// it makes is the runner's user's alone. A file that cannot be carried is said and passed over:
 /// the profile is then signed in again, as before any was carried, and the drain goes on. A
 /// profile named in the colon-separated list after the two folders is not carried at all (#4145).
@@ -80,9 +81,12 @@ umask 077
 from=$1 to=$2 stage=$3 old_stage=$4 skip=$5
 shift 5
 from=$(cd -P "$from" && pwd -P) || exit 1
-held=
+held= opencode_held=
 for mark in "$from"/.local/share/*/profiles/.default-folders-held; do
   [ -f "$mark" ] && [ ! -L "$mark" ] && held=1
+done
+for mark in "$from"/.local/share/*/profiles/.opencode-default-folder-held; do
+  [ -f "$mark" ] && [ ! -L "$mark" ] && opencode_held=1
 done
 cd -P "$to" || exit 1
 here=$(pwd -P)
@@ -109,6 +113,7 @@ set -C
 for pair in "$@"; do
   src=${pair%%=*} dst=${pair#*=}
   case $src in *'*'*) ;; *) [ -n "$held" ] || continue ;; esac
+  case $src in .local/share/opencode/*) [ -n "$opencode_held" ] || continue ;; esac
   for found in "$from"/$src; do
     rel=${found#"$from/"}
     [ -f "$found" ] && [ ! -L "$found" ] && [ -r "$found" ] || continue

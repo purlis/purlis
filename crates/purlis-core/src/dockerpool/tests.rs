@@ -3239,6 +3239,46 @@ fn a_runner_with_no_mark_carries_no_default_folder() {
     assert!(!batch.join("claude").exists());
 }
 
+/// **opencode's default-folder sign-in is carried only from a runner that keeps its opencode
+/// chats out of that folder** (ruled 2026-11-08): one that left the older mark alone carries
+/// Claude Code's and Codex's, and not opencode's; one that left both carries opencode's too,
+/// under the harness's name.
+#[cfg(unix)]
+#[test]
+fn opencodes_default_folder_is_carried_only_from_a_runner_that_left_its_mark() {
+    for opencode_held in [false, true] {
+        let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        for (file, text) in [
+            (".claude/.credentials.json", "claude's sign-in"),
+            (".local/share/opencode/auth.json", "opencode's sign-in"),
+        ] {
+            let at = from.path().join(file);
+            std::fs::create_dir_all(at.parent().unwrap()).unwrap();
+            std::fs::write(at, text).unwrap();
+        }
+        let marks = from.path().join(".local/share/purlis/profiles");
+        std::fs::create_dir_all(&marks).unwrap();
+        std::fs::write(marks.join(crate::profilestore::DEFAULTS_HELD), "").unwrap();
+        if opencode_held {
+            std::fs::write(marks.join(crate::profilestore::OPENCODE_DEFAULT_HELD), "").unwrap();
+        }
+
+        let ran = carried(from.path(), to.path());
+
+        assert!(ran.status.success(), "{ran:?}");
+        let batch = the_batch(to.path());
+        assert_eq!(
+            std::fs::read_to_string(batch.join("claude/config/.credentials.json")).unwrap(),
+            "claude's sign-in"
+        );
+        assert_eq!(
+            std::fs::read_to_string(batch.join("opencode/data/opencode/auth.json")).ok(),
+            opencode_held.then(|| "opencode's sign-in".to_owned()),
+            "with its mark: {opencode_held}"
+        );
+    }
+}
+
 /// **A carry takes nothing through a link inside the old home either**: a profile's folder that
 /// is a link to a harness's default folder there is passed over.
 #[cfg(unix)]

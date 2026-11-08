@@ -93,6 +93,9 @@ pub struct Wrap {
     /// makes, moves or removes (#2046), set as the sandbox is compiled for a chat
     /// ([`super::Form::hold_workspace_folders`]).
     pub planes: Vec<PathBuf>,
+    /// The folders of the profiles purlis made on this machine (`<data>/profiles`, #2034):
+    /// denied to every chat, but the folder of a wrapped chat's own profile ([`Wrap::on_profile`]).
+    pub profiles: Option<PathBuf>,
 }
 
 /// What a turn writes in opencode's data directory, below it, each and everything under it.
@@ -129,7 +132,62 @@ pub fn wrap(compiled: &Compiled) -> Result<Wrap, Uncompilable> {
         config: own(&compiled.homes.config),
         cache: own(&compiled.homes.cache),
         planes: Vec::new(),
+        profiles: compiled.homes.profiles.clone(),
     })
+}
+
+impl Wrap {
+    /// This wrap for a chat whose profile keeps opencode's files in `folders` (ruled 2026-11-08):
+    /// opencode's data and config folders in them, as the kernel names each, where it is this
+    /// user's folder or nothing yet ([`super::claude_wrap::held_folder`]). One that is not leaves
+    /// the chat with none, and opencode stops at its first write there. Answers opencode's default
+    /// data folder where the chat's own is another one: the chat is kept from it, since that
+    /// folder holds the sign-in of opencode's default profile, which a pool's next runner may be
+    /// given.
+    pub fn on_profile(&mut self, folders: &super::signin::ProfileFolders) -> Option<PathBuf> {
+        let own = |dir: &Option<PathBuf>| dir.as_ref().map(|dir| dir.join("opencode"));
+        if let Some(config) = own(&folders.config)
+            && Some(&config) != self.config.as_ref()
+        {
+            self.config = super::claude_wrap::held_folder(&config);
+        }
+        let data = own(&folders.data)?;
+        if Some(&data) == self.data.as_ref() {
+            return None;
+        }
+        let default = self.data.take();
+        self.data = super::claude_wrap::held_folder(&data);
+        default
+    }
+
+    /// Every path the chat is denied, as the profile is written: the folders of this machine's
+    /// profiles left out where the chat's own is among them, since [`own`] denies them but that
+    /// one.
+    fn denied_here(&self) -> Vec<Denial> {
+        let carved = self.carved();
+        self.denied
+            .iter()
+            .filter(|denial| {
+                carved
+                    .as_ref()
+                    .is_none_or(|(profiles, _)| denial.path != *profiles)
+            })
+            .cloned()
+            .collect()
+    }
+
+    /// The folder of this machine's profiles and the folder of the chat's own profile in it,
+    /// where opencode's data folder is in one of them.
+    fn carved(&self) -> Option<(PathBuf, PathBuf)> {
+        let (data, profiles) = (self.data.as_deref()?, self.profiles.as_deref()?);
+        [profiles.to_path_buf(), super::real(profiles)]
+            .into_iter()
+            .find_map(|all| {
+                let first = data.strip_prefix(&all).ok()?.components().next()?;
+                let mine = all.join(first);
+                (mine != *data).then_some((profiles.to_path_buf(), mine))
+            })
+    }
 }
 
 /// The directories opencode makes on a first run, made before the wrap: the wrap lets a chat
@@ -191,9 +249,22 @@ pub fn profile_serving(
     // At the floor too: its denials hold the folder the sockets are in, and every port of this
     // machine, so its own socket and its door are given back after them.
     if wrap.level == super::Level::Floor {
-        return seatbelt::floor_profile(&wrap.denied, &wrap.held, &own, proxy_ports, hook_socket);
+        return seatbelt::floor_profile(
+            &wrap.denied_here(),
+            &wrap.held,
+            &own,
+            proxy_ports,
+            hook_socket,
+        );
     }
-    seatbelt::profile(&wrap.denied, &own, cwd, tmp, proxy_ports, hook_socket)
+    seatbelt::profile(
+        &wrap.denied_here(),
+        &own,
+        cwd,
+        tmp,
+        proxy_ports,
+        hook_socket,
+    )
 }
 
 /// The floor's profile (#2071): every folder written and every host reached through the chat's
@@ -205,7 +276,7 @@ pub fn floor_profile(
     hook_socket: Option<&Path>,
 ) -> Result<String, &'static str> {
     seatbelt::floor_profile(
-        &wrap.denied,
+        &wrap.denied_here(),
         &wrap.held,
         &own(wrap)?,
         proxy_ports,
@@ -228,6 +299,11 @@ fn own(wrap: &Wrap) -> Result<Own, &'static str> {
     seatbelt::granted(&mut own, &wrap.granted)?;
     own.deny
         .extend(seatbelt::workspace_folder_rules(&wrap.planes)?);
+    // No other profile's folder is read or written, and the chat's own is reached through the
+    // folders above it, looked up and never listed.
+    if let Some((profiles, mine)) = wrap.carved() {
+        super::codex::carve(&mut own, &profiles, &mine)?;
+    }
     if let Some(data) = &wrap.data {
         own.allow.push(format!(
             "(regex {})",

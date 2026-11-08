@@ -396,6 +396,62 @@ fn the_profile_writes_the_chat_directory_its_temp_and_only_what_an_opencode_turn
 }
 
 #[test]
+fn a_chat_on_a_profile_made_here_writes_in_that_profile_and_is_kept_from_opencodes_default_folder()
+{
+    // Ruled 2026-11-08: the profile's folders are opencode's, under this machine's profiles,
+    // which every other chat is denied; its default folder, whose sign-in a pool's next runner
+    // may be given, is denied to this one.
+    let plane = plane_saying(ON);
+    let machine = Machine {
+        env: crate::secrets::Env::of(&[(crate::datahome::HOME_VAR, "/Users/op/data")]),
+        home: Some(PathBuf::from("/Users/op")),
+        os: Os::MacOs,
+    };
+    let mut applied = for_start(Harness::Opencode, plane.path(), &machine, &|_| true)
+        .expect("starts")
+        .expect("sandboxed");
+    let work = "/Users/op/data/profiles/work";
+    applied.on_profile(&signin::ProfileFolders {
+        config: Some(PathBuf::from(format!("{work}/config"))),
+        data: Some(PathBuf::from(format!("{work}/data"))),
+        ..signin::ProfileFolders::default()
+    });
+    let confinement = applied.confine().expect("confined").expect("a wrap");
+    let line = line_in(&applied, plane.path(), None, &confinement).expect("starts");
+    let profile = profile_of(&line);
+
+    let data = format!("{work}/data/opencode").replace('.', "\\\\.");
+    let allows = write_allows(profile);
+    for rule in [
+        format!("(regex \"^{data}/opencode\\\\.db(-wal|-shm|-journal)?$\")"),
+        format!("(regex \"^{data}/storage/.+\")"),
+        format!("(literal \"{work}/config/opencode/.gitignore\")"),
+    ] {
+        assert!(allows.contains(&rule), "{rule} missing: {allows:#?}");
+    }
+    assert!(
+        !allows
+            .iter()
+            .any(|rule| rule.contains("/Users/op/.local/share")),
+        "{allows:#?}"
+    );
+    assert!(
+        profile.contains(&format!(
+            "(deny file-read* file-write* file-link (require-all (subpath \"/Users/op/data/profiles\") \
+             (require-not (subpath \"{work}\"))))"
+        )),
+        "{profile}"
+    );
+    assert!(
+        applied.confines().denied.iter().any(|denial| denial.path
+            == Path::new("/Users/op/.local/share/opencode")
+            && denial.access == Access::ReadWrite),
+        "{:?}",
+        applied.confines().denied
+    );
+}
+
+#[test]
 fn nothing_a_later_opencode_loads_is_written() {
     // Ruling V73a: its credentials, which can name a remote config that starts servers, and a
     // snapshot repository's config, hooks and directory, which git reads when opencode runs it.
@@ -438,6 +494,7 @@ fn opencodes_data_folder_and_every_folder_above_it_stay_where_they_are() {
             config: None,
             cache: None,
             planes: Vec::new(),
+            profiles: None,
         };
         let profile = opencode::profile(
             &wrap,
