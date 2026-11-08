@@ -344,6 +344,7 @@ export const commands = {
 	reportConsent: __WINDOW_ONLY_RESULT,
 	keepReportConsent: __WINDOW_ONLY_RESULT,
 	reportsSent: __WINDOW_ONLY_RESULT,
+	reportWindowError: __WINDOW_ONLY_RESULT,
 	/**
 	 *  The project's sandbox, for the offer notice and Settings.
 	 * 
@@ -15836,6 +15837,22 @@ export type WindowDraft = {
 	 *  Review and allow on it, waits until the draft is reverted, and the strip says so.
 	 */
 	kept_refused: boolean,
+};
+
+/**
+ *  An error the window did not catch (#5690), as its JavaScript saw it: thrown and not caught, or
+ *  a promise rejected with nobody to handle it.
+ */
+export type WindowErrorSeen = {
+	/**  The error's name (`TypeError`), or the window's word for a reason that is no error. */
+	name: string,
+	message: string,
+	/**  The address of the script it was thrown in, when the window knows it. */
+	source: string | null,
+	line: number | null,
+	column: number | null,
+	/**  A promise rejected with nobody to handle it, rather than an error thrown. */
+	rejection: boolean,
 };
 
 /**  One face of a font. */

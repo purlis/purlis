@@ -80,6 +80,7 @@ macro_rules! app_commands {
                 reportconsent::report_consent,
                 reportconsent::keep_report_consent,
                 reportconsent::reports_sent,
+                reportconsent::report_window_error,
                 sandboxing::sandbox_state,
                 sandboxing::answer_sandbox_offer,
                 sandboxing::acknowledge_project_hosts,

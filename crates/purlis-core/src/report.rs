@@ -773,8 +773,27 @@ pub enum Evidence {
     AgentDraft(NotYet),
     /// A native crash the crash handler recorded. Not built yet.
     NativeCrash(NotYet),
-    /// An uncaught error in the window. Not built yet.
-    WindowError(NotYet),
+    /// An error the window did not catch (#5690): always a Crash report, whoever hands it in.
+    WindowError(WindowError),
+}
+
+/// An error the window did not catch, as its JavaScript saw it (#5690): thrown and not caught, or
+/// a promise rejected with nobody to handle it. What of it is sent is the core's to say
+/// ([`crash`]): the name, the scrubbed message, and the script's file name with its line and
+/// column; never a stack.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WindowError {
+    /// The error's name (`TypeError`), or what the window calls a rejection's reason that is no
+    /// error.
+    pub name: String,
+    pub message: String,
+    /// The address of the script it was thrown in (`tauri://localhost/assets/index-3f2a9c.js`),
+    /// when the window knows it: never for a rejection.
+    pub source: Option<String>,
+    pub line: Option<u32>,
+    pub column: Option<u32>,
+    /// A promise rejected with nobody to handle it, rather than an error thrown.
+    pub rejection: bool,
 }
 
 /// The value an evidence kind that is not built yet holds: none, so it cannot be handed in.
@@ -1060,15 +1079,22 @@ impl Reports {
     /// listed with its exact bytes. Nobody is there to be shown it: the yes to its stream is
     /// the person's word that it may go.
     fn send_crash(&self, evidence: &Evidence) -> Outcome {
-        let Evidence::Panic { record, .. } = evidence else {
-            return Outcome::Refused(Refusal::Unusable(
-                "only a panic is sent as a Crash report yet".to_string(),
-            ));
-        };
         let Some((intake, root)) = &self.intake else {
             return Outcome::Refused(Refusal::NoIntake);
         };
-        let crash = crash::CrashReport::of_panic(record, &self.known, intake.dsn());
+        let crash = match evidence {
+            Evidence::Panic { record, .. } => {
+                crash::CrashReport::of_panic(record, &self.known, intake.dsn())
+            }
+            Evidence::WindowError(error) => {
+                crash::CrashReport::of_window_error(error, &self.known, intake.dsn())
+            }
+            _ => {
+                return Outcome::Refused(Refusal::Unusable(
+                    "only a panic or a window error is sent as a Crash report".to_string(),
+                ));
+            }
+        };
         if let Some(repeats) = SentList::count_repeat(root, &crash.fingerprint) {
             return Outcome::Counted { repeats };
         }
@@ -1163,9 +1189,11 @@ impl Reports {
                 harness,
                 harness_version,
             }) => Draft::of_sandbox_block(&block, harness, harness_version.as_deref()),
-            Evidence::AgentDraft(never)
-            | Evidence::NativeCrash(never)
-            | Evidence::WindowError(never) => match never {},
+            // Machine-made, and read by nobody first: it goes only as a Crash report.
+            Evidence::WindowError(_) => Err(Refused(
+                "an error in the window is sent only as a Crash report".to_string(),
+            )),
+            Evidence::AgentDraft(never) | Evidence::NativeCrash(never) => match never {},
         };
         made.map_err(|Refused(said)| Refusal::Unusable(said))
     }

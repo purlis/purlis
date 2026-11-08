@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! The person's answers about reports (#5688, spec #5683): the window's two commands over
-//! `purlis_core::report::Consent`, which holds the file, its tier and the reasons.
+//! `purlis_core::report::Consent`, which holds the file, its tier and the reasons; the reports
+//! this machine sent (#5689); and the window's own errors handed in as Crash reports (#5690).
 //!
-//! **The window's alone.** Both are on `WINDOW_ONLY`: whether this machine sends reports is the
+//! **The window's alone.** Each is on `WINDOW_ONLY`: whether this machine sends reports is the
 //! person's to say, never a chat's or a link's.
 
 use purlis_core::report::{Consent, CrashNotice};
@@ -146,6 +147,46 @@ pub async fn reports_sent() -> Result<Vec<SentReport>, String> {
     })
     .await
     .map_err(|err| format!("Reading the reports this machine sent did not finish: {err}"))
+}
+
+/// An error the window did not catch (#5690), as its JavaScript saw it: thrown and not caught, or
+/// a promise rejected with nobody to handle it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, specta::Type)]
+pub struct WindowErrorSeen {
+    /// The error's name (`TypeError`), or the window's word for a reason that is no error.
+    pub name: String,
+    pub message: String,
+    /// The address of the script it was thrown in, when the window knows it.
+    pub source: Option<String>,
+    pub line: Option<u32>,
+    pub column: Option<u32>,
+    /// A promise rejected with nobody to handle it, rather than an error thrown.
+    pub rejection: bool,
+}
+
+/// Hands an error the window did not catch to the core's Reports, as a panic is handed: whether
+/// it may go, what of it goes and where are the core's to say, so without a yes to Crash reports
+/// nothing leaves. Answered at once; the send is on a thread of its own, so the window never
+/// waits on the network. The window's alone.
+#[tauri::command]
+#[specta::specta]
+pub async fn report_window_error(error: WindowErrorSeen) -> Result<(), String> {
+    let evidence = purlis_core::report::Evidence::WindowError(purlis_core::report::WindowError {
+        name: error.name,
+        message: error.message,
+        source: error.source,
+        line: error.line,
+        column: error.column,
+        rejection: error.rejection,
+    });
+    std::thread::Builder::new()
+        .name("reports-window-error".into())
+        .spawn(move || {
+            purlis_core::report::Reports::for_a_crash()
+                .take(evidence, &purlis_core::forge::Caller::window())
+        })
+        .map(drop)
+        .map_err(|err| format!("purlis could not start sending the window's error: {err}"))
 }
 
 #[cfg(test)]
