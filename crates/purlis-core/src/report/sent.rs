@@ -33,6 +33,10 @@ pub const MAX_BYTES: u64 = 16 * 1024 * 1024;
 pub enum SentTo {
     /// purlis's private Report intake (ADR 0118).
     Intake,
+    /// purlis/purlis on GitHub, filed as the person or added to an issue already there
+    /// (#5694).
+    #[serde(rename = "github")]
+    GitHub,
 }
 
 /// One report sent.

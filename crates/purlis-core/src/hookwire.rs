@@ -1542,6 +1542,12 @@ pub enum Ask {
     /// it, or why they do not. No ticket, for [`Self::Removal`]'s reason. Boxed: it carries the
     /// file's whole new content.
     Propose(Box<ProposeAsk>),
+    /// **A report a chat drafted** (#5694, spec #5683): what `purlis report bug|feature` hands
+    /// over in a chat, which holds no sign-in to file it. The app holds it for the person's Inbox
+    /// only with their yes to Agent drafts, and answers [`Answer::Said`] with where it went, or
+    /// [`Answer::No`] with why it was not held. Whose it is is the app's record of the chat whose
+    /// token the line carries. Boxed: it carries the report's whole text.
+    ReportDraft(Box<ReportDraftAsk>),
     /// **A proposed value for a pool's limit** (#4284, the person's ruling of 2026-11-01 on
     /// PC-1): what `purlis pool limit` hands over in a chat. The same ask as [`Self::Propose`],
     /// held for the person, who alone applies it. **It carries a value and no file**, so nothing
@@ -1718,6 +1724,23 @@ pub struct ProposeAsk {
     /// What it changes: the tool's own edits, which the app makes to the file as it reads it,
     /// or the file's whole new content.
     pub change: crate::proposed::Change,
+}
+
+/// **A report a chat drafted** ([`Ask::ReportDraft`]): its words, and the call that failed if
+/// it names one. Scrubbed and drafted by the app, as every report is, by the Reports module.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ReportDraftAsk {
+    /// The chat asking, from [`CHAT_ENV`]: the chat whose token the line must carry.
+    pub chat: u32,
+    /// A feature request rather than a bug.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub feature: bool,
+    pub text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// The purlis command or tool that failed, and its exit code.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub call: Option<(String, i32)>,
 }
 
 /// **A value a chat proposes for a pool's limit** ([`Ask::ProposeLimit`]). Judged by the app
@@ -2606,6 +2629,7 @@ impl Ask {
             Self::Task(asked) => asked.chat,
             Self::Removal(removal) => removal.chat,
             Self::Propose(proposed) => proposed.chat,
+            Self::ReportDraft(draft) => draft.chat,
             Self::ProposeLimit(proposed) => proposed.chat,
             Self::ProposeSkillSet(proposed) => proposed.chat,
             Self::Browse(browse) => browse.chat,

@@ -78,10 +78,10 @@ impl Transport for Native {
     }
 }
 
-struct Machine {
+pub(crate) struct Machine {
     _turn: MutexGuard<'static, ()>,
     _home: tempfile::TempDir,
-    recorded: Arc<Recorded>,
+    pub(crate) recorded: Arc<Recorded>,
     cli: Arc<CountedCli>,
     read: Arc<AtomicUsize>,
 }
@@ -89,7 +89,7 @@ struct Machine {
 impl Machine {
     /// A machine whose GitHub answers `exchanges`, signed in to github.com when `signed_in`, its
     /// sign-ins handed over as the app hands them over.
-    fn new(exchanges: serde_json::Value, signed_in: bool) -> Machine {
+    pub(crate) fn new(exchanges: serde_json::Value, signed_in: bool) -> Machine {
         let turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
         let home = tempfile::tempdir().unwrap();
         if signed_in {
@@ -196,7 +196,7 @@ fn refused_for_the_sign_in(outcome: Outcome, said: &str) {
     }
 }
 
-fn issue(number: u64, title: &str, state: &str) -> serde_json::Value {
+pub(crate) fn issue(number: u64, title: &str, state: &str) -> serde_json::Value {
     json!({"id": 5000 + number, "node_id": format!("I_kwDOPurlis{number}"), "number": number,
            "title": title, "state": state, "labels": [],
            "html_url": format!("https://github.com/purlis/purlis/issues/{number}")})

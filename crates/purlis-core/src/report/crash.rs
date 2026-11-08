@@ -13,7 +13,7 @@
 use regex::Regex;
 use serde_json::json;
 
-use super::{Known, Panic, short_place};
+use super::{Draft, Known, Panic, short_place};
 
 /// A Crash report, ready to send.
 pub(super) struct CrashReport {
@@ -64,6 +64,43 @@ impl CrashReport {
             json!({"type": "event", "length": event.len(), "content_type": "application/json"});
         CrashReport {
             title: format!("purlis panicked at {place}"),
+            bytes: format!("{header}\n{item}\n{event}\n"),
+            event_id,
+        }
+    }
+}
+
+impl CrashReport {
+    /// A report draft the person filed from the Inbox, for the intake at `dsn` (#5694): its
+    /// title and body as they were shown, marked as an agent's, and whether the person changed
+    /// its words. Its body was scrubbed when it was drafted and read before it was filed.
+    pub fn of_draft(draft: &Draft, edited: bool, dsn: &str) -> CrashReport {
+        let event_id = uuid::Uuid::new_v4().simple().to_string();
+        let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+        let channel = channel();
+        let event = json!({
+            "event_id": event_id,
+            "timestamp": now,
+            "platform": "other",
+            "level": "info",
+            "release": format!("purlis@{}", crate::adopt::release_version()),
+            "environment": channel,
+            "tags": {
+                "channel": channel,
+                "kind": draft.kind.verb(),
+                "written_by": "agent",
+                "edited_by_the_person": edited,
+            },
+            "contexts": {"os": {"name": std::env::consts::OS, "version": os_version()}},
+            "message": {"formatted": format!("{}\n\n{}", draft.title, draft.body)},
+            "culprit": draft.title,
+        })
+        .to_string();
+        let header = json!({"event_id": event_id, "sent_at": now, "dsn": dsn});
+        let item =
+            json!({"type": "event", "length": event.len(), "content_type": "application/json"});
+        CrashReport {
+            title: draft.title.clone(),
             bytes: format!("{header}\n{item}\n{event}\n"),
             event_id,
         }
