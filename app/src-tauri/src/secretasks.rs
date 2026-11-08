@@ -225,14 +225,17 @@ pub fn run_grant_given(
     press: RunGrantPress,
     given: RunGiven,
 ) -> Result<(), String> {
+    let Some(open) = held
+        .secret_asks()
+        .open_runs()
+        .into_iter()
+        .find(|open| open.id == id)
+    else {
+        return Err("This ask has already been answered, or its chat has closed.".to_owned());
+    };
     // Keep blocked on a run's own notice holds at once, as on the refused vault's (#5617): the
     // mark and the take-back come before it waits for a press under way.
     if press == RunGrantPress::Refuse
-        && let Some(open) = held
-            .secret_asks()
-            .open_runs()
-            .into_iter()
-            .find(|open| open.id == id)
         && matches!(
             open.offer,
             purlis_core::secrets::ask::run::Offer::Vault { .. }
@@ -245,7 +248,7 @@ pub fn run_grant_given(
             .keep_vault_blocked_taking(open.bound.chat, &open.bound.vault);
         crate::vaultroute::audit_kept_back(held, &kept.taken_back);
     }
-    let _one = held.run_answers();
+    let _one = held.run_answers(open.bound.chat);
     run_grant_carried_out(held, network, id, press, given)
 }
 

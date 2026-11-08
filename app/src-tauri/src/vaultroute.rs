@@ -739,11 +739,15 @@ pub(crate) fn audit_kept_back(
     taken_back: &[purlis_core::secrets::ask::run::GivenRun],
 ) {
     for one in taken_back {
-        let audited = held.hooks().record_run_grant(
-            held.root(),
-            one.bound.chat,
-            &purlis_core::secrets::ask::run::Audited::revoked(&one.bound, one.once),
-        );
+        let taken_back = purlis_core::secrets::ask::run::Audited::revoked(&one.bound, one.once);
+        // Given ahead of its run, its keys are not in its command yet: named as its grant was.
+        let taken_back = match &one.ahead_keys {
+            Some(keys) => taken_back.handing(keys),
+            None => taken_back,
+        };
+        let audited = held
+            .hooks()
+            .record_run_grant(held.root(), one.bound.chat, &taken_back);
         if let Err(unrecorded) = audited {
             tracing::warn!(
                 "purlis: a Run grant Keep blocked took back was not audited ({unrecorded})"
@@ -769,7 +773,7 @@ pub(crate) fn keep_blocked_pressed(
     // Its asks are answered below, under the answers' lock.
     let kept = held.secret_asks().keep_vault_blocked_taking(session, vault);
     audit_kept_back(held, &kept.taken_back);
-    let _one = held.run_answers();
+    let _one = held.run_answers(session);
     vault_kept_blocked(held, network, session, vault)
 }
 

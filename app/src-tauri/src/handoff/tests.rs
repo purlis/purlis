@@ -13719,7 +13719,7 @@ fn always_allow_pressed_as_keep_blocked_lands_leaves_no_tool_line() {
             curl_on_team_not_its(&plane, Offer::Program, &[]),
         );
         // Keep blocked is under way for chat 3 and vault team.
-        let keeping = held.run_answers();
+        let keeping = held.run_answers(3);
         let (pressing, id) = (&held, open.id);
         let always = scope.spawn(move || {
             crate::secretasks::run_grant_filled(
@@ -13790,7 +13790,7 @@ fn keep_blocked_takes_a_chats_grant_back_at_once_while_a_press_is_under_way() {
         assert_eq!(held.secret_asks().given_runs().len(), 1);
 
         // A press on another ask is under way, its audit stalled.
-        let pressing = held.run_answers();
+        let pressing = held.run_answers(3);
         let keeping =
             scope.spawn(|| crate::vaultroute::keep_blocked_pressed(&held, None, 3, "team"));
         let began = std::time::Instant::now();
@@ -13867,7 +13867,7 @@ fn a_press_after_keep_blocked_was_pressed_gives_nothing() {
         assert_eq!(purlis_core::sandbox::local::granted_vaults(&plane.root), []);
         assert!(held.secret_asks().given_runs().is_empty());
         let stayed = {
-            let _one = held.run_answers();
+            let _one = held.run_answers(3);
             crate::vaultroute::vault_kept_blocked(&held, None, 3, "team")
         };
         assert_eq!(stayed, Vec::<(u32, String)>::new());
@@ -14163,6 +14163,90 @@ fn keep_blocked_on_a_runs_notice_holds_while_another_press_waits_on_its_audit() 
         other_run.join().expect("it settles");
         assert!(held.secret_asks().given_runs().is_empty());
     });
+}
+
+/// #5617: one chat's press waiting on a stalled audit holds no other chat's press: the answers are
+/// carried out one at a time for each chat, not for the whole plane.
+#[test]
+fn a_press_in_one_chat_does_not_wait_for_another_chats_press() {
+    use purlis_core::secrets::ask::run::Offer;
+    let plane = Plane::new().a_persona("ops", "");
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let (events, _, _, _) = a_host_stalling_audit(0);
+    held.hooks().record_into(events);
+    vault_team_no_persona_is_tagged_for(&plane);
+
+    std::thread::scope(|scope| {
+        let mut need = curl_on_team_not_its(&plane, Offer::Program, &[]);
+        need.bound.chat = 4;
+        let (open, waits) = raised(scope, &held, need);
+        // Chat 3's press is under way, its audit stalled.
+        let pressing = held.run_answers(3);
+        let (other, id) = (&held, open.id);
+        let allowing = scope.spawn(move || {
+            crate::secretasks::run_grant_filled(
+                other,
+                None,
+                id,
+                crate::secretasks::RunGrantPress::Chat,
+                Vec::new(),
+            )
+        });
+        let began = std::time::Instant::now();
+        while !allowing.is_finished() && began.elapsed() < std::time::Duration::from_secs(5) {
+            std::thread::yield_now();
+        }
+        let done_meanwhile = allowing.is_finished();
+        drop(pressing);
+        assert!(done_meanwhile, "chat 4's press waited for chat 3's");
+        allowing.join().expect("it ends").expect("allowed");
+        waits.join().expect("it settles");
+    });
+}
+
+/// #5617: a grant given ahead of its run, its keys not yet bound to variables, is audited as taken
+/// back by Keep blocked naming the keys it was given with.
+#[test]
+fn keep_blocked_audits_a_grant_given_ahead_with_its_keys() {
+    use purlis_core::secrets::ask::run::Offer;
+    let plane = Plane::new().a_persona("ops", "");
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let (events, _, _, taken) = a_host_stalling_audit(0);
+    held.hooks().record_into(events);
+    vault_team_no_persona_is_tagged_for(&plane);
+
+    std::thread::scope(|scope| {
+        let mut need = curl_on_team_not_its(&plane, Offer::Program, &["TOKEN"]);
+        need.ahead = true;
+        need.bound.env = Vec::new();
+        need.bound.args = Vec::new();
+        let (open, waits) = raised(scope, &held, need);
+        crate::secretasks::run_grant_filled(
+            &held,
+            None,
+            open.id,
+            crate::secretasks::RunGrantPress::Chat,
+            vec![("TOKEN".to_owned(), "t0ken-v4lue".to_owned().into())],
+        )
+        .expect("allowed ahead");
+        waits.join().expect("it settles");
+    });
+    crate::vaultroute::keep_blocked_pressed(&held, None, 3, "team");
+
+    let keys = serde_json::json!(["TOKEN"]);
+    assert_eq!(
+        run_grant_audits(&taken),
+        [
+            ("grant".to_owned(), "chat".to_owned(), keys.clone()),
+            ("revoke".to_owned(), "chat".to_owned(), keys),
+        ]
+    );
 }
 
 /// A key that came to be a browser login's while its ask was up is no program's: Always allow

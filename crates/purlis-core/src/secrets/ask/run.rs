@@ -393,6 +393,9 @@ pub struct GivenRun {
     /// Good for one run of exactly its arguments; otherwise for any, for the chat's life.
     pub once: bool,
     pub at: u64,
+    /// **Given ahead of its run** (#5244), the keys it covers before a run binds them: what its
+    /// audit named, and so what its taking back names too (#5617).
+    pub ahead_keys: Option<Vec<String>>,
 }
 
 /// What Keep blocked did to the asks (#5617): the asks open on the vault, for the window to answer
@@ -868,6 +871,7 @@ impl Asks {
                     bound: given.bound,
                     once: given.once,
                     at: given.at,
+                    ahead_keys: given.ahead_keys,
                 })
                 .collect(),
         }
@@ -943,6 +947,7 @@ impl Asks {
                 bound: one.bound.clone(),
                 once: one.once,
                 at: one.at,
+                ahead_keys: one.ahead_keys.clone(),
             })
             .collect();
         given.sort_by_key(|one| (one.at, one.id));
@@ -966,6 +971,7 @@ impl Asks {
             bound: gone.bound,
             once: gone.once,
             at: gone.at,
+            ahead_keys: gone.ahead_keys,
         })
     }
 

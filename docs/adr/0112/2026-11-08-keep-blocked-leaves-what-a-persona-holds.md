@@ -31,5 +31,5 @@ vault in the Allowed list, takes them back.
   answer.
 - Values the person typed into a run's notice are stored before the press is audited, so a press
   refused after that keeps them in the vault, though it opens nothing for the chat.
-- Keep blocked's own answers wait for a press already under way; the mark and the take-back do
-  not.
+- Keep blocked's own answers wait for a press of the same chat already under way; the mark and
+  the take-back do not. A press in one chat never waits for another chat's.
