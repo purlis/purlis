@@ -350,14 +350,41 @@ fn a_pushed_commit_signed_with_another_key_says_nothing_of_this_one() {
     assert_eq!(checked.reason, "other_key");
 }
 
+/// #5788: the email chosen for chat commits is kept per forge account, so a person whose GitHub
+/// and GitLab addresses differ is Verified on both.
 #[test]
-fn the_email_chosen_for_chat_commits_is_kept_until_it_is_cleared() {
+fn the_email_chosen_for_chat_commits_is_kept_per_forge_account_until_it_is_cleared() {
     let config = tempfile::tempdir().unwrap();
-    assert_eq!(commit_email(config.path()), None);
-    set_commit_email(config.path(), Some("sam@example.com")).unwrap();
+    let octocat = AccountRef::new(Kind::GitHub, "github.com", "octocat");
+    let sam = AccountRef::new(Kind::GitLab, "GitLab.Example.org", "sam");
+    assert_eq!(commit_email_of(config.path(), &octocat), None);
+    set_commit_email_of(
+        config.path(),
+        &octocat,
+        Some("1+octocat@users.noreply.github.com"),
+    )
+    .unwrap();
+    set_commit_email_of(config.path(), &sam, Some("sam@example.org")).unwrap();
     assert_eq!(
-        commit_email(config.path()).as_deref(),
-        Some("sam@example.com")
+        commit_email_of(config.path(), &octocat).as_deref(),
+        Some("1+octocat@users.noreply.github.com")
+    );
+    assert_eq!(
+        commit_email_of(
+            config.path(),
+            &AccountRef::new(Kind::GitLab, "gitlab.example.org", "sam")
+        )
+        .as_deref(),
+        Some("sam@example.org"),
+        "a host is the same in any case"
+    );
+    // Another login on the same host chose nothing.
+    assert_eq!(
+        commit_email_of(
+            config.path(),
+            &AccountRef::new(Kind::GitHub, "github.com", "hubot")
+        ),
+        None
     );
     for bad in [
         "",
@@ -367,17 +394,50 @@ fn the_email_chosen_for_chat_commits_is_kept_until_it_is_cleared() {
         "x@y.z\nuser.name=evil",
     ] {
         assert!(
-            set_commit_email(config.path(), Some(bad)).is_err(),
+            set_commit_email_of(config.path(), &sam, Some(bad)).is_err(),
             "{bad:?}"
         );
     }
     assert_eq!(
-        commit_email(config.path()).as_deref(),
-        Some("sam@example.com")
+        commit_email_of(config.path(), &sam).as_deref(),
+        Some("sam@example.org")
     );
-    set_commit_email(config.path(), None).unwrap();
-    assert_eq!(commit_email(config.path()), None);
-    set_commit_email(config.path(), None).unwrap();
+    set_commit_email_of(config.path(), &sam, None).unwrap();
+    assert_eq!(commit_email_of(config.path(), &sam), None);
+    assert!(
+        commit_email_of(config.path(), &octocat).is_some(),
+        "the other stays"
+    );
+    set_commit_email_of(config.path(), &sam, None).unwrap();
+    forget_records(config.path()).unwrap();
+    assert_eq!(commit_email_of(config.path(), &octocat), None);
+}
+
+/// #5788: an address chosen before choices were per account was chosen for the device: it stays
+/// in use for any account that has not chosen its own since.
+#[test]
+fn an_email_chosen_for_the_whole_device_before_stands_for_an_account_with_none_of_its_own() {
+    let config = tempfile::tempdir().unwrap();
+    let folder = config.path().join("signing");
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::write(folder.join("commit-email"), "old@example.com\n").unwrap();
+    let octocat = AccountRef::new(Kind::GitHub, "github.com", "octocat");
+    let sam = AccountRef::new(Kind::GitLab, "gitlab.com", "sam");
+    assert_eq!(
+        commit_email_of(config.path(), &sam).as_deref(),
+        Some("old@example.com")
+    );
+    set_commit_email_of(config.path(), &octocat, Some("new@example.com")).unwrap();
+    assert_eq!(
+        commit_email_of(config.path(), &octocat).as_deref(),
+        Some("new@example.com")
+    );
+    assert_eq!(
+        commit_email_of(config.path(), &sam).as_deref(),
+        Some("old@example.com")
+    );
+    forget_records(config.path()).unwrap();
+    assert_eq!(commit_email_of(config.path(), &sam), None);
 }
 
 #[test]

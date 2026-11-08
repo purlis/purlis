@@ -192,6 +192,11 @@ fn note_verified(account: &ForgeAccount, email: Option<String>) {
     };
 }
 
+/// `account`, as its chosen commit email is kept by (#5788).
+fn account_ref(account: &ForgeAccount) -> signingsetup::AccountRef {
+    signingsetup::AccountRef::new(account.kind, &account.host, &account.login)
+}
+
 /// The scopes an account needs to add a signing key: GitHub's step-up, GitLab's `api`.
 fn may_add(account: &ForgeAccount) -> bool {
     match account.kind {
@@ -360,7 +365,7 @@ pub async fn signing_check(
         let root = config_root()?;
         let key = the_key(&root)?;
         let account = the_account(&root, &forge)?;
-        let who = signingsetup::who_commits_here(&root)?;
+        let who = signingsetup::who_commits_as(&root, &account_ref(&account))?;
         let transport = transport(&forge)?;
         let shown = forge.kind.display();
         let (checked, repo) = match forge.kind {
@@ -584,7 +589,7 @@ fn retried(
                 root,
                 one,
                 key,
-                signingsetup::commit_email(config).as_deref(),
+                signingsetup::commit_email_on(config, one.kind, &one.host).as_deref(),
                 &mut |_| {},
             )
         })
@@ -669,16 +674,17 @@ pub async fn signing_emails(forge: SigningForge) -> Result<SigningEmails, String
     .await
 }
 
-/// **Sign chat commits on this Mac as `email`** (#5631): one of the account on `forge`'s
-/// verified addresses, asked again of the forge, so nothing else is taken. Chat commits made
-/// from now on carry it, and Check is run again by the dialog.
+/// **Sign the account on `forge`'s chat commits on this Mac as `email`** (#5631, #5788): one of
+/// its verified addresses, asked again of the forge, so nothing else is taken. Chat commits made
+/// from now on in its forge's repositories carry it; another account keeps its own. Check is run
+/// again by the dialog.
 #[tauri::command]
 #[specta::specta]
 pub async fn signing_use_email(forge: SigningForge, email: String) -> Result<(), String> {
     blocking(move || {
         let forge = forge.forge()?;
         let root = config_root()?;
-        the_account(&root, &forge)?;
+        let account = the_account(&root, &forge)?;
         let transport = transport(&forge)?;
         let verified = signingsetup::verified_emails(transport.as_ref(), &forge)?;
         if !verified
@@ -690,7 +696,7 @@ pub async fn signing_use_email(forge: SigningForge, email: String) -> Result<(),
                 forge.kind.display()
             ));
         }
-        signingsetup::set_commit_email(&root, Some(&email))
+        signingsetup::set_commit_email_of(&root, &account_ref(&account), Some(&email))
     })
     .await
 }
