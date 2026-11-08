@@ -1315,3 +1315,57 @@ fn a_shell_a_chat_started_in_a_session_of_its_own_ends_when_the_next_host_settle
     );
     planes.close(&id).expect("it closes");
 }
+
+/// **A task a chat on a pool's runner asked for is not started again by a launch** (ADR 0078):
+/// it waits as a chat that did not start, its dispatch still running, saying why, until the
+/// person starts it again or ends it. The same task of a chat on this machine is started again,
+/// told to carry on (`after_a_restart_a_working_task_is_still_under_its_session_and_its_report_
+/// arrives`).
+#[test]
+fn a_task_a_runner_chat_asked_for_waits_for_the_person_after_a_restart() {
+    let (plane, host, planes, _id, held, steward, task) = a_steward_and_a_working_task();
+    let mut at_quit = quits(&held);
+    let record = record_of(&held, task);
+    let task_id = held
+        .chats()
+        .chat_at(task)
+        .and_then(|at| at.id)
+        .expect("an id");
+    for chat in &mut at_quit.chats {
+        if chat.number == Some(steward) {
+            // The steward chat ran on pool builds's runner, as its start chose.
+            chat.runs_on = Some(purlis_core::machine::StartChoice::Pool("builds".to_owned()));
+        }
+    }
+
+    let (relaunched, _planes, _again, held, opened) =
+        launches_again(&plane, (host.clone(), planes, held), &at_quit);
+
+    assert!(
+        !opened.iter().any(|open| open.session == task),
+        "the task was not started again"
+    );
+    assert!(
+        !relaunched.asked().iter().any(|(number, _)| *number == task),
+        "nothing was asked to start it"
+    );
+    let waits: Vec<String> = held
+        .chats()
+        .would_not_start()
+        .into_iter()
+        .filter(|one| one.id == task_id)
+        .map(|one| one.why)
+        .collect();
+    assert_eq!(waits.len(), 1, "it waits to start: {waits:?}");
+    assert!(
+        waits[0].contains("pool builds") && waits[0].contains("Try to start again"),
+        "{}",
+        waits[0]
+    );
+    assert!(
+        dispatchrecord::read(held.root(), &record.id)
+            .unwrap()
+            .running(),
+        "its dispatch still runs"
+    );
+}

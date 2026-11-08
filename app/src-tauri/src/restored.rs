@@ -94,14 +94,102 @@ pub(crate) fn begin(held: &Held, record: &Record) -> Begun {
         .filter(|chat| held.chats().left_running(chat))
         .filter_map(|chat| chat.number)
         .collect();
+    // **A task a chat on a pool's runner asked for waits for the person** (ADR 0078): it is
+    // held aside as a chat that did not start, under the chat that asked, and starts only on
+    // their Try to start again. Registered once the rest are, so a record written meanwhile
+    // holds every chat.
+    let (starting, waiting) = held_for_the_person(held, &launch);
     held.chats()
-        .begin_put_back(&launch.back, &|chat| launch.told(chat));
+        .begin_put_back(&starting, &|chat| launch.told(chat));
+    for one in waiting {
+        held.chats().keep_waiting(one);
+    }
     Begun {
         records,
         launch,
         coming,
         kept,
     }
+}
+
+/// **What a launch starts, and the tasks it holds for the person**: `launch`'s record without
+/// each task still owing its report whose asking chat ran on a pool's runner
+/// ([`ran_on_a_pool`]), and those tasks, each to wait as a chat that did not start. Nothing
+/// starts a task a runner chat asked for without the person, a launch included: the chat that
+/// asked would have had its dispatch held for their Approve (`crate::runnerdispatches`). A task
+/// the session host still runs is no start, and comes back as it is.
+fn held_for_the_person(held: &Held, launch: &AtLaunch) -> (Record, Vec<crate::chats::WaitingChat>) {
+    let back = &launch.back;
+    let mut starting = Vec::new();
+    let mut waiting = Vec::new();
+    for chat in &back.chats {
+        let pool = chat
+            .identity
+            .id
+            .as_deref()
+            .filter(|id| launch.is_a_listed_task(id))
+            .filter(|_| !held.chats().left_running(chat))
+            .and_then(|_| chat.from.as_ref())
+            .and_then(|from| {
+                back.chats.iter().find(|asker| {
+                    asker.number == Some(from.chat)
+                        || (from.id.is_some() && asker.identity.id == from.id)
+                })
+            })
+            .and_then(|asker| ran_on_a_pool(held, asker));
+        match pool {
+            Some(pool) => waiting.push(crate::chats::WaitingChat {
+                chat: chat.clone(),
+                why: format!(
+                    "the chat that asked for it runs on pool {pool}'s runner, so it starts \
+                     again only when you start it: Try to start again, or End task"
+                ),
+                approval: None,
+                told: launch.told(chat),
+            }),
+            None => starting.push(chat.clone()),
+        }
+    }
+    // The numbers the held tasks keep are never dealt to another chat.
+    let dealt = waiting
+        .iter()
+        .filter_map(|one| one.chat.number)
+        .fold(back.dealt, u32::max);
+    (
+        Record {
+            chats: starting,
+            dealt,
+            ..back.clone()
+        },
+        waiting,
+    )
+}
+
+/// **The pool chat `asker` ran on**, by its record: the pool its start chose, else the pool this
+/// machine kept it on (`chatsOnPools`), else the pool its workspace or project runs its chats
+/// on now, which is where it starts again. `None` for a chat of this machine.
+fn ran_on_a_pool(held: &Held, asker: &Chat) -> Option<String> {
+    use purlis_core::machine::StartChoice;
+    match &asker.runs_on {
+        Some(StartChoice::Pool(pool)) => return Some(pool.clone()),
+        Some(StartChoice::ThisMachine) => return None,
+        None => {}
+    }
+    let config = held.chats().pools_in()?;
+    if let Some(kept) = asker
+        .number
+        .and_then(|number| purlis_core::pools::chat_on_pool(&config, held.root(), number))
+    {
+        return Some(kept.pool);
+    }
+    let workspace = asker
+        .cwd
+        .as_deref()
+        .and_then(|cwd| purlis_core::active::workspace_of_tree(held.root(), cwd))?;
+    purlis_core::machine::read(&config)
+        .store
+        .chat_place(held.root(), &workspace, None)
+        .pool
 }
 
 /// The second half of a launch's put-back: starts the chats [`begin`] registered
