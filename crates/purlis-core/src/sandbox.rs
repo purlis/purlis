@@ -4711,9 +4711,9 @@ impl Applied {
             // A host listed without a port on every port for Claude Code on its own sandbox, as
             // its own proxy carried it (#1665); a wrapped one is carried as Codex is (#4083).
             any_port: claude,
-            // Claude Code's harness runs outside its sandbox and keeps its own temp folder, so
-            // its chat needs the proxy alone (#1699), and its ssh route where no chat writes
-            // (#1667).
+            // Claude Code's harness runs outside its sandbox, so its chat needs the proxy and a
+            // temp folder of its own, which it is named in `CLAUDE_CODE_TMPDIR` (#1699,
+            // #5675), and its ssh route where no chat writes (#1667).
             beside: if claude {
                 plan::Beside::ProxyOnly {
                     routes: plan::routes(&self.root),
@@ -4785,8 +4785,8 @@ pub struct Line {
 }
 
 /// What runs beside a chat charter wraps, for as long as it lives: the loopback proxy its
-/// traffic leaves through ([`egress`]) and a temp directory of its own, which a Claude Code
-/// chat's is without ([`Self::proxy_only`]). Both end when this is dropped.
+/// traffic leaves through ([`egress`]) and a temp directory of its own, a Claude Code chat's
+/// too ([`Self::proxy_only`], #5675). Both end when this is dropped.
 ///
 /// **Here, or held elsewhere** (#1999): the proxy runs in this process, or in the session host,
 /// which started it from this chat's [`plan::Plan`] and holds it for as long as the chat runs
@@ -5075,14 +5075,21 @@ impl Confinement {
         })
     }
 
-    /// A proxy serving `serving`, and nothing beside it (#1699): for a Claude Code chat, whose
-    /// harness keeps its own temp folder and whose git sets its own ssh through the proxy's
-    /// SOCKS port, so a temp directory and an ssh route would never be used.
+    /// A proxy serving `serving`, and a new temp directory with no ssh route in it (#1699): for
+    /// a Claude Code chat, whose git sets its own ssh through the proxy's SOCKS port. The temp
+    /// directory is the chat's own (#5675): Claude Code is started with
+    /// `CLAUDE_CODE_TMPDIR` naming it, and roots its own temporary files and its sandbox's
+    /// `$TMPDIR` there, where before every chat on the machine shared `/tmp/claude-<uid>`.
+    /// Claude Code's sandbox lets the chat write the folder it roots there and no other chat's.
+    /// It is made where that path stays short enough for Claude Code to take it, in `/tmp` on
+    /// macOS ([`claude_wrap::own_tmp`]).
     pub fn proxy_only(serving: egress::Serving) -> std::io::Result<Self> {
         let asks = serving.asks.clone();
+        let proxy = egress::Proxy::serving(serving)?;
+        let tmp = claude_wrap::own_tmp()?;
         Ok(Self {
-            proxy: Proxied::Here(Box::new(egress::Proxy::serving(serving)?)),
-            tmp: None,
+            proxy: Proxied::Here(Box::new(proxy)),
+            tmp: Some(Folder::Own(tmp)),
             asks: asks.map(|asks| asks as std::sync::Arc<dyn Board>),
             ssh: None,
             routed: None,
@@ -5256,7 +5263,7 @@ impl Confinement {
         self.asks.as_ref()
     }
 
-    /// The chat's own temp directory, which a proxy-only one has none of.
+    /// The chat's own temp directory.
     pub fn tmp(&self) -> Option<&Path> {
         self.tmp.as_ref().map(Folder::path)
     }
