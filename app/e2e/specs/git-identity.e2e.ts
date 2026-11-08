@@ -34,9 +34,10 @@ const NAME = "no-identity";
 
 /** The doctor's one Notice line (#5645, `DOCTOR_LINE`), whose list holds the finding. */
 const CAUSE = "doctor-finding:*";
-/** The finding's row in the line's list, by the doctor row's name. */
+/** The doctor's line in the Notices view: its words, with its ways out (`NoticeSaid`). */
 const LINE = `[role="tabpanel"][data-view="notices"] [data-cause="${CAUSE}"]`;
-const ROW = `${LINE} li.doctor-row[data-row="git identity"]`;
+/** The finding's row, in the list the line opens under itself (outside its words). */
+const ROW = `[role="tabpanel"][data-view="notices"] li.doctor-row[data-row="git identity"]`;
 
 /** This spec's own project: the fixture plane, with nothing to put back on open. */
 const mine = (() => {
