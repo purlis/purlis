@@ -6,7 +6,7 @@
  * Each asserts what a person sees, from the page, never a component's internals.
  */
 
-import { userEvent, waitFor } from "storybook/test";
+import { expect, userEvent, waitFor } from "storybook/test";
 import { cellInTest } from "../.storybook/matrix";
 
 /** The global the screenshot gate puts its picture-taker on (`.storybook/screenshots.setup.ts`),
@@ -409,6 +409,24 @@ export async function untilInSight(parts: Element[], step: string): Promise<void
   } catch {
     throw new Error(`${step}: ${why ?? "out of sight"}`);
   }
+}
+
+/**
+ * **`target` comes into view** (`step` names where in the story): drawn, and neither it nor
+ * anything around it hidden or wholly transparent, as `toBeVisible` reads it. Waited for, as a
+ * dialog's scrim fades in from nothing (`charter-appear`) and WebKit can start that fade late in
+ * a busy run (#5762): checked at once, a line drawn in a dialog not yet fading in was not
+ * visible. Throws, after the step, what the check last found.
+ */
+export async function untilVisible(target: () => Element | null, step: string): Promise<void> {
+  let why: unknown;
+  try {
+    await waitFor(() => expect(target()).toBeVisible(), { timeout: SETTLES_WITHIN_MS });
+    return;
+  } catch (error) {
+    why = error;
+  }
+  throw new Error(`${step}: ${why instanceof Error ? why.message : String(why)}`);
 }
 
 function describe(element: Element): string {
