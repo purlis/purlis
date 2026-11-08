@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794129610405,
+  "lastUpdate": 1794129708060,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -17196,6 +17196,42 @@ window.BENCHMARK_DATA = {
             "value": 1008.3,
             "unit": "MB",
             "extra": "median of 6 samples: 966.2, 988.3, 1000.1, 1016.6, 1017.1, 1090.6 MB; window 683.6 MB, session host 325 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "89e7ba261ab49266a73b824025cb9c29e8d3895e",
+          "message": "Judge every git that may write a branch folder, not only the porcelain that commits (#5775)\n\nThe guard of a chat started without the sandbox now holds to a branch\nfolder's claim every git that may move a branch or HEAD, or write the\nindex or the working tree. What only reads is an allow-list; a\nsubcommand it does not know counts as a write. -C, --git-dir,\n--work-tree, GIT_DIR and GIT_WORK_TREE place a git where they point,\nand one pointed where the line does not spell out is named unplaced.\n\nA corpus of everyday read-only git in the tests must pass unjudged.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6WKHA9NSVPJ2CXZHKRZ61WC\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-08T07:24:34Z",
+          "tree_id": "4f0d7c0472b398dff2d5e788dd8bdbbff56c8d6f",
+          "url": "https://github.com/purlis/purlis/commit/89e7ba261ab49266a73b824025cb9c29e8d3895e"
+        },
+        "date": 1794129702695,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 2323.8,
+            "unit": "MB",
+            "extra": "median of 3 samples: 2005.5, 2323.8, 2422.1 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 992.4,
+            "unit": "MB",
+            "extra": "median of 6 samples: 952, 971.1, 987, 997.8, 998.5, 1051.4 MB; window 671.6 MB, session host 320.8 MB"
           }
         ]
       }
