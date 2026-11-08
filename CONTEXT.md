@@ -322,6 +322,19 @@ ends. A run has many turns. What a turn changed is the diff of the chat's branch
 it to after it, which is what the operator reviews and can undo.
 _Avoid_: step, exchange, checkpoint, iteration
 
+**Own work**:
+Work a chat's **Turn** left running in the background and expects to be woken by: a shell, a
+monitor, a subagent, a workflow, a cron or a wakeup. A chat whose turn ended with own work in
+flight is waiting on its own work, not on the person. A reopen ends it; the chat is told so by
+its **Wake line**, and only the chat starts it again.
+_Avoid_: background tasks (that is Claude Code's name), jobs
+
+**Wake line**:
+The one message purlis types into a chat when it is reopened, saying what ended or arrived
+while it was closed: the **Own work** the restart ended, with each piece's last output, and
+its dispatched tasks and their reports. It wakes a chat that would otherwise wait for ever.
+_Avoid_: resume note, notification, carry-on line
+
 **Hot chat**:
 A chat whose current run has a process: `starting`, `working`, `input-required` or `paused`.
 An **open** chat is any chat whose current run is live, hot or not; a hibernated one is open and
@@ -1242,21 +1255,6 @@ A turn of a chat that the person did not begin: a line of purlis's own, such as 
 back, or the chat's own work waking it. It is no reply, so a chat that **needs you** keeps its
 wait through it, and only a line the person sends ends that wait (#4562).
 _Avoid_: silent turn, automatic turn
-
-**Own work**:
-Background work a chat started itself that is still running when its turn ends: a shell, a
-monitor, a subagent, a workflow, a cron or a wakeup. A chat waiting on its own work is waiting on
-neither the person nor purlis, and wakes when that work is done. purlis keeps a record of it on disk
-whenever it changes. A restart that ends the chat's program ends the work too (#3878, #5743).
-_Avoid_: background tasks (that is Claude Code's word), jobs
-
-**Wake line**:
-The one message purlis types into a chat it brings back on its conversation after a restart ended
-its program. It says what the restart ended of its **own work** and, for a task that still owes
-its report, that it should carry on. The chat decides what to start again, and purlis re-runs
-nothing. A chat whose program the host kept running gets none, and so does a chat with nothing to
-be told (ADR 0068 as amended 2026-11-08, #5743).
-_Avoid_: resume message, carry-on (that is part of it)
 
 **Component family**:
 One kind of control the window draws one way everywhere, such as the button (with the icon button
