@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
 # Fetches the packages runner-image/Dockerfile's `forge-programs-<arch>` stage pins, into <dir>,
 # each checked against the stage's own sum, for
 #   docker build --build-context forge-programs-<arch>=<dir> ...
