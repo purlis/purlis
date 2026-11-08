@@ -415,6 +415,12 @@ const SORTED: &[(&str, &str, Group, &str)] = &[
     ),
     (
         "crates/purlis-core/src/pools.rs",
+        "MARKED_SINCE",
+        Security,
+        "the first purlis whose runners a desktop can mark: nothing carries from an older one",
+    ),
+    (
+        "crates/purlis-core/src/pools.rs",
         "VOUCHED_WITHIN",
         PoolLimit,
         "a default in poollimits",
