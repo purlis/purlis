@@ -40,7 +40,7 @@
 use super::every_command_charter_names_is_one_it_has::{PROSE, help_of, repo, shipped_skills};
 use crate::support;
 
-#[path = "settled_words.rs"]
+#[path = "../shared/settled_words.rs"]
 mod settled_words;
 
 use purlis_skills::grade::TriggerTest;

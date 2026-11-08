@@ -8,7 +8,7 @@
 //! shipped-skill check (`tests/it/every_shipped_skill_passes_the_built_in_checks.rs`); these
 //! texts are here because only the binary reaches the MCP server's.
 
-#[path = "../../../tests/it/settled_words.rs"]
+#[path = "../../../tests/shared/settled_words.rs"]
 mod settled_words;
 
 use settled_words::{avoided, losing_sides, prose_paragraphs};

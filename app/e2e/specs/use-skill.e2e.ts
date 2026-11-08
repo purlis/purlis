@@ -194,7 +194,7 @@ describe("Use skill…", function () {
     const view = await $('[data-testid="skills-view"]');
     await view.waitForDisplayed({ timeout: 20_000 });
     await expect($('[data-testid="skills-view-said"]')).toHaveText(
-      /skills? of 30 · .* of 6,000 characters/,
+      /skills? of 30 · .* of 8,000 characters/,
     );
     await expect($('[data-testid="use-skill"]')).not.toBeDisplayed();
     // The left side back on Chats, as the next spec expects it (`showView`).
