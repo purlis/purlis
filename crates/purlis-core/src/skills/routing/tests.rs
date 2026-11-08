@@ -417,7 +417,7 @@ fn the_studio_says_why_each_harnesss_router_hid_a_skill_and_which_are_pinned() {
 
 #[test]
 fn the_studio_routes_each_harness_by_its_own_budget() {
-    // Under 30 skills and 6,000 characters of descriptions, but not once Codex's briefing counts
+    // Under 30 skills and 8,000 characters of descriptions, but not once Codex's briefing counts
     // each skill's path too.
     let (tmp, bundle) = a_plane_of(0);
     let root = tmp.path();
@@ -427,7 +427,7 @@ fn the_studio_routes_each_harness_by_its_own_budget() {
             &root.join("skills").join(&name),
             &format!(
                 "---\nname: {name}\ndescription: {}\n---\n\nbody\n",
-                "w".repeat(210)
+                "w".repeat(270)
             ),
         );
         std::fs::write(

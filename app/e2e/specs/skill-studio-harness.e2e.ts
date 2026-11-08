@@ -26,9 +26,10 @@ import { studioPage, studioSkill } from "../studio.js";
  * switch (#3692). Switching it off leaves the repo's skill out of `alpha`'s chats, in `alpha`'s own
  * settings, and switching it on takes that back out again.
  *
- * The project's listing budget is raised for the spec (`[skills.budget]` in `charter.toml`): the
- * built-in skills' descriptions and their paths are past Codex's own budget, so the router would
- * hide the project's copy there, and its page would lead with that banner rather than the clash. A pin
+ * The project's listing budget is raised for the spec (`[skills.budget]` in `charter.toml`): Codex
+ * counts each built-in skill's path too, so in a deep checkout the built-ins leave too little of
+ * its 8,000 for the project's copy, the router would hide it there, and its page would lead with
+ * that banner rather than the clash. A pin
  * would keep it listed too, but a pin names it in `workspace.json`, which the switch's steps read.
  *
  * **It leaves the window and the project as it found them**: `workspace.json` and `charter.toml`

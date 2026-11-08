@@ -124,9 +124,10 @@ fn every_harness_says_its_own_budget_and_what_it_lists_of_a_skill() {
     let codex = Harness::Codex.skill_budget();
     let opencode = Harness::Opencode.skill_budget();
     assert_eq!((claude.skills, claude.chars), (60, 15_000));
-    assert_eq!((codex.skills, codex.chars), (30, 6_000));
-    // Every built-in's description together is at most 5,000 (spec #5714's Q37), so opencode's
-    // default keeps them all and about 3,000 for the plane's own skills.
+    // Every built-in's description together is at most 5,000 (spec #5714's Q37), so Codex's and
+    // opencode's defaults keep them all and about 3,000 for the plane's own skills. Codex's is
+    // exactly the listing it holds where it does not know its window, so it never warns.
+    assert_eq!((codex.skills, codex.chars), (30, 8_000));
     assert_eq!((opencode.skills, opencode.chars), (30, 8_000));
     assert_eq!(claude.per_description, Some(1_536));
     assert_eq!(codex.per_description, Some(1_024));
