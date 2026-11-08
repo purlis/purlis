@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { $, expect } from "@wdio/globals";
 import { projectRoot } from "../acting.js";
 import { closesTheTabsItOpens, focusWorkspace, runFromThePalette } from "../reach.js";
-import { studioMore, studioSkill } from "../studio.js";
+import { codexBudgetPinned, studioMore, studioSkill } from "../studio.js";
 
 /**
  * **A skill's page: its state, history and uses** (SK-19, #2782; its page in the studio, #3682),
@@ -29,11 +29,13 @@ describe("a skill's tab", function () {
   this.timeout(180_000);
 
   let root = "";
+  let unpin = () => {};
   const folder = () => join(root, "skills", PROBE);
   const beside = () => join(root, "skills", `${PROBE}.toml`);
 
   before(async () => {
     root = await projectRoot();
+    unpin = codexBudgetPinned(root);
     mkdirSync(folder(), { recursive: true });
     writeFileSync(
       join(folder(), "SKILL.md"),
@@ -48,6 +50,7 @@ describe("a skill's tab", function () {
 
   after(() => {
     rmSync(folder(), { recursive: true, force: true });
+    unpin();
     rmSync(beside(), { force: true });
   });
 

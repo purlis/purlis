@@ -47,6 +47,7 @@ fn a_crash_with(consent: Consent) -> (Outcome, Consent) {
 
 #[test]
 fn a_crash_after_not_now_is_refused_and_makes_the_crash_notice_due() {
+    purlis_core::unsteered!();
     let (said, kept) = a_crash_with(not_now());
 
     assert!(
@@ -61,6 +62,7 @@ fn a_crash_after_not_now_is_refused_and_makes_the_crash_notice_due() {
 
 #[test]
 fn the_crash_notice_due_keeps_every_answer_the_person_gave() {
+    purlis_core::unsteered!();
     let (_, kept) = a_crash_with(Consent {
         agent_drafts: Some(true),
         ..not_now()
@@ -78,6 +80,7 @@ fn the_crash_notice_due_keeps_every_answer_the_person_gave() {
 
 #[test]
 fn a_crash_after_the_crash_notice_was_settled_never_raises_it_again() {
+    purlis_core::unsteered!();
     let settled = Consent {
         crash_notice: Some(CrashNotice::Settled),
         ..not_now()
@@ -90,6 +93,7 @@ fn a_crash_after_the_crash_notice_was_settled_never_raises_it_again() {
 
 #[test]
 fn a_crash_after_dont_send_raises_no_crash_notice() {
+    purlis_core::unsteered!();
     let dont_send = Consent {
         crash_reports: Some(false),
         ..not_now()
@@ -102,6 +106,7 @@ fn a_crash_after_dont_send_raises_no_crash_notice() {
 
 #[test]
 fn a_crash_before_the_first_run_question_raises_no_crash_notice() {
+    purlis_core::unsteered!();
     let (_, kept) = a_crash_with(Consent::default());
 
     assert_eq!(kept.crash_notice, None);

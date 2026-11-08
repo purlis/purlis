@@ -23,7 +23,14 @@ impl Project {
         let root = at.join("plane");
         std::fs::create_dir_all(root.join("workspaces/alpha")).unwrap();
         std::fs::create_dir_all(at.join("home")).unwrap();
-        std::fs::write(root.join("charter.toml"), "[plane]\n").unwrap();
+        // A Codex budget of its own, under Codex's listing limit: CI runs the binary beside the
+        // plugin, whose built-ins all but spend Codex's 6,000 characters with their paths, and
+        // these tests are about levels, so a built-in shipped later must not route these away.
+        std::fs::write(
+            root.join("charter.toml"),
+            "[plane]\n\n[skills.budget.codex]\nchars = 7900\n",
+        )
+        .unwrap();
         for name in ["deploy", "review"] {
             write_skill(&root, name, &format!("Does {name}."));
         }

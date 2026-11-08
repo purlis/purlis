@@ -53,7 +53,7 @@ mod scene;
 use scene::{MERGE, SAVE, SHA, Scene};
 
 /// Every case, by the seam method it covers. The parity test compares this with the traits.
-const CASES: [&str; 32] = [
+const CASES: [&str; 33] = [
     "owned",
     "about",
     "reachable",
@@ -77,6 +77,7 @@ const CASES: [&str; 32] = [
     "create",
     "read",
     "search",
+    "add_comment",
     "owners_to_create_under",
     "create_repo",
     "delete_created_repo",
@@ -1063,6 +1064,52 @@ mod cases {
         spent(&over);
     }
 
+    pub fn add_comment(kind: &str, how: How) {
+        let Some(over) = over(kind, "add_comment", how) else {
+            return;
+        };
+        let scene = &over.scene;
+        let api = scene.path("api");
+        // An issue of its own to comment on, opened as `create` opens one, so the sweep closes it
+        // on a live forge and the case can run there without a fixture issue (#5694).
+        (over.sweep)().unwrap_or_else(|e| panic!("sweeping before the case: {e}"));
+        let made = over.backend.create(
+            &over.caller,
+            &api,
+            &NewWorkItem {
+                title: live::ISSUE_TITLE.into(),
+                body: "What the todo said.\n\nSecond paragraph.".into(),
+                workspace_label: Some("alpha".into()),
+            },
+        );
+        let number = made.as_ref().ok().map(|made| {
+            made.url
+                .rsplit('/')
+                .next()
+                .and_then(|n| n.parse::<u64>().ok())
+                .unwrap_or_else(|| panic!("no issue number ends {}", made.url))
+        });
+        let said = number.map(|number| {
+            over.backend
+                .add_comment(&over.caller, &api, number, "Seen again on 0.42.0.")
+        });
+        let swept = (over.sweep)();
+        let made = made.unwrap();
+        let (number, said) = (number.unwrap(), said.unwrap().unwrap());
+        swept.unwrap_or_else(|e| panic!("sweeping after the case: {e}"));
+        // GitHub answers the comment's own page, on its issue's; GitLab's note names no page, so
+        // it is named by its issue and its id.
+        let id = match kind {
+            "github" => said.strip_prefix(&format!("{}#issuecomment-", made.url)),
+            _ => said.strip_prefix(&format!("{api}#{number}, note ")),
+        };
+        assert!(
+            id.is_some_and(|id| !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit())),
+            "the comment's answer: {said}"
+        );
+        spent(&over);
+    }
+
     pub fn search(kind: &str, how: How) {
         let Some(over) = over(kind, "search", how) else {
             return;
@@ -1333,6 +1380,12 @@ macro_rules! contract {
             fn search_finds_the_repos_issues_that_match_and_no_request() {
                 purlis_core::unsteered!();
                 super::cases::search(stringify!($forge), super::How::$how);
+            }
+            #[test]
+            $(#[$attr])?
+            fn add_comment_posts_on_the_issue_and_answers_where_the_comment_is() {
+                purlis_core::unsteered!();
+                super::cases::add_comment(stringify!($forge), super::How::$how);
             }
             #[test]
             $(#[$attr])?
@@ -2431,9 +2484,10 @@ mod network_log {
             // and six on a first proof, and reads three or two of one it refuses, GitLab in two uploads, and a comment is one call on each.
             // A fork (#4342): who the account is, the source and the fork's place, the fork, the
             // draft and the request from it; GitLab reads the fork once more while it copies.
+            // Adding to an issue (#5694) opens one and comments on it: two calls on each.
             let expected = match kind {
-                "github" => 86,
-                _ => 103,
+                "github" => 88,
+                _ => 105,
             };
             assert_eq!(paths.len(), expected, "{kind}: the recorded REST calls");
             for path in paths {

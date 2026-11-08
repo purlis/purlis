@@ -130,6 +130,7 @@ fn an_always_send_draft_is_held_then_goes_to_the_intake_and_never_to_github() {
 
 #[test]
 fn undo_within_the_hold_sends_nothing_and_the_draft_waits_in_the_inbox() {
+    purlis_core::unsteered!();
     let root = tempfile::tempdir().unwrap();
     let intake = recorded_intake();
     let reports = reports(root.path(), consent(Some(true)), &intake);
@@ -146,6 +147,7 @@ fn undo_within_the_hold_sends_nothing_and_the_draft_waits_in_the_inbox() {
 
 #[test]
 fn undo_after_the_draft_left_is_refused() {
+    purlis_core::unsteered!();
     let root = tempfile::tempdir().unwrap();
     let reports = reports(root.path(), consent(Some(true)), &recorded_intake());
     let one = held(&reports);
@@ -155,6 +157,7 @@ fn undo_after_the_draft_left_is_refused() {
 
 #[test]
 fn the_sixth_draft_of_the_day_falls_back_to_a_draft_in_the_inbox() {
+    purlis_core::unsteered!();
     let root = tempfile::tempdir().unwrap();
     let intake = recorded_intake();
     let reports = reports(root.path(), consent(Some(true)), &intake);
@@ -172,6 +175,7 @@ fn the_sixth_draft_of_the_day_falls_back_to_a_draft_in_the_inbox() {
 
 #[test]
 fn drafts_still_held_count_against_the_cap() {
+    purlis_core::unsteered!();
     let root = tempfile::tempdir().unwrap();
     let reports = reports(root.path(), consent(Some(true)), &recorded_intake());
     for _ in 0..5 {
@@ -182,6 +186,7 @@ fn drafts_still_held_count_against_the_cap() {
 
 #[test]
 fn without_always_send_a_draft_waits_in_the_inbox_and_nothing_is_sent() {
+    purlis_core::unsteered!();
     let root = tempfile::tempdir().unwrap();
     let intake = recorded_intake();
     for not_yes in [None, Some(false)] {
@@ -195,6 +200,7 @@ fn without_always_send_a_draft_waits_in_the_inbox_and_nothing_is_sent() {
 
 #[test]
 fn always_send_turned_off_during_the_hold_keeps_the_draft_in_the_inbox() {
+    purlis_core::unsteered!();
     let root = tempfile::tempdir().unwrap();
     let intake = recorded_intake();
     let one = held(&reports(root.path(), consent(Some(true)), &intake));
@@ -212,6 +218,7 @@ fn always_send_turned_off_during_the_hold_keeps_the_draft_in_the_inbox() {
 
 #[test]
 fn always_send_on_a_card_holds_it_and_needs_the_standing_yes() {
+    purlis_core::unsteered!();
     let root = tempfile::tempdir().unwrap();
     let intake = recorded_intake();
     let asking = reports(root.path(), consent(None), &intake);
@@ -231,6 +238,7 @@ fn always_send_on_a_card_holds_it_and_needs_the_standing_yes() {
 
 #[test]
 fn always_send_on_a_card_past_the_cap_is_refused_and_the_draft_stays() {
+    purlis_core::unsteered!();
     let root = tempfile::tempdir().unwrap();
     let reports = reports(root.path(), consent(Some(true)), &recorded_intake());
     for _ in 0..5 {
@@ -251,6 +259,7 @@ fn always_send_on_a_card_past_the_cap_is_refused_and_the_draft_stays() {
 
 #[test]
 fn an_agent_s_words_after_the_hold_follow_its_draft_to_the_intake_linked_to_it() {
+    purlis_core::unsteered!();
     let root = tempfile::tempdir().unwrap();
     let intake = recorded_intake();
     let reports = reports(root.path(), consent(Some(true)), &intake);
@@ -299,6 +308,7 @@ fn an_agent_s_words_after_the_hold_follow_its_draft_to_the_intake_linked_to_it()
 
 #[test]
 fn with_always_send_off_since_the_draft_left_the_agent_s_words_are_not_sent() {
+    purlis_core::unsteered!();
     let root = tempfile::tempdir().unwrap();
     let intake = recorded_intake();
     let one = held(&reports(root.path(), consent(Some(true)), &intake));

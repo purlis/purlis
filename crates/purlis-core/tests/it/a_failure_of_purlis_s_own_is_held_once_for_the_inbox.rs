@@ -89,6 +89,7 @@ fn failing(error: &str) -> Evidence {
 
 #[test]
 fn an_internal_failure_is_held_with_its_call_its_exit_and_its_scrubbed_error() {
+    purlis_core::unsteered!();
     let root = tempfile::tempdir().unwrap();
     let reports = reports(root.path(), Some(true));
 
@@ -130,6 +131,7 @@ fn an_internal_failure_is_held_with_its_call_its_exit_and_its_scrubbed_error() {
 
 #[test]
 fn its_footer_says_the_harness_its_version_and_the_persona_s_kind_never_its_name() {
+    purlis_core::unsteered!();
     let root = tempfile::tempdir().unwrap();
     let reports = reports(root.path(), Some(true));
 
@@ -153,6 +155,7 @@ fn its_footer_says_the_harness_its_version_and_the_persona_s_kind_never_its_name
 
 #[test]
 fn the_same_failure_from_any_chat_is_one_draft_and_each_repeat_is_counted() {
+    purlis_core::unsteered!();
     let root = tempfile::tempdir().unwrap();
     let reports = reports(root.path(), Some(true));
     let first = reports
@@ -181,6 +184,7 @@ fn the_same_failure_from_any_chat_is_one_draft_and_each_repeat_is_counted() {
 
 #[test]
 fn another_path_or_number_in_the_error_is_the_same_failure_and_another_error_is_not() {
+    purlis_core::unsteered!();
     let root = tempfile::tempdir().unwrap();
     let reports = reports(root.path(), Some(true));
     let hold = |error: &str, chat: u32| {
@@ -213,6 +217,7 @@ fn another_path_or_number_in_the_error_is_the_same_failure_and_another_error_is_
 
 #[test]
 fn a_failure_met_again_after_its_draft_left_is_counted_and_never_drafted_again() {
+    purlis_core::unsteered!();
     let root = tempfile::tempdir().unwrap();
     let intake = recorded_intake();
     let reports = reports_sending_to(root.path(), Some(true), Some(true), intake.clone());
@@ -263,6 +268,7 @@ fn a_failure_met_again_after_its_draft_left_is_counted_and_never_drafted_again()
 
 #[test]
 fn a_sandbox_block_of_purlis_s_own_takes_the_same_road() {
+    purlis_core::unsteered!();
     use purlis_core::sandboxblock::{Block, Kind, Operation};
     let root = tempfile::tempdir().unwrap();
     let reports = reports(root.path(), Some(true));
@@ -296,6 +302,7 @@ fn a_sandbox_block_of_purlis_s_own_takes_the_same_road() {
 
 #[test]
 fn without_a_yes_to_agent_drafts_nothing_of_purlis_s_own_is_held() {
+    purlis_core::unsteered!();
     let root = tempfile::tempdir().unwrap();
     let reports = reports(root.path(), None);
     assert_eq!(
@@ -307,6 +314,7 @@ fn without_a_yes_to_agent_drafts_nothing_of_purlis_s_own_is_held() {
 
 #[test]
 fn the_agent_adds_what_it_was_doing_to_its_own_chat_s_draft_only() {
+    purlis_core::unsteered!();
     let root = tempfile::tempdir().unwrap();
     let reports = reports(root.path(), Some(true));
     let one = reports

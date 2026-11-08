@@ -126,7 +126,7 @@ impl Consent {
 
     /// What this machine keeps, or nothing answered where it has no config home.
     pub fn here() -> Consent {
-        crate::machine::config_root().map_or_else(Consent::default, |root| Consent::read(&root))
+        super::config_home().map_or_else(Consent::default, |root| Consent::read(&root))
     }
 
     /// Keeps these answers under `config_root`, replacing what was kept: whole, `0600`, never

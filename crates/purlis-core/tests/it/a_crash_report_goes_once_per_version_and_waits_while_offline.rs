@@ -103,6 +103,7 @@ fn event(envelope: &str) -> serde_json::Value {
 
 #[test]
 fn a_repeat_of_a_sent_fingerprint_is_counted_and_not_sent_again() {
+    purlis_core::unsteered!();
     let home = tempfile::tempdir().unwrap();
     let line = Line::up(1);
     let reports = reports(&line, home.path());
@@ -122,6 +123,7 @@ fn a_repeat_of_a_sent_fingerprint_is_counted_and_not_sent_again() {
 
 #[test]
 fn the_same_panic_in_a_new_purlis_version_is_sent_again() {
+    purlis_core::unsteered!();
     let home = tempfile::tempdir().unwrap();
     let line = Line::up(2);
     let reports = reports(&line, home.path());
@@ -135,6 +137,7 @@ fn the_same_panic_in_a_new_purlis_version_is_sent_again() {
 
 #[test]
 fn a_panic_elsewhere_in_the_same_version_is_sent_on_its_own() {
+    purlis_core::unsteered!();
     let home = tempfile::tempdir().unwrap();
     let line = Line::up(2);
     let reports = reports(&line, home.path());
@@ -148,6 +151,7 @@ fn a_panic_elsewhere_in_the_same_version_is_sent_on_its_own() {
 
 #[test]
 fn the_count_of_repeats_rides_once_on_the_next_report_that_leaves() {
+    purlis_core::unsteered!();
     let home = tempfile::tempdir().unwrap();
     let line = Line::up(3);
     let reports = reports(&line, home.path());
@@ -200,6 +204,7 @@ fn places(line: &Line) -> Vec<String> {
 
 #[test]
 fn a_report_made_offline_waits_and_goes_oldest_first_when_the_intake_answers() {
+    purlis_core::unsteered!();
     let home = tempfile::tempdir().unwrap();
     let line = Line::down(4);
     let reports = reports(&line, home.path());
@@ -236,6 +241,7 @@ fn a_report_made_offline_waits_and_goes_oldest_first_when_the_intake_answers() {
 
 #[test]
 fn the_waiting_reports_go_on_their_own_once_the_intake_answers() {
+    purlis_core::unsteered!();
     let home = tempfile::tempdir().unwrap();
     let line = Line::down(2);
     let reports = reports(&line, home.path());
@@ -252,6 +258,7 @@ fn the_waiting_reports_go_on_their_own_once_the_intake_answers() {
 
 #[test]
 fn at_most_fifty_wait_and_the_fifty_first_is_dropped() {
+    purlis_core::unsteered!();
     let home = tempfile::tempdir().unwrap();
     let line = Line::down(50);
     let reports = reports(&line, home.path());
@@ -284,6 +291,7 @@ fn at_most_fifty_wait_and_the_fifty_first_is_dropped() {
 
 #[test]
 fn a_report_waiting_longer_than_fourteen_days_is_dropped_unsent() {
+    purlis_core::unsteered!();
     let home = tempfile::tempdir().unwrap();
     let line = Line::down(2);
     let reports = reports(&line, home.path());

@@ -89,6 +89,7 @@ fn lines(bytes: &[u8]) -> Vec<serde_json::Value> {
 
 #[test]
 fn a_panic_with_a_yes_to_crash_reports_is_sent_once_with_only_the_fixed_fields() {
+    purlis_core::unsteered!();
     let home = tempfile::tempdir().unwrap();
     let recorded = recorded();
     let reports = Reports::new(known())
@@ -147,6 +148,7 @@ fn a_panic_with_a_yes_to_crash_reports_is_sent_once_with_only_the_fixed_fields()
 
 #[test]
 fn without_a_yes_to_crash_reports_nothing_is_sent_and_nothing_listed() {
+    purlis_core::unsteered!();
     for unanswered in [None, Some(false)] {
         let home = tempfile::tempdir().unwrap();
         let recorded = recorded();
@@ -173,6 +175,7 @@ fn without_a_yes_to_crash_reports_nothing_is_sent_and_nothing_listed() {
 
 #[test]
 fn no_path_workspace_project_or_repo_name_reaches_the_crash_report() {
+    purlis_core::unsteered!();
     let home = tempfile::tempdir().unwrap();
     let recorded = recorded();
     Reports::new(known())
@@ -200,6 +203,7 @@ fn no_path_workspace_project_or_repo_name_reaches_the_crash_report() {
 
 #[test]
 fn the_sent_list_keeps_the_exact_bytes_that_left() {
+    purlis_core::unsteered!();
     let home = tempfile::tempdir().unwrap();
     let recorded = recorded();
     let said = Reports::new(known())
@@ -224,6 +228,7 @@ fn the_sent_list_keeps_the_exact_bytes_that_left() {
 
 #[test]
 fn a_build_with_no_intake_sends_nothing_and_says_so() {
+    purlis_core::unsteered!();
     let home = tempfile::tempdir().unwrap();
     let said = Reports::new(known())
         .with_consent(yes())
@@ -234,6 +239,7 @@ fn a_build_with_no_intake_sends_nothing_and_says_so() {
 
 #[test]
 fn a_sent_report_is_kept_ninety_days_and_then_dropped() {
+    purlis_core::unsteered!();
     use purlis_core::report::{Sent, SentTo};
     let home = tempfile::tempdir().unwrap();
     let sent = |days_ago: i64, title: &str| Sent {

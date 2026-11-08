@@ -1058,6 +1058,17 @@ impl std::fmt::Debug for Reports {
     }
 }
 
+/// **This machine's config home, as the Reports module keeps its answers, drafts and sent list
+/// there**: [`crate::machine::config_root`]'s ladder, except that a fenced test build reads a home
+/// outside its fence as none rather than ending there, as [`crate::profilestore::listed_here`]
+/// does. A report is drafted on the app's hook-line thread and in the window's commands, so a
+/// test of either that pinned no store must neither die on that thread nor touch a store the run
+/// did not make: it is answered as a machine with no config home.
+pub(crate) fn config_home() -> Option<PathBuf> {
+    crate::machine::config_root_unheld()
+        .filter(|root| !crate::fence::FENCED || crate::fence::inside(root, &crate::fence::fence()))
+}
+
 impl Default for Reports {
     /// Knowing nothing of this machine, and no stream with a yes.
     fn default() -> Self {
@@ -1085,8 +1096,8 @@ impl Reports {
             known: Known::here(plane),
             consent: None,
             intake: None,
-            root: crate::machine::config_root(),
-            answers: crate::machine::config_root(),
+            root: config_home(),
+            answers: config_home(),
         }
         .sending_to_the_built_in_intake()
     }
@@ -1096,7 +1107,7 @@ impl Reports {
     /// planes are read only with a yes to Crash reports: without one nothing is sent, and a
     /// panicking app has no time to spend on folders.
     pub fn for_a_crash() -> Reports {
-        let root = crate::machine::config_root();
+        let root = config_home();
         let consent = root.as_deref().map_or_else(Consent::default, Consent::read);
         let mut known = Known::here(None);
         if consent.allows(Stream::CrashReports)
@@ -1119,7 +1130,7 @@ impl Reports {
     /// The same Reports, sending Crash reports to the Report intake built into this binary,
     /// listed under this machine's config root, when it has both.
     fn sending_to_the_built_in_intake(self) -> Reports {
-        match (intake::built_in(), crate::machine::config_root()) {
+        match (intake::built_in(), config_home()) {
             (Some(dsn), Some(root)) => self.sending_to(
                 Arc::new(intake::Sentry::new(dsn, intake::Https::default())),
                 &root,

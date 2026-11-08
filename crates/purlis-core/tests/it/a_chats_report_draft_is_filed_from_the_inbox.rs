@@ -87,6 +87,7 @@ fn held(reports: &Reports) -> Held {
 
 #[test]
 fn without_a_yes_to_agent_drafts_a_chats_draft_is_refused_and_nothing_is_held() {
+    purlis_core::unsteered!();
     let root = tempfile::tempdir().unwrap();
     let intake = recorded_intake();
     for unanswered in [None, Some(false)] {
@@ -101,6 +102,7 @@ fn without_a_yes_to_agent_drafts_a_chats_draft_is_refused_and_nothing_is_held() 
 
 #[test]
 fn with_the_yes_a_chats_draft_is_held_for_the_inbox_naming_its_chat_and_its_call() {
+    purlis_core::unsteered!();
     let root = tempfile::tempdir().unwrap();
     let reports = reports(root.path(), Some(true), &recorded_intake());
     let one = held(&reports);
@@ -118,6 +120,7 @@ fn with_the_yes_a_chats_draft_is_held_for_the_inbox_naming_its_chat_and_its_call
 
 #[test]
 fn a_draft_edited_in_the_inbox_is_kept_as_edited_and_its_digest_follows_it() {
+    purlis_core::unsteered!();
     let root = tempfile::tempdir().unwrap();
     let reports = reports(root.path(), Some(true), &recorded_intake());
     let one = held(&reports);
@@ -134,6 +137,7 @@ fn a_draft_edited_in_the_inbox_is_kept_as_edited_and_its_digest_follows_it() {
 
 #[test]
 fn a_dismissed_draft_is_gone_and_nothing_was_sent() {
+    purlis_core::unsteered!();
     let root = tempfile::tempdir().unwrap();
     let intake = recorded_intake();
     let reports = reports(root.path(), Some(true), &intake);
@@ -146,6 +150,7 @@ fn a_dismissed_draft_is_gone_and_nothing_was_sent() {
 
 #[test]
 fn without_a_github_sign_in_a_filed_draft_goes_to_the_intake_and_is_listed() {
+    purlis_core::unsteered!();
     let root = tempfile::tempdir().unwrap();
     let intake = recorded_intake();
     let reports = reports(root.path(), Some(true), &intake);
@@ -179,6 +184,7 @@ fn without_a_github_sign_in_a_filed_draft_goes_to_the_intake_and_is_listed() {
 
 #[test]
 fn a_draft_filed_while_the_intake_cannot_be_reached_waits_and_goes_when_it_answers() {
+    purlis_core::unsteered!();
     let root = tempfile::tempdir().unwrap();
     let line = Line::down(1);
     // No yes to Crash reports: the person's File is the yes this draft needs.
@@ -217,6 +223,7 @@ fn a_draft_filed_while_the_intake_cannot_be_reached_waits_and_goes_when_it_answe
 
 #[test]
 fn a_digest_other_than_the_drafts_files_nothing() {
+    purlis_core::unsteered!();
     let root = tempfile::tempdir().unwrap();
     let intake = recorded_intake();
     let reports = reports(root.path(), Some(true), &intake);

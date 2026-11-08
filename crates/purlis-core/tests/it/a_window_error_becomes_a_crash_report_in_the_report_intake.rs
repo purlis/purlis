@@ -86,6 +86,7 @@ fn lines(bytes: &[u8]) -> Vec<serde_json::Value> {
 
 #[test]
 fn an_error_thrown_in_the_window_reaches_the_intake_once_as_a_scrubbed_window_error() {
+    purlis_core::unsteered!();
     let home = tempfile::tempdir().unwrap();
     let recorded = recorded();
 
@@ -129,6 +130,7 @@ fn an_error_thrown_in_the_window_reaches_the_intake_once_as_a_scrubbed_window_er
 
 #[test]
 fn without_a_yes_to_crash_reports_a_window_error_is_neither_sent_nor_listed() {
+    purlis_core::unsteered!();
     for unanswered in [None, Some(false)] {
         let home = tempfile::tempdir().unwrap();
         let recorded = recorded();
@@ -147,6 +149,7 @@ fn without_a_yes_to_crash_reports_a_window_error_is_neither_sent_nor_listed() {
 
 #[test]
 fn a_script_the_window_loaded_from_the_persons_folders_is_named_by_its_file_alone() {
+    purlis_core::unsteered!();
     let home = tempfile::tempdir().unwrap();
     let recorded = recorded();
     let Evidence::WindowError(mut error) = thrown() else {
@@ -163,6 +166,7 @@ fn a_script_the_window_loaded_from_the_persons_folders_is_named_by_its_file_alon
 
 #[test]
 fn an_unhandled_rejection_goes_as_one_with_its_scrubbed_reason() {
+    purlis_core::unsteered!();
     let home = tempfile::tempdir().unwrap();
     let recorded = recorded();
 

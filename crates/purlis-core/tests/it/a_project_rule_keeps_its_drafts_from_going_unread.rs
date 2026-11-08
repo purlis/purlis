@@ -85,6 +85,7 @@ fn after_the_hold() -> chrono::DateTime<chrono::Utc> {
 
 #[test]
 fn members_may_always_send_unless_the_projects_shared_file_turns_it_off() {
+    purlis_core::unsteered!();
     assert!(members_may_always_send(project("").path()), "on by default");
     assert!(members_may_always_send(
         project("[reports]\nalways_send = true\n").path()
@@ -99,6 +100,7 @@ fn members_may_always_send_unless_the_projects_shared_file_turns_it_off() {
 
 #[test]
 fn this_machines_own_file_cannot_turn_the_teams_rule_back_on() {
+    purlis_core::unsteered!();
     let forbids = project(FORBIDS);
     std::fs::write(
         forbids.path().join("purlis.local.toml"),
@@ -110,6 +112,7 @@ fn this_machines_own_file_cannot_turn_the_teams_rule_back_on() {
 
 #[test]
 fn with_the_rule_off_a_draft_from_that_project_waits_in_the_inbox_and_nothing_is_sent() {
+    purlis_core::unsteered!();
     let root = tempfile::tempdir().unwrap();
     let intake = recorded_intake();
     let reports = always_sends(root.path(), &intake);
@@ -124,6 +127,7 @@ fn with_the_rule_off_a_draft_from_that_project_waits_in_the_inbox_and_nothing_is
 
 #[test]
 fn with_the_rule_off_always_send_on_its_card_is_refused() {
+    purlis_core::unsteered!();
     let root = tempfile::tempdir().unwrap();
     let reports = always_sends(root.path(), &recorded_intake());
     let forbids = project(FORBIDS);
@@ -137,6 +141,7 @@ fn with_the_rule_off_always_send_on_its_card_is_refused() {
 
 #[test]
 fn a_rule_turned_off_during_the_hold_keeps_the_draft_in_the_inbox() {
+    purlis_core::unsteered!();
     let root = tempfile::tempdir().unwrap();
     let intake = recorded_intake();
     let reports = always_sends(root.path(), &intake);
@@ -152,6 +157,7 @@ fn a_rule_turned_off_during_the_hold_keeps_the_draft_in_the_inbox() {
 
 #[test]
 fn a_draft_from_a_project_without_the_rule_still_goes_unread() {
+    purlis_core::unsteered!();
     let root = tempfile::tempdir().unwrap();
     let intake = recorded_intake();
     let reports = always_sends(root.path(), &intake);
@@ -165,6 +171,7 @@ fn a_draft_from_a_project_without_the_rule_still_goes_unread() {
 
 #[test]
 fn with_the_rule_off_a_member_still_files_a_draft_by_hand() {
+    purlis_core::unsteered!();
     let root = tempfile::tempdir().unwrap();
     let intake = recorded_intake();
     let reports = always_sends(root.path(), &intake);

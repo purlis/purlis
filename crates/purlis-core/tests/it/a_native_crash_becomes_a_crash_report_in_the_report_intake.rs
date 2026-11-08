@@ -68,6 +68,7 @@ fn split(envelope: &[u8]) -> (Vec<serde_json::Value>, Vec<u8>) {
 
 #[test]
 fn a_native_crash_with_a_yes_is_sent_with_only_the_fixed_fields_and_its_minidump() {
+    purlis_core::unsteered!();
     let home = tempfile::tempdir().unwrap();
     let recorded = recorded(200);
 
@@ -118,6 +119,7 @@ fn a_native_crash_with_a_yes_is_sent_with_only_the_fixed_fields_and_its_minidump
 
 #[test]
 fn without_a_yes_to_crash_reports_a_native_crash_is_not_sent() {
+    purlis_core::unsteered!();
     for unanswered in [None, Some(false)] {
         let home = tempfile::tempdir().unwrap();
         let recorded = recorded(200);
@@ -135,6 +137,7 @@ fn without_a_yes_to_crash_reports_a_native_crash_is_not_sent() {
 
 #[test]
 fn a_native_crash_is_never_filed_on_a_tracker_even_by_the_person_at_the_window() {
+    purlis_core::unsteered!();
     let home = tempfile::tempdir().unwrap();
     let recorded = recorded(200);
     let reports = reports(&recorded, home.path(), Some(true));
@@ -150,6 +153,7 @@ fn a_native_crash_is_never_filed_on_a_tracker_even_by_the_person_at_the_window()
 
 #[test]
 fn the_sent_list_shows_the_envelope_with_the_minidump_named_by_its_size_and_digest() {
+    purlis_core::unsteered!();
     let home = tempfile::tempdir().unwrap();
     let recorded = recorded(200);
     reports(&recorded, home.path(), Some(true)).take(a_crash(), &Caller::trigger());
@@ -190,6 +194,7 @@ fn now() -> u64 {
 
 #[test]
 fn a_minidump_waiting_on_the_next_launch_is_sent_and_then_removed() {
+    purlis_core::unsteered!();
     let home = tempfile::tempdir().unwrap();
     let crashes = native::crashes_dir(home.path());
     let at = now() - 60;
@@ -220,6 +225,7 @@ impl Post for Offline {
 
 #[test]
 fn a_minidump_the_intake_gave_no_answer_for_waits_for_the_next_launch() {
+    purlis_core::unsteered!();
     let home = tempfile::tempdir().unwrap();
     let crashes = native::crashes_dir(home.path());
     let left = left_by_the_handler(&crashes, now() - 60);
@@ -247,6 +253,7 @@ fn a_minidump_the_intake_gave_no_answer_for_waits_for_the_next_launch() {
 
 #[test]
 fn a_minidump_the_intake_refused_is_not_sent_again() {
+    purlis_core::unsteered!();
     let home = tempfile::tempdir().unwrap();
     let crashes = native::crashes_dir(home.path());
     let left = left_by_the_handler(&crashes, now() - 60);
@@ -263,6 +270,7 @@ fn a_minidump_the_intake_refused_is_not_sent_again() {
 
 #[test]
 fn a_minidump_older_than_fourteen_days_is_dropped_unsent() {
+    purlis_core::unsteered!();
     let home = tempfile::tempdir().unwrap();
     let crashes = native::crashes_dir(home.path());
     let left = left_by_the_handler(&crashes, now() - 15 * 24 * 60 * 60);
@@ -277,6 +285,7 @@ fn a_minidump_older_than_fourteen_days_is_dropped_unsent() {
 
 #[test]
 fn without_a_yes_a_waiting_minidump_is_removed_unsent() {
+    purlis_core::unsteered!();
     let home = tempfile::tempdir().unwrap();
     let crashes = native::crashes_dir(home.path());
     let left = left_by_the_handler(&crashes, now() - 60);
@@ -297,6 +306,7 @@ fn without_a_yes_a_waiting_minidump_is_removed_unsent() {
 
 #[test]
 fn a_minidump_still_being_written_is_left_alone() {
+    purlis_core::unsteered!();
     let home = tempfile::tempdir().unwrap();
     let crashes = native::crashes_dir(home.path());
     std::fs::create_dir_all(crashes.join("writing")).unwrap();
@@ -312,6 +322,7 @@ fn a_minidump_still_being_written_is_left_alone() {
 
 #[test]
 fn no_crashes_folder_is_no_crash() {
+    purlis_core::unsteered!();
     let home = tempfile::tempdir().unwrap();
     let recorded = recorded(200);
 

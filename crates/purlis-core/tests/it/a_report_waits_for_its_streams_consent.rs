@@ -74,6 +74,7 @@ fn refused_for(outcome: &Outcome) -> Option<Stream> {
 
 #[test]
 fn a_panic_nobody_asked_for_waits_for_a_yes_to_crash_reports() {
+    purlis_core::unsteered!();
     for unanswered in [None, Some(false)] {
         let said = outcome(
             answered(unanswered, Some(true)),
@@ -90,6 +91,7 @@ fn a_panic_nobody_asked_for_waits_for_a_yes_to_crash_reports() {
 
 #[test]
 fn a_failure_purlis_caught_itself_waits_for_a_yes_to_agent_drafts() {
+    purlis_core::unsteered!();
     for unanswered in [None, Some(false)] {
         let said = outcome(
             answered(Some(true), unanswered),
@@ -108,6 +110,7 @@ fn a_failure_purlis_caught_itself_waits_for_a_yes_to_agent_drafts() {
 
 #[test]
 fn a_draft_a_chat_writes_waits_for_a_yes_to_agent_drafts_whatever_it_holds() {
+    purlis_core::unsteered!();
     for evidence in [an_agents_words(), a_panic(), a_sandbox_block()] {
         for source in [Caller::chat("01CHAT"), Caller::mcp("01CHAT")] {
             let said = outcome(answered(Some(true), Some(false)), evidence.clone(), &source);
@@ -120,6 +123,7 @@ fn a_draft_a_chat_writes_waits_for_a_yes_to_agent_drafts_whatever_it_holds() {
 
 #[test]
 fn filing_is_refused_unsent_for_a_stream_with_no_yes() {
+    purlis_core::unsteered!();
     let said = Reports::default()
         .with_consent(answered(Some(true), None))
         .file(an_agents_words(), &Caller::chat("01CHAT"), "any digest");
@@ -128,6 +132,7 @@ fn filing_is_refused_unsent_for_a_stream_with_no_yes() {
 
 #[test]
 fn a_persons_own_report_never_waits_on_either_answer() {
+    purlis_core::unsteered!();
     for evidence in [an_agents_words(), a_panic(), a_sandbox_block()] {
         for source in [Caller::window(), Caller::command()] {
             let said = outcome(Consent::default(), evidence.clone(), &source);
@@ -138,6 +143,7 @@ fn a_persons_own_report_never_waits_on_either_answer() {
 
 #[test]
 fn an_answer_kept_on_this_machine_is_what_the_next_read_finds() {
+    purlis_core::unsteered!();
     let home = tempfile::tempdir().expect("a temporary config home");
     assert_eq!(Consent::read(home.path()), Consent::default());
     assert!(!Consent::read(home.path()).asked);
@@ -156,6 +162,7 @@ fn an_answer_kept_on_this_machine_is_what_the_next_read_finds() {
 
 #[test]
 fn a_kept_answer_purlis_cannot_read_is_no_yes_and_not_yet_asked() {
+    purlis_core::unsteered!();
     let home = tempfile::tempdir().expect("a temporary config home");
     answered(Some(true), Some(true))
         .write(home.path())
