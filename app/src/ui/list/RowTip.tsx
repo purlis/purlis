@@ -126,6 +126,13 @@ export function useRowTip(
     },
     [leaving],
   );
+  // **Esc takes it down until the next rest or visit** (#5038): the pointer's tooltip with it, and
+  // what was to take it down later, so a pointer that was on the tooltip as it went (and so never
+  // leaves the row) leaves nothing to come back with the keyboard.
+  const dismiss = useCallback(() => {
+    gone();
+    setDismissed(true);
+  }, [gone]);
   const has = tip !== undefined && tip !== null && tip !== "";
   const listens = has || attend !== undefined;
   // Gone from the window, which an engine may not say on the row (#3095).
@@ -144,12 +151,7 @@ export function useRowTip(
           {/* The keyboard coming to the row brings back a tooltip Esc took down (#5038). */}
           <KeyboardComes on={byKeyboard} onCome={() => setDismissed(false)} />
           {has && (pointed !== null || byKeyboard) && !dismissed && (
-            <Shown
-              openedAt={pointed}
-              stay={stay}
-              leaving={leaving}
-              onEscape={() => setDismissed(true)}
-            >
+            <Shown openedAt={pointed} stay={stay} leaving={leaving} onEscape={dismiss}>
               {tip}
             </Shown>
           )}

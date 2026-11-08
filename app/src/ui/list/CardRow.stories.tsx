@@ -121,7 +121,8 @@ type Story = StoryObj<typeof meta>;
  * and the fix and ← comes back, ↓ moves to the next card, Shift+F10 opens a card's menu and
  * Escape gives the keyboard back. A three-line description shows two lines and an ellipsis, and
  * its tooltip holds the whole of it. Use that cannot be pressed keeps the keyboard and says why.
- * The picture is the first card under the keyboard.
+ * The picture is the first card under the keyboard, its tooltip back after the Esc that took it
+ * down on the way in (WCAG 1.4.13, #5038).
  */
 export const SkillsViewCards: Story = {
   play: async ({ canvas, userEvent }) => {

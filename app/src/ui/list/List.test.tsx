@@ -376,6 +376,32 @@ describe("a row's own tooltip, menu and keys (ADR 0104, 2026-10-24)", () => {
     }
   });
 
+  it("takes the pointer's tooltip down with Esc for good, though the pointer was on the tooltip as it went (#5038)", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      render(<Tipped />);
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      await user.hover(row());
+      await act(async () => {
+        vi.advanceTimersByTime(TOOLTIP_DELAY + 10);
+      });
+      await user.hover(screen.getByRole("tooltip"));
+      await user.keyboard("{Escape}");
+      expect(screen.queryByRole("tooltip")).toBeNull();
+      // The keyboard comes to the row and goes on to the next: no tooltip of the pointer's stays.
+      await user.hover(screen.getByRole("button", { name: "After" }));
+      await user.tab();
+      await user.tab();
+      await act(async () => {
+        vi.advanceTimersByTime(TOOLTIP_CLOSE_DELAY * 10);
+      });
+      expect(screen.getByRole("button", { name: "After" })).toHaveFocus();
+      expect(screen.queryByRole("tooltip")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("comes back on the keyboard's next visit after Esc (#5038)", async () => {
     render(<Tipped />);
     await userEvent.tab();
