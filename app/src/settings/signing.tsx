@@ -280,8 +280,9 @@ function On({
         <Button isDisabled={busy} onPress={() => act("replaced")}>
           Replace key
         </Button>
-        <Button variant="danger" isDisabled={busy} onPress={() => setConfirming(true)}>
-          Remove signing
+        {/* Opens the one confirmation, whose own Remove signing is the act. */}
+        <Button isDisabled={busy} onPress={() => setConfirming(true)}>
+          Remove signing…
         </Button>
       </SettingActions>
       {did !== undefined && <DidSaid did={did} />}

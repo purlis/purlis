@@ -622,7 +622,7 @@ describe("the Signed commits card", () => {
     state = structuredClone(ON);
     render(<Card />);
     await screen.findByRole("list", { name: "Your other devices' signing keys" });
-    await userEvent.click(screen.getByRole("button", { name: "Remove signing" }));
+    await userEvent.click(screen.getByRole("button", { name: "Remove signing…" }));
     const confirm = await screen.findByRole("dialog", { name: "Remove signing from this Mac?" });
     expect(
       within(confirm).getByRole("list", { name: "Accounts it is removed from" }),

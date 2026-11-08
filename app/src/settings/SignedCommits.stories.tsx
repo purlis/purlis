@@ -231,7 +231,7 @@ export const RemoveSigning: Story = {
     await waitFor(() =>
       within(canvasElement).getByRole("list", { name: "Your other devices' signing keys" }),
     );
-    await userEvent.click(within(canvasElement).getByRole("button", { name: "Remove signing" }));
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "Remove signing…" }));
     const confirm = await waitFor(() =>
       within(document.body).getByRole("dialog", { name: "Remove signing from this Mac?" }),
     );
