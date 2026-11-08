@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794126304880,
+  "lastUpdate": 1794128839955,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -43302,6 +43302,48 @@ window.BENCHMARK_DATA = {
             "value": 101.577268,
             "unit": "ms",
             "extra": "median of 5 runs: 101.026, 101.283, 101.577, 102.218, 102.510 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "8f775431ed17e2693d63c1beca903a16e7f27e4a",
+          "message": "story-baselines-pull: take only the pictures a run drew again, deleting nothing (#5791) (#5796)\n\n* stories: a partial take, and a story-redrawn artifact of the pictures drawn again (#5791)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6WX52TZ0K7EGK30868HG3B5\nPurlis-Persona: steward\n\n* story-baselines-pull: take the pictures drawn again alone when the run kept them, deleting nothing (#5791)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6WX52TZ0K7EGK30868HG3B5\nPurlis-Persona: steward\n\n* story-baselines-pull: each artifact read by its name, and only a fresh copy taken (#5791 review)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6WX52TZ0K7EGK30868HG3B5\nPurlis-Persona: steward\n\n* DO NOT MERGE: a throwaway picture change to prove story-redrawn on this pull request's run (reverted next)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6WX52TZ0K7EGK30868HG3B5\nPurlis-Persona: steward\n\n* Revert the throwaway Badge picture change: story-redrawn is proven on run 42457311162\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6WX52TZ0K7EGK30868HG3B5\nPurlis-Persona: steward",
+          "timestamp": "2026-11-08T07:52:23Z",
+          "tree_id": "e9b8f5643e4cdf3e3424bd9b20fd16f0e0a86b0b",
+          "url": "https://github.com/purlis/purlis/commit/8f775431ed17e2693d63c1beca903a16e7f27e4a"
+        },
+        "date": 1794128835477,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.668481,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.651, 0.651, 0.668, 0.674, 0.679 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6535535,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.569, 16.620, 16.654, 16.677, 17.011 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.36858649999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.477, 101.063, 102.369, 103.057, 103.639 ms"
           }
         ]
       }
