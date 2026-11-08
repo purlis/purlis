@@ -17,6 +17,11 @@
 //! **Asked once.** [`Consent::asked`] says the first-run question was answered, by both answers
 //! or by Not now. The file is new with this version, so a machine that ran an older purlis has
 //! none and is asked once too (Q8).
+//!
+//! **Asked again once, after a crash** (#5700). [`Consent::crash_notice`] is the one answer
+//! purlis writes itself: [`super::Reports`] marks it due when it refuses a crash for someone
+//! who chose Not now ([`Consent::wants_the_crash_notice`]), and the window settles it when the
+//! person dismisses or answers the Notice.
 
 use std::io;
 use std::path::Path;
@@ -53,6 +58,23 @@ pub struct Consent {
     /// Whether the first-run question was answered, by Save or by Not now.
     #[serde(default)]
     pub asked: bool,
+    /// Whether purlis asks again after a crash (#5700): `None` while no crash was caught after
+    /// Not now.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub crash_notice: Option<CrashNotice>,
+}
+
+/// **Asked again, once, after a crash** (#5700, spec #5683, story 8): someone who chose Not now
+/// is asked about Crash reports again by one Notice in the Inbox, after the next crash purlis
+/// catches, and never after that.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CrashNotice {
+    /// A crash was caught while Crash reports were left unanswered by Not now: the next window
+    /// raises the Notice.
+    Due,
+    /// The Notice was dismissed or answered: it is never raised again.
+    Settled,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -70,6 +92,13 @@ impl Consent {
             Stream::AgentDrafts => self.agent_drafts,
         };
         said == Some(true)
+    }
+
+    /// Whether a crash caught now should raise the crash Notice (#5700): the first-run question
+    /// was answered with Not now, Crash reports are still unanswered, and the Notice was never
+    /// raised before.
+    pub fn wants_the_crash_notice(&self) -> bool {
+        self.asked && self.crash_reports.is_none() && self.crash_notice.is_none()
     }
 
     /// What this machine keeps, under `config_root`: nothing answered and not yet asked when

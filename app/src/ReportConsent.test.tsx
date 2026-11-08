@@ -94,6 +94,7 @@ describe("the first-run question about reports", () => {
         crash_reports: true,
         agent_drafts: false,
         asked: true,
+        crash_notice: null,
       }),
     );
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
@@ -116,6 +117,7 @@ describe("the first-run question about reports", () => {
           crash_reports: null,
           agent_drafts: null,
           asked: true,
+          crash_notice: null,
         }),
       );
       await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());

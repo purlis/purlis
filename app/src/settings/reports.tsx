@@ -23,6 +23,9 @@ import type { LiveSetting, SettingsGroup } from "./groups";
  */
 export const REPORTS_GROUP = "you.reports";
 
+/** The Crash reports row, where the crash Notice's link lands (#5700). */
+export const CRASH_REPORTS_SETTING = "you.reports.crash";
+
 export function reportsGroup(): SettingsGroup {
   return {
     id: REPORTS_GROUP,
@@ -34,7 +37,7 @@ export function reportsGroup(): SettingsGroup {
 }
 
 const crashReports: LiveSetting = {
-  id: "you.reports.crash",
+  id: CRASH_REPORTS_SETTING,
   label: "Crash reports",
   help: CRASH_SAYS,
   writes: "this machine",

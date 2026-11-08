@@ -7365,6 +7365,13 @@ export type CommandDoes =
 /**  Runs one of its actions, on nothing in particular. */
 { kind: "run"; action: RowAction };
 
+/**  The crash Notice's state (#5700), as the window names it. */
+export type CrashNoticeSaid = 
+/**  A crash was caught after Not now: the Notice is raised. */
+"due" | 
+/**  The Notice was dismissed or answered: never raised again. */
+"settled";
+
 /**  What the person asked to create. */
 export type CreateOnForge = {
 	forge: ForgeWord,
@@ -13949,6 +13956,11 @@ export type ReportConsent = {
 	crash_reports: boolean | null,
 	agent_drafts: boolean | null,
 	asked: boolean,
+	/**
+	 *  Whether purlis asks again after a crash (#5700): `due` once a crash was caught after Not
+	 *  now, `settled` once its Notice was dismissed or answered, `None` while neither.
+	 */
+	crash_notice: CrashNoticeSaid | null,
 };
 
 /**

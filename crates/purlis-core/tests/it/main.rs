@@ -68,6 +68,7 @@ mod a_cli_login_is_imported_only_when_asked;
 mod a_clone_in_repos_works_as_one_at_the_root;
 mod a_command_too_big_to_check_is_refused_before_it_is_read;
 mod a_comparison_matches_git_diff;
+mod a_crash_after_not_now_asks_again_once;
 mod a_crash_report_goes_once_per_version_and_waits_while_offline;
 mod a_cut_says_branch_in_the_window;
 mod a_discard_matches_git;

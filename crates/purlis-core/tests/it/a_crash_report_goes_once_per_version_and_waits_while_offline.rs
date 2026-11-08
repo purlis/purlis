@@ -74,6 +74,7 @@ fn reports(line: &Arc<Line>, home: &std::path::Path) -> Reports {
             crash_reports: Some(true),
             agent_drafts: None,
             asked: true,
+            crash_notice: None,
         })
         .sending_to(
             Arc::new(Sentry::new(Dsn::parse(DSN).expect("a DSN"), line.clone())),

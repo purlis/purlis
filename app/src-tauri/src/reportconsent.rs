@@ -7,7 +7,7 @@
 //! **The window's alone.** Both are on `WINDOW_ONLY`: whether this machine sends reports is the
 //! person's to say, never a chat's or a link's.
 
-use purlis_core::report::Consent;
+use purlis_core::report::{Consent, CrashNotice};
 
 /// The person's answers: `None` is unanswered, which purlis reads as no. `asked` is whether the
 /// first-run question was answered, by Save or by Not now.
@@ -16,6 +16,37 @@ pub struct ReportConsent {
     pub crash_reports: Option<bool>,
     pub agent_drafts: Option<bool>,
     pub asked: bool,
+    /// Whether purlis asks again after a crash (#5700): `due` once a crash was caught after Not
+    /// now, `settled` once its Notice was dismissed or answered, `None` while neither.
+    pub crash_notice: Option<CrashNoticeSaid>,
+}
+
+/// The crash Notice's state (#5700), as the window names it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum CrashNoticeSaid {
+    /// A crash was caught after Not now: the Notice is raised.
+    Due,
+    /// The Notice was dismissed or answered: never raised again.
+    Settled,
+}
+
+impl From<CrashNotice> for CrashNoticeSaid {
+    fn from(kept: CrashNotice) -> Self {
+        match kept {
+            CrashNotice::Due => Self::Due,
+            CrashNotice::Settled => Self::Settled,
+        }
+    }
+}
+
+impl From<CrashNoticeSaid> for CrashNotice {
+    fn from(said: CrashNoticeSaid) -> Self {
+        match said {
+            CrashNoticeSaid::Due => Self::Due,
+            CrashNoticeSaid::Settled => Self::Settled,
+        }
+    }
 }
 
 impl From<Consent> for ReportConsent {
@@ -24,6 +55,7 @@ impl From<Consent> for ReportConsent {
             crash_reports: kept.crash_reports,
             agent_drafts: kept.agent_drafts,
             asked: kept.asked,
+            crash_notice: kept.crash_notice.map(Into::into),
         }
     }
 }
@@ -34,6 +66,7 @@ impl From<ReportConsent> for Consent {
             crash_reports: sent.crash_reports,
             agent_drafts: sent.agent_drafts,
             asked: sent.asked,
+            crash_notice: sent.crash_notice.map(Into::into),
         }
     }
 }
@@ -125,12 +158,19 @@ mod tests {
         for crash_reports in [None, Some(true), Some(false)] {
             for agent_drafts in [None, Some(true), Some(false)] {
                 for asked in [false, true] {
-                    let sent = ReportConsent {
-                        crash_reports,
-                        agent_drafts,
-                        asked,
-                    };
-                    assert_eq!(ReportConsent::from(Consent::from(sent)), sent);
+                    for crash_notice in [
+                        None,
+                        Some(CrashNoticeSaid::Due),
+                        Some(CrashNoticeSaid::Settled),
+                    ] {
+                        let sent = ReportConsent {
+                            crash_reports,
+                            agent_drafts,
+                            asked,
+                            crash_notice,
+                        };
+                        assert_eq!(ReportConsent::from(Consent::from(sent)), sent);
+                    }
                 }
             }
         }

@@ -17,7 +17,12 @@ import { commands, type ReportConsent } from "./bindings";
 export type Consent = ReportConsent;
 
 /** A machine that kept no answer: nothing chosen, and not yet asked. */
-export const UNANSWERED: Consent = { crash_reports: null, agent_drafts: null, asked: false };
+export const UNANSWERED: Consent = {
+  crash_reports: null,
+  agent_drafts: null,
+  asked: false,
+  crash_notice: null,
+};
 
 /** What the store holds: the answers once the core has said them, and why a keep failed. */
 export type Held = {
@@ -45,8 +50,13 @@ const isAnswer = (said: unknown): boolean => said === null || typeof said === "b
 /** Whether `said` has the shape the core answers with. */
 function isConsent(said: unknown): said is Consent {
   if (said === null || typeof said !== "object") return false;
-  const { crash_reports, agent_drafts, asked } = said as Record<string, unknown>;
-  return isAnswer(crash_reports) && isAnswer(agent_drafts) && typeof asked === "boolean";
+  const { crash_reports, agent_drafts, asked, crash_notice } = said as Record<string, unknown>;
+  return (
+    isAnswer(crash_reports) &&
+    isAnswer(agent_drafts) &&
+    typeof asked === "boolean" &&
+    (crash_notice === null || crash_notice === "due" || crash_notice === "settled")
+  );
 }
 
 /** Reads the kept answers from the core, once per launch. */
