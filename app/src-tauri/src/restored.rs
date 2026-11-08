@@ -170,10 +170,6 @@ fn held_for_the_person(held: &Held, launch: &AtLaunch) -> (Record, Vec<crate::ch
 /// on now, which is where it starts again. `None` for a chat of this machine.
 fn ran_on_a_pool(held: &Held, asker: &Chat) -> Option<String> {
     use purlis_core::machine::StartChoice;
-    // SWITCHED OFF to see the tests red: no restored task is held.
-    if std::convert::identity(true) {
-        return None;
-    }
     match &asker.runs_on {
         Some(StartChoice::Pool(pool)) => return Some(pool.clone()),
         Some(StartChoice::ThisMachine) => return None,

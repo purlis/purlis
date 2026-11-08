@@ -1043,10 +1043,16 @@ pub fn expire_in(
     }
     // One lock for them all: a folder held past the wait keeps every record's words until the
     // next time, after one wait and not one per record.
-    // SWITCHED OFF to see the tests red: one lock per record, as before.
+    let _held = match crate::rewrite::Lock::bounded(&dir(root)) {
+        Ok(held) => held,
+        Err(why) => {
+            tracing::warn!("purlis: what ended dispatches said was not let go of yet ({why})");
+            return Vec::new();
+        }
+    };
     let mut changed = Vec::new();
     for record in records.iter_mut().filter(|record| due(record)) {
-        let emptied = change(root, &record.id, |record| {
+        let emptied = change_held(root, &record.id, |record| {
             // Looked at again under the lock: only what is still due is changed.
             if !due(record) {
                 return false;

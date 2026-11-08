@@ -516,9 +516,8 @@ impl Record {
         let line = serde_json::to_string(entry).map_err(io::Error::other)?;
         let file = self.file(root);
         std::fs::create_dir_all(&self.dir)?;
-        // SWITCHED OFF to see the tests red: the old lock on the record's folder.
-        let _held = crate::rewrite::Lock::bounded(&self.dir)?;
-        let _ = (crate::sandbox::local::config_home(), RECORD_LOCK);
+        let _held = crate::sandbox::local::config_home()
+            .map(|home| crate::machine::Lock::named(&home, RECORD_LOCK));
         let text = match std::fs::read_to_string(&file) {
             Ok(text) => text,
             Err(e) if e.kind() == io::ErrorKind::NotFound => String::new(),

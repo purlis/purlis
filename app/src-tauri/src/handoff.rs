@@ -902,8 +902,7 @@ pub(crate) fn deliver(
     // **A report from a chat on a pool's runner names the pool** after the chat, as its
     // messages do (`crate::dispatched`), so the chat that asked knows it came from a runner:
     // by the router's record of where the reporting chat runs, whoever's line is heard now.
-    // SWITCHED OFF to see the tests red: no pool named.
-    let said_from = match held.chats().pool_of(chat).filter(|_| std::convert::identity(false)) {
+    let said_from = match held.chats().pool_of(chat) {
         Some(pool) => purlis_core::dispatchtalk::from_a_pool(&child_name, &pool),
         None => child_name.clone(),
     };

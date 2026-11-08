@@ -546,10 +546,6 @@ fn shown(held: &Held, chat: u32) -> Result<String, String> {
 /// line is being heard.
 fn shown_from(held: &Held, chat: u32) -> Result<String, String> {
     let name = shown(held, chat)?;
-    // SWITCHED OFF to see the tests red: no pool named.
-    if std::convert::identity(true) {
-        return Ok(name);
-    }
     Ok(
         match crate::runnerdispatches::heard_from_a_pool(held, chat) {
             Some(pool) => dispatchtalk::from_a_pool(&name, &pool),

@@ -807,8 +807,7 @@ impl crate::planes::Held {
     /// do, since the chat would take its tasks' reports and questions with it to the runner.
     /// A move back here, or one of a chat with none, is let through.
     fn tasks_stay_here(&self, session: u32, to: &Place, who: &str) -> Result<(), String> {
-        // SWITCHED OFF to see the tests red: tasks here hold no move.
-        if to.is_none() || std::convert::identity(true) {
+        if to.is_none() {
             return Ok(());
         }
         match crate::dispatched::tasks_working_here(self, session) {

@@ -810,8 +810,7 @@ fn names_for(path: &Path) -> Vec<std::path::PathBuf> {
     let mut names = vec![path.to_path_buf()];
     for name in super::seatbelt::held_names(path)
         .into_iter()
-        // SWITCHED OFF to see the tests red.
-        .chain(super::seatbelt::spelled_through_links(path).into_iter().take(0))
+        .chain(super::seatbelt::spelled_through_links(path))
     {
         if !names.contains(&name) {
             names.push(name);

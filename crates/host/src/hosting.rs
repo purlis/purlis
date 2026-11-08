@@ -1954,10 +1954,6 @@ impl Hosting {
     /// it, or one that came back to it ([`Self::a_window_linked_from`]), while a window's link
     /// is open. None on a host no window started.
     fn a_window_now(&self, pid: u32) -> bool {
-        // SWITCHED OFF to see the tests red: every pid is taken for a window.
-        if std::convert::identity(true) {
-            return true;
-        }
         let state = self.state();
         let Some(Window(first)) = state.window else {
             return false;
