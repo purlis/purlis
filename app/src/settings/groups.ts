@@ -28,6 +28,8 @@ export type SettingsGroup = {
   label: string;
   /** One line on what the group is for, said under its heading. */
   help: string;
+  /** Other words the filter finds the group by, never drawn (#5688), as the catalogue's. */
+  also?: readonly string[];
   settings: readonly Setting[];
   /** Sentences about what is in force in this group, the core's: drawn under its help. */
   notes?: readonly string[];

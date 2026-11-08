@@ -1,0 +1,162 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
+import type { DraftFiled, ReportDraft } from "./bindings";
+import { Inbox } from "./Inbox";
+import { ReportDraftNotices, WRITTEN_BY_AN_AGENT } from "./ReportDraftNotices";
+
+/**
+ * **A chat's report draft in the Inbox** (#5694): the card lists what the core holds, and every
+ * press reaches the core as the command that does it. The core is a mock at its command boundary
+ * that answers File with what each case gives it, and keeps every command it was sent.
+ */
+
+const DRAFT: ReportDraft = {
+  id: "d1",
+  at: "2026-11-08T10:00:00Z",
+  feature: false,
+  title: "pin refuses a workspace it just listed",
+  body: "It said the branch had changes.",
+  line: "purlis pin · exit 1 · purlis 0.41.2 · Darwin 27.2.0",
+  scrubbed: [],
+  chat: "steward 4",
+  session: 4,
+  edited: false,
+  digest: "0a1b2c3d4e5f",
+};
+
+let sent: { cmd: string; args: Record<string, unknown> }[] = [];
+
+function core(filed: DraftFiled[]) {
+  sent = [];
+  mockIPC((cmd, args) => {
+    sent.push({ cmd, args: args as Record<string, unknown> });
+    if (cmd === "report_drafts") return [DRAFT];
+    if (cmd === "edit_report_draft") {
+      const { title, body } = args as { title: string; body: string };
+      return { ...DRAFT, title, body, edited: true, digest: "ffffffffffff" };
+    }
+    if (cmd === "file_report_draft") return filed.shift();
+    return null;
+  });
+}
+
+const of = (cmd: string) => sent.filter((one) => one.cmd === cmd).map((one) => one.args);
+
+function drawn() {
+  const onGo = vi.fn();
+  const onSent = vi.fn();
+  render(
+    <Inbox
+      plane="/plane"
+      asks={[]}
+      onGo={() => undefined}
+      onLeave={() => undefined}
+      onIgnore={() => undefined}
+      notices={<ReportDraftNotices plane="/plane" onGo={onGo} onSent={onSent} />}
+    />,
+  );
+  return { onGo, onSent };
+}
+
+const card = () => screen.queryByText(`Report draft: ${DRAFT.title}`);
+
+afterEach(() => {
+  cleanup();
+  clearMocks();
+});
+
+describe("a report draft in the Inbox (#5694)", () => {
+  it("names the chat it came from and its line, and Go to chat goes there", async () => {
+    core([]);
+    const { onGo } = drawn();
+    await waitFor(() => expect(card()).not.toBeNull());
+    expect(screen.getByText("steward 4")).toBeTruthy();
+    expect(screen.getByText(DRAFT.line)).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Go to chat steward 4" }));
+    expect(onGo).toHaveBeenCalledWith(4);
+  });
+
+  it("reads whole, marked as an agent's, in fields the person can change", async () => {
+    core([]);
+    drawn();
+    await waitFor(() => expect(card()).not.toBeNull());
+    await userEvent.click(screen.getByRole("button", { name: "Read" }));
+    await waitFor(() => expect(screen.getByText(WRITTEN_BY_AN_AGENT)).toBeTruthy());
+    expect(screen.getByRole("textbox", { name: "Title" })).toHaveProperty("value", DRAFT.title);
+    expect(screen.getByRole("textbox", { name: "Body" })).toHaveProperty("value", DRAFT.body);
+  });
+
+  it("files with the duplicate check and leaves the Inbox once sent", async () => {
+    core([{ kind: "sent", to: "intake", address: "event 9f", title: DRAFT.title }]);
+    const { onSent } = drawn();
+    await waitFor(() => expect(card()).not.toBeNull());
+    await userEvent.click(screen.getByRole("button", { name: "File" }));
+    await waitFor(() => expect(onSent).toHaveBeenCalled());
+    expect(of("file_report_draft")).toEqual([
+      { id: "d1", digest: DRAFT.digest, how: { how: "check" } },
+    ]);
+    expect(onSent.mock.calls[0]?.[0]).toMatchObject({
+      id: "d1",
+      title: DRAFT.title,
+      session: 4,
+      chat: "steward 4",
+      to: "intake",
+    });
+    await waitFor(() => expect(card()).toBeNull());
+  });
+
+  it("keeps the person's changed words first and files them by their new digest", async () => {
+    core([{ kind: "sent", to: "github", address: "issues/42", title: "Shorter" }]);
+    const { onSent } = drawn();
+    await waitFor(() => expect(card()).not.toBeNull());
+    await userEvent.click(screen.getByRole("button", { name: "Read" }));
+    const title = await waitFor(() => screen.getByRole("textbox", { name: "Title" }));
+    await userEvent.clear(title);
+    await userEvent.type(title, "Shorter");
+    await userEvent.click(screen.getByRole("button", { name: "File" }));
+    await waitFor(() => expect(onSent).toHaveBeenCalled());
+    expect(of("edit_report_draft")).toEqual([{ id: "d1", title: "Shorter", body: DRAFT.body }]);
+    expect(of("file_report_draft")).toEqual([
+      { id: "d1", digest: "ffffffffffff", how: { how: "check" } },
+    ]);
+  });
+
+  it("shows possible duplicates first, and Add to adds it to that issue instead", async () => {
+    core([
+      {
+        kind: "duplicates",
+        issues: [{ number: 41, title: "Refuses clean branches", state: "open", url: "u" }],
+      },
+      { kind: "sent", to: "github", address: "issues/41#c", title: DRAFT.title },
+    ]);
+    const { onSent } = drawn();
+    await waitFor(() => expect(card()).not.toBeNull());
+    await userEvent.click(screen.getByRole("button", { name: "File" }));
+    const add = await waitFor(() => screen.getByRole("button", { name: "Add to #41" }));
+    expect(screen.getByRole("button", { name: "File as new" })).toBeTruthy();
+    expect(onSent).not.toHaveBeenCalled();
+    await userEvent.click(add);
+    await waitFor(() => expect(onSent).toHaveBeenCalled());
+    expect(of("file_report_draft")[1]).toEqual({
+      id: "d1",
+      digest: DRAFT.digest,
+      how: { how: "add-to", issue: 41 },
+    });
+  });
+
+  it("is let go unsent on Dismiss", async () => {
+    core([]);
+    const { onSent } = drawn();
+    await waitFor(() => expect(card()).not.toBeNull());
+    await userEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    await waitFor(() => expect(card()).toBeNull());
+    expect(of("dismiss_report_draft")).toEqual([{ id: "d1" }]);
+    expect(of("file_report_draft")).toEqual([]);
+    expect(onSent).not.toHaveBeenCalled();
+  });
+});
