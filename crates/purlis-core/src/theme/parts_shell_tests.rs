@@ -781,7 +781,8 @@ fn the_crumb_the_all_button_a_row_and_a_pin_are_reached_by_their_own_attributes(
         let sheet = sheet_of(json!({ format!("titlebar.{part}.fill"): "surface.raised" }));
         assert!(
             sheet.contains(&format!(
-                ":where([data-scope=\"titlebar\"][data-part=\"{part}\"]{}) {{ background-color: var(--surface-raised); }}",
+                // Classic's own corner, where it sets one, joins the rule (#3196).
+                ":where([data-scope=\"titlebar\"][data-part=\"{part}\"]{}) {{ background-color: var(--surface-raised);",
                 unless(part)
             )),
             "{part}: {sheet}"
@@ -804,7 +805,7 @@ fn the_crumb_s_words_reach_the_crumb() {
     }));
     assert!(
         sheet.contains(
-            ":where([data-scope=\"titlebar\"][data-part=\"crumb\"]) { background-color: var(--surface-raised); color: var(--text-primary); }"
+            ":where([data-scope=\"titlebar\"][data-part=\"crumb\"]) { background-color: var(--surface-raised); color: var(--text-primary);"
         ),
         "{sheet}"
     );
