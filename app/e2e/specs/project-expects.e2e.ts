@@ -17,7 +17,7 @@ import { $, browser, expect } from "@wdio/globals";
 import { anEmptyRecord, copyFixturePlane } from "../harness.js";
 import { pressGrant } from "../acting.js";
 import { bandNotice } from "../reading.js";
-import { PROJECTS, ask, inFront, openFromTheStrip } from "../switching.js";
+import { PROJECTS, ask, inFront, keepTheNotices, openFromTheStrip } from "../switching.js";
 
 /**
  * **The up-front Notice of what a project expects** (ADR 0093 as amended 2026-10-13, ruling R3;
@@ -144,9 +144,10 @@ async function noNotice(why: string): Promise<void> {
         const statuses = [...document.querySelectorAll<HTMLElement>('[role="status"]')]
           .map((one) => one.innerText.trim())
           .filter((one) => one !== "");
-        return `the Notice says: ${line?.innerText.replace(/\s+/g, " ") ?? "(none)"}; the window's statuses: ${statuses.join(" | ")}; focus on: ${document.activeElement?.textContent?.trim() ?? "nothing"}`;
+        const marked = document.querySelector<HTMLElement>("[data-e2e-pressed]");
+        return `the Notice says: ${line?.innerText.replace(/\s+/g, " ") ?? "(none)"}; the window's statuses: ${statuses.join(" | ")}; focus on: ${document.activeElement?.textContent?.trim() ?? "nothing"}; the button pressed is ${marked === null ? "gone: drawn again since" : "still drawn"}`;
       }, CAUSE);
-      throw new Error(`${why}; ${seen}`);
+      throw new Error(`${why}; ${seen}; kept: ${await keepTheNotices("project-expects")}`);
     });
 }
 
@@ -156,6 +157,13 @@ async function noNotice(why: string): Promise<void> {
 async function press(label: string): Promise<void> {
   const button = await $(`[data-cause="${CAUSE}"]`).$(`button=${label}`);
   await button.waitForClickable({ timeout: 20_000 });
+  // Marked, so a press the guard holds can say whether this is still the button drawn.
+  await browser.execute(
+    (el: HTMLElement) => {
+      el.dataset.e2ePressed = String(Date.now());
+    },
+    await button,
+  );
   if (label === ALLOW) await pressGrant(button);
   else await button.click();
 }

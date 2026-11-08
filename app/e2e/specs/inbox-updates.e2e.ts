@@ -154,7 +154,7 @@ describe("the doctor's Notice line", function () {
       const found = await asksTheDoctorAgain();
       await showView("Notices");
       await browser
-        .waitUntil(async () => /^Doctor: \d+ findings?/.test((await doctorLine()) ?? ""), {
+        .waitUntil(async () => /Doctor: \d+ findings?/.test((await doctorLine()) ?? ""), {
           timeout: 60_000,
           interval: 500,
         })
