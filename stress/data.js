@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794134046296,
+  "lastUpdate": 1794136392203,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -8726,6 +8726,40 @@ window.BENCHMARK_DATA = {
             "value": 630.9,
             "unit": "MB",
             "extra": "median of 6 samples: 619.3, 629.3, 632.5, 634.6, 635.1, 386.4 MB; window 387.7 MB, session host 243.7 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide",
+            "email": "aaron.yor@gmail.com"
+          },
+          "committer": {
+            "name": "GitHub",
+            "username": "web-flow",
+            "email": "noreply@github.com"
+          },
+          "id": "cd0b61508593e6d176d24cafad19524f96fda0d1",
+          "message": "ADR 0105 amendment and glossary: the CI grader, Miss, Correction, Trigger bar, Crowd fixture (#5719) (#5805)\n\nBuilt-in skills are also graded headless in CI by a CI grader, scored by\nADR 0105 section 2's rules; the amendment says why section 3's reasons\nagainst print modes do not hold on a throwaway runner, and that in-app\nGrades are unchanged. CONTEXT.md gains the five terms, and Trigger test,\nGrade and the skills' relationships name the CI grader so none\ncontradicts them.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6X2H3YBJ0YX3MHQ1FCW2TNP\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-08T08:35:36Z",
+          "url": "https://github.com/purlis/purlis/commit/cd0b61508593e6d176d24cafad19524f96fda0d1"
+        },
+        "date": 1794136386779,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 2299,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1959, 2299, 3502 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 313.7,
+            "unit": "MB",
+            "extra": "median of 6 samples: 442.8, 393.8, 327.4, 297.7, 300, 228.5 MB; window 232.8 MB, session host 80.9 MB"
           }
         ]
       }
