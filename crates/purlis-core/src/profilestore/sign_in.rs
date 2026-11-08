@@ -858,6 +858,7 @@ pub fn logout_of(
         args: words.iter().map(|w| (*w).to_owned()).collect(),
         env: profile.env.clone(),
         cleared: Vec::new(),
+        pin: None,
     })
 }
 
