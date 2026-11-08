@@ -30,6 +30,8 @@ import {
  * - **Its budget**: its set near or past purlis's skill budget, fixed on the studio's Routing.
  * - **Its listing dropped**: its program still drops descriptions, the person's own skills and
  *   plugins with purlis's past what it holds (#5736), fixed on the studio's Harness skills.
+ * - **Its twins**: two different skills under one name, both listed, which purlis never chooses
+ *   between (#5737), fixed on the studio's Harness skills.
  * - **Its pins**: its workspace's and persona's pins past the most it reads together, fixed in
  *   the studio of one who pins.
  * - **Its router**: a router extension that fell back at its start or on its last prompt (#4297),
@@ -39,7 +41,7 @@ import {
  */
 export type ChatNeed = {
   /** Its key among the chat's needs. */
-  id: "budget" | "drops" | "pins" | "routing" | "missing" | "changed";
+  id: "budget" | "drops" | "twins" | "pins" | "routing" | "missing" | "changed";
   /** What the card is called. */
   title: string;
   /** What it says, in the core's words where they are the core's. */
@@ -106,6 +108,13 @@ export function chatNeedsOf(said: ChatSkillsSaid, scope: StudioScope): ChatNeed[
       id: "drops",
       title: "Some descriptions are dropped",
       says: budget.drops,
+      fix: { act: "studio", label: "Open Harness skills", scope, page: "harness" },
+    });
+  if (budget?.twins)
+    needs.push({
+      id: "twins",
+      title: "Two skills share a name",
+      says: budget.twins,
       fix: { act: "studio", label: "Open Harness skills", scope, page: "harness" },
     });
   const together = budget === null ? undefined : pinsTogetherSaid(budget);

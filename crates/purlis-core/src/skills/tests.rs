@@ -1176,6 +1176,90 @@ fn the_studio_lists_each_harnesss_own_skills_beside_the_projects_and_marks_a_cla
     );
 }
 
+/// #5737: a chat's start hands one copy of a skill it would get twice the same, and both of one
+/// that differs; Use skill… names the pair that differs.
+#[test]
+fn a_chats_start_leaves_out_its_copy_of_a_skill_its_harness_has_the_same_of() {
+    let tmp = tempfile::tempdir().unwrap();
+    let plane = tmp.path().join("plane");
+    std::fs::create_dir_all(&plane).unwrap();
+    std::fs::write(plane.join("charter.toml"), "schema = 1\n").unwrap();
+    let write = |dir: &Path, body: &str| {
+        std::fs::create_dir_all(dir).unwrap();
+        std::fs::write(
+            dir.join("SKILL.md"),
+            format!("---\nname: tdd\ndescription: Test first.\n---\n{body}\n"),
+        )
+        .unwrap();
+    };
+    write(&plane.join("skills/tdd"), "Red, green, refactor.");
+    let plugin = tmp.path().join("plugins/matt/skills/tdd");
+    let copy = |body: &str| {
+        write(&plugin, body);
+        OutsideSkill {
+            skill: Skill {
+                name: "tdd".to_owned(),
+                description: "Test first.".to_owned(),
+                path: plugin.join("SKILL.md"),
+            },
+            root: plugin.clone(),
+            origin: Origin::Harness,
+            id: "matt:tdd".to_owned(),
+            owner: Owner::Plugin("matt".to_owned()),
+            switch: Switch::Alone,
+            off: false,
+            unread: None,
+        }
+    };
+    let set_with = |own: &[OutsideSkill]| {
+        routed(
+            None,
+            Some(PlaneSkills {
+                plane: &plane,
+                workspace: None,
+                repo: &[],
+                own,
+                routed: None,
+            }),
+            None,
+            Harness::ClaudeCode,
+        )
+    };
+
+    let same = [copy("Red, green, refactor.")];
+    let set = set_with(&same);
+    assert!(
+        !set.effective.iter().any(|e| e.skill.name == "tdd"),
+        "{set:?}"
+    );
+    assert_eq!(
+        set.left_out
+            .iter()
+            .find(|left| left.name == "tdd")
+            .map(|left| left.reason.to_string())
+            .as_deref(),
+        Some("the same as the copy plugin matt brings, which is listed in its place")
+    );
+    assert!(purlis_skills::copies::differing_copies(&set, &same).is_empty());
+
+    let differs = [copy("Write the test after.")];
+    let set = set_with(&differs);
+    assert!(
+        set.effective.iter().any(|e| e.skill.name == "tdd"),
+        "both are listed"
+    );
+    let twins = purlis_skills::copies::differing_copies(&set, &differs);
+    assert_eq!(
+        twins_said(&twins).as_deref(),
+        Some(
+            "This chat lists two different skills under one name, and purlis does not choose \
+             between them: tdd (the project's and plugin matt). Remove or rename one copy of \
+             each so the chat knows which to use."
+        )
+    );
+    assert_eq!(twins_said(&[]), None);
+}
+
 /// #5736: Codex drops trailing skills past its limit without a word, so a briefing past it lists
 /// every built-in skill first, before any of the plane's, whatever their names.
 #[test]

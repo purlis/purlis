@@ -20,6 +20,7 @@ const BUDGET: SkillBudget = {
   pinned_by: [],
   pins_together: null,
   drops: null,
+  twins: null,
   warns: null,
 };
 
@@ -65,9 +66,33 @@ describe("a chat's needs as a whole", () => {
       id: "drops",
       title: "Some descriptions are dropped",
       says: drops,
-      fix: { act: "studio", label: "Open Harness skills", scope: inWorkspace("ops"), page: "harness" },
+      fix: {
+        act: "studio",
+        label: "Open Harness skills",
+        scope: inWorkspace("ops"),
+        page: "harness",
+      },
     });
     expect(chatNeedsOf(NOTHING, inWorkspace("ops"))).toEqual([]);
+  });
+
+  it("names the pairs of differing same-named skills it lists, fixed on Harness skills (#5737)", () => {
+    const twins =
+      "This chat lists two different skills under one name, and purlis does not choose between them: tdd (the project's and plugin matt). Remove or rename one copy of each so the chat knows which to use.";
+    const needs = chatNeedsOf({ ...NOTHING, budget: { ...BUDGET, twins } }, inWorkspace("ops"));
+    expect(needs).toEqual([
+      {
+        id: "twins",
+        title: "Two skills share a name",
+        says: twins,
+        fix: {
+          act: "studio",
+          label: "Open Harness skills",
+          scope: inWorkspace("ops"),
+          page: "harness",
+        },
+      },
+    ]);
   });
 
   it("go budget, router, started without, then changed, each with its fix", () => {

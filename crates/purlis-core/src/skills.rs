@@ -1125,6 +1125,26 @@ pub struct ChatSkills {
     /// **Whether its harness still drops descriptions from its listing** (#5736), and who
     /// takes the room: its Skills view says so.
     pub drops: Option<Drops>,
+    /// **Copies of one name whose content differs, both listed to it** (#5737): its Skills view
+    /// names each pair ([`twins_said`]). purlis never picks one.
+    pub twins: Vec<purlis_skills::copies::Differ>,
+}
+
+/// **What a chat's Skills view says of `twins`**, copies of one name that differ and are both
+/// listed (#5737), or `None` where there are none.
+pub fn twins_said(twins: &[purlis_skills::copies::Differ]) -> Option<String> {
+    if twins.is_empty() {
+        return None;
+    }
+    let pairs: Vec<String> = twins
+        .iter()
+        .map(|pair| format!("{} ({} and {})", pair.name, pair.one, pair.other))
+        .collect();
+    Some(format!(
+        "This chat lists two different skills under one name, and purlis does not choose between \
+         them: {}. Remove or rename one copy of each so the chat knows which to use.",
+        pairs.join(", ")
+    ))
 }
 
 /// **The skills of chat `chat`, as Use skill… offers them** (SK-12): exactly its set, worked out
@@ -1215,8 +1235,10 @@ pub fn for_use_skill(chat: &Running<'_>) -> ChatSkills {
         set.spends(budget),
         &own_shares(chat.harness, held_own),
     );
+    let twins = purlis_skills::copies::differing_copies(&set, held_own);
     ChatSkills {
         drops,
+        twins,
         program,
         plugins_off,
         own,
@@ -1288,6 +1310,7 @@ pub fn armed_by_its_runner(
         plugins_off: Vec::new(),
         own: OwnCatalogue::default(),
         drops: None,
+        twins: Vec::new(),
     }
 }
 
@@ -1479,6 +1502,11 @@ fn ask(
             harness: HarnessSkills { route },
         },
     );
+    // One skill from two sources takes one slot where both are the same (#5737).
+    let set = match plane {
+        Some(at) => set.without_copies_of(at.own),
+        None => set,
+    };
     as_a_start_routes(
         set,
         route,

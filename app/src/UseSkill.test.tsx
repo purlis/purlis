@@ -54,6 +54,7 @@ const BUDGET: SkillBudget = {
   pinned_by: [],
   pins_together: null,
   drops: null,
+  twins: null,
   warns: null,
 };
 

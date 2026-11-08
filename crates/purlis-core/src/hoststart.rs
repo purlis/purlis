@@ -261,15 +261,25 @@ impl ChatSkills {
                 },
             )
         });
-        // A Try it's chat has every harness skill off, so none of them is its.
+        // A Try it's chat has every harness skill off, so none of them is its. purlis's own
+        // plugins are its built-in skills and the plane's it hands, never the person's.
         self.own = match (harness, &self.plugins) {
             (Some(harness), Some(plugins)) if !self.tried => {
+                let adapter = harness.adapter().plugins();
                 crate::harness_plugin::harness_skills_but(
-                    harness.adapter().plugins(),
+                    adapter,
                     &env,
                     &crate::harness_plugin::Choices::read_in(&self.root, self.workspace.as_deref()),
                     &plugins.off,
                 )
+                .into_iter()
+                .filter(|one| match &one.owner {
+                    crate::skills::Owner::Plugin(name) => {
+                        !crate::harness_plugin::purlis_s_own_named(adapter, name)
+                    }
+                    crate::skills::Owner::You | crate::skills::Owner::Repo(_) => true,
+                })
+                .collect()
             }
             _ => Vec::new(),
         };
@@ -360,7 +370,7 @@ impl ChatSkills {
                 plane: &self.root,
                 workspace: self.workspace.as_deref(),
                 repo: &self.repo,
-                own: &[],
+                own: &self.own,
                 routed: None,
             },
             self.persona.as_deref(),
