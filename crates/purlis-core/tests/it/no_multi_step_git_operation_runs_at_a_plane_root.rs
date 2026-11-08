@@ -14,17 +14,15 @@
 //! plane's claim) and fails on any such verb outside [`ALLOWED`]. A line there that stops being
 //! found fails too, so the list only shrinks. Allowed without a line of their own:
 //!
-//! - `merge --ff-only`: one checkout, as `reset --keep` is. It never makes a merge, so it
-//!   never leaves `MERGE_HEAD`.
+//! - `merge --ff-only`: one atomic step, as `reset --keep` is: it checks out one tree and moves
+//!   the branch, or refuses having moved nothing. It never makes a merge, so it never leaves
+//!   `MERGE_HEAD`, and a kill in it leaves no stop to recover.
 //! - `rebase --abort` and `rebase --quit`: one step that puts a stop away.
 
 use std::path::{Path, PathBuf};
 
 /// The verbs that start an operation git works through step by step.
 const MULTI_STEP: [&str; 6] = ["rebase", "merge", "cherry-pick", "am", "revert", "pull"];
-
-/// Where a verb's name is a step named in the root step marker (`recover.rs`), not git run.
-const NOT_GIT: [&str; 3] = ["recover::mark(", "\"op\":", "field(\"op\")"];
 
 /// What runs git at a plane root, relative to the crate.
 const SCANNED: [&str; 4] = [
@@ -108,11 +106,8 @@ fn offending(lines: &[String], at: usize) -> Option<&str> {
     let verb = MULTI_STEP
         .iter()
         .find(|verb| line.contains(&format!("\"{verb}\"")))?;
-    // A key of a JSON value, or the name of a step in the root step marker, not a git verb.
-    if line.contains(&format!(".get(\"{verb}\")"))
-        || line.contains(&format!("[\"{verb}\"]"))
-        || NOT_GIT.iter().any(|not| line.contains(not))
-    {
+    // A key of a JSON value, not a git verb.
+    if line.contains(&format!(".get(\"{verb}\")")) || line.contains(&format!("[\"{verb}\"]")) {
         return None;
     }
     let next = lines[at + 1..]

@@ -49,7 +49,11 @@ impl Two {
         run(&mine, &["config", "user.name", "Mine"]);
         run(&mine, &["config", "user.email", "mine@example.invalid"]);
         run(&mine, &["remote", "add", "origin", bare.to_str().unwrap()]);
-        write(&mine, "charter.toml", "[plane]\nname = \"fixture\"\n");
+        write(
+            &mine,
+            "charter.toml",
+            "[plane]\nname = \"fixture\"\nbranch = \"release\"\n",
+        );
         for (file, text) in seed {
             write(&mine, file, text);
         }

@@ -728,7 +728,12 @@ pub fn standing(root: &Path) -> Standing {
             .operation
             .map_or("conflicts", gitstate::Operation::kind)
     });
-    let blocked = stopped.as_ref().map(gitstate::Stopped::why).or(blocked);
+    // A step purlis left part-way that a look could not recover says why, in place of git's
+    // generic words (#5824 F3).
+    let blocked = stopped
+        .as_ref()
+        .map(|stopped| recover::said(root).unwrap_or_else(|| stopped.why()))
+        .or(blocked);
     // Named only while they are why: a stopped merge is settled first.
     if blocked.as_deref() != Some(SECRET_REFUSED) {
         secrets.clear();
@@ -1138,6 +1143,7 @@ pub fn fetch(root: &Path, fast_forward: bool) -> Result<Incoming, String> {
     git_files_refused(root)?;
     let plane = crate::planesave::Settings::read(root).plane;
     // The window's look recovers a step purlis left part-way, as its save does (#5824 F3).
+    // Nobody reads this look's words: what it refuses reaches the standing ([`recover::said`]).
     recover_first(root, plane.sign.value, &mut |_| {});
     let here = git::run(root, &["rev-parse", "--abbrev-ref", "HEAD"], git::READ)
         .map(|r| r.line().trim().to_string())
@@ -1257,9 +1263,12 @@ fn keep_fetched_upstream(root: &Path, https: &str, helper: &str, branch: &str) {
 
 /// **Recover a step purlis left part-way at `root`** ([`recover`], #5824 F3), for a caller that
 /// holds the plane's [`Claim`], so no step of purlis's own is running. From the window or the
-/// person's terminal; under a chat's sandbox it is only said, and the window's look makes it.
-/// A stop purlis did not start is left alone, and the save's own check names it.
+/// person's terminal (the person is there); under a chat's sandbox it is only said, and the
+/// window's look makes it. A stop purlis did not start is left alone, and the save's own check
+/// names it. A refusal is kept for the standing as well as said here ([`recover::said`]), so a
+/// look with nobody to tell still shows it.
 fn recover_first(root: &Path, sign: bool, say: Sink) {
+    recover::drop_spent_marker(root);
     if !recover::is_ours(root) {
         return;
     }
@@ -1269,26 +1278,50 @@ fn recover_first(root: &Path, sign: bool, say: Sink) {
         ));
         return;
     }
+    let short = |commit: &str| commit[..commit.len().min(7)].to_owned();
     match recover::recover(root, sign) {
-        recover::Recovered::Recovered(commit) => say(Say::Done(
-            format!(
-                "Recovered a step purlis left part-way: the plane is on its branch again at {}, \
-                 with nothing lost.",
-                &commit[..commit.len().min(7)]
-            )
-            .into(),
-        )),
+        recover::Recovered::Recovered {
+            commit,
+            lock_removed,
+        } => {
+            if let Some(lock) = lock_removed {
+                say(Say::Info(
+                    format!(
+                        "Removed {}: the step purlis left part-way had left it locked.",
+                        lock.display()
+                    )
+                    .into(),
+                ));
+            }
+            say(Say::Done(
+                format!(
+                    "Recovered a step purlis left part-way: the plane is on its branch at {}.",
+                    short(&commit)
+                )
+                .into(),
+            ));
+        }
         recover::Recovered::Conflict(files) => say(Say::Warn(
             format!(
-                "A step purlis left part-way is not recovered: what was written since conflicts \
-                 with it in {}. Nothing was moved.",
+                "Not recovered: what was written since conflicts in {}.",
                 files.join(", ")
             )
             .into(),
         )),
-        recover::Recovered::Waiting(why) | recover::Recovered::Failed(why) => say(Say::Warn(
-            format!("A step purlis left part-way is not recovered yet: {why}.").into(),
+        recover::Recovered::Unsettled(files) => say(Say::Warn(
+            format!(
+                "Not recovered: {} still {} a conflict to settle.",
+                files.join(", "),
+                if files.len() == 1 { "holds" } else { "hold" }
+            )
+            .into(),
         )),
+        recover::Recovered::Waiting(why) => {
+            say(Say::Warn(format!("Not recovered here: {why}.").into()));
+        }
+        recover::Recovered::Failed(why) => {
+            say(Say::Warn(format!("Not recovered: {why}.").into()));
+        }
         recover::Recovered::Nothing | recover::Recovered::Persons(_) => {}
     }
 }
@@ -1399,6 +1432,15 @@ fn git_dir_of(root: &Path) -> PathBuf {
         .ok()
         .filter(git::Run::ok)
         .map_or_else(|| root.join(".git"), |r| PathBuf::from(r.line().trim()))
+}
+
+/// git's one-line answer at `root`, where git answered with one: a commit's id, a ref's name.
+fn line_of(root: &Path, args: &[&str]) -> Option<String> {
+    git::run(root, args, git::READ)
+        .ok()
+        .filter(git::Run::ok)
+        .map(|run| run.line().trim().to_owned())
+        .filter(|line| !line.is_empty())
 }
 
 /// `charter save --pull`'s first half: [`fetch`] the plane's target branch and fast-forward
@@ -1759,12 +1801,15 @@ fn fetched_for_the_retry(root: &Path, helper: &str, https: &str, branch: &str) -
     if !fetched.is_ok_and(|run| run.ok()) {
         return None;
     }
-    let spec = format!("{tracking}^{{commit}}");
-    git::run(root, &["rev-parse", "--verify", "-q", &spec], git::READ)
-        .ok()
-        .filter(git::Run::ok)
-        .map(|run| run.line().trim().to_string())
-        .filter(|id| !id.is_empty())
+    line_of(
+        root,
+        &[
+            "rev-parse",
+            "--verify",
+            "-q",
+            &format!("{tracking}^{{commit}}"),
+        ],
+    )
 }
 
 /// [`rebase_onto_fetched`], onto `onto`: the fetched commit for a save's retry, the remote-tracking
@@ -1777,24 +1822,16 @@ fn rebase_onto(root: &Path, onto: &str, sign: bool, deadline: Duration) -> Rebas
     // Marked while it runs, so one a quit or a crash cuts off is recovered off to the side
     // ([`recover`], #5824 F3). The marker goes when this returns, a stop for a conflict
     // included: that stop is the person's to settle.
-    let onto_id = git::run(
+    let onto_id = line_of(
         root,
         &["rev-parse", "--verify", "-q", &format!("{onto}^{{commit}}")],
-        git::READ,
-    )
-    .ok()
-    .filter(git::Run::ok)
-    .map(|run| run.line().trim().to_owned());
+    );
     let base = onto_id.as_deref().and_then(|onto_id| {
-        git::run(root, &["merge-base", "HEAD", onto_id], git::READ)
-            .ok()
-            .filter(git::Run::ok)
-            .map(|run| run.line().trim().to_owned())
-            .map(|base| (onto_id.to_owned(), base))
+        line_of(root, &["merge-base", "HEAD", onto_id]).map(|base| (onto_id.to_owned(), base))
     });
     let _marked = base
         .as_ref()
-        .and_then(|(onto_id, base)| recover::mark(root, "rebase", onto_id, base));
+        .and_then(|(onto_id, base)| recover::mark(root, recover::Op::Rebase, onto_id, base));
     let started = std::time::Instant::now();
     let mut rebase: Vec<&str> = vec!["-c", gpgsign(sign)];
     rebase.extend(["rebase", onto]);

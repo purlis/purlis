@@ -91,14 +91,14 @@ fn a_rebase_killed_part_way_with_chats_writing_since_is_recovered_with_nothing_l
     let root = &two.mine;
     let remote = run(root, &["rev-parse", "refs/remotes/origin/release"]);
     // purlis marks the step before it starts it, and the quit kills it before the marker goes.
-    let marked = mark(root, "rebase", &remote, &base).expect("the marker");
+    let marked = mark(root, Op::Rebase, &remote, &base).expect("the marker");
     rebase_cut_off_after_two_picks(root, &base);
     std::mem::forget(marked);
     a_chat_writes(root);
 
     let got = recover(root, false);
 
-    let Recovered::Recovered(commit) = got else {
+    let Recovered::Recovered { commit, .. } = got else {
         panic!("not recovered: {got:?}");
     };
     let git_dir = root.join(".git");
@@ -165,7 +165,7 @@ fn a_rebase_a_purlis_before_the_marker_left_is_recovered_once_it_has_been_still(
         .unwrap();
     let got = recover(root, false);
 
-    assert!(matches!(got, Recovered::Recovered(_)), "{got:?}");
+    assert!(matches!(got, Recovered::Recovered { .. }), "{got:?}");
     assert_eq!(run(root, &["symbolic-ref", "HEAD"]), "refs/heads/release");
     for file in [
         "mine-1.md",
@@ -184,7 +184,7 @@ fn a_chats_write_that_conflicts_with_where_the_step_was_going_is_said_and_nothin
     let (two, base) = ahead_and_behind();
     let root = &two.mine;
     let remote = run(root, &["rev-parse", "refs/remotes/origin/release"]);
-    let marked = mark(root, "rebase", &remote, &base).expect("the marker");
+    let marked = mark(root, Op::Rebase, &remote, &base).expect("the marker");
     rebase_cut_off_after_two_picks(root, &base);
     std::mem::forget(marked);
     // The chat wrote, after the stop, a file of the name a commit not yet replayed adds.
@@ -197,4 +197,241 @@ fn a_chats_write_that_conflicts_with_where_the_step_was_going_is_said_and_nothin
     assert!(root.join(".git/rebase-merge").is_dir(), "nothing moved");
     assert_eq!(run(root, &["rev-parse", "HEAD"]), head);
     assert_eq!(read(root, "mine-4.md"), "a chat's four\n");
+}
+
+/// A rebase marked by purlis and cut off after two picks, as a quit leaves one.
+fn marked_and_cut_off(two: &Two, base: &str) -> String {
+    let root = &two.mine;
+    let remote = run(root, &["rev-parse", "refs/remotes/origin/release"]);
+    let marked = mark(root, Op::Rebase, &remote, base).expect("the marker");
+    rebase_cut_off_after_two_picks(root, base);
+    std::mem::forget(marked);
+    remote
+}
+
+#[test]
+fn a_commit_made_on_the_detached_head_during_the_stop_survives_recovery() {
+    let (two, base) = ahead_and_behind();
+    let root = &two.mine;
+    marked_and_cut_off(&two, &base);
+    // A person, or a chat, commits on the detached HEAD the stop left.
+    write(root, "made-in-the-stop.md", "committed during the stop\n");
+    commit(root, "made in the stop");
+    a_chat_writes(root);
+
+    let got = recover(root, false);
+
+    assert!(matches!(got, Recovered::Recovered { .. }), "{got:?}");
+    assert_eq!(
+        tracked(root, "made-in-the-stop.md").as_deref(),
+        Some("committed during the stop\n"),
+        "the commit made during the stop is in the result"
+    );
+    assert_eq!(
+        read(root, "made-in-the-stop.md"),
+        "committed during the stop\n"
+    );
+    assert_eq!(
+        tracked(root, "chat.md").as_deref(),
+        Some("a chat's words\n")
+    );
+    assert_eq!(run(root, &["status", "--porcelain"]), "");
+}
+
+#[test]
+fn a_branch_moved_since_the_step_began_is_not_overwritten() {
+    let (two, base) = ahead_and_behind();
+    let root = &two.mine;
+    marked_and_cut_off(&two, &base);
+    // Someone points the branch somewhere else while the stop sits there.
+    run(root, &["update-ref", "refs/heads/release", &base]);
+    let head = run(root, &["rev-parse", "HEAD"]);
+
+    let got = recover(root, false);
+
+    assert!(matches!(got, Recovered::Failed(_)), "{got:?}");
+    assert_eq!(run(root, &["rev-parse", "refs/heads/release"]), base);
+    assert!(root.join(".git/rebase-merge").is_dir(), "nothing moved");
+    assert_eq!(run(root, &["rev-parse", "HEAD"]), head);
+}
+
+/// `rebase-merge` set as still for ten minutes, as a pre-marker stop cut off by a quit is.
+fn left_still(root: &Path) {
+    let old = std::time::SystemTime::now() - std::time::Duration::from_secs(600);
+    std::fs::File::open(root.join(".git/rebase-merge"))
+        .unwrap()
+        .set_modified(old)
+        .unwrap();
+}
+
+#[test]
+fn a_persons_rebase_onto_an_older_commit_of_the_target_is_never_taken_over() {
+    let (two, base) = ahead_and_behind();
+    let root = &two.mine;
+    // The person's own `git rebase -i <base>`: onto a commit of origin's target, not its tip.
+    let out = crate::forklock::output(
+        std::process::Command::new("git")
+            .current_dir(root)
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .args([
+                "-c",
+                "core.hooksPath=/dev/null",
+                "-c",
+                "sequence.editor=perl -pi -e 'print qq(break\\n) if $. == 3'",
+                "rebase",
+                "-q",
+                "-i",
+                &base,
+            ]),
+    )
+    .unwrap();
+    assert!(root.join(".git/rebase-merge").is_dir(), "{out:?}");
+    left_still(root);
+    let head = run(root, &["rev-parse", "HEAD"]);
+
+    let got = recover(root, false);
+
+    assert!(matches!(got, Recovered::Persons(_)), "{got:?}");
+    assert_eq!(run(root, &["rev-parse", "HEAD"]), head);
+    assert!(root.join(".git/rebase-merge").is_dir());
+}
+
+#[test]
+fn a_pre_marker_rebase_whose_branch_moved_since_is_the_persons() {
+    let (two, base) = ahead_and_behind();
+    let root = &two.mine;
+    rebase_cut_off_after_two_picks(root, &base);
+    left_still(root);
+    // The branch is no longer where the rebase found it: not the stop purlis left.
+    run(root, &["update-ref", "refs/heads/release", &base]);
+
+    let got = recover(root, false);
+
+    assert!(matches!(got, Recovered::Persons(_)), "{got:?}");
+    assert!(root.join(".git/rebase-merge").is_dir());
+}
+
+/// A plane whose own commit and the remote's change one line, and a marked rebase of it that
+/// stopped on that conflict, then was cut off: `stopped-sha`, an unmerged path, markers on disk.
+fn marked_and_stopped_on_a_conflict() -> Two {
+    let two = Two::new(&[("shared.md", SHARED)]);
+    let base = two.head();
+    let root = &two.mine;
+    write(root, "shared.md", &SHARED.replace("one\n", "one, mine\n"));
+    commit(root, "mine");
+    write(
+        &two.theirs,
+        "shared.md",
+        &SHARED.replace("one\n", "one, theirs\n"),
+    );
+    two.land_theirs("theirs");
+    let remote = run(root, &["rev-parse", "refs/remotes/origin/release"]);
+    let marked = mark(root, Op::Rebase, &remote, &base).expect("the marker");
+    let stopped = crate::testgit::run(
+        root,
+        &[
+            "-c",
+            "commit.gpgsign=false",
+            "rebase",
+            "-q",
+            "refs/remotes/origin/release",
+        ],
+    );
+    assert!(
+        !stopped.ok(),
+        "the rebase stopped on the conflict: {stopped:?}"
+    );
+    std::mem::forget(marked);
+    assert!(read(root, "shared.md").contains("<<<<<<<"));
+    two
+}
+
+#[test]
+fn a_marked_rebase_cut_off_on_a_conflict_is_refused_and_its_markers_never_committed() {
+    let two = marked_and_stopped_on_a_conflict();
+    let root = &two.mine;
+    let head = run(root, &["rev-parse", "HEAD"]);
+
+    let got = recover(root, false);
+
+    assert_eq!(got, Recovered::Unsettled(vec!["shared.md".to_owned()]));
+    assert!(root.join(".git/rebase-merge").is_dir(), "nothing moved");
+    assert_eq!(run(root, &["rev-parse", "HEAD"]), head);
+
+    // Staged with its markers still in it, the file is no longer unmerged: still refused.
+    run(root, &["add", "shared.md"]);
+    let got = recover(root, false);
+    assert_eq!(got, Recovered::Unsettled(vec!["shared.md".to_owned()]));
+    assert_eq!(run(root, &["rev-parse", "HEAD"]), head);
+    let log = run(root, &["log", "--all", "-p", "--format=%H"]);
+    assert!(
+        !log.contains("+<<<<<<<"),
+        "a commit holds the markers:\n{log}"
+    );
+}
+
+/// `index.lock` in the root's git directory, last written `ago` back.
+fn a_lock_left(root: &Path, ago: std::time::Duration) -> std::path::PathBuf {
+    let lock = root.join(".git/index.lock");
+    std::fs::write(&lock, b"").unwrap();
+    std::fs::File::options()
+        .write(true)
+        .open(&lock)
+        .unwrap()
+        .set_modified(std::time::SystemTime::now() - ago)
+        .unwrap();
+    lock
+}
+
+#[test]
+fn an_index_lock_a_cut_off_step_left_is_removed_once_old_and_said() {
+    let (two, base) = ahead_and_behind();
+    let root = &two.mine;
+    marked_and_cut_off(&two, &base);
+    a_chat_writes(root);
+    let lock = a_lock_left(root, std::time::Duration::from_secs(3600));
+
+    let got = recover(root, false);
+
+    let Recovered::Recovered { lock_removed, .. } = got else {
+        panic!("not recovered: {got:?}");
+    };
+    assert!(lock_removed.is_some(), "the removal is said");
+    assert!(!lock.exists());
+    assert_eq!(run(root, &["symbolic-ref", "HEAD"]), "refs/heads/release");
+}
+
+#[test]
+fn a_young_index_lock_is_left_and_named() {
+    let (two, base) = ahead_and_behind();
+    let root = &two.mine;
+    marked_and_cut_off(&two, &base);
+    let lock = a_lock_left(root, std::time::Duration::from_secs(5));
+    let head = run(root, &["rev-parse", "HEAD"]);
+
+    let got = recover(root, false);
+
+    let Recovered::Failed(why) = &got else {
+        panic!("not refused: {got:?}");
+    };
+    assert!(why.contains("index.lock"), "the lock is named: {why}");
+    assert!(lock.exists(), "a young lock is never removed");
+    assert_eq!(run(root, &["rev-parse", "HEAD"]), head);
+}
+
+#[test]
+fn a_recovery_refused_on_a_look_reaches_the_standing() {
+    let (two, base) = ahead_and_behind();
+    let root = &two.mine;
+    marked_and_cut_off(&two, &base);
+    write(root, "mine-4.md", "a chat's four\n");
+
+    // The window's look recovers with nobody to tell: what it found is kept for the standing.
+    let got = recover(root, false);
+    assert!(matches!(got, Recovered::Conflict(_)), "{got:?}");
+
+    let standing = crate::planegit::standing(root);
+    assert_eq!(standing.stage, crate::planegit::Stage::Blocked);
+    let blocked = standing.blocked.unwrap_or_default();
+    assert!(blocked.contains("mine-4.md"), "{blocked}");
 }

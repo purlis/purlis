@@ -18,8 +18,8 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use crate::planegit::bringin::{BroughtIn, When, bring_in};
 use super::twoclones::{Two, commit, read, run, write};
+use crate::planegit::bringin::{BroughtIn, When, bring_in};
 
 const WS: &str = "workspaces/alpha";
 const CHARTER: &str = "# alpha\n\n## Vision\n\nShip it\n\n## Sessions\n\nNo session records yet.\n";
