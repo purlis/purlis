@@ -3616,6 +3616,7 @@ const STANDS_ON: &[(&str, &[&str])] = &[
             "meter",
             "notice",
             "option-card",
+            "page-tabs",
             "panel-separator",
             "popover",
             "radio",
@@ -3623,12 +3624,11 @@ const STANDS_ON: &[(&str, &[&str])] = &[
             "select",
             "slider",
             "switch",
-            "table",
             "text-input",
             "textarea",
             "tooltip",
-            "tree",
             "view-frame",
+            "view-nav",
         ],
     ),
     (
@@ -3689,23 +3689,6 @@ const STANDS_ON: &[(&str, &[&str])] = &[
     ("text-input", &["tooltip"]),
     ("textarea", &["tooltip"]),
     (
-        "tooltip",
-        &[
-            "badge",
-            "button",
-            "checkbox",
-            "field",
-            "option-card",
-            "popover",
-            "radio",
-            "select",
-            "slider",
-            "switch",
-            "text-input",
-            "textarea",
-        ],
-    ),
-    (
         "tree",
         &[
             "badge", "button", "count", "message", "meter", "notice", "popover", "tooltip",
@@ -3713,7 +3696,14 @@ const STANDS_ON: &[(&str, &[&str])] = &[
     ),
     (
         "view-frame",
-        &["count", "panel-separator", "popover", "select", "tooltip"],
+        &[
+            "count",
+            "panel-separator",
+            "popover",
+            "select",
+            "tooltip",
+            "view-nav",
+        ],
     ),
 ];
 
@@ -3847,9 +3837,7 @@ fn broken_on(
 ) -> Option<(String, Option<f64>)> {
     let sets = sets_read(rules, family);
     let looks = looks_in(rules, family, &sets);
-    // What the fill set breaks. A family's default look that breaks on the surface's default fill
-    // as well is the family default's, as the floors never hold a default look against a theme
-    // ([`held_from`]), and no reason for the surface to draw its default (#3268).
+    // What the fill set breaks, which a default broken on the default too is not (#3268).
     let reads = |margin: f64, one: &ResolvedTheme, on: &[String], look: &LookOn<'_>| {
         let (variant, states, look) = (look.0, look.1, &look.2);
         unreadable_by(
@@ -3864,21 +3852,9 @@ fn broken_on(
             look,
         )
         .filter(|_| {
-            *look != drawn(&[], family, variant, states) || {
-                let was = surface_ground(one, surface, default);
-                unreadable_by(
-                    0.0,
-                    one,
-                    &was,
-                    Some(default),
-                    rules,
-                    family,
-                    variant,
-                    states,
-                    look,
-                )
-                .is_none()
-            }
+            !a_default_broken_on_the_default_too(
+                one, rules, family, surface, default, variant, states, look,
+            )
         })
     };
     let on = surface_ground(theme, surface, set);
@@ -3929,6 +3905,37 @@ fn broken_on(
     None
 }
 
+/// **Whether `look` is `family`'s default and breaks on `surface`'s default fill too** (#3268): the
+/// family default's, as the floors never hold a default look against a theme ([`held_from`]), and
+/// no reason for the surface to draw its default.
+#[allow(clippy::too_many_arguments)]
+fn a_default_broken_on_the_default_too(
+    theme: &ResolvedTheme,
+    rules: &[Rule],
+    family: &Family,
+    surface: &Family,
+    default: &str,
+    variant: &str,
+    states: &[State],
+    look: &Drawn,
+) -> bool {
+    *look == drawn(&[], family, variant, states) && {
+        let was = surface_ground(theme, surface, default);
+        unreadable_by(
+            0.0,
+            theme,
+            &was,
+            Some(default),
+            rules,
+            family,
+            variant,
+            states,
+            look,
+        )
+        .is_some()
+    }
+}
+
 /// A family read on a surface's fill: the family, the surface, its default fill, the fill set and
 /// how many looks of the theme the consent floors are held in.
 type Reading = (
@@ -3941,6 +3948,11 @@ type Reading = (
 
 /// Each family read on a surface's fill, with the floor it breaks there and by how much, if any.
 type Readings = Vec<(Reading, Option<(String, Option<f64>)>)>;
+
+/// Drops what was read of `surface` itself on another's fill: a fall has changed its rules.
+fn forget(known: &mut Readings, surface: &Family) {
+    known.retain(|((one, ..), _)| *one != surface.name);
+}
 
 /// **Each surface whose fill a theme sets, held under what is drawn on it** (#3099, from
 /// #3083): every family drawn on the surface's default ground is measured on the fill set in its
@@ -3955,9 +3967,11 @@ fn held_on_surfaces(
 ) -> bool {
     let before = fell.len();
     // What each family breaks on a surface's fill, read once for every look of the surface that
-    // sets the same fill (a panel's three, #3268): it is the family's rules that it reads, so a
-    // reading holds until a fall changes the rules of the family it is of.
-    let mut read: Readings = Vec::new();
+    // sets the same fill (a panel's three, #3268). `broken_on` reads only the family's own rules,
+    // the surface's grounds and the looks of the theme in hand, which only ever grow from the
+    // theme alone to every tint: so a reading holds until a fall changes the rules of the family
+    // it is of, and is keyed by how many looks there are.
+    let mut known: Readings = Vec::new();
     for (surface, variant, default, set) in surfaces_set(rules) {
         for family in drawn_on(surface, default, set) {
             // The consent floors hold in every tint, a surface's fill under a consent variant
@@ -3967,17 +3981,17 @@ fn held_on_surfaces(
                 drawn_in.extend(every_tinted(theme));
             }
             let key = (family.name, surface.name, default, set, drawn_in.len());
-            let broken = if let Some((_, known)) = read.iter().find(|(one, _)| *one == key) {
-                known.clone()
+            let broken = if let Some((_, said)) = known.iter().find(|(one, _)| *one == key) {
+                said.clone()
             } else {
                 let broken = broken_on(
                     theme, coarse, drawn_in, rules, family, surface, default, set,
                 );
-                read.push((key, broken.clone()));
+                known.push((key, broken.clone()));
                 broken
             };
             if let Some((floor, ratio)) = broken {
-                read.retain(|((one, ..), _)| *one != surface.name);
+                forget(&mut known, surface);
                 Held {
                     family: surface,
                     rules: &mut *rules,
@@ -4016,7 +4030,7 @@ fn held_on_surfaces(
                 .find_map(|one| apart_broken_on(one, rules, surface, variant, set, 0.0));
         }
         if let Some((family, floor, ratio)) = broken {
-            read.retain(|((one, ..), _)| *one != surface.name);
+            forget(&mut known, surface);
             Held {
                 family: surface,
                 rules: &mut *rules,

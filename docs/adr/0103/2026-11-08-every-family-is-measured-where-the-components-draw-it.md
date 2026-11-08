@@ -8,11 +8,13 @@ Four rules replace the first rule of that amendment. Its other two stand.
 
 - **Where each family stands is found from the components.** `STANDS_ON` in the engine names, for
   each family whose root takes a fill, every family whose root the window draws inside it. A family
-  stands on every such root around it, out to the first element that covers what is under it.
-  `app/src/theme/grounds.test.ts` reads every component, follows each one to where it is placed and
-  each name to the file it is imported from, and holds the table to what it finds, exactly. A
-  family drawn on a new surface fails there until the table names it. `HOLDS_NO_CONSENT` is gone:
-  it existed only to account for the surfaces that the consent families were not measured on.
+  stands on every such root around it, out to the first element that covers what is under it. A
+  family's root is the part its manifest entry names first: `root` for most, a page tab's `tab`
+  and a view list's `item`. `app/src/theme/grounds.test.ts` reads every component, and follows
+  each name, and where it places what it is given, to the file the name is imported from. It holds
+  the table to what it finds, exactly: a family drawn on a new surface fails there until the table
+  names it. `HOLDS_NO_CONSENT` is gone: it existed only to account for the surfaces that the
+  consent families were not measured on.
 - **The table, not a family's grounds, says a family stands on a surface.** A family is measured on
   a surface's fill set wherever the table names it, and its grounds only spare a reading the
   family's own check already makes: a fill they already name adds nothing. A surface drawn with no

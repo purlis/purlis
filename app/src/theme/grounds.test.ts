@@ -527,6 +527,17 @@ function beneath(frames: Frame[]): { tokens: Set<Token>; covered: boolean } {
   return { tokens, covered: false };
 }
 
+/** An element that is `scope`'s root and draws nothing a rule names (#3268). */
+function rootFrame(scope: string): Frame {
+  return {
+    tokens: new Set(),
+    covers: false,
+    classes: new Set(),
+    painted: { tokens: new Set(), covers: false },
+    scope,
+  };
+}
+
 /** **The families' roots around what `frames` hold** (#3268), innermost first, out to the first
  *  element that covers what is under it, as a rule read whole paints it or a class drawn at rest
  *  does; and whether one does. A root around it that covers nothing (a list's row, drawn with no
@@ -539,6 +550,29 @@ function rootsAround(frames: Frame[]): { scopes: string[]; covered: boolean } {
     if (one.covers || one.painted.covers) return { scopes, covered: true };
   }
   return { scopes, covered: false };
+}
+
+/** **Each family's root part, by the family** (#3268), as the engine's manifest names its first
+ *  part: `root` for most, a tab's `tab` and an activity bar's `item`. */
+let rootPartsOnce: Map<string, string> | undefined;
+function rootParts(): Map<string, string> {
+  if (rootPartsOnce !== undefined) return rootPartsOnce;
+  rootPartsOnce = new Map();
+  for (const name of readdirSync(THEME).filter((one) => /^parts_\w+\.rs$/.test(one))) {
+    if (name.endsWith("_tests.rs")) continue;
+    const text = readFileSync(join(THEME, name), "utf8");
+    for (const [, family, part] of text.matchAll(
+      /Family \{\s*name: "([^"]+)",[\s\S]*?parts: &\[\s*Part \{\s*name: "([^"]+)"/g,
+    ))
+      rootPartsOnce.set(family, part);
+  }
+  return rootPartsOnce;
+}
+
+/** Whether `part` is `scope`'s root: none written, or the part the manifest names first (`root`
+ *  for a family it does not have). */
+function isRootPart(scope: string, part: Scoped["part"] | string): boolean {
+  return part === undefined || part === (rootParts().get(scope) ?? "root");
 }
 
 /** What an object of attributes says of a family's element: its `data-scope`, and its
@@ -604,7 +638,7 @@ function helpersIn(sources: ts.SourceFile[]): Helpers {
  *  parameter is the argument the helper is called with; an element with no part is the root. */
 function rootIn(expression: ts.Expression, helpers: Helpers): string | undefined {
   const isRoot = (scoped: Scoped | undefined, part = scoped?.part) =>
-    scoped !== undefined && (part === undefined || part === "root") ? scoped.scope : undefined;
+    scoped !== undefined && isRootPart(scoped.scope, part) ? scoped.scope : undefined;
   if (ts.isObjectLiteralExpression(expression)) return isRoot(scopedBy(expression));
   if (!ts.isCallExpression(expression)) return undefined;
   const helper = ts.isIdentifier(expression.expression)
@@ -867,7 +901,7 @@ class Reader {
       const written =
         scope !== undefined &&
         ts.isStringLiteral(scope) &&
-        (part === undefined || (ts.isStringLiteral(part) && part.text === "root"))
+        (part === undefined || (ts.isStringLiteral(part) && isRootPart(scope.text, part.text)))
           ? scope.text
           : undefined;
       const root =
@@ -975,17 +1009,23 @@ class Reader {
           inside = [...frames, frame];
       }
       const component = /^[A-Z]/.test(tag) && !isButton ? tag.split(".").pop() : undefined;
-      if (component !== undefined)
-        unit.uses.push({
-          name: component,
-          frames: inside,
-          from: tag.includes(".") ? undefined : this.origins.get(source.fileName)?.get(component),
-        });
-      // What a component is given is placed where it places its `children`, or around them.
-      const places: Frame[][] =
+      const use =
         component === undefined
+          ? undefined
+          : {
+              name: component,
+              frames: inside,
+              from: tag.includes(".")
+                ? undefined
+                : this.origins.get(source.fileName)?.get(component),
+            };
+      if (use !== undefined) unit.uses.push(use);
+      // What a component is given is placed where it places its `children`, or around them: the
+      // component its name is declared by, never another of the same name (#3268).
+      const places: Frame[][] =
+        use === undefined
           ? []
-          : (this.units.get(component)?.flatMap((one) => one.childrenAt) ?? []);
+          : this.rendered(use, source.fileName).flatMap((one) => one.childrenAt);
       const given = places.length === 0 ? [inside] : places.map((at) => [...inside, ...at]);
       for (const one of attributes) for (const at of given) again(one, at);
       if (ts.isJsxElement(node))
@@ -1017,16 +1057,7 @@ class Reader {
       const root = attributes === undefined ? undefined : rootIn(attributes, this.helpers);
       if (root !== undefined) {
         this.standsAt(unit, root, frames);
-        const inside: Frame[] = [
-          ...frames,
-          {
-            tokens: new Set(),
-            covers: false,
-            classes: new Set(),
-            painted: { tokens: new Set(), covers: false },
-            scope: root,
-          },
-        ];
+        const inside: Frame[] = [...frames, rootFrame(root)];
         again(attributes, frames);
         for (const one of held)
           if (ts.isIdentifier(one) && one.text === "children") unit.childrenAt.push(inside);
@@ -1081,6 +1112,15 @@ class Reader {
     this.laid.set(rule, laid);
   }
 
+  /** **The units a use renders** (#3268): the one its name is declared by, an import's or the
+   *  file's own; a name declared nowhere at the file's top (a function inside a component) is one
+   *  of the file's own; and a name another file declares is never taken for it. */
+  private rendered({ name, from }: Unit["uses"][number], file: string): Unit[] {
+    const named = this.units.get(from?.name ?? name) ?? [];
+    if (from !== undefined) return named.filter((one) => declaredAt(one, from));
+    return named.filter((one) => one.file === file);
+  }
+
   /** That a root of `family` is drawn in `unit` inside `frames` (#3268). */
   private standsAt(unit: Unit, family: string, frames: Frame[]): void {
     const around = rootsAround(frames);
@@ -1096,13 +1136,6 @@ class Reader {
   stands(): Map<string, Map<string, string[]>> {
     const all = [...this.units.values()].flat();
     const key = (unit: Unit) => `${unit.file}:${unit.name}`;
-    // The units a use renders: the one its name is declared by, an import's or the file's own;
-    // a name declared nowhere at the file's top (a function inside a component) is one of the
-    // file's own; and a name another file declares is never taken for it.
-    const rendered = ({ name, from }: Unit["uses"][number], file: string): Unit[] =>
-      from === undefined
-        ? (this.units.get(name) ?? []).filter((one) => one.file === file)
-        : (this.units.get(from.name) ?? []).filter((one) => declaredAt(one, from));
     const loose = new Map<string, Set<string>>(
       all.map((unit) => [key(unit), new Set(unit.standsLoose)]),
     );
@@ -1112,7 +1145,7 @@ class Reader {
         const mine = loose.get(key(unit)) ?? new Set<string>();
         for (const use of unit.uses) {
           if (rootsAround(use.frames).covered) continue;
-          for (const one of rendered(use, unit.file))
+          for (const one of this.rendered(use, unit.file))
             for (const family of loose.get(key(one)) ?? [])
               if (!mine.has(family)) {
                 mine.add(family);
@@ -1133,7 +1166,7 @@ class Reader {
       for (const [family, on] of unit.stands) on.forEach((one) => add(family, one, where));
       for (const use of unit.uses) {
         const around = rootsAround(use.frames).scopes;
-        for (const one of rendered(use, unit.file))
+        for (const one of this.rendered(use, unit.file))
           for (const family of loose.get(key(one)) ?? [])
             around
               .filter((surface) => surface !== family)
@@ -1559,7 +1592,8 @@ describe("the grounds a button is drawn on", () => {
       ),
       file(
         "Pane.tsx",
-        `export function Pane() {
+        `import { Note } from "./Note";
+         export function Pane() {
            return <div className="top"><Note at="pane"><button data-scope="button">Allow</button></Note></div>;
          }`,
       ),
@@ -1859,28 +1893,45 @@ function engineStandsOn(): Map<string, string[]> {
 /** **The families whose root takes a fill**, as the published schema names their keys: each a
  *  surface a theme can fill under what is drawn on it. */
 function fillable(): Set<string> {
-  const schema = readFileSync(
-    join(process.cwd(), "..", "docs", "schema", "theme.v2.schema.json"),
-    "utf8",
-  );
-  return new Set([...schema.matchAll(/"([\w-]+)\.root\.fill"/g)].map(([, family]) => family));
+  const schema = JSON.parse(
+    readFileSync(
+      join(THEME, "..", "..", "..", "..", "docs", "schema", "theme.v2.schema.json"),
+      "utf8",
+    ),
+  ) as unknown;
+  const keys = new Set<string>();
+  const walk = (value: unknown) => {
+    if (Array.isArray(value)) value.forEach(walk);
+    else if (value !== null && typeof value === "object")
+      for (const [key, inner] of Object.entries(value)) {
+        keys.add(key);
+        walk(inner);
+      }
+  };
+  walk(schema);
+  return new Set([...keys].flatMap((key) => /^([\w-]+)\.root\.fill$/.exec(key)?.[1] ?? []));
 }
 
-/** Each `surface family` pair `stands` holds, of the families the manifest has, on a surface
- *  whose root takes a fill. */
-function pairsOf(
-  stands: ReadonlyMap<string, Iterable<string>>,
-  by: "family" | "surface",
-): string[] {
+/** Each `surface family` pair of `on` (by surface, the families on it), of the families the
+ *  manifest has, on a surface whose root takes a fill. */
+function pairsOf(on: ReadonlyMap<string, Iterable<string>>): string[] {
   const families = new Set(engineGrounds().keys());
   const surfaces = fillable();
   const pairs: string[] = [];
-  for (const [key, values] of stands)
-    for (const value of values) {
-      const [surface, family] = by === "family" ? [value, key] : [key, value];
+  for (const [surface, standing] of on)
+    for (const family of standing)
       if (families.has(family) && surfaces.has(surface)) pairs.push(`${surface} ${family}`);
-    }
   return [...new Set(pairs)].sort();
+}
+
+/** `stands` (by family, the surfaces around it) turned round: by surface, the families on it. */
+function bySurface(
+  stands: ReadonlyMap<string, ReadonlyMap<string, unknown>>,
+): Map<string, string[]> {
+  const on = new Map<string, string[]>();
+  for (const [family, surfaces] of stands)
+    for (const surface of surfaces.keys()) on.set(surface, [...(on.get(surface) ?? []), family]);
+  return on;
 }
 
 describe("where each family is drawn on a surface a theme fills (#3268)", () => {
@@ -1914,6 +1965,18 @@ describe("where each family is drawn on a surface a theme fills (#3268)", () => 
       ),
     ]);
     expect(found).toEqual(["field: popover", "text-input: field popover"]);
+  });
+
+  it("takes the part a family's manifest names first as its root, a tab's tab", () => {
+    const found = standing([
+      file(
+        "Pane.tsx",
+        `export function Pane() {
+           return <div data-scope="panel" data-part="root"><div data-scope="page-tabs" data-part="tab" /></div>;
+         }`,
+      ),
+    ]);
+    expect(found).toEqual(["page-tabs: panel"]);
   });
 
   it("stops at the first element that covers what is under it", () => {
@@ -1978,11 +2041,8 @@ describe("where each family is drawn on a surface a theme fills (#3268)", () => 
     const read = windowRead();
     const listed = engineStandsOn();
     expect(listed.size, "STANDS_ON in parts.rs").toBeGreaterThan(0);
-    const found = pairsOf(
-      new Map([...read.stands].map(([family, on]) => [family, [...on.keys()]])),
-      "family",
-    );
-    const said = pairsOf(listed, "surface");
+    const found = pairsOf(bySurface(read.stands));
+    const said = pairsOf(listed);
     // A pair the table does not say is named with the components it is drawn in.
     const unsaid = found
       .filter((pair) => !said.includes(pair))
