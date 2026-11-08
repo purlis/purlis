@@ -2868,3 +2868,39 @@ fn a_runner_before_1_64_takes_no_more_than_it_did_and_one_from_1_64_takes_its_po
         Chosen::default()
     );
 }
+
+/// **opencode's `package.json` and `node_modules` do not stay on a runner**: a desktop never
+/// sends either, and opencode makes them again itself as it starts, so what a chat left there is
+/// never what the next chat's plugins load. Its sent settings stay.
+#[test]
+fn a_keep_clears_opencodes_package_and_its_modules() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("runner-home/.config");
+    let own = config.join("opencode");
+    std::fs::create_dir_all(own.join("node_modules/@opencode-ai/plugin")).unwrap();
+    std::fs::write(own.join("node_modules/@opencode-ai/plugin/index.js"), "left").unwrap();
+    std::fs::write(own.join("package.json"), "{\"dependencies\":{}}").unwrap();
+    std::fs::write(own.join("opencode.json"), "{}").unwrap();
+    let record = MachineProfile {
+        name: "opencode".to_owned(),
+        harness: "opencode".to_owned(),
+        title: "opencode (this runner)".to_owned(),
+        folders: Folders { config, data: None },
+        adopted: Some(Adopted {
+            at: 1,
+            variables: Vec::new(),
+        }),
+        imported: None,
+        sign_in: None,
+        pinned: None,
+        sandbox_only: false,
+        kept_for: Some(DESKTOP.to_owned()),
+        rest: Default::default(),
+    };
+
+    super::super::made::loaded_unsent_cleared(&record).expect("cleared");
+
+    assert!(!own.join("node_modules").exists());
+    assert!(!own.join("package.json").exists());
+    assert!(own.join("opencode.json").exists());
+}
