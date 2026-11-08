@@ -2314,6 +2314,24 @@ fn tell_the_host_about_the_tool_call(
             },
         );
     }
+    // A piece of the chat's own work the call started (#5750): recorded as it starts, so a kill
+    // that cuts the turn mid-way still leaves it on the record. The chat's own run alone, on a
+    // line of its own, sent once and never spooled: the turn's `Stop` says it again.
+    if call.agent.is_none()
+        && call.decision != hookwire::Decision::Deny
+        && let Some(turn_output) =
+            hookwire::Output::of_own_work_started(word, &data, &purlis_core::envvar::var)
+    {
+        let _ = hookwire::tell_turn_output(
+            std::path::Path::new(&socket),
+            token.as_ref(),
+            &hookwire::TurnOutput {
+                chat,
+                turn_output,
+                speaker: hookwire::Speaker::read(payload, &purlis_core::envvar::var),
+            },
+        );
+    }
 }
 
 /// Each sandbox block a block word found in the call's result, to the host, when one is
@@ -2597,14 +2615,32 @@ fn hook(name: &str, now: Option<&str>) -> ExitCode {
             hookwire::CHAT_ENV
         );
     }
-    // What the turn ended saying (#1981), before the report, so the app has it as it hears the
-    // turn end: a task that ended its turns without a report is reported from it. The chat's
-    // own run alone, on a line of its own, sent once and never spooled.
+    // What it left running of its own (#5750), which the record takes as the authority. The
+    // chat's own run alone, on a line of its own, sent once and never spooled, before the report.
+    if event == Event::Stop
+        && let Some(report) = &report
+        && report.agent.is_none()
+        && let Some(turn_output) =
+            hookwire::Output::of_own_work_in_flight(&text, &purlis_core::envvar::var)
+    {
+        let _ = hookwire::tell_turn_output(
+            std::path::Path::new(&socket),
+            hookwire::ChatToken::from_env().as_ref(),
+            &hookwire::TurnOutput {
+                chat: report.chat,
+                turn_output,
+                speaker: hookwire::Speaker::read(&text, &purlis_core::envvar::var),
+            },
+        );
+    }
     if event == Event::Stop
         && let Some(report) = &report
         && report.agent.is_none()
         && let Some(turn_output) = turn_output_of(&text)
     {
+        // What the turn ended saying (#1981), before the report, so the app has it as it hears
+        // the turn end: a task that ended its turns without a report is reported from it. The
+        // chat's own run alone, on a line of its own, sent once and never spooled.
         let _ = hookwire::tell_turn_output(
             std::path::Path::new(&socket),
             hookwire::ChatToken::from_env().as_ref(),

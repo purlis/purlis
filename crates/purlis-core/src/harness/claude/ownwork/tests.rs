@@ -161,3 +161,253 @@ fn what_it_reads_is_seconds_from_now_on_the_chat_s_clock_whatever_the_day() {
     let other = read(Some(&stop(&[], &[("*/20 * * * *", true)])), later);
     assert_eq!(one, other);
 }
+
+// ---- each piece, as its tool starts it and as the `Stop` says it (#5750) --------------------
+
+/// A `PostToolUse` payload of `tool`, called as `input`, that came back `response`.
+fn post(tool: &str, input: serde_json::Value, response: serde_json::Value) -> serde_json::Value {
+    serde_json::json!({
+        "hook_event_name": "PostToolUse",
+        "tool_name": tool,
+        "tool_use_id": "toolu_01ABC",
+        "tool_input": input,
+        "tool_response": response,
+    })
+}
+
+fn output_in_tasks(id: &str) -> Option<String> {
+    Some(format!("/tmp/claude-502/p/s1/tasks/{id}.output"))
+}
+
+fn no_output(_: &str) -> Option<String> {
+    None
+}
+
+#[test]
+fn a_command_moved_to_the_background_is_a_shell_with_its_output_file() {
+    let piece = started(
+        &post(
+            "Bash",
+            serde_json::json!({"command": "npm test", "run_in_background": true}),
+            serde_json::json!({"stdout": "", "stderr": "", "interrupted": false,
+                "backgroundTaskId": "b5ul9gyit"}),
+        ),
+        &output_in_tasks,
+    )
+    .expect("a piece");
+    assert_eq!(
+        (piece.kind, piece.id.as_str(), piece.what.as_str()),
+        (Kind::Shell, "b5ul9gyit", "npm test")
+    );
+    assert_eq!(
+        piece.output.as_deref(),
+        Some("/tmp/claude-502/p/s1/tasks/b5ul9gyit.output")
+    );
+}
+
+#[test]
+fn a_command_that_finished_starts_nothing() {
+    let payload = post(
+        "Bash",
+        serde_json::json!({"command": "ls"}),
+        serde_json::json!({"stdout": "a", "stderr": "", "interrupted": false}),
+    );
+    assert_eq!(started(&payload, &output_in_tasks), None);
+}
+
+#[test]
+fn a_monitor_a_background_agent_and_a_workflow_are_each_their_kind() {
+    let monitor = started(
+        &post(
+            "Monitor",
+            serde_json::json!({"description": "CI on #5790", "command": "gh run watch"}),
+            serde_json::json!({"taskId": "m1", "timeoutMs": 0}),
+        ),
+        &no_output,
+    )
+    .expect("a monitor");
+    assert_eq!(
+        (monitor.kind, monitor.what.as_str()),
+        (Kind::Monitor, "CI on #5790")
+    );
+    let agent = started(
+        &post(
+            "Agent",
+            serde_json::json!({"description": "find the callers", "run_in_background": true}),
+            serde_json::json!({"status": "async_launched", "agentId": "a7", "description":
+                "find the callers", "outputFile": "/tmp/claude-502/p/s1/tasks/a7.output"}),
+        ),
+        &no_output,
+    )
+    .expect("a subagent");
+    assert_eq!(
+        (agent.kind, agent.output.as_deref()),
+        (Kind::Subagent, Some("/tmp/claude-502/p/s1/tasks/a7.output"))
+    );
+    let workflow = started(
+        &post(
+            "Workflow",
+            serde_json::json!({"script": "…"}),
+            serde_json::json!({"status": "async_launched", "taskId": "w2",
+                "workflowName": "review-changes"}),
+        ),
+        &output_in_tasks,
+    )
+    .expect("a workflow");
+    assert_eq!(
+        (workflow.kind, workflow.what.as_str()),
+        (Kind::Workflow, "review-changes")
+    );
+}
+
+#[test]
+fn an_agent_that_ran_in_the_foreground_starts_nothing() {
+    let payload = post(
+        "Agent",
+        serde_json::json!({"description": "x"}),
+        serde_json::json!({"status": "completed", "content": []}),
+    );
+    assert_eq!(started(&payload, &no_output), None);
+}
+
+#[test]
+fn a_cron_keeps_its_schedule_and_prompt_and_a_one_shot_is_a_wake_up() {
+    let cron = started(
+        &post(
+            "CronCreate",
+            serde_json::json!({"cron": "*/5 * * * *", "prompt": "check the queue"}),
+            serde_json::json!({"id": "c9", "humanSchedule": "every 5 minutes", "recurring": true}),
+        ),
+        &no_output,
+    )
+    .expect("a cron");
+    assert_eq!(
+        (cron.kind, cron.schedule.as_deref(), cron.prompt.as_deref()),
+        (Kind::Cron, Some("*/5 * * * *"), Some("check the queue"))
+    );
+    let once = started(
+        &post(
+            "CronCreate",
+            serde_json::json!({"cron": "30 14 28 2 *", "prompt": "remind", "recurring": false}),
+            serde_json::json!({"id": "c10", "recurring": false, "nextFireAt": 1_800_000_000_000_i64}),
+        ),
+        &no_output,
+    )
+    .expect("a wake-up");
+    assert_eq!(
+        (once.kind, once.due_at),
+        (Kind::WakeUp, Some(1_800_000_000))
+    );
+}
+
+#[test]
+fn a_scheduled_wake_up_is_due_when_its_result_says() {
+    let wake = started(
+        &post(
+            "ScheduleWakeup",
+            serde_json::json!({"delaySeconds": 600, "prompt": "/loop check", "reason": "CI"}),
+            serde_json::json!({"scheduledFor": 1_800_000_600_000_i64, "clampedDelaySeconds": 600,
+                "wasClamped": false}),
+        ),
+        &no_output,
+    )
+    .expect("a wake-up");
+    assert_eq!(
+        (
+            wake.kind,
+            wake.id.as_str(),
+            wake.due_at,
+            wake.prompt.as_deref()
+        ),
+        (
+            Kind::WakeUp,
+            "toolu_01ABC",
+            Some(1_800_000_600),
+            Some("/loop check")
+        )
+    );
+    let stopped = post(
+        "ScheduleWakeup",
+        serde_json::json!({"stop": true}),
+        serde_json::json!({"scheduledFor": 0, "clampedDelaySeconds": 0, "wasClamped": false,
+            "stopped": true}),
+    );
+    assert_eq!(started(&stopped, &no_output), None);
+}
+
+#[test]
+fn a_stop_names_each_piece_in_flight_and_each_cron() {
+    let payload = stop(
+        &[("shell", "running"), ("subagent", "completed")],
+        &[("*/5 * * * *", true), ("30 18 29 10 *", false)],
+    );
+    let epoch = 1_000_000;
+    let said = pieces(Some(&payload), now(), epoch, &output_in_tasks).expect("pieces");
+    let kinds: Vec<(Kind, &str)> = said.iter().map(|one| (one.kind, one.id.as_str())).collect();
+    assert_eq!(
+        kinds,
+        [
+            (Kind::Shell, "t0"),
+            (Kind::Cron, "c0"),
+            (Kind::WakeUp, "c1")
+        ]
+    );
+    assert_eq!(
+        said[0].output.as_deref(),
+        Some("/tmp/claude-502/p/s1/tasks/t0.output")
+    );
+    assert_eq!(said[1].prompt.as_deref(), Some("check"));
+    assert_eq!(said[2].due_at, Some(epoch + i64::from(in_secs("18:30"))));
+}
+
+#[test]
+fn a_stop_that_names_neither_list_says_nothing_and_one_with_both_empty_says_none_runs() {
+    let older = serde_json::json!({"hook_event_name": "Stop"});
+    assert_eq!(pieces(Some(&older), now(), 1, &no_output), None);
+    assert_eq!(
+        pieces(Some(&stop(&[], &[])), now(), 1, &no_output),
+        Some(Vec::new())
+    );
+}
+
+#[test]
+fn an_output_file_is_found_under_the_chat_s_own_temporary_folder() {
+    let root = tempfile::tempdir().expect("a folder");
+    let uid = rustix::process::getuid().as_raw();
+    let tasks = root
+        .path()
+        .join(format!("claude-{uid}"))
+        .join("-Users-me-proj")
+        .join("0b7c-session")
+        .join("tasks");
+    std::fs::create_dir_all(&tasks).expect("made");
+    std::fs::write(tasks.join("b1.output"), "hi\n").expect("written");
+    let env = |name: &str| {
+        (name == "CLAUDE_CODE_TMPDIR").then(|| root.path().to_str().expect("utf-8").to_owned())
+    };
+    assert_eq!(
+        output_file("0b7c-session", "b1", &env).map(std::path::PathBuf::from),
+        Some(tasks.join("b1.output"))
+    );
+    assert_eq!(output_file("0b7c-session", "b2", &env), None);
+    assert_eq!(output_file("../x", "b1", &env), None);
+}
+
+#[test]
+fn a_wake_up_s_daily_schedule_still_ahead_today_is_not_overdue() {
+    // `ScheduleWakeup`'s entry, as Claude Code writes it: minute and hour of every day. It
+    // matched yesterday too, which says nothing of whether it is due now.
+    let payload = stop(&[], &[("30 15 * * *", false)]);
+    let said = pieces(Some(&payload), now(), 1_000_000, &no_output).expect("pieces");
+    assert_eq!(
+        said[0].due_at,
+        Some(1_000_000 + i64::from(in_secs("15:30")))
+    );
+    let just_now = stop(&[], &[("58 13 * * *", false)]);
+    let said = pieces(Some(&just_now), now(), 1_000_000, &no_output).expect("pieces");
+    assert_eq!(
+        said[0].due_at,
+        Some(1_000_000),
+        "matched two minutes ago: due now"
+    );
+}

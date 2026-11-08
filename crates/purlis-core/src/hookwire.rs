@@ -2960,6 +2960,20 @@ pub enum Output {
     },
     /// The question the server said it asks is answered, refused or let go of (#4710).
     Asked,
+    /// **A piece of the chat's own work its tool just started** (#5750): recorded at once, so
+    /// work a turn started is on the record though a kill cuts the turn mid-way
+    /// ([`crate::ownwork::pieces::started`]). The app holds it to its shape
+    /// ([`crate::ownwork::pieces::Piece::sound`]) before it keeps any of it.
+    OwnWorkStarted {
+        piece: crate::ownwork::pieces::Piece,
+    },
+    /// **Each piece of own work the turn's end says is in flight** (#5750): the authority, which
+    /// replaces what was recorded ([`crate::ownwork::pieces::at_stop`]). Sent by a `Stop` of the
+    /// chat's own whose harness says what it has in flight.
+    OwnWorkInFlight {
+        #[serde(default)]
+        pieces: Vec<crate::ownwork::pieces::Piece>,
+    },
 }
 
 impl Output {
@@ -3057,6 +3071,59 @@ impl Output {
     /// Code's and Codex's `last_assistant_message`, which purlis's opencode plugin sends too.
     pub fn of_stop(payload: &str) -> Option<Self> {
         Self::of_stop_within(payload, Self::MOST_BYTES)
+    }
+
+    /// **The piece of own work the call `payload` that hook `word` heard come back started**
+    /// (#5750), on a chat whose harness says what it has in flight (Claude Code's, by `env`), or
+    /// none: [`crate::harness::claude::ownwork::started`], its output looked for in the chat's
+    /// own temporary folder.
+    pub fn of_own_work_started(
+        word: &str,
+        payload: &serde_json::Value,
+        env: &dyn Fn(&str) -> Option<String>,
+    ) -> Option<Self> {
+        if !word.starts_with("posttooluse") || word.starts_with("posttoolusefailure") {
+            return None;
+        }
+        if chat_harness(env).as_deref() != Some(BACKGROUND_TASKS_HARNESS) {
+            return None;
+        }
+        let session = payload["session_id"].as_str().unwrap_or_default();
+        let piece = crate::harness::claude::ownwork::started(payload, &|id| {
+            crate::harness::claude::ownwork::output_file(session, id, env)
+        })?;
+        Some(Self::OwnWorkStarted { piece })
+    }
+
+    /// **Each piece of own work a `Stop`'s `payload` says is in flight** (#5750), on a chat whose
+    /// harness says so (Claude Code's, by `env`). A `Stop` that names neither list (an older
+    /// Claude Code) says none is: what the record holds was started under it, and nothing
+    /// else would ever retire it. None for a payload that does not parse.
+    pub fn of_own_work_in_flight(
+        payload: &str,
+        env: &dyn Fn(&str) -> Option<String>,
+    ) -> Option<Self> {
+        if chat_harness(env).as_deref() != Some(BACKGROUND_TASKS_HARNESS) {
+            return None;
+        }
+        let read = serde_json::from_str::<serde_json::Value>(payload).ok()?;
+        let session = read["session_id"].as_str().unwrap_or_default();
+        let local = chrono::Local::now();
+        // The conversation's task folder, looked for once for every piece (the hook's 50 ms).
+        let tasks = std::cell::OnceCell::new();
+        let pieces = crate::harness::claude::ownwork::pieces(
+            Some(&read),
+            local.naive_local(),
+            local.timestamp(),
+            &|id| {
+                tasks
+                    .get_or_init(|| crate::harness::claude::ownwork::tasks_folder(session, env))
+                    .as_deref()
+                    .and_then(|folder| crate::harness::claude::ownwork::output_in(folder, id))
+            },
+        )
+        .unwrap_or_default();
+        Some(Self::OwnWorkInFlight { pieces })
     }
 
     /// [`Self::of_stop`], cut to `most` bytes: a judge's answer has to come back whole (SK-55).

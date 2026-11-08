@@ -21,6 +21,7 @@ import { AimedList, AimedOption } from "./AimedList";
 import { TextField } from "../field/Field";
 import { RowBelow, RowDescription, RowLabel, RowLead, RowTrail } from "./Row";
 import { Badge } from "../badge/Badge";
+import { TOOLTIP_CLOSE_DELAY } from "../tooltip/Tooltip";
 
 /** Twenty-eight personas, as Start a chat lists them (R164: a list over about seven is filtered). */
 const PERSONAS = [
@@ -696,8 +697,9 @@ async function expectReadable(where: string) {
 /**
  * **A row across the window keeps its tooltip readable** (#3328, R166): the tooltip stands by
  * the pointer or by the row's words, at their end, and under or over the row where neither side
- * has room; never a column of words against the window's edge. The picture is the second row
- * under the keyboard, its words cut, its tooltip over it.
+ * has room; never a column of words against the window's edge. The pointer can go onto it, and
+ * Esc takes it down until the keyboard's next visit (WCAG 1.4.13, #5038). The picture is the
+ * second row under the keyboard, its words cut, its tooltip over it.
  */
 export const ARowAcrossTheWindow: Story = {
   parameters: { screenshot: "page" },
@@ -710,11 +712,28 @@ export const ARowAcrossTheWindow: Story = {
       coords: { clientX: box.left + box.width / 2, clientY: box.top + box.height / 2 },
     });
     await expectReadable("Across the window, under the pointer");
+    // **It can be hovered** (WCAG 1.4.13, #5038): the pointer goes onto it and it stays.
+    const tip = tipShown();
+    if (tip === null) throw new Error("Across the window: the tooltip is not up");
+    await userEvent.hover(tip);
+    await new Promise((done) => setTimeout(done, TOOLTIP_CLOSE_DELAY * 3));
+    await expect(tipShown(), "Across the window: the tooltip stays under the pointer").toBe(tip);
+    // Esc takes it down, and leaves the page as it was.
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(tipShown()).toBeNull());
     await userEvent.unhover(notes);
     await waitFor(() => expect(tipShown()).toBeNull());
     await userEvent.tab();
     await untilFocused(() => notes, "Across the window: Tab lands on the first row");
     await expectReadable("Across the window, by the row's words");
+    // Esc takes it down, and the keyboard's next visit brings it back (#5038).
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(tipShown()).toBeNull());
+    await expect(notes).toHaveFocus();
+    await userEvent.keyboard("{ArrowDown}");
+    await userEvent.keyboard("{ArrowUp}");
+    await untilFocused(() => notes, "Across the window: Up comes back to the first row");
+    await expectReadable("Across the window, by the row's words, after Esc");
     await userEvent.keyboard("{ArrowDown}");
     const audit = canvas.getByRole("row", { name: /Read the whole prototype audit/ });
     await untilFocused(() => audit, "Across the window: Down moves to the row whose words are cut");

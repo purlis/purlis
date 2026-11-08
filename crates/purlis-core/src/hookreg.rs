@@ -61,7 +61,7 @@ impl Handler {
 }
 
 /// Every hook the Rust `charter` answers, in the order a session meets them.
-pub const HANDLERS: [Handler; 17] = [
+pub const HANDLERS: [Handler; 18] = [
     Handler {
         name: "sessionstart",
         event: "SessionStart",
@@ -140,6 +140,16 @@ pub const HANDLERS: [Handler; 17] = [
         name: "posttooluse-blocked",
         event: "PostToolUse",
         matcher: Some("Bash|BashOutput|Read"),
+        timeout: 5,
+    },
+    // A piece of the chat's own work its tool started (#5750), heard as the call comes back so
+    // it is on the record though a kill cuts the turn mid-way. A background shell and a
+    // background agent are heard by the words above, which every such call already runs; these
+    // tools run no other. It answers nothing.
+    Handler {
+        name: "posttooluse-ownwork",
+        event: "PostToolUse",
+        matcher: Some("Monitor|Workflow|CronCreate|ScheduleWakeup"),
         timeout: 5,
     },
     Handler {

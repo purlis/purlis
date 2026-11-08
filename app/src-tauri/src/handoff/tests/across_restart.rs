@@ -1066,7 +1066,6 @@ fn a_chat_waiting_on_its_own_shell_is_told_after_a_restart_that_the_shell_was_cu
 /// purlis was down: the harness that would have fired it is gone, so the chat brought back must
 /// be told the wake-up was missed.
 #[test]
-#[ignore = "a missed wake-up in the wake line is #5751's: the tracer (#5747) names work in flight only"]
 fn a_chat_whose_own_wake_up_came_due_while_purlis_was_down_is_told_after_the_restart() {
     let plane = a_plane_with_personas();
     let host = Pretend::default();
@@ -1097,6 +1096,131 @@ fn a_chat_whose_own_wake_up_came_due_while_purlis_was_down_is_told_after_the_res
         told,
         "within {TOLD_WITHIN:?} of the relaunch, chat {steward} was never told the wake-up it \
          waited on came due while purlis was down; it was given only {said:#?}"
+    );
+}
+
+/// A report of `event` from chat `chat`'s own harness, under the conversation the board holds
+/// for it, heard as the socket hears it.
+fn its_own_harness_says(held: &Held, chat: u32, event: purlis_core::state::Event) {
+    let report = purlis_core::hookwire::Report {
+        chat,
+        event,
+        conversation: held
+            .board()
+            .conversation(chat)
+            .map_or(purlis_core::hookwire::Conversation::Unknown, |said| {
+                purlis_core::hookwire::Conversation::Named(said)
+            }),
+        pid: Some(4000 + chat),
+        agent: None,
+        detail: purlis_core::state::Detail::default(),
+    };
+    let _ = held.hooks().hear_as_the_socket_does(&report);
+}
+
+/// Chat `chat`'s tool started `piece` of its own work, as its tool's hook tells the app (#5750).
+fn its_tool_starts(held: &Held, chat: u32, piece: purlis_core::ownwork::pieces::Piece) {
+    held.hooks()
+        .output_as_the_socket_does(purlis_core::hookwire::TurnOutput {
+            chat,
+            turn_output: purlis_core::hookwire::Output::OwnWorkStarted { piece },
+            speaker: purlis_core::hookwire::Speaker::default(),
+        });
+}
+
+/// #5750: the steward chat starts a background shell in a turn, and purlis is killed before the
+/// turn ends, so no `Stop` ever says the shell was in flight. The shell was recorded as its tool
+/// started it: the chat brought back is told the restart cut its turn off mid-way, and named the
+/// shell it started.
+#[test]
+fn a_chat_killed_mid_turn_after_starting_a_shell_is_told_both_after_the_restart() {
+    let plane = a_plane_with_personas();
+    let host = Pretend::default();
+    let (planes, id, steward) = a_steward_chat(&host, &plane);
+    let held = planes.held(&id).expect("held");
+    its_own_harness_says(&held, steward, purlis_core::state::Event::UserPromptSubmit);
+    its_tool_starts(
+        &held,
+        steward,
+        purlis_core::ownwork::pieces::Piece::new(
+            purlis_core::ownwork::pieces::Kind::Shell,
+            "b5ul9gyit",
+            "cargo test -p purlis-core",
+        )
+        .expect("a piece"),
+    );
+    // Killed: what the record says as the turn runs is what the next launch reads. No `Stop`
+    // was ever heard.
+    let at_kill = quits(&held);
+
+    let (relaunched, _planes, _again, _held, opened) =
+        launches_again(&plane, (host, planes, held), &at_kill);
+
+    assert!(
+        opened.iter().any(|open| open.session == steward),
+        "precondition: the chat came back under its number"
+    );
+    let (told, said) = told_of_its_lost_work(&relaunched, steward, "cargo test -p purlis-core");
+    assert!(
+        told,
+        "within {TOLD_WITHIN:?} of the relaunch, chat {steward} was never told the shell it \
+         started was cut off; it was given only {said:#?}"
+    );
+    assert!(
+        said.iter().any(|line| line.contains("mid-way")),
+        "chat {steward} was not told its turn was cut mid-way: {said:#?}"
+    );
+}
+
+/// #5751: the steward chat's background shell had printed two lines when purlis quit. The chat
+/// brought back is told those lines, quoted as data, and where the whole of its output is.
+#[test]
+fn a_chat_is_told_what_its_shell_last_printed_and_where_the_rest_is_after_a_restart() {
+    let plane = a_plane_with_personas();
+    let host = Pretend::default();
+    let (planes, id, steward) = a_steward_chat(&host, &plane);
+    let held = planes.held(&id).expect("held");
+    let conversation = held
+        .board()
+        .conversation(steward)
+        .expect("precondition: the chat is under a conversation");
+    let tmp = tempfile::tempdir().expect("a folder");
+    let tasks = tmp.path().join("-proj").join(&conversation).join("tasks");
+    std::fs::create_dir_all(&tasks).expect("made");
+    let output = tasks.join("b5ul9gyit.output");
+    std::fs::write(
+        &output,
+        "Compiling purlis-core\ntest result: ok. 46 passed\n",
+    )
+    .expect("written");
+    its_tool_starts(
+        &held,
+        steward,
+        purlis_core::ownwork::pieces::Piece {
+            output: Some(output.to_str().expect("utf-8").to_owned()),
+            ..purlis_core::ownwork::pieces::Piece::new(
+                purlis_core::ownwork::pieces::Kind::Shell,
+                "b5ul9gyit",
+                "cargo test",
+            )
+            .expect("a piece")
+        },
+    );
+    let at_quit = quits(&held);
+
+    let (relaunched, _planes, _again, _held, _opened) =
+        launches_again(&plane, (host, planes, held), &at_quit);
+
+    let (told, said) = told_of_its_lost_work(&relaunched, steward, "test result: ok. 46 passed");
+    assert!(
+        told,
+        "within {TOLD_WITHIN:?} of the relaunch, chat {steward} was never told what its shell \
+         last printed; it was given only {said:#?}"
+    );
+    assert!(
+        said.iter()
+            .any(|line| line.contains(output.to_str().expect("utf-8"))),
+        "chat {steward} was not told where the rest of the output is: {said:#?}"
     );
 }
 
