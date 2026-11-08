@@ -240,6 +240,23 @@ impl Records {
 /// comes from.
 type Read = Result<reopen::Record, std::io::Error>;
 
+/// **An answer about one chat's Run grants being carried out** ([`Held::run_answers`]): the next
+/// for that chat waits until this is dropped.
+pub struct RunAnswering<'a> {
+    held: &'a Held,
+    chat: u32,
+}
+
+impl Drop for RunAnswering<'_> {
+    fn drop(&mut self) {
+        let (busy, ended) = &self.held.run_answers;
+        busy.lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(&self.chat);
+        ended.notify_all();
+    }
+}
+
 /// What the app holds for one open plane: its board, its chats, and where it is.
 pub struct Held {
     id: PlaneId,
@@ -316,6 +333,9 @@ pub struct Held {
     pool_tools: crate::pooltools::PoolTools,
     /// The Secret asks the chats' brokered runs wait on (#5068, ADR 0109).
     secret_asks: Arc<purlis_core::secrets::ask::Asks>,
+    /// The chats whose answer to a Run grant's ask, or Keep blocked on a vault, is being carried
+    /// out, and a wait for one to end ([`Self::run_answers`], #5617).
+    run_answers: (Mutex<std::collections::HashSet<u32>>, Condvar),
     /// Where the chats' browsers run: the window's session host, where it has one.
     browser_driver: Option<Arc<dyn crate::chatbrowsers::Driver>>,
     /// Told each time a browser is added to its chats' or taken from them (#2024).
@@ -767,6 +787,21 @@ impl Held {
     /// The Secret asks the chats' brokered runs wait on (#5068, ADR 0109).
     pub fn secret_asks(&self) -> &purlis_core::secrets::ask::Asks {
         &self.secret_asks
+    }
+
+    /// **One of the person's answers about chat `chat`'s Run grants at a time** (#5617): a Run
+    /// grant's press and Keep blocked on a vault each hold this while they are carried out, until
+    /// what it answers is dropped. Always allow writes its tool line before its ask is answered,
+    /// so a Keep blocked carried out in between would leave that line behind the ask it closed;
+    /// held, the press after it finds its ask answered first. Another chat's answers never wait.
+    pub fn run_answers(&self, chat: u32) -> RunAnswering<'_> {
+        let (busy, ended) = &self.run_answers;
+        let mut busy = busy.lock().unwrap_or_else(PoisonError::into_inner);
+        while busy.contains(&chat) {
+            busy = ended.wait(busy).unwrap_or_else(PoisonError::into_inner);
+        }
+        busy.insert(chat);
+        RunAnswering { held: self, chat }
     }
 
     /// Where the chats' browsers run: none where the window has no session host.
@@ -5155,6 +5190,7 @@ impl Planes {
             browser_driver: self.browser_driver.clone(),
             pool_tools: crate::pooltools::PoolTools::default(),
             secret_asks,
+            run_answers: (Mutex::default(), Condvar::new()),
             browsers_listed,
             browser_timeline,
             proposals: crate::proposals::Proposals::default(),

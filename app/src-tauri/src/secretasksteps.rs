@@ -13,13 +13,21 @@
 //! raise and keep its answer. A raise that is not written after all — the queue full, or the log
 //! refused it — takes the ask's later steps with it.
 //!
+//! **A host that stops answering holds a bounded number of steps** (#5618). The writer waits on
+//! the session host's answer to each write, and the queue to it holds at most [`MOST_QUEUED`]
+//! steps: one told past that is not written, and takes with it every step of its ask not written
+//! yet, those queued before it and those told after, so nothing is written without its raise.
+//! Telling never waits, since the asks tell under their lock. The asks so dropped are remembered
+//! for the plane's life, one number each.
+//!
 //! Best effort, as before: a step still waiting as the app quits is not written, and the steps of
 //! an ask raised then and answered after a restart are written without a raise. The chat's own
 //! trace keeps the whole of every ask's life whatever the log holds.
 
 use std::collections::{HashSet, VecDeque};
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{Receiver, Sender, channel};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use purlis_core::eventlog::Entry;
@@ -29,6 +37,14 @@ use crate::hooks::Events;
 
 /// The most steps that wait for the event log to open; one past it is not written.
 const MOST_WAITING: usize = 512;
+
+/// The most steps told and not yet taken by the writer, which waits on each write: a session
+/// host that stops answering holds no more than these (#5618).
+const MOST_QUEUED: usize = 512;
+
+/// Asks one of whose steps was not written: their later steps are not either. Shared by the
+/// teller, which drops a step the queue has no room for, and the writer.
+type Unraised = Arc<Mutex<HashSet<u32>>>;
 
 /// What the plane's writer is told.
 enum Told {
@@ -42,14 +58,17 @@ enum Told {
     Opened,
     /// Answered once everything told before it is written, or waits on a log not open.
     #[cfg(test)]
-    Written(Sender<()>),
+    Written(std::sync::mpsc::Sender<()>),
 }
 
 /// **A plane's Secret asks' steps, written in order off the asks' lock** (module docs). Its
 /// thread starts with the first [`Self::teller`], and ends once the plane and its asks are gone.
 #[derive(Default)]
 pub struct Steps {
-    sending: Mutex<Option<Sender<Told>>>,
+    sending: Mutex<Option<SyncSender<Told>>>,
+    unraised: Unraised,
+    /// How many steps the full queue turned away, for the log.
+    dropped: Arc<AtomicUsize>,
 }
 
 impl Steps {
@@ -62,53 +81,89 @@ impl Steps {
     ) -> purlis_core::secrets::ask::Telling {
         let send = self.sender(events);
         let plane = plane.to_path_buf();
+        let unraised = Arc::clone(&self.unraised);
+        let dropped = Arc::clone(&self.dropped);
         Arc::new(move |chat, step| {
-            if let Some(send) = &send {
+            let Some(send) = &send else {
+                return;
+            };
+            let told = send.try_send(Told::Step {
+                plane: plane.clone(),
+                chat,
+                step,
+            });
+            match told {
+                Err(TrySendError::Full(_)) => {
+                    if let Some(ask) = ask_of(step) {
+                        unraised
+                            .lock()
+                            .unwrap_or_else(PoisonError::into_inner)
+                            .insert(ask);
+                    }
+                    // Said as a stall begins, and again with its count as it ends.
+                    if dropped.fetch_add(1, Ordering::Relaxed) == 0 {
+                        tracing::info!(
+                            "purlis: a secret ask's {} was not recorded (the session host is not \
+                             answering, and {MOST_QUEUED} steps wait on it)",
+                            step.kind()
+                        );
+                    }
+                }
+                Ok(()) => {
+                    let lost = dropped.swap(0, Ordering::Relaxed);
+                    if lost > 0 {
+                        tracing::info!(
+                            "purlis: {lost} secret ask steps were not recorded while the session \
+                             host was not answering"
+                        );
+                    }
+                }
                 // Its writer gone, the plane is closing: nothing is left to write it.
-                let _ = send.send(Told::Step {
-                    plane: plane.clone(),
-                    chat,
-                    step,
-                });
+                Err(TrySendError::Disconnected(_)) => {}
             }
         })
     }
 
-    /// The event log has opened: the steps waiting on it are written.
+    /// The event log has opened: the steps waiting on it are written. Not told where the queue
+    /// is full: the writer writes what waits after each step it takes anyway.
     pub fn opened(&self) {
-        self.tell(Told::Opened);
+        if let Some(send) = self
+            .sending
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_ref()
+        {
+            let _ = send.try_send(Told::Opened);
+        }
     }
 
     /// Waits until every step told so far is written, or waits on a log not open.
     #[cfg(test)]
     pub fn written(&self) {
-        let (done, wait) = channel();
-        if self.tell(Told::Written(done)) {
+        let (done, wait) = std::sync::mpsc::channel();
+        let send = self
+            .sending
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        if send.is_some_and(|send| send.send(Told::Written(done)).is_ok()) {
             let _ = wait.recv();
         }
     }
 
-    /// Tells the writer, where it runs; whether it does.
-    fn tell(&self, told: Told) -> bool {
-        self.sending
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .as_ref()
-            .is_some_and(|send| send.send(told).is_ok())
-    }
-
     /// The writer's sender, started the first time. None where its thread could not start, and
     /// the steps go unwritten, which is how a log that is not open treated them before.
-    fn sender(&self, events: &Arc<Mutex<Option<Events>>>) -> Option<Sender<Told>> {
+    fn sender(&self, events: &Arc<Mutex<Option<Events>>>) -> Option<SyncSender<Told>> {
         let mut sending = self.sending.lock().unwrap_or_else(PoisonError::into_inner);
         if let Some(send) = sending.as_ref() {
             return Some(send.clone());
         }
-        let (send, told) = channel();
+        let (send, told) = sync_channel(MOST_QUEUED);
         let events = Arc::clone(events);
+        let unraised = Arc::clone(&self.unraised);
         let started = std::thread::Builder::new()
             .name("purlis-secret-ask-steps".to_owned())
-            .spawn(move || write(&told, &events));
+            .spawn(move || write(&told, &events, &unraised));
         if let Err(why) = started {
             tracing::warn!("purlis: secret asks' steps will not be recorded ({why})");
             return None;
@@ -130,16 +185,17 @@ fn ask_of(step: Step) -> Option<u32> {
 }
 
 /// The writer's thread: each step in the order it was told, held while the log is not open.
-fn write(told: &Receiver<Told>, events: &Mutex<Option<Events>>) {
+fn write(told: &Receiver<Told>, events: &Mutex<Option<Events>>, unraised: &Unraised) {
     let mut waiting: VecDeque<(PathBuf, Option<u32>, Step)> = VecDeque::new();
-    // Asks whose raise was not written: their later steps are not either.
-    let mut unraised: HashSet<u32> = HashSet::new();
     for one in told {
         match one {
             Told::Step { plane, chat, step } => {
                 if waiting.len() >= MOST_WAITING {
                     if let Some(ask) = ask_of(step) {
-                        unraised.insert(ask);
+                        unraised
+                            .lock()
+                            .unwrap_or_else(PoisonError::into_inner)
+                            .insert(ask);
                     }
                     tracing::info!(
                         "purlis: a secret ask's {} was not recorded (too many wait for the \
@@ -153,19 +209,19 @@ fn write(told: &Receiver<Told>, events: &Mutex<Option<Events>>) {
             Told::Opened => {}
             #[cfg(test)]
             Told::Written(done) => {
-                write_waiting(&mut waiting, &mut unraised, events);
+                write_waiting(&mut waiting, unraised, events);
                 let _ = done.send(());
                 continue;
             }
         }
-        write_waiting(&mut waiting, &mut unraised, events);
+        write_waiting(&mut waiting, unraised, events);
     }
 }
 
 /// Writes what waits, in order, where the log is open.
 fn write_waiting(
     waiting: &mut VecDeque<(PathBuf, Option<u32>, Step)>,
-    unraised: &mut HashSet<u32>,
+    unraised: &Unraised,
     events: &Mutex<Option<Events>>,
 ) {
     let open = events
@@ -177,7 +233,13 @@ fn write_waiting(
     };
     while let Some((plane, number, step)) = waiting.pop_front() {
         let ask = ask_of(step);
-        if ask.is_some_and(|ask| unraised.contains(&ask)) {
+        let dropped = |ask: u32| {
+            unraised
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .contains(&ask)
+        };
+        if ask.is_some_and(dropped) {
             continue;
         }
         let written = open.record(Entry::SecretAsk {
@@ -187,12 +249,114 @@ fn write_waiting(
         });
         if let Err(why) = written {
             if let (Some(ask), Step::Raised { .. }) = (ask, step) {
-                unraised.insert(ask);
+                unraised
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .insert(ask);
             }
             tracing::info!(
                 "purlis: a secret ask's {} was not recorded ({why})",
                 step.kind()
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::mpsc::{Receiver, Sender, channel};
+    use std::time::Duration;
+
+    /// A session host that takes the first write and then stops answering until `release` is
+    /// sent, as one stalled in the middle of a write does; every write it takes is listed.
+    /// The host, word that it stalled, the release, and every step it took.
+    type Stalled = (Events, Receiver<()>, Sender<()>, Arc<Mutex<Vec<Step>>>);
+
+    fn a_stalled_host() -> Stalled {
+        let written: Arc<Mutex<Vec<Step>>> = Arc::default();
+        let (entered, stalled) = sync_channel(1);
+        let (release, released) = channel::<()>();
+        let released = Mutex::new(released);
+        let listed = Arc::clone(&written);
+        let events = Events::in_the_host(move |entry| {
+            if let Entry::SecretAsk { step, .. } = entry {
+                let first = {
+                    let mut listed = listed.lock().unwrap_or_else(PoisonError::into_inner);
+                    listed.push(step);
+                    listed.len() == 1
+                };
+                if first {
+                    let _ = entered.try_send(());
+                    let _ = released
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner)
+                        .recv();
+                }
+            }
+            Ok(())
+        });
+        (events, stalled, release, written)
+    }
+
+    fn raised(ask: u32) -> Step {
+        Step::Raised {
+            ask,
+            declared: false,
+        }
+    }
+
+    #[test]
+    fn a_session_host_stalled_mid_write_holds_a_bounded_number_of_steps_and_a_dropped_raise_takes_its_ask_s_later_steps()
+     {
+        let (events, stalled, release, written) = a_stalled_host();
+        let events = Arc::new(Mutex::new(Some(events)));
+        let steps = Steps::default();
+        let tell = steps.teller(Path::new("/plane"), &events);
+        tell(Some(1), raised(0));
+        stalled
+            .recv_timeout(Duration::from_secs(10))
+            .expect("the host takes the first write and stalls");
+
+        // Ask 1's raise finds room in the queue.
+        tell(Some(1), raised(1));
+        // Told under the asks' lock while the host stalls: each returns at once.
+        let told = 20 * MOST_QUEUED as u32;
+        for ask in 2..=told {
+            tell(Some(1), raised(ask));
+        }
+        // Ask 1's answer finds no room: its raise, queued, goes unwritten with it.
+        tell(Some(1), Step::Declined { ask: 1, waiting: 0 });
+        release.send(()).expect("the host is there");
+        steps.written();
+        // With room again, the last ask's answer is told: its raise was dropped, so it is not
+        // written either.
+        tell(
+            Some(1),
+            Step::Declined {
+                ask: told,
+                waiting: 0,
+            },
+        );
+        steps.written();
+
+        let written = written.lock().unwrap_or_else(PoisonError::into_inner);
+        assert!(
+            written.len() > 1,
+            "the steps queued before it filled are written"
+        );
+        assert!(
+            !written.iter().any(|step| ask_of(*step) == Some(told)),
+            "a raise not written takes its ask's later steps with it"
+        );
+        assert!(
+            !written.iter().any(|step| ask_of(*step) == Some(1)),
+            "a step not written takes its ask's raise still queued with it"
+        );
+        assert!(
+            written.len() <= MOST_QUEUED + 1,
+            "{} steps were held for a stalled host",
+            written.len()
+        );
     }
 }

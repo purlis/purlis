@@ -1903,3 +1903,428 @@ fn a_refused_program_named_with_a_suffix_or_a_sibling_name_is_offered_no_run_gra
         refused_as_running_others(name);
     }
 }
+
+// #5619: programs that run others, found by #5595's adversarial review.
+
+#[test]
+fn xcodebuild_runs_a_project_s_build_phases_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("xcodebuild");
+}
+
+#[test]
+fn msgexec_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("msgexec");
+}
+
+#[test]
+fn leaks_runs_the_command_after_at_exit_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("leaks");
+}
+
+#[test]
+fn pyenv_runs_its_shims_and_exec_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("pyenv");
+}
+
+#[test]
+fn erb_runs_the_ruby_in_its_template_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("erb");
+}
+
+#[test]
+fn helm_runs_a_post_renderer_and_plugins_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("helm");
+}
+
+#[test]
+fn socat_runs_what_an_exec_address_names_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("socat");
+}
+
+#[test]
+fn ncat_runs_what_exec_names_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("ncat");
+}
+
+#[test]
+fn nc_runs_what_e_names_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("nc");
+}
+
+#[test]
+fn netcat_runs_what_e_names_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("netcat");
+}
+
+#[test]
+fn tar_runs_a_to_command_or_compressor_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("tar");
+}
+
+#[test]
+fn bsdtar_runs_a_compressor_it_is_told_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("bsdtar");
+}
+
+#[test]
+fn gtar_runs_a_to_command_or_compressor_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("gtar");
+}
+
+// #5617's review of #5619: the same family, refused with it.
+
+#[test]
+fn op_runs_what_op_run_names_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("op");
+}
+
+#[test]
+fn aws_vault_runs_what_aws_vault_exec_names_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("aws-vault");
+}
+
+#[test]
+fn rbenv_runs_its_shims_and_exec_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("rbenv");
+}
+
+#[test]
+fn asdf_runs_its_shims_and_exec_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("asdf");
+}
+
+#[test]
+fn mise_runs_its_tasks_and_exec_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("mise");
+}
+
+#[test]
+fn direnv_runs_what_direnv_exec_and_an_envrc_say_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("direnv");
+}
+
+#[test]
+fn pipenv_runs_what_pipenv_run_names_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("pipenv");
+}
+
+#[test]
+fn conda_runs_what_conda_run_names_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("conda");
+}
+
+#[test]
+fn volta_runs_what_volta_run_names_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("volta");
+}
+
+#[test]
+fn msgfilter_runs_the_filter_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("msgfilter");
+}
+
+#[test]
+fn xctrace_runs_what_it_launches_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("xctrace");
+}
+
+#[test]
+fn valgrind_runs_the_program_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("valgrind");
+}
+
+#[test]
+fn hyperfine_runs_the_commands_it_times_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("hyperfine");
+}
+
+#[test]
+fn helmfile_runs_its_hooks_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("helmfile");
+}
+
+// The second review of #5619: secret injectors, environment managers and project runners.
+
+#[test]
+fn doppler_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("doppler");
+}
+
+#[test]
+fn infisical_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("infisical");
+}
+
+#[test]
+fn sops_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("sops");
+}
+
+#[test]
+fn chamber_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("chamber");
+}
+
+#[test]
+fn envconsul_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("envconsul");
+}
+
+#[test]
+fn summon_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("summon");
+}
+
+#[test]
+fn envchain_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("envchain");
+}
+
+#[test]
+fn dotenvx_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("dotenvx");
+}
+
+#[test]
+fn teller_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("teller");
+}
+
+#[test]
+fn berglas_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("berglas");
+}
+
+#[test]
+fn aws_sso_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("aws-sso");
+}
+
+#[test]
+fn granted_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("granted");
+}
+
+#[test]
+fn assume_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("assume");
+}
+
+#[test]
+fn mamba_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("mamba");
+}
+
+#[test]
+fn micromamba_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("micromamba");
+}
+
+#[test]
+fn rtx_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("rtx");
+}
+
+#[test]
+fn goenv_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("goenv");
+}
+
+#[test]
+fn jenv_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("jenv");
+}
+
+#[test]
+fn fnm_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("fnm");
+}
+
+#[test]
+fn nix_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("nix");
+}
+
+#[test]
+fn nix_shell_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("nix-shell");
+}
+
+#[test]
+fn devbox_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("devbox");
+}
+
+#[test]
+fn pixi_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("pixi");
+}
+
+#[test]
+fn hatch_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("hatch");
+}
+
+#[test]
+fn pdm_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("pdm");
+}
+
+#[test]
+fn rye_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("rye");
+}
+
+#[test]
+fn tox_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("tox");
+}
+
+#[test]
+fn nox_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("nox");
+}
+
+// The third review of #5619: more secret injectors, and programs that run what a chat wrote.
+
+#[test]
+fn saml2aws_runs_what_it_is_given_or_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("saml2aws");
+}
+
+#[test]
+fn aws_okta_runs_what_it_is_given_or_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("aws-okta");
+}
+
+#[test]
+fn bws_runs_what_it_is_given_or_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("bws");
+}
+
+#[test]
+fn dotenv_runs_what_it_is_given_or_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("dotenv");
+}
+
+#[test]
+fn phase_runs_what_it_is_given_or_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("phase");
+}
+
+#[test]
+fn awsume_runs_what_it_is_given_or_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("awsume");
+}
+
+#[test]
+fn bunx_runs_what_it_is_given_or_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("bunx");
+}
+
+#[test]
+fn tsx_runs_what_it_is_given_or_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("tsx");
+}
+
+#[test]
+fn pytest_runs_what_it_is_given_or_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("pytest");
+}
+
+#[test]
+fn watchexec_runs_what_it_is_given_or_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("watchexec");
+}
+
+#[test]
+fn entr_runs_what_it_is_given_or_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("entr");
+}
+
+#[test]
+fn pre_commit_runs_what_it_is_given_or_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("pre-commit");
+}
+
+#[test]
+fn pulumi_runs_what_it_is_given_or_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("pulumi");
+}
+
+#[test]
+fn cdk_runs_what_it_is_given_or_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("cdk");
+}
+
+// The fourth review of #5619: programs that run what a file a chat wrote says.
+
+#[test]
+fn terraform_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("terraform");
+}
+
+#[test]
+fn tofu_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("tofu");
+}
+
+#[test]
+fn terragrunt_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("terragrunt");
+}
+
+#[test]
+fn ansible_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("ansible");
+}
+
+#[test]
+fn ansible_playbook_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("ansible-playbook");
+}
+
+#[test]
+fn vagrant_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("vagrant");
+}
+
+#[test]
+fn packer_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("packer");
+}
+
+#[test]
+fn cdktf_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("cdktf");
+}
+
+#[test]
+fn sst_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("sst");
+}
+
+#[test]
+fn serverless_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("serverless");
+}
+
+#[test]
+fn jest_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("jest");
+}
+
+#[test]
+fn vitest_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("vitest");
+}
+
+#[test]
+fn mocha_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("mocha");
+}
+
+#[test]
+fn rspec_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("rspec");
+}

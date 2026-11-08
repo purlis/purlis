@@ -36,3 +36,30 @@ export function useSandboxCommands(): number {
     () => asked,
   );
 }
+
+/**
+ * **The chats' Run grants moved** (#5617): a run's notice was answered, whose Allow gives one, or
+ * Keep blocked was pressed on a vault, which takes back the chat's grants on it. The core keeps
+ * them in memory and tells nobody, so the window says so itself, and the Allowed list reads
+ * again. A count, as {@link sandboxCommandReturned}'s is.
+ */
+let grants = 0;
+const grantListeners = new Set<() => void>();
+
+/** A press that gives or takes back a Run grant returned: the Allowed list reads again. */
+export function runGrantsMoved(): void {
+  grants += 1;
+  for (const listener of [...grantListeners]) listener();
+}
+
+/** How many presses that give or take back a Run grant have returned. */
+export function useRunGrantsMoved(): number {
+  return useSyncExternalStore(
+    (listener) => {
+      grantListeners.add(listener);
+      return () => void grantListeners.delete(listener);
+    },
+    () => grants,
+    () => grants,
+  );
+}

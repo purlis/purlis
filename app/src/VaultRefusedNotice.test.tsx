@@ -2,12 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, renderHook, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
 import { AskPersonaOpener, type OpenAskPersona } from "./AskPersona";
 import { VaultRefusedNotice } from "./VaultRefusedNotice";
+import { useRunGrantsMoved } from "./sandboxAsked";
 import { DispatchGrantNotice } from "./DispatchGrantNotice";
 import { askOfDispatch, askOfVault } from "./test-asks";
 import { answerThrough } from "./asks";
@@ -436,6 +437,16 @@ describe("the refused vault Notice", () => {
       { cmd: "allow_refused_vault", args: { plane: PLANE, session: 7, vault: "devops" } },
     ]);
     expect(screen.queryByRole("button", { name: /^Allow/ })).not.toBeInTheDocument();
+  });
+
+  it("tells the Allowed list to read again on Keep blocked, which takes back the chat's Run grants on the vault (#5617)", async () => {
+    core([DEVOPS]);
+    const heard = renderHook(() => useRunGrantsMoved());
+    const before = heard.result.current;
+    show();
+    await userEvent.setup().click(await screen.findByRole("button", { name: "Keep blocked" }));
+
+    await waitFor(() => expect(heard.result.current).toBeGreaterThan(before));
   });
 
   it("puts it away on Keep blocked and allows nothing", async () => {

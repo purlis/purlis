@@ -393,6 +393,17 @@ pub struct GivenRun {
     /// Good for one run of exactly its arguments; otherwise for any, for the chat's life.
     pub once: bool,
     pub at: u64,
+    /// **Given ahead of its run** (#5244), the keys it covers before a run binds them: what its
+    /// audit named, and so what its taking back names too (#5617).
+    pub ahead_keys: Option<Vec<String>>,
+}
+
+/// What Keep blocked did to the asks (#5617): the asks open on the vault, for the window to answer
+/// Don't allow, and the grants it took back, for the window to audit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KeptBlocked {
+    pub open: Vec<u32>,
+    pub taken_back: Vec<GivenRun>,
 }
 
 /// What an answer did: the chats to nudge, whose command stopped waiting before it, and what each
@@ -828,13 +839,19 @@ impl Asks {
     /// covered either. The asks open on it already are returned, for the window to answer Don't
     /// allow.
     pub fn keep_vault_blocked(&self, chat: u32, vault: &str) -> Vec<u32> {
+        self.keep_vault_blocked_taking(chat, vault).open
+    }
+
+    /// [`Self::keep_vault_blocked`], answering also the grants it took back (#5617), for the
+    /// window to audit each as taken back, as a grant removed from the Allowed list is.
+    pub fn keep_vault_blocked_taking(&self, chat: u32, vault: &str) -> KeptBlocked {
         let mut inner = self.inner();
         inner.runs.kept_blocked.insert((chat, vault.to_owned()));
-        inner
-            .runs
-            .given
-            .retain(|given| given.bound.chat != chat || given.bound.vault != vault);
-        inner
+        let (taken, kept): (Vec<Given>, Vec<Given>) = std::mem::take(&mut inner.runs.given)
+            .into_iter()
+            .partition(|given| given.bound.chat == chat && given.bound.vault == vault);
+        inner.runs.given = kept;
+        let open = inner
             .runs
             .open
             .iter()
@@ -844,7 +861,20 @@ impl Asks {
                     && asked.open.bound.vault == vault
             })
             .map(|asked| asked.open.id)
-            .collect()
+            .collect();
+        KeptBlocked {
+            open,
+            taken_back: taken
+                .into_iter()
+                .map(|given| GivenRun {
+                    id: given.id,
+                    bound: given.bound,
+                    once: given.once,
+                    at: given.at,
+                    ahead_keys: given.ahead_keys,
+                })
+                .collect(),
+        }
     }
 
     /// **Records that policy refused a run of `program`** (ADR 0112, #5243): closed words in the
@@ -917,6 +947,7 @@ impl Asks {
                 bound: one.bound.clone(),
                 once: one.once,
                 at: one.at,
+                ahead_keys: one.ahead_keys.clone(),
             })
             .collect();
         given.sort_by_key(|one| (one.at, one.id));
@@ -940,6 +971,7 @@ impl Asks {
             bound: gone.bound,
             once: gone.once,
             at: gone.at,
+            ahead_keys: gone.ahead_keys,
         })
     }
 
@@ -972,6 +1004,22 @@ impl Asks {
         };
         if !answer.is_offered_by(&inner.runs.open[at].open.offer) {
             return Err("That answer isn't offered on this notice.".to_owned());
+        }
+        // **Kept blocked for its chat** (#5617): nothing that opens the vault is given, under the
+        // lock Keep blocked marks it under, however far the press got before the mark. The ask
+        // stays open for Keep blocked to answer.
+        let bound = &inner.runs.open[at].open.bound;
+        if answer.goes_on()
+            && inner.runs.open[at].open.not_its_vault
+            && inner
+                .runs
+                .kept_blocked
+                .contains(&(bound.chat, bound.vault.clone()))
+        {
+            return Err(format!(
+                "You kept vault {} blocked for this chat, so nothing was allowed.",
+                bound.vault
+            ));
         }
         // Ahead of its run there is no command to bind: no Allow once, and no Always allow.
         if inner.runs.open[at].open.ahead
