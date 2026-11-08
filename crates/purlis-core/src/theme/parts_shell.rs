@@ -86,6 +86,7 @@ pub(super) const PANEL: Family = Family {
     around: &[],
     fills: &[],
     under: &[],
+    later: &[],
 };
 
 /// **The panel's colours as `app/src/ui/panel/panel.css` draws them**: the base surface, the
@@ -155,6 +156,7 @@ pub(super) const PANEL_SECTION: Family = Family {
     around: &[],
     fills: &[],
     under: &[],
+    later: &[],
 };
 
 /// **A section's colours as `panel.css` draws them**: no ground of its own, its title in the
@@ -233,6 +235,7 @@ pub(super) const EMPTY_STATE: Family = Family {
     around: &[],
     fills: &[],
     under: &[],
+    later: &[],
 };
 
 /// **An empty state's colours as `empty-state.css` draws them**: no ground, its sentence and its
@@ -343,6 +346,7 @@ pub(super) const STATUS_ITEM: Family = Family {
     around: &["dot", "dot-warning"],
     fills: &[("dot", "accent.base"), ("dot-warning", "state.waiting")],
     under: &[],
+    later: &[],
 };
 
 /// **A status item's colours as `app/src/ui/status/status.css` draws them**, at rest and under
@@ -450,6 +454,7 @@ pub(super) const RAIL: Family = Family {
     // The badge's pill, the overlay's surface (`rail.css`): its digits are read on it (#3041).
     fills: &[("badge", "surface.overlay")],
     under: &[],
+    later: &[],
 };
 
 /// **A rail button's colours as `app/src/ui/rail/rail.css` draws them.** A project's are its own
@@ -631,6 +636,7 @@ pub(super) const TITLEBAR: Family = Family {
     // A switcher's row and its pin paint no ground at rest: they stand on the popover's surface
     // the switcher is drawn on, which their words are read on (#3099).
     under: &[("row", &["surface.overlay"]), ("pin", &["surface.overlay"])],
+    later: &[],
 };
 
 /// **A chip's colours as `app/src/ui/titlebar/titlebar.css` draws them.** Quiet words with no box

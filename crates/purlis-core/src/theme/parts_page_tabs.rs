@@ -77,6 +77,7 @@ pub(super) const PAGE_TABS: Family = Family {
     around: &["list", "panel"],
     fills: &[],
     under: &[],
+    later: &[],
 };
 
 /// **A tab's colours as `tabs.css` draws them**: muted words at rest, the primary words under

@@ -49,6 +49,7 @@ pub(super) const CODE: Family = Family {
     around: &[],
     fills: &[],
     under: &[],
+    later: &[],
 };
 
 /// **The box as `code.css` draws it**: on the sunken ground, edged subtly.

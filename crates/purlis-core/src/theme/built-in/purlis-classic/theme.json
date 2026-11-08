@@ -24,6 +24,8 @@
     "rail.button.corner-radius": 9,
     "status-item.root.accent.text": "text.primary",
     "titlebar.workspace.corner-radius": 5,
+    "titlebar.crumb.corner-radius": 5,
+    "titlebar.row.corner-radius": 5,
     "table.rule.fill": "border.subtle",
     "list.root.card.fill": "surface.sunken",
     "list.root.card.disabled.fill": "surface.sunken",

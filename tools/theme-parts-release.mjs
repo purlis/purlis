@@ -3,7 +3,8 @@
 
 // **The component parts manifest takes one version per release** (operator ruling 2026-10-25,
 // ADR 0103 amended 2026-10-25). `parts::VERSION` is the last version a release shipped; a pull
-// request that adds a family, a part, a variant, a state or a property gives it `since: NEXT`
+// request that adds a family, a part, a variant, a state or a property gives it `since: NEXT`,
+// as it does a state or a property a released family or part joins (`Family::later`, #3226),
 // and never touches `VERSION` or the digest table. Release prep runs this, as it runs
 // `tools/changelog-fold.mjs`:
 //

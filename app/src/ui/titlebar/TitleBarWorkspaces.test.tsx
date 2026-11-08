@@ -17,6 +17,7 @@ import {
   PinnedStrip,
   ProjectCrumb,
   RootChip,
+  TITLEBAR_VARIANTS,
   TitleBarSlash,
   urgencyOf,
   WorkspaceChip,
@@ -357,5 +358,46 @@ describe("the crumb, the ⌄, a switcher's row and its pin (#3656)", () => {
     await userEvent.hover(row);
     expect(reached("row", hovered)).toEqual([row]);
     expect(reached("row", "[data-selected]")).toEqual([]);
+  });
+});
+
+describe("every titlebar part a theme can set (#3196)", () => {
+  // The parts the published schema offers, by name. A part with a key in a chip's variant is
+  // drawn inside a chip and reached through it; any other is reached by its own attributes, as
+  // a part drawn around or apart from the chip is (`parts::selector`).
+  const schema = JSON.parse(
+    readFileSync(join(process.cwd(), "../docs/schema/theme.v2.schema.json"), "utf8"),
+  ) as { properties: { parts: { properties: Record<string, unknown> } } };
+  const keys = Object.keys(schema.properties.parts.properties).filter((key) =>
+    key.startsWith("titlebar."),
+  );
+  const parts = [...new Set(keys.map((key) => key.split(".")[1]))];
+  const inAChip = (part: string) =>
+    part !== "workspace" &&
+    TITLEBAR_VARIANTS.some((variant) =>
+      keys.some((key) => key.startsWith(`titlebar.${part}.${variant}.`)),
+    );
+
+  it("reaches an element the title bar draws, each where the stylesheet looks for it", () => {
+    render(
+      <>
+        <WorkspaceChip name="alpha" waiting={2} />
+        {NOTICE_KINDS.map((kind) => (
+          <NoticeDot key={kind} workspace="alpha" count={1} kind={kind} onPress={() => undefined} />
+        ))}
+        <ProjectCrumb name="purlis" mark={null} open={false} onPress={() => undefined} />
+        <AllWorkspaces keys="⌥⌘P" open={false} stop onPress={() => undefined} />
+        <SwitcherRow id="r" name="delta" waiting={3} active onPress={() => undefined} />
+        <PinToggle name="delta" pinned onChange={() => undefined} />
+      </>,
+    );
+    expect(parts).toContain("crumb");
+    const chip = '[data-scope="titlebar"][data-part="workspace"]';
+    const missed = parts.filter((part) => {
+      const own = `[data-scope="titlebar"][data-part="${part}"]`;
+      const selector = part === "workspace" ? chip : inAChip(part) ? `${chip} ${own}` : own;
+      return document.querySelector(selector) === null;
+    });
+    expect(missed).toEqual([]);
   });
 });

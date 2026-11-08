@@ -474,6 +474,26 @@ pub struct Part {
     pub properties: &'static [Prop],
 }
 
+/// **What a released family or part joined after it shipped** (#3226): a state its family's
+/// `states` list gained, or a property one of its parts' `properties` list gained, each of which
+/// the manifest already had. Its list says it, as ever; this says since when, so the manifest as
+/// of an earlier version ([`manifest_as_of`]) leaves it out and a released digest is unchanged.
+/// Written `since: super::NEXT`, which the release step numbers as any other `NEXT`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Joined {
+    /// A state the family's root is now keyed in.
+    State(State),
+    /// A property the part of this name now takes.
+    Property(&'static str, Prop),
+}
+
+/// One addition to a released family's or part's list ([`Joined`]), and the version it came in.
+#[derive(Debug, Clone, Copy)]
+pub struct Later {
+    pub joined: Joined,
+    pub since: u32,
+}
+
 /// **One component family**: its parts, the first its root, which carries the variant and the
 /// state; its variants; the manifest version it came in; and the grounds it is drawn on.
 #[derive(Debug, Clone, Copy)]
@@ -533,9 +553,22 @@ pub struct Family {
     /// ([`FIELD_HELP_GROUNDS`]). Its words are held to these, but a fallback never
     /// paints them, since the part does not.
     under: &'static [(&'static str, &'static [&'static str])],
+    /// **What its lists gained after it shipped** (#3226), each with the version it came in: a
+    /// state in [`Family::states`] or a property in a part's list that came later than what holds
+    /// it. Empty for a family whose lists are as it first shipped them.
+    pub later: &'static [Later],
 }
 
 impl Family {
+    /// **The version `joined` came into this family's lists in**, where [`Family::later`] dates
+    /// it (#3226); else 0, and the state's, the property's and the holder's own `since` say it.
+    pub fn joined_since(&self, joined: Joined) -> u32 {
+        self.later
+            .iter()
+            .find(|one| one.joined == joined)
+            .map_or(0, |one| one.since)
+    }
+
     /// The attribute `state` is keyed on, on this family's root.
     fn attribute(&self, state: State) -> &'static str {
         if let Some((_, own)) = own_states(self).iter().find(|(one, _)| *one == state) {
@@ -736,6 +769,47 @@ fn apart_in_nothing(
     })
 }
 
+/// **A part's own look in a state of its own, inside its root** (#3269): a tab's × under the
+/// pointer takes the quiet hover, its fill and the primary words (`tabs.css`, #4756), whatever
+/// the tab around it is in. Its keys stay its root's (`tabs.closer.hover.text` is the × of a tab
+/// under the pointer), so the colours a theme's rules and a fallback set for the part reach it
+/// everywhere but in this state ([`targets`]): what the window draws there is this look, and
+/// the floors hold it over the root's fill as drawn in each set of the root's states it can be
+/// in at once ([`Held::part_states`]).
+#[derive(Debug, Clone, Copy)]
+pub(super) struct PartState {
+    pub(super) family: &'static str,
+    pub(super) part: &'static str,
+    /// The root's state that holds whenever this one does: the pointer on the × is on its tab.
+    pub(super) within: State,
+    /// What marks the state on the part's own element, and how a sentence says it.
+    pub(super) marked: &'static str,
+    pub(super) said: &'static str,
+    pub(super) fill: &'static str,
+    pub(super) words: &'static str,
+}
+
+/// The parts with a look of their own in a state of their own ([`PartState`]).
+pub(super) const PART_STATES: &[PartState] = &[PartState {
+    family: "tabs",
+    part: "closer",
+    within: State::Hover,
+    marked: ":hover",
+    said: "under the pointer",
+    fill: "surface.hover",
+    words: "text.primary",
+}];
+
+/// The states of its own `part` of `family` has, each with its look.
+fn part_states<'a>(
+    family: &'a Family,
+    part: &'a str,
+) -> impl Iterator<Item = &'static PartState> + 'a {
+    PART_STATES
+        .iter()
+        .filter(move |one| one.family == family.name && one.part == part)
+}
+
 /// **What a part drawn apart is drawn in**, by family and part (#4000): a switcher row's count
 /// is drawn in its row, so a fill a theme gives the row is under it too.
 const APART_IN: &[(&str, &str, &str)] = &[("titlebar", "row-count", "row")];
@@ -750,7 +824,8 @@ fn holder_of(family: &Family, part: &str) -> Option<usize> {
 
 /// **What a part drawn apart takes no key of**, by family and part (#4000): an unavailable
 /// switcher row stays in the faint tier `titlebar.css` draws it in, which the check holds on the
-/// popover as a mark (`text.faint` on `surface.overlay`), so a theme's row keys never reach it.
+/// popover as a mark (`text.faint` on `surface.overlay`), so a theme's row colours never reach
+/// it ([`targets`]). Its corner does, as every row's (#3196): availability is no shape.
 const APART_EXCEPT: &[(&str, &str, &str)] = &[("titlebar", "row", ":not([data-unavailable])")];
 
 /// The sets of states a part drawn apart is measured in: at rest, each of its own states but
@@ -3129,6 +3204,12 @@ fn held_from(
                     held.apart(one);
                 }
             }
+            held.part_states(theme);
+            if held.near(coarse, |copy, one| copy.part_states(one)) {
+                for one in tints() {
+                    held.part_states(one);
+                }
+            }
             for states in &singles {
                 held.consented(drawn_in, states);
             }
@@ -3987,31 +4068,74 @@ impl Held<'_> {
         }
     }
 
-    /// **Whether a part drawn apart from the root comes near a floor in the `coarse` tints**: read
-    /// on a copy, since a reading near a floor is no fall, for [`Self::apart`] at every degree.
-    fn apart_near(&self, coarse: &[ResolvedTheme]) -> bool {
-        let family = self.family;
-        if coarse.is_empty()
-            || !family
-                .parts
-                .iter()
-                .any(|part| drawn_apart(family, part.name).is_some())
-        {
-            return false;
-        }
+    /// **Whether `read` finds a floor come near in the `coarse` tints**: read on a copy, with
+    /// [`NEAR_A_FLOOR`] as its margin, since a reading near a floor is no fall.
+    fn near(&self, coarse: &[ResolvedTheme], read: impl Fn(&mut Held<'_>, &ResolvedTheme)) -> bool {
         let mut rules = self.rules.clone();
         let mut fell = self.fell.clone();
         let before = fell.len();
         let mut copy = Held {
-            family,
+            family: self.family,
             rules: &mut rules,
             fell: &mut fell,
             margin: NEAR_A_FLOOR,
         };
         for one in coarse {
-            copy.apart(one);
+            read(&mut copy, one);
         }
         fell.len() > before
+    }
+
+    /// **Each part's own look in its own state, on its root as drawn** (#3269): a tab's × under
+    /// the pointer, its words on its fill laid over the tab's fill in every set of the tab's states
+    /// it is drawn in then (under the pointer, alone or chosen too), in each look the window draws.
+    /// The look is the family's own and no rule reaches it ([`PART_STATES`]), so where it breaks
+    /// a floor only because the theme's rules changed the root's fill under it, that look of the
+    /// root draws its default back; where its default breaks too, the token floors hold it.
+    fn part_states(&mut self, theme: &ResolvedTheme) {
+        let family = self.family;
+        for own in PART_STATES.iter().filter(|one| one.family == family.name) {
+            let Some(part) = family.parts.iter().find(|one| one.name == own.part) else {
+                continue;
+            };
+            let floor = theme.least.floor(floor_of(family, part)) + self.margin;
+            let mut sets = singles_of(family);
+            sets.extend(combined(family));
+            for states in sets.iter().filter(|one| one.contains(&own.within)) {
+                for variant in family
+                    .looks()
+                    .into_iter()
+                    .filter(|one| family.draws(one, states))
+                {
+                    let read = |rules: &[Rule]| {
+                        let under = drawn(rules, family, variant, states).fill;
+                        let on = laid_over(theme, under, &grounds(theme, family));
+                        lowest(theme, &on, own.fill, own.words)
+                    };
+                    let Some(ratio) = read(self.rules).filter(|ratio| *ratio < floor) else {
+                        continue;
+                    };
+                    if read(&[]).is_some_and(|ratio| ratio < floor) {
+                        continue;
+                    }
+                    self.fall(
+                        variant,
+                        states,
+                        format!(
+                            "the {}'s words contrast {floor}:1 with its fill {}",
+                            own.part, own.said
+                        ),
+                        Some(ratio),
+                    );
+                }
+            }
+        }
+    }
+
+    /// **Whether a part drawn apart from the root comes near a floor in the `coarse` tints**: read
+    /// on a copy, since a reading near a floor is no fall, for [`Self::apart`] at every degree.
+    fn apart_near(&self, coarse: &[ResolvedTheme]) -> bool {
+        self.near(coarse, |copy, one| copy.apart(one))
     }
 
     /// Each consent variant the window draws while `states` hold, held to the consent floors in
@@ -5024,6 +5148,32 @@ fn written_to(rule: &Rule, property: Prop) -> Option<&'static str> {
 fn targets(rule: &Rule, property: Prop, sized: bool) -> Vec<String> {
     let own = selector(rule, sized);
     let part = rule.family.parts[rule.part].name;
+    // **A part's own state draws its own fill and words** (#3269): the fill or the words a theme
+    // or a fallback sets for the part never reach it there, where [`PART_STATES`] says what is
+    // drawn; anything else does, its size and corners as a state never changes them.
+    if rule.part != 0 && matches!(property, Prop::Fill | Prop::Text) {
+        let not: String = part_states(rule.family, part)
+            .map(|one| format!(":not({})", one.marked))
+            .collect();
+        if !not.is_empty() {
+            let at = format!(
+                "[data-scope=\"{}\"][data-part=\"{part}\"]",
+                rule.family.name
+            );
+            return vec![own.replace(&at, &format!("{at}{not}"))];
+        }
+    }
+    // **What a part drawn apart takes no colour of** ([`APART_EXCEPT`], #4000): an unavailable
+    // switcher row keeps its faint tier, and takes the row's corner like every other (#3196).
+    if property.in_state()
+        && let Some((_, _, not)) = APART_EXCEPT
+            .iter()
+            .find(|(name, one, _)| *name == rule.family.name && *one == part)
+    {
+        // `own` is the part's one `:where(…)`: the exception goes inside it, last.
+        let inside = own.strip_suffix(')').unwrap_or(&own);
+        return vec![format!("{inside}{not})")];
+    }
     // **A chat pane's band draws its Notices' ground and words itself** (#3142, #2912): the
     // state washes, never tinted, and the primary tier on them. A theme's Notice colours reach a
     // Notice anywhere else, so none can draw a band Notice in the terminal's own fill.
@@ -5314,12 +5464,8 @@ fn selector(rule: &Rule, sized: bool) -> String {
             .chain(rule.also.iter().copied())
             .map(|one| rule.family.attribute(one))
             .collect();
-        let except = APART_EXCEPT
-            .iter()
-            .find(|(name, one, _)| *name == rule.family.name && *one == part)
-            .map_or("", |(_, _, not)| *not);
         return format!(
-            ":where([data-scope=\"{}\"][data-part=\"{part}\"]{state}{except})",
+            ":where([data-scope=\"{}\"][data-part=\"{part}\"]{state})",
             rule.family.name
         );
     }
@@ -5612,64 +5758,7 @@ pub fn manifest_as_of(version: u32) -> Value {
     let families: Vec<Value> = MANIFEST
         .iter()
         .filter(|family| family.since <= version)
-        .map(|family| {
-            let mut said = json!({
-                "name": family.name,
-                "description": family.description,
-                "since": family.since,
-                "focused": family.focused,
-                "states": family.states.iter().filter(|state| state.since() <= version).map(|state| state.name()).collect::<Vec<_>>(),
-                "parts": family.parts.iter().filter(|part| part.since <= version).map(|part| {
-                    let mut said = json!({
-                        "name": part.name,
-                        "description": part.description,
-                        "since": part.since,
-                        "properties": part.properties.iter().filter(|p| p.since() <= version).map(|p| p.name()).collect::<Vec<_>>(),
-                    });
-                    // Only what a family has that the first did not, so the button's entry
-                    // reads as it did at version 2.
-                    if family.around.contains(&part.name) {
-                        said["around"] = Value::Bool(true);
-                    }
-                    // Drawn apart from the root, in no variant of it and only in its own states
-                    // (#3656). Said from the next release on: what version 12 shipped keeps its
-                    // contract.
-                    if version >= APART_SINCE
-                        && let Some(carried) = drawn_apart(family, part.name)
-                    {
-                        let states: Vec<&str> = carried.iter().map(|one| one.name()).collect();
-                        said["apart"] = json!(states);
-                    }
-                    if MARKS.contains(&(family.name, part.name)) {
-                        said["mark_height"] = json!({
-                            "least": 0,
-                            "most": geometry::show(MOST_MARK).parse::<i64>().unwrap_or_default(),
-                            "unit": "px",
-                        });
-                    }
-                    said
-                }).collect::<Vec<_>>(),
-                "variants": family.variants.iter().filter(|variant| variant.since <= version).map(|variant| json!({
-                    "name": variant.name,
-                    "description": variant.description,
-                    "since": variant.since,
-                    "consent": variant.consent.is_some(),
-                })).collect::<Vec<_>>(),
-            });
-            // Only what a family has that the others do not (#3143): drawn in marks, and keyed on
-            // attributes of its own in a state.
-            if marked(family).is_some() {
-                said["marks"] = Value::Bool(true);
-            }
-            if !own_states(family).is_empty() {
-                said["attributes"] = own_states(family)
-                    .iter()
-                    .map(|(state, attribute)| (state.name().to_owned(), Value::from(*attribute)))
-                    .collect::<Map<String, Value>>()
-                    .into();
-            }
-            said
-        })
+        .map(|family| family_as_of(family, version))
         .collect();
     json!({
         "version": VERSION,
@@ -5683,8 +5772,71 @@ pub fn manifest_as_of(version: u32) -> Value {
     })
 }
 
+/// **One family's entry in the manifest as it stood at `version`**: its parts, variants and
+/// states that came in by then, each part with the properties it took by then ([`Joined`]).
+pub(super) fn family_as_of(family: &Family, version: u32) -> Value {
+    let mut said = json!({
+        "name": family.name,
+        "description": family.description,
+        "since": family.since,
+        "focused": family.focused,
+        "states": family.states.iter().filter(|state| state.since() <= version && family.joined_since(Joined::State(**state)) <= version).map(|state| state.name()).collect::<Vec<_>>(),
+        "parts": family.parts.iter().filter(|part| part.since <= version).map(|part| {
+            let mut said = json!({
+                "name": part.name,
+                "description": part.description,
+                "since": part.since,
+                "properties": part.properties.iter().filter(|p| p.since() <= version && family.joined_since(Joined::Property(part.name, **p)) <= version).map(|p| p.name()).collect::<Vec<_>>(),
+            });
+            // Only what a family has that the first did not, so the button's entry
+            // reads as it did at version 2.
+            if family.around.contains(&part.name) {
+                said["around"] = Value::Bool(true);
+            }
+            // Drawn apart from the root, in no variant of it and only in its own states
+            // (#3656). Said from the next release on: what version 12 shipped keeps its
+            // contract.
+            if version >= APART_SINCE
+                && let Some(carried) = drawn_apart(family, part.name)
+            {
+                let states: Vec<&str> = carried.iter().map(|one| one.name()).collect();
+                said["apart"] = json!(states);
+            }
+            if MARKS.contains(&(family.name, part.name)) {
+                said["mark_height"] = json!({
+                    "least": 0,
+                    "most": geometry::show(MOST_MARK).parse::<i64>().unwrap_or_default(),
+                    "unit": "px",
+                });
+            }
+            said
+        }).collect::<Vec<_>>(),
+        "variants": family.variants.iter().filter(|variant| variant.since <= version).map(|variant| json!({
+            "name": variant.name,
+            "description": variant.description,
+            "since": variant.since,
+            "consent": variant.consent.is_some(),
+        })).collect::<Vec<_>>(),
+    });
+    // Only what a family has that the others do not (#3143): drawn in marks, and keyed on
+    // attributes of its own in a state.
+    if marked(family).is_some() {
+        said["marks"] = Value::Bool(true);
+    }
+    if !own_states(family).is_empty() {
+        said["attributes"] = own_states(family)
+            .iter()
+            .filter(|(state, _)| family.joined_since(Joined::State(*state)) <= version)
+            .map(|(state, attribute)| (state.name().to_owned(), Value::from(*attribute)))
+            .collect::<Map<String, Value>>()
+            .into();
+    }
+    said
+}
+
 /// **Whether the manifest holds anything no release has shipped yet**: a family, a part, a
-/// variant, a state or a property `since` [`NEXT`].
+/// variant, a state or a property `since` [`NEXT`], or a state or a property a released family
+/// or part joined since ([`Family::later`]).
 pub fn has_unreleased() -> bool {
     APART_SINCE > VERSION
         || STATES.iter().any(|state| state.since() > VERSION)
@@ -5696,6 +5848,7 @@ pub fn has_unreleased() -> bool {
                     .variants
                     .iter()
                     .any(|variant| variant.since > VERSION)
+                || family.later.iter().any(|one| one.since > VERSION)
         })
 }
 

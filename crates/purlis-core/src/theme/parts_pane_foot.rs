@@ -116,6 +116,7 @@ pub(super) const PANE_FOOT: Family = Family {
     // The track's own fill, the subtle hairline's colour.
     fills: &[("track", "border.subtle")],
     under: &[],
+    later: &[],
 };
 
 /// **The foot's colours as `pane-foot.css` draws them**: no ground of its own (the terminal's
