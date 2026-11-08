@@ -199,8 +199,14 @@ pub fn leaf_name(name: &str) -> &str {
 }
 
 /// **The skill a run recorded as `name` is of**: [`leaf_name`], and a built-in skill's by the name
-/// it reads as now where it was recorded by an older one (`purlis:secrets`, [`Reference::parse`]).
+/// it reads as now where it was recorded by an older one (`purlis:secrets`, [`Reference::parse`]),
+/// and a built-in's that left the bundle by the plane skill it left for
+/// ([`Reference::written_left`]).
 pub fn run_name(name: &str) -> std::borrow::Cow<'_, str> {
+    // A built-in that left for a plane skill: its runs follow it there (#5725).
+    if let Some(plane) = Reference::written_left(name) {
+        return plane.into();
+    }
     match Reference::parse(name) {
         Some(Reference::BuiltIn(own)) => own.into(),
         _ => leaf_name(name).into(),

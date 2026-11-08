@@ -103,6 +103,8 @@ pub fn by_name<'a>(set: &'a SkillSet, name: &str) -> Option<&'a Effective> {
             effective.origin == crate::Origin::BuiltIn && effective.skill.name == own
         });
     }
+    // A built-in that left for a plane skill, by any name it had: that plane skill (#5725).
+    let name = crate::Reference::written_left(name).unwrap_or(name);
     let bare = match name.rsplit_once(':') {
         Some(("skills", leaf)) => leaf,
         _ => name,

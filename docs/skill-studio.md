@@ -94,7 +94,7 @@ installed from a source shows the source's label after its name, such as
 
 **Search skills** finds a skill by what you type. The chips under it, **The project's own**,
 **Built-in**, **On** and **Off or left out**, narrow the list. The built-in skills fold into one
-quiet line, such as *13 built-in skills*, unless one of them needs your attention.
+quiet line, such as *12 built-in skills*, unless one of them needs your attention.
 
 Pick a row to open the skill's page, with its tabs **Overview**, **Text**, **Files**,
 **History**, **Grades** and **Runs**. **Overview** says who gets it, **Where it lives** (its level and

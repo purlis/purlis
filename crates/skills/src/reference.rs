@@ -18,6 +18,12 @@ pub const OLD_BUILT_IN_PREFIX: &str = BUILT_IN_PREFIXES[1];
 /// the prefix is, so it means this skill even bare.
 const RENAMED: [(&str, &str); 1] = [("purlis-building-purlis-ui", "purlis-building-ui")];
 
+/// **Built-in skills that left the bundle for a plane skill**, the name each had in the bundle
+/// and the plane skill's (spec #5714 Q35, #5725). Any name the built-in had reads as the plane
+/// skill, so a persona's list and a run recorded under the old name follow it; the plane skill
+/// reaches a chat only where the project has it, and the persona lint says where it went.
+const LEFT: [(&str, &str); 1] = [("purlis-building-ui", "building-purlis-ui")];
+
 /// One entry of a persona's `skills:` list.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Reference {
@@ -45,8 +51,8 @@ impl Reference {
         }
         let Some((prefix, name)) = written.split_once(':') else {
             return Some(match renamed(written) {
-                Some(own) => Self::BuiltIn(own.to_owned()),
-                None => Self::Named(written.to_owned()),
+                Some(own) => Self::built_in(own.to_owned()),
+                None => Self::built_in(written.to_owned()).left_or(written),
             });
         };
         let (prefix, name) = (prefix.trim(), name.trim());
@@ -54,13 +60,43 @@ impl Reference {
             return None;
         }
         Some(if BUILT_IN_PREFIXES.contains(&prefix) {
-            Self::BuiltIn(built_in_named(name))
+            Self::built_in(built_in_named(name))
         } else {
             Self::Harness {
                 plugin: prefix.to_owned(),
                 name: name.to_owned(),
             }
         })
+    }
+
+    /// The built-in skill `own`, or the plane skill it left for ([`LEFT`]).
+    fn built_in(own: String) -> Self {
+        match LEFT.iter().find(|(old, _)| *old == own) {
+            Some((_, plane)) => Self::Named((*plane).to_owned()),
+            None => Self::BuiltIn(own),
+        }
+    }
+
+    /// A bare `written` that is no built-in's name ([`Self::built_in`] kept it built in) is a
+    /// plane or harness skill's name, as written.
+    fn left_or(self, written: &str) -> Self {
+        match self {
+            Self::BuiltIn(_) => Self::Named(written.to_owned()),
+            named => named,
+        }
+    }
+
+    /// **The plane skill a built-in skill left the bundle for, where the entry `written` names
+    /// that built-in by any name it had** ([`LEFT`], #5725): what the persona lint says to write
+    /// in its place. `None` for any other entry, the plane skill's own name included.
+    pub fn written_left(written: &str) -> Option<&'static str> {
+        let Some(Self::Named(plane)) = Self::parse(written) else {
+            return None;
+        };
+        let written = written.trim();
+        LEFT.iter()
+            .find(|(_, to)| *to == plane && written != *to)
+            .map(|(_, to)| *to)
     }
 
     /// **Whether the entry `written` names a built-in skill with [`OLD_BUILT_IN_PREFIX`]**

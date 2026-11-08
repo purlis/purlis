@@ -799,3 +799,34 @@ fn with_the_skill_studio_off_a_skills_line_is_said_to_be_unread_and_not_checked(
     );
     assert_eq!(messages(&linter(&naming("")).definition("s")), vec![]);
 }
+
+/// #5725: the window-building guide left the bundle for a plane skill. An entry by any name it
+/// had still reaches that skill, and the lint says where it went; where the project has no such
+/// skill, the entry is also one its chats start without.
+#[test]
+fn a_skills_entry_naming_the_built_in_that_left_says_where_it_went_5725() {
+    let bundle = tempfile::tempdir().unwrap();
+    skill_folder(&bundle.path().join("skills"), "purlis-handoff");
+    let linted = |p: &Plane| {
+        Linter::new(p.root(), p.root())
+            .with_home(None)
+            .with_built_in(Some(bundle.path().join("skills")))
+            .with_studio(true)
+            .definition("s")
+    };
+    let moved = "`skills:` entry 'purlis:purlis-building-ui' names a skill purlis no longer \
+                 ships: it is the project skill `building-purlis-ui` now. Write that";
+    let p = naming("purlis:purlis-building-ui, building-purlis-ui");
+    skill_folder(&p.path("skills"), "building-purlis-ui");
+    assert_eq!(messages(&linted(&p)), vec![(Level::Warn, moved)]);
+
+    let p = naming("purlis:purlis-building-ui");
+    let issues = linted(&p);
+    let said = messages(&issues);
+    assert_eq!(said.first(), Some(&(Level::Warn, moved)), "{said:#?}");
+    assert!(
+        said.iter()
+            .any(|(_, line)| line.starts_with("`skills:` names building-purlis-ui: no skill")),
+        "{said:#?}"
+    );
+}

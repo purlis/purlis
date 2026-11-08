@@ -180,27 +180,39 @@ fn only_a_purlis_prefixed_name_is_reserved() {
     }
 }
 
-/// `purlis-building-ui` took a shorter name after the prefix (ADR 0099 as amended 2026-11-01).
-const BUILDING_OLD_NAMES: [&str; 5] = [
+/// Every name the window-building skill had while purlis shipped it: `purlis-building-ui`, and
+/// the names before it took a shorter one (ADR 0099 as amended 2026-11-01).
+const BUILDING_OLD_NAMES: [&str; 8] = [
+    "purlis-building-ui",
+    "purlis:purlis-building-ui",
+    "purlis:building-ui",
+    "charter:purlis-building-ui",
     "purlis-building-purlis-ui",
     "purlis:purlis-building-purlis-ui",
     "purlis:building-purlis-ui",
     "charter:building-purlis-ui",
-    "charter:purlis-building-purlis-ui",
 ];
 
+/// The plane skill the window-building guide became when it left the bundle (#5725).
+const BUILDING_ON_THE_PLANE: &str = "building-purlis-ui";
+
 #[test]
-fn every_old_name_of_the_building_skill_reads_as_its_name_now() {
+fn every_name_of_the_building_skill_reads_as_the_plane_skill_it_left_for_5725() {
     let tmp = tempfile::tempdir().unwrap();
-    let built_in = tmp.path().join("plugin/skills");
-    skill(&built_in, "purlis-building-ui");
+    let built_in = bundle(tmp.path());
+    skill(&tmp.path().join("skills"), BUILDING_ON_THE_PLANE);
     for old in BUILDING_OLD_NAMES {
         assert_eq!(
             Reference::parse(old),
-            Some(Reference::BuiltIn("purlis-building-ui".to_owned())),
+            Some(Reference::Named(BUILDING_ON_THE_PLANE.to_owned())),
             "{old}"
         );
-        assert_eq!(purlis_skills::run_name(old), "purlis-building-ui", "{old}");
+        assert_eq!(
+            Reference::written_left(old),
+            Some(BUILDING_ON_THE_PLANE),
+            "{old}"
+        );
+        assert_eq!(purlis_skills::run_name(old), BUILDING_ON_THE_PLANE, "{old}");
         for route in ROUTES {
             let reference = Reference::parse(old).unwrap();
             let set = set_for(
@@ -209,19 +221,25 @@ fn every_old_name_of_the_building_skill_reads_as_its_name_now() {
                 std::slice::from_ref(&reference),
                 route,
             );
-            assert_eq!(names_of(&set), ["purlis-building-ui"], "{old} {route:?}");
+            assert!(
+                names_of(&set).contains(&BUILDING_ON_THE_PLANE),
+                "{old} {route:?}: {:?}",
+                names_of(&set)
+            );
             assert!(
                 set.left_out.is_empty(),
                 "{old} {route:?}: {:?}",
                 set.left_out
             );
             assert_eq!(
-                purlis_skills::by_name(&set, old).map(|one| one.origin),
-                Some(purlis_skills::Origin::BuiltIn),
+                purlis_skills::by_name(&set, old).map(|one| one.skill.name.as_str()),
+                Some(BUILDING_ON_THE_PLANE),
                 "{old} {route:?}"
             );
         }
     }
+    assert_eq!(Reference::written_left(BUILDING_ON_THE_PLANE), None);
+    assert_eq!(Reference::written_left("purlis:purlis-handoff"), None);
 }
 
 #[test]

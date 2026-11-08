@@ -234,8 +234,8 @@ the command line, for that session alone, and writes nothing into any config fol
   `purlis`, with every hook purlis answers — the state hooks and the Bash guard — and
   the `purlis-handoff`, `purlis-working-in-a-clone`, `purlis-update`, `purlis-persona`,
   `purlis-secrets`, `purlis-browser`, `purlis-safe-remove`, `purlis-compact`,
-  `purlis-add-curation-action`, `purlis-smart-close`, `purlis-theme`, `purlis-skill-studio` and
-  `purlis-building-ui` skills, which reach the model as
+  `purlis-add-curation-action`, `purlis-smart-close`, `purlis-theme` and `purlis-skill-studio`
+  skills, which reach the model as
   `purlis:purlis-<skill>`, and the app's MCP server, `purlis` (tools `mcp__purlis__<tool>`).
   Beside it, `--settings` carries `enabledPlugins` with
   `purlis@inline` pinned on — a project file a chat can write could otherwise turn it
