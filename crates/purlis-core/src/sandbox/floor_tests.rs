@@ -2374,3 +2374,81 @@ fn a_forge_programs_folders_moved_by_a_variable_are_never_written_by_a_chat() {
         );
     }
 }
+
+/// A held name of more than one part in the home (`.local/share/dbus-1/services`, `.kube/kuberc`)
+/// is never passed by moving a folder holding it into place: at the floor of a harness purlis
+/// wraps, every folder above it in the home is pinned as an entry, whether or not a person lifted
+/// the name for the chat, and those folders a tool writes below are made before the chat starts.
+#[test]
+fn the_folders_above_a_held_name_in_the_home_are_pinned_at_a_wrapped_floor_lifted_or_not() {
+    let (_dir, root) = project();
+    let home = root.join("home");
+    std::fs::create_dir_all(&home).expect("a home");
+    let machine = homed(&home, &[]);
+    let pinned = |profile: &str, folder: &str| {
+        profile.contains(&format!(
+            "(deny file-write* (literal {}))",
+            seatbelt::quote(&home.join(folder)).expect("quoted")
+        ))
+    };
+    let mut lifted = grant::Grants::default();
+    lifted.add(&grant::What::Write(home.join(".kube/kuberc")));
+    for grants in [grant::Grants::default(), lifted] {
+        let compiled = Compiled::floor(&root, &machine, &grants);
+        for harness in [Harness::Codex, Harness::Opencode] {
+            let profile = wrapped_floor_of(harness, &compiled, &[4040]);
+            for folder in [
+                ".kube",
+                ".local/share/dbus-1",
+                ".local/share/bash-completion",
+                ".local/share/nvim/site",
+                ".local/share/fish",
+            ] {
+                assert!(
+                    pinned(&profile, folder),
+                    "{harness:?} {:?}: {folder} not pinned",
+                    compiled.widened.lifted
+                );
+            }
+        }
+    }
+    for folder in [".kube", ".local/share/dbus-1", ".local/share/nvim/site"] {
+        assert!(
+            usual_home_folders(Level::Floor, &machine).contains(&home.join(folder)),
+            "{folder} not made"
+        );
+    }
+}
+
+/// A name lifted for a Claude Code chat takes its entry out of the rules, and with it what pinned
+/// the folder above it where no other held name is below that folder (`.kube`,
+/// `.local/share/dbus-1`): an entry beside the name keeps that folder pinned while the chat
+/// writes the name, so it is never swapped for a link that a later chat writes through.
+#[test]
+fn the_folder_above_a_name_lifted_for_a_claude_code_chat_stays_pinned() {
+    let (_dir, root) = project();
+    let home = root.join("home");
+    std::fs::create_dir_all(&home).expect("a home");
+    let machine = homed(&home, &[]);
+    let compile = compiler(Harness::ClaudeCode).expect("a compiler");
+    for (name, above) in [
+        (".kube/kuberc", ".kube"),
+        (".local/share/dbus-1/services", ".local/share/dbus-1"),
+        (
+            ".local/share/bash-completion/completions",
+            ".local/share/bash-completion",
+        ),
+    ] {
+        let mut chat = grant::Grants::default();
+        chat.add(&grant::What::Write(home.join(name)));
+        let compiled = Compiled::floor(&root, &machine, &chat);
+        assert_eq!(compiled.widened.lifted, vec![home.join(name)], "{name}");
+        let Form::ClaudeCode(settings) = compile(&compiled).expect("compiled") else {
+            unreachable!();
+        };
+        let pin = home.join(above).join(PIN).display().to_string();
+        let rules = settings.sandbox.to_string();
+        assert!(rules.contains(&pin), "{name}: {rules}");
+        assert!(!rules.contains(&home.join(name).display().to_string()), "{name}");
+    }
+}

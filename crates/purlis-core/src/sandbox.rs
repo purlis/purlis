@@ -980,6 +980,37 @@ pub fn names_what_may_be_lifted(path: &Path) -> bool {
     })
 }
 
+/// A name below a folder that pins it while the name itself is lifted: never a file of anyone's,
+/// and never made, only held, so every folder above it stays pinned as an entry ([`planted_home_pins`]).
+pub const PIN: &str = ".purlis-pinned";
+
+/// **Each later-code name of more than one part in `home`**, as the home spells it: every
+/// [`PLANTED`] name held with what is below it, but one that holds `**`. A pattern held at any
+/// depth names no folder above it, so a folder holding the name could be moved into place under
+/// the home; a path held pins each folder above it. A name lifted for the chat (`lifted`) is held
+/// by [`PIN`] beside it instead, so its folder above stays pinned while the chat writes the name.
+pub fn planted_home_pins(home: &Path, lifted: &[PathBuf]) -> Vec<PathBuf> {
+    PLANTED
+        .iter()
+        .filter(|planted| {
+            planted.reach == Reach::AndBelow
+                && !planted.path.contains("**")
+                && planted.path.contains('/')
+        })
+        .filter_map(|planted| {
+            let at = home.join(planted.path);
+            let is_lifted = lifted
+                .iter()
+                .any(|one| *one == at || real(one) == real(&at));
+            if is_lifted {
+                Some(at.parent()?.join(PIN))
+            } else {
+                Some(at)
+            }
+        })
+        .collect()
+}
+
 /// The project's manifests, under both names (RN-2a): `purlis.toml`, which turns the sandbox
 /// on, and `purlis.local.toml`, what the machine adds to the project and purlis reads at every
 /// later start (the variables passed to chats, plugins and extensions).
@@ -3855,6 +3886,25 @@ impl Compiled {
             },
             own_temp_only: locks.holds_to_its_folder(),
         }
+    }
+
+    /// **What a wrap purlis builds holds at the floor** ([`seatbelt::floor_profile`], read as the
+    /// Linux wrap reads it too): [`Self::held`], and each later-code name of more than one part in
+    /// the home ([`planted_home_pins`]), so every folder above it there is pinned as an entry and no
+    /// folder holding it is moved into place. Not for Claude Code's own sandbox, whose rules name
+    /// those paths themselves.
+    pub fn wrapped_held(&self) -> Vec<PathBuf> {
+        let mut held = self.held.clone();
+        if self.level == Level::Floor
+            && let Some(home) = &self.homes.home
+        {
+            for path in planted_home_pins(home, &self.widened.lifted) {
+                if !held.contains(&path) {
+                    held.push(path);
+                }
+            }
+        }
+        held
     }
 
     /// Whether every class a service holds here is held for `harness`'s chat on this system.
@@ -7000,10 +7050,15 @@ fn usual_home_folders(level: Level, machine: &Machine) -> Vec<PathBuf> {
     let homes = Homes::of(machine);
     let mut out: Vec<PathBuf> = Vec::new();
     let usual = [home.join(".local/share"), home.join(".config")];
+    // And the folders above each name a person may lift, which the floor pins as entries
+    // ([`Compiled::wrapped_held`], and Claude Code's own rules): a tool's first run, and a lift,
+    // write below them.
+    let above = claude::above_what_may_be_lifted(home);
     for folder in usual
         .iter()
         .chain(homes.data.iter())
         .chain(homes.config.iter())
+        .chain(above.iter())
     {
         let plain = folder
             .components()

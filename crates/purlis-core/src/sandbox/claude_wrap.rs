@@ -185,7 +185,7 @@ pub fn wrap(compiled: &Compiled) -> Result<Wrap, Uncompilable> {
     Ok(Wrap {
         os: compiled.os,
         level: compiled.level,
-        held: compiled.held.clone(),
+        held: compiled.wrapped_held(),
         denied: compiled.denied.paths.clone(),
         widened: Box::new(compiled.widened.clone()),
         granted: compiled.writable.clone(),
