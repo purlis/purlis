@@ -16,7 +16,7 @@ import { $, browser, expect } from "@wdio/globals";
 import { press } from "../acting.js";
 import { anAnswerIsWaiting, noAnswerWaits, theNextFolderPickAnswers } from "../dialogs.js";
 import { THE_RUNS_TREE } from "../harness.js";
-import { closeProject } from "../opening.js";
+import { closingByTheWindow } from "../opening.js";
 import { ask, inFront, PROJECTS } from "../switching.js";
 
 /**
@@ -157,10 +157,10 @@ describe("a folder that is not a project is offered to be made one", function ()
       if (!up) break;
       await browser.keys(["Escape"]);
     }
-    if (local !== "") {
-      const closer = `${PROJECTS} [role="tab"][aria-label="${basename(local)}"]`;
-      if (await $(closer).isExisting()) await closeProject(closer);
-    }
+    // A close by the window that fails still leaves the rest to do (#5580, #5609): this `after`
+    // once stopped at the close question, with this machine's project open and in front for
+    // every spec after it.
+    const failed = await closingByTheWindow(local);
     for (const plane of (await ask<string[]>("open_planes")).filter((one) => one !== first))
       await ask("close_plane", { plane });
     if (local !== "") {
@@ -168,6 +168,7 @@ describe("a folder that is not a project is offered to be made one", function ()
       await ask("forget_project", { path: local }).catch(() => undefined);
     }
     await backTo(first);
+    if (failed !== undefined) throw failed;
   });
 
   it("leaves the folder untouched and opens nothing on Not now", async () => {
