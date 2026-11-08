@@ -971,7 +971,8 @@ struct Wanted<'a> {
 impl Wanted<'_> {
     /// Whether `row` is of this copy.
     fn holds(&self, row: &Graded) -> bool {
-        row.skill == self.name
+        // A row recorded under a built-in skill's name before a rename is of it now (#5724).
+        purlis_skills::name_now(&row.skill) == self.name
             && match &self.level {
                 None => true,
                 Some(word) => row.level.is_none() || row.level == *word,

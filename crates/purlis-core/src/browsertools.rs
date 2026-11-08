@@ -761,8 +761,8 @@ fn s_login() -> Value {
             },
             "user_key": {
                 "type": "string",
-                "description": "For a login your persona doesn't declare: the vault key of the \
-                                user name, if the page asks for one.",
+                "description": "For a login your persona doesn't declare: the vault key of \
+                                the login's user name, if the page asks for one.",
             },
             "key": {
                 "type": "string",

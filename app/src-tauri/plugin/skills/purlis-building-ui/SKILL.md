@@ -1,6 +1,6 @@
 ---
 name: purlis-building-ui
-description: Build or change purlis's own window — its screens, dialogs and component families in a purlis/purlis checkout's `app/src` — from the families in `app/src/ui`, with stories, axe, keyboard tests and screenshot baselines, until every check is green. Use when asked to add, change, fix or restyle a part of the purlis app's UI, or a component family and its theme parts.
+description: When changing purlis's own window in a purlis/purlis checkout, build it from the families in `app/src/ui`, with stories, axe and keyboard tests, until every check is green. Use when asked to add, change, fix or restyle the purlis app's UI.
 ---
 
 # Building purlis's UI
@@ -32,9 +32,9 @@ before you write the code it covers:
 A change to what a screen looks like or how it is laid out is drawn as a **prototype** before it
 is built: a standalone `app/src/<Screen>.prototype.html` on a `prototype/<name>` branch, never
 merged (`prototype/switcher`, `prototype/start-chat-dialog`, `prototype/settings-page` are the
-precedents). The operator looks at it and rules. A fix that keeps today's look needs none.
+precedents). The person looks at it and rules. A fix that keeps today's look needs none.
 
-Once a prototype is approved, **build it 1:1** (operator ruling on spec #2897): every
+Once a prototype is approved, **build it 1:1** (the person's ruling on spec #2897): every
 prototyped size, gap, colour role and behaviour, nothing lost. Where an ADR, a later ruling or the
 deviations in the pinned [prototype audit](https://github.com/purlis/purlis/blob/f4bb15744991dc9482b52dc2741f50b66e871425/docs/research/prototype-audit.md)
 (§7) differ from the prototype, build to the ruling and record it as a D-line in the pull request.
@@ -155,4 +155,4 @@ UI work is done when every check above is green on the pull request and:
 - every control is a family's, with lint at error for each family the change moved;
 - each screen a prototype drew matches it on screen, deviations recorded as D-lines;
 - the docs say what changed (`docs/ui-primitives.md` for a family, `themes.md` for its parts);
-- the operator has had the before and after look at every screen it changes.
+- the person has had the before and after look at every screen it changes.

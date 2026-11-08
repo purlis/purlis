@@ -171,11 +171,15 @@ impl HarnessAdapter for Opencode {
     }
 
     /// opencode 1.18.33 puts every skill in its system prompt with no limit at all, so purlis's
-    /// budget is the only one its chats have (ADR 0102 §1), and no description is cut. A
-    /// manual-only skill is handed without its description, which keeps it out of the listing
-    /// ([`Self::skill_frontmatter`]).
+    /// budget is the only one its chats have (ADR 0102 §1), and no description is cut. It is
+    /// 8,000 characters, where the built-ins take at most 5,000 (spec #5714's Q37), so they
+    /// leave room for the plane's own skills. A manual-only skill is handed without its
+    /// description, which keeps it out of the listing ([`Self::skill_frontmatter`]).
     fn skill_budget(&self) -> crate::skills::Budget {
-        super::SKILL_BUDGET
+        crate::skills::Budget {
+            chars: 8_000,
+            ..super::SKILL_BUDGET
+        }
     }
 
     /// **opencode 1.18.33** (`skill/index.ts`, research of 2026-10-20): it reads `name` and

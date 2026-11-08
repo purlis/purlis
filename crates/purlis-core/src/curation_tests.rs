@@ -1228,15 +1228,15 @@ fn a_builtins_prompt_is_its_harnesss_start_of_its_skill_and_a_personas_stays_as_
         .iter()
         .find(|a| a.id == "charter/compact")
         .unwrap();
-    let sentence = "Use the purlis-compact skill to compact and improve the persona ops.";
+    let sentence = "Use the purlis-tidy-memory skill to compact and improve the persona ops.";
     assert_eq!(compact.prompt, sentence);
     assert_eq!(
         compact.prompt_on(Some(Harness::ClaudeCode)),
-        "/purlis:purlis-compact compact and improve the persona ops"
+        "/purlis:purlis-tidy-memory compact and improve the persona ops"
     );
     assert_eq!(
         compact.prompt_on(Some(Harness::Opencode)),
-        "/purlis-compact compact and improve the persona ops"
+        "/purlis-tidy-memory compact and improve the persona ops"
     );
     assert_eq!(compact.prompt_on(Some(Harness::Codex)), sentence);
     assert_eq!(compact.prompt_on(None), sentence);
@@ -1248,5 +1248,61 @@ fn a_builtins_prompt_is_its_harnesss_start_of_its_skill_and_a_personas_stays_as_
         );
     } else {
         panic!("the persona's action is offered: {:?}", got.warnings);
+    }
+}
+
+#[test]
+fn persona_lint_warns_when_a_curation_prompt_names_a_built_in_skill_by_its_old_name_5724() {
+    let dir = plane(&["ops"], &[], None);
+    let root = dir.path();
+    declare(
+        root,
+        "ops",
+        "tidy",
+        "---\nlabel: Tidy\non: workspace\n---\n\nUse the purlis-compact skill on {subject.name}.\n",
+    );
+    declare(
+        root,
+        "ops",
+        "fresh",
+        "---\nlabel: Fresh\non: workspace\n---\n\nUse the purlis-tidy-memory skill on {subject.name}.\n",
+    );
+
+    let issues: Vec<(Level, String)> = lint(root, "ops")
+        .into_iter()
+        .map(|issue| (issue.level, issue.message))
+        .collect();
+
+    assert_eq!(
+        issues,
+        vec![(
+            Level::Warn,
+            "curation/tidy.md: the prompt names purlis-compact, which is purlis-tidy-memory now; \
+             no harness knows the old name, so write the new one"
+                .to_owned()
+        )]
+    );
+}
+
+#[test]
+fn every_built_in_curation_prompt_names_a_skill_by_the_name_it_has_now_5724() {
+    for builtin in BUILTINS {
+        assert_eq!(
+            purlis_skills::name_now(builtin.skill),
+            builtin.skill,
+            "{}",
+            builtin.id
+        );
+        assert!(
+            purlis_skills::old_names_in(builtin.template).is_empty(),
+            "{}",
+            builtin.id
+        );
+        assert!(
+            crate::skills::SHIPPED.contains(&builtin.skill),
+            "{}: {}",
+            builtin.id,
+            builtin.skill
+        );
     }
 }
