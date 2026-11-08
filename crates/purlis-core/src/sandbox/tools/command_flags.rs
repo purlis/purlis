@@ -137,7 +137,24 @@ fn shell_would_read(value: &str) -> bool {
         .split([',', '@'])
         .map(|part| part.strip_prefix("ssh://").unwrap_or(part))
         .any(dash_first);
+    // Brackets only as a whole IPv6 host, `[addr]`, with nothing after but a port.
+    let stray_brackets = value.split(',').any(|part| {
+        let part = part.strip_prefix("ssh://").unwrap_or(part);
+        let host = part.rsplit('@').next().unwrap_or(part);
+        let bracketed = host.strip_prefix('[').and_then(|rest| rest.split_once(']'));
+        match bracketed {
+            Some((inner, after)) => {
+                inner.contains(['[', ']'])
+                    || !(after.is_empty()
+                        || after
+                            .strip_prefix(':')
+                            .is_some_and(|port| port.chars().all(|c| c.is_ascii_digit())))
+            }
+            None => host.contains(['[', ']']),
+        }
+    });
     dashed
+        || stray_brackets
         || !value.chars().all(|c| {
             c.is_ascii_alphanumeric()
                 || matches!(c, '.' | '-' | '_' | '@' | ':' | ',' | '/' | '[' | ']')
@@ -428,35 +445,46 @@ pub fn names_a_command(name: &str, args: &[String]) -> Option<String> {
 /// starting with `-`: rsync passes the user as `-l user` and the host as a word of its own, each
 /// of which would then be an option of ssh's (#5876's fourth review).
 fn hands_ssh_a_dash(operand: &str) -> bool {
-    remote_part(operand).is_some_and(|remote| remote.split('@').any(dash_first))
+    remote_parts(operand)
+        .into_iter()
+        .any(|remote| remote.split('@').any(dash_first))
 }
 
 /// `operand`'s `[user@]host`, where it names a remote one: before the first `:` outside brackets
 /// (`[::1]:path` is host `::1`), unless a `/` comes first, which makes it a local path as scp and
 /// rsync read it; or a `scp://`, `sftp://` or `ssh://` URI's authority, up to its first `/`
 /// (#5876's seventh review).
-fn remote_part(operand: &str) -> Option<&str> {
+fn remote_parts(operand: &str) -> Vec<&str> {
     for scheme in ["scp://", "sftp://", "ssh://"] {
         if operand
             .get(..scheme.len())
             .is_some_and(|head| head.eq_ignore_ascii_case(scheme))
         {
             let authority = &operand[scheme.len()..];
-            return Some(authority.split('/').next().unwrap_or(authority));
+            return vec![authority.split('/').next().unwrap_or(authority)];
         }
     }
+    // As OpenSSH's `colon()` reads it (#5876's eighth review): a `[` opens brackets only where it
+    // opens the operand or follows `@`; anywhere else it is an ordinary character, and the `:`
+    // after it still ends the host.
     let mut inside = false;
+    let mut before = None;
     let end = operand.char_indices().find_map(|(at, c)| {
+        let opens = c == '[' && (at == 0 || before == Some('@'));
+        before = Some(c);
         match c {
-            '[' => inside = true,
-            ']' => inside = false,
+            '[' if opens => inside = true,
+            ']' if inside => inside = false,
             '/' if !inside => return Some(None),
             ':' if !inside => return Some(Some(at)),
             _ => {}
         }
         None
-    })??;
-    Some(&operand[..end])
+    });
+    match end {
+        Some(Some(end)) => vec![&operand[..end]],
+        _ => Vec::new(),
+    }
 }
 
 /// Whether ssh's `-o` value names a ProxyJump, whatever its case and quotes.
@@ -485,9 +513,12 @@ fn refused_form(program: &Flags, args: &[String]) -> Option<String> {
             Jumped::FirstOperand => operands
                 .iter()
                 .take(1)
-                .map(|one| remote_part(one).unwrap_or(one))
+                .flat_map(|one| {
+                    let parts = remote_parts(one);
+                    if parts.is_empty() { vec![*one] } else { parts }
+                })
                 .collect(),
-            Jumped::RemoteOperands => operands.iter().filter_map(|one| remote_part(one)).collect(),
+            Jumped::RemoteOperands => operands.iter().flat_map(|one| remote_parts(one)).collect(),
         };
         (jumped && pasted.into_iter().any(shell_would_read))
             .then(|| "a destination a shell would read".to_owned())

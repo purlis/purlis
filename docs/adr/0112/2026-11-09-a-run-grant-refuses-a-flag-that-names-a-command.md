@@ -1,6 +1,6 @@
 # Amended 2026-11-09: a Run grant refuses a flag that names a command
 
-Decided under the operator's standing order to take the recommended path (D-5799-1 to D-5799-14,
+Decided under the operator's standing order to take the recommended path (D-5799-1 to D-5799-16,
 #5799, from the adversarial reviews of #5798 and #5876), recorded here as a delegated decision.
 
 `ssh`, `scp`, `sftp`, `rsync`, `kubectl`, `psql`, `mysql`, `mariadb`, `zip` and `wget` stay
@@ -19,7 +19,10 @@ in the command the person reads.
   `User`) is refused when it holds anything but what hosts, users, ports and jump lists are
   spelled with, or a user or host starting with `-`. For `rsync`, an operand whose user or host
   starts with `-` is refused wherever it stands, since rsync hands each to ssh as a word of its
-  own. A host in IPv6 brackets is judged with them taken off. Where a jump is used, the
+  own. A host in IPv6 brackets is judged with them taken off; an
+  operand's host is read as OpenSSH's `colon()` reads it (a `[` opens brackets only at the start
+  or after `@`, and a `/` before the first `:` makes it a local path); brackets are let through
+  only as a whole `[address]`; and a `scp://`, `sftp://` or `ssh://` URI's host is its authority. Where a jump is used, the
   hosts ssh pastes into the jump's command (ssh's and sftp's destination, scp's remote hosts) are
   held to the same rule.
 - **A program's own tools are read by rows of their own**, ahead of the row their name's first

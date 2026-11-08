@@ -664,3 +664,21 @@ fn scp_and_sftp_uris_hosts_are_held_to_a_jumps_rule_and_a_slash_before_a_colon_i
     );
     offered("sftp", &["-J b sftp://deploy@[::1]:22/dir"]);
 }
+
+// The eighth review of #5876: a `[` that does not open the host is an ordinary character to scp
+// and rsync, so the `:` after it still ends the host.
+
+#[test]
+fn a_bracket_inside_a_host_does_not_hide_the_colon_that_ends_it() {
+    refused(
+        "scp",
+        "a destination a shell would read",
+        &[&["-J", "b", "f", "h$(x)[:p"], &["-J", "b", "f", "a[b:c]"]],
+    );
+    refused(
+        "rsync",
+        "an operand starting with -",
+        &[&["src", "u@-oX[:dst"], &["--", "src", "u@-oX[:dst"]],
+    );
+    offered("scp", &["-J b f [::1]:p", "-J b f u@[fe80::1]:p"]);
+}
