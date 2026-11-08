@@ -112,6 +112,10 @@ pub struct Update {
     /// The person put it away (Dismiss).
     #[serde(default)]
     pub dismissed: bool,
+    /// The first-open baseline set it aside (#5648): it was already there the first time the
+    /// project opened on this machine, so it is listed From the project, read.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub baselined: bool,
 }
 
 /// What the person did with updates.
@@ -127,6 +131,9 @@ pub enum Settle {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Store {
     dir: PathBuf,
+    /// The config home whose layout file says which projects this machine's window opened
+    /// before ([`Self::with_layout`]); `None` where it is not asked.
+    layout: Option<PathBuf>,
 }
 
 impl Store {
@@ -134,6 +141,17 @@ impl Store {
     pub fn in_data(data: &Path) -> Self {
         Self {
             dir: data.join(DIR),
+            layout: None,
+        }
+    }
+
+    /// The same store, asking the layout file under the config home `config_root` whether this
+    /// machine's window opened a project before ([`Self::first_open`]).
+    #[must_use]
+    pub fn with_layout(self, config_root: &Path) -> Self {
+        Self {
+            layout: Some(config_root.to_path_buf()),
+            ..self
         }
     }
 
@@ -141,9 +159,13 @@ impl Store {
     /// one and it is not inside a project or a git work tree (ADR 0075 §6).
     pub fn here() -> Option<Self> {
         let data = crate::datahome::root()?;
-        crate::datahome::refusal(&data)
+        let store = crate::datahome::refusal(&data)
             .is_none()
-            .then(|| Self::in_data(&data))
+            .then(|| Self::in_data(&data))?;
+        Some(match crate::machine::config_root() {
+            Some(config) => store.with_layout(&config),
+            None => store,
+        })
     }
 
     /// The file the project at `root` keeps its updates in.
@@ -159,11 +181,19 @@ impl Store {
 
     /// Notes `noted` for the project at `root`: each whose key is not kept yet is added, unread;
     /// one already kept, dismissed or not, is left as it is. Answers [`Self::read`].
+    ///
+    /// **Under a fresh first-open baseline** ([`Self::first_open`]), one that happened before the
+    /// project first opened here is noted read and baselined: it was already there.
     pub fn note(&self, root: &Path, noted: Vec<Update>, now: u64) -> io::Result<Vec<Update>> {
+        let baseline = self.baseline(root).filter(|one| one.fresh);
         self.change(root, now, |all| {
             let mut changed = false;
             for one in noted {
-                let one = bounded(one, now);
+                let mut one = bounded(one, now);
+                if baseline.as_ref().is_some_and(|base| base.covers(&one)) {
+                    one.read = true;
+                    one.baselined = true;
+                }
                 if !within(one.at, now) || all.iter().any(|kept| kept.key == one.key) {
                     continue;
                 }
@@ -286,9 +316,275 @@ fn bounded(one: Update, now: u64) -> Update {
         says: cut(&one.says, MOST_SAID),
         read: false,
         dismissed: false,
+        baselined: false,
+    }
+}
+
+/// **Snooze all** (#5647, ADR 0119): each snoozed chat, by its session, with the keys of the
+/// asks it held when it was snoozed. A chat stays away until it holds an ask its record has not
+/// ([`Store::release`]); nothing brings it back on a timer.
+pub type Snoozed = std::collections::BTreeMap<u32, Vec<String>>;
+
+/// The most chats one project keeps snoozed; the lowest session numbers go first.
+pub const AT_MOST_SNOOZED: usize = 200;
+
+/// The most asks one snoozed chat's record keeps.
+pub const MOST_SNOOZED_ASKS: usize = 100;
+
+/// What the snooze record's file is called beside the updates' (`<project key>.snoozed.json`).
+const SNOOZED: &str = "snoozed";
+
+/// Whether chat `session`, holding the asks `asks` by key, is still away under `snoozed`: it has
+/// a record, and every ask it holds is in it. The prototype's rule (#5638).
+pub fn away(snoozed: &Snoozed, session: u32, asks: &[String]) -> bool {
+    snoozed
+        .get(&session)
+        .is_some_and(|had| asks.iter().all(|ask| had.contains(ask)))
+}
+
+impl Store {
+    /// The file the project at `root` keeps its snooze record in, beside its updates.
+    pub fn snoozed_file(&self, root: &Path) -> PathBuf {
+        self.beside(root, SNOOZED)
+    }
+
+    /// The project at `root`'s snoozed chats, as the record holds them; none where it cannot be
+    /// read.
+    pub fn snoozed(&self, root: &Path) -> Snoozed {
+        self.read_beside(root, SNOOZED)
+    }
+
+    /// Snoozes each chat of `chats` with the asks it holds, in place of any record it had.
+    /// Answers [`Self::snoozed`].
+    pub fn snooze(&self, root: &Path, chats: Snoozed) -> io::Result<Snoozed> {
+        self.change_beside(root, SNOOZED, |kept: &mut Snoozed| {
+            for (session, asks) in chats {
+                let asks = asks
+                    .iter()
+                    .take(MOST_SNOOZED_ASKS)
+                    .map(|ask| cut(ask, MOST_KEY))
+                    .collect();
+                kept.insert(session, asks);
+            }
+            while kept.len() > AT_MOST_SNOOZED {
+                kept.pop_first();
+            }
+            true
+        })
+    }
+
+    /// Brings back the chats `sessions`, or every chat where it is `None`: Show them now, and
+    /// Snooze all's Undo. Answers [`Self::snoozed`].
+    pub fn wake(&self, root: &Path, sessions: Option<&[u32]>) -> io::Result<Snoozed> {
+        self.change_beside(root, SNOOZED, |kept: &mut Snoozed| {
+            let before = kept.len();
+            kept.retain(|session, _| sessions.is_some_and(|woken| !woken.contains(session)));
+            kept.len() != before
+        })
+    }
+
+    /// Lets go of every snoozed chat that holds, in `held`, an ask it did not have when it was
+    /// snoozed: it is back, with all its asks, and stays back. A chat `held` does not name, or
+    /// one holding only asks it had, stays away. Answers what stays away.
+    pub fn release(&self, root: &Path, held: &Snoozed) -> io::Result<Snoozed> {
+        let back = |kept: &Snoozed| {
+            held.iter()
+                .filter(|(session, asks)| {
+                    kept.contains_key(session) && !away(kept, **session, asks)
+                })
+                .map(|(session, _)| *session)
+                .collect::<Vec<_>>()
+        };
+        // Read first, unlocked: the window lists its asks often, and a chat comes back rarely.
+        let kept = self.snoozed(root);
+        if back(&kept).is_empty() {
+            return Ok(kept);
+        }
+        self.change_beside(root, SNOOZED, |kept: &mut Snoozed| {
+            let back = back(kept);
+            kept.retain(|session, _| !back.contains(session));
+            !back.is_empty()
+        })
+    }
+
+    /// The file named `name` that the project at `root` keeps beside its updates:
+    /// `<project key>.<name>.json`. Each per-project record of this store has one of its own,
+    /// so the updates' day and bounds never touch it.
+    fn beside(&self, root: &Path, name: &str) -> PathBuf {
+        self.dir.join(format!(
+            "{}.{name}.json",
+            crate::sandbox::Homes::project_key(root)
+        ))
+    }
+
+    /// The record `name` beside the project at `root`'s updates; its default where it is
+    /// missing, cannot be read, or is larger than [`MOST_BYTES`].
+    fn read_beside<T: serde::de::DeserializeOwned + Default>(&self, root: &Path, name: &str) -> T {
+        use std::io::Read as _;
+        let Ok(file) = std::fs::File::open(self.beside(root, name)) else {
+            return T::default();
+        };
+        let mut text = Vec::new();
+        if file.take(MOST_BYTES + 1).read_to_end(&mut text).is_err()
+            || text.len() as u64 > MOST_BYTES
+        {
+            return T::default();
+        }
+        serde_json::from_slice(&text).unwrap_or_default()
+    }
+
+    /// Reads the record `name`, lets `change` edit it, and writes it back where it changed,
+    /// under the same lock on the folder as the updates. Answers the record as kept.
+    fn change_beside<T: serde::Serialize + serde::de::DeserializeOwned + Default>(
+        &self,
+        root: &Path,
+        name: &str,
+        change: impl FnOnce(&mut T) -> bool,
+    ) -> io::Result<T> {
+        crate::rewrite::create_dir_all(&self.dir)?;
+        let _held = crate::rewrite::Lock::bounded(&self.dir)?;
+        let mut record = self.read_beside(root, name);
+        if change(&mut record) {
+            let text = serde_json::to_string(&record).map_err(io::Error::other)?;
+            crate::rewrite::replace(
+                &self.dir,
+                &self.beside(root, name),
+                text.as_bytes(),
+                crate::rewrite::Mode::Private,
+            )?;
+        }
+        Ok(record)
+    }
+}
+
+/// **The first-open baseline** (#5648, ADR 0119): the record, made the first time a project
+/// opens on this machine, that what was already there counts as seen. Kept beside the updates
+/// (`<project key>.baseline.json`), on this machine and never in the project. A project with a
+/// record is never baselined again.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Baseline {
+    /// When the project first opened on this machine, in seconds since 1970.
+    pub at: u64,
+    /// Whether that open set the past aside: false where this machine had a seen record for the
+    /// project already (an existing user updating purlis), which loses no unread line.
+    pub fresh: bool,
+    /// The doctor's findings already there, by the causes the window dismisses them by, once it
+    /// has read the first report after a fresh open ([`Store::set_aside_findings`]); `None`
+    /// until then, so they are set aside once.
+    #[serde(default)]
+    pub findings: Option<Vec<String>>,
+}
+
+impl Baseline {
+    /// Whether `one` was already there at this baseline: it happened before the first open.
+    fn covers(&self, one: &Update) -> bool {
+        one.at <= self.at
+    }
+}
+
+/// The most findings a baseline keeps.
+pub const MOST_FINDINGS: usize = 200;
+
+/// What the baseline's file is called beside the updates' (`<project key>.baseline.json`).
+const BASELINE: &str = "baseline";
+
+impl Store {
+    /// The file the project at `root` keeps its first-open baseline in, beside its updates.
+    pub fn baseline_file(&self, root: &Path) -> PathBuf {
+        self.beside(root, BASELINE)
+    }
+
+    /// The project at `root`'s first-open baseline; `None` before its first open here, or where
+    /// the record cannot be read.
+    pub fn baseline(&self, root: &Path) -> Option<Baseline> {
+        self.read_beside(root, BASELINE)
+    }
+
+    /// **Whether this machine opened the project at `root` before** (story 4): any record it
+    /// keeps of the project says so, and only a project with none is a first open. Its updates
+    /// file (which stays, emptied, once its updates age out), a snooze record, anything of its
+    /// sandbox told, or what the window's layout file keeps of it: an arrangement, a view's own
+    /// or a dismissed Notice, which every person who used the project in a window has.
+    fn opened_before(&self, root: &Path) -> bool {
+        self.file(root).exists()
+            || self.snoozed_file(root).exists()
+            || crate::sandbox::local::told_any(root)
+            || self.layout.as_deref().is_some_and(|config| {
+                crate::windowprefs::keeps_project(config, &root.to_string_lossy())
+            })
+    }
+
+    /// **The project at `root` opens** at `now`: its baseline, made where it has none. It is
+    /// **fresh** only where this machine has no record of the project
+    /// ([`Self::opened_before`]): then the teammate Notices' seen records are written as
+    /// the project stands, so its hosts and Internet access presets are not told as new. Never
+    /// a grant: a teammate's dispatch grant or browser site still waits on the person's answer.
+    /// A project with a record keeps it as it is.
+    pub fn first_open(&self, root: &Path, now: u64) -> io::Result<Baseline> {
+        if let Some(kept) = self.baseline(root) {
+            return Ok(kept);
+        }
+        let mut made = None;
+        let kept = self.change_beside(root, BASELINE, |kept: &mut Option<Baseline>| {
+            if kept.is_some() {
+                return false;
+            }
+            let fresh = !self.opened_before(root);
+            *kept = Some(Baseline {
+                at: now,
+                fresh,
+                findings: None,
+            });
+            made = Some(fresh);
+            true
+        })?;
+        if made == Some(true) {
+            crate::sandbox::local::told_as_it_stands(root)?;
+        }
+        Ok(kept.unwrap_or(Baseline {
+            at: now,
+            fresh: false,
+            findings: None,
+        }))
+    }
+
+    /// **The doctor's first report after a fresh first open**: its findings, `keys`, were
+    /// already there, and the window puts each away until it changes. Kept once: nothing is set
+    /// aside where the baseline is not fresh or has its findings already. Answers
+    /// [`Self::read`].
+    pub fn set_aside_findings(
+        &self,
+        root: &Path,
+        keys: &[String],
+        now: u64,
+    ) -> io::Result<Vec<Update>> {
+        self.change_beside(root, BASELINE, |kept: &mut Option<Baseline>| {
+            let Some(base) = kept
+                .as_mut()
+                .filter(|one| one.fresh && one.findings.is_none())
+            else {
+                return false;
+            };
+            let keys: Vec<String> = keys
+                .iter()
+                .take(MOST_FINDINGS)
+                .map(|key| cut(key, MOST_KEY))
+                .collect();
+            base.findings = Some(keys);
+            true
+        })?;
+        Ok(self.read(root, now))
     }
 }
 
 #[cfg(test)]
 #[path = "inboxupdates_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "inboxupdates_snoozed_tests.rs"]
+mod snoozed_tests;
+
+#[cfg(test)]
+#[path = "inboxupdates_baseline_tests.rs"]
+mod baseline_tests;

@@ -55,7 +55,7 @@ import {
   targetsOf,
 } from "./panePlacement";
 import { canUndoLayout, recorded, undoLayout } from "./layoutUndo";
-import { UNDO_MS } from "./MemoryEdits";
+import { UNDO_MS } from "./undo";
 import { contentsOf, focusPane, type LayoutUndo, selectTab, type Tabs } from "./tabs";
 import { Button, IconButton } from "./ui/button/Button";
 import { Grip } from "./ui/grip/Grip";

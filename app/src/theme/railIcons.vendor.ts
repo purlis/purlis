@@ -22,7 +22,11 @@ export const LUCIDE: Readonly<Record<string, string>> = {
   skills: "sparkles",
   repos: "folder",
   changes: "workflow",
-  inbox: "bell",
+  // ADR 0119 (#5644): the hand the title bar's ✋ is, and the bell for what happened.
+  asks: "hand",
+  updates: "bell",
+  // #5645: the warning sign, for what stands wrong until it is fixed.
+  notices: "triangle-alert",
   personas: "users",
   vaults: "key",
   memory: "archive",

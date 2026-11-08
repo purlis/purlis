@@ -2,31 +2,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {
-  Fragment,
   useCallback,
-  useId,
   useLayoutEffect,
   useRef,
   useState,
   type KeyboardEvent,
-  type ReactElement,
   type ReactNode,
 } from "react";
 import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
-import { LoaderCircle, Send, X } from "lucide-react";
+import { LoaderCircle } from "lucide-react";
 import { useTabStop } from "./roving";
-import { RestartEndsLine } from "./RestartEnds";
-import {
-  commands,
-  type InboxUpdate,
-  type Offered,
-  type PlaneId,
-  type ReachedWhy,
-  type Shown,
-} from "./bindings";
-import { answerTaken, asksMoved, secretAskEntries } from "./asks";
-import { counted as countedSaid } from "./dispatches";
-import { DispatchGrantNotice } from "./DispatchGrantNotice";
+import { type Offered, type PlaneId, type Shown } from "./bindings";
 import {
   ElsewhereGroup,
   elsewhereKey,
@@ -38,73 +24,96 @@ import {
   QuietNotices,
   type Elsewhere,
 } from "./InboxElsewhere";
-import { KindMark, kindOfAsk, kindOfUpdate, RowAge, useNow } from "./InboxRow";
+import { useNow } from "./InboxRow";
 import {
   INBOX_SCOPES,
   keepInboxScope,
-  keptInboxScope,
   scopeDrawn,
   scopeOf,
   useInboxScope,
   widerWaiting,
-  type InboxScope,
   type ScopeCounts,
 } from "./inboxScope";
-import { useOpenAnswer } from "./AnswerPanel";
 import { quietSaid } from "./NeedsYou";
-import { NoticeList } from "./Notice";
-import { PersonaMark } from "./PersonaMark";
+import { NoticeList, type NoticesClear } from "./Notice";
 import {
-  askKey,
-  byChat,
-  noteAnswered,
-  noteSeen,
-  replyBytes,
-  ageOf,
-  useAnswered,
-  useAnsweredWhenGone,
-  type Answered,
-} from "./inboxRules";
-import { KIND_SAID } from "./inboxUpdates";
-import { useAllowedLately, type AllowedLately } from "./allowedLately";
-import { SETTLE_MS } from "./TaskBlocksNotice";
+  DISMISS_ALL,
+  DISMISS_ALL_TIP,
+  DismissUndo,
+  holdOrCarryOut,
+  useDismissHold,
+  type DismissHold,
+} from "./dismissHold";
+import { PersonaMark } from "./PersonaMark";
+import { askKey, byChat, noteSeen, ageOf, useAnswered, useAnsweredWhenGone } from "./inboxRules";
+import { listedFrom, type UpdateFrom } from "./inboxUpdates";
+import { useAllowedLately } from "./allowedLately";
 import { NoticeWayGuard, useNoticeSettle } from "./noticeSettle";
-import { useWayPlaces } from "./wayPlaces";
 import { useProjectShown } from "./projectShown";
-import { ChatText } from "./ChatText";
-import { capMarks } from "./combiningMarks";
-import { blankOf, marksIn, markOf } from "./invisible";
-import { AskWrites } from "./AskWrites";
-import { LoginSite, useTypedSite } from "./LoginSite";
-import { SecretAskNotice, type SecretAskGiven } from "./SecretAskNotice";
-import { SecretFillSite } from "./SecretFillNotice";
 import { ScopeSwitch } from "./ScopeSwitch";
-import { Button, ButtonRow, IconButton } from "./ui/button/Button";
-import { Card } from "./ui/card/Card";
-import { Form, TextArea, TextField } from "./ui/field/Field";
+import { Button } from "./ui/button/Button";
 import { PanelSectionTitle } from "./ui/panel/Panel";
 import { RESULTS } from "./ActionResultNotice";
-import { Tooltip } from "./ui/tooltip/Tooltip";
+import { EmptyState } from "./ui/empty-state/EmptyState";
+import { SnoozeAll, type Snoozing } from "./AsksSnooze";
 
-/** What the card of a chat waiting on a reply says where the app heard no message from it: its
- *  harness gave none, or the app was started since (#4550). */
-export const NO_MESSAGE = "No message to show. Go to chat to see what it said.";
+import { chainSaid, NothingDone } from "./inboxRowParts";
+import { Ask, Empty, EmptyScope, SCOPE_LABEL, shapeOf, stopIds } from "./InboxAsks";
+import { heldBy, UpdateList, type UpdateRow, type Updates, updateStops } from "./InboxUpdatesList";
+export { chainSaid } from "./inboxRowParts";
+export { grants, NOTICE_MOVED_JUST_NOW } from "./noticeSettle";
 
-/** What an empty Inbox says (I-12). */
-export const NOTHING_WAITS = "Nothing is waiting on you";
+// The views' rows live in their own modules; what they exported is still read from here.
+export {
+  ALLOW_OR_KEEP,
+  ALLOWED_LATELY,
+  ASK_FOLD_LINES,
+  hiddenSaid,
+  landOnGroup,
+  landOnGroupIn,
+  linesSaid,
+  MOST_LINES,
+  MOVED_JUST_NOW,
+  MOVED_ON,
+  NOT_CHECKED,
+  REPLY_HINT,
+  SCOPE_LABEL,
+  NO_MESSAGE,
+  NOTHING_WAITS,
+} from "./InboxAsks";
+export {
+  heldUpdate,
+  type UpdateAnswer,
+  type UpdateRow,
+  UPDATES,
+  type Updates,
+} from "./InboxUpdatesList";
 
 /** What an Inbox says before its project's asks were read. */
 export const NOT_READ_YET = "Reading what waits on you…";
 
+/** What Updates' two lists are called, on its switch and where one is empty (#5646). */
+export const FROM_LABEL = "Show updates from";
+export const FROM_LISTS: readonly { scope: UpdateFrom; says: string; name: string }[] = [
+  { scope: "mine", says: "Mine", name: "Mine, from your chats" },
+  { scope: "project", says: "Project", name: "Project, from the project" },
+];
+export const NOTHING_FROM: Record<UpdateFrom, string> = {
+  mine: "Nothing new from your chats",
+  project: "Nothing new from the project",
+};
+
+/** What Updates' scope switch is called (#5646). */
+export const UPDATES_SCOPE_LABEL = "Show updates in";
+
+/** What an empty Notices view says (#5645): nothing stands wrong in this project. */
+export const NOTHING_STANDS = "No Notices";
+
+/** What the Notices icon's dot says (#5645): a Notice listed says something needs fixing. */
+export const NEEDS_FIXING = "A Notice needs fixing";
+
 /** What the Notices' section is called (#1695). */
 export const NOTICES = "Notices";
-
-/** What a chain is drawn as: the session first, the chat that asked last (I-9). */
-export const chainSaid = (chain: readonly string[]) => chain.join(" › ");
-
-/** The time an answer was given, or an update happened, as the list says it. */
-const timeSaid = (at: number) =>
-  new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
 /**
  * **The Inbox** (#1692, spec #1688): everything in this project that waits on the person, at the
@@ -168,6 +177,7 @@ const timeSaid = (at: number) =>
  * alone** (I-10): an ask is never answered in bulk, so neither button is drawn among them.
  */
 export function Inbox({
+  part,
   plane,
   asks,
   onGo,
@@ -178,16 +188,27 @@ export function Inbox({
   asked,
   personaOf,
   updates,
+  project: fromTheProject,
   notices,
   reading,
   windowLines,
   onNotices,
+  onTrouble,
   onNoticeAnswer,
   elsewhere,
   here,
   workspaceOf,
   workspaceNamed,
+  snoozing,
+  hold,
 }: {
+  /**
+   * **Which view of the right bar this draws** (ADR 0119, #5644, #5645): `asks`, the asks
+   * grouped by chat with the scope switch and what waits in other windows; `updates`, the
+   * updates; or `notices`, the project's Notices, the window's own lines and Results, in the
+   * Panel's right half. Left out, all three, one after the other, as one list.
+   */
+  part?: "asks" | "updates" | "notices";
   plane: PlaneId;
   /** The project's asks, as the registry derived them last; nothing before the first read. */
   asks: readonly Shown[] | undefined;
@@ -220,12 +241,19 @@ export function Inbox({
   personaOf?: (session: number) => string | null | undefined;
   /** The project's updates, drawn after the asks (#1693); none before they were read. */
   updates?: Updates;
+  /**
+   * **What teammates changed in the project** (#5646, ADR 0119): the teammate Notices (its
+   * hosts, its presets, its dispatch grants), listed under Updates' Project and never counted.
+   */
+  project?: ReactNode;
   /** The project's Notices (#1695): every `Notice` drawn in it is listed here, in its order. */
   notices?: ReactNode;
   /** What is still being read that may list a Notice here, in words, one line each (#5325). */
   reading?: readonly string[];
   /** How many Notices the list holds that the status line counts (`countsInStatusBar`). */
   onNotices?: (count: number) => void;
+  /** How many Notices the list holds that say something needs fixing (#5645). */
+  onTrouble?: (count: number) => void;
   /** A Notice answering the person's own press arrived (`ANSWERS`, D-1695-3). */
   onNoticeAnswer?: () => void;
   /** What waits where this project's registry cannot see (#1695): chats in other windows'
@@ -246,8 +274,18 @@ export function Inbox({
   workspaceOf?: (session: number) => string | undefined;
   /** What the strip calls the workspace with that key: its name, or the plane root's words. */
   workspaceNamed?: (key: string) => string;
+  /** **Snooze all** (#5647): the asks it put away, and how to snooze and bring them back.
+   *  Without it, Asks offers no Snooze all. */
+  snoozing?: Snoozing;
+  /** **Dismiss and Dismiss all wait for their Undo here** (#5650): Updates' lines and the
+   *  Notices taken away at once, each one's own Dismiss carried out when the Undo goes. Without
+   *  it, a Dismiss is carried out at once and no Undo stands. */
+  hold?: DismissHold;
 }) {
-  if (asks !== undefined) noteSeen(plane, asks);
+  const drawsAsks = part === undefined || part === "asks";
+  const drawsUpdates = part === undefined || part === "updates";
+  const drawsNotices = part === undefined || part === "notices";
+  if (asks !== undefined && drawsAsks) noteSeen(plane, asks);
   /** How many lines the window lists in this Inbox, and where it draws them. */
   const windowLinesCount = windowLines?.count ?? 0;
   // **Only while this project is in front** (`projectShown.tsx`). The window has one list and
@@ -268,21 +306,62 @@ export function Inbox({
    * in front; every project's where it says what waits elsewhere.
    */
   const picked = useInboxScope(plane);
+  /**
+   * **An ask's Ignore waits for its Undo** (story 54), as a Dismiss does: the ask goes at once
+   * and the queue's Ignore is pressed only when the Undo goes, or the view does.
+   */
+  const ignoring = useDismissHold();
+  const unheld = asks?.filter((ask) => !ignoring.held.has(askKey(ask)));
   const inHere = (ask: Shown) => workspaceOf?.(ask.session) === here;
   const counts: ScopeCounts = {
-    project: asks?.length ?? 0,
+    project: unheld?.length ?? 0,
     ...(here !== undefined && workspaceOf !== undefined
-      ? { workspace: (asks ?? []).filter(inHere).length }
+      ? { workspace: (unheld ?? []).filter(inHere).length }
       : {}),
     ...(elsewhere !== undefined
       ? {
           all:
-            (asks?.length ?? 0) + asking.length + others.reduce((sum, one) => sum + one.count, 0),
+            (unheld?.length ?? 0) + asking.length + others.reduce((sum, one) => sum + one.count, 0),
         }
       : {}),
   };
   const scope = scopeDrawn(picked, counts);
-  const listed = asks === undefined ? [] : scope === "workspace" ? asks.filter(inHere) : asks;
+  /**
+   * **Updates' two lists** (#5646, ADR 0119): Mine, what the person's own chats and tasks did,
+   * which it opens on; or Project, what is the project's. Narrowed by the scope switch as the
+   * asks are, where the window says which workspace is in front: this workspace's are the lines
+   * of the chats filed there. The whole Inbox (no `part`) lists every update, as it did.
+   */
+  const [from, setFrom] = useState<UpdateFrom>("mine");
+  const ofList =
+    part === "updates"
+      ? (updates?.rows ?? []).filter((row) => listedFrom(row.update) === from)
+      : (updates?.rows ?? []);
+  const updateInHere = (row: UpdateRow) =>
+    row.update.session !== null && workspaceOf?.(row.update.session) === here;
+  const updateCounts: ScopeCounts = {
+    project: ofList.length,
+    ...(here !== undefined && workspaceOf !== undefined
+      ? { workspace: ofList.filter(updateInHere).length }
+      : {}),
+  };
+  const updateScope = scopeDrawn(picked, updateCounts);
+  /** How many teammate Notices Project lists now, and what Dismiss all does to them. */
+  const [teammates, setTeammates] = useState(0);
+  const [teammatesClear, setTeammatesClear] = useState<NoticesClear>();
+  const shownRows =
+    updates?.rows === undefined
+      ? undefined
+      : part !== "updates"
+        ? updates.rows
+        : updateScope === "workspace"
+          ? ofList.filter(updateInHere)
+          : ofList;
+  const updatesShown: Updates | undefined =
+    updates === undefined || part !== "updates"
+      ? updates
+      : heldBy(hold, updates, shownRows, from === "project" ? teammatesClear : undefined);
+  const listed = unheld === undefined ? [] : scope === "workspace" ? unheld.filter(inHere) : unheld;
   /** What waits in other projects is listed among every project's alone. */
   const askingShown = scope === "all" ? asking : [];
   const othersShown = scope === "all" ? others : [];
@@ -310,7 +389,11 @@ export function Inbox({
   // Read only while nothing waits, where the empty Inbox lists them (D-1700-7).
   const allowedLately = useAllowedLately(
     plane,
-    asks !== undefined && asks.length === 0 && asking.length === 0 && others.length === 0,
+    drawsAsks &&
+      asks !== undefined &&
+      asks.length === 0 &&
+      asking.length === 0 &&
+      others.length === 0,
   );
   /** A way out of a Notice drawn here was pressed on an ask: answered here once it goes. */
   const touch = useAnsweredWhenGone(plane, asks);
@@ -324,33 +407,54 @@ export function Inbox({
         group.asks.findIndex((one) => one.source === "dispatch") === at,
     ),
   }));
+  const ignore =
+    onIgnore === undefined
+      ? undefined
+      : (ask: Shown) => ignoring.hold([askKey(ask)], () => onIgnore(ask.session));
+  /** What the Undo of an Ignore says: whose ask went. */
+  const ignoredSaid = () =>
+    `Ignored ${(asks ?? [])
+      .filter((ask) => ignoring.held.has(askKey(ask)))
+      .map((ask) => chainSaid(ask.chain))
+      .join(", ")}.`;
   const shapeOfAsk = (ask: Shown) => shapeOf(ask, whyOf, onIgnore, asked);
+  /** **The asks whose Answer is open** (#5651), by key: their forms are drawn, and stops. */
+  const [answering, setAnswering] = useState<ReadonlySet<string>>(() => new Set());
+  const answerOpen = (key: string, open: boolean) =>
+    setAnswering((was) => {
+      const next = new Set(was);
+      if (open) next.add(key);
+      else next.delete(key);
+      return next;
+    });
   const shapes = new Map(
     rows.flatMap((group) => group.asks).map((ask) => [askKey(ask), shapeOfAsk(ask)]),
   );
   // **One Tab stop for the list** (`docs/ui-primitives.md`, ADR 0037): the window's roving
   // focus, so ↑ and ↓, Home and End move through the asks and their buttons in order.
+  const askRows = drawsAsks ? rows : [];
   const stops = [
-    ...rows
+    ...askRows
       .flatMap((group) => group.asks)
       .flatMap((ask) => {
         const shape = shapes.get(askKey(ask)) ?? shapeOfAsk(ask);
-        return stopIds(askKey(ask), shape, shape.answers ? shape.offers : []);
+        const key = askKey(ask);
+        return stopIds(key, shape, shape.answers ? shape.offers : [], answering.has(key));
       }),
-    ...elsewhereStops(askingShown),
-    ...hereStops(othersShown),
-    ...updateStops(updates),
+    ...(drawsAsks ? elsewhereStops(askingShown) : []),
+    ...(drawsAsks ? hereStops(othersShown) : []),
+    ...(drawsUpdates ? updateStops(updatesShown) : []),
   ];
   // The keyboard comes in on the first ask, or the first update where none asks: an item, and
   // never one of its buttons or Mark all read.
-  const firstAsk = rows[0]?.asks[0];
-  const firstUpdate = updates?.rows?.[0]?.update;
+  const firstAsk = askRows[0]?.asks[0];
+  const firstUpdate = drawsUpdates ? updatesShown?.rows?.[0]?.update : undefined;
   const stop = useTabStop(
     firstAsk !== undefined
       ? askKey(firstAsk)
-      : askingShown[0] !== undefined
+      : drawsAsks && askingShown[0] !== undefined
         ? elsewhereKey(askingShown[0])
-        : othersShown[0] !== undefined
+        : drawsAsks && othersShown[0] !== undefined
           ? hereKey(othersShown[0].plane)
           : firstUpdate === undefined
             ? undefined
@@ -384,40 +488,86 @@ export function Inbox({
   });
 
   const [noticed, setNoticed] = useState(0);
+  /** What Dismiss all on the Notices does now (#5650): none while no Notice has a Dismiss. */
+  const [noticesClear, setNoticesClear] = useState<NoticesClear>();
   const {
     at: noticesAt,
     allows: noticesAllow,
     said: noticesSaid,
   } = useNoticeSettle<HTMLElement>("moves");
   const counted = useCallback(
-    (count: number, listed: number) => {
+    (count: number, listed: number, trouble: number) => {
       // The section is drawn while it lists anything, counted or not: a doctor finding alone
       // is still a Notice to read here.
       setNoticed(listed);
       onNotices?.(count);
+      onTrouble?.(trouble);
     },
-    [onNotices],
+    [onNotices, onTrouble],
   );
 
   return (
-    <section className="inbox" data-view="inbox" aria-label="Inbox">
+    // A part is named by its view's tab panel (#3330), so only the whole list names itself.
+    <section
+      className="inbox"
+      data-view={part ?? "inbox"}
+      aria-label={part === undefined ? "Inbox" : undefined}
+    >
       {/* Drawn while any scope lists something, as the Chats view's is: nothing to narrow
           otherwise, and an empty Inbox is its one sentence. */}
-      {Object.keys(counts).length > 1 && Object.values(counts).some((count) => count > 0) && (
+      {drawsAsks &&
+        Object.keys(counts).length > 1 &&
+        Object.values(counts).some((count) => count > 0) && (
+          <div className="inbox-scope">
+            <ScopeSwitch
+              label={SCOPE_LABEL}
+              scopes={INBOX_SCOPES.flatMap((one) => {
+                const count = counts[one.scope];
+                return count === undefined
+                  ? []
+                  : [{ ...one, count, name: `${one.says}, ${count} waiting on you` }];
+              })}
+              scope={scope}
+              onPick={(to) => keepInboxScope(plane, to)}
+            />
+          </div>
+        )}
+      {/* **Updates' scope, and its two lists** (#5646): the scope switch as Asks draws it, then
+          Mine or Project, Mine first. */}
+      {part === "updates" &&
+        Object.keys(updateCounts).length > 1 &&
+        Object.values(updateCounts).some((count) => count > 0) && (
+          <div className="inbox-scope">
+            <ScopeSwitch
+              label={UPDATES_SCOPE_LABEL}
+              scopes={INBOX_SCOPES.flatMap((one) => {
+                const count = updateCounts[one.scope];
+                return count === undefined
+                  ? []
+                  : [
+                      {
+                        ...one,
+                        count,
+                        name: `${one.says}, ${count} ${count === 1 ? "update" : "updates"}`,
+                      },
+                    ];
+              })}
+              scope={updateScope}
+              onPick={(to) => keepInboxScope(plane, to)}
+            />
+          </div>
+        )}
+      {part === "updates" && (
         <div className="inbox-scope">
-          <ScopeSwitch
-            label={SCOPE_LABEL}
-            scopes={INBOX_SCOPES.flatMap((one) => {
-              const count = counts[one.scope];
-              return count === undefined
-                ? []
-                : [{ ...one, count, name: `${one.says}, ${count} waiting on you` }];
-            })}
-            scope={scope}
-            onPick={(to) => keepInboxScope(plane, to)}
-          />
+          <ScopeSwitch label={FROM_LABEL} scopes={FROM_LISTS} scope={from} onPick={setFrom} />
         </div>
       )}
+      {drawsAsks && snoozing !== undefined && asks !== undefined && (
+        <SnoozeAll listed={listed} snoozing={snoozing} />
+      )}
+      {drawsAsks && <DismissUndo hold={ignoring} cause="ask-ignored" said={ignoredSaid} />}
+      {/* What was just dismissed, while its Undo stands (#5650). */}
+      {(part === "updates" || part === "notices") && <DismissUndo hold={hold} />}
       <RovingFocusGroup.Root asChild orientation="vertical" loop={false} {...stop}>
         <div
           className="inbox-list"
@@ -432,7 +582,7 @@ export function Inbox({
               lastOn.current = null;
           }}
         >
-          {asks === undefined ? (
+          {!drawsAsks ? null : asks === undefined ? (
             // Not read yet is not empty; what the window already knows waits wider is offered.
             <EmptyScope said={NOT_READ_YET} wider={wider} onWiden={widen} />
           ) : rows.length === 0 && askingShown.length === 0 && othersShown.length === 0 ? (
@@ -474,11 +624,13 @@ export function Inbox({
                         (one) => one.session === ask.session && one.source === "dispatch",
                       )}
                       shape={shapes.get(askKey(ask)) ?? shapeOfAsk(ask)}
+                      open={answering.has(askKey(ask))}
+                      onOpen={(open) => answerOpen(askKey(ask), open)}
                       where={whereOf(ask.session)}
                       now={now}
                       onGo={() => onGo(ask.session)}
                       onAnswered={onAnswered}
-                      onIgnore={onIgnore}
+                      onIgnore={ignore === undefined ? undefined : () => ignore(ask)}
                       onTouched={(answer) => touch(ask, answer)}
                       above={stops.slice(0, stops.indexOf(askKey(ask))).join("\n")}
                     />
@@ -487,62 +639,123 @@ export function Inbox({
               </section>
             ))
           )}
-          {elsewhere !== undefined &&
+          {drawsAsks &&
+            elsewhere !== undefined &&
             askingShown.map((item) => (
               <ElsewhereGroup key={elsewhereKey(item)} item={item} onPress={elsewhere.onPress} />
             ))}
-          {elsewhere?.onOpen !== undefined && othersShown.length > 0 && (
+          {drawsAsks && elsewhere?.onOpen !== undefined && othersShown.length > 0 && (
             <OtherProjects others={othersShown} onOpen={elsewhere.onOpen} now={now} />
           )}
-          {(notices !== undefined || quiet.length > 0 || windowLines !== undefined) && (
-            <section
-              className="inbox-notices"
-              aria-label={NOTICES}
-              hidden={
-                noticed === 0 &&
-                windowLinesCount === 0 &&
-                resultsCount === 0 &&
-                (reading === undefined || reading.length === 0)
-              }
-              ref={noticesAt}
-            >
-              <PanelSectionTitle level={3} className="inbox-chain">
-                {NOTICES}
-              </PanelSectionTitle>
-              <NothingDone said={noticesSaid} />
-              {/* What may yet list a Notice here, each with its own mark (#5325): not read yet
-                  is not nothing to say. */}
-              {reading?.map((said) => (
-                <p key={said} className="pending" aria-busy="true">
-                  <LoaderCircle className="node-icon spinning" aria-hidden="true" />
-                  {said}
-                </p>
-              ))}
-              {/* The window's own lines, listed first: the window draws its one list here. */}
-              {placeWindowLines !== undefined && (
-                <div className="inbox-window-lines" ref={placeWindowLines} />
-              )}
-              <NoticeWayGuard value={noticesAllow}>
-                <NoticeList onCount={counted} onAnswer={onNoticeAnswer}>
-                  {notices}
-                  {elsewhere !== undefined && (
-                    <QuietNotices plane={plane} quiet={quiet} onPress={elsewhere.onPress} />
-                  )}
-                </NoticeList>
-              </NoticeWayGuard>
-              {/* **Results** (#3344): what the person's actions answered, newest first, each the
-              notice that stood at the top of the content, with the same ways on. */}
-              {placeResults !== undefined && (
-                <section aria-label={RESULTS} hidden={resultsCount === 0}>
-                  <PanelSectionTitle level={3} className="inbox-chain">
-                    {RESULTS}
-                  </PanelSectionTitle>
-                  <div className="inbox-results" ref={placeResults} />
-                </section>
-              )}
-            </section>
+          {/* **A chat that cannot say it waits is the ✋'s** (#1695, FROM_THE_HAND): in Asks,
+              where the hand lands, after what waits elsewhere (#5644). Never counted on the
+              status line, so the Notices' count is the same wherever it is listed. */}
+          {part === "asks" && elsewhere !== undefined && quiet.length > 0 && (
+            <NoticeList>
+              <QuietNotices plane={plane} quiet={quiet} onPress={elsewhere.onPress} />
+            </NoticeList>
           )}
-          {updates !== undefined && <UpdateList updates={updates} stops={stops} />}
+          {drawsNotices &&
+            (notices !== undefined ||
+              (part === undefined && quiet.length > 0) ||
+              windowLines !== undefined) && (
+              <section
+                className="inbox-notices"
+                aria-label={NOTICES}
+                hidden={
+                  noticed === 0 &&
+                  windowLinesCount === 0 &&
+                  resultsCount === 0 &&
+                  (reading === undefined || reading.length === 0)
+                }
+                ref={noticesAt}
+              >
+                <div className="inbox-updates-head">
+                  <PanelSectionTitle level={3} className="inbox-chain">
+                    {NOTICES}
+                  </PanelSectionTitle>
+                  {/* **Dismiss all** (#5650): each listed Notice's own Dismiss, the Notices
+                      without one left standing; an Undo stands where the view holds it. */}
+                  {part === "notices" && noticesClear !== undefined && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      tooltip={DISMISS_ALL_TIP}
+                      onPress={() => {
+                        const { keys, out } = noticesClear.take();
+                        holdOrCarryOut(hold, keys, out);
+                      }}
+                      className="inbox-go"
+                    >
+                      {DISMISS_ALL}
+                    </Button>
+                  )}
+                </div>
+                <NothingDone said={noticesSaid} />
+                {/* What may yet list a Notice here, each with its own mark (#5325): not read yet
+                  is not nothing to say. */}
+                {reading?.map((said) => (
+                  <p key={said} className="pending" aria-busy="true">
+                    <LoaderCircle className="node-icon spinning" aria-hidden="true" />
+                    {said}
+                  </p>
+                ))}
+                {/* The window's own lines, listed first: the window draws its one list here. */}
+                {placeWindowLines !== undefined && (
+                  <div className="inbox-window-lines" ref={placeWindowLines} />
+                )}
+                <NoticeWayGuard value={noticesAllow}>
+                  <NoticeList
+                    onCount={counted}
+                    onAnswer={onNoticeAnswer}
+                    hold={part === "notices" ? hold : undefined}
+                    onClear={setNoticesClear}
+                  >
+                    {notices}
+                    {elsewhere !== undefined && part === undefined && (
+                      <QuietNotices plane={plane} quiet={quiet} onPress={elsewhere.onPress} />
+                    )}
+                  </NoticeList>
+                </NoticeWayGuard>
+                {/* **Results** (#3344): what the person's actions answered, newest first, each the
+              notice that stood at the top of the content, with the same ways on. */}
+                {placeResults !== undefined && (
+                  <section aria-label={RESULTS} hidden={resultsCount === 0}>
+                    <PanelSectionTitle level={3} className="inbox-chain">
+                      {RESULTS}
+                    </PanelSectionTitle>
+                    <div className="inbox-results" ref={placeResults} />
+                  </section>
+                )}
+              </section>
+            )}
+          {/* The teammate Notices, under Project alone (#5646): never counted, so no `onCount`
+              reaches the status line. */}
+          {drawsUpdates && updatesShown !== undefined && (
+            <UpdateList updates={updatesShown} stops={stops}>
+              {part === "updates" && from === "project" && fromTheProject !== undefined && (
+                <NoticeList
+                  onCount={(_, listed) => setTeammates(listed)}
+                  hold={hold}
+                  onClear={setTeammatesClear}
+                >
+                  {fromTheProject}
+                </NoticeList>
+              )}
+            </UpdateList>
+          )}
+          {part === "updates" &&
+            (updatesShown?.rows ?? []).length === 0 &&
+            (from === "mine" || fromTheProject === undefined || teammates === 0) && (
+              <EmptyState headline={NOTHING_FROM[from]} />
+            )}
+          {part === "notices" &&
+            noticed === 0 &&
+            windowLinesCount === 0 &&
+            resultsCount === 0 &&
+            (reading === undefined || reading.length === 0) && (
+              <EmptyState headline={NOTHING_STANDS} />
+            )}
         </div>
       </RovingFocusGroup.Root>
     </section>
@@ -560,1297 +773,3 @@ export type WindowLines = {
   /** How many results the window keeps for this project. */
   results?: number;
 };
-
-/**
- * **The asks whose answers are Allow and Keep blocked** (ADR 0097 §6): a permission prompt, a
- * sandbox's host, folder or local service, a browser's sites, and a refused vault. On these, each answer that
- * allows is drawn as the `grants` variant and every other in the plain style: equal in weight,
- * and told apart at a glance in every theme by the grant's edge and its open lock. A question's choices, a removal and a browser's reach are
- * answers of another kind and keep their own looks.
- */
-export const ALLOW_OR_KEEP: ReadonlySet<Shown["source"]> = new Set<Shown["source"]>([
-  "permission",
-  "sandbox-host",
-  "sandbox-write",
-  "sandbox-local",
-  "browser-site",
-  "pool-login",
-  "pool-tool",
-  "browser-login",
-  "run-grant",
-  "secret-fill",
-  "vault",
-]);
-
-/** What one ask's row offers, decided once for its stops and its drawing. */
-type Shape = {
-  /** Why the chat waits, said in place of what it asked. */
-  why?: string;
-  /** The line drawn: the reason, or what it asked, each run of stacked marks cut (#1146). */
-  line: string;
-  /** The answers drawn: none that allows, where the line is not what the ask said whole. */
-  offers: readonly Offered[];
-  /** The first character the line marks as one a reader does not see (`⟦U+XXXX⟧`), where that
-   *  is why the core offers no Allow on a permission (SK-51, #3202). */
-  hidden?: string;
-  /** The lines a permission's action runs over, where its line puts several on one (#3502):
-   *  the count, those drawn as lines (at most `MOST_LINES`, each run of stacked marks cut), and
-   *  how many more it runs over than are drawn. */
-  lines?: { count: number; drawn: string[]; more: number };
-  /** Its answers are buttons here. */
-  answers: boolean;
-  /** It gets a reply box. */
-  reply: boolean;
-  /** Its line is what its chat said, or that there is no message (#4550), so it is drawn whole
-   *  over the lines it has, and the status line above it names the card. */
-  message: boolean;
-  /** What its chat said, or that there is no message, where its line is the reason it waits
-   *  instead. */
-  said: string | undefined;
-  /** It is a task's question, which the Answer form takes. */
-  answerable: boolean;
-  /** It gets a box for why it is kept blocked, which its chat is told with the answer
-   *  (#1987). */
-  reason: boolean;
-  /** It's a login's ask, whose site the person may change (#4595). */
-  site: boolean;
-  /** It has the queue's Ignore. */
-  ignore: boolean;
-  /** It has Go to chat: every ask but a profile's, which is about no chat (#2035). */
-  go: boolean;
-};
-
-function shapeOf(
-  ask: Shown,
-  whyOf: ((session: number) => string | undefined) | undefined,
-  onIgnore: ((session: number) => void) | undefined,
-  asked: ((session: number) => boolean) | undefined,
-): Shape {
-  const waits = ask.source === "question" || ask.source === "terminal";
-  const why = ask.source === "question" ? whyOf?.(ask.session) : undefined;
-  // A chat that both asked and has a reason (a report with nowhere to go, say) still asked:
-  // while it is itself waiting, it gets the box beside the reason (#1700).
-  const reply = ask.source === "question" && (why === undefined || asked?.(ask.session) === true);
-  const message = reply && why === undefined;
-  // **A line cut is not the ask, so nothing that lets it run is offered on it** (#1146): the
-  // core offers Allow only where the line says the action word for word
-  // (`hooked::shown_in_full`), and a run of combining marks cut here would undo that.
-  const { text: line, capped } = capMarks(
-    why ?? (message ? (ask.last_message ?? NO_MESSAGE) : ask.says),
-  );
-  // An edit whose change is not shown is never allowed from here (#1146), whatever it offers.
-  const unshown = ask.writes?.kind === "not-shown";
-  const offers =
-    (capped && why === undefined) || unshown
-      ? ask.options.filter((one) => !one.allows)
-      : ask.options;
-  const withheld =
-    ask.source === "permission" && why === undefined && !offers.some((one) => one.allows);
-  return {
-    why,
-    line,
-    offers,
-    hidden: withheld ? withheldFor(line) : undefined,
-    lines: withheld ? linesOf(ask) : undefined,
-    answers:
-      ask.source !== "dispatch" && ask.options.length > 0 && ask.answer.via !== "in-its-pane",
-    reply,
-    message,
-    said: reply && !message ? capMarks(ask.last_message ?? NO_MESSAGE).text : undefined,
-    answerable: ask.source === "task-question",
-    site: ask.login != null,
-    reason:
-      (ask.answer.via === "sandbox-block" ||
-        ask.answer.via === "browser" ||
-        ask.answer.via === "browser-sites" ||
-        ask.answer.via === "browser-login" ||
-        ask.answer.via === "secret-fill" ||
-        ask.answer.via === "vault") &&
-      ask.options.some((one) => one.id === "keep"),
-    // A chat that only waits for the person's next word asks again at its next stop, so it
-    // may be put away, as the queue always let it be. A decision never is.
-    ignore: waits && onIgnore !== undefined,
-    // An ask of no chat's (session 0: a sign-in, a sandbox-only profile, purlis's own) has no
-    // chat to go to.
-    go: ask.session !== 0 && ask.source !== "sign-in" && ask.source !== "sandbox-only",
-  };
-}
-
-/**
- * **The mark that keeps a permission's Allow away** (SK-51, #3202): the core offers Allow only
- * on a line that says its action word for word and hides nothing by purlis's one rule
- * (`hooked::shown_in_full`), and the registry writes each character it hides as its mark
- * (`asking::said_inertly`), a `⟦` the chat wrote itself as `⟦U+27E6⟧`. So any mark but that one
- * on the line is a character the action holds that reads otherwise here: a no-break or an en
- * space that looks like a space, a control, a bidi override. Where it holds several, the row
- * names the one that misleads most (#3470): a line break, which can hide a second command, then
- * any other hidden character, then a blank that looks like a space.
- */
-function withheldFor(line: string): string | undefined {
-  const marks = marksIn(line)
-    .map((one) => one.mark)
-    .filter((one) => one !== markOf("\u27E6"));
-  const rank = (mark: string) => {
-    const kind = blankOf(mark);
-    return kind === "break" ? 0 : kind === "blank" ? 2 : 1;
-  };
-  return marks.reduce<string | undefined>(
-    (best, one) => (best === undefined || rank(one) < rank(best) ? one : best),
-    undefined,
-  );
-}
-
-/** The most lines of a command drawn on its row (#3502); the rest are counted. */
-export const MOST_LINES = 5;
-
-/** **The lines a permission's action runs over** (#3502): the core says how many where the
- *  ask's line puts several on one, and gives each as the line has it (`asking::lines_of`). They
- *  are the line, split where the command breaks one, so drawing them shows nothing it does not. */
-function linesOf(ask: Shown): Shape["lines"] {
-  if (ask.lines === undefined || ask.lines === null || ask.lines.count < 2) return undefined;
-  const drawn = ask.lines.shown.slice(0, MOST_LINES).map((one) => capMarks(one).text);
-  return { count: ask.lines.count, drawn, more: Math.max(0, ask.lines.count - drawn.length) };
-}
-
-/** Why a permission over several lines offers no Allow (#3502): its line is not what runs. */
-export const linesSaid = (lines: NonNullable<Shape["lines"]>) =>
-  lines.drawn.length > 0
-    ? `Allow is not offered. It runs over ${lines.count} lines.`
-    : `Allow is not offered. It runs over ${lines.count} lines, put on one here.`;
-
-/** What a row says of the lines it does not draw. */
-const moreLines = (more: number) => `and ${countedSaid(more, "more line", "more lines")}`;
-
-/** An ask's line, each mark on it drawn as one (`invisible-char`), apart from the words. Its
- *  parts, not a component of its own, so the tooltip still reads the words it repeats. */
-function markedLine(line: string): ReactNode[] {
-  const parts: ReactNode[] = [];
-  let at = 0;
-  for (const { mark, at: from } of marksIn(line)) {
-    parts.push(line.slice(at, from));
-    parts.push(
-      <mark key={from} className="invisible-char">
-        {mark}
-      </mark>,
-    );
-    at = from + mark.length;
-  }
-  parts.push(line.slice(at));
-  return parts;
-}
-
-/** The stops of one ask's row, in the order it draws them. A fold's button is a stop too, and
- *  not listed: whether it is drawn is `ChatText`'s measure. The keyboard leaving from one comes
- *  back to the list at its usual stop. */
-function stopIds(key: string, shape: Shape, options: readonly Offered[] = []): string[] {
-  return [
-    key,
-    // A profile's Ask is about no chat (#2035): there is no chat to go to.
-    ...(shape.go ? [`${key}:go`] : []),
-    ...(shape.ignore ? [`${key}:ignore`] : []),
-    ...(shape.site ? [`${key}:site`] : []),
-    ...(shape.reason ? [`${key}:reason`] : []),
-    ...options.map((option) => `${key}:${option.id}`),
-    ...(shape.reply ? [`${key}:reply`, `${key}:send`] : []),
-    ...(shape.answerable ? [`${key}:answer`] : []),
-  ];
-}
-
-/** One stop of the list's roving focus. */
-function Stop({
-  id,
-  focusable = true,
-  children,
-}: {
-  id: string;
-  focusable?: boolean;
-  children: ReactElement;
-}) {
-  return (
-    <RovingFocusGroup.Item asChild tabStopId={id} focusable={focusable}>
-      {children}
-    </RovingFocusGroup.Item>
-  );
-}
-
-/** An edit's change, drawn above its answers, which wait for it (#1146); any other ask's
- *  answers as they are. */
-function WithWrites({
-  ask,
-  onDrawn,
-  children,
-}: {
-  ask: Shown;
-  onDrawn: () => void;
-  children: ReactNode;
-}) {
-  if (ask.writes === undefined || ask.writes === null) return <>{children}</>;
-  return (
-    <AskWrites writes={ask.writes} onDrawn={onDrawn}>
-      {children}
-    </AskWrites>
-  );
-}
-
-/** What the row says a hidden character does, by the kind of blank it is (#3470). */
-const DOES = {
-  break: "that breaks the line here",
-  blank: "that looks like another one here",
-  hidden: "a reader does not see here",
-} as const;
-
-/** What a row says of a hidden character a permission holds. */
-const holdsSaid = (mark: string, also = false) =>
-  `It ${also ? "also holds" : "holds"} ${mark}, a character ${DOES[blankOf(mark) ?? "hidden"]}.`;
-
-/** Why a permission holding `mark` offers no Allow (SK-51, #3202; #3470). */
-export const hiddenSaid = (mark: string) => `Allow is not offered. ${holdsSaid(mark)}`;
-
-/** Why a permission over several lines offers no Allow, and the hidden character it holds too,
- *  where it holds one (#3502). */
-const withheldSaid = (lines: NonNullable<Shape["lines"]>, mark: string | undefined) =>
-  mark === undefined ? linesSaid(lines) : `${linesSaid(lines)} ${holdsSaid(mark, true)}`;
-
-/** What a row says of where it waits. */
-const SOURCE_SAID: Record<Shown["source"], string> = {
-  permission: "Asks your permission",
-  dispatch: "Asks to dispatch",
-  "sandbox-host": "Asks to reach a host",
-  "sandbox-write": "Asks to write in a folder",
-  "sandbox-local": "Asks to reach a service on this machine",
-  "workspace-removal": "Asks you to remove a workspace",
-  "proposed-change": "Proposes a change for you to apply",
-  "runner-write": "Asks, from a pool's runner, to change this project",
-  "runner-dispatch": "Asks, from a pool's runner, to start a chat here",
-  "sign-in": "Asks you to sign a profile in",
-  "sandbox-only": "Asks you to make a sandbox-only profile",
-  "old-harness-plugins": "Old harness plugin settings, ignored now",
-  browser: "Asks what its browser may reach",
-  "browser-needs-you": "Needs you in its browser",
-  "browser-site": "Asks to let its browser reach a new site",
-  "pool-login": "Asks to log its browser in on a pool's runner",
-  "pool-tool": "Asks to send a tool its vault values for a run on a pool's runner",
-  secret: "Asks you for a secret its vault doesn't hold",
-  vault: "Refused a vault its persona isn't tagged for",
-  "browser-login": "Asks to log its browser in to a site with vault credentials",
-  "secret-fill": "Asks to put a vault secret into a field of its browser",
-  "run-grant": "Asks you to allow a program to use a vault secret",
-  terminal: "In its terminal",
-  question: "Waiting on your reply",
-  "task-question": "Asks you, through its asking chat",
-};
-
-/** Why a task's question reached the person, as its row says it. */
-const REACHED_SAID: Record<ReachedWhy, (from: string) => string> = {
-  "passed-on": (from) => `${from} passed this on`,
-  "no-reply": (from) => `${from} didn't reply`,
-  "asker-gone": (from) => `${from} has closed`,
-};
-
-function Ask({
-  plane,
-  ask,
-  dispatches,
-  shape,
-  onGo,
-  onAnswered,
-  onIgnore,
-  onTouched,
-  above,
-  where,
-  now,
-}: {
-  plane: PlaneId;
-  ask: Shown;
-  /** Where its chat is: project · workspace · persona, as much as the window says. */
-  where: string;
-  /** The time its age is said against. */
-  now: number;
-  /** Its chat's dispatch asks, which its dispatch Notice draws its answers from (#1700). */
-  dispatches: readonly Shown[];
-  shape: Shape;
-  /** The stops drawn above it: one changing moves it (`useSettledPlace`). */
-  above: string;
-  onGo: () => void;
-  onAnswered?: (ask: Shown, option: Offered, live: boolean) => void;
-  onIgnore?: (session: number) => void;
-  /** A way out of the Notice drawn in the row was pressed, with its words. */
-  onTouched: (answer: string) => void;
-}) {
-  const id = useId();
-  const [said, setSaid] = useState<string>();
-  const [busy, setBusy] = useState(false);
-  /** Why the person keeps it blocked, if they say: told to the chat with the answer. */
-  const [reason, setReason] = useState("");
-  /** The site as the person changed it, on a login's ask (#4595). */
-  const [typed, setTyped] = useTypedSite(ask);
-  const who = chainSaid(ask.chain);
-  /** A secret's one notice draws its own answers (#5080). */
-  const secretNotice = ask.secret != null || ask.run != null;
-  const key = askKey(ask);
-  const openAnswer = useOpenAnswer();
-  /** Its words are drawn whole: it is a dispatch's own Notice, or an answer here allows. */
-  const whole =
-    ask.source === "dispatch" || (shape.answers && shape.offers.some((one) => one.allows));
-  /** Its words are a chat's own, not a command's or purlis's: a message it ended its turn on,
-   *  or a task's question (#5214). Never an ask an answer here allows, which is read as it is. */
-  const chatWords =
-    shape.message || (ask.source === "task-question" && !whole && shape.lines === undefined);
-
-  // An edit's change arrives after its row (#1146): its Allow waits to settle from then.
-  const [changeDrawn, setChangeDrawn] = useState(false);
-  const onChangeDrawn = useCallback(() => setChangeDrawn(true), []);
-  const here = [
-    above,
-    shape.line,
-    ...shape.offers.map((one) => one.label),
-    changeDrawn ? "drawn" : "",
-    // A login's notice drawn anew has to be read anew (#4595).
-    ask.answer.via === "browser-login" || ask.answer.via === "secret-fill" ? ask.answer.shown : "",
-  ].join("\n");
-  const { drawn, tooSoon } = useSettledPlace<HTMLLIElement>(here);
-  /** Whether `option` is an Allow on an ask of Allow and Keep blocked (ADR 0097 §6). */
-  const grants = (option: Offered) => option.allows && ALLOW_OR_KEEP.has(ask.source);
-  /** A press of `option`; on a secret's one notice (#5080), with what it gave, read once. */
-  const answer = (option: Offered, given?: () => SecretAskGiven) => {
-    if (busy) return;
-    // **An Allow waits for the row to settle** (#1695), as an update's does: with the hand's
-    // list retired, the Inbox is where a permission or a host is allowed from outside its
-    // pane, and an ask joining above must not put another's Allow under the pointer.
-    if (option.allows && tooSoon()) {
-      setSaid(MOVED_JUST_NOW);
-      return;
-    }
-    setBusy(true);
-    setSaid(undefined);
-    // A secret's values are read from their boxes as the answer is pressed, and the boxes
-    // emptied: only now, once the row has settled (#5080).
-    const got = given?.();
-    void answerTaken(
-      plane,
-      ask,
-      option.id,
-      option.id === "keep" ? reason : undefined,
-      got === undefined ? typed : got.typed,
-      got?.picked,
-      got?.remember,
-      got?.run,
-      got?.named,
-    )
-      .then(({ refused, live, opened }) => {
-        if (refused !== undefined) {
-          setSaid(refused);
-          return;
-        }
-        // A dialog of the window's was opened, where the person decides (qw356): the ask
-        // still waits, and nothing was answered here.
-        if (opened === true) return;
-        noteAnswered(plane, {
-          at: Date.now(),
-          chain: ask.chain,
-          says: ask.says,
-          answer: option.label,
-        });
-        onAnswered?.(ask, option, live);
-      })
-      .finally(() => {
-        setBusy(false);
-        // Whatever it answered, the list is read again: a refusal may mean it went elsewhere.
-        asksMoved(plane);
-      });
-  };
-
-  const body =
-    ask.source === "dispatch" ? (
-      // The dispatch's own Notice, whole: what an Allow is bound to is read before it. Only a
-      // press of one of its ways out counts as answering it here, never a tick or a scroll.
-      <div className="inbox-notice">
-        <NoticeWayGuard
-          value={(way) => {
-            // **Its answers wait for the row to settle** (#1695), as an ask's Allow does: the
-            // Notice grants, and what is under the pointer or the keyboard must be what the
-            // person read.
-            if (tooSoon()) {
-              setSaid(MOVED_JUST_NOW);
-              return false;
-            }
-            setSaid(undefined);
-            if (way.textContent) onTouched(way.textContent);
-            return true;
-          }}
-        >
-          <DispatchGrantNotice plane={plane} session={ask.session} asks={dispatches} />
-        </NoticeWayGuard>
-      </div>
-    ) : shape.reply ? (
-      <Reply plane={plane} ask={ask} stop={key} />
-    ) : shape.answers ? (
-      <WithWrites ask={ask} onDrawn={onChangeDrawn}>
-        {ask.login != null && (
-          <Stop id={`${key}:site`}>
-            <LoginSite login={ask.login} typed={typed} onTyped={setTyped} />
-          </Stop>
-        )}
-        {/* A secret's one notice (#5080): its facts, the chat's words, its fields, its Allow
-            and its own answers, from the secret-ask family. */}
-        {secretNotice && (
-          <Stop id={`${key}:secret`}>
-            <SecretAskNotice
-              ask={ask}
-              chat={who === "" ? "The chat" : who}
-              entries={() => secretAskEntries(plane, ask)}
-              busy={busy}
-              onAnswer={answer}
-              onSaid={setSaid}
-            />
-          </Stop>
-        )}
-        {/* What a secret fill puts where (#5115): words to read, nothing to reach. */}
-        {ask.fill != null && <SecretFillSite fill={ask.fill} />}
-        {shape.reason && (
-          <Stop id={`${key}:reason`}>
-            <TextField
-              className="inbox-reason"
-              aria-label={`Why you keep it blocked, told to ${who}`}
-              value={reason}
-              placeholder="Why keep it blocked? (optional, the chat is told)"
-              maxLength={REASON_TYPED_MOST}
-              spellCheck
-              onChange={setReason}
-              onKeyDown={keepHomeAndEnd}
-            />
-          </Stop>
-        )}
-        {!secretNotice && (
-          <ButtonRow className="inbox-answers" role="group" aria-label={`Answers to ${who}`}>
-            {shape.offers.map((option) => (
-              // Never `disabled` while busy: a disabled button drops the keyboard to the page
-              // (#1700). It says it is busy, and `answer` sends nothing a second time.
-              <Stop key={option.id} id={`${key}:${option.id}`}>
-                <Button
-                  // The answer the source suggests is the primary one, in its place (#2241): a
-                  // persona's declared browser. Still only the person's press answers. On an ask
-                  // of Allow and Keep blocked, each Allow is the grants variant, as plain as Keep
-                  // blocked and told apart by its edge and its lock, and never the primary look
-                  // (ADR 0097 §6).
-                  variant={
-                    grants(option)
-                      ? "grants"
-                      : option.preselected === true
-                        ? "primary"
-                        : "secondary"
-                  }
-                  className={option.allows ? "inbox-answer allows" : "inbox-answer"}
-                  aria-disabled={busy || undefined}
-                  aria-busy={busy || undefined}
-                  onPress={() => answer(option)}
-                >
-                  {option.label}
-                </Button>
-              </Stop>
-            ))}
-          </ButtonRow>
-        )}
-      </WithWrites>
-    ) : null;
-
-  return (
-    <Stop id={key}>
-      <Card
-        as="li"
-        variant="ask"
-        ref={drawn}
-        className="inbox-ask inbox-card"
-        data-source={ask.source}
-        aria-labelledby={shape.message ? `${id}-whose` : `${id}-says`}
-        aria-describedby={
-          shape.message
-            ? `${id}-says`
-            : `${id}-whose${shape.said === undefined ? "" : ` ${id}-said`}`
-        }
-      >
-        {/* **The card's head, one row in the pane band's style** (#5214): its kind's mark; the
-            chat's name, with what it waits on, how long and where quiet under it; and at its
-            end Go to chat, a quiet link, and the queue's Ignore, a ×. */}
-        <div className="inbox-ask-head">
-          <KindMark kind={kindOfAsk(ask.source)} />
-          <span className="inbox-ask-title">
-            <span className="inbox-who ui-text-body ui-text-strong">{who}</span>
-            <span className="inbox-ask-sub">
-              <Tooltip tip={SOURCE_SAID[ask.source]}>
-                <span className="inbox-meta ui-text-meta">
-                  <span id={`${id}-whose`} className="inbox-source">
-                    {SOURCE_SAID[ask.source]}
-                  </span>
-                  <RowAge when={ageOf(plane, ask)[0]} now={now} since="Waiting since" lead />
-                </span>
-              </Tooltip>
-              {where !== "" && (
-                <>
-                  <span className="inbox-meta-dot ui-text-meta">{" · "}</span>
-                  <Tooltip tip={where}>
-                    <span className="inbox-where inbox-secondary ui-text-meta">{where}</span>
-                  </Tooltip>
-                </>
-              )}
-            </span>
-          </span>
-          {(shape.go || (shape.ignore && onIgnore !== undefined)) && (
-            <span className="inbox-ask-end">
-              {shape.go && (
-                <Stop id={`${key}:go`}>
-                  <Button
-                    size="sm"
-                    variant="quiet-link"
-                    aria-label={`Go to chat ${who}`}
-                    onPress={onGo}
-                    className="inbox-go"
-                  >
-                    Go to chat
-                  </Button>
-                </Stop>
-              )}
-              {shape.ignore && onIgnore !== undefined && (
-                <Stop id={`${key}:ignore`}>
-                  <IconButton
-                    icon={<X />}
-                    size="sm"
-                    variant="quiet"
-                    aria-label={`Ignore ${who} until it asks again`}
-                    onPress={() => onIgnore(ask.session)}
-                  />
-                </Stop>
-              )}
-            </span>
-          )}
-        </div>
-        <div className="inbox-says">
-          {/* The ask's words are the source's, drawn as text and never as a control. What an
-              Allow here would let run is never cut (#1146): it is read whole first. **A chat's
-              own words** (its message, a task's question) are markdown under the safe subset
-              (`ChatText`, #5214), folded past six lines with Show all: the person answers them
-              here, and a question is often a message's last line (#4550). */}
-          {chatWords ? (
-            <ChatText
-              id={`${id}-says`}
-              className="ask-says inbox-primary inbox-chat-text"
-              text={shape.line}
-              foldStop={(button) => <Stop id={`${key}:fold`}>{button}</Stop>}
-            />
-          ) : (
-            <Tooltip tip={shape.line}>
-              {shape.lines !== undefined && shape.lines.drawn.length > 0 ? (
-                // **A command over several lines is drawn on them** (#3502): each as the line has
-                // it, the first few, and how many more. Never clamped: the cap is its own.
-                <span
-                  id={`${id}-says`}
-                  className="ask-says ask-lines inbox-primary ui-text-body ui-text-strong"
-                >
-                  {shape.lines.drawn.map((one, at) => (
-                    // A space between lines, which a column does not draw, so the row's name
-                    // reads them apart.
-                    <Fragment key={at}>
-                      {at > 0 && " "}
-                      <span className="ask-line">{markedLine(one)}</span>
-                    </Fragment>
-                  ))}
-                  {shape.lines.more > 0 && (
-                    <>
-                      {" "}
-                      <span className="ask-line ask-more-lines ui-text-secondary">
-                        {moreLines(shape.lines.more)}
-                      </span>
-                    </>
-                  )}
-                </span>
-              ) : (
-                <span
-                  id={`${id}-says`}
-                  className={`ask-says inbox-primary ui-text-body ui-text-strong${whole ? "" : " inbox-clamped"}`}
-                >
-                  {markedLine(shape.line)}
-                </span>
-              )}
-            </Tooltip>
-          )}
-        </div>
-        {shape.said !== undefined && (
-          <ChatText
-            id={`${id}-said`}
-            className="inbox-said"
-            text={shape.said}
-            foldStop={(button) => <Stop id={`${key}:said-fold`}>{button}</Stop>}
-          />
-        )}
-        {/* Why its Allow is missing: the lines it runs over, which its line put on one
-            (#3502), and a character it holds that reads otherwise (SK-51). */}
-        {shape.answers && (shape.lines !== undefined || shape.hidden !== undefined) && (
-          <p className="inbox-hidden ui-text-secondary">
-            {shape.lines !== undefined
-              ? withheldSaid(shape.lines, shape.hidden)
-              : hiddenSaid(shape.hidden ?? "")}
-          </p>
-        )}
-        {/* A folder or something on this machine reaches the chat only by its restart (#1986):
-            what that ends is said before an Allow here, naming the chat. */}
-        {(ask.source === "sandbox-write" || ask.source === "sandbox-local") &&
-          shape.answers &&
-          shape.offers.some((one) => one.allows) && (
-            <p className="inbox-restart ui-text-secondary">
-              <RestartEndsLine
-                plane={plane}
-                session={ask.session}
-                chat={ask.chain[ask.chain.length - 1]}
-              />
-            </p>
-          )}
-        {body}
-        {said !== undefined && (
-          <p className="inbox-refused" role="status">
-            {said}
-          </p>
-        )}
-        {ask.answer.via === "task-question" && (
-          <>
-            <p className="inbox-secondary ui-text-secondary">
-              {REACHED_SAID[ask.answer.why](ask.answer.from)}
-              {ask.answer.note === null ? "" : ". Its note:"}
-            </p>
-            {/* The asking chat's note is its own words, drawn as a chat's text is (#5214). */}
-            {ask.answer.note !== null && (
-              <ChatText
-                className="inbox-note"
-                text={ask.answer.note}
-                foldStop={(button) => <Stop id={`${key}:note-fold`}>{button}</Stop>}
-              />
-            )}
-          </>
-        )}
-        {/* A task's question is answered in the Answer form (ADR 0107). */}
-        {shape.answerable && openAnswer !== undefined && (
-          <div className="inbox-acts">
-            <Stop id={`${key}:answer`}>
-              <Button
-                size="sm"
-                variant="primary"
-                aria-label={`Answer ${who}`}
-                onPress={() =>
-                  openAnswer({ chat: ask.session, name: ask.chain[ask.chain.length - 1] ?? who })
-                }
-              >
-                Answer
-              </Button>
-            </Stop>
-          </div>
-        )}
-      </Card>
-    </Stop>
-  );
-}
-
-/**
- * **A reply box for a chat waiting on the person's reply** (I-3): what is typed is sent to the
- * chat as the person's message, one paste and Enter (`replyBytes`), through the pane's own
- * input path. Short replies only; anything longer is better written in the chat itself.
- */
-function Reply({ plane, ask, stop }: { plane: PlaneId; ask: Shown; stop: string }) {
-  const [text, setText] = useState("");
-  const [said, setSaid] = useState<string>();
-  const [busy, setBusy] = useState(false);
-  const box = useRef<HTMLTextAreaElement>(null);
-  const who = chainSaid(ask.chain);
-  const send = () => {
-    const bytes = replyBytes(text);
-    if (bytes === undefined || busy) return;
-    // The send is inert while it sends and once the box is empty: the keyboard goes back to the
-    // box rather than stay on a button that does nothing (#1700).
-    box.current?.focus();
-    setBusy(true);
-    setSaid(undefined);
-    // **Checked before it is sent** (#1700): the reply is a paste and Enter, and if the chat
-    // moved on since the list was read (a delivered report started a turn that stopped on a
-    // prompt in its terminal), that Enter would land on whatever is in front. So the asks are
-    // read again, and nothing is sent unless the chat still waits on a reply.
-    void stillWaits(plane, ask)
-      .then((waits) => {
-        if (waits !== true) {
-          asksMoved(plane);
-          return { status: "error" as const, error: waits === false ? MOVED_ON : NOT_CHECKED };
-        }
-        return commands.sendInput(plane, ask.session, bytes);
-      })
-      .then((done) => {
-        if (done.status === "error") {
-          setSaid(done.error);
-          return;
-        }
-        noteAnswered(plane, {
-          at: Date.now(),
-          chain: ask.chain,
-          says: ask.says,
-          answer: text.trim(),
-        });
-        setText("");
-        asksMoved(plane);
-      })
-      .catch((err: unknown) => setSaid(`purlis could not send it: ${String(err)}`))
-      .finally(() => setBusy(false));
-  };
-  const empty = busy || replyBytes(text) === undefined;
-  return (
-    <Form
-      className="inbox-reply"
-      onSubmit={(event) => {
-        event.preventDefault();
-        send();
-      }}
-    >
-      {/* **The reply strip** (#5214): always at the card's foot, edge to edge, one line at rest
-          and two once it holds the caret, growing to four with its lines. Enter sends,
-          Shift+Enter starts a new line, Esc leaves it for the card. A stop of the list too, so
-          ↑ and ↓ reach it; inside its lines they move the caret. */}
-      <Stop id={`${stop}:reply`}>
-        <TextArea
-          strip
-          inputRef={box}
-          aria-label={`Reply to ${who}`}
-          value={text}
-          placeholder={`Reply to ${who}…`}
-          hint={REPLY_HINT}
-          spellCheck
-          onChange={setText}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-              event.preventDefault();
-              send();
-              return;
-            }
-            if (event.key === "Escape") {
-              // It leaves the box for its card, not the Inbox for the chat in front.
-              event.preventDefault();
-              event.stopPropagation();
-              box.current?.closest<HTMLElement>("li.inbox-ask")?.focus();
-              return;
-            }
-            keepCaretKeys(event);
-          }}
-          end={
-            // Dim and inert while there is nothing to send, the accent's once there is. Never
-            // `disabled`: a disabled button drops the keyboard to the page (#1700).
-            <Stop id={`${stop}:send`} focusable={!empty}>
-              <IconButton
-                icon={<Send />}
-                type="submit"
-                size="sm"
-                variant={empty ? "quiet" : "primary"}
-                aria-label={`Send reply to ${who}`}
-                aria-disabled={empty || undefined}
-              />
-            </Stop>
-          }
-        />
-      </Stop>
-      {said !== undefined && (
-        <p className="inbox-refused" role="status">
-          {said}
-        </p>
-      )}
-    </Form>
-  );
-}
-
-/** What the reply strip says at its foot while it holds the caret (#5214). */
-export const REPLY_HINT = "Enter sends · Shift+Enter new line";
-
-/**
- * **The caret's keys inside a reply's lines** (#5214): ↑ and ↓ move the caret a line where there
- * is one above or below it, and Home and End go to its line's start and end, rather than moving
- * the list's focus. On its first line ↑, and on its last ↓, still leave it for the list's next
- * stop, as from any field of the list.
- */
-function keepCaretKeys(event: KeyboardEvent<HTMLTextAreaElement>) {
-  if (event.metaKey || event.ctrlKey || event.altKey) return;
-  const box = event.currentTarget;
-  const { value } = box;
-  const at = box.selectionDirection === "backward" ? box.selectionStart : box.selectionEnd;
-  const start = value.lastIndexOf("\n", at - 1) + 1;
-  const endAt = value.indexOf("\n", at);
-  const end = endAt === -1 ? value.length : endAt;
-  let to: number | undefined;
-  if (event.key === "Home") to = start;
-  else if (event.key === "End") to = end;
-  else if (event.key === "ArrowUp" && start > 0) {
-    const above = value.lastIndexOf("\n", start - 2) + 1;
-    to = Math.min(above + (at - start), start - 1);
-  } else if (event.key === "ArrowDown" && end < value.length) {
-    const belowEnd = value.indexOf("\n", end + 1);
-    to = Math.min(end + 1 + (at - start), belowEnd === -1 ? value.length : belowEnd);
-  }
-  if (to === undefined) return;
-  event.preventDefault();
-  if (!event.shiftKey) {
-    box.setSelectionRange(to, to);
-    return;
-  }
-  // Extending: the end the selection is anchored at stays where it is.
-  const anchor = box.selectionDirection === "backward" ? box.selectionEnd : box.selectionStart;
-  box.setSelectionRange(
-    Math.min(anchor, to),
-    Math.max(anchor, to),
-    to < anchor ? "backward" : "forward",
-  );
-}
-
-/** The most characters the reason box takes; the chat is told at most 200 of them. */
-const REASON_TYPED_MOST = 400;
-
-/** What an Allow pressed on an ask drawn or moved just now says: nothing was allowed. */
-export const MOVED_JUST_NOW =
-  "This ask was drawn or moved just now, so nothing was allowed. Read it and press again.";
-
-export { grants, NOTICE_MOVED_JUST_NOW } from "./noticeSettle";
-
-/** What a reply refused because its chat moved on says. */
-export const MOVED_ON =
-  "This chat no longer waits on a reply, so nothing was sent. Go to the chat to see what it does now.";
-
-/** What a reply refused because the check could not be made says. */
-export const NOT_CHECKED =
-  "purlis could not check that this chat still waits on a reply, so nothing was sent. Try again, or reply in the chat itself.";
-
-/** Whether `ask` still waits on a reply, the project's asks read again now: `undefined` where
- *  they could not be read, which sends nothing either. */
-async function stillWaits(plane: PlaneId, ask: Shown): Promise<boolean | undefined> {
-  const answer = await commands.asksWaiting(plane).catch(() => undefined);
-  const asks =
-    answer?.status === "ok" ? (answer.data as { asks?: readonly Shown[] } | null)?.asks : undefined;
-  if (asks === undefined) return undefined;
-  return asks.some((one) => one.session === ask.session && one.ask === ask.ask);
-}
-
-/**
- * **Home and End move the cursor in the reply box** (#1700): the box is a stop of the list's
- * roving focus, which takes Home and End for the list's ends. Done here instead, so the list
- * never sees them: the cursor goes to the start or the end, Shift extending the selection.
- */
-function keepHomeAndEnd(event: KeyboardEvent<HTMLInputElement>) {
-  if (event.key !== "Home" && event.key !== "End") return;
-  if (event.metaKey || event.ctrlKey || event.altKey) return;
-  event.preventDefault();
-  const box = event.currentTarget;
-  const to = event.key === "Home" ? 0 : box.value.length;
-  if (!event.shiftKey) {
-    box.setSelectionRange(to, to);
-    return;
-  }
-  // Extending: the end the selection is anchored at stays where it is.
-  const anchor = box.selectionDirection === "backward" ? box.selectionEnd : box.selectionStart;
-  const from = anchor ?? to;
-  box.setSelectionRange(Math.min(from, to), Math.max(from, to), to < from ? "backward" : "forward");
-}
-
-/** An empty Inbox: the sentence, and what was answered here lately, read-only (I-12). Where a
- *  chat cannot say it waits, the sentence says that instead. */
-function Empty({
-  recent,
-  allowed,
-  quiet,
-}: {
-  recent: readonly Answered[];
-  /** What was allowed on this machine in the last day, from the grants (D-1700-7). */
-  allowed: readonly AllowedLately[];
-  quiet?: string;
-}) {
-  return (
-    <>
-      {/* Never "nothing" over a chat that cannot say it waits (charter-app#52): the faint
-          hand's sentence, and the chats are the Notices below. */}
-      <p className="inbox-none">{quiet ?? NOTHING_WAITS}</p>
-      {recent.length > 0 && (
-        <section className="inbox-recent" aria-label="Recently answered">
-          <PanelSectionTitle level={3} className="inbox-chain">
-            Recently answered
-          </PanelSectionTitle>
-          <ul>
-            {recent.map((one) => (
-              <li key={`${one.at}:${chainSaid(one.chain)}:${one.says}`}>
-                <time dateTime={new Date(one.at).toISOString()}>{timeSaid(one.at)}</time>{" "}
-                <span className="inbox-recent-chat">{chainSaid(one.chain)}</span>
-                {": "}
-                <span className="ask-says">{capMarks(one.says).text}</span>
-                {" · "}
-                <span className="inbox-recent-answer">{one.answer}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-      {allowed.length > 0 && (
-        <section className="inbox-recent" aria-label={ALLOWED_LATELY}>
-          <PanelSectionTitle level={3} className="inbox-chain">
-            {ALLOWED_LATELY}
-          </PanelSectionTitle>
-          <ul>
-            {allowed.map((one) => (
-              <li key={one.key}>
-                <time dateTime={new Date(one.at).toISOString()}>{timeSaid(one.at)}</time>{" "}
-                {one.chat !== null && (
-                  <>
-                    <span className="inbox-recent-chat">{one.chat}</span>
-                    {": "}
-                  </>
-                )}
-                {/* A host, a folder, a persona: the grant's own words, as data. */}
-                <span className="ask-says">{capMarks(one.says).text}</span>
-                {" · "}
-                <span className="inbox-recent-answer">{one.level}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-    </>
-  );
-}
-
-/** What the scope switch is called. */
-export const SCOPE_LABEL = "Show what needs you in";
-
-/**
- * **A scope with nothing in it, while a wider one has something** (qw359): it says so, says how
- * many wait in the nearest wider scope, and widens in one press, so a narrow pick never reads
- * as "nothing needs you".
- */
-function EmptyScope({
-  said,
-  wider,
-  onWiden,
-}: {
-  /** What the scope says of itself: that nothing waits in it, or that it is not read yet. */
-  said: string;
-  wider: { scope: InboxScope; count: number } | undefined;
-  onWiden: () => void;
-}) {
-  if (wider === undefined) return <p className="inbox-none">{said}</p>;
-  return (
-    <div className="inbox-scope-empty">
-      <p className="inbox-none">{said}</p>
-      <p className="inbox-none">
-        {`${wider.count} ${wider.count === 1 ? "waits" : "wait"} in ${scopeOf(wider.scope)}.`}
-      </p>
-      <Button size="sm" onPress={onWiden}>
-        {`Show ${scopeOf(wider.scope)}`}
-      </Button>
-    </div>
-  );
-}
-
-/** What the empty Inbox's look back at the grants of the last day is called (D-1700-7). */
-export const ALLOWED_LATELY = "Allowed in the last day";
-
-/** One update as the Inbox draws it, with what can be done with it there. */
-export type UpdateRow = {
-  update: InboxUpdate;
-  /** Go to chat, where it is about a chat that is still there. */
-  go?: () => void;
-  /** A sentence of the source's own under it, before its answers. */
-  more?: string;
-  /** Its source's own answers, in their order: a refused dispatch's three. */
-  answers?: readonly UpdateAnswer[];
-  /** Put it away: and, where its source lists it, put away there too. */
-  dismiss: () => void;
-  /** What Dismiss does, as its tooltip, where it does more than put the update away. */
-  dismissSays?: string;
-};
-
-/** One of an update's answers. */
-export type UpdateAnswer = {
-  label: string;
-  /** Its accessible name: what it does, whole. */
-  name: string;
-  /** What it does, as its tooltip. */
-  title: string;
-  /** Whether it allows something: drawn as an Allow is. */
-  allows?: boolean;
-  press: () => void;
-};
-
-/** The project's updates and the two acts on all of them. */
-export type Updates = {
-  /** Newest first; nothing before they were read. */
-  rows: readonly UpdateRow[] | undefined;
-  /** Every update listed, marked read: none is put away. */
-  onMarkAllRead: () => void;
-  /** Every update listed, put away. No ask is touched. */
-  onDismissAll: () => void;
-};
-
-/** The stops of the updates' section, in the order it draws them. */
-function updateStops(updates: Updates | undefined): string[] {
-  const rows = updates?.rows ?? [];
-  if (rows.length === 0) return [];
-  return [
-    READ_ALL_STOP,
-    DISMISS_ALL_STOP,
-    ...rows.flatMap(({ update, go, answers = [] }) => {
-      const key = `update:${update.key}`;
-      return [
-        key,
-        ...answers.map((_, at) => `${key}:${at}`),
-        ...(go === undefined ? [] : [`${key}:go`]),
-        `${key}:dismiss`,
-      ];
-    }),
-  ];
-}
-
-/** The time now: when an update was drawn where it stands, or when an answer was pressed. */
-const placedAt = () => performance.now();
-
-const READ_ALL_STOP = "inbox:read-all";
-const DISMISS_ALL_STOP = "inbox:dismiss-all";
-
-/** What the updates' section is called. */
-export const UPDATES = "Updates";
-
-/** The updates, after the asks: newest first, each with Dismiss (#1693). */
-function UpdateList({ updates, stops }: { updates: Updates; stops: readonly string[] }) {
-  const rows = updates.rows ?? [];
-  if (rows.length === 0) return null;
-  const unread = rows.some(({ update }) => !update.read);
-  return (
-    <section className="inbox-updates" aria-label={UPDATES}>
-      <div className="inbox-updates-head">
-        <PanelSectionTitle level={3} className="inbox-chain">
-          {UPDATES}
-        </PanelSectionTitle>
-        <Stop id={READ_ALL_STOP} focusable={unread}>
-          <Button
-            size="sm"
-            variant="ghost"
-            isDisabled={!unread}
-            tooltip="Mark every update read. Nothing that waits on you is answered."
-            onPress={updates.onMarkAllRead}
-            className="inbox-go"
-          >
-            Mark all read
-          </Button>
-        </Stop>
-        <Stop id={DISMISS_ALL_STOP}>
-          <Button
-            size="sm"
-            variant="ghost"
-            tooltip="Put every update away. Nothing that waits on you is answered."
-            onPress={updates.onDismissAll}
-            className="inbox-go"
-          >
-            Dismiss all
-          </Button>
-        </Stop>
-      </div>
-      <ul>
-        {rows.map((row) => (
-          <UpdateItem
-            key={row.update.key}
-            row={row}
-            above={stops.slice(0, stops.indexOf(`update:${row.update.key}`)).join("\n")}
-          />
-        ))}
-      </ul>
-    </section>
-  );
-}
-
-/** A row's answers that grant: an ask's or an update's Allow, or a way out of its Notice's. */
-const granting = (row: Element) => row.querySelectorAll('[data-variant="grants"], .allows');
-const standsFirst = () => false;
-
-/**
- * **When a row was last drawn where it stands, or moved** (#1693, #1695): what an Allow on it
- * waits {@link SETTLE_MS} after, so what is under the pointer is what the person read.
- *
- * `here` is what the row stands under and offers: the stops above it and its own words and
- * answers. It is taken in the very render that draws it, so no press lands on a place whose time
- * is not known yet. **Where each of its answers that grant was last drawn, and since when**
- * (#3167, `useWayPlaces`): something above it can grow without a stop of its own changing (a
- * sentence said under another row, the recent answers of an empty list), its own words can wrap
- * again at a new width, and the list can be made to scroll back; none of these need reach this
- * row's render. So each answer's own box is read after each render, on every change that can
- * move it, and again at the press: one that differs is a move.
- */
-function useSettledPlace<T extends HTMLElement>(here: string) {
-  const [placed, setPlaced] = useState(() => ({ here, at: placedAt() }));
-  if (placed.here !== here) setPlaced({ here, at: placedAt() });
-  const drawn = useRef<T>(null);
-  // Its first drawing is `placed`'s: an answer read for the first time is no move of its own.
-  const { movedAt } = useWayPlaces(drawn, granting, standsFirst);
-  const tooSoon = () => placedAt() - Math.max(placed.at, movedAt()) < SETTLE_MS;
-  return { drawn, tooSoon };
-}
-
-/**
- * **What a press that did nothing says, where it was pressed** (#1693, #1695): an answer on an
- * update, or a way out of a granting Notice, pressed on something drawn or moved just now.
- */
-function NothingDone({ said }: { said: string | undefined }) {
-  return said === undefined ? null : (
-    <p className="inbox-refused" role="status">
-      {said}
-    </p>
-  );
-}
-
-function UpdateItem({ row, above }: { row: UpdateRow; above: string }) {
-  const { update, go, more, answers = [], dismiss, dismissSays } = row;
-  const id = useId();
-  const [said, setSaid] = useState<string>();
-  /**
-   * **When this update was last drawn where it stands**: at its first drawing, and whenever
-   * what stands above it changes, which moves it. Set in the very render that draws it, as a
-   * dispatch's Notice sets its own (`TaskBlocksNotice`), so no press lands on a place whose
-   * time is not known yet.
-   */
-  // What the row offers is part of where it stands: an answer whose words or tooltip changed
-  // under the pointer is a new place, though nothing above it moved.
-  const here = [above, more ?? "", ...answers.map(({ name, title }) => `${name}\t${title}`)].join(
-    "\n",
-  );
-  const { drawn, tooSoon } = useSettledPlace<HTMLLIElement>(here);
-  /** An answer that allows something, pressed too soon after the update was drawn or moved,
-   *  is not sent: what is under the pointer may not be what the person read. */
-  const press = (answer: UpdateAnswer) => {
-    if (answer.allows && tooSoon()) {
-      setSaid(
-        "This update was drawn or moved just now, so nothing was allowed. Read it and press again.",
-      );
-      return;
-    }
-    setSaid(undefined);
-    answer.press();
-  };
-  const key = `update:${update.key}`;
-  const who = chainSaid(update.chain);
-  const about = who === "" ? update.says : `${who}: ${update.says}`;
-  return (
-    <Stop id={key}>
-      <li
-        ref={drawn}
-        className="inbox-update"
-        data-kind={update.kind}
-        data-read={update.read || undefined}
-        aria-labelledby={`${id}-says`}
-        aria-describedby={`${id}-kind`}
-      >
-        <p className="inbox-says">
-          <KindMark kind={kindOfUpdate(update.kind)} />
-          {/* Every word here is its source's, drawn as text and never as a control. An update
-              whose answer allows is read whole, as an ask is (#1146). One read wears no role:
-              its step back (`.inbox-update[data-read]`) is not a rank of the scale (#1920). */}
-          <Tooltip tip={about}>
-            <span
-              id={`${id}-says`}
-              className={`ask-says inbox-primary${update.read ? "" : " ui-text-body ui-text-strong"}${answers.some((one) => one.allows) ? "" : " inbox-clamped"}`}
-            >
-              {about}
-            </span>
-          </Tooltip>
-          <span className="inbox-meta ui-text-meta">
-            <span id={`${id}-kind`} className="inbox-source">
-              {KIND_SAID[update.kind]}
-              {!update.read && <span className="inbox-unread"> · new</span>}
-            </span>
-            <span className="inbox-meta-dot">{" · "}</span>
-            <time dateTime={new Date(update.at * 1000).toISOString()}>
-              {timeSaid(update.at * 1000)}
-            </time>
-          </span>
-        </p>
-        {more !== undefined && <p className="inbox-more">{more}</p>}
-        {answers.length > 0 && (
-          <ButtonRow
-            className="inbox-answers"
-            role="group"
-            aria-label={`Answers to ${update.says}`}
-          >
-            {answers.map((answer, at) => (
-              <Stop key={answer.label} id={`${key}:${at}`}>
-                <Button
-                  // An answer that allows is a grant, drawn as every grant is (ADR 0097 §6).
-                  variant={answer.allows ? "grants" : "secondary"}
-                  className={answer.allows ? "inbox-answer allows" : "inbox-answer"}
-                  aria-label={answer.name}
-                  tooltip={answer.title}
-                  onPress={() => press(answer)}
-                >
-                  {answer.label}
-                </Button>
-              </Stop>
-            ))}
-          </ButtonRow>
-        )}
-        <NothingDone said={said} />
-        <ButtonRow size="sm" className="inbox-acts">
-          {go !== undefined && (
-            <Stop id={`${key}:go`}>
-              <Button
-                size="sm"
-                variant="ghost"
-                aria-label={`Go to chat ${who}`}
-                onPress={go}
-                className="inbox-go"
-              >
-                Go to chat
-              </Button>
-            </Stop>
-          )}
-          <Stop id={`${key}:dismiss`}>
-            <Button
-              size="sm"
-              variant="ghost"
-              aria-label={`Dismiss: ${about}`}
-              tooltip={dismissSays ?? "Put this update away"}
-              onPress={dismiss}
-              className="inbox-go"
-            >
-              Dismiss
-            </Button>
-          </Stop>
-        </ButtonRow>
-      </li>
-    </Stop>
-  );
-}
-
-/**
- * **Where a click on an ask's notification lands** (#1694, I-7): chat `session`'s group in the
- * Inbox drawn now, brought on screen, its first ask given the keyboard, from which the keys go
- * on as from any ask. Answers whether the chat has a group to land on: its asks may have been
- * answered elsewhere since.
- */
-export function landOnGroup(session: number, source?: Shown["source"]): boolean {
-  const group = document.querySelector<HTMLElement>(
-    `section.inbox .inbox-chat[data-session="${session}"]`,
-  );
-  // At the ask it came for, where it names one (#5215), else the group's first.
-  const first =
-    (source === undefined
-      ? null
-      : group?.querySelector<HTMLElement>(`li[data-source="${source}"]`)) ??
-    group?.querySelector<HTMLElement>("li");
-  if (!group || !first) return false;
-  group.scrollIntoView?.({ block: "nearest" });
-  first.focus();
-  return true;
-}
-
-/**
- * **The same landing, through a scope that leaves the chat out** (qw359): a notification is
- * about one ask, and This workspace may not list its chat. So where the group is not drawn and
- * the scope is the workspace's, the scope widens to the project's, as revealing a row a filter
- * hides clears the filter, and the landing is tried again once that is drawn.
- */
-export function landOnGroupIn(plane: PlaneId, session: number, source?: Shown["source"]): void {
-  if (landOnGroup(session, source) || keptInboxScope(plane) !== "workspace") return;
-  keepInboxScope(plane, "project");
-  requestAnimationFrame(() => landOnGroup(session, source));
-}

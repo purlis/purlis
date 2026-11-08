@@ -1267,7 +1267,7 @@ describe("a task that needs you and is not on screen", () => {
     await userEvent.click(
       await screen.findByRole("button", { name: /^1 (thing waits|chat needs)/ }),
     );
-    const inbox = await screen.findByRole("tabpanel", { name: "Inbox" });
+    const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
     await userEvent.click(
       await within(inbox).findByRole("button", { name: /^Go to chat .*sweep/ }),
     );

@@ -90,7 +90,7 @@ describe("changing a persona's own skills", function () {
   });
 
   after(async () => {
-    await showView("Inbox");
+    await showView("Asks");
   });
 
   it("makes, renames, deletes and restores a skill of the persona's own", async () => {

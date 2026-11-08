@@ -17,7 +17,13 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
 import App from "./App";
 import { forgetThisLaunch } from "./regions";
-import { findStripNamed, openTheInbox, sayingSomething, stripNamed } from "./test-strips";
+import {
+  findStripNamed,
+  openTheInbox,
+  sayingSomething,
+  showNotices,
+  stripNamed,
+} from "./test-strips";
 
 /** The project the status line names, found by its directory: the line draws the project's
  *  name, and its directory is the item's tooltip (qw357). */
@@ -816,6 +822,8 @@ describe("App", () => {
 
     await userEvent.click(paneDoing(2).getByRole("button", { name: "Close this pane" }));
     expect(await screen.findByText("Closed the pane.")).toBeInTheDocument();
+    // Its Undo is a result, listed in Notices since #5645.
+    await showNotices();
     await userEvent.click(screen.getByRole("button", { name: "Undo" }));
 
     await waitFor(() => expect(panes()).toEqual(["session 1", "session 2"]));
@@ -829,6 +837,8 @@ describe("App", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Close steward 1" }));
     expect(await screen.findByText("Closed steward 1.")).toBeInTheDocument();
+    // Its Undo is a result, listed in Notices since #5645.
+    await showNotices();
     await userEvent.click(screen.getByRole("button", { name: "Undo" }));
 
     await waitFor(() => expect(panes()).toEqual(["session 1", "session 2"]));

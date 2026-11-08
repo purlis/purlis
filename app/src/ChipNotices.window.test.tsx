@@ -7,6 +7,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
+import { waitOutTheUndo } from "./test-inbox";
 import { OUTSIDE, type Said } from "./actions";
 import type { StaleClone } from "./bindings";
 import { TitleBarSwitch } from "./TitleBarSwitch";
@@ -14,6 +15,7 @@ import { forgetRailMode } from "./railMode";
 import { forgetRepoClones } from "./repoClones";
 import { findOnCard } from "./actionResult.testkit";
 import { aTabForEachChat } from "./laidOut.testkit";
+import { showNotices } from "./test-strips";
 
 /**
  * **A workspace's notices hang from its chip** (#3648, the tracer of spec #3647), on the real
@@ -33,6 +35,7 @@ vi.mock("./SessionPane", () => ({
 const SCROLL_INTO_VIEW = Element.prototype.scrollIntoView;
 
 afterEach(() => {
+  vi.useRealTimers();
   cleanup();
   clearMocks();
   forgetRailMode();
@@ -301,7 +304,11 @@ const queryCard = (workspace: string) =>
 const queryDot = (workspace: string) =>
   within(bar()).queryByRole("button", { name: new RegExp(`^Show the notice on ${workspace}`) });
 /** The Notices centre's Results, where every result is listed too. */
-const results = () => screen.findByRole("region", { name: "Results" });
+const results = async () => {
+  // Listed in Notices since #5645, in the Panel under Asks.
+  await showNotices();
+  return screen.findByRole("region", { name: "Results" });
+};
 
 describe("the ready notice hangs from its chip (#3648)", () => {
   it("as a card over the window, in no page's flow, and without Open", async () => {
@@ -732,8 +739,12 @@ describe("a dormant chip and the keyboard (#3651's review)", () => {
   });
 
   it("loses its dot when the Notices centre dismisses its line", async () => {
+    // A Dismiss is kept once its Undo has stood (#5650): the test waits it out.
+    vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ["setTimeout", "clearTimeout"] });
     core({ missing: ["delta"] });
     opened();
+    // The Notices are listed in the Notices view since #5645, under Asks.
+    await showNotices();
     await waitFor(() => expect(chips()).toEqual(["alpha*", "delta~"]));
     await waitFor(() => expect(queryDot("delta")).not.toBeNull());
     const listed = await waitFor(() => {
@@ -742,6 +753,7 @@ describe("a dormant chip and the keyboard (#3651's review)", () => {
       return found[0];
     });
     await userEvent.click(within(listed).getByRole("button", { name: "Dismiss" }));
+    waitOutTheUndo();
     await waitFor(() => expect(queryDot("delta")).toBeNull());
     expect(chips()).toEqual(["alpha*", "delta~"]);
   });

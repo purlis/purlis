@@ -11,7 +11,8 @@
 /**
  * **One of purlis's own views**: the left side's Chats and Explorer (#1673), Search and Changes
  * (#1676), and Repos in the left half of the Panel (#1737), Changes beside it since #1739, and
- * the right side's Inbox (#1692), Personas and Vaults (#1678), with Memory, Todos and Sessions in
+ * the right side's Asks and Updates (#5644, which took the Inbox's place), Personas and Vaults
+ * (#1678), with Memory, Todos and Sessions in
  * the right half of the Panel (#1738). Data, as a region is: the catalogue says which region
  * holds it, the placement says which is open, and
  * `RegionFrame` draws the bar and the views from that.
@@ -23,7 +24,9 @@ export type OwnViewId =
   | "skills"
   | "changes"
   | "repos"
-  | "inbox"
+  | "asks"
+  | "updates"
+  | "notices"
   | "todos"
   | "memory"
   | "personas"
@@ -87,15 +90,17 @@ export function previewsDrawn(
 export const drawnOnlyPresent = (view: string): boolean =>
   isPanelView(view) || (PREVIEWED_VIEWS as readonly string[]).includes(view);
 
-/** The right sidebar's own views, in its bar's order (#1678, #1738): the attention region's. The
- *  Inbox is first (#1692, I-2): what waits on the person heads the "for you" side, and the side
- *  opens on it. */
-export const RIGHT_SIDEBAR_VIEWS: readonly OwnViewId[] = ["inbox", "personas", "vaults"];
+/** The right sidebar's own views, in its bar's order (#1678, #1738): the attention region's.
+ *  Asks is first (#1692, I-2; ADR 0119, #5644): what waits on the person heads the "for you"
+ *  side, and the side opens on it. Updates follows it: the updates the Inbox listed after its
+ *  asks. */
+export const RIGHT_SIDEBAR_VIEWS: readonly OwnViewId[] = ["asks", "updates", "personas", "vaults"];
 
 /** The right side's views in its half of the Panel, in its Lower icons' order (#1738, P-2):
- *  what you keep, out of the sidebar so it never hides what is asking for you. Memory first, as
- *  the half opens on it (P-14). */
-export const RIGHT_HALF_VIEWS: readonly OwnViewId[] = ["memory", "todos", "sessions"];
+ *  what you keep, out of the sidebar so it never hides what is asking for you. Notices first
+ *  (ADR 0119, #5645): the project's standing faults, read under Asks or Updates rather than in
+ *  their place. The half still opens on Memory (P-14, `regions.ts`). */
+export const RIGHT_HALF_VIEWS: readonly OwnViewId[] = ["notices", "memory", "todos", "sessions"];
 
 /** **Every one of the right side's own views**, wherever it lives: the sidebar's and the Panel
  *  half's. What the window draws a right-hand panel for. */
@@ -113,7 +118,9 @@ export const VIEWS: Record<OwnViewId, { name: string }> = {
   changes: { name: "Changes" },
   // #1737: Explorer's *Repos and branches*, a view of its own in the left half of the Panel.
   repos: { name: "Repos" },
-  inbox: { name: "Inbox" },
+  asks: { name: "Asks" },
+  updates: { name: "Updates" },
+  notices: { name: "Notices" },
   todos: { name: "Todos" },
   memory: { name: "Memory" },
   personas: { name: "Personas" },

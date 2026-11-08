@@ -241,14 +241,21 @@ import {
   reposStopped,
   workspaceMade,
 } from "./actionResult";
-import { Inbox, landOnGroupIn, type UpdateRow, type WindowLines } from "./Inbox";
+import {
+  heldUpdate,
+  Inbox,
+  landOnGroupIn,
+  NEEDS_FIXING,
+  type UpdateRow,
+  type WindowLines,
+} from "./Inbox";
+import { useDismissHold } from "./dismissHold";
 import { awayRow } from "./AwayRefusals";
 import {
   LIVE,
   awayUpdateKey,
   awayUpdates,
   browserAskUpdates,
-  doctorUpdates,
   seenAt,
   reasonUpdates,
   arrivedUpdates,
@@ -258,6 +265,7 @@ import {
   smartCloseUpdates,
   taskUpdates,
   useInboxUpdates,
+  unreadMine,
 } from "./inboxUpdates";
 import { useInboxOpenTold } from "./askNotices";
 import { useAnsweredWhenGone } from "./inboxRules";
@@ -278,8 +286,9 @@ import type { ExplorerPlace } from "./skillsListing";
 import { SIDE_KEYS_SAID, sideKeyOf } from "./sideKeys";
 import { RegionFrame, stepRegions } from "./RegionFrame";
 import { putAway } from "./regionsAway";
-import { ActivityCount, type PanelTab } from "./ActivityBar";
+import { ActivityCount, ActivityDot, type PanelTab } from "./ActivityBar";
 import { DoctorNotices, useDoctor } from "./Doctor";
+import { useFirstOpen } from "./firstOpen";
 import { StaleCloneNotices, useStaleClones } from "./StaleCloneNotices";
 import { BrowsersAtQuitNotice } from "./BrowsersAtQuitNotice";
 import { usePin } from "./Updates";
@@ -640,6 +649,7 @@ import { tabPanelOf, tabsPart } from "./ui/tabs/Tabs";
 import { panelRoot } from "./ui/panel/Panel";
 import { oneChatMidTurn, type Ending } from "./QuitWarning";
 import { answerTaken, asksMoved, secretAskEntries } from "./asks";
+import type { Snoozing } from "./AsksSnooze";
 import type { SecretAskGiven } from "./SecretAskNotice";
 import type { SecretAskEnded } from "./StartChat";
 import { useTextSizes } from "./textSize";
@@ -5279,33 +5289,38 @@ export const PlaneView = memo(function PlaneView({
     showView(settingsView("project"), SETTINGS_TAB_TITLE);
   }, [settingsAsked, showView]);
 
-  /** The title bar's ✋ asked for this project's Inbox (#1692): shown, and given the keyboard. */
+  /** The title bar's ✋ asked for this project's Asks (#1692, #5644): shown, and given the
+   *  keyboard. */
   const inboxHandled = useRef(inboxAsked);
   useEffect(() => {
     if (inboxAsked === undefined || inboxHandled.current === inboxAsked) return;
     inboxHandled.current = inboxAsked;
-    showSideView("inbox");
+    showSideView("asks");
     // After the view has given its first stop the keyboard: the group's first ask takes it.
     // Through a scope that leaves its chat out, which widens for it (qw359).
     if (inboxGroup !== undefined) requestAnimationFrame(() => landOnGroupIn(plane, inboxGroup));
   }, [inboxAsked, inboxGroup, plane, showSideView]);
-  /** Whether this project's Inbox is open on screen, told to the core: no notification is sent
-   *  about what the person is reading (#1694, I-7). */
-  const inboxShown = arrangement.some(
-    (one) => !one.collapsed && viewOpenIn(one, presentViews) === "inbox",
+  /** Whether this project's Asks is open on screen, told to the core: no notification is sent
+   *  about what the person is reading (#1694, I-7; #5644). */
+  const asksShown = arrangement.some(
+    (one) => !one.collapsed && viewOpenIn(one, presentViews) === "asks",
   );
-  useInboxOpenTold(plane, inFront && inboxShown);
-  /** **Opening the Inbox reads the alerts again** (#5702): what a chat's last turn found in its
-   *  folders is listed when the person comes to look, not at the next minute's read. Only as it
-   *  opens: a project brought to the front with its Inbox open is no opening, and a switch sends
-   *  nothing more for it (`projectSwitch.cost.test.tsx`). */
+  useInboxOpenTold(plane, inFront && asksShown);
+  /** Whether this project's Notices is open on screen: where the alerts are listed (#5645). */
+  const noticesShown = arrangement.some(
+    (one) => !one.collapsed && viewOpenIn(one, presentViews) === "notices",
+  );
+  /** **Opening the Notices reads the alerts again** (#5702; the Inbox's before #5645): what a
+   *  chat's last turn found in its folders is listed when the person comes to look, not at the
+   *  next minute's read. Only as it opens: a project brought to the front with its Notices open
+   *  is no opening, and a switch sends nothing more for it (`projectSwitch.cost.test.tsx`). */
   const rereadAlerts = alerts?.does.reread;
-  const inboxWasShown = useRef(inboxShown);
+  const noticesWereShown = useRef(noticesShown);
   useEffect(() => {
-    const opened = inboxShown && !inboxWasShown.current;
-    inboxWasShown.current = inboxShown;
+    const opened = noticesShown && !noticesWereShown.current;
+    noticesWereShown.current = noticesShown;
     if (opened && inFront) rereadAlerts?.();
-  }, [inboxShown, inFront, rereadAlerts]);
+  }, [noticesShown, inFront, rereadAlerts]);
 
   /** A file ⌘P found here (FM-7), opened in its file tab the way the explorer opens one. */
   const fileHandled = useRef(fileAsked?.at);
@@ -5426,9 +5441,9 @@ export const PlaneView = memo(function PlaneView({
       topOf: (task: number) => returnsTo(tabs, task, askedBy)?.own,
       openTask: (task: number) => showChat(task),
       openSettings: () => openSettingsAt({ group: "you.chats", setting: "you.chats.answer" }),
-      // A question's row's Answer (#5215): the Inbox, at the task's question.
+      // A question's row's Answer (#5215): Asks, at the task's question.
       answerInInbox: (task: number) => {
-        showSideView("inbox");
+        showSideView("asks");
         requestAnimationFrame(() => landOnGroupIn(plane, task, "task-question"));
       },
     }),
@@ -10700,6 +10715,17 @@ export const PlaneView = memo(function PlaneView({
       ).get(id),
     [listedChats, nameOf, needs, refusals, reports, stoppedBelow, tabs],
   );
+  /** Go to chat from Asks or Updates: a chat in the queue goes as the hand's Go did, by the
+   *  catalogue's own row, which knows a failed task's row and a report with nowhere to go
+   *  (#1448, #1491). */
+  const goToAsking = useCallback(
+    (session: number) => {
+      const go = queueRow(showId(session), session);
+      if (go?.available) press(go);
+      else showChat(session);
+    },
+    [queueRow, press, showChat],
+  );
 
   // What this project has open, told to the window: the quit warning lists every project's
   // chats, and this project's own tab says when one of them needs you.
@@ -10940,7 +10966,6 @@ export const PlaneView = memo(function PlaneView({
     const at = seenAt();
     return [
       ...taskUpdates([...finishedTasks.values()].flat(), nameOf, at),
-      ...doctorUpdates(doctor.report, at),
       ...resumeUpdates(reopened, at),
       ...sandboxUpdates(sandboxBlocks, nameOf, at),
       ...awayUpdates(awayRefused ?? []),
@@ -10961,7 +10986,6 @@ export const PlaneView = memo(function PlaneView({
     browserAsksEnded,
     finishedTasks,
     nameOf,
-    doctor.report,
     reopened,
     sandboxBlocks,
     awayRefused,
@@ -10969,7 +10993,18 @@ export const PlaneView = memo(function PlaneView({
     foundFor,
     refusals,
   ]);
-  const { updates: keptUpdates, settle: settleUpdates } = useInboxUpdates(plane, derivedUpdates);
+  const {
+    updates: keptUpdates,
+    settle: settleUpdates,
+    setAside,
+  } = useInboxUpdates(plane, derivedUpdates);
+  /** **The first-open baseline** (#5648, ADR 0119): a fresh clone opens quiet. */
+  const firstOpen = useFirstOpen({ plane, report: doctor.report, setAside, dismiss });
+  /** **Updates' and the Notices' Dismiss, held for their Undo** (#5650): each view's own. */
+  const updatesHold = useDismissHold();
+  const noticesHold = useDismissHold();
+  /** The bell's count (#5646): the unread lines From your chats, those just dismissed left out. */
+  const bell = unreadMine(keptUpdates?.filter((one) => !updatesHold.held.has(heldUpdate(one.key))));
 
   /**
    * **The chats in no pane** (#4759, spec #4750): listed, and in no tab of any window of the
@@ -11078,15 +11113,19 @@ export const PlaneView = memo(function PlaneView({
             : "Put this update away, and the chat's needs-you item with it",
         };
       }
-      return { update, go, dismiss: put };
+      // A finished task opens in place to show its report, or why it failed (#5651).
+      const report = task?.report.trim() ? task.report : undefined;
+      return { update, go, report, read, dismiss: put };
     });
     return {
       rows,
-      onMarkAllRead: () => settleUpdates(null, "read"),
-      onDismissAll: () => {
+      // The lines of the list shown (#5646): Mine's or Project's, never the other's.
+      onMarkAllRead: (keys: readonly string[]) => settleUpdates(keys, "read"),
+      onDismissAll: (keys: readonly string[]) => {
+        const these = new Set(keys);
         // Each update a source lists is put away there too, as its own Dismiss would.
         for (const one of keptUpdates ?? []) {
-          if (!LIVE.has(one.kind)) continue;
+          if (!these.has(one.key) || !LIVE.has(one.kind)) continue;
           const refused = away.get(one.key);
           if (refused !== undefined) onAway?.(plane, refused, "dismiss");
           if (
@@ -11102,7 +11141,7 @@ export const PlaneView = memo(function PlaneView({
           )
             ignoreForUpdate(one.session);
         }
-        settleUpdates(null, "dismissed");
+        settleUpdates(keys, "dismissed");
       },
     };
   }, [
@@ -11123,8 +11162,12 @@ export const PlaneView = memo(function PlaneView({
     asksOfChat,
     ignoreForUpdate,
   ]);
-  /** The Inbox, shown: where the away summary's refused dispatches are answered (#1693). */
-  const showInbox = useCallback(() => showSideView("inbox"), [showSideView]);
+  /** Asks, shown (#5644): where a vault's request and a profile's sign-in wait. */
+  const showInbox = useCallback(() => showSideView("asks"), [showSideView]);
+  /** Updates, shown (#5644): where the away summary's refused dispatches are answered (#1693). */
+  const showUpdates = useCallback(() => showSideView("updates"), [showSideView]);
+  /** Notices, shown (#5645): the project's Notices, in the Panel's right half, under Asks. */
+  const showNotices = useCallback(() => showSideView("notices"), [showSideView]);
   /** A runner's branch ready to push, from the away summary (#2051): its workspace in front,
    *  and Changes, where it is taken here and pushed. */
   const showChangesOf = useCallback(
@@ -11143,18 +11186,39 @@ export const PlaneView = memo(function PlaneView({
    * its chat in a new session, and the pane moves on to it before the ask is read as gone.
    */
   const touchOnPane = useAnsweredWhenGone(plane, waiting);
+  /**
+   * **Snooze all on Asks** (#5647): the core keeps what each chat held, and lists a snoozed
+   * chat's asks apart until it asks something new; every list of this project's asks is read
+   * again after, so the ✋ and Asks drop them, or take them back, at once.
+   */
+  const snoozedAsks = questions?.snoozed;
+  const snoozing = useMemo<Snoozing>(() => {
+    const done = (said: { status: "ok" } | { status: "error"; error: string }) => {
+      asksMoved(plane);
+      return said.status === "error" ? said.error : undefined;
+    };
+    const unsaid = (err: unknown) => ({ status: "error" as const, error: String(err) });
+    return {
+      snoozed: snoozedAsks ?? [],
+      snooze: async (chats) => done(await commands.snoozeInboxAsks(plane, chats).catch(unsaid)),
+      wake: async (sessions) =>
+        done(await commands.wakeInboxAsks(plane, sessions ?? null).catch(unsaid)),
+    };
+  }, [plane, snoozedAsks]);
   const answeredOnPane = useCallback(
     (words: string, ask: Shown) => touchOnPane(ask, words),
     [touchOnPane],
   );
-  /** The Inbox brought on screen with the keyboard left where it is: a Notice answering the
-   *  person's own press arrived in it (D-1695-3). */
-  const inboxOnScreen = useCallback(() => showSide("inbox"), [showSide]);
+  /** Notices brought on screen with the keyboard left where it is: a Notice answering the
+   *  person's own press arrived in it (D-1695-3), and a Result with it (#5645). */
+  const inboxOnScreen = useCallback(() => showSide("notices"), [showSide]);
 
   /** This machine's alerts (`windowprefs.ts`), listed in every project's Inbox. */
   const aboutThisMachine = useAboutThisMachine();
   /** How many Notices this project's Inbox lists, for the status line's button. */
   const [noticesListed, setNoticesListed] = useState(0);
+  /** How many of them say something needs fixing (#5645): the Notices icon's dot. */
+  const [noticesTrouble, setNoticesTrouble] = useState(0);
   /**
    * **The status line's Notices button** (#1695): what the Inbox lists that is no ask, opened by
    * a press. No number where purlis cannot stand behind one (`StatusLine`): until this
@@ -11172,10 +11236,10 @@ export const PlaneView = memo(function PlaneView({
       count: known ? noticesListed + (windowLines?.count ?? 0) : undefined,
       open: () => {
         reread();
-        showInbox();
+        showNotices();
       },
     };
-  }, [alerts, plane, noticesListed, showInbox, windowLines?.count]);
+  }, [alerts, plane, noticesListed, showNotices, windowLines?.count]);
 
   /** The element this project draws into, in the window only while it is in front. */
   const host = useProjectHost();
@@ -11225,6 +11289,36 @@ export const PlaneView = memo(function PlaneView({
     ...(staleClones.reading ? ["Checking repos for a stale branch or address…"] : []),
     ...(alerts?.reading.at === "reading" ? ["Reading the alerts…"] : []),
   ];
+  /**
+   * **What teammates changed in the project** (#5646, ADR 0119): its hosts and browser sites,
+   * its Internet access presets and its dispatch grants. Listed under Updates' Project, never
+   * among the Notices and never counted: each is told once, and asks the person nothing that
+   * blocks a chat of theirs. purlis has no Notice of the purlis version a project expects yet.
+   */
+  // Drawn once the first-open baseline is answered: at a fresh open the core writes their seen
+  // records first, so a teammate's past change is never told as new (#5648).
+  const fromTheProject = firstOpen.ready ? (
+    <>
+      {/* **The project's own hosts changed** (#1341): told once to each teammate. With them,
+          the project's browser sites (#2443), each told before it reaches their browsers. */}
+      <ProjectHostsNotice
+        plane={plane}
+        onReview={() => openSettingsAt({ group: "project.sandbox" })}
+      />
+      {/* **The project's Internet access presets changed** (#1385): told once to each
+          teammate, so a preset that widens never widens unseen. */}
+      <ProjectPresetsNotice
+        plane={plane}
+        onReview={() => openSettingsAt({ group: "project.sandbox" })}
+      />
+      {/* **A teammate's dispatch grant arrived** (#1506): said here, at the window's level,
+          when the project's settings gain one this person has not answered. */}
+      <ProjectDispatchNotice
+        plane={plane}
+        onReview={() => openSettingsAt({ group: "project.dispatch" })}
+      />
+    </>
+  ) : undefined;
   const standing = (
     <>
       {trouble && (
@@ -11301,12 +11395,6 @@ export const PlaneView = memo(function PlaneView({
         settle={settleNotices}
         onRestart={restartThem}
       />
-      {/* **The project's own hosts changed** (#1341): told once to each teammate. With them,
-          the project's browser sites (#2443), each told before it reaches their browsers. */}
-      <ProjectHostsNotice
-        plane={plane}
-        onReview={() => openSettingsAt({ group: "project.sandbox" })}
-      />
       {/* **The runner this project's chats run on answered with another key** (#2752): said
           once for the project, where its pool is removed. */}
       <RunnerKeyChangedNotice
@@ -11322,12 +11410,6 @@ export const PlaneView = memo(function PlaneView({
       {/* **A task's runner kept, since its work is not all here** (#4569): never silent, with
           Fetch again and Discard. */}
       <FreshRunnerKeptNotice plane={plane} />
-      {/* **The project's Internet access presets changed** (#1385): told once to each
-          teammate, so a preset that widens never widens unseen. */}
-      <ProjectPresetsNotice
-        plane={plane}
-        onReview={() => openSettingsAt({ group: "project.sandbox" })}
-      />
       {/* **The project expects something this machine has not allowed** (ADR 0093): asked
           once, up front, where the declaration is read, never first by a tool that failed. */}
       <ProjectExpectsNotice
@@ -11339,12 +11421,6 @@ export const PlaneView = memo(function PlaneView({
       <TeamSandboxOffNotice plane={plane} />
       {/* **A persona's hosts wait for you** (#1362): asked on each machine, never told. */}
       <PersonaHostsNotice plane={plane} />
-      {/* **A teammate's dispatch grant arrived** (#1506): said here, at the window's level,
-          when the project's settings gain one this person has not answered. */}
-      <ProjectDispatchNotice
-        plane={plane}
-        onReview={() => openSettingsAt({ group: "project.dispatch" })}
-      />
       {/* The doctor's findings that stand as Notices, each with its fix (#1250). */}
       <DoctorNotices
         doctor={doctor}
@@ -11491,7 +11567,7 @@ export const PlaneView = memo(function PlaneView({
         away={awayNow}
         onShowChat={showChat}
         onShowFinished={showFinished}
-        onShowInbox={showInbox}
+        onShowInbox={showUpdates}
         onShowChanges={showChangesOf}
       />
       {alerts !== undefined && (
@@ -11758,29 +11834,18 @@ export const PlaneView = memo(function PlaneView({
                       )}
                     />
                   ),
-                  // **The Inbox** (#1692): what waits on the person here, answered in place.
-                  inbox: (
+                  // **Asks** (#1692, #5644): what waits on the person here, answered in place.
+                  asks: (
                     <Inbox
+                      part="asks"
                       plane={plane}
                       asks={waiting}
-                      onGo={(session) => {
-                        // A chat in the queue goes as the hand's Go did: the catalogue's own row, which
-                        // knows a failed task's row and a report with nowhere to go (#1448, #1491).
-                        const go = queueRow(showId(session), session);
-                        if (go?.available) press(go);
-                        else showChat(session);
-                      }}
-                      updates={inboxUpdates}
-                      notices={standing}
-                      reading={inboxReading}
-                      onNotices={setNoticesListed}
-                      onNoticeAnswer={inboxOnScreen}
+                      onGo={goToAsking}
                       elsewhere={elsewhere}
                       // The scope's workspace is the strip's (qw359): the plane root is a place too.
                       here={focused}
                       workspaceOf={filedIn}
                       workspaceNamed={workspaceNamed}
-                      windowLines={windowLines}
                       asked={chatAsked}
                       personaOf={personaOf}
                       onLeave={leaveInbox}
@@ -11791,13 +11856,51 @@ export const PlaneView = memo(function PlaneView({
                         const ignore = queueRow(ignoreId(session), session);
                         if (ignore?.available) press(ignore);
                       }}
+                      snoozing={snoozing}
+                    />
+                  ),
+                  // **Updates** (#5644): the project's updates, as the Inbox listed them.
+                  updates: (
+                    <Inbox
+                      part="updates"
+                      plane={plane}
+                      asks={waiting}
+                      onGo={goToAsking}
+                      updates={inboxUpdates}
+                      project={fromTheProject}
+                      hold={updatesHold}
+                      elsewhere={elsewhere}
+                      onLeave={leaveInbox}
+                      here={focused}
+                      workspaceOf={filedIn}
+                      workspaceNamed={workspaceNamed}
+                    />
+                  ),
+                  // **Notices** (#5645): the project's Notices, the window's own lines and
+                  // Results, in the Panel's right half; always this project's, so no scope.
+                  notices: (
+                    <Inbox
+                      part="notices"
+                      plane={plane}
+                      asks={waiting}
+                      onGo={goToAsking}
+                      notices={standing}
+                      reading={inboxReading}
+                      onNotices={setNoticesListed}
+                      onTrouble={setNoticesTrouble}
+                      onNoticeAnswer={inboxOnScreen}
+                      windowLines={windowLines}
+                      onLeave={leaveInbox}
+                      hold={noticesHold}
                     />
                   ),
                   // **The attention region's views** (#1678): the "for you" side (ADR 0038 as amended
                   // 2026-10-10), one panel per view, and each approved extension's panel a view too.
                   ...Object.fromEntries(
                     [
-                      ...ATTENTION_VIEWS.filter((view) => view !== "inbox"),
+                      ...ATTENTION_VIEWS.filter(
+                        (view) => view !== "asks" && view !== "updates" && view !== "notices",
+                      ),
                       ...sidePanels.map((one) => one.view),
                     ].map((view) => [
                       view,
@@ -11872,7 +11975,7 @@ export const PlaneView = memo(function PlaneView({
                   ),
                   // The asks waiting here (#1692, I-2): the ✋'s count for this project, in its tone, on
                   // the bar, so it is there while the side is put away.
-                  inbox: (
+                  asks: (
                     <ActivityCount
                       count={waiting?.length ?? 0}
                       said={
@@ -11883,6 +11986,21 @@ export const PlaneView = memo(function PlaneView({
                       tone="needs-you"
                     />
                   ),
+                  // The unread lines From your chats (#5646, ADR 0119): the bell's count, in the plain
+                  // colours, since a result is news of the person's own work and asks nothing.
+                  // Project is never counted.
+                  updates: (
+                    <ActivityCount
+                      count={bell}
+                      said={
+                        bell === 1
+                          ? "1 unread update from your chats"
+                          : `${bell} unread updates from your chats`
+                      }
+                    />
+                  ),
+                  // A Notice needs fixing (#5645): a dot, never a number, and nothing otherwise.
+                  notices: noticesTrouble > 0 && <ActivityDot said={NEEDS_FIXING} />,
                   // The focused workspace's open todos (B-8), the status line's own count: plain, since
                   // a todo is yours to do and not a chat asking for you.
                   todos: (

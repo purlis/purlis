@@ -94,15 +94,15 @@ describe("the window's own lines", () => {
     await vi.waitFor(() => expect(projectTabs()).toEqual(["one"]));
     await vi.waitFor(() => expect(listening("plane-closed")).toBe(true));
 
-    // A project in front: the line is listed in its Inbox's Notices, outside the opener's page,
-    // and never under the title bar.
+    // A project in front: the line is listed in its Notices view (#5645), outside the opener's
+    // page, and never under the title bar.
     const line = await vi.waitFor(() => {
       const one = slowLine();
       expect(one.closest(".inbox-window-lines")).not.toBeNull();
       return one;
     });
     expect(line.closest(".window-notices-at")).toBeNull();
-    expect(line.closest('[aria-label="Inbox"]')).not.toBeNull();
+    expect(line.closest('[data-view="notices"]')).not.toBeNull();
 
     // The project goes: the same line, now at the top of the opener's page.
     fire("plane-closed", { plane: ONE });

@@ -119,7 +119,7 @@ describe("the motion layer", () => {
   it("hears no animation with reduced motion on, as a panel arrives", async () => {
     await untilTheStripIsRead();
     const panel = ".slot-right";
-    const inbox = '[role="tablist"][aria-label="Attention"] [role="tab"][aria-label="Inbox"]';
+    const inbox = '[role="tablist"][aria-label="Attention"] [role="tab"][aria-label="Asks"]';
     const close = ".slot-right .side-close";
     if (await $(close).isExisting()) await $(close).click();
     await $(close).waitForExist({ reverse: true, timeout: 10_000 });

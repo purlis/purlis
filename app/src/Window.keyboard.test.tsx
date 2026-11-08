@@ -5,7 +5,14 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render as renderBare, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  render as renderBare,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
@@ -14,6 +21,7 @@ import { forgetThisLaunch } from "./regions";
 import { sequenceIn } from "./tabSequence";
 import { closeFromTheRail, showTheExplorer, stripNamed, workspaceChips } from "./test-strips";
 import { roleOf, wordsOf } from "./a11y.testkit";
+import { UNDO_MS } from "./undo";
 
 /**
  * **Where Tab goes in the window outside its dialogs** (charter-app#189).
@@ -166,6 +174,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   clearMocks();
+  vi.useRealTimers();
 });
 
 /** The tabs of one strip, in the order it draws them. */
@@ -439,10 +448,10 @@ describe("the window's tab order", () => {
       "button What Claude Code can do here",
       "separator Resize the right sidebar",
       // The right panel's × (R125), on its header.
-      "button Close Inbox",
-      // Attention, on the right, opens on the Inbox (#1738), which holds nothing here: no
+      "button Close Asks",
+      // Attention, on the right, opens on Asks (#1738, #5644), which holds nothing here: no
       // stop. The needs-you queue is the title bar's (charter-app#249), and the Vaults view,
-      // with its `+`, is hidden while the Inbox is open.
+      // with its `+`, is hidden while Asks is open.
       // The Panel under them (#1737): the handle that resizes it against the editor, then each
       // half, ONE stop (P-13, #1741): its view's. The chevron on its line is the pointer's.
       // Repos' tree is ONE stop, the picked row (the workspace itself); the handle between the
@@ -455,7 +464,7 @@ describe("the window's tab order", () => {
       // icons, ONE stop. The window's rightmost column, so last in the DOM; Tab walks it
       // straight after the right sidebar, before the Panel (#1686, D-1686-2,
       // `RegionFrame.tabOrderOf`).
-      "tab Inbox",
+      "tab Asks",
       "tab Memory",
       // The status line: the project by its name, whose tooltip is its directory (qw357), then
       // the doctor and Notices, which stays outermost (#2913). The region toggles went; a side's
@@ -530,7 +539,7 @@ describe("a list is one Tab stop", () => {
 
     hand.focus();
     await userEvent.keyboard("{Enter}");
-    const inbox = await screen.findByRole("tabpanel", { name: "Inbox" });
+    const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
     // Each chat waiting is a group under its chain, in the order the registry first saw them.
     expect(
       within(inbox)
@@ -540,12 +549,20 @@ describe("a list is one Tab stop", () => {
     const asks = within(inbox).getAllByRole("listitem");
     // The keyboard lands on the first ask, never on one of its buttons.
     await waitFor(() => expect(asks[0]).toHaveFocus());
-    // Past the card's head, Go to chat and its × (#5214), to its reply.
-    await userEvent.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}");
-    expect(within(asks[0]).getByRole("textbox", { name: "Reply to steward three" })).toHaveFocus();
+    // To its Answer link, which opens its reply in the row with the keyboard in it (#5651).
+    await userEvent.keyboard("{ArrowDown}");
+    expect(within(asks[0]).getByRole("button", { name: "Answer steward three" })).toHaveFocus();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(
+        within(asks[0]).getByRole("textbox", { name: "Reply to steward three" }),
+      ).toHaveFocus(),
+    );
   });
 
-  it("the Inbox's Ignore is the queue's own row, which tells the core (#1692)", async () => {
+  it("the Inbox's Ignore is the queue's own row, which tells the core once its Undo goes (#1692, story 54)", async () => {
+    // The Ignore is held for its Undo first: the clock that takes the Undo away is the test's.
+    vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ["setTimeout", "clearTimeout"] });
     const { asked } = core({ waiting: [3], registry: true });
     render(<App />);
     await waitFor(() => expect(tabsOf("Tabs")).toHaveLength(3));
@@ -553,11 +570,13 @@ describe("a list is one Tab stop", () => {
       name: "1 thing waits on you",
     });
     await userEvent.click(hand);
-    const inbox = await screen.findByRole("tabpanel", { name: "Inbox" });
+    const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
 
     await userEvent.click(
       within(inbox).getByRole("button", { name: "Ignore steward three until it asks again" }),
     );
+    expect(asked).not.toContain("ignore_needs_you");
+    act(() => vi.advanceTimersByTime(UNDO_MS + 1));
 
     await waitFor(() => expect(asked).toContain("ignore_needs_you"));
   });

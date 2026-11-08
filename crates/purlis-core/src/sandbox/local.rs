@@ -924,6 +924,32 @@ pub fn acknowledge_presets(root: &Path, shown: &[String]) -> io::Result<()> {
     change(root, |held| held.presets_seen = Some(shown.to_vec()))
 }
 
+/// Whether this machine has told the person anything of the project at `root`'s sandbox: its
+/// hosts, its browser sites, its presets or its dispatch grants. What the first-open baseline
+/// (#5648) reads as a seen record.
+pub fn told_any(root: &Path) -> bool {
+    let held = read(root);
+    held.hosts_seen.is_some()
+        || held.presets_seen.is_some()
+        || held.dispatch_seen.is_some()
+        || !held.browser_sites_seen.is_empty()
+}
+
+/// **The first-open baseline** (#5648, ADR 0119): the project's hosts and Internet access
+/// presets as they stand count as told, so a fresh clone does not tell a teammate's past
+/// change as new; a change after this is told. Neither grants anything: what a chat reaches is
+/// the committed file's either way. Browser sites and dispatch grants are not touched, since
+/// recording them seen would put them in force.
+pub fn told_as_it_stands(root: &Path) -> io::Result<()> {
+    if let Some(hosts) = hosts_changed(root) {
+        acknowledge_hosts(root, &hosts.now)?;
+    }
+    if let Some(presets) = presets_changed(root) {
+        acknowledge_presets(root, &presets.now)?;
+    }
+    Ok(())
+}
+
 /// A change to the presets made in this machine's own Settings is one this machine has seen —
 /// unless another was still waiting to be told (`pending`, [`presets_changed`] read before the
 /// write), which the Notice then tells with it. Best effort: a record that cannot be written

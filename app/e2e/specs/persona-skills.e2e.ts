@@ -77,7 +77,7 @@ describe("a persona's skills", function () {
   });
 
   after(async () => {
-    await showView("Inbox");
+    await showView("Asks");
   });
 
   it("counts them on its page and opens the Skill studio on a chat as it", async () => {

@@ -62,7 +62,7 @@ describe("a persona's mark, in any colour", function () {
   after(async () => {
     writeFileSync(file, was);
     if ((await tabTexts()).includes(PERSONA)) await closeTab(PERSONA);
-    await showView("Inbox");
+    await showView("Asks");
   });
 
   it("marks a value that is not #rrggbb invalid and writes nothing", async () => {

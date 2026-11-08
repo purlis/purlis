@@ -1,0 +1,1203 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
+import { Send, X } from "lucide-react";
+import { RestartEndsLine } from "./RestartEnds";
+import { commands, type Offered, type PlaneId, type ReachedWhy, type Shown } from "./bindings";
+import { answerTaken, asksMoved, secretAskEntries } from "./asks";
+import { counted as countedSaid } from "./dispatches";
+import { DispatchGrantNotice } from "./DispatchGrantNotice";
+import { KindIcon, kindOfAsk, RowAge } from "./InboxRow";
+import { toneOfKind } from "./messageTone";
+import { keepInboxScope, keptInboxScope, scopeOf, type InboxScope } from "./inboxScope";
+import { NoQuestion, ReadingTheQuestion, useAnswerQuestion } from "./AnswerQuestion";
+import { askKey, noteAnswered, replyBytes, ageOf, type Answered } from "./inboxRules";
+import { type AllowedLately } from "./allowedLately";
+import { NoticeWayGuard } from "./noticeSettle";
+import { ChatText } from "./ChatText";
+import { capMarks } from "./combiningMarks";
+import { blankOf, marksIn, markOf } from "./invisible";
+import { AskWrites } from "./AskWrites";
+import { LoginSite, useTypedSite } from "./LoginSite";
+import { SecretAskNotice, type SecretAskGiven } from "./SecretAskNotice";
+import { SecretFillSite } from "./SecretFillNotice";
+import { Button, ButtonRow, IconButton } from "./ui/button/Button";
+import {
+  MessageBody,
+  MessageForm,
+  MessageLinks,
+  MessageMeta,
+  MessageRow,
+  MessageState,
+  MessageTop,
+} from "./ui/message/Message";
+import { Form, TextArea, TextField } from "./ui/field/Field";
+import { PanelSectionTitle } from "./ui/panel/Panel";
+import { Tooltip } from "./ui/tooltip/Tooltip";
+
+import { chainSaid, Stop, timeSaid, useSettledPlace } from "./inboxRowParts";
+
+// **The Asks view's rows** (#1692, #5644; moved from `Inbox.tsx`): what one ask offers, and how it
+// is drawn and answered in place.
+
+/** What the card of a chat waiting on a reply says where the app heard no message from it: its
+ *  harness gave none, or the app was started since (#4550). */
+export const NO_MESSAGE = "No message to show. Go to chat to see what it said.";
+
+/** What an empty Inbox says (I-12). */
+export const NOTHING_WAITS = "Nothing is waiting on you";
+
+/**
+ * **The asks whose answers are Allow and Keep blocked** (ADR 0097 §6): a permission prompt, a
+ * sandbox's host, folder or local service, a browser's sites, and a refused vault. On these, each answer that
+ * allows is drawn as the `grants` variant and every other in the plain style: equal in weight,
+ * and told apart at a glance in every theme by the grant's edge and its open lock. A question's choices, a removal and a browser's reach are
+ * answers of another kind and keep their own looks.
+ */
+export const ALLOW_OR_KEEP: ReadonlySet<Shown["source"]> = new Set<Shown["source"]>([
+  "permission",
+  "sandbox-host",
+  "sandbox-write",
+  "sandbox-local",
+  "browser-site",
+  "pool-login",
+  "pool-tool",
+  "browser-login",
+  "run-grant",
+  "secret-fill",
+  "vault",
+]);
+
+/** What one ask's row offers, decided once for its stops and its drawing. */
+export type Shape = {
+  /** Why the chat waits, said in place of what it asked. */
+  why?: string;
+  /** The line drawn: the reason, or what it asked, each run of stacked marks cut (#1146). */
+  line: string;
+  /** The answers drawn: none that allows, where the line is not what the ask said whole. */
+  offers: readonly Offered[];
+  /** The first character the line marks as one a reader does not see (`⟦U+XXXX⟧`), where that
+   *  is why the core offers no Allow on a permission (SK-51, #3202). */
+  hidden?: string;
+  /** The lines a permission's action runs over, where its line puts several on one (#3502):
+   *  the count, those drawn as lines (at most `MOST_LINES`, each run of stacked marks cut), and
+   *  how many more it runs over than are drawn. */
+  lines?: { count: number; drawn: string[]; more: number };
+  /** Its answers are buttons here. */
+  answers: boolean;
+  /** It gets a reply box. */
+  reply: boolean;
+  /** Its line is what its chat said, or that there is no message (#4550), so it is drawn whole
+   *  over the lines it has, and the status line above it names the card. */
+  message: boolean;
+  /** What its chat said, or that there is no message, where its line is the reason it waits
+   *  instead. */
+  said: string | undefined;
+  /** It is a task's question, which the Answer form takes. */
+  answerable: boolean;
+  /** **It is answered here, behind its Answer link** (#5651, ADR 0119 decision 7): its answers,
+   *  its reply box, its dispatch's Notice or a task's Answer form. An ask only its own place can
+   *  answer (a prompt in its terminal, its browser waiting for a sign-in) has Go to chat alone. */
+  form: boolean;
+  /** It gets a box for why it is kept blocked, which its chat is told with the answer
+   *  (#1987). */
+  reason: boolean;
+  /** It's a login's ask, whose site the person may change (#4595). */
+  site: boolean;
+  /** It has the queue's Ignore. */
+  ignore: boolean;
+  /** It has Go to chat: every ask but a profile's, which is about no chat (#2035). */
+  go: boolean;
+};
+
+export function shapeOf(
+  ask: Shown,
+  whyOf: ((session: number) => string | undefined) | undefined,
+  onIgnore: ((session: number) => void) | undefined,
+  asked: ((session: number) => boolean) | undefined,
+): Shape {
+  const waits = ask.source === "question" || ask.source === "terminal";
+  const why = ask.source === "question" ? whyOf?.(ask.session) : undefined;
+  // A chat that both asked and has a reason (a report with nowhere to go, say) still asked:
+  // while it is itself waiting, it gets the box beside the reason (#1700).
+  const reply = ask.source === "question" && (why === undefined || asked?.(ask.session) === true);
+  const message = reply && why === undefined;
+  // **A line cut is not the ask, so nothing that lets it run is offered on it** (#1146): the
+  // core offers Allow only where the line says the action word for word
+  // (`hooked::shown_in_full`), and a run of combining marks cut here would undo that.
+  const { text: line, capped } = capMarks(
+    why ?? (message ? (ask.last_message ?? NO_MESSAGE) : ask.says),
+  );
+  // An edit whose change is not shown is never allowed from here (#1146), whatever it offers.
+  const unshown = ask.writes?.kind === "not-shown";
+  const offers =
+    (capped && why === undefined) || unshown
+      ? ask.options.filter((one) => !one.allows)
+      : ask.options;
+  const withheld =
+    ask.source === "permission" && why === undefined && !offers.some((one) => one.allows);
+  // A browser waiting for a sign-in is answered in the browser itself, which its chat shows
+  // (#5651): its Take over is that place's own, not an answer drawn here.
+  const answers =
+    ask.source !== "dispatch" &&
+    ask.options.length > 0 &&
+    ask.answer.via !== "in-its-pane" &&
+    ask.answer.via !== "take-over";
+  const answerable = ask.source === "task-question";
+  return {
+    why,
+    line,
+    offers,
+    hidden: withheld ? withheldFor(line) : undefined,
+    lines: withheld ? linesOf(ask) : undefined,
+    answers,
+    reply,
+    message,
+    said: reply && !message ? capMarks(ask.last_message ?? NO_MESSAGE).text : undefined,
+    answerable,
+    form: ask.source === "dispatch" || reply || answers || answerable,
+    site: ask.login != null,
+    reason:
+      (ask.answer.via === "sandbox-block" ||
+        ask.answer.via === "browser" ||
+        ask.answer.via === "browser-sites" ||
+        ask.answer.via === "browser-login" ||
+        ask.answer.via === "secret-fill" ||
+        ask.answer.via === "vault") &&
+      ask.options.some((one) => one.id === "keep"),
+    // A chat that only waits for the person's next word asks again at its next stop, so it
+    // may be put away, as the queue always let it be. A decision never is.
+    ignore: waits && onIgnore !== undefined,
+    // An ask of no chat's (session 0: a sign-in, a sandbox-only profile, purlis's own) has no
+    // chat to go to.
+    go: ask.session !== 0 && ask.source !== "sign-in" && ask.source !== "sandbox-only",
+  };
+}
+
+/**
+ * **The mark that keeps a permission's Allow away** (SK-51, #3202): the core offers Allow only
+ * on a line that says its action word for word and hides nothing by purlis's one rule
+ * (`hooked::shown_in_full`), and the registry writes each character it hides as its mark
+ * (`asking::said_inertly`), a `⟦` the chat wrote itself as `⟦U+27E6⟧`. So any mark but that one
+ * on the line is a character the action holds that reads otherwise here: a no-break or an en
+ * space that looks like a space, a control, a bidi override. Where it holds several, the row
+ * names the one that misleads most (#3470): a line break, which can hide a second command, then
+ * any other hidden character, then a blank that looks like a space.
+ */
+function withheldFor(line: string): string | undefined {
+  const marks = marksIn(line)
+    .map((one) => one.mark)
+    .filter((one) => one !== markOf("\u27E6"));
+  const rank = (mark: string) => {
+    const kind = blankOf(mark);
+    return kind === "break" ? 0 : kind === "blank" ? 2 : 1;
+  };
+  return marks.reduce<string | undefined>(
+    (best, one) => (best === undefined || rank(one) < rank(best) ? one : best),
+    undefined,
+  );
+}
+
+/** The most lines of a command drawn on its row (#3502); the rest are counted. */
+export const MOST_LINES = 5;
+
+/** **The lines a permission's action runs over** (#3502): the core says how many where the
+ *  ask's line puts several on one, and gives each as the line has it (`asking::lines_of`). They
+ *  are the line, split where the command breaks one, so drawing them shows nothing it does not. */
+function linesOf(ask: Shown): Shape["lines"] {
+  if (ask.lines === undefined || ask.lines === null || ask.lines.count < 2) return undefined;
+  const drawn = ask.lines.shown.slice(0, MOST_LINES).map((one) => capMarks(one).text);
+  return { count: ask.lines.count, drawn, more: Math.max(0, ask.lines.count - drawn.length) };
+}
+
+/** Why a permission over several lines offers no Allow (#3502): its line is not what runs. */
+export const linesSaid = (lines: NonNullable<Shape["lines"]>) =>
+  lines.drawn.length > 0
+    ? `Allow is not offered. It runs over ${lines.count} lines.`
+    : `Allow is not offered. It runs over ${lines.count} lines, put on one here.`;
+
+/** What a row says of the lines it does not draw. */
+const moreLines = (more: number) => `and ${countedSaid(more, "more line", "more lines")}`;
+
+/** An ask's line, each mark on it drawn as one (`invisible-char`), apart from the words. Its
+ *  parts, not a component of its own, so the tooltip still reads the words it repeats. */
+function markedLine(line: string): ReactNode[] {
+  const parts: ReactNode[] = [];
+  let at = 0;
+  for (const { mark, at: from } of marksIn(line)) {
+    parts.push(line.slice(at, from));
+    parts.push(
+      <mark key={from} className="invisible-char">
+        {mark}
+      </mark>,
+    );
+    at = from + mark.length;
+  }
+  parts.push(line.slice(at));
+  return parts;
+}
+
+/** The stops of one ask's row, in the order it draws them, its form's only while `open`. A
+ *  fold's button is a stop too, and not listed: whether it is drawn is `ChatText`'s measure. The
+ *  keyboard leaving from one comes back to the list at its usual stop. */
+export function stopIds(
+  key: string,
+  shape: Shape,
+  options: readonly Offered[] = [],
+  open = false,
+): string[] {
+  // The row's order (#5649): its links, what answers it in the row (#5651: while its Answer
+  // link is open), then its ×.
+  return [
+    key,
+    ...(shape.form ? [`${key}:answer`] : []),
+    // A profile's Ask is about no chat (#2035): there is no chat to go to.
+    ...(shape.go ? [`${key}:go`] : []),
+    ...(open
+      ? [
+          ...(shape.site ? [`${key}:site`] : []),
+          ...(shape.reason ? [`${key}:reason`] : []),
+          ...options.map((option) => `${key}:${option.id}`),
+          ...(shape.reply ? [`${key}:reply`, `${key}:send`] : []),
+          ...(shape.answerable ? [`${key}:task-answer`, `${key}:task-send`] : []),
+        ]
+      : []),
+    ...(shape.ignore ? [`${key}:ignore`] : []),
+  ];
+}
+
+/** An edit's change, drawn above its answers, which wait for it (#1146); any other ask's
+ *  answers as they are. */
+function WithWrites({
+  ask,
+  onDrawn,
+  children,
+}: {
+  ask: Shown;
+  onDrawn: () => void;
+  children: ReactNode;
+}) {
+  if (ask.writes === undefined || ask.writes === null) return <>{children}</>;
+  return (
+    <AskWrites writes={ask.writes} onDrawn={onDrawn}>
+      {children}
+    </AskWrites>
+  );
+}
+
+/** What the row says a hidden character does, by the kind of blank it is (#3470). */
+const DOES = {
+  break: "that breaks the line here",
+  blank: "that looks like another one here",
+  hidden: "a reader does not see here",
+} as const;
+
+/** What a row says of a hidden character a permission holds. */
+const holdsSaid = (mark: string, also = false) =>
+  `It ${also ? "also holds" : "holds"} ${mark}, a character ${DOES[blankOf(mark) ?? "hidden"]}.`;
+
+/** Why a permission holding `mark` offers no Allow (SK-51, #3202; #3470). */
+export const hiddenSaid = (mark: string) => `Allow is not offered. ${holdsSaid(mark)}`;
+
+/** Why a permission over several lines offers no Allow, and the hidden character it holds too,
+ *  where it holds one (#3502). */
+const withheldSaid = (lines: NonNullable<Shape["lines"]>, mark: string | undefined) =>
+  mark === undefined ? linesSaid(lines) : `${linesSaid(lines)} ${holdsSaid(mark, true)}`;
+
+/** What a row says of where it waits. */
+export const SOURCE_SAID: Record<Shown["source"], string> = {
+  permission: "Asks your permission",
+  dispatch: "Asks to dispatch",
+  "sandbox-host": "Asks to reach a host",
+  "sandbox-write": "Asks to write in a folder",
+  "sandbox-local": "Asks to reach a service on this machine",
+  "workspace-removal": "Asks you to remove a workspace",
+  "proposed-change": "Proposes a change for you to apply",
+  "runner-write": "Asks, from a pool's runner, to change this project",
+  "runner-dispatch": "Asks, from a pool's runner, to start a chat here",
+  "sign-in": "Asks you to sign a profile in",
+  "sandbox-only": "Asks you to make a sandbox-only profile",
+  "old-harness-plugins": "Old harness plugin settings, ignored now",
+  browser: "Asks what its browser may reach",
+  "browser-needs-you": "Needs you in its browser",
+  "browser-site": "Asks to let its browser reach a new site",
+  "pool-login": "Asks to log its browser in on a pool's runner",
+  "pool-tool": "Asks to send a tool its vault values for a run on a pool's runner",
+  secret: "Asks you for a secret its vault doesn't hold",
+  vault: "Refused a vault its persona isn't tagged for",
+  "browser-login": "Asks to log its browser in to a site with vault credentials",
+  "secret-fill": "Asks to put a vault secret into a field of its browser",
+  "run-grant": "Asks you to allow a program to use a vault secret",
+  terminal: "In its terminal",
+  question: "Waiting on your reply",
+  "task-question": "Asks you, through its asking chat",
+};
+
+/** Why a task's question reached the person, as its row says it. */
+const REACHED_SAID: Record<ReachedWhy, (from: string) => string> = {
+  "passed-on": (from) => `${from} passed this on`,
+  "no-reply": (from) => `${from} didn't reply`,
+  "asker-gone": (from) => `${from} has closed`,
+};
+
+export function Ask({
+  plane,
+  ask,
+  dispatches,
+  shape,
+  open,
+  onOpen,
+  onGo,
+  onAnswered,
+  onIgnore,
+  onTouched,
+  above,
+  where,
+  now,
+}: {
+  plane: PlaneId;
+  ask: Shown;
+  /** Where its chat is: project · workspace · persona, as much as the window says. */
+  where: string;
+  /** The time its age is said against. */
+  now: number;
+  /** Its chat's dispatch asks, which its dispatch Notice draws its answers from (#1700). */
+  dispatches: readonly Shown[];
+  shape: Shape;
+  /** Its Answer is open: its form is drawn in the row (#5651). */
+  open: boolean;
+  /** Its Answer, or Cancel, was pressed. */
+  onOpen: (open: boolean) => void;
+  /** The stops drawn above it: one changing moves it (`useSettledPlace`). */
+  above: string;
+  onGo: () => void;
+  onAnswered?: (ask: Shown, option: Offered, live: boolean) => void;
+  onIgnore?: (session: number) => void;
+  /** A way out of the Notice drawn in the row was pressed, with its words. */
+  onTouched: (answer: string) => void;
+}) {
+  const id = useId();
+  const [said, setSaid] = useState<string>();
+  const [busy, setBusy] = useState(false);
+  /** Why the person keeps it blocked, if they say: told to the chat with the answer. */
+  const [reason, setReason] = useState("");
+  /** The site as the person changed it, on a login's ask (#4595). */
+  const [typed, setTyped] = useTypedSite(ask);
+  const who = chainSaid(ask.chain);
+  /** A secret's one notice draws its own answers (#5080). */
+  const secretNotice = ask.secret != null || ask.run != null;
+  const key = askKey(ask);
+  /** The task a task's question is from, as its Answer form names it. */
+  const task = ask.chain[ask.chain.length - 1] ?? who;
+  /** Its words are drawn whole: it is a dispatch's own Notice, or an answer here allows. */
+  const whole =
+    ask.source === "dispatch" || (shape.answers && shape.offers.some((one) => one.allows));
+  /** Its words are a chat's own, not a command's or purlis's: a message it ended its turn on,
+   *  or a task's question (#5214). Never an ask an answer here allows, which is read as it is. */
+  const chatWords =
+    shape.message || (ask.source === "task-question" && !whole && shape.lines === undefined);
+
+  // An edit's change arrives after its row (#1146): its Allow waits to settle from then.
+  const [changeDrawn, setChangeDrawn] = useState(false);
+  const onChangeDrawn = useCallback(() => setChangeDrawn(true), []);
+  const here = [
+    above,
+    shape.line,
+    ...shape.offers.map((one) => one.label),
+    changeDrawn ? "drawn" : "",
+    // **An Answer just opened is a form just drawn** (#5651): the keyboard lands on its first
+    // answer, so an Allow there waits to settle as one drawn anew does, and a second Enter on
+    // the link's heels allows nothing.
+    open ? "open" : "",
+    // A login's notice drawn anew has to be read anew (#4595).
+    ask.answer.via === "browser-login" || ask.answer.via === "secret-fill" ? ask.answer.shown : "",
+  ].join("\n");
+  const { drawn, tooSoon } = useSettledPlace<HTMLLIElement>(here);
+  /** **The keyboard goes into the form its Answer opens** (#5651): onto its box, or its first
+   *  answer. A task's box takes it itself once its question is read (`useAnswerQuestion`). */
+  const focusForm = useRef(false);
+  useEffect(() => {
+    if (!open || !focusForm.current) return;
+    focusForm.current = false;
+    document
+      .getElementById(`${id}-form`)
+      ?.querySelector<HTMLElement>("textarea, input, button")
+      ?.focus();
+  }, [open, id]);
+  /** Whether `option` is an Allow on an ask of Allow and Keep blocked (ADR 0097 §6). */
+  const grants = (option: Offered) => option.allows && ALLOW_OR_KEEP.has(ask.source);
+  /** A press of `option`; on a secret's one notice (#5080), with what it gave, read once. */
+  const answer = (option: Offered, given?: () => SecretAskGiven) => {
+    if (busy) return;
+    // **An Allow waits for the row to settle** (#1695), as an update's does: with the hand's
+    // list retired, the Inbox is where a permission or a host is allowed from outside its
+    // pane, and an ask joining above must not put another's Allow under the pointer.
+    if (option.allows && tooSoon()) {
+      setSaid(MOVED_JUST_NOW);
+      return;
+    }
+    setBusy(true);
+    setSaid(undefined);
+    // A secret's values are read from their boxes as the answer is pressed, and the boxes
+    // emptied: only now, once the row has settled (#5080).
+    const got = given?.();
+    void answerTaken(
+      plane,
+      ask,
+      option.id,
+      option.id === "keep" ? reason : undefined,
+      got === undefined ? typed : got.typed,
+      got?.picked,
+      got?.remember,
+      got?.run,
+      got?.named,
+    )
+      .then(({ refused, live, opened }) => {
+        if (refused !== undefined) {
+          setSaid(refused);
+          return;
+        }
+        // A dialog of the window's was opened, where the person decides (qw356): the ask
+        // still waits, and nothing was answered here.
+        if (opened === true) return;
+        noteAnswered(plane, {
+          at: Date.now(),
+          chain: ask.chain,
+          says: ask.says,
+          answer: option.label,
+        });
+        onAnswered?.(ask, option, live);
+      })
+      .finally(() => {
+        setBusy(false);
+        // Whatever it answered, the list is read again: a refusal may mean it went elsewhere.
+        asksMoved(plane);
+      });
+  };
+
+  const body =
+    ask.source === "dispatch" ? (
+      // The dispatch's own Notice, whole: what an Allow is bound to is read before it. Only a
+      // press of one of its ways out counts as answering it here, never a tick or a scroll.
+      <div className="inbox-notice">
+        <NoticeWayGuard
+          value={(way) => {
+            // **Its answers wait for the row to settle** (#1695), as an ask's Allow does: the
+            // Notice grants, and what is under the pointer or the keyboard must be what the
+            // person read.
+            if (tooSoon()) {
+              setSaid(MOVED_JUST_NOW);
+              return false;
+            }
+            setSaid(undefined);
+            if (way.textContent) onTouched(way.textContent);
+            return true;
+          }}
+        >
+          <DispatchGrantNotice plane={plane} session={ask.session} asks={dispatches} />
+        </NoticeWayGuard>
+      </div>
+    ) : shape.reply ? (
+      <Reply plane={plane} ask={ask} stop={key} />
+    ) : shape.answerable ? (
+      <TaskAnswer plane={plane} ask={ask} stop={key} task={task} />
+    ) : shape.answers ? (
+      <WithWrites ask={ask} onDrawn={onChangeDrawn}>
+        {ask.login != null && (
+          <Stop id={`${key}:site`}>
+            <LoginSite login={ask.login} typed={typed} onTyped={setTyped} />
+          </Stop>
+        )}
+        {/* A secret's one notice (#5080): its facts, the chat's words, its fields, its Allow
+            and its own answers, from the secret-ask family. */}
+        {secretNotice && (
+          <Stop id={`${key}:secret`}>
+            <SecretAskNotice
+              ask={ask}
+              chat={who === "" ? "The chat" : who}
+              entries={() => secretAskEntries(plane, ask)}
+              busy={busy}
+              onAnswer={answer}
+              onSaid={setSaid}
+            />
+          </Stop>
+        )}
+        {/* What a secret fill puts where (#5115): words to read, nothing to reach. */}
+        {ask.fill != null && <SecretFillSite fill={ask.fill} />}
+        {shape.reason && (
+          <Stop id={`${key}:reason`}>
+            <TextField
+              className="inbox-reason"
+              aria-label={`Why you keep it blocked, told to ${who}`}
+              value={reason}
+              placeholder="Why keep it blocked? (optional, the chat is told)"
+              maxLength={REASON_TYPED_MOST}
+              spellCheck
+              onChange={setReason}
+              onKeyDown={keepHomeAndEnd}
+            />
+          </Stop>
+        )}
+        {!secretNotice && (
+          <ButtonRow className="inbox-answers" role="group" aria-label={`Answers to ${who}`}>
+            {shape.offers.map((option) => (
+              // Never `disabled` while busy: a disabled button drops the keyboard to the page
+              // (#1700). It says it is busy, and `answer` sends nothing a second time.
+              <Stop key={option.id} id={`${key}:${option.id}`}>
+                <Button
+                  // The answer the source suggests is the primary one, in its place (#2241): a
+                  // persona's declared browser. Still only the person's press answers. On an ask
+                  // of Allow and Keep blocked, each Allow is the grants variant, as plain as Keep
+                  // blocked and told apart by its edge and its lock, and never the primary look
+                  // (ADR 0097 §6).
+                  variant={
+                    grants(option)
+                      ? "grants"
+                      : option.preselected === true
+                        ? "primary"
+                        : "secondary"
+                  }
+                  className={option.allows ? "inbox-answer allows" : "inbox-answer"}
+                  aria-disabled={busy || undefined}
+                  aria-busy={busy || undefined}
+                  onPress={() => answer(option)}
+                >
+                  {option.label}
+                </Button>
+              </Stop>
+            ))}
+          </ButtonRow>
+        )}
+      </WithWrites>
+    ) : null;
+
+  return (
+    <Stop id={key}>
+      {/* **A row of Asks** (#5649, ADR 0119 decision 6): its kind's glyph in the waiting tint;
+          the chat's name with how long it has waited at the right, the × in its place under the
+          pointer; what it waits on (in the waiting colour) and where; its words; its links
+          (Answer, Go to chat); and what answers it, in the row. */}
+      <MessageRow
+        as="li"
+        tone={toneOfKind(kindOfAsk(ask.source))}
+        icon={<KindIcon kind={kindOfAsk(ask.source)} />}
+        ref={drawn}
+        className="inbox-ask"
+        data-source={ask.source}
+        aria-labelledby={shape.message ? `${id}-whose` : `${id}-says`}
+        aria-describedby={
+          shape.message
+            ? `${id}-says`
+            : `${id}-whose${shape.said === undefined ? "" : ` ${id}-said`}`
+        }
+        dismiss={
+          shape.ignore && onIgnore !== undefined ? (
+            <Stop id={`${key}:ignore`}>
+              <IconButton
+                icon={<X />}
+                size="sm"
+                variant="quiet"
+                aria-label={`Ignore ${who} until it asks again`}
+                onPress={() => onIgnore(ask.session)}
+              />
+            </Stop>
+          ) : undefined
+        }
+      >
+        <MessageTop
+          title={<span className="inbox-who">{who}</span>}
+          time={<RowAge when={ageOf(plane, ask)[0]} now={now} since="Waiting since" />}
+        />
+        <MessageMeta>
+          <MessageState id={`${id}-whose`}>{SOURCE_SAID[ask.source]}</MessageState>
+          {where !== "" && (
+            <>
+              {" · "}
+              <span className="inbox-where">{where}</span>
+            </>
+          )}
+        </MessageMeta>
+        <MessageBody>
+          {/* The ask's words are the source's, drawn as text and never as a control. What an
+              Allow here would let run is never cut (#1146): it is read whole first. **A chat's
+              own words** (its message, a task's question) are markdown under the safe subset
+              (`ChatText`, #5214), folded past three lines with Show all (#5649): the person
+              answers them here, and a question is often a message's last line (#4550). */}
+          {chatWords ? (
+            <ChatText
+              id={`${id}-says`}
+              className="ask-says inbox-primary inbox-chat-text"
+              text={shape.line}
+              foldAt={ASK_FOLD_LINES}
+              foldStop={(button) => <Stop id={`${key}:fold`}>{button}</Stop>}
+            />
+          ) : (
+            <Tooltip tip={shape.line}>
+              {shape.lines !== undefined && shape.lines.drawn.length > 0 ? (
+                // **A command over several lines is drawn on them** (#3502): each as the line has
+                // it, the first few, and how many more. Never clamped: the cap is its own.
+                <span
+                  id={`${id}-says`}
+                  className="ask-says ask-lines inbox-primary ui-text-body ui-text-strong"
+                >
+                  {shape.lines.drawn.map((one, at) => (
+                    // A space between lines, which a column does not draw, so the row's name
+                    // reads them apart.
+                    <Fragment key={at}>
+                      {at > 0 && " "}
+                      <span className="ask-line">{markedLine(one)}</span>
+                    </Fragment>
+                  ))}
+                  {shape.lines.more > 0 && (
+                    <>
+                      {" "}
+                      <span className="ask-line ask-more-lines ui-text-secondary">
+                        {moreLines(shape.lines.more)}
+                      </span>
+                    </>
+                  )}
+                </span>
+              ) : (
+                <span
+                  id={`${id}-says`}
+                  className={`ask-says inbox-primary ui-text-body ui-text-strong${whole ? "" : " inbox-clamped"}`}
+                >
+                  {markedLine(shape.line)}
+                </span>
+              )}
+            </Tooltip>
+          )}
+          {shape.said !== undefined && (
+            <ChatText
+              id={`${id}-said`}
+              className="inbox-said"
+              text={shape.said}
+              foldAt={ASK_FOLD_LINES}
+              foldStop={(button) => <Stop id={`${key}:said-fold`}>{button}</Stop>}
+            />
+          )}
+          {/* Why its Allow is missing: the lines it runs over, which its line put on one
+              (#3502), and a character it holds that reads otherwise (SK-51). */}
+          {shape.answers && (shape.lines !== undefined || shape.hidden !== undefined) && (
+            <p className="inbox-hidden ui-text-secondary">
+              {shape.lines !== undefined
+                ? withheldSaid(shape.lines, shape.hidden)
+                : hiddenSaid(shape.hidden ?? "")}
+            </p>
+          )}
+          {/* A folder or something on this machine reaches the chat only by its restart (#1986):
+              what that ends is said before an Allow here, naming the chat. */}
+          {(ask.source === "sandbox-write" || ask.source === "sandbox-local") &&
+            shape.answers &&
+            shape.offers.some((one) => one.allows) && (
+              <p className="inbox-restart ui-text-secondary">
+                <RestartEndsLine
+                  plane={plane}
+                  session={ask.session}
+                  chat={ask.chain[ask.chain.length - 1]}
+                />
+              </p>
+            )}
+          {ask.answer.via === "task-question" && (
+            <>
+              <p className="inbox-secondary ui-text-secondary">
+                {REACHED_SAID[ask.answer.why](ask.answer.from)}
+                {ask.answer.note === null ? "" : ". Its note:"}
+              </p>
+              {/* The asking chat's note is its own words, drawn as a chat's text is (#5214). */}
+              {ask.answer.note !== null && (
+                <ChatText
+                  className="inbox-note"
+                  text={ask.answer.note}
+                  foldAt={ASK_FOLD_LINES}
+                  foldStop={(button) => <Stop id={`${key}:note-fold`}>{button}</Stop>}
+                />
+              )}
+            </>
+          )}
+        </MessageBody>
+        {/* **Its links** (#5649): Answer, where it is answered here, which opens its form in the
+            row and reads Cancel while it is open (#5651, ADR 0119 decision 7); and Go to chat,
+            on every ask of a chat. */}
+        {(shape.form || shape.go) && (
+          <MessageLinks>
+            {shape.form && (
+              <Stop id={`${key}:answer`}>
+                <Button
+                  size="sm"
+                  variant="quiet-link"
+                  data-lead=""
+                  aria-label={open ? `Cancel answering ${who}` : `Answer ${who}`}
+                  aria-expanded={open}
+                  aria-controls={open ? `${id}-form` : undefined}
+                  onPress={() => {
+                    focusForm.current = !open;
+                    onOpen(!open);
+                  }}
+                >
+                  {open ? "Cancel" : "Answer"}
+                </Button>
+              </Stop>
+            )}
+            {shape.go && (
+              <Stop id={`${key}:go`}>
+                <Button
+                  size="sm"
+                  variant="quiet-link"
+                  aria-label={`Go to chat ${who}`}
+                  onPress={onGo}
+                  className="inbox-go"
+                >
+                  Go to chat
+                </Button>
+              </Stop>
+            )}
+          </MessageLinks>
+        )}
+        {/* **What answers it, in the row, while its Answer is open** (#5651): its answers, its
+            reply box, a task's Answer form, a dispatch's own Notice. */}
+        {open && body !== null && <MessageForm id={`${id}-form`}>{body}</MessageForm>}
+        {said !== undefined && (
+          <p className="inbox-refused" role="status">
+            {said}
+          </p>
+        )}
+      </MessageRow>
+    </Stop>
+  );
+}
+
+/** **The most lines an ask's own words show before "Show all · N lines"** (#5649, ADR 0119
+ *  decision 7): a long one never pushes the others away. */
+export const ASK_FOLD_LINES = 3;
+
+/**
+ * **A reply box for a chat waiting on the person's reply** (I-3): what is typed is sent to the
+ * chat as the person's message, one paste and Enter (`replyBytes`), through the pane's own
+ * input path. Short replies only; anything longer is better written in the chat itself.
+ */
+function Reply({ plane, ask, stop }: { plane: PlaneId; ask: Shown; stop: string }) {
+  const [text, setText] = useState("");
+  const [said, setSaid] = useState<string>();
+  const [busy, setBusy] = useState(false);
+  const box = useRef<HTMLTextAreaElement>(null);
+  const who = chainSaid(ask.chain);
+  const send = () => {
+    const bytes = replyBytes(text);
+    if (bytes === undefined || busy) return;
+    // The send is inert while it sends and once the box is empty: the keyboard goes back to the
+    // box rather than stay on a button that does nothing (#1700).
+    box.current?.focus();
+    setBusy(true);
+    setSaid(undefined);
+    // **Checked before it is sent** (#1700): the reply is a paste and Enter, and if the chat
+    // moved on since the list was read (a delivered report started a turn that stopped on a
+    // prompt in its terminal), that Enter would land on whatever is in front. So the asks are
+    // read again, and nothing is sent unless the chat still waits on a reply.
+    void stillWaits(plane, ask)
+      .then((waits) => {
+        if (waits !== true) {
+          asksMoved(plane);
+          return { status: "error" as const, error: waits === false ? MOVED_ON : NOT_CHECKED };
+        }
+        return commands.sendInput(plane, ask.session, bytes);
+      })
+      .then((done) => {
+        if (done.status === "error") {
+          setSaid(done.error);
+          return;
+        }
+        noteAnswered(plane, {
+          at: Date.now(),
+          chain: ask.chain,
+          says: ask.says,
+          answer: text.trim(),
+        });
+        setText("");
+        asksMoved(plane);
+      })
+      .catch((err: unknown) => setSaid(`purlis could not send it: ${String(err)}`))
+      .finally(() => setBusy(false));
+  };
+  const empty = busy || replyBytes(text) === undefined;
+  return (
+    <Form
+      className="inbox-reply"
+      onSubmit={(event) => {
+        event.preventDefault();
+        send();
+      }}
+    >
+      {/* **The reply strip** (#5214): always at the card's foot, edge to edge, one line at rest
+          and two once it holds the caret, growing to four with its lines. Enter sends,
+          Shift+Enter starts a new line, Esc leaves it for the card. A stop of the list too, so
+          ↑ and ↓ reach it; inside its lines they move the caret. */}
+      <Stop id={`${stop}:reply`}>
+        <TextArea
+          strip
+          inputRef={box}
+          aria-label={`Reply to ${who}`}
+          value={text}
+          placeholder={`Reply to ${who}…`}
+          hint={REPLY_HINT}
+          spellCheck
+          onChange={setText}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+              event.preventDefault();
+              send();
+              return;
+            }
+            if (event.key === "Escape") {
+              // It leaves the box for its card, not the Inbox for the chat in front.
+              event.preventDefault();
+              event.stopPropagation();
+              box.current?.closest<HTMLElement>("li.inbox-ask")?.focus();
+              return;
+            }
+            keepCaretKeys(event);
+          }}
+          end={
+            // Dim and inert while there is nothing to send, the accent's once there is. Never
+            // `disabled`: a disabled button drops the keyboard to the page (#1700).
+            <Stop id={`${stop}:send`} focusable={!empty}>
+              <IconButton
+                icon={<Send />}
+                type="submit"
+                size="sm"
+                variant={empty ? "quiet" : "primary"}
+                aria-label={`Send reply to ${who}`}
+                aria-disabled={empty || undefined}
+              />
+            </Stop>
+          }
+        />
+      </Stop>
+      {said !== undefined && (
+        <p className="inbox-refused" role="status">
+          {said}
+        </p>
+      )}
+    </Form>
+  );
+}
+
+/** Notes `answer` given to `ask` just now, for the list's recently answered. */
+function answeredNow(plane: PlaneId, ask: Shown, answer: string) {
+  noteAnswered(plane, { at: Date.now(), chain: ask.chain, says: ask.says, answer });
+}
+
+/**
+ * **A task's question, answered in its row** (#5651, ADR 0107, ADR 0119 decision 7): the Answer
+ * form's rules (`useAnswerQuestion`: it reads the question the task is paused on and answers that
+ * one by its number, refuses an empty answer, and keeps what was typed through a refusal), drawn
+ * as the reply strip is, since the row already shows the question. Enter sends.
+ */
+function TaskAnswer({
+  plane,
+  ask,
+  stop,
+  task,
+}: {
+  plane: PlaneId;
+  ask: Shown;
+  stop: string;
+  task: string;
+}) {
+  const answering = useAnswerQuestion({
+    plane,
+    session: ask.session,
+    task,
+    onDone: () => {
+      answeredNow(plane, ask, text.trim());
+      asksMoved(plane);
+    },
+  });
+  const { asked, text, setText, sending, refused, setRefused, send, box } = answering;
+  if (asked === undefined) return <ReadingTheQuestion />;
+  if (asked === null) return <NoQuestion task={task} refused={refused} />;
+  const empty = sending || text.trim() === "";
+  return (
+    <Form
+      className="inbox-reply"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void send();
+      }}
+    >
+      <Stop id={`${stop}:task-answer`}>
+        <TextArea
+          strip
+          inputRef={box}
+          aria-label={`Your answer to ${task}`}
+          value={text}
+          placeholder={`Answer ${task}…`}
+          hint={REPLY_HINT}
+          spellCheck
+          onChange={(to) => {
+            setText(to);
+            setRefused(undefined);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+              event.preventDefault();
+              void send();
+              return;
+            }
+            keepCaretKeys(event);
+          }}
+          end={
+            <Stop id={`${stop}:task-send`} focusable={!empty}>
+              <IconButton
+                icon={<Send />}
+                type="submit"
+                size="sm"
+                variant={empty ? "quiet" : "primary"}
+                aria-label={`Send answer to ${task}`}
+                aria-disabled={empty || undefined}
+              />
+            </Stop>
+          }
+        />
+      </Stop>
+      {/* A refusal, as the core says it, with what was typed still in the box: said as the
+          reply strip says one. */}
+      {refused !== undefined && (
+        <p className="inbox-refused" role="status">
+          {refused}
+        </p>
+      )}
+    </Form>
+  );
+}
+
+/** What the reply strip says at its foot while it holds the caret (#5214). */
+export const REPLY_HINT = "Enter sends · Shift+Enter new line";
+
+/**
+ * **The caret's keys inside a reply's lines** (#5214): ↑ and ↓ move the caret a line where there
+ * is one above or below it, and Home and End go to its line's start and end, rather than moving
+ * the list's focus. On its first line ↑, and on its last ↓, still leave it for the list's next
+ * stop, as from any field of the list.
+ */
+function keepCaretKeys(event: KeyboardEvent<HTMLTextAreaElement>) {
+  if (event.metaKey || event.ctrlKey || event.altKey) return;
+  const box = event.currentTarget;
+  const { value } = box;
+  const at = box.selectionDirection === "backward" ? box.selectionStart : box.selectionEnd;
+  const start = value.lastIndexOf("\n", at - 1) + 1;
+  const endAt = value.indexOf("\n", at);
+  const end = endAt === -1 ? value.length : endAt;
+  let to: number | undefined;
+  if (event.key === "Home") to = start;
+  else if (event.key === "End") to = end;
+  else if (event.key === "ArrowUp" && start > 0) {
+    const above = value.lastIndexOf("\n", start - 2) + 1;
+    to = Math.min(above + (at - start), start - 1);
+  } else if (event.key === "ArrowDown" && end < value.length) {
+    const belowEnd = value.indexOf("\n", end + 1);
+    to = Math.min(end + 1 + (at - start), belowEnd === -1 ? value.length : belowEnd);
+  }
+  if (to === undefined) return;
+  event.preventDefault();
+  if (!event.shiftKey) {
+    box.setSelectionRange(to, to);
+    return;
+  }
+  // Extending: the end the selection is anchored at stays where it is.
+  const anchor = box.selectionDirection === "backward" ? box.selectionEnd : box.selectionStart;
+  box.setSelectionRange(
+    Math.min(anchor, to),
+    Math.max(anchor, to),
+    to < anchor ? "backward" : "forward",
+  );
+}
+
+/** The most characters the reason box takes; the chat is told at most 200 of them. */
+const REASON_TYPED_MOST = 400;
+
+/** What an Allow pressed on an ask drawn or moved just now says: nothing was allowed. */
+export const MOVED_JUST_NOW =
+  "This ask was drawn or moved just now, so nothing was allowed. Read it and press again.";
+
+/** What a reply refused because its chat moved on says. */
+export const MOVED_ON =
+  "This chat no longer waits on a reply, so nothing was sent. Go to the chat to see what it does now.";
+
+/** What a reply refused because the check could not be made says. */
+export const NOT_CHECKED =
+  "purlis could not check that this chat still waits on a reply, so nothing was sent. Try again, or reply in the chat itself.";
+
+/** Whether `ask` still waits on a reply, the project's asks read again now: `undefined` where
+ *  they could not be read, which sends nothing either. */
+async function stillWaits(plane: PlaneId, ask: Shown): Promise<boolean | undefined> {
+  const answer = await commands.asksWaiting(plane).catch(() => undefined);
+  const asks =
+    answer?.status === "ok" ? (answer.data as { asks?: readonly Shown[] } | null)?.asks : undefined;
+  if (asks === undefined) return undefined;
+  return asks.some((one) => one.session === ask.session && one.ask === ask.ask);
+}
+
+/**
+ * **Home and End move the cursor in the reply box** (#1700): the box is a stop of the list's
+ * roving focus, which takes Home and End for the list's ends. Done here instead, so the list
+ * never sees them: the cursor goes to the start or the end, Shift extending the selection.
+ */
+function keepHomeAndEnd(event: KeyboardEvent<HTMLInputElement>) {
+  if (event.key !== "Home" && event.key !== "End") return;
+  if (event.metaKey || event.ctrlKey || event.altKey) return;
+  event.preventDefault();
+  const box = event.currentTarget;
+  const to = event.key === "Home" ? 0 : box.value.length;
+  if (!event.shiftKey) {
+    box.setSelectionRange(to, to);
+    return;
+  }
+  // Extending: the end the selection is anchored at stays where it is.
+  const anchor = box.selectionDirection === "backward" ? box.selectionEnd : box.selectionStart;
+  const from = anchor ?? to;
+  box.setSelectionRange(Math.min(from, to), Math.max(from, to), to < from ? "backward" : "forward");
+}
+
+/** An empty Inbox: the sentence, and what was answered here lately, read-only (I-12). Where a
+ *  chat cannot say it waits, the sentence says that instead. */
+export function Empty({
+  recent,
+  allowed,
+  quiet,
+}: {
+  recent: readonly Answered[];
+  /** What was allowed on this machine in the last day, from the grants (D-1700-7). */
+  allowed: readonly AllowedLately[];
+  quiet?: string;
+}) {
+  return (
+    <>
+      {/* Never "nothing" over a chat that cannot say it waits (charter-app#52): the faint
+          hand's sentence, and the chats are the Notices below. */}
+      <p className="inbox-none">{quiet ?? NOTHING_WAITS}</p>
+      {recent.length > 0 && (
+        <section className="inbox-recent" aria-label="Recently answered">
+          <PanelSectionTitle level={3} className="inbox-chain">
+            Recently answered
+          </PanelSectionTitle>
+          <ul>
+            {recent.map((one) => (
+              <li key={`${one.at}:${chainSaid(one.chain)}:${one.says}`}>
+                <time dateTime={new Date(one.at).toISOString()}>{timeSaid(one.at)}</time>{" "}
+                <span className="inbox-recent-chat">{chainSaid(one.chain)}</span>
+                {": "}
+                <span className="ask-says">{capMarks(one.says).text}</span>
+                {" · "}
+                <span className="inbox-recent-answer">{one.answer}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {allowed.length > 0 && (
+        <section className="inbox-recent" aria-label={ALLOWED_LATELY}>
+          <PanelSectionTitle level={3} className="inbox-chain">
+            {ALLOWED_LATELY}
+          </PanelSectionTitle>
+          <ul>
+            {allowed.map((one) => (
+              <li key={one.key}>
+                <time dateTime={new Date(one.at).toISOString()}>{timeSaid(one.at)}</time>{" "}
+                {one.chat !== null && (
+                  <>
+                    <span className="inbox-recent-chat">{one.chat}</span>
+                    {": "}
+                  </>
+                )}
+                {/* A host, a folder, a persona: the grant's own words, as data. */}
+                <span className="ask-says">{capMarks(one.says).text}</span>
+                {" · "}
+                <span className="inbox-recent-answer">{one.level}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+    </>
+  );
+}
+
+/** What the scope switch is called. */
+export const SCOPE_LABEL = "Show what needs you in";
+
+/**
+ * **A scope with nothing in it, while a wider one has something** (qw359): it says so, says how
+ * many wait in the nearest wider scope, and widens in one press, so a narrow pick never reads
+ * as "nothing needs you".
+ */
+export function EmptyScope({
+  said,
+  wider,
+  onWiden,
+}: {
+  /** What the scope says of itself: that nothing waits in it, or that it is not read yet. */
+  said: string;
+  wider: { scope: InboxScope; count: number } | undefined;
+  onWiden: () => void;
+}) {
+  if (wider === undefined) return <p className="inbox-none">{said}</p>;
+  return (
+    <div className="inbox-scope-empty">
+      <p className="inbox-none">{said}</p>
+      <p className="inbox-none">
+        {`${wider.count} ${wider.count === 1 ? "waits" : "wait"} in ${scopeOf(wider.scope)}.`}
+      </p>
+      <Button size="sm" onPress={onWiden}>
+        {`Show ${scopeOf(wider.scope)}`}
+      </Button>
+    </div>
+  );
+}
+
+/** What the empty Inbox's look back at the grants of the last day is called (D-1700-7). */
+export const ALLOWED_LATELY = "Allowed in the last day";
+
+/**
+ * **Where a click on an ask's notification lands** (#1694, I-7): chat `session`'s group in the
+ * Inbox drawn now, brought on screen, its first ask given the keyboard, from which the keys go
+ * on as from any ask. Answers whether the chat has a group to land on: its asks may have been
+ * answered elsewhere since.
+ */
+export function landOnGroup(session: number, source?: Shown["source"]): boolean {
+  const group = document.querySelector<HTMLElement>(
+    `section.inbox .inbox-chat[data-session="${session}"]`,
+  );
+  // At the ask it came for, where it names one (#5215), else the group's first.
+  const first =
+    (source === undefined
+      ? null
+      : group?.querySelector<HTMLElement>(`li[data-source="${source}"]`)) ??
+    group?.querySelector<HTMLElement>("li");
+  if (!group || !first) return false;
+  group.scrollIntoView?.({ block: "nearest" });
+  first.focus();
+  return true;
+}
+
+/**
+ * **The same landing, through a scope that leaves the chat out** (qw359): a notification is
+ * about one ask, and This workspace may not list its chat. So where the group is not drawn and
+ * the scope is the workspace's, the scope widens to the project's, as revealing a row a filter
+ * hides clears the filter, and the landing is tried again once that is drawn.
+ */
+export function landOnGroupIn(plane: PlaneId, session: number, source?: Shown["source"]): void {
+  if (landOnGroup(session, source) || keptInboxScope(plane) !== "workspace") return;
+  keepInboxScope(plane, "project");
+  requestAnimationFrame(() => landOnGroup(session, source));
+}

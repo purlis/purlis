@@ -17,7 +17,7 @@ import { $, browser, expect } from "@wdio/globals";
 import { anEmptyRecord, copyFixturePlane } from "../harness.js";
 import { pressGrant } from "../acting.js";
 import { bandNotice } from "../reading.js";
-import { PROJECTS, ask, inFront, openFromTheStrip } from "../switching.js";
+import { PROJECTS, ask, inFront, keepTheNotices, openFromTheStrip } from "../switching.js";
 
 /**
  * **The up-front Notice of what a project expects** (ADR 0093 as amended 2026-10-13, ruling R3;
@@ -130,13 +130,25 @@ async function theNoticeSaying(text: string | readonly string[], why: string): P
   return said;
 }
 
-/** Waits for the Notice to go. */
+/** Waits for the Notice to go; one that stays says what it says, and what the window said of
+ *  the press (a press too soon after a way out moved allows nothing, and says so). */
 async function noNotice(why: string): Promise<void> {
-  await browser.waitUntil(async () => (await bandNotice(CAUSE)).state === "absent", {
-    timeout: 30_000,
-    interval: 250,
-    timeoutMsg: why,
-  });
+  await browser
+    .waitUntil(async () => (await bandNotice(CAUSE)).state === "absent", {
+      timeout: 30_000,
+      interval: 250,
+    })
+    .catch(async () => {
+      const seen = await browser.execute((cause: string) => {
+        const line = document.querySelector<HTMLElement>(`[data-cause="${cause}"]`);
+        const statuses = [...document.querySelectorAll<HTMLElement>('[role="status"]')]
+          .map((one) => one.innerText.trim())
+          .filter((one) => one !== "");
+        const marked = document.querySelector<HTMLElement>("[data-e2e-pressed]");
+        return `the Notice says: ${line?.innerText.replace(/\s+/g, " ") ?? "(none)"}; the window's statuses: ${statuses.join(" | ")}; focus on: ${document.activeElement?.textContent?.trim() ?? "nothing"}; the button pressed is ${marked === null ? "gone: drawn again since" : "still drawn"}`;
+      }, CAUSE);
+      throw new Error(`${why}; ${seen}; kept: ${await keepTheNotices("project-expects")}`);
+    });
 }
 
 /** Presses one of the Notice's own buttons. An answer that grants waits for the Notice to
@@ -145,8 +157,36 @@ async function noNotice(why: string): Promise<void> {
 async function press(label: string): Promise<void> {
   const button = await $(`[data-cause="${CAUSE}"]`).$(`button=${label}`);
   await button.waitForClickable({ timeout: 20_000 });
-  if (label === ALLOW) await pressGrant(button);
-  else await button.click();
+  // Marked, so a press the guard holds can say whether this is still the button drawn.
+  await browser.execute(
+    (el: HTMLElement) => {
+      el.dataset.e2ePressed = String(Date.now());
+    },
+    await button,
+  );
+  if (label !== ALLOW) {
+    await button.click();
+    return;
+  }
+  // **Pressed again where the window says so** (`NOTICE_MOVED_JUST_NOW`): in the Notices view, in
+  // the Panel's right half, a tall Notice stands scrolled, and a line above it that changes height
+  // (the doctor's, when it checks again) slides its Allow on screen. The guard holds that press
+  // and asks the person to read it and press again, which is what this does, at most twice more.
+  for (let tries = 0; tries < 3; tries += 1) {
+    await pressGrant(button);
+    const held = await browser
+      .waitUntil(
+        () =>
+          browser.execute(() =>
+            [...document.querySelectorAll<HTMLElement>('[role="status"]')].some((one) =>
+              one.innerText.includes("moved just now"),
+            ),
+          ),
+        { timeout: 2_500, interval: 250 },
+      )
+      .catch(() => false);
+    if (!held || !(await button.isExisting())) return;
+  }
 }
 
 /** Opens Settings for the project in front, at the Project level. */

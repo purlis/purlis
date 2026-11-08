@@ -80,7 +80,7 @@ async function inFront(): Promise<string | null> {
 
 /** Waits until the plane's panels are drawn, so a persona's row can be pressed. */
 async function untilThePersonasAreListed(): Promise<void> {
-  // Personas is a view of the right side (#1678), which opens on the Inbox (#1738).
+  // Personas is a view of the right side (#1678), which opens on Asks (#1738, ADR 0119).
   await showView("Personas");
   await browser.waitUntil(
     async () => (await $('[data-testid="panel-personas"]').getText()).includes("devops"),
@@ -135,9 +135,9 @@ async function closeTheTab(name: string): Promise<void> {
 describe("view tabs", function () {
   this.timeout(180_000);
 
-  // The right sidebar back on the Inbox, the view it opens on (#1738): the personas' specs leave
+  // The right sidebar back on Asks, the view it opens on (#1738, ADR 0119): the personas' specs leave
   // it on Personas, and one app process serves the whole run.
-  after(async () => await showView("Inbox"));
+  after(async () => await showView("Asks"));
 
   describe("a persona's own tab", () => {
     after(async () => {

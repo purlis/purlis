@@ -136,11 +136,40 @@ export const sayingSomething = () =>
   screen.queryAllByRole("status").filter((one) => (one.textContent ?? "") !== "");
 
 /**
- * **Opens the Inbox of the project in front** (#1695), as a person presses Notices on the
- * status line: the window's own lines are listed there while a project is in front (D-LB-1).
+ * **Opens the Notices of the project in front** (#1695), in the Notices view since #5645, as a
+ * person presses Notices on the status line: the window's own lines are listed there while a project
+ * is in front (D-LB-1).
  */
 export async function openTheInbox() {
   await userEvent.click(await screen.findByRole("button", { name: /^Notices: / }));
+}
+
+/**
+ * **Shows the Updates view of the right side** (#5644), as a person presses its icon: the
+ * project's updates are listed there, and the side opens on Asks. Returns the view.
+ */
+export async function showUpdates() {
+  const tab = within(await screen.findByRole("tablist", { name: "Attention" })).getByRole("tab", {
+    name: "Updates",
+  });
+  // A press of the open view puts the side away, so it is pressed only when it is not open.
+  if (tab.getAttribute("aria-selected") !== "true") await userEvent.click(tab);
+  return screen.findByRole("tabpanel", { name: "Updates" });
+}
+
+/**
+ * **Shows the Notices view** (#5645), in the Panel's right half under Asks, as a person presses
+ * its Lower icon: the project's Notices, the window's own lines and Results are listed there.
+ * Returns the view.
+ */
+export async function showNotices() {
+  const tab = within(await screen.findByRole("tablist", { name: "Panel, right half" })).getByRole(
+    "tab",
+    { name: "Notices" },
+  );
+  // A press of the open view puts the half away, so it is pressed only when it is not open.
+  if (tab.getAttribute("aria-selected") !== "true") await userEvent.click(tab);
+  return screen.findByRole("tabpanel", { name: "Notices" });
 }
 
 /**

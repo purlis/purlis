@@ -681,7 +681,9 @@ describe("the first run", () => {
     await vi.waitFor(() => expect(calls("send_input")).toHaveLength(1));
     expect(calls("send_input")[0].args).toMatchObject({ plane: LOCAL, text: "gh auth login\n" });
 
-    await person.click(await screen.findByRole("button", { name: "New chat" }));
+    // The sidebar's New chat: the empty pane draws one of the same name once it is shown.
+    const chats = await screen.findByRole("tabpanel", { name: "Chats" });
+    await person.click(await within(chats).findByRole("button", { name: "New chat" }));
     const picker = await screen.findByRole("dialog", { name: "Start a chat" });
     await person.click(within(picker).getByRole("button", { name: "Start chat" }));
     await vi.waitFor(() => expect(calls("start_chat")).toHaveLength(1));

@@ -23,7 +23,7 @@ import { aTabForEachChat } from "./laidOut.testkit";
 
 // The Inbox lists a chat that came back as an update too (#1693), after its Notices (#1695):
 // these tests are about the Notice, so the update is not what they find.
-configure({ defaultIgnore: 'script, style, [data-view="inbox"] .inbox-updates *' });
+configure({ defaultIgnore: 'script, style, [data-view="updates"] .inbox-updates *' });
 
 /** What the picker draws. One profile, so picking is one click. */
 const START_OPTIONS = {

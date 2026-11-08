@@ -307,7 +307,7 @@ describe("a persona with an icon and a colour is drawn with them", () => {
 
     await userEvent.click(await screen.findByRole("button", { name: "1 thing waits on you" }));
 
-    const inbox = await screen.findByRole("tabpanel", { name: "Inbox" });
+    const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
     const group = await within(inbox).findByRole("region", { name: "devops 1" });
     await waitFor(() => expect(marksIn(group, "devops")).toEqual([ROCKET_ON_TEAL]));
   });
