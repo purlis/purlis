@@ -93,6 +93,18 @@ fn a_commondir_that_names_no_folder_or_is_a_link_is_refused() {
     assert_eq!(ref_records_linked(&own), Some(file));
 }
 
+/// A `commondir` is a path and a newline: one longer than any path is not read through, however
+/// it ends.
+#[test]
+fn a_commondir_longer_than_any_path_is_refused() {
+    let (_dir, common) = git_dir();
+    let own = common.join("worktrees/p1");
+    std::fs::create_dir_all(&own).unwrap();
+    let file = own.join("commondir");
+    std::fs::write(&file, format!("../..{}", "\n".repeat(1 << 16))).unwrap();
+    assert_eq!(ref_records_linked(&own), Some(file));
+}
+
 #[test]
 fn a_logs_folder_that_cannot_be_listed_is_refused() {
     use std::os::unix::fs::PermissionsExt as _;

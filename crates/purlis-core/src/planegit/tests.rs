@@ -4977,6 +4977,48 @@ fn a_saves_push_of_a_hand_made_commit_holding_a_credential_is_refused() {
     }
 }
 
+/// A save's push to an origin that cannot be asked what it has, sending more commits than are
+/// read for such a remote, is refused saying what a save needs: origin reached and asked. It is
+/// never told to push some other way.
+#[test]
+fn a_saves_push_past_what_is_read_for_an_origin_that_cannot_be_asked_says_what_to_check() {
+    let (fixture, bare) = published();
+    let head = run(&fixture.root, &["rev-parse", "HEAD"]).trim().to_owned();
+    let branch = run(&fixture.root, &["symbolic-ref", "HEAD"])
+        .trim()
+        .to_owned();
+    let mut stream = String::new();
+    for at in 1..=crate::diffscan::UNASKED_AT_MOST + 1 {
+        stream.push_str(&format!(
+            "commit {branch}\nmark :{at}\ncommitter A <a@b> 0 +0000\ndata 0\n"
+        ));
+        if at == 1 {
+            stream.push_str(&format!("from {head}\n"));
+        } else {
+            stream.push_str(&format!("from :{}\n", at - 1));
+        }
+        stream.push('\n');
+    }
+    let mut fed = crate::forklock::spawn(
+        std::process::Command::new("git")
+            .args(["fast-import", "--quiet"])
+            .current_dir(&fixture.root)
+            .stdin(std::process::Stdio::piped()),
+    )
+    .unwrap();
+    std::io::Write::write_all(fed.stdin.as_mut().unwrap(), stream.as_bytes()).unwrap();
+    assert!(fed.wait().unwrap().success());
+    std::fs::remove_dir_all(&bare).unwrap();
+
+    let (pushed, said) = push(&fixture, false);
+
+    assert_eq!(pushed.outcome, Outcome::Blocked, "{said}");
+    assert!(said.contains("Not pushed"), "{said}");
+    assert!(said.contains("origin could not be asked"), "{said}");
+    assert!(said.contains("`purlis save`"), "{said}");
+    assert!(!said.contains("worktree push"), "{said}");
+}
+
 /// What origin has is asked of origin: a commit it does not have is scanned before a save
 /// pushes it, whatever the plane's own refs say origin has.
 #[test]

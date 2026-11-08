@@ -1829,6 +1829,18 @@ fn rebase_undone(
 /// matched whole, never searched for.
 pub const PUSH_SECRET_REFUSED: &str = "a secret-shaped value in a commit the push would send";
 
+/// Why a save's push to an origin that could not be asked what it has is refused, `sent`
+/// commits being more than the `most` read for such a remote. A save already asks origin at its
+/// https address with the plane's credential, so what it needs is origin reached and asked.
+fn origin_unasked(sent: usize, most: usize) -> String {
+    format!(
+        "origin could not be asked which commits it already has, so this push would send \
+         {sent} commits that purlis would have to read, more than the {most} it reads for a \
+         remote it cannot ask. Nothing was pushed. Check that this machine can reach origin and \
+         that its forge's sign-in is current, then `purlis save` again"
+    )
+}
+
 /// **What a save's own push would send, scanned before it is sent** (SQ-7), or `None` when the
 /// push may go on. Pushes purlis makes run git with no hooks, so the `pre-push` scan a chat's
 /// push gets never runs for them: a commit made by hand in the plane, then pushed by a save,
@@ -1852,7 +1864,7 @@ fn refused_push(root: &Path, branch: &str, url: &str, head: &str, say: Sink) -> 
     let helper = forge::gitcredential::helper_for_fetch(&forge, root).ok();
     let scanned = match crate::diffscan::remote_has(root, helper.as_deref(), url) {
         Some(known) => crate::diffscan::pushed_knowing(root, &updates, &known),
-        None => crate::diffscan::pushed_without_asking(root, &updates),
+        None => crate::diffscan::pushed_without_asking_saying(root, &updates, origin_unasked),
     };
     let refused: Vec<crate::diffscan::Finding> = match scanned {
         Ok(scan) => scan

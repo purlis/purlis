@@ -602,10 +602,14 @@ fn address_has(dir: &Path, helper: Option<&str>, url: &str) -> Option<Vec<String
 }
 
 /// What the address `url` says it has, asked with git run in `from` and in no repository: a
-/// `.git` there, or above it, is not read, so nothing written in it says where `url` goes.
+/// `.git` there, or above it, is not read, so nothing written in it says where `url` goes. It
+/// is asked trusting only the system's certificate authorities
+/// ([`git::run_network_in_no_repository_trusting_the_system`]): the hook runs with the
+/// environment of the push that ran it, and an authority named there, with a proxy, could
+/// answer for the remote. The proxy it names is kept: it may be the only way out.
 fn address_asked_from(from: &Path, helper: Option<&str>, url: &str) -> Option<Vec<String>> {
     let asked = git::isolated(&git::Isolated::default(), || {
-        git::run_network_in_no_repository(
+        git::run_network_in_no_repository_trusting_the_system(
             from,
             helper,
             &["ls-remote", "--heads", "--tags", "--", url],
@@ -737,16 +741,31 @@ pub fn pushed_knowing(repo: &Path, updates: &str, known: &[String]) -> Result<Sc
 /// refs are what a chat can write, so they never shrink what is read; and a ref the remote
 /// named on git's standard input already leaves out all it reaches.
 pub fn pushed_without_asking(repo: &Path, updates: &str) -> Result<Scan, String> {
-    pushed_within(repo, updates, &[], Some(UNASKED_AT_MOST))
+    pushed_without_asking_saying(repo, updates, too_much_unasked)
 }
 
+/// [`pushed_without_asking`], where a push past [`UNASKED_AT_MOST`] is refused in the words
+/// `too_much` gives for the commits it would send and the most read: for a push whose way to a
+/// remote that can be asked is not the one a chat's push has (a plane's save).
+pub fn pushed_without_asking_saying(
+    repo: &Path,
+    updates: &str,
+    too_much: TooMuch,
+) -> Result<Scan, String> {
+    pushed_within(repo, updates, &[], Some((UNASKED_AT_MOST, too_much)))
+}
+
+/// The sentence a push past what is read for a remote that cannot be asked is refused in, from
+/// the commits it would send and the most that is read.
+pub type TooMuch = fn(usize, usize) -> String;
+
 /// The scan of [`pushed_knowing`], refused where `at_most` is given and the push sends more
-/// commits than that.
+/// commits than its bound, in the words its sentence gives.
 fn pushed_within(
     repo: &Path,
     updates: &str,
     known: &[String],
-    at_most: Option<usize>,
+    at_most: Option<(usize, TooMuch)>,
 ) -> Result<Scan, String> {
     let commit_of = |oid: &str| {
         git::run_in_hook(
@@ -809,10 +828,10 @@ fn pushed_within(
     let mut range = sends;
     range.extend(has);
     range.extend(known.iter().map(|id| format!("^{id}")));
-    if let Some(most) = at_most {
+    if let Some((most, too_much)) = at_most {
         let sent = commits_in(repo, &range)?;
         if sent > most {
-            return Err(too_much_unasked(sent, most));
+            return Err(too_much(sent, most));
         }
     }
     let ask = |head: &[&str]| {
@@ -3183,6 +3202,49 @@ mod tests {
             "{:?}",
             scan.refused
         );
+    }
+
+    /// A push sends the objects as they were written, so they are what is read: a commit
+    /// another object stands in for (`refs/replace`), or one a graft leaves out of its child's
+    /// parents, is read as its own bytes say.
+    #[test]
+    fn a_push_reads_each_commit_as_written_whatever_stands_in_for_it() {
+        let (_dir, repo) = repo();
+        std::fs::write(repo.join("f"), "base\n").unwrap();
+        commit_all(&repo, "base");
+        let url = a_remote_beside(&repo);
+        testgit::run(&repo, &["push", "-q", "origin", "main"]);
+        let published = testgit::run(&repo, &["rev-parse", "HEAD"])
+            .out
+            .trim()
+            .to_owned();
+        std::fs::write(repo.join("evil.sh"), format!("T={}\n", key())).unwrap();
+        let evil = commit_all(&repo, "evil");
+        std::fs::remove_file(repo.join("evil.sh")).unwrap();
+        let tip = commit_all(&repo, "tidy");
+
+        // Another commit, with the published tree, stands in for the one that adds it.
+        let tree = format!("{published}^{{tree}}");
+        let tree = testgit::run(&repo, &["rev-parse", &tree])
+            .out
+            .trim()
+            .to_owned();
+        let stand_in = commit_tree(&repo, &tree, &[&published], "evil");
+        assert!(testgit::run(&repo, &["replace", &evil, &stand_in]).ok());
+        let scan = pushed(&repo, &url, &update(&tip, &published)).unwrap();
+        assert_eq!(refused(&scan), [("evil.sh", "forge-token")]);
+        testgit::run(&repo, &["replace", "-d", &evil]);
+
+        // A graft gives the tip the published commit as its only parent.
+        let grafts = testgit::run(&repo, &["rev-parse", "--git-path", "info/grafts"])
+            .out
+            .trim()
+            .to_owned();
+        let grafts = repo.join(grafts);
+        std::fs::create_dir_all(grafts.parent().unwrap()).unwrap();
+        std::fs::write(&grafts, format!("{tip} {published}\n")).unwrap();
+        let scan = pushed(&repo, &url, &update(&tip, &published)).unwrap();
+        assert_eq!(refused(&scan), [("evil.sh", "forge-token")]);
     }
 
     /// SQ-7: a commit's message and an annotated tag's are published with them, and read for
