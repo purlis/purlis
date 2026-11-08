@@ -349,7 +349,9 @@ export function take(drawn, app, within = LIMITS, { partial = false } = {}) {
     taken.push({ path, bytes });
   }
   const drew = new Set(all);
-  const removed = partial ? [] : baselinesIn(app).filter((path) => !drew.has(path));
+  const removed = partial
+    ? []
+    : baselinesIn(app).filter((path) => !drew.has(path));
   if (taken.length + removed.length > limits.files)
     throw new Error(
       `not a baseline, so nothing was taken: more than ${limits.files} files written or deleted`,

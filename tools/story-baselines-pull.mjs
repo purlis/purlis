@@ -14,7 +14,9 @@
 // writing the baselines as they are now, and keeps them as `story-baselines`
 // (`.github/workflows/stories.yml`). This takes that artifact from the newest `stories` run of
 // the pull request's head and writes the pictures that differ into `app/` with
-// `tools/story-baselines.mjs take`. The
+// `tools/story-baselines.mjs take`, which deletes the baselines it does not hold. Where the run
+// also kept the pictures it drew again alone, as `story-redrawn` (when no baseline is
+// obsolete), it takes those instead, writing them and deleting nothing (#5791). The
 // same check the `update-baselines` label's job does is done first: this checkout is the head
 // that run tested, and that head has every commit of the base the run merged it with, so the
 // pictures are of this tree. The person then reviews the pictures, commits them and pushes. A
@@ -41,7 +43,7 @@ import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, parse, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { take } from "./story-baselines.mjs";
+import { LIMITS, take } from "./story-baselines.mjs";
 
 /** The repository a pull request is in, unless `--repo` names another. */
 export const REPO = "purlis/purlis";
@@ -49,6 +51,13 @@ export const REPO = "purlis/purlis";
 /** The artifact a `stories` run keeps its drawn baselines in, and the file that says of what. */
 export const ARTIFACT = "story-baselines";
 export const DRAWN = "drawn.json";
+
+/**
+ * The artifact of the pictures a run drew again alone, which it keeps beside the whole set only
+ * when taking them deletes nothing the whole set would (#5791): a few pictures, where the whole
+ * set is about 330 MB.
+ */
+export const REDRAWN = "story-redrawn";
 
 /**
  * The run whose baselines are taken, of `runs` (the `stories` workflow's runs of the head, as
@@ -278,15 +287,21 @@ export function pull({ pr, repo = REPO, root, tmp = tmpdir(), exec = spawnSync }
   );
   const chosen = runToTake(runs, head, from);
   if (!chosen.run) throw new Refused(chosen.why);
-  const kept = JSON.parse(
+  const artifacts = JSON.parse(
     run("gh", [
       "api",
-      `repos/${repo}/actions/runs/${chosen.run.id}/artifacts?name=${ARTIFACT}`,
+      `repos/${repo}/actions/runs/${chosen.run.id}/artifacts?per_page=100`,
       "--jq",
-      ".artifacts[0]",
-    ]) || "null",
+      ".artifacts",
+    ]),
   );
-  if (kept === null)
+  const named = (name) => artifacts.find((artifact) => artifact.name === name);
+  // The pictures drawn again, when the run kept them and they have not expired; else the whole
+  // set, which also deletes the baselines whose stories are gone.
+  const redrawn = named(REDRAWN);
+  const partial = redrawn !== undefined && !redrawn.expired;
+  const kept = partial ? redrawn : named(ARTIFACT);
+  if (kept === undefined)
     throw new Refused(
       `the stories run ${chosen.run.html_url} kept no baselines: a story failed on more than its picture there, and its annotations say which`,
     );
@@ -320,11 +335,12 @@ export function pull({ pr, repo = REPO, root, tmp = tmpdir(), exec = spawnSync }
     // An artifact keeps no empty directory: with no baseline drawn, every one is deleted.
     mkdirSync(join(into, "app"), { recursive: true });
     const app = join(root, "app");
-    const { taken, removed, unchanged } = take(join(into, "app"), app);
+    const { taken, removed, unchanged } = take(join(into, "app"), app, LIMITS, { partial });
     return [
       ...said,
       ...removed.map((path) => `deleted: ${path}`),
-      `${taken.length} baselines written and ${removed.length} deleted (${unchanged.length} already matched) into ${app}, from ${chosen.run.html_url}: ` +
+      `${taken.length} baselines written and ${removed.length} deleted (${unchanged.length} already matched) into ${app}, from ` +
+        `${partial ? "the pictures the run drew again" : "every baseline the run drew"}, ${chosen.run.html_url}: ` +
         "review the pictures that changed (git status), then commit and push them",
     ];
   } finally {
