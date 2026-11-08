@@ -264,7 +264,9 @@ fn a_listener_of_another_group_is_never_answered() {
                 group: Some(group),
             },
             port,
+            THIS_SYSTEM,
         )
+        .unwrap()
     };
     assert_eq!(of_group(ours), vec![here]);
     // A group with no process in it holds no socket.
@@ -276,11 +278,44 @@ fn a_listener_of_another_group_is_never_answered() {
                 at: Some(here),
                 group: None
             },
-            port
+            port,
+            THIS_SYSTEM,
         ),
-        vec![here]
+        Ok(vec![here])
     );
     drop(listener);
+}
+
+/// **Where the system reads sockets' owners and could not this time, a login whose group was
+/// recorded is answered nowhere** (ruled 2026-11-08): another program may hold the other address.
+/// With no group recorded, or on a system that never says, it goes where the login was found.
+#[test]
+fn an_owner_that_could_not_be_read_is_answered_nowhere_where_owners_are_read() {
+    let here = IpAddr::from(Ipv4Addr::LOCALHOST);
+    let taken = |group| waiting::Taken {
+        at: Some(here),
+        group,
+    };
+    let unread = |reads| Owners {
+        reads,
+        of: |_, _| None,
+    };
+    assert_eq!(
+        answered_at(taken(Some(7)), 1455, unread(true)),
+        Err(OWNER_NOT_READ.to_owned())
+    );
+    assert_eq!(
+        answered_at(taken(Some(7)), 1455, unread(false)),
+        Ok(vec![here])
+    );
+    assert_eq!(answered_at(taken(None), 1455, unread(true)), Ok(vec![here]));
+    // Read, it is what the group listens on, none where it holds neither.
+    let read = Owners {
+        reads: true,
+        of: |_, _| Some(Vec::new()),
+    };
+    assert_eq!(answered_at(taken(Some(7)), 1455, read), Ok(Vec::new()));
+    assert!(OWNER_NOT_READ.contains("Sign in again"));
 }
 
 /// **A login on both addresses is answered on either.**
@@ -308,9 +343,10 @@ fn a_login_on_both_addresses_owns_both() {
                 at: None,
                 group: Some(ours)
             },
-            port
+            port,
+            THIS_SYSTEM,
         ),
-        LOOPBACK.to_vec()
+        Ok(LOOPBACK.to_vec())
     );
 }
 

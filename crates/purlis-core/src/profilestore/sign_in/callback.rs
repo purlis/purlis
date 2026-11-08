@@ -350,7 +350,7 @@ fn deliver_on(kept_in: &Path, port: u16, target: &str) -> Result<(), String> {
     let Some(waiting) = state_in(target).and_then(|state| waiting::take(kept_in, state)) else {
         return Err(NO_LOGIN_WAITING.to_owned());
     };
-    let at = answered_at(waiting, port);
+    let at = answered_at(waiting, port, THIS_SYSTEM)?;
     match asked(&at, port, target)? {
         Answered::Took => Ok(()),
         Answered::Next => match asked(&at, port, NEXT_PATH)? {
@@ -386,14 +386,37 @@ pub(super) fn listening_on(port: u16) -> Option<IpAddr> {
         .find(|at| TcpStream::connect_timeout(&SocketAddr::new(*at, port), REACHED_WITHIN).is_ok())
 }
 
-/// Where the answer to the login `waiting` goes: the addresses its own process group listens on,
-/// none where it holds neither; where the system does not say, or its group wasn't recorded, as
-/// [`addresses`] says.
-fn answered_at(waiting: waiting::Taken, port: u16) -> Vec<IpAddr> {
-    waiting
-        .group
-        .and_then(|group| owner::own_addresses(port, group))
-        .unwrap_or_else(|| addresses(waiting.at))
+/// **How a system says which loopback addresses a process group listens on at a port**: whether
+/// it can say (`reads`), and its look, `None` where this time it could not.
+#[derive(Clone, Copy)]
+struct Owners {
+    reads: bool,
+    of: fn(u16, u32) -> Option<Vec<IpAddr>>,
+}
+
+/// This system's: Linux reads them from `/proc`, and no other system says.
+const THIS_SYSTEM: Owners = Owners {
+    reads: cfg!(target_os = "linux"),
+    of: owner::own_addresses,
+};
+
+/// What a sign-in is told where its runner could not read who listens for the login.
+pub const OWNER_NOT_READ: &str = "the runner could not read which program is listening for this \
+     sign-in, so the browser's answer was not passed on. Sign in again.";
+
+/// **Where the answer to the login `waiting` goes** (ruled 2026-11-08): the addresses its own
+/// process group listens on, none where it holds neither. Where `owners` reads them and could not
+/// this time, nothing: the answer is not passed on, as another program may hold the other
+/// address. Only where its group wasn't recorded, or the system never says, as [`addresses`] says.
+fn answered_at(waiting: waiting::Taken, port: u16, owners: Owners) -> Result<Vec<IpAddr>, String> {
+    let Some(group) = waiting.group else {
+        return Ok(addresses(waiting.at));
+    };
+    match (owners.of)(port, group) {
+        Some(own) => Ok(own),
+        None if owners.reads => Err(OWNER_NOT_READ.to_owned()),
+        None => Ok(addresses(waiting.at)),
+    }
 }
 
 /// Where a login's answer goes: the one address it was found listening on, else either.

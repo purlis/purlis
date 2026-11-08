@@ -432,11 +432,15 @@ pub fn prepare(wrap: &Wrap, cwd: &Path) {
     super::codex::replace(&state, doc.to_string().as_bytes(), 0o600);
 }
 
-/// **`servers` as the user-scope MCP servers in the state file `state`** (#3846), with what else it
-/// holds as it is. No servers and no file is left as it is, and a link, or a file purlis cannot
-/// read, is left alone, for Claude Code to say so.
-pub fn keep_mcp_servers(state: &Path, servers: &serde_json::Value) {
-    let empty = servers.as_object().is_none_or(serde_json::Map::is_empty);
+/// **`servers` as the user-scope MCP servers in the state file `state`** (#3846), and no
+/// project's own (ruled 2026-11-08), with what else it holds as it is. A chat can add a server to
+/// its folder's entry, which every later chat in that folder would start, so each keep takes them
+/// out, as it puts the desktop's user-scope ones back. `None` sent leaves the user-scope ones as
+/// they are. No servers and no file is left as it is, and a link, or a file purlis cannot read, is
+/// left alone, for Claude Code to say so.
+pub fn keep_mcp_servers(state: &Path, servers: Option<&serde_json::Value>) {
+    let empty =
+        servers.is_none_or(|servers| servers.as_object().is_none_or(serde_json::Map::is_empty));
     let mut doc = match std::fs::symlink_metadata(state) {
         Ok(found) if found.is_file() => {
             match std::fs::read_to_string(state)
@@ -461,11 +465,27 @@ pub fn keep_mcp_servers(state: &Path, servers: &serde_json::Value) {
         Err(_) if empty => return,
         Err(_) => serde_json::json!({}),
     };
-    if doc.get("mcpServers") == Some(servers) || (empty && doc.get("mcpServers").is_none()) {
-        return;
+    let mut changed = false;
+    if let Some(servers) = servers
+        && doc.get("mcpServers") != Some(servers)
+        && !(empty && doc.get("mcpServers").is_none())
+    {
+        doc["mcpServers"] = servers.clone();
+        changed = true;
     }
-    doc["mcpServers"] = servers.clone();
-    super::codex::replace(state, doc.to_string().as_bytes(), 0o600);
+    if let Some(projects) = doc
+        .get_mut("projects")
+        .and_then(serde_json::Value::as_object_mut)
+    {
+        for project in projects.values_mut() {
+            if let Some(project) = project.as_object_mut() {
+                changed |= project.remove("mcpServers").is_some();
+            }
+        }
+    }
+    if changed {
+        super::codex::replace(state, doc.to_string().as_bytes(), 0o600);
+    }
 }
 
 /// Below `dir`, without following a link: every link taken out.

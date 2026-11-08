@@ -1025,7 +1025,7 @@ fn the_settings_a_sign_in_names_are_an_empty_config_of_purliss_own() {
 /// of its folder: `run` with `id`, `container inspect` with `inspect`, `volume inspect` with
 /// `volume`, `volume ls` with `volumes`, `info` with `info`, `image inspect` with `image`, and
 /// `exec` with `paired`, after keeping its standard input, and `container ls` with
-/// `containers`; `run` fails where `run-fails` is there. `container rm` and `volume rm` exit
+/// `containers`; `run --rm … --version` with `version`; `run` fails where `run-fails` is there. `container rm` and `volume rm` exit
 /// with what `rm-fails-container` or `rm-fails-volume` holds, else what `rm-fails` holds, 0
 /// when there is none. `inspect-once`, where it is there, answers one `container inspect` first.
 pub(crate) struct FakeDocker {
@@ -1041,7 +1041,8 @@ impl FakeDocker {
              prev=; for a in \"$@\"; do [ \"$prev\" = --cidfile ] && echo {probe} > \"$a\"; \
              prev=$a; done; \
              exit \"$(cat '{holds}' 2>/dev/null || echo 0)\" ;; esac\ncase \"$1 $2\" in\n  \
-             'run --rm') [ -f '{copy_fails}' ] && \
+             'run --rm') case \"$*\" in *' --version') cat '{version}' 2>/dev/null; exit 0 ;; esac; \
+             [ -f '{copy_fails}' ] && \
              {{ echo 'cp: cannot open' >&2; exit 1; }}; [ -f '{during_run}' ] && sh '{during_run}'; \
              cat '{conversations}' 2>/dev/null; true ;;\n  \
              'run '*) [ -f '{run_fails}' ] && \
@@ -1078,6 +1079,7 @@ impl FakeDocker {
             holds = at("holds"),
             conversations = at("conversations"),
             during_run = at("during-run"),
+            version = at("version"),
             probe = PROBE_ID,
         );
         stand_in::program(dir.path(), "docker", &script);
@@ -1092,6 +1094,7 @@ impl FakeDocker {
             "info",
             r#"["name=seccomp,profile=builtin","name=cgroupns"]"#,
         );
+        fake.set("version", "purlis 0.5.1 (release profile)\n");
         fake
     }
 

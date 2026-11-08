@@ -1602,28 +1602,31 @@ pub fn loaded_unsent_cleared(record: &MachineProfile) -> Result<(), String> {
     };
     let config = &record.folders.config;
     let dest = settings_dest(allowed, config);
+    // Neither the settings folder nor one between it and the profile's config folder, that folder
+    // itself among them, is a link: what it names, elsewhere, stays, and the keep is refused,
+    // naming the link and what to do (ruled 2026-11-08).
+    let linked = [config.as_path()]
+        .into_iter()
+        .chain(
+            dest.ancestors()
+                .take_while(|above| above.starts_with(config)),
+        )
+        .find(|at| std::fs::symlink_metadata(at).is_ok_and(|found| found.file_type().is_symlink()));
+    if let Some(linked) = linked {
+        return Err(format!(
+            "this runner did not keep the profile '{}': {} is a link to another folder, and \
+             purlis clears a profile's settings only in a folder of its own, so what the link \
+             leads to stays as it is. Make {} a plain folder on the runner, then keep the \
+             profile again.",
+            crate::shown::short(&record.name),
+            linked.display(),
+            linked.display()
+        ));
+    }
     allowed
         .loaded_unsent
         .iter()
-        .try_for_each(|name| {
-            // Neither the settings folder nor one between it and the profile's config folder,
-            // that folder itself among them, is a link: what it names, elsewhere, stays.
-            let through_a_link = [config.as_path()]
-                .into_iter()
-                .chain(
-                    dest.ancestors()
-                        .take_while(|above| above.starts_with(config)),
-                )
-                .any(|at| {
-                    std::fs::symlink_metadata(at).is_ok_and(|found| found.file_type().is_symlink())
-                });
-            if through_a_link {
-                return Err(io::Error::other(
-                    "the settings folder is reached through a link",
-                ));
-            }
-            remove_within(&dest, &dest.join(name))
-        })
+        .try_for_each(|name| remove_within(&dest, &dest.join(name)))
         .map_err(|e| {
             format!(
                 "this runner could not clear the profile '{}''s folder {} ({})",

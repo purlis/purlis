@@ -571,6 +571,8 @@ fn a_drained_runner_carries_its_sign_ins_to_the_pools_runner_then_goes_with_its_
     let config = tempfile::tempdir().unwrap();
     let ours = desktop();
     let fake = a_docker(&runner_answers());
+    fake.set("engine", "engine-a\n");
+    home_prints(&fake, HOME_CREATED);
     a_pool_added(config.path(), &fake, &ours);
     let new_image = crate::dockerpool::Image::pinned(NEW).unwrap();
     let successor = crate::dockerpool::successor_name("first", &new_image);
@@ -619,13 +621,102 @@ fn a_pool_draining(config: &std::path::Path, fake: &FakeDocker) -> String {
     successor
 }
 
+/// [`a_pool_draining`], its draining runner's row keeping its engine and its home's making, as a
+/// runner made since the mark does.
+fn a_pool_draining_since_the_mark(config: &std::path::Path, fake: &FakeDocker) -> String {
+    fake.set("engine", "engine-a\n");
+    home_prints(fake, HOME_CREATED);
+    a_pool_draining(config, fake)
+}
+
+/// **A runner made before the mark carries nothing** (ruled 2026-11-08): its row keeps no engine
+/// or home, its image's purlis is older than the first a desktop can mark, or that cannot be read.
+#[test]
+fn a_runner_made_before_the_mark_carries_no_sign_ins() {
+    let carried = |set_up: &dyn Fn(&std::path::Path, &FakeDocker)| {
+        let config = tempfile::tempdir().unwrap();
+        let fake = a_docker(&runner_answers());
+        set_up(config.path(), &fake);
+        drain(config.path(), &fake.docker(), "first", None).unwrap();
+        fake.file("log").contains("-copy ")
+    };
+    assert!(
+        carried(&|config, fake| {
+            a_pool_draining_since_the_mark(config, fake);
+        }),
+        "made since the mark, it carries"
+    );
+    assert!(
+        !carried(&|config, fake| {
+            a_pool_draining(config, fake);
+        }),
+        "a row with no engine or home"
+    );
+    assert!(
+        !carried(&|config, fake| {
+            a_pool_draining_since_the_mark(config, fake);
+            fake.set("version", "purlis 0.4.1 (release profile)\n");
+        }),
+        "an image older than the mark"
+    );
+    assert!(
+        !carried(&|config, fake| {
+            a_pool_draining_since_the_mark(config, fake);
+            fake.set("version", "no purlis here\n");
+        }),
+        "an image whose version cannot be read"
+    );
+}
+
+/// **The version is asked of the runner's image, never of its container** (ruled 2026-11-08): a
+/// chat could have changed what the container's purlis says, and nothing changes the image pinned
+/// by its digest.
+#[test]
+fn a_carry_asks_the_runners_image_its_version_and_not_its_container() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_pool_draining_since_the_mark(config.path(), &fake);
+
+    drain(config.path(), &fake.docker(), "first", None).unwrap();
+
+    let log = fake.file("log");
+    let asked = log
+        .lines()
+        .find(|line| line.ends_with(" --version"))
+        .expect("the version was asked");
+    assert!(asked.starts_with("run --rm --network none "), "{asked}");
+    assert!(
+        asked.contains(&format!(
+            "--read-only --entrypoint {} ",
+            crate::dockerpool::PURLIS
+        )),
+        "{asked}"
+    );
+    assert!(
+        !log.contains(&format!(
+            "exec -i --user 10001:10001 {ID} /usr/local/bin/purlis --version"
+        )),
+        "{log}"
+    );
+}
+
+#[test]
+fn the_first_purlis_a_desktop_can_mark_is_0_5_0() {
+    for since in ["0.5.0", "0.5.1", "0.6.0-rc.1", "1.0.0", "0.10.0+build"] {
+        assert!(marked_since(since), "{since}");
+    }
+    for before in ["0.4.1", "0.4.99", "0.5", "", "v0.5.0", "0.5.0.1", "zero"] {
+        assert!(!marked_since(before), "{before}");
+    }
+}
+
 /// **A drained runner is unpaired before its sign-ins are carried** (#4146): nothing can link to
 /// it while they go.
 #[test]
 fn a_drained_runner_is_unpaired_before_its_sign_ins_are_carried() {
     let config = tempfile::tempdir().unwrap();
     let fake = a_docker(&runner_answers());
-    a_pool_draining(config.path(), &fake);
+    a_pool_draining_since_the_mark(config.path(), &fake);
     let log_at_unpair = std::cell::RefCell::new(None);
     let unpair = |_: &runners::Kept| {
         *log_at_unpair.borrow_mut() = Some(fake.file("log"));
@@ -699,7 +790,7 @@ fn a_running_runner_that_was_not_unpaired_stays_and_carries_nothing() {
 fn a_stopped_runner_that_could_not_be_unpaired_is_drained() {
     let config = tempfile::tempdir().unwrap();
     let fake = a_docker(&runner_answers());
-    a_pool_draining(config.path(), &fake);
+    a_pool_draining_since_the_mark(config.path(), &fake);
     let mut stopped = inspected();
     stopped[0]["State"]["Running"] = false.into();
     fake.set("inspect", &stopped.to_string());
@@ -975,7 +1066,7 @@ fn a_held_runner_is_removed_by_the_person_and_any_other_is_refused() {
 fn signing_out_of_a_pool_reaches_its_draining_runners_and_nothing_is_carried_for_it() {
     let config = tempfile::tempdir().unwrap();
     let fake = a_docker(&runner_answers());
-    a_pool_draining(config.path(), &fake);
+    a_pool_draining_since_the_mark(config.path(), &fake);
     // Docker answers for the draining runner, as it was made.
     fake.set("inspect", &inspected().to_string());
     fake.set(
@@ -1199,6 +1290,8 @@ fn a_copy_container_an_earlier_carry_left_is_removed_before_the_next_carry() {
     let config = tempfile::tempdir().unwrap();
     let ours = desktop();
     let fake = a_docker(&runner_answers());
+    fake.set("engine", "engine-a\n");
+    home_prints(&fake, HOME_CREATED);
     a_pool_added(config.path(), &fake, &ours);
     let new_image = crate::dockerpool::Image::pinned(NEW).unwrap();
     let successor = crate::dockerpool::successor_name("first", &new_image);
@@ -3264,6 +3357,33 @@ fn make_again_here(config: &Path, fake: &FakeDocker, ours: &Pinned) -> Result<Ma
     make_again_as(config, &fake.docker(), "first", AGAIN_NAMED, ours)
 }
 
+/// **A runner made before the mark is made again with nothing carried** (ruled 2026-11-08), as a
+/// drain carries nothing from it: its row keeps no engine or home, or its image's purlis is older.
+#[test]
+fn a_runner_made_before_the_mark_is_made_again_with_nothing_carried() {
+    for older in [false, true] {
+        let config = tempfile::tempdir().unwrap();
+        let ours = desktop();
+        let fake = a_docker(&runner_answers());
+        if older {
+            removed_with_its_making_kept(config.path(), &fake, &ours);
+            fake.set("version", "purlis 0.4.1 (release profile)\n");
+        } else {
+            removed_outside_purlis(config.path(), &fake, &ours, Some("2026-01-01T00:00:00Z"));
+        }
+
+        let again = make_again_here(config.path(), &fake, &ours).unwrap();
+
+        assert!(!again.sign_ins_kept, "older image: {older}");
+        // The carry writes the new home; the read of the old one for conversations does not.
+        assert!(
+            !fake.file("log").contains("target=/to"),
+            "{}",
+            fake.file("log")
+        );
+    }
+}
+
 /// **Make the runner again** (#4149): a runner removed outside purlis is made again beside it,
 /// from the pool's own image and limits, on a home of its own with the sign-ins of the old home
 /// carried over where that home is the one purlis made for it, paired, and kept as the pool's
@@ -3273,7 +3393,7 @@ fn a_runner_removed_outside_purlis_is_made_again_with_its_sign_ins_and_paired() 
     let config = tempfile::tempdir().unwrap();
     let ours = desktop();
     let fake = a_docker(&runner_answers());
-    let old = removed_outside_purlis(config.path(), &fake, &ours, Some("2026-01-01T00:00:00Z"));
+    let old = removed_with_its_making_kept(config.path(), &fake, &ours);
 
     let again = make_again_here(config.path(), &fake, &ours).unwrap();
 
@@ -3349,7 +3469,7 @@ fn a_runner_made_again_keeps_the_gone_ones_home_where_it_holds_a_conversation() 
     let config = tempfile::tempdir().unwrap();
     let ours = desktop();
     let fake = a_docker(&runner_answers());
-    removed_outside_purlis(config.path(), &fake, &ours, Some("2026-01-01T00:00:00Z"));
+    removed_with_its_making_kept(config.path(), &fake, &ours);
     fake.set("conversations", "conversations 3 3 0\n");
 
     let again = make_again_here(config.path(), &fake, &ours).unwrap();
