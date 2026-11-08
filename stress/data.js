@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794152582520,
+  "lastUpdate": 1794158448104,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -8832,6 +8832,42 @@ window.BENCHMARK_DATA = {
             "value": 319.9,
             "unit": "MB",
             "extra": "median of 6 samples: 445.9, 372.8, 339.7, 287.9, 300.2, 229.3 MB; window 236.4 MB, session host 79.6 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "744cd93efb4cbea22b706d97249d01a4c2cbb06e",
+          "message": "Worktree remove: a closed PR's head on origin lets a folder go, and a refusal names every reason (#4500) (#5836)\n\n* worktree remove: a closed request's head on origin lets a folder go, a refusal names every reason, Astro and Vite caches don't keep it (#4500)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6XFQGQFBEQ7FTT50D2PWQ44\nPurlis-Persona: steward\n\n* rustfmt (#4500)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6XFQGQFBEQ7FTT50D2PWQ44\nPurlis-Persona: steward\n\n* worktree remove: origin is asked, not remembered; a closed head is fetched; a dirty folder asks no forge (review of #4500)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6XFQGQFBEQ7FTT50D2PWQ44\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-08T14:31:14Z",
+          "tree_id": "a51663effc861ac83d9eecbaeff4715ccd0fb5f6",
+          "url": "https://github.com/purlis/purlis/commit/744cd93efb4cbea22b706d97249d01a4c2cbb06e"
+        },
+        "date": 1794158441225,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 2429,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1846, 2429, 2846 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 338.9,
+            "unit": "MB",
+            "extra": "median of 6 samples: 446.5, 389.3, 372.4, 305.3, 303.4, 205.1 MB; window 252.1 MB, session host 86.8 MB"
           }
         ]
       }
