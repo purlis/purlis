@@ -65,6 +65,7 @@ fn an_old_local_project() -> Old {
             project_chats_run_on: None,
             chats_on_pools: Default::default(),
             branches_to_fetch: Default::default(),
+            pool_chats_recorded: false,
         });
         store.windows.push(crate::machine::Window {
             planes: vec![old.clone()],

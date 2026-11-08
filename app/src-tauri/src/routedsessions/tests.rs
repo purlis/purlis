@@ -89,6 +89,7 @@ fn a_sink() -> Sink {
 struct TheStore {
     chats: Mutex<BTreeMap<u32, purlis_core::machine::ChatOnPool>>,
     owed: Mutex<BTreeMap<String, BTreeSet<String>>>,
+    all_recorded: Mutex<bool>,
 }
 
 impl TheStore {
@@ -137,6 +138,14 @@ impl KeptPlaces for TheStore {
 
     fn owed(&self) -> BTreeMap<String, BTreeSet<String>> {
         self.owed.lock().unwrap().clone()
+    }
+
+    fn all_recorded(&self) -> bool {
+        *self.all_recorded.lock().unwrap()
+    }
+
+    fn mark_all_recorded(&self) {
+        *self.all_recorded.lock().unwrap() = true;
     }
 }
 
@@ -265,6 +274,24 @@ fn a_chat_is_taken_back_from_the_pool_it_ran_on_by_a_window_started_after_the_se
         assert_eq!(machine.pools_reached(), vec!["builds".to_owned()]);
         assert_eq!(machine.kept(), vec![number], "it runs there still");
     }
+}
+
+/// **A chat with no record is taken back on its pool's word once per project, at the first
+/// restart, and never after** (ruled 2026-11-08, amending D-4683-1): from then on every chat this
+/// window starts on a pool has a record, so a number the pool claims with none is not one of ours.
+#[test]
+fn a_chat_with_no_record_is_taken_back_at_the_first_restart_alone() {
+    let machine = AMachine::new();
+    let first = machine.window();
+    first.close_what_was_not_reattached();
+    first.chats_kept.settled();
+    let number = 41;
+    machine.builds.leaves_running(number, None);
+
+    let again = machine.window();
+
+    assert!(!again.left_running_in(number, Some("app")));
+    assert!(machine.kept().is_empty());
 }
 
 #[test]
