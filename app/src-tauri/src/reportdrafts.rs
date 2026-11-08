@@ -19,8 +19,8 @@ use purlis_core::dispatchtalk::DraftedWord;
 use purlis_core::forge::Caller;
 use purlis_core::hookwire::{Answer, ReportDraftAsk};
 use purlis_core::report::{
-    AgentDraft, CameFrom, Evidence, Filing, HOLD_SECS, Held as HeldDraft, HeldKind, How, Kind,
-    PurlisFailure, Refusal, Reports, SentTo, Stream,
+    Added, AgentDraft, CameFrom, Evidence, Filing, HOLD_SECS, Held as HeldDraft, HeldKind, How,
+    Kind, PersonaKind, PurlisFailure, RanAs, Refusal, Reports, SentTo, Stream,
 };
 
 use crate::planes::{Held, PlaneId, Planes};
@@ -97,11 +97,9 @@ pub fn asked(held: &Held, ask: &ReportDraftAsk) -> Answer {
         return added(held, ask.chat, id, &ask.text);
     }
     if let Some(caught) = &ask.caught {
-        let harness = held.chats().started_as(ask.chat).flatten();
         let failure = PurlisFailure::Internal {
             caught: caught.clone(),
-            harness,
-            harness_version: harness.and_then(purlis_core::sandbox::program::version_heard),
+            ran_as: ran_as(held, ask.chat),
         };
         return match failed(held, ask.chat, name, failure) {
             Ok(()) => Answer::Said {
@@ -121,6 +119,7 @@ pub fn asked(held: &Held, ask: &ReportDraftAsk) -> Answer {
         text: ask.text.clone(),
         title: ask.title.clone(),
         call: ask.call.clone(),
+        ran_as: ran_as(held, ask.chat),
     });
     let from = CameFrom {
         session: Some(ask.chat),
@@ -150,11 +149,28 @@ pub fn asked(held: &Held, ask: &ReportDraftAsk) -> Answer {
     }
 }
 
+/// **What chat `chat` runs under, as its reports say it** (spec #5683, Q5): its harness, the
+/// version this app last heard that harness answer (#1353), and its persona's kind, never its
+/// name.
+fn ran_as(held: &Held, chat: u32) -> RanAs {
+    let harness = held.chats().started_as(chat).flatten();
+    let persona = held
+        .chats()
+        .persona_of(chat)
+        .and_then(|persona| persona.started_as);
+    RanAs {
+        harness,
+        harness_version: harness.and_then(purlis_core::sandbox::program::version_heard),
+        persona: PersonaKind::of(persona.as_deref()),
+    }
+}
+
 /// **A failure of purlis's own in chat `chat`, called `name`, held as a draft** (#5697, spec
 /// #5683 layer 1): an internal failure its hook caught, or a sandbox block of purlis's own
-/// operation (#1338), both by this one road. Held once: the same failure again from the same
-/// chat while its draft waits in the Inbox holds nothing more. A new draft is told to the chat
-/// on its next turn, once, with the way to add what it was doing.
+/// operation (#1338), both by this one road. Held once: the same failure again, from this chat
+/// or another, is counted on its draft (or on what was sent of it) and holds nothing more
+/// (#5697, Q15). A new draft is told to the chat on its next turn, once, with the way to add
+/// what it was doing.
 pub fn failed(held: &Held, chat: u32, name: String, failure: PurlisFailure) -> Result<(), Refusal> {
     let call = failure.call();
     let from = CameFrom {
@@ -162,12 +178,12 @@ pub fn failed(held: &Held, chat: u32, name: String, failure: PurlisFailure) -> R
         chat: name,
         project: held.root().display().to_string(),
     };
-    let (one, new) = Reports::here(Some(held.root())).hold_once(
+    let new = Reports::here(Some(held.root())).hold_once(
         Evidence::PurlisFailure(failure),
         &Caller::chat(&chat.to_string()),
         from,
     )?;
-    if new {
+    if let Some(one) = new {
         // Under Always send (#5695) it leaves once its hold is over, unless the person undoes it.
         if one.sends_at.is_some() {
             send_after_the_hold();
@@ -189,15 +205,13 @@ pub fn own_block(held: &Held, chat: u32, block: purlis_core::sandboxblock::Block
     let Some(name) = held.chats().shown_name(chat) else {
         return;
     };
-    let harness = held.chats().started_as(chat).flatten();
     let _ = failed(
         held,
         chat,
         name,
         PurlisFailure::SandboxBlock {
             block,
-            harness,
-            harness_version: harness.and_then(purlis_core::sandbox::program::version_heard),
+            ran_as: ran_as(held, chat),
         },
     );
 }
@@ -206,13 +220,22 @@ pub fn own_block(held: &Held, chat: u32, block: purlis_core::sandboxblock::Block
 pub const ADDED_SAID: &str = "Your words are added to the draft in the person's Inbox. Nothing \
                               was sent.";
 
+/// What a chat is told when its draft had already gone unread, and its words followed it.
+pub const SENT_AFTER_SAID: &str = "The draft had already gone to purlis's report service \
+                                   unread, so your words were sent after it, linked to it. \
+                                   Settings › You › Reports lists both.";
+
 /// Chat `chat`'s words `text`, added to the draft `id` purlis made of a failure in that chat.
 fn added(held: &Held, chat: u32, id: &str, text: &str) -> Answer {
     match Reports::here(Some(held.root())).add_to_held(id, chat, text) {
-        Ok(_) => {
+        Ok(added) => {
             changed();
+            let said = match added {
+                Added::ToTheDraft(_) => ADDED_SAID,
+                Added::SentAfter(_) => SENT_AFTER_SAID,
+            };
             Answer::Said {
-                lines: vec![purlis_core::repocmd::Say::Done(ADDED_SAID.into())],
+                lines: vec![purlis_core::repocmd::Say::Done(said.into())],
                 code: 0,
             }
         }
@@ -288,17 +311,40 @@ pub enum FileHow {
     AddTo(u32),
 }
 
+/// **Where a report went**, by the names the core's sent list keeps (`purlis_core::report::
+/// SentTo`'s serde names): the one mapping of it the window reads, for a draft filed and for
+/// the sent list alike.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum ReportDestination {
+    /// purlis's private Report intake (ADR 0118).
+    Intake,
+    /// purlis/purlis on GitHub, as the person.
+    #[serde(rename = "github")]
+    GitHub,
+}
+
+impl From<SentTo> for ReportDestination {
+    fn from(to: SentTo) -> Self {
+        match to {
+            SentTo::Intake => Self::Intake,
+            SentTo::GitHub => Self::GitHub,
+        }
+    }
+}
+
 /// What became of a draft the person filed.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 #[serde(rename_all = "kebab-case", tag = "kind")]
 pub enum DraftFiled {
-    /// It left: `github` or `intake`, and where it was kept; or `waiting`, with no address: the
-    /// Report intake gave no answer, and it waits on this machine to send.
+    /// It left, to `to`, and where it was kept.
     Sent {
-        to: String,
+        to: ReportDestination,
         address: String,
         title: String,
     },
+    /// Not sent yet: the Report intake gave no answer, and it waits on this machine to send.
+    Queued { title: String },
     /// Issues that may already cover it: nothing was filed.
     Duplicates { issues: Vec<PossibleDuplicate> },
 }
@@ -391,22 +437,14 @@ pub async fn file_report_draft(
         Filing::Sent { to, address } => {
             changed();
             Ok(DraftFiled::Sent {
-                to: match to {
-                    SentTo::GitHub => "github",
-                    SentTo::Intake => "intake",
-                }
-                .to_owned(),
+                to: to.into(),
                 address,
                 title,
             })
         }
         Filing::Queued => {
             changed();
-            Ok(DraftFiled::Sent {
-                to: "waiting".to_owned(),
-                address: String::new(),
-                title,
-            })
+            Ok(DraftFiled::Queued { title })
         }
         Filing::Duplicates(hits) => Ok(DraftFiled::Duplicates {
             issues: hits
@@ -538,6 +576,25 @@ pub async fn members_may_always_send(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A draft that left names where by the sent list's own words, and one that waits says so
+    /// as a kind of its own, never as a place it went.
+    #[test]
+    fn a_filed_draft_names_where_it_went_by_the_sent_list_s_words() {
+        for to in [SentTo::Intake, SentTo::GitHub] {
+            let filed = serde_json::to_value(DraftFiled::Sent {
+                to: to.into(),
+                address: "a".into(),
+                title: "t".into(),
+            })
+            .unwrap();
+            assert_eq!(filed["to"], serde_json::to_value(to).unwrap());
+        }
+        assert_eq!(
+            serde_json::to_value(DraftFiled::Queued { title: "t".into() }).unwrap(),
+            serde_json::json!({"kind": "queued", "title": "t"})
+        );
+    }
 
     /// The window sends how it files in the shape the TypeScript bindings write.
     #[test]

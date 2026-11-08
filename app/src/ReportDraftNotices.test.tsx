@@ -8,7 +8,11 @@ import userEvent from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { DraftFiled, ReportDraft } from "./bindings";
 import { Inbox } from "./Inbox";
-import { ReportDraftNotices, WRITTEN_BY_AN_AGENT } from "./ReportDraftNotices";
+import {
+  ALWAYS_SEND_FORBIDDEN,
+  ReportDraftNotices,
+  WRITTEN_BY_AN_AGENT,
+} from "./ReportDraftNotices";
 import { forgetReportConsent, UNANSWERED, type Consent } from "./reportAnswers";
 
 /**
@@ -34,11 +38,12 @@ const DRAFT: ReportDraft = {
 
 let sent: { cmd: string; args: Record<string, unknown> }[] = [];
 
-function core(filed: DraftFiled[]) {
+function core(filed: DraftFiled[], { membersMayAlwaysSend = true } = {}) {
   sent = [];
   mockIPC((cmd, args) => {
     sent.push({ cmd, args: args as Record<string, unknown> });
     if (cmd === "report_drafts") return [DRAFT];
+    if (cmd === "members_may_always_send") return membersMayAlwaysSend;
     if (cmd === "edit_report_draft") {
       const { title, body } = args as { title: string; body: string };
       return { ...DRAFT, title, body, edited: true, digest: "ffffffffffff" };
@@ -75,6 +80,43 @@ afterEach(() => {
 });
 
 describe("a report draft in the Inbox (#5694)", () => {
+  it("offers Always send off, saying why, where the project turns sending without asking off (#5696)", async () => {
+    core([], { membersMayAlwaysSend: false });
+    drawn();
+    await waitFor(() => expect(card()).not.toBeNull());
+    const always = screen.getByRole("button", { name: "Always send" });
+    await waitFor(() => expect(always).toHaveAttribute("aria-disabled", "true"));
+
+    // Off, the keyboard still reaches it, and its tooltip says why.
+    for (let i = 0; i < 8 && document.activeElement !== always; i++) await userEvent.tab();
+    expect(document.activeElement).toBe(always);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(ALWAYS_SEND_FORBIDDEN);
+    await userEvent.click(always);
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(of("always_send_report_draft")).toEqual([]);
+  });
+
+  it("offers Always send where the project lets its members send without asking", async () => {
+    core([]);
+    drawn();
+    await waitFor(() => expect(card()).not.toBeNull());
+    await waitFor(() => expect(of("members_may_always_send")).toEqual([{ plane: "/plane" }]));
+    expect(screen.getByRole("button", { name: "Always send" })).not.toHaveAttribute(
+      "aria-disabled",
+    );
+  });
+
+  it("says a draft the report service did not answer waits to send", async () => {
+    core([{ kind: "queued", title: DRAFT.title }]);
+    const { onSent } = drawn();
+    await waitFor(() => expect(card()).not.toBeNull());
+    await userEvent.click(screen.getByRole("button", { name: "File" }));
+    await waitFor(() =>
+      expect(onSent).toHaveBeenCalledWith(expect.objectContaining({ id: "d1", to: "waiting" })),
+    );
+  });
+
   it("names the chat it came from and its line, and Go to chat goes there", async () => {
     core([]);
     const { onGo } = drawn();
@@ -176,6 +218,7 @@ describe("Always send on a report draft (#5695)", () => {
       (cmd, args) => {
         sent.push({ cmd, args: args as Record<string, unknown> });
         if (cmd === "report_drafts") return drafts;
+        if (cmd === "members_may_always_send") return true;
         if (cmd === "report_consent") return kept;
         if (cmd === "keep_report_consent") kept = (args as { consent: Consent }).consent;
         if (cmd === "always_send_report_draft") {

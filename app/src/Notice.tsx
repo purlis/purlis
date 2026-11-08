@@ -308,8 +308,9 @@ export function Notice(props: NoticeProps) {
     under,
     title,
     quiet,
+    // Only a card names the chat it came from: a line's `from` is `never`.
+    from,
   } = props;
-  const from = (props as { from?: string }).from;
   // A pane's Notice of a chat in no pane is the Notices centre's line (#4759).
   const inCentre = centre !== null && askedAt === "pane";
   const at = inCentre ? "inbox" : askedAt;

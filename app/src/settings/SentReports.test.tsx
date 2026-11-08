@@ -21,7 +21,7 @@ const BYTES =
 const SENT: SentReport = {
   at: "2026-11-08T03:19:00Z",
   title: "purlis panicked at crates/purlis-core/src/plane.rs:12:5",
-  to: "purlis's report service",
+  to: "intake",
   address: "purlis's report service, event 9f1c",
   bytes: BYTES,
   waiting: false,

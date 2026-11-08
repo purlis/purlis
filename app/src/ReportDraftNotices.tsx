@@ -9,12 +9,14 @@ import {
   type FileHow,
   type PlaneId,
   type PossibleDuplicate,
+  type ReportDestination,
   type ReportDraft,
 } from "./bindings";
 import { listen } from "./here";
 import { Notice } from "./Notice";
 import { AlwaysSendDialog } from "./ReportConsent";
 import { answerReports, useReportConsent } from "./reportAnswers";
+import { useMembersMayAlwaysSend } from "./reportProjectRule";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { TextArea, TextField } from "./ui/field/Field";
 import { List, ListRow } from "./ui/list/List";
@@ -26,14 +28,18 @@ export const WRITTEN_BY_AN_AGENT = "Written by an agent, unreviewed. Paths and n
 /** What Dismiss does, beyond putting the card away. */
 export const DISMISS_SAYS = "Lets the draft go. Nothing is sent.";
 
+/** Why a card's Always send is off, where the project turns sending without asking off (#5696). */
+export const ALWAYS_SEND_FORBIDDEN =
+  "Your project turns off sending without asking, so drafts written in it are read first. Read it, then File.";
+
 /** A draft the person filed in this window: what the Inbox's update says of it. */
 export type SentDraft = {
   id: string;
   title: string;
   session: number | null;
   chat: string;
-  /** `github` or `intake`; `waiting` when the intake gave no answer and it waits to send. */
-  to: string;
+  /** Where it went; `waiting` when the intake gave no answer and it waits to send. */
+  to: ReportDestination | "waiting";
   /** When it left, in ms. */
   at: number;
   /** Held by Always send, with Undo, until it leaves (#5695). */
@@ -110,6 +116,7 @@ export function ReportDraftNotices({
   }, [read]);
 
   const gone = (id: string) => setDrafts((now) => now.filter((one) => one.id !== id));
+  const mayAlwaysSend = useMembersMayAlwaysSend(plane);
 
   return (
     <>
@@ -117,6 +124,7 @@ export function ReportDraftNotices({
         <DraftNotice
           key={draft.id}
           draft={draft}
+          mayAlwaysSend={mayAlwaysSend}
           onGo={onGo}
           onGone={() => gone(draft.id)}
           onEdited={(edited) =>
@@ -130,7 +138,7 @@ export function ReportDraftNotices({
 }
 
 /** A draft as the Inbox's update says it. */
-const sentOf = (one: ReportDraft, to: string, holding: boolean): SentDraft => ({
+const sentOf = (one: ReportDraft, to: SentDraft["to"], holding: boolean): SentDraft => ({
   id: one.id,
   title: one.title,
   session: one.session,
@@ -155,12 +163,15 @@ type Under =
 
 function DraftNotice({
   draft,
+  mayAlwaysSend,
   onGo,
   onGone,
   onEdited,
   onSent,
 }: {
   draft: ReportDraft;
+  /** The project lets its members send drafts unread (#5696): else Always send is off, and says why. */
+  mayAlwaysSend: boolean;
   onGo: (session: number) => void;
   onGone: () => void;
   onEdited: (edited: ReportDraft) => void;
@@ -216,7 +227,7 @@ function DraftNotice({
       title: filed.title || now.title,
       session: now.session,
       chat: now.chat,
-      to: filed.to,
+      to: filed.kind === "queued" ? "waiting" : filed.to,
       at: Date.now(),
     });
     onGone();
@@ -260,6 +271,7 @@ function DraftNotice({
         { label: "File", busy, onPress: () => file({ how: "check" }) },
         {
           label: "Always send",
+          off: mayAlwaysSend ? undefined : ALWAYS_SEND_FORBIDDEN,
           onPress: () => (consent.always_send === true ? alwaysSend() : setAsking(true)),
         },
         ...(session === null

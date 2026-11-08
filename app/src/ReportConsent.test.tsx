@@ -19,12 +19,19 @@ import { forgetReportConsent, UNANSWERED } from "./reportAnswers";
 let kept: ReportConsent = UNANSWERED;
 const keeps = vi.fn();
 
+/** What the core's envelope builders make of its sample panic and draft, as it answers them. */
+const SAMPLES = {
+  crash: '{"event_id":"9f1c"}\n{"type":"event"}\n{"exception":{"values":[{"type":"panic"}]}}\n',
+  draft: '{"event_id":"7a2b"}\n{"type":"event"}\n{"tags":{"written_by":"agent"}}\n',
+};
+
 beforeEach(() => {
   kept = UNANSWERED;
   keeps.mockReset();
   forgetReportConsent();
   mockIPC((cmd, args) => {
     if (cmd === "report_consent") return kept;
+    if (cmd === "report_samples") return SAMPLES;
     if (cmd === "keep_report_consent") {
       kept = (args as { consent: ReportConsent }).consent;
       keeps(kept);
@@ -138,8 +145,15 @@ describe("the first-run question about reports", () => {
     await userEvent.click(within(asked).getByRole("button", { name: "See exactly what's sent…" }));
 
     const samples = await screen.findByRole("dialog", { name: "What a report sends" });
-    expect(within(samples).getByText(/"where": "purlis_core::plane::read_layout"/)).toBeVisible();
-    expect(within(samples).getByText(/Title: purlis worktree update/)).toBeVisible();
+    // Exactly the bytes the core made, whole: never a summary of them.
+    for (const bytes of [SAMPLES.crash, SAMPLES.draft])
+      await waitFor(() =>
+        expect(
+          within(samples).getAllByText((_, node) => node?.textContent === bytes, {
+            selector: "code",
+          }),
+        ).toHaveLength(1),
+      );
     expect(keeps).not.toHaveBeenCalled();
   });
 });

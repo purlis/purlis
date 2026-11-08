@@ -44,12 +44,13 @@ const core: { filed: DraftFiled[]; sent: { cmd: string; args: unknown }[] } = {
 };
 
 /** The faked core: one draft held, answering File with each of `filed` in turn. */
-function fake(filed: DraftFiled[]) {
+function fake(filed: DraftFiled[], membersMayAlwaysSend = true) {
   core.filed = [...filed];
   core.sent = [];
   mockIPC((cmd, args) => {
     core.sent.push({ cmd, args });
     if (cmd === "report_drafts") return [DRAFT];
+    if (cmd === "members_may_always_send") return membersMayAlwaysSend;
     if (cmd === "edit_report_draft") {
       const { title, body } = args as { title: string; body: string };
       return { ...DRAFT, title, body, edited: true, digest: "ffffffffffff" };
@@ -128,10 +129,11 @@ export const ADraftWaits: Story = {
     const canvas = await theCard(canvasElement);
     await expect(canvas.getByText("steward 4")).toBeVisible();
     await expect(canvas.getByText(DRAFT.line)).toBeVisible();
-    await expect(canvas.getByRole("button", { name: "Dismiss" })).toBeVisible();
     const go = canvas.getByRole("button", { name: "Go to chat steward 4" });
     go.focus();
     expectFocusInSight();
+    // The × stands in the row's time once the row holds the keyboard (or the pointer).
+    await waitFor(() => expect(canvas.getByRole("button", { name: "Dismiss" })).toBeVisible());
     await userEvent.keyboard("{Enter}");
     await waitFor(() => expect(args.onGo).toHaveBeenCalledWith(4));
   },
@@ -154,6 +156,11 @@ export const ReadOpensTheDraft: Story = {
     await untilFocused(
       () => canvas.getByRole("button", { name: "Always send" }),
       "Tab reaches Always send",
+    );
+    await userEvent.tab();
+    await untilFocused(
+      () => canvas.getByRole("button", { name: "Go to chat steward 4" }),
+      "Tab reaches Go to chat, the row's last way",
     );
     await userEvent.tab();
     const title = canvas.getByRole("textbox", { name: "Title" });
@@ -189,6 +196,26 @@ export const FiledToTheReportService: Story = {
       how: { how: "check" },
     });
     await waitFor(() => expect(canvas.queryByText(`Report draft: ${TITLE}`)).toBeNull());
+  },
+};
+
+/**
+ * **Always send, held by the project** (#5696): the project turns sending without asking off, so
+ * the card's Always send is drawn off, its reason its tooltip, and the keyboard still reaches it;
+ * a press asks nothing and sends nothing.
+ */
+export const AlwaysSendHeldByTheProject: Story = {
+  beforeEach: () => fake([], false),
+  play: async ({ canvasElement }) => {
+    const canvas = await theCard(canvasElement);
+    const always = canvas.getByRole("button", { name: "Always send" });
+    await waitFor(() => expect(always).toHaveAttribute("aria-disabled", "true"));
+    always.focus();
+    await untilFocused(() => always, "the keyboard reaches Always send, off");
+    expectFocusInSight();
+    await userEvent.keyboard("{Enter}");
+    await expect(within(document.body).queryByRole("dialog")).toBeNull();
+    await expect(sentTo("always_send_report_draft")).toEqual([]);
   },
 };
 

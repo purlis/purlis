@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useState } from "react";
+import { commands, type ReportSamples } from "./bindings";
 import { Button } from "./ui/button/Button";
 import { CodeBlock } from "./ui/code/CodeBlock";
 import { Dialog } from "./ui/dialog/Dialog";
@@ -31,24 +32,6 @@ export const DRAFTS_SAYS =
   "When an agent finds purlis misbehaving, it writes a report draft for you to read. Nothing is sent until you file it.";
 export const NEVER_SENT =
   "Never sent: your code, your chats, file paths, project or workspace names, or secrets.";
-
-/** What a crash report holds, as it would be sent: a sample, before the first one is. */
-export const CRASH_SAMPLE = `{
-  "where": "purlis_core::plane::read_layout",
-  "error": "called \`Option::unwrap()\` on a \`None\` value",
-  "purlis": "0.41.2",
-  "channel": "stable",
-  "os": "macOS 27.2 (arm64)"
-}`;
-
-/** What a report draft holds, as an agent writes it: a sample. */
-export const DRAFT_SAMPLE = `Title: purlis worktree update refuses a clean branch
-Command: purlis worktree update
-Exit: 1
-purlis 0.41.2 (stable) · macOS 27.2 (arm64) · Claude Code 3.4.0 · a built-in persona
-
-What happened: the update said the branch had uncommitted work, but git status was clean.
-What was expected: the branch brought up to its base.`;
 
 /** An answer as a radio choice holds it: nothing chosen while it is unanswered. */
 const chosen = (said: boolean | null, yes: string, no: string): string | undefined =>
@@ -156,12 +139,24 @@ export function AlwaysSendDialog({ onYes, onCancel }: { onYes: () => void; onCan
   );
 }
 
-/** "See exactly what's sent…": opens a sample of each kind of report, as its bytes. */
+/**
+ * "See exactly what's sent…": opens a sample of each kind of report, as its bytes. The core makes
+ * them with the envelope builders a real report goes through (`report_samples`), so the sample
+ * can never say less than what is sent.
+ */
 export function WhatReportsSend({ ids }: { ids: RowIds }) {
   const [open, setOpen] = useState(false);
+  const [samples, setSamples] = useState<ReportSamples | { error: string }>();
+  const show = () => {
+    setOpen(true);
+    void commands
+      .reportSamples()
+      .then((made) => setSamples(made.status === "ok" ? made.data : { error: made.error }))
+      .catch((err: unknown) => setSamples({ error: String(err) }));
+  };
   return (
     <div id={ids.id} role="group" aria-labelledby={ids.labelledBy}>
-      <Button onPress={() => setOpen(true)}>See exactly what's sent…</Button>
+      <Button onPress={show}>See exactly what's sent…</Button>
       {open && (
         <Dialog
           title="What a report sends"
@@ -170,8 +165,15 @@ export function WhatReportsSend({ ids }: { ids: RowIds }) {
           onClose={() => setOpen(false)}
           cancel={{ children: "Close" }}
         >
-          <CodeBlock label="A crash report" text={CRASH_SAMPLE} />
-          <CodeBlock label="A report draft, as an agent writes it" text={DRAFT_SAMPLE} />
+          {samples !== undefined && "error" in samples && (
+            <p>The samples could not be made: {samples.error}</p>
+          )}
+          {samples !== undefined && !("error" in samples) && (
+            <>
+              <CodeBlock label="A crash report" text={samples.crash} />
+              <CodeBlock label="A report draft an agent wrote, sent unread" text={samples.draft} />
+            </>
+          )}
         </Dialog>
       )}
     </div>

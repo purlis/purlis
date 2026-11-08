@@ -18,6 +18,22 @@ import { expectFocusInSight, untilFocused } from "./stories.testkit";
 
 let kept: ReportConsent = UNANSWERED;
 
+/** What the core's envelope builders make of its sample panic and draft (`report_samples`). */
+const SAMPLES = {
+  crash:
+    '{"event_id":"9f1c2a7b","sent_at":"2026-11-08T03:19:00Z","dsn":"https://<key>@<the report intake>/<project>"}\n' +
+    '{"type":"event","length":420,"content_type":"application/json"}\n' +
+    '{"event_id":"9f1c2a7b","level":"fatal","platform":"native","release":"purlis@0.42.0",' +
+    '"environment":"stable","exception":{"values":[{"type":"panic","value":"called `Option::unwrap()` on a `None` value"}]},' +
+    '"culprit":"crates/purlis-core/src/plane.rs:120:9"}\n',
+  draft:
+    '{"event_id":"7a2b","sent_at":"2026-11-08T03:19:00Z","dsn":"https://<key>@<the report intake>/<project>"}\n' +
+    '{"type":"event","length":610,"content_type":"application/json"}\n' +
+    '{"event_id":"7a2b","level":"info","tags":{"written_by":"agent","reviewed_by_the_person":false,' +
+    '"harness":"claude","harness_version":"2.1.4","persona_kind":"template"},' +
+    '"message":{"formatted":"purlis worktree update refuses a clean branch"}}\n',
+};
+
 const meta = {
   component: ReportConsentAsk,
   parameters: { layout: "fullscreen" },
@@ -26,6 +42,7 @@ const meta = {
     forgetReportConsent();
     mockIPC((cmd, args) => {
       if (cmd === "report_consent") return kept;
+      if (cmd === "report_samples") return SAMPLES;
       if (cmd === "keep_report_consent") kept = (args as { consent: ReportConsent }).consent;
       return null;
     });
@@ -77,7 +94,12 @@ export const BothAnswered: Story = {
     expectFocusInSight();
     await userEvent.keyboard(" ");
     await waitFor(() =>
-      expect(kept).toEqual({ crash_reports: true, agent_drafts: false, asked: true }),
+      expect(kept).toEqual({
+        ...UNANSWERED,
+        crash_reports: true,
+        agent_drafts: false,
+        asked: true,
+      }),
     );
   },
 };
@@ -87,9 +109,7 @@ export const NotNowByEsc: Story = {
   play: async ({ userEvent }) => {
     await asked();
     await userEvent.keyboard("{Escape}");
-    await waitFor(() =>
-      expect(kept).toEqual({ crash_reports: null, agent_drafts: null, asked: true }),
-    );
+    await waitFor(() => expect(kept).toEqual({ ...UNANSWERED, asked: true }));
     await waitFor(() => expect(within(document.body).queryByRole("dialog")).toBeNull());
   },
 };
@@ -105,8 +125,8 @@ export const WhatIsSent: Story = {
     const samples = await within(document.body).findByRole("dialog", {
       name: "What a report sends",
     });
-    await within(samples).findByText(/"where": "purlis_core::plane::read_layout"/);
-    await within(samples).findByText(/Title: purlis worktree update refuses a clean branch/);
+    await within(samples).findByText(/"type":"panic"/);
+    await within(samples).findByText(/"written_by":"agent"/);
     await userEvent.keyboard("{Escape}");
     await waitFor(() =>
       expect(

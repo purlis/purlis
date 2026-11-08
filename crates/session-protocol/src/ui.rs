@@ -648,6 +648,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     "keep_report_consent",
     // The reports this machine sent, with their bytes (#5689): the person's own record.
     "reports_sent",
+    // The sample bytes of each kind of report (#5688): shown to the person before they answer.
+    "report_samples",
     // The report drafts chats wrote for the person (#5694): only the person reads, edits, files
     // (as themselves) or dismisses one, never a chat or a link.
     "report_drafts",

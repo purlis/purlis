@@ -108,8 +108,8 @@ pub struct SentReport {
     /// When it left, UTC, RFC 3339 to the second.
     pub at: String,
     pub title: String,
-    /// Where it went, in the window's words: "purlis's report service".
-    pub to: String,
+    /// Where it went: the window says it in its own words.
+    pub to: crate::reportdrafts::ReportDestination,
     /// Where the destination kept it.
     pub address: String,
     /// Exactly what was sent.
@@ -124,10 +124,7 @@ impl From<purlis_core::report::Sent> for SentReport {
         Self {
             at: sent.at,
             title: sent.title,
-            to: match sent.to {
-                purlis_core::report::SentTo::Intake => "purlis's report service".to_owned(),
-                purlis_core::report::SentTo::GitHub => "purlis's issues on GitHub".to_owned(),
-            },
+            to: sent.to.into(),
             address: sent.address,
             bytes: sent.bytes,
             waiting: sent.waiting,
@@ -153,6 +150,32 @@ pub async fn reports_sent() -> Result<Vec<SentReport>, String> {
     })
     .await
     .map_err(|err| format!("Reading the reports this machine sent did not finish: {err}"))
+}
+
+/// What each kind of report sends, as "See exactly what's sent" shows it (#5688, Q13).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct ReportSamples {
+    /// A Crash report of a sample panic, exactly as it would leave.
+    pub crash: String,
+    /// A Report draft an agent wrote, exactly as Always send would send it.
+    pub draft: String,
+}
+
+/// **The bytes each kind of report sends**, made by the core's own envelope builders from a
+/// sample panic and a sample draft (`purlis_core::report::samples`), so what the window shows
+/// before the first report is what a real one sends. Nothing is sent.
+#[tauri::command]
+#[specta::specta]
+pub async fn report_samples() -> Result<ReportSamples, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let samples = purlis_core::report::samples();
+        ReportSamples {
+            crash: samples.crash,
+            draft: samples.draft,
+        }
+    })
+    .await
+    .map_err(|err| format!("Making the sample reports did not finish: {err}"))
 }
 
 /// An error the window did not catch (#5690), as its JavaScript saw it: thrown and not caught, or

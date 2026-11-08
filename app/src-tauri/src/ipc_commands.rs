@@ -80,6 +80,7 @@ macro_rules! app_commands {
                 reportconsent::report_consent,
                 reportconsent::keep_report_consent,
                 reportconsent::reports_sent,
+                reportconsent::report_samples,
                 reportdrafts::report_drafts,
                 reportdrafts::edit_report_draft,
                 reportdrafts::file_report_draft,

@@ -1189,7 +1189,7 @@ const DIALOGS: Opened[] = [
               {
                 at: "2026-11-08T03:19:00Z",
                 title: "purlis panicked at src/plane.rs:12:5",
-                to: "purlis's report service",
+                to: "intake",
                 address: "purlis's report service, event 9f1c",
                 bytes: '{"level":"fatal"}\n',
               },

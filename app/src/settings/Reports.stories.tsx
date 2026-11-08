@@ -26,7 +26,7 @@ let kept: ReportConsent = UNANSWERED;
 const SENT: SentReport = {
   at: "2026-11-08T03:19:00Z",
   title: "purlis panicked at crates/purlis-core/src/plane.rs:12:5",
-  to: "purlis's report service",
+  to: "intake",
   address: "purlis's report service, event 9f1c2a7be0d34b6c8e5f0a1b2c3d4e5f",
   bytes:
     '{"event_id":"9f1c2a7be0d34b6c8e5f0a1b2c3d4e5f","sent_at":"2026-11-08T03:19:00Z"}\n' +
@@ -209,7 +209,8 @@ export const Sent: Story = {
     expectFocusInSight();
     await userEvent.keyboard("{Enter}");
     const dialog = await within(document.body).findByRole("dialog", { name: SENT.title });
-    await expect(within(dialog).getByText(/"level":"fatal"/)).toBeVisible();
+    // The dialog fades in: its bytes are read once it has.
+    await waitFor(() => expect(within(dialog).getByText(/"level":"fatal"/)).toBeVisible());
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(within(document.body).queryByRole("dialog")).toBeNull());
   },

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useState } from "react";
-import { commands, type SentReport } from "../bindings";
+import { commands, type ReportDestination, type SentReport } from "../bindings";
 import { CodeBlock } from "../ui/code/CodeBlock";
 import { Dialog } from "../ui/dialog/Dialog";
 import { EmptyState } from "../ui/empty-state/EmptyState";
@@ -40,7 +40,7 @@ export function SentReports({ ids }: { ids: RowIds }) {
             <ListRow key={at} id={at} textValue={one.title}>
               <RowLabel>{one.title}</RowLabel>
               <RowDescription>
-                {one.waiting ? "Waiting to send" : one.to} · {when(one.at)}
+                {one.waiting ? "Waiting to send" : TO_SAID[one.to]} · {when(one.at)}
               </RowDescription>
             </ListRow>
           ))}
@@ -51,8 +51,8 @@ export function SentReports({ ids }: { ids: RowIds }) {
           title={open.title}
           description={
             open.waiting
-              ? `Exactly what will be sent to ${open.to} once it can be reached. Made ${when(open.at)}.`
-              : `Exactly what was sent to ${open.to}, ${when(open.at)}.`
+              ? `Exactly what will be sent to ${TO_SAID[open.to]} once it can be reached. Made ${when(open.at)}.`
+              : `Exactly what was sent to ${TO_SAID[open.to]}, ${when(open.at)}.`
           }
           size="wide"
           onClose={() => setOpen(undefined)}
@@ -64,6 +64,12 @@ export function SentReports({ ids }: { ids: RowIds }) {
     </div>
   );
 }
+
+/** Where a report went, in the window's words. */
+export const TO_SAID: Record<ReportDestination, string> = {
+  intake: "purlis's report service",
+  github: "purlis's issues on GitHub",
+};
 
 type Read =
   | { status: "ok"; reports: readonly SentReport[] }

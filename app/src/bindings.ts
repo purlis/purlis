@@ -488,6 +488,12 @@ export const commands = {
 	 */
 	reportsSent: () => typedError<SentReport[], string>(__TAURI_INVOKE("reports_sent")),
 	/**
+	 *  **The bytes each kind of report sends**, made by the core's own envelope builders from a
+	 *  sample panic and a sample draft (`purlis_core::report::samples`), so what the window shows
+	 *  before the first report is what a real one sends. Nothing is sent.
+	 */
+	reportSamples: () => typedError<ReportSamples, string>(__TAURI_INVOKE("report_samples")),
+	/**
 	 *  **The project's report drafts**, oldest first: what its chats drafted and the person has not
 	 *  filed or dismissed. None on a machine with no config home.
 	 */
@@ -8372,11 +8378,10 @@ export type Doing = {
 
 /**  What became of a draft the person filed. */
 export type DraftFiled = 
-/**
- *  It left: `github` or `intake`, and where it was kept; or `waiting`, with no address: the
- *  Report intake gave no answer, and it waits on this machine to send.
- */
-{ kind: "sent"; to: string; address: string; title: string } | 
+/**  It left, to `to`, and where it was kept. */
+{ kind: "sent"; to: ReportDestination; address: string; title: string } | 
+/**  Not sent yet: the Report intake gave no answer, and it waits on this machine to send. */
+{ kind: "queued"; title: string } | 
 /**  Issues that may already cover it: nothing was filed. */
 { kind: "duplicates"; issues: PossibleDuplicate[] };
 
@@ -14112,6 +14117,17 @@ export type ReportConsent = {
 	crash_notice: CrashNoticeSaid | null,
 };
 
+/**
+ *  **Where a report went**, by the names the core's sent list keeps (`purlis_core::report::
+ *  SentTo`'s serde names): the one mapping of it the window reads, for a draft filed and for
+ *  the sent list alike.
+ */
+export type ReportDestination = 
+/**  purlis's private Report intake (ADR 0118). */
+"intake" | 
+/**  purlis/purlis on GitHub, as the person. */
+"github";
+
 /**  A draft held for the project's Inbox, as the window draws its card. */
 export type ReportDraft = {
 	id: string,
@@ -14136,6 +14152,14 @@ export type ReportDraft = {
 	 *  until then, not as a card. `None` waits for the person.
 	 */
 	sends_at: string | null,
+};
+
+/**  What each kind of report sends, as "See exactly what's sent" shows it (#5688, Q13). */
+export type ReportSamples = {
+	/**  A Crash report of a sample panic, exactly as it would leave. */
+	crash: string,
+	/**  A Report draft an agent wrote, exactly as Always send would send it. */
+	draft: string,
 };
 
 /**
@@ -15520,8 +15544,8 @@ export type SentReport = {
 	/**  When it left, UTC, RFC 3339 to the second. */
 	at: string,
 	title: string,
-	/**  Where it went, in the window's words: "purlis's report service". */
-	to: string,
+	/**  Where it went: the window says it in its own words. */
+	to: ReportDestination,
 	/**  Where the destination kept it. */
 	address: string,
 	/**  Exactly what was sent. */
