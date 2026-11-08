@@ -2794,7 +2794,7 @@ fn unreadable(
     states: &[State],
     look: &Drawn,
 ) -> Option<(String, Option<f64>)> {
-    unreadable_by(0.0, theme, on, rules, family, variant, states, look)
+    unreadable_by(0.0, theme, on, None, rules, family, variant, states, look)
 }
 
 /// **Parts drawn on an opaque ground of their own**, so the root's fill is not under them: a
@@ -2808,11 +2808,14 @@ const ON_A_GROUND_OF_THEIR_OWN: &[(&str, &str)] = &[("titlebar", "count"), ("tab
 /// reads the root's fill itself, and one drawn around the root, on a ground of its own or on its
 /// variant's stands on `on` alone. A part with a fill of a theme's own over what its parent paints
 /// ([`Family::under`]) is laid over that too (#4406): a tab's count over the tasks menu it sums up (#5341). A
-/// part drawn on fewer grounds than its family stands on those in place of `on` (#3384), which
-/// keeps it off any surface a theme fills: no such family is in [`STANDS_ON`].
+/// part drawn on fewer grounds than its family stands on those in place of `on` (#3384). On a
+/// surface's fill a theme sets (`surface`, the default fill it takes the place of, #3268), such a
+/// part stands on that fill where the surface's default is one of its grounds, and is drawn
+/// nowhere on it where it is not: a field's help is read on a dialog's fill, never a pane's.
 fn under_part(
     theme: &ResolvedTheme,
     on: &[String],
+    surface: Option<&str>,
     family: &Family,
     at: usize,
     variant: &str,
@@ -2830,9 +2833,12 @@ fn under_part(
         }
         return laid_over(theme, parent, &laid_over(theme, look.fill, on));
     }
-    let fewer = stands_on
-        .filter(|grounds| grounds.len() > 1)
-        .map(|grounds| laid(theme, grounds));
+    let several = stands_on.filter(|grounds| grounds.len() > 1);
+    let fewer = match (several, surface) {
+        (Some(grounds), Some(default)) if !grounds.contains(&default) => return Vec::new(),
+        (Some(grounds), None) => Some(laid(theme, grounds)),
+        _ => None,
+    };
     let on = fewer.as_deref().unwrap_or(on);
     if at == 0
         || ground == look.fill
@@ -2845,12 +2851,14 @@ fn under_part(
     laid_over(theme, look.fill, on)
 }
 
-/// **What a look breaks of the reading floors, or comes within `margin` of breaking**.
+/// **What a look breaks of the reading floors, or comes within `margin` of breaking**, on `on`: the
+/// family's grounds, or a surface's fill a theme sets in place of `surface`, its default (#3268).
 #[allow(clippy::too_many_arguments)]
 fn unreadable_by(
     margin: f64,
     theme: &ResolvedTheme,
     on: &[String],
+    surface: Option<&str>,
     rules: &[Rule],
     family: &Family,
     variant: &str,
@@ -2864,7 +2872,7 @@ fn unreadable_by(
         }
         // With more contrast asked for, the reading floors are raised (#2925).
         let floor = theme.least.floor(floor_of(family, part));
-        let under = under_part(theme, on, family, at, variant, look);
+        let under = under_part(theme, on, surface, family, at, variant, look);
         if let Some(ratio) = lowest(theme, &under, look.grounds[at], look.words[at])
             && ratio < floor + margin
         {
@@ -3513,78 +3521,201 @@ fn surfaces_set(rules: &[Rule]) -> Vec<SurfaceSet> {
     found
 }
 
-/// **The surfaces each family with a consent variant is drawn on** (#3083): a button stands on
-/// a panel, in a popover and in a dialog, and a menu's row in the popover a menu is. A ground
-/// token a family names can be more than one surface's (the overlay is a popover's and a
-/// dialog's), so where a family stands is said here, not read from its grounds.
+/// **The families drawn on each surface a theme can fill** (#3083, #3268): by the surface, each
+/// family whose root the window draws inside the surface's root, out to the first element that
+/// covers what is under it, through the components that place it. A ground token a family names
+/// can be more than one surface's (the overlay is a popover's and a dialog's), so where a family
+/// stands is said here, not read from its grounds. `app/src/theme/grounds.test.ts` finds it from
+/// the components and holds this table to them, exactly: a family drawn on a new surface fails
+/// there until it is named here. A surface drawn with no fill of its own in every look (a table, a
+/// tree) is named too, though nothing on it is measured on a fill a theme sets there
+/// ([`surfaces_set`]).
 const STANDS_ON: &[(&str, &[&str])] = &[
-    ("panel", &["button"]),
-    ("popover", &["button", "menu"]),
-    ("dialog", &["button"]),
-    // A card's ask and a Notice hold answers (#2912, `content::HOLDS_ANSWERS`).
-    ("card", &["button"]),
-    ("notice", &["button"]),
+    (
+        "card",
+        &[
+            "badge",
+            "button",
+            "checkbox",
+            "count",
+            "field",
+            "meter",
+            "text-input",
+            "textarea",
+            "tooltip",
+        ],
+    ),
+    ("card-button", &["badge"]),
+    ("code", &["tooltip"]),
+    ("combobox", &["tooltip"]),
+    (
+        "dialog",
+        &["button", "field", "list", "text-input", "tooltip"],
+    ),
+    ("list", &["tooltip"]),
+    ("menu", &["chat-mark", "tooltip"]),
+    (
+        "message",
+        &[
+            "badge",
+            "button",
+            "card",
+            "checkbox",
+            "field",
+            "notice",
+            "option-card",
+            "popover",
+            "radio",
+            "secret-ask",
+            "segmented-control",
+            "select",
+            "switch",
+            "text-input",
+            "textarea",
+            "tooltip",
+        ],
+    ),
+    (
+        "notice",
+        &[
+            "badge",
+            "button",
+            "card",
+            "checkbox",
+            "count",
+            "field",
+            "meter",
+            "option-card",
+            "popover",
+            "radio",
+            "select",
+            "slider",
+            "switch",
+            "text-input",
+            "textarea",
+            "tooltip",
+        ],
+    ),
+    ("pane-foot", &["badge", "button", "tooltip"]),
+    (
+        "panel",
+        &[
+            "badge",
+            "button",
+            "card",
+            "card-button",
+            "chat-mark",
+            "checkbox",
+            "combobox",
+            "count",
+            "disclosure",
+            "empty-state",
+            "field",
+            "list",
+            "message",
+            "meter",
+            "notice",
+            "option-card",
+            "page-tabs",
+            "panel-separator",
+            "popover",
+            "radio",
+            "review-page",
+            "select",
+            "slider",
+            "steps",
+            "switch",
+            "text-input",
+            "textarea",
+            "tooltip",
+            "view-frame",
+            "view-nav",
+        ],
+    ),
+    (
+        "popover",
+        &[
+            "button",
+            "field",
+            "menu",
+            "message",
+            "meter",
+            "notice",
+            "text-input",
+            "tooltip",
+        ],
+    ),
+    (
+        "review-page",
+        &[
+            "badge",
+            "button",
+            "checkbox",
+            "disclosure",
+            "empty-state",
+            "field",
+            "list",
+            "message",
+            "meter",
+            "notice",
+            "option-card",
+            "popover",
+            "radio",
+            "select",
+            "switch",
+            "text-input",
+            "tooltip",
+        ],
+    ),
+    ("segmented-control", &["segment", "tooltip"]),
+    ("select", &["tooltip"]),
+    (
+        "table",
+        &[
+            "badge",
+            "button",
+            "card",
+            "checkbox",
+            "field",
+            "message",
+            "notice",
+            "option-card",
+            "popover",
+            "radio",
+            "select",
+            "slider",
+            "steps",
+            "switch",
+            "text-input",
+            "textarea",
+            "tooltip",
+        ],
+    ),
+    ("text-input", &["tooltip"]),
+    ("textarea", &["tooltip"]),
+    (
+        "tree",
+        &[
+            "badge", "button", "count", "message", "meter", "notice", "popover", "tooltip",
+        ],
+    ),
+    (
+        "view-frame",
+        &[
+            "count",
+            "panel-separator",
+            "popover",
+            "select",
+            "tooltip",
+            "view-nav",
+        ],
+    ),
 ];
 
-/// **The fill-taking families no consent family stands on**, each with why (#3083 review): a
-/// family whose root takes a fill and whose default fill is a ground a family with a consent
-/// variant names is in [`STANDS_ON`] or here, and a test holds every one to one list or the
-/// other, so a new Allow or danger answer on a filled surface cannot go unmeasured unseen.
-/// Every family is measured on a filled surface once #3268 lands.
-#[cfg(test)]
-pub(super) const HOLDS_NO_CONSENT: &[(&str, &str)] = &[
-    (
-        "code",
-        "a box of text to copy holds its ghost Copy button, never an Allow or a danger answer",
-    ),
-    (
-        "text-input",
-        "a field's box holds the words typed into it, never an answer",
-    ),
-    (
-        "textarea",
-        "a field's box holds the words typed into it, never an answer",
-    ),
-    (
-        "editor",
-        "its toolbar holds ghost and plain buttons, never an Allow or a danger answer (#3268)",
-    ),
-    ("tooltip", "it holds words only"),
-    (
-        "badge",
-        "a waiting badge is filled with the warning wash and holds its own words only (#4795)",
-    ),
-    (
-        "count",
-        "a waiting count is filled with the warning wash and holds its own number only (#4795)",
-    ),
-    (
-        "status-item",
-        "the status bar's waiting pill is filled with the warning wash and holds its own icon \
-         and words only (#4795)",
-    ),
-    (
-        "separator",
-        "it is a line between two groups, and holds nothing",
-    ),
-    ("select", "a control's box holds its value and its chevron"),
-    (
-        "combobox",
-        "a control's box holds its value and its chevron",
-    ),
-    (
-        "option-card",
-        "a choice holds its title, its detail and its check, never an answer",
-    ),
-    (
-        "list",
-        "a card row holds Use and its fix, plain buttons, never an Allow or a danger answer \
-         (#3669)",
-    ),
-];
-
-/// The families drawn on `surface` whose grounds name its `default` fill but not `set`: what a
-/// surface whose fill a theme turns from `default` to `set` brings a new ground under.
+/// **The families drawn on `surface` that a fill `set` in place of its `default` brings a new
+/// ground under** (#3268): each [`STANDS_ON`] says is drawn there, whose grounds do not name `set`
+/// already, or one of whose parts read on grounds of their own ([`Family::under`]) is drawn on
+/// `default` and not read on `set`.
 fn drawn_on(
     surface: &'static Family,
     default: &str,
@@ -3596,8 +3727,10 @@ fn drawn_on(
         .map_or(&[], |(_, families)| *families);
     MANIFEST.iter().filter(move |family| {
         on.contains(&family.name)
-            && family.grounds.contains(&default)
-            && !family.grounds.contains(&set)
+            && (!family.grounds.contains(&set)
+                || family.under.iter().any(|(_, grounds)| {
+                    grounds.len() > 1 && grounds.contains(&default) && !grounds.contains(&set)
+                }))
     })
 }
 
@@ -3704,21 +3837,39 @@ fn broken_on(
     rules: &[Rule],
     family: &Family,
     surface: &Family,
+    default: &str,
     set: &str,
 ) -> Option<(String, Option<f64>)> {
     let sets = sets_read(rules, family);
     let looks = looks_in(rules, family, &sets);
+    // What the fill set breaks, which a default broken on the default too is not (#3268).
+    let reads = |margin: f64, one: &ResolvedTheme, on: &[String], look: &LookOn<'_>| {
+        let (variant, states, look) = (look.0, look.1, &look.2);
+        unreadable_by(
+            margin,
+            one,
+            on,
+            Some(default),
+            rules,
+            family,
+            variant,
+            states,
+            look,
+        )
+        .filter(|_| {
+            !a_default_broken_on_the_default_too(
+                one, rules, family, surface, default, variant, states, look,
+            )
+        })
+    };
     let on = surface_ground(theme, surface, set);
-    for (variant, states, look) in &looks {
-        if let Some(broken) = unreadable_by(0.0, theme, &on, rules, family, variant, states, look) {
+    for look in &looks {
+        if let Some(broken) = reads(0.0, theme, &on, look) {
             return Some(broken);
         }
     }
     if tints_reach(theme, set, &looks) {
         // Only a look a coarse reading finds near a floor is read at every degree.
-        let reads = |margin: f64, one: &ResolvedTheme, on: &[String], look: &LookOn<'_>| {
-            unreadable_by(margin, one, on, rules, family, look.0, look.1, &look.2)
-        };
         let coarse_on: Vec<_> = coarse
             .iter()
             .map(|one| (one, surface_ground(one, surface, set)))
@@ -3759,6 +3910,55 @@ fn broken_on(
     None
 }
 
+/// **Whether `look` is `family`'s default and breaks on `surface`'s default fill too** (#3268): the
+/// family default's, as the floors never hold a default look against a theme ([`held_from`]), and
+/// no reason for the surface to draw its default.
+#[allow(clippy::too_many_arguments)]
+fn a_default_broken_on_the_default_too(
+    theme: &ResolvedTheme,
+    rules: &[Rule],
+    family: &Family,
+    surface: &Family,
+    default: &str,
+    variant: &str,
+    states: &[State],
+    look: &Drawn,
+) -> bool {
+    *look == drawn(&[], family, variant, states) && {
+        let was = surface_ground(theme, surface, default);
+        unreadable_by(
+            0.0,
+            theme,
+            &was,
+            Some(default),
+            rules,
+            family,
+            variant,
+            states,
+            look,
+        )
+        .is_some()
+    }
+}
+
+/// A family read on a surface's fill: the family, the surface, its default fill, the fill set and
+/// how many looks of the theme the consent floors are held in.
+type Reading = (
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+    usize,
+);
+
+/// Each family read on a surface's fill, with the floor it breaks there and by how much, if any.
+type Readings = Vec<(Reading, Option<(String, Option<f64>)>)>;
+
+/// Drops what was read of `surface` itself on another's fill: a fall has changed its rules.
+fn forget(known: &mut Readings, surface: &Family) {
+    known.retain(|((one, ..), _)| *one != surface.name);
+}
+
 /// **Each surface whose fill a theme sets, held under what is drawn on it** (#3099, from
 /// #3083): every family drawn on the surface's default ground is measured on the fill set in its
 /// place, and a surface under which one breaks a floor draws its family default there, said in
@@ -3771,6 +3971,12 @@ fn held_on_surfaces(
     fell: &mut Vec<Fell>,
 ) -> bool {
     let before = fell.len();
+    // What each family breaks on a surface's fill, read once for every look of the surface that
+    // sets the same fill (a panel's three, #3268). `broken_on` reads only the family's own rules,
+    // the surface's grounds and the looks of the theme in hand, which only ever grow from the
+    // theme alone to every tint: so a reading holds until a fall changes the rules of the family
+    // it is of, and is keyed by how many looks there are.
+    let mut known: Readings = Vec::new();
     for (surface, variant, default, set) in surfaces_set(rules) {
         for family in drawn_on(surface, default, set) {
             // The consent floors hold in every tint, a surface's fill under a consent variant
@@ -3779,9 +3985,18 @@ fn held_on_surfaces(
             if consent && drawn_in.len() == 1 && !theme.tint.tabs().is_empty() {
                 drawn_in.extend(every_tinted(theme));
             }
-            if let Some((floor, ratio)) =
-                broken_on(theme, coarse, drawn_in, rules, family, surface, set)
-            {
+            let key = (family.name, surface.name, default, set, drawn_in.len());
+            let broken = if let Some((_, said)) = known.iter().find(|(one, _)| *one == key) {
+                said.clone()
+            } else {
+                let broken = broken_on(
+                    theme, coarse, drawn_in, rules, family, surface, default, set,
+                );
+                known.push((key, broken.clone()));
+                broken
+            };
+            if let Some((floor, ratio)) = broken {
+                forget(&mut known, surface);
                 Held {
                     family: surface,
                     rules: &mut *rules,
@@ -3820,6 +4035,7 @@ fn held_on_surfaces(
                 .find_map(|one| apart_broken_on(one, rules, surface, variant, set, 0.0));
         }
         if let Some((family, floor, ratio)) = broken {
+            forget(&mut known, surface);
             Held {
                 family: surface,
                 rules: &mut *rules,
@@ -4042,6 +4258,7 @@ impl Held<'_> {
                         margin,
                         one,
                         &on,
+                        None,
                         self.rules,
                         self.family,
                         variant,
