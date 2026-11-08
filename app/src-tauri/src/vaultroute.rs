@@ -490,6 +490,24 @@ fn allow(
             level: sandbox::grant::Level::You,
         },
     )?;
+    // Kept blocked for this chat while the audit waited on the session host (#5617).
+    if refusals.kept_blocked(session, vault) {
+        let taken_back = audit(
+            Some(session),
+            &sandbox::grant::Audited {
+                granted: false,
+                what: sandbox::local::VAULT,
+                target: &target,
+                level: sandbox::grant::Level::You,
+            },
+        );
+        if let Err(unrecorded) = taken_back {
+            tracing::warn!("purlis: a vault Keep blocked overtook was not audited ({unrecorded})");
+        }
+        return Err(format!(
+            "You kept vault {vault} blocked for this chat, so nothing was allowed."
+        ));
+    }
     sandbox::local::grant_vault(root, &grant.vault, &grant.persona)
         .map_err(|why| format!("purlis could not keep it, so nothing was allowed: {why}"))?;
     if let Err(why) = sandbox::local::record_made(

@@ -13939,7 +13939,10 @@ fn always_allow_whose_audit_stalls_as_keep_blocked_is_pressed_writes_nothing() {
             .expect("its audit stalls");
         let keeping =
             scope.spawn(|| crate::vaultroute::keep_blocked_pressed(&held, None, 3, "team"));
-        while !held.vault_refusals().kept_blocked(3, "team") {
+        let began = std::time::Instant::now();
+        while !held.vault_refusals().kept_blocked(3, "team")
+            && began.elapsed() < std::time::Duration::from_secs(5)
+        {
             std::thread::yield_now();
         }
         release.send(()).expect("the host is there");
@@ -13995,12 +13998,21 @@ fn always_allow_gives_no_vault_once_keep_blocked_is_pressed_during_its_audit() {
             .expect("the vault's audit stalls");
         let keeping =
             scope.spawn(|| crate::vaultroute::keep_blocked_pressed(&held, None, 3, "team"));
-        while !held.vault_refusals().kept_blocked(3, "team") {
+        let began = std::time::Instant::now();
+        while !held.vault_refusals().kept_blocked(3, "team")
+            && began.elapsed() < std::time::Duration::from_secs(5)
+        {
             std::thread::yield_now();
         }
         release.send(()).expect("the host is there");
 
-        let _ = always.join().expect("it ends");
+        let pressed = always.join().expect("it ends");
+        assert!(pressed.is_err(), "{pressed:?}");
+        let ran = waits.join().expect("it settles");
+        assert!(
+            !matches!(ran, purlis_core::secrets::ask::run::RunHeld::Allowed),
+            "the run is not let go on: {ran:?}"
+        );
         keeping.join().expect("it ends");
         assert_eq!(
             purlis_core::sandbox::local::granted_vaults(&plane.root),
@@ -14008,7 +14020,82 @@ fn always_allow_gives_no_vault_once_keep_blocked_is_pressed_during_its_audit() {
             "the persona is not given the vault"
         );
         assert!(held.secret_asks().given_runs().is_empty());
-        waits.join().expect("it settles");
+    });
+}
+
+/// #5617: Keep blocked pressed on a run's own notice holds at once too, as the refused vault's
+/// does: Allow for this chat on another ask, its audit stalled as Keep blocked is pressed, gives
+/// nothing once the audit returns, and its run is not let go on.
+#[test]
+fn keep_blocked_on_a_runs_notice_holds_while_another_press_waits_on_its_audit() {
+    use purlis_core::secrets::ask::run::Offer;
+    let plane = Plane::new().a_persona("ops", "");
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let (events, stalled, release) = a_host_stalling_audit(1);
+    held.hooks().record_into(events);
+    vault_team_no_persona_is_tagged_for(&plane);
+
+    std::thread::scope(|scope| {
+        let (program, its_run) = raised(
+            scope,
+            &held,
+            curl_on_team_not_its(&plane, Offer::Program, &[]),
+        );
+        let (vaults, other_run) = raised(
+            scope,
+            &held,
+            curl_on_team_not_its(&plane, Offer::Vault { no_allow: None }, &["TOKEN"]),
+        );
+        let (pressing, program_id) = (&held, program.id);
+        let allowing = scope.spawn(move || {
+            crate::secretasks::run_grant_filled(
+                pressing,
+                None,
+                program_id,
+                crate::secretasks::RunGrantPress::Chat,
+                Vec::new(),
+            )
+        });
+        stalled
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("its audit stalls");
+        let (keeper, vault_id) = (&held, vaults.id);
+        let keeping = scope.spawn(move || {
+            crate::secretasks::run_grant_filled(
+                keeper,
+                None,
+                vault_id,
+                crate::secretasks::RunGrantPress::Refuse,
+                Vec::new(),
+            )
+        });
+        let began = std::time::Instant::now();
+        while !held.vault_refusals().kept_blocked(3, "team")
+            && began.elapsed() < std::time::Duration::from_secs(5)
+        {
+            std::thread::yield_now();
+        }
+        let held_at_once = held.vault_refusals().kept_blocked(3, "team");
+        // Released before any assert, so a failure ends the test rather than stalling it.
+        release.send(()).expect("the host is there");
+        assert!(
+            held_at_once,
+            "Keep blocked holds before it waits for the other press"
+        );
+
+        let allowed = allowing.join().expect("it ends");
+        assert!(allowed.is_err(), "{allowed:?}");
+        keeping.join().expect("it ends").expect("kept blocked");
+        let ran = its_run.join().expect("it settles");
+        assert!(
+            !matches!(ran, purlis_core::secrets::ask::run::RunHeld::Allowed),
+            "{ran:?}"
+        );
+        other_run.join().expect("it settles");
+        assert!(held.secret_asks().given_runs().is_empty());
     });
 }
 

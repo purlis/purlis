@@ -225,6 +225,25 @@ pub fn run_grant_given(
     press: RunGrantPress,
     given: RunGiven,
 ) -> Result<(), String> {
+    // Keep blocked on a run's own notice holds at once, as on the refused vault's (#5617): the
+    // mark and the take-back come before it waits for a press under way.
+    if press == RunGrantPress::Refuse
+        && let Some(open) = held
+            .secret_asks()
+            .open_runs()
+            .into_iter()
+            .find(|open| open.id == id)
+        && matches!(
+            open.offer,
+            purlis_core::secrets::ask::run::Offer::Vault { .. }
+        )
+    {
+        held.vault_refusals()
+            .keep_blocked(open.bound.chat, &open.bound.vault);
+        let _ = held
+            .secret_asks()
+            .keep_vault_blocked(open.bound.chat, &open.bound.vault);
+    }
     let _one = held.run_answers();
     run_grant_carried_out(held, network, id, press, given)
 }
@@ -480,19 +499,7 @@ fn run_grant_carried_out(
     // Read again (#5617): Keep blocked may have been pressed while the audit waited on the session
     // host, and nothing slow is left before what is written or given.
     if open.not_its_vault && answer.goes_on() && kept_blocked_on(held, &open) {
-        let taken_back = match answer {
-            RunAnswer::Once => Some(Audited::revoked(&open.bound, true)),
-            RunAnswer::ForChat => Some(Audited::revoked(&open.bound, false)),
-            RunAnswer::Always => Some(Audited::revoked_always(&open.bound)),
-            RunAnswer::Refuse | RunAnswer::AllowVault | RunAnswer::Fill => None,
-        };
-        if let Some(taken_back) = taken_back
-            && let Err(unrecorded) =
-                held.hooks()
-                    .record_run_grant(held.root(), open.bound.chat, &taken_back)
-        {
-            tracing::warn!("purlis: an Allow Keep blocked overtook was not audited ({unrecorded})");
-        }
+        audit_taken_back(held, &open, answer, &keys);
         return Err(kept_blocked_said(&open.bound.vault));
     }
     // The vault's own Allow: the persona is given it, audited first, and every chat its
@@ -529,6 +536,12 @@ fn run_grant_carried_out(
         if let Some(grant) = written.vault
             && let Err(why) = give_the_vault(held, network, open.bound.chat, &grant)
         {
+            // Kept blocked while the vault's audit waited (#5617): the line written before stays,
+            // and nothing more is given, the run's grant least of all.
+            if open.not_its_vault && kept_blocked_on(held, &open) {
+                audit_taken_back(held, &open, answer, &keys);
+                return Err(why);
+            }
             tracing::warn!("purlis: Always allow did not give the persona the vault ({why})");
         }
         if let Some(shown) = written.allow
@@ -547,6 +560,11 @@ fn run_grant_carried_out(
         .secret_asks()
         .answer_run(id, answer, crate::asking::the_window());
     held.chats().asks_may_have_moved();
+    // Audited as given, and refused by the asks, which hold Keep blocked under their own lock
+    // (#5617): audited as taken back.
+    if answered.is_err() {
+        audit_taken_back(held, &open, answer, &keys);
+    }
     let answered = answered?;
     told_each(held, &answered.nudge, &answered.told);
     // The needs the person ticked Remember for, once their keys are stored (#5240): only for a
@@ -658,6 +676,30 @@ fn declare_the_tool(
     open: &purlis_core::secrets::ask::run::OpenRun,
 ) -> Result<purlis_core::settings::always_allow::Written, String> {
     purlis_core::settings::always_allow::write(held.root(), &open.persona, &open.bound)
+}
+
+/// **Audits as taken back a Run grant audited as given** that was then refused (#5617), naming
+/// the keys its grant named. Nothing for an answer that audits no grant.
+fn audit_taken_back(
+    held: &crate::planes::Held,
+    open: &purlis_core::secrets::ask::run::OpenRun,
+    answer: purlis_core::secrets::ask::run::RunAnswer,
+    keys: &[String],
+) {
+    use purlis_core::secrets::ask::run::{Audited, RunAnswer};
+    let taken_back = match answer {
+        RunAnswer::Once => Audited::revoked(&open.bound, true),
+        RunAnswer::ForChat => Audited::revoked(&open.bound, false),
+        RunAnswer::Always => Audited::revoked_always(&open.bound),
+        RunAnswer::Refuse | RunAnswer::AllowVault | RunAnswer::Fill => return,
+    };
+    let taken_back = taken_back.handing(keys);
+    if let Err(unrecorded) =
+        held.hooks()
+            .record_run_grant(held.root(), open.bound.chat, &taken_back)
+    {
+        tracing::warn!("purlis: an Allow given nothing was not audited as such ({unrecorded})");
+    }
 }
 
 /// Whether the person kept `open`'s vault blocked for its chat (#5617).

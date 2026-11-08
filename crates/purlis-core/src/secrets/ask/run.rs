@@ -973,6 +973,22 @@ impl Asks {
         if !answer.is_offered_by(&inner.runs.open[at].open.offer) {
             return Err("That answer isn't offered on this notice.".to_owned());
         }
+        // **Kept blocked for its chat** (#5617): nothing that opens the vault is given, under the
+        // lock Keep blocked marks it under, however far the press got before the mark. The ask
+        // stays open for Keep blocked to answer.
+        let bound = &inner.runs.open[at].open.bound;
+        if answer.goes_on()
+            && inner.runs.open[at].open.not_its_vault
+            && inner
+                .runs
+                .kept_blocked
+                .contains(&(bound.chat, bound.vault.clone()))
+        {
+            return Err(format!(
+                "You kept vault {} blocked for this chat, so nothing was allowed.",
+                bound.vault
+            ));
+        }
         // Ahead of its run there is no command to bind: no Allow once, and no Always allow.
         if inner.runs.open[at].open.ahead
             && !matches!(answer, RunAnswer::ForChat | RunAnswer::Refuse)

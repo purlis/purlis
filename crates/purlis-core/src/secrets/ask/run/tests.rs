@@ -631,3 +631,41 @@ fn keep_blocked_takes_back_a_grant_given_on_that_vault_for_that_chat() {
     assert!(!asks.granted(&bound(7, &["b"])));
     assert!(asks.covers(&bound(8, &["b"])), "another chat's stays");
 }
+
+#[test]
+fn an_answer_that_would_open_a_vault_kept_blocked_for_its_chat_is_refused_and_gives_nothing() {
+    // A press already past the window's own checks when Keep blocked lands (#5617): refused under
+    // the lock the mark is set under, so it gives nothing. Refuse still answers, and another
+    // chat's ask, or one on its persona's own vault, is another matter.
+    let tmp = tempfile::tempdir().unwrap();
+    let asks = Asks::new(tmp.path());
+    asks.allowed_or_held(
+        RunNeed {
+            not_its_vault: true,
+            ..need(bound(7, &["a"]))
+        },
+        Duration::ZERO,
+        &mut |_| {},
+    );
+    let id = asks.open_runs()[0].id;
+    asks.keep_vault_blocked(7, "team");
+    for answer in [RunAnswer::Once, RunAnswer::ForChat, RunAnswer::Always] {
+        let given = asks.answer_run(id, answer, window());
+        assert!(given.is_err(), "{answer:?}: {given:?}");
+    }
+    assert!(asks.given_runs().is_empty());
+    assert_eq!(asks.open_runs().len(), 1, "left for Keep blocked to answer");
+    asks.answer_run(id, RunAnswer::Refuse, window())
+        .expect("Don't allow still answers");
+
+    asks.allowed_or_held(
+        RunNeed {
+            not_its_vault: true,
+            ..need(bound(8, &["a"]))
+        },
+        Duration::ZERO,
+        &mut |_| {},
+    );
+    answer_open(&asks, RunAnswer::ForChat);
+    assert!(asks.covers(&bound(8, &["b"])), "another chat's is its own");
+}
