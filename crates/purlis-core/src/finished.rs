@@ -173,9 +173,7 @@ pub fn own(
             _ => match merged::holding(plane, ws, repo, branch, forge) {
                 Ok(Found::Merged(number)) => Ok(Commits::InMergedRequest(number)),
                 Ok(Found::ClosedOnOrigin(number)) => Ok(Commits::InClosedRequestOnOrigin(number)),
-                Ok(Found::ClosedNotOnOrigin(number)) => {
-                    Err(NotFinished::ClosedNotOnOrigin(number))
-                }
+                Ok(Found::ClosedNotOnOrigin(number)) => Err(NotFinished::ClosedNotOnOrigin(number)),
                 Ok(Found::Nothing) => Err(NotFinished::Ahead),
                 Err(why) => Err(NotFinished::AheadUnasked(why)),
             },

@@ -153,7 +153,12 @@ fn queue_merged(f: &support::Fixture) -> (Cut, String) {
     write_commit(&f.clone, "two", "two, from the base\n", "the base moves");
     git(&f.clone, &["rm", "-q", "two"]);
     write_commit(&f.clone, "one", "one\n", "squash of request 9 (#9)");
-    write_commit(&f.clone, "two", "two, as the queue resolved it\n", "resolve");
+    write_commit(
+        &f.clone,
+        "two",
+        "two, as the queue resolved it\n",
+        "resolve",
+    );
     write_commit(&f.clone, "one", "one, changed since\n", "later");
     (cut, head)
 }

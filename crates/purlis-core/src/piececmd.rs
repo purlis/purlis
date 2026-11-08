@@ -416,7 +416,17 @@ pub fn remove(
     forge: crate::finished::Forge<'_>,
     say: &mut dyn FnMut(Say),
 ) -> u8 {
-    remove_as(plane, ws, repo, piece, force, delete_branch, false, forge, say)
+    remove_as(
+        plane,
+        ws,
+        repo,
+        piece,
+        force,
+        delete_branch,
+        false,
+        forge,
+        say,
+    )
 }
 
 /// [`remove`] for a chat, never forced: refused besides where the folder holds files git
@@ -431,7 +441,17 @@ pub fn remove_for_a_chat(
     forge: crate::finished::Forge<'_>,
     say: &mut dyn FnMut(Say),
 ) -> u8 {
-    remove_as(plane, ws, repo, piece, false, delete_branch, true, forge, say)
+    remove_as(
+        plane,
+        ws,
+        repo,
+        piece,
+        false,
+        delete_branch,
+        true,
+        forge,
+        say,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
