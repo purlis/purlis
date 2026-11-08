@@ -437,7 +437,8 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     why: WARNING,
   },
   "QuitWarning.tsx": {
-    count: 1,
+    // A chat mid-turn, and one waiting on its own work (#5748): each a loss the answer causes.
+    count: 2,
     why: WARNING,
   },
   "RemoveFromWorkspace.tsx": {
