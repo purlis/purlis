@@ -30,8 +30,9 @@
 //!   wrapper's own move to a literal folder (`env -C <folder> git …`, #3931) places that one
 //!   command; one it cannot place leaves that command to the sandbox.
 //!
-//! **A chat with no sandbox has no sandbox to leave a line to.** Its guard holds a branch
-//! folder's writes to the folder's one live writer ([`branch_write`]), and reads the same line
+//! **A chat with no sandbox has no sandbox to leave a line to.** Its guard holds every git
+//! that may write a branch folder (its branch, HEAD, index or working tree) to the folder's one
+//! live writer ([`branch_write`]), and reads the same line
 //! the same way, but where it cannot place a git that may write a branch (after a move it
 //! cannot follow, past [`MOST_PLACES`], as an alias it cannot read, behind a wrapper that may
 //! change where git runs or what it reads, in a script handed to a shell, or with words it
@@ -161,19 +162,24 @@ pub struct InAFolder<T> {
     pub folder: PathBuf,
 }
 
-/// **Plain git that writes a branch folder's branch** (#3931): every `git commit`, `merge`,
-/// `cherry-pick`, `revert` or `am` (a commit), `pull` or `rebase` (an update) or `push` on the
-/// line `cmd`, run in `cwd`, whose repository is a branch folder purlis made in the project at
-/// `root`, in the line's order, read and placed as [`refusal`] reads and places a line. What an
-/// unsandboxed chat's guard holds to each folder's one live writer ([`crate::piececlaim`]). A
-/// dry run, and a rebase, merge, cherry-pick, revert or am that only stops or shows one under
-/// way (`--abort`, `--quit`, `--show-current-patch`), writes nothing of its own and is let
-/// through.
+/// **Plain git that may write a branch folder** (#3931): every git on the line `cmd`, run in
+/// `cwd`, that may move a branch or HEAD, or write the index or the working tree, of a branch
+/// folder purlis made in the project at `root`, in the line's order, read and placed as
+/// [`refusal`] reads and places a line. What an unsandboxed chat's guard holds to each folder's
+/// one live writer ([`crate::piececlaim`]). A `git commit`, `merge`, `cherry-pick`, `revert` or
+/// `am` is a commit, a `push` a push, and every other git an update, but for the git that only
+/// reads ([`reads_only`]): an allow-list, so a subcommand it does not know counts as a write. A
+/// dry run writes nothing and is let through.
 ///
-/// A git that may write a branch but cannot be placed is named apart
-/// ([`BranchWrites::unplaced`]): this reader has no sandbox to leave it to. An alias is read
-/// from the configuration of each folder it may run in; one that runs a shell command, or that
-/// the line itself or git's environment defines, cannot be.
+/// Its folder is the repository git will use, from `-C`, `--git-dir` and `GIT_DIR` as git
+/// reads them, and the working tree it is told to write (`--work-tree`, `GIT_WORK_TREE`, or the
+/// folder it runs in where only a git directory is given).
+///
+/// A git that may write but cannot be placed is named apart ([`BranchWrites::unplaced`]): this
+/// reader has no sandbox to leave it to. That includes a `-C`, `--git-dir`, `--work-tree`,
+/// `GIT_DIR` or `GIT_WORK_TREE` the line does not spell out. An alias is read from the
+/// configuration of each folder it may run in; one that runs a shell command, or that the line
+/// itself or git's environment defines, cannot be.
 pub fn branch_write(cmd: &str, cwd: &str, root: &str) -> BranchWrites {
     branch_write_where(cmd, cwd, root, &|| {
         shell_may_have_cdpath(&|name| std::env::var_os(name), Path::new("/etc"))
@@ -310,19 +316,207 @@ pub fn any_branch_folder(root: &Path) -> bool {
     })
 }
 
-/// What `git <sub> <post…>` does to the branch it runs on, as a branch folder's claim names it
-/// ([`branch_write`]), or `None` for git that makes no commit and moves no branch.
+/// What `git <sub> <post…>` does to the branch folder it runs in, as a branch folder's claim
+/// names it ([`branch_write`]), or `None` for git that only reads: one of [`reads_only`].
+///
+/// A commit and its kin are a commit, a rebase or a pull an update, and a push a push. Every
+/// other git counts as an update, git's own or not: one that may move a branch or HEAD, or
+/// write the index or the working tree, and one this does not know. A dry run, and what only
+/// shows or leaves a sequence under way (`--quit`, `--show-current-patch`), writes nothing; an
+/// `--abort` puts HEAD, the index and the tree back, so it writes.
 fn writes_the_branch(sub: &str, post: &[String]) -> Option<crate::piececlaim::Act> {
     use crate::piececlaim::Act;
     let has = |flag: &str| post.iter().any(|arg| arg == flag);
-    let only_stops = has("--abort") || has("--quit") || has("--show-current-patch");
+    if reads_only(sub, post) {
+        return None;
+    }
+    let only_shows = has("--quit") || has("--show-current-patch");
     match sub {
-        "commit" if !has("--dry-run") => Some(Act::Commit),
-        "merge" | "cherry-pick" | "revert" | "am" if !only_stops => Some(Act::Commit),
-        "rebase" if !only_stops => Some(Act::Update),
-        "pull" if !has("--dry-run") => Some(Act::Update),
-        "push" if !(has("-n") || has("--dry-run")) => Some(Act::Push),
-        _ => None,
+        "commit" if has("--dry-run") => None,
+        "merge" | "cherry-pick" | "revert" | "am" | "rebase" if only_shows => None,
+        "commit" | "merge" | "cherry-pick" | "revert" | "am" if !has("--abort") => {
+            Some(Act::Commit)
+        }
+        "pull" if has("--dry-run") => None,
+        "push" if has("-n") || has("--dry-run") => None,
+        "push" => Some(Act::Push),
+        _ => Some(Act::Update),
+    }
+}
+
+/// git's own commands that never move a branch or HEAD, nor write the index or the working
+/// tree, however they are called. Some write objects, which change no branch.
+#[rustfmt::skip]
+const ONLY_READ: &[&str] = &[
+    "annotate", "archive", "blame", "bugreport", "cat-file", "check-attr", "check-ignore",
+    "check-mailmap", "check-ref-format", "cherry", "column", "commit-tree", "count-objects",
+    "describe", "diagnose", "diff", "diff-files", "diff-index", "diff-pairs", "diff-tree",
+    "fmt-merge-msg", "for-each-ref", "format-patch", "fsck", "fsck-objects", "get-tar-commit-id",
+    "grep", "hash-object", "help", "log", "ls-files", "ls-remote", "ls-tree", "mailinfo",
+    "mailsplit", "merge-base", "merge-tree", "mktag", "mktree", "name-rev", "patch-id",
+    "range-diff", "rev-list", "rev-parse", "shortlog", "show", "show-branch", "show-index",
+    "show-ref", "status", "stripspace", "var", "verify-commit", "verify-pack", "verify-tag",
+    "version", "whatchanged", "write-tree",
+];
+
+/// Whether `git <sub> <post…>` only reads: one of [`ONLY_READ`], or the reading forms of a
+/// command that may also write (`branch` listing, `config --get`, `stash list`, a `fetch` that
+/// names no local ref to update). Anything else may write, a subcommand this does not know
+/// included. Each word is looked at a bounded number of times.
+fn reads_only(sub: &str, post: &[String]) -> bool {
+    if ONLY_READ.contains(&sub) {
+        return true;
+    }
+    let has = |flags: &[&str]| {
+        post.iter().any(|arg| {
+            flags.iter().any(|flag| {
+                arg == flag
+                    || (flag.starts_with("--")
+                        && arg
+                            .strip_prefix(flag)
+                            .is_some_and(|rest| rest.starts_with('=')))
+            })
+        })
+    };
+    let operands = || post.iter().filter(|arg| !arg.starts_with('-'));
+    let first = || operands().next().map(String::as_str);
+    match sub {
+        // A local ref updated only by a refspec that names one (`<src>:<dst>`).
+        "fetch" => !operands().any(|arg| arg.contains(':')),
+        "branch" => {
+            !has(&[
+                "-d",
+                "-D",
+                "-m",
+                "-M",
+                "-c",
+                "-C",
+                "-f",
+                "-u",
+                "--delete",
+                "--move",
+                "--copy",
+                "--force",
+                "--set-upstream-to",
+                "--unset-upstream",
+                "--edit-description",
+                "--create-reflog",
+                "--track",
+                "--no-track",
+            ]) && (first().is_none()
+                || has(&[
+                    "-l",
+                    "--list",
+                    "--contains",
+                    "--no-contains",
+                    "--merged",
+                    "--no-merged",
+                    "--points-at",
+                    "--format",
+                    "--sort",
+                ]))
+        }
+        "tag" => {
+            !has(&[
+                "-d",
+                "-a",
+                "-s",
+                "-u",
+                "-f",
+                "-m",
+                "-F",
+                "--delete",
+                "--annotate",
+                "--sign",
+                "--local-user",
+                "--force",
+                "--message",
+                "--file",
+                "--edit",
+                "-e",
+            ]) && (first().is_none()
+                || has(&[
+                    "-l",
+                    "--list",
+                    "-n",
+                    "--contains",
+                    "--no-contains",
+                    "--merged",
+                    "--no-merged",
+                    "--points-at",
+                    "-v",
+                    "--verify",
+                ]))
+        }
+        "config" => config_reads(post),
+        "symbolic-ref" => !has(&["-d", "--delete"]) && operands().nth(1).is_none(),
+        "reflog" => !matches!(first(), Some("expire" | "delete" | "drop" | "write")),
+        "remote" => post.is_empty() || matches!(first(), None | Some("show" | "get-url")),
+        "stash" => matches!(first(), Some("list" | "show")),
+        "worktree" => first() == Some("list"),
+        "notes" => matches!(first(), Some("list" | "show")),
+        "submodule" => matches!(first(), None | Some("status" | "summary")),
+        "sparse-checkout" => first() == Some("list"),
+        "bisect" => matches!(first(), Some("log" | "view" | "visualize")),
+        "rerere" => matches!(first(), Some("status" | "diff" | "remaining")),
+        "bundle" => matches!(first(), Some("verify" | "list-heads")),
+        "apply" => {
+            has(&["--check", "--stat", "--numstat", "--summary"]) && !has(&["--apply", "--index"])
+        }
+        _ => false,
+    }
+}
+
+/// Whether `git config <post…>` only reads: a `--get…` or `--list`, the `get` and `list`
+/// commands, or a key alone, and nothing that sets, unsets, renames or edits.
+fn config_reads(post: &[String]) -> bool {
+    const SETS: &[&str] = &[
+        "--add",
+        "--replace-all",
+        "--unset",
+        "--unset-all",
+        "--rename-section",
+        "--remove-section",
+        "-e",
+        "--edit",
+    ];
+    const GETS: &[&str] = &[
+        "--get",
+        "--get-all",
+        "--get-regexp",
+        "--get-urlmatch",
+        "--get-color",
+        "--get-colorbool",
+        "-l",
+        "--list",
+    ];
+    // The options that take the next word as their value.
+    const VALUED: &[&str] = &["-f", "--file", "--blob", "--type", "--default", "--comment"];
+    let mut operands = 0usize;
+    let mut first: Option<&str> = None;
+    let mut words = post.iter();
+    let mut gets = false;
+    while let Some(word) = words.next() {
+        let word = word.as_str();
+        if SETS.contains(&word) {
+            return false;
+        }
+        if GETS.contains(&word) {
+            gets = true;
+        } else if VALUED.contains(&word) {
+            words.next();
+        } else if !word.starts_with('-') {
+            operands += 1;
+            first.get_or_insert(word);
+        }
+    }
+    if gets {
+        return true;
+    }
+    match first {
+        Some("get" | "list") => true,
+        Some("set" | "unset" | "rename-section" | "remove-section" | "edit") => false,
+        _ => operands <= 1,
     }
 }
 
@@ -493,8 +687,9 @@ fn found<T: Clone>(
         let mut env = before.clone();
         env.extend(call.env.iter().cloned());
         let direct = wanted(sub, post);
-        let may_be_an_alias =
-            unplaced == Unplaced::Name && direct.is_none() && !GITS_OWN.contains(&sub.as_str());
+        // git runs its own command by its name whatever an alias says; any other name is an
+        // alias where one is set, and otherwise a program of its own.
+        let may_be_an_alias = unplaced == Unplaced::Name && !GITS_OWN.contains(&sub.as_str());
         // An alias the line defines or includes itself, in any case, or one read from
         // configuration the line moves, is read from no configuration this can see.
         let defined_here = config_given(&pre) || env.iter().any(|pair| config_moved(pair));
@@ -503,7 +698,8 @@ fn found<T: Clone>(
         let wrapped = unplaced == Unplaced::Name && !read_through(&call);
         let placeable = !here.is_empty()
             && !wrapped
-            && (call.chdir.is_empty() || !projectgit::unplaceable(&call.chdir));
+            && (call.chdir.is_empty() || !projectgit::unplaceable(&call.chdir))
+            && !points_out_of_sight(&pre, &env);
         if !placeable || (may_be_an_alias && defined_here) {
             if unplaced == Unplaced::Name && (direct.is_some() || may_be_an_alias) && lost.is_none()
             {
@@ -514,24 +710,32 @@ fn found<T: Clone>(
         // Every branch folder the git may run in, each once. `env -C <folder>` moves this one
         // command, never the shell.
         let mut folders: Vec<(PathBuf, T)> = Vec::new();
+        let mut placed: Vec<PathBuf> = Vec::new();
         for from in &here {
             let at = if call.chdir.is_empty() {
                 from.clone()
             } else {
                 from.join(&call.chdir)
             };
-            let Some(folder) = projectgit::repository(&at, &pre, &env)
-                .and_then(|repo| purlis_made(&repo, Path::new(root)))
-            else {
-                continue;
-            };
-            if folders.iter().any(|(placed, _)| *placed == folder) {
-                continue;
+            let repository = projectgit::repository(&at, &pre, &env)
+                .and_then(|repo| purlis_made(&repo, Path::new(root)));
+            // A git with no sandbox behind it writes the tree it is given, too, whichever
+            // repository it uses.
+            let tree = (unplaced == Unplaced::Name)
+                .then(|| work_tree(&at, &pre, &env))
+                .flatten()
+                .and_then(|tree| projectgit::repository(&tree, &[], &[]))
+                .and_then(|repo| purlis_made(&repo, Path::new(root)));
+            for folder in repository.into_iter().chain(tree) {
+                if !placed.contains(&folder) {
+                    placed.push(folder);
+                }
             }
+        }
+        for folder in placed {
             let what = match &direct {
-                Some(what) => Some(what.clone()),
-                None if may_be_an_alias => match alias_of(&folder, sub) {
-                    Alias::None => None,
+                _ if may_be_an_alias => match alias_of(&folder, sub) {
+                    Alias::None => direct.clone(),
                     Alias::Runs(words) => {
                         // Read as git reads the words it runs: a global option among them, or
                         // another alias, is not read further.
@@ -539,13 +743,11 @@ fn found<T: Clone>(
                             std::iter::once("git".to_owned()).chain(words).collect();
                         let (globals, runs) = shellwrap::git_globals(&argv);
                         let read = match runs.split_first() {
-                            Some((then, more)) if globals.is_empty() => {
+                            Some((then, more))
+                                if globals.is_empty() && GITS_OWN.contains(&then.as_str()) =>
+                            {
                                 let post: Vec<String> = more.iter().chain(post).cloned().collect();
-                                match wanted(then, &post) {
-                                    Some(what) => Ok(Some(what)),
-                                    None if GITS_OWN.contains(&then.as_str()) => Ok(None),
-                                    None => Err(()),
-                                }
+                                Ok(wanted(then, &post))
                             }
                             _ => Err(()),
                         };
@@ -563,6 +765,7 @@ fn found<T: Clone>(
                         None
                     }
                 },
+                Some(what) => Some(what.clone()),
                 None => None,
             };
             if let Some(what) = what {
@@ -578,6 +781,82 @@ fn found<T: Clone>(
         }
     }
     (seen, lost)
+}
+
+/// Whether git's global options `pre` or the variables `env` (`NAME=value`) point it at a place
+/// the line does not show: a `-C`, `--git-dir` or `--work-tree`, or a `GIT_DIR` or
+/// `GIT_WORK_TREE`, that is a shell expansion, or an option whose value the line leaves out.
+fn points_out_of_sight(pre: &[String], env: &[String]) -> bool {
+    let mut words = pre.iter();
+    while let Some(word) = words.next() {
+        let value = match word.as_str() {
+            "-C" | "--git-dir" | "--work-tree" => match words.next() {
+                Some(value) => value,
+                None => return true,
+            },
+            other => match other
+                .strip_prefix("--git-dir=")
+                .or_else(|| other.strip_prefix("--work-tree="))
+            {
+                Some(value) => value,
+                None => {
+                    if shellwrap::GIT_VALUE_OPTS.contains(&other) {
+                        words.next();
+                    }
+                    continue;
+                }
+            },
+        };
+        if projectgit::unplaceable(value) {
+            return true;
+        }
+    }
+    env.iter().any(|pair| {
+        pair.strip_prefix("GIT_DIR=")
+            .or_else(|| pair.strip_prefix("GIT_WORK_TREE="))
+            .is_some_and(projectgit::unplaceable)
+    })
+}
+
+/// The working tree a git run in `cwd` with the global options `pre` and the variables `env`
+/// is told to write, where it is told one: the last `--work-tree`, else `GIT_WORK_TREE`, else,
+/// where a git directory is given (`--git-dir`, `GIT_DIR`), the folder it runs in, which git
+/// then takes for its tree. Relative to where the last `-C` leaves it. `None` where it is
+/// told none: it then writes the tree of the repository it finds.
+fn work_tree(cwd: &Path, pre: &[String], env: &[String]) -> Option<PathBuf> {
+    let last_set = |name: &str| {
+        env.iter()
+            .rev()
+            .find_map(|pair| pair.strip_prefix(name))
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned)
+    };
+    let mut tree = last_set("GIT_WORK_TREE=");
+    let mut git_dir = last_set("GIT_DIR=").is_some();
+    let mut here = cwd.to_path_buf();
+    let mut words = pre.iter();
+    while let Some(word) = words.next() {
+        match word.as_str() {
+            "-C" => here = here.join(words.next()?),
+            "--work-tree" => tree = Some(words.next()?.clone()),
+            "--git-dir" => {
+                words.next();
+                git_dir = true;
+            }
+            other if other.starts_with("--git-dir=") => git_dir = true,
+            other => {
+                if let Some(value) = other.strip_prefix("--work-tree=") {
+                    tree = Some(value.to_owned());
+                } else if shellwrap::GIT_VALUE_OPTS.contains(&other) {
+                    words.next();
+                }
+            }
+        }
+    }
+    match tree {
+        Some(tree) => Some(here.join(tree)),
+        None => git_dir.then_some(here),
+    }
 }
 
 /// What an unplaced git is named by where its subcommand cannot be read.

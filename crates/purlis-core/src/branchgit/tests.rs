@@ -516,7 +516,7 @@ fn plain_git_that_commits_updates_or_pushes_in_a_branch_folder_is_named_with_its
     let l = Layout::new();
     for (cmd, sub, act) in [
         ("git commit -m x", "commit", Act::Commit),
-        ("git add . && git commit -am x", "commit", Act::Commit),
+        ("git commit -am x", "commit", Act::Commit),
         ("git merge origin/main", "merge", Act::Commit),
         ("git cherry-pick abc123", "cherry-pick", Act::Commit),
         ("git revert HEAD", "revert", Act::Commit),
@@ -543,14 +543,11 @@ fn git_that_writes_no_branch_or_runs_outside_a_branch_folder_is_not_named() {
     let l = Layout::new();
     for cmd in [
         "git status",
-        "git add src/a.rs",
         "git fetch",
         "git log -1",
         "git commit --dry-run -m x",
         "git push --dry-run",
         "git push -n",
-        "git rebase --abort",
-        "git merge --abort",
         "git cherry-pick --quit",
         "git am --show-current-patch",
         "purlis worktree push",
@@ -1035,4 +1032,366 @@ fn an_alias_the_guard_is_given_in_its_environment_is_read() {
         [("zz", crate::piececlaim::Act::Commit)]
     );
     assert_eq!(read.unplaced, None);
+}
+
+/// Every git that may move a branch or HEAD, or write the index or the working tree of a
+/// branch folder, is judged as the porcelain that commits is: plumbing, a forced or renamed
+/// branch, a reset, a worktree's own commands, and what rewrites refs or the tree.
+#[test]
+fn git_that_moves_a_branch_or_head_or_writes_the_index_or_the_tree_is_named() {
+    use crate::piececlaim::Act;
+    let l = Layout::new();
+    for (cmd, sub) in [
+        ("git update-ref refs/heads/p1 HEAD~1", "update-ref"),
+        ("git update-ref -d refs/heads/other", "update-ref"),
+        ("git symbolic-ref HEAD refs/heads/other", "symbolic-ref"),
+        ("git symbolic-ref -d HEAD", "symbolic-ref"),
+        ("git branch -f p1 HEAD~2", "branch"),
+        ("git branch -m p1 renamed", "branch"),
+        ("git branch -M renamed", "branch"),
+        ("git branch -D other", "branch"),
+        ("git branch new-branch", "branch"),
+        ("git branch --set-upstream-to=origin/main", "branch"),
+        ("git checkout -B p1 origin/main", "checkout"),
+        ("git checkout main", "checkout"),
+        ("git checkout -- src/a.rs", "checkout"),
+        ("git switch -C p1 origin/main", "switch"),
+        ("git switch other", "switch"),
+        ("git reset --hard HEAD~1", "reset"),
+        ("git reset HEAD~1", "reset"),
+        ("git reset src/a.rs", "reset"),
+        ("git restore src/a.rs", "restore"),
+        ("git restore --staged src/a.rs", "restore"),
+        ("git add src/a.rs", "add"),
+        ("git rm src/a.rs", "rm"),
+        ("git mv src/a.rs src/b.rs", "mv"),
+        ("git clean -fd", "clean"),
+        ("git stash", "stash"),
+        ("git stash pop", "stash"),
+        ("git worktree add ../other", "worktree"),
+        ("git worktree move . ../elsewhere", "worktree"),
+        ("git worktree remove .", "worktree"),
+        ("git worktree prune", "worktree"),
+        ("git fast-import < stream", "fast-import"),
+        ("git read-tree -u -m HEAD", "read-tree"),
+        ("git checkout-index -a -f", "checkout-index"),
+        (
+            "git update-index --assume-unchanged src/a.rs",
+            "update-index",
+        ),
+        ("git notes add -m x", "notes"),
+        ("git replace abc123 def456", "replace"),
+        ("git gc", "gc"),
+        ("git prune", "prune"),
+        ("git reflog expire --expire=now --all", "reflog"),
+        ("git reflog delete HEAD@{1}", "reflog"),
+        ("git tag v1", "tag"),
+        ("git tag -d v1", "tag"),
+        ("git rebase --abort", "rebase"),
+        ("git merge --abort", "merge"),
+        ("git fetch origin main:main", "fetch"),
+        ("git fetch . HEAD:refs/heads/p1", "fetch"),
+        ("git config user.name someone", "config"),
+        ("git config --unset core.hooksPath", "config"),
+        ("git config set core.bare true", "config"),
+        ("git remote add up https://example.com/x.git", "remote"),
+        ("git apply fix.patch", "apply"),
+        ("git submodule update --init", "submodule"),
+        ("git sparse-checkout set src", "sparse-checkout"),
+        ("git bisect start", "bisect"),
+        ("git filter-branch --force HEAD", "filter-branch"),
+        ("git pack-refs --all", "pack-refs"),
+        ("git maintenance run", "maintenance"),
+    ] {
+        assert_eq!(
+            l.write(cmd, &l.folder),
+            Some((sub.to_owned(), Act::Update)),
+            "{cmd}"
+        );
+    }
+}
+
+/// A subcommand that is neither git's own nor an alias, such as an extension's `git-<name>`
+/// program, may do anything, so it counts as a write.
+#[test]
+fn an_unknown_subcommand_counts_as_a_write() {
+    use crate::piececlaim::Act;
+    let (_dir, root, folder) = a_real_branch_folder();
+    crate::testgit::run(&folder, &["config", "alias.st", "status"]);
+    crate::testgit::run(&folder, &["config", "alias.up", "update-ref"]);
+    let (cwd, root) = (folder.display().to_string(), root.display().to_string());
+    let folder = folder.canonicalize().unwrap();
+    for (cmd, sub) in [
+        ("git frobnicate --all", "frobnicate"),
+        ("git lfs migrate import", "lfs"),
+        ("git up refs/heads/p1 HEAD", "up"),
+    ] {
+        let read = branch_write(cmd, &cwd, &root);
+        assert_eq!(
+            read.found
+                .iter()
+                .map(|one| (one.sub.as_str(), one.what, one.folder.clone()))
+                .collect::<Vec<_>>(),
+            [(sub, Act::Update, folder.clone())],
+            "{cmd}"
+        );
+        assert_eq!(read.unplaced, None, "{cmd}");
+    }
+    assert_eq!(
+        branch_write("git st --short", &cwd, &root),
+        BranchWrites {
+            found: Vec::new(),
+            unplaced: None,
+        }
+    );
+}
+
+/// The everyday git a chat runs to look, in a branch folder: none of it is judged, and none is
+/// named unplaced. The measure of the guard's false positives.
+#[test]
+fn everyday_read_only_git_in_a_branch_folder_is_let_through() {
+    let l = Layout::new();
+    let folder = l.folder.display();
+    let corpus = [
+        "git status".to_owned(),
+        "git status --porcelain".to_owned(),
+        "git status -sb".to_owned(),
+        "git diff".to_owned(),
+        "git diff --cached".to_owned(),
+        "git diff --stat origin/main...HEAD".to_owned(),
+        "git diff HEAD~1 -- src/a.rs | cat".to_owned(),
+        "git diff-index --quiet HEAD --".to_owned(),
+        "git diff-tree --no-commit-id --name-only -r HEAD".to_owned(),
+        "git log -1".to_owned(),
+        "git log --oneline -20".to_owned(),
+        "git log --graph --decorate --all".to_owned(),
+        "git log -p -- src/a.rs | head -50".to_owned(),
+        "git log -g".to_owned(),
+        "git --no-pager log --oneline".to_owned(),
+        "git -P show HEAD".to_owned(),
+        "git -c color.ui=never diff".to_owned(),
+        "git show HEAD:src/a.rs".to_owned(),
+        "git show --stat".to_owned(),
+        "git shortlog -sn".to_owned(),
+        "git whatchanged -1".to_owned(),
+        "git blame src/a.rs".to_owned(),
+        "git annotate src/a.rs".to_owned(),
+        "git grep -n needle".to_owned(),
+        "git ls-files".to_owned(),
+        "git ls-files -m".to_owned(),
+        "git ls-tree -r HEAD".to_owned(),
+        "git ls-remote origin".to_owned(),
+        "git rev-parse HEAD".to_owned(),
+        "git rev-parse --show-toplevel".to_owned(),
+        "git rev-parse --abbrev-ref HEAD".to_owned(),
+        "git rev-list --count HEAD".to_owned(),
+        "git cat-file -p HEAD".to_owned(),
+        "git cat-file -t abc123".to_owned(),
+        "git for-each-ref --format='%(refname)' refs/heads".to_owned(),
+        "git show-ref --heads".to_owned(),
+        "git show-branch".to_owned(),
+        "git describe --tags".to_owned(),
+        "git name-rev HEAD".to_owned(),
+        "git merge-base HEAD origin/main".to_owned(),
+        "git merge-base --is-ancestor HEAD origin/main".to_owned(),
+        "git cherry -v origin/main".to_owned(),
+        "git range-diff main...HEAD".to_owned(),
+        "git check-ignore -v target".to_owned(),
+        "git check-attr -a src/a.rs".to_owned(),
+        "git count-objects -v".to_owned(),
+        "git fsck".to_owned(),
+        "git verify-commit HEAD".to_owned(),
+        "git format-patch -1 --stdout".to_owned(),
+        "git archive HEAD | tar t".to_owned(),
+        "git apply --check fix.patch".to_owned(),
+        "git apply --stat fix.patch".to_owned(),
+        "git fetch".to_owned(),
+        "git fetch origin".to_owned(),
+        "git fetch --prune origin main".to_owned(),
+        "git branch".to_owned(),
+        "git branch -a".to_owned(),
+        "git branch -vv".to_owned(),
+        "git branch -r".to_owned(),
+        "git branch --show-current".to_owned(),
+        "git branch --list 'feat*'".to_owned(),
+        "git branch --contains HEAD".to_owned(),
+        "git branch --merged main".to_owned(),
+        "git tag".to_owned(),
+        "git tag -l 'v*'".to_owned(),
+        "git tag --contains HEAD".to_owned(),
+        "git stash list".to_owned(),
+        "git stash show -p".to_owned(),
+        "git worktree list".to_owned(),
+        "git worktree list --porcelain".to_owned(),
+        "git remote".to_owned(),
+        "git remote -v".to_owned(),
+        "git remote get-url origin".to_owned(),
+        "git remote show origin".to_owned(),
+        "git config user.email".to_owned(),
+        "git config --get remote.origin.url".to_owned(),
+        "git config --get-regexp '^alias'".to_owned(),
+        "git config --list".to_owned(),
+        "git config -l --show-origin".to_owned(),
+        "git config get user.name".to_owned(),
+        "git config --file .gitmodules --get-regexp path".to_owned(),
+        "git reflog".to_owned(),
+        "git reflog show p1".to_owned(),
+        "git symbolic-ref HEAD".to_owned(),
+        "git symbolic-ref --short HEAD".to_owned(),
+        "git submodule status".to_owned(),
+        "git sparse-checkout list".to_owned(),
+        "git notes show HEAD".to_owned(),
+        "git bisect log".to_owned(),
+        "git help commit".to_owned(),
+        "git version".to_owned(),
+        "git --version".to_owned(),
+        "git var GIT_EDITOR".to_owned(),
+        "git hash-object src/a.rs".to_owned(),
+        "git -C src log -1".to_owned(),
+        "git rebase --show-current-patch".to_owned(),
+        "git cherry-pick --quit".to_owned(),
+        format!("cd {folder} && git status && git diff --stat && git log -3"),
+        "git status; git log -1; git diff".to_owned(),
+        "git -C $SOMEWHERE log".to_owned(),
+        "GIT_DIR=$SOMEWHERE git log".to_owned(),
+        "git --work-tree=$SOMEWHERE status".to_owned(),
+    ];
+    let mut judged = Vec::new();
+    for cmd in &corpus {
+        let read = branch_write(
+            cmd,
+            &l.folder.display().to_string(),
+            &l.root.display().to_string(),
+        );
+        if !read.found.is_empty() || read.unplaced.is_some() {
+            judged.push((cmd.clone(), read));
+        }
+    }
+    assert!(
+        judged.is_empty(),
+        "{} of {} read-only lines were judged: {judged:#?}",
+        judged.len(),
+        corpus.len()
+    );
+}
+
+/// `-C`, `--git-dir`, `--work-tree`, `GIT_DIR` and `GIT_WORK_TREE` place a git where they
+/// point: a branch folder written from elsewhere is judged as if from inside it, and so is a
+/// branch folder's working tree written through another repository.
+#[test]
+fn a_git_pointed_at_a_branch_folder_from_elsewhere_is_judged_there() {
+    use crate::piececlaim::Act;
+    let l = Layout::new();
+    let folder = l.folder.display();
+    let record = l.clone.join(".git/worktrees/guard-port");
+    let record = record.display();
+    let clone_git = l.clone.join(".git");
+    let clone_git = clone_git.display();
+    for (cmd, at) in [
+        (format!("git -C {folder} reset --hard"), &l.clone),
+        (
+            format!("git -C {folder} update-ref refs/heads/p1 HEAD~1"),
+            &l.clone,
+        ),
+        (
+            format!("git --git-dir={record} symbolic-ref HEAD refs/heads/x"),
+            &l.clone,
+        ),
+        (
+            format!("git --git-dir {record} update-ref HEAD HEAD~1"),
+            &l.clone,
+        ),
+        (
+            format!("GIT_DIR={record} git branch -f p1 HEAD~1"),
+            &l.clone,
+        ),
+        (
+            format!("export GIT_DIR={record}; git reset --hard"),
+            &l.clone,
+        ),
+        (
+            format!("git --git-dir={clone_git} --work-tree={folder} checkout main -- ."),
+            &l.clone,
+        ),
+        (
+            format!("GIT_WORK_TREE={folder} git checkout -f main"),
+            &l.clone,
+        ),
+        (format!("git --work-tree {folder} reset --hard"), &l.clone),
+        // A git directory given without a work tree writes the tree it runs in.
+        (
+            format!("GIT_DIR={clone_git} git checkout -f main"),
+            &l.folder,
+        ),
+    ] {
+        assert!(
+            l.writes(&cmd, at)
+                .iter()
+                .any(|(_, act, placed)| *act == Act::Update && *placed == l.folder),
+            "{cmd}: {:?}",
+            l.writes(&cmd, at)
+        );
+    }
+    // Pointed away from every branch folder, a write is not this guard's.
+    let cmd = format!("git -C {} reset --hard", l.clone.display());
+    assert_eq!(l.writes(&cmd, &l.folder), []);
+    assert_eq!(l.unplaced(&cmd, &l.folder), None);
+}
+
+/// Where `-C`, `--git-dir`, `--work-tree`, `GIT_DIR` or `GIT_WORK_TREE` names a place the
+/// line does not show, a git that may write is named unplaced.
+#[test]
+fn a_git_pointed_where_the_line_does_not_show_is_named_unplaced() {
+    let l = Layout::new();
+    for (cmd, sub) in [
+        ("git -C $PIECE reset --hard", "reset"),
+        (
+            "git -C ~/elsewhere update-ref refs/heads/p1 HEAD",
+            "update-ref",
+        ),
+        ("git --git-dir=$X/.git branch -f p1", "branch"),
+        (
+            "git --git-dir $X symbolic-ref HEAD refs/heads/x",
+            "symbolic-ref",
+        ),
+        ("git --work-tree=$X checkout -f main", "checkout"),
+        ("git --work-tree ~/x reset --hard", "reset"),
+        ("GIT_DIR=$X git update-ref HEAD HEAD~1", "update-ref"),
+        ("GIT_WORK_TREE=$X git checkout .", "checkout"),
+        ("export GIT_DIR=$X; git reset --hard", "reset"),
+        ("git -C $PIECE commit -m x", "commit"),
+    ] {
+        let read = branch_write(
+            cmd,
+            &l.clone.display().to_string(),
+            &l.root.display().to_string(),
+        );
+        assert!(read.found.is_empty(), "{cmd}: {:?}", read.found);
+        assert_eq!(read.unplaced.as_deref(), Some(sub), "{cmd}");
+    }
+}
+
+/// Judging a git reads its words a bounded number of times: a line of very many words is read
+/// in a moment.
+#[test]
+fn a_git_of_very_many_words_is_judged_in_a_moment() {
+    let l = Layout::new();
+    let many = " x".repeat(200_000);
+    for sub in [
+        "branch",
+        "config",
+        "tag",
+        "fetch origin",
+        "symbolic-ref",
+        "apply",
+    ] {
+        let cmd = format!("git {sub}{many}");
+        let started = std::time::Instant::now();
+        let _ = l.writes(&cmd, &l.folder);
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(2),
+            "{sub}: {:?}",
+            started.elapsed()
+        );
+    }
 }
