@@ -622,6 +622,17 @@ enum Host {
 /// not going to answer.
 pub(crate) const A_TICKET_TAKES_AT_MOST: std::time::Duration = std::time::Duration::from_secs(2);
 
+/// **How long a task's own message to its asking chat waits for a busy app** (#5845): its
+/// report, a note, a question and the ticket a report is sent on.
+///
+/// A chat in the session host is answered by the window through the host, and the host waits
+/// as long as the window takes. On 2026-11-08, after an upgrade had brought every chat back at
+/// once, the window took seconds over each line, and a task's report gave up at
+/// [`A_TICKET_TAKES_AT_MOST`] twice and went unsent. Such a message is the task's to send and has
+/// nowhere else to go from a sandboxed chat, so it waits as long as an open does. A chat with
+/// no app behind it is not held by this: nothing is listening, and the connect fails at once.
+pub(crate) const A_BUSY_APP_TAKES_AT_MOST: std::time::Duration = AN_OPEN_TAKES_AT_MOST;
+
 /// How long the app has to open the chat. It resolves a profile, which can run a subprocess
 /// to ask whether a file is tracked, and spawns a harness, so this is generous. It is still a
 /// bound, because the operator is waiting on a Bash tool call that has to end.
@@ -715,6 +726,20 @@ pub(crate) enum Ticketed {
 /// The first of the two lines every ask on the socket is (charter-app#204): a ticket for the
 /// chat this process runs in, which `$CHARTER_CHAT` names.
 pub(crate) fn ticketed() -> Ticketed {
+    ticketed_within(A_TICKET_TAKES_AT_MOST)
+}
+
+/// Whether this process runs in a chat an app started: its environment names the app's socket
+/// and the chat. Where it does, an app that does not answer is an app that is busy or gone, not
+/// a terminal with no app (#5845).
+pub(crate) fn names_an_app() -> bool {
+    use purlis_core::hookwire::{CHAT_ENV, SOCKET_ENV};
+    purlis_core::envvar::var_os(SOCKET_ENV).is_some_and(|s| !s.is_empty())
+        && purlis_core::envvar::var(CHAT_ENV).is_some_and(|chat| chat.parse::<u32>().is_ok())
+}
+
+/// [`ticketed`], waiting `within` for the app to mint it.
+pub(crate) fn ticketed_within(within: std::time::Duration) -> Ticketed {
     use purlis_core::hookwire::{Answer, Ask, Asking, CHAT_ENV, ChatToken, SOCKET_ENV};
 
     let Some(socket) = purlis_core::envvar::var_os(SOCKET_ENV).filter(|s| !s.is_empty()) else {
@@ -727,7 +752,7 @@ pub(crate) fn ticketed() -> Ticketed {
     let Ok(mut asking) = Asking::on(std::path::Path::new(&socket), ChatToken::from_env()) else {
         return Ticketed::NoApp;
     };
-    match asking.ask(&Ask::Ticket { chat }, A_TICKET_TAKES_AT_MOST) {
+    match asking.ask(&Ask::Ticket { chat }, within) {
         Ok(Answer::Ticket { ticket }) => Ticketed::Yes(asking, chat, ticket),
         Ok(Answer::No { why }) => Ticketed::Refused(why),
         Ok(
