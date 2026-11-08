@@ -418,6 +418,11 @@ fn filtering_what_was_filtered_changes_nothing() {
         ("claude", "settings.json", br#"{"statusLine":{"command":"--x://a=b@token=c"}}"#),
         ("claude", "settings.json", br#"{"statusLine":{"command":"x https://u:p@h"}}"#),
         ("codex", "config.toml", b"a = \"https://u:p@h\"\n"),
+        ("claude", "CLAUDE.md", b"see https://h/x?api_key=of-the-desktop&page=2#top\n"),
+        ("claude", "skills/x/c.json", br#"{"u":"https:\/\/me:pw@h\/x"}"#),
+        ("claude", "settings.json", br#"{"permissions":{"allow":["Bash(GH_TOKEN=x y)","Bash(ls)"]}}"#),
+        ("claude", "agents/a.md", b"---\nname: a\nurl: \"https://h/x?key=k\"\napiToken: k\n---\nb\n"),
+        ("codex", "config.toml", b"[profiles.p.shell_environment_policy.set]\nK = \"v\"\n"),
     ] {
         let once = without_credentials(kind, path, written).unwrap();
         let again = filtered(kind, path, &once).unwrap();
@@ -521,6 +526,11 @@ fn a_commands_credential_is_read_however_it_is_written() {
         "curl -ume:of-the-desktop x",
         "AWS_SECRET_ACCESS_KEY=of-the-desktop ./deploy",
         "cd a&&GH_TOKEN=of-the-desktop y",
+        "GH_PAT=of-the-desktop gh pr list",
+        "mysql -uroot -pof-the-desktop db",
+        "mysqldump -pof-the-desktop db",
+        "npx srv --key of-the-desktop",
+        "npx srv --key=of-the-desktop",
     ] {
         let written = serde_json::json!({ "statusLine": { "command": command } }).to_string();
         let sent = without_credentials("claude", "settings.json", written.as_bytes()).unwrap();
@@ -549,6 +559,12 @@ fn a_commands_credential_is_read_however_it_is_written() {
         "VAULT_TOKEN_FILE=/run/x tool",
         "tool --api-key {env:KEY}",
         "echo \"Cookie: none\"",
+        "mysql -p db",
+        "mysql -P3306 -p db",
+        "ssh -p2222 host",
+        "tool --key ./client.pem",
+        "tool --key ~/.ssh/id",
+        "tool --path /x",
     ] {
         let written = serde_json::json!({ "statusLine": { "command": command } }).to_string();
         let sent = filtered("claude", "settings.json", written.as_bytes()).unwrap();
@@ -742,4 +758,191 @@ fn a_file_with_nothing_to_take_out_is_kept_in_the_memory_it_came_in() {
     let kept = kept_without_credentials("claude", "agents/a.md", b"https://u:p@host/x\n".to_vec())
         .unwrap();
     assert_eq!(kept, b"https://host/x\n");
+}
+
+/// **A frontmatter's own address loses the value that signs it, and its plain command stays**:
+/// what is read of an address below the root is read of the root's too, and a command that shows
+/// nothing is not taken for one that does.
+#[test]
+fn a_frontmatters_own_signed_address_is_cleaned_and_its_plain_command_stays() {
+    let sent = filtered(
+        "claude",
+        "agents/a.md",
+        b"---\nname: a\nurl: \"https://h/x?key=of-the-desktop\"\ncommand: echo\n---\nb\n",
+    )
+    .unwrap();
+    let text = String::from_utf8(sent.bytes).unwrap();
+    assert!(!text.contains("of-the-desktop"), "{text}");
+    assert!(text.contains("command: \"echo\""), "{text}");
+}
+
+/// **A Codex server whose address is signed in its query goes whole**, as a Claude Code one does.
+#[test]
+fn a_codex_server_whose_address_is_signed_goes_whole() {
+    let sent = filtered(
+        "codex",
+        "config.toml",
+        b"[mcp_servers.a]\nurl = \"https://h/mcp?key=of-the-desktop\"\n\
+          [mcp_servers.b]\nurl = \"https://h/mcp?page=2\"\n",
+    )
+    .unwrap();
+    let text = String::from_utf8(sent.bytes).unwrap();
+    assert!(!text.contains("of-the-desktop"), "{text}");
+    assert!(text.contains("page=2"), "{text}");
+    assert!(
+        sent.removed
+            .iter()
+            .any(|what| what.contains("mcp_servers.a")),
+        "{:?}",
+        sent.removed
+    );
+}
+
+/// **The value that signs an address's query is emptied wherever the address is**: in any text,
+/// and in any string of a settings file, and the rest of the query stays.
+#[test]
+fn a_signing_value_in_any_addresss_query_is_emptied() {
+    let sent = filtered(
+        "claude",
+        "CLAUDE.md",
+        b"see https://api.example/y?api_key=of-the-desktop&page=2 and more\n",
+    )
+    .unwrap();
+    assert_eq!(
+        String::from_utf8(sent.bytes).unwrap(),
+        "see https://api.example/y?api_key=&page=2 and more\n"
+    );
+    assert!(!sent.removed.is_empty());
+
+    let sent = without_credentials(
+        "claude",
+        "settings.json",
+        br#"{"homepage":"https://h/?token=of-the-desktop","plain":"https://h/?q=1"}"#,
+    )
+    .unwrap();
+    let sent = json(&sent);
+    assert_eq!(sent["homepage"], "https://h/?token=");
+    assert_eq!(sent["plain"], "https://h/?q=1");
+}
+
+/// **An address written with JSON's escaped slashes loses its user information too**, in a file
+/// sent as text.
+#[test]
+fn an_escaped_address_loses_its_user_information() {
+    let sent = without_credentials(
+        "claude",
+        "skills/x/c.json",
+        br#"{"u":"https:\/\/me:of-the-desktop@h\/x"}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        String::from_utf8(sent).unwrap(),
+        r#"{"u":"https:\/\/h\/x"}"#
+    );
+}
+
+/// **An MDX file is Markdown**: its frontmatter loses what it declares.
+#[test]
+fn an_mdx_files_frontmatter_is_filtered_as_markdowns() {
+    let sent = without_credentials(
+        "claude",
+        "skills/x/a.mdx",
+        b"---\nname: a\nenv: {K: of-the-desktop}\n---\nb\n",
+    )
+    .unwrap();
+    assert!(!String::from_utf8(sent).unwrap().contains("of-the-desktop"));
+}
+
+/// **Codex's provider query parameters, and the variables a profile's shell policy sets, go**,
+/// as the top-level policy's do.
+#[test]
+fn codexs_query_parameters_and_a_profiles_set_variables_are_removed() {
+    let sent = filtered(
+        "codex",
+        "config.toml",
+        b"[model_providers.a]\nbase_url = \"https://h\"\nquery_params = { key = \"of-the-desktop\" }\n\
+          [profiles.p.shell_environment_policy]\ninherit = \"core\"\n\
+          [profiles.p.shell_environment_policy.set]\nK = \"of-the-desktop\"\n",
+    )
+    .unwrap();
+    let text = String::from_utf8(sent.bytes).unwrap();
+    assert!(!text.contains("of-the-desktop"), "{text}");
+    assert!(text.contains("inherit"), "{text}");
+    assert!(
+        sent.removed
+            .contains(&"settings.profiles.p.shell_environment_policy.set".to_owned()),
+        "{:?}",
+        sent.removed
+    );
+}
+
+/// **A setting named for a credential goes where it holds a value written out**, however its name
+/// is cased; one holding a number, a switch or a variable's reference stays.
+#[test]
+fn a_setting_named_for_a_credential_goes_where_it_holds_a_value() {
+    let sent = without_credentials(
+        "claude",
+        "settings.json",
+        br#"{"mcpServers":{"a":{"command":"x","apiToken":"of-the-desktop","access_token":"of-the-desktop",
+            "maxTokens":4096,"useAuth":true,"authToken":"${TOKEN}"}}}"#,
+    )
+    .unwrap();
+    let sent = json(&sent);
+    let server = &sent["mcpServers"]["a"];
+    assert!(!sent.to_string().contains("of-the-desktop"), "{sent}");
+    assert_eq!(server["maxTokens"], 4096);
+    assert_eq!(server["useAuth"], true);
+    assert_eq!(server["authToken"], "${TOKEN}");
+
+    let sent = without_credentials(
+        "claude",
+        "agents/a.md",
+        b"---\nname: a\napiToken: of-the-desktop\n---\nb\n",
+    )
+    .unwrap();
+    assert!(!String::from_utf8(sent).unwrap().contains("of-the-desktop"));
+
+    let sent = without_credentials(
+        "codex",
+        "config.toml",
+        b"[mcp_servers.a]\ncommand = \"x\"\napi_token = \"of-the-desktop\"\n",
+    )
+    .unwrap();
+    assert!(!String::from_utf8(sent).unwrap().contains("of-the-desktop"));
+}
+
+/// **A permission rule that runs a command showing a credential goes**, and the other rules stay.
+#[test]
+fn a_permission_rule_that_shows_a_credential_is_removed() {
+    let sent = filtered(
+        "claude",
+        "settings.json",
+        br#"{"permissions":{"allow":["Bash(GH_TOKEN=of-the-desktop gh pr list)","Bash(ls)","Read"]}}"#,
+    )
+    .unwrap();
+    let value = json(&sent.bytes);
+    assert_eq!(
+        value["permissions"]["allow"],
+        serde_json::json!(["Bash(ls)", "Read"])
+    );
+    assert!(!sent.removed.is_empty());
+}
+
+/// **A file sent as it is that holds a value shaped like a token is refused in words**, and no
+/// settings are sent: purlis cannot take a key out of a script or a file that is not text without
+/// breaking it, and a key belongs in a vault. The words name the file and never the value.
+#[test]
+fn a_sent_file_holding_a_token_is_refused_in_words() {
+    let token = format!("ghp_{}", "a".repeat(36));
+    for (path, written) in [
+        ("skills/x/run.sh", format!("export GH_TOKEN={token}\n").into_bytes()),
+        ("skills/x/a.yaml", format!("key: {token}\n").into_bytes()),
+        ("CLAUDE.md", format!("use {token}\n").into_bytes()),
+        ("skills/x/a.bin", [b"\xff\xfe".as_slice(), token.as_bytes()].concat()),
+    ] {
+        let refused = filtered("claude", path, &written).unwrap_err();
+        assert!(refused.contains("shaped like a token"), "{path}: {refused}");
+        assert!(refused.contains(path.rsplit('/').next().unwrap()), "{refused}");
+        assert!(!refused.contains(&token), "{refused}");
+    }
 }
