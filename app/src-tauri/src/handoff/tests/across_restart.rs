@@ -1486,13 +1486,32 @@ fn is_told_its_shell_ended(host: &Pretend, chat: u32, how: &str) {
     );
 }
 
-/// Asserts nothing chat `chat` on `host` was given says purlis restarted: no wake line.
+/// Asserts chat `chat` on `host` was given no wake line. Judged by the line the core makes for
+/// a chat with one background shell, and by the words it opens and ends with, so it holds
+/// whatever the line comes to say (#5808 owns its content).
 fn is_given_no_wake_line(host: &Pretend, chat: u32, how: &str) {
+    let line = purlis_core::wakeline::of(
+        Some(&purlis_core::ownwork::OwnWork {
+            shells: 1,
+            ..purlis_core::ownwork::OwnWork::default()
+        }),
+        false,
+    )
+    .expect("the core makes a wake line for one shell");
+    let opens: String = line.chars().take(40).collect();
+    let ends: String = line
+        .chars()
+        .rev()
+        .take(40)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
     let said = everything_said_to(host, chat);
     assert!(
         !said
             .iter()
-            .any(|line| line.to_lowercase().contains("purlis was restarted")),
+            .any(|one| one.contains(&opens) || one.contains(&ends)),
         "{how}: chat {chat} was given a wake line: {said:#?}"
     );
 }
@@ -1528,7 +1547,9 @@ fn an_update_tells_a_chat_waiting_on_its_own_shell_what_the_update_ended() {
 }
 
 /// The window crashed and stayed away past its grace, so the session host ended its chats: no
-/// quit wrote the record, and the launch reads what was last written as the turn ended.
+/// quit wrote the record, and the launch reads what was last written as the turn ended. The
+/// grace itself is the host's (#2006): here it has run out, so the host that serves the launch
+/// keeps nothing, and the chat is started on its conversation from that record.
 #[test]
 fn a_window_crash_past_its_grace_tells_the_chat_from_the_record_last_written() {
     let plane = a_plane_with_personas();
@@ -1621,7 +1642,7 @@ fn a_reattach_that_falls_back_to_a_start_still_tells_the_chat_what_ended() {
     let held = planes_again.held(&again).expect("held");
 
     let begun = held.begin_reopen(Ok(at_crash), Choice::ReopenAll);
-    relaunched.no_longer_leaves(steward);
+    relaunched.forgets_it_left(steward);
     let _ = held.finish_reopen(begun, A_SIZE);
 
     assert!(
@@ -1757,6 +1778,11 @@ fn reopen_all_tells_many_chats_what_ended_at_its_own_pace() {
         most <= crate::restoring::at_once(),
         "{most} chats started at once, past Reopen all's {}",
         crate::restoring::at_once()
+    );
+    // And at its pace, not one by one: the gate lets a project start all but one at once.
+    assert!(
+        most >= 2,
+        "the chats started one at a time ({most} at once at most)"
     );
 }
 

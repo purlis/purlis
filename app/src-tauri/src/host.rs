@@ -1226,7 +1226,7 @@ pub(crate) mod pretend {
 
         /// Chat `number`, left running, is no longer in the host: its program ended there after
         /// a window that comes back judged it kept, so it is started rather than reattached.
-        pub fn no_longer_leaves(&self, number: u32) {
+        pub fn forgets_it_left(&self, number: u32) {
             lock(&self.seen.left).retain(|(one, _)| *one != number);
         }
 

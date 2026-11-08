@@ -12,12 +12,14 @@
 //! said of the chat just before ([`after_the_host`]): a chat in the middle of a turn, or
 //! stopped on an ask, has **failed** (its turn is lost); one idle at a turn's end, on a harness
 //! that picks a conversation back up by its id (`resumes_by_id`, ADR 0076 §5), is
-//! **hibernated** (nothing is lost). The window keeps that for the chat ([`Lost`]) and says it
-//! on the chat's pane, with **Resume** where it has a conversation to resume: the chat's restart
-//! on its conversation (`ask_chat_restart`), one click. **What it had left running of its own
-//! ended with the host** (#5752): the Notice names it ([`LostChat::ended`]), never "nothing was
-//! lost" for a chat that had any, and Resume tells the chat it ended (its wake line). In memory only: a relaunch starts with
-//! none, and a closed chat's goes with it.
+//! **hibernated** (its turn is not lost). The window keeps that for the chat ([`Lost`]) and
+//! says it on the chat's pane, with **Resume** where it has a conversation to resume: the
+//! chat's restart on its conversation (`ask_chat_restart`), one click. In memory only: a
+//! relaunch starts with none, and a closed chat's goes with it.
+//!
+//! **What it had left running of its own ended with the host** (#5752): the Notice names it
+//! ([`LostChat::ended`]) and never says "nothing was lost" for a chat that had any, and Resume
+//! tells the chat what ended (its wake line, `Chats::restart`).
 
 use std::collections::HashMap;
 use std::sync::{Mutex, PoisonError};
@@ -36,7 +38,8 @@ pub const LOST: &str = "chat-lost-with-the-host";
 pub enum LeftIn {
     /// It was in the middle of a turn, or stopped on an ask: that turn is lost.
     Failed,
-    /// It was idle at a turn's end on a harness that resumes by id: nothing is lost.
+    /// It was idle at a turn's end on a harness that resumes by id: its turn is not lost, though
+    /// what it had running of its own ended ([`LostChat::ended`]).
     Hibernated,
 }
 

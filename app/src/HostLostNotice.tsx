@@ -46,18 +46,18 @@ export function HostLostNotice({
   };
 
   // What it had running of its own ended with the host (#5752): named, never "nothing was lost".
-  const ended = lost.ended;
+  // A chat on a gone runner says only that, since nothing of it can be resumed.
+  const ended = lost.with_the_runner ? null : lost.ended;
   const said = lost.with_the_runner
     ? `${offScreen ? "That chat" : "This chat"} ended with its pool's runner, which this machine no longer keeps, and its conversation was on that runner.`
     : lost.left_in === "hibernated"
       ? ended
-        ? `purlis's session host stopped unexpectedly while ${chat} was waiting on work of its own, and that work ended with it: ${ended}.`
+        ? `purlis's session host stopped unexpectedly while ${chat} was waiting on work of its own.`
         : `purlis's session host stopped unexpectedly while ${chat} was waiting for you, so nothing was lost.`
-      : ended
-        ? `purlis's session host stopped unexpectedly in the middle of ${chat}'s turn, so that turn was lost, and what it had running of its own ended with it: ${ended}.`
-        : `purlis's session host stopped unexpectedly in the middle of ${chat}'s turn, so that turn was lost.`;
+      : `purlis's session host stopped unexpectedly in the middle of ${chat}'s turn, so that turn was lost.`;
+  const what = ended ? ` What it had running of its own ended with the host: ${ended}.` : "";
   const next = lost.resumable
-    ? ended && !lost.with_the_runner
+    ? ended
       ? " Resume starts it again on its conversation and tells it what ended."
       : " Resume starts it again on its conversation."
     : lost.with_the_runner
@@ -86,6 +86,7 @@ export function HostLostNotice({
       onDismiss={putAway}
     >
       {said}
+      {what}
       {next}
     </Notice>
   );

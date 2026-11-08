@@ -92,7 +92,7 @@ describe("the Notice of a chat lost with its session host", () => {
     render(<HostLostNotice plane={PLANE} session={7} onRestart={() => {}} />);
     const said = await notice();
     expect(said).toHaveTextContent(
-      "purlis's session host stopped unexpectedly while this chat was waiting on work of its own, and that work ended with it: 1 background shell, 1 monitor. Resume starts it again on its conversation and tells it what ended.",
+      "purlis's session host stopped unexpectedly while this chat was waiting on work of its own. What it had running of its own ended with the host: 1 background shell, 1 monitor. Resume starts it again on its conversation and tells it what ended.",
     );
     expect(said).not.toHaveTextContent("nothing was lost");
   });
@@ -101,7 +101,7 @@ describe("the Notice of a chat lost with its session host", () => {
     core({ ...FAILED, ended: "1 background shell" });
     render(<HostLostNotice plane={PLANE} session={7} onRestart={() => {}} />);
     expect(await notice()).toHaveTextContent(
-      "purlis's session host stopped unexpectedly in the middle of this chat's turn, so that turn was lost, and what it had running of its own ended with it: 1 background shell. Resume starts it again on its conversation and tells it what ended.",
+      "purlis's session host stopped unexpectedly in the middle of this chat's turn, so that turn was lost. What it had running of its own ended with the host: 1 background shell. Resume starts it again on its conversation and tells it what ended.",
     );
   });
 
