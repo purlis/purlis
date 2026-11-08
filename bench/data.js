@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794128839955,
+  "lastUpdate": 1794131699863,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -43344,6 +43344,48 @@ window.BENCHMARK_DATA = {
             "value": 102.36858649999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.477, 101.063, 102.369, 103.057, 103.639 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "cd0b61508593e6d176d24cafad19524f96fda0d1",
+          "message": "ADR 0105 amendment and glossary: the CI grader, Miss, Correction, Trigger bar, Crowd fixture (#5719) (#5805)\n\nBuilt-in skills are also graded headless in CI by a CI grader, scored by\nADR 0105 section 2's rules; the amendment says why section 3's reasons\nagainst print modes do not hold on a throwaway runner, and that in-app\nGrades are unchanged. CONTEXT.md gains the five terms, and Trigger test,\nGrade and the skills' relationships name the CI grader so none\ncontradicts them.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6X2H3YBJ0YX3MHQ1FCW2TNP\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-08T08:35:36Z",
+          "tree_id": "7c41834fc16ce78ea66446c43bd4da776a8e0d0b",
+          "url": "https://github.com/purlis/purlis/commit/cd0b61508593e6d176d24cafad19524f96fda0d1"
+        },
+        "date": 1794131694933,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.700482,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.672, 0.692, 0.700, 0.707, 0.710 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6385175,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.489, 16.583, 16.639, 16.712, 16.770 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.14435800000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.221, 101.802, 102.144, 102.216, 103.138 ms"
           }
         ]
       }
