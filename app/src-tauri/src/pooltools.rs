@@ -103,8 +103,9 @@ type Asks = HashMap<(u32, u32), (PoolToolWaits, mpsc::Sender<Answered>)>;
 /// The persona's tools as the project declares them, and as this machine allowed them.
 pub type ToolsOf<'a> = &'a dyn Fn(&Path, &str) -> (Vec<Tool>, Vec<Tool>);
 
-/// The value of each of a tool's keys, from its vault here, each wiped as it is dropped (#3420).
-pub type Reads<'a> = &'a dyn Fn(&Tool) -> Result<Vec<(String, Zeroizing<String>)>, String>;
+/// The value of each of a tool's keys, from its vault here, each wiped as it is dropped (#3420),
+/// read for the persona named first: a link into a vault it may not use is refused (#5795).
+pub type Reads<'a> = &'a dyn Fn(&str, &Tool) -> Result<Vec<(String, Zeroizing<String>)>, String>;
 
 #[derive(Default)]
 pub struct PoolTools {
@@ -629,7 +630,7 @@ pub fn answered(
         }
     };
     as_shown()?;
-    let values = (waiting.read)(&checked.tool)?;
+    let values = (waiting.read)(&checked.persona, &checked.tool)?;
     // And once they are read: a vault may wait on a sign-in for as long as it takes (#4071).
     as_shown()?;
     Ok(Approved {
@@ -701,7 +702,7 @@ pub fn run_on_its_runner(
     let clones_at_start = held.chats().clones_at_start(session);
     // And only those purlis cloned or the person saved from the window.
     let config_root = purlis_core::forge::apptoken::record_root();
-    let read = |tool: &Tool| match tool.mint {
+    let read = |persona: &str, tool: &Tool| match tool.mint {
         Some(_) => minted(
             &ctx,
             tool,
@@ -720,7 +721,7 @@ pub fn run_on_its_runner(
             },
             &purlis_core::forge::apptoken::token_from_vault,
         ),
-        None => read(&ctx, tool),
+        None => read(&ctx, persona, tool),
     };
     let moved = || held.chats().asks_may_have_moved();
     // The runner this chat's link reached, as the desktop's host said it (#3417).
@@ -843,7 +844,8 @@ fn watch_the_asker(mut reader: Box<dyn std::io::BufRead + Send>, gone: Arc<Atomi
 
 /// The value of each of `tool`'s keys, read from its vault here: each the one copy, wiped as
 /// it is dropped, a refusal part way through too (#3420).
-fn read(ctx: &Ctx, tool: &Tool) -> Result<Vec<(String, Zeroizing<String>)>, String> {
+fn read(ctx: &Ctx, persona: &str, tool: &Tool) -> Result<Vec<(String, Zeroizing<String>)>, String> {
+    let _ = persona;
     let vault =
         purlis_core::secrets::cmd::provider(ctx, &tool.vault).map_err(|e| e.message.to_string())?;
     let mut values: Vec<(String, Zeroizing<String>)> = Vec::new();
@@ -857,6 +859,14 @@ fn read(ctx: &Ctx, tool: &Tool) -> Result<Vec<(String, Zeroizing<String>)>, Stri
         values.push((value.key.clone(), read));
     }
     Ok(values)
+}
+
+/// Why none of `tool`'s keys is read for `persona`: one is a link into a vault it may not use,
+/// judged as the core judges every read of a link (#5795), its App's key to mint with too.
+#[allow(dead_code)]
+fn out_of_reach(ctx: &Ctx, persona: &str, tool: &Tool) -> Option<String> {
+    let keys: Vec<&str> = tool.values.iter().map(|value| value.key.as_str()).collect();
+    brokered::read_out_of_reach(ctx, persona, &tool.vault, &keys)
 }
 
 /// **The token a GitHub App mints for a runner chat's tool `tool`, sent as the value of its key**

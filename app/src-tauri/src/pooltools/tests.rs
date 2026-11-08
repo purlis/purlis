@@ -280,7 +280,7 @@ fn deciding(
             owned: &now,
             ..a_gate(&ask)
         };
-        let read = move |tool: &Tool| {
+        let read = move |_persona: &str, tool: &Tool| {
             *reads.lock().unwrap() += 1;
             Ok(vec![(
                 tool.values[0].key.clone(),
@@ -468,7 +468,7 @@ fn a_pool_that_changed_while_its_vault_was_read_is_sent_nothing() {
                 owned: &now,
                 ..a_gate(&ask)
             };
-            let read = move |tool: &Tool| {
+            let read = move |_persona: &str, tool: &Tool| {
                 *owned.lock().unwrap() = builds("b");
                 Ok(vec![(
                     tool.values[0].key.clone(),
@@ -788,8 +788,8 @@ fn a_runner_run(
         ..a_gate(&ask)
     };
     let ctx = ctx_of(root);
-    let reads = |tool: &Tool| {
-        let values = super::read(&ctx, tool)?;
+    let reads = |persona: &str, tool: &Tool| {
+        let values = super::read(&ctx, persona, tool)?;
         read.lock()
             .unwrap()
             .extend(values.iter().map(|(_, value)| value.to_string()));
@@ -1076,4 +1076,40 @@ fn a_runner_not_shown_to_be_yours_is_declined_but_one_unreachable_just_now_is_no
         (declined.code, waits.code),
         (1, brokered::WAITING_ON_THE_PERSON)
     );
+}
+
+/// A runner chat's tool whose key is a link into a vault its persona may not use is read for no
+/// run on this desktop (#5795): the link is judged as it is read, whenever it was made.
+#[test]
+fn a_runner_chats_key_linked_into_a_vault_its_persona_may_not_use_is_never_read() {
+    let desktop = a_desktop_missing_the_key();
+    let root = desktop.path();
+    std::fs::write(
+        root.join("vaults.json"),
+        serde_json::json!({ "vaults": {
+            "team": {"provider": "plain-file", "config": {"file": "team.json"}, "persona": "devops"},
+            "other": {"provider": "plain-file", "config": {"file": "other.json"}},
+        }})
+        .to_string(),
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("other.json"),
+        serde_json::json!({"kubeconfig": "n0t-yours"}).to_string(),
+    )
+    .unwrap();
+    let ctx = ctx_of(root);
+    let team = purlis_core::secrets::cmd::provider(&ctx, "team").unwrap();
+    purlis_core::secrets::links::link(&ctx, &team, "kubeconfig", "other", "kubeconfig").unwrap();
+
+    let why = super::read(&ctx, "devops", &kubectl())
+        .map(|values| values.len())
+        .unwrap_err();
+
+    assert!(
+        why.contains("kubeconfig in vault team reads an entry of a vault devops may not use"),
+        "{why}"
+    );
+    assert!(!why.contains("other"), "names no other vault: {why}");
+    assert!(!why.contains("n0t-yours"), "never the value: {why}");
 }

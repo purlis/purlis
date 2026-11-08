@@ -166,6 +166,32 @@ mod at_start {
         }
     }
 
+    /// A profile's credential that is a link into a vault its persona may not use starts nothing
+    /// (#5795): the link is judged as it is read.
+    #[test]
+    fn a_credential_linked_into_a_vault_the_persona_may_not_use_starts_nothing() {
+        let plane = plane();
+        let file = plane.plain("billing", json!({"card": "n0t-yours"}));
+        plane.register(
+            "billing",
+            "plain-file",
+            json!({"file": file.to_string_lossy()}),
+            None,
+        );
+        let providers = crate::secrets::cmd::provider(&plane.ctx, "providers").unwrap();
+        crate::secrets::links::link(&plane.ctx, &providers, "anthropic", "billing", "card")
+            .unwrap();
+
+        let why = read(&plane.ctx, Some("dev"), &work_key(), None).unwrap_err();
+
+        assert!(
+            why.contains("anthropic in vault providers reads an entry of a vault dev may not use"),
+            "{why}"
+        );
+        assert!(!why.contains("billing"), "names no other vault: {why}");
+        assert!(!why.contains("n0t-yours"), "never the value: {why}");
+    }
+
     #[test]
     fn a_missing_entry_starts_nothing_and_says_which() {
         let plane = plane();
