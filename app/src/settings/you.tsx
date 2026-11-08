@@ -27,6 +27,7 @@ import { previewsGroup } from "./previews";
 import { poolsGroup } from "./pools";
 import { accountsGroup } from "./accounts";
 import { notificationsGroup } from "./notifications";
+import { reportsGroup } from "./reports";
 import { profilesGroup } from "./profiles";
 import { THEME_GROUP, themeRows } from "./themeGallery";
 import { minimumContrast, reduceMotion, yourColours } from "./youLook";
@@ -89,6 +90,7 @@ export function youGroups(plane?: string): SettingsGroup[] {
       settings: [chatsGrouped, awaySummary, browsersBeside, whereYouAnswerSetting],
     },
     notificationsGroup(),
+    reportsGroup(),
     thisMachineGroup(),
     browserLimitsGroup(),
     poolsGroup(plane),

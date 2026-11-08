@@ -341,6 +341,9 @@ export const commands = {
 	installDeveloperTools: __WINDOW_ONLY_RESULT,
 	onboardingProgress: __WINDOW_ONLY_RESULT,
 	keepOnboardingProgress: __WINDOW_ONLY_RESULT,
+	reportConsent: __WINDOW_ONLY_RESULT,
+	keepReportConsent: __WINDOW_ONLY_RESULT,
+	reportsSent: __WINDOW_ONLY_RESULT,
 	/**
 	 *  The project's sandbox, for the offer notice and Settings.
 	 * 
@@ -11149,6 +11152,16 @@ export type RepoStates_Serialize = {
 };
 
 /**
+ *  The person's answers: `None` is unanswered, which purlis reads as no. `asked` is whether the
+ *  first-run question was answered, by Save or by Not now.
+ */
+export type ReportConsent = {
+	crash_reports: boolean | null,
+	agent_drafts: boolean | null,
+	asked: boolean,
+};
+
+/**
  *  **A chat the core started again, or ended, because its project's Claude Code settings no
  *  longer pass**, as the window redraws it.
  */
@@ -12489,6 +12502,27 @@ export type SeenBlock = {
 	what: GrantWhat,
 	/**  The host or folder shown for this task. */
 	target: string,
+};
+
+/**
+ *  One report this machine sent (#5689): its title, where it went, when, and exactly the bytes
+ *  that left.
+ */
+export type SentReport = {
+	/**  When it left, UTC, RFC 3339 to the second. */
+	at: string,
+	title: string,
+	/**  Where it went, in the window's words: "purlis's report service". */
+	to: string,
+	/**  Where the destination kept it. */
+	address: string,
+	/**  Exactly what was sent. */
+	bytes: string,
+	/**
+	 *  Not sent yet (#5693): the report service could not be reached, and it waits on this
+	 *  machine; `at` is when it was made, `address` is empty, and `bytes` is what will go.
+	 */
+	waiting: boolean,
 };
 
 /**  One session record, as the palette and the Sessions panel name it. */

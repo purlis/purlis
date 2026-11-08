@@ -1059,6 +1059,7 @@ export function anEmptyRecord(plane: string): void {
 export function aConfigHomeOfItsOwn(): string {
   const home = mkdtempSync(join(THE_RUNS_TREE, "config-"));
   aMachineThroughTheSteps(home);
+  aMachineAskedAboutReports(home);
   return home;
 }
 
@@ -1088,6 +1089,19 @@ function aMachineThroughTheSteps(home: string): void {
     }) + "\n",
     { mode: 0o600 },
   );
+}
+
+/**
+ * **This run's machine was asked about reports, and answered Not now** (#5688): the config
+ * home's `reports.json` says `asked`, with neither stream answered, so nothing is ever drafted
+ * or sent. Without it the first-run question would stand over the window in every spec.
+ */
+function aMachineAskedAboutReports(home: string): void {
+  const store = join(home, "charter");
+  mkdirSync(store, { recursive: true, mode: 0o700 });
+  writeFileSync(join(store, "reports.json"), JSON.stringify({ version: 1, asked: true }) + "\n", {
+    mode: 0o600,
+  });
 }
 
 /**
