@@ -1031,6 +1031,7 @@ const ORDINARY: Answers = {
         harness: "claude",
         title: "Claude Code",
         repo_left_out: [],
+        same_left_out: [],
         own: null,
         skills: [
           {

@@ -37,8 +37,9 @@ export function fromWhom(skill: StudioSkill): string {
 
 /**
  * **One row of the Harness skills page** (#3692): a program's own skill; a project skill a repo
- * leaves out of that program's chats (SK-53); the line of a program with none of its own; or a
- * declared program skills are not supported on (SK-30).
+ * leaves out of that program's chats (SK-53), or one the program has the same copy of (#5843);
+ * the line of a program with none of its own; or a declared program skills are not supported on
+ * (SK-30).
  */
 export type HarnessRow =
   | {
@@ -51,9 +52,28 @@ export type HarnessRow =
        *  chat starts without it. */
       elsewhere?: string;
     }
-  | { kind: "left-out"; id: string; harness: HarnessKind; title: string; skill: StudioSkill }
+  | {
+      kind: "left-out";
+      id: string;
+      harness: HarnessKind;
+      title: string;
+      skill: StudioSkill;
+      /** Why its chats start without it: a repo's copy takes its name (SK-53), or the program
+       *  has the same copy itself and lists that one (#5843). */
+      by: LeftOutBy;
+    }
   | { kind: "none"; id: string; harness: HarnessKind; title: string }
   | { kind: "not-supported"; id: string; one: StudioNotSupported };
+
+/** **Why a program's chats start without a project skill**: a repo's copy takes its name, or the
+ *  program has the same copy itself. */
+export type LeftOutBy = "repo" | "same";
+
+/** The mark a project skill a program's chats start without carries, by why. */
+const LEFT_OUT_MARK: Record<LeftOutBy, string> = {
+  repo: "Left out by a repo",
+  same: "Listed once",
+};
 
 /** **One group of the page**, under its program's name. */
 export interface HarnessGroup {
@@ -98,12 +118,16 @@ export function harnessGroups(
             },
           ]
         : [];
-    const leftOut: HarnessRow[] = harness.repo_left_out.map((skill) => ({
+    const leftOut: HarnessRow[] = [
+      ...harness.repo_left_out.map((skill) => ({ skill, by: "repo" as const })),
+      ...harness.same_left_out.map((skill) => ({ skill, by: "same" as const })),
+    ].map(({ skill, by }) => ({
       kind: "left-out",
       id: `${harness.harness}/left-out/${skillRowId(skill)}\u0000${skill.left_out ?? ""}`,
       harness: harness.harness,
       title: harness.title,
       skill,
+      by,
     }));
     return {
       key: harness.harness,
@@ -222,12 +246,12 @@ function HarnessListRow({ row }: { row: HarnessRow }) {
       <ListRow
         id={row.id}
         textValue={skill.name}
-        data-testid={`repo-left-out-${row.harness}-${skill.name}`}
+        data-testid={`${row.by}-left-out-${row.harness}-${skill.name}`}
       >
         <RowLabel>{skill.name}</RowLabel>
         <RowTrail>
           <Badge>{skill.label}</Badge>
-          <Badge variant="waiting">Left out by a repo</Badge>
+          <Badge variant="waiting">{LEFT_OUT_MARK[row.by]}</Badge>
         </RowTrail>
         <RowBelow clamp={1}>{skill.left_out ?? ""}</RowBelow>
       </ListRow>
@@ -310,7 +334,7 @@ export function HarnessItem({
         <ViewPageHeader
           name={skill.name}
           tag={<Badge>{skill.label}</Badge>}
-          mark={<Badge variant="waiting">Left out by a repo</Badge>}
+          mark={<Badge variant="waiting">{LEFT_OUT_MARK[row.by]}</Badge>}
           description={skill.description}
         />
         <div>

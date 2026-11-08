@@ -1243,6 +1243,9 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                             "repo_left_out": one.repo_left_out.iter()
                                 .map(|row| left_out_json(one, row, row_json(row)))
                                 .collect::<Vec<_>>(),
+                            // Each it has the same copy of, left out naming it (#5843).
+                            "same_left_out": one.same_left_out.iter().map(row_json)
+                                .collect::<Vec<_>>(),
                             // Its own catalogue, which purlis's budget never counts (#3324).
                             "own": one.own.map(|own| json!({
                                 "skills": own.skills,
@@ -1281,6 +1284,15 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                             table(&one.repo_left_out, &|_| Vec::new())
                         );
                     }
+                    // What it has the same copy of, listed once (#5843).
+                    if !one.same_left_out.is_empty() {
+                        print!(
+                            "\n{} has its own copy of these, the same file for file, so its chats \
+                             start without them:\n{}",
+                            one.harness.title(),
+                            table(&one.same_left_out, &|_| Vec::new())
+                        );
+                    }
                 }
                 // Never a silent drop (SK-30): a declared harness's chats get no skills, and why.
                 for one in &list.not_supported {
@@ -1311,6 +1323,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                         .chain(
                             one.repo_left_out
                                 .iter()
+                                .chain(&one.same_left_out)
                                 .map(move |row| (CopyOf::LeftOut(one), row)),
                         )
                 }))
