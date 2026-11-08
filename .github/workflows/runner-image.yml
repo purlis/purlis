@@ -218,6 +218,12 @@ jobs:
           node-version-file: .nvmrc
           package-manager-cache: false
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      # gh's and glab's packages, fetched and checked against the Dockerfile's sums; the build is
+      # handed them and runs none of its ADDs (runner-image/fetch-forge-programs.sh).
+      - name: gh's and glab's packages, checked
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: runner-image/fetch-forge-programs.sh ${{ matrix.arch }} "$RUNNER_TEMP/forge-programs"
       # Built once, into a file, on every run alike (#4512): the image the checks below run on is
       # loaded from this file, and a publishing run pushes this same file after they pass.
       - name: Build the runner image into a file
@@ -225,6 +231,7 @@ jobs:
         with:
           context: ${{ runner.temp }}/context
           file: runner-image/Dockerfile
+          build-contexts: forge-programs-${{ matrix.arch }}=${{ runner.temp }}/forge-programs
           platforms: linux/${{ matrix.arch }}
           provenance: false
           labels: |
