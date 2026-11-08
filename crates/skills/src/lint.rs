@@ -22,6 +22,8 @@
 //! Every lint here is pure: the caller hands it the skill's files and what it may check them
 //! against, and nothing here reads a disk.
 
+mod shell;
+
 use crate::change::Problem;
 use crate::compat::{Field, widening_said};
 use crate::handed::Refusal;
@@ -505,19 +507,17 @@ fn script_programs(path: &str, text: &str) -> Vec<String> {
             program.to_owned()
         }
     });
-    let shell = match interpreter.as_deref() {
-        Some(program) => ["sh", "bash", "zsh", "dash", "ksh"]
-            .iter()
-            .any(|shell| program == *shell || program.ends_with(&format!("/{shell}"))),
+    let shell_script = match interpreter.as_deref() {
+        Some(program) => shell::is_shell(program),
         None => [".sh", ".bash", ".zsh"]
             .iter()
             .any(|ending| path.ends_with(ending)),
     };
-    if interpreter.is_none() && !shell {
+    if interpreter.is_none() && !shell_script {
         return Vec::new();
     }
     let mut out: Vec<String> = interpreter.into_iter().filter(|p| !p.is_empty()).collect();
-    if shell {
+    if shell_script {
         let own = functions(text);
         out.extend(
             shell::programs(text)
@@ -546,8 +546,6 @@ fn functions(text: &str) -> Vec<String> {
         })
         .collect()
 }
-
-mod shell;
 
 #[cfg(test)]
 mod tests;

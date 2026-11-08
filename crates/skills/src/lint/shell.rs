@@ -104,23 +104,27 @@ const LEADING: &[&str] = &[
     "noglob", "builtin",
 ];
 
-/// The shells whose `-c` argument or here-document is a script.
+/// The shells whose `-c` argument, or whose standard input, is a script.
 const SHELLS: &[&str] = &["sh", "bash", "zsh", "dash", "ksh"];
+
+/// What a substitution the reader has already read leaves in its word: data to a second reading
+/// (`eval "$(…)"`), never a program.
+const SUBSTITUTED: &str = "${_}";
 
 /// The programs `script` calls, in the order it names them: the first word of each command a
 /// pipe, a list, a subshell or a substitution starts, past what sets a variable for it and the
 /// shell's leading words. A variable, an option, a redirection, a quoted word with a space in it,
 /// the skill's own file (`./`, a `$` path) and the shell's own words are no program.
 pub(super) fn programs(script: &str) -> Vec<String> {
-    let mut reader = Reader {
-        text: script.chars().collect(),
-        at: 0,
-        found: Vec::new(),
-        heredocs: Vec::new(),
-        cases: 0,
-    };
-    reader.list(None);
+    let mut reader = Reader::new(script);
+    reader.list(Close::End);
     reader.found
+}
+
+/// Whether `program` is a shell, by name or path.
+pub(super) fn is_shell(program: &str) -> bool {
+    let name = program.rsplit('/').next().unwrap_or(program);
+    SHELLS.contains(&name)
 }
 
 /// One word of a command: its text with the quoting taken off, and whether any of it was quoted.
@@ -137,7 +141,7 @@ struct Heredoc {
     tabs: bool,
     /// `<<'EOF'`: nothing in the body is expanded.
     quoted: bool,
-    /// `bash <<EOF`: the body is a script.
+    /// `bash <<EOF`, `cat <<EOF | sh`: a shell reads the body as a script.
     script: bool,
 }
 
@@ -146,6 +150,44 @@ struct Heredoc {
 struct Command {
     words: Vec<Word>,
     slot: usize,
+}
+
+impl Command {
+    /// Where its program's name is: past what sets a variable and the shell's leading words.
+    fn head(&self) -> Option<usize> {
+        self.words
+            .iter()
+            .position(|w| !(assigns(w) || (!w.quoted && LEADING.contains(&w.text.as_str()))))
+    }
+
+    /// Whether it is inside a `[[ … ]]`, where `(`, `|`, `&`, `<` and `>` are the test's.
+    fn testing(&self) -> bool {
+        self.head()
+            .is_some_and(|at| self.words[at].text == "[[" && !self.words[at].quoted)
+            && !self.words.iter().any(|w| w.text == "]]")
+    }
+}
+
+/// What ends a list of commands.
+#[derive(Clone, Copy, PartialEq)]
+enum Close {
+    /// The end of the script.
+    End,
+    /// The `)` of a `$(`.
+    Paren,
+    /// A closing `` ` ``.
+    Backtick,
+}
+
+/// Text the shell expands but does not split into commands.
+#[derive(Clone, Copy, PartialEq)]
+enum Expanding {
+    /// A double-quoted string, to its `"`.
+    DoubleQuoted,
+    /// An array's words, `name=(…)`, to its `)`.
+    Array,
+    /// An unquoted here-document's body, to its end.
+    Body,
 }
 
 struct Reader {
@@ -158,6 +200,16 @@ struct Reader {
 }
 
 impl Reader {
+    fn new(text: &str) -> Self {
+        Reader {
+            text: text.chars().collect(),
+            at: 0,
+            found: Vec::new(),
+            heredocs: Vec::new(),
+            cases: 0,
+        }
+    }
+
     fn peek(&self) -> Option<char> {
         self.text.get(self.at).copied()
     }
@@ -172,30 +224,26 @@ impl Reader {
             .all(|(i, c)| self.peek_at(i) == Some(c))
     }
 
-    /// Reads a list of commands up to `close` (the `)` of a `$(`, a closing backtick) or the end,
-    /// and past it.
-    fn list(&mut self, close: Option<char>) {
+    /// Reads a list of commands up to `close` and past it.
+    fn list(&mut self, close: Close) {
         let mut command = Command {
             words: Vec::new(),
             slot: self.found.len(),
         };
         let mut word: Option<Word> = None;
         let mut depth = 0usize;
-        let mut pattern = false;
+        let mut pattern_next = false;
         while let Some(c) = self.peek() {
-            if pattern && word.is_none() && !c.is_whitespace() {
-                pattern = self.case_pattern();
+            if pattern_next && word.is_none() && !c.is_whitespace() {
+                pattern_next = self.case_pattern();
                 continue;
             }
-            // Inside `[[ … ]]`, `(`, `|`, `&`, `<` and `>` are the test's.
-            let test = command.words.first().is_some_and(|w| w.text == "[[")
-                && !command.words.iter().any(|w| w.text == "]]");
             match c {
-                ')' if close == Some(')') && depth == 0 => {
+                ')' if close == Close::Paren && depth == 0 => {
                     self.at += 1;
                     break;
                 }
-                '`' if close == Some('`') => {
+                '`' if close == Close::Backtick => {
                     self.at += 1;
                     break;
                 }
@@ -221,7 +269,7 @@ impl Reader {
                 '"' => {
                     self.at += 1;
                     let w = word.get_or_insert_default();
-                    self.expanding(&mut w.text, Some('"'));
+                    self.expanding(&mut w.text, Expanding::DoubleQuoted);
                     w.quoted = true;
                 }
                 '$' => {
@@ -234,38 +282,35 @@ impl Reader {
                         self.dollar(&mut w.text);
                     }
                 }
-                '`' => {
-                    self.at += 1;
-                    self.list(Some('`'));
-                    word.get_or_insert_default().text.push_str("$`…`");
-                }
-                '#' if word.is_none() => {
-                    while self.peek().is_some_and(|c| c != '\n') {
-                        self.at += 1;
-                    }
-                }
+                '`' => self.backticks(&mut word.get_or_insert_default().text),
+                '#' if word.is_none() => self.comment(),
                 '(' if word.as_ref().is_some_and(|w| w.text.ends_with('=')) => {
                     // An array, `name=(a b c)`: its words are data.
                     self.at += 1;
                     let w = word.as_mut().expect("the word is there");
-                    self.expanding(&mut w.text, Some(')'));
+                    self.expanding(&mut w.text, Expanding::Array);
                 }
                 '(' if word.is_none() && self.starts("((") => {
                     // Arithmetic, `(( n++ ))`, runs nothing.
                     self.at += 2;
                     self.arithmetic(&mut String::new());
                 }
-                '<' if self.starts("<<") && !self.starts("<<<") => {
+                '<' if self.starts("<<<") => {
+                    // A here-string: the word after it is data, as any argument is.
+                    self.at += 3;
+                    word.get_or_insert_default().text.push_str("<<<");
+                }
+                '<' if self.starts("<<") => {
                     self.at += 2;
-                    self.end_word(&mut command, &mut word, &mut pattern);
-                    self.open_heredoc(&command);
+                    self.end_word(&mut command, &mut word, &mut pattern_next);
+                    self.open_heredoc();
                 }
                 '&' if word.as_ref().is_some_and(|w| w.text.ends_with(['<', '>'])) => {
                     // `2>&1`, `<&3`: a redirection, not a list.
                     self.at += 1;
                     word.get_or_insert_default().text.push('&');
                 }
-                '|' | '&' | '(' | ')' | '<' | '>' if test => {
+                '|' | '&' | '(' | ')' | '<' | '>' if command.testing() => {
                     self.at += 1;
                     word.get_or_insert_default().text.push(c);
                 }
@@ -279,11 +324,11 @@ impl Reader {
                             while matches!(self.peek(), Some(';' | '&')) {
                                 self.at += 1;
                             }
-                            pattern = true;
+                            pattern_next = true;
                         }
                         _ => {}
                     }
-                    self.end_word(&mut command, &mut word, &mut pattern);
+                    self.end_word(&mut command, &mut word, &mut pattern_next);
                     self.end_command(&mut command);
                     if c == '\n' {
                         self.heredoc_bodies();
@@ -291,7 +336,7 @@ impl Reader {
                 }
                 ' ' | '\t' | '\r' => {
                     self.at += 1;
-                    self.end_word(&mut command, &mut word, &mut pattern);
+                    self.end_word(&mut command, &mut word, &mut pattern_next);
                 }
                 _ => {
                     self.at += 1;
@@ -299,13 +344,18 @@ impl Reader {
                 }
             }
         }
-        self.end_word(&mut command, &mut word, &mut pattern);
+        self.end_word(&mut command, &mut word, &mut pattern_next);
         self.end_command(&mut command);
     }
 
     /// A word is done. `case … in` opens a `case`, whose first arm's pattern follows; `esac`
     /// closes one.
-    fn end_word(&mut self, command: &mut Command, word: &mut Option<Word>, pattern: &mut bool) {
+    fn end_word(
+        &mut self,
+        command: &mut Command,
+        word: &mut Option<Word>,
+        pattern_next: &mut bool,
+    ) {
         let Some(word) = word.take() else {
             return;
         };
@@ -316,7 +366,7 @@ impl Reader {
         if first == Some("case") && word.text == "in" && !word.quoted {
             command.words.push(word);
             self.cases += 1;
-            *pattern = true;
+            *pattern_next = true;
             self.end_command(command);
             return;
         }
@@ -326,50 +376,56 @@ impl Reader {
         command.words.push(word);
     }
 
-    /// A command is done: its program is listed in its place, and what it hands a shell is read.
+    /// A command is done: its program is listed in its place, and what it hands a shell is read:
+    /// `eval`'s words, a shell's `-c` argument wherever the shell is called (`find -exec sh -c`,
+    /// `xargs bash -c`), and the here-documents open on its line when a shell reads its standard
+    /// input.
     fn end_command(&mut self, command: &mut Command) {
-        let words = std::mem::take(&mut command.words);
         let slot = command.slot.min(self.found.len());
+        let head = command.head();
+        let words = std::mem::take(&mut command.words);
         command.slot = self.found.len();
-        let Some(at) = words
+        let Some(at) = head else {
+            return;
+        };
+        if let Some(program) = program(&words[at]) {
+            self.found.insert(slot, program);
+        }
+        if words[at].text == "eval" && !words[at].quoted {
+            let rest: Vec<&str> = words[at + 1..].iter().map(|w| w.text.as_str()).collect();
+            self.found.extend(programs(&rest.join(" ")));
+            return;
+        }
+        let Some(shell) = words[at..]
             .iter()
-            .position(|w| !(assigns(w) || (!w.quoted && LEADING.contains(&w.text.as_str()))))
+            .position(|w| !w.quoted && is_shell(&w.text))
+            .map(|n| at + n)
         else {
             return;
         };
-        let head = &words[at];
-        if let Some(program) = program(head) {
-            self.found.insert(slot, program);
-        }
-        let rest = &words[at + 1..];
-        let handed = if head.text == "eval" && !head.quoted {
-            Some(
-                rest.iter()
-                    .map(|w| w.text.as_str())
-                    .collect::<Vec<_>>()
-                    .join(" "),
-            )
-        } else if is_shell(&head.text) {
-            rest.iter()
-                .position(|w| {
-                    !w.quoted
-                        && w.text.starts_with('-')
-                        && !w.text.starts_with("--")
-                        && w.text.contains('c')
-                })
-                .and_then(|flag| rest.get(flag + 1))
-                .map(|w| w.text.clone())
-        } else {
-            None
+        let args = &words[shell + 1..];
+        let option = |w: &Word| !w.quoted && w.text.starts_with('-');
+        let flag = |w: &Word, letter: char| {
+            option(w) && !w.text.starts_with("--") && w.text.contains(letter)
         };
-        if let Some(script) = handed {
-            self.found.extend(programs(&script));
+        if let Some(c) = args.iter().position(|w| flag(w, 'c')) {
+            if let Some(script) = args.get(c + 1) {
+                self.found.extend(programs(&script.text));
+            }
+        } else if shell == at && (args.iter().any(|w| flag(w, 's')) || args.iter().all(option)) {
+            for heredoc in &mut self.heredocs {
+                heredoc.script = true;
+            }
         }
     }
 
-    /// The pattern of a `case` arm, up to its `)`, which runs nothing; or `esac`. Whether a
-    /// pattern is still to come.
+    /// The pattern of a `case` arm, up to its `)`, which runs nothing; a comment; or `esac`.
+    /// Whether a pattern is still to come.
     fn case_pattern(&mut self) -> bool {
+        if self.peek() == Some('#') {
+            self.comment();
+            return true;
+        }
         if self.starts("esac")
             && self
                 .peek_at(4)
@@ -385,12 +441,26 @@ impl Reader {
             match c {
                 ')' => return false,
                 '\'' => self.single_quoted(&mut String::new(), false),
-                '"' => self.expanding(&mut String::new(), Some('"')),
+                '"' => self.expanding(&mut String::new(), Expanding::DoubleQuoted),
                 '\\' => self.at += 1,
                 _ => {}
             }
         }
         false
+    }
+
+    /// A comment, up to the end of its line.
+    fn comment(&mut self) {
+        while self.peek().is_some_and(|c| c != '\n') {
+            self.at += 1;
+        }
+    }
+
+    /// `` `…` ``, from its opening backtick: its commands count.
+    fn backticks(&mut self, into: &mut String) {
+        self.at += 1;
+        self.list(Close::Backtick);
+        into.push_str(SUBSTITUTED);
     }
 
     /// `'…'`, or with `escapes` `$'…'`, read past its closing quote into `into`: data.
@@ -410,10 +480,14 @@ impl Reader {
         }
     }
 
-    /// Text the shell expands but does not split into commands, read past `close` into `into`:
-    /// a double-quoted string (`"`), an array's words (`)`), or with no `close` an unquoted
-    /// here-document's body to its end. Only what a `$(…)` or a `` `…` `` in it runs counts.
-    fn expanding(&mut self, into: &mut String, close: Option<char>) {
+    /// Text the shell expands but does not split into commands, read past its end into `into`.
+    /// Only what a `$(…)` or a `` `…` `` in it runs counts.
+    fn expanding(&mut self, into: &mut String, what: Expanding) {
+        let close = match what {
+            Expanding::DoubleQuoted => Some('"'),
+            Expanding::Array => Some(')'),
+            Expanding::Body => None,
+        };
         while let Some(c) = self.peek() {
             if Some(c) == close {
                 self.at += 1;
@@ -428,18 +502,16 @@ impl Reader {
                     }
                 }
                 '$' => self.dollar(into),
-                '`' => {
-                    self.at += 1;
-                    self.list(Some('`'));
-                    into.push_str("$`…`");
-                }
-                '\'' if close == Some(')') => {
+                '`' => self.backticks(into),
+                // An array's words may be quoted; a double-quoted string's and a body's quotes
+                // are their text.
+                '\'' if what == Expanding::Array => {
                     self.at += 1;
                     self.single_quoted(into, false);
                 }
-                '"' if close == Some(')') => {
+                '"' if what == Expanding::Array => {
                     self.at += 1;
-                    self.expanding(into, Some('"'));
+                    self.expanding(into, Expanding::DoubleQuoted);
                 }
                 _ => {
                     self.at += 1;
@@ -454,12 +526,12 @@ impl Reader {
     fn dollar(&mut self, into: &mut String) {
         if self.starts("$((") {
             self.at += 3;
-            self.arithmetic(into);
-            into.push_str("$((…))");
+            self.arithmetic(&mut String::new());
+            into.push_str(SUBSTITUTED);
         } else if self.starts("$(") {
             self.at += 2;
-            self.list(Some(')'));
-            into.push_str("$(…)");
+            self.list(Close::Paren);
+            into.push_str(SUBSTITUTED);
         } else if self.starts("${") {
             self.at += 2;
             // A default, `${NAME:-$(hostname)}`, may run a program.
@@ -483,7 +555,7 @@ impl Reader {
                 }
                 self.at += 1;
             }
-            into.push_str("${…}");
+            into.push_str(SUBSTITUTED);
         } else {
             self.at += 1;
             into.push('$');
@@ -514,7 +586,7 @@ impl Reader {
     }
 
     /// `<<EOF`, `<<-'EOF'`: its closing word, kept until the line ends and its body starts.
-    fn open_heredoc(&mut self, command: &Command) {
+    fn open_heredoc(&mut self) {
         let tabs = self.peek() == Some('-');
         if tabs {
             self.at += 1;
@@ -530,25 +602,18 @@ impl Reader {
             }
             self.at += 1;
             match c {
-                '\'' | '"' => quoted = true,
-                '\\' => quoted = true,
+                '\'' | '"' | '\\' => quoted = true,
                 _ => end.push(c),
             }
         }
-        if end.is_empty() {
-            return;
+        if !end.is_empty() {
+            self.heredocs.push(Heredoc {
+                end,
+                tabs,
+                quoted,
+                script: false,
+            });
         }
-        let script = command
-            .words
-            .iter()
-            .find(|w| !(assigns(w) || LEADING.contains(&w.text.as_str())))
-            .is_some_and(|w| is_shell(&w.text));
-        self.heredocs.push(Heredoc {
-            end,
-            tabs,
-            quoted,
-            script,
-        });
     }
 
     /// The bodies of the here-documents the line just ended opened, read past their closing
@@ -578,14 +643,8 @@ impl Reader {
             if heredoc.script {
                 self.found.extend(programs(&body));
             } else if !heredoc.quoted {
-                let mut inner = Reader {
-                    text: body.chars().collect(),
-                    at: 0,
-                    found: Vec::new(),
-                    heredocs: Vec::new(),
-                    cases: 0,
-                };
-                inner.expanding(&mut String::new(), None);
+                let mut inner = Reader::new(&body);
+                inner.expanding(&mut String::new(), Expanding::Body);
                 self.found.extend(inner.found);
             }
         }
@@ -595,12 +654,6 @@ impl Reader {
 /// `NAME=value` before a command sets a variable for it.
 fn assigns(word: &Word) -> bool {
     word.text.contains('=') && !word.text.starts_with('=')
-}
-
-/// Whether `program` is a shell, by name or path.
-fn is_shell(program: &str) -> bool {
-    let name = program.rsplit('/').next().unwrap_or(program);
-    SHELLS.contains(&name)
 }
 
 /// The program `word`, the first of a command, calls, if it calls one.

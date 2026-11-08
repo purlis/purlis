@@ -382,52 +382,87 @@ printf '%s\n' "a | b; c & d (e)"
 }
 
 #[test]
-fn a_program_a_script_really_calls_is_found_inside_a_substitution_a_shell_string_or_a_heredoc_fed_to_a_shell()
- {
+fn a_program_a_substitution_runs_is_found_inside_double_quotes_a_default_and_an_unquoted_heredoc() {
     let script = r#"#!/usr/bin/env bash
 title="$(curl -s "$URL" | yq '.title | @sh')"
 echo "made by `whoami` on ${HOST:-$(hostname)}"
-bash -c 'kubectl get pods | awk "{print \$1}"'
-sh -ec "helm list; terraform plan"
-eval "make build"
-ssh host <<EOF
-remote-only-tool
-EOF
 cat <<EOF
 built $(date +%F) by $(id -un)
 EOF
+"#;
+    assert_eq!(
+        missing_from(script),
+        ["curl", "yq", "whoami", "hostname", "cat", "date", "id"]
+    );
+}
+
+#[test]
+fn what_a_script_hands_a_shell_is_read_as_a_script_wherever_the_shell_is_called() {
+    let script = r#"#!/usr/bin/env bash
+bash -c 'kubectl get pods | awk "{print \$1}"'
+sh -ec "helm list; terraform plan"
+eval "make build"
+eval "$(brew shellenv)"
+find . -name '*.log' -exec sh -c 'gzip "$1"' _ {} \;
+xargs -I{} bash -c 'rsync {} host:'
 bash -s <<'EOF'
-docker ps | sort_by
+docker ps
 EOF
-(( count++ ))
-arr=(one two three)
-case "$1" in
-  start|go) helm install x ;;
-  'stop') make stop ;;
-  *) usage ;;
-esac
-[[ $x =~ ^(a|b)$ && -n $y ]] && npm test
+cat <<'EOF' | sh
+podman ps
+EOF
 "#;
     assert_eq!(
         missing_from(script),
         [
-            "curl",
-            "yq",
-            "whoami",
-            "hostname",
             "kubectl",
             "awk",
             "helm",
             "terraform",
             "make",
-            "ssh",
-            "cat",
-            "date",
-            "id",
+            "brew",
+            "find",
+            "gzip",
+            "xargs",
+            "rsync",
             "docker",
-            "sort_by",
-            "usage",
-            "npm",
+            "cat",
+            "podman",
         ]
+    );
+}
+
+#[test]
+fn a_heredoc_for_another_program_and_a_here_string_are_data() {
+    let script = r#"#!/usr/bin/env bash
+ssh host <<EOF
+remote-only-tool
+EOF
+bash ./job.sh <<'EOF'
+input-not-a-command
+EOF
+read -r a <<< "$x"
+jqq .
+"#;
+    assert_eq!(missing_from(script), ["ssh", "jqq"]);
+}
+
+#[test]
+fn arithmetic_an_array_a_test_and_a_case_pattern_or_comment_run_nothing() {
+    let script = r#"#!/usr/bin/env bash
+(( count++ ))
+arr=(one two three)
+case "$1" in
+  # stop) the old way
+  start|go) helm install x ;;
+  'stop') make stop ;;
+  (*) usage ;;
+esac
+[[ $x =~ ^(a|b)$ && -n $y ]] && npm test
+if [[ $x =~ ^(foo|bar)$ ]]; then pnpm i; fi
+"#;
+    assert_eq!(
+        missing_from(script),
+        ["helm", "make", "usage", "npm", "pnpm"]
     );
 }
