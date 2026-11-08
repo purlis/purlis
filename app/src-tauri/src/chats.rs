@@ -6651,13 +6651,26 @@ impl Chats {
         }
     }
 
-    /// **What chat `session` had left running of its own as its own harness's turn ended**
-    /// (#5747, spec #5743): `now`, as the board holds it once it took that turn's end, or none
-    /// where nothing is in flight. The turn's end is the authority on what still runs, so it
-    /// replaces what was held. Written down whenever it changes, and not only at a quit: a crash
-    /// writes nothing as it goes.
-    pub fn heard_own_work(&self, session: u32, now: Option<purlis_core::ownwork::OwnWork>) {
-        let now = now.filter(|work| !work.is_nothing());
+    /// **What a chat's own harness said, in `report`, it left running of its own as its turn
+    /// ended** (#5747, spec #5743), kept for the record's `own_work`.
+    ///
+    /// **What the `Stop` said, never the board's reading of it**: the board holds no wait while
+    /// the chat shows a prompt or raised a notice, and drops it at the hour's lapse, and none of
+    /// those ends the work. **Only the chat's own harness** ([`its_own_turn_end`]): `now` is the
+    /// conversation the board holds for the chat, so a harness nested in the chat, a `claude -p`
+    /// in its shell, never clears it. Stamped on the app's clock, as the board stamps it.
+    pub fn heard_own_work(&self, report: &purlis_core::hookwire::Report, now: Option<&str>) {
+        let Some(said) = its_own_turn_end(report, now) else {
+            return;
+        };
+        self.holds_own_work(report.chat, said.at(chrono::Utc::now().timestamp()));
+    }
+
+    /// Chat `session` has `now` left running of its own, or nothing. The turn's end is the
+    /// authority on what still runs, so it replaces what was held. Written down whenever it
+    /// changes, and not only at a quit: a crash writes nothing as it goes.
+    pub(crate) fn holds_own_work(&self, session: u32, now: Option<purlis_core::ownwork::OwnWork>) {
+        let now = now.and_then(purlis_core::ownwork::OwnWork::in_flight);
         let mut held = lock(&self.own_work);
         let before = match now {
             Some(work) => held.insert(session, work),
@@ -8276,6 +8289,23 @@ fn its_own_model<'a>(
         .model
         .as_ref()
         .map(purlis_core::state::Model::as_str)
+}
+
+/// **What the chat's own harness said it left running at its turn's end** (#5747), where
+/// `report` is that: a `Stop` of the chat's own harness, not a helper's, under the conversation
+/// the board holds for the chat now (`now`), as [`its_own_model`] judges a model.
+fn its_own_turn_end(
+    report: &purlis_core::hookwire::Report,
+    now: Option<&str>,
+) -> Option<purlis_core::ownwork::Said> {
+    use purlis_core::hookwire::Conversation;
+    if report.event != purlis_core::state::Event::Stop || report.agent.is_some() {
+        return None;
+    }
+    let Conversation::Named(said) = &report.conversation else {
+        return None;
+    };
+    (now == Some(said.as_str())).then_some(report.detail.own_work)
 }
 
 /// Told, by chat, how many hosts its proxy refused past the ones it names (#1353).

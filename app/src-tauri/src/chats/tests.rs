@@ -7095,6 +7095,54 @@ fn session_start(chat: u32, conversation: &str, model: &str) -> purlis_core::hoo
 }
 
 #[test]
+fn only_the_chats_own_harness_ending_its_turn_says_what_it_left_running_5747() {
+    use purlis_core::hookwire::Conversation;
+    let a_shell = purlis_core::ownwork::Said {
+        shells: 1,
+        lapses_in: Some(3600),
+        ..purlis_core::ownwork::Said::default()
+    };
+    let own = purlis_core::hookwire::Report {
+        chat: 7,
+        event: purlis_core::state::Event::Stop,
+        conversation: Conversation::Named(ID.to_owned()),
+        pid: None,
+        agent: None,
+        detail: purlis_core::state::Detail {
+            own_work: a_shell,
+            ..purlis_core::state::Detail::default()
+        },
+    };
+    assert_eq!(its_own_turn_end(&own, Some(ID)), Some(a_shell));
+    // What its own `Stop` said, a prompt or a notice notwithstanding, and nothing at all too.
+    let nothing = purlis_core::hookwire::Report {
+        detail: purlis_core::state::Detail::default(),
+        ..own.clone()
+    };
+    assert_eq!(
+        its_own_turn_end(&nothing, Some(ID)),
+        Some(purlis_core::ownwork::Said::default())
+    );
+    // A harness nested in the chat, under another conversation, says nothing of the chat's.
+    assert_eq!(
+        its_own_turn_end(&own, Some(OTHER)),
+        None,
+        "a nested harness's"
+    );
+    assert_eq!(its_own_turn_end(&own, None), None);
+    let helper = purlis_core::hookwire::Report {
+        agent: Some("helper".to_owned()),
+        ..own.clone()
+    };
+    assert_eq!(its_own_turn_end(&helper, Some(ID)), None, "a helper's");
+    let start = purlis_core::hookwire::Report {
+        event: purlis_core::state::Event::SessionStart,
+        ..own
+    };
+    assert_eq!(its_own_turn_end(&start, Some(ID)), None, "only a Stop");
+}
+
+#[test]
 fn only_the_chats_own_harness_starting_names_its_model() {
     use purlis_core::hookwire::Conversation;
     let own = session_start(7, ID, "claude-opus-4-1");
@@ -7166,13 +7214,13 @@ fn what_a_chat_left_running_of_its_own_is_recorded_as_it_changes_and_kept_at_the
     };
 
     // Written as the turn's end is heard, not only at a quit: a crash writes nothing.
-    chats.heard_own_work(session, Some(a_shell));
+    chats.holds_own_work(session, Some(a_shell));
     let last = lock(&wrote).last().cloned().expect("a record was written");
     assert_eq!(last.chats[0].own_work, Some(a_shell));
 
     // The same again writes nothing.
     let before = lock(&wrote).len();
-    chats.heard_own_work(session, Some(a_shell));
+    chats.holds_own_work(session, Some(a_shell));
     assert_eq!(lock(&wrote).len(), before);
 
     // The quit's own write keeps it, for the next launch to tell the chat.
@@ -7189,7 +7237,7 @@ fn a_turn_s_end_that_says_nothing_runs_clears_what_the_record_held_5747() {
     let session = chats
         .start(&chat(&a_claude(dir.path()), "ide.7", Some(ID)), SIZE)
         .unwrap();
-    chats.heard_own_work(
+    chats.holds_own_work(
         session,
         Some(purlis_core::ownwork::OwnWork {
             monitors: 1,
@@ -7197,7 +7245,7 @@ fn a_turn_s_end_that_says_nothing_runs_clears_what_the_record_held_5747() {
         }),
     );
 
-    chats.heard_own_work(session, None);
+    chats.holds_own_work(session, None);
 
     let last = lock(&wrote).last().cloned().expect("a record was written");
     assert_eq!(last.chats[0].own_work, None);

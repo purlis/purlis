@@ -152,6 +152,12 @@ impl OwnWork {
         self.until.is_some_and(|until| until <= now)
     }
 
+    /// It, where anything is left to wait on, else none: what a record keeps
+    /// ([`crate::reopen::Chat::own_work`]).
+    pub fn in_flight(self) -> Option<Self> {
+        (!self.is_nothing()).then_some(self)
+    }
+
     /// Whether anything is left to wait on.
     pub fn is_nothing(&self) -> bool {
         self.helpers == 0

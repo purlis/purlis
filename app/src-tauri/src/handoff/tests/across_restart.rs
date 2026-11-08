@@ -952,7 +952,7 @@ fn a_handoff_put_back_with_no_conversation_is_told_what_a_fresh_start_is_told() 
 }
 
 // ---------------------------------------------------------------------------------------------
-// A chat waiting only on its own work, across a restart (diagnosis loop; red until fixed).
+// A chat waiting only on its own work, across a restart (#5717, #5747): its wake line.
 //
 // A chat whose turn ended on background work of its own (#3878: a `run_in_background` shell, a
 // Monitor, a wake-up of its own) is waiting for that work to wake it. A restart kills the work
@@ -1034,8 +1034,8 @@ fn told_of_its_lost_work(host: &Pretend, chat: u32, work: &str) -> (bool, Vec<St
 fn a_chat_waiting_on_its_own_shell_is_told_after_a_restart_that_the_shell_was_cut_off() {
     let plane = a_plane_with_personas();
     let host = Pretend::default();
-    let (planes, _id, steward) = a_steward_chat(&host, &plane);
-    let held = planes.held(&_id).expect("held");
+    let (planes, id, steward) = a_steward_chat(&host, &plane);
+    let held = planes.held(&id).expect("held");
     its_turn_ends_on_its_own(
         &held,
         steward,
@@ -1070,8 +1070,8 @@ fn a_chat_waiting_on_its_own_shell_is_told_after_a_restart_that_the_shell_was_cu
 fn a_chat_whose_own_wake_up_came_due_while_purlis_was_down_is_told_after_the_restart() {
     let plane = a_plane_with_personas();
     let host = Pretend::default();
-    let (planes, _id, steward) = a_steward_chat(&host, &plane);
-    let held = planes.held(&_id).expect("held");
+    let (planes, id, steward) = a_steward_chat(&host, &plane);
+    let held = planes.held(&id).expect("held");
     its_turn_ends_on_its_own(
         &held,
         steward,

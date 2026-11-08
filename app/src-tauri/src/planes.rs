@@ -3462,12 +3462,11 @@ impl Planes {
                     // ended, off this thread. A helper's end is no end of it.
                     if report.event == purlis_core::state::Event::Stop && report.agent.is_none() {
                         crate::arrived::turn_ended(&held, report.chat);
-                        // What it left running of its own, as the board took the turn's end,
-                        // kept in the record each time it changes (#5747): a restart that ends
-                        // the chat tells it, brought back, what ended.
-                        held.chats()
-                            .heard_own_work(report.chat, held.hooks.board().own_work(report.chat));
                     }
+                    // What its own harness said it left running as its turn ended, kept in the
+                    // record each time it changes (#5747): a restart that ends the chat tells
+                    // it, brought back, what ended. Judged against the same conversation.
+                    held.chats().heard_own_work(report, now.as_deref());
                     // And whatever waited for this chat to move: the line that says its tasks
                     // reported (#1441).
                     crate::dispatched::heard(&held, report);

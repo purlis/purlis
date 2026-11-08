@@ -1243,6 +1243,21 @@ back, or the chat's own work waking it. It is no reply, so a chat that **needs y
 wait through it, and only a line the person sends ends that wait (#4562).
 _Avoid_: silent turn, automatic turn
 
+**Own work**:
+Background work a chat started itself that is still running when its turn ends: a shell, a
+monitor, a subagent, a workflow, a cron or a wakeup. A chat waiting on its own work is waiting on
+neither the person nor purlis, and wakes when that work is done. purlis keeps a record of it on disk
+whenever it changes. A restart that ends the chat's program ends the work too (#3878, #5743).
+_Avoid_: background tasks (that is Claude Code's word), jobs
+
+**Wake line**:
+The one message purlis types into a chat it brings back on its conversation after a restart ended
+its program. It says what the restart ended of its **own work** and, for a task that still owes
+its report, that it should carry on. The chat decides what to start again, and purlis re-runs
+nothing. A chat whose program the host kept running gets none, and so does a chat with nothing to
+be told (ADR 0068 as amended 2026-11-08, #5743).
+_Avoid_: resume message, carry-on (that is part of it)
+
 **Component family**:
 One kind of control the window draws one way everywhere, such as the button (with the icon button
 and the toggle button), the field, the select or the dialog: its variants, its sizes and its

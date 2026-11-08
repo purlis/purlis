@@ -2021,7 +2021,7 @@ impl From<&Record> for OnDisk {
                     plane_skills: chat.plane_skills,
                     routing: chat.routing.clone(),
                     studio: chat.studio.as_ref().map(studio::StudioOnDisk::of),
-                    own_work: chat.own_work.filter(|work| !work.is_nothing()),
+                    own_work: chat.own_work.and_then(crate::ownwork::OwnWork::in_flight),
                 })
                 .collect(),
             dealt: highest_dealt(record),
@@ -2118,7 +2118,7 @@ impl From<ChatOnDisk> for Chat {
             // Never on disk ([`Chat::unrecorded`]): a chat that is read back was recorded.
             unrecorded: false,
             studio: chat.studio.and_then(studio::StudioOnDisk::sound),
-            own_work: chat.own_work.filter(|work| !work.is_nothing()),
+            own_work: chat.own_work.and_then(crate::ownwork::OwnWork::in_flight),
         }
     }
 }
