@@ -11,6 +11,8 @@
 //! A cache is written by whichever job saved it last. The release jobs that hold the keys, or
 //! can write the release, build from their own checkout and nothing else, which is slower and
 //! is the point. `ci`, `stress` and `mutants` keep their caches.
+//! Those caches are saved by `main` alone, never by a pull request or a merge queue branch
+//! (#5858).
 //!
 //! Both rules follow a step into the repository's own composite actions (`uses:
 //! ./.github/actions/<name>`, #1625): the action is pinned by the checkout, but the actions it
@@ -372,5 +374,291 @@ fn dependabot_keeps_the_action_pins_current() {
             .any(|l| l.trim() == "- package-ecosystem: github-actions"),
         "a SHA pin nobody moves is a pin to an old release; dependabot.yml has no \
          github-actions entry"
+    );
+}
+
+// **Only `main` saves a cache** (#5858). The repository holds 10 GB of Actions cache and evicts
+// the least recently used past that, so a cache any other ref saves (a pull request's, a merge
+// queue branch's) pushes out one `main` saved and every run reads. On 2026-11-08 the caches held
+// 10.9 GB and no Linux packages cache was left. A pull request restores what `main` saved and
+// saves nothing. What each of `main`'s caches costs is in `docs/development.md`.
+
+/// What a step's `save-if:` or `if:` must say for the step to save on `main` alone.
+const ON_MAIN: &str = "github.ref == 'refs/heads/main'";
+
+/// Whether `condition` holds on `main` alone: it requires [`ON_MAIN`], and nothing can stand in
+/// for it (no `||`, no negation of a group).
+fn on_main_only(condition: &str) -> bool {
+    condition.contains(ON_MAIN) && !condition.contains("||") && !condition.contains("!(")
+}
+
+/// The column of the step's own keys: two past its `- `.
+fn own_column(step: &[String]) -> usize {
+    step[0].find("- ").map_or(0, |dash| dash + 2)
+}
+
+/// The value of the step's own `key` (`if`, `uses`, `with`), as written after the colon.
+fn own_value<'a>(step: &'a [String], key: &str) -> Option<&'a str> {
+    let column = own_column(step);
+    step.iter().enumerate().find_map(|(i, line)| {
+        let body = if i == 0 {
+            line.get(column..)?
+        } else {
+            let (indent, body) = line.split_at_checked(column)?;
+            if !indent.trim().is_empty() || body.starts_with(' ') {
+                return None;
+            }
+            body
+        };
+        let (k, v) = body.split_once(':')?;
+        (k == key).then(|| v.trim())
+    })
+}
+
+/// The value of `key` in the step's `with:` map, as written after the colon.
+fn with_value<'a>(step: &'a [String], key: &str) -> Option<&'a str> {
+    let column = own_column(step);
+    let start = step.iter().position(|l| {
+        l.get(column..).is_some_and(|b| b.trim_end() == "with:") && l[..column].trim().is_empty()
+    })?;
+    let inner = " ".repeat(column + 2);
+    step[start + 1..]
+        .iter()
+        .filter(|l| !l.trim().is_empty() && !l.trim_start().starts_with('#'))
+        .take_while(|l| l.starts_with(&inner))
+        .filter(|l| !l[inner.len()..].starts_with(' '))
+        .find_map(|l| {
+            let (k, v) = l.trim().split_once(':')?;
+            (k == key).then(|| v.trim())
+        })
+}
+
+/// Why this step can save a cache on a ref other than `main`, or `None` if it cannot.
+fn saves_off_main(step: &[String]) -> Option<String> {
+    let lines: Vec<&str> = step
+        .iter()
+        .map(String::as_str)
+        .filter(|l| !l.trim_start().starts_with('#'))
+        .collect();
+    // sccache's GitHub cache reads and writes unless told otherwise, wherever it is turned on.
+    if lines.iter().any(|l| l.contains("SCCACHE_GHA_ENABLED")) {
+        if !lines.iter().any(|l| l.contains("SCCACHE_GHA_RW_MODE")) {
+            return Some(
+                "sccache's GitHub cache writes unless `SCCACHE_GHA_RW_MODE` says READ_ONLY".into(),
+            );
+        }
+        let guarded = format!("{ON_MAIN} && 'READ_WRITE'");
+        if lines
+            .iter()
+            .any(|l| l.contains("READ_WRITE") && !l.contains(&guarded))
+        {
+            return Some(format!("sccache writes only as `{guarded} || 'READ_ONLY'`"));
+        }
+    }
+    let action = step_uses(step)?.split('@').next().unwrap_or_default();
+    let step_if = own_value(step, "if").unwrap_or_default();
+    match action {
+        "Swatinem/rust-cache" => match with_value(step, "save-if") {
+            Some("false") => None,
+            Some(save_if) if on_main_only(save_if) => None,
+            Some(save_if) => Some(format!(
+                "rust-cache saves wherever `save-if: {save_if}` holds"
+            )),
+            None => Some("rust-cache saves on every ref unless `save-if` says otherwise".into()),
+        },
+        "actions/cache" => Some("actions/cache saves at the end of the job on every ref".into()),
+        "actions/cache/save" if on_main_only(step_if) => None,
+        "actions/cache/save" => {
+            Some("actions/cache/save runs on every ref its `if:` allows".into())
+        }
+        "actions/setup-node" => caches(step).map(|why| format!("{why}, on every ref")),
+        _ => None,
+    }
+}
+
+/// A step as a workflow writes it, from its lines.
+fn written(lines: &[&str]) -> Vec<String> {
+    lines.iter().map(|l| (*l).to_owned()).collect()
+}
+
+#[test]
+fn rust_cache_saves_only_when_its_save_if_says_main_or_false() {
+    let sha = "0123456789abcdef0123456789abcdef01234567";
+    let uses = format!("      - uses: Swatinem/rust-cache@{sha} # v2");
+    let with = |save_if: &str| {
+        written(&[
+            &uses,
+            "        with:",
+            "          shared-key: rust",
+            save_if,
+        ])
+    };
+    assert!(
+        saves_off_main(&written(&[&uses])).is_some(),
+        "rust-cache saves on every ref by default"
+    );
+    assert!(saves_off_main(&with("          save-if: true")).is_some());
+    assert!(
+        saves_off_main(&with(
+            "          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'merge_group' }}"
+        ))
+        .is_some(),
+        "a merge queue branch is not main"
+    );
+    assert_eq!(saves_off_main(&with("          save-if: false")), None);
+    assert_eq!(
+        saves_off_main(&with(
+            "          save-if: ${{ github.ref == 'refs/heads/main' }}"
+        )),
+        None
+    );
+    assert_eq!(
+        saves_off_main(&with(
+            "          save-if: ${{ github.ref == 'refs/heads/main' && !matrix.pool }}"
+        )),
+        None
+    );
+}
+
+#[test]
+fn actions_cache_saves_only_through_its_save_step_under_an_if_on_main() {
+    let sha = "0123456789abcdef0123456789abcdef01234567";
+    assert!(
+        saves_off_main(&written(&[
+            &format!("      - uses: actions/cache@{sha} # v6"),
+            "        with:",
+            "          path: ~/x",
+        ]))
+        .is_some(),
+        "actions/cache saves at the end of the job on every ref"
+    );
+    assert_eq!(
+        saves_off_main(&written(&[&format!(
+            "      - uses: actions/cache/restore@{sha} # v6"
+        )])),
+        None
+    );
+    let save = format!("uses: actions/cache/save@{sha} # v6");
+    assert!(saves_off_main(&written(&[&format!("      - {save}")])).is_some());
+    assert!(
+        saves_off_main(&written(&[
+            "      - if: always()",
+            &format!("        {save}"),
+        ]))
+        .is_some()
+    );
+    assert_eq!(
+        saves_off_main(&written(&[
+            "      - if: github.ref == 'refs/heads/main' && steps.restore.outputs.cache-hit != 'true'",
+            &format!("        {save}"),
+        ])),
+        None
+    );
+    // A composite action's steps sit two columns further left.
+    assert_eq!(
+        saves_off_main(&written(&[
+            "    - if: github.ref == 'refs/heads/main'",
+            &format!("      {save}"),
+            "      with:",
+            "        path: ~/x",
+        ])),
+        None
+    );
+    assert!(saves_off_main(&written(&[&format!("    - {save}")])).is_some());
+}
+
+#[test]
+fn setup_nodes_own_cache_is_refused_since_it_saves_on_every_ref() {
+    let sha = "0123456789abcdef0123456789abcdef01234567";
+    let uses = format!("      - uses: actions/setup-node@{sha} # v7");
+    assert!(saves_off_main(&written(&[&uses, "        with:", "          cache: npm"])).is_some());
+    assert!(
+        saves_off_main(&written(&[
+            &uses,
+            "        with:",
+            "          node-version: 22"
+        ]))
+        .is_some(),
+        "setup-node turns its cache on by itself when package.json names npm"
+    );
+    assert_eq!(
+        saves_off_main(&written(&[
+            &uses,
+            "        with:",
+            "          node-version: 22",
+            "          package-manager-cache: false",
+        ])),
+        None
+    );
+}
+
+#[test]
+fn sccache_writes_only_on_main() {
+    let guarded = written(&[
+        "      - name: Compile through sccache",
+        "        env:",
+        "          MODE: ${{ github.ref == 'refs/heads/main' && 'READ_WRITE' || 'READ_ONLY' }}",
+        "        run: |",
+        "          export SCCACHE_GHA_ENABLED=true SCCACHE_GHA_RW_MODE=\"$MODE\"",
+    ]);
+    assert_eq!(saves_off_main(&guarded), None);
+    assert!(
+        saves_off_main(&written(&[
+            "      - run: echo SCCACHE_GHA_ENABLED=true >> \"$GITHUB_ENV\"",
+        ]))
+        .is_some(),
+        "sccache's GitHub cache reads and writes unless told READ_ONLY"
+    );
+    assert!(
+        saves_off_main(&written(&[
+            "      - env:",
+            "          SCCACHE_GHA_ENABLED: true",
+            "          SCCACHE_GHA_RW_MODE: READ_WRITE",
+            "        run: cargo build",
+        ]))
+        .is_some()
+    );
+}
+
+#[test]
+fn no_workflow_or_action_saves_a_cache_on_any_ref_but_main() {
+    let mut problems = Vec::new();
+    let mut savers = 0;
+    for path in workflow_files() {
+        let name = path.file_name().unwrap().to_string_lossy().into_owned();
+        for job in workflow::jobs(&workflow::read(&path)) {
+            for step in job.steps() {
+                if caches(&step).is_some() {
+                    savers += 1;
+                }
+                if let Some(why) = saves_off_main(&step) {
+                    problems.push(format!(
+                        "{name}: job `{}`: {} ({why})",
+                        job.name,
+                        step[0].trim()
+                    ));
+                }
+            }
+        }
+    }
+    for path in local_action_files() {
+        let name = path.display().to_string();
+        for step in action_steps(&workflow::read(&path)) {
+            if let Some(why) = saves_off_main(&step) {
+                problems.push(format!("{name}: {} ({why})", step[0].trim()));
+            }
+        }
+    }
+    assert!(
+        savers > 0,
+        "no workflow step caches at all: the reader found nothing"
+    );
+    assert!(
+        problems.is_empty(),
+        "only `main` saves a cache (#5858): a pull request restores what main saved. For \
+         rust-cache, `save-if: ${{{{ {ON_MAIN} }}}}` (or `false`); for actions/cache, \
+         actions/cache/restore and an actions/cache/save step under `if: {ON_MAIN}`; for npm, \
+         `./.github/actions/npm-ci` and setup-node with `package-manager-cache: false`.\n{}",
+        problems.join("\n")
     );
 }
