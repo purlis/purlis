@@ -4,7 +4,7 @@
 /// <reference types="node" />
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { projectName } from "./projectName";
@@ -300,7 +300,12 @@ describe("the project, as its name (qw357)", () => {
     // A focusable span read as "span plane" said nothing of what it is; a button that copies the
     // directory is a role a screen reader names and a press that does something.
     const writeText = vi.fn(() => Promise.resolve());
+    const was = Object.getOwnPropertyDescriptor(navigator, "clipboard");
     Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    onTestFinished(() => {
+      if (was) Object.defineProperty(navigator, "clipboard", was);
+      else Reflect.deleteProperty(navigator, "clipboard");
+    });
     draw();
     const button = screen.getByRole("button", { name: "Project plane" });
     expect(button).toBe(project());

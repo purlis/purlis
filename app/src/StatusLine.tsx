@@ -393,12 +393,12 @@ function ProjectItem({ plane }: { plane: string }) {
     setSaid("");
     const put = navigator.clipboard?.writeText(plane);
     if (put === undefined) {
-      setSaid(COPY_REFUSED);
+      setSaid(copyRefused("this window has no clipboard"));
       return;
     }
     put.then(
       () => setSaid("Directory copied."),
-      () => setSaid(COPY_REFUSED),
+      (why: unknown) => setSaid(copyRefused(String(why))),
     );
   };
   return (
@@ -431,8 +431,11 @@ function ProjectItem({ plane }: { plane: string }) {
   );
 }
 
-/** What the project item says when the clipboard refused its directory. */
-const COPY_REFUSED = "The directory could not be copied: the clipboard refused it.";
+/** What the project item says when its directory was not copied, in the clipboard's words, and
+ *  what to do: the item is its own retry. */
+function copyRefused(why: string): string {
+  return `purlis could not copy the directory: ${why}. Press the project again to try once more.`;
+}
 
 /** What the project's Inbox hands the button. */
 export type Alerts = {
