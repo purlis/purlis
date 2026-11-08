@@ -169,6 +169,24 @@ function rules(over = {}) {
   return Object.values(all).filter(Boolean);
 }
 
+// A stand-in for the clock, loaded before the script: its one sleep (`Atomics.wait` on a buffer
+// no one wakes) is recorded, in milliseconds, and returns at once, and `Date.now` moves only by
+// the pauses recorded. So a test reads which pauses a landing makes and how long each is, and
+// never waits for one or times one on a machine that may be loaded (#5802).
+const FAKE_PAUSE = `import { appendFileSync } from "node:fs";
+const start = Date.now();
+let slept = 0;
+Date.now = () => start + slept;
+Atomics.wait = (array, index, value, ms) => {
+  appendFileSync(process.env.FAKE_PAUSE_LOG, JSON.stringify(ms) + "\\n");
+  slept += ms;
+  return "timed-out";
+};
+`;
+
+const logged = (path) =>
+  existsSync(path) ? readFileSync(path, "utf8").trim().split("\n").map(JSON.parse) : [];
+
 function land(args, over = {}, env = {}) {
   const dir = mkdtempSync(join(tmpdir(), "land-"));
   const gh = join(dir, "gh");
@@ -177,29 +195,29 @@ function land(args, over = {}, env = {}) {
   const statePath = join(dir, "state.json");
   writeFileSync(statePath, JSON.stringify({ rules: rules(over) }));
   const logPath = join(dir, "calls.jsonl");
-  const started = Date.now();
-  const done = spawnSync(process.execPath, [SCRIPT, ...args], {
+  const pause = join(dir, "pause.mjs");
+  writeFileSync(pause, FAKE_PAUSE);
+  const pausePath = join(dir, "pauses.jsonl");
+  const done = spawnSync(process.execPath, ["--import", pause, SCRIPT, ...args], {
     encoding: "utf8",
     env: {
       ...process.env,
       PATH: `${dir}:${process.env.PATH}`,
       FAKE_GH_STATE: statePath,
       FAKE_GH_LOG: logPath,
+      FAKE_PAUSE_LOG: pausePath,
       LAND_POLL_SECONDS: "0",
       LAND_SETTLE_SECONDS: "0",
       LAND_UNPOSTED_SECONDS: "0",
       ...env,
     },
   });
-  const calls = existsSync(logPath)
-    ? readFileSync(logPath, "utf8").trim().split("\n").map(JSON.parse)
-    : [];
   return {
     status: done.status,
     stdout: done.stdout,
     stderr: done.stderr,
-    calls,
-    took: Date.now() - started,
+    calls: logged(logPath),
+    pauses: logged(pausePath),
   };
 }
 
@@ -603,10 +621,10 @@ test("a run held for approval is named and never rerun: the tool stops for the o
 });
 
 test("with nothing held for approval, nothing is rerun and there is no pause", () => {
-  const got = land(["7", "--sha", HEAD], {}, { LAND_SETTLE_SECONDS: "2" });
+  const got = land(["7", "--sha", HEAD], {}, { LAND_SETTLE_SECONDS: "30", LAND_POLL_SECONDS: "60" });
   assert.equal(got.status, 0, got.stderr);
   assert.ok(!lines(got.calls).some((line) => line.startsWith("run rerun")));
-  assert.ok(got.took < 2000);
+  assert.deepEqual(got.pauses, []);
 });
 
 test("a required check that has never posted is refused without --watch, naming it", () => {
@@ -803,19 +821,27 @@ const neverPosts = {
 };
 
 test("the early refusal says running it again is safe, and waits a while as well as three polls", () => {
+  const polls = { LAND_CHECKS_FOR_SECONDS: "3600", LAND_POLL_SECONDS: "60" };
+  // With no time to wait as well, the third poll that finds them stuck refuses.
+  const quick = land(["7", "--sha", HEAD, "--watch"], neverPosts, {
+    ...polls,
+    LAND_UNPOSTED_SECONDS: "0",
+  });
+  assert.equal(quick.status, 1);
+  assert.deepEqual(quick.pauses, [60_000, 60_000]);
+  // With five minutes to wait, three polls are not enough: it refuses five minutes on.
   const got = land(["7", "--sha", HEAD, "--watch"], neverPosts, {
-    LAND_CHECKS_FOR_SECONDS: "3600",
-    LAND_UNPOSTED_SECONDS: "1",
+    ...polls,
+    LAND_UNPOSTED_SECONDS: "300",
   });
   assert.equal(got.status, 1);
   assert.match(got.stderr, /renamed job/);
   assert.match(got.stderr, /Running it again is safe/);
-  // Three polls take no time here; the second it must also wait is what holds it.
-  assert.ok(got.took >= 1000, `took ${got.took}ms`);
+  assert.deepEqual(got.pauses, Array(5).fill(60_000));
   const runReads = lines(got.calls).filter(
     (line) => line.includes("head_sha") && line.includes("per_page=100"),
   );
-  assert.ok(runReads.length > 3, `${runReads.length} reads of the runs`);
+  assert.equal(runReads.length, 6, `${runReads.length} reads of the runs`);
 });
 
 test("when the head moved off the reviewed sha, the early refusal says so, not a renamed job", () => {
@@ -860,14 +886,20 @@ test("the ci run a ready starts is the pull request's newest ci run after the dr
 });
 
 test("after the ready it waits for the ci run that starts to finish, then reads the checks", () => {
-  const got = land(["7", "--sha", HEAD], {
-    view: { match: "^pr view 7 ", replies: [{ out: prOf({ isDraft: true }) }] },
-    headRuns: readyRuns(
-      ciRun({ id: 11, name: "ci", event: "pull_request", status: "in_progress", conclusion: null }),
-      ciRun({ id: 11, name: "ci", event: "pull_request" }),
-    ),
-  });
+  const got = land(
+    ["7", "--sha", HEAD],
+    {
+      view: { match: "^pr view 7 ", replies: [{ out: prOf({ isDraft: true }) }] },
+      headRuns: readyRuns(
+        ciRun({ id: 11, name: "ci", event: "pull_request", status: "in_progress", conclusion: null }),
+        ciRun({ id: 11, name: "ci", event: "pull_request" }),
+      ),
+    },
+    { LAND_SETTLE_SECONDS: "30", LAND_POLL_SECONDS: "60" },
+  );
   assert.equal(got.status, 0, got.stderr);
+  // It lets the ready settle before its first read, then reads again a poll later.
+  assert.deepEqual(got.pauses, [30_000, 60_000]);
   const said = lines(got.calls);
   const ready = said.indexOf("pr ready 7 --repo purlis/purlis");
   const reads = said
