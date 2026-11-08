@@ -53,6 +53,10 @@ pub use status::{AheadBehind, Change, MARKED, Mark, RefusedChange, RefusedFor, R
 // Where to listen for those changes (FM-4).
 mod watch;
 pub use watch::{ASKED, KNOWN, Root, root};
+// What a repo's own folder changed, kept per clone: the explorer's closed repo rows (#3489).
+mod counts;
+pub(crate) use counts::touch_within as counts_touch_within;
+pub use counts::{RepoChanges, repo_changes};
 // Both read in a bounded child of charter's own binary (FM-4, D-88h).
 mod reader;
 pub use reader::{

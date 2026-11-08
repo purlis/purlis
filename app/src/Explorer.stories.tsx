@@ -102,6 +102,16 @@ function core(live = false) {
         const folder = String(a.folder ?? "");
         return { entries: folder === "" ? TOP : (UNDER[folder] ?? []), more: 0 };
       }
+      // A closed repo row's count, every closed row in one ask (#3489).
+      if (cmd === "repos_changed")
+        return (a.repos as string[]).map((repo) => {
+          const count = repo === "purlis" ? 3 : repo === "theme-lab" ? 1 : 0;
+          return {
+            repo,
+            changes: count === 0 ? null : { folder: "", mark: "changed", count },
+            trouble: null,
+          };
+        });
       if (cmd === "branch_status") {
         const count = a.repo === "purlis" ? 3 : a.repo === "theme-lab" ? 1 : 0;
         return {

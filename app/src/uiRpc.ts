@@ -1794,6 +1794,11 @@ export const commands = {
 	 *  rolled up onto its folders: the explorer's markers and its "Changed only" (FM-4).
 	 */
 	branchStatus: (plane: PlaneId, workspace: string, repo: string, piece: string | null) => typedError<BranchStatus, string>(__TAURI_INVOKE("branch_status", { plane, workspace, repo, piece })),
+	/**
+	 *  What each of `repos` changed in its own folder, rolled up onto its top: what the explorer's
+	 *  closed repo rows say, for every repo of a workspace in one ask (#3489).
+	 */
+	reposChanged: (plane: PlaneId, workspace: string, repos: string[]) => typedError<RepoChanged[], string>(__TAURI_INVOKE("repos_changed", { plane, workspace, repos })),
 	/**  How far a branch is from the branch it was cut from, in commits ahead and behind. */
 	branchAheadBehind: (plane: PlaneId, workspace: string, repo: string, piece: string | null) => typedError<AheadBehind, string>(__TAURI_INVOKE("branch_ahead_behind", { plane, workspace, repo, piece })),
 	/**
@@ -10995,6 +11000,21 @@ export type RepoAnswer = {
 	 *  the window asks GitHub or GitLab and calls again with the answer. Nothing was made.
 	 */
 	asks_forge: string | null,
+};
+
+/**
+ *  What one repo's own folder changed, rolled up onto its top: a closed repo row of the explorer
+ *  (#3343, #3489).
+ */
+export type RepoChanged = {
+	repo: string,
+	/**
+	 *  Its own folder's mark and how many files it holds that changed; `null` when it changed
+	 *  nothing, or when it was refused.
+	 */
+	changes: FolderChanges | null,
+	/**  Why it could not be read, in the sentence the window shows; `null` when it was. */
+	trouble: string | null,
 };
 
 /**  `[repos.<name>]` for one repo, as `planesave::Settings::repo` resolves it. */
