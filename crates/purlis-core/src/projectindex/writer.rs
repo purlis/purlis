@@ -654,11 +654,20 @@ fn opened(path: &Path) -> Option<(std::fs::Metadata, Vec<u8>)> {
     Some((meta, bytes))
 }
 
-/// `work` done on each of `items` across the machine's threads, the answers in `items`' order.
+/// How many threads [`in_parallel`] reads files on for each of the machine's cores. A thread
+/// reading a file waits in the kernel as much as it computes, so a second one per core takes
+/// the waits up. On a 3-core macOS runner a build of the scale project's 221,302 memories took
+/// 28.6 and 21.7 s on 3 threads and 23.0 and 18.3 s on 6, with no more from 12; on 4-core
+/// Linux, 15.8 s on 3 and 16.3 s on 6 (#5672).
+const THREADS_PER_CORE: usize = 2;
+
+/// `work` done on each of `items` across [`THREADS_PER_CORE`] threads for each of the
+/// machine's cores, the answers in `items`' order.
 fn in_parallel<T: Sync, R: Send>(items: &[T], work: impl Fn(&T) -> R + Sync) -> Vec<R> {
     use std::sync::atomic::{AtomicUsize, Ordering};
     let threads = std::thread::available_parallelism()
         .map_or(1, std::num::NonZeroUsize::get)
+        .saturating_mul(THREADS_PER_CORE)
         .min(items.len());
     if threads <= 1 {
         return items.iter().map(work).collect();
