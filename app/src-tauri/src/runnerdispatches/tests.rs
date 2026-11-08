@@ -90,8 +90,9 @@ fn a_chat_holds_at_most_eight_and_its_close_takes_them() {
         held.note(Some("builds"), None, a_task(4, "t", "b"), 100),
         Err(NotHeld::Full)
     );
+    // Another chat holds its own eight: on another pool, since a pool's chats share eight.
     assert!(
-        held.note(Some("builds"), None, a_task(5, "t", "b"), 100)
+        held.note(Some("tests"), None, a_task(5, "t", "b"), 100)
             .is_ok()
     );
     held.forget(4);
@@ -230,4 +231,38 @@ fn a_chat_started_again_keeps_the_places_the_person_refused_it() {
 
     assert!(held.refused_before(9, &builds));
     assert!(!held.refused_before(4, &builds));
+}
+
+/// **A pool's chats hold at most eight together**: one more from any chat of that pool is
+/// refused, whichever chat asks, while another pool's chats and a chat of this machine still
+/// ask. An answer frees a place.
+#[test]
+fn a_pools_chats_hold_at_most_eight_together() {
+    let held = RunnerDispatches::default();
+    for chat in 0..u32::try_from(AT_MOST_PER_POOL).expect("a few") {
+        assert!(
+            held.note(Some("builds"), None, a_task(chat, "t", "b"), 100)
+                .is_ok()
+        );
+    }
+    assert_eq!(
+        held.note(Some("builds"), None, a_task(40, "t", "b"), 100),
+        Err(NotHeld::PoolFull)
+    );
+    assert!(
+        held.note(Some("tests"), None, a_task(41, "t", "b"), 100)
+            .is_ok(),
+        "another pool's chats still ask"
+    );
+    assert!(
+        held.note(None, None, a_move(42, "builds"), 100).is_ok(),
+        "a chat of this machine still asks"
+    );
+    let first = held.every()[0].id;
+    held.take(first).expect("it was held");
+    assert!(
+        held.note(Some("builds"), None, a_task(40, "t", "b"), 100)
+            .is_ok(),
+        "an answer frees a place"
+    );
 }

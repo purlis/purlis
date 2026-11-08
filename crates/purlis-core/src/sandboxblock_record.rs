@@ -31,8 +31,10 @@
 //! named by, `sandbox::Homes::project_key`), one JSON line per event, appended. A write lets
 //! go of what is older than [`KEPT_FOR_SECS`], of a chat's oldest lines past its share
 //! ([`AT_MOST_PER_CHAT`]) and of what is past [`AT_MOST_KEPT`] by rewriting the file whole,
-//! under a lock on its folder. The file is 0600. A line this build cannot read, such as
-//! an event word a newer build added, is kept and passed over. A sandboxed chat cannot write it:
+//! under a lock taken by name with purlis's other locks ([`RECORD_LOCK`]), never on the record's
+//! folder, which a chat can open and so could hold. The file is 0600. A line this build cannot
+//! read, such as an event word a newer build added, is kept and passed over. A sandboxed chat
+//! cannot write it:
 //! purlis's data home is outside what a chat may write, but for the caches it is pointed at.
 
 use std::io::{self, Write as _};
@@ -42,6 +44,11 @@ use super::{Block, Kind, Operation};
 
 /// The record's folder under purlis's data home.
 pub const DIR: &str = "network";
+
+/// The lock every [`Record::write`] takes: by name, in the session host's folder, which no
+/// chat's sandbox opens (as the sandbox grants' is). A lock on [`DIR`] itself could be held by
+/// anything that can open the folder, and every block heard meanwhile would wait on it.
+const RECORD_LOCK: &str = "network-record.lock";
 
 /// How long a line is kept: 30 days.
 pub const KEPT_FOR_SECS: u64 = 30 * 24 * 60 * 60;
@@ -509,7 +516,8 @@ impl Record {
         let line = serde_json::to_string(entry).map_err(io::Error::other)?;
         let file = self.file(root);
         std::fs::create_dir_all(&self.dir)?;
-        let _held = crate::rewrite::Lock::bounded(&self.dir)?;
+        let _held = crate::sandbox::local::config_home()
+            .map(|home| crate::machine::Lock::named(&home, RECORD_LOCK));
         let text = match std::fs::read_to_string(&file) {
             Ok(text) => text,
             Err(e) if e.kind() == io::ErrorKind::NotFound => String::new(),

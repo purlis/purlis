@@ -3674,9 +3674,10 @@ impl Planes {
                 }
             })
         });
-        // A sandbox block a chat's hook found (#1338): kept in this machine's network record
-        // with the chat it came from (#1662), then shown on the chat's tab. Of what the line
-        // named, only a refused host is kept.
+        // A sandbox block a chat's hook found (#1338): shown on the chat's tab, then kept in this
+        // machine's network record with the chat it came from (#1662). Of what the line named,
+        // only a refused host is kept. The window is told first, so a record that waits on its
+        // lock never holds a Notice back.
         held.hooks.when_blocked({
             let plane = id.clone();
             let blocks = Arc::clone(&self.blocks);
@@ -3710,24 +3711,29 @@ impl Planes {
                     // Held while the person answers (#1666): the chat's own board says so,
                     // never anything the block's sender said.
                     told.held = strong.chats().asking(told.session, told.target.as_deref());
-                    if let Some(network) = &network {
-                        crate::network::record_block(
-                            network,
-                            plane.root(),
-                            strong.chats(),
-                            &block,
-                            crate::sandboxing::now_secs(),
-                        );
-                    }
+                    // Heard now, kept once the window has been told.
+                    let at = crate::sandboxing::now_secs();
+                    let record = || {
+                        if let Some(network) = &network {
+                            crate::network::record_block(
+                                network,
+                                plane.root(),
+                                strong.chats(),
+                                &block,
+                                at,
+                            );
+                        }
+                    };
                     // A block that is the chat's own to retry (#3861): its hook told it the
                     // command to retry with, and the person has nothing to answer, so it is
-                    // kept in the record above and raises no Notice, and the chat waits on
-                    // nobody for it.
+                    // kept in the record and raises no Notice, and the chat waits on nobody
+                    // for it.
                     let chat_dir = strong
                         .chats()
                         .chat_at(block.line.chat)
                         .and_then(|chat| chat.cwd);
                     if hooks::its_own_to_retry(&block, chat_dir.as_deref()) {
+                        record();
                         return;
                     }
                     crate::taskblocks::heard(strong.chats(), &told);
@@ -3741,6 +3747,9 @@ impl Planes {
                         // A block heard while it waits on its own work is an ask (#3878).
                         strong.blocked_while_waiting(told.session);
                     }
+                    blocks(told);
+                    record();
+                    return;
                 }
                 blocks(told);
             })

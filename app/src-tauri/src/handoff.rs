@@ -899,13 +899,20 @@ pub(crate) fn deliver(
     } else {
         from.name.clone()
     };
+    // **A report from a chat on a pool's runner names the pool** after the chat, as its
+    // messages do (`crate::dispatched`), so the chat that asked knows it came from a runner:
+    // by the router's record of where the reporting chat runs, whoever's line is heard now.
+    let said_from = match held.chats().pool_of(chat) {
+        Some(pool) => purlis_core::dispatchtalk::from_a_pool(&child_name, &pool),
+        None => child_name.clone(),
+    };
     let report = Handback {
         // The stop's word is purlis's own line, so the name is written as that line can
         // carry it; a report's name is a chat's, as it stands (D-T59-j11).
         from: if was_stopped {
-            handback::in_purlis_s_line(&child_name)
+            handback::in_purlis_s_line(&said_from)
         } else {
-            child_name.clone()
+            said_from
         },
         from_workspace: child
             .cwd
