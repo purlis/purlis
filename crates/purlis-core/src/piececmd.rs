@@ -416,6 +416,36 @@ pub fn remove(
     forge: crate::finished::Forge<'_>,
     say: &mut dyn FnMut(Say),
 ) -> u8 {
+    remove_as(plane, ws, repo, piece, force, delete_branch, false, forge, say)
+}
+
+/// [`remove`] for a chat, never forced: refused besides where the folder holds files git
+/// ignores that are not a build's ([`ignored_would_go`]), and then naming in the same refusal
+/// whatever else would keep it (#4500), so a chat meets every reason in one try.
+pub fn remove_for_a_chat(
+    plane: &Path,
+    ws: &str,
+    repo: &str,
+    piece: &str,
+    delete_branch: bool,
+    forge: crate::finished::Forge<'_>,
+    say: &mut dyn FnMut(Say),
+) -> u8 {
+    remove_as(plane, ws, repo, piece, false, delete_branch, true, forge, say)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn remove_as(
+    plane: &Path,
+    ws: &str,
+    repo: &str,
+    piece: &str,
+    force: bool,
+    delete_branch: bool,
+    refuse_ignored: bool,
+    forge: crate::finished::Forge<'_>,
+    say: &mut dyn FnMut(Say),
+) -> u8 {
     say(Say::Info(format!("workspace: {ws}").into()));
     let no_discard_there = || {
         // A clone purlis cannot find is one the brokered route runs no git in either.
@@ -452,15 +482,51 @@ pub fn remove(
     // `--delete-branch` asks it to go (ADR 0110). Uncommitted work still refuses it.
     // Where the forge could not be asked, a refusal says so (#5439).
     let mut unasked = None;
+    let mut closed = None;
     let how = if force {
         None
     } else {
-        carried_branch(plane, ws, repo, piece, forge).unwrap_or_else(|why| {
-            unasked = Some(why);
-            None
-        })
+        match carried_branch(plane, ws, repo, piece, forge) {
+            Ok(Ok(how)) => how,
+            Ok(Err(number)) => {
+                closed = Some(number);
+                None
+            }
+            Err(why) => {
+                unasked = Some(why);
+                None
+            }
+        }
     };
     let carried = how.is_some();
+    // Why the forge let nothing through, said beside a refusal (#4500).
+    let forge_said = |say: &mut dyn FnMut(Say)| {
+        if let Some(why) = &unasked {
+            say(Say::Info(
+                format!(
+                    "Whether a merged pull request holds its commits could not be told ({why})."
+                )
+                .into(),
+            ));
+        }
+        if let Some(number) = closed {
+            say(Say::Info(
+                format!(
+                    "Its pull request {number} closed without merging, and its commits are on \
+                     no branch of origin."
+                )
+                .into(),
+            ));
+        }
+    };
+    if refuse_ignored && let Some(why) = ignored_would_go(plane, ws, repo, piece) {
+        if let Some(refusal) = worktree::would_refuse(plane, ws, repo, piece, carried) {
+            say(Say::Fail(refusal.to_string().into()));
+            forge_said(say);
+        }
+        say(Say::Fail(why.into()));
+        return 1;
+    }
     let removed = if carried {
         worktree::remove_keeping_branch(plane, ws, repo, piece)
     } else {
@@ -500,6 +566,18 @@ pub fn remove(
                 )
                 .into(),
             )),
+            Some(Carried::InClosedRequestOnOrigin(number)) => say(Say::Info(
+                format!(
+                    "The head of {repo} · {piece}'s pull request {number}, which closed without \
+                     merging, is on origin, so its folder goes without --force{}.",
+                    if delete_branch {
+                        ""
+                    } else {
+                        " and the branch is kept"
+                    }
+                )
+                .into(),
+            )),
             None => {}
         }
     }
@@ -520,7 +598,14 @@ pub fn remove(
             // goes with `-D` (ADR 0110); one only found in history may not read as the base
             // does, and stays.
             let dropped = delete_branch
-                && matches!(how, Some(Carried::ByItsFiles | Carried::InMergedRequest(_)))
+                && matches!(
+                    how,
+                    Some(
+                        Carried::ByItsFiles
+                            | Carried::InMergedRequest(_)
+                            | Carried::InClosedRequestOnOrigin(_)
+                    )
+                )
                 && removed.branch.as_deref().is_some_and(|branch| {
                     worktree::standing::drop_carried(plane, ws, repo, branch)
                 });
@@ -533,6 +618,10 @@ pub fn remove(
                                     "Deleted branch {b}, whose commits merged in pull request {number}"
                                 )
                             }
+                            Some(Carried::InClosedRequestOnOrigin(number)) => format!(
+                                "Deleted branch {b}, whose commits are on origin in pull request \
+                                 {number}"
+                            ),
                             _ => format!("Deleted branch {b}, which landed by its files"),
                         }
                         .into(),
@@ -562,15 +651,7 @@ pub fn remove(
         }
         Err(refusal) => {
             say(Say::Fail(refusal.to_string().into()));
-            if let Some(why) = &unasked {
-                say(Say::Info(
-                    format!(
-                        "Whether a merged pull request holds its commits could not be told \
-                         ({why})."
-                    )
-                    .into(),
-                ));
-            }
+            forge_said(say);
             if matches!(refusal, Refusal::NoSuchPiece { .. }) {
                 say(Say::Info(
                     format!("See what exists: purlis worktree list {repo} -w {ws}").into(),
@@ -724,11 +805,12 @@ const REGENERATED_AT: [&str; 3] = [
 ];
 
 /// **Whether `path`, an ignored path of the branch folder `folder`, is a folder that only the
-/// harness or a build writes** (#4237, #4245), which the next run writes again, so a chat's
-/// removal does not keep the piece for it. A narrow list, and only folders (git prints those
-/// with a closing slash): a `.env`, or a `results/`, is the task's. `target/` and `dist/` are
-/// names a person could use too, as is `node_modules/`, so each counts only beside the manifest
-/// of the build that writes it. None counts with a repository inside it.
+/// harness or a build writes** (#4237, #4245, #4500), which the next run writes again, so a
+/// chat's removal does not keep the piece for it. A narrow list, and only folders (git prints
+/// those with a closing slash): a `.env`, or a `results/`, is the task's. `target/`, `dist/` and
+/// `.astro/` are names a person could use too, as is `node_modules/`, so each counts only beside
+/// the manifest of the build that writes it, or, for `node_modules/`, holding nothing but
+/// Vite's cache. None counts with a repository inside it.
 fn regenerated(folder: &Path, path: &str) -> bool {
     let Some(dir) = path.strip_suffix('/') else {
         return false;
@@ -742,8 +824,12 @@ fn regenerated(folder: &Path, path: &str) -> bool {
             .is_ok_and(|meta| meta.is_file())
     };
     let named = match name {
-        "__pycache__" => true,
-        "node_modules" | "dist" => beside("package.json"),
+        // Vite's cache, by a name nothing else uses (#4500).
+        "__pycache__" | ".vite" => true,
+        "dist" | ".astro" => beside("package.json"),
+        // Where Vite's root is not the package's, it keeps its cache in a `node_modules/` of
+        // its own, beside no manifest, which holds nothing else (#4500).
+        "node_modules" => beside("package.json") || holds_only(&folder.join(dir), ".vite"),
         "target" => beside("Cargo.toml"),
         _ => REGENERATED_AT.iter().any(|end| {
             dir.strip_suffix(end)
@@ -751,6 +837,17 @@ fn regenerated(folder: &Path, path: &str) -> bool {
         }),
     };
     named && !may_hold_a_repository(&folder.join(dir))
+}
+
+/// Whether every entry of `dir` is a folder named `name`: an empty one is too.
+fn holds_only(dir: &Path, name: &str) -> bool {
+    std::fs::read_dir(dir).is_ok_and(|entries| {
+        entries.into_iter().all(|entry| {
+            entry.is_ok_and(|entry| {
+                entry.file_name() == name && entry.file_type().is_ok_and(|kind| kind.is_dir())
+            })
+        })
+    })
 }
 
 /// **Whether `path`, an ignored path of the branch folder `folder`, is a symbolic link**
@@ -806,41 +903,51 @@ enum Carried {
     InHistory,
     /// Its tip is inside the head of a request that merged, by its number (#5439).
     InMergedRequest(u64),
+    /// Its tip is inside the head of a request that closed without merging, by its number,
+    /// and that head is on a branch of origin (#4500).
+    InClosedRequestOnOrigin(u64),
 }
 
 /// Whether the branch `piece` is on landed in the branch it was cut from by its files and not
 /// its commits ([`worktree::standing::Landed::Carried`]): a squash merge, there or on its
 /// remote branch, whether or not those files have changed again since
 /// ([`worktree::standing::change_in_history`]), or inside the head of a pull request that
-/// merged (#5439). `Err` where only the forge could tell, and it could not be asked, saying why.
+/// merged (#5439), or of one that closed with its head on origin (#4500). `Ok(Err(n))` where
+/// its tip is inside the head of request `n`, which closed without merging, on no branch of
+/// origin. `Err` where only the forge could tell, and it could not be asked, saying why.
 fn carried_branch(
     plane: &Path,
     ws: &str,
     repo: &str,
     piece: &str,
     forge: crate::finished::Forge<'_>,
-) -> Result<Option<Carried>, String> {
+) -> Result<Result<Option<Carried>, u64>, String> {
     let Some(branch) = worktree::list(plane, ws, repo).ok().and_then(|found| {
         found
             .into_iter()
             .find(|p| p.piece == piece && p.prunable.is_none())
             .and_then(|p| p.branch)
     }) else {
-        return Ok(None);
+        return Ok(Ok(None));
     };
     if matches!(
         worktree::standing::landed(plane, ws, repo, piece, &branch),
         worktree::standing::Landed::Carried { .. }
     ) {
-        return Ok(Some(Carried::ByItsFiles));
+        return Ok(Ok(Some(Carried::ByItsFiles)));
     }
     if worktree::standing::change_in_history(plane, ws, repo, piece, &branch) {
-        return Ok(Some(Carried::InHistory));
+        return Ok(Ok(Some(Carried::InHistory)));
     }
     // Asked of the forge last, and only for a branch no local reading lets go (#5439).
+    use crate::finished::Found;
     Ok(
-        crate::finished::merged::holding(plane, ws, repo, &branch, forge)?
-            .map(Carried::InMergedRequest),
+        match crate::finished::merged::holding(plane, ws, repo, &branch, forge)? {
+            Found::Merged(number) => Ok(Some(Carried::InMergedRequest(number))),
+            Found::ClosedOnOrigin(number) => Ok(Some(Carried::InClosedRequestOnOrigin(number))),
+            Found::ClosedNotOnOrigin(number) => Err(number),
+            Found::Nothing => Ok(None),
+        },
     )
 }
 

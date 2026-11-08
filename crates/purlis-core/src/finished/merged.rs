@@ -5,8 +5,11 @@
 //! base nor carried there, because its request got more commits after this tip before it
 //! merged, still lost nothing. Its commits are part of what merged.
 //!
+//! A request that closed without merging holds them too where its head is on a branch of
+//! origin (#4500): a request superseded by another branch's leaves its own on origin.
+//!
 //! Asked of the forge, never assumed: the forge says the newest request whose head is the
-//! branch merged, and the tip is an ancestor of that request's head
+//! branch merged or closed, and the tip is an ancestor of that request's head
 //! (`git merge-base --is-ancestor <tip> <head>`). Where the clone does not have the head, it is
 //! fetched by the request's own ref (`refs/pull/<n>/head` on GitHub,
 //! `refs/merge-requests/<n>/head` on GitLab). Offline, or with no forge, nothing can be told
@@ -28,7 +31,9 @@ pub enum Request {
         head: String,
         head_ref: String,
     },
-    /// It is open or closed without merging, or there is none.
+    /// It closed without merging: its number, and the commit its head was at.
+    Closed { number: u64, head: String },
+    /// It is open, or there is none.
     NotMerged,
     /// The forge could not be asked, and why: offline, or no forge for the clone.
     Unasked(String),
@@ -93,7 +98,11 @@ pub fn of_the_plane<'a>(
                     },
                     head: request.head,
                 },
-                State::Open | State::Closed => Request::NotMerged,
+                State::Closed => Request::Closed {
+                    number: request.number,
+                    head: request.head,
+                },
+                State::Open => Request::NotMerged,
             },
             Ok(None) => Request::NotMerged,
             Err(why) => Request::Unasked(why.to_string()),
@@ -101,26 +110,47 @@ pub fn of_the_plane<'a>(
     }
 }
 
-/// **The merged request whose head holds `branch` of `repo`**, by its number: `Ok(None)` where
-/// the forge names none that merged or its head does not hold the branch's tip, `Err` where
-/// that could not be told, saying why.
+/// What the forge's newest request from a branch says of the branch's tip (#5439, #4500).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Found {
+    /// The tip is inside the head of request `n`, which merged: by a merge, a squash or the
+    /// merge queue, its commits are part of what merged.
+    Merged(u64),
+    /// The tip is inside the head of request `n`, which closed without merging, and that head
+    /// is on a branch of origin as the clone last fetched it: nothing is lost with the folder.
+    ClosedOnOrigin(u64),
+    /// The tip is inside the head of request `n`, which closed without merging, and that head
+    /// is on no branch of origin: its commits may be nowhere else.
+    ClosedNotOnOrigin(u64),
+    /// No request the forge names holds the tip.
+    Nothing,
+}
+
+/// **What the newest request from `branch` of `repo` says of its tip** ([`Found`]): `Err`
+/// where that could not be told, saying why.
+///
+/// A closed request is read from the clone alone: its head must be a commit the clone has, and
+/// "on origin" is a remote-tracking branch of origin (`refs/remotes/origin/*`) holding it, as
+/// the removal's own guard reads `--remotes`. A merged request's head is fetched by its own
+/// ref where the clone does not have it.
 pub fn holding(
     plane: &Path,
     ws: &str,
     repo: &str,
     branch: &str,
     forge: Forge<'_>,
-) -> Result<Option<u64>, String> {
+) -> Result<Found, String> {
     if name::branch_name_ok(branch).is_err() {
-        return Ok(None);
+        return Ok(Found::Nothing);
     }
     let (number, head, head_ref) = match forge.ask(repo, branch) {
         Request::Merged {
             number,
             head,
             head_ref,
-        } => (number, head, head_ref),
-        Request::NotMerged => return Ok(None),
+        } => (number, head, Some(head_ref)),
+        Request::Closed { number, head } => (number, head, None),
+        Request::NotMerged => return Ok(Found::Nothing),
         Request::Unasked(why) => return Err(why),
     };
     // A head is a whole commit id, SHA-1 or SHA-256, and nothing else is passed to git as one:
@@ -141,7 +171,12 @@ pub fn holding(
         .is_ok_and(|run| run.ok())
     };
     if !has(&head) {
-        crate::repocmd::sync::fetch_ref(plane, &clone, "origin", &head_ref, None)?;
+        let Some(head_ref) = head_ref.as_deref() else {
+            // A closed request's head the clone never saw is on no branch of origin it knows,
+            // and whether the tip is inside it cannot be read.
+            return Ok(Found::Nothing);
+        };
+        crate::repocmd::sync::fetch_ref(plane, &clone, "origin", head_ref, None)?;
         if !has(&head) {
             return Err(format!(
                 "the head of request {number} ({}) is not in the clone after fetching {head_ref}",
@@ -156,11 +191,40 @@ pub fn holding(
     )
     .map_err(|why| why.to_string())?;
     match within.code {
-        Some(0) => Ok(Some(number)),
-        Some(1) => Ok(None),
-        _ => Err(format!(
-            "git did not say whether {branch} is inside request {number}: {}",
-            within.err.lines().next().unwrap_or("").trim()
-        )),
+        Some(0) => {}
+        Some(1) => return Ok(Found::Nothing),
+        _ => {
+            return Err(format!(
+                "git did not say whether {branch} is inside request {number}: {}",
+                within.err.lines().next().unwrap_or("").trim()
+            ));
+        }
     }
+    if head_ref.is_some() {
+        return Ok(Found::Merged(number));
+    }
+    let on_origin = git::run(
+        &clone,
+        &[
+            "for-each-ref",
+            "--count=1",
+            "--format=%(refname)",
+            "--contains",
+            &head,
+            "refs/remotes/origin/",
+        ],
+        git::READ,
+    )
+    .map_err(|why| why.to_string())?;
+    if !on_origin.ok() {
+        return Err(format!(
+            "git did not say whether the head of request {number} is on origin: {}",
+            on_origin.err.lines().next().unwrap_or("").trim()
+        ));
+    }
+    Ok(if on_origin.out.trim().is_empty() {
+        Found::ClosedNotOnOrigin(number)
+    } else {
+        Found::ClosedOnOrigin(number)
+    })
 }
