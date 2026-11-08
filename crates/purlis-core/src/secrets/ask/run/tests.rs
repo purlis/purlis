@@ -698,3 +698,89 @@ fn keep_blocked_answers_the_grants_it_took_back_for_their_audit() {
         "taken back once"
     );
 }
+
+// #5800: the Allowed list lists Allow once grants, so it is told when one goes some way other
+// than an answer or a Keep blocked, which the window says itself.
+
+/// `asks`, counting each time it tells that its Run grants moved.
+fn counting(asks: &Asks) -> std::sync::Arc<std::sync::atomic::AtomicUsize> {
+    let told = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    asks.telling_run_grants_moved({
+        let told = std::sync::Arc::clone(&told);
+        std::sync::Arc::new(move || {
+            told.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        })
+    });
+    told
+}
+
+fn times(told: &std::sync::atomic::AtomicUsize) -> usize {
+    told.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+#[test]
+fn an_allow_once_taken_by_its_run_tells_that_the_run_grants_moved() {
+    let asks = Asks::new(std::path::Path::new("/nowhere"));
+    stopped(&asks, bound(1, &["get"]));
+    answer_open(&asks, RunAnswer::Once);
+    let told = counting(&asks);
+    assert_eq!(stopped(&asks, bound(1, &["get"])), RunHeld::Allowed);
+    assert_eq!(times(&told), 0, "a run told it may go has not used it yet");
+    assert!(asks.granted(&bound(1, &["get"])));
+    assert_eq!(times(&told), 1);
+}
+
+#[test]
+fn a_grant_for_the_chat_used_by_a_run_stays_and_tells_nothing() {
+    let asks = Asks::new(std::path::Path::new("/nowhere"));
+    stopped(&asks, bound(1, &["get"]));
+    answer_open(&asks, RunAnswer::ForChat);
+    let told = counting(&asks);
+    assert!(asks.granted(&bound(1, &["other"])));
+    assert_eq!(times(&told), 0);
+}
+
+#[test]
+fn an_allow_once_dropped_unused_tells_that_the_run_grants_moved() {
+    let asks = Asks::new(std::path::Path::new("/nowhere"));
+    stopped(&asks, bound(1, &["get"]));
+    answer_open(&asks, RunAnswer::Once);
+    let told = counting(&asks);
+    asks.drop_once(&bound(1, &["other"]));
+    assert_eq!(times(&told), 0, "nothing was dropped");
+    asks.drop_once(&bound(1, &["get"]));
+    assert!(asks.given_runs().is_empty());
+    assert_eq!(times(&told), 1);
+}
+
+#[test]
+fn a_chat_that_closes_holding_a_grant_tells_that_the_run_grants_moved() {
+    let asks = Asks::new(std::path::Path::new("/nowhere"));
+    stopped(&asks, bound(7, &["get"]));
+    answer_open(&asks, RunAnswer::Once);
+    let told = counting(&asks);
+    asks.forget(8);
+    assert_eq!(times(&told), 0, "chat 8 held no grant");
+    asks.forget(7);
+    assert!(asks.given_runs().is_empty());
+    assert_eq!(times(&told), 1);
+}
+
+#[test]
+fn what_is_told_of_moved_grants_may_read_them_again_at_once() {
+    let asks = std::sync::Arc::new(Asks::new(std::path::Path::new("/nowhere")));
+    stopped(&asks, bound(1, &["get"]));
+    answer_open(&asks, RunAnswer::Once);
+    let read = std::sync::Arc::new(std::sync::Mutex::new(None));
+    asks.telling_run_grants_moved({
+        let asks = std::sync::Arc::downgrade(&asks);
+        let read = std::sync::Arc::clone(&read);
+        std::sync::Arc::new(move || {
+            if let Some(asks) = asks.upgrade() {
+                *read.lock().unwrap() = Some(asks.given_runs().len());
+            }
+        })
+    });
+    assert!(asks.granted(&bound(1, &["get"])));
+    assert_eq!(*read.lock().unwrap(), Some(0), "told off the asks' lock");
+}

@@ -273,6 +273,10 @@ pub const DECLINED_BY_POLICY: &str = "policy";
 pub type Telling =
     std::sync::Arc<dyn Fn(Option<u32>, crate::eventlog::secretasks::Step) + Send + Sync>;
 
+/// **Told that the Run grants moved** (#5800) some way the window did not make: an Allow once
+/// taken by its run or dropped unused, or a chat that held one closed.
+pub type RunGrantsMoved = std::sync::Arc<dyn Fn() + Send + Sync>;
+
 /// The person's answer to a Secret ask.
 #[derive(Debug)]
 pub enum Answer {
@@ -392,6 +396,8 @@ pub struct Asks {
     kept_at: Option<PathBuf>,
     /// Told each step, where the app records them ([`Self::telling`]).
     told: Mutex<Option<Telling>>,
+    /// Told that the Run grants moved ([`Self::telling_run_grants_moved`]).
+    grants_moved: Mutex<Option<RunGrantsMoved>>,
 }
 
 impl std::fmt::Debug for Asks {
@@ -612,6 +618,7 @@ impl Asks {
             inner: Mutex::new(Inner::default()),
             kept_at: None,
             told: Mutex::new(None),
+            grants_moved: Mutex::new(None),
         }
     }
 
@@ -620,6 +627,28 @@ impl Asks {
     /// ([`crate::eventlog::secretasks::Step`]).
     pub fn telling(&self, told: Telling) {
         *self.told.lock().unwrap_or_else(PoisonError::into_inner) = Some(told);
+    }
+
+    /// **Tells `moved` each time the Run grants move** some way the window did not make (#5800):
+    /// an Allow once taken by its run or dropped unused, or a chat that held a grant closed. Told
+    /// off the asks' lock, so it may read them again at once.
+    pub fn telling_run_grants_moved(&self, moved: RunGrantsMoved) {
+        *self
+            .grants_moved
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(moved);
+    }
+
+    /// Tells that the Run grants moved, where anything listens. Never under the asks' lock.
+    fn run_grants_moved(&self) {
+        let moved = self
+            .grants_moved
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        if let Some(moved) = moved {
+            moved();
+        }
     }
 
     /// Tells the step of chat `chat`'s, where anything listens.
@@ -717,6 +746,7 @@ impl Asks {
             inner: Mutex::new(inner),
             kept_at: Some(path),
             told: Mutex::new(None),
+            grants_moved: Mutex::new(None),
         }
     }
 
@@ -1511,8 +1541,12 @@ impl Asks {
             asked.cannot_receive.retain(|one| *one != chat);
             asked.needed()
         });
-        Self::forget_runs(&mut inner, chat);
+        let held_grants = Self::forget_runs(&mut inner, chat);
         self.save(&inner);
+        drop(inner);
+        if held_grants {
+            self.run_grants_moved();
+        }
     }
 }
 

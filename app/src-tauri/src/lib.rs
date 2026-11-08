@@ -4594,6 +4594,18 @@ pub fn run() {
                         asknotify::poke(&window, &told.plane);
                     })
                 })
+                // A project's Run grants the core moved: the Allowed list reads again (#5800).
+                .telling_run_grants_moved({
+                    let window = app.handle().clone();
+                    std::sync::Arc::new(move |told: sandboxing::RunGrantsMoved| {
+                        windows::emit_for_plane(
+                            &window,
+                            &told.plane.clone(),
+                            sandboxing::RUN_GRANTS_MOVED,
+                            &told,
+                        );
+                    })
+                })
                 // An Ask about a chat's browser that ended with the browser: the Inbox keeps
                 // it as an Update (#2015).
                 .telling_browser_asks_ended({
