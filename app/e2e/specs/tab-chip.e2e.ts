@@ -499,6 +499,11 @@ describe("a session's tasks, from its pane head and not its tab (#5341)", () => 
     await fenceRealPointer(true);
     was = await browser.getWindowSize();
     await windowIs(1280, 800);
+    // **And the real pointer is parked off the strip** (#3521), on the status line, once the
+    // window has its size: wherever an earlier file left it, it is then under no chip this file
+    // draws, so the engine has no pointer of its own to send onto one. The fence stays: this is
+    // the second guard, not the first.
+    await $('[data-testid="status-line"]').moveTo();
     // **Each tab is waited for by itself, and by its name.** The pane in front already shows
     // the harness's word from the tab before, so "a pane shows it" is true at once: without
     // a wait of its own the next tab was pressed for while this one was still starting. And

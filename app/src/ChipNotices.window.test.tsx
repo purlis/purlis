@@ -146,11 +146,13 @@ function core({
     if (cmd === "opened_chats") return [CHAT];
     // The layout stored gives the chat its tab on alpha (#4758).
     if (cmd === "reopened_layout") return aTabForEachChat([CHAT], () => "alpha");
+    // Copies, as the IPC's answers are: a list the store goes on changing is never one the
+    // window was handed.
     if (cmd === "plane_pins")
       return {
         project: false,
-        workspaces: pinned,
-        missing: gone,
+        workspaces: [...pinned],
+        missing: [...gone],
         order: [...pinned, ...gone],
         certain: true,
       };

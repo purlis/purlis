@@ -41,6 +41,7 @@ pub use studio::{StudioJob, StudioWork};
 pub mod layout;
 pub use layout::Layout;
 pub mod upgrade;
+pub mod worked;
 
 /// The one version of this file this app writes and reads. A record of any other version is
 /// ignored whole, the way the frame's own manifest is: a format that changed means the
@@ -1077,8 +1078,14 @@ pub fn write(plane_root: &Path, record: &Record) -> std::io::Result<()> {
     no_link_on_the_way(plane_root, &file)?;
     let dir = file.parent().expect("the record's path has a directory");
     crate::rewrite::create_dir_all(dir)?;
-    let text = serde_json::to_string_pretty(&OnDisk::from(record))
-        .expect("the record is plain data serde can always write");
+    // **Who worked where outlives the chats** (#3593): what the record on disk held, with each
+    // persona chat this one holds, so a chat that closed is still counted after a relaunch.
+    let worked = worked::carried(plane_root, &record.chats);
+    let text = serde_json::to_string_pretty(&OnDisk {
+        worked: worked::on_disk(worked),
+        ..OnDisk::from(record)
+    })
+    .expect("the record is plain data serde can always write");
     crate::rewrite::replace(
         plane_root,
         &file,
@@ -1424,6 +1431,16 @@ struct OnDisk {
         deserialize_with = "lenient"
     )]
     strip: Option<String>,
+    /// Who has worked in each workspace, kept after their chats close (#3593): see [`worked`].
+    /// **Absent while no persona chat has been recorded in a workspace**, so such a plane writes
+    /// the record it always wrote; a value that does not read is absent. Not a version bump, for
+    /// [`Chat::pinned`]'s reason.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "lenient"
+    )]
+    worked: Option<worked::OnDisk>,
 }
 
 /// A value that does not read as `T` reads as absent, never as a record that does not read.
@@ -2034,6 +2051,8 @@ impl From<&Record> for OnDisk {
             focus: record.focus.as_ref().map(FocusOnDisk::from),
             tabs,
             strip,
+            // Filled by [`write`], which carries what the record on disk held forward.
+            worked: None,
         }
     }
 }

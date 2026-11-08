@@ -210,6 +210,25 @@ describe("a chat's tasks button", () => {
     expect(menu()).toBeNull();
   });
 
+  it("opens nothing when the first it hears of a parked pointer is a move (#3521)", () => {
+    vi.useFakeTimers();
+    chip();
+
+    // Drawn under a pointer that is not moving, with no word that the pointer came on: the
+    // engine's "still here" is the first the chip hears, and then the same again. A move from
+    // a point the chip never saw is where the pointer is, not a hand moving it.
+    fireEvent.pointerMove(counts(), { pointerType: "mouse", clientX: 40, clientY: 12 });
+    act(() => void vi.advanceTimersByTime(5_000));
+    fireEvent.pointerMove(counts(), { pointerType: "mouse", clientX: 40, clientY: 12 });
+    act(() => void vi.advanceTimersByTime(5_000));
+    expect(menu()).toBeNull();
+
+    // The person's hand moves it from there: that rest is theirs.
+    fireEvent.pointerMove(counts(), { pointerType: "mouse", clientX: 44, clientY: 12 });
+    act(() => void vi.advanceTimersByTime(REST_MS));
+    expect(menu()).not.toBeNull();
+  });
+
   it("opens nothing for a pointer moving over it with a button held", () => {
     vi.useFakeTimers();
     chip();
