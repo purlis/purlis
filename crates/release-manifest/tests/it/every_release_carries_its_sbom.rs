@@ -190,7 +190,7 @@ fn the_sbom_job_holds_nothing_and_reads_the_sbom_off_the_built_bundles() {
     let lines = run_lines(&syft);
     let fetch = position(
         &lines,
-        r#"curl -fsSL --proto '=https' -o "$RUNNER_TEMP/syft.tar.gz" "https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/syft_${SYFT_VERSION}_linux_amd64.tar.gz""#,
+        r#"curl -fsSL --proto '=https' --retry 5 --retry-all-errors --retry-delay 20 -o "$RUNNER_TEMP/syft.tar.gz" "https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/syft_${SYFT_VERSION}_linux_amd64.tar.gz""#,
     );
     let check = position(
         &lines,
