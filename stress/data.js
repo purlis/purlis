@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794115433384,
+  "lastUpdate": 1794120863413,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -8654,6 +8654,42 @@ window.BENCHMARK_DATA = {
             "value": 664.9,
             "unit": "MB",
             "extra": "median of 6 samples: 652.3, 663.5, 666.4, 668.8, 669.3, 484.4 MB; window 420.7 MB, session host 244.8 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "1fa96de507d24ef3fdbdb4938da15d0c64dfcf31",
+          "message": "Steering follow-ups: chats not told are named, runner chats say why they have no turn, a restored index keeps its mtime (#5711)\n\n* A move that does not finish puts the index back as old as it was (#5548)\n\nIndexKept records the index's mtime when it keeps a copy and sets it on the\nindex it puts back. On Linux std::fs::copy gave the restored index a new\nmtime, so git's racy-clean check trusted the stat of a file written in the\nold index's own tick at the same size and missed its change. Same approach\nas turns::staged_tree (#5423). No other place copies .git/index.\n\nSigned-off-by: Aaron Yordanyan <aharon@purlis.com>\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6VQ9KT7HX6GNE0MWBRE9A4E\nPurlis-Persona: steward\n\n* The turn diff says why a chat on a runner or a pool has no turn (#5427)\n\nA chat on a runner or a pool's runner works in a folder of the runner's, so\npurlis records none of its turns (#5405, decision g). The turn diff said only\nthat no chat had finished a turn there. Chats::no_turns_from_in now names such\na chat with its runner or pool, beside a program that reports no turns, and\nthe sentence says purlis does not record the turns of a chat on a runner yet.\n\nRecording the turns themselves is left open: the runner's folder reaches this\nmachine only as git fetched over the link (ADR 0078 §7), so it needs the\nlink's protocol to carry turn refs and an undo.\n\nSigned-off-by: Aaron Yordanyan <aharon@purlis.com>\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6VQ9YN6JCN8NCX652F2ZGHS\nPurlis-Persona: steward\n\n* A Discard or an Undo a turn names the chats its agent isn't told in (#5477)\n\nA Human edit is told to a chat's agent at its next turn through the prompt\nhook purlis arms (#5409). Claude Code, Codex and opencode each have one.\nA harness a project or this machine declares runs at level 1, its terminal\nalone, so nothing reaches it: the answer to a Discard or an Undo a turn now\nnames each such chat working in the folder, and the review says so under\nthe diff with a Notice, so the operator can tell it themselves.\n\nLevel 3 has no host that delivers a prompt yet (the core's ACP client is\nstarted only by tests), so there is no level-3 chat to tell or name. ADR\n0084's amendment of 2026-11-07 records both, and what the level-3 host\nmust do when it is built.\n\nSigned-off-by: Aaron Yordanyan <aharon@purlis.com>\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6VQA9YHENF4TE23X7V8NR1Y\nPurlis-Persona: steward\n\n* Record #5477 in ADR 0084's amendment and a changelog fragment\n\nSigned-off-by: Aaron Yordanyan <aharon@purlis.com>\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6VQA9YHENF4TE23X7V8NR1Y\nPurlis-Persona: steward\n\n* A runner's host records its chats' turns and gives them with its code (#5427)\n\nSession protocol 1.78: give_code may carry with_turns, and undo_turn has\nthe runner's host put a turn's files back under its own idle check. The\ncore's turn recorder moves from the app into purlis-core, and a runner's\nhook channel records with it (HostedTurns). The desktop keeps a runner's\nturns as refs/purlis/runners/<pool>/turns/..., which the turn diff reads\nas the turn ended there.\n\nSigned-off-by: Aaron Yordanyan <aharon@purlis.com>\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6VXA5M9XNWNHWQQGHSZYK0F\nPurlis-Persona: steward\n\n* The desktop fetches a runner's turns, undoes one over the link, and removes them with the chat (#5427)\n\nA pool chat whose runner speaks session protocol 1.78 gives its turns\nwith its code, so the turn diff reads them and says nothing is missing.\nUndo a turn of such a chat goes to its runner (undo_turn), which answers\nby its own idle check; the window keeps the human edit, tells the chat,\nand marks its copy undone. A runner chat's copies go when it ends, as a\nlocal chat's own turns do. An older runner keeps today's behaviour, and\nthe turn diff now says it is too old to record its turns.\n\nADR 0068 amended 2026-11-08 for the protocol bump; plane-format names\nrefs/purlis/runners/<pool>/turns/ and its tier.\n\nSigned-off-by: Aaron Yordanyan <aharon@purlis.com>\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6VXA5M9XNWNHWQQGHSZYK0F\nPurlis-Persona: steward\n\n* Clippy and rustfmt for the runner turns (#5427)\n\nA type alias for the hook channel's heard_from, the host's no-turns\nrefusal before its test module, the copy-marked check through the\ntest's own git helper, and rustfmt.\n\nSigned-off-by: Aaron Yordanyan <aharon@purlis.com>\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6VXA5M9XNWNHWQQGHSZYK0F\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* Record 1.78 frames, and open the runner turns tests unsteered (#5427)\n\nThe frames of undo_turn, turn_undone and undo_waits are recorded (ids 200 and 201).\nUndoWaitsOn.state goes on the wire as `doing`, since a state value must be a\nsnake_case word (V76) and this one is a sentence. 1.78 is unreleased.\n\nSigned-off-by: Aaron Yordanyan <aharon@purlis.com>\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n---------\n\nSigned-off-by: Aaron Yordanyan <aharon@purlis.com>\nCo-authored-by: Aaron Yordanyan <aharon@easydmarc.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-11-08T04:37:15Z",
+          "tree_id": "baff93b874288b4d84c03030e5baee223d84ceb3",
+          "url": "https://github.com/purlis/purlis/commit/1fa96de507d24ef3fdbdb4938da15d0c64dfcf31"
+        },
+        "date": 1794120859607,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 2432,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1977, 2432, 3835 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 295.7,
+            "unit": "MB",
+            "extra": "median of 6 samples: 423.1, 390.6, 293.4, 287.8, 298.1, 186.5 MB; window 224.5 MB, session host 71.2 MB"
           }
         ]
       }
