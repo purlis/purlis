@@ -13215,6 +13215,64 @@ fn a_runs_field_picked_from_its_own_refused_vault_is_not_offered_or_runs() {
     );
 }
 
+/// #5744's review: where the notice's Allow is the vault's own (`Offer::Vault`), which gives the
+/// persona the vault before the run reads it, the vault's own entries are still offered and a
+/// pick of one is linked on that Allow: the gate then opens the vault for the persona.
+#[test]
+fn a_refused_vaults_own_allow_still_takes_an_entry_of_that_vault() {
+    let plane = Plane::new().a_persona("ops", "");
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    team_and_a_kept_entry(&plane);
+    let logs = tempfile::tempdir().expect("a folder for the log");
+    {
+        use purlis_core::eventlog::{ArgsKey, Log, Recorder};
+        held.hooks()
+            .record_into(crate::hooks::Events::here(Recorder::new(
+                Log::open(logs.path(), "DEVICE").expect("a log"),
+                ArgsKey::open(logs.path()).expect("a key"),
+            )));
+    }
+    let mut need = curl_lacking_token(&plane);
+    need.bound.vault = "finance".to_owned();
+    need.not_its_vault = true;
+    need.offer = purlis_core::secrets::ask::run::Offer::Vault { no_allow: None };
+
+    held_while(&held, need, |open| {
+        let listed = crate::secretasks::run_entries_for(&held, open.id).expect("listed");
+        assert!(
+            listed
+                .iter()
+                .any(|one| one.vault == "finance" && one.keys.contains(&"STRIPE".to_owned())),
+            "the vault's own entries are offered on its own Allow: {listed:?}"
+        );
+        crate::secretasks::run_grant_given(
+            &held,
+            None,
+            open.id,
+            crate::secretasks::RunGrantPress::AllowVault,
+            picked_in("TOKEN", "finance", "STRIPE"),
+        )
+        .expect("allowed");
+    });
+    let ctx =
+        purlis_core::secrets::Ctx::new(&plane.root, purlis_core::secrets::Env::from_process());
+    assert_eq!(
+        purlis_core::secrets::links::of(&ctx, "finance", "TOKEN").expect("read"),
+        Some(purlis_core::secrets::links::Target {
+            vault: "finance".to_owned(),
+            key: "STRIPE".to_owned(),
+        }),
+        "linked on the vault's own Allow"
+    );
+    assert!(
+        purlis_core::secrets::brokered::authorise(&ctx, Some("ops"), "finance").is_ok(),
+        "and ops may use finance now, so the gate hands the key on"
+    );
+}
+
 /// **#5745** (the person's ruling, 2026-11-08: refuse such links): a run's field links into
 /// the run's vault, which every persona of that vault reads. So where `billing` may use `team`
 /// too and not `keep`, the picker offers none of `keep`'s entries, though `ops` may use them, and
