@@ -785,6 +785,11 @@ impl purlis_host::Channel for HookChannel {
         self.relaying.let_go();
     }
 
+    /// Each slot a chat's server dials in on goes only to a window the host links now.
+    fn windows_linked(&self, is_one: Arc<dyn Fn(u32) -> bool + Send + Sync + 'static>) {
+        self.relaying.handing_slots_only_to(is_one);
+    }
+
     fn ended_with_no_window(&self, number: u32, exit: &session::Exit) {
         self.board.ended(number, exit);
     }
