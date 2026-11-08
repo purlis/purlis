@@ -1,0 +1,9 @@
+{
+  "source": "GitLab REST API v4, docs.gitlab.com/api/user_keys (read 2026-11-08): List SSH keys for a user (GET /users/:id_or_username/keys, no authentication needed), each with its usage_type. The key is the test's own, put in for @KEY@.",
+  "exchanges": [
+    {
+      "call": {"endpoint": {"rest": {"method": null, "path": "users/sam/keys"}}, "fields": [{"typed": ["per_page", "100"]}]},
+      "reply": {"code": 0, "out": "[{\"id\": 77, \"title\": \"purlis · studio\", \"key\": \"@KEY@\", \"usage_type\": \"signing\"}]", "err": "", "status": 200}
+    }
+  ]
+}

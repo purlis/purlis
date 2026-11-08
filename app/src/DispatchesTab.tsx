@@ -44,6 +44,7 @@ import {
 } from "./dispatches";
 import { useWhileShown } from "./whileShown";
 import { Button } from "./ui/button/Button";
+import { SigningRefusal, useSigningWaiting } from "./SigningRefusal";
 import { Twist } from "./ui/disclosure/Disclosure";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "./ui/table/Table";
@@ -116,6 +117,8 @@ export function DispatchesTab({
   onChanges?: (id: string, task: string) => void;
 }) {
   const [said, setSaid] = useState<{ read?: Dispatches; trouble?: string }>();
+  /** Lanes a forge refused for unsigned commits (#5630): their prompt is on their row. */
+  const signing = useSigningWaiting(plane);
   const [filter, setFilter] = useState<DispatchFilter>(() => dispatchesIn(workspace));
   const [read, setRead] = useState<string>();
   const [again, setAgain] = useState(0);
@@ -335,6 +338,17 @@ export function DispatchesTab({
                       </Button>
                       <Task row={row} onShowChat={onShowChat} onOpenRecord={onOpenRecord} />
                     </span>
+                    {(signing.waiting ?? [])
+                      .filter((lane) => row.open_session !== null && lane.chat === row.open_session)
+                      .map((lane) => (
+                        <SigningRefusal
+                          key={`${lane.ws}/${lane.repo}/${lane.piece}`}
+                          plane={plane}
+                          lane={lane}
+                          on={signing.on}
+                          where="lane"
+                        />
+                      ))}
                   </TableCell>
                   <TableCell>
                     {row.persona === null ? (

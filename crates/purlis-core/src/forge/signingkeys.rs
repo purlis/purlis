@@ -12,7 +12,10 @@
 //!   one (ADR 0070 ruling 5), so `purlis signing` in their terminal asks the running window
 //!   over its line ([`crate::windowline`]) and holds no token itself (the person's ruling of
 //!   2026-11-07 on #5625).
-//! - **GitHub only, for now**: GitLab's user keys with the usage type *Signing* come with #5629.
+//! - **GitHub and GitLab** (#5629): GitHub's signing keys, and GitLab's user keys with the usage
+//!   type *Signing* only, which the account's `api` scope already allows. GitLab has no API that
+//!   makes a signed commit, so its check reads a signed commit already pushed ([`check_over`]),
+//!   and a server older than [`GITLAB_VERIFIES_FROM`] says it can't verify ([`verifies_over`]).
 //!
 //! A key is told apart by its type and data, never its comment: GitHub keeps the title apart.
 
@@ -147,15 +150,49 @@ fn first_line(said: &str) -> &str {
     said.lines().next().unwrap_or("").trim()
 }
 
-fn github_only(forge: &Forge) -> Result<(), Refused> {
-    match forge.kind {
-        Kind::GitHub => Ok(()),
-        Kind::GitLab => Err(Refused::Said(
-            "purlis adds a signing key to a GitLab account from the window only once it \
-             supports GitLab's signing keys"
-                .to_owned(),
-        )),
+/// Where the account's own signing keys are listed and added.
+fn own_keys(kind: Kind) -> &'static str {
+    match kind {
+        Kind::GitHub => "user/ssh_signing_keys",
+        Kind::GitLab => "user/keys",
     }
+}
+
+/// **GitLab's usage type for a key that only signs**: never `auth_and_signing`, GitLab's default
+/// where none is sent, so the key cannot log in over SSH (ADR 0116 §5).
+pub const GITLAB_SIGNING_ONLY: &str = "signing";
+
+/// The oldest GitLab release that verifies SSH-signed commits: 15.7. Not confirmed by GitLab's
+/// current docs (#5629), so a server older than this, or one whose version does not read, is
+/// one that can't verify.
+pub const GITLAB_VERIFIES_FROM: (u32, u32) = (15, 7);
+
+/// The keys `out` lists, as the forge spells them: on GitLab only those that may sign.
+fn keys_listed(kind: Kind, out: &str) -> Option<Vec<Key>> {
+    let listed: Vec<serde_json::Value> = serde_json::from_str(out).ok()?;
+    Some(
+        listed
+            .iter()
+            .filter(|key| match kind {
+                Kind::GitHub => true,
+                Kind::GitLab => key
+                    .get("usage_type")
+                    .and_then(serde_json::Value::as_str)
+                    .is_none_or(|usage| usage == "signing" || usage == "auth_and_signing"),
+            })
+            .filter_map(|key| {
+                Some(Key {
+                    id: key.get("id")?.as_u64()?,
+                    title: key
+                        .get("title")
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or("")
+                        .to_owned(),
+                    key: key.get("key")?.as_str()?.to_owned(),
+                })
+            })
+            .collect(),
+    )
 }
 
 fn unanswered(forge: &Forge, said: &str) -> Refused {
@@ -164,8 +201,7 @@ fn unanswered(forge: &Forge, said: &str) -> Refused {
 
 /// **The account's signing keys**, over `transport`.
 pub fn listed_over(transport: &dyn Transport, forge: &Forge) -> Result<Listed, Refused> {
-    github_only(forge)?;
-    let mut call = Call::get("user/ssh_signing_keys", WITHIN);
+    let mut call = Call::get(own_keys(forge.kind), WITHIN);
     call.fields.push(Field::typed("per_page", PAGE));
     let reply = transport
         .send(forge, &call)
@@ -173,7 +209,7 @@ pub fn listed_over(transport: &dyn Transport, forge: &Forge) -> Result<Listed, R
     if !reply.ok() {
         return Err(refused_on_keys(&reply, forge.kind));
     }
-    let keys: Vec<Key> = serde_json::from_str(&reply.out).map_err(|_| {
+    let keys = keys_listed(forge.kind, &reply.out).ok_or_else(|| {
         Refused::Said(format!(
             "{}'s list of your signing keys did not read as one",
             forge.kind.display()
@@ -190,11 +226,14 @@ pub fn listed_publicly_over(
     forge: &Forge,
     login: &str,
 ) -> Result<Listed, Refused> {
-    github_only(forge)?;
     if !named(login) {
         return Err(Refused::Said(format!("{login} is not an account's name")));
     }
-    let mut call = Call::get(format!("users/{login}/ssh_signing_keys"), WITHIN);
+    let path = match forge.kind {
+        Kind::GitHub => format!("users/{login}/ssh_signing_keys"),
+        Kind::GitLab => format!("users/{login}/keys"),
+    };
+    let mut call = Call::get(path, WITHIN);
     call.fields.push(Field::typed("per_page", PAGE));
     let reply = transport
         .send(forge, &call)
@@ -206,25 +245,14 @@ pub fn listed_publicly_over(
             first_line(&reply.said(forge.kind))
         )));
     }
-    // The public list names each key and its id, and no title.
-    let keys: Vec<serde_json::Value> = serde_json::from_str(&reply.out).map_err(|_| {
+    // GitHub's public list names each key and its id, and no title.
+    let keys = keys_listed(forge.kind, &reply.out).ok_or_else(|| {
         Refused::Said(format!(
             "{}'s list of {login}'s signing keys did not read as one",
             forge.kind.display()
         ))
     })?;
-    Ok(Listed {
-        keys: keys
-            .iter()
-            .filter_map(|key| {
-                Some(Key {
-                    id: key.get("id")?.as_u64()?,
-                    title: String::new(),
-                    key: key.get("key")?.as_str()?.to_owned(),
-                })
-            })
-            .collect(),
-    })
+    Ok(Listed { keys })
 }
 
 /// **`signer`'s key added to the account** as a signing key under `title`, over `transport`,
@@ -235,19 +263,31 @@ pub fn add_over(
     signer: &Signer,
     title: &str,
 ) -> Result<Key, Refused> {
-    github_only(forge)?;
-    let call = Call::write(
-        Method::Post,
-        "user/ssh_signing_keys",
-        vec![
-            Field::text("title", title),
-            Field::text("key", &signer.public_line()),
-        ],
-    );
+    let mut fields = vec![
+        Field::text("title", title),
+        Field::text("key", &signer.public_line()),
+    ];
+    if forge.kind == Kind::GitLab {
+        fields.push(Field::text("usage_type", GITLAB_SIGNING_ONLY));
+    }
+    let call = Call::write(Method::Post, own_keys(forge.kind), fields);
     let reply = transport
         .send(forge, &call)
         .map_err(|no| unanswered(forge, no.said()))?;
     if !reply.ok() {
+        // GitLab answers a key it has already with 400 "has already been taken": the one it has.
+        if forge.kind == Kind::GitLab && reply.said(forge.kind).contains("has already been taken") {
+            return listed_over(transport, forge)?
+                .this_device(signer)
+                .cloned()
+                .ok_or_else(|| {
+                    Refused::Said(
+                        "GitLab has this key on another account already, so it can't be added \
+                         to this one"
+                            .to_owned(),
+                    )
+                });
+        }
         return Err(refused_on_keys(&reply, forge.kind));
     }
     serde_json::from_str(&reply.out).map_err(|_| {
@@ -260,10 +300,9 @@ pub fn add_over(
 
 /// **The signing key `id` removed from the account**, over `transport`.
 pub fn remove_over(transport: &dyn Transport, forge: &Forge, id: u64) -> Result<(), Refused> {
-    github_only(forge)?;
     let call = Call::write(
         Method::Delete,
-        format!("user/ssh_signing_keys/{id}"),
+        format!("{}/{id}", own_keys(forge.kind)),
         Vec::new(),
     );
     let reply = transport
@@ -283,6 +322,9 @@ pub struct Checked {
     pub verified: bool,
     /// The forge's own reason, such as `valid` or `unverified_email`.
     pub reason: String,
+    /// The public line of the key the forge says signed it, where it names one (GitLab does).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
 }
 
 impl Checked {
@@ -318,29 +360,122 @@ pub fn commit_named(commit: &str) -> Result<(), String> {
     }
 }
 
-/// **Whether `commit` in `repo` (`owner/name`) shows as Verified**, over `transport`.
+/// `repo` as a GitLab project's full path (`group/sub/name`), or why it is not one.
+pub fn project_named(repo: &str) -> Result<(), String> {
+    let parts: Vec<&str> = repo.split('/').collect();
+    if parts.len() >= 2 && parts.iter().all(|part| named(part)) {
+        Ok(())
+    } else {
+        Err(format!("{repo} is not a project as `group/name`."))
+    }
+}
+
+/// **Whether `commit` in `repo` shows as Verified**, over `transport`: `owner/name` on GitHub, a
+/// project's full path on GitLab.
 pub fn check_over(
     transport: &dyn Transport,
     forge: &Forge,
     repo: &str,
     commit: &str,
 ) -> Result<Checked, String> {
-    github_only(forge).map_err(|why| why.said(forge.kind))?;
-    let (owner, name) = repo_named(repo)?;
     commit_named(commit)?;
-    let call = Call::get(format!("repos/{owner}/{name}/commits/{commit}"), WITHIN);
+    let path = match forge.kind {
+        Kind::GitHub => {
+            let (owner, name) = repo_named(repo)?;
+            format!("repos/{owner}/{name}/commits/{commit}")
+        }
+        Kind::GitLab => {
+            project_named(repo)?;
+            format!(
+                "projects/{}/repository/commits/{commit}/signature",
+                super::quote(repo)
+            )
+        }
+    };
     let reply = transport
-        .send(forge, &call)
+        .send(forge, &Call::get(path, WITHIN))
+        .map_err(|no| unanswered(forge, no.said()).said(forge.kind))?;
+    if !reply.ok() {
+        return Err(match forge.kind {
+            Kind::GitLab if reply.failure() == Failure::NotFound => format!(
+                "GitLab has no signature for commit {commit} in {repo}: it was pushed unsigned, \
+                 or not pushed"
+            ),
+            _ => format!(
+                "{} did not find commit {commit} in {repo}: is it pushed? ({})",
+                forge.kind.display(),
+                first_line(&reply.said(forge.kind))
+            ),
+        });
+    }
+    let (verified, reason, key) = match forge.kind {
+        Kind::GitHub => {
+            let (verified, reason) = commitsign::verification(&reply.out)?;
+            (verified, reason, None)
+        }
+        Kind::GitLab => gitlab_verification(&reply.out)?,
+    };
+    Ok(Checked {
+        verified,
+        reason,
+        key,
+    })
+}
+
+/// **What GitLab says of a commit's signature**, from `GET
+/// projects/:id/repository/commits/:sha/signature`, in GitHub's reasons so the window words
+/// both alike: `verified` is `valid`, an email that is not the account's verified one is
+/// `unverified_email`, a key GitLab does not know is `unknown_key`, and any other status is
+/// GitLab's own word. With the public line of the key GitLab says signed it, where it names one.
+pub fn gitlab_verification(answer: &str) -> Result<(bool, String, Option<String>), String> {
+    let said: serde_json::Value = serde_json::from_str(answer)
+        .map_err(|_| "GitLab's answer about the commit did not read".to_owned())?;
+    let status = said
+        .get("verification_status")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| "GitLab's answer names no signature check for the commit".to_owned())?;
+    let key = said
+        .pointer("/key/key")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_owned);
+    let (verified, reason) = match status {
+        "verified" | "verified_system" | "verified_ca" => (true, "valid".to_owned()),
+        "same_user_different_email" | "unverified_email" => (false, "unverified_email".to_owned()),
+        "unknown_key" | "unverified_key" => (false, "unknown_key".to_owned()),
+        other => (false, other.to_owned()),
+    };
+    Ok((verified, reason, key))
+}
+
+/// **Whether the forge verifies SSH-signed commits**, over `transport`: GitHub does; a GitLab
+/// does from [`GITLAB_VERIFIES_FROM`], read from its `GET version`. A version that does not
+/// read is one that can't verify. `Err` where the forge did not answer.
+pub fn verifies_over(transport: &dyn Transport, forge: &Forge) -> Result<bool, String> {
+    if forge.kind == Kind::GitHub {
+        return Ok(true);
+    }
+    let reply = transport
+        .send(forge, &Call::get("version", WITHIN))
         .map_err(|no| unanswered(forge, no.said()).said(forge.kind))?;
     if !reply.ok() {
         return Err(format!(
-            "{} did not find commit {commit} in {repo}: is it pushed? ({})",
-            forge.kind.display(),
+            "GitLab on {} did not say its version ({})",
+            forge.host,
             first_line(&reply.said(forge.kind))
         ));
     }
-    let (verified, reason) = commitsign::verification(&reply.out)?;
-    Ok(Checked { verified, reason })
+    let said: serde_json::Value = serde_json::from_str(&reply.out).unwrap_or_default();
+    let mut numbers = said
+        .get("version")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("")
+        .split(|c: char| !c.is_ascii_digit())
+        .map(str::parse::<u32>);
+    let release = match (numbers.next(), numbers.next()) {
+        (Some(Ok(major)), Some(Ok(minor))) => (major, minor),
+        _ => return Ok(false),
+    };
+    Ok(release >= GITLAB_VERIFIES_FROM)
 }
 
 /// **The transport the window's own sign-in sends a signing call with**, for the person in the
@@ -361,8 +496,20 @@ pub(crate) fn recording(case: &str, signer: &Signer) -> super::recorded::Recorde
 /// inside is: a signature runs over several lines.
 #[cfg(test)]
 pub(crate) fn recording_with(case: &str, marks: &[(&str, &str)]) -> super::recorded::Recorded {
+    recording_of("github", case, marks)
+}
+
+/// The recording `case` of `forge`'s signing keys (`github`, `gitlab`), each mark in `marks`
+/// replaced by its value.
+#[cfg(test)]
+pub(crate) fn recording_of(
+    forge: &str,
+    case: &str,
+    marks: &[(&str, &str)],
+) -> super::recorded::Recorded {
     let file = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/forge_contract/signing_keys/github")
+        .join("tests/forge_contract/signing_keys")
+        .join(forge)
         .join(format!("{case}.json"));
     let mut text =
         std::fs::read_to_string(&file).unwrap_or_else(|why| panic!("{}: {why}", file.display()));

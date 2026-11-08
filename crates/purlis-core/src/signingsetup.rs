@@ -50,9 +50,18 @@ pub enum Heard {
     Checked(Checked),
 }
 
-/// The forge a signing ask goes to: GitHub, on github.com. GitLab comes with #5629.
+/// The forge `purlis signing` asks about: GitHub, on github.com. The window's setup goes to any
+/// signed-in account's forge, GitLab's included ([`forge_of`]).
 pub fn github() -> Forge {
     Forge::default_of(Kind::GitHub)
+}
+
+/// The forge of `kind` on `host`.
+pub fn forge_of(kind: Kind, host: &str) -> Forge {
+    Forge {
+        kind,
+        host: host.to_owned(),
+    }
 }
 
 /// **The window's answer to `asked`** for the account `login`, sent over `transport` (the
@@ -318,6 +327,7 @@ pub fn check_with_a_test_commit(
         .get("verification")
         .ok_or_else(|| format!("{shown} named no signature check for the test commit"))?;
     Ok(Checked {
+        key: None,
         verified: said
             .get("verified")
             .and_then(serde_json::Value::as_bool)
@@ -363,6 +373,261 @@ pub fn a_repo_to_check_in(
         .and_then(serde_json::Value::as_str)
         .map(str::to_owned))
 }
+
+// ---------------------------------------------------------------------------------------
+// GitLab's Check (#5629): a signed commit already pushed
+// ---------------------------------------------------------------------------------------
+
+/// **A signed chat commit the app pushed**, as the GitLab Check finds one: GitLab has no API
+/// that makes a signed commit, so its Check asks about one already there (#5629).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct SignedPush {
+    pub kind: Kind,
+    pub host: String,
+    /// The repository's path on the forge: `owner/name`, or a GitLab project's full path.
+    pub repo: String,
+    pub commit: String,
+    /// When it was pushed, in seconds since the epoch.
+    pub at: i64,
+}
+
+/// How many signed pushes are kept: the newest, per forge, is the one asked about.
+const PUSHES_KEPT: usize = 20;
+
+/// Where this device's signed pushes are kept, under its config home: the app writes it, as the
+/// brokered push it made for a chat; no chat writes there.
+fn pushes_file(config_root: &Path) -> std::path::PathBuf {
+    config_root.join("signing").join("pushed.json")
+}
+
+/// The signed pushes kept, newest first; none where the file is missing or does not read.
+pub fn signed_pushes(config_root: &Path) -> Vec<SignedPush> {
+    std::fs::read_to_string(pushes_file(config_root))
+        .ok()
+        .and_then(|text| serde_json::from_str(&text).ok())
+        .unwrap_or_default()
+}
+
+/// **`push` kept as the newest signed push**, the oldest dropped past [`PUSHES_KEPT`].
+pub fn note_signed_push(config_root: &Path, push: SignedPush) -> Result<(), String> {
+    let mut kept = signed_pushes(config_root);
+    kept.retain(|was| !(was.kind == push.kind && was.host == push.host && was.repo == push.repo));
+    kept.insert(0, push);
+    kept.truncate(PUSHES_KEPT);
+    let file = pushes_file(config_root);
+    if let Some(folder) = file.parent() {
+        std::fs::create_dir_all(folder).map_err(|why| why.to_string())?;
+    }
+    let text = serde_json::to_string_pretty(&kept).map_err(|why| why.to_string())?;
+    crate::plane::write_private(config_root, &file, text.as_bytes()).map_err(|why| why.to_string())
+}
+
+/// The newest signed push to `forge`, where the app has made one.
+pub fn last_signed_push(config_root: &Path, forge: &Forge) -> Option<SignedPush> {
+    signed_pushes(config_root)
+        .into_iter()
+        .find(|push| push.kind == forge.kind && push.host == forge.host)
+}
+
+/// **Check on GitLab** (ADR 0116 §6, #5629): what GitLab says of `commit` in `repo`, a commit
+/// already pushed and signed with `signer`. Verified only where GitLab says `verified` and the
+/// key it names is this device's: a commit signed with another key says nothing of this one.
+pub fn check_a_pushed_commit(
+    transport: &dyn Transport,
+    forge: &Forge,
+    signer: &Signer,
+    repo: &str,
+    commit: &str,
+) -> Result<Checked, String> {
+    let checked = signingkeys::check_over(transport, forge, repo, commit)?;
+    // Only GitLab's verdict on this device's own key says anything of it: a commit GitLab signed
+    // itself, or one signed with another key, names none or another.
+    match &checked.key {
+        Some(key) if signingkeys::same_key(key, &signer.public_line()) => Ok(checked),
+        _ => Ok(Checked {
+            verified: false,
+            reason: "other_key".to_owned(),
+            key: checked.key.clone(),
+        }),
+    }
+}
+
+// ---------------------------------------------------------------------------------------
+// The email chat commits use (#5631)
+// ---------------------------------------------------------------------------------------
+
+/// Where the email the person chose for chat commits is kept, under the device's config home.
+fn email_file(config_root: &Path) -> std::path::PathBuf {
+    config_root.join("signing").join("commit-email")
+}
+
+/// **The email the person chose to sign chat commits as**, where they chose one: it stands in for
+/// their git's `user.email` in the commits the app makes for a chat.
+pub fn commit_email(config_root: &Path) -> Option<String> {
+    std::fs::read_to_string(email_file(config_root))
+        .ok()
+        .map(|text| text.trim().to_owned())
+        .filter(|email| email_reads(email))
+}
+
+/// Whether `email` reads as one address git may put on a commit.
+fn email_reads(email: &str) -> bool {
+    let Some((name, host)) = email.split_once('@') else {
+        return false;
+    };
+    !name.is_empty()
+        && host.contains('.')
+        && email.len() <= 254
+        && !email
+            .chars()
+            .any(|c| c.is_whitespace() || c.is_control() || matches!(c, '<' | '>' | '\\'))
+}
+
+/// **`email` kept as the one chat commits use**, or `None` to go back to the person's git's own.
+pub fn set_commit_email(config_root: &Path, email: Option<&str>) -> Result<(), String> {
+    let file = email_file(config_root);
+    match email {
+        None => match std::fs::remove_file(&file) {
+            Err(why) if why.kind() != std::io::ErrorKind::NotFound => Err(why.to_string()),
+            _ => Ok(()),
+        },
+        Some(email) if !email_reads(email) => Err(format!("{email} is not an email address")),
+        Some(email) => {
+            if let Some(folder) = file.parent() {
+                std::fs::create_dir_all(folder).map_err(|why| why.to_string())?;
+            }
+            crate::plane::write_private(config_root, &file, email.as_bytes())
+                .map_err(|why| why.to_string())
+        }
+    }
+}
+
+/// **Who a chat's commit is made as on this device**: the person's own git name, and the email
+/// they chose for chat commits where they chose one, else their git's own.
+pub fn who_commits_here(config_root: &Path) -> Result<Who, String> {
+    let mut who = who_commits()?;
+    if let Some(email) = commit_email(config_root) {
+        who.email = email;
+    }
+    Ok(who)
+}
+
+/// **A verified email address of the forge account**, as the Check step offers it (#5631).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct VerifiedEmail {
+    pub email: String,
+    /// The account's primary address.
+    pub primary: bool,
+    /// The forge's private address for commits (GitHub's noreply), which keeps the person's
+    /// own address out of their commits.
+    pub private: bool,
+}
+
+/// **The account's verified email addresses** (#5631, ADR 0116 §6), over `transport`: on GitHub
+/// the verified ones of `GET user/emails` (the `user:email` scope #5627 asks for) and the
+/// account's noreply address; on GitLab the account's primary email and its confirmed ones of
+/// `GET user/emails` (its `api` scope). Primary first, the private address last.
+pub fn verified_emails(
+    transport: &dyn Transport,
+    forge: &Forge,
+) -> Result<Vec<VerifiedEmail>, String> {
+    use crate::forge::transport::Call;
+    let shown = forge.kind.display();
+    let within = std::time::Duration::from_secs(30);
+    let read = |path: &str| -> Result<serde_json::Value, String> {
+        let reply = transport
+            .send(forge, &Call::get(path, within))
+            .map_err(|no| format!("{shown} did not answer ({})", no.said()))?;
+        if !reply.ok() {
+            return Err(format!(
+                "{shown} did not list your email addresses ({})",
+                reply.said(forge.kind).lines().next().unwrap_or("").trim()
+            ));
+        }
+        serde_json::from_str(&reply.out)
+            .map_err(|_| format!("{shown}'s list of your email addresses did not read"))
+    };
+    let text = |value: &serde_json::Value, key: &str| {
+        value
+            .get(key)
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned)
+    };
+    let mut found: Vec<VerifiedEmail> = Vec::new();
+    let mut keep = |email: String, primary: bool, private: bool| {
+        if !email.is_empty()
+            && !found
+                .iter()
+                .any(|was| was.email.eq_ignore_ascii_case(&email))
+        {
+            found.push(VerifiedEmail {
+                email,
+                primary,
+                private,
+            });
+        }
+    };
+    match forge.kind {
+        Kind::GitHub => {
+            for one in read("user/emails")?.as_array().into_iter().flatten() {
+                let verified = one.get("verified").and_then(serde_json::Value::as_bool);
+                if verified == Some(true)
+                    && let Some(email) = text(one, "email")
+                {
+                    let primary = one.get("primary").and_then(serde_json::Value::as_bool);
+                    keep(email, primary == Some(true), false);
+                }
+            }
+            let user = read("user")?;
+            if let (Some(id), Some(login)) = (
+                user.get("id").and_then(serde_json::Value::as_u64),
+                text(&user, "login"),
+            ) {
+                keep(
+                    format!("{id}+{login}@users.noreply.github.com"),
+                    false,
+                    true,
+                );
+            }
+        }
+        Kind::GitLab => {
+            let user = read("user")?;
+            let confirmed = user.get("confirmed_at").is_none_or(|at| !at.is_null());
+            if confirmed && let Some(email) = text(&user, "email") {
+                keep(email, true, false);
+            }
+            for one in read("user/emails")?.as_array().into_iter().flatten() {
+                let confirmed = one.get("confirmed_at").is_some_and(|at| !at.is_null());
+                if confirmed && let Some(email) = text(one, "email") {
+                    keep(email, false, false);
+                }
+            }
+        }
+    }
+    found.sort_by_key(|one| (!one.primary, one.private));
+    Ok(found)
+}
+
+/// The forge's page where the person adds and verifies an email address.
+pub fn email_settings(forge: &Forge) -> String {
+    match forge.kind {
+        Kind::GitHub => "https://github.com/settings/emails".to_owned(),
+        Kind::GitLab => format!("https://{}/-/user_settings/profile", forge.host),
+    }
+}
+
+/// **What signing kept on this device beside its key, forgotten** (Remove signing, #5632): the
+/// email chosen for chat commits and the signed pushes kept for GitLab's Check.
+pub fn forget_records(config_root: &Path) -> Result<(), String> {
+    set_commit_email(config_root, None)?;
+    match std::fs::remove_file(pushes_file(config_root)) {
+        Err(why) if why.kind() != std::io::ErrorKind::NotFound => Err(why.to_string()),
+        _ => Ok(()),
+    }
+}
+
+pub mod manage;
+pub mod retry;
 
 #[cfg(test)]
 mod tests;

@@ -1,0 +1,17 @@
+{
+  "source": "GitHub REST API version 2022-11-28, docs.github.com/en/rest/users/ssh-signing-keys: List (the old key there), Create (the new key, 201), Delete (the old key, 204). The old key is put in for @OLD@, the new for @NEW@.",
+  "exchanges": [
+    {
+      "call": {"endpoint": {"rest": {"method": null, "path": "user/ssh_signing_keys"}}, "fields": [{"typed": ["per_page", "100"]}]},
+      "reply": {"code": 0, "out": "[{\"id\": 4242, \"key\": \"@OLD@\", \"title\": \"purlis · studio\"}]", "err": "", "status": 200}
+    },
+    {
+      "call": {"endpoint": {"rest": {"method": "POST", "path": "user/ssh_signing_keys"}}, "fields": [{"text": ["title", "purlis · studio"]}, {"text": ["key", "@NEW@"]}]},
+      "reply": {"code": 0, "out": "{\"id\": 4343, \"key\": \"@NEW@\", \"title\": \"purlis · studio\"}", "err": "", "status": 201}
+    },
+    {
+      "call": {"endpoint": {"rest": {"method": "DELETE", "path": "user/ssh_signing_keys/4242"}}, "fields": []},
+      "reply": {"code": 0, "out": "", "err": "", "status": 204}
+    }
+  ]
+}

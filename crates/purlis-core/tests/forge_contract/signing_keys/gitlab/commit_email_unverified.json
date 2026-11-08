@@ -1,0 +1,9 @@
+{
+  "source": "GitLab REST API v4, docs.gitlab.com/api/commits (Get signature of a commit; read 2026-11-08) and docs.gitlab.com/user/project/repository/signed_commits/ssh: signed with the account's key, by an email that is not one of its verified ones",
+  "exchanges": [
+    {
+      "call": {"endpoint": {"rest": {"method": null, "path": "projects/platform%2Fbilling/repository/commits/0123abc/signature"}}, "fields": []},
+      "reply": {"code": 0, "out": "{\"signature_type\": \"SSH\", \"verification_status\": \"same_user_different_email\", \"key\": {\"id\": 77, \"key\": \"@KEY@\"}, \"commit_source\": \"gitaly\"}", "err": "", "status": 200}
+    }
+  ]
+}

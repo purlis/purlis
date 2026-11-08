@@ -285,8 +285,9 @@ fn with_no_key_the_commit_is_made_unsigned_and_the_answer_says_how_to_set_one_up
         "N",
         "and it carries no signature"
     );
-    assert_eq!(rest, [Say::Warn(commit::UNSIGNED.into())]);
-    assert!(commit::UNSIGNED.contains("purlis signing setup"));
+    assert_eq!(rest, [Say::Info(commit::UNSIGNED.into())]);
+    assert!(commit::UNSIGNED.starts_with("Not signed: signing isn't set up on this Mac"));
+    assert!(commit::UNSIGNED.contains("Signed commits"));
 }
 
 #[test]

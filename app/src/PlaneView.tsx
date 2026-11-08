@@ -1,6 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { SigningSetupAsked } from "./SigningRefusal";
 import {
   memo,
   useCallback,
@@ -12218,6 +12219,8 @@ export const PlaneView = memo(function PlaneView({
           share, and the sidebar has already been read for the strip, so the line costs no
           command of its own — which matters here more than anywhere, because it is the one
           surface that is drawn whatever else the window is doing. */}
+              {/* Set up signing, opened from the one Ask about lanes waiting on signing (#5633). */}
+              <SigningSetupAsked plane={plane} />
               <StatusLineHere
                 sessions={quitSessions}
                 settled={settled}

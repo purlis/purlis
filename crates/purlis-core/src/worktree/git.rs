@@ -1646,6 +1646,18 @@ impl Isolated {
         }
     }
 
+    /// The same, committing as `email` in place of the email it had (#5631): the address the
+    /// person chose for chat commits. A value git would not read as one line is left out.
+    #[must_use]
+    pub fn as_email(mut self, email: &str) -> Self {
+        if email.is_empty() || email.contains(['\n', '\0']) {
+            return self;
+        }
+        self.config.retain(|key| !key.starts_with("user.email="));
+        self.config.push(format!("user.email={email}"));
+        self
+    }
+
     /// The identity the operator's global git config gives, read through this module's
     /// hardened runner, outside any repository.
     pub fn operators() -> Self {

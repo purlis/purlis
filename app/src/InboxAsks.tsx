@@ -328,6 +328,7 @@ export const SOURCE_SAID: Record<Shown["source"], string> = {
   "sign-in": "Asks you to sign a profile in",
   "sandbox-only": "Asks you to make a sandbox-only profile",
   "old-harness-plugins": "Old harness plugin settings, ignored now",
+  signing: "Lanes wait on signed commits",
   browser: "Asks what its browser may reach",
   "browser-needs-you": "Needs you in its browser",
   "browser-site": "Asks to let its browser reach a new site",

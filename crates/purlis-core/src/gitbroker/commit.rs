@@ -655,11 +655,12 @@ fn made(
     Ok(lines)
 }
 
-/// What a commit made where no signing key is set up says, after it (#5480).
-pub const UNSIGNED: &str = "this commit is not signed: the app has no signing key on this \
-     machine yet, so a repository that requires signed commits will refuse a pull request with \
-     it. Ask the person to run `purlis signing setup` once in their own terminal; it says each \
-     step in plain words, and later commits are signed";
+/// **The quiet line a commit made where no signing key is set up says, after it** (#5480,
+/// #5630): no more than that, before any forge refused it. Setting signing up is the person's,
+/// on the Signed commits card in the window; a chat never runs it (ADR 0116 §2, §3).
+pub const UNSIGNED: &str = "Not signed: signing isn't set up on this Mac. The person sets it up \
+     on Settings › You › Accounts › Signed commits in the purlis window, if they want it; a chat \
+     can't. Nothing to do unless a repository refuses unsigned commits";
 
 /// The commit git made, `made` on `branch`, signed with `signer` and the branch moved to the
 /// signed copy (#5480), and what the line naming it adds. Where there is no signer, or signing
@@ -672,7 +673,7 @@ pub(crate) fn signed(
     lines: &mut Vec<Say>,
 ) -> (String, &'static str) {
     let Some(signer) = signer else {
-        lines.push(Say::Warn(UNSIGNED.into()));
+        lines.push(Say::Info(UNSIGNED.into()));
         return (made, "");
     };
     match crate::commitsign::sign_one(top, &worktree::name::as_ref(branch), &made, signer) {

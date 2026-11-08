@@ -1,0 +1,9 @@
+{
+  "source": "GitLab REST API v4, docs.gitlab.com/api/user_keys (read 2026-11-08): List SSH keys for a user, where this device's key is there for logging in only (usage_type auth), which signs nothing GitLab verifies. The key is the test's own, put in for @KEY@.",
+  "exchanges": [
+    {
+      "call": {"endpoint": {"rest": {"method": null, "path": "users/sam/keys"}}, "fields": [{"typed": ["per_page", "100"]}]},
+      "reply": {"code": 0, "out": "[{\"id\": 77, \"title\": \"purlis · studio\", \"key\": \"@KEY@\", \"usage_type\": \"auth\"}]", "err": "", "status": 200}
+    }
+  ]
+}

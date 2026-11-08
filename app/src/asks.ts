@@ -44,6 +44,7 @@ import { proposeOldKeysRemoval } from "./oldHarnessPlugins";
 import { askOpenRunnerWrite } from "./runnerWriteOpen";
 import { askOpenRunnerDispatch } from "./runnerDispatchOpen";
 import { askProfileSignIn } from "./settings/links";
+import { askSigningSetUp, signAndRetryAll, SIGNING_WAITING_CHANGED } from "./signingAsked";
 import { refusalsAnswered } from "./vaultRefusals";
 
 /**
@@ -406,6 +407,26 @@ export async function answerTaken(
           return { status: "ok" };
         }
         break;
+      case "signing": {
+        // The lanes a forge refused for unsigned commits (#5633): Set up signing opens the
+        // dialog in the project's window, ending in Sign and retry all; once on, Sign and retry
+        // all sends each again; once all went, Dismiss puts it away.
+        if (option === "set-up") {
+          askSigningSetUp(plane);
+          opened = true;
+          return { status: "ok" };
+        }
+        if (option === "retry-all") {
+          const done = await signAndRetryAll(plane);
+          return typeof done === "string" ? { status: "error", error: done } : { status: "ok" };
+        }
+        if (option === "dismiss") {
+          const gone = await commands.signingForget(plane, null);
+          window.dispatchEvent(new Event(SIGNING_WAITING_CHANGED));
+          return gone;
+        }
+        break;
+      }
       case "old-harness-plugins": {
         // The old `[harness_plugins]` keys (#3467): Remove holds purlis's proposed change for
         // each file and opens the first one's tab, where Apply is pressed; nothing is written

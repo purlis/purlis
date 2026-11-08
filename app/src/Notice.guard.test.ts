@@ -538,14 +538,15 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
   },
   "UnsavedWorkQuestion.tsx": { count: 1, why: ACTION },
   "SigningSetupDialog.tsx": {
-    count: 14,
+    count: 18,
     why:
       ACTION +
-      ". Set up signing's own lines (#5628), inside its dialog: each step's progress while it " +
-      "runs by itself (reading, making the key, asking GitHub for a code, adding the key, the " +
-      "wait on GitHub's page, the watch for a key added by hand, the check), each step's " +
-      "refusal in the core's or GitHub's words, and the Verified line; its Try again, Check " +
-      "again and Cancel are the way out",
+      ". Set up signing's own lines (#5628, #5629, #5631), inside its dialog: each step's progress " +
+      "while it runs by itself (reading, making the key, asking GitHub for a code, adding the " +
+      "key, the wait on GitHub's page, the watch for a key added by hand, the check), each " +
+      "step's refusal in the core's or the forge's words, the Verified line, GitLab's wait for a " +
+      "first signed push, and the email step's reading, its no-verified-email sentence and its " +
+      "refusal; its Try again, Check again, Use this email, Done and Cancel are the way out",
   },
   "SkillBudget.tsx": {
     count: 3,
@@ -738,11 +739,12 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "just done; its Sign in with a token and Sign out are the way on",
   },
   "settings/signing.tsx": {
-    count: 1,
+    count: 4,
     why:
       ACTION +
-      ". The Signed commits card's read refusal (#5628), in the core's words; Set up signing " +
-      "is the way on",
+      ". The Signed commits card's read refusal (#5628), in the core's words; another device's " +
+      "key Remove refused, beside its row; and what Replace key or Remove signing came to, with " +
+      "a refusal's keys page (#5632). Set up signing, Remove and Open its keys page are the ways on",
   },
   "settings/profiles.tsx": {
     count: 2,

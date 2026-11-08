@@ -79,8 +79,11 @@ pub const STATUS_TIMEOUT: Duration = Duration::from_secs(10);
 /// The strict budget: one page of a listing, one tree. Python's `base.LIST_TIMEOUT`.
 pub const LIST_TIMEOUT: Duration = Duration::from_secs(60);
 
-/// A forge kind charter has a backend for.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+/// A forge kind charter has a backend for. Written as its [`Kind::word`]: `github`, `gitlab`.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
+#[serde(rename_all = "lowercase")]
 pub enum Kind {
     GitHub,
     GitLab,

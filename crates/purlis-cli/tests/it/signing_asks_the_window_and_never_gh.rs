@@ -237,6 +237,7 @@ fn check_asks_the_window_and_says_the_reason_in_plain_words() {
         Said::Signing(Heard::Checked(Checked {
             verified: false,
             reason: "unverified_email".to_owned(),
+            key: None,
         })),
     );
     let out = purlis(config, &["signing", "check", "octo/hello", "0123abc"], &[]);

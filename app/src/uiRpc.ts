@@ -825,6 +825,15 @@ export const commands = {
 	signingAddKey: __WINDOW_ONLY_RESULT,
 	signingKeyListed: __WINDOW_ONLY_RESULT,
 	signingCheck: __WINDOW_ONLY_RESULT,
+	signingWaiting: __WINDOW_ONLY_RESULT,
+	signingSignAndRetry: __WINDOW_ONLY_RESULT,
+	signingForget: __WINDOW_ONLY_RESULT,
+	signingEmails: __WINDOW_ONLY_RESULT,
+	signingUseEmail: __WINDOW_ONLY_RESULT,
+	signingAccountsKeys: __WINDOW_ONLY_RESULT,
+	signingRemoveOther: __WINDOW_ONLY_RESULT,
+	signingReplaceKey: __WINDOW_ONLY_RESULT,
+	signingRemoveEverywhere: __WINDOW_ONLY_RESULT,
 	agentIdentities: __WINDOW_ONLY_RESULT,
 	agentIdentityCreate: __WINDOW_ONLY_RESULT,
 	agentIdentityCreateCancel: __WINDOW_ONLY,
@@ -2955,6 +2964,12 @@ export type AnswerPath =
  */
 { via: "old-harness-plugins" } | 
 /**
+ *  Set up signing opens the setup dialog in the window, whose last step is Sign and retry
+ *  all; Sign and retry all sends `signing_sign_and_retry` for every waiting lane; Dismiss
+ *  sends `signing_forget` for them all (#5633).
+ */
+{ via: "signing" } | 
+/**
  *  `allow_chat_browser`, with the open web for `open-web`, and `keep_chat_browser_off` for
  *  Keep off, with the person's reason (#2013).
  */
@@ -3166,6 +3181,11 @@ export type AskSource =
 "old-harness-plugins" | 
 /**  A chat's first browser call, asking what its browser may reach (#2013). */
 "browser" | 
+/**
+ *  **The lanes a forge refused for unsigned commits** (#5633, ADR 0116 §3): one Ask for all
+ *  of them, said once, counted once.
+ */
+"signing" | 
 /**
  *  A chat's browser whose page needs the person (#2015): the chat asked them to take it
  *  over, through `ask_operator` pointed at it.
@@ -12960,40 +12980,101 @@ export type SidebarWorkspace = {
 	live: boolean,
 };
 
-/**  The forge account setup adds the key to. */
+/**  A forge account setup adds the key to. */
 export type SigningAccount = {
+	/**  `github` or `gitlab`. */
+	kind: string,
 	login: string,
 	host: string,
-	/**  The forge, as a sentence names it: `GitHub`. */
+	/**  The forge, as a sentence names it: `GitHub`, `GitLab`. */
 	forge: string,
-	/**  Whether its sign-in may add a signing key already, so setup asks for no permission. */
+	/**
+	 *  Whether its sign-in may add a signing key already, so setup asks for no permission:
+	 *  GitLab's `api` always may.
+	 */
 	may_add: boolean,
 	/**
-	 *  The email the last Check in this window found verified, for "Verified on GitHub ✓".
+	 *  The email the last Check in this window found verified, for "Verified on <forge> ✓".
 	 *  Only the forge's own answer sets it, and it lasts the window's life.
 	 */
 	verified_as: string | null,
+	/**
+	 *  Whether the forge verifies SSH-signed commits: a GitLab older than 15.7 does not, and is
+	 *  offered no setup (#5629).
+	 */
+	verifies: boolean,
+};
+
+/**  What an account holds of this person's purlis signing keys, as the card shows it once on. */
+export type SigningAccountKeys = {
+	kind: string,
+	host: string,
+	/**  Whether this device's key is on the account; `None` where the forge would not say. */
+	has_key?: boolean | null,
+	/**
+	 *  The account's purlis keys from the person's other devices, where the sign-in may read
+	 *  them.
+	 */
+	others: SigningOtherKey[],
+	/**  Whether the sign-in may remove a key there: else the keys page does. */
+	may_remove: boolean,
+	/**  The forge's page of the account's keys. */
+	keys_page: string,
 };
 
 /**  How adding the key went. */
 export type SigningAdded = 
-/**  GitHub has it now, or had it already. */
+/**  The forge has it now, or had it already. */
 "added" | 
 /**  The sign-in may not add it: setup asks for the permission, or the person adds it by hand. */
 "needs_permission";
 
-/**  What Check found: GitHub's own verdict on a signed test commit. */
+/**  What Check found: the forge's own verdict on a signed commit. */
 export type SigningCheck = {
 	verified: boolean,
 	/**
-	 *  GitHub's reason, such as `valid`, `unverified_email` or `unknown_key`: the window words
-	 *  it.
+	 *  The forge's reason, in GitHub's words, such as `valid`, `unverified_email` or
+	 *  `unknown_key`, or `nothing_pushed` where GitLab has no signed chat commit to read yet:
+	 *  the window words it.
 	 */
 	reason: string,
-	/**  The email the test commit was made as: chat commits use it too. */
+	/**  The email the commit was made as: chat commits use it too. */
 	email: string,
-	/**  The repository the test commit was made in. */
+	/**  The repository the commit is in. */
 	repo: string,
+};
+
+/**  What became of one account, after Replace key or Remove signing. */
+export type SigningDone = {
+	kind: string,
+	host: string,
+	login: string,
+	/**  `done`, `not_there` (it never had the key), or `refused`. */
+	outcome: string,
+	/**  The forge's refusal, in a sentence, and its keys page to finish there. */
+	why?: string | null,
+	keys_page: string,
+};
+
+/**  One verified email address of the account, as the Check step offers it. */
+export type SigningEmail = {
+	email: string,
+	primary: boolean,
+	/**  The forge's private address for commits (GitHub's noreply). */
+	private: boolean,
+};
+
+/**  The account's verified addresses, and the forge's page to add and verify one. */
+export type SigningEmails = {
+	emails: SigningEmail[],
+	/**  The forge's email settings page, for an account with none verified. */
+	settings: string,
+};
+
+/**  Which forge account a signing step acts on: its forge (`github`, `gitlab`) and host. */
+export type SigningForge = {
+	kind: string,
+	host: string,
 };
 
 /**  This device's key as Details and the by-hand step show it: never its private half. */
@@ -13004,14 +13085,68 @@ export type SigningKeyShown = {
 	public_key: string,
 };
 
-/**  What the card shows: whether this device has a signing key, and the GitHub account it goes to. */
+/**  One branch folder, by its workspace, repo and piece. */
+export type SigningLane = {
+	ws: string,
+	repo: string,
+	piece: string,
+};
+
+/**  Another of the person's devices' purlis signing keys on an account. */
+export type SigningOtherKey = {
+	/**  The forge's id of it, as text: it removes it. */
+	id: string,
+	/**  `purlis · <device>`. */
+	title: string,
+};
+
+/**  How Sign and retry went for one branch folder. */
+export type SigningRetried = {
+	ws: string,
+	repo: string,
+	piece: string,
+	/**  How many commits were signed again, where it was sent. */
+	signed: number,
+	/**  Why it was not sent, where it was not: it stays waiting. */
+	why?: string | null,
+};
+
+/**  What the card shows: whether this device has a signing key, and the forge accounts it goes to. */
 export type SigningState = {
 	/**  "On": this device has a signing key (ADR 0116 §1). Nothing else turns it on. */
 	on: boolean,
 	/**  What the key is titled on the forge: `purlis · <device>`. */
 	title: string,
-	/**  The GitHub account on github.com setup adds the key to, where one is signed in. */
-	account: SigningAccount | null,
+	/**
+	 *  Each forge account signed in on this machine, one per forge and host, GitHub and GitLab
+	 *  alike, in the order they were added.
+	 */
+	accounts: SigningAccount[],
+};
+
+/**
+ *  **A chat's branch folder whose push the forge refused for unsigned commits** (#5630), as the
+ *  lane, the chat and the grouped notice show it.
+ */
+export type SigningWaiting = {
+	ws: string,
+	repo: string,
+	piece: string,
+	branch: string,
+	/**  `github` or `gitlab`, and the forge as a sentence names it. */
+	kind: string,
+	forge: string,
+	host: string,
+	/**  The repository's path on the forge: what setup is checked in. */
+	path: string,
+	/**  The commit whose push was refused. */
+	commit: string,
+	/**  The app's number for the chat that pushed, while it is open. */
+	chat?: number | null,
+	/**  Signed and sent since: shown as done until the window has shown it. */
+	sent: boolean,
+	/**  Why the last Sign and retry did not send it, where it did not. */
+	why?: string | null,
 };
 
 /**
