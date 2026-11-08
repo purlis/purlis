@@ -1,0 +1,178 @@
+[
+  {
+    "query": "Make a purlis theme from our brand colour, a deep teal.",
+    "should_trigger": true
+  },
+  {
+    "query": "Change the purlis window's accent colour to green.",
+    "should_trigger": true
+  },
+  {
+    "query": "Build me a purlis theme from this screenshot of our product.",
+    "should_trigger": true
+  },
+  {
+    "query": "Turn this Figma frame into a purlis theme.",
+    "should_trigger": true
+  },
+  {
+    "query": "The purlis light theme's links are too faint; fix them.",
+    "should_trigger": true
+  },
+  {
+    "query": "Check my workspace's purlis theme for contrast problems.",
+    "should_trigger": true
+  },
+  {
+    "query": "Export the project's purlis theme so I can share it with my team.",
+    "should_trigger": true
+  },
+  {
+    "query": "Import the theme a colleague sent me and tweak its background.",
+    "should_trigger": true
+  },
+  {
+    "query": "Make purlis look like a warm sepia paper notebook.",
+    "should_trigger": true
+  },
+  {
+    "query": "Fork Purlis Classic into a new theme with a darker sidebar.",
+    "should_trigger": true
+  },
+  {
+    "query": "Give this workspace its own purlis theme so I can tell it apart from the others.",
+    "should_trigger": true
+  },
+  {
+    "query": "Add a high-contrast appearance to our purlis theme.",
+    "should_trigger": true
+  },
+  {
+    "query": "Draft a theme and show it live in the purlis window before I keep it.",
+    "should_trigger": true
+  },
+  {
+    "query": "Revert the theme draft and try a cooler palette.",
+    "should_trigger": true
+  },
+  {
+    "query": "Is the theme in this project clean? Run purlis's theme check.",
+    "should_trigger": true
+  },
+  {
+    "query": "Make the terminal colours in purlis easier to read on the dark theme.",
+    "should_trigger": true
+  },
+  {
+    "query": "Change how purlis looks: softer greys, less blue.",
+    "should_trigger": true
+  },
+  {
+    "query": "Create a light version of our dark purlis theme.",
+    "should_trigger": true
+  },
+  {
+    "query": "Share my purlis theme as a zip.",
+    "should_trigger": true
+  },
+  {
+    "query": "The selection colour in the purlis terminal is invisible; fix the theme.",
+    "should_trigger": true
+  },
+  {
+    "query": "Design a purlis theme my colour-blind teammates can read.",
+    "should_trigger": true
+  },
+  {
+    "query": "Restyle the purlis window to match our company's logo.",
+    "should_trigger": true
+  },
+  {
+    "query": "Add a dark mode to the web app in the frontend repo.",
+    "should_trigger": false
+  },
+  {
+    "query": "Change the primary button colour in our marketing site's CSS and commit it.",
+    "should_trigger": false
+  },
+  {
+    "query": "Update the Tailwind config in the dashboard repo to use our brand palette.",
+    "should_trigger": false
+  },
+  {
+    "query": "Fix the contrast of the links in the docs site repo's stylesheet.",
+    "should_trigger": false
+  },
+  {
+    "query": "Make the mobile app's splash screen use the new logo colours.",
+    "should_trigger": false
+  },
+  {
+    "query": "Log in to staging with the qa vault and screenshot the new dark mode.",
+    "should_trigger": false
+  },
+  {
+    "query": "Sign in to the admin panel as two users and compare how their dashboards look.",
+    "should_trigger": false
+  },
+  {
+    "query": "Log in to our design tool's website with the vault login and download the frame.",
+    "should_trigger": false
+  },
+  {
+    "query": "Add a new token to a component family in app/src/ui of the purlis repo.",
+    "should_trigger": false
+  },
+  {
+    "query": "Write a story and a screenshot baseline for the new Notice variant in purlis's app.",
+    "should_trigger": false
+  },
+  {
+    "query": "Change the theme generator code in the purlis repo so it emits a new CSS property.",
+    "should_trigger": false
+  },
+  {
+    "query": "Change my code editor's colour theme to something darker.",
+    "should_trigger": false
+  },
+  {
+    "query": "Pick a colour palette for a slide deck.",
+    "should_trigger": false
+  },
+  {
+    "query": "What's the hex code for navy blue?",
+    "should_trigger": false
+  },
+  {
+    "query": "Make my zsh prompt colourful.",
+    "should_trigger": false
+  },
+  {
+    "query": "Write a CSS gradient for a hero banner.",
+    "should_trigger": false
+  },
+  {
+    "query": "Explain the WCAG contrast ratio formula.",
+    "should_trigger": false
+  },
+  {
+    "query": "Summarise this pull request's changes.",
+    "should_trigger": false
+  },
+  {
+    "query": "Rename the theme variable in the Python script.",
+    "should_trigger": false
+  },
+  {
+    "query": "Set up syntax highlighting for Markdown in the editor.",
+    "should_trigger": false
+  },
+  {
+    "query": "Resize the screenshot to 800 pixels wide.",
+    "should_trigger": false
+  },
+  {
+    "query": "Convert this RGB value to HSL.",
+    "should_trigger": false
+  }
+]

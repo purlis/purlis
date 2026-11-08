@@ -1,6 +1,6 @@
 ---
 name: purlis-curation-action
-description: Add a curation action to a purlis persona — a chat the person can open on a workspace, a persona or the plane with a prompt already typed. Use when asked to add, write or change a persona's curation action, or to give a persona a new entry in the Curate menu.
+description: When a person wants a purlis persona to offer a chat in the Curate menu — on a workspace, a persona or the plane, with a prompt already typed — write or change that persona's curation action. Use when asked to add, write, change, rename or remove a curation action or a Curate menu entry, or what a curation action's prompt and frontmatter may hold. Not for writing a skill, its trigger tests or its evals — that is purlis-skill-studio. Not for creating a persona or handing it work — that is purlis-persona.
 ---
 
 # Adding a curation action
