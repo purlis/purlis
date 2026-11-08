@@ -10750,6 +10750,23 @@ export type NotASkill = {
 };
 
 /**
+ *  **How a draining runner that cannot be asked came to be so**, as Docker says now, and so what
+ *  is left of it (ruled 2026-11-08): the window names which in its own words, so a person reads
+ *  what is there and what can be done with it.
+ */
+export type NotChecked = 
+/**
+ *  Its container had stopped before its drain, and has not run since: it is there, stopped,
+ *  and is checked once it runs again.
+ */
+"stopped" | 
+/**
+ *  Its container was removed outside purlis, and only its home volume is left, which nothing
+ *  can check.
+ */
+"home_only";
+
+/**
  *  What a runner holds, set against what the window has open: the chats and browsers of its own
  *  pool it holds, which its row lists by what the runner says rather than where the window
  *  started them, and how many it holds the window has not open.
@@ -12306,6 +12323,15 @@ export type PoolNamedBy = {
 };
 
 /**
+ *  **An older runner of a pool kept unchecked** (ruled 2026-11-08): its name, and what is left of
+ *  it.
+ */
+export type PoolNotChecked = {
+	runner: string,
+	left: NotChecked,
+};
+
+/**
  *  **A project an older runner of a pool waits on** (#5461): it still has to bring back what its
  *  chats left there, and only an open project does.
  */
@@ -12643,6 +12669,11 @@ export type PoolVersion = {
 	 *  runner. Empty where none does.
 	 */
 	left: string[],
+	/**
+	 *  **Its older runners kept as they could not be checked for such work** (ruled 2026-11-08),
+	 *  each by name with what is left of it: the Pools group names each in a line of its own.
+	 */
+	not_checked: PoolNotChecked[],
 };
 
 /**  What the Pools group draws: the pools, and the limits a new pool gets by default. */
@@ -14351,6 +14382,11 @@ export type RunnerOnTheList = {
 	 *  may let go of with it. Empty where none keeps it.
 	 */
 	left: string[],
+	/**
+	 *  **A draining runner kept as it could not be checked for such work**, and what is left of
+	 *  it (ruled 2026-11-08): a stopped container, or only its home. None where it was checked.
+	 */
+	not_checked: NotChecked | null,
 	on: OnADevice,
 };
 

@@ -122,6 +122,7 @@ beforeEach(() => {
     owed: [],
     owed_why: null,
     left: [],
+    not_checked: [],
   };
   added = [];
   removed = [];
@@ -928,6 +929,7 @@ describe("You › This machine › Pools", () => {
       owed: [],
       owed_why: null,
       left: [],
+      not_checked: [],
     };
     render(<App />);
     const nav = await yourSettings();
@@ -945,6 +947,33 @@ describe("You › This machine › Pools", () => {
         /2 chats still run there: end them to let purlis remove the older runners\./,
       ),
     ).toBeInTheDocument();
+  });
+
+  it("names each older runner kept unchecked in a line of its own, saying what is left of it and what lets it go", async () => {
+    pools = [a_pool("builds")];
+    version = {
+      ...version,
+      draining: 2,
+      not_checked: [
+        { runner: "builds-0a1b2c3d", left: "stopped" },
+        { runner: "builds-4e5f6a7b", left: "home_only" },
+      ],
+    };
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+
+    const stopped = await within(group).findByText(/^Older runner builds-0a1b2c3d stays/);
+    expect(stopped).toHaveTextContent(
+      "Its stopped container is still in Docker. Start it there and purlis checks it, or let it go in Devices, which deletes whatever it holds.",
+    );
+    const homeOnly = within(group).getByText(/^Older runner builds-4e5f6a7b stays/);
+    expect(homeOnly).toHaveTextContent("only its saved home is left");
+    expect(homeOnly).toHaveTextContent("purlis can't check the home");
+    // Neither says it holds work, which nobody knows, nor sends the person to a container that is gone.
+    expect(group).not.toHaveTextContent(/holds work purlis can't bring back/);
+    expect(homeOnly).not.toHaveTextContent(/container with Docker/);
   });
 
   it("names the closed project an older runner waits on, and what lets the runner go", async () => {
@@ -1034,6 +1063,7 @@ describe("You › This machine › Pools", () => {
       owed: [],
       owed_why: null,
       left: [],
+      not_checked: [],
     };
     render(<App />);
     const nav = await yourSettings();
@@ -1059,6 +1089,7 @@ describe("You › This machine › Pools", () => {
       owed: [],
       owed_why: null,
       left: [],
+      not_checked: [],
     };
     render(<App />);
     const nav = await yourSettings();
@@ -1117,6 +1148,7 @@ describe("You › This machine › Pools", () => {
       owed: [],
       owed_why: null,
       left: [],
+      not_checked: [],
     };
     render(<App />);
     const nav = await yourSettings();
@@ -1143,6 +1175,7 @@ describe("You › This machine › Pools", () => {
       owed: [],
       owed_why: null,
       left: [],
+      not_checked: [],
     };
     render(<App />);
     const nav = await yourSettings();
@@ -1368,6 +1401,7 @@ describe("owedSaid", () => {
     owed: [{ path: "/p/alpha", name: "alpha", opened: opened(secondsAgo), open_now: false }],
     owed_why: null,
     left: [],
+    not_checked: [],
   });
 
   it("says how many whole days ago a closed project was last opened", () => {
@@ -1405,6 +1439,7 @@ describe("leftSaid", () => {
     owed: [],
     owed_why: null,
     left,
+    not_checked: [],
   });
 
   it("says what an older runner holds that can't be brought back, and what lets it go", () => {

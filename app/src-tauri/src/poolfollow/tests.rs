@@ -552,10 +552,14 @@ fn a_runner_that_stopped_before_its_drain_began_stays_unchecked_and_is_not_woken
     assert_eq!(names(&machine), ["first", "first-fedcba98"], "{said:?}");
     assert!(said[0].contains("not checked"), "{said:?}");
     assert_eq!(
-        left_by(&machine.config, "first", "first"),
-        [NOT_CHECKED_STOPPED]
+        not_checked_by(&machine.config, "first", "first"),
+        Some(NotChecked::Stopped)
     );
-    assert_eq!(left_on(&machine.config, "first"), [NOT_CHECKED_STOPPED]);
+    assert_eq!(
+        not_checked_on(&machine.config, "first"),
+        [("first".to_owned(), NotChecked::Stopped)]
+    );
+    assert_eq!(left_on(&machine.config, "first"), Vec::<String>::new());
     assert!(
         !purlis_core::runners::named(config.path(), "first")
             .unwrap()
@@ -615,6 +619,7 @@ fn a_runner_kept_unchecked_is_checked_once_it_runs_again() {
         "{said:?}"
     );
     assert_eq!(left_on(&again.config, "first"), Vec::<String>::new());
+    assert_eq!(not_checked_on(&again.config, "first"), []);
 }
 
 /// **One kept unchecked is let go without being woken**: nothing runs on a stopped container, and
@@ -635,7 +640,7 @@ fn a_stopped_runner_kept_unchecked_is_let_go_without_being_woken() {
     let_go(
         &machine,
         "first",
-        &[crate::devices::shown_safely(NOT_CHECKED_STOPPED)],
+        &[],
         &|_| panic!("a stopped runner runs no chat"),
         &|_| panic!("a stopped runner is not asked what it holds"),
     )
@@ -643,6 +648,7 @@ fn a_stopped_runner_kept_unchecked_is_let_go_without_being_woken() {
 
     assert_eq!(names(&machine), ["first-fedcba98"]);
     assert_eq!(left_on(&machine.config, "first"), Vec::<String>::new());
+    assert_eq!(not_checked_on(&machine.config, "first"), []);
     let log = std::fs::read_to_string(config.path().join("log")).unwrap();
     assert!(!log.contains("start "), "{log}");
     assert!(
@@ -1051,7 +1057,10 @@ fn a_pruned_draining_runner_whose_home_holds_no_conversation_stays_unchecked() {
 
     assert_eq!(names(&machine), ["first", "first-fedcba98"], "{said:?}");
     assert!(said[0].contains("not checked"), "{said:?}");
-    assert_eq!(left_on(&machine.config, "first"), [NOT_CHECKED_REMOVED]);
+    assert_eq!(
+        not_checked_on(&machine.config, "first"),
+        [("first".to_owned(), NotChecked::HomeOnly)]
+    );
     let log = std::fs::read_to_string(config.path().join("log")).unwrap();
     assert!(!log.contains("volume rm"), "{log}");
 }
@@ -1073,7 +1082,7 @@ fn a_pruned_draining_runner_kept_unchecked_is_forgotten_once_let_go() {
     let_go(
         &machine,
         "first",
-        &[crate::devices::shown_safely(NOT_CHECKED_REMOVED)],
+        &[],
         &|_| panic!("a pruned runner runs no chat"),
         &|_| panic!("a pruned runner is not asked what it holds"),
     )
@@ -1081,6 +1090,7 @@ fn a_pruned_draining_runner_kept_unchecked_is_forgotten_once_let_go() {
 
     assert_eq!(names(&machine), ["first-fedcba98"]);
     assert_eq!(left_on(&machine.config, "first"), Vec::<String>::new());
+    assert_eq!(not_checked_on(&machine.config, "first"), []);
     let log = std::fs::read_to_string(config.path().join("log")).unwrap();
     assert!(log.contains("volume rm"), "{log}");
 }
