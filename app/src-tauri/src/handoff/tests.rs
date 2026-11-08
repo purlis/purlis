@@ -14054,6 +14054,9 @@ fn always_allow_gives_no_vault_once_keep_blocked_is_pressed_during_its_audit() {
                 .is_err_and(|why| why.contains("stays") && why.contains("tools")),
             "it says the line it wrote stays: {pressed:?}"
         );
+        // Keep blocked answers its ask Don't allow only once the Always allow has let go of the
+        // answers, so its own audit line is written by the time it returns, not before (#5859).
+        keeping.join().expect("it ends");
         let keys = serde_json::json!(["TOKEN"]);
         assert_eq!(
             run_grant_audits(&taken),
@@ -14070,7 +14073,6 @@ fn always_allow_gives_no_vault_once_keep_blocked_is_pressed_during_its_audit() {
             !matches!(ran, purlis_core::secrets::ask::run::RunHeld::Allowed),
             "the run is not let go on: {ran:?}"
         );
-        keeping.join().expect("it ends");
         assert_eq!(
             purlis_core::sandbox::local::granted_vaults(&plane.root),
             [],
