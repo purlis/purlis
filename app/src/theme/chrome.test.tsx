@@ -559,6 +559,7 @@ function dialogCore() {
           pushFailed: null,
           live: [],
           conflicts: [],
+          conflictKeys: {},
           notice: null,
           mode: "push",
           modeFrom: "charter.toml",

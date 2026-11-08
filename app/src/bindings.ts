@@ -12388,6 +12388,8 @@ export type PlaneSaving = {
 	live: string[],
 	/**  The files to settle, when conflicts are why the save is blocked. */
 	conflicts: string[],
+	/**  Of `conflicts`, the settings file with the keys both machines changed (#5824). */
+	conflictKeys: { [key in string]: string[] },
 	/**  What a save cannot do here that is not a block (a request mode with no forge to open it on). */
 	notice: string | null,
 	/**  `[plane] mode`, or `null` when the plane names none. */
@@ -17481,6 +17483,11 @@ export type StudioHarness = {
 	 *  with why (SK-53): the core's `HarnessInTheStudio::repo_left_out`.
 	 */
 	repo_left_out: StudioSkill[],
+	/**
+	 *  The project's skills its chats start without because it has the same copy itself, each
+	 *  naming the copy kept (#5843): the core's `HarnessInTheStudio::same_left_out`.
+	 */
+	same_left_out: StudioSkill[],
 	/**
 	 *  **What its own catalogue holds** (#3324), in the core's words (`OwnCatalogue::said`),
 	 *  which `purlis skill list` says too: the skills it finds itself in the person's own

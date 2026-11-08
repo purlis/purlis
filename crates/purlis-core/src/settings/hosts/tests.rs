@@ -30,7 +30,8 @@ fn a_project_host_is_added_to_the_committed_file_keeping_every_other_line() {
     let after = text(dir.path(), "charter.toml").unwrap();
     assert_eq!(
         after,
-        "schema = 1\n\n[sandbox]\nmode = \"on\" # on for everyone\nhosts = [\"10.100.39.145:6443\"]\n"
+        "schema = 1\n\n[sandbox]\nmode = \"on\" # on for everyone\nhosts = [\n    \
+         \"10.100.39.145:6443\",\n]\n"
     );
     assert_eq!(listed(&after)[0].id, id);
     assert_eq!(listed(&after)[0].label, "10.100.39.145:6443");
@@ -69,7 +70,7 @@ fn your_own_host_goes_to_this_machine_s_file_alone() {
     assert_eq!(text(dir.path(), "charter.toml").unwrap(), ON);
     assert_eq!(
         text(dir.path(), "charter.local.toml").unwrap(),
-        "[sandbox]\nhosts = [\"[fd00::7]:8443\"]\n"
+        "[sandbox]\nhosts = [\n    \"[fd00::7]:8443\",\n]\n"
     );
     assert_eq!(
         crate::sandbox::hosts::personal(dir.path()),
@@ -145,7 +146,7 @@ fn removing_the_last_host_takes_the_key_and_this_machine_s_empty_table_with_it()
     remove(dir.path(), Which::Shared, Some(&with), &id).expect("removed");
     assert_eq!(
         text(dir.path(), "charter.toml").unwrap(),
-        format!("{ON}hosts = [\"c.example\"]\n")
+        format!("{ON}hosts = [\n    \"c.example\",\n]\n")
     );
 }
 
@@ -178,28 +179,29 @@ fn host(typed: &str) -> crate::sandbox::hosts::Host {
 }
 
 #[test]
-fn a_host_is_written_last_in_one_list_keeping_every_other_line() {
+fn a_host_is_written_one_per_line_in_order_keeping_every_other_line() {
     assert_eq!(
         with(Which::Shared, ON, &host("10.100.39.145:6443")).unwrap(),
-        format!("{ON}hosts = [\"10.100.39.145:6443\"]\n")
+        format!("{ON}hosts = [\n    \"10.100.39.145:6443\",\n]\n")
     );
-    let across = format!("{ON}hosts = [\n  \"a.example\",\n]\n");
+    // As every Always allow appended them before #5824: one line, in the order they came.
+    let one_line = format!("{ON}hosts = [\"c.example\", \"a.example\"]\n");
     assert_eq!(
-        with(Which::Shared, &across, &host("b.example")).unwrap(),
-        format!("{ON}hosts = [\"a.example\", \"b.example\"]\n")
+        with(Which::Shared, &one_line, &host("b.example")).unwrap(),
+        format!("{ON}hosts = [\n    \"a.example\",\n    \"b.example\",\n    \"c.example\",\n]\n")
     );
     assert_eq!(
         with(Which::Local, "", &host("[fd00::7]:8443")).unwrap(),
-        "[sandbox]\nhosts = [\"[fd00::7]:8443\"]\n"
+        "[sandbox]\nhosts = [\n    \"[fd00::7]:8443\",\n]\n"
     );
 }
 
 #[test]
-fn removing_writes_the_rest_as_one_list_and_the_last_takes_its_key_with_it() {
-    let two = format!("{ON}hosts = [\n  \"a.example\",\n  \"c.example\",\n]\n");
+fn removing_writes_the_rest_one_per_line_and_the_last_takes_its_key_with_it() {
+    let two = format!("{ON}hosts = [\"a.example\", \"c.example\"]\n");
     assert_eq!(
         without(Which::Shared, &two, 0).unwrap(),
-        format!("{ON}hosts = [\"c.example\"]\n")
+        format!("{ON}hosts = [\n    \"c.example\",\n]\n")
     );
     let one = format!("{ON}hosts = [\"a.example\"]\n");
     assert_eq!(without(Which::Shared, &one, 0).unwrap(), ON);
@@ -284,7 +286,7 @@ fn a_host_policy_does_not_allow_is_refused_as_it_is_added_and_nothing_is_written
     allowed.expect("added");
     assert_eq!(
         text(dir.path(), "charter.toml").unwrap(),
-        format!("{ON}hosts = [\"build.corp.example\"]\n")
+        format!("{ON}hosts = [\n    \"build.corp.example\",\n]\n")
     );
     let refused = yours.expect_err("refused");
     assert!(

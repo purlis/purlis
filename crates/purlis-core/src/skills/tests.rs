@@ -57,6 +57,7 @@ fn a_chat_is_handed_every_built_in_skill_by_its_harness_route() {
         judging: false,
         writes_its_piece: false,
         runs_a_shell: false,
+        own: &[],
     };
     for harness in [Harness::ClaudeCode, Harness::Codex, Harness::Opencode] {
         let set = for_chat(kit, harness);
@@ -1174,6 +1175,82 @@ fn the_studio_lists_each_harnesss_own_skills_beside_the_projects_and_marks_a_cla
         harnesses[0].set.clashes.is_empty(),
         "Claude Code has none of its own here"
     );
+}
+
+/// #5843: the studio previews a harness's chat as its start sees it, so a project skill the
+/// harness has the same copy of is out of the preview, listed under the harness as left out,
+/// naming the copy kept; one that differs stays in, and a harness without a copy keeps it.
+#[test]
+fn the_studios_preview_lists_a_skill_its_harness_has_the_same_copy_of_once() {
+    let tmp = tempfile::tempdir().unwrap();
+    let plane = tmp.path().join("plane");
+    std::fs::create_dir_all(&plane).unwrap();
+    std::fs::write(plane.join("charter.toml"), "schema = 1\n").unwrap();
+    let write = |dir: &Path, name: &str, body: &str| {
+        std::fs::create_dir_all(dir.join(name)).unwrap();
+        std::fs::write(
+            dir.join(name).join("SKILL.md"),
+            format!("---\nname: {name}\ndescription: Does {name}.\n---\n{body}\n"),
+        )
+        .unwrap();
+    };
+    write(&plane.join("skills"), "tdd", "Red, green, refactor.");
+    write(&plane.join("skills"), "review", "Read it twice.");
+    let claude = tmp.path().join("claude-config");
+    write(&claude.join("skills"), "tdd", "Red, green, refactor.");
+    write(&claude.join("skills"), "review", "Read it once.");
+    let chat = [("CLAUDE_CONFIG_DIR".to_owned(), claude.display().to_string())];
+    let env = crate::harness_plugin::Env {
+        chat: &chat,
+        home: Some(tmp.path().join("home")),
+        process: false,
+    };
+
+    let set = in_the_studio(None, &plane, None, None);
+    let harnesses = harnesses_in_the_studio(
+        &set,
+        &plane,
+        None,
+        &[],
+        &[],
+        &env,
+        &Known::of(&plane, None),
+        Reading::Whole,
+    );
+
+    let on_claude = &harnesses[0];
+    assert_eq!(on_claude.harness, Harness::ClaudeCode);
+    let previewed = |set: &SkillSet, name: &str| {
+        set.effective
+            .iter()
+            .any(|e| e.skill.name == name && e.origin == Origin::Project)
+    };
+    assert!(!previewed(&on_claude.at_the_root, "tdd"), "listed once");
+    assert!(previewed(&on_claude.at_the_root, "review"), "they differ");
+    let left: Vec<(String, Option<String>)> = on_claude
+        .same_left_out
+        .iter()
+        .map(|row| (row.name.clone(), row.left_out.clone()))
+        .collect();
+    assert_eq!(
+        left,
+        [(
+            "tdd".to_owned(),
+            Some("the same as your own copy, which is listed in its place".to_owned())
+        )]
+    );
+    let kept = on_claude
+        .rows
+        .iter()
+        .find(|row| row.name == "tdd")
+        .expect("the harness's own copy is listed");
+    assert_eq!(kept.left_out, None, "the copy kept is the harness's");
+    let on_codex = harnesses
+        .iter()
+        .find(|one| one.harness == Harness::Codex)
+        .unwrap();
+    assert!(previewed(&on_codex.at_the_root, "tdd"), "Codex has no copy");
+    assert!(on_codex.same_left_out.is_empty());
 }
 
 /// #5737: a chat's start hands one copy of a skill it would get twice the same, and both of one
