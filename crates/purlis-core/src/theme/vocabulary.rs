@@ -528,10 +528,13 @@ pub fn follow_kin(
             // A ring whose edge is still to come holds the edge's pairs too, so the two take one
             // colour: the edge has a pair the ring has not, the palette's aimed row.
             let edge_to_come = token == RING && alike && !given.contains_key(EDGE);
+            let apart = HeldApart::of(token, under, |token| Some(is(token).to_owned()));
+            let contrast = super::check::KeepsContrast::of(token, &was);
+            let edge = super::check::KeepsContrast::of(EDGE, &was);
             let keeps = |one: &str| {
-                holds_as_apart(token, one, under, |token| Some(is(token).to_owned()))
-                    && super::check::keeps_contrast(token, one, &is, &was)
-                    && (!edge_to_come || super::check::keeps_contrast(EDGE, one, &is, &was))
+                apart.holds(one)
+                    && contrast.keeps(one, &is)
+                    && (!edge_to_come || edge.keeps(one, &is))
                     && (token != FIRST_SERIES || apart_from_the_series(one, &is, &was))
             };
             let holding = tries.iter().find(|one| keeps(one)).cloned().or_else(|| {
@@ -575,32 +578,45 @@ fn apart_from_the_series<'v>(
     })
 }
 
-/// **Whether `turned`, what `token` would be drawn as, holds every rule of [`super::tint::APART`] it is the
-/// token of** (#4918), each at least its distance from its other side as `value` gives it, or
-/// no nearer than `written`, the value it was turned from, already was: a mark of the accent
-/// ([`super::tint::SIGNAL_MARKS`]) so from each state colour too (#5157). A rule of the
-/// accent's words is measured by its own answer, and a value that is not a colour has nothing
-/// to be near.
-pub fn holds_as_apart(
-    token: &str,
-    turned: &str,
-    written: &str,
-    value: impl Fn(&str) -> Option<String>,
-) -> bool {
-    super::tint::APART
-        .iter()
-        .filter(|rule| rule.token == token && !rule.words)
-        .all(|rule| {
-            let Some(from) = value(rule.from).as_deref().and_then(super::tint::oklab_of) else {
-                return true;
-            };
-            let near =
-                |one: &str| super::tint::oklab_of(one).map(|one| super::tint::distance(one, from));
-            match (near(turned), near(written)) {
-                (Some(now), Some(was)) => now >= rule.distance.min(was),
-                _ => true,
-            }
-        })
+/// **What every rule of [`super::tint::APART`] that `token` is the token of holds it to** (#4918):
+/// at least the rule's distance from its other side as `value` gives it, or no nearer than
+/// `written`, the value it is turned from, already was: a mark of the accent
+/// ([`super::tint::SIGNAL_MARKS`]) so from each state colour too (#5157). A rule of the accent's
+/// words is measured by its own answer, and a value that is not a colour has nothing to be near.
+///
+/// Each rule's other side and bound are found once, so a search that asks of thousands of colours
+/// ([`super::tint::nudged`]) measures only the colour it asks of (#3597).
+pub struct HeldApart {
+    /// Each rule's other side, and the distance a colour must keep from it.
+    rules: Vec<([f64; 3], f64)>,
+}
+
+impl HeldApart {
+    pub fn of(token: &str, written: &str, value: impl Fn(&str) -> Option<String>) -> Self {
+        let written = super::tint::oklab_of(written);
+        let rules = super::tint::APART
+            .iter()
+            .filter(|rule| rule.token == token && !rule.words)
+            .filter_map(|rule| {
+                let from = value(rule.from)
+                    .as_deref()
+                    .and_then(super::tint::oklab_of)?;
+                let was = super::tint::distance(written?, from);
+                Some((from, rule.distance.min(was)))
+            })
+            .collect();
+        Self { rules }
+    }
+
+    /// Whether `turned`, what the token would be drawn as, holds every rule.
+    pub fn holds(&self, turned: &str) -> bool {
+        let Some(turned) = super::tint::oklab_of(turned) else {
+            return true;
+        };
+        self.rules
+            .iter()
+            .all(|(from, bound)| super::tint::distance(turned, *from) >= *bound)
+    }
 }
 
 /// The accent.

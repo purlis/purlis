@@ -1324,7 +1324,7 @@ fn toward(
     if own.len() != 7 {
         return None;
     }
-    let mut fewest = findings_for(theme, token);
+    let mut fewest = findings_for(theme, token, usize::MAX)?;
     if fewest == 0 {
         return None;
     }
@@ -1338,8 +1338,7 @@ fn toward(
         for step in 1..=TOWARD_STEPS {
             let point = super::check::mix(to, &from, f64::from(step) / f64::from(TOWARD_STEPS));
             trial.values.insert(token, point.clone());
-            let found = findings_for(&trial, token);
-            if found < fewest {
+            if let Some(found) = findings_for(&trial, token, fewest) {
                 fewest = found;
                 taken = Some(point);
                 if found == 0 {
@@ -1356,7 +1355,11 @@ fn toward(
 /// each workspace colour, as [`super::check`] counts them, and the tokens the consent floors
 /// hold when it is drawn, for a token a floor names. Only the pairs `token` is drawn in are
 /// measured: a walk measures one token at a time.
-fn findings_for(theme: &ResolvedTheme, token: &'static str) -> usize {
+///
+/// `None` once they reach `fewer_than`: a point no better than the best so far is never taken, so
+/// the floors are held, which is most of what a walk costs (#3597), only for a point whose
+/// contrast findings alone leave it a chance.
+fn findings_for(theme: &ResolvedTheme, token: &'static str, fewer_than: usize) -> Option<usize> {
     let pairs: Vec<&super::check::Pair> = super::check::PAIRS
         .iter()
         .filter(|pair| pair.front == token)
@@ -1389,6 +1392,9 @@ fn findings_for(theme: &ResolvedTheme, token: &'static str) -> usize {
             };
         }
     }
+    if found >= fewer_than {
+        return None;
+    }
     let held = if FLOORED.contains(&token) || token.starts_with("state.") {
         super::floors::hold(theme)
             .1
@@ -1396,7 +1402,7 @@ fn findings_for(theme: &ResolvedTheme, token: &'static str) -> usize {
     } else {
         0
     };
-    found + held
+    Some(found + held).filter(|all| *all < fewer_than)
 }
 
 /// The tokens a walk may move that a consent floor names besides the state marks: the danger
