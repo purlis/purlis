@@ -2328,3 +2328,54 @@ fn mocha_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
 fn rspec_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
     refused_as_running_others("rspec");
 }
+
+// #5799: programs whose flags name a command. Refused whole where the program is the language
+// that runs it, or reads a file a chat wrote; offered without the flag otherwise.
+
+#[test]
+fn sed_runs_a_command_its_script_names_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("sed");
+}
+
+#[test]
+fn aria2c_runs_the_command_its_hooks_name_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("aria2c");
+}
+
+#[test]
+fn kustomize_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("kustomize");
+}
+
+/// `name args…` run by a chat raises no notice, and the chat hears the form it named and to leave
+/// it out.
+fn refused_for_its_flag(name: &str, args: &[&str], form: &str) {
+    let project = project();
+    let asks = Asks::new(project.path());
+    let mut want = printenv(project.path(), args);
+    want.command[0] = name.to_owned();
+    let frames = run_with(&the_chat(project.path()), want, &asks, Duration::ZERO);
+    assert!(asks.open_runs().is_empty(), "{name}: {frames:?}");
+    let (why, _) = refusal(&frames);
+    assert!(why.contains(form), "{name}: {why}");
+    assert!(why.contains(&format!("leave {form} out")), "{name}: {why}");
+}
+
+#[test]
+fn ssh_with_a_proxy_command_is_offered_no_run_grant_and_the_chat_hears_to_leave_it_out() {
+    refused_for_its_flag(
+        "ssh",
+        &["-oProxyCommand=sh -c x", "host", "uptime"],
+        "-o ProxyCommand",
+    );
+}
+
+#[test]
+fn rsync_with_a_remote_shell_is_offered_no_run_grant_and_the_chat_hears_to_leave_it_out() {
+    refused_for_its_flag("rsync", &["-avze", "x", "a", "host:b"], "-e");
+}
+
+#[test]
+fn psql_with_a_file_of_commands_is_offered_no_run_grant_and_the_chat_hears_to_leave_it_out() {
+    refused_for_its_flag("psql", &["-f", "x.sql"], "-f");
+}

@@ -1302,8 +1302,14 @@ fn run_granted(
             (1, said)
         }
     };
+    // A flag that names a command is not offered (#5799), by the name the chat gave and by the
+    // program a link leads to.
+    let names_a_command =
+        |name: &str| tools::command_flags::names_a_command(name, &command[1..]).map_or(Ok(()), Err);
+    names_a_command(&command_name(&command[0])).map_err(refused)?;
     let ready = grantable(asker, persona, &asked, listed, &locks, &writes)
         .map_err(|refused_as| refused(format!("{why} ({refused_as})")))?;
+    names_a_command(&command_name(&ready.program.to_string_lossy())).map_err(refused)?;
     // A command its run would refuse is not offered.
     tools::allows(&ready, &command[1..]).map_err(refused)?;
     let bound = bound_of(asker, wanted, command, &ready);

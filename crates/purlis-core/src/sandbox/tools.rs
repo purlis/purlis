@@ -80,6 +80,7 @@ use std::path::{Path, PathBuf};
 use crate::settings::Refusal;
 
 pub mod args;
+pub mod command_flags;
 pub mod fill;
 pub mod host;
 pub mod login;
@@ -1859,11 +1860,19 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "vitest",
     "mocha",
     "rspec",
-    // Kept offered, Allow once on the exact command alone (#5799 holds the rest of this ruling):
-    // `kubectl`, `psql`, `ssh`, `scp`, `rsync` and the like are the usual reason a chat is handed
-    // a key at all. A kubeconfig's `exec:` plugin, `psql -f`'s `\!`, `ssh -o ProxyCommand` or
-    // `rsync -e` can run another program, but each is said in the command the person reads, or
-    // in a file the command names, which the notice's caution warns of.
+    // programs whose flags name a command (#5799): `sed`'s script runs one (GNU `e`), as `awk`'s
+    // and `m4`'s do; `aria2c` runs its `--on-download-*` hooks, which a `--conf-path` file or its
+    // RPC can set too; `kustomize` runs what a kustomization a chat wrote says, with its exec
+    // plugins and helm.
+    "sed",
+    "aria2c",
+    "kustomize",
+    // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
+    // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
+    // key at all. Only their forms that name a command, or a file that can, are refused
+    // (`ssh -o ProxyCommand`, `rsync -e`, `kubectl --kubeconfig`, `psql -f`, `zip -TT`,
+    // `wget --use-askpass` and the rest: [`command_flags`]). A granted run has no stdin and a
+    // home of its own, so what else it reads is in the command the person reads.
 ];
 
 /// **The programs a Run grant may be wider than one exact command for** (the person's ruling on
@@ -2687,6 +2696,9 @@ mod login_tests;
 
 #[cfg(test)]
 mod args_tests;
+
+#[cfg(test)]
+mod command_flags_tests;
 
 #[cfg(test)]
 mod fill_tests;
