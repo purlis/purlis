@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794172326137,
+  "lastUpdate": 1794173809334,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -43890,6 +43890,48 @@ window.BENCHMARK_DATA = {
             "value": 100.8231155,
             "unit": "ms",
             "extra": "median of 5 runs: 100.415, 100.605, 100.823, 101.783, 101.838 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "c4d311a14d2260d20c0acc8ceb3b4a5e7a282444",
+          "message": "Sandbox and runners: gh's folders moved by a variable are held, and a keep clears opencode's package (#5872)\n\n* Sandbox: gh's and glab's folders are held where a variable moves them\n\nA sandboxed chat no longer writes $GH_CONFIG_DIR, $GLAB_CONFIG_DIR,\n$XDG_CONFIG_HOME/gh, $XDG_CONFIG_HOME/glab-cli or $XDG_DATA_HOME/gh,\non any machine, as it already could not at ~/.config/gh. A folder at\nits usual place stays liftable, and one that is the home, above it or\nholds the project is never held for this.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6Y9SP4MBBZ5C428HVS0R7SJ\nPurlis-Persona: steward\n\n* Runners: a keep clears opencode's package.json and node_modules (test)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6Y9SP4MBBZ5C428HVS0R7SJ\nPurlis-Persona: steward\n\n* Runners: a keep clears opencode's package.json and node_modules\n\nopencode remakes both in its config folder as it starts, so a kept\nprofile loses nothing a desktop sent. Claude Code's and Codex's plugins\nfolders stay: each holds its plugins' own data, which no setting makes\nagain.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6Y9SP4MBBZ5C428HVS0R7SJ\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-08T20:55:50Z",
+          "tree_id": "14a78a07f998421715bb96c77e03b5fd2223abb2",
+          "url": "https://github.com/purlis/purlis/commit/c4d311a14d2260d20c0acc8ceb3b4a5e7a282444"
+        },
+        "date": 1794173803878,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.3374825,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.335, 0.336, 0.337, 0.344, 0.352 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.672148999999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.089, 16.414, 16.672, 16.780, 16.945 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.387157,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.892, 100.980, 101.387, 101.644, 102.370 ms"
           }
         ]
       }
