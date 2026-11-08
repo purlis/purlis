@@ -442,7 +442,9 @@ pub struct SigningWaiting {
     pub path: String,
     /// The commit whose push was refused.
     pub commit: String,
-    /// The app's number for the chat that pushed, while it is open.
+    /// The app's number now for the chat that pushed, while it is open: looked up by the chat's
+    /// lasting id each time it is read, so a number given to another chat since never shows it
+    /// there (#5789).
     #[specta(optional)]
     pub chat: Option<u32>,
     /// Signed and sent since: shown as done until the window has shown it.
@@ -489,26 +491,36 @@ pub async fn signing_waiting(
     plane: crate::planes::PlaneId,
 ) -> Result<Vec<SigningWaiting>, String> {
     let root = root_of(&planes, &plane)?;
+    let held = planes.held(&plane)?;
     blocking(move || {
         Ok(signingsetup::retry::waiting_here(&root)
             .into_iter()
-            .map(|one| SigningWaiting {
-                forge: one.kind.display().to_string(),
-                kind: one.kind.word().to_string(),
-                ws: one.ws,
-                repo: one.repo,
-                piece: one.piece,
-                branch: one.branch,
-                host: one.host,
-                path: one.path,
-                commit: one.commit,
-                chat: one.chat,
-                sent: one.sent,
-                why: one.why,
-            })
+            .map(|one| shown(one, |id| held.chats().session_of_id(id)))
             .collect())
     })
     .await
+}
+
+/// `one` as the window shows it, its chat named by the number `session_of` gives its lasting id
+/// now: none where that chat is not open.
+fn shown(
+    one: signingsetup::retry::Waiting,
+    session_of: impl Fn(&str) -> Option<u32>,
+) -> SigningWaiting {
+    SigningWaiting {
+        forge: one.kind.display().to_string(),
+        kind: one.kind.word().to_string(),
+        chat: one.chat_id.as_deref().and_then(session_of),
+        ws: one.ws,
+        repo: one.repo,
+        piece: one.piece,
+        branch: one.branch,
+        host: one.host,
+        path: one.path,
+        commit: one.commit,
+        sent: one.sent,
+        why: one.why,
+    }
 }
 
 /// **Sign and retry** (#5630, ADR 0116 §4), for each of `lanes` that waits on signing: the
@@ -935,7 +947,7 @@ mod tests {
             host: "github.com".to_owned(),
             path: "purlis/purlis".to_owned(),
             commit: "0123abc".to_owned(),
-            chat: Some(3),
+            chat_id: Some("01JCHATTHREE".to_owned()),
             at: 1,
             sent: false,
             why: None,
@@ -1008,5 +1020,23 @@ mod tests {
         assert_eq!(labels(&all_sent), ["Dismiss"]);
         retry::forget_sent(root.path()).unwrap();
         assert!(crate::asking::signing_waiting(root.path(), || true).is_none());
+    }
+
+    /// #5789: a lane shows on the chat whose lasting id pushed it, by whatever number that chat
+    /// has now, and on no chat once it is closed: never on another chat given its old number.
+    #[test]
+    fn a_lane_shows_on_the_chat_that_pushed_it_by_its_lasting_id() {
+        let open = |id: &str| match id {
+            "01JCHATTHREE" => Some(12),
+            _ => None,
+        };
+        assert_eq!(super::shown(refused("p1"), open).chat, Some(12));
+        let closed = |_: &str| None;
+        assert_eq!(super::shown(refused("p1"), closed).chat, None);
+        let unnamed = Waiting {
+            chat_id: None,
+            ..refused("p1")
+        };
+        assert_eq!(super::shown(unnamed, |_| Some(3)).chat, None);
     }
 }

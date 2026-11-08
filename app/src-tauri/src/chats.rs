@@ -3213,6 +3213,15 @@ impl Chats {
             .and_then(|one| one.chat.identity.id.clone())
     }
 
+    /// **The number of the open chat whose lasting id is `id`** (ADR 0066), where one is: what a
+    /// record kept by id is shown on now, since numbers are given again after a restart.
+    pub fn session_of_id(&self, id: &str) -> Option<u32> {
+        lock(&self.open)
+            .iter()
+            .find(|(_, one)| one.chat.identity.id.as_deref() == Some(id))
+            .map(|(session, _)| *session)
+    }
+
     pub fn id_is_open(&self, id: &str) -> bool {
         lock(&self.open)
             .values()
