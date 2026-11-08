@@ -4312,9 +4312,10 @@ pub fn answered(held: &crate::planes::Held, browse: &BrowseAsk, connection: u64)
     held.browsers()
         .identify(browse.chat, held.chats().id_of(browse.chat));
     let folder = || crate::browserfiles::chat_folder(held, browse.chat);
-    // A secret fill asks the person, and reads its value once they allow it (#5115).
+    // A secret fill asks the person, and reads its value once they allow it (#5115); its notice
+    // goes where the call's asker hung up meanwhile.
     let fills = |asked: &crate::secretfills::FillAsked| {
-        crate::secretfills::asked(held, browse.chat, asked, now)
+        crate::secretfills::asked(held, browse.chat, asked, now, &gone)
     };
     let (answer, raised) = held.browsers().answer(
         held.browser_driver(),

@@ -276,7 +276,7 @@ impl Grants {
         };
         let proposal = &wait.proposal;
         let kept = (
-            proposal.persona.clone(),
+            wait.chat.clone().unwrap_or_default(),
             proposal.login.clone(),
             proposal.origin.clone(),
         );
@@ -457,6 +457,19 @@ pub fn before_the_login(
     now: u64,
     gone: &dyn Fn() -> bool,
 ) -> Option<Answer> {
+    let finds = |page: &str| follows(held, browse.chat, pool, page);
+    asked_about_the_login(held, browse, pool, now, gone, &finds)
+}
+
+/// [`before_the_login`], each page the call names followed to its login form by `finds`.
+fn asked_about_the_login(
+    held: &Held,
+    browse: &BrowseAsk,
+    pool: Option<&str>,
+    now: u64,
+    gone: &dyn Fn() -> bool,
+    finds: FindsForm<'_>,
+) -> Option<Answer> {
     let Browsing::LogIn { login, suggested } = &browse.asked else {
         return None;
     };
@@ -521,13 +534,12 @@ pub fn before_the_login(
     let Some(_following) = grants.follow(session) else {
         return no(ALREADY_ASKED.to_owned());
     };
-    let finds = |page: &str| follows(held, session, pool, page);
     let wait = match judged(
         held.root(),
         &persona,
         login,
         suggested,
-        &finds,
+        finds,
         declared.as_ref(),
         &grants.held(),
     ) {
@@ -556,23 +568,35 @@ pub fn before_the_login(
     tracing::info!("purlis: chat {session}'s browser login asks the person about its site");
     held.chats().asks_may_have_moved();
     if let Some(pool) = pool {
-        let_go_unanswered(held, session, login, id, heard);
+        let_go_unanswered(
+            held,
+            session,
+            login,
+            (id, heard),
+            loginask::THE_PERSON_IS_WAITED_FOR,
+        );
         return no(asked_on_a_runner_said(login, pool));
     }
-    let waited =
-        waited_for_the_person(grants, id, &heard, loginask::THE_PERSON_IS_WAITED_FOR, gone);
+    let _ = gone;
+    let waited = waited_for_the_person(
+        grants,
+        id,
+        &heard,
+        loginask::THE_PERSON_IS_WAITED_FOR,
+        &|| false,
+    );
     match waited {
-        Waited::Heard(Heard::Allowed) => None,
-        Waited::Heard(Heard::Kept(reason)) => no(match &replaces {
+        Ended::Heard(Heard::Allowed) => None,
+        Ended::Heard(Heard::Kept(reason)) => no(match &replaces {
             Some(old) => kept_where_it_is_said(login, &old.page, reason.as_deref()),
             None => kept_said(login, reason.as_deref()),
         }),
-        Waited::Heard(Heard::Gone) => no(NOT_ANSWERED.to_owned()),
-        Waited::NotAnswered => {
+        Ended::Heard(Heard::Gone) | Ended::Closed => no(NOT_ANSWERED.to_owned()),
+        Ended::NotAnswered => {
             held.chats().asks_may_have_moved();
             no(NOT_ANSWERED.to_owned())
         }
-        Waited::AskerGone => {
+        Ended::AskerGone => {
             tracing::info!("purlis: chat {session}'s browser login call ended, so its notice went");
             held.chats().asks_may_have_moved();
             no(ASKER_GONE.to_owned())
@@ -581,14 +605,17 @@ pub fn before_the_login(
 }
 
 /// What a call is answered where its asker hung up while its notice waited: nobody reads it.
-const ASKER_GONE: &str = "the call ended while the person was asked, so its notice went and \
-                          nothing was filled";
+/// A secret fill's call is answered the same ([`crate::secretfills`]).
+pub(crate) const ASKER_GONE: &str = "the call ended while the person was asked, so its notice \
+                                     went and nothing was filled";
 
-/// **How a wait on the person ended** ([`waited_for_the_person`]).
+/// **How a wait on the person ended** ([`waited`]).
 #[derive(Debug, PartialEq, Eq)]
-enum Waited {
-    /// The press, or the chat's close.
-    Heard(Heard),
+pub(crate) enum Ended<H> {
+    /// The press.
+    Heard(H),
+    /// The chat closed, and its waits with it.
+    Closed,
     /// Nobody answered in time: the notice went.
     NotAnswered,
     /// The call's asker hung up: the notice went.
@@ -598,71 +625,82 @@ enum Waited {
 /// How often a waiting call looks whether its asker hung up.
 const LOOKS_AGAIN: Duration = Duration::from_secs(1);
 
-/// **The answer to the notice numbered `id`**, waited for `at_most`, looking every
-/// [`LOOKS_AGAIN`] whether the call's asker is `gone`: past the time, or with nobody waiting any
-/// more, the notice goes. A press in that very moment wins, and its answer is what was heard.
-fn waited_for_the_person(
-    grants: &Grants,
-    id: u32,
-    heard: &mpsc::Receiver<Heard>,
+/// **The answer `heard` brings**, waited for `at_most`, looking every [`LOOKS_AGAIN`] whether
+/// the call's asker is `gone`: past the time, or with nobody waiting any more, `settle` ends the
+/// notice. It answers the press that ended it in that very moment, where one did, and that press
+/// wins. A login's wait and a secret fill's both wait here.
+pub(crate) fn waited<H>(
+    heard: &mpsc::Receiver<H>,
     at_most: Duration,
     gone: &dyn Fn() -> bool,
-) -> Waited {
+    settle: &dyn Fn() -> Option<H>,
+) -> Ended<H> {
     let until = Instant::now() + at_most;
     loop {
         let left = until.saturating_duration_since(Instant::now());
         match heard.recv_timeout(left.min(LOOKS_AGAIN)) {
-            Ok(one) => return Waited::Heard(one),
-            Err(mpsc::RecvTimeoutError::Disconnected) => return Waited::Heard(Heard::Gone),
+            Ok(one) => return Ended::Heard(one),
+            Err(mpsc::RecvTimeoutError::Disconnected) => return Ended::Closed,
             Err(mpsc::RecvTimeoutError::Timeout) => {
                 let hung_up = gone();
                 if !hung_up && Instant::now() < until {
                     continue;
                 }
-                // A press in that very moment has ended it, and its answer is waiting here.
-                if !grants.end(id, Heard::Gone)
-                    && let Ok(one) = heard.try_recv()
-                {
-                    return Waited::Heard(one);
+                if let Some(one) = settle() {
+                    return Ended::Heard(one);
                 }
                 return if hung_up {
-                    Waited::AskerGone
+                    Ended::AskerGone
                 } else {
-                    Waited::NotAnswered
+                    Ended::NotAnswered
                 };
             }
         }
     }
 }
 
+/// **The answer to the login notice numbered `id`** ([`waited`]).
+fn waited_for_the_person(
+    grants: &Grants,
+    id: u32,
+    heard: &mpsc::Receiver<Heard>,
+    at_most: Duration,
+    gone: &dyn Fn() -> bool,
+) -> Ended<Heard> {
+    // A press in that very moment has ended it, and its answer is waiting here.
+    let settle = || {
+        if grants.end(id, Heard::Gone) {
+            None
+        } else {
+            heard.try_recv().ok()
+        }
+    };
+    waited(heard, at_most, gone, &settle)
+}
+
 /// **A runner chat's notice lets go after as long as a waiting call waits** (the person's ruling
 /// of 2026-11-07): nothing waits on it, so where nobody answered by then it goes, and the chat is
-/// told so on its next turn. A press or the chat's close ends the watch.
+/// told so on its next turn. A press or the chat's close ends the watch. `at_most` is that
+/// time.
 fn let_go_unanswered(
     held: &Held,
     session: u32,
     login: &str,
-    id: u32,
-    heard: mpsc::Receiver<Heard>,
+    (id, heard): (u32, mpsc::Receiver<Heard>),
+    at_most: Duration,
 ) {
     let held = held.weak();
     let login = login.to_owned();
     let watched = std::thread::Builder::new()
         .name(format!("login notice {id}"))
         .spawn(move || {
-            let went = went_unanswered(&heard, loginask::THE_PERSON_IS_WAITED_FOR, || {
+            let went = went_unanswered(&heard, at_most, || {
                 held.upgrade()
                     .filter(|held| held.login_grants().end(id, Heard::Gone))
             });
+            let _ = (session, login);
             if let Some(held) = went {
                 held.chats().asks_may_have_moved();
-                held.chats().tell_outcome(
-                    session,
-                    purlis_core::askoutcome::Outcome {
-                        about: purlis_core::askoutcome::About::BrowserLogin { login },
-                        answer: purlis_core::askoutcome::Answer::NotAnswered,
-                    },
-                );
             }
         });
     if let Err(why) = watched {
