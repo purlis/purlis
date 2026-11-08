@@ -1079,6 +1079,10 @@ fn handed_to_no_granted_program(
 /// hears names the key and its own vault, never the other vault (D-5246-8), nor anything of the
 /// grants file, which holds other vaults' names: that goes to the log.
 pub fn read_out_of_reach(ctx: &Ctx, persona: &str, vault: &str, keys: &[&str]) -> Option<String> {
+    // TEMPORARY (#5795): the judge off, so CI shows each new test red; reverted next commit.
+    if std::env::var_os("PURLIS_5795_JUDGE").is_none() {
+        return None;
+    }
     for &key in keys {
         let to = match super::links::of(ctx, vault, key) {
             Ok(None) => continue,
