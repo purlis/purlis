@@ -342,3 +342,32 @@ fn a_chat_that_cannot_reach_the_app_edits_nothing_and_makes_no_draft() {
         WAS
     );
 }
+
+/// **A chat can't accept its own draft**: Accept and Decline are the window's alone, and no
+/// `purlis skill` command a chat runs takes a draft into the skill.
+#[test]
+fn a_chat_has_no_command_that_accepts_its_draft() {
+    let project = Project::new();
+    let (env, _asked, _reading) = an_app(&project);
+    let from = project.written("grilling.md", NOW);
+    let out = project.run_with(
+        &["edit", "grilling", "--from", from.to_str().unwrap()],
+        &env,
+    );
+    assert!(out.status.success(), "{}", said(&out));
+    let id = drafts::list(&project.root())[0].id.clone();
+    for args in [
+        &["accept", id.as_str()][..],
+        &["draft", "accept", id.as_str()],
+        &["drafts", "accept", id.as_str()],
+        &["edit", "grilling", "--accept", id.as_str()],
+    ] {
+        let out = project.run_with(args, &env);
+        assert!(!out.status.success(), "{args:?}: {}", said(&out));
+    }
+    assert_eq!(
+        std::fs::read_to_string(project.root().join("skills/grilling/SKILL.md")).unwrap(),
+        WAS
+    );
+    assert_eq!(drafts::list(&project.root()).len(), 1);
+}

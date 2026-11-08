@@ -455,21 +455,8 @@ pub fn create(
 ) -> Result<PathBuf, String> {
     let plane = cx.plane;
     crate::settings::writable(plane)?;
-    if let Some(why) = change::name_problem(name) {
-        return Err(format!("{name:?} cannot be a skill's name: {why}"));
-    }
-    if let Some(why) = change::description_problem(description) {
-        return Err(format!("that description cannot be used: {why}"));
-    }
-    cx.not_built_in(name)?;
-    let text = templates.text(template, name, description)?;
-    if let Some(problem) = change::check(&text, name).first() {
-        return Err(format!(
-            "that template does not make a whole skill: {problem}"
-        ));
-    }
-    let dir = free_at(plane, level, name, name)?;
-    let folder = dir.join(name);
+    let (folder, text) = new_checked(cx, level, name, description, templates, template)?;
+    let folder = plane.join(folder);
     write(
         plane,
         &format!("{}/SKILL.md", rel(plane, &folder)),
@@ -485,6 +472,36 @@ pub fn create(
     ));
     cx.commit(&[rel(plane, &folder)], &format!("skill new {name}"));
     Ok(folder)
+}
+
+/// **A new skill `name` at `level`, as [`create`] would make it, without making it** (#5815): its
+/// folder, relative to the plane, and the text the template gives its `SKILL.md`, after every check
+/// [`create`] makes of the name, the description, the text and the level. Nothing is written: a
+/// chat's new skill is this, kept as a draft for the person.
+pub fn new_checked(
+    cx: &Ctx<'_>,
+    level: &Level,
+    name: &str,
+    description: &str,
+    templates: &dyn SkillTemplate,
+    template: &TemplateId,
+) -> Result<(String, String), String> {
+    let plane = cx.plane;
+    if let Some(why) = change::name_problem(name) {
+        return Err(format!("{name:?} cannot be a skill's name: {why}"));
+    }
+    if let Some(why) = change::description_problem(description) {
+        return Err(format!("that description cannot be used: {why}"));
+    }
+    cx.not_built_in(name)?;
+    let text = templates.text(template, name, description)?;
+    if let Some(problem) = change::check(&text, name).first() {
+        return Err(format!(
+            "that template does not make a whole skill: {problem}"
+        ));
+    }
+    let dir = free_at(plane, level, name, name)?;
+    Ok((rel(plane, &dir.join(name)), text))
 }
 
 /// **Make my own copy** (#3686, spec #3679 S12): the built-in skill `name`, copied to `level`
@@ -594,6 +611,30 @@ pub(super) fn pending_in(plane: &Path, paths: &[&str]) -> Result<Vec<String>, St
         .collect())
 }
 
+/// **An edit of the skill named `name` at `level`, checked as [`edit`] checks it, without saving
+/// it** (#5815): the skill's folder, and whether `now` changes `was` at all. Refused where the
+/// live lint finds a problem in `now` ([`change::check`]): a text that is no whole skill, or
+/// that renames it. Nothing is written: a chat's edit is this, kept as a draft for the person.
+pub fn edit_checked(
+    plane: &Path,
+    level: &Level,
+    name: &str,
+    was: &str,
+    now: &str,
+) -> Result<(PathBuf, bool), String> {
+    let problems = change::check(now, name);
+    if !problems.is_empty() {
+        let lines: Vec<String> = problems.iter().map(ToString::to_string).collect();
+        return Err(format!("nothing was saved: {}", lines.join("; ")));
+    }
+    Ok((find(plane, level, name)?, was != now))
+}
+
+/// What an edit that changes nothing is told.
+pub fn unchanged(name: &str) -> String {
+    format!("{name} is unchanged, so nothing was saved.")
+}
+
 /// **Saves an edit** of the skill named `name` at `level` (#2770): `now` as its `SKILL.md`, only
 /// while the file is still `was`, the text the editor opened, and only while the live lint finds
 /// nothing ([`change::check`]). Commits its `SKILL.md` alone: another file of the skill with
@@ -607,16 +648,9 @@ pub fn edit(
 ) -> Result<PathBuf, String> {
     let plane = cx.plane;
     crate::settings::writable(plane)?;
-    let problems = change::check(now, name);
-    if !problems.is_empty() {
-        let lines: Vec<String> = problems.iter().map(ToString::to_string).collect();
-        return Err(format!("nothing was saved: {}", lines.join("; ")));
-    }
-    let folder = find(plane, level, name)?;
-    if was == now {
-        (cx.say)(Say::Info(
-            format!("{name} is unchanged, so nothing was saved.").into(),
-        ));
+    let (folder, changed) = edit_checked(plane, level, name, was, now)?;
+    if !changed {
+        (cx.say)(Say::Info(unchanged(name).into()));
         return Ok(folder);
     }
     let file = format!("{}/SKILL.md", rel(plane, &folder));
