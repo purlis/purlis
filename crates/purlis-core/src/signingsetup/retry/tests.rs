@@ -68,6 +68,7 @@ fn refused(piece: &str, at: i64) -> Waiting {
         chat: Some(4),
         at,
         sent: false,
+        why: None,
     }
 }
 

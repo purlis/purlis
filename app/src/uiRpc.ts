@@ -2964,6 +2964,12 @@ export type AnswerPath =
  */
 { via: "old-harness-plugins" } | 
 /**
+ *  Set up signing opens the setup dialog in the window, whose last step is Sign and retry
+ *  all; Sign and retry all sends `signing_sign_and_retry` for every waiting lane; Dismiss,
+ *  once all are sent, `signing_forget_sent` (#5633).
+ */
+{ via: "signing" } | 
+/**
  *  `allow_chat_browser`, with the open web for `open-web`, and `keep_chat_browser_off` for
  *  Keep off, with the person's reason (#2013).
  */
@@ -3175,6 +3181,11 @@ export type AskSource =
 "old-harness-plugins" | 
 /**  A chat's first browser call, asking what its browser may reach (#2013). */
 "browser" | 
+/**
+ *  **The lanes a forge refused for unsigned commits** (#5633, ADR 0116 §3): one Ask for all
+ *  of them, said once, counted once.
+ */
+"signing" | 
 /**
  *  A chat's browser whose page needs the person (#2015): the chat asked them to take it
  *  over, through `ask_operator` pointed at it.

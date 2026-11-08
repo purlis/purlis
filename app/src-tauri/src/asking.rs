@@ -437,6 +437,9 @@ pub enum AskSource {
     OldHarnessPlugins,
     /// A chat's first browser call, asking what its browser may reach (#2013).
     Browser,
+    /// **The lanes a forge refused for unsigned commits** (#5633, ADR 0116 §3): one Ask for all
+    /// of them, said once, counted once.
+    Signing,
     /// A chat's browser whose page needs the person (#2015): the chat asked them to take it
     /// over, through `ask_operator` pointed at it.
     BrowserNeedsYou,
@@ -517,6 +520,10 @@ pub enum AnswerPath {
     /// `remove_old_harness_plugins` for Remove, which holds purlis's proposed change for each
     /// file and opens the first; `dismiss_old_harness_plugins` for Dismiss (#3467).
     OldHarnessPlugins,
+    /// Set up signing opens the setup dialog in the window, whose last step is Sign and retry
+    /// all; Sign and retry all sends `signing_sign_and_retry` for every waiting lane; Dismiss,
+    /// once all are sent, `signing_forget_sent` (#5633).
+    Signing,
     /// `allow_chat_browser`, with the open web for `open-web`, and `keep_chat_browser_off` for
     /// Keep off, with the person's reason (#2013).
     Browser,
@@ -3058,6 +3065,95 @@ pub fn old_harness_plugins(old: &crate::oldplugins::OldHarnessPlugins) -> Shown 
     }
 }
 
+/// The option ids of the Ask about lanes waiting on signing (#5633).
+pub const SET_UP_SIGNING: &str = "set-up";
+pub const SIGN_AND_RETRY_ALL: &str = "retry-all";
+
+/// **The lanes waiting on signing, as one Ask** (#5633): every branch folder a forge refused
+/// for unsigned commits, listed by name, about no chat. Before signing is set up it offers Set
+/// up signing; once on, Sign and retry all N. Once every one was signed and sent it says so, and
+/// Dismiss puts it away. A lane that failed again stays listed, with its reason. Nothing where
+/// nothing waits.
+pub fn signing_waiting(root: &std::path::Path, on: bool) -> Option<Shown> {
+    let waiting = purlis_core::signingsetup::retry::waiting(root);
+    if waiting.is_empty() {
+        return None;
+    }
+    let still: Vec<_> = waiting.iter().filter(|one| !one.sent).collect();
+    let counted = |n: usize| {
+        if n == 1 {
+            "1 lane".to_owned()
+        } else {
+            format!("{n} lanes")
+        }
+    };
+    let (says, options) = if still.is_empty() {
+        (
+            format!("{} signed and sent ✓", counted(waiting.len())),
+            vec![refuses(DISMISS, "Dismiss")],
+        )
+    } else {
+        let mut repos: Vec<&str> = still.iter().map(|one| one.path.as_str()).collect();
+        repos.sort_unstable();
+        repos.dedup();
+        let forges: Vec<&str> = {
+            let mut forges: Vec<&str> = still.iter().map(|one| one.kind.display()).collect();
+            forges.sort_unstable();
+            forges.dedup();
+            forges
+        };
+        let lines: Vec<String> = still
+            .iter()
+            .map(|one| match &one.why {
+                Some(why) => format!("- {} · {} ({}): {why}", one.repo, one.piece, one.branch),
+                None => format!("- {} · {} ({})", one.repo, one.piece, one.branch),
+            })
+            .collect();
+        let head = format!(
+            "{} can't merge: {} only accepts signed commits{}",
+            counted(still.len()),
+            repos.join(", "),
+            if forges.len() == 1 && repos.len() > 1 {
+                format!(" on {}", forges[0])
+            } else {
+                String::new()
+            },
+        );
+        let option = if on {
+            refuses(
+                SIGN_AND_RETRY_ALL,
+                &if still.len() == 1 {
+                    "Sign and retry".to_owned()
+                } else {
+                    format!("Sign and retry all {}", still.len())
+                },
+            )
+        } else {
+            refuses(SET_UP_SIGNING, "Set up signing")
+        };
+        (format!("{head}\n{}", lines.join("\n")), vec![option])
+    };
+    Some(Shown {
+        session: 0,
+        ask: "signing-waiting".to_owned(),
+        says: said_inertly(&says),
+        options,
+        source: AskSource::Signing,
+        chain: vec![said_inertly("purlis")],
+        answer: AnswerPath::Signing,
+        since: None,
+        held_until: None,
+        writes: None,
+        lines: None,
+        last_message: None,
+        login: None,
+        fill: None,
+        earlier_messages: None,
+        secret: None,
+        run: None,
+    })
+}
+
 /// How far up who-asked-whom a chain is followed: far past any depth a dispatch is allowed.
 const MOST_CHAIN: usize = 64;
 
@@ -3631,6 +3727,8 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
                     .flatten()
                     .map(|old| old_harness_plugins(&old)),
             )
+            // The lanes a forge refused for unsigned commits (#5633): one Ask for them all.
+            .chain(signing_waiting(root, signing_on()))
             .collect(),
     }
 }
@@ -3672,3 +3770,12 @@ pub fn forget_sandbox_block(
 
 #[cfg(test)]
 mod tests;
+
+/// Whether this Mac has a signing key, asked of the keychain's attributes only, never its value.
+fn signing_on() -> bool {
+    let Some(config) = purlis_core::machine::config_root() else {
+        return false;
+    };
+    let keyring = purlis_core::commitsign::this_builds_keyring(&config);
+    purlis_core::signingsetup::key_is_there(&config, keyring.as_ref()).unwrap_or(false)
+}

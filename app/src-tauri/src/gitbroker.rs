@@ -236,6 +236,11 @@ pub fn answer(held: &Held, ask: &GitAsk) -> Answer {
         held.tree_moved();
     }
     let answer = told(held, ask.chat, answered);
+    // A push refused for unsigned commits, or one that went, changes the one Ask for the lanes
+    // waiting on signing (#5633).
+    if matches!(ask.work, GitWork::WorktreePush { .. }) {
+        held.hooks().asks_teller()();
+    }
     match &answer {
         Answer::Said { code, .. } => tracing::info!(
             "purlis: chat {} asked the app to {what} in workspace '{}'; it ran, exit {code}",

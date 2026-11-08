@@ -258,11 +258,27 @@ pub async fn signing_key_shown() -> Result<SigningKeyShown, String> {
     .await
 }
 
+/// Every open project told its Asks changed: the one about lanes waiting on signing offers
+/// another answer once signing is on or off (#5633).
+fn tell_every_project(planes: &crate::planes::Planes) {
+    for held in planes.every_held() {
+        held.hooks().asks_teller()();
+    }
+}
+
 /// **Step 1: this device's key, made and kept in the Keychain**, where it has none. macOS asks the
 /// person here; where they say no, the sentence says to try again and choose Always Allow.
 #[tauri::command]
 #[specta::specta]
-pub async fn signing_make_key() -> Result<String, String> {
+pub async fn signing_make_key(
+    planes: tauri::State<'_, crate::planes::Planes>,
+) -> Result<String, String> {
+    let made = signing_make_key_here().await;
+    tell_every_project(&planes);
+    made
+}
+
+async fn signing_make_key_here() -> Result<String, String> {
     blocking(|| {
         let root = config_root()?;
         let keyring = commitsign::this_builds_keyring(&root);
@@ -503,7 +519,8 @@ pub async fn signing_sign_and_retry(
     lanes: Vec<SigningLane>,
 ) -> Result<Vec<SigningRetried>, String> {
     let root = root_of(&planes, &plane)?;
-    blocking(move || {
+    let teller = planes.held(&plane)?.hooks().asks_teller();
+    let done = blocking(move || {
         let config = config_root()?;
         let key = the_key(&config)?;
         let waiting = signingsetup::retry::waiting(&root);
@@ -531,7 +548,9 @@ pub async fn signing_sign_and_retry(
             })
             .collect())
     })
-    .await
+    .await;
+    teller();
+    done
 }
 
 /// One branch folder signed and sent again, as the app runs git for a chat: no global or system
@@ -566,7 +585,10 @@ pub async fn signing_forget_sent(
     plane: crate::planes::PlaneId,
 ) -> Result<(), String> {
     let root = root_of(&planes, &plane)?;
-    blocking(move || signingsetup::retry::forget_sent(&root)).await
+    let teller = planes.held(&plane)?.hooks().asks_teller();
+    let done = blocking(move || signingsetup::retry::forget_sent(&root)).await;
+    teller();
+    done
 }
 
 // ---------------------------------------------------------------------------------------
@@ -858,7 +880,15 @@ pub async fn signing_replace_key() -> Result<Vec<SigningDone>, String> {
 /// account it was added to, behind the person's yes to the confirmation that names them.
 #[tauri::command]
 #[specta::specta]
-pub async fn signing_remove_everywhere() -> Result<Vec<SigningDone>, String> {
+pub async fn signing_remove_everywhere(
+    planes: tauri::State<'_, crate::planes::Planes>,
+) -> Result<Vec<SigningDone>, String> {
+    let done = signing_remove_everywhere_here().await;
+    tell_every_project(&planes);
+    done
+}
+
+async fn signing_remove_everywhere_here() -> Result<Vec<SigningDone>, String> {
     blocking(|| {
         on_every_account(|root, on| {
             let keyring = commitsign::this_builds_keyring(root);
@@ -868,4 +898,90 @@ pub async fn signing_remove_everywhere() -> Result<Vec<SigningDone>, String> {
         .map(|((), done)| done)
     })
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use purlis_core::forge::Kind;
+    use purlis_core::signingsetup::retry::{self, Waiting};
+
+    fn refused(piece: &str) -> Waiting {
+        Waiting {
+            ws: "smart-ide".to_owned(),
+            repo: "purlis".to_owned(),
+            piece: piece.to_owned(),
+            branch: piece.to_owned(),
+            kind: Kind::GitHub,
+            host: "github.com".to_owned(),
+            path: "purlis/purlis".to_owned(),
+            commit: "0123abc".to_owned(),
+            chat: Some(3),
+            at: 1,
+            sent: false,
+            why: None,
+        }
+    }
+
+    /// #5633: three lanes refused for unsigned commits are one Ask, not three: Set up signing
+    /// before setup, Sign and retry all 3 once on; a lane that failed again stays with why; and
+    /// once all were sent, "3 lanes signed and sent ✓" with Dismiss.
+    #[test]
+    fn three_refused_lanes_are_one_ask() {
+        let root = tempfile::tempdir().unwrap();
+        assert!(crate::asking::signing_waiting(root.path(), false).is_none());
+        for piece in ["tab-names", "empty-tab", "pane-foot"] {
+            retry::note_refused(root.path(), refused(piece)).unwrap();
+        }
+        let ask = crate::asking::signing_waiting(root.path(), false).unwrap();
+        assert!(
+            ask.says
+                .starts_with("3 lanes can't merge: purlis/purlis only accepts signed commits"),
+            "{}",
+            ask.says
+        );
+        for piece in ["tab-names", "empty-tab", "pane-foot"] {
+            assert!(
+                ask.says.contains(&format!("purlis · {piece}")),
+                "{}",
+                ask.says
+            );
+        }
+        let labels = |ask: &crate::asking::Shown| -> Vec<String> {
+            ask.options.iter().map(|one| one.label.clone()).collect()
+        };
+        assert_eq!(labels(&ask), ["Set up signing"]);
+        let on = crate::asking::signing_waiting(root.path(), true).unwrap();
+        assert_eq!(labels(&on), ["Sign and retry all 3"]);
+
+        retry::note_refused(
+            root.path(),
+            Waiting {
+                why: Some("it was refused again".to_owned()),
+                ..refused("pane-foot")
+            },
+        )
+        .unwrap();
+        for piece in ["tab-names", "empty-tab"] {
+            retry::note_pushed(root.path(), "smart-ide", "purlis", piece, true);
+        }
+        let one_left = crate::asking::signing_waiting(root.path(), true).unwrap();
+        assert!(
+            one_left.says.starts_with("1 lane can't merge"),
+            "{}",
+            one_left.says
+        );
+        assert!(
+            one_left.says.contains("it was refused again"),
+            "{}",
+            one_left.says
+        );
+        assert_eq!(labels(&one_left), ["Sign and retry"]);
+
+        retry::note_pushed(root.path(), "smart-ide", "purlis", "pane-foot", true);
+        let all_sent = crate::asking::signing_waiting(root.path(), true).unwrap();
+        assert_eq!(all_sent.says, "3 lanes signed and sent ✓");
+        assert_eq!(labels(&all_sent), ["Dismiss"]);
+        retry::forget_sent(root.path()).unwrap();
+        assert!(crate::asking::signing_waiting(root.path(), true).is_none());
+    }
 }

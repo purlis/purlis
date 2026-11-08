@@ -62,6 +62,7 @@ fn waits_on_signing(
         chat: Some(asker.chat),
         at: now.timestamp(),
         sent: false,
+        why: None,
     };
     if let Err(why) = crate::signingsetup::retry::note_refused(root, waiting) {
         tracing::warn!("purlis: a push refused for unsigned commits was not kept: {why}");

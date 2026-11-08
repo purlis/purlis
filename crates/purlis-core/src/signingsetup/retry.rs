@@ -73,6 +73,9 @@ pub struct Waiting {
     /// Signed and sent since: it stays listed as done until the window's next look clears it.
     #[serde(default)]
     pub sent: bool,
+    /// Why the last Sign and retry did not send it, where it did not: it stays waiting, with it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub why: Option<String>,
 }
 
 impl Waiting {
@@ -224,18 +227,17 @@ pub fn sign_and_retry(
         say(line);
     });
     if code != 0 {
-        // Refused again: it waits on the commit it refused now.
-        if let Some(refused) = unsigned {
-            let again = Waiting {
-                commit: refused.commit,
-                at: chrono::Utc::now().timestamp(),
-                ..one.clone()
-            };
-            if let Err(why) = note_refused(root, again) {
-                tracing::warn!("purlis: the work waiting on signing was not updated: {why}");
-            }
+        let why = failed.unwrap_or_else(|| format!("{label} was not sent"));
+        // It stays waiting, on the commit refused now where it was refused again, with why.
+        let again = Waiting {
+            commit: unsigned.map_or_else(|| one.commit.clone(), |refused| refused.commit),
+            why: Some(why.clone()),
+            ..one.clone()
+        };
+        if let Err(trouble) = note_refused(root, again) {
+            tracing::warn!("purlis: the work waiting on signing was not updated: {trouble}");
         }
-        return Err(failed.unwrap_or_else(|| format!("{label} was not sent")));
+        return Err(why);
     }
     note_pushed(root, &one.ws, &one.repo, &one.piece, true);
     Ok(Retried {

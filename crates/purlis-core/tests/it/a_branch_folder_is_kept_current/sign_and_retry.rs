@@ -93,6 +93,7 @@ fn a_push_refused_for_unsigned_commits_is_told_apart_and_sign_and_retry_sends_it
             chat: Some(3),
             at: 1,
             sent: false,
+            why: None,
         },
     )
     .unwrap();

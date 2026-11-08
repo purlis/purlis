@@ -2,33 +2,25 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useCallback, useEffect, useState } from "react";
-import {
-  commands,
-  type PlaneId,
-  type SigningLane,
-  type SigningRetried,
-  type SigningWaiting,
-} from "./bindings";
+import { commands, type PlaneId, type SigningLane, type SigningWaiting } from "./bindings";
 import { useChatsHere, useChatsSelect } from "./chatState";
 import { ACCOUNTS_CHANGED } from "./ForgeSignInEnded";
 import { Notice } from "./Notice";
 import { SigningSetupDialog } from "./SigningSetupDialog";
+import {
+  SIGNING_SETUP_ASKED,
+  SIGNING_WAITING_CHANGED,
+  signAndRetry,
+  signAndRetryAll,
+} from "./signingAsked";
 
-/** Told on `window` whenever work waiting on signing may have moved: set up, signed or sent. */
-export const SIGNING_WAITING_CHANGED = "purlis:signing-waiting-changed";
+export { SIGNING_WAITING_CHANGED } from "./signingAsked";
 
 /** Each chat's state, as one string: a turn that pushed and ended changes it. */
 const chatsMoved = (states: { bySession: Readonly<Record<number, unknown>> }) =>
   Object.entries(states.bySession)
     .map(([session, state]) => `${session}:${JSON.stringify(state)}`)
     .join(",");
-
-/** The lane's key: its workspace, repo and piece. */
-export const laneOf = (one: SigningLane): SigningLane => ({
-  ws: one.ws,
-  repo: one.repo,
-  piece: one.piece,
-});
 
 const sameLane = (one: SigningLane, other: SigningLane) =>
   one.ws === other.ws && one.repo === other.repo && one.piece === other.piece;
@@ -84,19 +76,6 @@ export function useSigningWaiting(plane: PlaneId): {
     };
   }, [anyWaiting, asked]);
   return { waiting, on };
-}
-
-/**
- * **Sign and retry `lanes`** (ADR 0116 §4): each signed with this Mac's key and sent again, and
- * every reader told. What each came to, or the one sentence why none was tried.
- */
-export async function signAndRetry(
-  plane: PlaneId,
-  lanes: readonly SigningLane[],
-): Promise<readonly SigningRetried[] | string> {
-  const done = await commands.signingSignAndRetry(plane, lanes.map(laneOf));
-  window.dispatchEvent(new Event(SIGNING_WAITING_CHANGED));
-  return done.status === "ok" ? done.data : done.error;
 }
 
 /** How one lane's Sign and retry is going, as its prompt says it. */
@@ -223,5 +202,44 @@ export function SigningRefusalNotice({ plane, session }: { plane: PlaneId; sessi
           />
         ))}
     </>
+  );
+}
+
+/**
+ * **Set up signing, from the one Ask about waiting lanes** (#5633): opened when that Ask is
+ * answered Set up signing, in this project's window, for the forge that refused the lanes; its
+ * last step is **Sign and retry all N**, which sends every waiting lane again.
+ */
+export function SigningSetupAsked({ plane }: { plane: PlaneId }) {
+  const [lanes, setLanes] = useState<readonly SigningWaiting[]>();
+  useEffect(() => {
+    const asked = (event: Event) => {
+      const wanted = (event as CustomEvent<{ plane: string }>).detail;
+      if (wanted.plane !== plane) return;
+      void commands.signingWaiting(plane).then((read) => {
+        if (read.status !== "ok") return;
+        const still = read.data.filter((one) => !one.sent);
+        if (still.length > 0) setLanes(still);
+      });
+    };
+    window.addEventListener(SIGNING_SETUP_ASKED, asked);
+    return () => window.removeEventListener(SIGNING_SETUP_ASKED, asked);
+  }, [plane]);
+  const first = lanes?.[0];
+  if (lanes === undefined || first === undefined) return null;
+  return (
+    <SigningSetupDialog
+      forge={{ kind: first.kind, host: first.host }}
+      repo={first.path}
+      commit={first.commit}
+      finish={{
+        label: lanes.length === 1 ? "Sign and retry" : `Sign and retry all ${lanes.length}`,
+        onFinish: () => void signAndRetryAll(plane),
+      }}
+      onClose={() => {
+        setLanes(undefined);
+        window.dispatchEvent(new Event(SIGNING_WAITING_CHANGED));
+      }}
+    />
   );
 }
