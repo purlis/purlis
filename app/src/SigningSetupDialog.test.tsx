@@ -10,6 +10,7 @@ import type {
   ForgeDeviceCode,
   SigningAccount,
   SigningCheck,
+  SigningEmails,
   SigningState,
 } from "./bindings";
 import { NEW_SIGNING_KEY_PAGE, SigningSetupDialog } from "./SigningSetupDialog";
@@ -85,6 +86,8 @@ let addAnswers: "added" | "needs_permission";
 let listed: boolean;
 /** What Check answers. */
 let checked: SigningCheck;
+/** The account's verified addresses. */
+let emails: SigningEmails;
 /** Ends the permission wait in progress. */
 let allow: () => void;
 let refuse: (why: string) => void;
@@ -96,6 +99,13 @@ beforeEach(() => {
   addAnswers = "added";
   listed = false;
   checked = VERIFIED;
+  emails = {
+    emails: [
+      { email: "octocat@example.com", primary: true, private: false },
+      { email: "583231+octocat@users.noreply.github.com", primary: false, private: true },
+    ],
+    settings: "https://github.com/settings/emails",
+  };
   allow = () => undefined;
   refuse = () => undefined;
   Object.defineProperty(navigator, "clipboard", {
@@ -138,6 +148,11 @@ beforeEach(() => {
         return { fingerprint: "SHA256:q3VbT1sM", public_key: PUBLIC };
       case "signing_check":
         return checked;
+      case "signing_emails":
+        return emails;
+      case "signing_use_email":
+        checked = VERIFIED;
+        return null;
       default:
         return null;
     }
@@ -265,13 +280,11 @@ describe("SigningSetupDialog", () => {
 
   it("names why GitHub didn't verify the test commit, and checks again", async () => {
     state = { ...structuredClone(ON), accounts: [{ ...ACCOUNT, may_add: true }] };
-    checked = { ...VERIFIED, verified: false, reason: "unverified_email" };
+    checked = { ...VERIFIED, verified: false, reason: "unknown_key" };
     render(<SigningSetupDialog onClose={vi.fn()} />);
     const dialog = await theDialog();
     const why = await within(dialog).findByRole("alert");
-    expect(why.textContent).toContain(
-      "octocat@example.com, which isn't a verified email on octocat",
-    );
+    expect(why.textContent).toContain("doesn't know this key as a signing key on octocat");
     expect(dialog).not.toHaveTextContent("Verified on GitHub ✓");
     checked = VERIFIED;
     await userEvent.click(within(dialog).getByRole("button", { name: "Check again" }));
@@ -297,6 +310,76 @@ describe("SigningSetupDialog", () => {
       ]),
     );
     expect(commandsSent("signing_check")).toEqual([]);
+  });
+});
+
+describe("the Check step's email (#5631)", () => {
+  it("a commit email the forge won't verify leads to a choice, and after it the account shows Verified", async () => {
+    state = { ...structuredClone(ON), accounts: [{ ...ACCOUNT, may_add: true }] };
+    checked = { ...VERIFIED, verified: false, reason: "unverified_email", email: "o@studio.local" };
+    render(<SigningSetupDialog onClose={vi.fn()} />);
+    const dialog = await theDialog();
+    expect(
+      await within(dialog).findByText(/only verifies a commit whose email is one/),
+    ).toBeTruthy();
+    expect(dialog).toHaveTextContent("o@studio.local");
+    const choices = await within(dialog).findByRole("radiogroup", { name: "Sign chat commits as" });
+    expect(within(choices).getByRole("radio", { name: "octocat@example.com" })).toBeChecked();
+    expect(choices).toHaveTextContent("keeps your address private");
+    await userEvent.click(
+      within(choices).getByRole("radio", { name: "583231+octocat@users.noreply.github.com" }),
+    );
+    await userEvent.click(within(dialog).getByRole("button", { name: "Use this email" }));
+    expect(await within(dialog).findByText("Verified on GitHub ✓")).toBeTruthy();
+    expect(commandsSent("signing_use_email")).toEqual([
+      {
+        cmd: "signing_use_email",
+        args: {
+          forge: ON_GITHUB,
+          email: "583231+octocat@users.noreply.github.com",
+        },
+      },
+    ]);
+    // Checked once more, after the choice.
+    expect(commandsSent("signing_check").length).toBe(2);
+  });
+
+  it("with no verified email, links to the forge's email settings and gives no ✓", async () => {
+    state = { ...structuredClone(ON), accounts: [{ ...ACCOUNT, may_add: true }] };
+    checked = { ...VERIFIED, verified: false, reason: "unverified_email" };
+    emails = { emails: [], settings: "https://github.com/settings/emails" };
+    render(<SigningSetupDialog onClose={vi.fn()} />);
+    const dialog = await theDialog();
+    expect((await within(dialog).findByRole("alert")).textContent).toContain(
+      "octocat has no verified email on GitHub yet",
+    );
+    expect(dialog).not.toHaveTextContent("Verified on GitHub ✓");
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Open GitHub's email settings" }),
+    );
+    await waitFor(() =>
+      expect(commandsSent("plugin:opener|open_url")[0]?.args).toMatchObject({
+        url: "https://github.com/settings/emails",
+      }),
+    );
+  });
+
+  it("works on GitLab too", async () => {
+    state = { ...structuredClone(ON), accounts: [GITLAB] };
+    checked = { ...VERIFIED, verified: false, reason: "unverified_email" };
+    emails = {
+      emails: [{ email: "sam@example.org", primary: true, private: false }],
+      settings: "https://gitlab.example.org/-/user_settings/profile",
+    };
+    render(<SigningSetupDialog forge={ON_GITLAB} onClose={vi.fn()} />);
+    const dialog = await theDialog();
+    await within(dialog).findByRole("radio", { name: "sam@example.org" });
+    await userEvent.click(within(dialog).getByRole("button", { name: "Use this email" }));
+    expect(await within(dialog).findByText("Verified on GitLab ✓")).toBeTruthy();
+    expect(commandsSent("signing_use_email")[0]?.args).toEqual({
+      forge: ON_GITLAB,
+      email: "sam@example.org",
+    });
   });
 });
 

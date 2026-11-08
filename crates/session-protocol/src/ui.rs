@@ -290,6 +290,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     "signing_waiting",
     "signing_sign_and_retry",
     "signing_forget_sent",
+    // The email chat commits use, from the account's verified addresses (#5631).
+    "signing_emails",
+    "signing_use_email",
     // Agent identity (#4485): GitHub's App flow, the tool lines and the key, each the person's.
     "agent_identities",
     "agent_identity_create",

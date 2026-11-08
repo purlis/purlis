@@ -349,3 +349,88 @@ fn a_pushed_commit_signed_with_another_key_says_nothing_of_this_one() {
     assert!(!checked.verified);
     assert_eq!(checked.reason, "other_key");
 }
+
+#[test]
+fn the_email_chosen_for_chat_commits_is_kept_until_it_is_cleared() {
+    let config = tempfile::tempdir().unwrap();
+    assert_eq!(commit_email(config.path()), None);
+    set_commit_email(config.path(), Some("sam@example.com")).unwrap();
+    assert_eq!(
+        commit_email(config.path()).as_deref(),
+        Some("sam@example.com")
+    );
+    for bad in [
+        "",
+        "sam",
+        "sam@local",
+        "a b@example.com",
+        "x@y.z\nuser.name=evil",
+    ] {
+        assert!(
+            set_commit_email(config.path(), Some(bad)).is_err(),
+            "{bad:?}"
+        );
+    }
+    assert_eq!(
+        commit_email(config.path()).as_deref(),
+        Some("sam@example.com")
+    );
+    set_commit_email(config.path(), None).unwrap();
+    assert_eq!(commit_email(config.path()), None);
+    set_commit_email(config.path(), None).unwrap();
+}
+
+#[test]
+fn githubs_verified_addresses_are_offered_primary_first_and_the_noreply_last() {
+    let signer = Signer::generate().unwrap();
+    let recorded = recording("emails", &signer);
+    let found = verified_emails(&recorded, &github()).unwrap();
+    let emails: Vec<_> = found.iter().map(|one| one.email.as_str()).collect();
+    assert_eq!(
+        emails,
+        [
+            "octocat@example.com",
+            "work@example.org",
+            "583231+octocat@users.noreply.github.com"
+        ]
+    );
+    assert!(found[0].primary && found[2].private);
+    assert!(recorded.unspent().is_empty());
+}
+
+#[test]
+fn gitlabs_confirmed_addresses_are_offered_and_an_unconfirmed_one_is_not() {
+    let signer = Signer::generate().unwrap();
+    let recorded = gitlab_recording("emails", &signer);
+    let found = verified_emails(&recorded, &gitlab()).unwrap();
+    let emails: Vec<_> = found.iter().map(|one| one.email.as_str()).collect();
+    assert_eq!(emails, ["sam@example.org", "sam@billing.example.org"]);
+}
+
+#[test]
+fn an_account_with_no_verified_address_offers_none_and_its_settings_page_is_named() {
+    let signer = Signer::generate().unwrap();
+    let recorded = recording("emails_none", &signer);
+    assert!(verified_emails(&recorded, &github()).unwrap().is_empty());
+    assert_eq!(
+        email_settings(&github()),
+        "https://github.com/settings/emails"
+    );
+    assert_eq!(
+        email_settings(&forge_of(Kind::GitLab, "git.example.org")),
+        "https://git.example.org/-/user_settings/profile"
+    );
+}
+
+#[test]
+fn a_chat_commit_is_made_as_the_email_chosen_for_it() {
+    let isolation = crate::worktree::git::Isolated::identity(Some("Sam"), Some("sam@laptop.local"))
+        .as_email("sam@example.com");
+    assert_eq!(
+        isolation,
+        crate::worktree::git::Isolated::identity(Some("Sam"), Some("sam@example.com"))
+    );
+    // A value git would not read as one line changes nothing.
+    let kept = crate::worktree::git::Isolated::identity(Some("Sam"), Some("sam@laptop.local"));
+    assert_eq!(kept.clone().as_email("a\nuser.name=x"), kept);
+}

@@ -828,6 +828,8 @@ export const commands = {
 	signingWaiting: __WINDOW_ONLY_RESULT,
 	signingSignAndRetry: __WINDOW_ONLY_RESULT,
 	signingForgetSent: __WINDOW_ONLY_RESULT,
+	signingEmails: __WINDOW_ONLY_RESULT,
+	signingUseEmail: __WINDOW_ONLY_RESULT,
 	agentIdentities: __WINDOW_ONLY_RESULT,
 	agentIdentityCreate: __WINDOW_ONLY_RESULT,
 	agentIdentityCreateCancel: __WINDOW_ONLY,
@@ -12975,6 +12977,21 @@ export type SigningCheck = {
 	email: string,
 	/**  The repository the commit is in. */
 	repo: string,
+};
+
+/**  One verified email address of the account, as the Check step offers it. */
+export type SigningEmail = {
+	email: string,
+	primary: boolean,
+	/**  The forge's private address for commits (GitHub's noreply). */
+	private: boolean,
+};
+
+/**  The account's verified addresses, and the forge's page to add and verify one. */
+export type SigningEmails = {
+	emails: SigningEmail[],
+	/**  The forge's email settings page, for an account with none verified. */
+	settings: string,
 };
 
 /**  Which forge account a signing step acts on: its forge (`github`, `gitlab`) and host. */

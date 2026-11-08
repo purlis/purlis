@@ -8,6 +8,7 @@ import {
   type ForgeDeviceCode,
   type SigningAccount,
   type SigningCheck,
+  type SigningEmails,
   type SigningForge,
   type SigningKeyShown,
   type SigningState,
@@ -15,6 +16,7 @@ import {
 import { SettingActions } from "./settings/components";
 import { Button } from "./ui/button/Button";
 import { Card } from "./ui/card/Card";
+import { Radio, RadioGroup } from "./ui/choice/Radio";
 import { Dialog } from "./ui/dialog/Dialog";
 import { StepList, type Step as RailStep } from "./ui/steps/Steps";
 
@@ -57,9 +59,21 @@ type Add =
   | { at: "by-hand"; copied: boolean }
   | { at: "trouble"; why: string };
 
+/** The forge's reasons a commit's email is not one of the account's verified ones. */
+export const EMAIL_REASONS = ["unverified_email", "no_user", "bad_email"];
+
 type Check =
   | { at: "checking" }
   | { at: "found"; result: SigningCheck }
+  /** The email isn't one the forge verifies (#5631): the account's verified ones, once read,
+   *  and the one picked. */
+  | {
+      at: "email";
+      result: SigningCheck;
+      emails?: SigningEmails;
+      picked?: string;
+      why?: string;
+    }
   | { at: "nothing-pushed" }
   | { at: "trouble"; why: string };
 
@@ -168,11 +182,41 @@ export function SigningSetupDialog({
         else if (checked.data.verified) go({ step: "done", email: checked.data.email });
         else if (checked.data.reason === "nothing_pushed")
           go({ step: "check", check: { at: "nothing-pushed" } });
-        else go({ step: "check", check: { at: "found", result: checked.data } });
+        else if (EMAIL_REASONS.includes(checked.data.reason)) {
+          const result = checked.data;
+          go({ step: "check", check: { at: "email", result } });
+          void commands.signingEmails(on).then((read) =>
+            go({
+              step: "check",
+              check:
+                read.status === "ok" && read.data
+                  ? { at: "email", result, emails: read.data, picked: read.data.emails[0]?.email }
+                  : {
+                      at: "email",
+                      result,
+                      why: read.status === "error" ? read.error : "purlis couldn't read them.",
+                    },
+            }),
+          );
+        } else go({ step: "check", check: { at: "found", result: checked.data } });
       });
     },
     [go, repo, commit],
   );
+
+  /** Chat commits signed as the address picked, then Check again (#5631). */
+  const takeEmail = (email: string) => {
+    const on = { kind, host };
+    void commands.signingUseEmail(on, email).then((used) => {
+      if (used.status === "ok") check(on);
+      else
+        setNow((was) =>
+          was.step === "check" && was.check.at === "email"
+            ? { step: "check", check: { ...was.check, why: used.error } }
+            : was,
+        );
+    });
+  };
 
   /** The public key read (once), then copied: whether it reached the clipboard. */
   const copyKey = useCallback(async () => {
@@ -384,6 +428,10 @@ export function SigningSetupDialog({
         }
       case "check":
         if (now.check.at === "nothing-pushed") return { children: "Done", onPress: onClose };
+        if (now.check.at === "email" && now.check.picked !== undefined) {
+          const picked = now.check.picked;
+          return { children: "Use this email", onPress: () => takeEmail(picked) };
+        }
         return {
           children: "Check again",
           isDisabled: now.check.at === "checking",
@@ -402,10 +450,22 @@ export function SigningSetupDialog({
     }
   };
 
+  const emailSettings =
+    now.step === "check" &&
+    now.check.at === "email" &&
+    now.check.emails !== undefined &&
+    now.check.emails.emails.length === 0
+      ? now.check.emails.settings
+      : undefined;
   const alternative =
     now.step === "add" && ["ask", "waiting", "declined"].includes(now.add.at) && !lookingBack
       ? { children: "I'll add it myself", onPress: () => byHand({ kind, host }) }
-      : undefined;
+      : emailSettings !== undefined && !lookingBack
+        ? {
+            children: `Open ${forgeName}'s email settings`,
+            onPress: () => void openUrl(emailSettings),
+          }
+        : undefined;
 
   return (
     <Dialog
@@ -445,6 +505,13 @@ export function SigningSetupDialog({
           onCopy={() =>
             void copyKey().then((copied) => go({ step: "add", add: { at: "by-hand", copied } }))
           }
+          onPick={(email) =>
+            setNow((was) =>
+              was.step === "check" && was.check.at === "email"
+                ? { step: "check", check: { ...was.check, picked: email, why: undefined } }
+                : was,
+            )
+          }
         />
       )}
     </Dialog>
@@ -478,6 +545,7 @@ function Body({
   gitlab,
   page,
   onCopy,
+  onPick,
 }: {
   now: Now;
   state?: SigningState;
@@ -487,6 +555,7 @@ function Body({
   gitlab: boolean;
   page: string;
   onCopy: () => void;
+  onPick: (email: string) => void;
 }) {
   switch (now.step) {
     case "reading":
@@ -556,6 +625,9 @@ function Body({
             <p className="trouble said-in-full" role="alert">
               {reasonSaid(now.check.result, login, forge)}
             </p>
+          )}
+          {now.check.at === "email" && (
+            <EmailChoice check={now.check} login={login} forge={forge} onPick={onPick} />
           )}
           {now.check.at === "nothing-pushed" && (
             <p role="status">
@@ -706,4 +778,73 @@ function AddBody({
         </p>
       );
   }
+}
+
+/**
+ * **The Check step's email choice** (#5631, ADR 0116 §6): why the email matters, in one
+ * sentence, and the account's verified addresses to sign chat commits as; with none, what to do
+ * on the forge, and no ✓.
+ */
+function EmailChoice({
+  check,
+  login,
+  forge,
+  onPick,
+}: {
+  check: { result: SigningCheck; emails?: SigningEmails; picked?: string; why?: string };
+  login: string;
+  forge: string;
+  onPick: (email: string) => void;
+}) {
+  const emails = check.emails?.emails;
+  return (
+    <>
+      <p className="said-in-full">
+        The key is on {forge}, but your chat commits use <code>{check.result.email}</code>, which
+        isn&apos;t a verified email on {login}. {forge} only verifies a commit whose email is one of
+        yours.
+      </p>
+      {emails === undefined && check.why === undefined && (
+        <p className="pending" role="status" aria-busy="true">
+          Reading your verified emails on {forge}…
+        </p>
+      )}
+      {emails !== undefined && emails.length > 0 && <p>Sign chat commits as:</p>}
+      {emails !== undefined && emails.length > 0 && (
+        <RadioGroup
+          aria-label="Sign chat commits as"
+          value={check.picked ?? null}
+          onChange={onPick}
+          className="signing-emails"
+        >
+          {emails.map((one) => (
+            <Radio
+              key={one.email}
+              value={one.email}
+              description={
+                one.primary
+                  ? "Verified · primary"
+                  : one.private
+                    ? "Verified · keeps your address private"
+                    : "Verified"
+              }
+            >
+              {one.email}
+            </Radio>
+          ))}
+        </RadioGroup>
+      )}
+      {emails !== undefined && emails.length === 0 && (
+        <p className="trouble said-in-full" role="alert">
+          {login} has no verified email on {forge} yet. Add one in {forge}&apos;s email settings and
+          verify it, then check again: {forge} shows a commit as Verified only then.
+        </p>
+      )}
+      {check.why !== undefined && (
+        <p className="trouble said-in-full" role="alert">
+          {check.why}
+        </p>
+      )}
+    </>
+  );
 }

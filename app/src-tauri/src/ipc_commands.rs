@@ -301,6 +301,8 @@ macro_rules! app_commands {
                 signingsetup::signing_waiting,
                 signingsetup::signing_sign_and_retry,
                 signingsetup::signing_forget_sent,
+                signingsetup::signing_emails,
+                signingsetup::signing_use_email,
                 agentidentity::agent_identities,
                 agentidentity::agent_identity_create,
                 agentidentity::agent_identity_create_cancel,

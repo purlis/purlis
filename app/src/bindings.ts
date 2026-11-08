@@ -1854,6 +1854,17 @@ export const commands = {
 	/**  **What was signed and sent, cleared** once the window has shown it. */
 	signingForgetSent: (plane: PlaneId) => typedError<null, string>(__TAURI_INVOKE("signing_forget_sent", { plane })),
 	/**
+	 *  **The verified email addresses of the account on `forge`** (#5631): what Check offers to sign
+	 *  chat commits as, where the email they use now is not one the forge verifies.
+	 */
+	signingEmails: (forge: SigningForge) => typedError<SigningEmails, string>(__TAURI_INVOKE("signing_emails", { forge })),
+	/**
+	 *  **Sign chat commits on this Mac as `email`** (#5631): one of the account on `forge`'s
+	 *  verified addresses, asked again of the forge, so nothing else is taken. Chat commits made
+	 *  from now on carry it, and Check is run again by the dialog.
+	 */
+	signingUseEmail: (forge: SigningForge, email: string) => typedError<null, string>(__TAURI_INVOKE("signing_use_email", { forge, email })),
+	/**
 	 *  **What the Agent identity tab draws**, read fresh. Each row proves itself against GitHub, so
 	 *  it shows what it acts as now.
 	 */
@@ -15776,6 +15787,21 @@ export type SigningCheck = {
 	email: string,
 	/**  The repository the commit is in. */
 	repo: string,
+};
+
+/**  One verified email address of the account, as the Check step offers it. */
+export type SigningEmail = {
+	email: string,
+	primary: boolean,
+	/**  The forge's private address for commits (GitHub's noreply). */
+	private: boolean,
+};
+
+/**  The account's verified addresses, and the forge's page to add and verify one. */
+export type SigningEmails = {
+	emails: SigningEmail[],
+	/**  The forge's email settings page, for an account with none verified. */
+	settings: string,
 };
 
 /**  Which forge account a signing step acts on: its forge (`github`, `gitlab`) and host. */

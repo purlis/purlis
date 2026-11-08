@@ -344,7 +344,7 @@ pub async fn signing_check(
         let root = config_root()?;
         let key = the_key(&root)?;
         let account = the_account(&root, &forge)?;
-        let who = signingsetup::who_commits()?;
+        let who = signingsetup::who_commits_here(&root)?;
         let transport = transport(&forge)?;
         let shown = forge.kind.display();
         let (checked, repo) = match forge.kind {
@@ -567,4 +567,77 @@ pub async fn signing_forget_sent(
 ) -> Result<(), String> {
     let root = root_of(&planes, &plane)?;
     blocking(move || signingsetup::retry::forget_sent(&root)).await
+}
+
+// ---------------------------------------------------------------------------------------
+// The email chat commits use (#5631)
+// ---------------------------------------------------------------------------------------
+
+/// One verified email address of the account, as the Check step offers it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct SigningEmail {
+    pub email: String,
+    pub primary: bool,
+    /// The forge's private address for commits (GitHub's noreply).
+    pub private: bool,
+}
+
+/// The account's verified addresses, and the forge's page to add and verify one.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct SigningEmails {
+    pub emails: Vec<SigningEmail>,
+    /// The forge's email settings page, for an account with none verified.
+    pub settings: String,
+}
+
+/// **The verified email addresses of the account on `forge`** (#5631): what Check offers to sign
+/// chat commits as, where the email they use now is not one the forge verifies.
+#[tauri::command]
+#[specta::specta]
+pub async fn signing_emails(forge: SigningForge) -> Result<SigningEmails, String> {
+    blocking(move || {
+        let forge = forge.forge()?;
+        let root = config_root()?;
+        the_account(&root, &forge)?;
+        let transport = transport(&forge)?;
+        let emails = signingsetup::verified_emails(transport.as_ref(), &forge)?
+            .into_iter()
+            .map(|one| SigningEmail {
+                email: one.email,
+                primary: one.primary,
+                private: one.private,
+            })
+            .collect();
+        Ok(SigningEmails {
+            emails,
+            settings: signingsetup::email_settings(&forge),
+        })
+    })
+    .await
+}
+
+/// **Sign chat commits on this Mac as `email`** (#5631): one of the account on `forge`'s
+/// verified addresses, asked again of the forge, so nothing else is taken. Chat commits made
+/// from now on carry it, and Check is run again by the dialog.
+#[tauri::command]
+#[specta::specta]
+pub async fn signing_use_email(forge: SigningForge, email: String) -> Result<(), String> {
+    blocking(move || {
+        let forge = forge.forge()?;
+        let root = config_root()?;
+        the_account(&root, &forge)?;
+        let transport = transport(&forge)?;
+        let verified = signingsetup::verified_emails(transport.as_ref(), &forge)?;
+        if !verified
+            .iter()
+            .any(|one| one.email.eq_ignore_ascii_case(&email))
+        {
+            return Err(format!(
+                "{email} isn't a verified email on your {} account, so purlis didn't use it.",
+                forge.kind.display()
+            ));
+        }
+        signingsetup::set_commit_email(&root, Some(&email))
+    })
+    .await
 }

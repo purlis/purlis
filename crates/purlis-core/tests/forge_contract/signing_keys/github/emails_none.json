@@ -1,0 +1,13 @@
+{
+  "source": "GitHub REST API version 2022-11-28, docs.github.com/en/rest/users/emails: an account whose one address is not verified, and Get the authenticated user",
+  "exchanges": [
+    {
+      "call": {"endpoint": {"rest": {"method": null, "path": "user/emails"}}, "fields": []},
+      "reply": {"code": 0, "out": "[{\"email\": \"new@example.com\", \"verified\": false, \"primary\": true, \"visibility\": null}]", "err": "", "status": 200}
+    },
+    {
+      "call": {"endpoint": {"rest": {"method": null, "path": "user"}}, "fields": []},
+      "reply": {"code": 0, "out": "{\"login\": \"newcomer\"}", "err": "", "status": 200}
+    }
+  ]
+}

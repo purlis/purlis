@@ -9,7 +9,13 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent, waitFor, within } from "storybook/test";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import type { SigningAccount, SigningCheck, SigningForge, SigningState } from "./bindings";
+import type {
+  SigningAccount,
+  SigningCheck,
+  SigningEmails,
+  SigningForge,
+  SigningState,
+} from "./bindings";
 import { SigningSetupDialog } from "./SigningSetupDialog";
 import { expectFocusInSight } from "./stories.testkit";
 
@@ -46,6 +52,15 @@ const ON: SigningState = {
   on: true,
 };
 
+/** The account's verified addresses, primary first and GitHub's noreply last. */
+const EMAILS: SigningEmails = {
+  emails: [
+    { email: "octocat@example.com", primary: true, private: false },
+    { email: "583231+octocat@users.noreply.github.com", primary: false, private: true },
+  ],
+  settings: "https://github.com/settings/emails",
+};
+
 /** A Check that never answers: the story stays on the step before it. */
 const NEVER = new Promise<SigningCheck>(() => undefined) as unknown as SigningCheck;
 
@@ -61,12 +76,14 @@ function theCore({
     repo: "octocat/hello",
   },
   waitRefused,
+  emails = EMAILS,
 }: {
   state: SigningState;
   makeRefused?: string;
   added?: "added" | "needs_permission";
   checked?: SigningCheck;
   waitRefused?: string;
+  emails?: SigningEmails;
 }) {
   mockIPC((cmd) => {
     switch (cmd) {
@@ -99,6 +116,8 @@ function theCore({
         };
       case "signing_check":
         return checked;
+      case "signing_emails":
+        return emails;
       default:
         return null;
     }
@@ -219,7 +238,7 @@ export const ByHand: Story = {
   },
 };
 
-/** **Check, not verified**: why GitHub didn't verify it, and Check again. */
+/** **Check, the email**: the commit email isn't verified on GitHub; the account's to choose (#5631). */
 export const CheckNotVerified: Story = {
   beforeEach: () => {
     theCore({
@@ -236,10 +255,36 @@ export const CheckNotVerified: Story = {
   },
   play: async () => {
     const dialog = await theDialog();
-    await within(dialog).findByRole("alert");
-    const again = within(dialog).getByRole("button", { name: "Check again" });
-    again.focus();
-    await expect(again).toHaveFocus();
+    const picked = await within(dialog).findByRole("radio", { name: "octocat@example.com" });
+    await expect(picked).toBeChecked();
+    await userEvent.tab();
+    expectFocusInSight();
+    await expect(within(dialog).getByRole("button", { name: "Use this email" })).toBeEnabled();
+  },
+};
+
+/** **Check, no verified email**: the sentence, the forge's email settings, and no ✓ (#5631). */
+export const NoVerifiedEmail: Story = {
+  beforeEach: () => {
+    theCore({
+      state: { ...ON, accounts: [{ ...ACCOUNT, may_add: true }] },
+      added: "added",
+      checked: {
+        verified: false,
+        reason: "unverified_email",
+        email: "octo@studio.local",
+        repo: "octocat/hello",
+      },
+      emails: { emails: [], settings: "https://github.com/settings/emails" },
+    });
+    return () => clearMocks();
+  },
+  play: async () => {
+    const dialog = await theDialog();
+    await within(dialog).findByText(/has no verified email on GitHub yet/);
+    const open = within(dialog).getByRole("button", { name: "Open GitHub's email settings" });
+    open.focus();
+    await expect(open).toHaveFocus();
     expectFocusInSight();
   },
 };

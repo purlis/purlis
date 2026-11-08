@@ -1,0 +1,13 @@
+{
+  "source": "GitLab REST API v4, docs.gitlab.com/api/users (Get the current user: email and confirmed_at) and docs.gitlab.com/api/user_email_addresses (List all email addresses: confirmed_at, null until confirmed); read 2026-11-08",
+  "exchanges": [
+    {
+      "call": {"endpoint": {"rest": {"method": null, "path": "user"}}, "fields": []},
+      "reply": {"code": 0, "out": "{\"id\": 42, \"username\": \"sam\", \"email\": \"sam@example.org\", \"confirmed_at\": \"2024-01-01T09:00:00.000Z\"}", "err": "", "status": 200}
+    },
+    {
+      "call": {"endpoint": {"rest": {"method": null, "path": "user/emails"}}, "fields": []},
+      "reply": {"code": 0, "out": "[{\"id\": 1, \"email\": \"sam@billing.example.org\", \"confirmed_at\": \"2025-02-01T09:00:00.000Z\"}, {\"id\": 2, \"email\": \"unconfirmed@example.org\", \"confirmed_at\": null}]", "err": "", "status": 200}
+    }
+  ]
+}

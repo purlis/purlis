@@ -450,6 +450,170 @@ pub fn check_a_pushed_commit(
     }
 }
 
+// ---------------------------------------------------------------------------------------
+// The email chat commits use (#5631)
+// ---------------------------------------------------------------------------------------
+
+/// Where the email the person chose for chat commits is kept, under the device's config home.
+fn email_file(config_root: &Path) -> std::path::PathBuf {
+    config_root.join("signing").join("commit-email")
+}
+
+/// **The email the person chose to sign chat commits as**, where they chose one: it stands in for
+/// their git's `user.email` in the commits the app makes for a chat.
+pub fn commit_email(config_root: &Path) -> Option<String> {
+    std::fs::read_to_string(email_file(config_root))
+        .ok()
+        .map(|text| text.trim().to_owned())
+        .filter(|email| email_reads(email))
+}
+
+/// Whether `email` reads as one address git may put on a commit.
+fn email_reads(email: &str) -> bool {
+    let Some((name, host)) = email.split_once('@') else {
+        return false;
+    };
+    !name.is_empty()
+        && host.contains('.')
+        && email.len() <= 254
+        && !email
+            .chars()
+            .any(|c| c.is_whitespace() || c.is_control() || matches!(c, '<' | '>' | '\\'))
+}
+
+/// **`email` kept as the one chat commits use**, or `None` to go back to the person's git's own.
+pub fn set_commit_email(config_root: &Path, email: Option<&str>) -> Result<(), String> {
+    let file = email_file(config_root);
+    match email {
+        None => match std::fs::remove_file(&file) {
+            Err(why) if why.kind() != std::io::ErrorKind::NotFound => Err(why.to_string()),
+            _ => Ok(()),
+        },
+        Some(email) if !email_reads(email) => Err(format!("{email} is not an email address")),
+        Some(email) => {
+            if let Some(folder) = file.parent() {
+                std::fs::create_dir_all(folder).map_err(|why| why.to_string())?;
+            }
+            crate::plane::write_private(config_root, &file, email.as_bytes())
+                .map_err(|why| why.to_string())
+        }
+    }
+}
+
+/// **Who a chat's commit is made as on this device**: the person's own git name, and the email
+/// they chose for chat commits where they chose one, else their git's own.
+pub fn who_commits_here(config_root: &Path) -> Result<Who, String> {
+    let mut who = who_commits()?;
+    if let Some(email) = commit_email(config_root) {
+        who.email = email;
+    }
+    Ok(who)
+}
+
+/// **A verified email address of the forge account**, as the Check step offers it (#5631).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct VerifiedEmail {
+    pub email: String,
+    /// The account's primary address.
+    pub primary: bool,
+    /// The forge's private address for commits (GitHub's noreply), which keeps the person's
+    /// own address out of their commits.
+    pub private: bool,
+}
+
+/// **The account's verified email addresses** (#5631, ADR 0116 §6), over `transport`: on GitHub
+/// the verified ones of `GET user/emails` (the `user:email` scope #5627 asks for) and the
+/// account's noreply address; on GitLab the account's primary email and its confirmed ones of
+/// `GET user/emails` (its `api` scope). Primary first, the private address last.
+pub fn verified_emails(
+    transport: &dyn Transport,
+    forge: &Forge,
+) -> Result<Vec<VerifiedEmail>, String> {
+    use crate::forge::transport::Call;
+    let shown = forge.kind.display();
+    let within = std::time::Duration::from_secs(30);
+    let read = |path: &str| -> Result<serde_json::Value, String> {
+        let reply = transport
+            .send(forge, &Call::get(path, within))
+            .map_err(|no| format!("{shown} did not answer ({})", no.said()))?;
+        if !reply.ok() {
+            return Err(format!(
+                "{shown} did not list your email addresses ({})",
+                reply.said(forge.kind).lines().next().unwrap_or("").trim()
+            ));
+        }
+        serde_json::from_str(&reply.out)
+            .map_err(|_| format!("{shown}'s list of your email addresses did not read"))
+    };
+    let text = |value: &serde_json::Value, key: &str| {
+        value
+            .get(key)
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned)
+    };
+    let mut found: Vec<VerifiedEmail> = Vec::new();
+    let mut keep = |email: String, primary: bool, private: bool| {
+        if !email.is_empty()
+            && !found
+                .iter()
+                .any(|was| was.email.eq_ignore_ascii_case(&email))
+        {
+            found.push(VerifiedEmail {
+                email,
+                primary,
+                private,
+            });
+        }
+    };
+    match forge.kind {
+        Kind::GitHub => {
+            for one in read("user/emails")?.as_array().into_iter().flatten() {
+                let verified = one.get("verified").and_then(serde_json::Value::as_bool);
+                if verified == Some(true)
+                    && let Some(email) = text(one, "email")
+                {
+                    let primary = one.get("primary").and_then(serde_json::Value::as_bool);
+                    keep(email, primary == Some(true), false);
+                }
+            }
+            let user = read("user")?;
+            if let (Some(id), Some(login)) = (
+                user.get("id").and_then(serde_json::Value::as_u64),
+                text(&user, "login"),
+            ) {
+                keep(
+                    format!("{id}+{login}@users.noreply.github.com"),
+                    false,
+                    true,
+                );
+            }
+        }
+        Kind::GitLab => {
+            let user = read("user")?;
+            let confirmed = user.get("confirmed_at").is_none_or(|at| !at.is_null());
+            if confirmed && let Some(email) = text(&user, "email") {
+                keep(email, true, false);
+            }
+            for one in read("user/emails")?.as_array().into_iter().flatten() {
+                let confirmed = one.get("confirmed_at").is_some_and(|at| !at.is_null());
+                if confirmed && let Some(email) = text(one, "email") {
+                    keep(email, false, false);
+                }
+            }
+        }
+    }
+    found.sort_by_key(|one| (!one.primary, one.private));
+    Ok(found)
+}
+
+/// The forge's page where the person adds and verifies an email address.
+pub fn email_settings(forge: &Forge) -> String {
+    match forge.kind {
+        Kind::GitHub => "https://github.com/settings/emails".to_owned(),
+        Kind::GitLab => format!("https://{}/-/user_settings/profile", forge.host),
+    }
+}
+
 pub mod retry;
 
 #[cfg(test)]
