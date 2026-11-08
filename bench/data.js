@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794119035580,
+  "lastUpdate": 1794121957631,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -43176,6 +43176,48 @@ window.BENCHMARK_DATA = {
             "value": 100.91871649999999,
             "unit": "ms",
             "extra": "median of 5 runs: 99.811, 100.799, 100.919, 101.512, 101.612 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "bfdec666976fd5a0781f91d37cfd06b0eeab5023",
+          "message": "CI and tools: grounds timing (#4956), a resumable baselines pull (#5059), and stories annotations under GitHub's cap (#3260) (#5783)\n\n* story-baselines-pull: resume a broken download, and take a path the artifact holds twice (#5059)\n\ngh run download neither resumes a download that breaks off nor extracts an\nartifact that holds a path twice. The pull now lists the run's story-baselines\nartifact, fetches its zip with curl (gh's token on curl's input), resumes from\nwhere an attempt stopped up to four times, and says the size and where each\nattempt stopped. It unzips with unzip -o: a path held twice is taken once when\nthe copies are the same and refused by name when they differ. Output is read\nwith a 64 MB maxBuffer, since a run's listing (about 12,000 names) is over\nspawnSync's default 1 MB.\n\nCloses #5059\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6WSD1GPJ8XBRRJTQZPGRP9B\nPurlis-Persona: steward\n\n* Stories check: annotations fit GitHub's 10 a step (#3260)\n\nA story whose picture alone failed printed one annotation a cell, so a story\nfailing in every cell of Chromium filled the step's 10 and its WebKit failure,\nand every other story's, never showed. named() now prints a picture-only story\nonce a browser, listing the cells it failed in, the way the headline already\nnames a blocking one (#4050). Past 10 annotations, the step prints 9 and a last\none saying how many more failed and that the job's summary, which GitHub never\ncaps and which still lists every cell, has them all.\n\nCloses #3260\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6WSD1GPJ8XBRRJTQZPGRP9B\nPurlis-Persona: steward\n\n* story-baselines-pull: start over where the store will not resume, and say the right stop (#5059)\n\nFrom review: curl's 33 (the store will not resume) now starts the next attempt\nfrom nothing rather than failing four times alike; the byte count a stop says\nis read before a whole-but-failed file is removed; a duplicated path's copies\nare compared by length and CRC-32, and a listing that does not show them is\nrefused as that rather than as copies that differ. Tests for a run that kept\nno baselines, an expired artifact, and an artifact with no drawn.json.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6WSD1GPJ8XBRRJTQZPGRP9B\nPurlis-Persona: steward\n\n* Stories check: the cap counts annotations, and the doc says how failures are grouped (#3260)\n\nFrom review: the tenth annotation says how many more annotations are not shown\n(one can stand for a story's every cell), and docs/component-stories.md says\nthat a picture-only failure is one annotation a browser listing its cells, and\nthat past 10 the job's summary lists every one.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6WSD1GPJ8XBRRJTQZPGRP9B\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-08T06:19:54Z",
+          "tree_id": "d5a4f8ef3bd3bd4c1004440be0d5c1fa00a7ba73",
+          "url": "https://github.com/purlis/purlis/commit/bfdec666976fd5a0781f91d37cfd06b0eeab5023"
+        },
+        "date": 1794121953518,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6966519999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.673, 0.695, 0.697, 0.698, 0.708 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.462041499999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.351, 16.458, 16.462, 16.598, 16.854 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.433909,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.693, 101.888, 102.434, 102.484, 102.615 ms"
           }
         ]
       }
