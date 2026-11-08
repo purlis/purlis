@@ -697,9 +697,12 @@ pub fn report(outcome: &str, text: &str, changed: Option<&str>) -> Result<String
                 .map_err(|bad| format!("{REPORT_SAYS} --changed: {}", words(&bad)))?,
         ),
     };
-    let (mut asking, chat, ticket) = match crate::handoff::ticketed() {
+    // A busy app is waited for (#5845): a report has nowhere else to go.
+    let busy = crate::handoff::A_BUSY_APP_TAKES_AT_MOST;
+    let (mut asking, chat, ticket) = match crate::handoff::ticketed_within(busy) {
         Ticketed::Yes(asking, chat, ticket) => (asking, chat, ticket),
         Ticketed::Refused(why) => return Err(not_sent(&why)),
+        Ticketed::NoApp if crate::handoff::names_an_app() => return Err(report_unanswered()),
         Ticketed::NoApp => {
             return Err(format!(
                 "{REPORT_SAYS} no purlis app answered this call, so nothing was sent. A report \
@@ -713,10 +716,7 @@ pub fn report(outcome: &str, text: &str, changed: Option<&str>) -> Result<String
         ticket,
         task: Some(TaskReport { outcome, changed }),
     };
-    match asking.ask(
-        &Ask::Report(Box::new(back)),
-        crate::handoff::A_TICKET_TAKES_AT_MOST,
-    ) {
+    match asking.ask(&Ask::Report(Box::new(back)), busy) {
         // Delivered, and the app says the task is over (#1485): the chat is told its program
         // ends with this turn, so it starts nothing it would lose. Only where the app says
         // so: a handoff's chat, a blocked task and one the person started are not ended.
@@ -786,10 +786,17 @@ pub fn report(outcome: &str, text: &str, changed: Option<&str>) -> Result<String
             | Answer::Browsed { .. }
             | Answer::Previewed { .. },
         )
-        | Err(_) => Err(format!(
-            "{REPORT_SAYS} the purlis app did not answer, so nothing was sent."
-        )),
+        | Err(_) => Err(report_unanswered()),
     }
+}
+
+/// What a report is told where the app that started its chat did not answer (#5845): it may be
+/// busy or restarting, and the report is the chat's to send again.
+fn report_unanswered() -> String {
+    format!(
+        "{REPORT_SAYS} the purlis app did not answer, so nothing was sent. It may be busy or \
+         restarting: send the report again."
+    )
 }
 
 /// A report refusal in this command's words, as its recorded answers have it.
@@ -874,7 +881,8 @@ fn sent_on(
     queued: Queued,
 ) -> Result<Fate, String> {
     use purlis_core::hookwire::{CHAT_ENV, ChatToken, SOCKET_ENV};
-    const WITHIN: std::time::Duration = crate::handoff::A_TICKET_TAKES_AT_MOST;
+    // A busy app is waited for (#5845): from a sandboxed chat, nothing is queued.
+    const WITHIN: std::time::Duration = crate::handoff::A_BUSY_APP_TAKES_AT_MOST;
     let socket = purlis_core::envvar::var_os(SOCKET_ENV).filter(|s| !s.is_empty());
     let chat = purlis_core::envvar::var(CHAT_ENV).and_then(|chat| chat.parse::<u32>().ok());
     let (Some(socket), Some(chat), Some(token)) = (socket, chat, ChatToken::from_env()) else {
