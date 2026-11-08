@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794169723837,
+  "lastUpdate": 1794177185363,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -8904,6 +8904,42 @@ window.BENCHMARK_DATA = {
             "value": 315.1,
             "unit": "MB",
             "extra": "median of 6 samples: 469.1, 400.9, 329, 298.1, 301.2, 224.3 MB; window 232.9 MB, session host 82.2 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "36965ba7572404cde03da47c4c24c7a195dcfbba",
+          "message": "Listing limit without the plane's skills; studio previews list an identical pair once (#5842, #5843) (#5869)\n\n* Claude Code's listing limit holds the person's own skills in a chat the plane's skills don't reach (#5842)\n\nThe arming read the person's own catalogue only through the plane's skills, so a chat the\nplane's skills don't reach was handed the 40,000 floor alone. harness::Kit now carries the\nskills the harness finds itself (Kit::own) apart from the plane's, and Claude Code's limit is\nworked out from them either way. Tested where a chat starts, in the session host's compose.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6Y4W205YFJ2AF6866VY1QZA\nPurlis-Persona: steward\n\n* Skill studio previews list an identical skill pair once (#5843)\n\nEach harness's preview drops from the plane's set every skill that harness has the same copy\nof (SkillSet::without_copies_of, purlis's own plugins left out of the comparison), before it\nroutes the chat at the workspace's root and in each clone, as a chat's start does. The copy\nleft out is listed under its harness (HarnessInTheStudio::same_left_out) naming the copy kept:\na 'Listed once' row on Harness skills, and in purlis skill list and show.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6Y4W205YFJ2AF6866VY1QZA\nPurlis-Persona: steward\n\n* Review fixes: a same-copy row says 'Same as its own copy', and a story draws both left-out rows (#5842, #5843)\n\nFrom the branch's two-axis review: the Harness skills mark names its cause as its sibling\n'Left out by a repo' does; a story draws a repo's and a same-copy left-out row for axe, the\nkeyboard and a screenshot; PlaneSkills::own's doc points at Kit::own; the CLI sentence and the\nchangelog headline read plainer; ADR 0102's amendment records the sandboxed preview's edge.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6Y4W205YFJ2AF6866VY1QZA\nPurlis-Persona: steward\n\n* Story baselines for Harness skills with left-out rows (#5843)\n\nDrawn by this pull request's stories run (42513695698) and pulled with\ntools/story-baselines-pull.mjs: the new HarnessSkillsLeftOut story, every theme, both engines.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6Y4W205YFJ2AF6866VY1QZA\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-08T20:32:03Z",
+          "tree_id": "57aacf39bbc7cb97e5503e5fd52bcd82a9800581",
+          "url": "https://github.com/purlis/purlis/commit/36965ba7572404cde03da47c4c24c7a195dcfbba"
+        },
+        "date": 1794177179739,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 2377,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1684, 2377, 3880 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 292.2,
+            "unit": "MB",
+            "extra": "median of 6 samples: 432.8, 387.4, 307.8, 273.9, 276.7, 209.1 MB; window 216.3 MB, session host 75.9 MB"
           }
         ]
       }
