@@ -75,3 +75,31 @@ fn a_skill_is_shown_what_it_uses_and_every_level_that_uses_it() {
         ["deploy"]
     );
 }
+
+/// #4510: a skill of a workspace that names a project skill bare, beside the word "skill", hints
+/// at it, and the graph says so from both ends.
+#[test]
+fn a_skill_named_bare_beside_the_word_skill_is_shown_as_a_hint_from_both_ends() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    std::fs::write(root.join("charter.toml"), "schema = 1\n").unwrap();
+    std::fs::create_dir_all(root.join("workspaces/ops")).unwrap();
+    skill(root, "skills/grilling", "grilling", "Asks hard questions.");
+    skill(
+        root,
+        "workspaces/ops/skills/plan",
+        "plan",
+        "Use the Skill tool with \"grilling\" first.",
+    );
+
+    let plan = uses_of(root, None, "plan");
+    let uses: Vec<(&str, bool, bool)> = plan
+        .uses
+        .iter()
+        .map(|one| (one.said.as_str(), one.broken, one.hint))
+        .collect();
+    assert_eq!(uses, [("\"grilling\"", false, true)]);
+    let grilling = uses_of(root, None, "grilling");
+    assert!(grilling.used_by.is_empty());
+    assert_eq!(grilling.hinted_by, ["plan"]);
+}
