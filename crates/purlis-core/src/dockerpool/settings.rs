@@ -195,32 +195,14 @@ pub fn engine_on_this_machine(
                 .map(|()| PathBuf::from(socket))
                 .map_err(|why| why.0),
             None => Err(format!(
-                "this machine's DOCKER_HOST is {}, an engine purlis cannot tell is on this \
-                 machine",
-                named_by_scheme(host)
+                "this machine's DOCKER_HOST is {host}, an engine purlis cannot tell is on this \
+                 machine"
             )),
         };
     }
     match engine(None, places).map_err(|why| why.0)? {
         Some(host) => Ok(PathBuf::from(host.trim_start_matches("unix://"))),
         None => Err("purlis finds no Docker engine on this machine".to_owned()),
-    }
-}
-
-/// **A `DOCKER_HOST` named by its scheme alone** ("a tcp:// address"): the rest of the address
-/// may hold a user and a password, and a refusal reaches whoever prints it. A value with no
-/// scheme, or one that is not a plain word, is not quoted at all.
-fn named_by_scheme(host: &str) -> String {
-    match host.split_once("://") {
-        Some((scheme, _))
-            if !scheme.is_empty()
-                && scheme
-                    .chars()
-                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.')) =>
-        {
-            format!("a {scheme}:// address")
-        }
-        _ => "not a unix:// address".to_owned(),
     }
 }
 

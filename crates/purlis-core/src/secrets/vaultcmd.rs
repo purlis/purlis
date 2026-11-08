@@ -1143,14 +1143,6 @@ pub fn remove(ctx: &Ctx, name: &str, io: &mut dyn Io) -> i32 {
     let keyring = registry::vault(ctx, name)
         .ok()
         .filter(|v| v.provider == "keyring");
-    if let Some(v) = &keyring {
-        // An agent identity's key would come back with the name, so it stays until the identity
-        // is removed.
-        if let Err(e) = holds_no_identity_key(ctx, name, v) {
-            io.say(Say::Err(e.said()));
-            return 1;
-        }
-    }
     match registry::remove_vault(ctx, name) {
         Ok(()) => {
             io.say(Say::Ok(format!(
@@ -1175,21 +1167,6 @@ pub fn remove(ctx: &Ctx, name: &str, io: &mut dyn Io) -> i32 {
             1
         }
     }
-}
-
-/// **Refuses keyring vault `v`, named `name`, where it holds an agent identity's key**
-/// ([`crate::sandbox::tools::mint::reserved`]): only the Agent identity tab takes one away.
-fn holds_no_identity_key(ctx: &Ctx, name: &str, v: &Vault) -> Result<(), super::VaultError> {
-    if super::keyring::keys(ctx, v)?
-        .iter()
-        .any(|key| crate::sandbox::tools::mint::reserved(key))
-    {
-        return Err(super::VaultError::new(format!(
-            "vault '{name}' holds an agent identity's key. Remove the identity in the Agent \
-             identity tab first, then delete the vault."
-        )));
-    }
-    Ok(())
 }
 
 /// What [`destroy`] took away: the vault's provider, and the keyring entries it deleted.
@@ -1224,7 +1201,15 @@ pub fn destroy_with(
     let mut destroyed = Vec::new();
     if v.provider == "keyring" {
         // An agent identity's key goes with its tool lines and its live tokens, or not at all.
-        holds_no_identity_key(ctx, name, &v)?;
+        if super::keyring::keys(ctx, &v)?
+            .iter()
+            .any(|key| crate::sandbox::tools::mint::reserved(key))
+        {
+            return Err(super::VaultError::new(format!(
+                "vault '{name}' holds an agent identity's key. Remove the identity in the Agent \
+                 identity tab first, then delete the vault."
+            )));
+        }
         for key in super::keyring::keys(ctx, &v)? {
             super::keyring::delete_with(store, ctx, &v, &key)?;
             destroyed.push(key);
