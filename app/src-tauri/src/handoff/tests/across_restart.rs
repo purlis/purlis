@@ -1451,7 +1451,9 @@ fn a_shell_a_chat_started_in_a_session_of_its_own_ends_when_the_next_host_settle
 // ---------------------------------------------------------------------------------------------
 
 /// A steward chat in `alpha` idle on one background shell of its own, on `host`, in planes
-/// kept in `config`: the planes, the project, the held plane and the chat.
+/// kept in `config` that were launched with nothing to put back, so the project's record is the
+/// app's to write from then on, as after any launch: the planes, the project, the held plane
+/// and the chat.
 fn a_steward_on_its_own_shell(
     plane: &Plane,
     host: &Pretend,
@@ -1460,6 +1462,7 @@ fn a_steward_on_its_own_shell(
     let planes = planes_kept_in(host, config);
     let id = planes.open(&plane.root);
     let held = planes.held(&id).expect("held");
+    held.reopen(A_SIZE, Ok(Record::default()), Choice::ReopenAll);
     let alpha = plane.root.join("workspaces").join("alpha");
     let steward = a_chat_as(&held, &plane.root, Some("steward"), &alpha);
     its_turn_ends_on_its_own(&held, steward, one_shell());
@@ -1555,14 +1558,7 @@ fn a_window_crash_past_its_grace_tells_the_chat_from_the_record_last_written() {
     let plane = a_plane_with_personas();
     let config = tempfile::tempdir().expect("a config home");
     let host = Pretend::default();
-    let planes = planes_kept_in(&host, config.path());
-    let id = planes.open(&plane.root);
-    let held = planes.held(&id).expect("held");
-    // A launch with nothing to put back: from here the project's record is the app's to write.
-    held.reopen(A_SIZE, Ok(Record::default()), Choice::ReopenAll);
-    let alpha = plane.root.join("workspaces").join("alpha");
-    let steward = a_chat_as(&held, &plane.root, Some("steward"), &alpha);
-    its_turn_ends_on_its_own(&held, steward, one_shell());
+    let (planes, _id, held, steward) = a_steward_on_its_own_shell(&plane, &host, config.path());
     let until = std::time::Instant::now() + TOLD_WITHIN;
     let last_written = loop {
         let read = purlis_core::reopen::read_or_refusal(&plane.root).ok();

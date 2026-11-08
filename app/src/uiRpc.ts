@@ -7483,7 +7483,10 @@ export type LeftBranch = {
 export type LeftIn = 
 /**  It was in the middle of a turn, or stopped on an ask: that turn is lost. */
 "failed" | 
-/**  It was idle at a turn's end on a harness that resumes by id: nothing is lost. */
+/**
+ *  It was idle at a turn's end on a harness that resumes by id: its turn is not lost, though
+ *  what it had running of its own ended ([`LostChat::ended`]).
+ */
 "hibernated";
 
 /**

@@ -8263,12 +8263,14 @@ impl Chats {
             .map(|one| one.chat.clone())
     }
 
-    /// The chat with id `id` that a launch could not start is told nothing as it starts again
-    /// (#1546): its dispatch is no longer at work (`crate::restored::retrying`).
-    pub(crate) fn tell_nothing(&self, id: &str) {
+    /// The chat with id `id` that a launch could not start is **not told to carry on** as it
+    /// starts again (#1546): its dispatch is no longer at work (`crate::restored::retrying`).
+    /// What the restart ended of its own work is still told (#5752): its wake line without the
+    /// carry-on, which is nothing for a chat that had none.
+    pub(crate) fn tell_no_carry_on(&self, id: &str) {
         for one in lock(&self.would_not_start).iter_mut() {
             if one.chat.identity.id.as_deref() == Some(id) {
-                one.told = None;
+                one.told = purlis_core::wakeline::of_chat(&one.chat, false);
             }
         }
     }
