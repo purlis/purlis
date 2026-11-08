@@ -29,6 +29,8 @@
 
 use chrono::Duration;
 
+pub mod pieces;
+
 /// **How long a background shell, or the wait for a recurring wake-up's next run, holds a
 /// chat's turn's end from the person** (#3878): one hour, the operator's ruling. Past it with no
 /// wake, the chat needs the person.

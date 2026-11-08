@@ -3224,3 +3224,65 @@ fn own_work_that_does_not_read_whole_or_holds_nothing_reads_as_none_5747() {
         assert_eq!(back[0].own_work, None, "{own_work}");
     }
 }
+
+#[test]
+fn each_piece_of_own_work_and_a_turn_under_way_survive_a_relaunch_5750() {
+    let plane = tempfile::tempdir().unwrap();
+    let cut = Chat {
+        own_pieces: vec![crate::ownwork::pieces::Piece {
+            output: Some("/tmp/claude-502/p/s/tasks/b1.output".to_owned()),
+            ..crate::ownwork::pieces::Piece::new(
+                crate::ownwork::pieces::Kind::Shell,
+                "b1",
+                "npm test",
+            )
+            .unwrap()
+        }],
+        mid_turn: true,
+        ..claude("ide.7", None)
+    };
+    write(
+        plane.path(),
+        &Record {
+            chats: vec![cut.clone(), claude("ide.8", Some(ID))],
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    let text = fs::read_to_string(path(plane.path())).unwrap();
+    assert_eq!(text.matches("\"own_pieces\"").count(), 1, "{text}");
+    assert_eq!(text.matches("\"mid_turn\"").count(), 1, "{text}");
+    let back = read(plane.path()).chats;
+    assert_eq!(back[0], cut);
+    assert!(back[1].own_pieces.is_empty() && !back[1].mid_turn);
+}
+
+#[test]
+fn a_piece_that_does_not_read_whole_or_is_not_of_its_shape_is_left_out_5750() {
+    let plane = tempfile::tempdir().unwrap();
+    let file = path(plane.path());
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    std::fs::write(
+        &file,
+        r#"{"version": 1, "at": 0, "chats": [{"program": "claude", "name": "3", "own_pieces": [
+            {"kind": "shell", "id": "b1", "what": "npm test"},
+            {"kind": "shell", "id": "../etc"},
+            {"kind": "spaceship", "id": "x1"},
+            "nonsense"
+        ]}, {"program": "claude", "name": "4", "own_pieces": "nonsense"}]}"#,
+    )
+    .unwrap();
+
+    let back = read(plane.path()).chats;
+    assert_eq!(back.len(), 2);
+    assert_eq!(
+        back[0]
+            .own_pieces
+            .iter()
+            .map(|one| one.id.as_str())
+            .collect::<Vec<_>>(),
+        ["b1"]
+    );
+    assert!(back[1].own_pieces.is_empty());
+}

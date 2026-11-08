@@ -1099,3 +1099,76 @@ fn a_chat_whose_own_wake_up_came_due_while_purlis_was_down_is_told_after_the_res
          waited on came due while purlis was down; it was given only {said:#?}"
     );
 }
+
+/// A report of `event` from chat `chat`'s own harness, under the conversation the board holds
+/// for it, heard as the socket hears it.
+fn its_own_harness_says(held: &Held, chat: u32, event: purlis_core::state::Event) {
+    let report = purlis_core::hookwire::Report {
+        chat,
+        event,
+        conversation: held
+            .board()
+            .conversation(chat)
+            .map_or(purlis_core::hookwire::Conversation::Unknown, |said| {
+                purlis_core::hookwire::Conversation::Named(said)
+            }),
+        pid: Some(4000 + chat),
+        agent: None,
+        detail: purlis_core::state::Detail::default(),
+    };
+    let _ = held.hooks().hear_as_the_socket_does(&report);
+}
+
+/// Chat `chat`'s tool started `piece` of its own work, as its tool's hook tells the app (#5750).
+fn its_tool_starts(held: &Held, chat: u32, piece: purlis_core::ownwork::pieces::Piece) {
+    held.hooks()
+        .output_as_the_socket_does(purlis_core::hookwire::TurnOutput {
+            chat,
+            turn_output: purlis_core::hookwire::Output::OwnWorkStarted { piece },
+            speaker: purlis_core::hookwire::Speaker::default(),
+        });
+}
+
+/// #5750: the steward chat starts a background shell in a turn, and purlis is killed before the
+/// turn ends, so no `Stop` ever says the shell was in flight. The shell was recorded as its tool
+/// started it: the chat brought back is told the restart cut its turn off mid-way, and named the
+/// shell it started.
+#[test]
+fn a_chat_killed_mid_turn_after_starting_a_shell_is_told_both_after_the_restart() {
+    let plane = a_plane_with_personas();
+    let host = Pretend::default();
+    let (planes, id, steward) = a_steward_chat(&host, &plane);
+    let held = planes.held(&id).expect("held");
+    its_own_harness_says(&held, steward, purlis_core::state::Event::UserPromptSubmit);
+    its_tool_starts(
+        &held,
+        steward,
+        purlis_core::ownwork::pieces::Piece::new(
+            purlis_core::ownwork::pieces::Kind::Shell,
+            "b5ul9gyit",
+            "cargo test -p purlis-core",
+        )
+        .expect("a piece"),
+    );
+    // Killed: what the record says as the turn runs is what the next launch reads. No `Stop`
+    // was ever heard.
+    let at_kill = quits(&held);
+
+    let (relaunched, _planes, _again, _held, opened) =
+        launches_again(&plane, (host, planes, held), &at_kill);
+
+    assert!(
+        opened.iter().any(|open| open.session == steward),
+        "precondition: the chat came back under its number"
+    );
+    let (told, said) = told_of_its_lost_work(&relaunched, steward, "cargo test -p purlis-core");
+    assert!(
+        told,
+        "within {TOLD_WITHIN:?} of the relaunch, chat {steward} was never told the shell it \
+         started was cut off; it was given only {said:#?}"
+    );
+    assert!(
+        said.iter().any(|line| line.contains("mid-way")),
+        "chat {steward} was not told its turn was cut mid-way: {said:#?}"
+    );
+}

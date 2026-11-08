@@ -98,16 +98,22 @@ impl AtLaunch {
     ///
     /// A task that still owes its report and is brought back on its conversation is told to
     /// carry on ([`CARRY_ON`]). A chat brought back on its conversation that had work of its
-    /// own left running ([`Chat::own_work`]) is told the restart ended it, unless the session
+    /// own left running ([`Chat::own_work`], [`Chat::own_pieces`]), or was cut off mid-turn
+    /// ([`Chat::mid_turn`]), is told the restart ended it, unless the session
     /// host kept its program running (#3900), when nothing of it ended. A task that is both
     /// gets the two in one line. Every other chat is told nothing.
     pub fn told(&self, chat: &Chat) -> Option<String> {
         let id = chat.identity.id.as_ref()?;
-        let own_work = chat
-            .own_work
-            .as_ref()
-            .filter(|_| chat.resume.is_some() && !self.kept.contains(id));
-        crate::wakeline::of(own_work, self.carry_on.contains(id))
+        let ended = if chat.resume.is_some() && !self.kept.contains(id) {
+            crate::wakeline::Ended {
+                own_work: chat.own_work.as_ref(),
+                pieces: &chat.own_pieces,
+                mid_turn: chat.mid_turn,
+            }
+        } else {
+            crate::wakeline::Ended::default()
+        };
+        crate::wakeline::of(&ended, self.carry_on.contains(id))
     }
 
     /// Whether the chat with the id `id` is a task that still owes its report to a chat the
@@ -248,7 +254,7 @@ pub fn at_launch_beside(
     let mut kept = Vec::new();
     let mut seen = std::collections::HashSet::new();
     for chat in &record.chats {
-        if chat.own_work.is_some()
+        if (chat.own_work.is_some() || !chat.own_pieces.is_empty() || chat.mid_turn)
             && let Some(id) = &chat.identity.id
             && left_running(chat)
         {
