@@ -24,6 +24,27 @@
 //! What a skill is held to is in the **sources file** beside its trigger tests
 //! ([`SOURCES_FILE`]): its trigger bar, its neighbours and a note per test saying where its query
 //! came from. A skill without one, or with one that is not whole, is reported, never scored.
+//!
+//! **Where each harness's format was read** (#5728), its recordings under `ci/recorded/` made to
+//! match. Neither Codex nor opencode was run for them: no model is called from where they were
+//! written.
+//!
+//! - **Codex**, from the source at `rust-v0.167.0`: `exec/src/exec_events.rs` (the events and
+//!   items, `turn.failed`, `mcp_tool_call`'s `server`, `tool` and `arguments`),
+//!   `app-server-protocol/src/protocol/item_builders.rs` (a command is `shlex_join` of its
+//!   argv) and `core/src/shell.rs` (the argv is the shell's full path, `-lc` and the command),
+//!   so a read is `/bin/bash -lc 'cat …/SKILL.md'`.
+//! - **opencode**, from the source at `v1.19.5`: `cli/cmd/run.ts` (each event is `type`,
+//!   `timestamp`, `sessionID` and a `part` or an `error`; a tool is reported once completed or
+//!   failed), `core/src/tool/skill.ts` (the tool `skill`, its input `name`),
+//!   `mcp/catalog.ts` (an MCP tool is `<server>_<tool>`, so `purlis_skill_load`) and
+//!   `session/processor.ts` (a `step-finish`'s `reason` is the model's finish reason, `stop` at
+//!   the end of the turn).
+//! - **Claude Code**'s is #5727's.
+//!
+//! **Not verified**: what a real model does with them, the finish reason opencode's providers
+//! map an Anthropic `end_turn` to (`stop` by the AI SDK's own mapping), and which shell a Codex
+//! run on the runner names. None of them names the model it ran on but Claude Code.
 
 use std::path::Path;
 

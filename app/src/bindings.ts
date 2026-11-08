@@ -5454,6 +5454,12 @@ export type AlertRow = {
 	 *  in place of the command the terminal status line names.
 	 */
 	way: AlertWay,
+	/**
+	 *  **When what it says was found**, in seconds since the epoch, where purlis keeps that
+	 *  (#5702): a chat's arrived files, from the look that last told them. The Inbox says the
+	 *  Notice's age from it, and without it from when the window first drew the Notice.
+	 */
+	since?: number | null,
 };
 
 /**
@@ -16780,6 +16786,11 @@ export type StatsRow = {
 	/**  Tokens spent inside them, or null where no run said its tokens. */
 	tokens: number | null,
 	ms: number,
+	/**
+	 *  Times a built-in skill should have started and did not (#5738): counted by harness, and
+	 *  0 in every other grouping.
+	 */
+	misses: number,
 };
 
 /**  Where a chat's stop stands. */

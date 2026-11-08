@@ -202,6 +202,8 @@ pub fn clone(request: &Request, say: Sink) -> u8 {
     // printing as they finish interleave into something nobody can scan for which failed.
     let mut failures = 0;
     let mut members: Vec<String> = Vec::new();
+    // The clones made here, said once the layer is in them too (#5702).
+    let mut made: Vec<PathBuf> = Vec::new();
     let window = forge::gitcredential::in_the_window();
     for (record, outcome) in targets.iter().zip(outcomes) {
         let name = py_str(record.get("name").unwrap_or(&Value::Null));
@@ -232,12 +234,7 @@ pub fn clone(request: &Request, say: Sink) -> u8 {
                 } else {
                     format!("{name} ({branch})")
                 };
-                if let Err(why) = crate::sandbox::arrived::made_by_the_app(root, &dest) {
-                    tracing::warn!(
-                        "purlis: {} was not recorded as made ({why})",
-                        dest.display()
-                    );
-                }
+                made.push(dest.clone());
                 let rel = dest.strip_prefix(root).unwrap_or(&dest);
                 say(Say::Done(
                     format!(
@@ -296,6 +293,14 @@ pub fn clone(request: &Request, say: Sink) -> u8 {
         }
     }
     wire(root, ws, say);
+    for dest in &made {
+        if let Err(why) = crate::sandbox::arrived::made_by_the_app(root, dest) {
+            tracing::warn!(
+                "purlis: {} was not recorded as made ({why})",
+                dest.display()
+            );
+        }
+    }
     record_membership(request, &members, say);
     u8::from(failures > 0)
 }

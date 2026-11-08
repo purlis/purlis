@@ -33,8 +33,14 @@
 //! trigger ([`StartedBy::Trigger`]), as that prompt is what asked for them; a run opened inside
 //! one is the harness's own pick. It is held until a prompt is sent, however long the person
 //! reads it first, and dropped with the session.
+//!
+//! **A correction** (#5738, spec #5714) is the person starting a built-in skill themselves, by
+//! Use skill… or, where the harness names it, a slash command typed by hand, in the prompt right
+//! after a turn that did not start it. It is a **miss** of that skill ([`Tracker::missed`]): never
+//! on a chat's first prompt, and never when the turn before started it, by whoever's start. Only
+//! the skill is kept, by its own name, never the prompt.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use purlis_skills::runs::{Call, Closed, Ended, Heard, Open, Spans, Start, StartedBy, Whose};
 
@@ -66,6 +72,51 @@ pub struct Tracker {
     /// What started the turn under way in each chat, by the same key, where it was a curation
     /// action or a trigger: the start of every run it opens at the top.
     turn_started_by: HashMap<String, StartedBy>,
+    /// Each chat's turns, by the same key, as far as a correction needs them (#5738).
+    turns: HashMap<String, Turns>,
+}
+
+/// **A chat's turns, as a correction reads them** (#5738): how many prompts it has sent, the
+/// skills each of its last two turns started, and the misses not yet taken.
+#[derive(Debug, Default)]
+struct Turns {
+    /// Prompts sent in it, its own, never a sub-agent's.
+    prompts: u32,
+    /// A prompt was sent and its turn has not ended.
+    under_way: bool,
+    /// The skills the turn before the one under way started, by their own names.
+    previous: HashSet<String>,
+    /// The skills the turn under way started, by their own names.
+    current: HashSet<String>,
+    /// Built-ins its harness named as started by the person before their prompt was sent:
+    /// decided by that prompt.
+    named: Vec<String>,
+    /// The misses not yet taken.
+    missed: Vec<Missed>,
+}
+
+impl Turns {
+    /// The person started built-in `skill` in the prompt under way: a miss where a turn came
+    /// before and did not start it.
+    fn person_started(&mut self, skill: String) {
+        if self.prompts >= 2 && !self.previous.contains(&skill) {
+            self.missed.push(Missed { skill });
+        }
+    }
+}
+
+/// **A miss of a built-in skill** a correction found (#5738): the skill alone, by its own name
+/// (`purlis-secrets`), never the prompt.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Missed {
+    pub skill: String,
+}
+
+/// The own name of `skill`, a copy at `level`, where it is a built-in's: what a correction keeps.
+fn built_in(skill: &str, level: Option<purlis_skills::runs::Level>) -> Option<String> {
+    level
+        .filter(|level| level.origin == crate::skills::Origin::BuiltIn)
+        .map(|level| crate::skilluse::own_name(skill.trim(), Some(level)).into_owned())
 }
 
 /// **A prompt a curation action typed into a chat, or a trigger sent it** (SK-20): the runs the
@@ -356,6 +407,17 @@ impl Tracker {
         if let Some(started) = &call.skill
             && started.started_by == StartedBy::UseSkill
         {
+            if !self.holds_typed(key, &started.skill)
+                && let Some(skill) = built_in(&started.skill, started.level)
+            {
+                // A slash command the person typed by hand: no run opens, and it may be a miss.
+                let turns = self.turns.entry(key.to_owned()).or_default();
+                if turns.under_way {
+                    turns.person_started(skill);
+                } else {
+                    turns.named.push(skill);
+                }
+            }
             return self.named(key, &started.skill, at_ms, tokens);
         }
         let opened = match &call.skill {
@@ -431,6 +493,9 @@ impl Tracker {
                     held.retain(|one| !one.sent);
                 }
                 self.turn_started_by.remove(key);
+                if let Some(turns) = self.turns.get_mut(key) {
+                    turns.under_way = false;
+                }
                 Ended::Turn
             }
             Event::UserPromptSubmit => Ended::Interrupted,
@@ -438,6 +503,7 @@ impl Tracker {
                 self.typed.remove(key);
                 self.prompted.remove(key);
                 self.turn_started_by.remove(key);
+                self.turns.remove(key);
                 Ended::Session
             }
             _ => {
@@ -461,6 +527,14 @@ impl Tracker {
             };
         }
         let marks = report.detail.prompt_marks;
+        // A new turn: the one before is the one a correction is read against.
+        let turns = self.turns.entry(key.to_owned()).or_default();
+        turns.previous = std::mem::take(&mut turns.current);
+        turns.prompts = turns.prompts.saturating_add(1);
+        turns.under_way = true;
+        for skill in std::mem::take(&mut turns.named) {
+            turns.person_started(skill);
+        }
         // The prompt put there decides at the next prompt, sent as it was or not.
         self.turn_started_by.remove(key);
         if let Some(prompted) = self.prompted.remove(key)
@@ -502,12 +576,43 @@ impl Tracker {
         self.typed.remove(key);
         self.prompted.remove(key);
         self.turn_started_by.remove(key);
+        self.turns.remove(key);
         self.spans.close(key, ended, at_ms)
     }
 
     /// The innermost run open in the chat keyed `key`: the skill an entry there is inside.
     pub fn inside(&self, key: &str) -> Option<&Open> {
         self.spans.inside(key)
+    }
+
+    /// **The misses corrections found in the chat keyed `key`** (#5738) since this was last
+    /// asked, each once.
+    pub fn missed(&mut self, key: &str) -> Vec<Missed> {
+        self.turns
+            .get_mut(key)
+            .map(|turns| std::mem::take(&mut turns.missed))
+            .unwrap_or_default()
+    }
+
+    /// Whether Use skill… typed `skill` into the chat keyed `key` for its harness to name.
+    fn holds_typed(&self, key: &str, skill: &str) -> bool {
+        self.typed.get(key).is_some_and(|held| {
+            held.iter()
+                .any(|one| one.typed.confirmed == Confirmed::ByName && one.typed.skill == skill)
+        })
+    }
+
+    /// Run `open` opened in the chat keyed `key`: the turn under way started its skill, and the
+    /// person's own start of a built-in (Use skill…) may be a correction.
+    fn turn_opened(&mut self, key: &str, open: &Open) {
+        let turns = self.turns.entry(key.to_owned()).or_default();
+        let name = crate::skilluse::own_name(&open.skill, open.whose.level).into_owned();
+        turns.current.insert(name);
+        if open.started_by == StartedBy::UseSkill
+            && let Some(skill) = built_in(&open.skill, open.whose.level)
+        {
+            turns.person_started(skill);
+        }
     }
 
     /// The chat's harness named `skill` as started by a prompt the person sent: the held skill
@@ -553,7 +658,8 @@ impl Tracker {
             level: typed.level,
         };
         let id = typed.run.to_string();
-        self.spans
+        let opened = self
+            .spans
             .open(
                 key,
                 Start {
@@ -565,7 +671,9 @@ impl Tracker {
                     tokens,
                 },
             )
-            .cloned()
+            .cloned()?;
+        self.turn_opened(key, &opened);
+        Some(opened)
     }
 
     /// Opens the run `started` claims, where it checks: a start this purlis knows, a ULID for
@@ -605,7 +713,8 @@ impl Tracker {
             Some(by) if self.spans.inside(key).is_none() => *by,
             _ => started.started_by,
         };
-        self.spans
+        let opened = self
+            .spans
             .open(
                 key,
                 Start {
@@ -617,7 +726,9 @@ impl Tracker {
                     tokens: tokens(),
                 },
             )
-            .cloned()
+            .cloned()?;
+        self.turn_opened(key, &opened);
+        Some(opened)
     }
 }
 

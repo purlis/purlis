@@ -158,26 +158,33 @@ const GROUPINGS: readonly {
   heading: string;
   column: string;
   none?: string;
+  /** Whether a built-in's misses are counted in it: by what it ran on alone (#5738). */
+  misses?: true;
 }[] = [
-  { key: "by_harness", heading: "By what it ran on", column: "Ran on" },
+  { key: "by_harness", heading: "By what it ran on", column: "Ran on", misses: true },
   { key: "by_persona", heading: "By persona", column: "Persona", none: "No persona" },
   { key: "by_workspace", heading: "By workspace", column: "Workspace", none: "Project root" },
 ];
 
 /**
  * **A skill's totals** (SK-20, #2783): its runs, their signals and their tokens, by what they ran
- * on, by persona and by workspace. Signals only, never a pass or a fail.
+ * on, by persona and by workspace. Signals only, never a pass or a fail. A built-in's misses
+ * (#5738), the times it should have started and the person started it themselves, are counted
+ * by what it ran on, where a harness with misses and no run has a row too.
  */
 export function SkillTotals({
   name,
   stats,
   refused,
+  builtIn = false,
 }: {
   name: string;
   /** Its totals, once read. */
   stats: SkillStats | undefined;
   /** Why they could not be read. */
   refused: string | undefined;
+  /** It is a built-in skill, whose misses are counted. */
+  builtIn?: boolean;
 }) {
   if (refused !== undefined)
     return (
@@ -187,49 +194,55 @@ export function SkillTotals({
         testid="skill-totals-refused"
       />
     );
-  if (stats === undefined || stats.by_persona.length === 0) return null;
+  if (stats === undefined || (stats.by_persona.length === 0 && stats.by_harness.length === 0))
+    return null;
   return (
     <section aria-labelledby="skill-totals-heading" data-testid="skill-totals">
       <h2 id="skill-totals-heading">Totals</h2>
-      {GROUPINGS.map(({ key, heading, column, none }) => (
-        <Table
-          key={key}
-          caption={heading}
-          aria-label={`Runs of ${name}, ${heading.toLowerCase()}`}
-          data-testid={`skill-totals-${key}`}
-        >
-          <TableHeader>
-            <TableColumn isRowHeader>{column}</TableColumn>
-            <TableColumn>Runs</TableColumn>
-            <TableColumn align="end">Tool calls</TableColumn>
-            <TableColumn align="end">Errors</TableColumn>
-            <TableColumn align="end">Refused</TableColumn>
-            <TableColumn align="end">Asks</TableColumn>
-            <TableColumn align="end">Tokens</TableColumn>
-            <TableColumn align="end">Time</TableColumn>
-          </TableHeader>
-          <TableBody>
-            {stats[key].map((row: StatsRow) => {
-              const id = `${row.group.kind}:${row.group.kind === "named" ? row.group.name : ""}`;
-              return (
-                <TableRow key={id} id={id} textValue={groupSaid(row.group, none)}>
-                  <TableCell>{groupSaid(row.group, none)}</TableCell>
-                  <TableCell>
-                    {counted(row.runs, "run", "runs")}
-                    {row.ended < row.runs ? `, ${row.ended} ended` : ""}
-                  </TableCell>
-                  <TableCell align="end">{row.tool_calls}</TableCell>
-                  <TableCell align="end">{row.tool_errors}</TableCell>
-                  <TableCell align="end">{row.refusals}</TableCell>
-                  <TableCell align="end">{row.asks}</TableCell>
-                  <TableCell align="end">{row.tokens ?? "Not reported"}</TableCell>
-                  <TableCell align="end">{timeSaid(row.ms)}</TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
-      ))}
+      {GROUPINGS.map(({ key, heading, column, none, misses }) => {
+        const missed = builtIn && misses === true;
+        return (
+          <Table
+            key={key}
+            caption={heading}
+            aria-label={`Runs of ${name}, ${heading.toLowerCase()}`}
+            data-testid={`skill-totals-${key}`}
+          >
+            <TableHeader>
+              <TableColumn isRowHeader>{column}</TableColumn>
+              <TableColumn>Runs</TableColumn>
+              {missed && <TableColumn>Misses</TableColumn>}
+              <TableColumn align="end">Tool calls</TableColumn>
+              <TableColumn align="end">Errors</TableColumn>
+              <TableColumn align="end">Refused</TableColumn>
+              <TableColumn align="end">Asks</TableColumn>
+              <TableColumn align="end">Tokens</TableColumn>
+              <TableColumn align="end">Time</TableColumn>
+            </TableHeader>
+            <TableBody>
+              {stats[key].map((row: StatsRow) => {
+                const id = `${row.group.kind}:${row.group.kind === "named" ? row.group.name : ""}`;
+                return (
+                  <TableRow key={id} id={id} textValue={groupSaid(row.group, none)}>
+                    <TableCell>{groupSaid(row.group, none)}</TableCell>
+                    <TableCell>
+                      {counted(row.runs, "run", "runs")}
+                      {row.ended < row.runs ? `, ${row.ended} ended` : ""}
+                    </TableCell>
+                    {missed && <TableCell>{counted(row.misses, "miss", "misses")}</TableCell>}
+                    <TableCell align="end">{row.tool_calls}</TableCell>
+                    <TableCell align="end">{row.tool_errors}</TableCell>
+                    <TableCell align="end">{row.refusals}</TableCell>
+                    <TableCell align="end">{row.asks}</TableCell>
+                    <TableCell align="end">{row.tokens ?? "Not reported"}</TableCell>
+                    <TableCell align="end">{timeSaid(row.ms)}</TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        );
+      })}
     </section>
   );
 }

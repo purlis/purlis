@@ -711,26 +711,45 @@ pub fn run_entries_for(held: &crate::planes::Held, id: u32) -> Result<Vec<Entrie
         .collect())
 }
 
-/// [`secret_ask_entries`]'s work.
+/// [`secret_ask_entries`]'s work: only entries of a vault the asking persona may use, and none no
+/// program is handed (D-5246-1, the person's ruling amending D-5080-11), as a run's picker lists
+/// them. The link a pick makes is read by every later run of the key, whose notice names only the
+/// persona's vault. A press is judged again by the core, read afresh.
 pub fn entries_for(held: &crate::planes::Held, id: u32) -> Result<Vec<EntriesOf>, String> {
-    let asked = held
+    let (asked, persona) = held
         .secret_asks()
         .open()
         .into_iter()
         .find(|open| open.id == id)
-        .map(|open| Target {
-            vault: open.vault,
-            key: open.key,
+        .map(|open| {
+            (
+                Target {
+                    vault: open.vault,
+                    key: open.key,
+                },
+                open.persona,
+            )
         })
         .ok_or_else(|| format!("secret ask {id} is no longer open"))?;
     let ctx = Ctx::new(held.root(), Env::from_process());
+    // Read once, however many keys are listed (#5582), and failing closed as `run_entries_for`'s
+    // reads do: no persona, or a registry that can't be read, offers no vault.
+    let usable = (!persona.is_empty())
+        .then(|| purlis_core::secrets::brokered::vaults_of(&ctx, &persona).ok())
+        .flatten()
+        .unwrap_or_default();
+    let handed = purlis_core::secrets::brokered::NoProgram::read(&ctx);
     Ok(links::pickable(&ctx, Some(&asked))
         .map_err(|e| e.message.to_string())?
         .into_iter()
+        .filter(|one| usable.contains(&one.vault))
         .map(|one| match one.keys {
             Ok(keys) => EntriesOf {
+                keys: keys
+                    .into_iter()
+                    .filter(|key| handed.refuses(&one.vault, &[key.as_str()]).is_none())
+                    .collect(),
                 vault: one.vault,
-                keys,
                 unlisted: None,
             },
             Err(why) => EntriesOf {
@@ -861,8 +880,10 @@ pub fn asked(
         harness: open.harness,
     };
     // A chat on a pool's runner runs its commands there, where no Run grant reaches: a program
-    // it names ahead is asked about as any Secret ask is, by the link the line came over.
-    let on_a_runner = crate::hooks::heard_from_a_pool().is_some();
+    // it names ahead is asked about as any Secret ask is (D-5244-4). Judged by the link the line
+    // came over, else the router's record of the chat, as a brokered write and a dispatch are, so
+    // either alone keeps the Allow off (#5246's review).
+    let on_a_runner = crate::runnerdispatches::heard_from_a_pool(held, asked.chat).is_some();
     let chat = purlis_core::secrets::ask::Chat {
         chat: asked.chat,
         persona: open.persona.as_deref(),

@@ -18,6 +18,8 @@ purlis-skills.workspace = true
 # variable: the same words a chat in the window is armed with.
 purlis-core.workspace = true
 serde_json.workspace = true
+# The open issues the nightly is handed, as `gh api` prints them.
+serde.workspace = true
 clap.workspace = true
 # The pin file, `ci/skill-grades/pins.toml`.
 toml = "1.1"

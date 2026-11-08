@@ -5394,7 +5394,7 @@ fn a_run_missing_its_key_waits_on_a_secret_ask_and_runs_with_the_value_filled() 
     );
 }
 
-/// A command that runs only with `other`'s TOKEN, the entry the person picks, under `MISSING`.
+/// A command that runs only with `kept`'s TOKEN, the entry the person picks, under `MISSING`.
 fn a_missing_key_filled_by_a_pick(root: &Path) -> Wanted {
     let mut want = wanted(root, "team", sh(r#"test "$X" = "n0t-yours" && echo ran"#));
     want.env = vec!["X=MISSING".into()];
@@ -5404,6 +5404,23 @@ fn a_missing_key_filled_by_a_pick(root: &Path) -> Wanted {
 #[test]
 fn a_run_missing_its_key_that_the_person_fills_with_an_entry_runs_with_the_entrys_value() {
     let project = project();
+    // The entry is in `kept`, a vault `devops` may use too: only such an entry fills an ask
+    // (D-5246-1).
+    std::fs::write(
+        project.path().join("vaults.json"),
+        serde_json::json!({ "vaults": {
+            "team": {"provider": "plain-file", "config": {"file": "team.json"}, "persona": "devops"},
+            "other": {"provider": "plain-file", "config": {"file": "other.json"}},
+            "kept": {"provider": "plain-file", "config": {"file": "kept.json"}, "persona": "devops"},
+        }})
+        .to_string(),
+    )
+    .unwrap();
+    std::fs::write(
+        project.path().join("kept.json"),
+        serde_json::json!({"TOKEN": "n0t-yours"}).to_string(),
+    )
+    .unwrap();
     let asks = crate::secrets::ask::Asks::new(project.path());
     let frames = std::thread::scope(|scope| {
         let run = scope.spawn(|| {
@@ -5424,7 +5441,7 @@ fn a_run_missing_its_key_that_the_person_fills_with_an_entry_runs_with_the_entry
             &Ctx::new(project.path(), Env::of(&[])),
             id,
             crate::secrets::ask::Answer::Link(crate::secrets::links::Target {
-                vault: "other".into(),
+                vault: "kept".into(),
                 key: "TOKEN".into(),
             }),
             crate::harness::asks::Answerer::admitted(crate::harness::asks::Admitted::LocalUi)
@@ -5436,7 +5453,7 @@ fn a_run_missing_its_key_that_the_person_fills_with_an_entry_runs_with_the_entry
     assert_eq!(frames.last(), Some(&Frame::Exit(0)), "{frames:?}");
     assert_eq!(stdout(&frames), "ran\n");
     let heard = format!("{frames:?}");
-    for never in ["n0t-yours", "other/TOKEN"] {
+    for never in ["n0t-yours", "kept/TOKEN"] {
         assert!(!heard.contains(never), "{never} in: {heard}");
     }
     let team = std::fs::read_to_string(project.path().join("team.json")).unwrap();

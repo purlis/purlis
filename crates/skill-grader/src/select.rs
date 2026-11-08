@@ -21,6 +21,16 @@ const EVERY: &[(&str, &str)] = &[
         "crates/purlis-core/src/harness/claude.rs",
         "the plugin wiring",
     ),
+    // What a Codex or opencode chat is armed with, which their grades start them with.
+    (
+        "crates/purlis-core/src/harness/codex.rs",
+        "the plugin wiring",
+    ),
+    (
+        "crates/purlis-core/src/harness/opencode.rs",
+        "the plugin wiring",
+    ),
+    ("crates/purlis-core/src/opencode.rs", "the plugin wiring"),
     (
         "crates/purlis-core/src/briefing.rs",
         "the session-start briefing",

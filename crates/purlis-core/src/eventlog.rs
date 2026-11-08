@@ -2566,13 +2566,50 @@ impl Recorder {
         call: &crate::hookwire::ToolCall,
     ) -> io::Result<()> {
         let chat = under.chat.clone();
-        let Some(opened) = self
+        let opened = self
             .skills
-            .call(span_of(under), call, now_ms(), || tokens_of(plane, &chat))
-        else {
+            .call(span_of(under), call, now_ms(), || tokens_of(plane, &chat));
+        if let Some(opened) = opened {
+            self.skill_started(plane, under, who, &opened)?;
+        }
+        self.skills_missed(plane, under, who)
+    }
+
+    /// **The misses corrections found in the chat's run** (#5738, [`crate::skillspan::Tracker::missed`]):
+    /// each a `skill.missed`, and logged in the plane's skill log ([`crate::skilluse::missed`])
+    /// with the chat's harness, the version of it this purlis heard, its persona and the signal.
+    /// Never the prompt.
+    fn skills_missed(&mut self, plane: &Path, under: &Under, who: &Who) -> io::Result<()> {
+        let missed = self.skills.missed(span_of(under));
+        if missed.is_empty() {
             return Ok(());
-        };
-        self.skill_started(plane, under, who, &opened)
+        }
+        let version = who
+            .harness
+            .as_deref()
+            .and_then(crate::harness::Harness::of_kind)
+            .and_then(crate::sandbox::program::version_heard);
+        for miss in missed {
+            let signal = crate::skilluse::Signal::Correction;
+            let mut body = serde_json::json!({ "missed": miss.skill, "signal": signal.word() });
+            if let Some(version) = &version {
+                body["harness_version"] = version.as_str().into();
+            }
+            self.append(under, "skill.missed", body)?;
+            crate::skilluse::missed(
+                plane,
+                &crate::skilluse::Missing {
+                    skill: &miss.skill,
+                    harness: who.harness.as_deref(),
+                    harness_version: version.as_deref(),
+                    persona: who.persona.as_deref(),
+                    signal,
+                },
+                chrono::Utc::now(),
+                &self.log.device,
+            );
+        }
+        Ok(())
     }
 
     /// Says that skill run `opened` began, with a `skill.started`, and logs it in the plane's
@@ -2660,7 +2697,7 @@ impl Recorder {
         for opened in &reported.opened {
             self.skill_started(plane, under, who, opened)?;
         }
-        Ok(())
+        self.skills_missed(plane, under, who)
     }
 
     /// **Use skill… typed `typed` into chat `number` of `plane`**, unsent (SK-12): its run opens
