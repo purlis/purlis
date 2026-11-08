@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794095227585,
+  "lastUpdate": 1794097287677,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -42798,6 +42798,48 @@ window.BENCHMARK_DATA = {
             "value": 102.12676450000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.393, 101.992, 102.127, 102.829, 103.382 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "1479fe987d13eca8c7d2a296474f0af62f4c7e14",
+          "message": "Secret ask: the end-to-end check and final security review (#5246) (#5709)\n\n* Secret ask: a runner chat's ask naming curl is the plain Fill (D-5244-4), red on purpose; #5227's steps as a scenario (#5246)\n\nRED ON PURPOSE: the runner line in secretasks::asked is taken out, so\na_secret_ask_naming_curl_heard_from_a_pool_is_the_plain_fill_with_no_allow\nmust fail on CI (a Run grant notice opens for a runner chat). The next\ncommit puts it back.\n\nThe scenario (secret-run.state.e2e.ts) runs #5227's steps in the built app:\none notice, Fill and allow once, the command runs, nothing committed changes.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6VTMYNND7MN570CY9EQQ4DK\nPurlis-Persona: steward\n\n* Secret ask: a runner chat is judged by its pool record too; D-5244-4's line back (#5246)\n\nPuts back the line 765419f8 took out on purpose, so a runner chat's\nsecret_ask naming curl is the plain Fill again. The review found the check\nread only the link the line came over; it now reads\nrunnerdispatches::heard_from_a_pool, as a brokered write and a dispatch do,\nso either the link or the router's record keeps the Allow off.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6VTMYNND7MN570CY9EQQ4DK\nPurlis-Persona: steward\n\n* Secret ask: a picked entry is linked only into a vault the persona may use (#5246)\n\nA Fill on a plain Secret ask was refused in a vault its persona may not use,\nand a Link was not: a chat naming another persona's vault could have the\nperson plant a link there, which that persona's tools read. The Link is now\nrefused the same way, before anything is written.\na_link_into_a_vault_the_persona_may_not_use_is_refused_as_a_fill_is was seen\nred first (the link was written into 'others').\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6VTMYNND7MN570CY9EQQ4DK\nPurlis-Persona: steward\n\n* Scenario: #5227's no-second-item check reads the kinds a secret raises, and says what is left (#5246)\n\nAt 765419f8 the run's one notice, Fill and allow once and the command all\npassed on CI; then an Inbox item stayed. The chat's own turn ending once its\ncommand ran lists it as waiting on the person, which is the chat's and not\nthe secret's. The check now looks at secret, secret-fill, run-grant, vault and\nproposed-change items alone, and a red run names what it found.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6VTMYNND7MN570CY9EQQ4DK\nPurlis-Persona: steward\n\n* D-5246-1: a picked entry is one a run's picker would list, at the picker and the press; the gate's test, red on purpose (#5246)\n\nThe person's ruling on the review's first finding, amending D-5080-11. A\nplain Secret ask's picker listed every vault's entries and a Link press\nchecked nothing about its target, so a steered chat could have the person\nlink its persona's key into another persona's vault; a later Run grant's\nnotice named only the persona's vault and handed that value on.\n\n- The plain picker (secretasks::entries_for) lists only vaults the persona\n  may use and no entry no program is handed, as run_entries_for does.\n  a_secret_asks_picker_lists_only_entries_its_persona_may_hand_on was seen\n  red first (finance and the login's SHOP_PW were listed).\n- A Link press is judged the same way in the core (Asks::linkable), before\n  anything is written.\n  a_picked_entry_the_persona_may_not_use_or_a_browser_fills_is_refused_and_nothing_linked\n  was seen red first (elsewhere/PROD_PW was linked). Two tests that picked\n  such entries now pick one the persona may use, or see the press refused.\n\nRED ON PURPOSE: the gate's end is not in this commit, so\na_key_linked_into_a_vault_the_persona_may_not_use_is_never_offered_to_a_program\nmust fail on CI (this sandbox refuses the links index it writes).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6VTMYNND7MN570CY9EQQ4DK\nPurlis-Persona: steward\n\n* D-5246-1: the gate hands no granted program a key linked out of its persona's vaults (#5246)\n\nThe gate's end of the person's ruling. handed_to_no_granted_program judges\neach key where no_program_is_handed did (before the ask, after Allow, after a\nFill): a key that is a link into a vault the persona may not use, however and\nwhenever the link was made, goes to no program the person allowed, since the\nnotice names only the persona's vault. A link that can't be read is refused.\nDeclared tools are unchanged. What the chat hears doesn't name the other vault.\n\na_key_linked_into_a_vault_the_persona_may_not_use_is_never_offered_to_a_program\nwas red on CI at d8b889e7 (the person was asked to allow curl with vault team).\n\nAlso: the ruling as an ADR 0112 amendment, its changelog fragment, and the\ntwo clippy findings d8b889e7 carried.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6VTMYNND7MN570CY9EQQ4DK\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-07T23:27:09Z",
+          "tree_id": "1112b0e9c41d6c2b192ffcd5d086a2d9fd2b5c60",
+          "url": "https://github.com/purlis/purlis/commit/1479fe987d13eca8c7d2a296474f0af62f4c7e14"
+        },
+        "date": 1794097282794,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.553417,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.546, 0.552, 0.553, 0.565, 0.579 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.235066500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.043, 16.125, 16.235, 16.255, 16.306 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.1048595,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.107, 99.335, 100.105, 100.668, 101.169 ms"
           }
         ]
       }
