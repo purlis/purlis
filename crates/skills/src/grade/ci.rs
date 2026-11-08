@@ -84,9 +84,13 @@ impl Ratio {
 pub struct Score {
     /// Of its prompts that should start it and ran, the ones that did.
     pub recall: Ratio,
-    /// Of the prompts that ran and should not start it, the ones that did: its own, and every
-    /// other scored built-in's that are not its.
+    /// Of its own prompts that should not start it and ran, the ones that did: the share its
+    /// bar holds, the same whatever else was scored beside it.
     pub false_triggers: Ratio,
+    /// The prompts of the other built-ins scored beside it, none of them its, that started it:
+    /// each a false trigger listed against it, and a miss for the built-in it is of. Counted
+    /// apart from the share, so the share does not move with what else was scored.
+    pub on_others: u32,
 }
 
 /// **Why a prompt counts against a skill.**
@@ -99,6 +103,17 @@ pub enum Why {
     FalseTrigger,
     /// None of its runs read: nothing says what it starts.
     NotRun,
+}
+
+impl Why {
+    /// Its words, as a verdict says them.
+    pub fn word(self) -> &'static str {
+        match self {
+            Self::Missed => "missed",
+            Self::FalseTrigger => "false trigger",
+            Self::NotRun => "not run",
+        }
+    }
 }
 
 /// **A prompt that counts against a skill**, with what its runs started instead.
@@ -182,29 +197,35 @@ impl Graded {
             (Setting::Crowded, scored.crowded),
             (Setting::Bare, scored.bare),
         ] {
-            let shown = match setting {
-                Setting::Crowded => "Crowded",
-                Setting::Bare => "Bare",
-            };
+            let shown = capitalised(setting.word());
             match score {
                 None => text.push_str(&format!("{shown}: not run.\n")),
-                Some(score) => text.push_str(&format!(
-                    "{shown}: recall {}, false triggers {}.\n",
-                    ratio(score.recall),
-                    ratio(score.false_triggers)
-                )),
+                Some(score) => {
+                    text.push_str(&format!(
+                        "{shown}: recall {}, false triggers {}",
+                        ratio(score.recall),
+                        ratio(score.false_triggers)
+                    ));
+                    if score.on_others > 0 {
+                        text.push_str(&format!(
+                            "; it also started on {} of other built-ins' prompts",
+                            score.on_others
+                        ));
+                    }
+                    text.push_str(".\n");
+                }
             }
         }
         if !scored.failing.is_empty() {
             text.push_str("Failing prompts:\n");
         }
         for failing in &scored.failing {
-            let why = match failing.why {
-                Why::Missed => "missed",
-                Why::FalseTrigger => "false trigger",
-                Why::NotRun => "not run",
-            };
-            let mut line = format!("- {}, {why}: \"{}\"", failing.setting.word(), failing.query);
+            let mut line = format!(
+                "- {}, {}: \"{}\"",
+                failing.setting.word(),
+                failing.why.word(),
+                failing.query
+            );
             if failing.runs > 0 {
                 line.push_str(&format!(
                     " (started it in {} of {} runs",
@@ -223,6 +244,14 @@ impl Graded {
         }
         text
     }
+}
+
+/// `word` with its first letter a capital.
+fn capitalised(word: &str) -> String {
+    let mut letters = word.chars();
+    letters.next().map_or_else(String::new, |first| {
+        first.to_uppercase().chain(letters).collect()
+    })
 }
 
 /// `share` as a whole percent.
@@ -245,19 +274,8 @@ pub struct Report {
     pub skills: Vec<Graded>,
 }
 
-impl Report {
-    /// **Whether it passes a CI check**: it scored at least one built-in, and every built-in it
-    /// was given was scored and meets its bar.
-    pub fn passes(&self) -> bool {
-        !self.skills.is_empty()
-            && self
-                .skills
-                .iter()
-                .all(|graded| matches!(graded, Graded::Scored(scored) if scored.meets_its_bar))
-    }
-}
-
-/// A prompt of a scored skill: whom it belongs to, if anyone among the built-ins.
+/// **A prompt of the built-ins scored together, and whose it is**: the built-in that should start
+/// on it, else the neighbour a near miss is said to belong to, else nobody's.
 struct Prompt<'a> {
     query: &'a str,
     owner: Option<&'a str>,
@@ -266,45 +284,47 @@ struct Prompt<'a> {
 /// **Scores `built_ins` from `runs`**, on what `on` says. Each prompt's runs are counted as a
 /// grade's are: a skill started on it where half the runs that read or more started it. A
 /// built-in that starts on a prompt that is not its own, whoever's it is, has a false trigger;
-/// the skill it belongs to, where it should start it, has a miss.
+/// the skill it belongs to, where it should start it, has a miss. A skill's false-trigger share
+/// is over its own prompts; its starts on the others' are counted beside it.
 pub fn score(on: On, built_ins: &[BuiltIn<'_>], runs: &[Run]) -> Report {
     let read: Vec<Result<Readable<'_>, Graded>> = built_ins.iter().map(read_one).collect();
-    let prompts: Vec<Prompt<'_>> = read
-        .iter()
-        .flatten()
-        .flat_map(
-            |Readable {
-                 skill,
-                 tests,
-                 sources,
-             }| {
-                tests.iter().map(move |test| Prompt {
-                    query: &test.query,
-                    owner: if test.should_trigger {
-                        Some(*skill)
-                    } else {
-                        sources
-                            .of(&test.query)
-                            .and_then(|source| source.belongs_to.as_deref())
-                    },
-                })
-            },
-        )
-        .collect();
+    let prompts = whose(read.iter().flatten());
     let skills = read
         .iter()
         .map(|one| match one {
             Err(not_scored) => not_scored.clone(),
-            Ok(one) => Graded::Scored(scored(
-                one.skill,
-                &one.tests,
-                one.sources.tier,
-                &prompts,
-                runs,
-            )),
+            Ok(one) => Graded::Scored(scored(one, &prompts, runs)),
         })
         .collect();
     Report { on, skills }
+}
+
+/// **Each prompt of `built_ins` once, with whose it is**, whatever order they come in: a built-in
+/// that should start on it first, then a neighbour a near miss names.
+fn whose<'a>(built_ins: impl Iterator<Item = &'a Readable<'a>> + Clone) -> Vec<Prompt<'a>> {
+    let mut prompts: Vec<Prompt<'a>> = Vec::new();
+    for one in built_ins.clone() {
+        for test in one.tests.iter().filter(|test| test.should_trigger) {
+            if !prompts.iter().any(|prompt| prompt.query == test.query) {
+                prompts.push(Prompt {
+                    query: &test.query,
+                    owner: Some(one.skill),
+                });
+            }
+        }
+    }
+    for one in built_ins {
+        for test in one.tests.iter().filter(|test| !test.should_trigger) {
+            if !prompts.iter().any(|prompt| prompt.query == test.query) {
+                let near_miss_of = one.sources.of(&test.query);
+                prompts.push(Prompt {
+                    query: &test.query,
+                    owner: near_miss_of.and_then(|source| source.belongs_to.as_deref()),
+                });
+            }
+        }
+    }
+    prompts
 }
 
 /// A built-in whose tests and sources read.
@@ -320,16 +340,8 @@ fn read_one<'a>(built_in: &BuiltIn<'a>) -> Result<Readable<'a>, Graded> {
         skill: built_in.name.to_owned(),
         why,
     };
-    let none = super::Fixtures {
-        triggers: super::Read::Absent,
-        outcomes: super::Read::Absent,
-    };
-    let tests =
-        match super::fixtures_over(none, Some(built_in.triggers), None, built_in.name).triggers {
-            super::Read::Read(tests) => tests,
-            super::Read::Refused(why) => return Err(not_scored(why.terminal())),
-            super::Read::Absent => return Err(not_scored("it has no trigger tests".to_owned())),
-        };
+    let tests = super::fixtures::triggers_of(built_in.triggers)
+        .map_err(|why| not_scored(why.terminal()))?;
     let Some(text) = built_in.sources else {
         return Err(not_scored(format!(
             "it has no {SOURCES_PATH}, so no tier to hold it to"
@@ -394,14 +406,10 @@ impl Tally {
     }
 }
 
-/// `skill` scored over every scored built-in's `prompts`, its own `tests` among them.
-fn scored(
-    skill: &str,
-    tests: &[TriggerTest],
-    tier: Tier,
-    prompts: &[Prompt<'_>],
-    runs: &[Run],
-) -> Scored {
+/// **`one` scored**: its own tests by what each says, and every other built-in's `prompts` that
+/// are not its, for the ones it started on.
+fn scored(one: &Readable<'_>, prompts: &[Prompt<'_>], runs: &[Run]) -> Scored {
+    let skill = one.skill;
     let mut failing = Vec::new();
     let mut score_in = |setting: Setting| {
         if !runs.iter().any(|run| run.setting == setting) {
@@ -410,55 +418,55 @@ fn scored(
         let mut score = Score {
             recall: Ratio { hits: 0, of: 0 },
             false_triggers: Ratio { hits: 0, of: 0 },
+            on_others: 0,
         };
-        let mut seen: Vec<&str> = Vec::new();
-        for prompt in prompts {
-            if seen.contains(&prompt.query) {
-                continue;
-            }
-            seen.push(prompt.query);
-            let own = tests.iter().any(|test| test.query == prompt.query);
-            if !own && prompt.owner == Some(skill) {
-                continue;
-            }
-            let tally = Tally::of(prompt.query, setting, runs);
-            let should = prompt.owner == Some(skill);
-            let mut against = |why: Why| {
-                failing.push(Failing {
-                    query: prompt.query.to_owned(),
-                    setting,
-                    why,
-                    runs: tally.runs,
-                    started_it: tally.count(skill),
-                    started_instead: tally.instead_of(skill),
-                });
-            };
+        let mut against = |query: &str, tally: &Tally, why: Why| {
+            failing.push(Failing {
+                query: query.to_owned(),
+                setting,
+                why,
+                runs: tally.runs,
+                started_it: tally.count(skill),
+                started_instead: tally.instead_of(skill),
+            });
+        };
+        for test in &one.tests {
+            let tally = Tally::of(&test.query, setting, runs);
             if tally.runs == 0 {
-                if own {
-                    against(Why::NotRun);
-                }
+                against(&test.query, &tally, Why::NotRun);
                 continue;
             }
             let started = tally.started(skill);
-            if should {
-                score.recall.of = score.recall.of.saturating_add(1);
-                if started {
-                    score.recall.hits = score.recall.hits.saturating_add(1);
-                } else {
-                    against(Why::Missed);
-                }
+            let share = if test.should_trigger {
+                &mut score.recall
             } else {
-                score.false_triggers.of = score.false_triggers.of.saturating_add(1);
-                if started {
-                    score.false_triggers.hits = score.false_triggers.hits.saturating_add(1);
-                    against(Why::FalseTrigger);
-                }
+                &mut score.false_triggers
+            };
+            share.of = share.of.saturating_add(1);
+            if started {
+                share.hits = share.hits.saturating_add(1);
+            }
+            match (test.should_trigger, started) {
+                (true, false) => against(&test.query, &tally, Why::Missed),
+                (false, true) => against(&test.query, &tally, Why::FalseTrigger),
+                _ => {}
+            }
+        }
+        let others = prompts.iter().filter(|prompt| {
+            prompt.owner != Some(skill) && !one.tests.iter().any(|test| test.query == prompt.query)
+        });
+        for prompt in others {
+            let tally = Tally::of(prompt.query, setting, runs);
+            if tally.started(skill) {
+                score.on_others = score.on_others.saturating_add(1);
+                against(prompt.query, &tally, Why::FalseTrigger);
             }
         }
         Some(score)
     };
     let crowded = score_in(Setting::Crowded);
     let bare = score_in(Setting::Bare);
+    let tier = one.sources.tier;
     let bar = tier.bar();
     let not_run = failing
         .iter()

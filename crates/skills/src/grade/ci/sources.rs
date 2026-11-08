@@ -89,12 +89,12 @@ impl Sources {
 
 /// **The sources file `text` of the skill `skill`, whose trigger tests are `triggers`**, or a
 /// sentence saying what is wrong with it. It is refused whole: a file with no tier, a prompt
-/// with no source, two or none, a source with no prompt, an empty note, or a prompt said to belong to a
+/// with no source or two, a source for no prompt, an empty note, or a prompt said to belong to a
 /// skill that is not one of the neighbours, or that the skill itself should start.
 pub fn sources_of(
     text: &str,
     skill: &str,
-    triggers: &[super::super::TriggerTest],
+    triggers: &[crate::grade::TriggerTest],
 ) -> Result<Sources, String> {
     let written: Written =
         serde_json::from_str(text).map_err(|why| format!("{SOURCES_PATH} does not read: {why}"))?;

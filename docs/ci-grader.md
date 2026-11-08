@@ -1,7 +1,8 @@
 # The CI grader
 
-purlis's built-in skills are graded in CI by the **CI grader** (spec #5714; [ADR 0105 as amended
-2026-11-08](adr/0105/2026-11-08-built-in-skills-are-also-graded-headless-in-ci.md)). It runs
+purlis's built-in skills are graded in CI by the **CI grader** (spec #5714;
+[ADR 0105](adr/0105-a-grade-is-real-chats-purlis-runs-cost-first-scored-by-skill-runs-and-recorded-against-the-skills-version.md)
+as amended 2026-11-08, "built-in skills are also graded headless in CI"). It runs
 Claude Code, Codex and opencode in their print modes on a throwaway runner, reads which skills
 each chat started from the harness's machine-readable output, and holds each built-in to its
 **trigger bar**. It is not a Grade in the Skill studio: nothing of it is shown in the window or
@@ -10,6 +11,9 @@ written to an eval record.
 This page is for whoever writes a built-in skill's tests. The scoring is
 `purlis_skills::grade::ci`; it launches nothing, so it is tested offline on recorded output in
 `crates/skills/src/grade/ci/recorded/`.
+
+It reads what a harness printed only to score a test, never to move a run: no purlis run exists
+in it (ADR 0076 holds), as the amendment says.
 
 ## A built-in skill's two files
 
@@ -55,9 +59,11 @@ with the sentence saying what is wrong.
 - **Whose a prompt is**: the skill's own when it should start it, else its `belongs_to`, else
   nobody's. A built-in that starts on a prompt that is not its own has a false trigger, whichever
   scored skill's tests the prompt is in. The prompt's own skill has a miss.
-- **Recall** is the share of the skill's own prompts it started on. **False triggers** is the
-  share of the prompts that ran and are not its own, among every built-in scored in the same run,
-  that started it. So a skill graded beside its neighbours is held to their prompts too.
+- **Recall** is the share of the skill's own prompts that should start it that did. **False
+  triggers** is the share of its own prompts that should not start it that did: the share its bar
+  holds, the same whether it is graded alone or beside every other built-in. Its starts on other
+  built-ins' prompts are listed among its failing prompts and counted beside the share, and each
+  is a miss for the built-in the prompt is of, whose recall its bar holds.
 - **Crowded and bare** runs are scored apart. Only the crowded score holds a skill to its bar,
   and only where every one of its prompts ran among the crowd. The bare score is reported beside
   it, so a wording problem can be told from a crowding problem.

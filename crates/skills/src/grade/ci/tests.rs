@@ -380,12 +380,21 @@ fn a_prompt_that_starts_the_wrong_built_in_is_a_miss_for_its_own_and_a_false_tri
         let secrets = scored(&report, "purlis-secrets");
         let crowded = secrets.crowded.expect("secrets ran among the crowd");
         assert_eq!(crowded.recall, Ratio { hits: 2, of: 2 }, "{harness:?}");
-        // Its own two negatives, the login near miss among them, and the browser's preview
-        // prompt, which is not its own: two false triggers.
+        // Of its own two negatives, the login near miss started it; and it started on the
+        // browser's preview prompt, which is counted beside its share, not in it.
         assert_eq!(
             crowded.false_triggers,
-            Ratio { hits: 2, of: 3 },
+            Ratio { hits: 1, of: 2 },
             "{harness:?}"
+        );
+        assert_eq!(crowded.on_others, 1, "{harness:?}");
+        let verdict = report.skills[0].verdict(&report.on);
+        assert!(
+            verdict.contains(
+                "Crowded: recall 100% (2 of 2), false triggers 50% (1 of 2); it also started on \
+                 1 of other built-ins' prompts.\n"
+            ),
+            "{verdict}"
         );
         assert_eq!(
             secrets
@@ -730,17 +739,34 @@ fn a_verdict_says_a_skill_meets_its_bar_and_one_not_scored_says_why() {
 }
 
 #[test]
-fn a_report_passes_only_where_every_built_in_was_scored_and_meets_its_bar() {
-    let as_it_should = secrets_as_it_should(Setting::Crowded);
-    assert!(score(on(), &[secrets()], &as_it_should).passes());
-    let not_scored = BuiltIn {
-        sources: None,
-        ..browser()
-    };
-    assert!(!score(on(), &[secrets(), not_scored], &as_it_should).passes());
-    assert!(!score(on(), &[secrets()], &secrets_as_it_should(Setting::Bare)).passes());
-    assert!(
-        !score(on(), &[], &[]).passes(),
-        "a report of nothing passes nothing"
+fn a_prompt_one_built_in_should_start_and_another_should_not_is_the_first_one_s_in_whatever_order_they_are_given()
+ {
+    // The rename prompt is a negative of the secrets skill's that names no owner, and a positive
+    // of this one's.
+    let rename = "rename this variable to something clearer";
+    let triggers = format!(r#"[{{"query": "{rename}", "should_trigger": true}}]"#);
+    let sources = format!(
+        r#"{{"tier": "standard", "prompts": [{{"query": "{rename}", "source": "written"}}]}}"#
     );
+    let refactor = BuiltIn {
+        name: "purlis-refactor",
+        triggers: &triggers,
+        sources: Some(&sources),
+    };
+    let mut all = secrets_as_it_should(Setting::Crowded);
+    all.retain(|run| run.query != rename);
+    all.extend(runs(Setting::Crowded, rename, 3, &["purlis-refactor"]));
+    for order in [[secrets(), refactor], [refactor, secrets()]] {
+        let report = score(on(), &order, &all);
+        let refactor = scored(&report, "purlis-refactor");
+        let crowded = refactor.crowded.expect("it ran");
+        assert_eq!(
+            crowded.recall,
+            Ratio { hits: 1, of: 1 },
+            "{:?}",
+            refactor.failing
+        );
+        assert!(refactor.failing.is_empty(), "{:?}", refactor.failing);
+        assert!(refactor.meets_its_bar);
+    }
 }
