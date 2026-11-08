@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794158485943,
+  "lastUpdate": 1794164126455,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -8868,6 +8868,42 @@ window.BENCHMARK_DATA = {
             "value": 338.9,
             "unit": "MB",
             "extra": "median of 6 samples: 446.5, 389.3, 372.4, 305.3, 303.4, 205.1 MB; window 252.1 MB, session host 86.8 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "99a1bb9d1dca089e849c8b7c8111ac9a1975a22f",
+          "message": "Lanes held on approval prompts: worktree add stops sending them there, and the list says so (#5770, #5771) (#5850)\n\n* A sandboxed chat's worktree add says the new folder is out of its reach, never to enter it (#5770)\n\nThe app cuts a folder for a sandboxed chat, whose sandbox reaches only the folder\nit started in. Telling it to \"hand this path to EnterWorktree\" sent lane 641 to a\nharness approval prompt nobody watched, and once that was approved the app still\nrefused to commit there. It is now told what works: the person opens a chat on the\nfolder, or a dispatched task reports back and its asker dispatches with\n--in worktree.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6WKNE7KBFCYKW4P0D4XZ7QA\nPurlis-Persona: steward\n\n* A task held on an approval prompt is listed as one, with what that means for a message (#5771)\n\n\"waiting on the person\" covered both a question shown in the pane and a tool\ncall's approval open in the window. Lane 641's coordinator read it as stale for\nfive hours: its last question had been answered. A task whose approval is open\nin the window is now NeedsApproval, said with the fact that it reads messages\nonly once that is answered.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6WKNE7KBFCYKW4P0D4XZ7QA\nPurlis-Persona: steward\n\n* Changelog: lanes held on approval prompts (#5770, #5771)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6WKNE7KBFCYKW4P0D4XZ7QA\nPurlis-Persona: steward\n\n* brokered_git test: the brokered add's enter advice differs from the terminal's on purpose (#5770)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6WKNE7KBFCYKW4P0D4XZ7QA\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-08T16:48:25Z",
+          "tree_id": "5658ecbc3ff984b66483af63517a53f2855c92ad",
+          "url": "https://github.com/purlis/purlis/commit/99a1bb9d1dca089e849c8b7c8111ac9a1975a22f"
+        },
+        "date": 1794164120931,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 2580,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1942, 2580, 2922 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 315.1,
+            "unit": "MB",
+            "extra": "median of 6 samples: 469.1, 400.9, 329, 298.1, 301.2, 224.3 MB; window 232.9 MB, session host 82.2 MB"
           }
         ]
       }
