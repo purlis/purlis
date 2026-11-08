@@ -33,7 +33,7 @@ use purlis_skills::tree;
 use serde::{Deserialize, Serialize};
 use sha2::Digest as _;
 
-use super::carried;
+use super::carried::{self, plain};
 use super::fetch::{Handing, REMOTE, Scratch, handing};
 use super::outgoing::{self, OutSkill, Outgoing, Purpose, Stop};
 use super::{Commit, Source};
@@ -468,14 +468,6 @@ fn title_of(skills: &[OutSkill], replaces: bool) -> String {
         0 | 1 => format!("{verb} the skill {name}"),
         n => format!("{verb} the skill {name} and {} it refers to", n - 1),
     }
-}
-
-/// `text` held to characters that mean nothing in a table or to a terminal.
-fn plain(text: &str) -> String {
-    text.chars()
-        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | ' '))
-        .take(64)
-        .collect()
 }
 
 fn percent(value: Option<f64>) -> String {

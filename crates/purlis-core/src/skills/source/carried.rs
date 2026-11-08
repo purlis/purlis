@@ -165,11 +165,8 @@ pub fn row_of(graded: &grades::Graded, tree: String) -> Option<Row> {
     let row = Row {
         date: graded.ts.chars().take(10).collect(),
         tree,
-        harness: graded
-            .harness
-            .clone()
-            .unwrap_or_else(|| "unknown".to_owned()),
-        grader: graded.report.grader.clone(),
+        harness: named(graded.harness.as_deref().unwrap_or("unknown")),
+        grader: named(&graded.report.grader),
         with: rate(purlis_skills::grade::Arm::With),
         without: rate(purlis_skills::grade::Arm::Without),
         runs: graded.runs,
@@ -226,6 +223,25 @@ fn row_problem(row: &Row) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// **`text` held to characters that mean nothing in a table or to a terminal**: what a publish's
+/// description and its grade file write of a name.
+pub fn plain(text: &str) -> String {
+    text.chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | ' '))
+        .take(64)
+        .collect()
+}
+
+/// [`plain`], or `unknown` where nothing of it is left.
+fn named(text: &str) -> String {
+    let plain = plain(text);
+    if plain.trim().is_empty() {
+        "unknown".to_owned()
+    } else {
+        plain
+    }
 }
 
 /// Whether `name` is what publish writes for a name: 1 to 64 letters, digits, `-`, `_`, `.` or
