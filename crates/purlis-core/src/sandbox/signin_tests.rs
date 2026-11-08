@@ -7,7 +7,9 @@
 use std::path::{Path, PathBuf};
 
 use super::signin::{self, ProfileFolders};
-use super::{Access, Applied, Class, Compiled, Form, Machine, Os, Plane, applied_of, compiler};
+use super::{
+    Access, Applied, Class, Compiled, Denial, Form, Machine, Os, Plane, applied_of, compiler,
+};
 use crate::harness::Harness;
 
 const SANDBOXED: &str = "[sandbox]\nmode = \"on\"\n";
@@ -248,4 +250,39 @@ fn a_chat_inside_another_harnesses_folder_is_denied_its_sign_in_alone() {
     assert!(denied(home.join(".codex/auth.json")));
     assert!(!denied(home.join(".codex")));
     assert!(denied(home.join(".local/share/opencode")));
+}
+
+/// **On macOS another harness's default folder is denied in any case of its letters**: its disk
+/// takes `~/.local/share/OPENCODE` for `~/.local/share/opencode`, so a rule matching the spelling
+/// alone would let the other one through. Linux's names are the spelling, and so are its rules.
+#[test]
+fn another_harnesses_default_folder_is_denied_in_any_case_on_macos_alone() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().canonicalize().unwrap().join("home");
+    let root = home.join("project");
+    std::fs::create_dir_all(&root).unwrap();
+    for os in [Os::MacOs, Os::Linux] {
+        let machine = Machine {
+            os,
+            ..machine(&home)
+        };
+        for harness in Harness::ALL {
+            let applied = applied(harness, &root, &machine);
+            let others: Vec<&Denial> = signin::other_harnesses_defaults(harness, &machine)
+                .into_iter()
+                .filter_map(|(folder, _)| {
+                    applied.denied.iter().find(|denial| denial.path == folder)
+                })
+                .collect();
+            assert_eq!(others.len(), 2, "{os:?} {harness:?}");
+            for denial in others {
+                assert_eq!(
+                    denial.any_case,
+                    os == Os::MacOs,
+                    "{os:?} {harness:?} {}",
+                    denial.path.display()
+                );
+            }
+        }
+    }
 }

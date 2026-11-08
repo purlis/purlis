@@ -200,6 +200,9 @@ struct Words {
     /// the client its page must name.
     answered_on: Option<u16>,
     client: &'static str,
+    /// The page its vendor sends the browser back to, for a login that asks for a code pasted
+    /// from that page: its own page must name it, and [`Self::client`].
+    pasted_from: &'static [&'static str],
     /// The prompt for the code, which may end with no line break.
     asks_code: &'static str,
     /// The starts of the lines it refuses a code with.
@@ -230,6 +233,7 @@ const NO_WORDS: Words = Words {
     page_alone: false,
     answered_on: None,
     client: "",
+    pasted_from: &[],
     asks_code: "",
     refuses: &[],
     fails: "",
@@ -251,6 +255,13 @@ const CLAUDE: Words = Words {
     asks_code: "Paste code here",
     refuses: &["Invalid code", "That code is not from this sign-in"],
     fails: "Login failed: ",
+    // Its own code's client and its `MANUAL_REDIRECT_URL`: the platform's in 2.1.319, the
+    // console's in the versions before it moved, which a profile may be pinned to.
+    client: "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
+    pasted_from: &[
+        "https://platform.claude.com/oauth/code/callback",
+        "https://console.anthropic.com/oauth/code/callback",
+    ],
     pages: &[
         ("claude.ai", "/oauth/authorize"),
         ("claude.com", "/cai/oauth/authorize"),
@@ -557,6 +568,9 @@ impl Driven {
     /// waiting for the browser whose page does not send it back as purlis can carry.
     fn step_at(&self, url: String) -> Option<(At, Event)> {
         let Some(port) = self.words.answered_on else {
+            if !self.words.pasted_from.is_empty() {
+                pasted_on(&url, self.words.pasted_from, self.words.client)?;
+            }
             return Some((At::Opened, Event::Open { url }));
         };
         let state = state_on(&url, port, self.words.client)?;
@@ -744,24 +758,7 @@ impl Driven {
 /// and written as it is, and every name in its query written plainly, so no vendor reads a name
 /// purlis did not. Nothing else about a page is guessed at.
 fn state_on(url: &str, port: u16, client: &str) -> Option<String> {
-    let (_, query) = url.split_once('?')?;
-    let query = query.split('#').next()?;
-    if query.split('&').any(|pair| {
-        pair.split('=')
-            .next()
-            .is_some_and(|name| name.contains('%'))
-    }) {
-        return None;
-    }
-    let one = |name: &str| {
-        let mut values = query
-            .split('&')
-            .filter_map(|pair| pair.split_once('='))
-            .filter(|(key, _)| *key == name)
-            .map(|(_, value)| value);
-        let value = values.next()?;
-        values.next().is_none().then_some(value)
-    };
+    let one = query_of(url)?;
     let back = percent_encoding::percent_decode_str(one("redirect_uri")?)
         .decode_utf8()
         .ok()?;
@@ -779,6 +776,44 @@ fn state_on(url: &str, port: u16, client: &str) -> Option<String> {
             .iter()
             .any(|host| back == format!("http://{host}:{port}{}", callback::PATH)))
     .then(|| state.to_owned())
+}
+
+/// **Whether a login's page `url`, where it asks for a code pasted back, asks as its own login
+/// does**: a code, for its own `client`, with the browser sent back to `back` exactly, each named
+/// once and plainly; `back` is one of the pages it may send it back to. What else it asks for is
+/// its vendor's to judge.
+fn pasted_on(url: &str, back: &[&str], client: &str) -> Option<()> {
+    let one = query_of(url)?;
+    let sent_back = percent_encoding::percent_decode_str(one("redirect_uri")?)
+        .decode_utf8()
+        .ok()?;
+    (one("response_type")? == "code"
+        && one("client_id")? == client
+        && back.contains(&sent_back.as_ref()))
+    .then_some(())
+}
+
+/// The query of a page `url`, as one value of a name: none where a name is written with an
+/// escape, which a vendor could read as another name, and none for a name given twice.
+fn query_of<'a>(url: &'a str) -> Option<impl Fn(&str) -> Option<&'a str> + 'a> {
+    let (_, query) = url.split_once('?')?;
+    let query = query.split('#').next()?;
+    if query.split('&').any(|pair| {
+        pair.split('=')
+            .next()
+            .is_some_and(|name| name.contains('%'))
+    }) {
+        return None;
+    }
+    Some(move |name: &str| {
+        let mut values = query
+            .split('&')
+            .filter_map(|pair| pair.split_once('='))
+            .filter(|(key, _)| *key == name)
+            .map(|(_, value)| value);
+        let value = values.next()?;
+        values.next().is_none().then_some(value)
+    })
 }
 
 /// Whether the login to plan `plan`, of whichever harness serves it, waits for the browser's

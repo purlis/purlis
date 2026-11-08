@@ -552,8 +552,15 @@ pub fn profile(
     for root in [&cwd_real, &real(tmp)] {
         pin(kernel_strings(root)?, &mut line)?;
     }
-    // Between a name of the chat's directory and the same side's name of the denied path.
+    // Between a name of a directory the chat may write (its own, and each folder granted to
+    // it) and the same side's name of the denied path; and a granted folder holding a denied
+    // path itself, which could otherwise be moved whole into the chat's own.
     let cwd_names = super::kernel_names(&cwd_real);
+    let granted_names: Vec<PathBuf> = own
+        .roots
+        .iter()
+        .flat_map(|root| super::kernel_names(root))
+        .collect();
     for denial in denied {
         for link in links_on_the_way(&denial.path) {
             pin(kernel_strings_itself(&link)?, &mut line)?;
@@ -562,6 +569,14 @@ pub fn profile(
             for cwd_name in &cwd_names {
                 for ancestor in super::ancestors_within(&path, cwd_name) {
                     pin(kernel_strings(&ancestor)?, &mut line)?;
+                }
+            }
+            for granted in &granted_names {
+                if path != *granted && path.starts_with(granted) {
+                    pin(kernel_strings(granted)?, &mut line)?;
+                    for ancestor in super::ancestors_within(&path, granted) {
+                        pin(kernel_strings(&ancestor)?, &mut line)?;
+                    }
                 }
             }
         }

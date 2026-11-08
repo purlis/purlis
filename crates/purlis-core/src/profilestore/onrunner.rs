@@ -704,6 +704,7 @@ pub fn keep(
         .map_or_else(|| kept.harness.clone(), |d| d.title.clone());
     let folder = homes.folder_of(&kept.name);
     let mut made_folder = false;
+    super::made::clear_carried_before(homes);
     // One change of the store, found or made under its lock: two keeps at once make one record,
     // and the second finds the first's.
     let answer = super::update(homes.config_root(), |store| {

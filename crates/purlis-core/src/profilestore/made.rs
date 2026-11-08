@@ -201,7 +201,8 @@ pub const ALLOWED: [Allowed; 3] = [
         kind: "claude",
         files: &["settings.json", "CLAUDE.md"],
         folders: &["agents", "commands", "output-styles", "skills"],
-        loaded_unsent: &["rules"],
+        // `hooks`: never loaded by itself, but where a sent setting's hook commonly points.
+        loaded_unsent: &["hooks", "rules"],
         sent_only: &[super::sent::MCP_SERVERS_FILE],
     },
     Allowed {
@@ -413,10 +414,10 @@ pub(super) fn make_in(
 /// stays over it. What was carried for the profile is then removed. What cannot be taken in is
 /// left out: the profile is signed in again, as before.
 ///
-/// The folder an earlier version carried to ([`super::CARRIED_BEFORE`]) is cleared and nothing of
-/// it taken in: its profiles are signed in again.
+/// Nothing of the folder an earlier version carried to ([`super::CARRIED_BEFORE`]) is taken in:
+/// its profiles are signed in again, and a keep clears it before it takes the store's lock
+/// ([`clear_carried_before`]).
 pub(super) fn take_carried(homes: &Homes, home: &Path, record: &MachineProfile) {
-    clear_carried_before(&homes.data);
     if private_dirs(&homes.folders).is_ok() {
         let _ = std::fs::write(homes.folders.join(super::DEFAULTS_HELD), "");
     }
@@ -500,9 +501,10 @@ pub fn forget_carried(homes: &Homes, name: &str) {
 }
 
 /// Removes the folder an earlier version carried sign-ins to, whatever is there: a link goes as a
-/// link, and what it names stays.
-fn clear_carried_before(data: &Path) {
-    let before = data.join(super::CARRIED_BEFORE);
+/// link, and what it names stays. Never under the store's lock: a chat can make that folder as
+/// large as it likes, and every keep would wait while it is cleared.
+pub(super) fn clear_carried_before(homes: &Homes) {
+    let before = homes.data.join(super::CARRIED_BEFORE);
     match std::fs::symlink_metadata(&before) {
         Ok(found) if found.is_dir() => {
             let _ = std::fs::remove_dir_all(&before);
@@ -1578,15 +1580,27 @@ pub fn loaded_unsent_cleared(record: &MachineProfile) -> Result<(), String> {
     let Ok((_, allowed)) = harness_of(&record.harness) else {
         return Ok(());
     };
-    let dest = settings_dest(allowed, &record.folders.config);
+    let config = &record.folders.config;
+    let dest = settings_dest(allowed, config);
     allowed
         .loaded_unsent
         .iter()
         .try_for_each(|name| {
-            let through_a_link =
-                std::fs::symlink_metadata(&dest).is_ok_and(|found| found.file_type().is_symlink());
+            // Neither the settings folder nor one between it and the profile's config folder,
+            // that folder itself among them, is a link: what it names, elsewhere, stays.
+            let through_a_link = [config.as_path()]
+                .into_iter()
+                .chain(
+                    dest.ancestors()
+                        .take_while(|above| above.starts_with(config)),
+                )
+                .any(|at| {
+                    std::fs::symlink_metadata(at).is_ok_and(|found| found.file_type().is_symlink())
+                });
             if through_a_link {
-                return Err(io::Error::other("the settings folder is a link"));
+                return Err(io::Error::other(
+                    "the settings folder is reached through a link",
+                ));
             }
             remove_within(&dest, &dest.join(name))
         })
