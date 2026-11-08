@@ -825,6 +825,9 @@ export const commands = {
 	signingAddKey: __WINDOW_ONLY_RESULT,
 	signingKeyListed: __WINDOW_ONLY_RESULT,
 	signingCheck: __WINDOW_ONLY_RESULT,
+	signingWaiting: __WINDOW_ONLY_RESULT,
+	signingSignAndRetry: __WINDOW_ONLY_RESULT,
+	signingForgetSent: __WINDOW_ONLY_RESULT,
 	agentIdentities: __WINDOW_ONLY_RESULT,
 	agentIdentityCreate: __WINDOW_ONLY_RESULT,
 	agentIdentityCreateCancel: __WINDOW_ONLY,
@@ -12988,6 +12991,24 @@ export type SigningKeyShown = {
 	public_key: string,
 };
 
+/**  One branch folder, by its workspace, repo and piece. */
+export type SigningLane = {
+	ws: string,
+	repo: string,
+	piece: string,
+};
+
+/**  How Sign and retry went for one branch folder. */
+export type SigningRetried = {
+	ws: string,
+	repo: string,
+	piece: string,
+	/**  How many commits were signed again, where it was sent. */
+	signed: number,
+	/**  Why it was not sent, where it was not: it stays waiting. */
+	why?: string | null,
+};
+
 /**  What the card shows: whether this device has a signing key, and the forge accounts it goes to. */
 export type SigningState = {
 	/**  "On": this device has a signing key (ADR 0116 §1). Nothing else turns it on. */
@@ -12999,6 +13020,29 @@ export type SigningState = {
 	 *  alike, in the order they were added.
 	 */
 	accounts: SigningAccount[],
+};
+
+/**
+ *  **A chat's branch folder whose push the forge refused for unsigned commits** (#5630), as the
+ *  lane, the chat and the grouped notice show it.
+ */
+export type SigningWaiting = {
+	ws: string,
+	repo: string,
+	piece: string,
+	branch: string,
+	/**  `github` or `gitlab`, and the forge as a sentence names it. */
+	kind: string,
+	forge: string,
+	host: string,
+	/**  The repository's path on the forge: what setup is checked in. */
+	path: string,
+	/**  The commit whose push was refused. */
+	commit: string,
+	/**  The app's number for the chat that pushed, while it is open. */
+	chat?: number | null,
+	/**  Signed and sent since: shown as done until the window has shown it. */
+	sent: boolean,
 };
 
 /**

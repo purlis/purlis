@@ -200,18 +200,42 @@ pub fn update_clone(
 /// `purlis worktree push`: the branch of `piece` pushed to its remote, over the remote's copy
 /// where purlis's own update rewrote it (#3895).
 pub fn push(piece: &Piece, reach: &Reach, say: &mut dyn FnMut(Say)) -> u8 {
+    push_told(piece, reach, say).0
+}
+
+/// **A push the forge refused because the branch's commits aren't signed** (#5630): which
+/// forge, where, and what was refused. The chat is told it in [`crate::signingsetup::retry`]'s
+/// words.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnsignedRefused {
+    pub kind: crate::forge::Kind,
+    pub host: String,
+    /// The repository's path on the forge, where the plane knows the forge; else the remote.
+    pub path: String,
+    pub branch: String,
+    pub commit: String,
+}
+
+/// [`push`], and the push the forge refused for unsigned commits, where it was refused so.
+pub fn push_told(
+    piece: &Piece,
+    reach: &Reach,
+    say: &mut dyn FnMut(Say),
+) -> (u8, Option<UnsignedRefused>) {
     mended(piece.root, piece.ws, piece.repo, say);
+    let mut unsigned = None;
     let ran = Here::of(piece, true).and_then(|here| {
         let lock = broker::lock_of(&here.git_dir);
         let _held = lock
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        pushed(piece, &here, reach, say)
+        pushed(piece, &here, reach, say, &mut unsigned)
     });
-    ran.unwrap_or_else(|why| {
+    let code = ran.unwrap_or_else(|why| {
         say(Say::Fail(why.into()));
         1
-    })
+    });
+    (code, unsigned)
 }
 
 /// The clone's config freed of a base recorded under no branch ([`worktree::mend_nameless_base`]),
@@ -1784,6 +1808,7 @@ fn pushed(
     here: &Here,
     reach: &Reach,
     say: &mut dyn FnMut(Say),
+    unsigned: &mut Option<UnsignedRefused>,
 ) -> Result<u8, String> {
     let (repo, label) = (piece.repo, &here.label);
     let branch = &here.branch;
@@ -1868,6 +1893,23 @@ fn pushed(
     let sent =
         git::run_network(&here.folder, helper.as_deref(), &args).map_err(|e| e.to_string())?;
     if !sent.ok() {
+        // GitHub's words for a branch that takes only signed commits (#5630): told apart, so the
+        // window can put the setup in front of the person.
+        if crate::signingsetup::retry::refused_unsigned(crate::forge::Kind::GitHub, &sent.err) {
+            let (kind, host, path) = match crate::forge::pr::Repo::of_clone(piece.root, &here.clone)
+            {
+                Ok(repo) => (repo.forge.kind, repo.forge.host, repo.path),
+                Err(_) => (crate::forge::Kind::GitHub, String::new(), remote.clone()),
+            };
+            *unsigned = Some(UnsignedRefused {
+                kind,
+                host,
+                path,
+                branch: branch.clone(),
+                commit: ours.clone(),
+            });
+            return Err(crate::signingsetup::retry::refused_said(kind, branch));
+        }
         return Err(format!(
             "git did not push {branch} to {remote}: {}",
             first_line(&sent.err)
@@ -1888,26 +1930,32 @@ fn pushed(
             ));
         }
     }
-    if reach.for_a_chat {
-        noted_if_signed(piece.root, &here.clone, &ours);
-    }
     say(Say::Done(
         format!("{label}: {branch} pushed to {remote}").into(),
     ));
     Ok(0)
 }
 
-/// **A signed chat commit pushed, kept for GitLab's Check** (#5629): GitLab makes no signed
-/// commit of its own, so its Check asks about the newest one the app pushed there. Only a tip
-/// that carries a signature, on a forge the plane knows, is kept; nothing is said either way.
-fn noted_if_signed(root: &Path, clone: &Path, tip: &str) {
-    if !crate::commitsign::is_signed(clone, tip) {
+/// **A signed chat commit pushed, kept for GitLab's Check** (#5629) in the machine store at
+/// `config`: GitLab makes no signed commit of its own, so its Check asks about the newest one
+/// the app pushed there. Only a tip that carries a signature, on a forge the plane knows, is
+/// kept; nothing is said either way. The app calls it after a push it made for a chat.
+pub fn note_if_signed(piece: &Piece, config: &Path) {
+    let (Ok(clone), Ok(folder)) = (
+        worktree::clone_dir(piece.root, piece.ws, piece.repo),
+        worktree::path_for(piece.root, piece.ws, piece.repo, piece.piece),
+    ) else {
+        return;
+    };
+    let Some(tip) = commit_of(&folder, "HEAD") else {
+        return;
+    };
+    let tip = tip.as_str();
+    if !crate::commitsign::is_signed(&clone, tip) {
         return;
     }
-    let (Ok(repo), Some(config)) = (
-        crate::forge::pr::Repo::of_clone(root, clone),
-        crate::machine::config_root(),
-    ) else {
+    let (root, clone) = (piece.root, clone.as_path());
+    let Ok(repo) = crate::forge::pr::Repo::of_clone(root, clone) else {
         return;
     };
     let push = crate::signingsetup::SignedPush {
@@ -1917,7 +1965,7 @@ fn noted_if_signed(root: &Path, clone: &Path, tip: &str) {
         commit: tip.to_owned(),
         at: chrono::Utc::now().timestamp(),
     };
-    if let Err(why) = crate::signingsetup::note_signed_push(&config, push) {
+    if let Err(why) = crate::signingsetup::note_signed_push(config, push) {
         tracing::warn!("purlis: a signed push was not noted for the signing check: {why}");
     }
 }

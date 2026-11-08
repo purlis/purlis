@@ -1840,6 +1840,20 @@ export const commands = {
 	 */
 	signingCheck: (forge: SigningForge, repo: string | null, commit: string | null) => typedError<SigningCheck, string>(__TAURI_INVOKE("signing_check", { forge, repo, commit })),
 	/**
+	 *  **The work in `plane` waiting on signing**: each branch folder whose push the forge refused
+	 *  for unsigned commits, oldest first, and those signed and sent since.
+	 */
+	signingWaiting: (plane: PlaneId) => typedError<SigningWaiting[], string>(__TAURI_INVOKE("signing_waiting", { plane })),
+	/**
+	 *  **Sign and retry** (#5630, ADR 0116 §4), for each of `lanes` that waits on signing: the
+	 *  commits on its branch its remote has none of are signed with this device's key, and the
+	 *  branch is sent again, as a chat's push is, with the window's own sign-in. Behind the person's
+	 *  press in the window alone (`WINDOW_ONLY`). One that fails again stays waiting, with why.
+	 */
+	signingSignAndRetry: (plane: PlaneId, lanes: SigningLane[]) => typedError<SigningRetried[], string>(__TAURI_INVOKE("signing_sign_and_retry", { plane, lanes })),
+	/**  **What was signed and sent, cleared** once the window has shown it. */
+	signingForgetSent: (plane: PlaneId) => typedError<null, string>(__TAURI_INVOKE("signing_forget_sent", { plane })),
+	/**
 	 *  **What the Agent identity tab draws**, read fresh. Each row proves itself against GitHub, so
 	 *  it shows what it acts as now.
 	 */
@@ -15778,6 +15792,24 @@ export type SigningKeyShown = {
 	public_key: string,
 };
 
+/**  One branch folder, by its workspace, repo and piece. */
+export type SigningLane = {
+	ws: string,
+	repo: string,
+	piece: string,
+};
+
+/**  How Sign and retry went for one branch folder. */
+export type SigningRetried = {
+	ws: string,
+	repo: string,
+	piece: string,
+	/**  How many commits were signed again, where it was sent. */
+	signed: number,
+	/**  Why it was not sent, where it was not: it stays waiting. */
+	why?: string | null,
+};
+
 /**  What the card shows: whether this device has a signing key, and the forge accounts it goes to. */
 export type SigningState = {
 	/**  "On": this device has a signing key (ADR 0116 §1). Nothing else turns it on. */
@@ -15789,6 +15821,29 @@ export type SigningState = {
 	 *  alike, in the order they were added.
 	 */
 	accounts: SigningAccount[],
+};
+
+/**
+ *  **A chat's branch folder whose push the forge refused for unsigned commits** (#5630), as the
+ *  lane, the chat and the grouped notice show it.
+ */
+export type SigningWaiting = {
+	ws: string,
+	repo: string,
+	piece: string,
+	branch: string,
+	/**  `github` or `gitlab`, and the forge as a sentence names it. */
+	kind: string,
+	forge: string,
+	host: string,
+	/**  The repository's path on the forge: what setup is checked in. */
+	path: string,
+	/**  The commit whose push was refused. */
+	commit: string,
+	/**  The app's number for the chat that pushed, while it is open. */
+	chat?: number | null,
+	/**  Signed and sent since: shown as done until the window has shown it. */
+	sent: boolean,
 };
 
 /**

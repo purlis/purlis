@@ -405,3 +405,166 @@ pub async fn signing_check(
     })
     .await
 }
+
+// ---------------------------------------------------------------------------------------
+// A forge's refusal of unsigned commits, and Sign and retry (#5630, #5633)
+// ---------------------------------------------------------------------------------------
+
+/// **A chat's branch folder whose push the forge refused for unsigned commits** (#5630), as the
+/// lane, the chat and the grouped notice show it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct SigningWaiting {
+    pub ws: String,
+    pub repo: String,
+    pub piece: String,
+    pub branch: String,
+    /// `github` or `gitlab`, and the forge as a sentence names it.
+    pub kind: String,
+    pub forge: String,
+    pub host: String,
+    /// The repository's path on the forge: what setup is checked in.
+    pub path: String,
+    /// The commit whose push was refused.
+    pub commit: String,
+    /// The app's number for the chat that pushed, while it is open.
+    #[specta(optional)]
+    pub chat: Option<u32>,
+    /// Signed and sent since: shown as done until the window has shown it.
+    pub sent: bool,
+}
+
+/// One branch folder, by its workspace, repo and piece.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, specta::Type)]
+pub struct SigningLane {
+    pub ws: String,
+    pub repo: String,
+    pub piece: String,
+}
+
+/// How Sign and retry went for one branch folder.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct SigningRetried {
+    pub ws: String,
+    pub repo: String,
+    pub piece: String,
+    /// How many commits were signed again, where it was sent.
+    pub signed: u32,
+    /// Why it was not sent, where it was not: it stays waiting.
+    #[specta(optional)]
+    pub why: Option<String>,
+}
+
+fn root_of(
+    planes: &crate::planes::Planes,
+    plane: &crate::planes::PlaneId,
+) -> Result<std::path::PathBuf, String> {
+    Ok(planes.held(plane)?.root().to_path_buf())
+}
+
+/// **The work in `plane` waiting on signing**: each branch folder whose push the forge refused
+/// for unsigned commits, oldest first, and those signed and sent since.
+#[tauri::command]
+#[specta::specta]
+pub async fn signing_waiting(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+) -> Result<Vec<SigningWaiting>, String> {
+    let root = root_of(&planes, &plane)?;
+    blocking(move || {
+        Ok(signingsetup::retry::waiting(&root)
+            .into_iter()
+            .map(|one| SigningWaiting {
+                forge: one.kind.display().to_string(),
+                kind: one.kind.word().to_string(),
+                ws: one.ws,
+                repo: one.repo,
+                piece: one.piece,
+                branch: one.branch,
+                host: one.host,
+                path: one.path,
+                commit: one.commit,
+                chat: one.chat,
+                sent: one.sent,
+            })
+            .collect())
+    })
+    .await
+}
+
+/// **Sign and retry** (#5630, ADR 0116 §4), for each of `lanes` that waits on signing: the
+/// commits on its branch its remote has none of are signed with this device's key, and the
+/// branch is sent again, as a chat's push is, with the window's own sign-in. Behind the person's
+/// press in the window alone (`WINDOW_ONLY`). One that fails again stays waiting, with why.
+#[tauri::command]
+#[specta::specta]
+pub async fn signing_sign_and_retry(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    lanes: Vec<SigningLane>,
+) -> Result<Vec<SigningRetried>, String> {
+    let root = root_of(&planes, &plane)?;
+    blocking(move || {
+        let config = config_root()?;
+        let key = the_key(&config)?;
+        let waiting = signingsetup::retry::waiting(&root);
+        Ok(lanes
+            .into_iter()
+            .map(|lane| {
+                let retried = match waiting
+                    .iter()
+                    .find(|one| one.is(&lane.ws, &lane.repo, &lane.piece) && !one.sent)
+                {
+                    None => Err("it isn't waiting on signing any more".to_string()),
+                    Some(one) => retried(&root, &config, one, &key),
+                };
+                let (signed, why) = match retried {
+                    Ok(signed) => (signed, None),
+                    Err(why) => (0, Some(why)),
+                };
+                SigningRetried {
+                    ws: lane.ws,
+                    repo: lane.repo,
+                    piece: lane.piece,
+                    signed,
+                    why,
+                }
+            })
+            .collect())
+    })
+    .await
+}
+
+/// One branch folder signed and sent again, as the app runs git for a chat: no global or system
+/// git config, and the window's own sign-in to reach the forge. How many commits it signed.
+fn retried(
+    root: &std::path::Path,
+    config: &std::path::Path,
+    one: &signingsetup::retry::Waiting,
+    key: &commitsign::Signer,
+) -> Result<u32, String> {
+    let isolation = purlis_core::worktree::git::Isolated::operators();
+    let done = purlis_core::worktree::git::isolated(&isolation, || {
+        crate::forgeaccounts::window_git(|| {
+            signingsetup::retry::sign_and_retry(root, one, key, &mut |_| {})
+        })
+    })?;
+    let piece = purlis_core::pieceupdate::Piece {
+        root,
+        ws: &one.ws,
+        repo: &one.repo,
+        piece: &one.piece,
+    };
+    purlis_core::pieceupdate::note_if_signed(&piece, config);
+    Ok(u32::try_from(done.signed).unwrap_or(u32::MAX))
+}
+
+/// **What was signed and sent, cleared** once the window has shown it.
+#[tauri::command]
+#[specta::specta]
+pub async fn signing_forget_sent(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+) -> Result<(), String> {
+    let root = root_of(&planes, &plane)?;
+    blocking(move || signingsetup::retry::forget_sent(&root)).await
+}

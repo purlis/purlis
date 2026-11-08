@@ -285,6 +285,11 @@ pub const WINDOW_ONLY: &[&str] = &[
     "signing_add_key",
     "signing_key_listed",
     "signing_check",
+    // Work a forge refused for unsigned commits, and Sign and retry (#5630, #5633): signed with
+    // this device's key and pushed again, behind the person's press in the window alone.
+    "signing_waiting",
+    "signing_sign_and_retry",
+    "signing_forget_sent",
     // Agent identity (#4485): GitHub's App flow, the tool lines and the key, each the person's.
     "agent_identities",
     "agent_identity_create",

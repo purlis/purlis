@@ -450,5 +450,7 @@ pub fn check_a_pushed_commit(
     }
 }
 
+pub mod retry;
+
 #[cfg(test)]
 mod tests;

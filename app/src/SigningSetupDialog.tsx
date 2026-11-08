@@ -121,8 +121,12 @@ export function SigningSetupDialog({
   forge = null,
   repo = null,
   commit = null,
+  finish,
   onClose,
 }: {
+  /** What the last step offers in place of Done, where setup was opened from work a forge
+   *  refused: **Sign and retry**, or **Sign and retry all N** from the notice (ADR 0116 §4). */
+  finish?: { label: string; onFinish: () => void };
   /** The forge account setup is for: the one bound to the repo that needed it. With none, the
    *  first account whose forge verifies signed commits. */
   forge?: SigningForge | null;
@@ -386,7 +390,15 @@ export function SigningSetupDialog({
           onPress: () => check({ kind, host }),
         };
       case "done":
-        return { children: "Done", onPress: onClose };
+        return finish
+          ? {
+              children: finish.label,
+              onPress: () => {
+                finish.onFinish();
+                onClose();
+              },
+            }
+          : { children: "Done", onPress: onClose };
     }
   };
 
@@ -401,7 +413,7 @@ export function SigningSetupDialog({
       title="Set up signing"
       subtitle={`So ${forgeName} shows the commits purlis makes for you as Verified.`}
       className="signing-setup"
-      cancel={now.step === "done" ? false : undefined}
+      cancel={now.step === "done" && !finish ? false : undefined}
       summary={
         now.step === "done" || now.step === "unread"
           ? undefined
