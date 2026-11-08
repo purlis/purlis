@@ -254,6 +254,27 @@ describe("the first-open baseline (#5648)", () => {
     expect(asked.map((one) => one.cmd)).not.toContain("set_aside_inbox_findings");
   });
 
+  it("lists a finding the doctor finds when asked again after a fresh first open", async () => {
+    // Nothing to find at the first open: its report is set aside with no finding.
+    const found: DoctorRow[] = [];
+    const asked = core({ findings: found });
+    render(<App />);
+    await waitFor(() =>
+      expect(asked).toContainEqual({
+        cmd: "set_aside_inbox_findings",
+        args: { plane: PLANE, keys: [] },
+      }),
+    );
+    // Then the identity goes, and the person asks the doctor again from its status item.
+    found.push({ ...PERSONAS, status: "fail" });
+    await userEvent.click(screen.getByTestId("status-doctor"));
+    await waitFor(() =>
+      expect(asked.filter((one) => one.cmd === "plane_doctor").length).toBeGreaterThan(1),
+    );
+    await userEvent.keyboard("{Escape}");
+    expect(await within(await notices()).findByText("Doctor: 1 finding")).toBeInTheDocument();
+  });
+
   it("never baselines a plane this machine has a record for: an update keeps its unread lines", async () => {
     const asked = core({
       record: { at: secs(NOW) - 86_000, fresh: false, findings: null },

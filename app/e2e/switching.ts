@@ -1,13 +1,14 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { realpathSync, renameSync } from "node:fs";
+import { mkdirSync, realpathSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
 import type { Bench, Plan } from "../src/bench.ts";
 import { anEmptyRecord, copyFixturePlane } from "./harness.js";
 import { closeProject, openThroughTheTrustQuestion } from "./opening.js";
 import { attributesOfEach } from "./reading.js";
+import { LOGS } from "./processes.js";
 import { escapeUntilClosed } from "./tooltips.js";
 import { OPEN, summarise, type Switches } from "./switchTimes.js";
 
@@ -146,6 +147,29 @@ export async function asksTheDoctorAgain(): Promise<string> {
   );
   await escapeUntilClosed(() => dialog.isDisplayed());
   return found;
+}
+
+/**
+ * **Keeps what the window showed, for a failure to be read**: a picture of the window and the
+ * Notices view's markup, beside the run's logs (`LOGS`, kept with the run), named by `what`.
+ * Answers where they are, for the failure's message.
+ */
+export async function keepTheNotices(what: string): Promise<string> {
+  mkdirSync(LOGS, { recursive: true });
+  const picture = join(LOGS, `${what}.png`);
+  const markup = join(LOGS, `${what}.html`);
+  await browser.saveScreenshot(picture).catch(() => undefined);
+  const html = await browser.execute(() =>
+    [
+      ...document.querySelectorAll<HTMLElement>(
+        '[role="tabpanel"][data-view="notices"], [data-cause^="doctor-finding"]',
+      ),
+    ]
+      .map((one) => one.outerHTML)
+      .join("\n\n<!-- next -->\n\n"),
+  );
+  writeFileSync(markup, html);
+  return `${picture}, ${markup}`;
 }
 
 /**

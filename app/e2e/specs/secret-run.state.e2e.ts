@@ -44,7 +44,7 @@ import { RUNS_A_SECRET, SECRET_KEY, SECRET_RAN, SECRET_VAULT } from "../harness.
 const HAND = '[data-testid="title-bar"] [data-testid="needs-you-button"]';
 
 /** The Inbox view, wherever the right side's bar draws it. */
-const INBOX = '[role="tabpanel"][data-view="inbox"]';
+const INBOX = '[role="tabpanel"][data-view="asks"]';
 
 /** Every item the Inbox lists. */
 const ITEMS = `${INBOX} .inbox-ask`;
@@ -190,7 +190,7 @@ describe("a run that needs a secret (#5227)", function () {
     const notice = await $(NOTICE);
     await notice.waitForDisplayed({
       timeout: 20_000,
-      timeoutMsg: "the ✋ did not open the Inbox on the run's notice",
+      timeoutMsg: "the ✋ did not open Asks on the run's notice",
     });
 
     // **One notice**, through the harness's retry: its first wait ends at 7.5 s and it runs the
@@ -206,7 +206,9 @@ describe("a run that needs a secret (#5227)", function () {
     await expect(notice).toHaveText(expect.stringContaining("curl"));
     await expect(notice).toHaveText(expect.stringContaining(SECRET_KEY));
 
-    // The value, typed in its masked box, and the narrowest scope, which is chosen already.
+    // Its form stands behind its Answer link (#5651, ADR 0119 decision 7): the value, typed in
+    // its masked box, and the narrowest scope, which is chosen already.
+    await notice.$("button=Answer").click();
     await notice.$(`aria/Value of ${SECRET_KEY}`).setValue(VALUE);
     await pressGrant(await notice.$("button=Fill and allow once"));
 

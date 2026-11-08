@@ -11,7 +11,7 @@ import {
   THE_RUNS_GIT_CONFIG_TEXT,
 } from "../harness.js";
 import { bandNotice } from "../reading.js";
-import { asksTheDoctorAgain, openedWithTheDoctorHeard } from "../switching.js";
+import { asksTheDoctorAgain, keepTheNotices, openedWithTheDoctorHeard } from "../switching.js";
 
 /**
  * **A machine with no git identity is told so by a Notice** (#1250), in the built app against
@@ -122,7 +122,7 @@ describe("a machine with no git identity", function () {
           LINE,
         );
         throw new Error(
-          `no git identity row in the doctor's line; the doctor found: ${found}; the line says: ${line}`,
+          `no git identity row in the doctor's line; the doctor found: ${found}; the line says: ${line}; kept: ${await keepTheNotices("git-identity")}`,
         );
       });
       await expect(row).toHaveText(expect.stringContaining("not set: user.name, user.email"));

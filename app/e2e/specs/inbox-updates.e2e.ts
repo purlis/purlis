@@ -16,6 +16,7 @@ import {
   ask,
   inFront,
   asksTheDoctorAgain,
+  keepTheNotices,
   openedWithTheDoctorHeard,
 } from "../switching.js";
 
@@ -159,7 +160,7 @@ describe("the doctor's Notice line", function () {
         })
         .catch(async () => {
           throw new Error(
-            `the doctor's line never stood; the doctor found: ${found}; the views say: ${await viewsSay()}`,
+            `the doctor's line never stood; the doctor found: ${found}; the views say: ${await viewsSay()}; kept: ${await keepTheNotices("inbox-updates")}`,
           );
         });
 
