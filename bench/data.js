@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794139000346,
+  "lastUpdate": 1794145607808,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -43470,6 +43470,48 @@ window.BENCHMARK_DATA = {
             "value": 101.493503,
             "unit": "ms",
             "extra": "median of 5 runs: 100.811, 101.465, 101.494, 102.111, 103.021 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "298b32863570310742a90fadfcf8100e5457fa66",
+          "message": "A sign-in test's sleep and a portal test's service die with their tests (#5838)\n\nmain's rust tests (part 1 of 4) failed on an orphan after every test passed\n(run 42475446185): a_pinned_login_takes_nothing_before_it_was_heard returned\nas soon as its assertion held, and the Driving it dropped ends its login on\nthe watching thread, up to 100 ms later, after nextest's process for the test\nhad exited. Its sleep 600 outlived it. The stand-in now says its pid, is held\nby stand_in::Ends, and the test asserts it is gone once Driving is let go,\nwhich fails without Driving's drop cancelling it.\n\nThe portal test nextest flagged as LEAK was real too: PrivateBus killed the\ndbus-daemon, but the service the bus started (sleep 60) is the daemon's child\nand outlived it with the test's output open. Each service now writes its pid\nand is ended with the bus.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6XHSEXK311DZYVEQM2WEVC9\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-08T13:14:43Z",
+          "tree_id": "047fcb6ec46142b4d0c85c5cd870db4279e025c5",
+          "url": "https://github.com/purlis/purlis/commit/298b32863570310742a90fadfcf8100e5457fa66"
+        },
+        "date": 1794145601627,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.542278,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.540, 0.540, 0.542, 0.543, 0.549 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.151220000000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.064, 16.073, 16.151, 16.157, 16.436 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 99.6528,
+            "unit": "ms",
+            "extra": "median of 5 runs: 98.813, 99.423, 99.653, 100.822, 101.772 ms"
           }
         ]
       }
