@@ -3324,6 +3324,32 @@ fn make_again_here(config: &Path, fake: &FakeDocker, ours: &Pinned) -> Result<Ma
     make_again_as(config, &fake.docker(), "first", AGAIN_NAMED, ours)
 }
 
+/// **A runner made before the mark is made again with nothing carried** (ruled 2026-11-08), as a
+/// drain carries nothing from it: its row keeps no engine or home, or its image's purlis is older.
+#[test]
+fn a_runner_made_before_the_mark_is_made_again_with_nothing_carried() {
+    for older in [false, true] {
+        let config = tempfile::tempdir().unwrap();
+        let ours = desktop();
+        let fake = a_docker(&runner_answers());
+        if older {
+            removed_with_its_making_kept(config.path(), &fake, &ours);
+            fake.set("version", "purlis 0.4.1 (release profile)\n");
+        } else {
+            removed_outside_purlis(config.path(), &fake, &ours, Some("2026-01-01T00:00:00Z"));
+        }
+
+        let again = make_again_here(config.path(), &fake, &ours).unwrap();
+
+        assert!(!again.sign_ins_kept, "older image: {older}");
+        assert!(
+            !fake.file("log").contains("target=/from"),
+            "{}",
+            fake.file("log")
+        );
+    }
+}
+
 /// **Make the runner again** (#4149): a runner removed outside purlis is made again beside it,
 /// from the pool's own image and limits, on a home of its own with the sign-ins of the old home
 /// carried over where that home is the one purlis made for it, paired, and kept as the pool's
@@ -3333,7 +3359,7 @@ fn a_runner_removed_outside_purlis_is_made_again_with_its_sign_ins_and_paired() 
     let config = tempfile::tempdir().unwrap();
     let ours = desktop();
     let fake = a_docker(&runner_answers());
-    let old = removed_outside_purlis(config.path(), &fake, &ours, Some("2026-01-01T00:00:00Z"));
+    let old = removed_with_its_making_kept(config.path(), &fake, &ours);
 
     let again = make_again_here(config.path(), &fake, &ours).unwrap();
 
@@ -3409,7 +3435,7 @@ fn a_runner_made_again_keeps_the_gone_ones_home_where_it_holds_a_conversation() 
     let config = tempfile::tempdir().unwrap();
     let ours = desktop();
     let fake = a_docker(&runner_answers());
-    removed_outside_purlis(config.path(), &fake, &ours, Some("2026-01-01T00:00:00Z"));
+    removed_with_its_making_kept(config.path(), &fake, &ours);
     fake.set("conversations", "conversations 3 3 0\n");
 
     let again = make_again_here(config.path(), &fake, &ours).unwrap();

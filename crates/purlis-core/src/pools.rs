@@ -1188,6 +1188,15 @@ fn carried_from_its_own_home(
         );
         return false;
     }
+    if let Some(why) = made_before_the_mark(docker, old) {
+        tracing::warn!(
+            "purlis: runner {} is not known to be made after purlis began to keep which runners \
+             a chat ran on without the sandbox ({why}), so its sign-ins were not carried; sign \
+             the profiles in again on pool {pool}",
+            old.name()
+        );
+        return false;
+    }
     if old.made.runner.user() != made.runner.user() {
         tracing::warn!(
             "purlis: runner {} ran as {} and the runner made again as {}, so its sign-ins were \
