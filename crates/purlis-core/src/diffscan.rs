@@ -3185,6 +3185,49 @@ mod tests {
         );
     }
 
+    /// A push sends the objects as they were written, so they are what is read: a commit
+    /// another object stands in for (`refs/replace`), or one a graft leaves out of its child's
+    /// parents, is read as its own bytes say.
+    #[test]
+    fn a_push_reads_each_commit_as_written_whatever_stands_in_for_it() {
+        let (_dir, repo) = repo();
+        std::fs::write(repo.join("f"), "base\n").unwrap();
+        commit_all(&repo, "base");
+        let url = a_remote_beside(&repo);
+        testgit::run(&repo, &["push", "-q", "origin", "main"]);
+        let published = testgit::run(&repo, &["rev-parse", "HEAD"])
+            .out
+            .trim()
+            .to_owned();
+        std::fs::write(repo.join("evil.sh"), format!("T={}\n", key())).unwrap();
+        let evil = commit_all(&repo, "evil");
+        std::fs::remove_file(repo.join("evil.sh")).unwrap();
+        let tip = commit_all(&repo, "tidy");
+
+        // Another commit, with the published tree, stands in for the one that adds it.
+        let tree = format!("{published}^{{tree}}");
+        let tree = testgit::run(&repo, &["rev-parse", &tree])
+            .out
+            .trim()
+            .to_owned();
+        let stand_in = commit_tree(&repo, &tree, &[&published], "evil");
+        assert!(testgit::run(&repo, &["replace", &evil, &stand_in]).ok());
+        let scan = pushed(&repo, &url, &update(&tip, &published)).unwrap();
+        assert_eq!(refused(&scan), [("evil.sh", "forge-token")]);
+        testgit::run(&repo, &["replace", "-d", &evil]);
+
+        // A graft gives the tip the published commit as its only parent.
+        let grafts = testgit::run(&repo, &["rev-parse", "--git-path", "info/grafts"])
+            .out
+            .trim()
+            .to_owned();
+        let grafts = repo.join(grafts);
+        std::fs::create_dir_all(grafts.parent().unwrap()).unwrap();
+        std::fs::write(&grafts, format!("{tip} {published}\n")).unwrap();
+        let scan = pushed(&repo, &url, &update(&tip, &published)).unwrap();
+        assert_eq!(refused(&scan), [("evil.sh", "forge-token")]);
+    }
+
     /// SQ-7: a commit's message and an annotated tag's are published with them, and read for
     /// credentials. An address in a message — a trailer's — is not refused.
     #[test]

@@ -2432,14 +2432,25 @@ pub const HOOK_REPOSITORY_ENV: [&str; 6] = [
     "GIT_ALTERNATE_OBJECT_DIRECTORIES",
 ];
 
+/// History as it was written, for a call that reads what a push or a commit publishes: no
+/// graft gives a commit parents it was not written with, so every commit is read against the
+/// parents its own bytes name. The file named is one that cannot exist. (No object stands in
+/// for another on any call: [`NO_PROGRAMS`] turns `refs/replace` off.)
+pub const AS_WRITTEN_ENV: [(&str, &str); 1] = [("GIT_GRAFT_FILE", "/dev/null/no-grafts")];
+
 /// Run `git -C <dir> <args>` with a deadline, from inside a git hook: [`run`]'s hardening plus
 /// [`HOOK_REPOSITORY_ENV`] and [`CONFIG_LOCATION_ENV`], so it reads the index and the config
-/// the command that ran the hook reads. Read-only callers only.
+/// the command that ran the hook reads, and history as written ([`AS_WRITTEN_ENV`]).
+/// Read-only callers only.
 pub fn run_in_hook(dir: &Path, args: &[&str], timeout: Duration) -> Result<RawRun, GitUnavailable> {
     if let Err(why) = linked(dir, args) {
         return Ok(refused_raw(why));
     }
-    let mut pass = config_location_env(|name| std::env::var_os(name));
+    let mut pass: Vec<(String, std::ffi::OsString)> = AS_WRITTEN_ENV
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), (*value).into()))
+        .collect();
+    pass.extend(config_location_env(|name| std::env::var_os(name)));
     pass.extend(
         HOOK_REPOSITORY_ENV
             .iter()
