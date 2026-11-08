@@ -14,7 +14,11 @@ fn real(path: &Path) -> PathBuf {
 }
 
 /// A project saying `toml`, a home, and a chat's folder in the project.
-fn started(toml: &str, harness: Harness, env: &[(&str, &str)]) -> (tempfile::TempDir, tempfile::TempDir, PathBuf, Applied) {
+fn started(
+    toml: &str,
+    harness: Harness,
+    env: &[(&str, &str)],
+) -> (tempfile::TempDir, tempfile::TempDir, PathBuf, Applied) {
     let plane = tempfile::tempdir().expect("a plane");
     std::fs::write(plane.path().join("charter.toml"), toml).expect("charter.toml");
     let root = real(plane.path());

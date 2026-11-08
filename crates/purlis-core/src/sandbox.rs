@@ -2467,14 +2467,16 @@ fn xdg_later_code_moved(root: &Path, machine: &Machine) -> Vec<PathBuf> {
             home.join(".local/share"),
         ),
     ];
-    let holds_the_work =
-        |folder: &Path| root.starts_with(folder) || home.starts_with(folder);
+    let holds_the_work = |folder: &Path| root.starts_with(folder) || home.starts_with(folder);
     let mut out: Vec<PathBuf> = Vec::new();
     for (usual, moved, usual_folder) in moves {
         let Some(moved) = moved.filter(|moved| *moved != usual_folder) else {
             continue;
         };
-        for planted in PLANTED.iter().filter(|planted| !planted.path.contains("**")) {
+        for planted in PLANTED
+            .iter()
+            .filter(|planted| !planted.path.contains("**"))
+        {
             let Some(rest) = planted.path.strip_prefix(usual) else {
                 continue;
             };
@@ -7995,9 +7997,9 @@ mod persona_tests;
 mod reach_tests;
 #[cfg(test)]
 mod signin_tests;
-#[cfg(all(test, unix))]
-mod walks_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
 mod tunnel_tests;
+#[cfg(all(test, unix))]
+mod walks_tests;

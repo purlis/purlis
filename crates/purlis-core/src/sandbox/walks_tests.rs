@@ -14,7 +14,11 @@ const RACE: Duration = Duration::from_secs(3);
 /// A folder at `inside` and one at `outside`, swapped for each other again and again until
 /// `stop` is set, as a chat that can write both would: each rename is one a sandboxed chat is
 /// allowed, since neither makes a link.
-fn swapping(inside: PathBuf, outside: PathBuf, stop: Arc<AtomicBool>) -> std::thread::JoinHandle<()> {
+fn swapping(
+    inside: PathBuf,
+    outside: PathBuf,
+    stop: Arc<AtomicBool>,
+) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         let aside = outside.with_extension("aside");
         while !stop.load(Ordering::Relaxed) {
@@ -92,7 +96,9 @@ fn codex_s_tidy_of_a_day_s_sessions_never_follows_a_folder_swapped_for_a_link() 
     // `d` is a month and `x` a day: the walk descends into both by their dated names.
     let store = sessions.join("2026");
     std::fs::create_dir_all(&store).expect("a year");
-    raced(&sessions, &store, "11", "05", || super::codex::tidy(&sessions, 3));
+    raced(&sessions, &store, "11", "05", || {
+        super::codex::tidy(&sessions, 3)
+    });
 }
 
 #[test]

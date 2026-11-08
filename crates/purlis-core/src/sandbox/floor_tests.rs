@@ -2449,7 +2449,10 @@ fn the_folder_above_a_name_lifted_for_a_claude_code_chat_stays_pinned() {
         let pin = home.join(above).join(PIN).display().to_string();
         let rules = settings.sandbox.to_string();
         assert!(rules.contains(&pin), "{name}: {rules}");
-        assert!(!rules.contains(&home.join(name).display().to_string()), "{name}");
+        assert!(
+            !rules.contains(&home.join(name).display().to_string()),
+            "{name}"
+        );
     }
 }
 
