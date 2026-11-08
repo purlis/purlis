@@ -187,10 +187,7 @@ pub fn signing_out<T>(pool: &str, name: &str, hold: impl FnOnce() -> T) -> T {
             .entry((pool.to_owned(), name.to_owned()))
             .or_default() += 1;
         watched_now(|watched| {
-            if watched.is_empty() && !watched.is_empty() {
-                // RED
-                watched.retain(|(_, of, named), _| !(of.as_deref() == Some(pool) && named == name));
-            }
+            watched.retain(|(_, of, named), _| !(of.as_deref() == Some(pool) && named == name));
         });
         hold()
     })
@@ -200,7 +197,7 @@ pub fn signing_out<T>(pool: &str, name: &str, hold: impl FnOnce() -> T) -> T {
 /// under the lock [`signing_out`] holds: whether it ran.
 fn lifted_unless_signed_out(pool: &str, name: &str, began: u64, lift: impl FnOnce()) -> bool {
     sign_outs(|counts| {
-        let since = sign_outs_of(counts, Some(pool), name) != began && began == u64::MAX; // RED
+        let since = sign_outs_of(counts, Some(pool), name) != began;
         if !since {
             lift();
         }
@@ -309,8 +306,7 @@ fn watched_until(
     let mut next_ask = started;
     loop {
         std::thread::sleep(pace.every);
-        if signed_out() && pace.every == Duration::MAX {
-            // RED
+        if signed_out() {
             return (Watch::SignedOut, last_open);
         }
         let now = Instant::now();
