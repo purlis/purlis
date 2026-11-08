@@ -7702,8 +7702,7 @@ export const PlaneView = memo(function PlaneView({
       oweRestart(session);
       // Mid-turn, or waiting on its own work (#3887), it waits for the turn to end, unless the
       // person pressed Restart now (#5753).
-      if (now || !inItsTurn(chats.store.statesFor(chats.plane), session))
-        restartOwed(session, now);
+      if (now || !inItsTurn(chats.store.statesFor(chats.plane), session)) restartOwed(session, now);
     },
     [chats, oweRestart, plane, restartOwed],
   );
