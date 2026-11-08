@@ -1,0 +1,174 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+/**
+ * **You › Reports** (#5688, spec #5683): the two answers as Settings holds them, unanswered,
+ * all on and all off, with "See exactly what's sent…". Drawn, held to axe, walked by the keyboard
+ * and pictured in every pictured theme cell (`docs/component-stories.md`). The core is faked at
+ * its command boundary, keeping what it is told.
+ */
+import type { Meta, StoryObj } from "@storybook/react-vite";
+import { expect, waitFor, within } from "storybook/test";
+import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
+import type { ReportConsent, SentReport } from "../bindings";
+import { forgetReportConsent, UNANSWERED } from "../reportAnswers";
+import { expectFocusInSight, untilFocused } from "../stories.testkit";
+import { SettingGroup, SettingRow } from "./components";
+import type { LiveSetting } from "./groups";
+import { reportsGroup } from "./reports";
+
+let kept: ReportConsent = UNANSWERED;
+
+/** A Crash report as the core lists it: its envelope, byte for byte. */
+const SENT: SentReport = {
+  at: "2026-11-08T03:19:00Z",
+  title: "purlis panicked at crates/purlis-core/src/plane.rs:12:5",
+  to: "purlis's report service",
+  address: "purlis's report service, event 9f1c2a7be0d34b6c8e5f0a1b2c3d4e5f",
+  bytes:
+    '{"event_id":"9f1c2a7be0d34b6c8e5f0a1b2c3d4e5f","sent_at":"2026-11-08T03:19:00Z"}\n' +
+    '{"type":"event","length":312,"content_type":"application/json"}\n' +
+    '{"event_id":"9f1c2a7be0d34b6c8e5f0a1b2c3d4e5f","level":"fatal","platform":"native",' +
+    '"release":"purlis@0.42.0","environment":"stable","culprit":"crates/purlis-core/src/plane.rs:12:5",' +
+    '"exception":{"values":[{"type":"panic","value":"could not read [path] for [workspace]"}]}}\n',
+};
+
+/** One row, as the Settings tab draws a live setting. */
+function Row({ setting }: { setting: LiveSetting }) {
+  const { control, grouped, error } = setting.useControl();
+  return (
+    <SettingRow
+      setting={setting.id}
+      label={setting.label}
+      help={setting.help}
+      grouped={grouped}
+      error={error}
+      control={control}
+    />
+  );
+}
+
+/** The Reports group as Settings › You draws it. */
+function Reports() {
+  const group = reportsGroup();
+  return (
+    <SettingGroup label={group.label} help={group.help}>
+      {group.settings.map((one) => (
+        <Row key={one.id} setting={one as LiveSetting} />
+      ))}
+    </SettingGroup>
+  );
+}
+
+const meta = {
+  component: Reports,
+  // What this machine keeps: a story's `parameters.consent`, nothing answered by default.
+  beforeEach: ({ parameters }) => {
+    kept = (parameters.consent as ReportConsent | undefined) ?? UNANSWERED;
+    const sent = (parameters.sent as SentReport[] | undefined) ?? [];
+    forgetReportConsent();
+    mockIPC((cmd, args) => {
+      if (cmd === "report_consent") return kept;
+      if (cmd === "reports_sent") return sent;
+      if (cmd === "keep_report_consent") kept = (args as { consent: ReportConsent }).consent;
+      return null;
+    });
+    return () => clearMocks();
+  },
+  decorators: [
+    (Story) => (
+      <div style={{ inlineSize: 720 }}>
+        <Story />
+      </div>
+    ),
+  ],
+} satisfies Meta<typeof Reports>;
+
+export default meta;
+type Story = StoryObj<typeof meta>;
+
+const radios = (group: HTMLElement, name: string) =>
+  within(within(group).getByRole("radiogroup", { name })).getAllByRole("radio");
+
+/** **Unanswered**: neither choice made for the person; choosing one keeps it. */
+export const Unanswered: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const group = await canvas.findByRole("region", { name: "Reports" });
+    for (const stream of ["Crash reports", "Agent drafts"])
+      for (const radio of radios(group, stream)) await expect(radio).not.toBeChecked();
+    await userEvent.tab();
+    await untilFocused(
+      () => within(group).getByRole("radio", { name: "Send" }),
+      "Tab reaches Crash reports",
+    );
+    expectFocusInSight();
+    await userEvent.keyboard(" ");
+    await waitFor(() => expect(kept.crash_reports).toBe(true));
+    await expect(kept.agent_drafts).toBeNull();
+  },
+};
+
+/** **All on**: Send and Allow chosen; Tab walks on to See exactly what's sent…. */
+export const AllOn: Story = {
+  parameters: { consent: { crash_reports: true, agent_drafts: true, asked: true } },
+  play: async ({ canvas, userEvent }) => {
+    const group = await canvas.findByRole("region", { name: "Reports" });
+    await waitFor(() => expect(within(group).getByRole("radio", { name: "Send" })).toBeChecked());
+    await expect(within(group).getByRole("radio", { name: "Allow" })).toBeChecked();
+    await userEvent.tab();
+    await userEvent.tab();
+    await userEvent.tab();
+    await untilFocused(
+      () => within(group).getByRole("button", { name: "See exactly what's sent…" }),
+      "Tab reaches See exactly what's sent…",
+    );
+    expectFocusInSight();
+  },
+};
+
+/** **All off**: Don't send and Don't allow chosen; Allow from the keyboard turns drafts on. */
+export const AllOff: Story = {
+  parameters: { consent: { crash_reports: false, agent_drafts: false, asked: true } },
+  play: async ({ canvas, userEvent }) => {
+    const group = await canvas.findByRole("region", { name: "Reports" });
+    await waitFor(() =>
+      expect(within(group).getByRole("radio", { name: "Don't send" })).toBeChecked(),
+    );
+    const dont = within(group).getByRole("radio", { name: "Don't allow" });
+    await expect(dont).toBeChecked();
+    dont.focus();
+    await untilFocused(() => dont, "Don't allow takes the keyboard");
+    expectFocusInSight();
+    await userEvent.keyboard("{ArrowLeft}");
+    await waitFor(() => expect(kept.agent_drafts).toBe(true));
+  },
+};
+
+/** **Sent**: the sent list holds a Crash report; Enter opens exactly its bytes, Esc closes. */
+export const Sent: Story = {
+  parameters: {
+    consent: { crash_reports: true, agent_drafts: false, asked: true },
+    sent: [SENT],
+  },
+  play: async ({ canvas, userEvent }) => {
+    const list = await canvas.findByRole("grid", { name: "Reports sent from this machine" });
+    const row = await within(list).findByRole("row", { name: new RegExp(SENT.title) });
+    row.focus();
+    await untilFocused(() => row, "the sent report takes the keyboard");
+    expectFocusInSight();
+    await userEvent.keyboard("{Enter}");
+    const dialog = await within(document.body).findByRole("dialog", { name: SENT.title });
+    await expect(within(dialog).getByText(/"level":"fatal"/)).toBeVisible();
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(within(document.body).queryByRole("dialog")).toBeNull());
+  },
+};
+
+/** **Nothing sent**: the list says so, in a line that is not an instruction. */
+export const NothingSent: Story = {
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByText("No report has been sent from this machine."),
+    ).toBeVisible();
+  },
+};

@@ -370,16 +370,24 @@ mod report {
             Arc::new(purlis_core::forge::cli::Cli::default()),
         );
         let caller = Caller::window();
-        let draft = purlis_core::report::Draft {
+        use purlis_core::report::{Evidence, Known, Outcome, Reports};
+        let reports = Reports::new(Known::default());
+        let evidence = Evidence::PersonDraft {
             kind: purlis_core::report::Kind::Bug,
-            title: "The picker crashes".into(),
-            body: "Open the picker.".into(),
-            scrubbed: Vec::new(),
+            text: "Open the picker.".into(),
+            title: Some("The picker crashes".into()),
         };
-        let tracker = purlis_core::report::as_the_reporter(&caller).expect("signed in");
-        purlis_core::report::search_duplicates(tracker.as_ref(), &caller, &draft)
-            .expect("searched");
-        purlis_core::report::file(tracker.as_ref(), &caller, &draft).expect("filed");
+        let Outcome::Drafted { draft, .. } = reports.take(evidence.clone(), &caller) else {
+            panic!("not drafted");
+        };
+        reports.duplicates(&draft, &caller).expect("searched");
+        assert!(
+            matches!(
+                reports.file(evidence, &caller, &draft.digest()),
+                Outcome::Sent { .. }
+            ),
+            "not filed"
+        );
         signin::take_back();
 
         let native: Vec<_> = own
@@ -394,6 +402,67 @@ mod report {
                     .iter()
                     .all(|(feature, _)| *feature == Feature::Report),
             "{native:?}\n{}",
+            log_text()
+        );
+    }
+}
+
+/// A Crash report's send to the Report intake, in a child and a log of its own (#5689).
+#[test]
+fn a_crash_reports_send_is_listed_in_a_child_of_its_own() {
+    purlis_core::unsteered!();
+    in_a_child(
+        "every_third_party_call_is_listed_in_the_network_log::report_intake::",
+        "bin",
+    );
+}
+
+mod report_intake {
+    use super::*;
+
+    /// The intake's host is in the log, as a third party's, under the intake's own feature: the
+    /// envelope endpoint's template, never the project's id or anything the report said.
+    #[test]
+    fn a_send_to_the_report_intake_is_listed_with_the_intakes_host() {
+        purlis_core::unsteered!();
+        if !in_child() {
+            return;
+        }
+        use purlis_core::report::intake::{Dsn, Https, Intake, Sentry};
+        use wiremock::matchers::{method, path};
+
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let own = OwnServer::start(&rt);
+        rt.block_on(async {
+            Mock::given(method("POST"))
+                .and(path("/api/4508/envelope/"))
+                .respond_with(ResponseTemplate::new(200).set_body_string(r#"{"id": "9f1c"}"#))
+                .mount(&own.server)
+                .await;
+        });
+        let dsn = Dsn::parse(&format!("http://f00dfeed@{}/4508", own.authority)).unwrap();
+        Sentry::new(dsn, Https::default())
+            .send(b"{}\n{\"type\":\"event\"}\n{\"level\":\"fatal\"}\n", "9f1c")
+            .expect("the intake took it");
+
+        let listed: Vec<_> = own
+            .calls()
+            .into_iter()
+            .map(|e| (e.feature, e.method, e.path, e.status, e.to))
+            .collect();
+        assert_eq!(
+            listed,
+            [(
+                Feature::ReportIntake,
+                "POST".to_string(),
+                "api/{}/envelope".to_string(),
+                Some(200),
+                Party::ThirdParty
+            )],
+            "{}",
             log_text()
         );
     }

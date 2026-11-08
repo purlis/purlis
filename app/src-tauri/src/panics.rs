@@ -21,6 +21,11 @@
 //! the hook that was there before it. It runs on the panicking thread, before the abort. The
 //! place in the source survives stripping, which is what makes it worth writing down even where
 //! the backtrace is only addresses.
+//!
+//! **Then it hands the panic to Reports** (#5689, spec #5683): with the person's yes to Crash
+//! reports, the core sends it to purlis's Report intake with its fixed fields only, and lists
+//! the bytes in Settings › You › Reports. Without one, the core refuses it and nothing leaves.
+//! The log is written first, so a send that fails or hangs loses nothing it had.
 
 use std::backtrace::Backtrace;
 use std::fs::OpenOptions;
@@ -40,7 +45,32 @@ pub fn record() {
     if let Some(file) = purlis_core::envvar::var_os("PURLIS_PANIC_LOG") {
         let _ = LOG.set(PathBuf::from(file));
     }
-    install(|| LOG.get());
+    install(|| LOG.get(), report);
+}
+
+/// Hands a panic to the core's Reports, as a trigger: nobody is at the keyboard. Whether it may
+/// go, what of it goes and where are the core's to say.
+fn report(place: Option<&str>, message: &str) {
+    let record = purlis_core::report::Panic {
+        at: Some(now()),
+        place: place.unwrap_or("an unknown place").to_owned(),
+        message: message.to_owned(),
+        version: Some(env!("CARGO_PKG_VERSION").to_owned()),
+    };
+    let _ = purlis_core::report::Reports::for_a_crash().take(
+        purlis_core::report::Evidence::Panic {
+            record,
+            words: None,
+        },
+        &purlis_core::forge::Caller::trigger(),
+    );
+}
+
+fn now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|since| since.as_secs())
+        .unwrap_or(0)
 }
 
 /// Panics are appended to `panics.log` in `dir` from now on — unless the environment has
@@ -49,16 +79,23 @@ pub fn keep_in(dir: &Path) {
     let _ = LOG.set(dir.join("panics.log"));
 }
 
-fn install(log: impl Fn() -> Option<&'static PathBuf> + Send + Sync + 'static) {
+fn install(
+    log: impl Fn() -> Option<&'static PathBuf> + Send + Sync + 'static,
+    report: impl Fn(Option<&str>, &str) + Send + Sync + 'static,
+) {
     let before = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         let thread = std::thread::current();
+        let place = info
+            .location()
+            .map(|at| format!("{}:{}:{}", at.file(), at.line(), at.column()));
+        let message = info
+            .payload_as_str()
+            .unwrap_or("(a panic that carries no message)");
         let said = describe(
             thread.name().unwrap_or("an unnamed thread"),
-            info.location()
-                .map(|at| format!("{}:{}:{}", at.file(), at.line(), at.column())),
-            info.payload_as_str()
-                .unwrap_or("(a panic that carries no message)"),
+            place.clone(),
+            message,
             &Backtrace::force_capture(),
         );
         // Nothing here may panic: a panic inside the hook aborts at once and says less.
@@ -67,6 +104,8 @@ fn install(log: impl Fn() -> Option<&'static PathBuf> + Send + Sync + 'static) {
             write_down(file, &said);
         }
         before(info);
+        // Last: the panic is already written down and said, whatever the send does.
+        report(place.as_deref(), message);
     }));
 }
 
@@ -78,10 +117,7 @@ fn describe(
     backtrace: &impl std::fmt::Display,
 ) -> String {
     let place = place.as_deref().unwrap_or("an unknown place");
-    let when = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|since| since.as_secs())
-        .unwrap_or(0);
+    let when = now();
     format!(
         "charter-panic pid {pid} at {when} (seconds since 1970)\n\
          version: {version}\n\
@@ -161,7 +197,16 @@ mod tests {
         // still called after it, so every other test in this binary reports as it always did.
         let file: &'static PathBuf = Box::leak(Box::new(scratch("hooked")));
         let _ = std::fs::remove_file(file);
-        install(move || Some(file));
+        let handed: &'static std::sync::Mutex<Vec<(Option<String>, String)>> =
+            Box::leak(Box::default());
+        install(
+            move || Some(file),
+            |place, message| {
+                if let Ok(mut handed) = handed.lock() {
+                    handed.push((place.map(str::to_owned), message.to_owned()));
+                }
+            },
+        );
 
         let died = std::thread::Builder::new()
             .name("a-thread-that-panics".into())
@@ -182,6 +227,17 @@ mod tests {
         assert!(
             written.contains("place: app/src-tauri/src/panics.rs:"),
             "{written}"
+        );
+        let handed = handed.lock().expect("the hook let go of the list");
+        let ours = handed
+            .iter()
+            .find(|(_, message)| message == "a panic the test asked for")
+            .expect("the panic was handed on to Reports");
+        assert!(
+            ours.0
+                .as_deref()
+                .is_some_and(|place| place.starts_with("app/src-tauri/src/panics.rs:")),
+            "{ours:?}"
         );
     }
 }

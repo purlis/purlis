@@ -687,10 +687,11 @@ _Avoid_: level (that is the run's), completeness
 What purlis measures about how chats and purlis itself perform: time, resources, tokens and
 cost. It is one OpenTelemetry pipeline per device: the session host receives what the harnesses
 and purlis report, keeps it on the device for a month, and sends it only to the user's own
-**export destinations**. The opt-in product telemetry and crash reports are telemetry too, each
-with its own consent. It may be sampled, never names a person, and never reads the audit (ADR
-0075, ADR 0083).
-_Avoid_: audit, analytics, metrics (for the whole of it), log (that is the diagnostic log)
+**export destinations**. The opt-in product telemetry is telemetry too, with its own consent. It
+may be sampled, never names a person, and never reads the audit (ADR 0075, ADR 0083). A **Crash
+report** is not telemetry.
+_Avoid_: audit, analytics, metrics (for the whole of it), log (that is the diagnostic log), crash
+reporting, error reporting
 
 **Content gate**:
 A switch that lets telemetry keep what was said in a chat: `prompts`, or tool arguments and
@@ -714,6 +715,38 @@ leaves the file at the next merge and checkpoint; an unlinked old copy is not ov
 never answers a reader with anything the files would not (ADR 0079).
 _Avoid_: index (unqualified: `memory/index.md` and `sessions/index.md` are lists for people),
 cache, database
+
+### Reporting purlis's bugs
+
+**Crash report**:
+What purlis sends by itself when it crashes, panics or fails in the window, if the person allowed
+it: a fixed set of fields saying where it failed and on which versions, and nothing the person
+wrote or worked on. It goes only to the **Report intake**, and every one sent can be read on the
+machine (ADR 0083, ADR 0118).
+_Avoid_: telemetry (that is a separate opt-in), error report, bug report, panic log
+
+**Report** (of a bug):
+A bug or a feature request about purlis itself, in words, written by a person or an agent. It is
+shown before it is filed, unless the person chose **Always send** (ADR 0059, ADR 0118).
+_Avoid_: issue (that is what it becomes on the tracker), ticket, feedback, crash report (that is
+machine-made)
+
+**Report draft**:
+A **Report** not yet sent, waiting in the Inbox for the person to read, file or dismiss it, or to
+send it by **Always send**. An agent only ever writes drafts; it never files one (ADR 0118).
+_Avoid_: pending report, unfiled issue
+
+**Always send**:
+The person's standing yes for **Report drafts** to go to the **Report intake** without being read.
+It never sends to a public tracker, can be turned off at any time, and a project can forbid it
+for its members (ADR 0118).
+_Avoid_: auto-file, auto-report, send automatically
+
+**Report intake**:
+purlis's private service for reports, readable only by purlis's maintainers: the one place a
+**Crash report**, or a **Report** nobody has read, may go. A maintainer promotes what it receives
+to the public tracker (ADR 0118).
+_Avoid_: tracker, inbox (that is the person's), backend, telemetry destination
 
 ### Browsers
 
@@ -986,11 +1019,12 @@ and it works under its own persona's charter and guards. One a task started is s
 **task**; "persona chat" is the model's word, and the app's sentences do not say it for one.
 _Avoid_: sub-agent, worker, child (unqualified: a child run is the harness's)
 
-**Report**:
+**Report** (of a task):
 What a task returns to its asking chat: an outcome (done, blocked or failed), what the persona
 chat has to say, and what changed. It is data to the asking chat, never instructions, and it is
 kept for the workspace when the asking chat is gone.
-_Avoid_: reply, result (for a handoff), handback (in UI text)
+_Avoid_: reply, result (for a handoff), handback (in UI text), report (for a bug: that is a
+**Report** of a bug)
 
 **Reading a task** (`purlis dispatch read`):
 What the asking chat may see of a task it dispatched: the task's last few messages and the
