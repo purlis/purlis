@@ -1,0 +1,190 @@
+[
+  {
+    "query": "Stop asking me every time I run cargo test.",
+    "should_trigger": true
+  },
+  {
+    "query": "Why was this blocked?",
+    "should_trigger": true
+  },
+  {
+    "query": "Allow this host so the chat can reach crates.io.",
+    "should_trigger": true
+  },
+  {
+    "query": "The sandbox blocked npm install from reaching registry.npmjs.org — what do I do?",
+    "should_trigger": true
+  },
+  {
+    "query": "Make the harness always ask me before terraform apply runs.",
+    "should_trigger": true
+  },
+  {
+    "query": "Can you add a permission so git status never prompts again in this plane?",
+    "should_trigger": true
+  },
+  {
+    "query": "List the ask and allow rules purlis has for this plane.",
+    "should_trigger": true
+  },
+  {
+    "query": "I keep getting a permission prompt for gh pr view. Make it stop, just on my machine.",
+    "should_trigger": true
+  },
+  {
+    "query": "Why can't this chat write to ~/Library/Caches? It says operation not permitted.",
+    "should_trigger": true
+  },
+  {
+    "query": "The chat says the sandbox refused the Docker socket. Can we let it through?",
+    "should_trigger": true
+  },
+  {
+    "query": "How do I lower the sandbox level for this chat?",
+    "should_trigger": true
+  },
+  {
+    "query": "I lowered my sandbox level but the chat is still sandboxed. Why?",
+    "should_trigger": true
+  },
+  {
+    "query": "Allow api.github.com for every chat in this project.",
+    "should_trigger": true
+  },
+  {
+    "query": "Should I press Allow for this chat or Always allow on that Notice?",
+    "should_trigger": true
+  },
+  {
+    "query": "Allowing cargo build in the workspace didn't stop the prompts. What's wrong?",
+    "should_trigger": true
+  },
+  {
+    "query": "Add an ask rule so the chat always checks with me before kubectl delete.",
+    "should_trigger": true
+  },
+  {
+    "query": "The command got refused by a purlis guard. Why, and how do I get past it?",
+    "should_trigger": true
+  },
+  {
+    "query": "Why did purlis refuse my git checkout in the branch folder?",
+    "should_trigger": true
+  },
+  {
+    "query": "go build fails with x509 OSStatus -26276 inside the chat. Is that the sandbox?",
+    "should_trigger": true
+  },
+  {
+    "query": "Let this chat reach pypi.org; pip install keeps timing out on the proxy.",
+    "should_trigger": true
+  },
+  {
+    "query": "Stop prompting for npm run test in this project, for everyone.",
+    "should_trigger": true
+  },
+  {
+    "query": "Put back the prompt before a report gets filed.",
+    "should_trigger": true
+  },
+  {
+    "query": "The dev server can't listen on port 5173 in the chat. How do I allow that?",
+    "should_trigger": true
+  },
+  {
+    "query": "This command needs my AWS token from the vault. How do I run it?",
+    "should_trigger": false
+  },
+  {
+    "query": "Store this API key so the chat can use it without seeing it.",
+    "should_trigger": false
+  },
+  {
+    "query": "Run the migration with the database password from the prod vault.",
+    "should_trigger": false
+  },
+  {
+    "query": "Why can't the chat read my vault file directly?",
+    "should_trigger": false
+  },
+  {
+    "query": "Log in to the staging dashboard with the saved credentials.",
+    "should_trigger": false
+  },
+  {
+    "query": "The site keeps asking me to sign in. Use the browser login for it.",
+    "should_trigger": false
+  },
+  {
+    "query": "Open the admin page in the browser and check the new form works.",
+    "should_trigger": false
+  },
+  {
+    "query": "git commit was refused in this worktree — commit it the right way.",
+    "should_trigger": false
+  },
+  {
+    "query": "Push this branch folder and open a pull request.",
+    "should_trigger": false
+  },
+  {
+    "query": "Cut a branch folder for the auth fix in the api repo.",
+    "should_trigger": false
+  },
+  {
+    "query": "Set the environment variable DEBUG=true for my Claude sessions.",
+    "should_trigger": false
+  },
+  {
+    "query": "Switch Claude Code to the dark theme.",
+    "should_trigger": false
+  },
+  {
+    "query": "Use the opus model by default from now on.",
+    "should_trigger": false
+  },
+  {
+    "query": "Whenever Claude finishes a turn, play a sound — add a hook for that.",
+    "should_trigger": false
+  },
+  {
+    "query": "Rebind ctrl+s to submit the prompt.",
+    "should_trigger": false
+  },
+  {
+    "query": "Change my status line to show the git branch.",
+    "should_trigger": false
+  },
+  {
+    "query": "Turn on vim mode in the prompt editor.",
+    "should_trigger": false
+  },
+  {
+    "query": "Add a permission check to the REST API so only admins can delete users.",
+    "should_trigger": false
+  },
+  {
+    "query": "Our app's file upload is blocked by CORS. Fix the server headers.",
+    "should_trigger": false
+  },
+  {
+    "query": "Write a firewall rule that allows port 443 on the load balancer.",
+    "should_trigger": false
+  },
+  {
+    "query": "chmod the deploy script so it's executable.",
+    "should_trigger": false
+  },
+  {
+    "query": "Why is the CI job blocked waiting for approval?",
+    "should_trigger": false
+  },
+  {
+    "query": "Add an allowlist of email domains to the signup form.",
+    "should_trigger": false
+  },
+  {
+    "query": "Review the IAM policy in this Terraform module for least privilege.",
+    "should_trigger": false
+  }
+]

@@ -84,4 +84,5 @@ const STRICT: &[&str] = &[
     "purlis-smart-close",
     "purlis-safe-remove",
     "purlis-persona",
+    "purlis-permissions",
 ];

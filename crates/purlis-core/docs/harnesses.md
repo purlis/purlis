@@ -233,7 +233,7 @@ the command line, for that session alone, and writes nothing into any config fol
 - **Claude Code** gets `--plugin-dir <the bundled plugin>`: the app's own plugin,
   `purlis`, with every hook purlis answers — the state hooks and the Bash guard — and
   the `purlis-handoff`, `purlis-repo-work`, `purlis-upgrade`, `purlis-persona`,
-  `purlis-secrets`, `purlis-browser`, `purlis-safe-remove`, `purlis-tidy-memory`,
+  `purlis-permissions`, `purlis-secrets`, `purlis-browser`, `purlis-safe-remove`, `purlis-tidy-memory`,
   `purlis-curation-action`, `purlis-smart-close`, `purlis-theme`, `purlis-skill-studio` and
   `purlis-building-ui` skills, which reach the model as
   `purlis:purlis-<skill>`, and the app's MCP server, `purlis` (tools `mcp__purlis__<tool>`).

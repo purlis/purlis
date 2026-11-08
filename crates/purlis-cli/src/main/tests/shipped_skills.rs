@@ -89,6 +89,10 @@ const RULES: &[(&str, Rule)] = &[
     ("uses the glossary's words", uses_the_glossary_s_words),
     ("names a skill purlis ships", skills_are_real),
     ("says what it is not for", names_each_neighbour),
+    (
+        "never lowers the sandbox or edits a harness's settings",
+        keeps_the_sandbox,
+    ),
 ];
 
 /// **Words the glossary avoids** (#5723, spec #5714's Q31): `CONTEXT.md`'s `_Avoid_` words that
@@ -588,6 +592,67 @@ fn skills_are_real(skill: &Skill, built: &Built) -> Vec<String> {
         .collect()
 }
 
+/// **Remedies a chat never offers** (#5735, spec #5714's Q19, the briefing's `SANDBOXED_NOTE`):
+/// each lowers purlis's sandbox or edits a harness's own settings file, which purlis's own
+/// settings outrank, so a chat that suggests one sends the person to a refusal or to a rule
+/// nothing reads. Matched in any case.
+const NEVER_OFFERED: &[&str] = &[
+    "/sandbox",
+    "excludedcommands",
+    "dangerouslydisablesandbox",
+    "start without the sandbox",
+    "lower the sandbox",
+    ".claude/settings.json",
+    ".claude/settings.local.json",
+    "opencode.json",
+    "config.toml",
+    "settings file",
+];
+
+/// The words that make a sentence about a remedy say not to take it.
+const REFUSING: &[&str] = &["never", "not", "no", "cannot", "don't", "nothing"];
+
+/// The sentences of `page` outside its fenced blocks, code spans kept, each on one line: a
+/// sentence ends at a `.`, `!` or `?` that a space or the paragraph's end follows, so a path's
+/// dot does not end one.
+fn sentences(page: &str) -> Vec<String> {
+    paragraphs(page)
+        .iter()
+        .flat_map(|paragraph| {
+            let one = paragraph.split_whitespace().collect::<Vec<_>>().join(" ");
+            let mut out = Vec::new();
+            let mut sentence = String::new();
+            let mut chars = one.chars().peekable();
+            while let Some(c) = chars.next() {
+                sentence.push(c);
+                if matches!(c, '.' | '!' | '?') && chars.peek().is_none_or(|n| *n == ' ') {
+                    out.push(std::mem::take(&mut sentence).trim().to_owned());
+                }
+            }
+            out.push(sentence.trim().to_owned());
+            out.retain(|sentence| !sentence.is_empty());
+            out
+        })
+        .collect()
+}
+
+/// **Never lowers the sandbox or edits a harness's settings** (#5735): a sentence that names one
+/// of [`NEVER_OFFERED`] says not to take it, in one of the [`REFUSING`] words. A sentence is
+/// read to its end ([`sentences`]), so a refusal in the next one does not cover it.
+fn keeps_the_sandbox(skill: &Skill, _: &Built) -> Vec<String> {
+    sentences(&skill.page)
+        .into_iter()
+        .filter_map(|sentence| {
+            let lower = sentence.to_lowercase();
+            let named = NEVER_OFFERED.iter().find(|r| lower.contains(*r))?;
+            let refuses = lower
+                .split(|c: char| !(c.is_alphanumeric() || c == '\''))
+                .any(|word| REFUSING.contains(&word));
+            (!refuses).then(|| format!("offers “{named}” without saying never: “{sentence}”"))
+        })
+        .collect()
+}
+
 /// **The house style's "Not for" clause** (#5730, spec #5714's Q15 and Q30): a skill whose
 /// sources file declares neighbours says, after "Not for" in its description, the name of each,
 /// so a harness choosing between two skills reads where one ends. Each neighbour is a skill
@@ -1082,6 +1147,51 @@ fn a_neighbour_purlis_does_not_ship_and_unreadable_sources_are_named() {
              (a line `Trigger bar: strict` or `Trigger bar: standard`) (says what it is not for)"
         ]
     );
+}
+
+#[test]
+fn a_sentence_that_offers_to_lower_the_sandbox_or_edit_a_harness_s_settings_is_named() {
+    for (page, named) in [
+        ("Run `/sandbox exclude cargo` and retry.", "/sandbox"),
+        ("Add the host to `excludedCommands`.", "excludedcommands"),
+        (
+            "Ask them to choose Start without the sandbox. Never guess.",
+            "start without the sandbox",
+        ),
+        (
+            "Edit `.claude/settings.json` and add `Bash(terraform *)` to its allow list.",
+            ".claude/settings.json",
+        ),
+        (
+            "Put the rule in the harness's settings file by hand.",
+            "settings file",
+        ),
+    ] {
+        let found = problems(&format!("{GOOD}{page}\n"));
+        assert_eq!(found.len(), 1, "{page}: {found:?}");
+        assert!(
+            found[0].contains(named)
+                && found[0].ends_with("(never lowers the sandbox or edits a harness's settings)"),
+            "{found:?}"
+        );
+    }
+}
+
+#[test]
+fn a_sentence_that_says_never_to_lower_the_sandbox_or_edit_a_harness_s_settings_is_not_named() {
+    for page in [
+        "Never suggest `/sandbox` or `excludedCommands`: purlis's own settings outrank them.",
+        "The person alone may choose Start without the sandbox; never offer it.\n\nYou do not \
+         edit `.claude/settings.json` by hand.",
+        "```bash\ncat .claude/settings.json\n```",
+        "Settings › Project › Sandbox shows the level.",
+    ] {
+        assert_eq!(
+            problems(&format!("{GOOD}{page}\n")),
+            Vec::<String>::new(),
+            "{page}"
+        );
+    }
 }
 
 /// What a chat is told at its start in the cases whose words are purlis's own: the gate, the
