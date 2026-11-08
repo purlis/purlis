@@ -1591,7 +1591,11 @@ fn a_window_crash_within_its_grace_types_no_wake_line_into_the_chat_the_host_kep
     );
 
     assert!(opened.iter().any(|open| open.session == steward));
-    assert_eq!(relaunched.reattached(), [steward], "precondition: reattached");
+    assert_eq!(
+        relaunched.reattached(),
+        [steward],
+        "precondition: reattached"
+    );
     assert!(relaunched.asked().is_empty(), "nothing was started");
     is_given_no_wake_line(&relaunched, steward, "reattached within the grace");
 }
@@ -1620,7 +1624,10 @@ fn a_reattach_that_falls_back_to_a_start_still_tells_the_chat_what_ended() {
     relaunched.no_longer_leaves(steward);
     let _ = held.finish_reopen(begun, A_SIZE);
 
-    assert!(relaunched.reattached().is_empty(), "precondition: not reattached");
+    assert!(
+        relaunched.reattached().is_empty(),
+        "precondition: not reattached"
+    );
     is_told_its_shell_ended(&relaunched, steward, "started where a reattach was meant");
 }
 
@@ -1636,7 +1643,9 @@ fn a_hibernated_chat_is_told_what_its_host_s_crash_ended_as_resume_wakes_it() {
 
     host.program_ends_with_its_host(steward);
     assert_eq!(
-        held.lost_with_the_host().of(steward).map(|lost| lost.left_in),
+        held.lost_with_the_host()
+            .of(steward)
+            .map(|lost| lost.left_in),
         Some(crate::hostlost::LeftIn::Hibernated),
         "precondition: hibernated"
     );
@@ -1668,7 +1677,9 @@ fn a_chat_its_host_s_crash_failed_mid_turn_is_told_what_ended_as_it_is_resumed()
 
     host.program_ends_with_its_host(steward);
     assert_eq!(
-        held.lost_with_the_host().of(steward).map(|lost| lost.left_in),
+        held.lost_with_the_host()
+            .of(steward)
+            .map(|lost| lost.left_in),
         Some(crate::hostlost::LeftIn::Failed),
         "precondition: failed mid-turn"
     );
