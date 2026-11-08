@@ -49,9 +49,11 @@ fn intact(at: &Path) -> bool {
         && at.join("link").is_symlink()
 }
 
-/// The race of a walk below `walked`, where the folder `d` in `store` holds a real folder `x`, and
-/// the chat's own `e` holds `x` as a link to the victim: `d` and `e` swap while `walk` runs.
-fn raced(walked: &Path, store: &Path, d: &str, x: &str, walk: impl Fn()) {
+/// The race of a walk below `walked`, where the folder `d` in `store` holds a real folder of each
+/// name in `xs`, and the chat's own `e` holds each as a link to the victim: `d` and `e` swap while
+/// `walk` runs. Every name is a chance: a walk that opens what it found in `d` again by path, after
+/// `d` was swapped for `e`, follows a link, and many names make the time it spends in `d` long.
+fn raced(walked: &Path, store: &Path, d: &str, xs: &[String], walk: impl Fn()) {
     let place = tempfile::tempdir().expect("a folder");
     let outside = place.path().join("victim");
     let e = place.path().join("e");
@@ -67,16 +69,18 @@ fn raced(walked: &Path, store: &Path, d: &str, x: &str, walk: impl Fn()) {
         for side in [&d, &e] {
             let _ = std::fs::create_dir_all(side);
         }
-        for side in [&d, &e] {
-            let at = side.join(x);
-            if std::fs::symlink_metadata(&at).is_err() && std::fs::create_dir(&at).is_ok() {
-                let _ = std::fs::create_dir_all(at.join("stray"));
+        for x in xs {
+            for side in [&d, &e] {
+                let at = side.join(x);
+                if std::fs::symlink_metadata(&at).is_err() && std::fs::create_dir(&at).is_ok() {
+                    let _ = std::fs::create_dir_all(at.join("stray"));
+                }
             }
-        }
-        let linked = e.join(x);
-        if std::fs::symlink_metadata(&linked).is_ok_and(|found| !found.is_symlink()) {
-            let _ = std::fs::remove_dir_all(&linked);
-            let _ = std::os::unix::fs::symlink(&outside, &linked);
+            let linked = e.join(x);
+            if std::fs::symlink_metadata(&linked).is_ok_and(|found| !found.is_symlink()) {
+                let _ = std::fs::remove_dir_all(&linked);
+                let _ = std::os::unix::fs::symlink(&outside, &linked);
+            }
         }
         walk();
         walks += 1;
@@ -94,11 +98,12 @@ fn raced(walked: &Path, store: &Path, d: &str, x: &str, walk: impl Fn()) {
 fn codex_s_tidy_of_a_day_s_sessions_never_follows_a_folder_swapped_for_a_link() {
     let home = tempfile::tempdir().expect("a home");
     let sessions = home.path().join("sessions");
-    // `d` is a month and `x` a day: the walk descends into both by their dated names.
+    // `d` is a month and each of `xs` a day: the walk descends into both by their dated names.
     let store = sessions.join("2026");
     std::fs::create_dir_all(&store).expect("a year");
-    raced(&sessions, &store, "11", "05", || {
-        super::codex::tidy(&sessions, 3)
+    let days: Vec<String> = (0..100).map(|day| format!("{day:02}")).collect();
+    raced(&sessions, &store, "11", &days, || {
+        super::codex::tidy(&sessions, 3);
     });
 }
 
@@ -107,7 +112,8 @@ fn the_claude_wrap_s_link_sweep_never_follows_a_folder_swapped_for_a_link() {
     let home = tempfile::tempdir().expect("a home");
     let projects = home.path().join("projects");
     std::fs::create_dir_all(&projects).expect("its folder");
-    raced(&projects, &projects, "p", "x", || {
+    let names: Vec<String> = (0..200).map(|n| format!("x{n:03}")).collect();
+    raced(&projects, &projects, "p", &names, || {
         super::claude_wrap::no_links_below(&projects);
     });
 }
