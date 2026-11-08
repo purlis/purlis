@@ -74,6 +74,9 @@ pub struct SkillReview {
     pub lint: Vec<String>,
     /// The digest of what it installs, which the install is handed back.
     pub digest: String,
+    /// **The grade the source carries beside its folder** (ADR 0100, amended 2026-11-08): the
+    /// publisher's, never purlis's own. `None` where it carries none.
+    pub grade: Option<super::SourceGrade>,
 }
 
 /// **An install review**: the source, the commit it was read at, and each skill, those it refers
@@ -364,6 +367,7 @@ pub(super) fn review_of(
         lint,
         digest: digest_of(&wrote(files)),
         summary,
+        grade: None,
     }
 }
 
@@ -508,12 +512,33 @@ pub(super) fn reviewed_from(
         queue = next;
         // One that is named is reviewed itself, so it is never said to be left as it is.
         let left_as_is = |other: &str| have(other) && !names.iter().any(|named| named == other);
-        skills.push(Reviewed {
-            review: review_of(one, &files, left, by, &held, &left_as_is),
-            files,
-        });
+        let mut review = review_of(one, &files, left, by, &held, &left_as_is);
+        review.grade = graded(source, one, &files);
+        skills.push(Reviewed { review, files });
     }
     Ok(skills)
+}
+
+/// **The grade `source` carries for `skill`**, whose files are `files`, as the review shows it.
+fn graded(
+    source: &dyn super::SkillSource,
+    skill: &Found,
+    files: &[SourceFile],
+) -> Option<super::SourceGrade> {
+    let whose = source.shown();
+    Some(match source.grade(skill)? {
+        Ok(bytes) => {
+            let tree = super::carried::tree_id(files.iter().map(|file| {
+                (
+                    file.parts.as_slice(),
+                    file.executable,
+                    file.bytes.as_slice(),
+                )
+            }));
+            super::carried::shown(&bytes, &skill.name, &whose, &tree)
+        }
+        Err(why) => super::SourceGrade::LeftOut { whose, why },
+    })
 }
 
 /// **The review of `names` from `source`** ([`reviewed`]), what more than one read may take said

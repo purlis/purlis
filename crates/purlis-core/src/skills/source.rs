@@ -26,6 +26,7 @@
 use purlis_skills::tree;
 use serde::{Deserialize, Serialize};
 
+pub mod carried;
 pub mod checked;
 pub mod extension;
 pub mod fetch;
@@ -39,6 +40,7 @@ pub mod update;
 pub mod widen;
 mod write;
 
+pub use carried::SourceGrade;
 pub use fetch::{Fetched, Found, MOST_SKILL_BYTES, NotASkill, SourceFile, fetch, newest};
 pub use install::{Renames, install, install_named};
 pub use listed::{Listed, TABLE, add, confirm, remove, sources};
@@ -74,6 +76,12 @@ pub trait SkillSource {
     /// A source with no such limit always fits.
     fn fits_one_read(&self, _skill: &Found) -> Result<(), String> {
         Ok(())
+    }
+    /// **The grade file it carries beside `skill`'s folder** (ADR 0100, amended 2026-11-08), as
+    /// bytes, `None` where it carries none, or why it could not be read. A source that carries no
+    /// grades answers `None`.
+    fn grade(&self, _skill: &Found) -> Option<Result<Vec<u8>, String>> {
+        None
     }
 }
 

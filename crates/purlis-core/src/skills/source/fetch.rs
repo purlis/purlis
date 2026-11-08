@@ -561,6 +561,24 @@ impl super::SkillSource for Fetched {
         }
         Ok(())
     }
+
+    fn grade(&self, skill: &Found) -> Option<Result<Vec<u8>, String>> {
+        let path = super::carried::beside(&skill.folder)?;
+        if let Some(left) = self.left.iter().find(|one| one.path == path) {
+            return Some(Err(format!("it is {}", left.why)));
+        }
+        let entry = self.entries.iter().find(|entry| entry.shown() == path)?;
+        if entry.size > super::carried::MOST_BYTES {
+            return Some(Err(format!(
+                "it is larger than {} KiB",
+                super::carried::MOST_BYTES >> 10
+            )));
+        }
+        Some(
+            self.blobs(&[entry.oid.as_str()], entry.size)
+                .map(|mut read| read.pop().unwrap_or_default()),
+        )
+    }
 }
 
 impl Fetched {

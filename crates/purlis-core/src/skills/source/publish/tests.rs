@@ -7,7 +7,7 @@
 use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
 
-use super::super::Remote;
+use super::super::{Remote, SourceGrade};
 use super::*;
 
 /// Built here, so the scan of this file finds no address in it.
@@ -475,8 +475,8 @@ fn a_folder_on_this_machine_is_no_forge_to_publish_to() {
     assert!(refused.contains("Export the skill instead"), "{refused}");
 }
 
-#[test]
-fn a_grade_goes_as_a_summary_with_no_chat_text_path_cost_or_device() {
+/// A grade of `deploy` at `ts`, on the folder whose tree is `tree`, with what must never go out.
+fn graded(tree: &str, ts: &str) -> Graded {
     use purlis_skills::grade::{Arm, ArmScore, GradeEnd, GradeReport, Stat, TriggerScore};
     let score = |arm, mean| ArmScore {
         arm,
@@ -515,16 +515,16 @@ fn a_grade_goes_as_a_summary_with_no_chat_text_path_cost_or_device() {
         resets_at: None,
         earlier: None,
     };
-    let graded = Graded {
+    Graded {
         v: 1,
         grade: "g1".to_owned(),
         skill: "deploy".to_owned(),
         level: Some("skills".to_owned()),
-        tree: "abc".to_owned(),
+        tree: tree.to_owned(),
         commit: None,
         harness: Some("claude|code".to_owned()),
         profile: Some("my-profile".to_owned()),
-        ts: "2026-10-30T10:00:00Z".to_owned(),
+        ts: ts.to_owned(),
         runs: 3,
         report,
         spent: grades::Spent::default(),
@@ -533,7 +533,12 @@ fn a_grade_goes_as_a_summary_with_no_chat_text_path_cost_or_device() {
         previous: None,
         after_edit: false,
         draft: None,
-    };
+    }
+}
+
+#[test]
+fn a_grade_goes_as_a_summary_with_no_chat_text_path_cost_or_device() {
+    let graded = graded("abc", "2026-10-30T10:00:00Z");
 
     let row = grade_row(&grade_sent("deploy", &graded, Some("abc")));
 
@@ -687,4 +692,95 @@ fn an_account_the_forge_does_not_say_of_gets_a_branch_on_the_source_and_no_fork(
 
     assert!(matches!(done, Published::Opened { .. }), "{done:?}");
     assert!(branches(&set.bare).contains(&review.branch));
+}
+
+/// Commits the plane, so its skill's folder has a tree a grade can be tied to, and answers it.
+fn committed(plane: &Path) -> String {
+    for args in [&["add", "."][..], &["commit", "-qm", "skills"]] {
+        assert!(crate::testgit::run(plane, args).ok());
+    }
+    let folder = Level::project().dir(plane).unwrap().join("deploy");
+    let rel = folder.strip_prefix(plane).unwrap().display().to_string();
+    let spec = format!("HEAD:{rel}");
+    crate::testgit::run(plane, &["rev-parse", &spec])
+        .out
+        .trim()
+        .to_owned()
+}
+
+#[test]
+fn a_publish_commits_the_grade_beside_the_folder_and_its_install_review_shows_it() {
+    let set = set();
+    let now = committed(&set.plane);
+    let level = Level::project();
+    let older = "b".repeat(40);
+    grades::record(
+        &set.plane,
+        &level,
+        &graded(&older, "2026-10-01T10:00:00Z"),
+        "dev",
+    )
+    .unwrap();
+    grades::record(
+        &set.plane,
+        &level,
+        &graded(&now, "2026-10-30T10:00:00Z"),
+        "dev",
+    )
+    .unwrap();
+    let review = review_of(&set);
+    assert!(
+        review
+            .carried
+            .iter()
+            .any(|(path, _)| path == "deploy.grades.json"),
+        "{:?}",
+        review.carried
+    );
+
+    let Published::Opened { branch, .. } =
+        publish_of(&set, &review.accepted(), &StandIn::default()).unwrap()
+    else {
+        panic!()
+    };
+
+    let spec = format!("{branch}:deploy.grades.json");
+    let file = crate::testgit::run(&set.bare, &["show", &spec]).out;
+    for never in ["secret", "/Users", "my-profile", "7.77", "12345", "g1"] {
+        assert!(!file.contains(never), "{file}");
+    }
+    // Read back as an install of the published branch would read it.
+    let mut source = set.source.clone();
+    source.remote.branch = Some(branch);
+    let installing =
+        crate::skills::source::review(&set.plane, &source, &["deploy".to_owned()], &level).unwrap();
+    let Some(SourceGrade::Shown {
+        this_version,
+        more,
+        newest,
+        ..
+    }) = &installing.skills[0].grade
+    else {
+        panic!("{:?}", installing.skills[0].grade);
+    };
+    assert!(*this_version);
+    assert_eq!(*more, 1);
+    assert_eq!(
+        (newest.date.as_str(), newest.with, newest.without),
+        ("2026-10-30", Some(90), Some(50))
+    );
+}
+
+#[test]
+fn a_skill_with_no_grade_publishes_no_grade_file() {
+    let set = set();
+    let review = review_of(&set);
+    assert!(review.carried.is_empty());
+    let Published::Opened { branch, .. } =
+        publish_of(&set, &review.accepted(), &StandIn::default()).unwrap()
+    else {
+        panic!()
+    };
+    let listed = crate::testgit::run(&set.bare, &["ls-tree", "-r", "--name-only", &branch]);
+    assert!(!listed.out.contains(".grades.json"), "{}", listed.out);
 }
