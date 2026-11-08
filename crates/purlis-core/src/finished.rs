@@ -126,9 +126,21 @@ impl NotFinished {
     }
 }
 
+/// **How a branch neither on its base nor carried stands by its request** ([`merged::holding`]):
+/// one reading for a folder and for a branch whose folder is gone, so the two cannot differ.
+pub fn by_its_request(found: Result<Found, String>) -> Result<Commits, NotFinished> {
+    match found {
+        Ok(Found::Merged(number)) => Ok(Commits::InMergedRequest(number)),
+        Ok(Found::ClosedOnOrigin(number)) => Ok(Commits::InClosedRequestOnOrigin(number)),
+        Ok(Found::ClosedNotOnOrigin(number)) => Err(NotFinished::ClosedNotOnOrigin(number)),
+        Ok(Found::Nothing) => Err(NotFinished::Ahead),
+        Err(why) => Err(NotFinished::AheadUnasked(why)),
+    }
+}
+
 /// **How the folder `piece` of `repo` stands by its own files and commits**: `Ok` with how
-/// its commits stand where nothing in it would be lost with it, else the first reason it is
-/// not finished. A branch neither on its base nor carried is asked of `forge`: its tip may be
+/// its commits stand where nothing in it would be lost with it, else every reason it is not
+/// finished (#4500): one, or [`NotFinished::Several`]. A branch neither on its base nor carried is asked of `forge`: its tip may be
 /// inside a merged request's head. Links into it, its task and its chat are read apart.
 pub fn own(
     plane: &Path,
@@ -170,13 +182,11 @@ pub fn own(
             _ if standing::change_in_history(plane, ws, repo, piece, branch) => {
                 Ok(Commits::InHistory)
             }
-            _ => match merged::holding(plane, ws, repo, branch, forge) {
-                Ok(Found::Merged(number)) => Ok(Commits::InMergedRequest(number)),
-                Ok(Found::ClosedOnOrigin(number)) => Ok(Commits::InClosedRequestOnOrigin(number)),
-                Ok(Found::ClosedNotOnOrigin(number)) => Err(NotFinished::ClosedNotOnOrigin(number)),
-                Ok(Found::Nothing) => Err(NotFinished::Ahead),
-                Err(why) => Err(NotFinished::AheadUnasked(why)),
-            },
+            // Asked of the forge only where nothing else keeps the folder (on review, #4500):
+            // a prune of many dirty folders would ask it of each, and the commits are said
+            // beside the changes all the same.
+            _ if !not.is_empty() => Err(NotFinished::Ahead),
+            _ => by_its_request(merged::holding(plane, ws, repo, branch, forge)),
         },
         None if detached_on_its_base(plane, ws, repo, &found.path) => Ok(Commits::NoBranch),
         None => Err(NotFinished::Ahead),
@@ -210,13 +220,7 @@ pub fn branch_only(
         standing::Landed::Unknown => return None,
         standing::Landed::Yes { .. } => Ok(Commits::OnBase),
         standing::Landed::Carried { .. } => Ok(Commits::Carried),
-        standing::Landed::No => match merged::holding(plane, ws, repo, branch, forge) {
-            Ok(Found::Merged(number)) => Ok(Commits::InMergedRequest(number)),
-            Ok(Found::ClosedOnOrigin(number)) => Ok(Commits::InClosedRequestOnOrigin(number)),
-            Ok(Found::ClosedNotOnOrigin(number)) => Err(NotFinished::ClosedNotOnOrigin(number)),
-            Ok(Found::Nothing) => Err(NotFinished::Ahead),
-            Err(why) => Err(NotFinished::AheadUnasked(why)),
-        },
+        standing::Landed::No => by_its_request(merged::holding(plane, ws, repo, branch, forge)),
     })
 }
 

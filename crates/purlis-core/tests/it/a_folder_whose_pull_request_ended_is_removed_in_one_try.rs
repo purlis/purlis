@@ -141,6 +141,28 @@ fn answering(branch: String, request: Request) -> impl Fn(&str, &str) -> Request
     }
 }
 
+/// The request `number` from a branch, closed without merging at `head`.
+fn closed(number: u64, head: &str) -> Request {
+    Request::Closed {
+        number,
+        head: head.to_owned(),
+        head_ref: format!("refs/pull/{number}/head"),
+    }
+}
+
+/// A bare repository beside the clone, made its `origin`, and its path.
+fn an_origin(f: &support::Fixture) -> std::path::PathBuf {
+    let origin = f.plane.join("origin.git");
+    git(
+        &f.plane,
+        &["init", "-q", "--bare", "-b", "main", "origin.git"],
+    );
+    let at = origin.to_str().unwrap().to_owned();
+    git(&f.clone, &["remote", "add", "origin", &at]);
+    git(&f.clone, &["push", "-q", "origin", "main"]);
+    origin
+}
+
 /// A task folder with two commits, the second a review's, whose request then landed through
 /// the queue: squashed onto a base that had moved under it, so the squash is not the branch's
 /// own change, and its base changed the branch's file again after. Its tip is the request's
@@ -195,15 +217,10 @@ fn a_task_folder_whose_request_closed_with_its_head_on_origin_goes_saying_the_re
     let cut = task_folder(&f, "superseded", true);
     write_commit(&cut.path, "one", "one\n", "one");
     let head = sha(&cut.path, "HEAD");
-    let tracking = format!("refs/remotes/origin/{}", cut.branch);
-    git(&f.clone, &["update-ref", &tracking, &head]);
-    let forge = answering(
-        cut.branch.clone(),
-        Request::Closed {
-            number: 12,
-            head: head.clone(),
-        },
-    );
+    let origin = an_origin(&f);
+    git(&f.clone, &["push", "-q", "origin", &cut.branch]);
+    git(&origin, &["update-ref", "refs/pull/12/head", &head]);
+    let forge = answering(cut.branch.clone(), closed(12, &head));
 
     let (code, said) = removed(&f, &cut.piece, false, &forge);
 
@@ -222,7 +239,8 @@ fn a_task_folder_whose_request_closed_with_its_head_on_no_branch_of_origin_is_ke
     let cut = task_folder(&f, "abandoned", true);
     write_commit(&cut.path, "one", "one\n", "one");
     let head = sha(&cut.path, "HEAD");
-    let forge = answering(cut.branch.clone(), Request::Closed { number: 12, head });
+    an_origin(&f);
+    let forge = answering(cut.branch.clone(), closed(12, &head));
 
     let (code, said) = removed(&f, &cut.piece, false, &forge);
 
@@ -245,7 +263,8 @@ fn a_plain_folder_whose_request_closed_with_its_head_on_no_branch_of_origin_says
     let lane = plain(&f, "lane");
     write_commit(&lane, "one", "one\n", "one");
     let head = sha(&lane, "HEAD");
-    let forge = answering("lane".to_owned(), Request::Closed { number: 12, head });
+    an_origin(&f);
+    let forge = answering("lane".to_owned(), closed(12, &head));
 
     let (code, said) = removed(&f, "lane", false, &forge);
 
@@ -338,4 +357,87 @@ fn a_task_folder_kept_for_its_commits_and_its_ignored_files_names_both() {
         "{said}"
     );
     assert!(said.contains("`.env`"), "{said}");
+}
+
+#[test]
+fn a_closed_requests_branch_deleted_on_origin_is_not_on_origin_however_the_clone_remembers_it() {
+    purlis_core::unsteered!();
+    // On review: the clone's `refs/remotes/origin/<branch>` outlives the branch on origin until
+    // a fetch prunes it, and read alone it would let the commits go.
+    let f = support::plane_with_clone("api");
+    let cut = task_folder(&f, "deleted on origin", true);
+    write_commit(&cut.path, "one", "one\n", "one");
+    let head = sha(&cut.path, "HEAD");
+    let origin = an_origin(&f);
+    git(&f.clone, &["push", "-q", "origin", &cut.branch]);
+    git(&origin, &["branch", "-q", "-D", &cut.branch]);
+    let forge = answering(cut.branch.clone(), closed(12, &head));
+
+    let (code, said) = removed(&f, &cut.piece, false, &forge);
+
+    assert_eq!(code, 1, "{said}");
+    assert!(cut.path.is_dir(), "{said}");
+    assert!(
+        said.contains(
+            "its pull request 12 closed without merging, and its commits are on no branch of origin"
+        ),
+        "{said}"
+    );
+}
+
+#[test]
+fn a_closed_requests_head_the_clone_never_fetched_is_fetched_and_read() {
+    purlis_core::unsteered!();
+    // On review: a request closed after commits pushed from elsewhere has a head the clone
+    // lacks; it is fetched by its own ref, not read as "no request".
+    let f = support::plane_with_clone("api");
+    let cut = task_folder(&f, "pushed from elsewhere", true);
+    write_commit(&cut.path, "one", "one\n", "one");
+    let origin = an_origin(&f);
+    git(&f.clone, &["push", "-q", "origin", &cut.branch]);
+    let elsewhere = f.plane.join("elsewhere");
+    let from = origin.to_str().unwrap().to_owned();
+    git(
+        &f.plane,
+        &["clone", "-q", "-b", &cut.branch, &from, "elsewhere"],
+    );
+    write_commit(&elsewhere, "two", "two\n", "review from elsewhere");
+    git(&elsewhere, &["push", "-q", "origin", &cut.branch]);
+    let head = sha(&elsewhere, "HEAD");
+    git(&origin, &["update-ref", "refs/pull/12/head", &head]);
+    let forge = answering(cut.branch.clone(), closed(12, &head));
+
+    let (code, said) = removed(&f, &cut.piece, false, &forge);
+
+    assert_eq!(code, 0, "{said}");
+    assert!(!cut.path.exists(), "{said}");
+    assert!(
+        said.contains("pull request 12, which closed without merging, is on origin"),
+        "{said}"
+    );
+}
+
+#[test]
+fn a_dirty_folder_is_refused_without_asking_the_forge() {
+    purlis_core::unsteered!();
+    // On review: a prune over many dirty folders asked the forge of each.
+    let f = support::plane_with_clone("api");
+    let cut = task_folder(&f, "dirty and ahead", true);
+    write_commit(&cut.path, "one", "one\n", "only here");
+    std::fs::write(cut.path.join("one"), "changed\n").unwrap();
+    let asked = std::sync::atomic::AtomicBool::new(false);
+    let forge = |_: &str, _: &str| {
+        asked.store(true, std::sync::atomic::Ordering::Relaxed);
+        Request::NotMerged
+    };
+
+    let (code, said) = removed(&f, &cut.piece, false, &forge);
+
+    assert_eq!(code, 1, "{said}");
+    assert!(said.contains("uncommitted changes"), "{said}");
+    assert!(
+        said.contains("its branch holds commits its base does not have"),
+        "{said}"
+    );
+    assert!(!asked.load(std::sync::atomic::Ordering::Relaxed), "{said}");
 }

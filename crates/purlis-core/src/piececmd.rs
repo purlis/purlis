@@ -501,43 +501,30 @@ fn remove_as(
     // folder holds is lost with it, so it goes without `--force`, and the branch stays unless
     // `--delete-branch` asks it to go (ADR 0110). Uncommitted work still refuses it.
     // Where the forge could not be asked, a refusal says so (#5439).
-    let mut unasked = None;
-    let mut closed = None;
-    let how = if force {
-        None
+    let read = if force {
+        Read::Neither
     } else {
-        match carried_branch(plane, ws, repo, piece, forge) {
-            Ok(Ok(how)) => how,
-            Ok(Err(number)) => {
-                closed = Some(number);
-                None
-            }
-            Err(why) => {
-                unasked = Some(why);
-                None
-            }
-        }
+        carried_branch(plane, ws, repo, piece, forge)
+    };
+    let how = match read {
+        Read::Goes(how) => Some(how),
+        _ => None,
     };
     let carried = how.is_some();
     // Why the forge let nothing through, said beside a refusal (#4500).
-    let forge_said = |say: &mut dyn FnMut(Say)| {
-        if let Some(why) = &unasked {
-            say(Say::Info(
-                format!(
-                    "Whether a merged pull request holds its commits could not be told ({why})."
-                )
+    let forge_said = |say: &mut dyn FnMut(Say)| match &read {
+        Read::Unasked(why) => say(Say::Info(
+            format!("Whether a merged pull request holds its commits could not be told ({why}).")
                 .into(),
-            ));
-        }
-        if let Some(number) = closed {
-            say(Say::Info(
-                format!(
-                    "Its pull request {number} closed without merging, and its commits are on \
-                     no branch of origin."
-                )
-                .into(),
-            ));
-        }
+        )),
+        Read::ClosedNotOnOrigin(number) => say(Say::Info(
+            format!(
+                "Its pull request {number} closed without merging, and its commits are on no \
+                 branch of origin."
+            )
+            .into(),
+        )),
+        Read::Goes(_) | Read::Neither => {}
     };
     if refuse_ignored && let Some(why) = ignored_would_go(plane, ws, repo, piece) {
         if let Some(refusal) = worktree::would_refuse(plane, ws, repo, piece, carried) {
@@ -553,52 +540,33 @@ fn remove_as(
         worktree::remove(plane, ws, repo, piece, force, delete_branch)
     };
     if removed.is_ok() {
-        match how {
-            Some(Carried::ByItsFiles) => say(Say::Info(
-                format!(
-                    "The branch of {repo} · {piece} landed by its files, as a squash merge leaves \
-                     it, so its folder goes without --force{}.",
-                    if delete_branch {
-                        ""
-                    } else {
-                        " and the branch is kept"
-                    }
-                )
-                .into(),
+        // Why it goes, and what becomes of its branch: one found only in history stays.
+        let kept = if delete_branch && how != Some(Carried::InHistory) {
+            ""
+        } else {
+            " and the branch is kept"
+        };
+        let why = match how {
+            Some(Carried::ByItsFiles) => Some(format!(
+                "The branch of {repo} · {piece} landed by its files, as a squash merge leaves it"
             )),
-            Some(Carried::InHistory) => say(Say::Info(
-                format!(
-                    "One commit already upstream makes the whole change of {repo} · {piece}, as \
-                     a squash merge does, though later commits may have changed it since, so its \
-                     folder goes without --force and the branch is kept."
-                )
-                .into(),
+            Some(Carried::InHistory) => Some(format!(
+                "One commit already upstream makes the whole change of {repo} · {piece}, as a \
+                 squash merge does, though later commits may have changed it since"
             )),
-            Some(Carried::InMergedRequest(number)) => say(Say::Info(
-                format!(
-                    "The commits of {repo} · {piece} are inside pull request {number}, which \
-                     merged, so its folder goes without --force{}.",
-                    if delete_branch {
-                        ""
-                    } else {
-                        " and the branch is kept"
-                    }
-                )
-                .into(),
+            Some(Carried::InMergedRequest(number)) => Some(format!(
+                "The commits of {repo} · {piece} are inside pull request {number}, which merged"
             )),
-            Some(Carried::InClosedRequestOnOrigin(number)) => say(Say::Info(
-                format!(
-                    "The head of {repo} · {piece}'s pull request {number}, which closed without \
-                     merging, is on origin, so its folder goes without --force{}.",
-                    if delete_branch {
-                        ""
-                    } else {
-                        " and the branch is kept"
-                    }
-                )
-                .into(),
+            Some(Carried::InClosedRequestOnOrigin(number)) => Some(format!(
+                "The head of {repo} · {piece}'s pull request {number}, which closed without \
+                 merging, is on origin"
             )),
-            None => {}
+            None => None,
+        };
+        if let Some(why) = why {
+            say(Say::Info(
+                format!("{why}, so its folder goes without --force{kept}.").into(),
+            ));
         }
     }
     match removed {
@@ -928,47 +896,61 @@ enum Carried {
     InClosedRequestOnOrigin(u64),
 }
 
+/// What [`carried_branch`] read of the branch a folder is on.
+enum Read {
+    /// It landed without its commits, or they are safe elsewhere: the folder goes.
+    Goes(Carried),
+    /// Its tip is inside the head of the request by this number, which closed without merging,
+    /// on no branch of origin (#4500).
+    ClosedNotOnOrigin(u64),
+    /// Only the forge could tell, and it could not be asked, and why.
+    Unasked(String),
+    /// Nothing lets it go but git's own guard.
+    Neither,
+}
+
 /// Whether the branch `piece` is on landed in the branch it was cut from by its files and not
 /// its commits ([`worktree::standing::Landed::Carried`]): a squash merge, there or on its
 /// remote branch, whether or not those files have changed again since
 /// ([`worktree::standing::change_in_history`]), or inside the head of a pull request that
-/// merged (#5439), or of one that closed with its head on origin (#4500). `Ok(Err(n))` where
-/// its tip is inside the head of request `n`, which closed without merging, on no branch of
-/// origin. `Err` where only the forge could tell, and it could not be asked, saying why.
+/// merged (#5439), or of one that closed with its head on origin (#4500).
 fn carried_branch(
     plane: &Path,
     ws: &str,
     repo: &str,
     piece: &str,
     forge: crate::finished::Forge<'_>,
-) -> Result<Result<Option<Carried>, u64>, String> {
+) -> Read {
     let Some(branch) = worktree::list(plane, ws, repo).ok().and_then(|found| {
         found
             .into_iter()
             .find(|p| p.piece == piece && p.prunable.is_none())
             .and_then(|p| p.branch)
     }) else {
-        return Ok(Ok(None));
+        return Read::Neither;
     };
     if matches!(
         worktree::standing::landed(plane, ws, repo, piece, &branch),
         worktree::standing::Landed::Carried { .. }
     ) {
-        return Ok(Ok(Some(Carried::ByItsFiles)));
+        return Read::Goes(Carried::ByItsFiles);
     }
     if worktree::standing::change_in_history(plane, ws, repo, piece, &branch) {
-        return Ok(Ok(Some(Carried::InHistory)));
+        return Read::Goes(Carried::InHistory);
     }
     // Asked of the forge last, and only for a branch no local reading lets go (#5439).
-    use crate::finished::Found;
-    Ok(
-        match crate::finished::merged::holding(plane, ws, repo, &branch, forge)? {
-            Found::Merged(number) => Ok(Some(Carried::InMergedRequest(number))),
-            Found::ClosedOnOrigin(number) => Ok(Some(Carried::InClosedRequestOnOrigin(number))),
-            Found::ClosedNotOnOrigin(number) => Err(number),
-            Found::Nothing => Ok(None),
-        },
-    )
+    use crate::finished::{Commits, NotFinished};
+    match crate::finished::by_its_request(crate::finished::merged::holding(
+        plane, ws, repo, &branch, forge,
+    )) {
+        Ok(Commits::InMergedRequest(number)) => Read::Goes(Carried::InMergedRequest(number)),
+        Ok(Commits::InClosedRequestOnOrigin(number)) => {
+            Read::Goes(Carried::InClosedRequestOnOrigin(number))
+        }
+        Err(NotFinished::ClosedNotOnOrigin(number)) => Read::ClosedNotOnOrigin(number),
+        Err(NotFinished::AheadUnasked(why)) => Read::Unasked(why),
+        _ => Read::Neither,
+    }
 }
 
 /// Rows of five cells, the first four sized to their widest value in terminal cells, the last
