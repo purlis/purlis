@@ -771,7 +771,50 @@ pub(super) fn commit_tree(
     message: &str,
     sign: bool,
 ) -> Result<String, String> {
-    let mut args = vec!["commit-tree", tree];
+    commit_tree_as(root, tree, parents, message, sign, None, WRITE).map_err(Unmade::said)
+}
+
+/// Who wrote a commit, kept when it is written again off to the side ([`super::replay`]):
+/// `date` as git's raw `<seconds> <zone>`.
+pub(super) struct Author<'a> {
+    pub(super) name: &'a str,
+    pub(super) email: &'a str,
+    pub(super) date: &'a str,
+}
+
+/// Why [`commit_tree_as`] made no commit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum Unmade {
+    /// Asked to sign, git could not: the signer's words.
+    Unsigned(String),
+    /// Still running at the deadline.
+    OutOfTime,
+    /// git could not, in its words.
+    Failed(String),
+}
+
+impl Unmade {
+    fn said(self) -> String {
+        match self {
+            Self::Unsigned(said) | Self::Failed(said) => said,
+            Self::OutOfTime => "git did not finish in time".to_owned(),
+        }
+    }
+}
+
+/// [`commit_tree`], as `author` where one is given (the committer is this machine's), giving up
+/// at `deadline`. Signed exactly when `sign` says ([`super::gpgsign`]), whatever the machine's
+/// own `commit.gpgsign`.
+pub(super) fn commit_tree_as(
+    root: &Path,
+    tree: &str,
+    parents: &[&str],
+    message: &str,
+    sign: bool,
+    author: Option<&Author>,
+    deadline: std::time::Duration,
+) -> Result<String, Unmade> {
+    let mut args = vec!["-c", super::gpgsign(sign), "commit-tree", tree];
     for parent in parents {
         args.extend(["-p", parent]);
     }
@@ -779,11 +822,35 @@ pub(super) fn commit_tree(
     if sign {
         args.push("-S");
     }
-    let made = git::run(root, &args, WRITE).map_err(|unavailable| unavailable.to_string())?;
-    if !made.ok() {
-        return Err(tail(&made));
+    let vars: Vec<(&str, &str)> = author
+        .map(|author| {
+            vec![
+                ("GIT_AUTHOR_NAME", author.name),
+                ("GIT_AUTHOR_EMAIL", author.email),
+                ("GIT_AUTHOR_DATE", author.date),
+            ]
+        })
+        .unwrap_or_default();
+    match git::run_with_vars(root, &vars, &args, deadline) {
+        Ok(run) if run.ok() => {
+            let id = run.line().trim().to_owned();
+            if is_object_name(&id) {
+                Ok(id)
+            } else {
+                Err(Unmade::Failed(tail(&run)))
+            }
+        }
+        Ok(run) if run.code.is_none() => Err(Unmade::OutOfTime),
+        // `commit-tree` says the signer failed in its own words, with or without git's line.
+        Ok(run)
+            if sign
+                && (run.err.contains(super::UNWRITTEN) || run.err.contains("failed to sign")) =>
+        {
+            Err(Unmade::Unsigned(super::signer_said(&run.err)))
+        }
+        Ok(run) => Err(Unmade::Failed(tail(&run))),
+        Err(unavailable) => Err(Unmade::Failed(unavailable.to_string())),
     }
-    Ok(made.line().trim().to_owned())
 }
 
 /// A memory store's index, as its path and its text, written from the memory files of `tree`

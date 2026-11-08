@@ -53,9 +53,6 @@ pub struct Conflicts {
     pub keyed: Vec<String>,
 }
 
-/// What a press says while a save or a fetch holds the project.
-const BUSY: &str = "A save of this project is running. Wait for it to finish, then try again.";
-
 /// What Continue says of a stop an older purlis left at the root.
 const AT_THE_ROOT: &str = "A rebase or merge is stopped in the project itself, from before \
      purlis settled conflicts off to the side, so it is not carried on here. Carry it on in a \
@@ -97,7 +94,7 @@ pub fn abort(root: &Path) -> Settled {
         return resolvefolder::abort(root);
     }
     let Some(_claim) = Claim::of(root) else {
-        return Settled::Refused(BUSY.into());
+        return Settled::Refused(resolvefolder::BUSY.into());
     };
     if let Err(why) = super::git_files_refused(root) {
         return Settled::Refused(format!("Nothing was started: {why}."));
@@ -119,7 +116,7 @@ pub fn abort(root: &Path) -> Settled {
         return Settled::Refused(format!(
             "git did not abort the {stop}: {}",
             match aborted {
-                Ok(run) => one_line(&tail(&run)),
+                Ok(run) => crate::personas::one_line(&tail(&run)),
                 Err(unavailable) => unavailable.to_string(),
             }
         ));
@@ -182,10 +179,6 @@ pub fn markers_in(text: &[u8]) -> bool {
     text.split(|b| *b == b'\n').any(|line| {
         line.starts_with(b"<<<<<<<") || line.starts_with(b">>>>>>>") || line.starts_with(b"|||||||")
     })
-}
-
-fn one_line(said: &str) -> String {
-    said.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 #[cfg(test)]

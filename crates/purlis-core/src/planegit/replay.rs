@@ -20,7 +20,7 @@
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use super::{UNWRITTEN, git, gpgsign, is_object_name, line_of, signer_said, tail};
+use super::{bringin, git, is_object_name, line_of, tail};
 
 /// How a replay ended.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -191,39 +191,21 @@ fn written(
     else {
         return Err(Replayed::Failed(format!("{pick} could not be read")));
     };
-    let mut args = vec!["-c", gpgsign(sign), "commit-tree", tree, "-p", parent];
-    if sign {
-        args.push("-S");
-    }
-    let message = message.trim_end();
-    args.extend(["-m", message]);
-    let made = git::run_with_vars(
+    let author = bringin::Author { name, email, date };
+    bringin::commit_tree_as(
         root,
-        &[
-            ("GIT_AUTHOR_NAME", name),
-            ("GIT_AUTHOR_EMAIL", email),
-            ("GIT_AUTHOR_DATE", date),
-        ],
-        &args,
+        tree,
+        &[parent],
+        message.trim_end(),
+        sign,
+        Some(&author),
         deadline,
-    );
-    match made {
-        Ok(run) if run.ok() => {
-            let id = run.line().trim().to_owned();
-            if is_object_name(&id) {
-                Ok(id)
-            } else {
-                Err(Replayed::Failed(tail(&run)))
-            }
-        }
-        Ok(run) if run.code.is_none() => Err(Replayed::OutOfTime),
-        // `commit-tree` says the signer failed in its own words, with or without git's line.
-        Ok(run) if sign && (run.err.contains(UNWRITTEN) || run.err.contains("failed to sign")) => {
-            Err(Replayed::Unsigned(signer_said(&run.err)))
-        }
-        Ok(run) => Err(Replayed::Failed(tail(&run))),
-        Err(unavailable) => Err(Replayed::Failed(unavailable.to_string())),
-    }
+    )
+    .map_err(|unmade| match unmade {
+        bringin::Unmade::Unsigned(said) => Replayed::Unsigned(said),
+        bringin::Unmade::OutOfTime => Replayed::OutOfTime,
+        bringin::Unmade::Failed(said) => Replayed::Failed(said),
+    })
 }
 
 #[cfg(test)]

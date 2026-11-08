@@ -677,7 +677,7 @@ fn fetch_target(root: &Path, https: &str, helper: &str, target: &str) -> bool {
         Ok(run) if run.ok() => None,
         Ok(run) => Some(format!(
             "{target} could not be fetched: {}",
-            one_line(&tail(run))
+            crate::personas::one_line(&tail(run))
         )),
         Err(unavailable) => Some(format!("{target} could not be fetched: {unavailable}")),
     };
@@ -710,10 +710,6 @@ pub(super) fn known_stale(root: &Path) -> Option<super::Stale> {
     let kept = Kept::read(root);
     kept.pr.as_ref()?;
     kept.stale
-}
-
-fn one_line(said: &str) -> String {
-    said.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// When a save or a look brings a moved target in: where the request needs it, or whenever it
@@ -1230,7 +1226,7 @@ pub(super) fn settle(
             self::fetched(
                 root,
                 Some(match &fetched {
-                    Ok(run) => format!("{why}: {}", one_line(&tail(run))),
+                    Ok(run) => format!("{why}: {}", crate::personas::one_line(&tail(run))),
                     Err(unavailable) => format!("{why}: {unavailable}"),
                 }),
             );

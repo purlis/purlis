@@ -59,7 +59,8 @@ const FOLDER: &str = "resolve";
 const MOST_READ: u64 = 16 * 1024 * 1024;
 
 /// What a press says while a save or a fetch holds the project.
-const BUSY: &str = "A save of this project is running. Wait for it to finish, then try again.";
+pub(super) const BUSY: &str =
+    "A save of this project is running. Wait for it to finish, then try again.";
 
 /// What a press says where no resolve is open.
 const NONE_OPEN: &str =
@@ -288,32 +289,14 @@ pub(super) fn cut(root: &Path, target: &str) -> Result<Vec<String>, String> {
         ))?;
         // What a person wrote, with purlis's part already settled and markers around theirs.
         for (path, text) in &plan.marked {
-            crate::contain::no_link_on_the_way(&folder, &folder.join(path))
-                .and_then(|()| {
-                    crate::rewrite::replace(
-                        &folder,
-                        &folder.join(path),
-                        text.as_bytes(),
-                        crate::rewrite::Mode::Kept,
-                    )
-                })
-                .map_err(|why| format!("{path}: {why}"))?;
+            written_in(&folder, path, text)?;
         }
         // A settings file whose keys conflict is written as the structured merge leaves it,
         // this machine's value standing in for each such key: no marker, ever (#5852).
         let mut keys = Vec::new();
         for file in plan.keys.keys() {
             let around = settings_around(root, &ours, &theirs, file)?;
-            crate::contain::no_link_on_the_way(&folder, &folder.join(file))
-                .and_then(|()| {
-                    crate::rewrite::replace(
-                        &folder,
-                        &folder.join(file),
-                        around.text.as_bytes(),
-                        crate::rewrite::Mode::Kept,
-                    )
-                })
-                .map_err(|why| format!("{file}: {why}"))?;
+            written_in(&folder, file, &around.text)?;
             keys.extend(around.keys.into_iter().map(|key| HeldKey {
                 file: file.clone(),
                 key: key.key,
@@ -441,7 +424,7 @@ pub(super) fn start_fetched(root: &Path, say: Sink) -> Settled {
             bringin::BroughtIn::Failed(why) => {
                 return Settled::Refused(format!(
                     "Nothing was started: git could not merge them: {}.",
-                    one_line(&why)
+                    crate::personas::one_line(&why)
                 ));
             }
             bringin::BroughtIn::Conflict(_) => {}
@@ -475,7 +458,7 @@ pub(super) fn start_fetched(root: &Path, say: Sink) -> Settled {
             replay::Replayed::Failed(said) => {
                 return Settled::Refused(format!(
                     "Nothing was started: git could not replay them: {}.",
-                    one_line(&said)
+                    crate::personas::one_line(&said)
                 ));
             }
         }
@@ -490,7 +473,7 @@ pub(super) fn start_fetched(root: &Path, say: Sink) -> Settled {
         }
         Err(why) => Settled::Refused(format!(
             "Nothing was started: the resolve folder could not be made: {}.",
-            one_line(&why)
+            crate::personas::one_line(&why)
         )),
     }
 }
@@ -576,7 +559,7 @@ pub fn carry_on(root: &Path, shown: &[String], keys: &[Chosen], say: Sink) -> Se
         Err(why) => {
             return Settled::Refused(format!(
                 "The merge could not be committed: {}. Nothing moved; the resolve folder is kept.",
-                one_line(&why)
+                crate::personas::one_line(&why)
             ));
         }
     };
@@ -760,7 +743,10 @@ fn settled_tree(
         let text = settings_chosen(root, &held.ours, &held.theirs, file, &theirs_for)
             .map_err(|why| Settled::Refused(format!("`{file}` could not be settled: {why}.")))?;
         staged_as(folder, file, &text).map_err(|why| {
-            Settled::Refused(format!("`{file}` could not be staged: {}", one_line(&why)))
+            Settled::Refused(format!(
+                "`{file}` could not be staged: {}",
+                crate::personas::one_line(&why)
+            ))
         })?;
     }
     // Nothing is left unmerged (#433), whatever the window last drew.
@@ -781,7 +767,7 @@ fn settled_tree(
         bringin::indexes_settled_between(root, &tree, &held.ours, &held.theirs).map_err(|why| {
             Settled::Refused(format!(
                 "Nothing was carried on: purlis could not write a memory index: {}.",
-                one_line(&why)
+                crate::personas::one_line(&why)
             ))
         })?;
     if indexes.is_empty() {
@@ -791,7 +777,7 @@ fn settled_tree(
         staged_as(folder, index, text).map_err(|why| {
             Settled::Refused(format!(
                 "Nothing was carried on: purlis could not write {index}: {}.",
-                one_line(&why)
+                crate::personas::one_line(&why)
             ))
         })?;
     }
@@ -807,7 +793,10 @@ fn staged_checked(folder: &Path, rows: Vec<ondisk::Row>, named: &[String]) -> Re
     #[cfg(test)]
     super::tests::before_the_add(folder);
     let held_back = ondisk::stage_rows(folder, rows).map_err(|said| {
-        Settled::Refused(format!("git would not stage them: {}", one_line(&said)))
+        Settled::Refused(format!(
+            "git would not stage them: {}",
+            crate::personas::one_line(&said)
+        ))
     })?;
     if let Some(refusal) = ondisk::refused_unstaged(&held_back, ondisk::PutBack::Conflicted(named))
     {
@@ -863,6 +852,21 @@ fn not_the_file(refusal: &ondisk::Refusal) -> Settled {
     ))
 }
 
+/// `text` written at `path` in the folder, never through a link a side of the merge committed on
+/// the way to it, the file's mode kept. `Err` names the file.
+fn written_in(folder: &Path, path: &str, text: &str) -> Result<(), String> {
+    crate::contain::no_link_on_the_way(folder, &folder.join(path))
+        .and_then(|()| {
+            crate::rewrite::replace(
+                folder,
+                &folder.join(path),
+                text.as_bytes(),
+                crate::rewrite::Mode::Kept,
+            )
+        })
+        .map_err(|why| format!("{path}: {why}"))
+}
+
 /// The tree the folder's index holds now.
 fn written_tree(folder: &Path) -> Result<String, Settled> {
     git::run(folder, &["write-tree"], WRITE)
@@ -876,16 +880,7 @@ fn written_tree(folder: &Path) -> Result<String, Settled> {
 /// `text` written at `path` in the folder and staged as those bytes, whatever the file held and
 /// whatever sides the index had for it.
 fn staged_as(folder: &Path, path: &str, text: &str) -> Result<(), String> {
-    crate::contain::no_link_on_the_way(folder, &folder.join(path))
-        .and_then(|()| {
-            crate::rewrite::replace(
-                folder,
-                &folder.join(path),
-                text.as_bytes(),
-                crate::rewrite::Mode::Kept,
-            )
-        })
-        .map_err(|why| why.to_string())?;
+    written_in(folder, path, text)?;
     let hashed = git::run_with_input(
         folder,
         &["hash-object", "-w", "--no-filters", "--stdin"],
@@ -1001,7 +996,7 @@ fn moved_onto(root: &Path, held: &Held, onto: &str, sign: bool) -> Result<(), St
                 return Err(format!(
                     "This machine's newer saves could not be carried onto the merge: {}. \
                      Nothing moved; the resolve folder is kept.",
-                    one_line(&said)
+                    crate::personas::one_line(&said)
                 ));
             }
         }
@@ -1029,7 +1024,7 @@ fn move_root(root: &Path, onto: &str) -> Result<(), String> {
                 format!(
                     "The project did not move onto the merge: {}. Nothing moved; the resolve \
                      folder is kept.",
-                    one_line(&tail(&run))
+                    crate::personas::one_line(&tail(&run))
                 )
             } else {
                 let named: Vec<&String> = in_the_way.iter().collect();
@@ -1322,10 +1317,6 @@ fn join(paths: &[&String]) -> String {
         .map(|p| format!("`{p}`"))
         .collect::<Vec<_>>()
         .join(", ")
-}
-
-fn one_line(said: &str) -> String {
-    said.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 #[cfg(test)]
