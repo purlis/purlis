@@ -328,12 +328,7 @@ export function Notice(props: NoticeProps) {
   // **Its band reads it in the commit it comes or goes in** (#3437), not a task later from what
   // its observer saw: so the band's room and its last warning go in one layout, and the
   // terminal is fitted once.
-  const bandChanged = useContext(BandChanged);
-  useLayoutEffect(() => {
-    if (at !== "pane" || bandChanged === null) return undefined;
-    bandChanged();
-    return bandChanged;
-  }, [at, bandChanged]);
+  useStandsInBand(at === "pane");
   useEffect(
     () => (at === "pane" && title === undefined ? stands?.(cause) : undefined),
     [at, title, stands, cause],
@@ -841,6 +836,19 @@ const BandRows = createContext<{
  *  band reads its stack then, where its observers would read it a task later, after a frame
  *  that drew the band with nothing in it. None outside a band. */
 const BandChanged = createContext<(() => void) | null>(null);
+
+/** **A row of a pane's band says when it comes and goes** (#3437), in the commit that draws it or
+ *  takes it away, so the band reads its stack before the frame is laid out (`BandChanged`). A
+ *  `Notice` says so itself; a row the band holds that is no Notice (a task's question,
+ *  `QuizBand`) calls this while `drawn`. Nothing outside a band. */
+export function useStandsInBand(drawn: boolean) {
+  const reread = useContext(BandChanged);
+  useLayoutEffect(() => {
+    if (!drawn || reread === null) return undefined;
+    reread();
+    return reread;
+  }, [drawn, reread]);
+}
 
 /** **What this band has closed, and how to close**, for what draws a part of it itself (a task's
  *  question, `QuizBand`); none outside a chat's band. */
@@ -1523,8 +1531,10 @@ export function NoticePaneRow({
   // commit (`BandChanged`), the band renders again before the frame is laid out, and reads its
   // stack here, after the Notice's own box has come or gone. What the observers above read, a
   // task later, is then what was already read.
-  const [changed, change] = useReducer((count: number) => count + 1, 0);
-  useLayoutEffect(() => placeAt.current(), [changed]);
+  // And so is a row this band closed itself, or opened again (`closed`): its Notice stays
+  // drawn, and draws nothing.
+  const [rowsMoved, reread] = useReducer((count: number) => count + 1, 0);
+  useLayoutEffect(() => placeAt.current(), [rowsMoved, closed]);
 
   const { notes, trouble, asks } = held;
   useEffect(() => onHolds?.({ notes, trouble, asks }), [onHolds, notes, trouble, asks]);
@@ -1682,7 +1692,7 @@ export function NoticePaneRow({
         </NoticeRowHead>
       )}
       <NoticeStack ref={stackAt}>
-        <BandChanged.Provider value={change}>
+        <BandChanged.Provider value={reread}>
           <BandRows.Provider value={rows}>
             <NoticeWayGuard value={allows}>{children}</NoticeWayGuard>
           </BandRows.Provider>

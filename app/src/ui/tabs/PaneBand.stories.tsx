@@ -845,7 +845,7 @@ function RaisedAgain(props: Parameters<typeof PaneBand>[0]) {
   return (
     <div style={{ display: "grid", gap: "var(--space-3)", justifyItems: "start" }}>
       <Button size="sm" onPress={() => setRound((was) => was + 1)}>
-        Raise them again
+        Raise the warnings again
       </Button>
       <PaneBand {...props} round={round} />
     </div>
@@ -891,7 +891,7 @@ export const PutAwayInOneFit: Story = {
     // One fit, not one a row short and then another.
     expect(fits).toHaveLength(1);
 
-    await userEvent.click(canvas.getByRole("button", { name: "Raise them again" }));
+    await userEvent.click(canvas.getByRole("button", { name: "Raise the warnings again" }));
     const first = await canvas.findByRole("status", { name: "Sandbox block" });
     expect(stack.scrollTop).toBe(0);
     expect(first.getBoundingClientRect().top).toBeGreaterThanOrEqual(

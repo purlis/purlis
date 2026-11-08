@@ -12,7 +12,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { commands, type PlaneId, type Shown } from "./bindings";
-import { Notice, useBandRows } from "./Notice";
+import { Notice, useBandRows, useStandsInBand } from "./Notice";
 import { useQuestionsHere } from "./QuestionsHere";
 import { QuizClosing, type Closed } from "./QuizClosing";
 import { closeQuizSaid, moreSaid, moreSaidFully, TaskQuiz } from "./TaskQuiz";
@@ -251,7 +251,12 @@ export function QuizBand({
   const offers = useOffersHere(
     quiz !== undefined && quiz.drawn && !quiz.own && !prefs.offered && prefs.answer === "top",
   );
-  if (quiz === undefined && closings.length === 0) return null;
+  // Its question and its pause are rows of the band, and no Notices: each says when it comes
+  // and goes, so the band is put away with its last row in one layout (#3437).
+  const drawsQuiz = quiz !== undefined || closings.length > 0;
+  useStandsInBand(drawsQuiz && pausing !== undefined);
+  useStandsInBand(drawsQuiz && pausing === undefined && quiz !== undefined && places !== undefined);
+  if (!drawsQuiz) return null;
   const closeQuiz = () => {
     if (quiz !== undefined) rows?.close(quiz.ask.ask);
   };

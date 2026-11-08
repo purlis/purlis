@@ -224,6 +224,43 @@ describe("the band put away (#3437)", () => {
     expect(moments).not.toContain("0 drawn");
   });
 
+  it("goes in the same task as an ask closed in it, which stays drawn and draws nothing", async () => {
+    const user = userEvent.setup();
+    const bell = {
+      minimised: false,
+      minimise: () => undefined,
+      expand: () => undefined,
+      onHolds: () => undefined,
+      focus: () => undefined,
+    };
+    render(
+      <NoticePaneRow band="pane-3437" bell={bell}>
+        <Notice
+          cause="vault-refused:7:forge"
+          at="pane"
+          tone="trouble"
+          label="Vault"
+          fixes={[
+            { label: "Allow steward to use this vault", onPress: () => undefined, allows: true },
+            { label: "Keep blocked", onPress: () => undefined },
+          ]}
+        >
+          This chat runs as steward, and vault forge is tagged for devops.
+        </Notice>
+      </NoticePaneRow>,
+    );
+    await waitFor(() => expect(shown()).toEqual(["Vault"]));
+    const row = document.querySelector('[data-scope="notice-row"][data-part="root"]');
+    if (row === null) throw new Error("no band drawn");
+    const { moments, stop } = watched(row);
+
+    await user.click(screen.getByRole("button", { name: "Close" }));
+
+    await waitFor(() => expect(row).toHaveAttribute("data-empty"));
+    stop();
+    expect(moments).not.toContain("0 drawn");
+  });
+
   it("comes in the same task as its first warning", async () => {
     const user = userEvent.setup();
     function Arrives() {
