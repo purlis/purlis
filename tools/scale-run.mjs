@@ -163,14 +163,22 @@ row("index-rebuild", {
   quiet: settled.quiet,
 });
 
-// DIAGNOSTIC (#5672), to be reverted: the build's CPU and two rebuilds at once after it.
+// DIAGNOSTIC (#5672), to be reverted: the build's CPU and where its time goes.
 {
   const { rmSync } = await import("node:fs");
   const timeFlag = process.platform === "darwin" ? "-l" : "-v";
-  for (const n of [1, 2, 3]) {
+  const timedIndex = (label, extra = {}) => {
     rmSync(join(project, ".charter", "index"), { recursive: true, force: true });
-    const ran = spawnSync("/usr/bin/time", [timeFlag, resolve(values["scale-project"]), "index", "--project", project], { cwd: project, env, encoding: "utf8" });
-    console.log(`scale-run | diag ${n} | ${ran.stdout.trim()} | ${ran.stderr.replace(/\n\s*/g, " | ").slice(0, 1500)}`);
+    const ran = spawnSync("/usr/bin/time", [timeFlag, resolve(values["scale-project"]), "index", "--project", project], { cwd: project, env: { ...env, ...extra }, encoding: "utf8" });
+    console.log(`scale-run | diag ${label} | ${ran.stdout.trim()} | ${ran.stderr.replace(/\n\s*/g, " | ").slice(0, 900)}`);
+  };
+  timedIndex("default 1");
+  timedIndex("cache 1", { SCRATCH_CACHE: "1" });
+  timedIndex("default 2");
+  timedIndex("cache 2", { SCRATCH_CACHE: "1" });
+  for (const mode of ["list", "stat", "stat+read", "open+read", "stat+read", "open+read"]) {
+    const ran = spawnSync("/usr/bin/time", [resolve(values["scale-project"]), "readbench", "--project", project, "--mode", mode], { cwd: project, env, encoding: "utf8" });
+    console.log(`scale-run | diag read | ${ran.stdout.trim()} | ${ran.stderr.replace(/\n\s*/g, " ").trim()}`);
   }
   console.log(`scale-run | diag cpus | ${(await import("node:os")).cpus().length}`);
 }
