@@ -80,6 +80,25 @@ pub struct Sent {
     /// Its `at` is when it was made, and its `address` is empty.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub waiting: bool,
+    /// The Report draft it was, where it was one (#5694, #5695, #5697): words its chat adds
+    /// after it left follow it to the intake, and a failure of purlis's own it counts is an
+    /// Agent draft's, not a crash's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub draft: Option<SentDraft>,
+}
+
+/// The held draft an entry sent: its id, and the chat it came from.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SentDraft {
+    pub id: String,
+    pub session: Option<u32>,
+}
+
+impl Sent {
+    /// A Crash report, whose fingerprint and counts are the Crash reports stream's.
+    pub fn is_a_crash(&self) -> bool {
+        self.draft.is_none() && self.fingerprint.is_some()
+    }
 }
 
 /// Marks each count in `told` as told on the entry with its fingerprint.
@@ -157,11 +176,17 @@ impl SentList {
         .flatten()
     }
 
-    /// Each fingerprint with repeats the intake has not been told of, and its count.
-    pub(super) fn untold_repeats(config_root: &Path) -> Vec<(String, u32)> {
+    /// Each fingerprint with repeats the intake has not been told of, and its count: a crash's
+    /// with `crashes`, a draft's with `drafts` (the yes to each stream).
+    pub(super) fn untold_repeats(
+        config_root: &Path,
+        crashes: bool,
+        drafts: bool,
+    ) -> Vec<(String, u32)> {
         SentList::read(config_root)
             .into_iter()
             .filter(|one| one.repeats > one.repeats_sent)
+            .filter(|one| if one.is_a_crash() { crashes } else { drafts })
             .filter_map(|one| Some((one.fingerprint?, one.repeats)))
             .collect()
     }
@@ -225,9 +250,11 @@ impl SentList {
         })
     }
 
-    /// Refused as [`super::Refusal::CapReached`] when [`DRAFTS_A_DAY`] drafts were sent unread,
-    /// or wait to be, on `now`'s UTC day, counting `holding` more that Always send holds to send
-    /// (#5695): the next one falls back to asking.
+    /// Refused as [`super::Refusal::CapReached`] when [`DRAFTS_A_DAY`] drafts were sent unread
+    /// on `now`'s UTC day, counting `holding` more that Always send holds to send
+    /// (#5695): the next one falls back to asking. A draft that waits on this machine for the
+    /// intake to answer counts on the day it leaves, not the day it was made: [`SentList::left`]
+    /// gives it the time it left.
     pub(super) fn within_the_daily_cap(
         config_root: &Path,
         now: chrono::DateTime<chrono::Utc>,
@@ -236,7 +263,7 @@ impl SentList {
         let today = now.date_naive();
         let drafts = SentList::read(config_root)
             .iter()
-            .filter(|one| one.unread_draft)
+            .filter(|one| one.unread_draft && !one.waiting)
             .filter(|one| {
                 chrono::DateTime::parse_from_rfc3339(&one.at)
                     .is_ok_and(|at| at.with_timezone(&chrono::Utc).date_naive() == today)
@@ -289,6 +316,7 @@ mod tests {
             repeats_sent: 0,
             unread_draft,
             waiting: false,
+            draft: None,
         }
     }
 
@@ -320,6 +348,36 @@ mod tests {
         assert_eq!(
             SentList::within_the_daily_cap(home.path(), now, 2),
             Err(Refusal::CapReached)
+        );
+    }
+
+    #[test]
+    fn an_unread_draft_waiting_offline_counts_on_the_day_it_leaves() {
+        let home = tempfile::tempdir().unwrap();
+        let today = chrono::Utc::now();
+        let tomorrow = today + chrono::Duration::days(1);
+        for _ in 0..DRAFTS_A_DAY {
+            assert!(SentList::wait(home.path(), entry(today, true)).unwrap());
+        }
+        assert_eq!(
+            SentList::within_the_daily_cap(home.path(), today, 0),
+            Ok(()),
+            "a draft still waiting has not left: it counts on no day yet"
+        );
+
+        for one in SentList::waiting(home.path()) {
+            SentList::left(home.path(), &one.bytes, entry(tomorrow, true), &[]).unwrap();
+        }
+
+        assert_eq!(
+            SentList::within_the_daily_cap(home.path(), tomorrow, 0),
+            Err(Refusal::CapReached),
+            "the drafts count on the day they left"
+        );
+        assert_eq!(
+            SentList::within_the_daily_cap(home.path(), today, 0),
+            Ok(()),
+            "and not on the day they were made"
         );
     }
 

@@ -128,7 +128,17 @@ for s in SENTRY_SYMBOLS_TOKEN SENTRY_ORG SENTRY_PROJECT; do
 done
 ```
 
-Until all three are set, the job skips with a note on the run and stays green. A failed upload
+**The Report intake's address** is a fourth secret in the same environment,
+`PURLIS_REPORT_INTAKE_DSN`: the project's DSN (`https://<key>@<host>/<project>`), public by
+design (ADR 0118). The `build` job hands it to every compile of a publish, stable and dev alike,
+and purlis-core builds it in; a dev build's reports say `channel=dev`. Without it a build
+still succeeds and sends no report at all.
+
+```sh
+gh secret set PURLIS_REPORT_INTAKE_DSN --repo purlis/purlis --env release
+```
+
+Until all three upload secrets are set, the `symbols` job skips with a note on the run and stays green. A failed upload
 leaves the release published and the run green with a warning. Rerun the `symbols` job to try
 again: the build keeps its symbols artifact for 90 days. Today the release profile strips every
 binary, so the job finds no debug files and says so. A dSYM is made beside each macOS binary

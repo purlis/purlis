@@ -22,7 +22,26 @@ use regex::Regex;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
-use super::{Draft, Known, NativeCrash, Panic, WindowError, short_place};
+use super::{Draft, Known, NativeCrash, Panic, RanAsSaid, short_place};
+
+/// An error the window did not catch, as its JavaScript saw it (#5690): thrown and not caught, or
+/// a promise rejected with nobody to handle it. What of it is sent is the core's to say
+/// (this module): the name, the scrubbed message, and the script's file name with its line and
+/// column; never a stack.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WindowError {
+    /// The error's name (`TypeError`), or what the window calls a rejection's reason that is no
+    /// error.
+    pub name: String,
+    pub message: String,
+    /// The address of the script it was thrown in (`tauri://localhost/assets/index-3f2a9c.js`),
+    /// when the window knows it: never for a rejection.
+    pub source: Option<String>,
+    pub line: Option<u32>,
+    pub column: Option<u32>,
+    /// A promise rejected with nobody to handle it, rather than an error thrown.
+    pub rejection: bool,
+}
 
 /// A Crash report, ready to send.
 pub(super) struct CrashReport {
@@ -228,7 +247,7 @@ fn event_item(event: &serde_json::Value) -> String {
 }
 
 /// The fingerprint of `parts`: the same crash again in the same version has the same one.
-fn fingerprint(parts: &[&str]) -> String {
+pub(super) fn fingerprint(parts: &[&str]) -> String {
     Sha256::digest(parts.join("\0"))
         .iter()
         .take(16)
@@ -276,41 +295,71 @@ impl CrashReport {
     /// A report draft for the intake at `dsn`: its title and body, marked as an agent's, whether
     /// the person changed its words, and whether they `reviewed` it: read and filed it from the
     /// Inbox (#5694), or let Always send send it unread (#5695). Its body was scrubbed when it
-    /// was drafted.
-    pub fn of_draft(draft: &Draft, edited: bool, reviewed: bool, dsn: &str) -> CrashReport {
-        let event_id = uuid::Uuid::new_v4().simple().to_string();
-        let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
-        let channel = channel();
-        let event = json!({
-            "event_id": event_id,
-            "timestamp": now,
-            "platform": "other",
-            "level": "info",
-            "release": format!("purlis@{}", crate::adopt::release_version()),
-            "environment": channel,
-            "tags": {
-                "channel": channel,
-                "kind": draft.kind.verb(),
-                "written_by": "agent",
-                "edited_by_the_person": edited,
-                // Sent unread by Always send (#5695), or read and filed by the person.
-                "reviewed_by_the_person": reviewed,
-            },
-            "contexts": {"os": {"name": std::env::consts::OS, "version": os_version()}},
-            "message": {"formatted": format!("{}\n\n{}", draft.title, draft.body)},
-            "culprit": draft.title,
-        })
-        .to_string();
-        let header = json!({"event_id": event_id, "sent_at": now, "dsn": dsn});
-        let item =
-            json!({"type": "event", "length": event.len(), "content_type": "application/json"});
-        CrashReport {
-            // A draft the person read and filed is never counted away: filing it is their act.
-            fingerprint: None,
-            title: draft.title.clone(),
-            bytes: format!("{header}\n{item}\n{event}\n"),
-            event_id,
+    /// was drafted. What its chat ran under (`ran_as`, Q5) rides in its tags, as its body's
+    /// footer says it; a failure of purlis's own carries its `fingerprint` (#5697), so the
+    /// intake groups the same failure from every chat and its counts name that group.
+    ///
+    /// It is a message event tagged `written_by=agent`, never a user-feedback item: an envelope
+    /// carries one event, and the steward's routine reads events (ADR 0118).
+    pub fn of_draft(
+        draft: &Draft,
+        edited: bool,
+        reviewed: bool,
+        ran_as: Option<&RanAsSaid>,
+        fingerprint: Option<&str>,
+        dsn: &str,
+    ) -> CrashReport {
+        let mut event = message_event(&format!("{}\n\n{}", draft.title, draft.body));
+        event["tags"]["kind"] = json!(draft.kind.verb());
+        event["tags"]["edited_by_the_person"] = json!(edited);
+        // Sent unread by Always send (#5695), or read and filed by the person.
+        event["tags"]["reviewed_by_the_person"] = json!(reviewed);
+        if let Some(ran_as) = ran_as {
+            event["tags"]["harness"] = json!(ran_as.harness);
+            event["tags"]["harness_version"] = json!(ran_as.harness_version);
+            event["tags"]["persona_kind"] = json!(ran_as.persona);
         }
+        if let Some(fingerprint) = fingerprint {
+            event["fingerprint"] = json!([fingerprint]);
+        }
+        event["culprit"] = json!(draft.title);
+        message_envelope(event, draft.title.clone(), dsn)
+    }
+
+    /// **Words a chat added to a draft Always send already sent** (#5697, #5695): a message event
+    /// of their own, tagged as the agent's and unreviewed, that names the event it follows
+    /// (`follows`, its id) so the intake reads the two as one report.
+    pub fn follow_up(follows: &str, title: &str, words: &str, dsn: &str) -> CrashReport {
+        let mut event = message_event(&format!(
+            "{title}\n\n**What the agent was doing:**\n\n{words}"
+        ));
+        event["tags"]["edited_by_the_person"] = json!(false);
+        event["tags"]["reviewed_by_the_person"] = json!(false);
+        event["tags"]["follows"] = json!(follows);
+        event["culprit"] = json!(title);
+        message_envelope(event, format!("Added to: {title}"), dsn)
+    }
+}
+
+/// A message event of `text`, written by an agent, with the fixed fields every report carries.
+fn message_event(text: &str) -> serde_json::Value {
+    let event_id = uuid::Uuid::new_v4().simple().to_string();
+    let mut event = fixed_fields(&event_id, "other", None);
+    event["level"] = json!("info");
+    event["tags"]["written_by"] = json!("agent");
+    event["message"] = json!({"formatted": text});
+    event
+}
+
+/// The envelope of a message `event`, listed as `title`, for the intake at `dsn`.
+fn message_envelope(event: serde_json::Value, title: String, dsn: &str) -> CrashReport {
+    let event_id = event["event_id"].as_str().unwrap_or_default().to_owned();
+    CrashReport {
+        // Counted by the held draft it was, never by the envelope (#5697).
+        fingerprint: None,
+        title,
+        bytes: format!("{}{}", header(&event_id, dsn), event_item(&event)),
+        event_id,
     }
 }
 
@@ -335,7 +384,7 @@ fn os_version() -> Option<String> {
 
 /// `text` with every absolute path, home-relative path and Windows path replaced, whole, by
 /// `[path]`: a path names the person's folders, and a Crash report is read by nobody first.
-fn without_paths(text: &str) -> String {
+pub(super) fn without_paths(text: &str) -> String {
     static ONCE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
     let paths = ONCE.get_or_init(|| {
         Regex::new(r#"(^|[\s'"`(=:,\[<])(?:/|~/|[A-Za-z]:\\)[^\s'"`()<>\[\],]*"#)

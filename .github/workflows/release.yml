@@ -584,6 +584,11 @@ jobs:
       # `purlis` is the command line; `charter` is its alias for the rename's window, a small
       # program that runs the `purlis` beside it (RN-3). Both ship, each as a file of its own.
       - name: The purlis binary the app's hooks run, its charter alias, and the built-in extensions
+        env:
+          # The Report intake's address (#5687, ADR 0118), read by purlis-core's `option_env!` as it
+          # compiles. Empty where the secret is not set, which is no address: the build succeeds
+          # and sends nothing.
+          PURLIS_REPORT_INTAKE_DSN: ${{ secrets.PURLIS_REPORT_INTAKE_DSN }}
         run: cargo auditable build --profile "$PROFILE" --locked -p purlis-cli -p persona-statistics
 
       - name: Stage them where Tauri's bundler picks them up
@@ -689,6 +694,7 @@ jobs:
         working-directory: app
         env:
           BUNDLES: ${{ (matrix.extra_required && needs.plan.outputs.appimage_required == 'true') && format('{0},{1}', matrix.bundles, matrix.extra_bundles) || matrix.bundles }}
+          PURLIS_REPORT_INTAKE_DSN: ${{ secrets.PURLIS_REPORT_INTAKE_DSN }}
         # `--runner`: Tauri runs `<runner> build …` in place of `cargo build …`, so the app
         # binary is linked through `cargo auditable` too (tools/auditable-cargo says why a
         # wrapper). An absolute path, so it resolves the same wherever Tauri starts it.
@@ -708,6 +714,8 @@ jobs:
         if: ${{ !(matrix.extra_required && needs.plan.outputs.appimage_required == 'true') && !(matrix.extra_bundles == 'dmg' && needs.plan.outputs.dmg != 'true') }}
         continue-on-error: true
         working-directory: app
+        env:
+          PURLIS_REPORT_INTAKE_DSN: ${{ secrets.PURLIS_REPORT_INTAKE_DSN }}
         run: npx tauri build --config src-tauri/tauri.build.conf.json --bundles ${{ matrix.bundles }},${{ matrix.extra_bundles }} --runner "$GITHUB_WORKSPACE/tools/auditable-cargo" -- --profile "$PROFILE"
 
       # Fixed names, so the dev release's assets are REPLACED build after build rather than

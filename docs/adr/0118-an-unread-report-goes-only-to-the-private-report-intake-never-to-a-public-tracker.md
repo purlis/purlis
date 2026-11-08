@@ -65,3 +65,14 @@ for GT-CLOUD and TM-2. Until then a team has one lever, the project rule above.
   anyone send to the intake and no one read it.
 - The maintainers must read the intake. A daily steward routine promotes its reports to issues
   labelled `reported`; a report it does not promote is never public.
+- **How a report rides in Sentry's envelope** (recorded at the spec's final review, 2026-11-08).
+  A Report draft goes to the intake as a message event tagged `written_by=agent` (with
+  `reviewed_by_the_person` and `edited_by_the_person`), not as a user-feedback item: an envelope
+  carries one event, and the steward's routine reads events. Repeat counts (Q15) ride in the
+  next event's `extra`, as each fingerprint and its count, never as an envelope item of their
+  own: Sentry drops an item type it does not know.
+- **A native crash's minidump waits on a ruling of its own.** It holds raw memory of the app and
+  is sent as it was written, unscrubbed; O9 sends it whole, and the spec's story 15 says no paths
+  or names leave the machine. The native crash handler is not switched on until the operator
+  rules on the minidump's privacy, alongside the `minidumper-child` bump and the release
+  profile's debug symbols (#5691, #5692; `app/src-tauri/src/nativecrash.rs`).

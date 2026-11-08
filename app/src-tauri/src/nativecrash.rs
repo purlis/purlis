@@ -28,13 +28,21 @@
 //! `strip = true`, so a dSYM lands beside each binary for `release.yml`'s `symbols` job to send to
 //! the Report intake. Until then the job finds none. The change is a ruling under ADR 0092 (an
 //! amendment, and the profile test in `crates/release-manifest` moves with it), and its cost to
-//! the macOS build is measured on that change's own release run. Everything else (the companion's role, the minidumps waiting on the next
+//! the macOS build is measured on that change's own release run. **And before [`STARTED`] turns
+//! on, the operator rules on the minidump's privacy** (hard gate, ADR 0118): a minidump holds raw
+//! memory of the app (its stacks and the bytes around them, which may carry paths, project and
+//! persona names, and words of the person's) and is sent as it was written, unscrubbed. Ruling O9
+//! sends it whole; story 15 of spec #5683 says no paths or names leave the machine. The two
+//! disagree for this one report, and only the operator's ruling settles which holds, or what
+//! the minidump is cut to first. No change turns [`STARTED`] on without that ruling cited beside
+//! it. Everything else (the companion's role, the minidumps waiting on the next
 //! launch, the panic's hand-off) is in place and runs; with nothing watching, nothing waits.
 
 use std::sync::OnceLock;
 
 /// Whether the app starts its crash handler. Off until `minidumper-child` depends on
-/// `crash-handler` 0.8 (the module's doc says why and what turns it on).
+/// `crash-handler` 0.8 and the operator has ruled on the minidump's privacy (the module's doc
+/// says why and what turns it on).
 pub const STARTED: bool = false;
 
 /// What became of the watch, for the log once there is one: it is set before the log is.

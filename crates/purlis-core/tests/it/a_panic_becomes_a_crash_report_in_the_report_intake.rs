@@ -249,6 +249,7 @@ fn a_sent_report_is_kept_ninety_days_and_then_dropped() {
         repeats_sent: 0,
         unread_draft: false,
         waiting: false,
+        draft: None,
     };
     SentList::add(home.path(), sent(91, "too old")).unwrap();
     SentList::add(home.path(), sent(89, "kept")).unwrap();

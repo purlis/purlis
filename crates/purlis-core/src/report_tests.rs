@@ -43,8 +43,11 @@ fn of_sandbox_block(
         &Known::default(),
         Evidence::PurlisFailure(PurlisFailure::SandboxBlock {
             block: *block,
-            harness,
-            harness_version: harness_version.map(str::to_string),
+            ran_as: RanAs {
+                harness,
+                harness_version: harness_version.map(str::to_string),
+                persona: PersonaKind::None,
+            },
         }),
     )
 }
@@ -540,4 +543,30 @@ fn a_sandbox_block_draft_names_the_harness_version_only_in_a_versions_shape() {
             draft.body
         );
     }
+}
+
+#[test]
+fn the_samples_are_what_the_envelope_builders_make_of_a_sample_panic_and_draft() {
+    let samples = samples();
+
+    let event = |envelope: &str| -> serde_json::Value {
+        let lines: Vec<&str> = envelope.lines().collect();
+        assert_eq!(lines.len(), 3, "an envelope of one event: {envelope}");
+        serde_json::from_str(lines[2]).expect("the event")
+    };
+    let crash = event(&samples.crash);
+    assert_eq!(crash["exception"]["values"][0]["type"], "panic");
+    assert_eq!(crash["level"], "fatal");
+    assert_eq!(crash["fingerprint"].as_array().map(Vec::len), Some(1));
+    assert!(crash.get("user").is_none() && crash.get("server_name").is_none());
+
+    let draft = event(&samples.draft);
+    assert_eq!(draft["tags"]["written_by"], "agent");
+    assert_eq!(draft["tags"]["reviewed_by_the_person"], false);
+    assert_eq!(draft["tags"]["persona_kind"], "template");
+    let text = draft["message"]["formatted"].as_str().unwrap_or_default();
+    assert!(
+        text.contains("a persona from a purlis template"),
+        "its footer says what the chat ran under: {text}"
+    );
 }

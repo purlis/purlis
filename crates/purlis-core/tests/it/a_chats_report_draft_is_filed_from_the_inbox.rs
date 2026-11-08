@@ -67,6 +67,7 @@ fn the_agents_draft() -> Evidence {
         text: format!("{TITLE}\n\nIt said the branch had uncommitted changes. It had none."),
         title: None,
         call: Some(("purlis worktree update".into(), 1)),
+        ran_as: purlis_core::report::RanAs::default(),
     })
 }
 

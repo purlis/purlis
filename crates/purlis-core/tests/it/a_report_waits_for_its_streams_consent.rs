@@ -37,8 +37,7 @@ fn a_sandbox_block() -> Evidence {
             kind: BlockKind::of_word("home").expect("a kind the sandbox reports"),
             ours: true,
         },
-        harness: None,
-        harness_version: None,
+        ran_as: purlis_core::report::RanAs::default(),
     })
 }
 

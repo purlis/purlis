@@ -511,3 +511,33 @@ test("the macOS build saves its debug symbols as an artifact of their own, never
     assert.ok(!job(name).some((line) => line.trim().startsWith("pattern:")), name);
   }
 });
+
+/** The lines of the step `name` in `body` (a job's lines), up to the next step. */
+function step(body, name) {
+  const start = body.findIndex((line) => line.trim() === `- name: ${name}`);
+  assert.notEqual(start, -1, `no step named ${name}`);
+  const indent = body[start].indexOf("-");
+  const end = body.findIndex(
+    (line, i) => i > start && line.indexOf("- ") === indent && line.trim().startsWith("- "),
+  );
+  return body.slice(start, end === -1 ? undefined : end).map((line) => line.trim());
+}
+
+test("every compile of a build takes the Report intake's address from the release environment (#5687)", () => {
+  const build = job("build");
+  // The secret is reached only where the build publishes: the job's environment says so, on
+  // both channels, a dev build too (its reports say channel=dev, from its profile).
+  assert.equal(value(build, 4, "environment"), "${{ needs.plan.outputs.publish == 'true' && 'release' || '' }}");
+  // `option_env!` reads it when purlis-core compiles: the command line's build and both of
+  // Tauri's. With the secret absent it is empty, which is no address, so nothing is sent.
+  for (const name of [
+    "The purlis binary the app's hooks run, its charter alias, and the built-in extensions",
+    "Build the app",
+    "Build the extra bundle",
+  ]) {
+    assert.ok(
+      step(build, name).includes("PURLIS_REPORT_INTAKE_DSN: ${{ secrets.PURLIS_REPORT_INTAKE_DSN }}"),
+      `${name} builds without the intake's address`,
+    );
+  }
+});

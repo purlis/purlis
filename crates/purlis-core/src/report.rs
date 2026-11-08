@@ -11,8 +11,8 @@
 //! and the source it came from (a [`Caller`]), and reads back an [`Outcome`]. The caller never
 //! decides how a report is scrubbed, where it goes or whether it may go: [`Reports::take`] drafts
 //! and names the route, [`Reports::file`] files only the draft whose digest was shown, and
-//! [`Reports::duplicates`] is the one search sent before a yes. The evidence kinds not built yet
-//! are named and hold [`NotYet`], which has no value, so nothing can hand one in.
+//! [`Reports::duplicates`] is the one search sent before a yes. A draft a chat wrote waits in the
+//! Inbox, and is filed from there ([`held`]); a crash is sent as a Crash report ([`crash`]).
 //!
 //! # What this module promises
 //!
@@ -64,28 +64,15 @@ use crate::forge::{self, Forge, ForgeError, Kind as ForgeKind};
 
 mod consent;
 mod crash;
+pub use crash::WindowError;
 pub mod native;
 pub use consent::{Consent, CrashNotice, Stream};
 pub use native::NativeCrash;
 mod held;
-pub use held::{CameFrom, Held, HeldDrafts, HeldKind};
+pub use held::{Added, AgentDraft, CameFrom, Filing, HOLD_SECS, Held, HeldDrafts, HeldKind, How};
 pub mod intake;
 mod sent;
-pub use sent::{Sent, SentList, SentTo};
-
-/// How long a draft Always send sends is held first, with Undo (#5695, Q2b): "Sent a report"
-/// says it, and it leaves only once this has passed.
-pub const HOLD_SECS: u32 = 10;
-
-/// Taken by every change of whether a held draft is sent (#5695): the send after the hold and
-/// Undo, so an Undo either comes before the send and nothing leaves, or after it and is refused.
-static HOLDING: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-fn holding() -> std::sync::MutexGuard<'static, ()> {
-    HOLDING
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-}
+pub use sent::{Sent, SentDraft, SentList, SentTo};
 
 /// The repository reports are filed on (RN-9: the product's repository since 2026-10-05).
 pub const UPSTREAM: &str = "purlis/purlis";
@@ -437,12 +424,14 @@ pub struct Draft {
 struct Refused(String);
 
 impl Draft {
-    /// A report the reporter described in prose. `title` overrides the first line.
+    /// A report the reporter described in prose. `title` overrides the first line. A chat's
+    /// carries what it ran as (`ran_as`) in its footer.
     fn described(
         kind: Kind,
         text: &str,
         title: Option<&str>,
         known: &Known,
+        ran_as: Option<&RanAsSaid>,
     ) -> Result<Draft, Refused> {
         let (text, scrubbed) = known.scrub(text.trim());
         if text.trim().is_empty() {
@@ -461,7 +450,7 @@ impl Draft {
             }
             None => (title_of(&text), Vec::new()),
         };
-        Draft::assemble(kind, title, text, merge(scrubbed, more))
+        Draft::assemble(kind, title, text, merge(scrubbed, more), ran_as)
     }
 
     /// A draft bug from a saved panic, with the reporter's own words in front of it if any.
@@ -492,7 +481,13 @@ impl Draft {
             let _ = writeln!(text, "  > {line}");
         }
         let title = cut_title(&format!("purlis panicked at {place}"));
-        Draft::assemble(Kind::Bug, title, text.trim_end().to_string(), scrubbed)
+        Draft::assemble(
+            Kind::Bug,
+            title,
+            text.trim_end().to_string(),
+            scrubbed,
+            None,
+        )
     }
 
     /// A draft bug from a sandbox block of purlis's own operation (#1338): the operation, the
@@ -505,16 +500,16 @@ impl Draft {
     /// taken only in a version's shape (`a_version`), else it reads "not known".
     fn of_sandbox_block(
         block: &crate::sandboxblock::Block,
-        harness: Option<crate::harness::Harness>,
-        harness_version: Option<&str>,
+        ran_as: &RanAsSaid,
     ) -> Result<Draft, Refused> {
         let crate::sandboxblock::Block {
             operation, kind, ..
         } = *block;
-        let harness = harness.map_or("not known", |harness| harness.name());
-        let harness_version = harness_version
-            .filter(|said| a_version(said))
-            .unwrap_or("not known");
+        let RanAsSaid {
+            harness,
+            harness_version,
+            ..
+        } = ran_as;
         let text = format!(
             "The sandbox blocked an operation purlis itself ran in a chat: {}.\n\n\
              - **operation:** {}\n\
@@ -535,21 +530,21 @@ impl Draft {
             operation.word(),
             kind.word()
         ));
-        Draft::assemble(Kind::Bug, title, text, Vec::new())
+        Draft::assemble(Kind::Bug, title, text, Vec::new(), Some(ran_as))
     }
 
     /// A failure inside purlis its hook caught in a chat (#5697): the call, its exit and its
     /// error, scrubbed, and the harness it ran under. Made from what the hook handed over alone.
     fn of_internal(
         caught: &crate::caught::Caught,
-        harness: Option<crate::harness::Harness>,
-        harness_version: Option<&str>,
+        ran_as: &RanAsSaid,
         known: &Known,
     ) -> Result<Draft, Refused> {
-        let harness = harness.map_or("not known", |harness| harness.name());
-        let harness_version = harness_version
-            .filter(|said| a_version(said))
-            .unwrap_or("not known");
+        let RanAsSaid {
+            harness,
+            harness_version,
+            ..
+        } = ran_as;
         let (call, call_scrubbed) = known.scrub(&caught.call);
         let (error, scrubbed) = known.scrub(&caught.error);
         let exit = caught
@@ -568,26 +563,37 @@ impl Draft {
             error.replace("```", "'''"),
         );
         let title = cut_title(&format!("Internal failure in {call}"));
-        Draft::assemble(Kind::Bug, title, text, merge(call_scrubbed, scrubbed))
+        Draft::assemble(
+            Kind::Bug,
+            title,
+            text,
+            merge(call_scrubbed, scrubbed),
+            Some(ran_as),
+        )
     }
 
+    /// The draft of `text` under `title`, with its fixed footer: purlis's version and the
+    /// operating system, and for a chat's draft what it ran as (`ran_as`, Q5).
     fn assemble(
         kind: Kind,
         title: String,
         text: String,
         scrubbed: Vec<String>,
+        ran_as: Option<&RanAsSaid>,
     ) -> Result<Draft, Refused> {
         let title = title.trim().to_string();
         if title.is_empty() {
             return Err(Refused("a report needs a title".to_string()));
         }
         let mut body = text;
+        let ran_as = ran_as.map(|said| format!(" · {}", said.footer()));
         let _ = write!(
             body,
-            "\n\n---\npurlis {} · {} {}\n_Filed with `purlis report {}`._",
+            "\n\n---\npurlis {} · {} {}{}\n_Filed with `purlis report {}`._",
             crate::adopt::app_version(),
             std::env::consts::OS,
             std::env::consts::ARCH,
+            ran_as.unwrap_or_default(),
             kind.verb()
         );
         if body.chars().count() > BODY_MAX {
@@ -829,83 +835,115 @@ pub enum Evidence {
     WindowError(WindowError),
 }
 
-/// An error the window did not catch, as its JavaScript saw it (#5690): thrown and not caught, or
-/// a promise rejected with nobody to handle it. What of it is sent is the core's to say
-/// ([`crash`]): the name, the scrubbed message, and the script's file name with its line and
-/// column; never a stack.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WindowError {
-    /// The error's name (`TypeError`), or what the window calls a rejection's reason that is no
-    /// error.
-    pub name: String,
-    pub message: String,
-    /// The address of the script it was thrown in (`tauri://localhost/assets/index-3f2a9c.js`),
-    /// when the window knows it: never for a rejection.
-    pub source: Option<String>,
-    pub line: Option<u32>,
-    pub column: Option<u32>,
-    /// A promise rejected with nobody to handle it, rather than an error thrown.
-    pub rejection: bool,
-}
-
-/// What a chat wrote about purlis, and the call that failed if it names one.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AgentDraft {
-    pub kind: Kind,
-    pub text: String,
-    /// Overrides the text's first line.
-    pub title: Option<String>,
-    /// The purlis command or tool that failed, and its exit code.
-    pub call: Option<(String, i32)>,
-}
-
-/// How the person files a held draft from the Inbox.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum How {
-    /// Search for possible duplicates first, and file only when there are none.
-    Check,
-    /// File it as a new issue, whatever the search found.
-    New,
-    /// Add it to issue `n` as a comment instead of filing it.
-    AddTo(u64),
-}
-
-/// What became of a held draft the person filed.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Filing {
-    /// It left, to `to`, kept at `address`, and the sent list records it.
-    Sent { to: SentTo, address: String },
-    /// Not sent yet: the Report intake gave no answer, and it waits on this machine to go when
-    /// it answers again (#5693, Q24), listed as waiting to send. The draft leaves the Inbox.
-    Queued,
-    /// Issues that may already cover it: nothing was filed, and the person chooses.
-    Duplicates(Vec<Hit>),
-    /// Nothing was sent, and why.
-    Refused(Refusal),
-}
-
-/// The value an evidence kind that is not built yet holds: none, so it cannot be handed in.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum NotYet {}
-
 /// A failure of purlis's own that becomes evidence.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PurlisFailure {
-    /// The sandbox blocked an operation purlis itself ran in a chat (#1338), from the chat running
-    /// `harness`, whose version is `harness_version` as the app heard it (#1353).
+    /// The sandbox blocked an operation purlis itself ran in a chat (#1338), from the chat
+    /// that ran as `ran_as` says (#1353).
     SandboxBlock {
         block: crate::sandboxblock::Block,
-        harness: Option<crate::harness::Harness>,
-        harness_version: Option<String>,
+        ran_as: RanAs,
     },
     /// A `purlis` command or a purlis tool that failed inside purlis in a chat (#5697), as its
-    /// hook caught it ([`crate::caught`]), from the chat running `harness`, whose version is
-    /// `harness_version` as the app heard it.
+    /// hook caught it ([`crate::caught`]), from the chat that ran as `ran_as` says.
     Internal {
         caught: crate::caught::Caught,
-        harness: Option<crate::harness::Harness>,
-        harness_version: Option<String>,
+        ran_as: RanAs,
     },
+}
+
+/// **What a chat ran under, as a report of it says** (spec #5683, Q5): its harness, the harness's
+/// version as the app heard it (#1353), and its persona's kind, never its name.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RanAs {
+    pub harness: Option<crate::harness::Harness>,
+    pub harness_version: Option<String>,
+    pub persona: PersonaKind,
+}
+
+impl RanAs {
+    /// The fixed words a report carries of it: a harness by the word purlis calls it, a version
+    /// only in a version's shape ([`a_version`]), and the persona's kind.
+    pub fn said(&self) -> RanAsSaid {
+        RanAsSaid {
+            harness: self
+                .harness
+                .map_or("not known", |harness| harness.name())
+                .to_owned(),
+            harness_version: self
+                .harness_version
+                .as_deref()
+                .filter(|said| a_version(said))
+                .unwrap_or("not known")
+                .to_owned(),
+            persona: self.persona,
+        }
+    }
+}
+
+/// [`RanAs`] in the closed words a report carries, as a held draft keeps them.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct RanAsSaid {
+    pub harness: String,
+    pub harness_version: String,
+    pub persona: PersonaKind,
+}
+
+impl RanAsSaid {
+    /// The words of the body's fixed footer: `Claude Code 2.1.3 · the project's own persona`.
+    fn footer(&self) -> String {
+        let version = if self.harness_version == "not known" {
+            String::new()
+        } else {
+            format!(" {}", self.harness_version)
+        };
+        format!("{}{version} · {}", self.harness, self.persona.word())
+    }
+}
+
+/// **A persona's kind** (spec #5683, Q5): what a report says of the persona a chat ran as, in
+/// place of its name, which is the person's.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PersonaKind {
+    /// A chat on no persona.
+    #[default]
+    None,
+    /// A persona one of purlis's own project templates ships ([`crate::template::all`]), by its
+    /// name.
+    Template,
+    /// The project's own persona.
+    Own,
+}
+
+impl PersonaKind {
+    /// The kind of the persona named `persona`, or of none.
+    pub fn of(persona: Option<&str>) -> PersonaKind {
+        let Some(name) = persona else {
+            return PersonaKind::None;
+        };
+        let shipped = crate::template::all().iter().any(|template| {
+            template.files.iter().any(|(rel, _)| {
+                rel.strip_prefix("personas/")
+                    .and_then(|rest| rest.split_once('/'))
+                    .is_some_and(|(persona, _)| persona == name)
+            })
+        });
+        if shipped {
+            PersonaKind::Template
+        } else {
+            PersonaKind::Own
+        }
+    }
+
+    /// The words a report says it in.
+    pub fn word(self) -> &'static str {
+        match self {
+            PersonaKind::None => "no persona",
+            PersonaKind::Template => "a persona from a purlis template",
+            PersonaKind::Own => "the project's own persona",
+        }
+    }
 }
 
 impl PurlisFailure {
@@ -1236,7 +1274,7 @@ impl Reports {
         }
         // The reports that waited go first, so the intake hears them oldest first.
         self.send_waiting();
-        let told = SentList::untold_repeats(root);
+        let told = self.counts_to_tell(root);
         let bytes = crash::with_repeats(&crash.bytes, &told);
         let listed = |address: String, bytes: String| Sent {
             at: now(),
@@ -1249,6 +1287,7 @@ impl Reports {
             repeats_sent: 0,
             unread_draft: false,
             waiting: false,
+            draft: None,
         };
         match intake.send(bytes.as_bytes(), &crash.event_id) {
             Ok(address) => {
@@ -1304,6 +1343,7 @@ impl Reports {
                         repeats_sent: 0,
                         unread_draft: false,
                         waiting: false,
+                        draft: None,
                     },
                 );
                 Outcome::Sent { address }
@@ -1324,15 +1364,14 @@ impl Reports {
             return 0;
         };
         let consent = self.consent.unwrap_or_else(Consent::here);
-        let crashes = consent.allows(Stream::CrashReports);
         let mut left = 0;
         for waited in SentList::waiting(root) {
-            if (waited.fingerprint.is_some() && !crashes)
+            if (waited.is_a_crash() && !consent.allows(Stream::CrashReports))
                 || (waited.unread_draft && !consent.allows(Stream::AgentDrafts))
             {
                 continue;
             }
-            let told = Self::counts_to_tell(root, crashes);
+            let told = self.counts_to_tell(root);
             let bytes = crash::with_repeats(&waited.bytes, &told);
             let Ok(address) = intake.send(bytes.as_bytes(), &crash::event_id_of(&waited.bytes))
             else {
@@ -1354,387 +1393,45 @@ impl Reports {
         left
     }
 
-    /// The counts of repeats a report that leaves carries: none without the yes to Crash reports,
-    /// whose counts they are.
-    fn counts_to_tell(root: &Path, crashes: bool) -> Vec<(String, u32)> {
-        if crashes {
-            SentList::untold_repeats(root)
-        } else {
-            Vec::new()
-        }
-    }
-
-    /// Holds a chat's `evidence` for the person's Inbox, naming the chat it came `from`: only
-    /// with the yes to its stream, and nothing is sent (#5694). With the yes to Always send too,
-    /// and room in today's cap, it is held to send instead (#5695): its `sends_at` says when the
-    /// hold ends, and [`Reports::send_held_due`] sends it to the Report intake after.
-    pub fn hold(
-        &self,
-        evidence: Evidence,
-        source: &Caller,
-        from: CameFrom,
-    ) -> Result<Held, Refusal> {
-        self.consented(&evidence, source)?;
-        let root = self.kept_under()?;
-        let line = line_of(&evidence, &self.known);
-        let draft = self.draft(evidence)?;
-        let _turn = holding();
-        let mut all = HeldDrafts::read(&root);
-        // With Always send it is held to send, not to read, while today has room (#5695).
-        let sends_at = self
-            .may_send_unread(held_to_send(&all, None), &from.project)
-            .is_ok()
-            .then(hold_ends);
-        let one = Held {
-            id: held::new_id(),
-            at: now(),
-            kind: draft.kind.into(),
-            title: draft.title,
-            body: draft.body,
-            line,
-            scrubbed: draft.scrubbed,
-            from,
-            edited: false,
-            sends_at,
-        };
-        all.push(one.clone());
-        HeldDrafts::write(&root, all).map_err(|e| Refusal::NotKept(e.to_string()))?;
-        Ok(one)
-    }
-
-    /// [`Self::hold`], once: where a draft of the same report from the same chat already waits
-    /// in the Inbox, that draft, and `false`; else the new one, and `true` (#5697). So a failure
-    /// of purlis's own met again and again in one chat is one draft, and its chat told once.
-    pub fn hold_once(
-        &self,
-        evidence: Evidence,
-        source: &Caller,
-        from: CameFrom,
-    ) -> Result<(Held, bool), Refusal> {
-        self.consented(&evidence, source)?;
-        let draft = self.draft(evidence.clone())?;
-        let waiting = self.held().into_iter().find(|one| {
-            one.from.session == from.session
-                && one.from.project == from.project
-                && one.title == draft.title
-        });
-        match waiting {
-            Some(one) => Ok((one, false)),
-            None => self.hold(evidence, source, from).map(|one| (one, true)),
-        }
-    }
-
-    /// **Chat `session`'s words, added to the draft `id` purlis made in that chat** (#5697):
-    /// what the agent was doing when purlis failed, scrubbed, after the draft's own words.
-    /// Refused as no longer held for a draft of another chat's, or one filed or dismissed.
-    pub fn add_to_held(&self, id: &str, session: u32, text: &str) -> Result<Held, Refusal> {
-        let text = text.trim();
-        if text.is_empty() {
-            return Err(Refusal::Unusable(
-                "there is nothing to add: say what you were doing".to_string(),
-            ));
-        }
-        if !self
-            .held()
-            .iter()
-            .any(|one| one.id == id && one.from.session == Some(session))
-        {
-            return Err(Refusal::NotHeld);
-        }
-        let (words, scrubbed) = self.known.scrub(text);
-        let added = format!("\n\n**What the agent was doing:**\n\n{words}");
-        if self
-            .held()
-            .iter()
-            .find(|one| one.id == id)
-            .is_some_and(|one| one.body.chars().count() + added.chars().count() > BODY_MAX)
-        {
-            return Err(Refusal::Unusable(format!(
-                "the report would be over {BODY_MAX} characters with these words. Shorten them."
-            )));
-        }
-        self.change_held(id, |one| {
-            one.body.push_str(&added);
-            one.scrubbed = merge(std::mem::take(&mut one.scrubbed), scrubbed);
-        })
-    }
-
-    /// Every draft held for the Inbox, oldest first.
-    pub fn held(&self) -> Vec<Held> {
-        self.root
-            .as_deref()
-            .map(HeldDrafts::read)
-            .unwrap_or_default()
-    }
-
-    /// The held draft `id` with the person's own `title` and `body` in place of its words.
-    pub fn edit_held(&self, id: &str, title: &str, body: &str) -> Result<Held, Refusal> {
-        let title = title.split_whitespace().collect::<Vec<_>>().join(" ");
-        if title.is_empty() || body.trim().is_empty() {
-            return Err(Refusal::Unusable(
-                "a report needs a title and a body".to_string(),
-            ));
-        }
-        if body.chars().count() > BODY_MAX {
-            return Err(Refusal::Unusable(format!(
-                "the report is over {BODY_MAX} characters; GitHub would refuse it. Shorten it."
-            )));
-        }
-        self.change_held(id, |one| {
-            one.title = title.clone();
-            one.body = body.to_string();
-            one.edited = true;
-        })
-    }
-
-    /// Lets the held draft `id` go, unsent.
-    pub fn dismiss_held(&self, id: &str) {
-        if let Some(root) = self.root.as_deref() {
-            let all = HeldDrafts::read(root);
-            if all.iter().any(|one| one.id == id) {
-                let _ =
-                    HeldDrafts::write(root, all.into_iter().filter(|one| one.id != id).collect());
-            }
-        }
-    }
-
-    /// Files the held draft `id`, only if `shown` is its digest, as `source` (the person in the
-    /// window): on [`UPSTREAM`] as them where they are signed in to GitHub, after the duplicate
-    /// search unless `how` says otherwise; to the Report intake where they are not. What left is
-    /// listed in the sent list, and the draft leaves the Inbox.
-    pub fn file_held(&self, id: &str, source: &Caller, shown: &str, how: How) -> Filing {
-        let Some(one) = self.held().into_iter().find(|one| one.id == id) else {
-            return Filing::Refused(Refusal::NotHeld);
-        };
-        let digest = one.digest();
-        if digest != shown {
-            return Filing::Refused(Refusal::NotTheShownDraft { digest });
-        }
-        let draft = Draft {
-            kind: one.report_kind(),
-            title: one.title.clone(),
-            body: one.body.clone(),
-            scrubbed: Vec::new(),
-        };
-        let sent = match as_the_reporter(source) {
-            Ok(tracker) => {
-                if how == How::Check {
-                    match search_duplicates(tracker.as_ref(), source, &draft) {
-                        Ok(hits) if !hits.is_empty() => return Filing::Duplicates(hits),
-                        Ok(_) => {}
-                        Err(why) => return Filing::Refused(not_filed(&draft, why)),
-                    }
-                }
-                let filed = match how {
-                    How::AddTo(number) => tracker.add_comment(
-                        source,
-                        UPSTREAM,
-                        number,
-                        &format!("**{}**\n\n{}", draft.title, draft.body),
-                    ),
-                    How::Check | How::New => file(tracker.as_ref(), source, &draft),
-                };
-                match filed {
-                    Ok(address) => Sent {
-                        at: now(),
-                        title: draft.title.clone(),
-                        to: SentTo::GitHub,
-                        address,
-                        bytes: format!("{}\n\n{}", draft.title, draft.body),
-                        fingerprint: None,
-                        repeats: 0,
-                        repeats_sent: 0,
-                        unread_draft: false,
-                        waiting: false,
-                    },
-                    Err(why) => return Filing::Refused(not_filed(&draft, why)),
-                }
-            }
-            Err(_) => return self.draft_to_the_intake(id, &draft, one.edited, true),
-        };
-        let to = sent.to;
-        let address = sent.address.clone();
-        if let Some(root) = self.root.as_deref() {
-            // The report has left: a list that cannot be written does not unsend it.
-            let _ = SentList::add(root, sent);
-        }
-        self.dismiss_held(id);
-        Filing::Sent { to, address }
-    }
-
-    /// Files `draft`, held as `id`, to the Report intake, the way #5693 sends any report there:
-    /// the reports that wait go first, it carries the counts of repeats not yet told, and it
-    /// waits on this machine when the intake gives no answer. It has no fingerprint to be counted
-    /// away by. Read and filed by the person when `reviewed`; sent unread by Always send, and
-    /// counted against the daily cap, when not (#5695).
-    fn draft_to_the_intake(&self, id: &str, draft: &Draft, edited: bool, reviewed: bool) -> Filing {
-        let Some((intake, root)) = &self.intake else {
-            return Filing::Refused(Refusal::NoIntake);
-        };
-        let report = crash::CrashReport::of_draft(draft, edited, reviewed, intake.dsn());
-        self.send_waiting();
-        let crashes = self
-            .consent
-            .unwrap_or_else(Consent::here)
-            .allows(Stream::CrashReports);
-        let told = Self::counts_to_tell(root, crashes);
-        let bytes = crash::with_repeats(&report.bytes, &told);
-        let listed = |address: String, bytes: String| Sent {
-            at: now(),
-            title: report.title.clone(),
-            to: SentTo::Intake,
-            address,
-            bytes,
-            fingerprint: None,
-            repeats: 0,
-            repeats_sent: 0,
-            unread_draft: !reviewed,
-            waiting: false,
-        };
-        match intake.send(bytes.as_bytes(), &report.event_id) {
-            Ok(address) => {
-                // The report has left: a list that cannot be written does not unsend it.
-                let _ = SentList::add_telling(root, listed(address.clone(), bytes), &told);
-                self.dismiss_held(id);
-                Filing::Sent {
-                    to: SentTo::Intake,
-                    address,
-                }
-            }
-            Err(intake::Failed::NoAnswer(why)) => {
-                match SentList::wait(root, listed(String::new(), report.bytes.clone())) {
-                    Ok(true) => {
-                        self.dismiss_held(id);
-                        Filing::Queued
-                    }
-                    Ok(false) => Filing::Refused(Refusal::NotSent(format!(
-                        "{why}, and {} reports already wait to send",
-                        sent::WAITING_AT_MOST
-                    ))),
-                    Err(err) => Filing::Refused(Refusal::NotSent(format!(
-                        "{why}, and it could not be kept to send later: {err}"
-                    ))),
-                }
-            }
-            Err(intake::Failed::Refused(why)) => Filing::Refused(Refusal::NotSent(why)),
-        }
-    }
-
-    /// Refused unless a draft written in `project` may go to the Report intake unread now, with
-    /// `holding` more held to send (#5695): the yes to Always send, a project whose rule lets its
-    /// members (#5696), an intake to send to, and room in today's cap.
-    fn may_send_unread(&self, holding: usize, project: &str) -> Result<(), Refusal> {
-        if !self.consent.unwrap_or_else(Consent::here).always_sends() {
-            return Err(Refusal::NoConsent(Stream::AgentDrafts));
-        }
-        if !members_may_always_send(Path::new(project)) {
-            return Err(Refusal::ProjectForbids);
-        }
-        let Some((_, root)) = &self.intake else {
-            return Err(Refusal::NoIntake);
-        };
-        SentList::within_the_daily_cap(root, chrono::Utc::now(), holding)
-    }
-
-    /// **Always send, pressed on a draft in the Inbox** (#5695): the held draft `id` is held to
-    /// send, as a chat's draft is when Always send is on. Refused, and left in the Inbox, without
-    /// the standing yes (the window asks for it first), without an intake, or past today's cap.
-    pub fn always_send_held(&self, id: &str) -> Result<Held, Refusal> {
-        let root = self.kept_under()?;
-        let _turn = holding();
-        let all = HeldDrafts::read(&root);
-        let Some(one) = all.iter().find(|one| one.id == id) else {
-            return Err(Refusal::NotHeld);
-        };
-        self.may_send_unread(held_to_send(&all, Some(id)), &one.from.project)?;
-        self.change_held(id, |one| one.sends_at = Some(hold_ends()))
-    }
-
-    /// **Undo, within the hold** (#5695): the held draft `id` is not sent, and waits in the Inbox
-    /// for the person to read. Refused as [`Refusal::NotHeld`] once it has left.
-    pub fn undo_held(&self, id: &str) -> Result<Held, Refusal> {
-        let _turn = holding();
-        self.change_held(id, |one| one.sends_at = None)
-    }
-
-    /// Sends every held draft whose hold ended by `now` to the Report intake, unread, and never
-    /// anywhere else (ADR 0118), and answers how many left the Inbox: sent, or waiting on this
-    /// machine for the intake to answer. One that may no longer go unread (Always send was
-    /// turned off, today's cap was reached, the intake did not take it) falls back to asking: it
-    /// waits in the Inbox.
-    pub fn send_held_due(&self, now: chrono::DateTime<chrono::Utc>) -> usize {
-        let Some(root) = self.root.as_deref() else {
-            return 0;
-        };
-        let _turn = holding();
-        let due = HeldDrafts::read(root).into_iter().filter(|one| {
-            one.sends_at.as_deref().is_some_and(|at| {
-                chrono::DateTime::parse_from_rfc3339(at).map_or(true, |at| at <= now)
-            })
-        });
-        let mut left = 0;
-        for one in due {
-            let filed = match self.may_send_unread(0, &one.from.project) {
-                Ok(()) => {
-                    let draft = Draft {
-                        kind: one.report_kind(),
-                        title: one.title.clone(),
-                        body: one.body.clone(),
-                        scrubbed: Vec::new(),
-                    };
-                    self.draft_to_the_intake(&one.id, &draft, one.edited, false)
-                }
-                Err(refused) => Filing::Refused(refused),
-            };
-            match filed {
-                Filing::Sent { .. } | Filing::Queued => left += 1,
-                _ => {
-                    let _ = self.change_held(&one.id, |one| one.sends_at = None);
-                }
-            }
-        }
-        left
-    }
-
-    fn change_held(&self, id: &str, change: impl FnOnce(&mut Held)) -> Result<Held, Refusal> {
-        let root = self.kept_under()?;
-        let mut all = HeldDrafts::read(&root);
-        let Some(one) = all.iter_mut().find(|one| one.id == id) else {
-            return Err(Refusal::NotHeld);
-        };
-        change(one);
-        let changed = one.clone();
-        HeldDrafts::write(&root, all).map_err(|e| Refusal::NotKept(e.to_string()))?;
-        Ok(changed)
-    }
-
-    fn kept_under(&self) -> Result<PathBuf, Refusal> {
-        self.root.clone().ok_or_else(|| {
-            Refusal::NotKept("this machine has no config home to keep a draft in".to_string())
-        })
+    /// The counts of repeats a report that leaves carries: a crash's only with the yes to Crash
+    /// reports, and a failure of purlis's own only with the yes to Agent drafts, whose counts
+    /// they are.
+    fn counts_to_tell(&self, root: &Path) -> Vec<(String, u32)> {
+        let consent = self.consent.unwrap_or_else(Consent::here);
+        SentList::untold_repeats(
+            root,
+            consent.allows(Stream::CrashReports),
+            consent.allows(Stream::AgentDrafts),
+        )
     }
 
     fn draft(&self, evidence: Evidence) -> Result<Draft, Refusal> {
         let made = match evidence {
             Evidence::PersonDraft { kind, text, title } => {
-                Draft::described(kind, &text, title.as_deref(), &self.known)
+                Draft::described(kind, &text, title.as_deref(), &self.known, None)
             }
             Evidence::Panic { record, words } => {
                 Draft::of_panic(&record, words.as_deref(), &self.known)
             }
-            Evidence::PurlisFailure(PurlisFailure::SandboxBlock {
-                block,
-                harness,
-                harness_version,
-            }) => Draft::of_sandbox_block(&block, harness, harness_version.as_deref()),
-            Evidence::PurlisFailure(PurlisFailure::Internal {
-                caught,
-                harness,
-                harness_version,
-            }) => Draft::of_internal(&caught, harness, harness_version.as_deref(), &self.known),
+            Evidence::PurlisFailure(PurlisFailure::SandboxBlock { block, ran_as }) => {
+                Draft::of_sandbox_block(&block, &ran_as.said())
+            }
+            Evidence::PurlisFailure(PurlisFailure::Internal { caught, ran_as }) => {
+                Draft::of_internal(&caught, &ran_as.said(), &self.known)
+            }
             Evidence::AgentDraft(AgentDraft {
-                kind, text, title, ..
-            }) => Draft::described(kind, &text, title.as_deref(), &self.known),
+                kind,
+                text,
+                title,
+                ran_as,
+                ..
+            }) => Draft::described(
+                kind,
+                &text,
+                title.as_deref(),
+                &self.known,
+                Some(&ran_as.said()),
+            ),
             // Machine-made, and read by nobody first: it goes only as a Crash report.
             Evidence::WindowError(_) => Err(Refused(
                 "an error in the window is sent only as a Crash report".to_string(),
@@ -1769,20 +1466,6 @@ pub fn members_may_always_send(project: &Path) -> bool {
 
 /// Where the project's rule is kept in its shared settings file: `[reports].always_send`.
 pub const PROJECT_RULE: (&str, &str) = ("reports", "always_send");
-
-/// How many of `all` are held to send, leaving out `but`.
-fn held_to_send(all: &[Held], but: Option<&str>) -> usize {
-    all.iter()
-        .filter(|one| one.sends_at.is_some() && Some(one.id.as_str()) != but)
-        .count()
-}
-
-/// When a hold that starts now ends.
-fn hold_ends() -> String {
-    (chrono::Utc::now() + chrono::Duration::seconds(i64::from(HOLD_SECS)))
-        .format("%Y-%m-%dT%H:%M:%SZ")
-        .to_string()
-}
 
 /// Now, UTC, RFC 3339 to the second, as the sent list and the held drafts keep a time.
 fn now() -> String {
@@ -1839,6 +1522,57 @@ fn stream_of(evidence: &Evidence, source: &Caller) -> Option<Stream> {
         (_, Surface::Trigger | Surface::Mcp) if crash => Some(Stream::CrashReports),
         (_, Surface::Trigger | Surface::Mcp) => Some(Stream::AgentDrafts),
     }
+}
+
+/// **What each kind of report sends, shown before the first is sent** (#5688, Q13): the bytes
+/// the envelope builders make of a sample panic and of a sample agent's draft, exactly as a real
+/// one of each would leave. "See exactly what's sent" shows them, so they cannot say less than
+/// what is sent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Samples {
+    /// A Crash report of a panic.
+    pub crash: String,
+    /// A Report draft an agent wrote, sent unread by Always send.
+    pub draft: String,
+}
+
+/// The [`Samples`], addressed to this build's Report intake, or a sample address where it has
+/// none.
+pub fn samples() -> Samples {
+    let dsn = intake::built_in().map_or_else(
+        || "https://<key>@<the report intake>/<project>".to_owned(),
+        |dsn| dsn.as_str().to_owned(),
+    );
+    let known = Known::default();
+    let panic = Panic {
+        at: None,
+        place: "crates/purlis-core/src/plane.rs:120:9".to_owned(),
+        message: "called `Option::unwrap()` on a `None` value".to_owned(),
+        version: None,
+    };
+    let crash = crash::CrashReport::of_panic(&panic, &known, &dsn).bytes;
+    let ran_as = RanAs {
+        harness: Some(crate::harness::Harness::ClaudeCode),
+        harness_version: Some("2.1.4".to_owned()),
+        persona: PersonaKind::Template,
+    };
+    let draft = Reports::new(known)
+        .draft(Evidence::AgentDraft(AgentDraft {
+            kind: Kind::Bug,
+            text: "purlis worktree update refuses a clean branch\n\n\
+                   What happened: the update said the branch had uncommitted work, but git \
+                   status was clean.\nWhat was expected: the branch brought up to its base."
+                .to_owned(),
+            title: None,
+            call: Some(("purlis worktree update".to_owned(), 1)),
+            ran_as: ran_as.clone(),
+        }))
+        .map(|draft| {
+            crash::CrashReport::of_draft(&draft, false, false, Some(&ran_as.said()), None, &dsn)
+                .bytes
+        })
+        .unwrap_or_default();
+    Samples { crash, draft }
 }
 
 /// A panic the app wrote down, as `panics.rs` writes it.

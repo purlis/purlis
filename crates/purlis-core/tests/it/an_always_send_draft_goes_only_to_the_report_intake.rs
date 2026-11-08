@@ -66,6 +66,7 @@ fn the_agents_draft() -> Evidence {
         text: format!("{TITLE}\n\nIt said the branch had uncommitted changes. It had none."),
         title: None,
         call: Some(("purlis worktree update".into(), 1)),
+        ran_as: purlis_core::report::RanAs::default(),
     })
 }
 
@@ -246,4 +247,70 @@ fn always_send_on_a_card_past_the_cap_is_refused_and_the_draft_stays() {
             .iter()
             .any(|one| one.id == sixth.id && one.sends_at.is_none())
     );
+}
+
+#[test]
+fn an_agent_s_words_after_the_hold_follow_its_draft_to_the_intake_linked_to_it() {
+    let root = tempfile::tempdir().unwrap();
+    let intake = recorded_intake();
+    let reports = reports(root.path(), consent(Some(true)), &intake);
+    let one = held(&reports);
+    assert_eq!(reports.send_held_due(after_the_hold()), 1);
+    let first = String::from_utf8(intake.received()[0].clone()).unwrap();
+    let first_id = serde_json::from_str::<serde_json::Value>(first.lines().next().unwrap())
+        .unwrap()["event_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    assert_eq!(
+        reports.add_to_held(&one.id, 5, "I was updating chat 5's branch"),
+        Err(Refusal::NotHeld),
+        "another chat's draft is not this chat's to add to, sent or not"
+    );
+    let added = reports
+        .add_to_held(&one.id, 4, "I was updating the reporting branch.")
+        .expect("followed");
+
+    assert!(
+        matches!(added, purlis_core::report::Added::SentAfter(Some(_))),
+        "{added:?}"
+    );
+    let received = intake.received();
+    assert_eq!(received.len(), 2, "the words left after the draft");
+    let words = String::from_utf8(received[1].clone()).unwrap();
+    assert!(
+        words.contains("I was updating the reporting branch."),
+        "{words}"
+    );
+    assert!(
+        words.contains(&format!("\"follows\":\"{first_id}\"")),
+        "linked to the draft's event: {words}"
+    );
+    assert!(words.contains("\"written_by\":\"agent\""), "{words}");
+    let sent = SentList::read(root.path());
+    assert_eq!(sent.len(), 2, "{sent:?}");
+    assert_eq!(sent[1].bytes, words, "the list keeps exactly what left");
+    assert!(
+        !sent[1].unread_draft,
+        "words about a draft already counted are not one more against the cap"
+    );
+}
+
+#[test]
+fn with_always_send_off_since_the_draft_left_the_agent_s_words_are_not_sent() {
+    let root = tempfile::tempdir().unwrap();
+    let intake = recorded_intake();
+    let one = held(&reports(root.path(), consent(Some(true)), &intake));
+    assert_eq!(
+        reports(root.path(), consent(Some(true)), &intake).send_held_due(after_the_hold()),
+        1
+    );
+
+    let now_off = reports(root.path(), consent(Some(false)), &intake);
+    assert_eq!(
+        now_off.add_to_held(&one.id, 4, "I was updating the branch."),
+        Err(Refusal::NoConsent(Stream::AgentDrafts))
+    );
+    assert_eq!(intake.received().len(), 1);
 }

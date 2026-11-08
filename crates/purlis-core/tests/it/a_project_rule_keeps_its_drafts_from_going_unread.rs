@@ -67,6 +67,7 @@ fn held_from(reports: &Reports, project: &Path) -> Held {
                 text: "The Inbox counts a dismissed Notice\n\nIt said 2; there was one.".into(),
                 title: None,
                 call: None,
+                ran_as: purlis_core::report::RanAs::default(),
             }),
             &Caller::chat("4"),
             CameFrom {
