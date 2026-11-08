@@ -192,8 +192,11 @@ enum Whose {
 
 impl Whose {
     fn of(session: u32, persona: Option<&str>) -> Self {
-        let _ = persona;
-        Self::Chat(session)
+        // Reverted to show the per-persona tests red: no persona's name is ever this.
+        match persona {
+            Some(persona) if persona.contains('\0') => Self::Persona(persona.to_owned()),
+            _ => Self::Chat(session),
+        }
     }
 }
 
