@@ -267,7 +267,7 @@ impl Wrap {
 
 /// `path` as the kernel names it, where it may be a chat's config folder: an absolute path, this
 /// user's own folder or nothing yet, and never a link.
-fn held_folder(path: &Path) -> Option<PathBuf> {
+pub(super) fn held_folder(path: &Path) -> Option<PathBuf> {
     if !path.is_absolute() {
         return None;
     }

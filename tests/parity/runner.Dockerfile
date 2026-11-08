@@ -47,4 +47,13 @@ RUN printf '%s\n' '#!/bin/sh' \
       '[ -x "$stand_in" ] || { echo "parity: no stand-in codex at $stand_in: a behaviour writes one before it starts a chat on its profile" >&2; exit 127; }' \
       'exec "$stand_in" "$@"' > /usr/local/bin/codex \
  && chmod 0755 /usr/local/bin/codex
+# The runner's `opencode`, the same way: an opencode chat on a profile the runner made runs
+# under purlis's own Linux sandbox, so a behaviour sees from inside it what its wrap lets it
+# write. Anything it is asked runs the stand-in a behaviour writes at
+# `/home/purlis/.parity/opencode`.
+RUN printf '%s\n' '#!/bin/sh' \
+      'stand_in=/home/purlis/.parity/opencode' \
+      '[ -x "$stand_in" ] || { echo "parity: no stand-in opencode at $stand_in: a behaviour writes one before it starts a chat on its profile" >&2; exit 127; }' \
+      'exec "$stand_in" "$@"' > /usr/local/bin/opencode \
+ && chmod 0755 /usr/local/bin/opencode
 USER 10001:10001
