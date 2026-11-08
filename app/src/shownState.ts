@@ -275,7 +275,7 @@ export function waitingOnTasks(tasks: number): Said {
 }
 
 /** `1 monitor`, `2 monitors`: one kind of a chat's own work, counted. */
-function counted(n: number, one: string): string | undefined {
+export function counted(n: number, one: string): string | undefined {
   if (n === 0) return undefined;
   return `${n} ${one}${n === 1 ? "" : "s"}`;
 }

@@ -13,7 +13,10 @@
 //! and naming them all. The write is done by then, so a log that refuses it does not undo the
 //! discard: the window is told it is not in the chat's history.
 //!
-//! **Told at the chat's next turn** ([`line_for`]), which every chat named in the edit is.
+//! **Told at the chat's next turn** ([`line_for`]), which every chat named in the edit is whose
+//! harness purlis arms a prompt hook on. A chat on one it does not, a harness run at level 1, is
+//! never told, so the answer names it for the window to say (#5477; ADR 0084 §8, as amended
+//! 2026-11-07).
 //!
 //! **Undo a turn** (#5411; ADR 0081 as amended 2026-11-05) is the other edit made here: every file
 //! the latest turn not yet undone changed, put back as its start had it (`files::undo_turn`). Not
@@ -62,10 +65,13 @@ pub struct BusyChat {
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum DiscardAnswer {
     /// It is written. `now` is the file's diff without the hunk, or `null` when nothing of its
-    /// change is left to draw; `unrecorded` says why the log did not take it, if it did not.
+    /// change is left to draw; `unrecorded` says why the log did not take it, if it did not;
+    /// `untold` names each chat in the folder whose agent is not told of it
+    /// ([`crate::staleclones::untold_in`]).
     Discarded {
         now: Option<WhatChanged>,
         unrecorded: Option<String>,
+        untold: Vec<String>,
     },
     /// Nothing was written: these chats are not idle, and the choice is the operator's.
     Busy { chats: Vec<BusyChat> },
@@ -150,6 +156,7 @@ pub(crate) fn discard_in(
             Ok(DiscardAnswer::Discarded {
                 now: now.map(|now| what_changed_shown(*now)),
                 unrecorded: record(held, root, &edit).err(),
+                untold: crate::staleclones::untold_in(held, &folder),
             })
         }
     }
@@ -160,10 +167,12 @@ pub(crate) fn discard_in(
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum UndoAnswer {
     /// Every file is back. `unrecorded` says why the log did not take it, `unmarked` why the turn
-    /// is not marked undone, if either.
+    /// is not marked undone, if either; `untold` names each chat in the folder whose agent is not
+    /// told of it ([`crate::staleclones::untold_in`]).
     Undone {
         unrecorded: Option<String>,
         unmarked: Option<String>,
+        untold: Vec<String>,
     },
     /// Nothing was written: these chats are not idle, and an undo waits until they are.
     Busy { chats: Vec<BusyChat> },
@@ -205,6 +214,11 @@ pub(crate) fn undo_in(
     let reader = crate::reader();
     let folder = placed_of(&reader, root, at, "")?.absolute;
     let chats = crate::staleclones::chats_placed_in(held, &folder);
+    let untold = crate::staleclones::untold_in(held, &folder);
+    // A runner's turn is put back by that runner, under its own idle check (#5427).
+    if let Some(pool) = files::turns::runner_of(root, at, &turn.chat, turn.number) {
+        return undo_on_a_runner(held, at, turn, &pool, &chats, untold);
+    }
     held.hooks().while_held(|glance| {
         let recording = |number: u32| {
             held.chats()
@@ -236,8 +250,67 @@ pub(crate) fn undo_in(
         Ok(UndoAnswer::Undone {
             unrecorded: record(held, root, &edit).err(),
             unmarked: undone.unmarked,
+            untold,
         })
     })
+}
+
+/// **Undo `turn`, a turn of a chat on `pool`'s runner** (session protocol 1.78, #5427): asked of
+/// that runner, which carries it out in its own folder under its own idle check. What it waits on
+/// is named as a chat here would be; once it has put the files back, the edit is kept and told
+/// here as an undo of this machine's is, to `chats`, which work in the folder, and this machine's
+/// copy of the turn is marked undone.
+fn undo_on_a_runner(
+    held: &Held,
+    at: Branch<'_>,
+    turn: &files::TurnKey,
+    pool: &str,
+    chats: &[(u32, String)],
+    untold: Vec<String>,
+) -> Result<UndoAnswer, String> {
+    use purlis_session_protocol::session::Answer;
+    let root = held.root();
+    let place = files::turns::Place {
+        ws: at.ws.to_owned(),
+        repo: at.repo.to_owned(),
+        piece: at.piece.map(str::to_owned),
+    };
+    match held.chats().sessions().undo_turn_on(pool, &place, turn)? {
+        Answer::UndoWaits { chats: waits } => Ok(UndoAnswer::Busy {
+            chats: waits
+                .into_iter()
+                .map(|one| BusyChat {
+                    name: chats
+                        .iter()
+                        .find(|(number, _)| *number == one.number)
+                        .map_or_else(|| format!("chat {}", one.number), |(_, name)| name.clone()),
+                    state: one.state,
+                })
+                .collect(),
+        }),
+        Answer::TurnUndone { edit, unmarked } => {
+            let edit: HumanEdit = serde_json::from_value(edit).map_err(|why| {
+                format!("the runner put the files back, but its record of it was unreadable: {why}")
+            })?;
+            let edit = HumanEdit {
+                chats: chats.iter().map(|(number, _)| *number).collect(),
+                chat_ids: chats
+                    .iter()
+                    .filter_map(|(number, _)| held.chats().id_of(*number))
+                    .collect(),
+                ..edit
+            };
+            let marked = files::turns::undone(root, at, &turn.chat, turn.number)
+                .err()
+                .map(|why| why.to_string());
+            Ok(UndoAnswer::Undone {
+                unrecorded: record(held, root, &edit).err(),
+                unmarked: unmarked.or(marked),
+                untold,
+            })
+        }
+        other => Err(format!("the runner answered something else: {other:?}")),
+    }
 }
 
 fn record(held: &Held, root: &Path, edit: &HumanEdit) -> Result<(), String> {

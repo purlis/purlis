@@ -136,6 +136,13 @@ pub(in super::super) fn undo_here(
             None => "this branch has no turn left to undo".to_string(),
         }));
     }
+    // A runner's turn is put back by its runner, in its own folder (#5427): this one never had
+    // its files.
+    if super::super::turns::a_runners(&opened.repo, &turn.chat, turn.number) {
+        return Err(not_undone(
+            "it ran on a runner, and only its runner can put its files back",
+        ));
+    }
     let comparison = Comparison::Turn {
         chat: turn.chat.clone(),
         number: turn.number,

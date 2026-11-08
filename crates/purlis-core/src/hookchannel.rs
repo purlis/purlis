@@ -27,10 +27,13 @@ use std::time::Duration;
 use purlis_session_protocol::session;
 
 use crate::eventlog::{Entry, Recorder};
+use crate::files::Reader;
 use crate::hookwire::relay::{Keeping, Relaying};
 
 mod record;
 pub use record::{how_its_run_ended, its_children_end};
+mod turns;
+pub use turns::HostedTurns;
 
 /// One line in the host's log: the window keeps what its own host says, and `purlis serve` says
 /// it on its standard error.
@@ -496,6 +499,9 @@ pub struct HookChannels {
     spools_after: Duration,
     /// Whether each channel carries its chats' queued dispatch messages to the window itself.
     carries_messages: bool,
+    /// What each channel records its chats' turns with, where it records them: a runner's host
+    /// (#5427). The window records the turns of the chats it runs itself.
+    records_turns: Option<Reader>,
 }
 
 impl HookChannels {
@@ -505,6 +511,33 @@ impl HookChannels {
             log,
             spools_after: A_SPOOL_IS_LOOKED_AT_AFTER,
             carries_messages: false,
+            records_turns: None,
+        }
+    }
+
+    /// **Each channel records its chats' turns and undoes one** (#5427, [`HostedTurns`]): a
+    /// runner's host, whose chats work in its own folders, where the window records nothing.
+    /// `reader` is what an undo reads and writes the folder through.
+    /// [`HookChannels::recording_turns`], undone through this binary started again as the
+    /// reader: `purlis serve`'s, which answers it ([`crate::files::serve_if_asked`]). Where this
+    /// binary cannot be found, none of its chats' turns is recorded, and the host says why.
+    pub fn recording_turns_here(self) -> HookChannels {
+        match Reader::this_binary() {
+            Ok(reader) => self.recording_turns(reader),
+            Err(why) => {
+                host_says(&format!(
+                    "this host records no turns of its chats, as it cannot start itself as their \
+                     reader: {why}"
+                ));
+                self
+            }
+        }
+    }
+
+    pub fn recording_turns(self, reader: Reader) -> HookChannels {
+        HookChannels {
+            records_turns: Some(reader),
+            ..self
         }
     }
 
@@ -559,11 +592,23 @@ impl purlis_host::Hear for HookChannels {
                 }
             })
         };
+        let turns = self
+            .records_turns
+            .clone()
+            .map(|reader| Arc::new(HostedTurns::new(path.to_path_buf(), reader)));
         let relaying = Relaying::keeping(
             board.handing_on(hand_on),
             Keeping {
                 record: hook_lines_recorded(log.clone(), path),
-                heard_from: Box::new(move |chat| spooled.heard_from(chat)),
+                heard_from: {
+                    let turns = turns.clone();
+                    Box::new(move |chat, heard| {
+                        spooled.heard_from(chat);
+                        if let Some(turns) = &turns {
+                            turns.heard(chat, heard);
+                        }
+                    })
+                },
                 unheard: {
                     let board = board.clone();
                     Box::new(move |heard| board.unheard(heard))
@@ -589,6 +634,7 @@ impl purlis_host::Hear for HookChannels {
             tokens,
             relaying,
             board,
+            turns,
             reading: Mutex::new(Some(reading)),
         })))
     }
@@ -656,6 +702,8 @@ struct HookChannel {
     relaying: Arc<Relaying>,
     /// The project's board, kept here (#2194).
     board: KeptBoard,
+    /// Its chats' turns, where this host records them (#5427).
+    turns: Option<Arc<HostedTurns>>,
     reading: Mutex<Option<crate::hookwire::Reading>>,
 }
 
@@ -682,6 +730,9 @@ impl purlis_host::Channel for HookChannel {
         // A token the operator minted for it goes as it ends, window or no window (#4207, #3808):
         // not where the chat has started again under this number since.
         if self.tokens.program_ended(number, pid) {
+            if let Some(turns) = &self.turns {
+                turns.program_ended(number);
+            }
             crate::forge::apptoken::chat_ended(&self.root, number);
             self.relaying.chat_went(number);
         }
@@ -689,6 +740,10 @@ impl purlis_host::Channel for HookChannel {
 
     fn forget(&self, number: u32) {
         self.tokens.forget(number);
+        // Its turns' refs go with it (#5427).
+        if let Some(turns) = &self.turns {
+            turns.removed(number);
+        }
         crate::hostedchats::forget(&self.root, number);
         // And where its window closed it before it ended.
         crate::forge::apptoken::chat_ended(&self.root, number);
@@ -732,6 +787,20 @@ impl purlis_host::Channel for HookChannel {
 
     fn ended_with_no_window(&self, number: u32, exit: &session::Exit) {
         self.board.ended(number, exit);
+    }
+
+    /// Under this host's own idle check, read off the board kept here while it is held (#5427).
+    fn undo_turn(
+        &self,
+        turn: &purlis_host::TurnToUndo,
+    ) -> Result<session::Answer, session::Refusal> {
+        let Some(turns) = &self.turns else {
+            return Err(session::Refusal {
+                code: session::NOT_ALLOWED.into(),
+                why: "this host records no turns of its chats, so it has none to undo".into(),
+            });
+        };
+        turns.undo(&self.board.board(), turn)
     }
 }
 

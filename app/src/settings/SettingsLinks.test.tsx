@@ -228,7 +228,7 @@ describe("a notice about this machine that names a setting", () => {
     await waitFor(() => expect(group("Saving")).toBeInTheDocument());
 
     await userEvent.click(await screen.findByRole("button", { name: /^Notices/ }));
-    const inbox = await screen.findByRole("tabpanel", { name: "Inbox" });
+    const inbox = await screen.findByRole("tabpanel", { name: "Notices" });
     const machine = await within(inbox).findByRole("region", { name: "Notices" });
     await userEvent.click(within(machine).getByRole("button", { name: "Fix it in Settings" }));
 

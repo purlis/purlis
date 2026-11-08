@@ -239,6 +239,41 @@ describe("the update button", () => {
     expect(restarted).toBe(1);
   });
 
+  it("asks about a chat waiting on its own work, says what will end, and restarts when told to (#5748)", async () => {
+    let restarted = 0;
+    render(
+      <UpdateItem
+        updates={updates(
+          { kind: "installed", version: "0.2.0" },
+          { restart: () => (restarted += 1) },
+        )}
+        chats={[
+          {
+            ...chat("ide.1", "waiting"),
+            ownWork: { helpers: 0, workflows: 0, monitors: 1, shells: 2 },
+          },
+          chat("ide.2", "waiting"),
+        ]}
+      />,
+    );
+
+    await userEvent.click(button());
+    await userEvent.click(
+      within(await screen.findByRole("dialog")).getByRole("button", { name: "Restart to update" }),
+    );
+
+    const asking = await screen.findByRole("alertdialog");
+    expect(within(asking).getByRole("alert").textContent).toBe(
+      "ide.1 is waiting on its own work: 1 monitor and 2 background shells will end.",
+    );
+    // A chat idle with nothing of its own in flight loses nothing, so it is not asked about.
+    expect(within(asking).queryByText("ide.2")).toBeNull();
+    expect(restarted).toBe(0);
+    await userEvent.click(within(asking).getByRole("button", { name: "Restart now" }));
+
+    expect(restarted).toBe(1);
+  });
+
   it("asks about a chat that reports no state, which could be mid-turn", async () => {
     let restarted = 0;
     render(

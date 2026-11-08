@@ -39,6 +39,7 @@ import {
   type Tabs,
   type ViewRef,
 } from "./tabs";
+import { UNDO_MS } from "./undo";
 
 /** The verbs of `Doing` this hook carries out (SI-9b). */
 export type MemoryEditing = Pick<
@@ -52,9 +53,6 @@ type Undoable = { title: string; trouble?: string } & (
   | { kind: "deleted"; ref: MemoryRef; archived: string }
   | { kind: "moved"; from: MemoryRef; at: MemoryRef }
 );
-
-/** How long a Delete's or a Move's Undo is offered (ADR 0065 Q8: "a few seconds"). */
-export const UNDO_MS = 8_000;
 
 /**
  * **A plane's memories, from the window** (SI-9b, ADR 0065): opening one in the strip's preview

@@ -20,6 +20,7 @@ import { forgetThisLaunch } from "./regions";
 import { GLOBAL } from "./windowprefs";
 import { findTheWorkspaces } from "./test-strips";
 import { aTabForEachChat } from "./laidOut.testkit";
+import { waitOutTheUndo } from "./test-inbox";
 
 /**
  * **A project's Notices, in its Inbox, against the whole window** (NO-2 #1229, rulings V91i,
@@ -196,12 +197,15 @@ beforeEach(() => {
   disk.layout = undefined;
   disk.dismissed = {};
   forgetThisLaunch();
+  // A Dismiss is kept once its Undo has stood (#5650): the tests wait it out.
+  vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ["setTimeout", "clearTimeout"] });
 });
 
 afterEach(() => {
   cleanup();
   clearMocks();
   Reflect.deleteProperty(globalThis, GLOBAL);
+  vi.useRealTimers();
 });
 
 /** The Inbox's Notices, top to bottom, by cause. */
@@ -212,17 +216,19 @@ const listed = () =>
 /** The Inbox, shown: pressed only where it is not, since a press on the view in front puts it
  *  away. */
 const inbox = async () => {
-  const tab = within(await screen.findByRole("tablist", { name: "Attention" })).getByRole("tab", {
-    name: "Inbox",
-  });
+  const tab = within(await screen.findByRole("tablist", { name: "Panel, right half" })).getByRole(
+    "tab",
+    { name: "Notices" },
+  );
   if (tab.getAttribute("aria-selected") !== "true") await userEvent.click(tab);
-  return screen.findByRole("tabpanel", { name: "Inbox" });
+  return screen.findByRole("tabpanel", { name: "Notices" });
 };
 const dormant = (name: string) => screen.findByText(new RegExp(`^${name} is gone, kept dormant`));
 const noticeOf = (text: HTMLElement) => text.closest("[data-cause]") as HTMLElement;
 const dismiss = async (text: HTMLElement) => {
   await inbox();
   await userEvent.click(within(noticeOf(text)).getByRole("button", { name: "Dismiss" }));
+  waitOutTheUndo();
 };
 /** Lets every answer in flight land. */
 const settle = () => new Promise((done) => setTimeout(done, 50));
@@ -508,19 +514,15 @@ describe("the Notices in the Inbox (#1695)", () => {
     core([chat(1, "one")], { gone: ["able"] });
     render(<App />);
     await dormant("able");
-    // The side opens on the Inbox (#1738): another view in front first.
-    await userEvent.click(
-      within(await screen.findByRole("tablist", { name: "Attention" })).getByRole("tab", {
-        name: "Personas",
-      }),
-    );
-    expect(screen.queryByRole("tabpanel", { name: "Inbox" })).toBeNull();
+    // The Panel's right half opens on Memory (P-14): Notices is behind it (#5645).
+    await screen.findByRole("tabpanel", { name: "Memory" });
+    expect(screen.queryByRole("tabpanel", { name: "Notices" })).toBeNull();
 
     fireEvent.click(
       within(noticeOf(await dormant("able"))).getByRole("button", { name: "Forget", hidden: true }),
     );
 
-    expect(await screen.findByRole("tabpanel", { name: "Inbox" })).toBeInTheDocument();
+    expect(await screen.findByRole("tabpanel", { name: "Notices" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Undo" })).toBeInTheDocument();
   });
 });
@@ -540,6 +542,6 @@ describe("the status bar", () => {
     const button = await screen.findByRole("button", { name: "Notices: 4" });
     await userEvent.click(button);
 
-    expect(await screen.findByRole("tabpanel", { name: "Inbox" })).toBeInTheDocument();
+    expect(await screen.findByRole("tabpanel", { name: "Notices" })).toBeInTheDocument();
   });
 });

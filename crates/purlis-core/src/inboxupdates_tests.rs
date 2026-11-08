@@ -27,6 +27,7 @@ fn update(key: &str, kind: Kind, at: u64) -> Update {
         says: format!("{key} happened"),
         read: false,
         dismissed: false,
+        baselined: false,
     }
 }
 
@@ -312,6 +313,7 @@ fn the_most_this_store_writes_is_read_back_whole() {
             says: wide(MOST_SAID),
             read: false,
             dismissed: false,
+            baselined: false,
         })
         .collect();
     store.note(&root, all, NOW).expect("noted");

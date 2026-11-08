@@ -956,6 +956,11 @@ pub fn compose_ready(
             },
         ),
     }
+    // Where it works, by its id, which its turns are recorded under as its hooks are heard
+    // (#5427): sandboxed or not.
+    if let Some(id) = start.program.as_deref() {
+        crate::hostedchats::record_place(root, starting.number, id, &cwd);
+    }
     Ok(Launch {
         program,
         args,

@@ -1966,7 +1966,9 @@ describe("carrying out a row", () => {
         "showExtensions",
         "showSideView:chats",
         "showSideView:explorer",
-        "showSideView:inbox",
+        "showSideView:asks",
+        "showSideView:updates",
+        "showSideView:notices",
         "showSideView:changes",
         "showSideView:repos",
         "showSideView:todos",
@@ -2757,8 +2759,9 @@ describe("the palette at fifty chats", () => {
     // own row, and each of the fifty tabs' right-click, whose forty-nine behind are menu-only,
     // as Close other tabs' are. 1224 since #5318: no Close pane row, the tab in front having one
     // pane. 1274 since #5343: a tab's Rename…, each of the fifty tabs' own row, whose forty-nine
-    // behind are menu-only.
-    expect(offers).toHaveLength(1274);
+    // behind are menu-only. 1275 since #5644: Show the Asks view and Show the Updates view, where
+    // Show the Inbox view was. 1276 since #5645: Show the Notices view.
+    expect(offers).toHaveLength(1276);
     // Fifty tabs of one chat each: the palette has their chats' Rename chat rows instead.
     expect(inPalette(offers).filter((row) => row.id.startsWith("tab.rename:"))).toHaveLength(0);
     expect(inPalette(offers).filter((row) => row.id.startsWith("tab.closeOthers:"))).toHaveLength(
@@ -4785,7 +4788,8 @@ describe("where each view lives, in the palette (#1752)", () => {
   const searchInThePanel: NonNullable<Now["places"]> = [
     { view: "chats", name: "Chats", region: "navigation", to: "panel" },
     { view: "explorer", name: "Explorer", region: "navigation", to: "panel" },
-    { view: "inbox", name: "Inbox", region: "aside" },
+    { view: "asks", name: "Asks", region: "aside" },
+    { view: "updates", name: "Updates", region: "aside" },
     { view: "personas", name: "Personas", region: "aside", to: "panel" },
     { view: "vaults", name: "Vaults", region: "aside", to: "panel" },
     { view: "repos", name: "Repos", region: "panel-left", to: "sidebar" },
@@ -4806,8 +4810,9 @@ describe("where each view lives, in the palette (#1752)", () => {
       to: "sidebar",
     });
     expect(by(offers, "view.move:chats")?.title).toBe("Move Chats to the panel");
-    // The Inbox is pinned (P-4): no row moves it.
-    expect(by(offers, "view.move:inbox")).toBeUndefined();
+    // Asks and Updates are pinned (P-4, #5644): no row moves either.
+    expect(by(offers, "view.move:asks")).toBeUndefined();
+    expect(by(offers, "view.move:updates")).toBeUndefined();
   });
 
   it("carries the move out", () => {
@@ -4827,7 +4832,7 @@ describe("where each view lives, in the palette (#1752)", () => {
       /^The Chats and Explorer views on the left\./,
     );
     expect(by(offers, "view.toggle:aside")?.note).toMatch(
-      /^The Inbox, Personas and Vaults views on the right\./,
+      /^The Asks, Updates, Personas and Vaults views on the right\./,
     );
     expect(by(offers, "view.toggle:panel")?.note).toMatch(
       /Repos, Changes and Search in its left half, Memory, Todos and Sessions in its right\./,

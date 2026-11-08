@@ -379,8 +379,14 @@ describe("a chat nobody asked for that did not start", () => {
   it("still says so in the Inbox, with the whole reason", async () => {
     core([], [waiting("01K6ROOT", "5")]);
     render(<App />);
-    // The right side opens on the Inbox (#1738).
-    await screen.findByRole("tabpanel", { name: "Inbox" });
+    // A Notice of the project's, listed in the Notices view (#5645), under Asks.
+    await screen.findByRole("tabpanel", { name: "Asks" });
+    await userEvent.click(
+      within(screen.getByRole("tablist", { name: "Panel, right half" })).getByRole("tab", {
+        name: "Notices",
+      }),
+    );
+    await screen.findByRole("tabpanel", { name: "Notices" });
 
     const said = (await screen.findByText(/did not start/)).closest("[data-cause]");
     expect(said).toHaveAttribute("data-cause", "chat-did-not-start:01K6ROOT");

@@ -111,7 +111,10 @@ export function ActionResultNotice({
     const on = event.target as HTMLElement;
     focused.current = {
       on,
-      line: on.closest<HTMLElement>('[data-scope="notice"][data-part="root"]'),
+      // A Notice's box, or its row in the Notices view (#5649).
+      line: on.closest<HTMLElement>(
+        ':is([data-scope="notice"], [data-scope="message"])[data-part="root"]',
+      ),
     };
   };
   const onBlur = (event: FocusEvent) => {

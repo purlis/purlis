@@ -15,7 +15,9 @@ import {
   type Ref,
 } from "react";
 import { createPortal } from "react-dom";
+import { holdOrCarryOut, type DismissHold } from "./dismissHold";
 import { useNow } from "./InboxRow";
+import { toneOfNotice } from "./messageTone";
 import { agoSaid } from "./inboxRules";
 import { PersonaMark } from "./PersonaMark";
 import {
@@ -35,12 +37,26 @@ import {
   sameHolds,
   type BandHolds,
 } from "./paneNotices";
-import { ChevronUp, X } from "lucide-react";
+import {
+  ChevronUp,
+  CircleAlert,
+  CircleCheck,
+  CircleQuestionMark,
+  LoaderCircle,
+  X,
+} from "lucide-react";
 import { Twist } from "./ui/disclosure/Disclosure";
 import { Button, ButtonRow, IconButton, type ButtonVariant } from "./ui/button/Button";
 import {
+  MessageBody,
+  MessageForm,
+  MessageLinks,
+  MessageMeta,
+  MessageRow,
+  MessageTop,
+} from "./ui/message/Message";
+import {
   NoticeBox,
-  NoticeHead,
   NoticeListBox,
   NoticeMark,
   NoticeMessage,
@@ -317,9 +333,24 @@ export function Notice(props: NoticeProps) {
   // Where this Notice is drawn when the Inbox lists it: an element of its own, which the list
   // puts in its place, in importance order.
   const [host] = useState(() => document.createElement("div"));
+  // Its own Dismiss, as the list carries it out for Dismiss all or after an Undo (#5650): the
+  // latest one, read when it is carried out.
+  const ownDismiss = useRef(onDismiss);
+  useLayoutEffect(() => {
+    ownDismiss.current = onDismiss;
+  });
+  const dismissable = onDismiss !== undefined;
   useLayoutEffect(
-    () => (stacked ? list.register(id, { cause, tone, host }) : undefined),
-    [list, cause, host, id, stacked, tone],
+    () =>
+      stacked
+        ? list.register(id, {
+            cause,
+            tone,
+            host,
+            dismiss: dismissable ? () => ownDismiss.current : undefined,
+          })
+        : undefined,
+    [list, cause, host, id, stacked, tone, dismissable],
   );
   // Its chat's row is told it has something to read while it stands (#4759).
   useLayoutEffect(() => {
@@ -335,7 +366,7 @@ export function Notice(props: NoticeProps) {
   // window's own lines, wherever they are drawn.
   if (stacked)
     return createPortal(
-      <CentreCard
+      <NoticeViewRow
         cause={cause}
         tone={tone}
         running={running}
@@ -353,13 +384,13 @@ export function Notice(props: NoticeProps) {
         fixes={fixes}
         link={link}
         copy={copy}
-        onDismiss={onDismiss}
+        onDismiss={onDismiss === undefined ? undefined : () => list.dismiss(id)}
         dismissSays={dismissSays}
         mayAct={mayAct}
         under={under}
       >
         {children}
-      </CentreCard>,
+      </NoticeViewRow>,
       host,
     );
   if (at === "pane" && band !== null && title === undefined) {
@@ -532,23 +563,24 @@ function stateSaid({
 }
 
 /**
- * **A Notice as a card of the Notices centre** (#5217, the Inbox card's style from #5214): a
- * one-line head (its mark; its title, with its state and age muted beneath; Go to chat as a quiet
- * link; its ×), what it says at the card's size, and its ways under it. A chat's own prose has
- * no part of its own here (#5363): no Notice in the centre carries any, and the Inbox, which
- * does, draws it through `ChatText`.
+ * **A Notice as a row of the Notices view** (#5649, ADR 0119 decision 6; a card of the Notices
+ * centre before, #5217): the message family's row, as the view's other lines are. Its tone's
+ * glyph in its state's tint; its title, with how long it has stood at the right and its × in that
+ * place under the pointer; its state under it; what it says; its ways as text links (its fix,
+ * Go to chat); and, for a consent, its answers as buttons in the row. A chat's own prose has no
+ * part of its own here (#5363): no Notice in the view carries any, and Asks, which does, draws
+ * it through `ChatText`.
  *
- * **One primary, where it has an answer**: the way its caller leads with, else its first. Every
- * other way is a quiet link. **A consent takes no primary** (ADR 0097 §6): Allow keeps the
- * `grants` look and what stands beside it the plain one, at equal weight; only what opens more
- * is quiet.
+ * **One way leads, where it has an answer**: the way its caller leads with, else its first, in the
+ * accent's words. **A consent takes no lead** (ADR 0097 §6): Allow keeps the `grants` look and
+ * what stands beside it the plain one, at equal weight; only what opens more is a link.
  *
  * **Its title is the one thing it may not lack**: what it names (a card's title, whose it is, its
  * label), or else its state, which then is not said again under it. Its age is from when what it
  * says began where its caller knows that (`since`, #5702); else it is how long it has stood in this
  * window, so a relaunch starts it again.
  */
-function CentreCard({
+function NoticeViewRow({
   cause,
   tone,
   running,
@@ -598,102 +630,138 @@ function CentreCard({
     ? undefined
     : (others.find((fix) => fix.primary === true) ??
       others.find((fix) => fix.disclosure !== true && fix.opens === undefined));
-  const variantOf = (fix: NoticeAction) => {
+  // **A consent's answers are buttons, in the row** (ADR 0097 §6): Allow keeps the `grants` look
+  // and what stands beside it the plain one, at equal weight; only what opens more is a link.
+  // Every other way is a text link (#5649), its one answer leading in the accent's words.
+  const variantOf = (fix: NoticeAction): ButtonVariant => {
     if (fix.allows === true) return "grants";
-    if (fix === answer) return "primary";
-    // Beside a consent's Allow its answers are as plain as each other; what opens more is not one.
     return consent && fix.opens === undefined ? "secondary" : "quiet-link";
   };
-  const hasWays = others.length > 0 || link !== undefined || copy !== undefined;
+  const answers = consent ? others.filter((fix) => variantOf(fix) !== "quiet-link") : [];
+  const links = others.filter((fix) => !answers.includes(fix));
   const goes = whose?.onGo ?? toChat?.onPress;
+  const hasLinks =
+    goes !== undefined || links.length > 0 || link !== undefined || copy !== undefined;
   return (
-    <NoticeBox
-      tone={tone}
-      placement="inbox"
-      opened={under !== undefined}
-      asks={fixes !== undefined || link !== undefined || under !== undefined}
-      consent={consent}
-      layout="head"
-    >
+    // **A Notice as a row of its view** (#5649, ADR 0119 decision 6): its tone's glyph in its
+    // state's tint; its title with how long it has stood at the right, the × in its place under
+    // the pointer; its state; what it says; its ways as links (Go to chat, its fix); a
+    // consent's answers and what a way out opened, in the row.
+    <>
+      {/* Its live words are the whole row, its × too, as its card's head held it; never what a
+          way out opened, which stands under it, at its words' place. */}
       <NoticeSaid
         label={whose !== undefined && label !== undefined ? `${whose.whose}: ${label}` : label}
         cause={cause}
         live={quiet !== true}
       >
-        <NoticeHead
-          mark={<NoticeMark tone={tone} running={running} />}
-          title={
-            <NoticeTitle>
-              {persona != null && <PersonaMark persona={persona} />}
-              {named ?? state}
-            </NoticeTitle>
-          }
-          sub={
-            <>
-              {named !== undefined && `${state} · `}
-              <time dateTime={new Date(since).toISOString()}>{agoSaid(since, now)}</time>
-            </>
-          }
-          end={
-            goes === undefined && onDismiss === undefined ? undefined : (
-              <>
-                {goes !== undefined && (
-                  <Button
-                    size="sm"
-                    variant="quiet-link"
-                    aria-label={whose === undefined ? "Go to chat" : `Go to chat ${whose.whose}`}
-                    onPress={(press) => {
-                      if (whose !== undefined) whose.onGo();
-                      else if (mayAct(press.target)) toChat?.onPress();
-                    }}
-                    data-way="go"
-                  >
-                    Go to chat
-                  </Button>
-                )}
-                {onDismiss !== undefined && (
-                  <IconButton
-                    size="sm"
-                    variant="quiet"
-                    aria-label="Dismiss"
-                    tooltip={dismissSays}
-                    onPress={onDismiss}
-                    data-way="dismiss"
-                    icon={<X aria-hidden="true" />}
-                  />
-                )}
-              </>
+        <MessageRow
+          as="div"
+          tone={toneOfNotice(tone, waitsOnYou || consent)}
+          consent={consent}
+          icon={running ? <LoaderCircle className="spinning" /> : <NoticeGlyph tone={tone} />}
+          data-tone={tone}
+          dismiss={
+            onDismiss === undefined ? undefined : (
+              <IconButton
+                size="sm"
+                variant="quiet"
+                aria-label="Dismiss"
+                tooltip={dismissSays}
+                onPress={onDismiss}
+                data-way="dismiss"
+                icon={<X aria-hidden="true" />}
+              />
             )
           }
-        />
-        {children !== undefined && <NoticeMessage>{children}</NoticeMessage>}
-        {hasWays && (
-          <ButtonRow size="sm">
-            {others.map((fix) => (
-              <FixWay key={fix.label} fix={fix} mayAct={mayAct} variant={variantOf(fix)} />
-            ))}
-            {link && (
-              <Button size="sm" variant="quiet-link" onPress={link.onPress} data-way="link">
-                {link.label}
-              </Button>
-            )}
-            {copy !== undefined && (
-              <Button
-                size="sm"
-                variant="quiet-link"
-                tooltip={copy}
-                onPress={() => void navigator.clipboard?.writeText(copy).catch(() => undefined)}
-                data-way="copy"
-              >
-                Copy command
-              </Button>
-            )}
-          </ButtonRow>
-        )}
+        >
+          {/* A refusal, and a decision, are told by more than their mark and colour (#3344). */}
+          {tone === "trouble" && <span className="sr-only">Not done: </span>}
+          {tone === "attention" && <span className="sr-only">{NEEDS_A_DECISION}</span>}
+          <MessageTop
+            title={
+              <>
+                {persona != null && <PersonaMark persona={persona} />}
+                {named ?? state}
+              </>
+            }
+            time={
+              // Its age changes every minute: nothing to read the whole row out again for.
+              <time aria-live="off" dateTime={new Date(since).toISOString()}>
+                {agoSaid(since, now)}
+              </time>
+            }
+          />
+          {named !== undefined && <MessageMeta>{state}</MessageMeta>}
+          {children !== undefined && (
+            <MessageBody>
+              <NoticeMessage>{children}</NoticeMessage>
+            </MessageBody>
+          )}
+          {hasLinks && (
+            <MessageLinks>
+              {links.map((fix) => (
+                <FixWay
+                  key={fix.label}
+                  fix={fix}
+                  mayAct={mayAct}
+                  variant="quiet-link"
+                  lead={fix === answer}
+                />
+              ))}
+              {link && (
+                <Button size="sm" variant="quiet-link" onPress={link.onPress} data-way="link">
+                  {link.label}
+                </Button>
+              )}
+              {copy !== undefined && (
+                <Button
+                  size="sm"
+                  variant="quiet-link"
+                  tooltip={copy}
+                  onPress={() => void navigator.clipboard?.writeText(copy).catch(() => undefined)}
+                  data-way="copy"
+                >
+                  Copy command
+                </Button>
+              )}
+              {goes !== undefined && (
+                <Button
+                  size="sm"
+                  variant="quiet-link"
+                  aria-label={whose === undefined ? "Go to chat" : `Go to chat ${whose.whose}`}
+                  onPress={(press) => {
+                    if (whose !== undefined) whose.onGo();
+                    else if (mayAct(press.target)) toChat?.onPress();
+                  }}
+                  data-way="go"
+                >
+                  Go to chat
+                </Button>
+              )}
+            </MessageLinks>
+          )}
+          {answers.length > 0 && (
+            <MessageForm>
+              <ButtonRow size="sm">
+                {answers.map((fix) => (
+                  <FixWay key={fix.label} fix={fix} mayAct={mayAct} variant={variantOf(fix)} />
+                ))}
+              </ButtonRow>
+            </MessageForm>
+          )}
+        </MessageRow>
       </NoticeSaid>
       {under !== undefined && <NoticeUnder>{under}</NoticeUnder>}
-    </NoticeBox>
+    </>
   );
+}
+
+/** **A Notice's glyph** in its row's mark (#5649): the icons its card drew (`NoticeMark`). */
+function NoticeGlyph({ tone }: { tone: NoticeTone }) {
+  const Glyph =
+    tone === "trouble" ? CircleAlert : tone === "attention" ? CircleQuestionMark : CircleCheck;
+  return <Glyph />;
 }
 
 /** **A way out that fixes**, on a pane's line or row: Allow in its own look, and every press asks
@@ -702,9 +770,12 @@ function FixWay({
   fix: { button, label, allows, opens, busy, off, onPress, disclosure },
   mayAct,
   variant = allows === true ? "grants" : "secondary",
+  lead = false,
 }: {
   fix: NoticeAction;
   mayAct: (way: Element) => boolean;
+  /** **The way a message row leads with** (#5649): its one answer, in the accent's words. */
+  lead?: boolean;
   /** Its look where it stands: a card weighs its ways (#3478, #5217); a line or a row draws each
    *  as an answer that grants or a plain one. */
   variant?: ButtonVariant;
@@ -716,6 +787,7 @@ function FixWay({
       variant={variant}
       icon={disclosure !== true ? undefined : <Twist open={opens?.open === true} />}
       data-way={disclosure === true ? "disclosure" : "fix"}
+      data-lead={lead ? "" : undefined}
       aria-expanded={opens?.open}
       aria-controls={opens?.open ? opens.id : undefined}
       aria-disabled={busy || off !== undefined || undefined}
@@ -1027,13 +1099,45 @@ export const ANSWERS: ReadonlySet<string> = new Set([
   "away-summary",
 ]);
 
-type Stacked = { cause: string; tone: NoticeTone; host: HTMLElement };
+/**
+ * **The lines whose own Dismiss stands no Undo** (#5650): each answers something the person
+ * just did ({@link ANSWERS}) or is an Undo itself (a layout change's), and goes by itself. Put
+ * away, it is gone at once, as it was; Dismiss all still takes it with the rest, under one Undo.
+ */
+const GOES_AT_ONCE: ReadonlySet<string> = new Set([...ANSWERS, "layout-changed"]);
+
+type Stacked = {
+  cause: string;
+  tone: NoticeTone;
+  host: HTMLElement;
+  /** Its own Dismiss as it is now, where it has one: taken when pressed, so a Dismiss held for
+   *  its Undo is the one of the cause that was shown. */
+  dismiss?: () => (() => void) | undefined;
+};
 type Entry = Stacked & { seq: number };
 
 /** What the Inbox's list is to the Notices drawn inside it. */
 const Listed = createContext<{
   register: (id: string, notice: Stacked) => () => void;
+  /** The Notice `id`'s own Dismiss was pressed: carried out now, or held for its Undo. */
+  dismiss: (id: string) => void;
 } | null>(null);
+
+/**
+ * **Dismiss all on a list of Notices** (#5650): how many of its Notices have a Dismiss of their
+ * own, and the press that does each one's, by its own rule. A Notice without one (an ask, a
+ * teammate's change read by its Got it alone) is left standing.
+ */
+export type NoticesClear = {
+  count: number;
+  /** Taken at the press: the keys the Notices are held by, where Dismiss all waits for its
+   *  Undo, and each one's own Dismiss, done when `out` is called. */
+  take: () => { keys: readonly string[]; out: () => void };
+};
+
+/** The key a Notice is held by in a {@link DismissHold}: its place in the list and its cause,
+ *  so a new cause in the same place shows at once. */
+const heldKey = (id: string, cause: string) => `notice:${id}:${cause}`;
 
 /**
  * **A project's Notices, listed in its Inbox** (#1695, V91i): every `at="inbox"` Notice drawn
@@ -1047,7 +1151,7 @@ const Listed = createContext<{
  * moves**, so a button the person is on keeps the focus as another Notice arrives (F2).
  *
  * `onCount` hears how many it lists that the status line counts ({@link countsInStatusBar}),
- * and how many it lists in all;
+ * how many it lists in all, and how many of those say something needs fixing (`trouble`);
  * `onAnswer` hears that a Notice of an {@link ANSWERS} family arrived;
  * `into` is where the list is drawn, when that is not where it is written: the window's own
  * lines are written once, and drawn at the top of the page a window with no project shows
@@ -1060,21 +1164,63 @@ export function NoticeList({
   onAnswer,
   into,
   at = "inbox",
+  hold,
+  onClear,
 }: {
   children: ReactNode;
-  onCount?: (counted: number, listed: number) => void;
+  onCount?: (counted: number, listed: number, trouble: number) => void;
   onAnswer?: () => void;
   into?: Element | null;
   at?: NoticeListAt;
+  /** **Where a Dismiss waits for its Undo** (#5650): a Notice dismissed here, alone or by Dismiss
+   *  all, is taken out of the list at once and its own Dismiss carried out when the Undo goes.
+   *  Without it, a Dismiss is carried out at once. */
+  hold?: DismissHold;
+  /** Hears what Dismiss all on this list would dismiss now: none while no Notice has a
+   *  Dismiss of its own. */
+  onClear?: (clear: NoticesClear | undefined) => void;
 }) {
   const [entries, setEntries] = useState<ReadonlyMap<string, Entry>>(() => new Map());
   // State, not a ref: the list's element changes when it is drawn somewhere else (`into`), and
   // the Notices are moved into the new one.
   const [listAt, setListAt] = useState<HTMLDivElement | null>(null);
   const next = useRef(0);
+  /** The Notices registered now, read when a Dismiss is pressed. */
+  const registered = useRef(entries);
+  const holding = useRef(hold);
+  useLayoutEffect(() => {
+    registered.current = entries;
+    holding.current = hold;
+  });
+
+  /** The keys of the Notices `ids` as they stand now, and their own Dismiss, done when called. */
+  const outOf = useCallback((ids: readonly string[]) => {
+    const now = ids.flatMap((id) => {
+      const one = registered.current.get(id);
+      return one === undefined ? [] : [{ key: heldKey(id, one.cause), own: one.dismiss?.() }];
+    });
+    return {
+      keys: now.map((one) => one.key),
+      out: () => now.forEach((one) => one.own?.()),
+    };
+  }, []);
+  /** Does the Dismiss of each Notice of `ids`: held for its Undo where the list has a hold. */
+  const dismissEach = useCallback(
+    (ids: readonly string[]) => {
+      const { keys, out } = outOf(ids);
+      holdOrCarryOut(holding.current, keys, out);
+    },
+    [outOf],
+  );
 
   const list = useMemo(
     () => ({
+      dismiss: (id: string) => {
+        const one = registered.current.get(id);
+        // A line that answers a press and goes by itself is put away at once: no Undo of an Undo.
+        if (one !== undefined && GOES_AT_ONCE.has(familyOf(one.cause))) outOf([id]).out();
+        else dismissEach([id]);
+      },
       register: (id: string, notice: Stacked) => {
         setEntries((was) =>
           new Map(was).set(id, { ...notice, seq: was.get(id)?.seq ?? next.current++ }),
@@ -1087,19 +1233,43 @@ export function NoticeList({
           });
       },
     }),
-    [],
+    [dismissEach, outOf],
   );
 
+  const held = hold?.held;
   const ordered = useMemo(
     () =>
-      [...entries.values()].sort(
-        (a, b) =>
-          ahead(a.cause) - ahead(b.cause) ||
-          TONE_ORDER[a.tone] - TONE_ORDER[b.tone] ||
-          rank(a.cause) - rank(b.cause) ||
-          a.seq - b.seq,
+      [...entries]
+        .filter(([id, one]) => held?.has(heldKey(id, one.cause)) !== true)
+        .map(([, entry]) => entry)
+        .sort(
+          (a, b) =>
+            ahead(a.cause) - ahead(b.cause) ||
+            TONE_ORDER[a.tone] - TONE_ORDER[b.tone] ||
+            rank(a.cause) - rank(b.cause) ||
+            a.seq - b.seq,
+        ),
+    [entries, held],
+  );
+
+  /** The Notices listed now that have a Dismiss of their own. */
+  const clearable = useMemo(
+    () =>
+      [...entries]
+        .filter(
+          ([id, one]) => one.dismiss !== undefined && held?.has(heldKey(id, one.cause)) !== true,
+        )
+        .map(([id]) => id),
+    [entries, held],
+  );
+  useEffect(
+    () =>
+      onClear?.(
+        clearable.length === 0
+          ? undefined
+          : { count: clearable.length, take: () => outOf(clearable) },
       ),
-    [entries],
+    [onClear, clearable, outOf],
   );
 
   // Before the frame is painted, so a Notice is never seen out of its place.
@@ -1115,7 +1285,12 @@ export function NoticeList({
   }, [ordered, listAt]);
 
   const counted = ordered.filter((one) => countsInStatusBar(one.cause)).length;
-  useEffect(() => onCount?.(counted, ordered.length), [onCount, counted, ordered.length]);
+  // What says something needs fixing (#5645): the Notices icon's dot.
+  const trouble = ordered.filter((one) => one.tone === "trouble").length;
+  useEffect(
+    () => onCount?.(counted, ordered.length, trouble),
+    [onCount, counted, ordered.length, trouble],
+  );
 
   /** The answers listed already, by cause: one arriving is one not listed before. */
   const answered = useRef(new Set<string>());

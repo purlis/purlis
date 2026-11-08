@@ -6089,6 +6089,690 @@
         "menu.indicator.danger.open.text": {
           "$ref": "#/$defs/part-text"
         },
+        "message.root.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "message.root.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.root.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "message.root.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "message.root.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "message.root.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.root.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "message.root.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.root.waiting.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "message.root.waiting.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.root.waiting.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "message.root.waiting.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "message.root.waiting.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "message.root.waiting.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.root.waiting.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "message.root.waiting.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.root.done.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "message.root.done.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.root.done.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "message.root.done.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "message.root.done.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "message.root.done.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.root.done.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "message.root.done.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.root.failed.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "message.root.failed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.root.failed.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "message.root.failed.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "message.root.failed.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "message.root.failed.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.root.failed.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "message.root.failed.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.root.report.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "message.root.report.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.root.report.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "message.root.report.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "message.root.report.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "message.root.report.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.root.report.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "message.root.report.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.root.plain.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "message.root.plain.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.root.plain.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "message.root.plain.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "message.root.plain.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "message.root.plain.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.root.plain.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "message.root.plain.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.mark.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "message.mark.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.mark.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "message.mark.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.mark.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "message.mark.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.mark.waiting.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "message.mark.waiting.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.mark.waiting.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "message.mark.waiting.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.mark.waiting.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "message.mark.waiting.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.mark.done.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "message.mark.done.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.mark.done.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "message.mark.done.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.mark.done.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "message.mark.done.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.mark.failed.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "message.mark.failed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.mark.failed.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "message.mark.failed.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.mark.failed.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "message.mark.failed.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.mark.report.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "message.mark.report.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.mark.report.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "message.mark.report.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.mark.report.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "message.mark.report.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.mark.plain.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "message.mark.plain.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.mark.plain.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "message.mark.plain.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.mark.plain.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "message.mark.plain.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.main.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "message.main.waiting.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "message.main.done.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "message.main.failed.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "message.main.report.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "message.main.plain.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "message.top.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "message.top.waiting.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "message.top.done.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "message.top.failed.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "message.top.report.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "message.top.plain.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "message.title.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.title.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "message.title.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "message.title.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.title.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.title.waiting.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.title.waiting.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "message.title.waiting.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "message.title.waiting.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.title.waiting.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.title.done.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.title.done.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "message.title.done.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "message.title.done.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.title.done.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.title.failed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.title.failed.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "message.title.failed.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "message.title.failed.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.title.failed.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.title.report.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.title.report.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "message.title.report.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "message.title.report.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.title.report.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.title.plain.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.title.plain.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "message.title.plain.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "message.title.plain.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.title.plain.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.time.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.time.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "message.time.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.time.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.time.waiting.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.time.waiting.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "message.time.waiting.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.time.waiting.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.time.done.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.time.done.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "message.time.done.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.time.done.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.time.failed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.time.failed.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "message.time.failed.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.time.failed.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.time.report.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.time.report.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "message.time.report.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.time.report.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.time.plain.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.time.plain.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "message.time.plain.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.time.plain.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.meta.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.meta.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "message.meta.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.meta.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.meta.waiting.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.meta.waiting.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "message.meta.waiting.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.meta.waiting.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.meta.done.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.meta.done.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "message.meta.done.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.meta.done.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.meta.failed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.meta.failed.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "message.meta.failed.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.meta.failed.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.meta.report.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.meta.report.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "message.meta.report.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.meta.report.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.meta.plain.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.meta.plain.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "message.meta.plain.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.meta.plain.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.state.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.state.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.state.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.state.waiting.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.state.waiting.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.state.waiting.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.state.done.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.state.done.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.state.done.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.state.failed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.state.failed.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.state.failed.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.state.report.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.state.report.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.state.report.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.state.plain.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.state.plain.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.state.plain.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.body.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.body.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "message.body.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.body.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.body.waiting.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.body.waiting.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "message.body.waiting.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.body.waiting.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.body.done.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.body.done.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "message.body.done.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.body.done.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.body.failed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.body.failed.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "message.body.failed.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.body.failed.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.body.report.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.body.report.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "message.body.report.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.body.report.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.body.plain.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.body.plain.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "message.body.plain.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.body.plain.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "message.links.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "message.links.waiting.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "message.links.done.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "message.links.failed.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "message.links.report.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "message.links.plain.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "message.form.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "message.form.waiting.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "message.form.done.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "message.form.failed.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "message.form.report.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "message.form.plain.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
         "meter.root.text": {
           "$ref": "#/$defs/part-text"
         },

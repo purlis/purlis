@@ -21,8 +21,8 @@ import { READY } from "../harness.js";
  */
 const HAND = '[data-testid="title-bar"] [data-testid="needs-you-button"]';
 
-/** The Inbox view (#1692), and the chat waiting on you in it. */
-const WAITING_IN_THE_INBOX = '[role="tabpanel"][data-view="inbox"] .inbox-ask';
+/** The Asks view (#1692, ADR 0119), and the chat waiting on you in it. */
+const WAITING_IN_THE_INBOX = '[role="tabpanel"][data-view="asks"] .inbox-ask';
 
 /**
  * Presses the hand with the page's own `click()`: a WebDriver click is a `mousedown` and a

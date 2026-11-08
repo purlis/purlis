@@ -184,6 +184,22 @@ export function ActivityCount({
 }
 
 /**
+ * **A dot on an item** (ADR 0119, #5645): where the count is drawn, a mark in the danger colour
+ * that says something needs fixing, and never a number. `said` is the item's description, as a
+ * count's sentence is. The danger tone is its own role, as the needs-you count's is: a count rule
+ * of `parts` never reaches it.
+ */
+export function ActivityDot({ said }: { said: string }) {
+  return (
+    <span data-scope="activity" data-part="count" data-tone="danger">
+      <span data-scope="activity" data-part="said">
+        {said}
+      </span>
+    </span>
+  );
+}
+
+/**
  * **A group of a bar's items**: one tab list, the side panel's views or its half of the bottom
  * panel's. Every prop reaches the element (a roving group's root hands it its own), and the
  * family's attributes are its own.

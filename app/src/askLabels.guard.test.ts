@@ -25,6 +25,7 @@ const DRAWING_ASKS = [
   "TaskPromptNotice.tsx",
   "WorkspaceRemovalNotice.tsx",
   "Inbox.tsx",
+  "InboxAsks.tsx",
 ];
 
 /** The registry's labels, as `asking.rs` writes them. */

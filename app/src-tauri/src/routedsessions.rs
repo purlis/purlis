@@ -1310,6 +1310,19 @@ impl SessionHost for RoutedSessions {
         }
     }
 
+    fn records_turns_of(&self, id: u32) -> bool {
+        host_of(&self.shared, id).is_some_and(|host| host.records_turns_of(id))
+    }
+
+    fn undo_turn_on(
+        &self,
+        pool: &str,
+        place: &purlis_core::files::turns::Place,
+        turn: &purlis_core::files::TurnKey,
+    ) -> Result<purlis_session_protocol::session::Answer, String> {
+        pool_of(&self.shared, &self.to_a_pool, pool)?.undo_turn_on(pool, place, turn)
+    }
+
     fn pool_of(&self, id: u32) -> Option<String> {
         // Its pool, wherever it runs: a chat's own fresh runner is named under it (#3818).
         lock(&self.shared.chats)

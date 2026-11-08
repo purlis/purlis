@@ -90,11 +90,11 @@ async function noticesCounted(): Promise<number> {
 /** The Notices button's name for a count. */
 const noticesSaid = (count: number) => (count === 0 ? "Notices: none" : `Notices: ${count}`);
 
-/** Presses the status line's Notices button and waits for the Inbox it opens (#1695), asked
- *  for afresh — an element looked up before the view was shown is not the view. */
-async function openTheInbox(): Promise<WebdriverIO.Element> {
+/** Presses the status line's Notices button and waits for the Notices view it opens (#1695,
+ *  ADR 0119), asked for afresh — an element looked up before the view was shown is not the view. */
+async function openTheNotices(): Promise<WebdriverIO.Element> {
   await $('[data-testid="status-alerts"]').click();
-  const inbox = await $('.region-view[data-view="inbox"]');
+  const inbox = await $('.region-view[data-view="notices"]');
   await inbox.waitForDisplayed({ timeout: 20_000 });
   return inbox.getElement();
 }
@@ -291,12 +291,12 @@ describe("the status line", () => {
     await untilItSays("alpha");
   });
 
-  it("opens the Inbox from the Notices button, and moves the window not at all", async () => {
+  it("opens the Notices view from the Notices button, and moves the window not at all", async () => {
     // The fixture plane is healthy, so purlis has read the project to the end and has a number.
     await untilTheStripIsRead();
     await noticesCounted();
 
-    const inbox = await openTheInbox();
+    const inbox = await openTheNotices();
     // The window is not scrolled and is no bigger than itself: a box hanging out of a view made
     // the page taller once, and a click that opened something scrolled the whole window
     // (train 36). Said with the sizes, so a failure names which way it grew.
@@ -311,7 +311,7 @@ describe("the status line", () => {
 
   it("lists an alert the plane has as a Notice, counts it, and stops counting it once it is fixed", async () => {
     // A workspace behind the current layout: purlis's `reinit` alert, with its Reinit button
-    // (NO-6: a row's way out is a button, not a command to type), in the Inbox (#1695).
+    // (NO-6: a row's way out is a button, not a command to type), in the Notices view (#1695, ADR 0119).
     await untilTheStripIsRead();
     const plane = await planeRoot();
     // The stamp under whichever name it has: a plane charter laid out carries
@@ -324,8 +324,8 @@ describe("the status line", () => {
     const before = await noticesCounted();
     try {
       writeFileSync(marker, "4\n");
-      // Opening the Inbox from the button reads the alerts again, as the drawer's opening did.
-      const inbox = await openTheInbox();
+      // Opening the Notices view from the button reads the alerts again, as the drawer's opening did.
+      const inbox = await openTheNotices();
       await untilTheButtonSays(noticesSaid(before + 1));
       const row = await inbox.$('[data-scope=notice-list] [data-cause="alert:reinit"]');
       await row.waitForDisplayed({ timeout: 20_000 });
@@ -336,7 +336,7 @@ describe("the status line", () => {
       // Put back what this spec changed: one app process serves the whole run.
       writeFileSync(marker, was);
     }
-    await openTheInbox();
+    await openTheNotices();
     await untilTheButtonSays(noticesSaid(before));
   });
 

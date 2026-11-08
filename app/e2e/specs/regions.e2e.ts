@@ -260,8 +260,8 @@ describe("the right-hand region", () => {
     expect(await tooltipOf('[data-testid="panel-personas"] .panel-row.is-default')).toContain(
       "default",
     );
-    // As the window was found: the sidebar on the Inbox, the right half on Memory.
-    await showView("Inbox");
+    // As the window was found: the sidebar on Asks, the right half on Memory.
+    await showView("Asks");
     await showView("Memory");
   });
 
@@ -487,26 +487,26 @@ describe("the right side's activity bar (#1678)", () => {
       return found ? { left: found.left, right: found.right, width: found.width } : null;
     }, selector);
 
-  /** The right sidebar's Inbox, drawn: the view it opens on since #1738. */
-  const INBOX = '[data-panel][id="region-right"] .region-view[data-view="inbox"]';
+  /** The right sidebar's Asks, drawn: the view it opens on since #1738 (Asks since ADR 0119). */
+  const INBOX = '[data-panel][id="region-right"] .region-view[data-view="asks"]';
 
-  // On the Inbox, the view the side opens on (#1738; `regions.test.ts` holds that default): one
+  // On Asks, the view the side opens on (#1738; `regions.test.ts` holds that default): one
   // app process serves the whole run, and a spec before this one may have left another view open.
   before(async () => {
     await onAlpha();
-    await showView("Inbox");
+    await showView("Asks");
   });
 
-  it("is on the Inbox and switches to Personas, one view at a time (#1738)", async () => {
+  it("is on Asks and switches to Personas, one view at a time (#1738)", async () => {
     await onAlpha();
-    await (await tab("Inbox")).waitForExist({ timeout: 20_000 });
-    await expect(await tab("Inbox")).toHaveAttribute("aria-selected", "true");
+    await (await tab("Asks")).waitForExist({ timeout: 20_000 });
+    await expect(await tab("Asks")).toHaveAttribute("aria-selected", "true");
 
     await (await tab("Personas")).click();
     await $('[data-testid="panel-personas"]').waitForDisplayed({ timeout: 20_000 });
     await expect(await $(INBOX)).not.toBeDisplayed();
 
-    await (await tab("Inbox")).click();
+    await (await tab("Asks")).click();
     await $(INBOX).waitForDisplayed({ timeout: 20_000 });
   });
 
@@ -514,7 +514,7 @@ describe("the right side's activity bar (#1678)", () => {
     await onAlpha();
     await $(INBOX).waitForDisplayed({ timeout: 20_000 });
 
-    await (await tab("Inbox")).click();
+    await (await tab("Asks")).click();
     const slot = await $('[data-panel][id="region-right"]');
     await browser.waitUntil(async () => ((await slot.getSize("width")) as number) === 0, {
       timeout: 20_000,
@@ -522,7 +522,7 @@ describe("the right side's activity bar (#1678)", () => {
     });
     await expect(await $(BAR)).toBeDisplayed();
 
-    await (await tab("Inbox")).click();
+    await (await tab("Asks")).click();
     await $(INBOX).waitForDisplayed({ timeout: 20_000 });
     expect((await slot.getSize("width")) as number).toBeGreaterThan(0);
   });

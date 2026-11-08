@@ -554,6 +554,21 @@ pub fn seen_on_this_machine(config_root: &Path, cause: &str) -> bool {
         .is_some_and(|held| held.iter().any(|one| one.as_str() == Some(cause)))
 }
 
+/// **Whether the layout file keeps anything of `project`** (#5648): an arrangement or a view's
+/// own (`projects`), or a Notice dismissed there (`dismissed`), each by the project's root as the
+/// window keys it. What this machine's window wrote of a project says it opened that project
+/// before. A file purlis cannot read or use says no.
+pub fn keeps_project(config_root: &Path, project: &str) -> bool {
+    read_layout(config_root).document.is_some_and(|document| {
+        [PROJECTS, DISMISSED].iter().any(|field| {
+            document
+                .get(field)
+                .and_then(|held| held.get(project))
+                .is_some()
+        })
+    })
+}
+
 /// Only the causes [`ONCE_ON_THIS_MACHINE`] lists, each once, in the order given.
 fn only_once<'a>(causes: impl IntoIterator<Item = &'a str>) -> Vec<String> {
     let mut kept: Vec<String> = Vec::new();

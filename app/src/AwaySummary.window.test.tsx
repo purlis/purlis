@@ -15,6 +15,7 @@ import {
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
+import { waitOutTheUndo } from "./test-inbox";
 import type {
   FinishedTask,
   InboxUpdate,
@@ -477,7 +478,7 @@ describe("while you were away (#1514)", () => {
     );
 
     // The Inbox, shown, and its updates, where its Allow, Never and Dismiss answer it.
-    const inbox = await screen.findByRole("tabpanel", { name: "Inbox" });
+    const inbox = await screen.findByRole("tabpanel", { name: "Updates" });
     const updates = within(inbox).getByRole("region", { name: "Updates" });
     expect(within(updates).getByText("steward wanted devops while you were away")).toBeTruthy();
     expect(
@@ -499,7 +500,7 @@ describe("while you were away (#1514)", () => {
     expect(part.getAttribute("aria-haspopup")).toBeNull();
     await userEvent.click(part);
 
-    const inbox = await screen.findByRole("tabpanel", { name: "Inbox" });
+    const inbox = await screen.findByRole("tabpanel", { name: "Updates" });
     const updates = within(inbox).getByRole("region", { name: "Updates" });
     expect(within(updates).getByText("lead wanted devops while you were away")).toBeTruthy();
     await settle();
@@ -737,13 +738,13 @@ function projectTab(name: string): HTMLElement {
 describe("the Inbox's updates (#1693)", () => {
   const openInbox = async () => {
     // Pressed only where it is not shown already: a press on the view in front puts it away.
-    if (screen.queryByRole("tabpanel", { name: "Inbox" }) === null)
+    if (screen.queryByRole("tabpanel", { name: "Updates" }) === null)
       await userEvent.click(
         within(screen.getByRole("tablist", { name: "Attention" })).getByRole("tab", {
-          name: "Inbox",
+          name: "Updates",
         }),
       );
-    return screen.findByRole("tabpanel", { name: "Inbox" });
+    return screen.findByRole("tabpanel", { name: "Updates" });
   };
 
   it("notes a task that finished and one that failed, and lists both newest first", async () => {
@@ -775,21 +776,24 @@ describe("the Inbox's updates (#1693)", () => {
   it("lists what the core kept across a relaunch, though no source says it now", async () => {
     keeps = keeping([
       {
-        key: "doctor:git:fail",
-        kind: "doctor",
+        key: "sandbox:api",
+        kind: "sandbox",
         at: LEFT / 1000 - 3600,
         session: null,
         chain: [],
-        says: "git: no identity is set",
+        says: "The sandbox now allows api.example.com",
         read: true,
       },
     ]);
     await drawn();
     const updates = within(await openInbox()).getByRole("region", { name: "Updates" });
-    expect(within(updates).getByText("git: no identity is set")).toBeTruthy();
+    expect(within(updates).getByText("The sandbox now allows api.example.com")).toBeTruthy();
   });
 
-  it("dismisses every update and marks every one read on the core, and answers no ask", async () => {
+  it("dismisses every update of the list shown and marks every one read on the core, and answers no ask", async () => {
+    // Dismiss all is kept once its Undo has stood (#5650): the test waits it out.
+    vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ["Date", "setTimeout", "clearTimeout"] });
+    vi.setSystemTime(LEFT);
     keeps = keeping();
     const held = await drawn([{ ...FAILED, ended: iso(LEFT - MINUTE) }]);
     const inbox = await openInbox();
@@ -798,18 +802,22 @@ describe("the Inbox's updates (#1693)", () => {
     await userEvent.click(within(inbox).getByRole("button", { name: "Mark all read" }));
     await waitFor(() =>
       expect(held.asked("settle_inbox_updates")).toEqual([
-        { plane: PLANE, keys: null, how: "read" },
+        { plane: PLANE, keys: ["task:01K7FAILED"], how: "read" },
       ]),
     );
     await userEvent.click(within(inbox).getByRole("button", { name: "Dismiss all" }));
     await waitFor(() =>
       expect(within(inbox).queryByRole("region", { name: "Updates" })).toBeNull(),
     );
-    expect(held.asked("settle_inbox_updates").at(-1)).toEqual({
-      plane: PLANE,
-      keys: null,
-      how: "dismissed",
-    });
+    waitOutTheUndo();
+    // The lines Mine lists (#5646): Project's are not put away with them.
+    await waitFor(() =>
+      expect(held.asked("settle_inbox_updates").at(-1)).toEqual({
+        plane: PLANE,
+        keys: ["task:01K7FAILED"],
+        how: "dismissed",
+      }),
+    );
     expect(held.commands()).not.toContain("answer_ask");
   });
 

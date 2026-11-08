@@ -10,6 +10,7 @@ import { SETTLE_MS } from "./TaskBlocksNotice";
 import { DRAWING } from "./AskWrites";
 import { forgetInbox } from "./inboxRules";
 import type { Shown } from "./bindings";
+import { openEveryAnswer } from "./test-inbox";
 
 /**
  * **An edit's change, in its Inbox row, before its Allow** (#1146): Claude Code's Write, Edit and
@@ -45,9 +46,12 @@ function draw(asks: readonly Shown[], calls: string[] = [], Drawn: typeof Inbox 
     calls.push(cmd);
     return null;
   });
-  return render(
+  const drawn = render(
     <Drawn plane={PLANE} asks={asks} onGo={vi.fn()} onLeave={vi.fn()} onAnswered={vi.fn()} />,
   );
+  // What an edit's change shows is drawn in its form, behind its Answer (#5651).
+  openEveryAnswer();
+  return drawn;
 }
 
 const buttons = () => screen.getAllByRole("button").map((button) => button.textContent);
@@ -74,7 +78,7 @@ describe("an edit's change in the Inbox (#1146)", () => {
     ]);
     // The view is its own chunk: while it loads, nothing that lets the edit run is drawn.
     expect(screen.getByText(DRAWING)).toBeTruthy();
-    expect(buttons()).toEqual(["Go to chat"]);
+    expect(buttons()).toEqual(["Cancel", "Go to chat"]);
 
     const view = await screen.findByTestId("merge-viewer", undefined, { timeout: 5000 });
     expect(view).toHaveAttribute("aria-label", "Replaces this text, in /work/src/lib.rs");
@@ -83,7 +87,7 @@ describe("an edit's change in the Inbox (#1146)", () => {
     expect(lines(before)).toEqual(["fn one() {}", ""]);
     expect(lines(after)).toEqual(["fn two() {}", ""]);
     expect(screen.getByText("Replaces this text")).toBeTruthy();
-    expect(buttons()).toEqual(["Go to chat", "Allow", "Deny"]);
+    expect(buttons()).toEqual(["Cancel", "Go to chat", "Allow", "Deny"]);
   });
 
   it("counts no Allow pressed as the change is drawn, and one pressed once it was read", async () => {
@@ -163,7 +167,7 @@ describe("an edit's change in the Inbox (#1146)", () => {
     expect(screen.getByTestId("ask-writes-not-shown").textContent).toBe(why);
     expect(screen.queryByTestId("merge-viewer")).toBeNull();
     // Even were an Allow offered with it, none is drawn.
-    expect(buttons()).toEqual(["Go to chat", "Deny"]);
+    expect(buttons()).toEqual(["Cancel", "Go to chat", "Deny"]);
   });
 });
 
@@ -225,6 +229,6 @@ describe("a proposed change in the Inbox (#1975)", () => {
     draw([
       proposal({ kind: "not-shown", why: "This change holds what looks like a credential." }, both),
     ]);
-    expect(buttons()).toEqual(["Go to chat", "Dismiss"]);
+    expect(buttons()).toEqual(["Cancel", "Go to chat", "Dismiss"]);
   });
 });

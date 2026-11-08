@@ -640,6 +640,10 @@ export const commands = {
 	inboxUpdates: __WINDOW_ONLY_RESULT,
 	noteInboxUpdates: __WINDOW_ONLY_RESULT,
 	settleInboxUpdates: __WINDOW_ONLY_RESULT,
+	snoozeInboxAsks: __WINDOW_ONLY_RESULT,
+	wakeInboxAsks: __WINDOW_ONLY_RESULT,
+	inboxFirstOpen: __WINDOW_ONLY_RESULT,
+	setAsideInboxFindings: __WINDOW_ONLY_RESULT,
 	/**
 	 *  The window says whether it has `plane`'s Inbox open (#1694): while it is, and the window
 	 *  is focused with the project in front, no notification is sent about that project's asks.
@@ -3221,6 +3225,13 @@ export type Asking = {
 	 *  Inbox, which read [`Asking::asks`].
 	 */
 	with_asking_chat: WithAskingChat[],
+	/**
+	 *  **The asks Snooze all put away** (#5647, ADR 0119): each held by a chat that holds no
+	 *  ask it did not have when it was snoozed. Listed apart from [`Asking::asks`], so neither
+	 *  the ✋ nor Asks counts them; the Chats view, which reads the board, still says the chat
+	 *  waits. Only [`asks_waiting`] puts any here.
+	 */
+	snoozed?: Shown[],
 };
 
 /**  Which command's question it is. */
@@ -4753,9 +4764,11 @@ export type DiscardAgainst =
 export type DiscardAnswer = 
 /**
  *  It is written. `now` is the file's diff without the hunk, or `null` when nothing of its
- *  change is left to draw; `unrecorded` says why the log did not take it, if it did not.
+ *  change is left to draw; `unrecorded` says why the log did not take it, if it did not;
+ *  `untold` names each chat in the folder whose agent is not told of it
+ *  ([`crate::staleclones::untold_in`]).
  */
-{ kind: "discarded"; now: WhatChanged | null; unrecorded: string | null } | 
+{ kind: "discarded"; now: WhatChanged | null; unrecorded: string | null; untold: string[] } | 
 /**  Nothing was written: these chats are not idle, and the choice is the operator's. */
 { kind: "busy"; chats: BusyChat[] } | 
 /**  Nothing was written: the file changed on disk since the diff was drawn. */
@@ -7108,8 +7121,24 @@ export type InTurn =
 /**  The file, compared across the turn. */
 { kind: "changed"; shown: WhatChanged };
 
+/**  **The first-open baseline** (#5648, ADR 0119), as the window reads it. */
+export type InboxBaseline = {
+	/**  When the project first opened on this machine, in seconds since 1970. */
+	at: number,
+	/**  Whether that open set the past aside: false where this machine had seen the project. */
+	fresh: boolean,
+	/**
+	 *  The doctor findings already there, by the causes the window dismisses them by; null
+	 *  until the window has set aside the first report's.
+	 */
+	findings: string[] | null,
+};
+
 /**  One update, as the window draws it. */
-export type InboxUpdate = {
+export type InboxUpdate = InboxUpdate_Serialize | InboxUpdate_Deserialize;
+
+/**  One update, as the window draws it. */
+export type InboxUpdate_Deserialize = {
 	/**  Its source's own name for it: what the window notes, settles and matches it by. */
 	key: string,
 	kind: UpdateKind,
@@ -7123,6 +7152,33 @@ export type InboxUpdate = {
 	says: string,
 	/**  The person has read it. */
 	read: boolean,
+	/**
+	 *  The first-open baseline set it aside (#5648): listed From the project, read. Absent for
+	 *  every other update.
+	 */
+	baselined?: boolean | null,
+};
+
+/**  One update, as the window draws it. */
+export type InboxUpdate_Serialize = {
+	/**  Its source's own name for it: what the window notes, settles and matches it by. */
+	key: string,
+	kind: UpdateKind,
+	/**  When it happened, in seconds since 1970. */
+	at: number,
+	/**  The chat it is about, while that number means one. */
+	session: number | null,
+	/**  Who it is about, the session first: names, as data. */
+	chain: string[],
+	/**  What happened, in one line: data, never markup. */
+	says: string,
+	/**  The person has read it. */
+	read: boolean,
+	/**
+	 *  The first-open baseline set it aside (#5648): listed From the project, read. Absent for
+	 *  every other update.
+	 */
+	baselined?: boolean | null,
 };
 
 /**
@@ -13937,6 +13993,12 @@ export type SmartClosing = {
 	record: SavedRecord | null,
 };
 
+/**  One chat Snooze all puts away (#5647): its session, and the keys of the asks it holds now. */
+export type SnoozedChat = {
+	session: number,
+	asks: string[],
+};
+
 /**  What a source offers. */
 export type SourceBrowse = {
 	commit: SourceCommit,
@@ -15138,9 +15200,10 @@ export type TurnPick = {
 export type UndoAnswer = 
 /**
  *  Every file is back. `unrecorded` says why the log did not take it, `unmarked` why the turn
- *  is not marked undone, if either.
+ *  is not marked undone, if either; `untold` names each chat in the folder whose agent is not
+ *  told of it ([`crate::staleclones::untold_in`]).
  */
-{ kind: "undone"; unrecorded: string | null; unmarked: string | null } | 
+{ kind: "undone"; unrecorded: string | null; unmarked: string | null; untold: string[] } | 
 /**  Nothing was written: these chats are not idle, and an undo waits until they are. */
 { kind: "busy"; chats: BusyChat[] };
 

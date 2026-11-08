@@ -3,24 +3,14 @@
 
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  cleanup,
-  configure,
-  render as renderBare,
-  screen,
-  waitFor,
-  within,
-} from "@testing-library/react";
+import { cleanup, render as renderBare, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
+import { waitOutTheUndo } from "./test-inbox";
 import type { DoctorReport, DoctorRow } from "./bindings";
 import { forgetThisLaunch } from "./regions";
 import { findTheWorkspaces } from "./test-strips";
-
-// The Inbox lists a doctor finding as an update too (#1693), after its Notices (#1695):
-// these tests are about the Notice, so the update is not what they find.
-configure({ defaultIgnore: 'script, style, [data-view="inbox"] .inbox-updates *' });
 
 /**
  * **A Notice that carries a fix with a form draws that form** (#1250), against the whole
@@ -119,32 +109,50 @@ function core(answers: {
 beforeEach(() => forgetThisLaunch());
 
 afterEach(() => {
+  vi.useRealTimers();
   cleanup();
   clearMocks();
 });
 
-/** The finding's Notice, in the Inbox (#1695), which is shown first: pressed only where it is
- *  not, since a press on the view in front puts it away. */
-const identityNotice = async () => {
-  const found = (await screen.findByText(/^git identity: not set: user\.email/)).closest(
+/** Shows the Notices view (#5645), in the Panel's right half, as a person presses its icon. */
+async function showNotices(): Promise<HTMLElement> {
+  const tab = within(await screen.findByRole("tablist", { name: "Panel, right half" })).getByRole(
+    "tab",
+    { name: "Notices" },
+  );
+  if (tab.getAttribute("aria-selected") !== "true") await userEvent.click(tab);
+  return screen.findByRole("tabpanel", { name: "Notices" });
+}
+
+/** Lets the window finish opening: where the keyboard starts is placed once it has. */
+const settle = () => new Promise((done) => setTimeout(done, 100));
+
+/**
+ * **The doctor's one line in Notices, opened to its findings** (#5645): the line, and the row of
+ * the finding named `name` in its list. Opened only where it is not, since Show findings toggles.
+ */
+async function finding(name: string): Promise<{ line: HTMLElement; row: HTMLElement }> {
+  const notices = await showNotices();
+  const line = (await within(notices).findByText(/^Doctor: \d+ findings?$/)).closest(
     "[data-cause]",
   ) as HTMLElement;
-  if (screen.queryByRole("tabpanel", { name: "Inbox" }) === null)
-    await userEvent.click(
-      within(await screen.findByRole("tablist", { name: "Attention" })).getByRole("tab", {
-        name: "Inbox",
-      }),
-    );
-  return found;
-};
+  if (within(notices).queryByRole("list", { name: "Doctor findings" }) === null) {
+    await settle();
+    await userEvent.click(within(line).getByRole("button", { name: "Show findings" }));
+  }
+  const list = await within(notices).findByRole("list", { name: "Doctor findings" });
+  const row = await waitFor(() => {
+    const found = list.querySelector<HTMLElement>(`[data-row="${name}"]`);
+    if (found === null) throw new Error(`no finding ${name}`);
+    return found;
+  });
+  return { line, row };
+}
 
 /** What the window last asked the core to keep dismissed for this project. */
 const kept = (asked: Asked[]) =>
   (asked.filter((one) => one.cmd === "set_dismissed").at(-1)?.args as { causes?: string[] })
     ?.causes;
-
-/** Lets the window finish opening: where the keyboard starts is placed once it has. */
-const settle = () => new Promise((done) => setTimeout(done, 100));
 
 /**
  * Types into a field the form has put the keyboard in. Not by a click: jsdom lays nothing out,
@@ -156,19 +164,19 @@ async function type(field: HTMLElement, text: string) {
 }
 
 async function openForm() {
-  const notice = await identityNotice();
+  const { line: notice, row } = await finding("git identity");
   await settle();
-  const fix = within(notice).getByRole("button", { name: "Fix" });
+  const fix = within(row).getByRole("button", { name: "Fix git identity" });
   await userEvent.click(fix);
   const form = await screen.findByRole("form", { name: "Git identity" });
   return { notice, fix, form };
 }
 
-describe("the doctor's git identity finding, as a Notice (#1250)", () => {
-  it("stands in the Inbox with its fix id, and its Fix opens the form, set keys locked", async () => {
+describe("the doctor's git identity finding, in the doctor's Notice line (#1250, #5645)", () => {
+  it("stands in Notices' doctor line, and its Fix opens the form, set keys locked", async () => {
     const asked = core({ identity: () => unset });
     render(<App />);
-    expect(await identityNotice()).toHaveAttribute("data-cause", "doctor-finding:git-identity");
+    expect((await finding("git identity")).line).toHaveAttribute("data-cause", "doctor-finding:*");
 
     const { notice: line, fix, form } = await openForm();
     // A fix that takes input is not applied by the press alone.
@@ -257,7 +265,8 @@ describe("the doctor's git identity finding, as a Notice (#1250)", () => {
       cmd: "plane_doctor_fix_identity",
       args: { plane: PLANE, name: "", email: "bea@example.invalid" },
     });
-    await waitFor(() => expect(screen.queryByText(/^git identity: not set/)).toBeNull());
+    await waitFor(() => expect(screen.queryByText("not set: user.email")).toBeNull());
+    await waitFor(() => expect(screen.queryByText(/^Doctor: /)).toBeNull());
     // Gone because the doctor answered again without the finding, not because it was hidden.
     expect(asked.filter((one) => one.cmd === "plane_doctor").length).toBeGreaterThan(1);
   });
@@ -285,14 +294,17 @@ describe("the doctor's git identity finding, as a Notice (#1250)", () => {
   });
 
   it("stays dismissed until the finding is mended, and shows again when it comes back (V91j)", async () => {
+    // A Dismiss is kept once its Undo has stood (#5650): the test waits it out.
+    vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ["setTimeout", "clearTimeout"] });
     let identity = unset;
     const asked = core({ identity: () => identity });
     render(<App />);
-    const notice = await identityNotice();
+    const { line: notice } = await finding("git identity");
     await settle();
     await userEvent.click(within(notice).getByRole("button", { name: "Dismiss" }));
+    waitOutTheUndo();
 
-    expect(screen.queryByText(/^git identity: not set/)).toBeNull();
+    expect(screen.queryByText(/^Doctor: /)).toBeNull();
     await waitFor(() => expect(kept(asked)).toEqual(["doctor-finding:git-identity"]));
 
     /** Asks the doctor again, as the operator does by opening it. */
@@ -309,7 +321,7 @@ describe("the doctor's git identity finding, as a Notice (#1250)", () => {
 
     // Still found: still dismissed.
     await checkAgain();
-    expect(screen.queryByText(/^git identity: not set/)).toBeNull();
+    expect(screen.queryByText(/^Doctor: /)).toBeNull();
     expect(kept(asked)).toEqual(["doctor-finding:git-identity"]);
 
     // Mended (set from a terminal): the dismissal is let go.
@@ -320,7 +332,7 @@ describe("the doctor's git identity finding, as a Notice (#1250)", () => {
     // And it comes back: the Notice shows again.
     identity = unset;
     await checkAgain();
-    expect(await identityNotice()).toBeInTheDocument();
+    expect((await finding("git identity")).row).toBeInTheDocument();
   });
 
   it("is not drawn while the identity is set", async () => {
@@ -333,6 +345,145 @@ describe("the doctor's git identity finding, as a Notice (#1250)", () => {
   });
 });
 
+describe("every doctor finding, as one Notice line (#5645)", () => {
+  const plugin = row("plugin", "warn", {
+    detail: "the plugin is not installed for chats started outside the app",
+    fix: "plugin-install",
+  });
+  const memory = row("memory indexes", "warn", {
+    detail: "1 memory is not in its MEMORY.md",
+    fix: "memory-optimize",
+  });
+  const leftover = row("personas", "warn", {
+    detail: "1 generated sub-agent file remains in .claude/agents/",
+    fix: "persona-agents",
+  });
+
+  it("stands as one line, Doctor: N findings, that opens to its list, and none is an update", async () => {
+    core({ identity: () => unset, personas: () => plugin });
+    render(<App />);
+    const notices = await showNotices();
+
+    const line = await within(notices).findByText("Doctor: 2 findings");
+    const notice = line.closest("[data-cause]") as HTMLElement;
+    expect(notice).toHaveAttribute("data-cause", "doctor-finding:*");
+    expect(notices.querySelectorAll('[data-cause^="doctor-finding"]')).toHaveLength(1);
+    // Closed, it lists nothing; opened, every finding, each with what the doctor said.
+    expect(within(notices).queryByText("not set: user.email")).toBeNull();
+    await settle();
+    await userEvent.click(within(notice).getByRole("button", { name: "Show findings" }));
+    const list = await within(notices).findByRole("list", { name: "Doctor findings" });
+    expect(
+      within(list)
+        .getAllByRole("listitem")
+        .map((one) => one.getAttribute("data-row")),
+    ).toEqual(["git identity", "plugin"]);
+    expect(within(list).getByText("not set: user.email")).toBeInTheDocument();
+
+    const updates = within(await screen.findByRole("tablist", { name: "Attention" })).getByRole(
+      "tab",
+      { name: "Updates" },
+    );
+    await userEvent.click(updates);
+    const view = await screen.findByRole("tabpanel", { name: "Updates" });
+    expect(within(view).queryByText(/git identity/)).toBeNull();
+    expect(within(view).queryByText(/plugin/)).toBeNull();
+  });
+
+  it("says one finding as one", async () => {
+    core({ identity: () => unset });
+    render(<App />);
+    const notices = await showNotices();
+
+    expect(await within(notices).findByText("Doctor: 1 finding")).toBeInTheDocument();
+  });
+
+  it("offers the doctor's fix: Fix all runs each fix one press may run, then checks again", async () => {
+    const asked = core({
+      identity: () => set,
+      personas: () => memory,
+      fix: (args) => ({ fix: args.fix, refused: null, said: [], complete: true }),
+    });
+    render(<App />);
+    const notices = await showNotices();
+    const notice = (await within(notices).findByText("Doctor: 1 finding")).closest(
+      "[data-cause]",
+    ) as HTMLElement;
+    await settle();
+    const before = asked.filter((one) => one.cmd === "plane_doctor").length;
+
+    await userEvent.click(within(notice).getByRole("button", { name: "Fix all" }));
+
+    await waitFor(() =>
+      expect(asked).toContainEqual({
+        cmd: "plane_doctor_fix",
+        args: { plane: PLANE, fix: "memory-optimize" },
+      }),
+    );
+    await waitFor(() =>
+      expect(asked.filter((one) => one.cmd === "plane_doctor").length).toBeGreaterThan(before),
+    );
+  });
+
+  it("runs no fix that only its name may run, and offers no Fix all for it alone", async () => {
+    const asked = core({ identity: () => set, personas: () => plugin });
+    render(<App />);
+    const notices = await showNotices();
+    const notice = (await within(notices).findByText("Doctor: 1 finding")).closest(
+      "[data-cause]",
+    ) as HTMLElement;
+    await settle();
+
+    expect(within(notice).queryByRole("button", { name: "Fix all" })).toBeNull();
+    await userEvent.click(within(notice).getByRole("button", { name: "Show findings" }));
+    const list = await within(notices).findByRole("list", { name: "Doctor findings" });
+    expect(within(list).queryByRole("button", { name: /^Fix/ })).toBeNull();
+    expect(asked.map((one) => one.cmd)).not.toContain("plane_doctor_fix");
+  });
+
+  it("dismisses every finding it lists, and stands again for a new one", async () => {
+    // A Dismiss is kept once its Undo has stood (#5650): the test waits it out.
+    vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ["setTimeout", "clearTimeout"] });
+    let second: DoctorRow = row("personas", "ok", { detail: "all clean" });
+    const asked = core({ identity: () => unset, personas: () => second });
+    render(<App />);
+    const notices = await showNotices();
+    const notice = (await within(notices).findByText("Doctor: 1 finding")).closest(
+      "[data-cause]",
+    ) as HTMLElement;
+    await settle();
+
+    await userEvent.click(within(notice).getByRole("button", { name: "Dismiss" }));
+    waitOutTheUndo();
+
+    await waitFor(() => expect(within(notices).queryByText(/^Doctor: /)).toBeNull());
+    await waitFor(() => expect(kept(asked)).toEqual(["doctor-finding:git-identity"]));
+
+    second = leftover;
+    const before = asked.filter((one) => one.cmd === "plane_doctor").length;
+    await userEvent.click(screen.getByTestId("status-doctor"));
+    const dialog = await screen.findByRole("dialog");
+    await waitFor(() =>
+      expect(asked.filter((one) => one.cmd === "plane_doctor").length).toBeGreaterThan(before),
+    );
+    await settle();
+    await userEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+
+    // The new finding alone: the one dismissed stays dismissed.
+    expect(await within(notices).findByText("Doctor: 1 finding")).toBeInTheDocument();
+    const again = within(notices).getByText("Doctor: 1 finding").closest("[data-cause]");
+    await userEvent.click(
+      within(again as HTMLElement).getByRole("button", { name: "Show findings" }),
+    );
+    const list = await within(notices).findByRole("list", { name: "Doctor findings" });
+    expect(
+      within(list)
+        .getAllByRole("listitem")
+        .map((one) => one.getAttribute("data-row")),
+    ).toEqual(["personas"]);
+  });
+});
+
 describe("the persona sub-agent files purlis generated, as a Notice (#1990, Q67)", () => {
   const leftover = row("personas", "warn", {
     detail: "1 generated sub-agent file remains in .claude/agents/",
@@ -340,7 +491,7 @@ describe("the persona sub-agent files purlis generated, as a Notice (#1990, Q67)
   });
   const gone = row("personas", "ok", { detail: "1 persona, all clean" });
 
-  it("stands once in the Inbox, its Fix runs the doctor's fix, and it goes with the files", async () => {
+  it("stands once in the doctor's line, its Fix runs the doctor's fix, and it goes with the files", async () => {
     let removed = false;
     const asked = core({
       identity: () => set,
@@ -357,21 +508,13 @@ describe("the persona sub-agent files purlis generated, as a Notice (#1990, Q67)
     });
     render(<App />);
 
-    const found = await screen.findAllByText(
-      /^personas: 1 generated sub-agent file remains in \.claude\/agents\//,
-    );
-    expect(found).toHaveLength(1);
-    const notice = found[0].closest("[data-cause]") as HTMLElement;
-    expect(notice).toHaveAttribute("data-cause", "doctor-finding:persona-agents");
-    if (screen.queryByRole("tabpanel", { name: "Inbox" }) === null)
-      await userEvent.click(
-        within(await screen.findByRole("tablist", { name: "Attention" })).getByRole("tab", {
-          name: "Inbox",
-        }),
-      );
+    const { row } = await finding("personas");
+    expect(
+      await screen.findAllByText("1 generated sub-agent file remains in .claude/agents/"),
+    ).toHaveLength(1);
     await settle();
 
-    await userEvent.click(within(notice).getByRole("button", { name: "Fix" }));
+    await userEvent.click(within(row).getByRole("button", { name: "Fix personas" }));
 
     expect(asked).toContainEqual({
       cmd: "plane_doctor_fix",

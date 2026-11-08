@@ -226,7 +226,8 @@ const VIEWS: Partial<Record<ViewId, React.ReactNode>> = {
       <div data-testid="v-memory">memory</div>
     </PanelSection>
   ),
-  inbox: <div data-testid="v-inbox">inbox</div>,
+  asks: <div data-testid="v-asks">asks</div>,
+  updates: <div data-testid="v-updates">updates</div>,
   personas: <div data-testid="v-personas">personas</div>,
   sessions: <div data-testid="v-sessions">sessions</div>,
   // A section with provenance and an action, as an extension's panel draws (#3330).
@@ -406,17 +407,17 @@ describe("the activity bar of a region with views (#1673)", () => {
 describe("the right side's activity bar (#1678)", () => {
   const right = () => screen.getByRole("tablist", { name: "Attention" });
 
-  it("holds the Inbox, Personas and Vaults, opens on the Inbox, and sits at the right edge (#1738)", () => {
+  it("holds Asks, Updates, Personas and Vaults, opens on Asks, and sits at the right edge (#1738)", () => {
     render(<WithViews from={DEFAULT_ARRANGEMENT} />);
 
     expect(
       within(right())
         .getAllByRole("tab")
         .map((tab) => tab.getAttribute("aria-label")),
-    ).toEqual(["Inbox", "Personas", "Vaults"]);
+    ).toEqual(["Asks", "Updates", "Personas", "Vaults"]);
     expect(right().closest("[data-side]")).toHaveAttribute("data-side", "right");
-    expect(within(slot("right")).getByRole("tabpanel", { name: "Inbox" })).toContainElement(
-      screen.getByTestId("v-inbox"),
+    expect(within(slot("right")).getByRole("tabpanel", { name: "Asks" })).toContainElement(
+      screen.getByTestId("v-asks"),
     );
     // The others are mounted and hidden.
     expect(screen.getByTestId("v-personas")).toBeInTheDocument();
@@ -450,14 +451,14 @@ describe("the right side's activity bar (#1678)", () => {
     );
   });
 
-  it("opens on the Inbox when the panel picked last is not contributed any more", () => {
+  it("opens on Asks when the panel picked last is not contributed any more", () => {
     render(
       <WithViews
         from={[on("navigation", "left"), { ...on("aside", "right"), view: "panel:ext/stats/burn" }]}
       />,
     );
 
-    expect(screen.getByRole("tabpanel", { name: "Inbox" })).toBeInTheDocument();
+    expect(screen.getByRole("tabpanel", { name: "Asks" })).toBeInTheDocument();
     expect(screen.queryByTestId("v-burn")).toBeNull();
   });
 });
@@ -602,14 +603,14 @@ describe("the Panel's right half (#1738)", () => {
       .getByTestId("region-panel")
       .querySelector(`.panel-half[data-side="${side}"]`) as HTMLElement;
 
-  it("puts Memory, Todos and Sessions on the right bar's Lower icons, at its foot", () => {
+  it("puts Notices, Memory, Todos and Sessions on the right bar's Lower icons, at its foot", () => {
     render(<WithViews from={DEFAULT_ARRANGEMENT} />);
 
     expect(
       within(lowerRight())
         .getAllByRole("tab")
         .map((tab) => tab.getAttribute("aria-label")),
-    ).toEqual(["Memory", "Todos", "Sessions"]);
+    ).toEqual(["Notices", "Memory", "Todos", "Sessions"]);
     const column = lowerRight().closest(".activity-column");
     expect(column).toHaveAttribute("data-side", "right");
     expect(column).toHaveAttribute("data-variant", "bar");
@@ -992,7 +993,7 @@ describe("the right bar in Tab order (#1686, D-1686-2)", () => {
 
   it("comes straight after the right sidebar, before the Panel, and back the same way", async () => {
     render(<WithViews from={DEFAULT_ARRANGEMENT} />);
-    // The handle between the editor and the right sidebar, whose Inbox has nothing to press.
+    // The handle between the editor and the right sidebar, whose Asks has nothing to press.
     const row = screen.getByTestId("centre").closest(".region-row") as HTMLElement;
     const handles = [...row.querySelectorAll<HTMLElement>(":scope > [role='separator']")];
     handles[handles.length - 1].focus();
@@ -1003,14 +1004,14 @@ describe("the right bar in Tab order (#1686, D-1686-2)", () => {
       forward.push(said());
     }
     // The right panel's × first (R125), then its bar.
-    expect(forward).toEqual(["button", "tab Inbox", "tab Memory", "separator over the Panel"]);
+    expect(forward).toEqual(["button", "tab Asks", "tab Memory", "separator over the Panel"]);
 
     const back: string[] = [];
     for (let press = 0; press < 3; press++) {
       await userEvent.tab({ shift: true });
       back.push(said());
     }
-    expect(back).toEqual(["tab Memory", "tab Inbox", "button"]);
+    expect(back).toEqual(["tab Memory", "tab Asks", "button"]);
     await userEvent.tab({ shift: true });
     expect(said()).toBe("separator in the row");
   });

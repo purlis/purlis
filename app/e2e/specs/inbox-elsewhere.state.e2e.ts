@@ -26,7 +26,7 @@ import { PROJECTS, ask, inFront, openFromTheStrip } from "../switching.js";
  * project closed, and the launch's project is in front.
  */
 
-const INBOX = '[role="tabpanel"][data-view="inbox"]';
+const INBOX = '[role="tabpanel"][data-view="asks"]';
 const OTHERS = `${INBOX} section[aria-label="Other projects in this window"]`;
 const HAND = '[data-testid="title-bar"] [data-testid="needs-you-button"]';
 const ASK = `${INBOX} .inbox-ask[data-source="permission"]`;
@@ -117,7 +117,7 @@ describe("the Inbox of one project, about another that waits", function () {
 
     // The second project, in front, and its Inbox.
     await toFront(second);
-    await showView("Inbox");
+    await showView("Asks");
     // The Inbox opens on This project, which is empty here and says what waits wider (qw359):
     // its one press lists every project's.
     const widen = await $(`${INBOX} .inbox-scope-empty button`);

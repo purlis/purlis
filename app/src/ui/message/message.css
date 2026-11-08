@@ -1,0 +1,214 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* **The message family's default** (#5649, spec #5638, ADR 0119 decision 6; ADR 0103, ADR 0104):
+   one message of the Inbox's views as a row of its view (`ui/message/Message.tsx`), keyed on the
+   wrapper's attributes alone; `purlis_core::theme::parts` holds a copy of its colours.
+
+   The variants prototype's variant A (on the branch `prototype/inbox`): no box and no edge, on the view's own
+   ground; a hairline between two rows, from past the mark to the row's end, gone beside a row
+   under the pointer or the keyboard, which takes the hover fill instead. Its mark is a round icon
+   on its state's colour at a seventh, in that colour. A theme sets the row's fill under the
+   pointer and the keyboard (`message.root.hover.fill`, `message.root.focused.fill`) and each
+   mark's tint (`message.mark.<variant>.fill`); `parts_message.rs` names them. Its time stands at the right of its title,
+   and gives its place to the × while the row is under the pointer or holds the keyboard; where
+   nothing hovers, the × is always shown.
+
+   **In the `components` layer** (`styles.css`). Only tokens. */
+
+[data-scope="message"][data-part="root"] {
+  --message-mark: var(--size-control);
+  --message-gap: var(--space-5);
+  --message-pad: var(--space-4);
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--message-mark) minmax(0, 1fr);
+  column-gap: var(--message-gap);
+  box-sizing: border-box;
+  min-inline-size: 0;
+  margin: 0;
+  padding: var(--space-5) var(--message-pad);
+  border: 0;
+  border-radius: var(--radius-lg);
+  background-color: transparent;
+  color: var(--text-primary);
+  font-size: var(--font-size-md);
+  list-style: none;
+  overflow-wrap: anywhere;
+}
+
+[data-scope="message"][data-part="root"]:is([data-hovered], [data-focus-within]) {
+  background-color: var(--surface-hover);
+}
+
+/* **A consent keeps its waiting edge** (ADR 0097 §6, the ruling on #5222): no box, but a bar in
+   the waiting colour at its start, so a Notice that waits on the person's answer is told apart
+   from the notes around it by more than its mark. */
+[data-scope="message"][data-part="root"][data-consent] {
+  box-shadow: inset var(--space-1) 0 0 var(--state-waiting);
+}
+
+/* The hairline between two rows, from past the mark, as long as the words. */
+[data-scope="message"][data-part="root"] + [data-scope="message"][data-part="root"]::before {
+  content: "";
+  position: absolute;
+  inset-block-start: calc(var(--separator-width) * -1);
+  inset-inline: calc(var(--message-pad) + var(--message-mark) + var(--message-gap))
+    var(--message-pad);
+  block-size: var(--separator-width);
+  background-color: var(--border-subtle);
+}
+
+[data-scope="message"][data-part="root"]:is([data-hovered], [data-focus-within])::before,
+[data-scope="message"][data-part="root"]:is([data-hovered], [data-focus-within])
+  + [data-scope="message"][data-part="root"]::before {
+  visibility: hidden;
+}
+
+/* **Its mark**: a round icon, its state's colour on a seventh of it. */
+[data-scope="message"][data-part="mark"] {
+  display: grid;
+  place-items: center;
+  inline-size: var(--message-mark);
+  block-size: var(--message-mark);
+  border-radius: var(--radius-full);
+  background-color: var(--surface-hover);
+  color: var(--text-secondary);
+}
+
+[data-scope="message"][data-part="mark"] > svg {
+  inline-size: var(--space-6);
+  block-size: var(--space-6);
+}
+
+[data-scope="message"][data-variant="waiting"] > [data-part="mark"] {
+  background-color: color-mix(in oklab, var(--state-waiting) 14%, transparent);
+  color: var(--state-waiting);
+}
+
+[data-scope="message"][data-variant="done"] > [data-part="mark"] {
+  background-color: color-mix(in oklab, var(--state-success) 14%, transparent);
+  color: var(--state-success);
+}
+
+[data-scope="message"][data-variant="failed"] > [data-part="mark"] {
+  background-color: color-mix(in oklab, var(--state-failed) 14%, transparent);
+  color: var(--state-failed);
+}
+
+[data-scope="message"][data-variant="report"] > [data-part="mark"] {
+  background-color: color-mix(in oklab, var(--accent-base) 14%, transparent);
+  color: var(--accent-text);
+}
+
+[data-scope="message"][data-part="main"] {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-inline-size: 0;
+}
+
+/* **Its first line**: the title, cut short, and the time at its end. */
+[data-scope="message"][data-part="top"] {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-4);
+  min-inline-size: 0;
+}
+
+[data-scope="message"][data-part="title"] {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-strong);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-scope="message"][data-read] [data-part="title"] {
+  color: var(--text-secondary);
+  font-weight: var(--font-weight-medium);
+}
+
+[data-scope="message"][data-part="time"] {
+  flex: none;
+  color: var(--text-quiet);
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* The × takes the time's place while the row is under the pointer or holds the keyboard. */
+[data-scope="message"][data-part="root"][data-dismiss]:is([data-hovered], [data-focus-within])
+  [data-part="time"] {
+  visibility: hidden;
+}
+
+[data-scope="message"][data-part="dismiss"] {
+  position: absolute;
+  inset-block-start: var(--space-4);
+  inset-inline-end: var(--space-2);
+  opacity: 0;
+}
+
+[data-scope="message"][data-part="root"]:is([data-hovered], [data-focus-within])
+  > [data-part="dismiss"] {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  [data-scope="message"][data-part="dismiss"] {
+    opacity: 1;
+  }
+
+  [data-scope="message"][data-part="root"][data-dismiss] [data-part="time"] {
+    visibility: hidden;
+  }
+}
+
+/* **What it is, and where**: quiet, under its title. */
+[data-scope="message"][data-part="meta"] {
+  min-inline-size: 0;
+  color: var(--text-quiet);
+  font-size: var(--font-size-sm);
+}
+
+/* **What it waits on**, at the head of its meta: in the waiting colour on a row that waits. */
+[data-scope="message"][data-variant="waiting"] [data-part="state"] {
+  color: var(--state-waiting);
+}
+
+/* **What it says**, at the row's size, a little apart from its meta. */
+[data-scope="message"][data-part="body"] {
+  min-inline-size: 0;
+  margin-block-start: var(--space-2);
+  color: var(--text-primary);
+  font-size: var(--font-size-md);
+  line-height: var(--line-height-body);
+}
+
+/* **Its ways out**: text links on a line that wraps, starting where its words do. */
+[data-scope="message"][data-part="links"] {
+  min-inline-size: 0;
+  margin-block-start: var(--space-1);
+}
+
+[data-scope="message"][data-part="links"] > [data-scope="button-row"] {
+  column-gap: var(--space-6);
+}
+
+/* The way it leads with (Answer, a Notice's one fix): the accent's words, as the prototype's. */
+[data-scope="message"][data-part="links"] [data-lead] {
+  color: var(--accent-text);
+}
+
+/* **What it is answered with**, under its links. */
+[data-scope="message"][data-part="form"] {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-inline-size: 0;
+  margin-block-start: var(--space-2);
+}

@@ -84,6 +84,9 @@ export function ProjectHostsNotice({
           { label: "Got it", onPress: read },
           { label: "Review the hosts", onPress: onReview },
         ]}
+        // Dismiss is Got it (#5650): the change is recorded as seen, and a new one shows.
+        onDismiss={read}
+        dismissSays="Put this away until the project changes it again"
       >
         <p>
           The hosts chats in this project may reach have changed in the project's settings, which

@@ -47,6 +47,37 @@ function core(gains: Record<string, SkillGained[]>) {
   return asked;
 }
 
+/** A core offering a git source's update of `tidy`, and an extension's of `fromAcme`, gaining
+ *  `gains` (#5760). */
+function coreWithAnExtension(gains: SkillGained[]) {
+  const asked: { cmd: string; args: Record<string, unknown> }[] = [];
+  mockIPC((cmd, args) => {
+    const given = (args ?? {}) as Record<string, unknown>;
+    asked.push({ cmd, args: given });
+    switch (cmd) {
+      case "skill_updates":
+        return {
+          offers: [
+            offer("tidy"),
+            {
+              ...offer("fromAcme"),
+              source: { kind: "extension", id: "acme-registry", label: "acme-registry" },
+            },
+          ],
+          unasked: [],
+          unconfirmed: [],
+        };
+      case "skill_update_review":
+        return review(given.name as string);
+      case "skill_extension_update_review":
+        return review(given.name as string, gains);
+      default:
+        return null;
+    }
+  });
+  return asked;
+}
+
 function page(names: string[], onApply = vi.fn()) {
   render(
     <SetUpdateReviewPage
@@ -127,6 +158,35 @@ describe("Review updates", () => {
     await waitFor(() =>
       expect(screen.getByTestId("set-stays-quiet")).toHaveTextContent("No update is waiting."),
     );
+  });
+
+  it("reviews an extension's update through the extension, beside a git source's (#5760)", async () => {
+    const asked = coreWithAnExtension([]);
+    const onApply = page(["tidy", "fromAcme"]);
+    await waitFor(() => expect(box("fromAcme")).toBeChecked());
+    expect(box("tidy")).toBeChecked();
+    expect(screen.queryByTestId("set-stays-fromAcme")).toBeNull();
+    expect(
+      asked.filter((one) => one.cmd === "skill_extension_update_review").map((one) => one.args),
+    ).toEqual([{ plane: "p", level: PROJECT, name: "fromAcme" }]);
+    expect(
+      asked.some((one) => one.cmd === "skill_update_review" && one.args.name === "fromAcme"),
+    ).toBe(false);
+    await userEvent.click(screen.getByRole("button", { name: "Accept 2 updates" }));
+    expect(onApply).toHaveBeenCalledWith([
+      expect.objectContaining({ name: "tidy" }),
+      expect.objectContaining({ name: "fromAcme", allowed: [] }),
+    ]);
+  });
+
+  it("starts an extension's update that adds a script unticked, as a git source's (#5760)", async () => {
+    coreWithAnExtension(["script"]);
+    page(["tidy", "fromAcme"]);
+    await waitFor(() => expect(box("fromAcme")).toBeInTheDocument());
+    expect(box("fromAcme")).not.toBeChecked();
+    expect(box("fromAcme")).toBeDisabled();
+    await userEvent.click(screen.getByRole("button", { name: "What changes in fromAcme" }));
+    await waitFor(() => expect(box("fromAcme")).toBeEnabled());
   });
 
   it("accepts as one command and undoes with the Undo it answered", async () => {
