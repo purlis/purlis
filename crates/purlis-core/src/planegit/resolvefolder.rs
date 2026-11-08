@@ -86,8 +86,34 @@ pub struct Held {
     pub conflicted: Vec<String>,
     /// Of those, the ones git could not mark.
     pub by_hand: Vec<String>,
+    /// The settings file's keys both sides changed, each its own way (#5852): the person's to
+    /// choose in the window. Empty where none.
+    #[serde(default)]
+    pub keys: Vec<HeldKey>,
     /// When it was cut, in seconds since the epoch.
     pub at: u64,
+}
+
+/// A settings key both sides changed, each its own way, with both values as TOML writes them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HeldKey {
+    /// The settings file it is in.
+    pub file: String,
+    /// The key's dotted path.
+    pub key: String,
+    /// This machine's value; `None` where it removed the key.
+    pub ours: Option<String>,
+    /// The remote's value; `None` where it removed the key.
+    pub theirs: Option<String>,
+}
+
+/// **The person's choice for one settings key in conflict** (#5852): the remote's value, or this
+/// machine's.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Chosen {
+    pub file: String,
+    pub key: String,
+    pub theirs: bool,
 }
 
 impl Held {
@@ -107,6 +133,15 @@ impl Held {
                 .by_hand
                 .iter()
                 .all(|path| self.conflicted.contains(path))
+            && self
+                .keys
+                .iter()
+                .all(|key| self.conflicted.contains(&key.file))
+    }
+
+    /// Whether `path` is a settings file whose keys the person chooses.
+    fn keyed(&self, path: &str) -> bool {
+        self.keys.iter().any(|key| key.file == path)
     }
 }
 
@@ -184,6 +219,28 @@ pub(super) fn cut(root: &Path, target: &str) -> Result<Vec<String>, String> {
                 })
                 .map_err(|why| format!("{path}: {why}"))?;
         }
+        // A settings file whose keys conflict is written as the structured merge leaves it,
+        // this machine's value standing in for each such key: no marker, ever (#5852).
+        let mut keys = Vec::new();
+        for file in plan.keys.keys() {
+            let around = settings_around(root, &ours, &theirs, file)?;
+            crate::contain::no_link_on_the_way(&folder, &folder.join(file))
+                .and_then(|()| {
+                    crate::rewrite::replace(
+                        &folder,
+                        &folder.join(file),
+                        around.text.as_bytes(),
+                        crate::rewrite::Mode::Kept,
+                    )
+                })
+                .map_err(|why| format!("{file}: {why}"))?;
+            keys.extend(around.keys.into_iter().map(|key| HeldKey {
+                file: file.clone(),
+                key: key.key,
+                ours: key.ours,
+                theirs: key.theirs,
+            }));
+        }
         let mut info = String::new();
         let zero = "0".repeat(ours.len());
         for path in &plan.person {
@@ -205,13 +262,17 @@ pub(super) fn cut(root: &Path, target: &str) -> Result<Vec<String>, String> {
         if indexed.code != Some(0) {
             return Err(String::from_utf8_lossy(&indexed.err).trim().to_owned());
         }
+        // A file git could not mark, or one its attributes merged with no marker in it (a
+        // `-merge` or `binary` rule leaves one side's copy), is settled by hand.
         let by_hand: Vec<String> = plan
             .person
             .iter()
             .filter(|path| {
-                stages
-                    .get(*path)
-                    .is_none_or(|sides| marks_nothing(&folder, path, sides))
+                !plan.keys.contains_key(*path)
+                    && (stages
+                        .get(*path)
+                        .is_none_or(|sides| marks_nothing(&folder, path, sides))
+                        || !std::fs::read(folder.join(path)).is_ok_and(|bytes| markers_in(&bytes)))
             })
             .cloned()
             .collect();
@@ -222,6 +283,7 @@ pub(super) fn cut(root: &Path, target: &str) -> Result<Vec<String>, String> {
             tree: tree.clone(),
             conflicted: plan.person.clone(),
             by_hand,
+            keys,
             at: super::now() as u64,
         };
         write_record(root, &held)
@@ -386,7 +448,7 @@ fn target_of(root: &Path) -> Result<String, Settled> {
 /// with nothing moved, while a file git could not mark is unsettled, a marked file still holds a
 /// marker or is not a plain file, anything unmerged is left, or anything outside the files in
 /// conflict differs from how the folder was cut.
-pub fn carry_on(root: &Path, shown: &[String], say: Sink) -> Settled {
+pub fn carry_on(root: &Path, shown: &[String], keys: &[Chosen], say: Sink) -> Settled {
     let Some(_claim) = Claim::of(root) else {
         return Settled::Refused(BUSY.into());
     };
@@ -408,10 +470,16 @@ pub fn carry_on(root: &Path, shown: &[String], say: Sink) -> Settled {
             if outside.len() == 1 { "is" } else { "are" },
         ));
     }
-    let tree = match settled_tree(&folder, &held) {
+    let tree = match settled_tree(root, &folder, &held, keys) {
         Ok(tree) => tree,
         Err(refused) => return refused,
     };
+    // Settled as the remote has it: nothing of this machine's is left, and Skip is the way on.
+    if line_of(root, &["rev-parse", &format!("{}^{{tree}}", held.theirs)]).as_deref()
+        == Some(tree.as_str())
+    {
+        return Settled::Empty;
+    }
     say(Say::Info("Committing the merge …".into()));
     let plane = crate::planesave::Settings::read(root).plane;
     let subject = format!("Bring {} into this machine's saves", held.target);
@@ -451,7 +519,17 @@ pub fn skip(root: &Path) -> Settled {
         return Settled::Refused(NONE_OPEN.into());
     };
     let folder = path(root);
-    let tree = match settled_tree(&folder, &held) {
+    // Skip keeps this machine's value for no key: each stands as the remote's.
+    let keys: Vec<Chosen> = held
+        .keys
+        .iter()
+        .map(|key| Chosen {
+            file: key.file.clone(),
+            key: key.key.clone(),
+            theirs: true,
+        })
+        .collect();
+    let tree = match settled_tree(root, &folder, &held, &keys) {
         Ok(tree) => tree,
         Err(refused) => return refused,
     };
@@ -505,57 +583,42 @@ pub fn sides(root: &Path) -> Option<(String, String)> {
 
 /// The tree the folder comes to once every file in conflict is settled and staged, or the
 /// refusal that leaves everything as it was.
-fn settled_tree(folder: &Path, held: &Held) -> Result<String, Settled> {
+fn settled_tree(
+    root: &Path,
+    folder: &Path,
+    held: &Held,
+    chosen: &[Chosen],
+) -> Result<String, Settled> {
     let left = sorted(folder, held);
     if !left.by_hand.is_empty() {
         return Err(Settled::Refused(said_by_hand(folder, &left.by_hand)));
     }
+    // Every key in conflict is chosen before anything is staged.
+    let unchosen: Vec<String> = held
+        .keys
+        .iter()
+        .filter(|key| left.keyed.contains(&key.file))
+        .filter(|key| {
+            !chosen
+                .iter()
+                .any(|c| c.file == key.file && c.key == key.key)
+        })
+        .map(|key| format!("`{}` in `{}`", key.key, key.file))
+        .collect();
+    if !unchosen.is_empty() {
+        return Err(Settled::Refused(format!(
+            "Choose this machine's value or the remote's for {}, then Continue.",
+            unchosen.join(", ")
+        )));
+    }
     // Settled already, and staged: by the person in a terminal there.
     for path in &held.conflicted {
-        if left.marked.contains(path) || held.by_hand.contains(path) {
+        if left.marked.contains(path) || held.by_hand.contains(path) || held.keyed(path) {
             continue;
         }
         if staged_text(folder, path).is_some_and(|text| markers_in(&text)) {
             return Err(Settled::Refused(said_markers(path, "is staged with")));
         }
-    }
-    let mut rows = Vec::new();
-    for path in &left.marked {
-        let (file, runs, bytes) = read_plain(folder, path).map_err(Settled::Refused)?;
-        if markers_in(&bytes) {
-            return Err(Settled::Refused(said_markers(path, "still has")));
-        }
-        rows.push(ondisk::Row {
-            path: path.clone(),
-            from: ondisk::Source::File {
-                file,
-                runs,
-                checked: Some(bytes),
-            },
-        });
-    }
-    let named: Vec<String> = left.marked.clone();
-    let held_back = ondisk::stage_rows(folder, rows).map_err(|said| {
-        Settled::Refused(format!("git would not stage them: {}", one_line(&said)))
-    })?;
-    if let Some(refusal) = ondisk::refused_unstaged(&held_back, ondisk::PutBack::Conflicted(&named))
-    {
-        return Err(Settled::Refused(format!(
-            "A settled file is not the one file on disk: {} Settle it again as one file, then \
-             Continue.",
-            refusal.sentence()
-        )));
-    }
-    // Nothing is left unmerged (#433), whatever the window last drew.
-    let unmerged = unmerged(folder);
-    if !unmerged.is_empty() {
-        let named: Vec<&String> = unmerged.keys().collect();
-        return Err(Settled::Refused(format!(
-            "{} {} still unmerged in the resolve folder. Settle {}, then Continue.",
-            join(&named),
-            if named.len() == 1 { "is" } else { "are" },
-            if named.len() == 1 { "it" } else { "them" },
-        )));
     }
     // Only the files in conflict change: everything else is as the folder was cut.
     let changed = names(
@@ -583,13 +646,233 @@ fn settled_tree(folder: &Path, held: &Held) -> Result<String, Settled> {
             if elsewhere.len() == 1 { "it" } else { "them" },
         )));
     }
-    let tree = git::run(folder, &["write-tree"], WRITE)
+    let mut rows = Vec::new();
+    for path in &left.marked {
+        let (file, runs, bytes) = read_plain(folder, path).map_err(Settled::Refused)?;
+        if markers_in(&bytes) {
+            return Err(Settled::Refused(said_markers(path, "still has")));
+        }
+        rows.push(ondisk::Row {
+            path: path.clone(),
+            from: ondisk::Source::File {
+                file,
+                runs,
+                checked: Some(bytes),
+            },
+        });
+    }
+    let named: Vec<String> = left.marked.clone();
+    if !named.is_empty() {
+        staged_checked(folder, rows, &named)?;
+    }
+    // Each settings file in conflict, written from the three sides and the person's choices,
+    // never from what is on disk in the folder, which a chat can write (#5852).
+    for file in &left.keyed {
+        let theirs_for: Vec<String> = chosen
+            .iter()
+            .filter(|c| &c.file == file && c.theirs)
+            .map(|c| c.key.clone())
+            .collect();
+        let text = settings_chosen(root, &held.ours, &held.theirs, file, &theirs_for)
+            .map_err(|why| Settled::Refused(format!("`{file}` could not be settled: {why}.")))?;
+        staged_as(folder, file, &text).map_err(|why| {
+            Settled::Refused(format!("`{file}` could not be staged: {}", one_line(&why)))
+        })?;
+    }
+    // Nothing is left unmerged (#433), whatever the window last drew.
+    let unmerged = unmerged(folder);
+    if !unmerged.is_empty() {
+        let named: Vec<&String> = unmerged.keys().collect();
+        return Err(Settled::Refused(format!(
+            "{} {} still unmerged in the resolve folder. Settle {}, then Continue.",
+            join(&named),
+            if named.len() == 1 { "is" } else { "are" },
+            if named.len() == 1 { "it" } else { "them" },
+        )));
+    }
+    let tree = written_tree(folder)?;
+    // The memory indexes, written again from the tree the person settled (#5824 F4), so no line
+    // names a memory they deleted, and one they kept is listed.
+    let indexes =
+        bringin::indexes_settled_between(root, &tree, &held.ours, &held.theirs).map_err(|why| {
+            Settled::Refused(format!(
+                "Nothing was carried on: purlis could not write a memory index: {}.",
+                one_line(&why)
+            ))
+        })?;
+    if indexes.is_empty() {
+        return Ok(tree);
+    }
+    for (index, text) in &indexes {
+        staged_as(folder, index, text).map_err(|why| {
+            Settled::Refused(format!(
+                "Nothing was carried on: purlis could not write {index}: {}.",
+                one_line(&why)
+            ))
+        })?;
+    }
+    written_tree(folder)
+}
+
+/// **The settled files staged as the bytes that were checked**, as a save stages ([`ondisk`]):
+/// each from the descriptor it was read through, asked again just before that it has one name.
+/// Once staged, a file that is not the file on disk now (written while purlis was checking it,
+/// or given a second name) is put back in conflict and its blob taken out of the object store,
+/// so a chat's late write is never left behind in a folder Continue then removes.
+fn staged_checked(folder: &Path, rows: Vec<ondisk::Row>, named: &[String]) -> Result<(), Settled> {
+    #[cfg(test)]
+    super::tests::before_the_add(folder);
+    let held_back = ondisk::stage_rows(folder, rows).map_err(|said| {
+        Settled::Refused(format!("git would not stage them: {}", one_line(&said)))
+    })?;
+    if let Some(refusal) = ondisk::refused_unstaged(&held_back, ondisk::PutBack::Conflicted(named))
+    {
+        return Err(not_the_file(&refusal));
+    }
+    if let Err(said) = ondisk::refresh(folder, false)
+        && let Some(refusal) =
+            ondisk::refused_into(folder, &Err(said), ondisk::PutBack::Conflicted(named))
+    {
+        return Err(not_the_file(&refusal));
+    }
+    let found: Result<Vec<ondisk::Held>, String> = ondisk::not_as_staged(folder).map(|held| {
+        held.into_iter()
+            .filter(|one| named.contains(&one.path))
+            .collect()
+    });
+    if let Ok(held) = &found
+        && !held.is_empty()
+        && held.iter().all(|one| one.why == ondisk::Why::Changed)
+    {
+        let moved: Vec<&String> = named
+            .iter()
+            .filter(|path| held.iter().any(|one| one.path == **path))
+            .collect();
+        let all: Vec<ondisk::Held> = named
+            .iter()
+            .map(|path| ondisk::Held {
+                path: path.clone(),
+                why: ondisk::Why::Changed,
+            })
+            .collect();
+        let _ = ondisk::refused_into(folder, &Ok(all), ondisk::PutBack::Conflicted(named));
+        return Err(Settled::Refused(format!(
+            "{} changed while purlis was checking {}, so nothing was carried on. Continue again \
+             once it is settled.",
+            join(&moved),
+            if moved.len() == 1 { "it" } else { "them" },
+        )));
+    }
+    if let Some(refusal) = ondisk::refused_into(folder, &found, ondisk::PutBack::Conflicted(named))
+    {
+        return Err(not_the_file(&refusal));
+    }
+    Ok(())
+}
+
+/// What Continue refused by [`ondisk`] says: a settled file is not the one file on disk.
+fn not_the_file(refusal: &ondisk::Refusal) -> Settled {
+    Settled::Refused(format!(
+        "A settled file is not the one file on disk: {} Settle it again as one file, then \
+         Continue.",
+        refusal.sentence()
+    ))
+}
+
+/// The tree the folder's index holds now.
+fn written_tree(folder: &Path) -> Result<String, Settled> {
+    git::run(folder, &["write-tree"], WRITE)
         .ok()
         .filter(git::Run::ok)
         .map(|run| run.line().trim().to_owned())
         .filter(|tree| is_object_name(tree))
-        .ok_or_else(|| Settled::Refused("git could not write what is settled.".into()))?;
-    Ok(tree)
+        .ok_or_else(|| Settled::Refused("git could not write what is settled.".into()))
+}
+
+/// `text` written at `path` in the folder and staged as those bytes, whatever the file held and
+/// whatever sides the index had for it.
+fn staged_as(folder: &Path, path: &str, text: &str) -> Result<(), String> {
+    crate::contain::no_link_on_the_way(folder, &folder.join(path))
+        .and_then(|()| {
+            crate::rewrite::replace(
+                folder,
+                &folder.join(path),
+                text.as_bytes(),
+                crate::rewrite::Mode::Kept,
+            )
+        })
+        .map_err(|why| why.to_string())?;
+    let hashed = git::run_with_input(
+        folder,
+        &["hash-object", "-w", "--no-filters", "--stdin"],
+        text.as_bytes().to_vec(),
+        WRITE,
+    )
+    .map_err(|unavailable| unavailable.to_string())?;
+    let object = String::from_utf8_lossy(&hashed.out).trim().to_owned();
+    if hashed.code != Some(0) || !is_object_name(&object) {
+        return Err(String::from_utf8_lossy(&hashed.err).trim().to_owned());
+    }
+    let zero = "0".repeat(object.len());
+    let info = format!("0 {zero}\t{path}\0100644 {object} 0\t{path}\0");
+    let indexed = git::run_with_input(
+        folder,
+        &["update-index", "-z", "--index-info"],
+        info.into_bytes(),
+        WRITE,
+    )
+    .map_err(|unavailable| unavailable.to_string())?;
+    if indexed.code != Some(0) {
+        return Err(String::from_utf8_lossy(&indexed.err).trim().to_owned());
+    }
+    Ok(())
+}
+
+/// The three sides of the settings file at `file` for a merge of `ours` and `theirs`: from where
+/// they parted, this machine's and the remote's.
+fn settings_sides(
+    root: &Path,
+    ours: &str,
+    theirs: &str,
+    file: &str,
+) -> Result<(String, String, String), String> {
+    let base = line_of(root, &["merge-base", ours, theirs])
+        .ok_or("the two histories have no commit in common")?;
+    let blob = |rev: &str| {
+        git::run(
+            root,
+            &["cat-file", "blob", &format!("{rev}:{file}")],
+            git::READ,
+        )
+        .ok()
+        .filter(git::Run::ok)
+        .map(|run| run.out)
+        .ok_or_else(|| format!("{file} is not in {rev}"))
+    };
+    Ok((blob(&base)?, blob(ours)?, blob(theirs)?))
+}
+
+/// The settings file merged around its keys in conflict ([`crate::tomlmerge::around`]).
+fn settings_around(
+    root: &Path,
+    ours: &str,
+    theirs: &str,
+    file: &str,
+) -> Result<crate::tomlmerge::Around, String> {
+    let (base, mine, remote) = settings_sides(root, ours, theirs, file)?;
+    crate::tomlmerge::around(&base, &mine, &remote)
+}
+
+/// The settings file once the person chose ([`crate::tomlmerge::chosen`]).
+fn settings_chosen(
+    root: &Path,
+    ours: &str,
+    theirs: &str,
+    file: &str,
+    theirs_for: &[String],
+) -> Result<String, String> {
+    let (base, mine, remote) = settings_sides(root, ours, theirs, file)?;
+    crate::tomlmerge::chosen(&base, &mine, &remote, theirs_for)
 }
 
 /// Move the root onto `onto` with one `reset --keep`: first replaying onto it, off to the side,
@@ -798,7 +1081,9 @@ fn unmerged(folder: &Path) -> Sides {
 fn sorted(folder: &Path, held: &Held) -> Conflicts {
     let mut out = Conflicts::default();
     for (path, sides) in unmerged(folder) {
-        if held.by_hand.contains(&path) || marks_nothing(folder, &path, &sides) {
+        if held.keyed(&path) {
+            out.keyed.push(path);
+        } else if held.by_hand.contains(&path) || marks_nothing(folder, &path, &sides) {
             out.by_hand.push(path);
         } else {
             out.marked.push(path);
@@ -854,10 +1139,19 @@ fn read_plain(folder: &Path, path: &str) -> Result<(std::fs::File, bool, Vec<u8>
     let (file, runs) = match ondisk::opened(folder, path) {
         ondisk::OnDisk::File(file, runs) => (file, runs),
         ondisk::OnDisk::SecondName => {
-            return Err(format!(
-                "`{path}` has a second name on disk, so purlis will not stage it. Settle it \
-                 again as one file, then Continue."
-            ));
+            let held = Ok(vec![ondisk::Held {
+                path: path.to_owned(),
+                why: ondisk::Why::SecondName,
+            }]);
+            return Err(ondisk::refused_ahead(&held)
+                .map(|refusal| {
+                    format!(
+                        "A settled file is not the one file on disk: {} Settle it again as one \
+                         file, then Continue.",
+                        refusal.sentence()
+                    )
+                })
+                .unwrap_or_default());
         }
         ondisk::OnDisk::Gone => {
             return Err(format!(

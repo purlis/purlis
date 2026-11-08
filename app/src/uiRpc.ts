@@ -9596,6 +9596,8 @@ export type PlaneSaving = {
 	 *  the project may be further behind than `behind` says; `null` when it is not.
 	 */
 	stale?: SaveStale | null,
+	/**  The resolve open in its folder, while `stoppedBy` is `resolve`; `null` otherwise. */
+	resolving?: SaveResolving | null,
 };
 
 /**
@@ -12247,6 +12249,26 @@ export type SaveEntry = {
  *  asks: the commit it is at and where it stands now. The press hands `head` and
  *  `merge.shown` back, and the merge is made only of them.
  */
+/**  A settings key both machines changed, with both values as TOML writes them (#5852). */
+export type SaveKey = {
+	file: string,
+	key: string,
+	/**  This machine's value; `null` where it removed the key. */
+	ours: string | null,
+	/**  The remote's value; `null` where it removed the key. */
+	theirs: string | null,
+};
+
+/**  The person's choice for one settings key both machines changed (#5852). */
+export type SaveKeyChoice = {
+	/**  The settings file it is in. */
+	file: string,
+	/**  The key's dotted path. */
+	key: string,
+	/**  Whether the remote's value is chosen; this machine's otherwise. */
+	theirs: boolean,
+};
+
 export type SaveLook = {
 	/**  The commit the request is at; `null` when no request is open any more. */
 	head: string | null,
@@ -12295,6 +12317,14 @@ export type SaveMerge = {
 };
 
 /**  How a press of Resolve, Continue or Abort on a save's conflict ended (qw382). */
+/**  A resolve open in its folder off to the side (#5824 F7). */
+export type SaveResolving = {
+	/**  Where the resolve folder is. */
+	folder: string,
+	/**  The settings keys both machines changed, each its own way, for the person to choose. */
+	keys: SaveKey[],
+};
+
 export type SaveSettled = {
 	/**
 	 *  `saved`: the replay finished and what is committed was pushed, with no new commit

@@ -6837,6 +6837,13 @@ nav.piece-files-head {
   padding-left: var(--space-6);
   color: var(--text-secondary);
 }
+/* One settings key both machines changed (#5852): its name over its two values. */
+.saving-key {
+  margin: var(--space-2) 0 0;
+}
+.saving-key-name {
+  color: var(--text-secondary);
+}
 .saving-said {
   margin: 0;
   white-space: pre-wrap;

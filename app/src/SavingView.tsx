@@ -297,7 +297,8 @@ export function SavingView({
           {saving.stage === "blocked" &&
             saving.byHand == null &&
             saving.stoppedBy !== "rebase" &&
-            saving.stoppedBy !== "merge" && (
+            saving.stoppedBy !== "merge" &&
+            saving.stoppedBy !== "resolve" && (
               <div className="saving-question" role="group" aria-label="Ways out">
                 {saving.conflicts.length > 0 && (
                   <ul className="saving-files" aria-label="Where it conflicts">
@@ -917,7 +918,16 @@ export function staleSaid(stale: SaveStale, now: Date = new Date()): string {
  *  any of these rewrites the tree, which its guard refuses there (A3c). A merge is the
  *  window's Continue, as a replay is (#5338), and unmerged files with no operation are a chat's
  *  to finish. */
-const ONLY_GIT_FINISHES = new Set(["rebase", "merge", "am", "cherry-pick", "revert", "bisect"]);
+const ONLY_GIT_FINISHES = new Set([
+  "rebase",
+  "merge",
+  "am",
+  "cherry-pick",
+  "revert",
+  "bisect",
+  // A resolve folder's (#5824 F7): its own Notice offers the chat, for its folder.
+  "resolve",
+]);
 
 /** Whether a blocked save offers *Resolve in a chat*: never for a save's own replay that
  *  conflicted, nor for a stop only git in a terminal can finish (qw382). */

@@ -176,6 +176,43 @@ pub struct PlaneSaving {
     /// the project may be further behind than `behind` says; `null` when it is not.
     #[specta(optional)]
     pub stale: Option<SaveStale>,
+    /// The resolve open in its folder, while `stoppedBy` is `resolve`; `null` otherwise.
+    #[specta(optional)]
+    pub resolving: Option<SaveResolving>,
+}
+
+/// The person's choice for one settings key both machines changed (#5852).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveKeyChoice {
+    /// The settings file it is in.
+    pub file: String,
+    /// The key's dotted path.
+    pub key: String,
+    /// Whether the remote's value is chosen; this machine's otherwise.
+    pub theirs: bool,
+}
+
+/// A resolve open in its folder off to the side (#5824 F7).
+#[derive(Debug, Clone, PartialEq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveResolving {
+    /// Where the resolve folder is.
+    pub folder: String,
+    /// The settings keys both machines changed, each its own way, for the person to choose.
+    pub keys: Vec<SaveKey>,
+}
+
+/// A settings key both machines changed, with both values as TOML writes them (#5852).
+#[derive(Debug, Clone, PartialEq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveKey {
+    pub file: String,
+    pub key: String,
+    /// This machine's value; `null` where it removed the key.
+    pub ours: Option<String>,
+    /// The remote's value; `null` where it removed the key.
+    pub theirs: Option<String>,
 }
 
 /// A project that could not be fetched while its request is open (#5824 F8).
@@ -307,6 +344,19 @@ pub fn saving_of(root: &Path) -> PlaneSaving {
             .rebase_by_hand
             .then(|| planegit::BY_HAND.to_owned()),
         stopped_by: standing.stopped_by.map(str::to_owned),
+        resolving: planegit::resolvefolder::held(root).map(|held| SaveResolving {
+            folder: planegit::resolvefolder::path(root).display().to_string(),
+            keys: held
+                .keys
+                .into_iter()
+                .map(|key| SaveKey {
+                    file: key.file,
+                    key: key.key,
+                    ours: key.ours,
+                    theirs: key.theirs,
+                })
+                .collect(),
+        }),
         stale: standing.stale.clone().map(|stale| SaveStale {
             since: stale.since as f64,
             why: stale.why,
@@ -490,10 +540,11 @@ pub async fn settle_save_conflict(
     plane: PlaneId,
     step: String,
     files: Vec<String>,
+    keys: Vec<SaveKeyChoice>,
 ) -> Result<SaveSettled, String> {
     let held = planes.held(&plane)?;
     let root = held.root().to_path_buf();
-    let done = tauri::async_runtime::spawn_blocking(move || settle(&root, &step, &files))
+    let done = tauri::async_runtime::spawn_blocking(move || settle(&root, &step, &files, &keys))
         .await
         .map_err(|err| format!("it did not finish: {err}"))??;
     if done.outcome != "refused" {
@@ -503,25 +554,30 @@ pub async fn settle_save_conflict(
 }
 
 /// [`settle_save_conflict`], without a runtime.
-pub fn settle(root: &Path, step: &str, files: &[String]) -> Result<SaveSettled, String> {
+pub fn settle(
+    root: &Path,
+    step: &str,
+    files: &[String],
+    keys: &[SaveKeyChoice],
+) -> Result<SaveSettled, String> {
     use planegit::resolve::{self, Settled};
-    use planegit::resolvefolder as folder;
     let mut lines: Vec<String> = Vec::new();
-    // A stop an older purlis left at the root is carried on or aborted where it is; every
-    // resolve this build starts is settled in its folder, off to the side (#5824 F7).
-    let at_the_root = folder::held(root).is_none()
-        && purlis_core::gitstate::stopped(root).is_some_and(|stopped| stopped.operation.is_some());
+    let chosen: Vec<planegit::resolvefolder::Chosen> = keys
+        .iter()
+        .map(|key| planegit::resolvefolder::Chosen {
+            file: key.file.clone(),
+            key: key.key.clone(),
+            theirs: key.theirs,
+        })
+        .collect();
     let settled = {
         let mut say = |line: Say| lines.push(line.to_string());
         match step {
             // The window's own git (#752): its sign-in, offered to the recorded remote alone.
-            "start" => crate::forgeaccounts::window_git(|| folder::start(root, &mut say)),
-            "continue" if at_the_root => resolve::carry_on(root, files, &mut say),
-            "continue" => folder::carry_on(root, files, &mut say),
-            "skip" if at_the_root => resolve::skip(root),
-            "skip" => folder::skip(root),
-            "abort" if at_the_root => resolve::abort(root),
-            "abort" => folder::abort(root),
+            "start" => crate::forgeaccounts::window_git(|| resolve::start(root, &mut say)),
+            "continue" => resolve::carry_on(root, files, &chosen, &mut say),
+            "skip" => resolve::skip(root),
+            "abort" => resolve::abort(root),
             other => {
                 return Err(format!(
                     "{other} is not a step: start, continue, skip or abort"
@@ -534,34 +590,24 @@ pub fn settle(root: &Path, step: &str, files: &[String]) -> Result<SaveSettled, 
         Settled::Replayed => ("saved", pushed_after(root, &mut lines), Vec::new()),
         Settled::Stopped(files) => (
             "stopped",
-            if at_the_root {
-                "git stopped on a conflict. Settle the files below, in a chat or by hand, then \
-                 Continue. Abort puts the project back where it was."
-                    .to_owned()
-            } else {
-                format!(
-                    "The files below conflict. Settle them in the resolve folder {}, in a chat \
-                     or by hand, then Continue. Abort removes the folder and changes nothing.",
-                    folder::path(root).display()
-                )
-            },
+            format!(
+                "The files below conflict. Settle them in the resolve folder {}, in a chat or \
+                 by hand, then Continue. Abort removes the folder and changes nothing here.",
+                planegit::resolvefolder::path(root).display()
+            ),
             files,
         ),
         Settled::Empty => (
             "empty",
-            "Settled, this commit of the project's own changes nothing the remote does not \
-             already have. Skip drops it and carries the replay on; Abort puts the project \
-             back where it was."
+            "Settled, this machine's side brings nothing the remote does not already have. \
+             Skip drops it and moves the project onto the remote's; Abort removes the resolve \
+             folder and changes nothing."
                 .to_owned(),
             Vec::new(),
         ),
         Settled::Aborted => (
             "aborted",
-            if at_the_root {
-                "Aborted: the project is back where it was before Resolve.".to_owned()
-            } else {
-                "Aborted: the resolve folder is removed, and the project is as it was.".to_owned()
-            },
+            "Aborted: the resolve folder is removed, and the project is as it was.".to_owned(),
             Vec::new(),
         ),
         Settled::Refused(why) => ("refused", why, Vec::new()),

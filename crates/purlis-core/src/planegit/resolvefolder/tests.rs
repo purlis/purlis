@@ -67,6 +67,7 @@ fn a_conflict_is_settled_in_a_resolve_folder_and_the_root_never_stops() {
         Some(Conflicts {
             marked: vec!["shared.md".into()],
             by_hand: Vec::new(),
+            keyed: Vec::new(),
         })
     );
     assert_eq!(sides(&two.mine), Some(("theirs".into(), "mine".into())));
@@ -81,7 +82,7 @@ fn a_conflict_is_settled_in_a_resolve_folder_and_the_root_never_stops() {
     );
 
     // Markers left: refused, and nothing moved.
-    let refused = carry_on(&two.mine, &shown(&["shared.md"]), &mut said);
+    let refused = carry_on(&two.mine, &shown(&["shared.md"]), &[], &mut said);
     assert!(
         matches!(&refused, Settled::Refused(why) if why.contains("conflict markers")),
         "{refused:?}"
@@ -90,7 +91,7 @@ fn a_conflict_is_settled_in_a_resolve_folder_and_the_root_never_stops() {
 
     write(&folder, "shared.md", "one, both\ntwo\nthree\n");
     assert_eq!(
-        carry_on(&two.mine, &shown(&["shared.md"]), &mut said),
+        carry_on(&two.mine, &shown(&["shared.md"]), &[], &mut said),
         Settled::Replayed
     );
 
@@ -133,7 +134,7 @@ fn a_quit_mid_resolve_leaves_the_root_untouched_and_the_folder_is_found_again() 
     assert_eq!(found.ours, before);
 
     assert_eq!(
-        carry_on(&two.mine, &shown(&["shared.md"]), &mut said),
+        carry_on(&two.mine, &shown(&["shared.md"]), &[], &mut said),
         Settled::Replayed
     );
     assert_eq!(read(&two.mine, "shared.md"), "one, both\ntwo\nthree\n");
@@ -160,7 +161,7 @@ fn a_chat_writing_at_the_root_during_a_resolve_is_kept_and_a_clash_is_named() {
     write(&two.mine, "chat.md", "a chat's words\n");
     write(&two.mine, "theirs.md", "a chat wrote here first\n");
 
-    let refused = carry_on(&two.mine, &shown(&["shared.md"]), &mut said);
+    let refused = carry_on(&two.mine, &shown(&["shared.md"]), &[], &mut said);
 
     assert!(
         matches!(&refused, Settled::Refused(why) if why.contains("`theirs.md`")),
@@ -172,7 +173,7 @@ fn a_chat_writing_at_the_root_during_a_resolve_is_kept_and_a_clash_is_named() {
     // The chat's clash undone: Continue goes on, and the chat's own file stays as it wrote it.
     std::fs::remove_file(two.mine.join("theirs.md")).unwrap();
     assert_eq!(
-        carry_on(&two.mine, &shown(&["shared.md"]), &mut said),
+        carry_on(&two.mine, &shown(&["shared.md"]), &[], &mut said),
         Settled::Replayed
     );
     assert_eq!(read(&two.mine, "chat.md"), "a chat's words\n");
@@ -188,7 +189,7 @@ fn a_save_made_at_the_root_during_a_resolve_is_carried_onto_the_merge() {
     commit(&two.mine, "later");
 
     assert_eq!(
-        carry_on(&two.mine, &shown(&["shared.md"]), &mut said),
+        carry_on(&two.mine, &shown(&["shared.md"]), &[], &mut said),
         Settled::Replayed
     );
 
@@ -227,7 +228,7 @@ fn a_file_settled_outside_the_conflict_is_refused_and_nothing_moves() {
     write(&folder, "other.md", "changed in the folder\n");
     run(&folder, &["add", "other.md"]);
 
-    let refused = carry_on(&two.mine, &shown(&["shared.md"]), &mut said);
+    let refused = carry_on(&two.mine, &shown(&["shared.md"]), &[], &mut said);
 
     assert!(
         matches!(&refused, Settled::Refused(why) if why.contains("`other.md`")),
@@ -250,7 +251,7 @@ fn a_binary_conflict_is_settled_by_hand_in_the_folder() {
         vec!["blob.bin".to_owned()]
     );
 
-    let refused = carry_on(&two.mine, &[], &mut said);
+    let refused = carry_on(&two.mine, &[], &[], &mut said);
     assert!(
         matches!(&refused, Settled::Refused(why) if why.contains("git checkout --theirs")),
         "{refused:?}"
@@ -258,7 +259,7 @@ fn a_binary_conflict_is_settled_by_hand_in_the_folder() {
 
     run(&folder, &["checkout", "--theirs", "--", "blob.bin"]);
     run(&folder, &["add", "--", "blob.bin"]);
-    assert_eq!(carry_on(&two.mine, &[], &mut said), Settled::Replayed);
+    assert_eq!(carry_on(&two.mine, &[], &[], &mut said), Settled::Replayed);
     assert_eq!(read(&two.mine, "blob.bin"), "theirs\0");
 }
 
@@ -340,8 +341,106 @@ fn resolve_in_a_request_mode_cuts_a_folder_and_brings_in_by_itself_what_does_not
     );
     write(&path(&two.mine), "shared.md", "one, both\ntwo\nthree\n");
     assert_eq!(
-        carry_on(&two.mine, &shown(&["shared.md"]), &mut said),
+        carry_on(&two.mine, &shown(&["shared.md"]), &[], &mut said),
         Settled::Replayed
     );
     assert!(read(&two.mine, "charter.toml").contains("mode = \"pr\""));
+}
+
+/// **A key both machines changed in `charter.toml` is chosen by key, and no marker is ever
+/// written into it** (#5852): the folder's settings file has the sets merged and this machine's
+/// value standing in, Continue waits for a choice, and the choice is what lands, whatever a chat
+/// wrote into the folder's copy.
+#[test]
+fn a_charter_toml_key_conflict_is_settled_in_the_resolve_folder_with_no_marker() {
+    let seed = "[plane]\nname = \"fixture\"\nbranch = \"release\"\n\n[sandbox]\nmode = \"project\"\nhosts = [\"a.example\"]\n";
+    let two = Two::new(&[]);
+    write(&two.mine, "charter.toml", seed);
+    commit(&two.mine, "settings");
+    run(&two.mine, &["push", "-q", "origin", "release"]);
+    run(&two.theirs, &["pull", "-q", "origin", "release"]);
+    write(
+        &two.mine,
+        "charter.toml",
+        &seed
+            .replace("\"project\"", "\"workspace\"")
+            .replace("[\"a.example\"]", "[\"a.example\", \"mine.example\"]"),
+    );
+    commit(&two.mine, "mine");
+    write(
+        &two.theirs,
+        "charter.toml",
+        &seed
+            .replace("\"project\"", "\"off\"")
+            .replace("[\"a.example\"]", "[\"a.example\", \"theirs.example\"]"),
+    );
+    two.land_theirs("theirs");
+    // The window, under no chat's sandbox, whatever runs these tests.
+    let _the_window = crate::sandbox::held::stand_in(&[]);
+
+    assert_eq!(
+        cut(&two.mine, "release"),
+        Ok(vec!["charter.toml".to_owned()])
+    );
+
+    let folder = path(&two.mine);
+    let written = read(&folder, "charter.toml");
+    assert!(
+        !written.contains("<<<<<<<") && !written.contains(">>>>>>>"),
+        "{written}"
+    );
+    assert!(written.contains("mode = \"workspace\""), "{written}");
+    assert!(
+        written.contains("theirs.example") && written.contains("mine.example"),
+        "{written}"
+    );
+    assert_eq!(
+        conflicts(&two.mine),
+        Some(Conflicts {
+            marked: Vec::new(),
+            by_hand: Vec::new(),
+            keyed: vec!["charter.toml".into()],
+        })
+    );
+    assert_eq!(
+        held(&two.mine).unwrap().keys,
+        vec![HeldKey {
+            file: "charter.toml".into(),
+            key: "sandbox.mode".into(),
+            ours: Some("\"workspace\"".into()),
+            theirs: Some("\"off\"".into()),
+        }]
+    );
+
+    // No choice yet: refused, naming the key.
+    let refused = carry_on(&two.mine, &[], &[], &mut said);
+    assert!(
+        matches!(&refused, Settled::Refused(why) if why.contains("`sandbox.mode`")),
+        "{refused:?}"
+    );
+
+    // A chat writes the folder's copy: what lands is still the person's choice.
+    write(
+        &folder,
+        "charter.toml",
+        "[sandbox]\nmode = \"off\"\nhosts = [\"evil.example\"]\n",
+    );
+    let theirs = Chosen {
+        file: "charter.toml".into(),
+        key: "sandbox.mode".into(),
+        theirs: true,
+    };
+    assert_eq!(
+        carry_on(&two.mine, &[], &[theirs], &mut said),
+        Settled::Replayed
+    );
+
+    let landed = read(&two.mine, "charter.toml");
+    assert!(landed.contains("mode = \"off\""), "{landed}");
+    assert!(
+        landed.contains("mine.example") && landed.contains("theirs.example"),
+        "{landed}"
+    );
+    assert!(!landed.contains("evil.example"), "{landed}");
+    assert!(!landed.contains("<<<<<<<"), "{landed}");
 }
