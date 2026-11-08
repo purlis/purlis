@@ -1454,8 +1454,9 @@ pub fn vaults_of(ctx: &Ctx, persona: &str) -> Result<Vec<String>, String> {
 }
 
 /// **The personas that may use `vault`** (#5745), by name and sorted: the one the registry tags
-/// it for, and each you let use it on this machine, which is whom [`authorise`] opens it for, and
-/// each let use it while policy's lock holds the grant dormant, since lifting it opens the vault.
+/// it for, and each you let use it on this machine, which is whom [`authorise`] opens it for. A
+/// grant policy's lock holds dormant is not counted, as `authorise` does not open it: lifting
+/// the lock is a later grant, judged as any is (or not, D-5745-6).
 /// None for a vault the registry does not hold. An error where the registry, or the vault's own
 /// entry in it, does not read, so "which is not known" is never said as "none".
 pub fn personas_of(ctx: &Ctx, vault: &str) -> Result<Vec<String>, String> {
@@ -1465,10 +1466,11 @@ pub fn personas_of(ctx: &Ctx, vault: &str) -> Result<Vec<String>, String> {
     }
     let registered = registry::vault_in(&doc, vault).map_err(|e| e.message.to_string())?;
     let mut out: Vec<String> = registered.persona.into_iter().collect();
-    // A grant policy's lock holds dormant counts too: lifting the lock lets it read again.
-    for one in crate::sandbox::local::granted_vaults(&ctx.root) {
-        if one.vault == vault {
-            out.push(one.persona);
+    if !crate::sandbox::policy::Locks::of(&ctx.root).forbids_vault_grants() {
+        for one in crate::sandbox::local::granted_vaults(&ctx.root) {
+            if one.vault == vault {
+                out.push(one.persona);
+            }
         }
     }
     out.retain(|one| !one.is_empty());
