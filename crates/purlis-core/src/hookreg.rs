@@ -158,6 +158,15 @@ pub const HANDLERS: [Handler; 18] = [
         matcher: Some("Bash"),
         timeout: 5,
     },
+    // A purlis tool that failed (#5697): one whose error says it failed inside purlis is
+    // handed to the app as a Report draft (`caught`). Claude Code reads a matcher that is not a
+    // bare name as a pattern, so every purlis tool is named by its server's prefix.
+    Handler {
+        name: crate::caught::TOOL_WORD,
+        event: "PostToolUseFailure",
+        matcher: Some("mcp__purlis__.*"),
+        timeout: 5,
+    },
     Handler {
         name: "notification",
         event: "Notification",

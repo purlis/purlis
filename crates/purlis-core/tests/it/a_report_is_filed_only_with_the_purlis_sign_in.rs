@@ -4,6 +4,9 @@
 //! **`purlis report` searches and files through the forge seam's work-item area, with purlis's
 //! own sign-in, and never through `gh`** (#806, ADR 0059, ADR 0070 §4).
 //!
+//! Every case drives the Reports module through its interface (#5686): evidence from a source in,
+//! an outcome out. The route is the module's to choose, never the case's.
+//!
 //! Each case signs in to github.com with a token through the account store, hands the sign-ins
 //! over as the app does at start, and asks the tracker as the window does. The native route is a
 //! recording of GitHub's answers, handed each request's token source, which checks the token it
@@ -27,7 +30,7 @@ use purlis_core::forge::route::HostScope;
 use purlis_core::forge::signin;
 use purlis_core::forge::transport::{Call, NoAnswer, Reply, Transport};
 use purlis_core::forge::{Caller, Failure, Forge, ForgeError, Kind};
-use purlis_core::report::{self, Draft, Hit};
+use purlis_core::report::{self, Consent, Evidence, Hit, Known, Outcome, Refusal, Reports, Route};
 use secrecy::ExposeSecret;
 use serde_json::json;
 
@@ -75,10 +78,10 @@ impl Transport for Native {
     }
 }
 
-struct Machine {
+pub(crate) struct Machine {
     _turn: MutexGuard<'static, ()>,
     _home: tempfile::TempDir,
-    recorded: Arc<Recorded>,
+    pub(crate) recorded: Arc<Recorded>,
     cli: Arc<CountedCli>,
     read: Arc<AtomicUsize>,
 }
@@ -86,7 +89,7 @@ struct Machine {
 impl Machine {
     /// A machine whose GitHub answers `exchanges`, signed in to github.com when `signed_in`, its
     /// sign-ins handed over as the app hands them over.
-    fn new(exchanges: serde_json::Value, signed_in: bool) -> Machine {
+    pub(crate) fn new(exchanges: serde_json::Value, signed_in: bool) -> Machine {
         let turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
         let home = tempfile::tempdir().unwrap();
         if signed_in {
@@ -143,7 +146,7 @@ impl Machine {
     }
 
     /// Nothing was sent on either route.
-    fn nothing_sent(&self) {
+    pub(crate) fn nothing_sent(&self) {
         assert_eq!(self.cli.0.load(Ordering::SeqCst), 0, "gh was asked");
         assert_eq!(self.read.load(Ordering::SeqCst), 0, "the token was read");
     }
@@ -155,16 +158,47 @@ impl Drop for Machine {
     }
 }
 
-fn draft() -> Draft {
-    Draft {
+fn evidence() -> Evidence {
+    Evidence::PersonDraft {
         kind: report::Kind::Bug,
-        title: "The picker crashes on an empty list".into(),
-        body: "Open the picker with no repos.".into(),
-        scrubbed: Vec::new(),
+        text: "Open the picker with no repos.".into(),
+        title: Some("The picker crashes on an empty list".into()),
     }
 }
 
-fn issue(number: u64, title: &str, state: &str) -> serde_json::Value {
+/// The Reports module knowing nothing of this machine, so the draft is the same on every one,
+/// with a yes to both streams: what a stream without one is refused is
+/// `a_report_waits_for_its_streams_consent`'s (#5688), and here only the sign-in decides.
+fn reports() -> Reports {
+    Reports::new(Known::default()).with_consent(Consent {
+        crash_reports: Some(true),
+        agent_drafts: Some(true),
+        always_send: None,
+        asked: true,
+        crash_notice: None,
+    })
+}
+
+/// What the module drafts of [`evidence`] for `source`, and the route it chose.
+fn drafted(source: &Caller) -> (report::Draft, Route) {
+    match reports().take(evidence(), source) {
+        Outcome::Drafted { draft, route } => (draft, route),
+        other => panic!("not drafted: {other:?}"),
+    }
+}
+
+/// The refusal a route gave, and that it was a sign-in refusal naming where to sign in.
+fn refused_for_the_sign_in(outcome: Outcome, said: &str) {
+    match outcome {
+        Outcome::Refused(Refusal::NotFiled { why, .. }) => {
+            assert_eq!(why.failure(), &Failure::Auth);
+            assert!(why.said().contains(said), "{why}");
+        }
+        other => panic!("not refused for the sign-in: {other:?}"),
+    }
+}
+
+pub(crate) fn issue(number: u64, title: &str, state: &str) -> serde_json::Value {
     json!({"id": 5000 + number, "node_id": format!("I_kwDOPurlis{number}"), "number": number,
            "title": title, "state": state, "labels": [],
            "html_url": format!("https://github.com/purlis/purlis/issues/{number}")})
@@ -179,10 +213,10 @@ fn searched() -> serde_json::Value {
               "items": [issue(41, "Picker crash", "closed")]}).to_string()}})
 }
 
-fn filed() -> serde_json::Value {
+fn filed(body: &str) -> serde_json::Value {
     json!({"call": {"endpoint": {"rest": {"method": "POST", "path": "repos/purlis/purlis/issues"}},
                     "fields": [{"text": ["title", "The picker crashes on an empty list"]},
-                               {"text": ["body", "Open the picker with no repos."]}]},
+                               {"text": ["body", body]}]},
            "reply": {"code": 0, "err": "",
                      "out": issue(42, "The picker crashes on an empty list", "open").to_string()}})
 }
@@ -193,11 +227,24 @@ fn the_window_searches_and_files_a_report_with_the_purlis_sign_in_and_never_gh()
     if crate::alone() {
         return;
     }
-    let machine = Machine::new(json!([searched(), filed()]), true);
+    let (shown, _) = drafted(&Caller::window());
+    let machine = Machine::new(json!([searched(), filed(&shown.body)]), true);
     let caller = Caller::window();
-    let tracker = report::as_the_reporter(&caller).expect("the person in the window, signed in");
+    let (draft, route) = drafted(&caller);
+    assert_eq!(
+        route,
+        Route::AsTheReporter,
+        "the person in the window, signed in"
+    );
+    assert!(
+        draft
+            .body
+            .starts_with("Open the picker with no repos.\n\n---\npurlis "),
+        "{}",
+        draft.body
+    );
 
-    let hits = report::search_duplicates(tracker.as_ref(), &caller, &draft()).unwrap();
+    let hits = reports().duplicates(&draft, &caller).unwrap();
     assert_eq!(
         hits,
         [Hit {
@@ -207,8 +254,12 @@ fn the_window_searches_and_files_a_report_with_the_purlis_sign_in_and_never_gh()
             url: "https://github.com/purlis/purlis/issues/41".into(),
         }]
     );
-    let url = report::file(tracker.as_ref(), &caller, &draft()).unwrap();
-    assert_eq!(url, "https://github.com/purlis/purlis/issues/42");
+    assert_eq!(
+        reports().file(evidence(), &caller, &draft.digest()),
+        Outcome::Sent {
+            address: "https://github.com/purlis/purlis/issues/42".into()
+        }
+    );
 
     assert!(
         machine.recorded.unspent().is_empty(),
@@ -224,6 +275,25 @@ fn the_window_searches_and_files_a_report_with_the_purlis_sign_in_and_never_gh()
 }
 
 #[test]
+fn a_draft_other_than_the_one_shown_is_never_filed() {
+    purlis_core::unsteered!();
+    if crate::alone() {
+        return;
+    }
+    let machine = Machine::new(json!([]), true);
+    let (draft, _) = drafted(&Caller::window());
+    let other = "0".repeat(12);
+    assert_ne!(draft.digest(), other);
+    assert_eq!(
+        reports().file(evidence(), &Caller::window(), &other),
+        Outcome::Refused(Refusal::NotTheShownDraft {
+            digest: draft.digest()
+        })
+    );
+    machine.nothing_sent();
+}
+
+#[test]
 fn a_purlis_command_and_a_chat_are_refused_before_anything_is_sent() {
     purlis_core::unsteered!();
     if crate::alone() {
@@ -236,9 +306,22 @@ fn a_purlis_command_and_a_chat_are_refused_before_anything_is_sent() {
         Caller::mcp("c1"),
         Caller::trigger(),
     ] {
-        let refused = report::as_the_reporter(&caller).err().expect("refused");
-        assert_eq!(refused.failure(), &Failure::Auth, "{caller:?}");
-        assert!(refused.said().contains(signin::SIGN_IN_AT), "{refused}");
+        let (draft, route) = drafted(&caller);
+        match route {
+            Route::ByHand { why, link, .. } => {
+                assert_eq!(why.failure(), &Failure::Auth, "{caller:?}");
+                assert!(why.said().contains(signin::SIGN_IN_AT), "{why}");
+                assert!(
+                    link.starts_with("https://github.com/purlis/purlis/issues/new?title="),
+                    "{link}"
+                );
+            }
+            other => panic!("{caller:?} was routed {other:?}"),
+        }
+        refused_for_the_sign_in(
+            reports().file(evidence(), &caller, &draft.digest()),
+            signin::SIGN_IN_AT,
+        );
     }
     machine.nothing_sent();
 }
@@ -250,11 +333,11 @@ fn a_window_with_no_purlis_sign_in_is_refused_and_never_falls_back_to_gh() {
         return;
     }
     let machine = Machine::new(json!([]), false);
-    let refused = report::as_the_reporter(&Caller::window())
-        .err()
-        .expect("refused");
-    assert_eq!(refused.failure(), &Failure::Auth);
-    assert!(refused.said().contains("GitHub on github.com"), "{refused}");
+    let (draft, _) = drafted(&Caller::window());
+    refused_for_the_sign_in(
+        reports().file(evidence(), &Caller::window(), &draft.digest()),
+        "GitHub on github.com",
+    );
     machine.nothing_sent();
 }
 
@@ -266,9 +349,10 @@ fn where_no_sign_in_was_handed_over_a_report_is_refused() {
     }
     let machine = Machine::new(json!([]), true);
     signin::take_back();
-    let refused = report::as_the_reporter(&Caller::window())
-        .err()
-        .expect("refused");
-    assert_eq!(refused.failure(), &Failure::Auth);
+    let (draft, _) = drafted(&Caller::window());
+    refused_for_the_sign_in(
+        reports().file(evidence(), &Caller::window(), &draft.digest()),
+        "",
+    );
     machine.nothing_sent();
 }

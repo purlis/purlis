@@ -504,6 +504,28 @@ impl WorkItems for GitHub {
             .map(|issue| read::item_of(issue, &doing))
             .collect()
     }
+
+    fn add_comment(
+        &self,
+        caller: &Caller,
+        path: &str,
+        number: u64,
+        body: &str,
+    ) -> Result<String, ForgeError> {
+        let (owner, name) = owner_name(path);
+        let api = format!(
+            "repos/{}/{}/issues/{number}/comments",
+            quote(owner),
+            quote(name)
+        );
+        let doing = format!("commenting on issue #{number} in {path}");
+        let call = Call::write(Method::Post, api, vec![Field::text("body", body)]);
+        let record = self.0.ask(caller, &call, &doing)?;
+        record["html_url"]
+            .as_str()
+            .map(str::to_string)
+            .ok_or_else(|| ForgeError::new(format!("{doing}: the answer named no html_url")))
+    }
 }
 
 impl Requests for GitHub {
