@@ -13156,24 +13156,195 @@ fn a_runs_field_linked_to_a_browser_logins_key_is_refused_with_nothing_linked_or
     );
 }
 
-/// **D-5246-1** (the person's ruling, amending D-5080-11): a plain Secret ask's picker lists what
-/// a run's does, only vaults its persona may use and no entry a browser login fills, since the link
-/// it makes is read by every later run of that key, whose notice names only the persona's vault.
+/// **#5744**: a run on a vault its persona may not use (`finance`, not `ops`'s) is offered none of
+/// that vault's own entries, and a press picking one is refused before anything is linked, since
+/// the gate refuses a key that links into a vault the persona may not use (D-5246-1). So the
+/// picker, the press and the gate agree, and the person is never asked to allow a run the gate
+/// then refuses.
 #[test]
-fn a_secret_asks_picker_lists_only_entries_its_persona_may_hand_on() {
+fn a_runs_field_picked_from_its_own_refused_vault_is_not_offered_or_runs() {
     let plane = Plane::new().a_persona("ops", "");
     let host = Pretend::default();
     let planes = planes_on(&host);
     let id = planes.open(&plane.root);
     let held = planes.held(&id).expect("held");
     team_and_a_kept_entry(&plane);
-    let manifest = plane.root.join(purlis_core::plane::MANIFEST);
-    let mut file = std::fs::read_to_string(&manifest).unwrap_or_default();
-    file.push_str(
-        "\n[sandbox.personas.qa.tools.shop]\nvault = \"keep\"\nbrowser = \
-         \"https://shop.example.test/login\"\nkey = \"SHOP_PW\"\n",
+    let mut need = curl_lacking_token(&plane);
+    need.bound.vault = "finance".to_owned();
+    need.not_its_vault = true;
+
+    let ran = held_while(&held, need, |open| {
+        let listed = crate::secretasks::run_entries_for(&held, open.id).expect("listed");
+        assert!(
+            listed.iter().all(|one| one.vault != "finance"),
+            "the run's own refused vault is not offered: {listed:?}"
+        );
+        let pressed = crate::secretasks::run_grant_given(
+            &held,
+            None,
+            open.id,
+            crate::secretasks::RunGrantPress::Once,
+            picked_in("TOKEN", "finance", "STRIPE"),
+        );
+        assert!(
+            pressed
+                .as_ref()
+                .is_err_and(|why| why.contains("can't use vault finance")),
+            "{pressed:?}"
+        );
+        let ctx =
+            purlis_core::secrets::Ctx::new(&plane.root, purlis_core::secrets::Env::from_process());
+        assert_eq!(
+            purlis_core::secrets::links::of(&ctx, "finance", "TOKEN").expect("read"),
+            None,
+            "nothing linked"
+        );
+        assert!(held.secret_asks().given_runs().is_empty(), "nothing given");
+        crate::secretasks::run_grant_filled(
+            &held,
+            None,
+            open.id,
+            crate::secretasks::RunGrantPress::Refuse,
+            Vec::new(),
+        )
+        .expect("kept off");
+    });
+    assert!(
+        matches!(ran, purlis_core::secrets::ask::run::RunHeld::Refused { .. }),
+        "{ran:?}"
     );
-    std::fs::write(&manifest, &file).expect("a teammate's login line");
+}
+
+/// #5744's review: where the notice's Allow is the vault's own (`Offer::Vault`), which gives the
+/// persona the vault before the run reads it, the vault's own entries are still offered and a
+/// pick of one is linked on that Allow: the gate then opens the vault for the persona.
+#[test]
+fn a_refused_vaults_own_allow_still_takes_an_entry_of_that_vault() {
+    own_allow_takes_an_entry_of_its_vault(None);
+}
+
+/// As [`a_refused_vaults_own_allow_still_takes_an_entry_of_that_vault`], where policy locks the
+/// program's Allow (`no_allow`): the vault's own Allow is still offered, and gives the vault.
+#[test]
+fn a_refused_vaults_own_allow_takes_an_entry_of_that_vault_where_the_programs_allow_is_locked() {
+    own_allow_takes_an_entry_of_its_vault(Some("policy locks run grants for curl".to_owned()));
+}
+
+/// A run on `finance`, which `ops` may not use, whose notice offers the vault's own Allow.
+fn own_allow_takes_an_entry_of_its_vault(no_allow: Option<String>) {
+    let plane = Plane::new().a_persona("ops", "");
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    team_and_a_kept_entry(&plane);
+    let logs = tempfile::tempdir().expect("a folder for the log");
+    {
+        use purlis_core::eventlog::{ArgsKey, Log, Recorder};
+        held.hooks()
+            .record_into(crate::hooks::Events::here(Recorder::new(
+                Log::open(logs.path(), "DEVICE").expect("a log"),
+                ArgsKey::open(logs.path()).expect("a key"),
+            )));
+    }
+    let mut need = curl_lacking_token(&plane);
+    need.bound.vault = "finance".to_owned();
+    need.not_its_vault = true;
+    need.offer = purlis_core::secrets::ask::run::Offer::Vault { no_allow };
+
+    held_while(&held, need, |open| {
+        let listed = crate::secretasks::run_entries_for(&held, open.id).expect("listed");
+        assert!(
+            listed
+                .iter()
+                .any(|one| one.vault == "finance" && one.keys.contains(&"STRIPE".to_owned())),
+            "the vault's own entries are offered on its own Allow: {listed:?}"
+        );
+        crate::secretasks::run_grant_given(
+            &held,
+            None,
+            open.id,
+            crate::secretasks::RunGrantPress::AllowVault,
+            picked_in("TOKEN", "finance", "STRIPE"),
+        )
+        .expect("allowed");
+    });
+    let ctx =
+        purlis_core::secrets::Ctx::new(&plane.root, purlis_core::secrets::Env::from_process());
+    assert_eq!(
+        purlis_core::secrets::links::of(&ctx, "finance", "TOKEN").expect("read"),
+        Some(purlis_core::secrets::links::Target {
+            vault: "finance".to_owned(),
+            key: "STRIPE".to_owned(),
+        }),
+        "linked on the vault's own Allow"
+    );
+    assert!(
+        purlis_core::secrets::brokered::authorise(&ctx, Some("ops"), "finance").is_ok(),
+        "and ops may use finance now, so the gate hands the key on"
+    );
+}
+
+/// **#5745** (the person's ruling, 2026-11-08: refuse such links): a run's field links into
+/// the run's vault, which every persona of that vault reads. So where `billing` may use `team`
+/// too and not `keep`, the picker offers none of `keep`'s entries, though `ops` may use them, and
+/// a press picking one is refused, saying why, with nothing linked or given.
+#[test]
+fn a_runs_field_is_not_linked_to_an_entry_another_persona_of_its_vault_may_not_use() {
+    let plane = Plane::new().a_persona("ops", "");
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    team_and_a_kept_entry(&plane);
+    purlis_core::sandbox::local::grant_vault(&plane.root, "team", "billing")
+        .expect("billing may use team here");
+
+    let ran = held_while(&held, curl_lacking_token(&plane), |open| {
+        let listed = crate::secretasks::run_entries_for(&held, open.id).expect("listed");
+        assert!(
+            listed.iter().all(|one| one.vault != "keep"),
+            "keep is not offered: {listed:?}"
+        );
+        let pressed = crate::secretasks::run_grant_given(
+            &held,
+            None,
+            open.id,
+            crate::secretasks::RunGrantPress::Once,
+            picked("TOKEN", "SHARED"),
+        );
+        assert!(
+            pressed.as_ref().is_err_and(|why| {
+                why.contains("billing may use vault team") && why.contains("can't use vault keep")
+            }),
+            "{pressed:?}"
+        );
+        let ctx =
+            purlis_core::secrets::Ctx::new(&plane.root, purlis_core::secrets::Env::from_process());
+        assert_eq!(
+            purlis_core::secrets::links::of(&ctx, "team", "TOKEN").expect("read"),
+            None,
+            "nothing linked"
+        );
+        assert!(held.secret_asks().given_runs().is_empty(), "nothing given");
+        crate::secretasks::run_grant_filled(
+            &held,
+            None,
+            open.id,
+            crate::secretasks::RunGrantPress::Refuse,
+            Vec::new(),
+        )
+        .expect("kept off");
+    });
+    assert!(
+        matches!(ran, purlis_core::secrets::ask::run::RunHeld::Refused { .. }),
+        "{ran:?}"
+    );
+}
+
+/// What a Secret ask's picker lists for chat 3, as `ops`, asking for `DEPLOY_TOKEN` in `team`,
+/// declined once listed.
+fn secret_ask_listed(held: &Held, plane: &Plane) -> Vec<crate::secretasks::EntriesOf> {
     let ctx =
         purlis_core::secrets::Ctx::new(&plane.root, purlis_core::secrets::Env::from_process());
     let line = purlis_core::secrets::ask::SecretAsk {
@@ -13191,7 +13362,7 @@ fn a_secret_asks_picker_lists_only_entries_its_persona_may_hand_on() {
         asker: None,
     };
 
-    let listed = std::thread::scope(|scope| {
+    std::thread::scope(|scope| {
         let asks = held.secret_asks();
         let asking = scope.spawn(|| {
             purlis_core::secrets::ask::raised_within(
@@ -13213,7 +13384,7 @@ fn a_secret_asks_picker_lists_only_entries_its_persona_may_hand_on() {
             );
             std::thread::yield_now();
         };
-        let listed = crate::secretasks::entries_for(&held, open.id).expect("listed");
+        let listed = crate::secretasks::entries_for(held, open.id).expect("listed");
         held.secret_asks()
             .answer(
                 &ctx,
@@ -13227,7 +13398,48 @@ fn a_secret_asks_picker_lists_only_entries_its_persona_may_hand_on() {
             .expect("Not now");
         asking.join().expect("it ends").expect("declined");
         listed
-    });
+    })
+}
+
+/// **#5745**: a Secret ask's picker offers no entry another persona of the asked vault may not
+/// use, as its press refuses one: where `billing` may use `team` too and not `keep`, none of
+/// `keep`'s entries is listed, though `ops` may use them.
+#[test]
+fn a_secret_asks_picker_lists_no_entry_another_persona_of_its_vault_may_not_use() {
+    let plane = Plane::new().a_persona("ops", "");
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    team_and_a_kept_entry(&plane);
+    purlis_core::sandbox::local::grant_vault(&plane.root, "team", "billing")
+        .expect("billing may use team here");
+    let listed = secret_ask_listed(&held, &plane);
+    assert!(
+        listed.iter().all(|one| one.vault != "keep"),
+        "keep is not offered: {listed:?}"
+    );
+}
+
+/// **D-5246-1** (the person's ruling, amending D-5080-11): a plain Secret ask's picker lists what
+/// a run's does, only vaults its persona may use and no entry a browser login fills, since the link
+/// it makes is read by every later run of that key, whose notice names only the persona's vault.
+#[test]
+fn a_secret_asks_picker_lists_only_entries_its_persona_may_hand_on() {
+    let plane = Plane::new().a_persona("ops", "");
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    team_and_a_kept_entry(&plane);
+    let manifest = plane.root.join(purlis_core::plane::MANIFEST);
+    let mut file = std::fs::read_to_string(&manifest).unwrap_or_default();
+    file.push_str(
+        "\n[sandbox.personas.qa.tools.shop]\nvault = \"keep\"\nbrowser = \
+         \"https://shop.example.test/login\"\nkey = \"SHOP_PW\"\n",
+    );
+    std::fs::write(&manifest, &file).expect("a teammate's login line");
+    let listed = secret_ask_listed(&held, &plane);
 
     let names: Vec<_> = listed
         .iter()
