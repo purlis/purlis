@@ -44,6 +44,7 @@ mod gradelink;
 mod guard;
 mod handoff;
 mod hooks;
+mod internal;
 #[cfg(unix)]
 mod listen;
 mod mcp;
@@ -2516,6 +2517,7 @@ fn hook(name: &str, now: Option<&str>) -> ExitCode {
             .flatten();
         tell_the_host_about_the_tool_call(name, &text, &answered, began.elapsed(), skill);
         let taken = tell_the_host_about_blocks(name, &text);
+        hooks::tell_the_app_what_failed(name, &text);
         // A block word answers nothing of its own, so this is the one line it prints (#1631).
         // And what a git command the sandbox stopped partway left behind (qw349), in the
         // same line: a hook prints one answer. Never of words only read back (#1884).
@@ -5275,6 +5277,13 @@ fn main() -> ExitCode {
     // must refuse the tool call, not allow it (#349).
     if is_a_pretooluse_call(&std::env::args_os().collect::<Vec<_>>()) {
         guard::refuse_on_a_crash(tell_the_host_about_a_crash);
+    } else {
+        // A command a chat runs ends a panic as an internal failure, the one exit purlis's own
+        // hook drafts a Report of (#5697). Read from the raw command line, before clap.
+        let first = std::env::args_os()
+            .nth(1)
+            .map(|word| word.to_string_lossy().into_owned());
+        internal::exit_on_a_panic(first.as_deref());
     }
     // Started again by the session host as a browser engine's keeper (#2012): keep its process
     // group and never return, before anything else of the command runs.

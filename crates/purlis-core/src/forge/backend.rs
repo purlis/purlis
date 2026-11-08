@@ -603,6 +603,16 @@ pub trait WorkItems {
         words: &str,
         limit: u8,
     ) -> Result<Vec<crate::work::WorkItem>, ForgeError>;
+
+    /// Post `body` as a comment on issue `number` of the repo at `path`, as `caller`, and answer
+    /// the comment's page: what a report adds to an issue that already covers it (#5694). Strict.
+    fn add_comment(
+        &self,
+        caller: &Caller,
+        path: &str,
+        number: u64,
+        body: &str,
+    ) -> Result<String, ForgeError>;
 }
 
 /// A new issue, in the neutral model.

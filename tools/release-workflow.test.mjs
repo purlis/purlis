@@ -343,6 +343,7 @@ test("every job has a deadline, so a hung one cannot hold the dev builds' group 
     "manifest",
     "provenance",
     "publish",
+    "symbols",
     "profile-guard",
   ]);
   // A job that calls a workflow has no deadline of its own: it takes the longest chain of
@@ -459,4 +460,84 @@ test("the Linux build turns on more swap before anything compiles", () => {
   assert.match(head.slice(name), /if: runner\.os == 'Linux'/);
   assert.ok(swap < steps.indexOf("rust-toolchain"), "the swap is turned on before the toolchain is installed");
   assert.ok(swap < steps.indexOf("Build the app"), "the swap is turned on before the app is built");
+});
+
+test("the debug symbols go up in a job of their own that never holds a release back (#5692)", () => {
+  const symbols = job("symbols");
+  // After the build, from what it saved, so the build's own time is untouched.
+  assert.deepEqual(needsOf(symbols), ["plan", "build"]);
+  // Whenever the run publishes, even when one platform's build failed and the other's saved
+  // its symbols; never in a cancelled run.
+  assert.equal(
+    value(symbols, 4, "if"),
+    "${{ !cancelled() && needs.plan.outputs.publish == 'true' }}",
+  );
+  // A red here leaves the run green, and nothing that publishes waits on it.
+  assert.equal(value(symbols, 4, "continue-on-error"), "true");
+  for (const name of ["sbom", "manifest", "provenance", "publish", "profile-guard"]) {
+    assert.ok(!needsOf(job(name)).includes("symbols"), `${name} waits on the symbols`);
+  }
+  const body = symbols.map((line) => line.trim());
+  // The intake's secrets, under the names sentry-cli reads; nothing else of the release's.
+  for (const want of [
+    "SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_SYMBOLS_TOKEN }}",
+    "SENTRY_ORG: ${{ secrets.SENTRY_ORG }}",
+    "SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}",
+  ]) {
+    assert.ok(body.includes(want), `symbols lacks ${want}`);
+  }
+  const secrets = body.join("\n").match(/secrets\.\w+/g);
+  assert.deepEqual([...new Set(secrets)].sort(), [
+    "secrets.SENTRY_ORG",
+    "secrets.SENTRY_PROJECT",
+    "secrets.SENTRY_SYMBOLS_TOKEN",
+  ]);
+  // Every platform's symbols artifact, by pattern: a build that saved none leaves none to
+  // download, and the tool says so rather than the download failing.
+  assert.ok(body.includes("pattern: purlis-*-symbols-${{ needs.plan.outputs.version }}"));
+  assert.ok(body.includes("run: node tools/symbols-upload.mjs check symbols"));
+  assert.ok(body.includes("run: node tools/symbols-upload.mjs upload symbols"));
+});
+
+test("the macOS build saves its debug symbols as an artifact of their own, never published (#5692)", () => {
+  const build = job("build").map((line) => line.trim());
+  assert.ok(
+    build.includes("name: purlis-${{ steps.names.outputs.slug }}-symbols-${{ needs.plan.outputs.version }}"),
+    "the build uploads no symbols artifact",
+  );
+  // The jobs that publish download each platform's artifact by its exact name, never by a
+  // pattern that would also take the symbols.
+  for (const name of ["sbom", "manifest", "provenance", "publish"]) {
+    assert.ok(!job(name).some((line) => line.trim().startsWith("pattern:")), name);
+  }
+});
+
+/** The lines of the step `name` in `body` (a job's lines), up to the next step. */
+function step(body, name) {
+  const start = body.findIndex((line) => line.trim() === `- name: ${name}`);
+  assert.notEqual(start, -1, `no step named ${name}`);
+  const indent = body[start].indexOf("-");
+  const end = body.findIndex(
+    (line, i) => i > start && line.indexOf("- ") === indent && line.trim().startsWith("- "),
+  );
+  return body.slice(start, end === -1 ? undefined : end).map((line) => line.trim());
+}
+
+test("every compile of a build takes the Report intake's address from the release environment (#5687)", () => {
+  const build = job("build");
+  // The secret is reached only where the build publishes: the job's environment says so, on
+  // both channels, a dev build too (its reports say channel=dev, from its profile).
+  assert.equal(value(build, 4, "environment"), "${{ needs.plan.outputs.publish == 'true' && 'release' || '' }}");
+  // `option_env!` reads it when purlis-core compiles: the command line's build and both of
+  // Tauri's. With the secret absent it is empty, which is no address, so nothing is sent.
+  for (const name of [
+    "The purlis binary the app's hooks run, its charter alias, and the built-in extensions",
+    "Build the app",
+    "Build the extra bundle",
+  ]) {
+    assert.ok(
+      step(build, name).includes("PURLIS_REPORT_INTAKE_DSN: ${{ secrets.PURLIS_REPORT_INTAKE_DSN }}"),
+      `${name} builds without the intake's address`,
+    );
+  }
 });

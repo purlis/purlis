@@ -797,6 +797,7 @@ describe("the one list of actions", () => {
       "Your settings: Editor",
       "Your settings: Chats list",
       "Your settings: Notifications",
+      "Your settings: Reports",
       "Your settings: This machine",
       "Your settings: Browsers",
       "Your settings: Pools",
@@ -808,6 +809,20 @@ describe("the one list of actions", () => {
     await run(alone, "settings.group:you.editor", hands);
     expect(hands.calls).toEqual(["openYourSettings"]);
     expect(shownAt(settingsPlace("you"))).toBe("you.editor");
+  });
+
+  it("finds Your settings: Reports by each of its other words, and says none of them (#5688)", () => {
+    const offers = catalogue(now());
+    for (const word of ["reports", "crash", "telemetry", "error reporting", "Error Reporting"]) {
+      const found = narrow(word, offers).map((one) => one.title);
+      expect(found, word).toContain("Your settings: Reports");
+    }
+    // The other words find the row and are never drawn: its title stays the group's label.
+    expect(by(offers, "settings.group:you.reports")?.title).toBe("Your settings: Reports");
+    // A word that is no synonym of it does not.
+    expect(narrow("quiet hours", offers).map((one) => one.title)).not.toContain(
+      "Your settings: Reports",
+    );
   });
 
   it("offers the project's groups and the focused workspace's, each a link into Settings (#1201)", async () => {
@@ -2760,8 +2775,9 @@ describe("the palette at fifty chats", () => {
     // as Close other tabs' are. 1224 since #5318: no Close pane row, the tab in front having one
     // pane. 1274 since #5343: a tab's Rename…, each of the fifty tabs' own row, whose forty-nine
     // behind are menu-only. 1275 since #5644: Show the Asks view and Show the Updates view, where
-    // Show the Inbox view was. 1276 since #5645: Show the Notices view.
-    expect(offers).toHaveLength(1276);
+    // Show the Inbox view was. 1276 since #5645: Show the Notices view. 1277 since #5688: Your
+    // settings: Reports.
+    expect(offers).toHaveLength(1277);
     // Fifty tabs of one chat each: the palette has their chats' Rename chat rows instead.
     expect(inPalette(offers).filter((row) => row.id.startsWith("tab.rename:"))).toHaveLength(0);
     expect(inPalette(offers).filter((row) => row.id.startsWith("tab.closeOthers:"))).toHaveLength(

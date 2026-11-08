@@ -341,6 +341,18 @@ export const commands = {
 	installDeveloperTools: __WINDOW_ONLY_RESULT,
 	onboardingProgress: __WINDOW_ONLY_RESULT,
 	keepOnboardingProgress: __WINDOW_ONLY_RESULT,
+	reportConsent: __WINDOW_ONLY_RESULT,
+	keepReportConsent: __WINDOW_ONLY_RESULT,
+	reportsSent: __WINDOW_ONLY_RESULT,
+	reportSamples: __WINDOW_ONLY_RESULT,
+	reportDrafts: __WINDOW_ONLY_RESULT,
+	editReportDraft: __WINDOW_ONLY_RESULT,
+	fileReportDraft: __WINDOW_ONLY_RESULT,
+	dismissReportDraft: __WINDOW_ONLY_RESULT,
+	alwaysSendReportDraft: __WINDOW_ONLY_RESULT,
+	undoReportDraft: __WINDOW_ONLY_RESULT,
+	membersMayAlwaysSend: __WINDOW_ONLY_RESULT,
+	reportWindowError: __WINDOW_ONLY_RESULT,
 	/**
 	 *  The project's sandbox, for the offer notice and Settings.
 	 * 
@@ -2590,6 +2602,8 @@ export const POOL_MINTS_WITHOUT_ASKING = "pool-mints-without-asking" as const;
 
 export const PROJECT_READY = "project-ready" as const;
 
+export const REPORT_DRAFTS_CHANGED = "report-drafts-changed" as const;
+
 export const ROUTER_GRADE = "router-grade" as const;
 
 export const SESSION_BUS_ANSWERS = "session-bus://answers" as const;
@@ -4606,6 +4620,13 @@ export type CommandDoes =
 /**  Runs one of its actions, on nothing in particular. */
 { kind: "run"; action: RowAction };
 
+/**  The crash Notice's state (#5700), as the window names it. */
+export type CrashNoticeSaid = 
+/**  A crash was caught after Not now: the Notice is raised. */
+"due" | 
+/**  The Notice was dismissed or answered: never raised again. */
+"settled";
+
 /**  What the person asked to create. */
 export type CreateOnForge = {
 	forge: ForgeWord,
@@ -5490,6 +5511,15 @@ export type Doing = {
 	over: boolean,
 };
 
+/**  What became of a draft the person filed. */
+export type DraftFiled = 
+/**  It left, to `to`, and where it was kept. */
+{ kind: "sent"; to: ReportDestination; address: string; title: string } | 
+/**  Not sent yet: the Report intake gave no answer, and it waits on this machine to send. */
+{ kind: "queued"; title: string } | 
+/**  Issues that may already cover it: nothing was filed. */
+{ kind: "duplicates"; issues: PossibleDuplicate[] };
+
 /**
  *  **What a draft's grade measured of one kind of fixture**: each arm's rate in points, and the
  *  draft's difference from what it is weighed against, which the core leaves out where that arm
@@ -5878,6 +5908,15 @@ export type FileDiff =
 { kind: "binary" } | 
 /**  A side past the largest file the preview draws (2 MiB), by its size in bytes. */
 { kind: "too-large"; bytes: number };
+
+/**  How the person files a draft. */
+export type FileHow = 
+/**  Search for duplicates first. */
+{ how: "check" } | 
+/**  File it as a new issue. */
+{ how: "new" } | 
+/**  Add it to this issue instead. */
+{ how: "add-to"; issue: number };
 
 /**
  *  Where ⌘P and ⌘⇧F look: for ⌘P the scope follows the window's focus, and Tab widens it; the
@@ -10185,6 +10224,15 @@ export type PoolsShown = {
 	clusters?: ClusterPoolRow[] | null,
 };
 
+/**  One issue a draft may duplicate. */
+export type PossibleDuplicate = {
+	number: number,
+	title: string,
+	/**  `open` or `closed`. */
+	state: string,
+	url: string,
+};
+
 /**
  *  The project's presets as they changed (`sandbox::local::PresetsChange`): each named as the
  *  window names it.
@@ -11191,6 +11239,71 @@ export type RepoStates_Serialize = {
 	 *  listing rather than repeated on every row.
 	 */
 	cache_refused: string | null,
+};
+
+/**
+ *  The person's answers: `None` is unanswered, which purlis reads as no. `asked` is whether the
+ *  first-run question was answered, by Save or by Not now.
+ */
+export type ReportConsent = {
+	crash_reports: boolean | null,
+	agent_drafts: boolean | null,
+	/**
+	 *  Always send (#5695): drafts go to purlis's report service unread, held first with Undo.
+	 *  Meant only while Agent drafts is allowed.
+	 */
+	always_send: boolean | null,
+	asked: boolean,
+	/**
+	 *  Whether purlis asks again after a crash (#5700): `due` once a crash was caught after Not
+	 *  now, `settled` once its Notice was dismissed or answered, `None` while neither.
+	 */
+	crash_notice: CrashNoticeSaid | null,
+};
+
+/**
+ *  **Where a report went**, by the names the core's sent list keeps (`purlis_core::report::
+ *  SentTo`'s serde names): the one mapping of it the window reads, for a draft filed and for
+ *  the sent list alike.
+ */
+export type ReportDestination = 
+/**  purlis's private Report intake (ADR 0118). */
+"intake" | 
+/**  purlis/purlis on GitHub, as the person. */
+"github";
+
+/**  A draft held for the project's Inbox, as the window draws its card. */
+export type ReportDraft = {
+	id: string,
+	/**  When it was held, UTC, RFC 3339 to the second. */
+	at: string,
+	feature: boolean,
+	title: string,
+	body: string,
+	/**  The call that failed and its exit, where named, and the versions. */
+	line: string,
+	/**  What the scrub took out, by category. */
+	scrubbed: string[],
+	/**  The chat it came from, by its name, and its number while it means one. */
+	chat: string,
+	session: number | null,
+	/**  The person changed its words. */
+	edited: boolean,
+	/**  What File must name for exactly these words to be filed. */
+	digest: string,
+	/**
+	 *  When Always send sends it (#5695), UTC, RFC 3339: shown as "Sent a report" with Undo
+	 *  until then, not as a card. `None` waits for the person.
+	 */
+	sends_at: string | null,
+};
+
+/**  What each kind of report sends, as "See exactly what's sent" shows it (#5688, Q13). */
+export type ReportSamples = {
+	/**  A Crash report of a sample panic, exactly as it would leave. */
+	crash: string,
+	/**  A Report draft an agent wrote, exactly as Always send would send it. */
+	draft: string,
 };
 
 /**
@@ -12565,6 +12678,27 @@ export type SeenBlock = {
 	what: GrantWhat,
 	/**  The host or folder shown for this task. */
 	target: string,
+};
+
+/**
+ *  One report this machine sent (#5689): its title, where it went, when, and exactly the bytes
+ *  that left.
+ */
+export type SentReport = {
+	/**  When it left, UTC, RFC 3339 to the second. */
+	at: string,
+	title: string,
+	/**  Where it went: the window says it in its own words. */
+	to: ReportDestination,
+	/**  Where the destination kept it. */
+	address: string,
+	/**  Exactly what was sent. */
+	bytes: string,
+	/**
+	 *  Not sent yet (#5693): the report service could not be reached, and it waits on this
+	 *  machine; `at` is when it was made, `address` is empty, and `bytes` is what will go.
+	 */
+	waiting: boolean,
 };
 
 /**  One session record, as the palette and the Sessions panel name it. */
@@ -15497,7 +15631,9 @@ export type UpdateKind =
  *  A chat another chat started arrived in no pane, and was announced (#4759): a handoff,
  *  or a task that can't report asks.
  */
-"arrived";
+"arrived" | 
+/**  The person filed a report a chat drafted (#5694). */
+"report-sent";
 
 /**  An update the window derived from its source, to be noted. */
 export type UpdateNoted = {
@@ -15991,6 +16127,22 @@ export type WindowDraft = {
 	 *  Review and allow on it, waits until the draft is reverted, and the strip says so.
 	 */
 	kept_refused: boolean,
+};
+
+/**
+ *  An error the window did not catch (#5690), as its JavaScript saw it: thrown and not caught, or
+ *  a promise rejected with nobody to handle it.
+ */
+export type WindowErrorSeen = {
+	/**  The error's name (`TypeError`), or the window's word for a reason that is no error. */
+	name: string,
+	message: string,
+	/**  The address of the script it was thrown in, when the window knows it. */
+	source: string | null,
+	line: number | null,
+	column: number | null,
+	/**  A promise rejected with nobody to handle it, rather than an error thrown. */
+	rejection: boolean,
 };
 
 /**  One face of a font. */

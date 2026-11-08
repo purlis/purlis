@@ -7,18 +7,24 @@
 //! prompt on a terminal, or `--yes <digest>` naming the digest the preview printed, so a chat
 //! can run this safely — what it would send is on screen before anything is sent.
 //!
-//! **Filed with purlis's own sign-in, never `gh`** (#806). The search and the filing go through
-//! the forge seam's work-item area as the reporter ([`report::as_the_reporter`]), which only the
-//! person in the app's window is: a command, which a chat may be running, holds no sign-in (ADR
-//! 0070 ruling 5). So here the draft is shown and its digest checked, and the reporter files it
-//! through the prefilled link, or from the app.
+//! **Filed with purlis's own sign-in, never `gh`** (#806). Everything after reading the words
+//! is the Reports module's ([`Reports`], #5686): it drafts, scrubs, routes and files, and this
+//! only prints its outcome. Only the person in the app's window files as the reporter: a
+//! command, which a chat may be running, holds no sign-in (ADR 0070 ruling 5). So here the draft
+//! is shown and its digest checked, and the reporter files it through the prefilled link, or from
+//! the app.
+//!
+//! **In a chat the app started, the words go to the person's Inbox** (#5694, spec #5683): the
+//! command hands them to the app over the chat's hook socket, and the app holds the draft for the
+//! person only with their yes to Agent drafts. The person reads it, edits it and files it there.
+//! Nothing is filed from a chat.
 
 use std::io::{IsTerminal, Read, Write};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
 use purlis_core::forge::Caller;
-use purlis_core::report::{self, Draft, Kind, Known};
+use purlis_core::report::{self, Draft, Evidence, Kind, Outcome, Refusal, Reports, Route};
 
 #[derive(clap::Subcommand)]
 pub enum ReportCommand {
@@ -58,24 +64,54 @@ pub struct TextArgs {
     /// printed. Anything else files nothing.
     #[arg(long, value_name = "DIGEST")]
     yes: Option<String>,
+    /// The purlis command or tool that failed, for the report's first line.
+    #[arg(long, value_name = "COMMAND")]
+    call: Option<String>,
+    /// The exit code the failed call ended with.
+    #[arg(
+        long,
+        value_name = "CODE",
+        requires = "call",
+        allow_hyphen_values = true
+    )]
+    exit: Option<i32>,
+    /// In a chat: add the words to the draft purlis made of a failure of its own in this chat,
+    /// the one its note named, rather than draft a report of their own (#5697).
+    #[arg(long, value_name = "DRAFT", conflicts_with_all = ["call", "title", "yes"])]
+    adds: Option<String>,
 }
 
 pub fn run(command: &ReportCommand) -> ExitCode {
-    match draft(command) {
-        Ok((draft, args)) => decide(&draft, args),
-        Err(said) => {
-            eprintln!("charter report: {said}");
-            ExitCode::FAILURE
-        }
-    }
-}
-
-fn draft(command: &ReportCommand) -> Result<(Draft, &TextArgs), String> {
     // No working directory means no plane, and a report needs none.
     let plane = std::env::current_dir()
         .ok()
         .and_then(|cwd| purlis_core::plane::resolve(&cwd).ok());
-    let known = Known::here(plane.as_deref());
+    let reports = Reports::here(plane.as_deref());
+    let source = Caller::command();
+    let refused = |said: &str| {
+        eprintln!("charter report: {said}");
+        ExitCode::FAILURE
+    };
+    let (evidence, args) = match evidence(command) {
+        Ok(made) => made,
+        Err(said) => return refused(&said),
+    };
+    if let Evidence::PersonDraft { kind, text, title } = &evidence
+        && let Some(code) = to_the_inbox(*kind, text, title.as_deref(), args)
+    {
+        return code;
+    }
+    match reports.take(evidence.clone(), &source) {
+        Outcome::Drafted { draft, route } => {
+            decide(&reports, &source, evidence, &draft, route, args)
+        }
+        Outcome::Refused(Refusal::Unusable(said)) => refused(&said),
+        other => refused(&format!("the draft was not made: {other:?}")),
+    }
+}
+
+/// What the command line hands the Reports module: the reporter's words, or a saved panic.
+fn evidence(command: &ReportCommand) -> Result<(Evidence, &TextArgs), String> {
     let (kind, args, panic) = match command {
         ReportCommand::Bug { text, panic } => (Kind::Bug, text, *panic),
         ReportCommand::Feature { text } => (Kind::Feature, text, false),
@@ -84,14 +120,17 @@ fn draft(command: &ReportCommand) -> Result<(Draft, &TextArgs), String> {
     let saved = report::panic_log()
         .and_then(|log| std::fs::read_to_string(log).ok())
         .and_then(|log| report::latest_panic(&log));
-    let made = if panic {
+    let evidence = if panic {
         let Some(saved) = saved else {
             return Err(format!(
                 "there is no saved panic to report (purlis looked in {})",
                 report::panic_log().map_or("no log directory".into(), |p| p.display().to_string())
             ));
         };
-        Draft::of_panic(&saved, words.as_deref(), &known)
+        Evidence::Panic {
+            record: saved,
+            words,
+        }
     } else {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -105,15 +144,79 @@ fn draft(command: &ReportCommand) -> Result<(Draft, &TextArgs), String> {
                 saved.place.rsplit(['/', '\\']).next().unwrap_or("")
             );
         }
-        Draft::described(
+        Evidence::PersonDraft {
             kind,
-            words.as_deref().unwrap_or(""),
-            args.title.as_deref(),
-            &known,
-        )
+            text: words.unwrap_or_default(),
+            title: args.title.clone(),
+        }
     };
-    made.map(|d| (d, args)).map_err(|refused| refused.0)
+    Ok((evidence, args))
 }
+
+/// How long the app may take to hold a draft: a scrub and one small write.
+const HOLDING_TAKES_AT_MOST: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// In a chat the app started, hands the words to the app for the person's Inbox and says what
+/// became of them; `None` where this is no such chat, so the command drafts here as before.
+fn to_the_inbox(kind: Kind, text: &str, title: Option<&str>, args: &TextArgs) -> Option<ExitCode> {
+    use crate::brokered::NotTaken;
+    use purlis_core::hookwire::{Answer, Ask, ReportDraftAsk};
+    let ask = |chat| {
+        Ask::ReportDraft(Box::new(ReportDraftAsk {
+            chat,
+            feature: kind == Kind::Feature,
+            text: text.to_owned(),
+            title: title.map(str::to_owned),
+            call: args
+                .call
+                .as_ref()
+                .map(|call| (call.clone(), args.exit.unwrap_or(1))),
+            caught: None,
+            adds: args.adds.clone(),
+        }))
+    };
+    let said = match crate::brokered::asked(ask, HOLDING_TAKES_AT_MOST) {
+        Err(NotTaken::NotAChat) if args.adds.is_some() => Err(ADDS_ONLY_IN_A_CHAT.to_owned()),
+        Err(NotTaken::NotAChat) => return None,
+        Err(_) => Err(NOT_HELD.to_owned()),
+        Ok(Ok(Answer::Said { lines, code })) => Ok((lines, code)),
+        Ok(Ok(Answer::No { why })) if why == purlis_core::hookwire::UNKNOWN_LINE => {
+            Err(NOT_HELD.to_owned())
+        }
+        Ok(Ok(Answer::No { why })) => Err(why),
+        Ok(Ok(_)) => Err(NOT_HELD.to_owned()),
+        Ok(Err(e)) => Err(format!(
+            "the app took the draft and did not answer ({e}), so it may be in the person's \
+             Inbox already. Nothing was sent."
+        )),
+    };
+    Some(match said {
+        Ok((lines, code)) => {
+            for line in lines {
+                crate::speak(line);
+            }
+            if args.yes.is_some() {
+                eprintln!(
+                    "charter report: a chat files no report, so --yes did nothing: the person \
+                     files it from their Inbox."
+                );
+            }
+            ExitCode::from(code)
+        }
+        Err(why) => {
+            eprintln!("charter report: {why}");
+            ExitCode::FAILURE
+        }
+    })
+}
+
+/// Why `--adds` did nothing outside a chat the app started.
+const ADDS_ONLY_IN_A_CHAT: &str = "--adds adds to a draft purlis made in a chat the app started, \
+                                   and this is no such chat. Nothing was changed.";
+
+/// Why a chat's draft did not reach the Inbox where no app could take it.
+const NOT_HELD: &str = "the purlis app that started this chat did not take the draft: it is not \
+                        running, or older than this command. Nothing was sent.";
 
 /// The reporter's own words, from wherever they were given.
 fn words(args: &TextArgs) -> Result<Option<String>, String> {
@@ -132,28 +235,24 @@ fn words(args: &TextArgs) -> Result<Option<String>, String> {
     Ok(args.text.clone())
 }
 
-fn decide(draft: &Draft, args: &TextArgs) -> ExitCode {
+fn decide(
+    reports: &Reports,
+    source: &Caller,
+    evidence: Evidence,
+    draft: &Draft,
+    route: Route,
+    args: &TextArgs,
+) -> ExitCode {
     let digest = draft.digest();
     print!("{}", draft.preview());
-    match &args.yes {
-        Some(given) if *given == digest => return send(draft),
-        Some(given) => {
-            eprintln!(
-                "charter report: `--yes {given}` is not the draft above (its digest is {digest}), \
-                 so nothing was sent. Read the draft, then pass its digest."
-            );
-            return ExitCode::FAILURE;
-        }
-        None => {}
+    if let Some(given) = &args.yes {
+        return send(reports, source, evidence, given);
     }
-    let tracker = match report::as_the_reporter(&Caller::command()) {
-        Ok(tracker) => tracker,
-        Err(why) => {
-            println!("Nothing was sent: {why}.");
-            print_link(draft);
-            return ExitCode::SUCCESS;
-        }
-    };
+    if let Route::ByHand { why, link, whole } = route {
+        println!("Nothing was sent: {why}.");
+        print_link(&link, whole);
+        return ExitCode::SUCCESS;
+    }
     let query = draft.query();
     if !query.is_empty() {
         println!(
@@ -161,7 +260,7 @@ fn decide(draft: &Draft, args: &TextArgs) -> ExitCode {
             report::UPSTREAM
         );
     }
-    match report::search_duplicates(tracker.as_ref(), &Caller::command(), draft) {
+    match reports.duplicates(draft, source) {
         Ok(hits) if hits.is_empty() => println!("Possible duplicates: none found."),
         Ok(hits) => {
             println!("Possible duplicates — if one is the same, add to it on GitHub instead:");
@@ -187,7 +286,7 @@ fn decide(draft: &Draft, args: &TextArgs) -> ExitCode {
         let mut answer = String::new();
         let _ = std::io::stdin().read_line(&mut answer);
         if matches!(answer.trim(), "y" | "Y" | "yes") {
-            return send(draft);
+            return send(reports, source, evidence, &digest);
         }
         eprintln!("Nothing was sent.");
         return ExitCode::SUCCESS;
@@ -200,8 +299,7 @@ fn decide(draft: &Draft, args: &TextArgs) -> ExitCode {
 }
 
 /// The prefilled link that files the draft in the reporter's browser.
-fn print_link(draft: &Draft) {
-    let (url, whole) = draft.fallback_url();
+fn print_link(url: &str, whole: bool) {
     println!(
         "To file it yourself, open this link in your browser{}:\n{url}",
         if whole {
@@ -212,25 +310,34 @@ fn print_link(draft: &Draft) {
     );
 }
 
-fn send(draft: &Draft) -> ExitCode {
-    let filed = report::as_the_reporter(&Caller::command())
-        .and_then(|tracker| report::file(tracker.as_ref(), &Caller::command(), draft));
-    match filed {
-        Ok(url) => {
-            println!("Filed: {url}");
+/// Files the draft whose digest is `shown`, and says what became of it.
+fn send(reports: &Reports, source: &Caller, evidence: Evidence, shown: &str) -> ExitCode {
+    match reports.file(evidence, source, shown) {
+        Outcome::Sent { address } => {
+            println!("Filed: {address}");
             ExitCode::SUCCESS
         }
-        Err(e) => {
-            let (url, whole) = draft.fallback_url();
+        Outcome::Refused(Refusal::NotTheShownDraft { digest }) => {
             eprintln!(
-                "charter report: purlis did not file it: {e}\n\
-                 Open this link to file it in the browser instead{}:\n{url}",
+                "charter report: `--yes {shown}` is not the draft above (its digest is {digest}), \
+                 so nothing was sent. Read the draft, then pass its digest."
+            );
+            ExitCode::FAILURE
+        }
+        Outcome::Refused(Refusal::NotFiled { why, link, whole }) => {
+            eprintln!(
+                "charter report: purlis did not file it: {why}\n\
+                 Open this link to file it in the browser instead{}:\n{link}",
                 if whole {
                     ""
                 } else {
                     ", and paste the body from the draft above"
                 }
             );
+            ExitCode::FAILURE
+        }
+        other => {
+            eprintln!("charter report: purlis did not file it: {other:?}");
             ExitCode::FAILURE
         }
     }
