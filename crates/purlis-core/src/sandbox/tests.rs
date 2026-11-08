@@ -6087,6 +6087,30 @@ fn charters_own_wrap_denies_a_path_and_pins_its_folders_under_both_firmlink_name
 }
 
 #[test]
+fn a_denied_path_inside_a_granted_folder_is_pinned_up_to_that_folder() {
+    // With `~/.local` granted, `~/.local/share` moved away would take a denied
+    // `~/.local/share/opencode` with it, written under its new name and moved back.
+    let cwd = std::path::Path::new("/Users/op-grant/plane");
+    let tmp = std::path::Path::new("/Users/op-grant/tmp");
+    let mut own = seatbelt::Own::default();
+    seatbelt::granted(
+        &mut own,
+        &[std::path::PathBuf::from("/Users/op-grant/.local")],
+    )
+    .expect("granted");
+    let denied = [one(
+        Class::Vaults,
+        "/Users/op-grant/.local/share/opencode",
+        Access::ReadWrite,
+    )];
+    let profile = seatbelt::profile(&denied, &own, cwd, tmp, &[4040], None).expect("a profile");
+    for folder in ["/Users/op-grant/.local/share", "/Users/op-grant/.local"] {
+        let rule = format!("(deny file-write* (literal \"{folder}\"))");
+        assert!(profile.contains(&rule), "{rule} missing:\n{profile}");
+    }
+}
+
+#[test]
 fn the_firmlinks_are_the_system_s_list_and_the_known_one_together() {
     // #1356 review F2: an unreadable list falls back to the one compiled in, never to none.
     let known = firmlinks_from(None);
