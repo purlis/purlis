@@ -1104,8 +1104,18 @@ fn spelled(rest: &str) -> Option<(char, usize)> {
 /// any character is its own, so a value read as written never answers for a longer one its
 /// escapes spell.
 pub fn escaped_leaks(line: &str) -> Vec<(Leak, String)> {
+    escaped_leaks_beside(line, || leaks(line))
+}
+
+/// [`escaped_leaks`], given what [`leaks`] answers for `line` as written, which it asks only
+/// when `line` holds an escape to read: without a backslash there is no reading but the line
+/// itself, and nothing is found that the line as written does not already show.
+fn escaped_leaks_beside(line: &str, as_written: impl FnOnce() -> Vec<Leak>) -> Vec<(Leak, String)> {
+    if !line.contains('\\') {
+        return Vec::new();
+    }
     // A set, so a line of many values is still read in one pass.
-    let mut seen: std::collections::HashSet<(&'static str, String)> = leaks(line)
+    let mut seen: std::collections::HashSet<(&'static str, String)> = as_written()
         .into_iter()
         .map(|leak| (leak.rule, line[leak.span].to_owned()))
         .collect();
@@ -2199,7 +2209,11 @@ fn a_bsn(candidate: &str) -> bool {
 /// What an agent's diff is checked with before it is committed (SQ-16). **Not** the plane
 /// save's rule ([`found`]): that one refuses `password: String`, which is ordinary code.
 pub fn leaks(line: &str) -> Vec<Leak> {
-    let mut all = every_leak(line);
+    kept(every_leak(line))
+}
+
+/// [`leaks`]' answer from every hit on its line: in order, the earlier of two overlapping kept.
+fn kept(mut all: Vec<Leak>) -> Vec<Leak> {
     all.sort_by_key(|leak| (leak.span.start, std::cmp::Reverse(leak.span.end)));
     let mut kept: Vec<Leak> = Vec::new();
     for leak in all {
@@ -2219,8 +2233,11 @@ pub fn leaks(line: &str) -> Vec<Leak> {
 /// keeps the earlier of two overlapping hits whole, which can leave the tail of the later one
 /// outside every span.
 pub fn leak_spans(line: &str) -> Vec<(std::ops::Range<usize>, &'static str)> {
+    // Every rule is asked of the line once: what the escaped readings are measured against is
+    // the same hits, kept as [`leaks`] keeps them.
     let mut all = every_leak(line);
-    all.extend(escaped_leaks(line).into_iter().map(|(leak, _)| leak));
+    let escaped = escaped_leaks_beside(line, || kept(all.clone()));
+    all.extend(escaped.into_iter().map(|(leak, _)| leak));
     joined(all)
 }
 
