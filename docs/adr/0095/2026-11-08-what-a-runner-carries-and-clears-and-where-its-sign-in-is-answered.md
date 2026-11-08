@@ -2,9 +2,10 @@
 
 Ruled by the operator on 2026-11-08.
 
-1. **A runner made before the mark carries nothing.** A drain carries a runner's sign-ins only
-   where its row keeps the engine that made it and its home's making, and its image's own purlis
-   is 0.5.0 or later, the first whose runners a desktop can mark. The version is asked of the
+1. **A runner made before the mark carries nothing**, whether it drains or is made again after
+   its container was removed outside purlis. Its sign-ins are carried only where its row keeps
+   the engine that made it and its home's making, and its image's own purlis is 0.5.0 or later,
+   the first whose runners a desktop can mark. The version is asked of the
    image pinned by its digest, in a container of its own with no network and nothing writable,
    never of the runner's container, which a chat could have changed. What cannot be read counts as
    before. Its profiles are signed in again on the pool, once.
@@ -13,14 +14,16 @@ Ruled by the operator on 2026-11-08.
    carries from a marked runner.
 3. **A sign-in in a shell lets a drain carry it again**, as the driven sign-in and the command's
    do: its watcher lifts the hold once the harness says it is signed in. A sign-out of that pool
-   and profile ends every such watcher, and a watcher that began before a sign-out lifts nothing:
-   the lift and the sign-out's hold are taken under one lock in the window, so one or the other is
-   last.
+   and profile ends every such watcher, and a watcher that began before a sign-out leaves nothing
+   lifted: a sign-out is counted before its hold, and a watcher reads the count before and after
+   its lift and holds again where it moved, so the hold is last. No lock is held across a hold
+   or a lift.
 4. **A keep takes out every project's own MCP servers** from Claude Code's state file on the
-   runner, as it puts the desktop's user-scope ones back, so a server a chat added to its folder's
-   entry is not started by a later chat there. What else a project's entry holds stays. Claude
-   Code's and Codex's plugin caches and opencode's packages are not cleared yet: what each harness
-   does with an enabled plugin whose cache is gone is to be measured first.
+   runner, at every keep, settings sent or not, as it puts the desktop's user-scope ones back, so
+   a server a chat added to its folder's entry is not started by a later chat there. What else a
+   project's entry holds stays. Claude Code's and Codex's plugin caches and opencode's packages
+   are not cleared yet: what each harness does with an enabled plugin whose cache is gone is to be
+   measured first.
 5. **A keep clears for the chats that start after it.** A chat already running on the profile
    keeps what it loaded as it started, and the next keep clears again.
 6. **A keep is refused where the settings folder is reached through a link**, as before, and the
