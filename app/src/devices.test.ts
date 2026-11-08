@@ -48,6 +48,7 @@ const runner = (
     runner: name,
     draining: false,
     left: [],
+    not_checked: null,
     on: { chats, browsers },
   }) satisfies RunnerOnTheList;
 

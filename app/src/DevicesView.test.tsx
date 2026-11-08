@@ -63,9 +63,17 @@ beforeEach(() => {
           runner: "builds",
           draining: false,
           left: [],
+          not_checked: null,
           on: { chats: [{ plane: PLANE, session: 2, name: "verify" }], browsers: [] },
         },
-        { pool: "qa", runner: "qa", draining: false, left: [], on: { chats: [], browsers: [] } },
+        {
+          pool: "qa",
+          runner: "qa",
+          draining: false,
+          left: [],
+          not_checked: null,
+          on: { chats: [], browsers: [] },
+        },
       ],
       unkept: [],
       unkept_browsers: [],
@@ -549,6 +557,53 @@ describe("DevicesView", () => {
     expect(document.querySelector('[data-cause="devices-kept-runner:qa"]')).not.toBeNull();
     // What it holds now is read again, so the next ask names it.
     await vi.waitFor(() => expect(devicesRead).toBeGreaterThan(reads));
+  });
+
+  /** Runner qa of pool qa drains, kept as it could not be checked: `left` says what is left of it. */
+  const keptUnchecked = (left: "stopped" | "home_only") => {
+    const runners = shown.placement.runners;
+    runners[1] = { ...(runners[1] as (typeof runners)[number]), draining: true, not_checked: left };
+  };
+
+  it("says an older runner that stopped before it was checked stays until it runs again, and asks before it goes unchecked", async () => {
+    keptUnchecked("stopped");
+    render(<DevicesView />);
+    const notice = await keptNotice();
+    expect(notice.textContent).toContain(
+      "purlis keeps older runner qa of pool qa, since it stopped before purlis could check it for work only it holds.",
+    );
+    expect(notice.textContent).toContain("Start it there and purlis checks it");
+    expect(notice.textContent).not.toContain("holds work purlis can't bring back");
+    expect(section("Runner qa of pool qa").textContent).toContain(
+      "An older runner purlis keeps, since it stopped before purlis could check it",
+    );
+
+    await userEvent.click(within(notice).getByRole("button", { name: "Let it go…" }));
+    const asking = await screen.findByRole("alertdialog", { name: "Let runner qa go?" });
+    expect(asking.textContent).toContain(
+      "Its stopped container and its home are removed from your Docker. purlis never checked them, so any work only they hold is lost with them.",
+    );
+    expect(asking.textContent).toContain("Pool qa and its runner now stay as they are.");
+    await userEvent.click(within(asking).getByRole("button", { name: "Let it go" }));
+
+    await vi.waitFor(() => expect(letGone).toEqual(["qa"]));
+    expect(letGoShown).toEqual([[]]);
+  });
+
+  it("says only the saved home of a runner removed outside purlis is left, and that purlis can't check it", async () => {
+    keptUnchecked("home_only");
+    render(<DevicesView />);
+    const notice = await keptNotice();
+    expect(notice.textContent).toContain(
+      "purlis keeps the saved home of older runner qa of pool qa.",
+    );
+    expect(notice.textContent).toContain("purlis can't check the home");
+    expect(notice.textContent).not.toContain("container with Docker");
+
+    await userEvent.click(within(notice).getByRole("button", { name: "Let it go…" }));
+    const asking = await screen.findByRole("alertdialog", { name: "Let runner qa go?" });
+    expect(asking.textContent).toContain("Its saved home is removed from your Docker.");
+    expect(asking.textContent).not.toContain("container");
   });
 
   it("offers Let it go on no runner that nothing keeps", async () => {

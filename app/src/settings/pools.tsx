@@ -30,6 +30,7 @@ import { Switch } from "../ui/choice/Switch";
 import { ClusterSetupGuide } from "./ClusterSetupGuide";
 import { PoolLimits } from "./PoolLimits";
 import { PoolProfiles } from "./PoolProfiles";
+import { notCheckedPoolSaid } from "../notChecked";
 
 /**
  * **You › This machine › Pools** (#2679, the person's rulings of 2026-10-20): the Docker pools
@@ -541,6 +542,11 @@ function PoolEntry({
       )}
       {owed !== undefined && <p className="ui-setting-help">{owed}</p>}
       {left !== undefined && <p className="ui-setting-help">{left}</p>}
+      {version?.not_checked.map((one) => (
+        <p key={`not-checked:${one.runner}`} className="ui-setting-help">
+          {notCheckedPoolSaid(one.runner, one.left)}
+        </p>
+      ))}
       {notHeld}
       {profiles}
       <PoolLimits pool={pool.name} plane={plane} />
