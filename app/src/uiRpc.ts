@@ -13037,6 +13037,11 @@ export type SkillBudget = {
 	 *  pins. Null where its pins are read.
 	 */
 	pins_together: SkillPinsTogether | null,
+	/**
+	 *  **Whether its program still drops descriptions from its listing** (#5736), in the core's
+	 *  words, naming who takes the most room. Null where it does not.
+	 */
+	drops: string | null,
 };
 
 /**  **What a typed skill budget would do to new chats** (#5353), as the Change… dialog says it. */

@@ -148,6 +148,9 @@ pub struct SkillBudget {
     /// pass the most it reads, though each alone is accepted (#3391): both, and how many each
     /// pins. Null where its pins are read.
     pub pins_together: Option<crate::skillchange::SkillPinsTogether>,
+    /// **Whether its program still drops descriptions from its listing** (#5736), in the core's
+    /// words, naming who takes the most room. Null where it does not.
+    pub drops: Option<String>,
 }
 
 /// What Use skill… offers a chat, and its budget.
@@ -432,6 +435,7 @@ pub(crate) fn shown(skills: Option<&purlis_core::skills::ChatSkills>) -> ChatSki
             still_over: skills.still_over.map(Into::into),
             pinned_by: skills.pinned_by.iter().cloned().map(Into::into).collect(),
             pins_together: skills.pins_together.as_ref().map(Into::into),
+            drops: skills.drops.as_ref().map(purlis_core::skills::Drops::said),
         }),
         repos: Vec::new(),
         not_supported: None,

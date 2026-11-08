@@ -2108,8 +2108,8 @@ _Avoid_: skill selector, dispatcher (dispatch is persona work)
 **Skill budget**:
 How many skills, and how many characters of what is listed of them, one chat's listing may hold
 on its harness. Each harness's adapter says its own numbers, and `settings.skills.budget`
-overrides them. purlis hands Claude Code a limit that holds it, and warns where a value is past a
-limit it cannot move. Past it, the skill router hides skills behind the index skill (ADR 0102).
+overrides them. purlis hands Claude Code a limit that holds it and the person's own skills and
+plugins, and warns where a value is past a limit it cannot move. Past it, the skill router hides skills behind the index skill (ADR 0102).
 _Avoid_: context budget (for this), skill limit
 
 **Use skill…**:

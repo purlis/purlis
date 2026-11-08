@@ -66,6 +66,7 @@ const SKILLS: ChatSkills = {
     still_over: null,
     pinned_by: [],
     pins_together: null,
+    drops: null,
     warns: "both",
   },
   repos: [],

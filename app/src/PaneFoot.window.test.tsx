@@ -437,6 +437,7 @@ describe("a narrow pane drops parts from its two lines, and has them back (#5206
         still_over: null,
         pinned_by: [],
         pins_together: null,
+        drops: null,
         warns: "chars",
       },
     };
@@ -543,6 +544,7 @@ describe("the foot's skills warning and studio chip (#5204, #5205, #5206)", () =
       still_over: null,
       pinned_by: [],
       pins_together: null,
+      drops: null,
       warns: "chars",
     },
   };

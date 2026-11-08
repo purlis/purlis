@@ -135,7 +135,10 @@ impl HarnessAdapter for ClaudeCode {
                         cwd,
                         crate::footerclaim::status_line(cwd).free(),
                         &handed,
-                        listing_limit(budget.chars.max(skills.spends(budget))),
+                        listing_limit(
+                            budget.chars.max(skills.spends(budget)),
+                            own_listing(kit.skills),
+                        ),
                         sandbox,
                         &denied_tools(kit),
                         screened.as_ref(),
@@ -277,6 +280,33 @@ impl HarnessAdapter for ClaudeCode {
             lists_paths: false,
             per_line: Some(LISTING_LINE),
         }
+    }
+
+    /// **Past [`LISTING_CEILING`], Claude Code drops descriptions** (#5736): its listing then
+    /// needs more than the limit purlis hands ([`listing_limit`]), which the person's own
+    /// skills never lift past it. Measured as a chat's start measures it.
+    fn listing_drops(
+        &self,
+        room: usize,
+        listed: usize,
+        own: &[crate::skills::Share],
+    ) -> Option<crate::skills::Drops> {
+        let mine: usize = own.iter().map(|share| share.chars).sum();
+        let holds = listing_limit(room.max(listed), mine);
+        let needs = listed.saturating_add(mine).saturating_add(OWN_LISTING);
+        (needs > holds).then(|| {
+            crate::skills::Drops::of(
+                "Claude Code",
+                needs,
+                holds,
+                std::iter::once(crate::skills::Share {
+                    who: crate::skills::Brings::Purlis,
+                    chars: listed,
+                })
+                .chain(own.iter().cloned())
+                .collect(),
+            )
+        })
     }
 
     /// **Claude Code 2.1.304** (`skills.md` "Frontmatter reference", research of 2026-10-20):
@@ -979,17 +1009,46 @@ const LEAST_LISTING_LIMIT: usize = 40_000;
 /// and 7 for the `skills:` or `purlis:` it is known by.
 const LISTING_LINE: usize = 23;
 
+/// **Claude Code's own ceiling** on a listing limit it sets itself: the most a limit it is sent
+/// may raise its own to (2.1.319's code). A person's own skills never lift a handed limit past
+/// it (#5736).
+const LISTING_CEILING: usize = 100_000;
+
 /// **An absolute limit, so nothing depends on the window** (#4610): `listed`, what a chat's list
 /// may spend, Claude Code's own entries, and a tenth over both for what purlis can't count.
 /// 2.1.316 counts its own entries against the limit it is given, so on 200k, where 1% is 6,000,
 /// every plane skill's description used to go. `listed` is past the budget where pins or what no
 /// router hides are, so those keep their descriptions too.
 ///
+/// **The person's own skills and plugins share it, so they are in it** (#5736): `own`, what
+/// they take as purlis measures them at the chat's start, up to [`LISTING_CEILING`]. purlis's
+/// own list is never cut for them: where it needs more than the ceiling by itself, it gets it,
+/// as a raised budget always raised the limit.
+///
 /// **Never below [`LEAST_LISTING_LIMIT`].** A limit is a ceiling, so a chat pays only for what it
-/// lists, and a person's own skills share it uncounted.
-fn listing_limit(listed: usize) -> usize {
+/// lists.
+fn listing_limit(listed: usize, own: usize) -> usize {
+    let purlis = with_margin(listed);
+    let whole = with_margin(listed.saturating_add(own));
+    purlis.max(whole.min(LISTING_CEILING))
+}
+
+/// `listed` with Claude Code's own entries, a tenth over both, and never below
+/// [`LEAST_LISTING_LIMIT`].
+fn with_margin(listed: usize) -> usize {
     let held = listed.saturating_add(OWN_LISTING);
     held.saturating_add(held / 10).max(LEAST_LISTING_LIMIT)
+}
+
+/// What the person's own skills and plugins take of a chat's listing, as its start read them
+/// ([`crate::skills::PlaneSkills::own`]): none where they were not read.
+fn own_listing(skills: Option<crate::skills::PlaneSkills<'_>>) -> usize {
+    skills.map_or(0, |at| {
+        crate::skills::own_shares(Harness::ClaudeCode, at.own)
+            .iter()
+            .map(|share| share.chars)
+            .sum()
+    })
 }
 
 /// The limit a test's [`settings`] is called with.

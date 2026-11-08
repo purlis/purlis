@@ -271,6 +271,21 @@ pub trait HarnessAdapter: Sync {
         None
     }
 
+    /// **Whether this harness would still drop descriptions from a chat's listing** (#5736),
+    /// where `room` is the characters of the chat's budget, `listed` what purlis's own list
+    /// spends of its listing, and `own` what each plugin and the
+    /// person's own folders add ([`crate::skills::own_shares`]), and who takes the room. `None`,
+    /// the default, where it would not, or it never does.
+    fn listing_drops(
+        &self,
+        room: usize,
+        listed: usize,
+        own: &[crate::skills::Share],
+    ) -> Option<crate::skills::Drops> {
+        let _ = (room, listed, own);
+        None
+    }
+
     /// **What this harness reads of a skill's frontmatter** (SK-8, #2771; decision 18): the
     /// keys it applies to a skill purlis hands it, and how it keeps a manual-only skill out of
     /// its model's choice. What every skill's compatibility badge for it, the `SKILL.md` it is

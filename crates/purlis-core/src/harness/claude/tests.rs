@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use crate::skills::{OutsideSkill, Owner};
 
 #[test]
 fn a_reference_is_written_as_claude_codes_own_mention() {
@@ -1667,6 +1668,7 @@ fn a_chat_in_a_workspace_is_handed_the_limit_its_written_budget_needs() {
             plane,
             workspace,
             repo: &[],
+            own: &[],
             routed: None,
         }))
     };
@@ -1685,6 +1687,7 @@ fn claude_codes_own_number_is_the_limit_it_is_handed_and_codexs_is_not() {
             plane,
             workspace: None,
             repo: &[],
+            own: &[],
             routed: None,
         }))
     };
@@ -1700,11 +1703,89 @@ fn claude_codes_own_number_is_the_limit_it_is_handed_and_codexs_is_not() {
 #[test]
 fn the_limit_holds_claude_codes_own_entries_and_the_list_with_a_margin() {
     // The largest limit any model has of its own, which no handed one goes below.
-    assert_eq!(listing_limit(0), 40_000);
+    assert_eq!(listing_limit(0, 0), 40_000);
     let budget = ADAPTER.skill_budget();
-    assert!(listing_limit(budget.chars) > (6_848 + budget.chars) * 11 / 10);
-    assert_eq!(listing_limit(30_000), 40_532);
-    assert_eq!(listing_limit(usize::MAX), usize::MAX);
+    assert!(listing_limit(budget.chars, 0) > (6_848 + budget.chars) * 11 / 10);
+    assert_eq!(listing_limit(30_000, 0), 40_532);
+    assert_eq!(listing_limit(usize::MAX, 0), usize::MAX);
+}
+
+/// #5736: the person's own skills and plugins share the limit, so it is handed with them in it,
+/// and they never lift it past Claude Code's own ceiling.
+#[test]
+fn the_limit_holds_the_persons_own_catalogue_up_to_claude_codes_ceiling() {
+    // 30,000 of purlis's, 10,000 of the person's, 6,848 of Claude Code's, and a tenth.
+    assert_eq!(listing_limit(30_000, 10_000), 51_532);
+    assert_eq!(listing_limit(15_000, 1_000_000), 100_000, "the ceiling");
+    // purlis's own list alone past the ceiling is handed whole, as a raised budget always was.
+    assert_eq!(listing_limit(200_000, 50_000), listing_limit(200_000, 0));
+    assert!(listing_limit(200_000, 0) > 200_000);
+    assert_eq!(listing_limit(usize::MAX, 5), usize::MAX);
+}
+
+/// A skill the person has for Claude Code: `owner`'s, named `name`, with a description of `chars`.
+fn own_skill(dir: &std::path::Path, owner: Owner, name: &str, chars: usize) -> OutsideSkill {
+    let folder = dir.join(owner.to_string()).join(name);
+    std::fs::create_dir_all(&folder).unwrap();
+    let path = folder.join("SKILL.md");
+    let description = "d".repeat(chars);
+    std::fs::write(
+        &path,
+        format!("---\nname: {name}\ndescription: {description}\n---\n"),
+    )
+    .unwrap();
+    let id = match &owner {
+        Owner::Plugin(plugin) => format!("{plugin}:{name}"),
+        Owner::You | Owner::Repo(_) => name.to_owned(),
+    };
+    OutsideSkill {
+        skill: crate::skills::Skill {
+            name: name.to_owned(),
+            description,
+            path,
+        },
+        root: folder,
+        origin: crate::skills::Origin::Harness,
+        id,
+        owner,
+        switch: crate::skills::Switch::Alone,
+        off: false,
+        unread: None,
+    }
+}
+
+/// #5736: a chat whose person has a large catalogue of their own is handed a limit that covers it.
+#[test]
+fn a_chat_with_a_large_own_catalogue_is_handed_a_limit_that_covers_it() {
+    let tmp = tempfile::tempdir().unwrap();
+    let plane = tmp.path().join("plane");
+    std::fs::create_dir_all(&plane).unwrap();
+    std::fs::write(plane.join("charter.toml"), "schema = 1\n").unwrap();
+    // 30 skills of a plugin's, each cut at 1,536, with its name and line: past the 40,000 alone.
+    let own: Vec<OutsideSkill> = (0..30)
+        .map(|at| {
+            own_skill(
+                tmp.path(),
+                Owner::Plugin("big".to_owned()),
+                &format!("s{at:02}"),
+                2_000,
+            )
+        })
+        .collect();
+    let handed = |own: &[OutsideSkill]| {
+        listing_limit_handed(Some(crate::skills::PlaneSkills {
+            plane: &plane,
+            workspace: None,
+            repo: &[],
+            own,
+            routed: None,
+        }))
+    };
+    let line = 1_536 + "s00".len() + LISTING_LINE;
+    let budget = ADAPTER.skill_budget().chars;
+    assert_eq!(handed(&[]), "40000");
+    assert_eq!(handed(&own), listing_limit(budget, 30 * line).to_string());
+    assert!(listing_limit(budget, 30 * line) > 30 * line + budget + 6_848);
 }
 
 /// A pin is never hidden, so a list its pins take past the budget has to fit the limit too.
@@ -1739,6 +1820,7 @@ fn a_chat_whose_pins_are_past_its_budget_is_handed_a_limit_that_holds_them() {
         plane,
         workspace: Some("alpha"),
         repo: &[],
+        own: &[],
         routed: None,
     }));
     // 20 descriptions cut at 1,536, each name and line, Claude Code's own 6,848, and a tenth.
@@ -1784,4 +1866,65 @@ fn an_outcome_chat_with_a_shell_runs_it_unasked_and_one_without_asks() {
     assert!(!asks_for_bash(&settings), "{settings}");
     let settings = armed(false);
     assert!(asks_for_bash(&settings), "{settings}");
+}
+
+/// #5736: what the person has is measured by whose it is, largest first.
+#[test]
+fn the_persons_own_catalogue_is_measured_by_plugin_and_by_their_own_folders() {
+    use crate::skills::{Brings, Share, own_shares};
+    let tmp = tempfile::tempdir().unwrap();
+    let figma = Owner::Plugin("figma".to_owned());
+    let own = [
+        own_skill(tmp.path(), figma.clone(), "draw", 100),
+        own_skill(tmp.path(), Owner::You, "mine", 50),
+        own_skill(tmp.path(), figma, "code", 2_000),
+    ];
+    let line = |name: &str, chars: usize| chars + name.len() + LISTING_LINE;
+    assert_eq!(
+        own_shares(Harness::ClaudeCode, &own),
+        vec![
+            Share {
+                who: Brings::Plugin("figma".to_owned()),
+                chars: line("draw", 100) + line("code", 1_536),
+            },
+            Share {
+                who: Brings::You,
+                chars: line("mine", 50),
+            },
+        ]
+    );
+}
+
+/// #5736: below the ceiling the handed limit holds the person's catalogue, so nothing is dropped;
+/// past it, the chat is told who takes the most room.
+#[test]
+fn past_claude_codes_ceiling_the_biggest_contributors_are_named() {
+    use crate::skills::{Brings, Share};
+    let share = |who, chars| Share { who, chars };
+    let figma = || Brings::Plugin("figma".to_owned());
+    assert_eq!(
+        ADAPTER.listing_drops(15_000, 12_000, &[share(figma(), 50_000)]),
+        None,
+        "the limit covers it"
+    );
+    let drops = ADAPTER
+        .listing_drops(
+            15_000,
+            12_000,
+            &[
+                share(figma(), 60_000),
+                share(Brings::You, 30_000),
+                share(Brings::Plugin("tiny".to_owned()), 10),
+            ],
+        )
+        .expect("past the ceiling");
+    assert_eq!(drops.holds, 100_000);
+    assert_eq!(drops.needs, 12_000 + 60_010 + 30_000 + 6_848);
+    assert_eq!(
+        drops.said(),
+        "Claude Code drops some skill descriptions in this chat: its skills need 108,858 \
+         characters, past the 100,000 it holds, so the model sees bare names for some. The most \
+         room goes to plugin figma (60,000), your own skills (30,000), purlis's skills (12,000). \
+         Turn some of these skills or plugins off for this workspace's chats."
+    );
 }

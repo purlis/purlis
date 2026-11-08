@@ -1176,6 +1176,63 @@ fn the_studio_lists_each_harnesss_own_skills_beside_the_projects_and_marks_a_cla
     );
 }
 
+/// #5736: Codex drops trailing skills past its limit without a word, so a briefing past it lists
+/// every built-in skill first, before any of the plane's, whatever their names.
+#[test]
+fn a_codex_briefing_past_its_limit_lists_every_built_in_skill_first() {
+    let tmp = tempfile::tempdir().unwrap();
+    let plane = tmp.path().join("plane");
+    std::fs::create_dir_all(&plane).unwrap();
+    std::fs::write(plane.join("charter.toml"), "schema = 1\n").unwrap();
+    let write = |dir: &Path, name: &str, chars: usize| {
+        std::fs::create_dir_all(dir.join(name)).unwrap();
+        std::fs::write(
+            dir.join(name).join("SKILL.md"),
+            format!(
+                "---\nname: {name}\ndescription: {}\n---\n",
+                "d".repeat(chars)
+            ),
+        )
+        .unwrap();
+    };
+    let built_in = tmp.path().join("bundle/skills");
+    for name in ["purlis-secrets", "purlis-smart-close", "zz-last"] {
+        write(&built_in, name, 100);
+    }
+    // Twelve of the plane's, named to sort before every built-in, past Codex's 8,000 together.
+    let handed = tmp.path().join("sets/handed");
+    let names: Vec<String> = (0..12).map(|at| format!("a{at:02}")).collect();
+    for name in &names {
+        write(&plane.join("skills"), name, 1_000);
+        std::fs::write(
+            plane.join(format!("skills/{name}.toml")),
+            "grant = \"all\"\n",
+        )
+        .unwrap();
+        write(&handed.join("skills"), name, 1_000);
+    }
+    let (dir, handed) = (built_in.display().to_string(), handed.display().to_string());
+    let env = move |name: &str| match name {
+        LISTED_ENV => Some(dir.clone()),
+        PLANE_LISTED_ENV => Some(handed.clone()),
+        _ => None,
+    };
+
+    let text = briefed(&plane, None, None, &env).expect("listed");
+
+    assert!(text.chars().count() > 8_000, "past Codex's limit");
+    let at = |name: &str| {
+        text.find(&format!("`{name}`"))
+            .unwrap_or_else(|| panic!("{name} listed: {text}"))
+    };
+    let last_built_in = ["purlis-secrets", "purlis-smart-close", "zz-last"].map(at);
+    let first_of_the_planes = names.iter().map(|name| at(name)).min().unwrap();
+    assert!(
+        last_built_in.iter().all(|at| *at < first_of_the_planes),
+        "{text}"
+    );
+}
+
 #[test]
 fn a_briefed_chat_in_a_clone_is_told_the_repos_copy_of_a_name_and_not_the_projects() {
     // SK-6 (#2769), decision 51: Codex reads the clone's `.agents/skills` itself, and purlis
@@ -1265,6 +1322,7 @@ fn a_repo_skill_with_a_reserved_name_one_never_replaces_it_on_codex_and_is_anoth
                 plane: &plane,
                 workspace: Some("alpha"),
                 repo: &repo,
+                own: &[],
                 routed: None,
             }),
             None,
@@ -1903,6 +1961,7 @@ fn a_repo_skills_folder_purlis_could_not_list_leaves_the_plane_skills_out_of_a_c
                 plane: &plane,
                 workspace: Some("alpha"),
                 repo,
+                own: &[],
                 routed: None,
             },
             None,

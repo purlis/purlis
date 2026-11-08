@@ -1114,6 +1114,7 @@ describe("the chat in front's set as a whole (S8, #3694)", () => {
     still_over: null,
     pinned_by: [],
     pins_together: null,
+    drops: null,
     warns: null,
   };
   /** The card of the chat's need `title`. */
