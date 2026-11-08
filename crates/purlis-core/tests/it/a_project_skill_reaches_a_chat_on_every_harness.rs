@@ -284,8 +284,11 @@ fn a_codex_chat_at_the_plane_root_is_briefed_on_the_project_skill_from_its_folde
     let lookup = |name: &str| var(&env, name).map(str::to_owned);
     let text = purlis_core::skills::briefed(&here.plane, None, None, &lookup).expect("listed");
     assert!(text.contains("`deploy`"), "{text}");
+    // Under the folder of the SKILL.md purlis wrote for it, named once (Q38).
+    let folder = format!("\nUnder `{}`:", handed.join("skills").display());
+    let under = text.find(&folder).expect("its folder named");
     assert!(
-        text.contains(&handed.join("skills/deploy/SKILL.md").display().to_string()),
+        text[under..].contains("\n- `deploy` — "),
         "the SKILL.md purlis wrote for it: {text}"
     );
     assert!(text.contains("`purlis-secrets`"), "{text}");

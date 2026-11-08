@@ -153,13 +153,47 @@ fn a_description_counts_only_as_far_as_the_harness_lists_it_and_a_listed_path_co
         lists_paths: true,
         ..capped
     };
-    let path = set.effective[0]
-        .skill
-        .path
-        .to_string_lossy()
-        .chars()
-        .count();
-    assert_eq!(spent_by(&set, with_paths).chars, 1_024 + path);
+    // Its folder is named once in the listing, not its whole path on its line (Q38).
+    let folder = plane.join(PROJECT_DIR).to_string_lossy().chars().count();
+    assert_eq!(spent_by(&set, with_paths).chars, 1_024 + folder);
+}
+
+#[test]
+fn where_a_harness_lists_paths_a_folder_of_skills_costs_its_path_once() {
+    let tmp = tempfile::tempdir().unwrap();
+    let built_in = tmp.path().join("bundle");
+    let plane = tmp.path().join("plane");
+    skill(&built_in, "handoff", "Hands off.", "");
+    skill(&built_in, "remember", "Remembers.", "");
+    skill(&plane.join(PROJECT_DIR), "deploy", "Deploys.", "");
+    let set = set_at_the_root(&plane, &built_in);
+    let with_paths = Budget {
+        lists_paths: true,
+        ..ROOMY
+    };
+    let chars = |path: &Path| path.to_string_lossy().chars().count();
+    assert_eq!(
+        spent_by(&set, with_paths).chars,
+        "Hands off.Remembers.Deploys.".len() + chars(&built_in) + chars(&plane.join(PROJECT_DIR))
+    );
+}
+
+#[test]
+fn a_skill_whose_folder_is_named_otherwise_costs_its_whole_path() {
+    let skill = Skill {
+        name: "compact".to_owned(),
+        description: "Compacts.".to_owned(),
+        path: std::path::PathBuf::from("/app/skills/purlis-tidy-memory/SKILL.md"),
+    };
+    let with_paths = Budget {
+        lists_paths: true,
+        ..ROOMY
+    };
+    let spent = spent([(&skill, &Declared::default())], with_paths);
+    assert_eq!(
+        spent.chars,
+        "Compacts.".len() + "/app/skills/purlis-tidy-memory/SKILL.md".len()
+    );
 }
 
 #[test]
@@ -229,4 +263,27 @@ fn a_huge_budget_warns_of_nothing_rather_than_overflowing() {
         budget: huge,
     };
     assert_eq!(spent.warns(), None);
+}
+
+#[test]
+fn a_skill_the_harness_lists_itself_costs_its_whole_path_whatever_its_folder() {
+    let tmp = tempfile::tempdir().unwrap();
+    let own = tmp.path().join("codex-home/skills");
+    skill(&own, "review", "Reviews.", "");
+    skill(&own, "quiet", "Says little.", "");
+    let skills = crate::read(&own);
+    let declared = Declared::default();
+    let with_paths = Budget {
+        lists_paths: true,
+        ..ROOMY
+    };
+    let paths: usize = skills
+        .iter()
+        .map(|one| one.path.to_string_lossy().chars().count())
+        .sum();
+    let spent = spent_listed(
+        skills.iter().map(|one| (one, &declared, ListedBy::Harness)),
+        with_paths,
+    );
+    assert_eq!(spent.chars, "Reviews.Says little.".len() + paths);
 }

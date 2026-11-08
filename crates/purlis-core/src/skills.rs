@@ -2262,8 +2262,11 @@ pub(crate) fn grouped(n: usize) -> String {
 /// in it: purlis's budget counts those already, as the chat's set holds them.
 fn own_catalogue(harness: Harness, outside: &[OutsideSkill]) -> OwnCatalogue {
     let listed = own_listed(harness, outside);
-    let spent = purlis_skills::budget::spent(
-        listed.iter().map(|(one, said)| (&one.skill, said)),
+    // Listed by the harness itself, each with its whole path where it lists paths.
+    let spent = purlis_skills::budget::spent_listed(
+        listed
+            .iter()
+            .map(|(one, said)| (&one.skill, said, purlis_skills::budget::ListedBy::Harness)),
         harness.skill_budget(),
     );
     OwnCatalogue {

@@ -92,14 +92,20 @@ fn only_a_chat_started_with_the_variable_is_briefed_on_its_skills() {
     let text = briefed(root, None, None, &set).expect("listed");
 
     assert!(text.contains("`purlis-safe-remove`"), "{text}");
+    // Its folder is named once (Q38), and the file the model is told to read there, by its
+    // whole path, is the read that starts the skill.
     assert!(
-        text.contains(
-            &skills
-                .join("purlis-safe-remove/SKILL.md")
-                .display()
-                .to_string()
-        )
+        text.contains(&format!("\nUnder `{}`:", skills.display())),
+        "{text}"
     );
+    assert!(text.contains("`<that folder>/<name>/SKILL.md`"), "{text}");
+    let read = format!(
+        "cat {}",
+        skills.join("purlis-safe-remove/SKILL.md").display()
+    );
+    let readable = readable_by_a_briefed_chat(&set);
+    let started = purlis_skills::runs::started_by_a_read(&read, root, &readable);
+    assert_eq!(started.map(|s| s.name.as_str()), Some("purlis-safe-remove"));
 }
 
 #[test]

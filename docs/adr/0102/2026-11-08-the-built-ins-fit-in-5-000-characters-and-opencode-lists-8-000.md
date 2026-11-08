@@ -20,5 +20,17 @@ The shipped-skill check (`crates/purlis-cli/tests/it/every_shipped_skill_passes_
 
 ## What it leaves
 
-- **Codex counts each skill's path too**, so what the built-ins leave of its 8,000 depends on where the bundle sits: about 1,600 characters for an installed app (paths of about 80 characters each), but under 200 in a deep checkout (about 167 each, measured 2026-11-08). The CLI test that lists two plane skills on Codex, and the Skill studio's e2e spec, keep their own `[skills.budget]` for that reason.
+- **Codex's briefing names a folder of skills once** (spec #5714's Q38, ruled by the person
+  2026-11-08). Codex's budget counts the paths its briefing lists. The built-ins' `SKILL.md`
+  paths, about 167 characters each where a chat's set lays them out, took 2,840 of its 8,000 and
+  left under 200. Now skills at `<folder>/<name>/SKILL.md` are listed under one line naming the
+  folder, the model is told to read each file by that whole path, and the budget counts the
+  folder once (`purlis_skills::listing`, `budget::spent`). A skill in a folder named otherwise
+  keeps its whole path on its line. A skill Codex finds itself (its own, or a repo's) still
+  costs its whole path, as Codex's own list names it (`budget::ListedBy`).
+- **The built-ins now leave more than 2,800 of Codex's 8,000** wherever the bundle sits
+  (`the_built_ins_codex_listing_leaves_room_for_the_planes_skills`). A start is still seen by the
+  read of the whole path, the same in a chat's hook and in the CI grader
+  (`runs::started_by_a_read`). The CLI test that lists two plane skills on Codex, and the Skill
+  studio's e2e spec, no longer raise their own `[skills.budget]`.
 - **The trigger bars are not measured on the shorter descriptions.** The CI grader measures them once its keys exist.

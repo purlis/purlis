@@ -9,9 +9,6 @@ use crate::support;
 use std::path::{Path, PathBuf};
 use std::process::Output;
 
-/// A listing budget the built-in skills and a project's few never reach on any harness.
-const BUDGET: &str = "[skills.budget]\nskills = 80\nchars = 40000\n";
-
 struct Project {
     _tmp: tempfile::TempDir,
     /// The temporary folder, as the kernel names it (`/private/tmp` on macOS).
@@ -26,11 +23,7 @@ impl Project {
         let root = at.join("plane");
         std::fs::create_dir_all(root.join("workspaces/alpha")).unwrap();
         std::fs::create_dir_all(at.join("home")).unwrap();
-        // A budget past what the built-in skills spend with these: where the bundle is beside the
-        // binary (a build of the app puts it there), Codex counts each built-in's path too, so in
-        // a deep checkout they leave less of its 8,000 than these two skills' lines take, and the
-        // router would hide them there. That is the routing tests' to hold, not this one's.
-        std::fs::write(root.join("charter.toml"), format!("[plane]\n\n{BUDGET}")).unwrap();
+        std::fs::write(root.join("charter.toml"), "[plane]\n").unwrap();
         for name in ["deploy", "review"] {
             write_skill(&root, name, &format!("Does {name}."));
         }
