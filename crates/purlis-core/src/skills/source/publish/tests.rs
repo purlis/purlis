@@ -694,6 +694,17 @@ fn an_account_the_forge_does_not_say_of_gets_a_branch_on_the_source_and_no_fork(
     assert!(branches(&set.bare).contains(&review.branch));
 }
 
+/// [`graded`], as the eval record reads it back: a plain harness, and arms whose chats are the
+/// tests it ran (none), so the record does not skip it as unsound.
+fn recorded(tree: &str, ts: &str) -> Graded {
+    let mut one = graded(tree, ts);
+    one.harness = Some("claude-code".to_owned());
+    for arm in &mut one.report.arms {
+        arm.chats = 0;
+    }
+    one
+}
+
 /// Commits the plane, so its skill's folder has a tree a grade can be tied to, and answers it.
 fn committed(plane: &Path) -> String {
     for args in [&["add", "."][..], &["commit", "-qm", "skills"]] {
@@ -717,14 +728,14 @@ fn a_publish_commits_the_grade_beside_the_folder_and_its_install_review_shows_it
     grades::record(
         &set.plane,
         &level,
-        &graded(&older, "2026-10-01T10:00:00Z"),
+        &recorded(&older, "2026-10-01T10:00:00Z"),
         "dev",
     )
     .unwrap();
     grades::record(
         &set.plane,
         &level,
-        &graded(&now, "2026-10-30T10:00:00Z"),
+        &recorded(&now, "2026-10-30T10:00:00Z"),
         "dev",
     )
     .unwrap();
@@ -797,7 +808,7 @@ fn a_file_an_install_leaves_on_the_server_still_reads_as_this_version_once_publi
     grades::record(
         &set.plane,
         &level,
-        &graded(&now, "2026-10-30T10:00:00Z"),
+        &recorded(&now, "2026-10-30T10:00:00Z"),
         "dev",
     )
     .unwrap();
@@ -841,7 +852,13 @@ fn no_grade_file_goes_where_beside_the_folder_is_inside_a_skill_the_source_holds
     let bare = upstream_of(tmp.path(), &work);
     let now = committed(&plane);
     let level = Level::project();
-    grades::record(&plane, &level, &graded(&now, "2026-10-30T10:00:00Z"), "dev").unwrap();
+    grades::record(
+        &plane,
+        &level,
+        &recorded(&now, "2026-10-30T10:00:00Z"),
+        "dev",
+    )
+    .unwrap();
     let review = review(
         &plane,
         None,
