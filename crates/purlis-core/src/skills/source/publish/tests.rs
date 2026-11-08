@@ -694,14 +694,19 @@ fn an_account_the_forge_does_not_say_of_gets_a_branch_on_the_source_and_no_fork(
     assert!(branches(&set.bare).contains(&review.branch));
 }
 
-/// [`graded`], as the eval record reads it back: a plain harness, and arms whose chats are the
-/// tests it ran (none), so the record does not skip it as unsound.
+/// [`graded`], as the eval record reads it back: a plain harness, arms whose chats are the tests
+/// it ran (none), and a report whose spend is the row's, so the record does not skip it as
+/// unsound (`Graded::sound`).
 fn recorded(tree: &str, ts: &str) -> Graded {
     let mut one = graded(tree, ts);
     one.harness = Some("claude-code".to_owned());
     for arm in &mut one.report.arms {
         arm.chats = 0;
     }
+    // What it spent is what its report says: nothing counted.
+    one.report.spent_tokens = None;
+    one.report.spent_usd = None;
+    one.report.not_started = None;
     one
 }
 
