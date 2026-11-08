@@ -15,15 +15,18 @@
  */
 
 /** The system colours the spec resolves in the WebView, each by its CSS keyword. */
-export type SystemColour =
-  | "Canvas"
-  | "CanvasText"
-  | "Highlight"
-  | "HighlightText"
-  | "SelectedItem"
-  | "SelectedItemText"
-  | "Mark"
-  | "MarkText";
+export const SYSTEM_COLOURS = [
+  "Canvas",
+  "CanvasText",
+  "Highlight",
+  "HighlightText",
+  "SelectedItem",
+  "SelectedItemText",
+  "Mark",
+  "MarkText",
+] as const;
+
+export type SystemColour = (typeof SYSTEM_COLOURS)[number];
 
 /** What the spec reads of each probed control's computed style. */
 export type ForcedRead =

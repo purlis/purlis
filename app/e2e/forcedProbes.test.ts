@@ -35,7 +35,7 @@ describe("the forced-colours probes", () => {
       expect(names).toContain(family);
   });
 
-  it("each test a forced-colours sheet beside them", async () => {
+  it("each sit beside the forced-colours sheet they test", async () => {
     for (const { file } of await forcedProbes())
       expect({ [file]: existsSync(join(dirname(file), "forced-colors.css")) }).toEqual({
         [file]: true,

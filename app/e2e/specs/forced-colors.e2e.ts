@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { $$, browser, expect } from "@wdio/globals";
-import type { ForcedValues } from "../../src/theme/forcedProbe.testkit.ts";
+import { SYSTEM_COLOURS, type ForcedValues } from "../../src/theme/forcedProbe.testkit.ts";
 import { forcedProbes, type NamedProbe } from "../forcedProbes.js";
 
 /**
@@ -127,7 +127,7 @@ describe("forced colours", () => {
     await untilTheStripIsRead();
     expect(probes.length).toBeGreaterThan(1);
     const drawn: Drawn = await browser.execute(
-      (given: { name: string; markup: string; focus?: string }[]) => {
+      (given: { name: string; markup: string; focus?: string }[], colours: readonly string[]) => {
         // No named helpers inside `execute`: the spec's bundler wraps a function declaration in a
         // `__name` the page does not have. Arrows assigned to a name are what the test above uses.
         const already = matchMedia("(forced-colors: active)").matches;
@@ -172,16 +172,7 @@ describe("forced colours", () => {
 
         // What the engine resolves each system colour to, through an inline style no rule beats.
         const system: Record<string, string> = {};
-        for (const name of [
-          "Canvas",
-          "CanvasText",
-          "Highlight",
-          "HighlightText",
-          "SelectedItem",
-          "SelectedItemText",
-          "Mark",
-          "MarkText",
-        ]) {
+        for (const name of colours) {
           const probe = document.createElement("span");
           probe.style.setProperty("color", name);
           box.appendChild(probe);
@@ -249,6 +240,7 @@ describe("forced colours", () => {
         }
       },
       probes.map(({ name, probe }) => ({ name, markup: probe.markup, focus: probe.focus })),
+      SYSTEM_COLOURS,
     );
 
     expect(drawn.already || drawn.placed > 0).toBe(true);
