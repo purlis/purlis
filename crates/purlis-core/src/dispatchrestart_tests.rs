@@ -1590,7 +1590,7 @@ fn a_wait_reads_the_report_its_record_keeps_by_the_asker_s_id() {
         ..ChatRef::default()
     };
 
-    let (name, report) = report_on_disk(&records, &steward, TASK).expect("its report");
+    let (name, report) = report_on_disk(&records, &steward, None, TASK).expect("its report");
 
     assert_eq!(name, "check prod");
     assert_eq!(report.summary, "The rollout is healthy.");
@@ -1599,6 +1599,88 @@ fn a_wait_reads_the_report_its_record_keeps_by_the_asker_s_id() {
         id: Some(OTHER_ID.to_owned()),
         ..steward.clone()
     };
-    assert_eq!(report_on_disk(&records, &other, TASK), None);
-    assert_eq!(report_on_disk(&records, &steward, TASK + 1), None);
+    assert_eq!(report_on_disk(&records, &other, None, TASK), None);
+    assert_eq!(report_on_disk(&records, &steward, None, TASK + 1), None);
+    // The chat that resumed the steward chat reads it too.
+    assert!(report_on_disk(&records, &other, Some(STEWARD_ID), TASK).is_some());
+}
+
+#[test]
+fn a_wait_reads_nothing_from_a_cleared_row() {
+    let (_d, root) = project();
+    pending_for_the_steward(&root);
+    let id = dispatchrecord::list(&root)[0].id.clone();
+    assert!(dispatchrecord::clear(&root, &id).unwrap());
+    let steward = ChatRef {
+        chat: STEWARD,
+        id: Some(STEWARD_ID.to_owned()),
+        ..ChatRef::default()
+    };
+
+    assert_eq!(
+        report_on_disk(&dispatchrecord::list(&root), &steward, None, TASK),
+        None
+    );
+}
+
+#[test]
+fn a_task_that_asked_tasks_is_told_to_carry_on_and_of_its_own_task_in_one_line() {
+    let (_d, root) = project();
+    dispatched(&root);
+    // The task asked a task of its own, which still works.
+    let below = dispatchrecord::open(
+        &root,
+        Opening {
+            asker: Asker {
+                chat: ChatRef {
+                    chat: TASK,
+                    id: Some(TASK_ID.to_owned()),
+                    name: "check prod".to_owned(),
+                    persona: Some("devops".to_owned()),
+                },
+                ..opening(BRIEF).asker
+            },
+            worker: Worker {
+                chat: ChatRef {
+                    chat: 9,
+                    id: Some(OTHER_ID.to_owned()),
+                    name: "check logs".to_owned(),
+                    persona: Some("devops".to_owned()),
+                },
+                ..opening(BRIEF).worker
+            },
+            task: Some("check logs".to_owned()),
+            ..opening("# Check logs")
+        },
+        at("2026-10-09T08:05:00Z"),
+    )
+    .unwrap();
+    let below_chat = Chat {
+        number: Some(9),
+        name: "9".to_owned(),
+        label: Some("check logs".to_owned()),
+        resume: Some(SessionId::new("conv-9").unwrap()),
+        from: Some(HandedFrom {
+            chat: TASK,
+            name: "check prod".to_owned(),
+            depth: 2,
+            ..the_task().from.unwrap()
+        }),
+        identity: Identity {
+            id: Some(OTHER_ID.to_owned()),
+            ..Identity::default()
+        },
+        ..the_task()
+    };
+    let record = recorded(vec![the_steward(), the_task(), below_chat]);
+
+    let launch = at_launch(&root, &record, &dispatchrecord::list(&root));
+
+    assert!(dispatchrecord::read(&root, &below.id).unwrap().running());
+    let told = launch.told(&the_task()).expect("a wake line");
+    assert!(told.starts_with(CARRY_ON), "{told}");
+    assert!(
+        told.contains("chat 9: brought back on its conversation, carrying on"),
+        "{told}"
+    );
 }

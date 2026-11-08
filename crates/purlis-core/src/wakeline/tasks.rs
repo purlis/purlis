@@ -10,8 +10,10 @@
 //! Made only of purlis's own words, chat numbers the app dealt and the words a finished task's
 //! row is told with ([`crate::dispatchrecord::Finished::said_to_a_chat`]): no task's name, no
 //! report's text. A report itself reaches the chat as it always does, quoted as data in the
-//! context of the turn the wake line starts ([`crate::handback::context`]), and
-//! `purlis dispatch wait` reads it again from the task's dispatch record.
+//! context of a turn ([`crate::handback::context`]): the turn the wake line starts, for one that
+//! waited for the chat at the quit, and the turn after, for one kept on its record, which is
+//! handed over once the chat has started. `purlis dispatch wait` reads any of them at once
+//! from the task's dispatch record ([`crate::dispatchrestart::report_on_disk`]).
 
 /// The most tasks one list in the line names; the rest are counted.
 pub const MOST_NAMED: usize = 20;
@@ -70,16 +72,20 @@ impl News {
     }
 }
 
-/// What a chat told nothing else is told first: the wake line's own opening.
-const RESTARTED: &str =
-    "purlis: purlis was restarted, and this is this chat's conversation brought back.";
+use super::RESTARTED;
+use crate::dispatchrestart::CARRY_ON;
 
 /// **`line` with the news of the chat's tasks added**, or `line` as it was where there is no
-/// news. A chat with no other wake line is given one for its tasks alone.
+/// news. A chat with no other wake line is given one for its tasks alone. A task told to carry
+/// on ([`CARRY_ON`]) has been told already not to dispatch its tasks again, and is not told
+/// twice.
 pub fn with(line: Option<String>, news: &News) -> Option<String> {
     if news.is_empty() {
         return line;
     }
+    let told_already = line
+        .as_deref()
+        .is_some_and(|line| line.starts_with(CARRY_ON));
     let mut said = line.unwrap_or_else(|| RESTARTED.to_owned());
     if !news.restored.is_empty() {
         let listed = listed(
@@ -88,10 +94,15 @@ pub fn with(line: Option<String>, news: &News) -> Option<String> {
                 .map(|task| format!("chat {}: {}", task.chat, task.standing.said())),
         );
         said.push_str(&format!(
-            " The tasks this chat dispatched before the restart: {listed}. They are still this \
-             chat's tasks, and each report reaches it as it lands: dispatch none of them again \
-             while they work. `purlis dispatch list` shows where each stands."
+            " The tasks this chat dispatched before the restart: {listed}."
         ));
+        if !told_already {
+            said.push_str(
+                " They are still this chat's tasks, and each report reaches it as it lands: \
+                 dispatch none of them again while they work. `purlis dispatch list` shows \
+                 where each stands.",
+            );
+        }
     }
     if !news.reported.is_empty() {
         let listed = listed(
@@ -101,8 +112,8 @@ pub fn with(line: Option<String>, news: &News) -> Option<String> {
         );
         said.push_str(&format!(
             " Reports of its tasks waited for this chat across the restart: {listed}. Each is \
-             handed to this turn as context, quoted as data; `purlis dispatch wait <chat>` \
-             prints one again."
+             handed to this chat as context, quoted as data; `purlis dispatch wait <chat>` \
+             prints any of them now."
         ));
     }
     Some(said)

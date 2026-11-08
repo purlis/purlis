@@ -63,7 +63,7 @@ fn reports_that_waited_are_named_by_chat_and_how_each_ended() {
         said.contains("chat 7 reported (done); chat 8 reported (blocked)"),
         "{said}"
     );
-    assert!(said.contains("handed to this turn as context"), "{said}");
+    assert!(said.contains("handed to this chat as context"), "{said}");
 }
 
 #[test]
@@ -76,6 +76,25 @@ fn the_news_follows_a_line_the_chat_is_given_already() {
     let said = with(Some("carry on.".to_owned()), &news).expect("a line");
 
     assert!(said.starts_with("carry on. The tasks this chat"), "{said}");
+    assert!(said.contains("dispatch none of them again"), "{said}");
+}
+
+#[test]
+fn a_task_told_to_carry_on_is_not_told_twice_not_to_dispatch_its_tasks_again() {
+    let news = News {
+        restored: vec![restored(9, Standing::CarriesOn)],
+        reported: Vec::new(),
+    };
+
+    let said = with(Some(CARRY_ON.to_owned()), &news).expect("a line");
+
+    assert!(said.starts_with(CARRY_ON), "{said}");
+    assert!(said.contains("chat 9: brought back"), "{said}");
+    assert_eq!(
+        said.matches("dispatch none of them again").count(),
+        1,
+        "{said}"
+    );
 }
 
 #[test]

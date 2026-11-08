@@ -2404,15 +2404,19 @@ pub fn wait(held: &Weak<Held>, asked: &Asked, connection: u64) -> Answer {
 
 /// **The report task `of` sent chat `asker`, read from the task's dispatch record** (#5754,
 /// #1463): what a wait answers where the app no longer holds the report's text. The asking
-/// chat is matched by its id, never its number alone.
+/// chat is matched by its id, or the id of the chat it resumed, never its number alone.
 fn report_on_disk(
     held: &Held,
     asker: u32,
     of: u32,
 ) -> Option<(String, purlis_core::handback::Handback)> {
+    let resumed_from = held
+        .chats()
+        .recorded_chat(asker)
+        .and_then(|chat| chat.identity.resumed_from);
     let asker = crate::dispatches::chat_ref(held, asker)?;
     let records = purlis_core::dispatchrecord::list(held.root());
-    purlis_core::dispatchrestart::report_on_disk(&records, &asker, of)
+    purlis_core::dispatchrestart::report_on_disk(&records, &asker, resumed_from.as_deref(), of)
 }
 
 /// The tasks under chat `asker`: the ones still open, in the order they were started, then

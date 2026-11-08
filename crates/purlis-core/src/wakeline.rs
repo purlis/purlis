@@ -11,19 +11,24 @@
 //! decides what to start again**, and purlis starts none of it.
 //!
 //! It is purlis's own sentence, made only from counts the app recorded
-//! ([`crate::reopen::Chat::own_work`]) and from whether the chat is a task told to carry on
+//! ([`crate::reopen::Chat::own_work`]), from whether the chat is a task told to carry on
 //! ([`crate::dispatchrestart::CARRY_ON`], which it absorbs, so a task gets one message and
-//! not two). It names no chat, no command and no path, so nothing read off a file a chat can
-//! write reaches a line a harness is started with.
+//! not two), and from the news of the chat's own tasks ([`tasks`], #5754): chat numbers the app
+//! dealt and the words a finished task's row is told with. It names no path and quotes nothing
+//! read off a file a chat can write, so none of that reaches a line a harness is started with.
 //!
 //! **The tracer** (#5747) names the kinds of work in flight and how many of each. What each
-//! one last printed, the wake-ups and crons that were lost, a turn cut mid-way and the news of
-//! the chat's tasks are its siblings under #5743.
+//! one last printed, the wake-ups and crons that were lost and a turn cut mid-way are its
+//! siblings under #5743.
 
 use crate::dispatchrestart::CARRY_ON;
 use crate::ownwork::OwnWork;
 
 pub mod tasks;
+
+/// How a wake line opens where nothing else opens it: purlis's word that it restarted.
+const RESTARTED: &str =
+    "purlis: purlis was restarted, and this is this chat's conversation brought back.";
 
 /// What the chat is told after the work it had left running is listed: that none of it runs
 /// now, and that starting it again is the chat's to decide.
@@ -42,9 +47,8 @@ pub fn of(own_work: Option<&OwnWork>, carry_on: bool) -> Option<String> {
         (false, None) => None,
         (true, None) => Some(CARRY_ON.to_owned()),
         (false, Some(ended)) => Some(format!(
-            "purlis: purlis was restarted, and this is this chat's conversation brought back. \
-             The restart ended what this chat had left running in the background: {ended}. \
-             {NONE_OF_IT_RUNS}"
+            "{RESTARTED} The restart ended what this chat had left running in the background: \
+             {ended}. {NONE_OF_IT_RUNS}"
         )),
         (true, Some(ended)) => Some(format!(
             "{CARRY_ON} The restart also ended what this chat had left running in the \

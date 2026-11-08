@@ -56,6 +56,7 @@
 //! when the report lands after it was reopened**, it goes to the open chat that resumed the
 //! one that asked ([`crate::reopen::Identity::resumed_from`]) at once.
 
+use std::collections::HashMap;
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -93,7 +94,7 @@ pub struct AtLaunch {
     kept: Vec<String>,
     /// What each chat brought back on its conversation is told of its tasks (#5754), by chat
     /// id: the ones the launch restored, and the ones whose reports wait for it.
-    news: std::collections::HashMap<String, crate::wakeline::tasks::News>,
+    news: HashMap<String, News>,
 }
 
 impl AtLaunch {
@@ -119,7 +120,7 @@ impl AtLaunch {
 
     /// **What `chat` is told of its tasks as it is brought back** (#5754): nothing for a chat
     /// started fresh, or one the session host kept running, whose turn the restart never cut.
-    pub fn news(&self, chat: &Chat) -> crate::wakeline::tasks::News {
+    pub fn news(&self, chat: &Chat) -> News {
         chat.identity
             .id
             .as_ref()
@@ -296,7 +297,7 @@ pub fn at_launch_beside(
             (Vouched::Under | Vouched::Alone, false) => {
                 not_resumed.push(chat.clone());
                 if stands == Vouched::Under {
-                    restored.push((asker_of(record, chat), chat.number, Standing::Ended));
+                    restored.push(UnderItsAsker::of(record, chat, Standing::Ended));
                 }
                 continue;
             }
@@ -311,7 +312,7 @@ pub fn at_launch_beside(
             }
         };
         if let Some(standing) = standing {
-            restored.push((asker_of(record, chat), chat.number, standing));
+            restored.push(UnderItsAsker::of(record, chat, standing));
         }
         back.push(chat.clone());
     }
@@ -336,15 +337,34 @@ pub fn at_launch_beside(
     }
 }
 
-/// The id of the chat `record` brings back under the number `chat`'s entry names as the one
-/// that asked it.
-fn asker_of(record: &reopen::Record, chat: &Chat) -> Option<String> {
-    let from = chat.from.as_ref()?;
-    record
-        .chats
-        .iter()
-        .find(|other| other.number == Some(from.chat) && other.number != chat.number)
-        .and_then(|asker| asker.identity.id.clone())
+/// One task the launch restored, as the news of the chat that asked it is made from it.
+struct UnderItsAsker {
+    /// The id of the chat that asked it.
+    asker: Option<String>,
+    /// The number the task's chat has.
+    task: Option<u32>,
+    standing: Standing,
+}
+
+impl UnderItsAsker {
+    /// `chat`, one of `record`'s, standing as `standing`. Only a task the store vouched for as
+    /// asked by a chat the record brings back is passed ([`Vouched::Under`]): that check held
+    /// the entry under its number to the store's id for the asker, so the number names it
+    /// here, within this one record, as [`vouched`] found it.
+    fn of(record: &reopen::Record, chat: &Chat, standing: Standing) -> Self {
+        let asker = chat.from.as_ref().and_then(|from| {
+            record
+                .chats
+                .iter()
+                .find(|other| other.number == Some(from.chat) && other.number != chat.number)
+                .and_then(|asker| asker.identity.id.clone())
+        });
+        Self {
+            asker,
+            task: chat.number,
+            standing,
+        }
+    }
 }
 
 /// **What each chat brought back on its conversation is told of its tasks** (#5754), by chat
@@ -356,11 +376,16 @@ fn news_of(
     root: &Path,
     back: &[Chat],
     records: &[dispatchrecord::Record],
-    restored: Vec<(Option<String>, Option<u32>, Standing)>,
+    restored: Vec<UnderItsAsker>,
     left_running: &dyn Fn(&Chat) -> bool,
-) -> std::collections::HashMap<String, News> {
-    let mut news: std::collections::HashMap<String, News> = std::collections::HashMap::new();
-    for (asker, task, standing) in restored {
+) -> HashMap<String, News> {
+    let mut news: HashMap<String, News> = HashMap::new();
+    for UnderItsAsker {
+        asker,
+        task,
+        standing,
+    } in restored
+    {
         if let (Some(asker), Some(chat)) = (asker, task) {
             news.entry(asker)
                 .or_default()
@@ -385,6 +410,19 @@ fn news_of(
     news
 }
 
+/// Whether `record` is a finished task asked for by `asker`, by its id, or by the chat it
+/// resumed (`resumed_from`): never by a number alone, which another launch deals again.
+fn a_finished_task_of(
+    record: &dispatchrecord::Record,
+    asker: &ChatRef,
+    resumed_from: Option<&str>,
+) -> bool {
+    record.mode == dispatchrecord::Mode::Task
+        && !record.running()
+        && (dispatchrecord::asked_by(record, asker)
+            || resumed_from.is_some_and(|was| record.asker.chat.id.as_deref() == Some(was)))
+}
+
 /// **The reports of `chat`'s tasks that wait for it** as it is brought back (#5754): each left
 /// for its next turn before the quit and never read, and each kept on its dispatch record as
 /// reaching no chat ([`take_back`]). Only a report a record of the store says is that task's
@@ -398,15 +436,10 @@ fn reports_waiting(root: &Path, chat: &Chat, records: &[dispatchrecord::Record])
     let resumed_from = chat.identity.resumed_from.as_deref();
     let mut asked: Vec<&dispatchrecord::Record> = records
         .iter()
-        .filter(|record| {
-            record.mode == dispatchrecord::Mode::Task
-                && !record.running()
-                && (dispatchrecord::asked_by(record, &me)
-                    || resumed_from.is_some_and(|was| record.asker.chat.id.as_deref() == Some(was)))
-        })
+        .filter(|record| a_finished_task_of(record, &me, resumed_from))
         .collect();
     let mut reported = Vec::new();
-    let mut said = |record: &dispatchrecord::Record| {
+    let mut name = |record: &dispatchrecord::Record| {
         if let Some(ended) = dispatchrecord::Finished::of(record) {
             reported.push(Reported {
                 chat: record.worker.chat.chat,
@@ -422,13 +455,13 @@ fn reports_waiting(root: &Path, chat: &Chat, records: &[dispatchrecord::Record])
             if let Some(at) = asked.iter().position(|record| {
                 dispatchrecord::asked_by(record, &me) && is_its_report(record, &report)
             }) {
-                said(asked.remove(at));
+                name(asked.remove(at));
             }
         }
     }
     for record in asked {
         if record.undelivered.is_some() && report_of(record).is_some() {
-            said(record);
+            name(record);
         }
     }
     reported
@@ -859,19 +892,21 @@ pub fn report_of(record: &dispatchrecord::Record) -> Option<Handback> {
 /// #1463): what a wait on the task answers once the app no longer holds the report in
 /// memory, after a restart or once a turn has read it. `task` is the number the task's chat
 /// had; of `records` (the store as [`dispatchrecord::list`] reads it, newest first), the
-/// newest finished task `asker` asked for by its id under that number. Its name, and the
-/// report as the chat that asked is told it ([`report_of`]); `None` where no record of the
-/// store says so.
+/// newest finished task asked for by `asker`, by its id, or by the chat it resumed
+/// (`resumed_from`), under that number, whose row was not cleared and which the store would
+/// draw ([`dispatchrecord::sound`]). Its name, and the report as the chat that asked is told
+/// it ([`report_of`]); `None` where no record of the store says so.
 pub fn report_on_disk(
     records: &[dispatchrecord::Record],
     asker: &ChatRef,
+    resumed_from: Option<&str>,
     task: u32,
 ) -> Option<(String, Handback)> {
     let record = records.iter().find(|record| {
-        record.mode == dispatchrecord::Mode::Task
-            && !record.running()
-            && record.worker.chat.chat == task
-            && dispatchrecord::asked_by(record, asker)
+        record.worker.chat.chat == task
+            && !record.cleared
+            && dispatchrecord::sound(record)
+            && a_finished_task_of(record, asker, resumed_from)
     })?;
     let name = record
         .task
