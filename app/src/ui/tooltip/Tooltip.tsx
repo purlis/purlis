@@ -249,6 +249,8 @@ function useRoom(
       tip.style.inlineSize = "max-content";
       const width = Math.ceil(tip.getBoundingClientRect().width);
       tip.style.inlineSize = was;
+      // Nothing laid out, nothing to choose by: React Aria's placement stands (R166).
+      if (width === 0) return;
       const rtl = getComputedStyle(target).direction === "rtl";
       const box = target.getBoundingClientRect();
       const view = document.documentElement.clientWidth;
@@ -270,9 +272,8 @@ function useRoom(
 const placementOf = (side: TooltipSide): AriaTooltipProps["placement"] =>
   side === "end" ? TOOLTIP_PLACEMENT : side;
 
-/** The width a tooltip holds once measured: none where nothing could be (no layout). */
-const heldWidth = (room: Room | null) =>
-  room === null || room.width === 0 ? undefined : { inlineSize: room.width };
+/** The width a tooltip holds once measured. */
+const heldWidth = (room: Room | null) => (room === null ? undefined : { inlineSize: room.width });
 
 /** A second line under a tooltip's first: the `detail` part. */
 export function TooltipDetail({ id, children }: { id?: string; children: Tip }) {
