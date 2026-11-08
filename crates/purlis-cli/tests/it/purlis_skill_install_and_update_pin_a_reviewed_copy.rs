@@ -583,3 +583,89 @@ fn an_update_with_a_grant_widens_what_it_relies_on_and_grants_what_it_brings() {
             .contains("Made here."),
     );
 }
+
+// --- From an extension's source (#5760) --------------------------------------------------------
+
+#[test]
+fn a_chat_cannot_install_from_an_extensions_source_and_is_told_as_for_a_git_one() {
+    let project = Project::new();
+    let out = project.run_with(
+        &["skill", "install", "--extension", "acme-registry", "deploy"],
+        "y\n",
+        &[("PURLIS_SESSION_ID", "chat-1")],
+    );
+    assert_eq!(out.status.code(), Some(1), "{}", text(&out));
+    assert!(
+        text(&out).contains("A chat does not change skills itself"),
+        "{}",
+        text(&out)
+    );
+    assert!(!project.root().join("skills").exists());
+}
+
+#[test]
+fn an_install_from_an_extensions_source_has_no_yes() {
+    let project = Project::new();
+    let out = project.run(
+        &[
+            "skill",
+            "install",
+            "--extension",
+            "acme-registry",
+            "deploy",
+            "--yes",
+        ],
+        "",
+    );
+    assert_eq!(out.status.code(), Some(2), "{}", text(&out));
+    assert!(text(&out).contains("--yes"), "{}", text(&out));
+    assert!(!project.root().join("skills").exists());
+}
+
+#[test]
+fn an_install_from_an_extensions_source_with_no_terminal_to_ask_installs_nothing() {
+    let project = Project::new();
+    // Its standard input is a pipe holding a yes: no person is there to answer.
+    let out = project.run(
+        &["skill", "install", "--extension", "acme-registry", "deploy"],
+        "y\n",
+    );
+    assert_eq!(out.status.code(), Some(1), "{}", text(&out));
+    assert!(
+        text(&out).contains("asked of you at your own terminal each time"),
+        "{}",
+        text(&out)
+    );
+    assert!(!project.root().join("skills").exists());
+    assert!(!project.root().join("skills.lock").exists());
+}
+
+#[test]
+fn an_extension_that_is_no_skill_source_here_is_asked_nothing() {
+    let project = Project::new();
+    let out = project.run(&["skill", "install", "--extension", "acme-registry"], "");
+    assert_eq!(out.status.code(), Some(1), "{}", text(&out));
+    assert!(
+        text(&out).contains("acme-registry is no skill source here"),
+        "{}",
+        text(&out)
+    );
+}
+
+#[test]
+fn an_install_names_its_source_or_an_extension() {
+    let project = Project::new();
+    let out = project.run(&["skill", "install"], "");
+    assert_eq!(out.status.code(), Some(2), "{}", text(&out));
+    let out = project.run(
+        &[
+            "skill",
+            "install",
+            &project.url(),
+            "--extension",
+            "acme-registry",
+        ],
+        "",
+    );
+    assert_eq!(out.status.code(), Some(2), "{}", text(&out));
+}

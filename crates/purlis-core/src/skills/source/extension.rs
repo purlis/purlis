@@ -30,19 +30,29 @@ use super::fetch::{Found, NotASkill, SourceFile};
 use super::install::{Renames, install_from};
 use super::lock::{self, Locked};
 use super::review::{self, Accepted, Set, SkillReview, TooMuch, installed_at, met_at};
-use super::update::{UpdateReview, plan_from, reviewed_update, write_update};
+use super::update::{Planned, UpdateReview, plan_from, reviewed_update, write_update};
 use super::{Origin, Pin, Revision, SkillSource};
 use crate::extension::studio::{self as wire, Ask};
 use crate::skills::Grant;
 use crate::skills::studio::Studio;
 use crate::skills::verbs::{Ctx, Level};
 
-/// One skill an extension's source offers, and the levels it is installed at from it here.
+/// One skill an extension's source offers, the levels it is installed at from it here, and what
+/// its files do beyond its instructions.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Offered {
     pub skill: Found,
     pub installed: Vec<Level>,
+    /// **What its files do beyond its instructions**, a few words each, as a git source's page
+    /// marks them (#5760): `None` where they were not read to browse, past what one browse reads
+    /// or where the extension's answer for it was refused; its review reads them.
+    pub marks: Option<Vec<String>>,
 }
+
+/// **The most skills one browse of an extension's source reads the files of** for their marks
+/// (#5760): each is one question to the extension in its sandbox, so a long list marks its
+/// first ones and leaves the rest to their reviews, as a git source's past what one read may take.
+pub const MOST_MARKED: usize = 32;
 
 /// What an extension's source offers, at one revision.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -243,22 +253,51 @@ pub fn newest(studio: Studio<'_>, id: &str) -> Result<Revision, String> {
 }
 
 /// **What the extension `id`'s source offers now**, each skill with the levels it is installed at
-/// from it in the project at `plane`. No skill's files are read to browse: its review reads them.
+/// from it in the project at `plane` and what its files do (#5760). The files read to mark it
+/// inform the person alone: they are let go of here, and an install copies only what its own
+/// review read ([`Held`]).
 pub fn browse(studio: Studio<'_>, plane: &Path, id: &str) -> Result<Browse, String> {
     let asked = Asked::of(studio, id)?;
+    let revision = asked.revision.clone();
+    browse_of(&asked, id, revision, plane)
+}
+
+/// [`browse`], of what `source` answers as the extension `id` at `revision`: each skill's files
+/// read for its marks until [`MOST_MARKED`] skills or [`super::fetch::MOST_READ_BYTES`] are read.
+fn browse_of(
+    source: &dyn SkillSource,
+    id: &str,
+    revision: Revision,
+    plane: &Path,
+) -> Result<Browse, String> {
+    let (found, _) = source.skills()?;
     let (locked, _) = lock::every(plane);
     let origin = Origin::Extension(id.to_owned());
+    let mut read: u64 = 0;
+    let skills = found
+        .into_iter()
+        .enumerate()
+        .map(|(at, skill)| {
+            let marks = if at < MOST_MARKED && read <= super::fetch::MOST_READ_BYTES {
+                // One skill's answer refused marks that one alone: the others are still read.
+                source.files(&skill).ok().map(|(files, _)| {
+                    read += files.iter().map(|f| f.bytes.len() as u64).sum::<u64>();
+                    review::summary_of(&files).marks()
+                })
+            } else {
+                None
+            };
+            Offered {
+                installed: installed_at(&locked, &origin, &skill.name),
+                marks,
+                skill,
+            }
+        })
+        .collect();
     Ok(Browse {
         extension: id.to_owned(),
-        skills: asked
-            .found
-            .iter()
-            .map(|skill| Offered {
-                installed: installed_at(&locked, &origin, &skill.name),
-                skill: skill.clone(),
-            })
-            .collect(),
-        revision: asked.revision,
+        skills,
+        revision,
     })
 }
 
@@ -423,6 +462,22 @@ pub fn update(
     grant: Option<&Grant>,
 ) -> Result<PathBuf, String> {
     crate::settings::writable(cx.plane)?;
+    let planned = planned(cx, held, level, name, accepted, grant)?;
+    write_update(cx, level, name, grant, &planned)
+}
+
+/// **Checks an update** of the installed skill `name` at `level` from what its review read,
+/// `held`, writing nothing: refused where `held` is not at what was accepted or is another
+/// extension's, then the git source's own checks ([`plan_from`]). The extension is not asked.
+/// Several are written together by [`super::update::set::update_set`] (#5760).
+pub(super) fn planned(
+    cx: &Ctx<'_>,
+    held: &Held,
+    level: &Level,
+    name: &str,
+    accepted: &Accepted,
+    grant: Option<&Grant>,
+) -> Result<Planned, String> {
     held.is_at(accepted)?;
     let (_, id) = locked_from_an_extension(cx.plane, level, name)?;
     if id != held.extension {
@@ -430,8 +485,7 @@ pub fn update(
             "{name} came from the extension '{id}', not the one reviewed, so nothing was updated"
         ));
     }
-    let planned = plan_from(cx, level, name, accepted, grant, held, held.pin(), None)?;
-    write_update(cx, level, name, grant, &planned)
+    plan_from(cx, level, name, accepted, grant, held, held.pin(), None)
 }
 
 /// A skill a test's [`Held`] holds: its name, its description, and each file's path and text.
@@ -443,6 +497,11 @@ impl Held {
     /// The review a review of the extension would answer, read from what it holds.
     pub fn review(&self, plane: &Path, names: &[String], level: &Level) -> Review {
         review_in(self, &self.extension, &self.revision, plane, names, level).expect("reviewed")
+    }
+
+    /// What browsing the extension would answer, read from what it holds.
+    pub fn browse(&self, plane: &Path) -> Browse {
+        browse_of(self, &self.extension, self.revision.clone(), plane).expect("browsed")
     }
 
     /// The review of updating `name` at `level` to what it holds.

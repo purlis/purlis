@@ -57,6 +57,7 @@ fn accepted_whole(root: &Path, name: &str) -> Updating {
         accepted: diff.accepted(),
         grant: diff.grant.clone(),
         allowed: diff.gained.clone(),
+        held: None,
     }
 }
 

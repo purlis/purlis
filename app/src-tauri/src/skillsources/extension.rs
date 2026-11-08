@@ -53,8 +53,9 @@ enum For {
     },
 }
 
-/// The most reviews held at once: each is one skill set's files, at most a few MiB.
-const MOST_HELD: usize = 8;
+/// The most reviews held at once: each is one skill set's files, most a few KiB. Review updates
+/// holds one for each skill from an extension it shows (#5760), so it is room for a page of them.
+const MOST_HELD: usize = 32;
 
 /// **What each open review read**, newest last: one for each install or update a review waits on.
 static HELD: Mutex<Vec<(For, Held)>> = Mutex::new(Vec::new());
@@ -193,7 +194,8 @@ pub(crate) async fn skill_extension_sources(
     .await
 }
 
-/// **Browses an extension's skill source** at the revision it names now: its listing alone.
+/// **Browses an extension's skill source** at the revision it names now: its listing, and each
+/// skill's files read for its marks (#5760).
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_extension_source_browse(
@@ -222,8 +224,9 @@ pub(crate) async fn skill_extension_source_browse(
                     description: esc(&one.skill.description),
                     folder: esc(&one.skill.folder),
                     installed: one.installed.iter().map(ToString::to_string).collect(),
-                    // Its files are read by its review, not to browse.
-                    marks: None,
+                    // purlis's own words, read to browse as a git source's are and let go of
+                    // (#5760): the install copies what its own review reads.
+                    marks: one.marks,
                 })
                 .collect(),
             not_skills: Vec::new(),
@@ -346,6 +349,44 @@ pub(crate) async fn skill_extension_install(
         Ok(changed)
     })
     .await
+}
+
+/// **What the update of `name` at `level` copies from, as one of several accepted at once**
+/// (#5760): for a skill from an extension's source, what its own review read, while the extension
+/// is still a source here; `None` for a git source's. Refused where its review is not held.
+pub(crate) fn held_for_a_set(
+    executor: &purlis_core::executor::Executor,
+    root: &Path,
+    level: &purlis_core::skills::verbs::Level,
+    name: &str,
+) -> Result<Option<Held>, String> {
+    let (locked, _) = purlis_core::skills::source::lock::every(root);
+    let from_an_extension = locked
+        .iter()
+        .any(|(_, one)| one.is(level, name) && matches!(one.source, Origin::Extension(_)));
+    if !from_an_extension {
+        return Ok(None);
+    }
+    let read = held(&For::Update {
+        plane: root.to_path_buf(),
+        level: level.to_string(),
+        name: name.to_owned(),
+    })
+    .map_err(|_| format!("The review of {name} is no longer open: review the updates again."))?;
+    still_a_source(executor, root, read.extension())?;
+    Ok(Some(read))
+}
+
+/// Lets go of what the reviews of the updates of `names` (each at its level) read, once the set
+/// that copied them is made.
+pub(crate) fn release_set(root: &Path, names: &[(purlis_core::skills::verbs::Level, String)]) {
+    for (level, name) in names {
+        release(&For::Update {
+            plane: root.to_path_buf(),
+            level: level.to_string(),
+            name: name.clone(),
+        });
+    }
 }
 
 /// **The review of updating `name` at `level`**, a skill from an extension's source, to the

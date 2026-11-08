@@ -553,6 +553,7 @@ pub struct SkillSetUpdated {
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_set_update(
+    views: tauri::State<'_, crate::views::Views>,
     planes: tauri::State<'_, crate::planes::Planes>,
     undos: tauri::State<'_, SetUpdateUndos>,
     plane: crate::planes::PlaneId,
@@ -568,16 +569,35 @@ pub(crate) async fn skill_set_update(
                 accepted: purlis_core::skills::source::Accepted::try_from(&one.reviewed)?,
                 grant: one.grant.clone().map(Into::into),
                 allowed: one.allowed.iter().copied().map(Into::into).collect(),
+                held: None,
             })
         })
         .collect::<Result<_, String>>()?;
+    let executor = views.executor();
     let (said, undo) = crate::off_the_window("updating the skills", move || {
         flag_on()?;
+        let root = held.root();
+        // A skill from an extension's source copies what its own review read, and only while the
+        // extension is still approved and on here (#5760; ADR 0100, amended 2026-11-08).
+        let mut set = set;
+        for one in &mut set {
+            one.held = crate::skillsources::extension::held_for_a_set(
+                &executor, root, &one.level, &one.name,
+            )?;
+        }
         let mut undo = None;
-        let said = heard(held.root(), |cx| {
+        let said = heard(root, |cx| {
             undo = Some(set_update::update_set(cx, &set)?);
             Ok(())
         })?;
+        // Each review an extension's update copied is used once: the same accept again needs a
+        // new review.
+        let copied: Vec<_> = set
+            .iter()
+            .filter(|one| one.held.is_some())
+            .map(|one| (one.level.clone(), one.name.clone()))
+            .collect();
+        crate::skillsources::extension::release_set(root, &copied);
         // update_set answers an Undo whenever it is done, so this is never met.
         undo.map(|undo| (said, undo)).ok_or_else(|| {
             "The skills were updated, but their Undo was lost: update them back one at a time."

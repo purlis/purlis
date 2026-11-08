@@ -190,3 +190,33 @@ fn a_publish_through_a_fork_the_person_has_names_it_and_makes_nothing() {
     assert!(said.contains("https://github.com/ada/skills"), "{said}");
     assert!(!said.contains("makes"), "{said}");
 }
+
+#[test]
+fn an_extensions_browse_lists_each_skill_escaped_with_what_its_files_do_and_where_it_is() {
+    use purlis_core::skills::source::extension::Held;
+    let plane = tempfile::tempdir().unwrap();
+    let skill_md = format!("---\nname: {HOSTILE}\ndescription: Ships it.\n---\n\nGo.\n");
+    let browse = Held::of(
+        "acme",
+        "r7",
+        &[
+            (
+                HOSTILE,
+                "Ships it.",
+                &[
+                    ("SKILL.md", skill_md.as_str()),
+                    ("scripts/ship.sh", "#!/bin/sh\n"),
+                ],
+            ),
+            ("notify", "Tells the team.", &[]),
+        ],
+    )
+    .browse(plane.path());
+    assert_eq!(
+        browse_text(&browse),
+        format!(
+            "the extension acme at revision r7:\n  {SHOWN}  Ships it. · runs a script\n  notify  \
+             Tells the team. · its files are read when you review it\n"
+        )
+    );
+}
