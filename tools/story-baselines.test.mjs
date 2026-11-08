@@ -21,6 +21,7 @@ import { test } from "node:test";
 import {
   BASELINE,
   gather,
+  LIMITS,
   pictureName,
   picturedCells,
   problems,
@@ -182,6 +183,23 @@ test("take writes drawn baselines into the app", () => {
     unchanged: [],
   });
   assert.deepEqual(readFileSync(join(app, `${SHOT}-chromium-linux.png`)), PNG);
+});
+
+test("a partial take writes the pictures it is given and deletes no other baseline (#5791)", () => {
+  const drawn = tree({ [`${SHOT}-chromium-linux.png`]: PNG });
+  const app = tree({
+    "src/settings/Choice.stories.tsx": "",
+    [`${SHOT}-webkit-linux.png`]: PNG,
+  });
+  assert.deepEqual(take(drawn, app, LIMITS, { partial: true }), {
+    taken: [`${SHOT}-chromium-linux.png`],
+    removed: [],
+    unchanged: [],
+  });
+  assert.deepEqual(readFileSync(join(app, `${SHOT}-chromium-linux.png`)), PNG);
+  assert.deepEqual(readFileSync(join(app, `${SHOT}-webkit-linux.png`)), PNG);
+  // The whole take of the same pictures deletes the one it was not given.
+  assert.deepEqual(take(drawn, app).removed, [`${SHOT}-webkit-linux.png`]);
 });
 
 test("take refuses anything that is not a baseline, and writes nothing", () => {
