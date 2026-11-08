@@ -8,7 +8,7 @@ values. Session records are summaries, not transcripts, so no prompt is quoted w
 filed miss Report replaces a plausible phrasing through a reviewed change.
 
 Trigger bar: standard
-Neighbours: purlis-smart-close, purlis-safe-remove
+Neighbours: purlis-smart-close, purlis-safe-remove, purlis-remember
 
 ## Should start purlis-tidy-memory
 
@@ -56,6 +56,6 @@ Neighbours: purlis-smart-close, purlis-safe-remove
 39. plausible phrasing a person types: "archive" elsewhere.
 40. plausible phrasing a person types: "tidy" on a file.
 41. plausible phrasing a person types: unrelated.
-42. plausible phrasing a person types: a fact to record, not a tidy.
+42. Near miss (purlis-remember): a fact to record, not a tidy (decisions.md of spec #5714 Q29).
 43. plausible phrasing a person types: "merge" in git.
 44. plausible phrasing a person types: "delete" in a repo.

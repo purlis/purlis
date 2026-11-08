@@ -38,16 +38,9 @@ Done when every memory, every open todo and every repo with unpushed work has a 
 ## 2. Promote
 
 A **durable learning** is one that is still true and still useful after the subject is gone: a
-decision and its reason, a gotcha, a verified fact about a system. Write each where it will be
-found. In a chat purlis started, the `persona_remember` tool writes to this chat's own persona,
-or with `shared` to every persona; the command names a persona:
-
-```bash
-purlis persona remember <persona> --shared "<fact>"   # every persona needs it
-purlis persona remember <persona> "<fact>"            # one persona owns the domain
-```
-
-or the plane's docs, when it describes the plane itself. A todo that still matters moves to the
+decision and its reason, a gotcha, a verified fact about a system. Write each where the
+`purlis-remember` skill says a fact goes, or into the plane's docs when it describes the plane
+itself. A todo that still matters moves to the
 workspace that will do it (`purlis ws todo -w <other> "<text>"`). A repo's unpushed work is
 the person's call: name it and ask.
 

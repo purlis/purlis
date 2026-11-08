@@ -1316,3 +1316,137 @@ fn the_briefing_and_every_tool_description_use_the_glossary_s_words() {
         .collect();
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));
 }
+
+// ---- where a fact goes, said once ----------------------------------------------------- //
+
+/// **The skill that holds the rule for where a fact goes** (#5733, spec #5714's Q29): workspace
+/// memory, the workspace's charter, persona memory or shared memory. Written there once; every
+/// other text a chat is told points to it rather than saying it again, so the rule cannot drift
+/// into four versions.
+const REMEMBER: &str = "purlis-remember";
+
+/// The texts that used to restate the rule, each of which now points to [`REMEMBER`].
+const POINT_TO_REMEMBER: [&str; 4] = [
+    "purlis-persona",
+    "purlis-safe-remove",
+    "purlis-smart-close",
+    "purlis-tidy-memory",
+];
+
+/// Each base a fact can be written to that `text` names a way to write to: the tool or command
+/// that records a fact there. A text naming two or more is choosing between them, which is the
+/// rule; one naming one is only using it.
+fn bases_written(text: &str) -> BTreeSet<&'static str> {
+    let commands: Vec<String> = code(text)
+        .iter()
+        .flat_map(|code| code.lines().map(str::to_owned).collect::<Vec<_>>())
+        .collect();
+    // A command shown recording a fact: its words and a quoted argument. One named in passing,
+    // as the secrets skill names the commands that persist prose, records nothing.
+    let said = |words: &'static str| {
+        commands
+            .iter()
+            .filter(move |line| line.contains(words) && line.contains('"'))
+    };
+    let prose = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    // Each sentence that names the `persona_remember` tool, and whether it gives it `shared`.
+    let persona_tool: Vec<bool> = prose
+        .match_indices("`persona_remember`")
+        .map(|(at, _)| {
+            prose[at..]
+                .split(". ")
+                .next()
+                .unwrap_or("")
+                .contains("`shared`")
+        })
+        .collect();
+    let mut bases = BTreeSet::new();
+    if prose.contains("`memory_add`") || said("purlis workspace remember").next().is_some() {
+        bases.insert("workspace memory");
+    }
+    if prose.contains("`workspace_section`") || prose.contains("`workspace_vision`") {
+        bases.insert("the workspace's charter");
+    }
+    if persona_tool.iter().any(|shared| !shared)
+        || said("purlis persona remember").any(|line| !line.contains("--shared"))
+    {
+        bases.insert("persona memory");
+    }
+    if persona_tool.iter().any(|shared| *shared)
+        || said("purlis persona remember").any(|line| line.contains("--shared"))
+    {
+        bases.insert("shared memory");
+    }
+    bases
+}
+
+#[test]
+fn the_rule_for_where_a_fact_goes_is_written_once_and_the_rest_point_to_it() {
+    let skills = shipped();
+    let remember = skills
+        .iter()
+        .find(|skill| skill.name == REMEMBER)
+        .unwrap_or_else(|| panic!("purlis ships no `{REMEMBER}`"));
+    assert_eq!(
+        bases_written(&remember.page).len(),
+        4,
+        "{REMEMBER} names a way to write to only {:?}",
+        bases_written(&remember.page)
+    );
+    let mut wrong = Vec::new();
+    for skill in skills.iter().filter(|skill| skill.name != REMEMBER) {
+        let bases = bases_written(&skill.page);
+        if bases.len() > 1 {
+            wrong.push(format!(
+                "{} says where a fact goes ({}) — point to {REMEMBER} instead",
+                skill.name,
+                bases.into_iter().collect::<Vec<_>>().join(", ")
+            ));
+        }
+    }
+    for name in POINT_TO_REMEMBER {
+        let skill = skills
+            .iter()
+            .find(|skill| skill.name == name)
+            .unwrap_or_else(|| panic!("purlis ships no `{name}`"));
+        if !skills_named(&skill.page).iter().any(|n| n == REMEMBER) {
+            wrong.push(format!("{name} does not point to {REMEMBER}"));
+        }
+    }
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
+
+#[test]
+fn a_text_naming_ways_to_write_to_two_bases_is_choosing_between_them() {
+    let one = |text: &str| bases_written(text).into_iter().collect::<Vec<_>>();
+    assert_eq!(
+        one("record it with the `memory_add` tool"),
+        ["workspace memory"]
+    );
+    assert_eq!(
+        one("add it with `workspace_section`, or a goal with `workspace_vision`"),
+        ["the workspace's charter"]
+    );
+    assert_eq!(
+        one("the `persona_remember` tool with `shared`, to every persona"),
+        ["shared memory"]
+    );
+    assert_eq!(
+        one("```bash\npurlis persona remember <persona> --shared \"<fact>\"\n```"),
+        ["shared memory"]
+    );
+    assert_eq!(
+        one("record with the `persona_remember` tool. The workspace's own takes `memory_add`."),
+        ["persona memory", "workspace memory"]
+    );
+    assert_eq!(
+        one("escape a backtick in `purlis persona remember <persona>` and `note`"),
+        Vec::<&str>::new(),
+        "a command named in passing records no fact"
+    );
+    assert_eq!(
+        one("purlis persona edit-memory <name> <slug> --shared"),
+        Vec::<&str>::new(),
+        "curating a memory writes no fact"
+    );
+}

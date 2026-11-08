@@ -2091,3 +2091,18 @@ fn the_gate_takes_the_most_recently_used_workspaces_from_the_index_where_there_i
         got[0]
     );
 }
+
+#[test]
+fn the_memory_block_points_to_purlis_remember_for_where_a_fact_goes_and_says_no_rule_itself() {
+    let block = memory_block("newest shown", "steward", &["- [A fact](a.md)".to_owned()]);
+    assert!(block.contains("`purlis recall \"<keywords>\"`"), "{block}");
+    assert!(block.contains("the `purlis-remember` skill"), "{block}");
+    for restated in [
+        "persona_remember",
+        "persona remember",
+        "--shared",
+        "memory_add",
+    ] {
+        assert!(!block.contains(restated), "{restated} in {block}");
+    }
+}

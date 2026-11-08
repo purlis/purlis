@@ -101,4 +101,5 @@ const STANDARD: &[&str] = &[
     "purlis-repo-work",
     "purlis-curation-action",
     "purlis-skill-studio",
+    "purlis-remember",
 ];

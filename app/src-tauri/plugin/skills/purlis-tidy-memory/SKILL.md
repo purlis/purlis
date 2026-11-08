@@ -1,6 +1,6 @@
 ---
 name: purlis-tidy-memory
-description: When a purlis workspace's or persona's memory has grown duplicates and stale entries, find them with purlis's optimize and dedupe reports, prune only with the person's yes, and fold lasting lessons into workspace.md or persona.md. Use when asked to tidy, compact, dedupe, prune, clean up or improve a workspace's, a persona's or shared memory, or to archive, move, restore or forget a memory. Not for writing the session record of a chat that is ending — that is purlis-smart-close. Not for removing a workspace or a persona — that is purlis-safe-remove.
+description: When a purlis workspace's or persona's memory has grown duplicates and stale entries, find them with purlis's optimize and dedupe reports, prune only with the person's yes, and fold lasting lessons into workspace.md or persona.md. Use when asked to tidy, compact, dedupe, prune, clean up or improve a workspace's, a persona's or shared memory, or to archive, move, restore or forget a memory. Not for writing the session record of a chat that is ending — that is purlis-smart-close. Not for removing a workspace or a persona — that is purlis-safe-remove. Not for recording a new fact or todo — that is purlis-remember.
 ---
 
 # Compact & improve
@@ -49,7 +49,8 @@ An edit keeps the memory's slug and date. An archive moves it to `memory/archive
 list, and `unarchive` / `unarchive-memory` puts it back. `workspace forget` and `persona forget`
 delete for good; keep them for a memory that must not survive, such as one holding a secret.
 A memory in the wrong scope, such as a workspace lesson every persona should know, is moved, not
-copied: the move keeps its title and date and prints the command that moves it back.
+copied: the move keeps its title and date and prints the command that moves it back. Which scope
+is right is the rule the `purlis-remember` skill holds.
 
 Done when every finding is applied, merged, kept on purpose, or declined by the person.
 

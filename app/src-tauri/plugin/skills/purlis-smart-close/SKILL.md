@@ -24,21 +24,15 @@ each of the five in a few lines.
 
 ## 2. Fold what lasts into workspace.md
 
-In a workspace, purlis writes its `workspace.md` for this chat; a sandboxed chat is refused the
-file itself. Move what should outlive this chat into the section it belongs to, with
-purlis's tools:
-
-- a decision every later chat should act on, and why → the `workspace_section` tool with section
-  `decisions` (`## Context & decisions`);
-- a term this work coined → `workspace_section` with section `glossary` (`## Glossary`);
-- a changed goal → the `workspace_vision` tool, which replaces `## Vision`.
-
-Each `workspace_section` call adds one entry and keeps what is there. A harness without purlis's
-tools sets the goal with `purlis workspace vision "<the goal>"`. Leave `## Sessions` alone; that
-line is purlis's. At the plane root there is no `workspace.md`; a
-lesson for every persona goes to the `persona_remember` tool with `shared`, or to
-`purlis persona remember <persona> --shared "<fact>"` with this chat's own persona. Done when
-each lasting decision, term or goal change is in its section, or there was none.
+Put what should outlive this chat where the `purlis-remember` skill says a fact goes: that
+skill holds the rule, so load it if this chat has not. In a workspace, most of it is the
+charter. purlis writes its `workspace.md` for this chat, since a sandboxed chat is refused the
+file itself: a lasting decision through the `workspace_section` tool with section `decisions`,
+a term this work coined with section `glossary`, a changed goal through the `workspace_vision`
+tool. Each `workspace_section` call adds one entry and keeps what is there. A harness without
+purlis's tools sets the goal with `purlis workspace vision "<the goal>"`. Leave `## Sessions`
+alone; that line is purlis's. Done when each lasting decision, term, goal change or lesson is
+where that rule puts it, or there was none.
 
 ## 3. Write the record
 
