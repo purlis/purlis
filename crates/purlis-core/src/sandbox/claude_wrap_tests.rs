@@ -430,6 +430,42 @@ fn its_config_folder_is_written_only_where_a_turn_writes_at_either_level() {
     }
 }
 
+/// Below `plugins/data`, the one place under `plugins` a turn writes, what the floor holds by name
+/// everywhere stays held: the allow that lets a plugin's data be written gives back no planted
+/// name, no project's state folder and no link.
+#[test]
+fn below_a_plugin_s_data_folder_every_planted_name_stays_held_at_either_level() {
+    for manifest in [FULL, FLOOR] {
+        let place = place(manifest, true);
+        let home = place.home.join("work");
+        let applied = started(&place, &home);
+        let cwd = super::real(place.plane.path());
+        let tmp = place.home.join("tmp");
+        let socket = place.home.join("run/hooks.sock");
+        let profile = profile_of(&wrap_of(&applied), &cwd, &tmp, &socket);
+        let data = home.join("plugins/data/x");
+        assert!(writes(&profile, &data.join("one")), "{manifest}");
+        for held in [
+            ".git/hooks/pre-commit",
+            ".git/config",
+            ".envrc",
+            ".mcp.json",
+            ".claude/settings.json",
+            ".purlis/app/x",
+        ] {
+            assert!(!writes(&profile, &data.join(held)), "{manifest}: {held}");
+        }
+        assert!(
+            !profile.allows(&Op::File {
+                what: FileOp::Create,
+                path: &data.join("link"),
+                kind: Kind::Symlink,
+            }),
+            "{manifest}"
+        );
+    }
+}
+
 #[test]
 fn another_profile_s_folder_is_neither_read_nor_written() {
     for manifest in [FULL, FLOOR] {

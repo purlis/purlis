@@ -352,10 +352,15 @@ fn own(wrap: &Wrap) -> Result<Own, &'static str> {
     }
     // The floor holds `.claude/plugins` by name wherever it is, which a home of that name is.
     if wrap.level == super::Level::Floor {
+        let data = home.join("plugins/data");
         own.after.push(format!(
-            "(allow file-write* (regex {}))",
+            "(allow file-write* (require-all (regex {}) (require-not (vnode-type SYMLINK))))",
             string(&under(home, "plugins/data/.+"))?
         ));
+        // What the floor holds by name everywhere stays held below it: the allow gives back a
+        // plugin's data, never a planted name, a project's state folder or a manifest there.
+        own.after.extend(seatbelt::planted_rules(&data)?);
+        own.after.extend(seatbelt::every_project_rules()?);
         // And still no link made there, after the allow that would let one through.
         own.after.push(format!(
             "(deny file-write-create (require-all (vnode-type SYMLINK) (subpath {})))",
