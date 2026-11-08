@@ -245,6 +245,9 @@ add or change one:
      the checked-out head's own code, so take another person's pull request's baselines only in
      a checkout you would run anyway. It reads `purlis/purlis` unless `--repo` names another,
      never `gh`'s default repository, which in a fork's clone is the fork.
+     It needs `curl` and `unzip`: it fetches the artifact with `curl`, resuming a download that
+     breaks off and saying its size and where it stopped, and takes a path the artifact holds
+     twice when the copies are the same, refusing it by name when they differ.
    - **The `update-baselines` label**: `.github/workflows/stories-baselines.yml` waits for the
      head's `stories` run, takes its `story-baselines` with the base branch's own copy of
      `tools/story-baselines.mjs`, pushes them to the branch as one commit, takes the label off
