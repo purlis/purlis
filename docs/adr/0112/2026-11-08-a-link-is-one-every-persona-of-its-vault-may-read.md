@@ -20,4 +20,4 @@ The rule is judged at the press, and only there. A link made before this ruling 
 and so does one made before a persona later came to use its vault: by a tag, an Allow (a refused
 vault's, or Always allow's), or a policy lock lifted. That persona's declared tool still reads
 through it. Judging those too, as the grant is given or as a declared tool reads, is a ruling of
-its own, left to a follow-up of #5745.
+its own: #5795.
