@@ -42,7 +42,7 @@ fn every_bundled_skill_is_read_with_its_name_description_and_file() {
         .unwrap();
     assert!(
         safe.description
-            .starts_with("Remove a purlis workspace or persona")
+            .starts_with("When the person wants a purlis workspace or persona gone")
     );
     assert_eq!(safe.path, bundled().join("purlis-safe-remove/SKILL.md"));
 }

@@ -205,11 +205,13 @@ pub fn built_in_names(dir: Option<&Path>) -> Vec<String> {
 /// **The skills purlis ships**, by name: the bundle's `plugin/skills/<name>/SKILL.md`, each
 /// folder named as its skill (held to that folder by a test). Compiled in, for the doctor's check
 /// of a project keeping its own copy of one.
-pub const SHIPPED: [&str; 14] = [
+pub const SHIPPED: [&str; 17] = [
     "purlis-browser",
     "purlis-building-ui",
+    "purlis-change",
     "purlis-curation-action",
     "purlis-handoff",
+    "purlis-permissions",
     "purlis-persona",
     "purlis-remember",
     "purlis-repo-work",
@@ -220,6 +222,7 @@ pub const SHIPPED: [&str; 14] = [
     "purlis-theme",
     "purlis-tidy-memory",
     "purlis-upgrade",
+    "purlis-workspace",
 ];
 
 /// **What a skill that would take a name of purlis's own is refused with** (spec #3679 S12, ADR
