@@ -6431,11 +6431,16 @@ export const PlaneView = memo(function PlaneView({
   const makeWorkspace = useCallback(
     async (name: string, vision: string, live: boolean, repos: string[]) => {
       setBusyMaking(true);
+      // **Made here, so pinned** from before it is made (#1926): its folder is on disk before
+      // `workspace_create` answers, and the watcher's read of the plane may land first. A
+      // refused make lets it go again.
+      setMadePins((was) => (was.includes(name) ? was : [...was, name]));
       const answer = await commands
         .workspaceCreate(plane, name, vision.trim() === "" ? null : vision, live)
         .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
       setBusyMaking(false);
       if (answer.status === "error") {
+        setMadePins((was) => was.filter((one) => one !== name));
         setWorkspaceTrouble(answer.error);
         return;
       }
@@ -6443,11 +6448,9 @@ export const PlaneView = memo(function PlaneView({
       setWorkspaceTrouble(undefined);
       forgetEndedClones(plane, name);
       // **Made here, so pinned** (ADR 0054): the operator made it in order to work in it, and
-      // the workspace strip draws what is pinned. Counted pinned from now, before the store
-      // answers, so a read of the plane that lands first never draws it unpinned (#1926). A pin
-      // the store refused leaves the workspace made and says why, beside what charter said
-      // about making it.
-      setMadePins((was) => (was.includes(name) ? was : [...was, name]));
+      // the workspace strip draws what is pinned, and has counted it pinned since the make was
+      // asked for (above). A pin the store refused leaves the workspace made and says why,
+      // beside what charter said about making it.
       const pinned = await pinWorkspace(name, true);
       // Said in the app's own words, hung from the new workspace's chip (#3648); the core's
       // lines, where it landed and whether it is LOCAL or LIVE, are kept behind Details, less
