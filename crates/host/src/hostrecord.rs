@@ -79,6 +79,10 @@ pub struct Started {
     /// wrote.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sandbox: Option<purlis_session_protocol::session::RunSandbox>,
+    /// Whether what it started outside its process group ends with it (#5749): a chat's
+    /// harness, and not a person's own shell. Absent, and so not, in a line an older host wrote.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub ends_strays: bool,
 }
 
 /// **This boot of the machine**, where the system names it: Linux's `boot_id`, new at every
@@ -366,6 +370,7 @@ mod tests {
             process_started: Some("12345".to_owned()),
             boot: Some("a boot".to_owned()),
             sandbox: None,
+            ends_strays: false,
         }
     }
 

@@ -224,6 +224,8 @@ fn left_in(process: u32, started: Option<String>, boot: Option<String>) -> Start
         process_started: started,
         boot,
         sandbox: None,
+        // A chat's harness, whose strays end with it (#5749).
+        ends_strays: true,
     }
 }
 

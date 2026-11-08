@@ -62,6 +62,10 @@ pub struct Spec {
     /// them. Each, and the folder it is in, is made a folder itself: one that cannot be, or that
     /// is a link, refuses the start before anything runs, and nothing is written through it.
     pub holds: Vec<PathBuf>,
+    /// **What the program starts outside its process group ends with it** (#5749): a chat's
+    /// harness, whose background shells lead sessions of their own. Not a person's own shell,
+    /// where `nohup` or `setsid` is how a job is meant to outlive its tab.
+    pub ends_what_left_its_group: bool,
 }
 
 impl Spec {
@@ -75,6 +79,7 @@ impl Spec {
             env_clear: false,
             size,
             holds: Vec::new(),
+            ends_what_left_its_group: false,
         }
     }
 
@@ -400,7 +405,7 @@ impl Session {
             .map_err(|err| spawn_error(err.to_string()))?;
         // Only the program may hold the terminal's other end, or the reader never sees it close.
         drop(pair.slave);
-        let child = Arc::new(Mutex::new(Held::of(child)));
+        let child = Arc::new(Mutex::new(Held::of(child, spec.ends_what_left_its_group)));
         let notes = match holds::write_all(holds, lock(&child).process_id()) {
             Ok(notes) => notes,
             Err(why) => {
@@ -726,13 +731,16 @@ struct Held {
     child: Box<dyn Child + Send + Sync>,
     /// Whether the program has been waited for, after which its id is no longer its own.
     waited_for: bool,
+    /// [`Spec::ends_what_left_its_group`].
+    ends_strays: bool,
 }
 
 impl Held {
-    fn of(child: Box<dyn Child + Send + Sync>) -> Self {
+    fn of(child: Box<dyn Child + Send + Sync>, ends_strays: bool) -> Self {
         Self {
             child,
             waited_for: false,
+            ends_strays,
         }
     }
 
@@ -929,17 +937,18 @@ fn end(child: &Mutex<Held>) {
 }
 
 /// What the program, while it still runs, has started outside its process group (#5749):
-/// nothing, once it has ended.
+/// nothing, once it has ended, or where its spec does not ask. Read with the program let go
+/// of, so nothing that asks after it waits on the listing.
 #[cfg(unix)]
 fn strays(child: &Mutex<Held>) -> crate::process::Strays {
-    let mut child = lock(child);
-    if !matches!(child.try_wait(), Ok(None)) {
-        return crate::process::Strays::default();
-    }
-    child
-        .process_id()
-        .map(crate::process::Strays::of)
-        .unwrap_or_default()
+    let leader = {
+        let mut child = lock(child);
+        if !child.ends_strays || !matches!(child.try_wait(), Ok(None)) {
+            return crate::process::Strays::default();
+        }
+        child.process_id()
+    };
+    leader.map(crate::process::Strays::of).unwrap_or_default()
 }
 
 /// [`end`], with `strays` read before anything was signalled.
@@ -961,6 +970,10 @@ fn end_with(child: &Mutex<Held>, strays: &crate::process::Strays) {
         .flatten();
     if running && group.is_none() {
         let _ = child.kill();
+        if strays.is_empty() {
+            let _ = child.wait();
+            return;
+        }
     }
     if let Some(group) = group {
         let _ = kill_process_group(group, Signal::HUP);
@@ -2078,10 +2091,24 @@ mod tests {
     /// background shell, after `before`, and stays; and that `sleep`'s pid, with a guard that
     /// ends it whatever the test does.
     fn a_program_with_a_shell_of_its_own(before: &str) -> (Session, u32, stand_in::Ends) {
-        let session = sh(&format!(
-            "{before}perl -e 'use POSIX (); POSIX::setsid(); exec @ARGV or die' sleep 600 \
+        a_program_with_a_shell_of_its_own_ending_it(before, true)
+    }
+
+    /// [`a_program_with_a_shell_of_its_own`], whose spec says whether its strays end with it.
+    fn a_program_with_a_shell_of_its_own_ending_it(
+        before: &str,
+        ends_strays: bool,
+    ) -> (Session, u32, stand_in::Ends) {
+        let mut spec = Spec::new("/bin/sh", SIZE).args([
+            "-c",
+            &format!(
+                "{before}perl -e 'use POSIX (); POSIX::setsid(); exec @ARGV or die' sleep 600 \
              </dev/null >/dev/null 2>&1 & echo \"shell $!\"; while :; do sleep 600 & wait; done"
-        ));
+            ),
+        ]);
+        spec.ends_what_left_its_group = ends_strays;
+        let session = Session::spawn(spec, Box::new(AlacrittyEngine::new(SIZE, 1000)))
+            .expect("the session starts");
         let screen = screen_until(&session, shows("shell "));
         let shell: u32 = screen
             .lines
@@ -2125,6 +2152,17 @@ mod tests {
         session.stopper().stop();
 
         assert!(gone_soon(shell), "its shell {shell} outlived the stop");
+    }
+
+    #[test]
+    fn a_person_s_own_shell_leaves_what_it_started_in_a_session_of_its_own_running() {
+        // `setsid` and `nohup` are how a job is meant to outlive a terminal tab; only a chat's
+        // harness asks for its strays to end with it.
+        let (session, shell, _ends) = a_program_with_a_shell_of_its_own_ending_it("", false);
+
+        session.end();
+
+        assert!(alive(shell), "its shell {shell} was ended with the tab");
     }
 
     #[test]

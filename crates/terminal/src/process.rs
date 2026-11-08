@@ -104,19 +104,20 @@ pub fn wait_for_group_to_go(leader: rustix::process::Pid, until: std::time::Inst
 /// it, it does not outlive the chat as an orphan nobody sees.
 ///
 /// Read once, before the first signal, because a process whose parent has gone is handed to
-/// the system's first process and is nobody's descendant after. Signalled within the end's
-/// grace of being read, while the system would have to hand out every other process id before
-/// one of these came round again.
+/// the system's first process and is nobody's descendant after. Each is signalled only while
+/// the processes listed then still hold its id under the start they were read with, so an id
+/// handed to another process meanwhile is left alone.
 #[cfg(unix)]
 #[derive(Debug, Default)]
 pub struct Strays(Vec<Stray>);
 
-/// One of [`Strays`]: its process, and whether it leads a group of its own, which is then
-/// ended with it.
-#[cfg(unix)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// One of [`Strays`]: its process, when it started, and whether it leads a group of its own,
+/// which is then ended with it.
+#[cfg(any(unix, test))]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct Stray {
     pid: u32,
+    started: String,
     leads: bool,
 }
 
@@ -145,7 +146,14 @@ impl Strays {
 
     fn signal(&self, signal: rustix::process::Signal) {
         use rustix::process::{Pid, kill_process, kill_process_group};
-        for stray in &self.0 {
+        if self.0.is_empty() {
+            return;
+        }
+        let now = listed();
+        for stray in self.0.iter().filter(|stray| {
+            now.iter()
+                .any(|row| row.pid == stray.pid && row.started == stray.started)
+        }) {
             let Some(pid) = i32::try_from(stray.pid)
                 .ok()
                 .filter(|raw| *raw > 1)
@@ -161,13 +169,15 @@ impl Strays {
     }
 }
 
-/// One process as the system lists it: its id, its parent's and its group's.
+/// One process as the system lists it: its id, its parent's and its group's, and when it
+/// started, in whichever words the system lists that.
 #[cfg(any(unix, test))]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct Listed {
     pid: u32,
     parent: u32,
     group: u32,
+    started: String,
 }
 
 /// The descendants of `leader` in `table` that are not in `leader`'s group, by process id.
@@ -180,7 +190,7 @@ fn strays_in(table: &[Listed], leader: u32) -> Vec<Stray> {
             .iter()
             .filter(|row| row.parent == parent && row.pid != leader)
         {
-            if descendants.insert(child.pid, *child).is_none() {
+            if descendants.insert(child.pid, child.clone()).is_none() {
                 parents.push(child.pid);
             }
         }
@@ -191,6 +201,7 @@ fn strays_in(table: &[Listed], leader: u32) -> Vec<Stray> {
         .map(|row| Stray {
             pid: row.pid,
             leads: row.group == row.pid,
+            started: row.started,
         })
         .collect()
 }
@@ -212,7 +223,7 @@ fn listed() -> Vec<Listed> {
 }
 
 /// Process `pid` as its `/proc/<pid>/stat` line says, unless it has exited. The fields are read
-/// after the name's last `)`: state, parent, group.
+/// after the name's last `)`: state, parent, group, and, seventeen on, its start.
 #[cfg(any(target_os = "linux", test))]
 fn listed_in_stat(pid: u32, stat: &str) -> Option<Listed> {
     let (_, rest) = stat.rsplit_once(')')?;
@@ -221,10 +232,14 @@ fn listed_in_stat(pid: u32, stat: &str) -> Option<Listed> {
     if matches!(state, "Z" | "X") {
         return None;
     }
+    let parent = fields.next()?.parse().ok()?;
+    let group = fields.next()?.parse().ok()?;
+    let started = fields.nth(16)?.to_owned();
     Some(Listed {
         pid,
-        parent: fields.next()?.parse().ok()?,
-        group: fields.next()?.parse().ok()?,
+        parent,
+        group,
+        started,
     })
 }
 
@@ -233,7 +248,9 @@ fn listed_in_stat(pid: u32, stat: &str) -> Option<Listed> {
 #[cfg(all(unix, not(target_os = "linux")))]
 fn listed() -> Vec<Listed> {
     let mut ps = std::process::Command::new("/bin/ps");
-    ps.args(["-A", "-o", "pid=", "-o", "ppid=", "-o", "pgid="]);
+    ps.args([
+        "-A", "-o", "pid=", "-o", "ppid=", "-o", "pgid=", "-o", "lstart=",
+    ]);
     crate::forklock::output(&mut ps)
         .ok()
         .filter(|out| out.status.success())
@@ -241,21 +258,23 @@ fn listed() -> Vec<Listed> {
         .unwrap_or_default()
 }
 
-/// The rows of `ps -o pid= -o ppid= -o pgid=`; a line that is not three numbers is passed over.
+/// The rows of `ps -o pid= -o ppid= -o pgid= -o lstart=`: three numbers, then the start in
+/// words. A line that is not that is passed over.
 #[cfg(any(all(unix, not(target_os = "linux")), test))]
 fn listed_by_ps(text: &str) -> Vec<Listed> {
     text.lines()
         .filter_map(|line| {
-            let mut numbers = line.split_ascii_whitespace().map(str::parse);
-            let (Some(Ok(pid)), Some(Ok(parent)), Some(Ok(group)), None) = (
-                numbers.next(),
-                numbers.next(),
-                numbers.next(),
-                numbers.next(),
-            ) else {
-                return None;
-            };
-            Some(Listed { pid, parent, group })
+            let mut words = line.split_ascii_whitespace();
+            let pid = words.next()?.parse().ok()?;
+            let parent = words.next()?.parse().ok()?;
+            let group = words.next()?.parse().ok()?;
+            let started = words.collect::<Vec<_>>().join(" ");
+            (!started.is_empty()).then_some(Listed {
+                pid,
+                parent,
+                group,
+                started,
+            })
         })
         .collect()
 }

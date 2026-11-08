@@ -1305,6 +1305,7 @@ fn a_shell_a_chat_started_in_a_session_of_its_own_ends_when_the_next_host_settle
         process_started: purlis_same_user::Parents::started(program),
         boot: purlis_host::this_boot(),
         sandbox: None,
+        ends_strays: true,
     });
 
     assert!(

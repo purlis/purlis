@@ -73,9 +73,23 @@ fn a_process_record_is_read_past_a_name_that_holds_spaces_and_parentheses() {
     assert!(!in_group_and_running("77 (git)", "77"));
 }
 
-/// One row of a process table: `(pid, parent, group)`.
+/// One row of a process table: `(pid, parent, group)`, started at a time of its own.
 fn row(pid: u32, parent: u32, group: u32) -> Listed {
-    Listed { pid, parent, group }
+    Listed {
+        pid,
+        parent,
+        group,
+        started: format!("start of {pid}"),
+    }
+}
+
+/// [`Stray`] `pid`, started as [`row`] says.
+fn stray(pid: u32, leads: bool) -> Stray {
+    Stray {
+        pid,
+        started: format!("start of {pid}"),
+        leads,
+    }
 }
 
 #[test]
@@ -98,20 +112,7 @@ fn what_a_program_started_in_a_group_of_its_own_is_a_stray_and_its_own_group_is_
 
     assert_eq!(
         strays,
-        [
-            Stray {
-                pid: 200,
-                leads: true
-            },
-            Stray {
-                pid: 201,
-                leads: false
-            },
-            Stray {
-                pid: 300,
-                leads: true
-            },
-        ]
+        [stray(200, true), stray(201, false), stray(300, true)]
     );
 }
 
@@ -129,27 +130,40 @@ fn a_table_that_says_a_process_is_its_own_ancestor_is_walked_once() {
     // ancestor's parent must not loop.
     let table = [row(100, 1, 100), row(200, 100, 200), row(100, 200, 100)];
 
-    assert_eq!(
-        strays_in(&table, 100),
-        [Stray {
-            pid: 200,
-            leads: true
-        }]
-    );
+    assert_eq!(strays_in(&table, 100), [stray(200, true)]);
 }
 
 #[test]
-fn a_ps_listing_and_a_proc_stat_line_read_as_rows() {
+fn a_ps_listing_and_a_proc_stat_line_read_as_rows_with_their_start() {
+    let at = |pid, parent, group, started: &str| Listed {
+        pid,
+        parent,
+        group,
+        started: started.to_owned(),
+    };
     assert_eq!(
-        listed_by_ps("  100     1   100\n  200   100   200\nnot a row\n"),
-        [row(100, 1, 100), row(200, 100, 200)]
+        listed_by_ps(
+            "  100     1   100 Sun Nov  8 09:17:34 2026\n  200   100   200 Sun Nov  8 09:18:01 2026\n\
+             not a row\n  300   1   300\n"
+        ),
+        [
+            at(100, 1, 100, "Sun Nov 8 09:17:34 2026"),
+            at(200, 100, 200, "Sun Nov 8 09:18:01 2026"),
+        ],
+        "a row with no start is passed over"
     );
     assert_eq!(
-        listed_in_stat(201, "201 (sleep (a) b) S 200 200 1 0 -1 4194304"),
-        Some(row(201, 200, 200))
+        listed_in_stat(
+            201,
+            "201 (sleep (a) b) S 200 200 1 0 -1 4194304 90 0 0 0 0 0 0 0 20 0 1 0 8812345 1 2"
+        ),
+        Some(at(201, 200, 200, "8812345"))
     );
     assert_eq!(
-        listed_in_stat(77, "77 (git) Z 1 77 77 0"),
+        listed_in_stat(
+            77,
+            "77 (git) Z 1 77 77 0 -1 4194304 90 0 0 0 0 0 0 0 20 0 1 0 5 1 2"
+        ),
         None,
         "an exited one"
     );

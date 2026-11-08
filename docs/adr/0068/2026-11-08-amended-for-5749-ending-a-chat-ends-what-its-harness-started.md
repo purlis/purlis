@@ -7,12 +7,17 @@ background shell is not in the harness's group. Quitting, restarting, stopping o
 a crash ended the harness and left the shell running as an orphan. The scenarios in
 `app/src-tauri/src/handoff/tests/across_restart.rs` showed it.
 
-1. **What the program started outside its group ends with it.** When a terminal's program is
+1. **What a chat's harness started outside its group ends with it.** When a chat's program is
    ended while it still runs (a close, a quit, a restart's end of the old run, a stop), and when
    the next host settles a program the last one left (§4 of the 2026-10-16 amendment), the
    program's descendants that are in another process group are read first. Each one, and the
    group of each one that leads a group, is hung up together with the program's group and killed
-   with it. These are `purlis_terminal::process::Strays`.
+   with it. These are `purlis_terminal::process::Strays`. Each one is signalled only while the
+   process list still shows its id with the start time it was read with. An id that has gone to
+   another process in the meantime is left alone. A person's own shell tab is not a chat's
+   harness: `nohup` and `setsid` are how a job there is meant to outlive the tab, so its spec does
+   not ask for this (`Spec::ends_what_left_its_group`). The host record keeps the answer for the
+   crash path as `ends_strays`.
 2. **They are read before the first signal.** A process whose parent has gone is handed to the
    system's first process and is no longer anyone's descendant. A stop reads them before its
    interrupt, because a harness that leaves on the interrupt hands them over at once.
