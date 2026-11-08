@@ -103,7 +103,5 @@ const STANDARD: &[&str] = &[
     "purlis-repo-work",
     "purlis-curation-action",
     "purlis-skill-studio",
+    "purlis-change",
 ];
-
-/// The built-ins spec #5714 holds to the standard bar (decision Q3) that carry tests so far.
-const STANDARD: &[&str] = &["purlis-change"];
