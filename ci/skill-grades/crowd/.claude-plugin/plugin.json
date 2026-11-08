@@ -1,0 +1,4 @@
+{
+  "name": "crowd",
+  "description": "The crowd fixture of the CI grader (spec #5714): about forty synthetic skills written for purlis, modelled on commonly installed kinds, near-duplicates included. No third-party text. Never shipped."
+}

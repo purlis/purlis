@@ -969,19 +969,15 @@ fn a_repo_or_harness_skill_of_a_built_in_skills_name_loads_beside_it_and_is_a_cl
 fn a_built_in_skill_named_with_either_prefix_is_the_built_in_one_and_a_missing_one_says_so() {
     let plane = Plane::new();
     let built_in = plane.root.join("../plugin/skills");
-    skill(
-        &built_in,
-        "purlis-working-in-a-clone",
-        &whole("purlis-working-in-a-clone"),
-    );
+    skill(&built_in, "purlis-repo-work", &whole("purlis-repo-work"));
 
     let set = plane.as_persona(
         None,
         "steward",
         &[
-            "charter:working-in-a-clone",
-            "purlis:working-in-a-clone",
-            "purlis:purlis-working-in-a-clone",
+            "charter:repo-work",
+            "purlis:repo-work",
+            "purlis:purlis-repo-work",
             "purlis:gone",
         ],
         Some(&built_in),
@@ -990,7 +986,7 @@ fn a_built_in_skill_named_with_either_prefix_is_the_built_in_one_and_a_missing_o
 
     assert_eq!(
         effective(&set),
-        [("purlis-working-in-a-clone", Origin::BuiltIn, false)]
+        [("purlis-repo-work", Origin::BuiltIn, false)]
     );
     assert_eq!(
         left_out(&set),
@@ -1942,4 +1938,204 @@ fn each_levels_word_reads_back_as_its_origin() {
         assert_eq!(Origin::from_level(origin.level()), Some(origin));
     }
     assert_eq!(Origin::from_level("local project"), None);
+}
+
+// ---- duplicate copies (#5737) ---------------------------------------------------------------
+
+/// A copy from outside the plane of the skill `name`, whose folder is `folder`.
+fn copy_at(folder: &Path, name: &str, origin: Origin, owner: Owner) -> OutsideSkill {
+    OutsideSkill {
+        skill: Skill {
+            name: name.to_owned(),
+            description: format!("Does {name}."),
+            path: folder.join(FILE),
+        },
+        root: folder.to_path_buf(),
+        origin,
+        id: name.to_owned(),
+        owner,
+        switch: Switch::Alone,
+        off: false,
+        unread: None,
+    }
+}
+
+/// The person's own skills folder beside `plane`, with `name` in it holding `text`.
+fn own_copy(plane: &Plane, name: &str, text: &str) -> OutsideSkill {
+    let own = plane.root.parent().unwrap().join("own-skills");
+    skill(&own, name, text);
+    copy_at(&own.join(name), name, Origin::Harness, Owner::You)
+}
+
+#[test]
+fn a_plane_skill_identical_to_the_persons_own_copy_takes_one_slot_and_says_which_copy_loads() {
+    let plane = Plane::new();
+    skill(&plane.project(), "tdd", &whole("tdd"));
+    std::fs::write(plane.project().join("tdd/steps.md"), "red, green\n").unwrap();
+    let own = own_copy(&plane, "tdd", &whole("tdd"));
+    std::fs::write(own.root.join("steps.md"), "red, green\n").unwrap();
+
+    let set = plane.set(None).with_copies_of([&own]);
+
+    assert_eq!(set.from_the_plane().count(), 0, "one copy reaches the chat");
+    assert_eq!(
+        left_out(&set),
+        [(
+            "tdd",
+            Origin::Project,
+            false,
+            "identical to your own copy, which loads in its place".to_owned()
+        )]
+    );
+    assert_eq!(set.clashes, [], "an identical pair is no clash");
+}
+
+#[test]
+fn same_named_copies_whose_content_differs_both_load_and_are_named_as_a_pair() {
+    let plane = Plane::new();
+    skill(&plane.workspace("smart-ide"), "tdd", &whole("tdd"));
+    let own = own_copy(&plane, "tdd", &whole("tdd"));
+    std::fs::write(own.root.join("steps.md"), "red, green\n").unwrap();
+
+    let set = plane.set(Some("smart-ide")).with_copies_of([&own]);
+
+    assert_eq!(
+        effective(&set),
+        [("tdd", Origin::Workspace, false)],
+        "purlis never picks a winner"
+    );
+    assert_eq!(
+        set.clashes,
+        [Clash {
+            name: "tdd".to_owned(),
+            plane: At {
+                origin: Origin::Workspace,
+                local: false
+            },
+            outside: Origin::Harness,
+            owner: Owner::You,
+            outcome: Outcome::BothLoad,
+        }]
+    );
+}
+
+#[test]
+fn a_pair_already_marked_beside_the_set_is_marked_once() {
+    let plane = Plane::new();
+    skill(&plane.project(), "tdd", &whole("tdd"));
+    let own = own_copy(&plane, "tdd", "---\nname: tdd\ndescription: Mine.\n---\n");
+
+    let set = plane
+        .set(None)
+        .with_outside(Route::Plugin, [own.clone()])
+        .with_copies_of([&own]);
+
+    assert_eq!(set.clashes.len(), 1);
+}
+
+#[test]
+fn an_identical_repo_copy_on_a_plugin_route_takes_the_plane_copys_slot_and_is_no_clash() {
+    let plane = Plane::new();
+    skill(&plane.workspace("smart-ide"), "review", &whole("review"));
+    let clone = plane.root.parent().unwrap().join("api/.claude/skills");
+    skill(&clone, "review", &whole("review"));
+    let theirs = copy_at(&clone.join("review"), "review", Origin::Repo, repo("api"));
+
+    let set = plane
+        .set(Some("smart-ide"))
+        .with_outside(Route::Plugin, [theirs.clone()])
+        .with_copies_of([&theirs]);
+
+    assert_eq!(effective(&set), [("review", Origin::Repo, false)]);
+    assert_eq!(
+        left_out(&set)[0].3,
+        "identical to the copy in the repo api, which loads in its place"
+    );
+    assert_eq!(set.clashes, []);
+}
+
+#[test]
+fn a_built_in_skill_is_never_left_out_for_an_identical_copy() {
+    let plane = Plane::new();
+    let built_in = plane.root.parent().unwrap().join("bundle/skills");
+    skill(&built_in, "purlis-secrets", &whole("purlis-secrets"));
+    let own = own_copy(&plane, "purlis-secrets", &whole("purlis-secrets"));
+
+    let set = built_in_set(&plane, &built_in, Route::Plugin).with_copies_of([&own]);
+
+    assert!(
+        set.effective
+            .iter()
+            .any(|e| e.skill.name == "purlis-secrets" && e.origin == Origin::BuiltIn)
+    );
+    assert!(set.left_out.is_empty(), "{:?}", set.left_out);
+}
+
+#[test]
+fn the_narrowest_plane_copy_still_hides_the_wider_ones_when_it_is_identical_to_an_outside_copy() {
+    let plane = Plane::new();
+    skill(
+        &plane.project(),
+        "tdd",
+        "---\nname: tdd\ndescription: Wide.\n---\n",
+    );
+    plane.grant("tdd", "grant = \"all\"\n");
+    skill(&plane.workspace("smart-ide"), "tdd", &whole("tdd"));
+    let own = own_copy(&plane, "tdd", &whole("tdd"));
+
+    let set = plane.set(Some("smart-ide")).with_copies_of([&own]);
+
+    assert_eq!(set.from_the_plane().count(), 0);
+    assert_eq!(
+        left_out(&set),
+        [
+            (
+                "tdd",
+                Origin::Project,
+                false,
+                "hidden by the workspace skill of this name".to_owned()
+            ),
+            (
+                "tdd",
+                Origin::Workspace,
+                false,
+                "identical to your own copy, which loads in its place".to_owned()
+            ),
+        ]
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_copy_holding_a_link_is_never_read_as_identical() {
+    let plane = Plane::new();
+    skill(&plane.project(), "tdd", &whole("tdd"));
+    std::fs::write(plane.project().join("tdd/steps.md"), "red, green\n").unwrap();
+    let own = own_copy(&plane, "tdd", &whole("tdd"));
+    std::os::unix::fs::symlink(
+        plane.project().join("tdd/steps.md"),
+        own.root.join("steps.md"),
+    )
+    .unwrap();
+
+    let set = plane.set(None).with_copies_of([&own]);
+
+    assert_eq!(set.from_the_plane().count(), 1);
+    assert_eq!(set.clashes.len(), 1);
+}
+
+#[test]
+fn a_copy_turned_off_or_unread_is_no_copy_of_anything() {
+    let plane = Plane::new();
+    skill(&plane.project(), "tdd", &whole("tdd"));
+    let mut off = own_copy(&plane, "tdd", &whole("tdd"));
+    off.off = true;
+    let mut unread = off.clone();
+    unread.off = false;
+    unread.unread = Some(Unread::Refused);
+
+    let set = plane.set(None).with_copies_of([&off, &unread]);
+
+    assert_eq!(set.from_the_plane().count(), 1);
+    assert_eq!(set.clashes, []);
 }

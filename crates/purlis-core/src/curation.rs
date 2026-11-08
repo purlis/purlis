@@ -262,19 +262,19 @@ pub const BUILTINS: [Builtin; 4] = [
     Builtin {
         id: "compact",
         label: "Compact & improve",
-        skill: "purlis-compact",
+        skill: "purlis-tidy-memory",
         on: &[Kind::Workspace, Kind::Persona],
         at_plane_root: false,
-        template: "Use the purlis-compact skill to compact and improve the {subject.kind} {subject.name}.",
+        template: "Use the purlis-tidy-memory skill to compact and improve the {subject.kind} {subject.name}.",
         job: "compact and improve the {subject.kind} {subject.name}",
     },
     Builtin {
         id: "add-curation-action",
         label: "Add curation action",
-        skill: "purlis-add-curation-action",
+        skill: "purlis-curation-action",
         on: &[Kind::Persona],
         at_plane_root: false,
-        template: "Use the purlis-add-curation-action skill to add a curation action to the persona \
+        template: "Use the purlis-curation-action skill to add a curation action to the persona \
                    {subject.name}.",
         job: "add a curation action to the persona {subject.name}",
     },
@@ -627,7 +627,11 @@ pub fn lint(root: &Path, persona: &str) -> Vec<Issue> {
             let unreadable = parsed
                 .action
                 .as_ref()
-                .map(|action| drawn_as_a_placeholder(root, action))
+                .map(|action| {
+                    let mut issues = old_skill_names(action);
+                    issues.extend(drawn_as_a_placeholder(root, action));
+                    issues
+                })
                 .unwrap_or_default();
             parsed
                 .issues
@@ -637,6 +641,22 @@ pub fn lint(root: &Path, persona: &str) -> Vec<Issue> {
                     level: issue.level,
                     message: format!("curation/{id}.md: {}", issue.message),
                 })
+        })
+        .collect()
+}
+
+/// **A warning for each built-in skill `action`'s prompt names by a name it had before a
+/// rename** (#5724): its chat would ask for a skill no harness knows by that name, as the old
+/// names have no stubs.
+fn old_skill_names(action: &Declared) -> Vec<Issue> {
+    purlis_skills::old_names_in(&action.template)
+        .into_iter()
+        .map(|(old, new)| Issue {
+            level: Level::Warn,
+            message: format!(
+                "the prompt names {old}, which is {new} now; no harness knows the old name, so \
+                 write the new one"
+            ),
         })
         .collect()
 }
