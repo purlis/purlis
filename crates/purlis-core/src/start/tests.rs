@@ -128,13 +128,33 @@ fn on_a_runner_a_claude_code_chat_starts_only_wrapped_and_says_so() {
         profile_refusal(Some(Harness::ClaudeCode), "claude", false, false, false),
         None
     );
-    // Codex and opencode on a runner keep their own rules.
+}
+
+#[test]
+fn on_a_runner_no_chat_of_any_harness_starts_without_the_sandbox() {
+    // Ruled 2026-11-08: every harness on a runner, a declared one with no adapter too, starts
+    // inside purlis's sandbox or not at all. The runner's mark stays as a backstop.
+    for (harness, name) in [
+        (Some(Harness::Codex), "codex"),
+        (Some(Harness::Opencode), "opencode"),
+        (Some(Harness::ClaudeCode), "claude"),
+    ] {
+        let refused = profile_refusal(harness, name, false, false, true).expect("refused");
+        assert!(refused.contains("on a runner"), "{refused}");
+        assert!(refused.contains("nothing was started"), "{refused}");
+        assert!(refused.contains("Start it sandboxed"), "{refused}");
+        assert_eq!(profile_refusal(harness, name, false, false, false), None);
+    }
+    // A sandboxed Codex chat keeps its own rule there; a sandboxed opencode chat starts.
     assert_eq!(
-        profile_refusal(Some(Harness::Codex), "codex", false, false, true),
+        profile_refusal(Some(Harness::Opencode), "opencode", false, true, true),
         None
     );
-    assert_eq!(
-        profile_refusal(Some(Harness::Opencode), "opencode", false, false, true),
-        None
-    );
+    // A declared harness has no adapter, so no sandbox: it never starts on a runner, and the
+    // refusal says where it can run instead of asking for a sandbox it cannot have.
+    let declared = profile_refusal(None, "aider", false, false, true).expect("refused");
+    assert!(declared.contains("on a runner"), "{declared}");
+    assert!(declared.contains("cannot sandbox"), "{declared}");
+    assert!(!declared.contains("Start it sandboxed"), "{declared}");
+    assert_eq!(profile_refusal(None, "aider", false, false, false), None);
 }

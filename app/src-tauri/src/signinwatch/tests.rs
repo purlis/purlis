@@ -46,6 +46,82 @@ fn an_ended_watch_lets_go_only_the_asks_it_speaks_for() {
     assert_eq!(asks_go(Watch::SignedIn, false), AsksGo::Everywhere);
     assert_eq!(asks_go(Watch::ShellsClosed, true), AsksGo::InTheProject);
     assert_eq!(asks_go(Watch::ShellsClosed, false), AsksGo::None);
+    // A sign-out lets none go: the profile is signed out, and the Asks say so.
+    assert_eq!(asks_go(Watch::SignedOut, true), AsksGo::None);
+    assert_eq!(asks_go(Watch::SignedOut, false), AsksGo::None);
+}
+
+/// **A sign-out that began ends the watch at its next look**, before the harness is asked
+/// (ruled 2026-11-08): what it would say may be the sign-in the person is signing out.
+#[test]
+fn a_sign_out_ends_the_watch_before_the_harness_is_asked() {
+    let asked = std::cell::Cell::new(0);
+    let (ended, _) = watched_until(
+        NO_WAIT,
+        || true,
+        || {
+            asked.set(asked.get() + 1);
+            true
+        },
+        || true,
+    );
+    assert_eq!(ended, Watch::SignedOut);
+    assert_eq!(asked.get(), 0);
+}
+
+/// **A watcher that began before a sign-out lifts no hold** (ruled 2026-11-08): the lift and the
+/// sign-out's hold are taken under one lock, so a drain never carries what the person signed out.
+/// One that began after it lifts as before, and another pool or profile is not held to it.
+#[test]
+fn a_watcher_that_began_before_a_sign_out_lifts_no_hold() {
+    let (pool, name) = ("lifts-pool", "lifts-work");
+    let began = sign_outs(|counts| sign_outs_of(counts, Some(pool), name));
+    let held = std::cell::Cell::new(false);
+    signing_out(pool, name, || held.set(true));
+    assert!(held.get(), "the hold ran");
+
+    let lifted = std::cell::Cell::new(false);
+    assert!(!lifted_unless_signed_out(pool, name, began, || lifted.set(true)));
+    assert!(!lifted.get());
+
+    let since = sign_outs(|counts| sign_outs_of(counts, Some(pool), name));
+    assert!(lifted_unless_signed_out(pool, name, since, || lifted.set(true)));
+    assert!(lifted.get());
+
+    let other = sign_outs(|counts| sign_outs_of(counts, Some("lifts-other"), name));
+    assert!(lifted_unless_signed_out("lifts-other", name, other, || ()));
+}
+
+/// **A sign-out gives up every claim of its pool and profile**, in every project, so a Sign in
+/// after it has a watcher of its own; another pool's, profile's or this machine's stay.
+#[test]
+fn a_sign_out_gives_up_every_claim_of_its_pool_and_profile() {
+    let key = |project: usize, pool: Option<&str>, name: &str| {
+        (project, pool.map(str::to_owned), name.to_owned())
+    };
+    let (pool, name) = ("claims-pool", "claims-work");
+    let ours = [key(1, Some(pool), name), key(2, Some(pool), name)];
+    let others = [
+        key(1, Some("claims-other"), name),
+        key(1, Some(pool), "claims-home"),
+        key(1, None, name),
+    ];
+    watched_now(|watched| {
+        for (session, one) in ours.iter().chain(&others).enumerate() {
+            claimed(watched, one, u32::try_from(session).unwrap());
+        }
+    });
+
+    signing_out(pool, name, || ());
+
+    watched_now(|watched| {
+        for one in &ours {
+            assert!(!watched.contains_key(one), "{one:?}");
+        }
+        for one in &others {
+            assert!(watched.remove(one).is_some(), "{one:?}");
+        }
+    });
 }
 
 const NO_WAIT: Pace = Pace {
@@ -60,6 +136,7 @@ fn watched_over(said: &[bool], closes_at: usize) -> (Watch, usize) {
     let asked = std::cell::Cell::new(0);
     let (ended, _) = watched_until(
         NO_WAIT,
+        || false,
         || {
             asked.set(asked.get() + 1);
             said[(asked.get() - 1).min(said.len() - 1)]
@@ -108,6 +185,7 @@ fn past_its_time_a_watch_asks_rarely_and_still_sees_the_shell_close() {
             for_: Duration::ZERO,
             later_every: Duration::from_secs(3600),
         },
+        || false,
         || {
             asked.set(asked.get() + 1);
             false
@@ -134,6 +212,7 @@ fn a_watch_says_when_it_last_saw_a_shell_open() {
     let (ended, last_open) = watched_until(
         NO_WAIT,
         || false,
+        || false,
         || {
             looks.set(looks.get() + 1);
             if looks.get() < 3 {
@@ -155,7 +234,7 @@ fn a_watch_says_when_it_last_saw_a_shell_open() {
 fn a_shell_closed_at_the_first_look_was_last_seen_as_the_watch_began() {
     let before = Instant::now();
 
-    let (_, last_open) = watched_until(NO_WAIT, || false, || false);
+    let (_, last_open) = watched_until(NO_WAIT, || false, || false, || false);
 
     assert!(last_open >= before);
     assert!(last_open <= Instant::now());

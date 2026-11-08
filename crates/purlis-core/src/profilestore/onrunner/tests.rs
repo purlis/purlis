@@ -220,8 +220,15 @@ fn a_settings_folder_reached_through_a_linked_folder_above_it_is_not_cleared() {
         rest: Default::default(),
     };
 
-    assert!(super::super::made::loaded_unsent_cleared(&record).is_err());
+    let refused = super::super::made::loaded_unsent_cleared(&record).expect_err("refused");
     assert!(elsewhere.join("opencode/plugin/kept.ts").exists());
+    // It names the linked folder, and what to do (ruled 2026-11-08).
+    assert!(
+        refused.contains(&record.folders.config.display().to_string()),
+        "{refused}"
+    );
+    assert!(refused.contains("is a link"), "{refused}");
+    assert!(refused.contains("keep the profile again"), "{refused}");
 }
 
 /// A desktop's Claude Code folder, adopted in place there as `claude` and pinned.
@@ -2650,6 +2657,56 @@ fn a_server_taken_out_on_the_desktop_goes_from_the_runner() {
         serde_json::from_str(&fs::read_to_string(&there).unwrap()).unwrap();
     assert_eq!(doc["mcpServers"], serde_json::json!({}));
     assert_eq!(doc["hasCompletedOnboarding"], true);
+}
+
+/// **A keep takes every project's own MCP servers out of the runner's state file** (ruled
+/// 2026-11-08): a chat may have added one to its folder's entry, which a later chat there would
+/// start. What else a project's entry holds stays, and so does a keep that sends no servers.
+#[test]
+fn a_keep_takes_out_the_mcp_servers_a_chat_added_to_a_project() {
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_desktop_profile_with_settings(dir.path());
+    let state = desktop.folders.config.join(".claude.json");
+    fs::write(&state, r#"{"mcpServers":{"docs":{"command":"npx"}}}"#).unwrap();
+    let runner = homes(dir.path(), "runner");
+    let keep = |kept: Kept| in_batches(&kept).unwrap();
+    let with_servers = || Kept::of(&desktop).unwrap().with_settings_of(&desktop);
+    let record = kept_staged(&runner, dir.path(), keep(with_servers())).expect("it is kept");
+    let there = record.folders.config.join(".claude.json");
+    let planted = || {
+        let mut doc: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&there).unwrap()).unwrap();
+        doc["projects"] = serde_json::json!({
+            "/work/a": {"hasTrustDialogAccepted": true, "mcpServers": {"x": {"command": "planted"}}},
+            "/work/b": {"mcpServers": {}},
+        });
+        fs::write(&there, doc.to_string()).unwrap();
+    };
+    let read = || -> serde_json::Value {
+        serde_json::from_str(&fs::read_to_string(&there).unwrap()).unwrap()
+    };
+
+    planted();
+    kept_staged(&runner, dir.path(), keep(with_servers())).expect("it is kept again");
+    let doc = read();
+    assert_eq!(doc["projects"]["/work/a"].get("mcpServers"), None, "{doc}");
+    assert_eq!(doc["projects"]["/work/b"].get("mcpServers"), None, "{doc}");
+    assert_eq!(doc["projects"]["/work/a"]["hasTrustDialogAccepted"], true);
+    assert_eq!(doc["mcpServers"]["docs"]["command"], "npx");
+
+    planted();
+    kept_staged(
+        &runner,
+        dir.path(),
+        keep(with_servers().with_no_mcp_servers()),
+    )
+    .expect("kept by a desktop that sends no servers");
+    let doc = read();
+    assert_eq!(doc["projects"]["/work/a"].get("mcpServers"), None, "{doc}");
+    assert_eq!(
+        doc["mcpServers"]["docs"]["command"], "npx",
+        "user scope stays"
+    );
 }
 
 /// **A runner before 1.66 is sent no such file**, which it would refuse with all the settings.

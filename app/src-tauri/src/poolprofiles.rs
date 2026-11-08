@@ -1629,14 +1629,17 @@ pub fn sign_out_line(pool: &str, name: &str) -> Result<String, String> {
     onrunner::Kept::of(&record)?;
     let runner = this_desktops_runner(&config, pool)?;
     let line = crate::runnerlinks::docker()?.sign_out_line(&runner.made, &engine, name)?;
-    // A sign-in open on it would say signed in over this sign-out, so it ends first.
-    stop_those(
-        |one| one.pool == pool && one.name == name,
-        "the sign-in was stopped, as a sign-out of this profile started.",
-    );
-    // The running runner too: a follow while the line waits makes it one that drains.
-    purlis_core::runners::hold_every_runner_from_carrying(&config, pool, name)
-        .map_err(|why| why.to_string())?;
+    // A sign-in open on it would say signed in over this sign-out, so it ends first, and so does
+    // every watcher of a sign-in in a shell, none of which lifts this hold (ruled 2026-11-08).
+    crate::signinwatch::signing_out(pool, name, || {
+        stop_those(
+            |one| one.pool == pool && one.name == name,
+            "the sign-in was stopped, as a sign-out of this profile started.",
+        );
+        // The running runner too: a follow while the line waits makes it one that drains.
+        purlis_core::runners::hold_every_runner_from_carrying(&config, pool, name)
+            .map_err(|why| why.to_string())
+    })?;
     Ok(line)
 }
 
@@ -2149,6 +2152,8 @@ pub async fn pool_sign_out(pool: String, name: String) -> Result<Option<String>,
         let yours = yours(&config, &pool)?;
         let record = record_named(&config, &name)?;
         let kept = onrunner::Kept::of(&record)?;
+        // A watcher of a sign-in in a shell ends: the profile is being signed out.
+        crate::signinwatch::signing_out(&pool, &name, || ());
         let mut draining = Vec::new();
         match &yours {
             Yours::Docker(_) => {
@@ -2367,6 +2372,7 @@ pub fn watched_sign_in(pool: String, name: String) -> Option<crate::signinwatch:
         .and_then(|record| onrunner::Kept::of(&record).ok())?;
     let asked = pool.clone();
     let (config_there, pool_there, name_there) = (config.clone(), pool.clone(), name.clone());
+    let (pool_again, name_again) = (pool.clone(), name.clone());
     Some(crate::signinwatch::SignIn {
         pool: Some(pool.clone()),
         name: name.clone(),
@@ -2390,6 +2396,9 @@ pub fn watched_sign_in(pool: String, name: String) -> Option<crate::signinwatch:
                 Vec::new()
             }
         }),
+        // Signed in in a shell, as by the driven sign-in: a drain carries it again (ruled
+        // 2026-11-08), unless a sign-out began since the watch did.
+        carries_again: Box::new(move || carries_again_after_a_sign_in(&pool_again, &name_again)),
     })
 }
 

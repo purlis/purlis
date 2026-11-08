@@ -983,19 +983,20 @@ pub fn kept_for_the_desktop(
 }
 
 /// Puts the MCP servers among `files`, kept for `record`, into its state file, where only purlis
-/// writes it (#3846). None sent leaves them as they are.
+/// writes it (#3846), and takes out every project's own (ruled 2026-11-08). None sent leaves the
+/// user-scope ones as they are.
 fn keep_mcp_servers_of(record: &MachineProfile, files: &[(String, Vec<u8>)]) {
+    if record.harness != "claude" {
+        return;
+    }
     let servers = files
         .iter()
         .find(|(path, _)| path == super::sent::MCP_SERVERS_FILE)
-        .filter(|_| record.harness == "claude")
         .and_then(|(_, bytes)| serde_json::from_slice::<serde_json::Value>(bytes).ok());
-    if let Some(servers) = servers.as_ref().and_then(|doc| doc.get("mcpServers")) {
-        crate::sandbox::claude_wrap::keep_mcp_servers(
-            &super::sent::claude_state_file(record),
-            servers,
-        );
-    }
+    crate::sandbox::claude_wrap::keep_mcp_servers(
+        &super::sent::claude_state_file(record),
+        servers.as_ref().and_then(|doc| doc.get("mcpServers")),
+    );
 }
 
 /// **The name of each profile this runner, with `homes` its store, keeps for the desktop

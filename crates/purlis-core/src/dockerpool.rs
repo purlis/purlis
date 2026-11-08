@@ -885,6 +885,33 @@ impl Made {
         self.exec(&["--version"])
     }
 
+    /// **`docker`'s arguments that ask this runner's image its `purlis` version** (ruled
+    /// 2026-11-08): a container of the image pinned by digest, removed once it ends, with no
+    /// network, no capability and nothing writable, so what a chat changed in the runner's own
+    /// container never answers for it, and it answers where that container is gone.
+    pub fn image_version_args(&self) -> Vec<String> {
+        [
+            "run",
+            "--rm",
+            "--network",
+            "none",
+            "--user",
+            &self.runner.user.spelled(),
+            "--cap-drop",
+            "ALL",
+            "--security-opt",
+            "no-new-privileges",
+            "--read-only",
+            "--entrypoint",
+            PURLIS,
+            self.runner.image.as_str(),
+            "--version",
+        ]
+        .iter()
+        .map(|word| (*word).to_owned())
+        .collect()
+    }
+
     /// **The name of the container that carries sign-ins to this runner** (#4011): its own
     /// container's, with `-copy`, so what a carry that stopped short left is found with this
     /// runner's ([`Docker::remove_leftovers_of`], [`Docker::copy_profiles`]).
@@ -3339,6 +3366,19 @@ impl Docker {
         version_in(&out).map(str::to_owned).ok_or_else(|| {
             refused(format!(
                 "runner {}'s purlis did not say its version as purlis does: {:?}",
+                made.runner.name(),
+                out.trim()
+            ))
+        })
+    }
+
+    /// **The `purlis` version `made`'s image holds** ([`Made::image_version_args`]), as its
+    /// `purlis --version` says it.
+    pub fn image_version_of(&self, made: &Made) -> Result<String, Refused> {
+        let out = self.read(&made.image_version_args(), crate::runnerlink::MOST_LINE)?;
+        version_in(&out).map(str::to_owned).ok_or_else(|| {
+            refused(format!(
+                "runner {}'s image did not say its purlis version as purlis does: {:?}",
                 made.runner.name(),
                 out.trim()
             ))

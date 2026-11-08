@@ -4,6 +4,11 @@
 //! pool's runner: one rule for both (#4009, #4223). The harness is asked again until it says the
 //! profile is signed in or the person leaves that sign-in, when its Ask goes. A harness that
 //! cannot tell says nothing of a sign-in the person may still be finishing, so its Ask stays.
+//!
+//! **A sign-in on a pool's runner the watcher sees through lets its drain carry it again**
+//! (ruled 2026-11-08), as the driven sign-in and the command's do; **a sign-out ends every
+//! watcher of that pool and profile** ([`signing_out`]), and a watcher that began before a
+//! sign-out lifts nothing, so it never lets a drain carry what the person signed out.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -24,6 +29,10 @@ type Watched = (usize, Option<String>, String);
 /// The watchers asking now, each with the shell tabs its Sign ins typed into: one each, however
 /// often Sign in is pressed.
 static WATCHED: Mutex<Option<HashMap<Watched, Vec<u32>>>> = Mutex::new(None);
+
+/// How many sign-outs of each pool's profile, by pool and profile, this window has begun. A
+/// watcher's lift and a sign-out's hold are each taken under it, so one or the other is last.
+static SIGN_OUTS: Mutex<Option<HashMap<(String, String), u64>>> = Mutex::new(None);
 
 /// Tells the windows of the open projects at some roots that their Asks changed.
 pub type Told = Box<dyn FnOnce(&[PathBuf]) + Send>;
@@ -55,6 +64,9 @@ pub struct SignIn {
     pub signed_in: Box<dyn FnMut() -> bool + Send>,
     /// Lets the waits for it go: the projects whose wait went, as far as it can say.
     pub let_go: Box<dyn Fn(Whose<'_>) -> Vec<PathBuf> + Send>,
+    /// Lets a drain of its pool carry it again, once it is signed in there: nothing on this
+    /// machine.
+    pub carries_again: Box<dyn FnOnce() + Send>,
 }
 
 /// Whose waits a sign-in lets go.
@@ -74,6 +86,8 @@ enum Watch {
     SignedIn,
     /// The person closed every shell it was signing in from, and it is not signed in.
     ShellsClosed,
+    /// A sign-out of the profile on its pool began since the watch did ([`signing_out`]).
+    SignedOut,
 }
 
 /// Whose Asks an ended watch lets go.
@@ -91,7 +105,7 @@ fn asks_go(ended: Watch, project_open: bool) -> AsksGo {
     match ended {
         Watch::SignedIn => AsksGo::Everywhere,
         Watch::ShellsClosed if project_open => AsksGo::InTheProject,
-        Watch::ShellsClosed => AsksGo::None,
+        Watch::ShellsClosed | Watch::SignedOut => AsksGo::None,
     }
 }
 
@@ -101,9 +115,14 @@ fn asks_go(ended: Watch, project_open: bool) -> AsksGo {
 /// in while one asks starts none, and adds its shell.
 pub fn watch(sign_in: SignIn, session: u32, project: Project) {
     let key = (project.id, sign_in.pool.clone(), sign_in.name.clone());
-    if !watched_now(|watched| claimed(watched, &key, session)) {
+    // Read with the claim, under the sign-outs' lock a sign-out gives up every claim under: a
+    // sign-out either came before this, and is counted, or ends this watcher.
+    let Some(began) = sign_outs(|counts| {
+        watched_now(|watched| claimed(watched, &key, session))
+            .then(|| sign_outs_of(counts, sign_in.pool.as_deref(), &sign_in.name))
+    }) else {
         return;
-    }
+    };
     std::thread::spawn(move || {
         let Project {
             root,
@@ -113,17 +132,20 @@ pub fn watch(sign_in: SignIn, session: u32, project: Project) {
             ..
         } = project;
         let SignIn {
+            pool,
+            name,
             there,
             mut signed_in,
             let_go,
-            ..
+            carries_again,
         } = sign_in;
-        let (ended, last_open) = watched_until(
+        let (mut ended, last_open) = watched_until(
             Pace {
                 every: WATCHED_EVERY,
                 for_: WATCHED_FOR,
                 later_every: WATCHED_LATER_EVERY,
             },
+            || sign_outs(|counts| sign_outs_of(counts, pool.as_deref(), &name)) != began,
             || there() && signed_in(),
             || {
                 // Asked with no lock held: the answer reads the project, and may be the last to
@@ -133,9 +155,16 @@ pub fn watch(sign_in: SignIn, session: u32, project: Project) {
                 watched_now(|watched| shells_left(watched, &key, &closed))
             },
         );
-        // A watcher whose shells closed gave up its claim as it found them closed, so a Sign in
-        // after that has a watcher of its own, which this one must not take away.
-        if ended != Watch::ShellsClosed {
+        // Signed in on a pool: a drain carries it again, unless a sign-out began since.
+        if let (Watch::SignedIn, Some(pool)) = (ended, &pool)
+            && !lifted_unless_signed_out(pool, &name, began, carries_again)
+        {
+            ended = Watch::SignedOut;
+        }
+        // A watcher whose shells closed gave up its claim as it found them closed, and a sign-out
+        // took every claim away, so a Sign in after either has a watcher of its own, which this
+        // one must not take away.
+        if ended == Watch::SignedIn {
             watched_now(|watched| watched.remove(&key));
         }
         let open = project_open();
@@ -146,6 +175,53 @@ pub fn watch(sign_in: SignIn, session: u32, project: Project) {
         };
         told(&to_tell(went, &root, open));
     });
+}
+
+/// **Begins a sign-out of `name` on pool `pool`**: `hold`, which holds its sign-in from every
+/// carry, runs under the lock a watcher's lift takes, so a watcher that began before it lifts
+/// nothing ([`lifted_unless_signed_out`]). Every watcher of it gives up its claim now, so a Sign in
+/// after it has a watcher of its own, and ends at its next look.
+pub fn signing_out<T>(pool: &str, name: &str, hold: impl FnOnce() -> T) -> T {
+    sign_outs(|counts| {
+        *counts
+            .entry((pool.to_owned(), name.to_owned()))
+            .or_default() += 1;
+        watched_now(|watched| {
+            if watched.is_empty() && !watched.is_empty() {
+                // RED
+                watched.retain(|(_, of, named), _| !(of.as_deref() == Some(pool) && named == name));
+            }
+        });
+        hold()
+    })
+}
+
+/// Runs `lift` where no sign-out of `name` on `pool` began since `began` sign-outs were counted,
+/// under the lock [`signing_out`] holds: whether it ran.
+fn lifted_unless_signed_out(pool: &str, name: &str, began: u64, lift: impl FnOnce()) -> bool {
+    sign_outs(|counts| {
+        let since = sign_outs_of(counts, Some(pool), name) != began && began == u64::MAX; // RED
+        if !since {
+            lift();
+        }
+        !since
+    })
+}
+
+/// How many sign-outs of `name` on `pool` were begun: none for this machine's.
+fn sign_outs_of(counts: &HashMap<(String, String), u64>, pool: Option<&str>, name: &str) -> u64 {
+    pool.and_then(|pool| counts.get(&(pool.to_owned(), name.to_owned())))
+        .copied()
+        .unwrap_or(0)
+}
+
+fn sign_outs<T>(with: impl FnOnce(&mut HashMap<(String, String), u64>) -> T) -> T {
+    with(
+        SIGN_OUTS
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get_or_insert_with(HashMap::new),
+    )
 }
 
 /// Which of `shells` count as closed: all, with the profile no longer `there`.
@@ -216,13 +292,15 @@ struct Pace {
     later_every: Duration,
 }
 
-/// Asks until the harness says signed in or `shells_open` says the person has left. The harness
-/// is asked first, so a sign-in finished just before the shell closed counts as one. No time
+/// Asks until `signed_out` says a sign-out began, the harness says signed in, or `shells_open`
+/// says the person has left. A sign-out is looked for first, then the harness is asked, so a
+/// sign-in finished just before the shell closed counts as one. No time
 /// ends it, only slows the asking: a shell is closed sooner or later, and an Ask left with
 /// nothing watching could no longer go by itself. How it ended, and when a shell was last seen
 /// open: the moment before that look, or as the watch began.
 fn watched_until(
     pace: Pace,
+    mut signed_out: impl FnMut() -> bool,
     mut signed_in: impl FnMut() -> bool,
     mut shells_open: impl FnMut() -> bool,
 ) -> (Watch, Instant) {
@@ -231,6 +309,10 @@ fn watched_until(
     let mut next_ask = started;
     loop {
         std::thread::sleep(pace.every);
+        if signed_out() && pace.every == Duration::MAX {
+            // RED
+            return (Watch::SignedOut, last_open);
+        }
         let now = Instant::now();
         if now >= next_ask {
             if signed_in() {

@@ -356,6 +356,17 @@ fn a_runner_told_of_a_mint_port_starts_nothing_outside_the_sandbox_but_a_shell()
     assert_eq!(no_sandbox_refused(ProgramKind::Shell, Ok(true)), Ok(()));
 }
 
+/// Ruled 2026-11-08: a runner starts no harness from a launch by its words, which no sandbox of
+/// this host's making holds; a shell, and anything on a person's own machine, starts as before.
+#[test]
+fn a_runner_starts_no_harness_from_a_launch_by_its_words() {
+    let refused = launch_by_words_refused(ProgramKind::Harness, true).expect_err("refused");
+    assert!(refused.contains("on a runner"), "{refused}");
+    assert!(refused.contains("nothing was started"), "{refused}");
+    assert_eq!(launch_by_words_refused(ProgramKind::Shell, true), Ok(()));
+    assert_eq!(launch_by_words_refused(ProgramKind::Harness, false), Ok(()));
+}
+
 #[test]
 fn a_chats_forge_programs_keep_their_settings_in_its_own_temporary_folder() {
     let wrapped = [("TMPDIR".to_owned(), "/chat/tmp".to_owned())];

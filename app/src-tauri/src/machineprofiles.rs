@@ -424,6 +424,8 @@ fn signing_in_here(profile: purlis_core::profiles::Profile) -> crate::signinwatc
                 Vec::new()
             }
         }),
+        // No drain carries this machine's sign-ins.
+        carries_again: Box::new(|| ()),
     }
 }
 

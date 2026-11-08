@@ -619,6 +619,95 @@ fn a_pool_draining(config: &std::path::Path, fake: &FakeDocker) -> String {
     successor
 }
 
+/// [`a_pool_draining`], its draining runner's row keeping its engine and its home's making, as a
+/// runner made since the mark does.
+fn a_pool_draining_since_the_mark(config: &std::path::Path, fake: &FakeDocker) -> String {
+    fake.set("engine", "engine-a\n");
+    home_prints(fake, HOME_CREATED);
+    a_pool_draining(config, fake)
+}
+
+/// **A runner made before the mark carries nothing** (ruled 2026-11-08): its row keeps no engine
+/// or home, its image's purlis is older than the first a desktop can mark, or that cannot be read.
+#[test]
+fn a_runner_made_before_the_mark_carries_no_sign_ins() {
+    let carried = |set_up: &dyn Fn(&std::path::Path, &FakeDocker)| {
+        let config = tempfile::tempdir().unwrap();
+        let fake = a_docker(&runner_answers());
+        set_up(config.path(), &fake);
+        drain(config.path(), &fake.docker(), "first", None).unwrap();
+        fake.file("log").contains("-copy ")
+    };
+    assert!(
+        carried(&|config, fake| {
+            a_pool_draining_since_the_mark(config, fake);
+        }),
+        "made since the mark, it carries"
+    );
+    assert!(
+        !carried(&|config, fake| {
+            a_pool_draining(config, fake);
+        }),
+        "a row with no engine or home"
+    );
+    assert!(
+        !carried(&|config, fake| {
+            a_pool_draining_since_the_mark(config, fake);
+            fake.set("version", "purlis 0.4.1 (release profile)\n");
+        }),
+        "an image older than the mark"
+    );
+    assert!(
+        !carried(&|config, fake| {
+            a_pool_draining_since_the_mark(config, fake);
+            fake.set("version", "no purlis here\n");
+        }),
+        "an image whose version cannot be read"
+    );
+}
+
+/// **The version is asked of the runner's image, never of its container** (ruled 2026-11-08): a
+/// chat could have changed what the container's purlis says, and nothing changes the image pinned
+/// by its digest.
+#[test]
+fn a_carry_asks_the_runners_image_its_version_and_not_its_container() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_pool_draining_since_the_mark(config.path(), &fake);
+
+    drain(config.path(), &fake.docker(), "first", None).unwrap();
+
+    let log = fake.file("log");
+    let asked = log
+        .lines()
+        .find(|line| line.ends_with(" --version"))
+        .expect("the version was asked");
+    assert!(asked.starts_with("run --rm --network none "), "{asked}");
+    assert!(
+        asked.contains(&format!(
+            "--read-only --entrypoint {} ",
+            crate::dockerpool::PURLIS
+        )),
+        "{asked}"
+    );
+    assert!(
+        !log.contains(&format!(
+            "exec -i --user 10001:10001 {ID} /usr/local/bin/purlis --version"
+        )),
+        "{log}"
+    );
+}
+
+#[test]
+fn the_first_purlis_a_desktop_can_mark_is_0_5_0() {
+    for since in ["0.5.0", "0.5.1", "0.6.0-rc.1", "1.0.0", "0.10.0+build"] {
+        assert!(marked_since(since), "{since}");
+    }
+    for before in ["0.4.1", "0.4.99", "0.5", "", "v0.5.0", "0.5.0.1", "zero"] {
+        assert!(!marked_since(before), "{before}");
+    }
+}
+
 /// **A drained runner is unpaired before its sign-ins are carried** (#4146): nothing can link to
 /// it while they go.
 #[test]
