@@ -1381,6 +1381,52 @@ fn a_harness_settings_file_too_large_to_go_refuses_the_chat() {
     assert!(in_batches(&kept).unwrap_err().said.contains("larger than"));
 }
 
+/// **A harness's own settings file that cannot be read refuses the chat in words**: a link, as a
+/// dotfile manager leaves, or a file with another name on the disk is never read, and sent without
+/// it a runner would drop its copy, so a chat there would start with none of its rules.
+#[test]
+fn a_harness_settings_file_that_cannot_be_read_refuses_the_chat() {
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_desktop_profile_with_settings(dir.path());
+    let config = &desktop.folders.config;
+    let kept = Kept::of(&desktop).unwrap().with_settings_of(&desktop);
+    let real = dir.path().join("dotfiles-settings.json");
+    fs::write(&real, r#"{"permissions":{"deny":["Bash(curl:*)"]}}"#).unwrap();
+    let _ = fs::remove_file(config.join("settings.json"));
+    std::os::unix::fs::symlink(&real, config.join("settings.json")).unwrap();
+
+    let refused = in_batches(&kept).unwrap_err();
+    let older = to_send(&kept).unwrap_err();
+
+    assert!(
+        refused.said.contains("settings.json") && refused.said.contains("a link"),
+        "{}",
+        refused.said
+    );
+    assert!(refused.hits.is_empty());
+    assert!(older.contains("settings.json"), "{older}");
+    fs::remove_file(config.join("settings.json")).unwrap();
+    fs::hard_link(&real, config.join("settings.json")).unwrap();
+    let refused = in_batches(&kept).unwrap_err().said;
+    assert!(refused.contains("another name"), "{refused}");
+}
+
+/// A link elsewhere in the settings, which is not a harness's own settings file, is left out and
+/// said, as before, and the rest goes.
+#[test]
+fn a_link_that_is_not_the_harness_settings_file_is_left_out_and_the_rest_goes() {
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_desktop_profile_with_settings(dir.path());
+    let config = &desktop.folders.config;
+    let real = dir.path().join("elsewhere.md");
+    fs::write(&real, "Elsewhere.").unwrap();
+    std::os::unix::fs::symlink(&real, config.join("agents/linked.md")).unwrap();
+
+    let sent = in_batches(&Kept::of(&desktop).unwrap().with_settings_of(&desktop));
+
+    assert!(sent.is_ok(), "{:?}", sent.err());
+}
+
 /// **What a runner has no use for does not go** (#4081): a skill's `node_modules`, `__pycache__`
 /// and `.git` stay behind unsaid, and what a made profile imports on this machine is not changed.
 #[test]

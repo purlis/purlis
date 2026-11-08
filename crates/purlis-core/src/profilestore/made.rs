@@ -242,6 +242,10 @@ pub struct Copied {
     pub copied: Vec<String>,
     /// Each with why, in a sentence's tail: `"skills/x.md: a link, …"`.
     pub skipped: Vec<String>,
+    /// **The listed files there that were not read**, each as [`Self::skipped`] has it: a link,
+    /// a file with another name on the disk, one that would not open, or something not a file. A
+    /// file that is not there is not among them.
+    pub unread_listed: Vec<String>,
 }
 
 /// A profile made, and what its settings import did.
@@ -850,6 +854,7 @@ fn import_into(
     Ok(Copied {
         copied: Vec::new(),
         skipped: vec!["every settings file: an import needs a Unix system".to_owned()],
+        unread_listed: Vec::new(),
     })
 }
 
@@ -858,6 +863,18 @@ fn import_into(
 struct Place<'a> {
     into: Sink<'a>,
     copied: &'a mut Copied,
+}
+
+#[cfg(unix)]
+impl Place<'_> {
+    /// An entry there that was not read, for `why`: among the listed files left unread too where
+    /// the list names it itself.
+    fn unread(&mut self, why: String, listed: bool) {
+        if listed {
+            self.copied.unread_listed.push(why.clone());
+        }
+        self.copied.skipped.push(why);
+    }
 }
 
 /// Where what an import reads goes: into a profile folder, or kept in memory to be sent to a
@@ -920,6 +937,8 @@ fn entry(
     if enough {
         return Ok(());
     }
+    // A file the list names itself, rather than one in a folder it names.
+    let listed = depth == 0 && !folder_ok;
     let fd = match rustix::fs::openat(
         dir,
         name,
@@ -929,17 +948,20 @@ fn entry(
         Ok(fd) => fd,
         Err(Errno::NOENT) => return Ok(()),
         Err(Errno::LOOP | Errno::MLINK) => {
-            place
-                .copied
-                .skipped
-                .push(format!("{shown}: a link, which an import never follows"));
+            place.unread(
+                format!("{shown}: a link, which an import never follows"),
+                listed,
+            );
             return Ok(());
         }
         Err(e) => {
-            place.copied.skipped.push(format!(
-                "{shown}: not read ({})",
-                crate::rewrite::os_words(&e.into())
-            ));
+            place.unread(
+                format!(
+                    "{shown}: not read ({})",
+                    crate::rewrite::os_words(&e.into())
+                ),
+                listed,
+            );
             return Ok(());
         }
     };
@@ -947,10 +969,10 @@ fn entry(
     let kind = FileType::from_raw_mode(stat.st_mode);
     if kind == FileType::RegularFile {
         if stat.st_nlink > 1 {
-            place
-                .copied
-                .skipped
-                .push(format!("{shown}: a file with another name on this disk"));
+            place.unread(
+                format!("{shown}: a file with another name on this disk"),
+                listed,
+            );
             return Ok(());
         }
         let mut bytes = Vec::new();
@@ -1000,10 +1022,7 @@ fn entry(
         return Ok(());
     }
     if kind != FileType::Directory || !folder_ok {
-        place
-            .copied
-            .skipped
-            .push(format!("{shown}: not a settings file"));
+        place.unread(format!("{shown}: not a settings file"), listed);
         return Ok(());
     }
     if depth >= DEEPEST {
@@ -1081,6 +1100,8 @@ pub struct SettingsRead {
     pub left_behind: Vec<(String, u64)>,
     /// What an import would not copy, each with why (a link, a file named like a credential).
     pub skipped: Vec<String>,
+    /// Those of [`Self::skipped`] that the list names itself ([`Copied::unread_listed`]).
+    pub unread_listed: Vec<String>,
 }
 
 /// **The settings files `kind`'s settings folder `config` holds, as an import reads them**
@@ -1099,7 +1120,7 @@ pub fn settings_read(
 ) -> Result<SettingsRead, String> {
     let mut files = Vec::new();
     let mut left_behind = Vec::new();
-    let skipped = settings_walked(
+    let walked = settings_walked(
         kind,
         config,
         Sink::Memory {
@@ -1114,7 +1135,8 @@ pub fn settings_read(
     Ok(SettingsRead {
         files,
         left_behind,
-        skipped,
+        skipped: walked.skipped,
+        unread_listed: walked.unread_listed,
     })
 }
 
@@ -1137,7 +1159,7 @@ pub fn settings_measured(kind: &str, config: &Path) -> Result<Measured, String> 
 /// Walks `kind`'s settings folder `config` as an import does, into `into`. What it left out, each
 /// with why.
 #[cfg(unix)]
-fn settings_walked(kind: &str, config: &Path, into: Sink<'_>) -> Result<Vec<String>, String> {
+fn settings_walked(kind: &str, config: &Path, into: Sink<'_>) -> Result<Copied, String> {
     use rustix::fs::{Mode, OFlags};
     let (_, allowed) = harness_of(kind)?;
     let from = settings_dest(allowed, config);
@@ -1199,7 +1221,7 @@ fn settings_walked(kind: &str, config: &Path, into: Sink<'_>) -> Result<Vec<Stri
             crate::rewrite::os_words(&e)
         )
     })?;
-    Ok(copied.skipped)
+    Ok(copied)
 }
 
 /// No settings are read where there is no descriptor-relative open to read them with safely.
