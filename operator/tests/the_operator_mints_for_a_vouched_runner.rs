@@ -920,3 +920,216 @@ fn a_pool_naming_a_key_makes_marked_runners_and_nothing_else_is_marked() {
     .expect("a pod");
     assert!(!mint::marked(&wrong), "another container's word is nothing");
 }
+
+const POD_IP: &str = "10.244.0.7";
+
+/// A runner's pod as the operator reads it after a proof: there, holding `key`, made with the mark,
+/// running [`IMAGE`] in every container, at [`POD_IP`] and `fd00::7`.
+fn a_runner_pod(key: &str) -> k8s_openapi::api::core::v1::Pod {
+    use purlis_cluster_operator::upstream::{KEY_STEP, MINTING_MARK, RUNNER_CONTAINER};
+    serde_json::from_value(json!({
+        "metadata": { "name": "work-pod" },
+        "spec": {
+            "initContainers": [{ "name": KEY_STEP, "image": IMAGE }],
+            "containers": [{
+                "name": RUNNER_CONTAINER, "image": IMAGE,
+                "env": [{ "name": MINTING_MARK, "value": "1" }],
+            }],
+        },
+        "status": {
+            "phase": "Running",
+            "podIP": POD_IP,
+            "podIPs": [{ "ip": POD_IP }, { "ip": "fd00::7" }],
+            "initContainerStatuses": [{
+                "name": KEY_STEP,
+                "image": "i", "imageID": "i", "ready": true, "restartCount": 0,
+                "state": { "terminated": { "exitCode": 0, "message": key } },
+            }],
+        },
+    }))
+    .expect("a pod")
+}
+
+fn ip(text: &str) -> std::net::IpAddr {
+    text.parse().expect("an address")
+}
+
+/// What is checked of the pod once its runner proved its key, in order.
+fn pod_may_mint(pod: Option<&k8s_openapi::api::core::v1::Pod>, peer: &str) -> Result<(), String> {
+    mint::pod_may_mint(pod, &"ab".repeat(32), IMAGE, ip(peer))
+}
+
+#[test]
+fn a_marked_runner_on_its_pools_image_asking_from_its_pod_passes_the_pods_checks() {
+    let pod = a_runner_pod(&"ab".repeat(32));
+    assert_eq!(pod_may_mint(Some(&pod), POD_IP), Ok(()));
+    assert_eq!(pod_may_mint(Some(&pod), "fd00::7"), Ok(()));
+    // The port listens on `::`, so an IPv4 asker comes as an IPv4-mapped address.
+    assert_eq!(pod_may_mint(Some(&pod), "::ffff:10.244.0.7"), Ok(()));
+}
+
+#[test]
+fn a_pod_gone_or_holding_another_key_is_refused_before_anything_else() {
+    let why = pod_may_mint(None, POD_IP).expect_err("refused");
+    assert!(why.contains("gone"), "{why}");
+    let mut other = a_runner_pod(&"cd".repeat(32));
+    // Whatever else is wrong with it, that comes first.
+    other.spec = None;
+    let why = pod_may_mint(Some(&other), "10.0.0.1").expect_err("refused");
+    assert!(why.contains("no longer holds this key"), "{why}");
+}
+
+/// The statement still holds, and the proof was right: the mark alone refuses it.
+#[test]
+fn an_unmarked_pod_whose_statement_still_holds_is_told_it_bears_no_mark() {
+    let mut pod = a_runner_pod(&"ab".repeat(32));
+    for container in &mut pod.spec.as_mut().expect("a spec").containers {
+        container.env = None;
+    }
+    assert!(mint::pod_holds(&pod, &"ab".repeat(32)), "it holds its key");
+    assert_eq!(
+        pod_may_mint(Some(&pod), POD_IP),
+        Err(mint::NOT_MARKED.to_owned())
+    );
+    // Before the image or the address is looked at.
+    assert_eq!(
+        mint::pod_may_mint(Some(&pod), &"ab".repeat(32), "other", ip("10.0.0.1")),
+        Err(mint::NOT_MARKED.to_owned())
+    );
+}
+
+#[test]
+fn a_pod_on_another_image_than_its_pools_is_refused_saying_so() {
+    let pod = a_runner_pod(&"ab".repeat(32));
+    let why =
+        mint::pod_may_mint(Some(&pod), &"ab".repeat(32), "other", ip(POD_IP)).expect_err("refused");
+    assert!(why.contains("image"), "{why}");
+    // Before the address is looked at.
+    let why = mint::pod_may_mint(Some(&pod), &"ab".repeat(32), "other", ip("10.0.0.1"))
+        .expect_err("refused");
+    assert!(why.contains("image"), "{why}");
+}
+
+/// A network that rewrites pod source addresses (SNAT between pods) cannot use the port.
+#[test]
+fn a_request_from_another_address_than_the_runners_pod_is_refused_saying_so() {
+    let pod = a_runner_pod(&"ab".repeat(32));
+    for elsewhere in [
+        "10.244.0.8",
+        "127.0.0.1",
+        "::1",
+        "fd00::8",
+        "::ffff:10.244.0.8",
+    ] {
+        assert_eq!(
+            pod_may_mint(Some(&pod), elsewhere),
+            Err(mint::NOT_FROM_ITS_POD.to_owned()),
+            "{elsewhere}"
+        );
+    }
+    assert!(mint::NOT_FROM_ITS_POD.contains("address"));
+}
+
+#[test]
+fn a_pod_that_says_no_address_is_asked_from_nowhere() {
+    let mut pod = a_runner_pod(&"ab".repeat(32));
+    let status = pod.status.as_mut().expect("a status");
+    status.pod_ip = None;
+    status.pod_ips = None;
+    assert!(!mint::from_its_pod(&pod, ip(POD_IP)));
+    // The single address alone, as an older cluster says it.
+    let status = pod.status.as_mut().expect("a status");
+    status.pod_ip = Some(POD_IP.to_owned());
+    assert!(mint::from_its_pod(&pod, ip(POD_IP)));
+    assert!(!mint::from_its_pod(&pod, ip("fd00::7")));
+    // An address that does not parse matches nothing.
+    let status = pod.status.as_mut().expect("a status");
+    status.pod_ip = Some("not an address".to_owned());
+    assert!(!mint::from_its_pod(&pod, ip(POD_IP)));
+}
+
+#[test]
+fn one_address_holds_at_most_four_of_the_ports_connections() {
+    use mint::limits::{MOST_FROM_ONE_SOURCE, PerSource};
+    use std::sync::Arc;
+    assert_eq!(MOST_FROM_ONE_SOURCE, 4);
+    let per_source = Arc::new(PerSource::default());
+    let one = ip("10.244.0.7");
+    let held: Vec<_> = (0..MOST_FROM_ONE_SOURCE)
+        .map(|_| per_source.admit(one).expect("let in"))
+        .collect();
+    assert!(per_source.admit(one).is_none(), "a fifth from one address");
+    // The same address spelled as the socket on `::` spells it is the same address.
+    assert!(per_source.admit(ip("::ffff:10.244.0.7")).is_none());
+    // Another address is let in meanwhile.
+    let other = per_source.admit(ip("10.244.0.8")).expect("another address");
+    drop(held.into_iter().next());
+    assert_eq!(per_source.open_from(one), MOST_FROM_ONE_SOURCE - 1);
+    assert!(
+        per_source.admit(one).is_some(),
+        "one closed lets one more in"
+    );
+    drop(other);
+    assert_eq!(per_source.open_from(ip("10.244.0.8")), 0);
+}
+
+#[test]
+fn a_claim_is_minted_for_at_most_five_times_a_minute_and_told_how_long_to_wait() {
+    use mint::limits::{MINTS_WITHIN, MOST_MINTS, Paces};
+    use std::time::{Duration, Instant};
+    assert_eq!((MOST_MINTS, MINTS_WITHIN), (5, Duration::from_secs(60)));
+    let paces = Paces::default();
+    let start = Instant::now();
+    let at = |seconds: u64| start + Duration::from_secs(seconds);
+    // A chat's start asking for a token per tool, close together, is never held up.
+    for second in 0..MOST_MINTS as u64 {
+        assert_eq!(paces.take("team-ns", "work", at(second)), Ok(()));
+    }
+    let wait = paces
+        .take("team-ns", "work", at(10))
+        .expect_err("a sixth within the minute");
+    assert_eq!(
+        wait,
+        Duration::from_secs(50),
+        "till the first is a minute old"
+    );
+    // A refused ask is not counted, and another Claim has its own count.
+    assert!(paces.take("team-ns", "work", at(20)).is_err());
+    assert_eq!(paces.take("team-ns", "other", at(20)), Ok(()));
+    assert_eq!(paces.take("other-ns", "work", at(20)), Ok(()));
+    assert_eq!(
+        paces.take("team-ns", "work", at(60)),
+        Ok(()),
+        "the first aged out"
+    );
+    assert!(paces.take("team-ns", "work", at(60)).is_err());
+    let words = mint::paced(Duration::from_secs(50));
+    assert!(words.contains("50 seconds"), "{words}");
+    assert!(words.contains(mint::PACED), "{words}");
+}
+
+#[test]
+fn a_line_anyone_could_cause_is_logged_at_most_once_a_minute() {
+    use mint::limits::AtMostEvery;
+    use std::time::{Duration, Instant};
+    let said = AtMostEvery::new(Duration::from_secs(60));
+    let start = Instant::now();
+    assert!(said.due(start));
+    assert!(!said.due(start + Duration::from_secs(1)));
+    assert!(!said.due(start + Duration::from_secs(59)));
+    assert!(said.due(start + Duration::from_secs(60)));
+    assert!(!said.due(start + Duration::from_secs(61)));
+}
+
+/// GitHub made it, and it reached no one: it is revoked, not left to live its hour.
+#[test]
+fn a_token_whose_answer_was_not_written_is_the_one_to_revoke() {
+    let failed: std::io::Result<()> = Err(std::io::Error::from(std::io::ErrorKind::BrokenPipe));
+    assert_eq!(mint::undelivered(&failed, Some("t")), Some("t"));
+    assert_eq!(mint::undelivered(&Ok(()), Some("t")), None);
+    assert_eq!(
+        mint::undelivered::<&str>(&failed, None),
+        None,
+        "a refusal holds none"
+    );
+}

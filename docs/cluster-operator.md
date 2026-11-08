@@ -1071,24 +1071,33 @@ read at that moment:
   says nothing of which claims there are;
 - the Claim and the Pool made after the policy `purlis-forge` settled. **A Pool or Claim made before
   never mints: delete it and make it again**, since what it says was not held to that policy;
-- the runner's pod running its Pool's image as it is now;
+- the runner's pod running its Pool's image as it is now, and the request coming from one of that
+  pod's own addresses. **The operator answers a runner only from its pod's own address, so a network
+  that rewrites pod source addresses (SNAT between pods) cannot use the mint port**;
 - the Pool opted in, neither stopped nor being deleted, and at least one repo on both lists, of one
   owner;
 - **the requester still allowed `use` on the Pool**, asked of the cluster before each mint, so a
   revoked right stops new tokens at once. A Claim records no groups, so this is asked of the person
   by name: **a right held only through a group is refused. Grant `use` to the person by name** on a
   Pool that mints;
-- the Secret's key parsed, its `app` the one asked for.
+- the Secret's key parsed, its `app` the one asked for;
+- no more than 5 tokens minted for the Claim in the last minute. Past that the runner is told how
+  many seconds to wait, and its run goes to the desktop as any refused mint does. Only a mint that
+  would reach GitHub counts, so a chat's start asking for a token per tool is not held up.
+
+One address may hold 4 of the port's 16 connections at once; one more is closed unanswered.
 
 The token is limited to those repos by name and, also by name, to what the installation holds of
 the repo-level permissions that administer nothing: `actions`, `checks`, `contents`, `deployments`,
 `discussions`, `issues`, `metadata`, `pull_requests`, `repository_projects` and `statuses`, at
 `write` at most. So a minted token cannot change administration, secrets or workflow files. It can
 still push code that an existing workflow runs, with what that workflow may use, and set checks and
-statuses: keep branch rules and environments in mind when you list repos. A token GitHub says covers anything else is revoked and not handed over.
+statuses: keep branch rules and environments in mind when you list repos. A token GitHub says covers anything else is revoked and not handed over, and so is one
+whose answer could not be written to the runner.
 It is not stored, and nothing about it is written to the API server. The operator's log has every
 mint (who, which pool and App, the repos, the permission names, the expiry) and every refusal, with
-no token and no key in it.
+no token and no key in it. A refusal of an asker who proved nothing, which anyone who reaches the
+port can cause, is a warning at most once a minute and a debug line otherwise.
 
 ### What the opt-in means
 

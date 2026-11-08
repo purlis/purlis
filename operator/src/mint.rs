@@ -18,7 +18,8 @@
 //! token would cover something; and the cluster is asked, before each mint, whether the requester
 //! may still `use` the Pool. Only then is the App's Secret read, held to the `app` asked for, and
 //! the token asked of GitHub ([`crate::github`]), limited to [`crate::github::MINTABLE`]. Each mint and refusal is in the log, with no
-//! token; nothing about a token is written to the API server.
+//! token (a refusal of an asker who proved nothing at most once a minute as a warning); nothing
+//! about a token is written to the API server.
 //!
 //! A runner is told the port's address and the key to hold it to as it is paired, from the Claim's
 //! `status.mint` ([`said_on_a_claim`]). `POST` [`NEXT_KEY_PATH`] answers the current key's word for
@@ -29,6 +30,13 @@
 //! **The port's certificate is self-signed by the operator's signing key** ([`certificate`]), the
 //! key every Pool's status names, so a runner holds it to the key its desktop pinned, not to an
 //! authority. Before a runner has proved anything, every refusal is the same words.
+//!
+//! **The port answers a runner only from its pod's own address** ([`pod_may_mint`]), holds one
+//! address to [`limits::MOST_FROM_ONE_SOURCE`] of its connections, and mints for one Claim
+//! [`limits::MOST_MINTS`] times in [`limits::MINTS_WITHIN`] at most ([`limits::Paces`]). A token
+//! whose answer could not be written is revoked ([`undelivered`]).
+
+pub mod limits;
 
 use crate::admission::{Admission, FORGE_POLICY, POLICY, admission, in_force_since};
 use crate::forge::{self, Covered};
@@ -46,11 +54,13 @@ use k8s_openapi::api::networking::v1::NetworkPolicy;
 use k8s_openapi::jiff::Timestamp;
 use kube::Client;
 use kube::api::{Api, PostParams};
+use limits::{AtMostEvery, Paces, PerSource, plain};
 use ring::agreement::{self, EphemeralPrivateKey, UnparsedPublicKey, X25519};
 use ring::{hkdf, hmac};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
+use std::net::IpAddr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
@@ -74,7 +84,8 @@ pub const CHALLENGE_LIVES: Duration = Duration::from_secs(60);
 /// operator's memory than this.
 const MOST_CHALLENGES: usize = 1024;
 
-/// The most connections held open at once; one more is closed unanswered.
+/// The most connections held open at once, [`limits::MOST_FROM_ONE_SOURCE`] of them from one
+/// address; one more is closed unanswered.
 const CONNECTIONS: usize = 16;
 
 /// How long one connection may take, GitHub's answers included.
@@ -93,6 +104,25 @@ pub const NOT_VOUCHED: &str = "the operator vouches for no such key on that clai
 /// What a runner made before its Pool named an App's key is told.
 pub const NOT_MARKED: &str = "this runner was made before its pool named an App's key, so it mints \
      nothing: claim a new runner";
+
+/// What a runner is told whose request came from another address than its pod's: a network that
+/// rewrites pod source addresses (SNAT between pods) cannot use the port.
+pub const NOT_FROM_ITS_POD: &str = "this request came from another address than the runner's pod, \
+     so it mints nothing: the operator answers a runner only from its pod's own address";
+
+/// The words every refusal for minting too often holds.
+pub const PACED: &str = "ask again in";
+
+/// What a runner is told whose Claim was minted for [`limits::MOST_MINTS`] times within
+/// [`limits::MINTS_WITHIN`]: how long until one more may be.
+pub fn paced(wait: Duration) -> String {
+    format!(
+        "this claim was minted {} tokens within {} seconds: {PACED} {} seconds",
+        limits::MOST_MINTS,
+        limits::MINTS_WITHIN.as_secs(),
+        wait.as_secs().max(1)
+    )
+}
 
 /// What the proof is a MAC of, each value one line. `operator` is the signing key the runner holds
 /// the port to, as a Pool's status spells it, so a proof made for another key is good for nothing.
@@ -357,6 +387,54 @@ pub fn marked(pod: &Pod) -> bool {
                 var.name == crate::upstream::MINTING_MARK && var.value.as_deref() == Some("1")
             })
     })
+}
+
+/// **Whether `peer` is one of `pod`'s own addresses**, `status.podIPs` or, where a cluster says only
+/// one, `status.podIP`. A pod that says none was asked from nowhere.
+pub fn from_its_pod(pod: &Pod, peer: IpAddr) -> bool {
+    let Some(status) = pod.status.as_ref() else {
+        return false;
+    };
+    let peer = plain(peer);
+    status
+        .pod_ips
+        .iter()
+        .flatten()
+        .map(|said| said.ip.as_str())
+        .chain(status.pod_ip.as_deref())
+        .filter_map(|said| said.parse::<IpAddr>().ok())
+        .any(|said| plain(said) == peer)
+}
+
+/// **What is checked of the runner's pod once its runner proved its key**, in this order, each
+/// refusal in words of its own: the pod is there and holds the key ([`pod_holds`]), it bears the
+/// mark ([`marked`]), it runs its Pool's `image` ([`runs_image`]), and the request came from one
+/// of its own addresses ([`from_its_pod`]). `pod` is `None` where it is gone.
+pub fn pod_may_mint(
+    pod: Option<&Pod>,
+    key_hex: &str,
+    image: &str,
+    peer: IpAddr,
+) -> Result<(), String> {
+    let Some(pod) = pod.filter(|pod| pod_holds(pod, key_hex)) else {
+        return Err("the runner's pod is gone, or no longer holds this key".to_owned());
+    };
+    if !marked(pod) {
+        return Err(NOT_MARKED.to_owned());
+    }
+    if !runs_image(pod, image) {
+        return Err("the runner's pod does not run its pool's image".to_owned());
+    }
+    if !from_its_pod(pod, peer) {
+        return Err(NOT_FROM_ITS_POD.to_owned());
+    }
+    Ok(())
+}
+
+/// **The token to revoke** once an answer was written, or failed to be: `minted`, the token the
+/// answer held, where `written` failed, since then it reached no one. A refusal holds none.
+pub fn undelivered<T>(written: &std::io::Result<()>, minted: Option<T>) -> Option<T> {
+    minted.filter(|_| written.is_err())
 }
 
 /// What a mint may cover, and with which key.
@@ -739,7 +817,26 @@ struct Serving {
     challenges: Challenges,
     github: Result<GitHub, String>,
     cluster: String,
+    paces: Paces,
+    /// When a refusal of an asker who proved nothing was last a warning: anyone who reaches the
+    /// port can cause one, so the rest are debug lines.
+    unproved: AtMostEvery,
 }
+
+/// An answer, and the token it holds where it holds one: revoked if the answer is not written.
+struct Answered {
+    text: String,
+    token: Option<String>,
+}
+
+impl From<String> for Answered {
+    fn from(text: String) -> Answered {
+        Answered { text, token: None }
+    }
+}
+
+/// How often a refusal anyone could cause, or a full port, is a warning in the log.
+const SAID_EVERY: Duration = Duration::from_secs(60);
 
 fn seconds_now() -> u64 {
     std::time::SystemTime::now()
@@ -780,27 +877,25 @@ impl Serving {
     }
 
     /// Everything after the runner proved its key; a refusal here is told to it in words.
-    async fn mint(&self, asked: &Asked, claim: &Claim, runner: &Vouched) -> Result<String, String> {
+    async fn mint(
+        &self,
+        asked: &Asked,
+        claim: &Claim,
+        runner: &Vouched,
+        peer: IpAddr,
+    ) -> Result<Answered, String> {
         let client = &self.client;
         let read_failed = |what: &str| format!("the {what} could not be read");
         let pod = Api::<Pod>::namespaced(client.clone(), &runner.runner_namespace)
             .get_opt(&runner.pod)
             .await
             .map_err(|_| read_failed("runner's pod"))?;
-        let Some(pod) = pod.filter(|pod| pod_holds(pod, &runner.key_hex)) else {
-            return Err("the runner's pod is gone, or no longer holds this key".to_owned());
-        };
-        if !marked(&pod) {
-            return Err(NOT_MARKED.to_owned());
-        }
         let pool = Api::<Pool>::all(client.clone())
             .get_opt(&claim.spec.pool)
             .await
             .map_err(|_| read_failed("pool"))?
             .ok_or("the claim's pool is gone")?;
-        if !runs_image(&pod, &pool.spec.image) {
-            return Err("the runner's pod does not run its pool's image".to_owned());
-        }
+        pod_may_mint(pod.as_ref(), &runner.key_hex, &pool.spec.image, peer)?;
         let bindings = Api::<ValidatingAdmissionPolicyBinding>::all(client.clone());
         let claims_binding = bindings
             .get_opt(POLICY)
@@ -848,6 +943,11 @@ impl Serving {
             .map_err(|why| format!("the pool's App key {}: {why}", grant.secret))?;
         key.serves(&asked.app)?;
         let github = self.github.as_ref().map_err(|why| why.clone())?;
+        // Every check passed: only a request that would reach GitHub counts, so a refusal costs
+        // nothing here and a chat's start asking for a token per tool is not held up.
+        self.paces
+            .take(&asked.namespace, &asked.claim, Instant::now())
+            .map_err(paced)?;
         let jwt = key.jwt(seconds_now())?;
         let Covered { owner, names } = &grant.covered;
         let first = names.first().ok_or("nothing to cover")?;
@@ -867,41 +967,62 @@ impl Serving {
             expires_at = ?token.expires_at,
             "minted a token"
         );
-        Ok(answer(
-            "200 OK",
-            &json!({
-                "token": token.token,
-                "expires_at": token.expires_at,
-                "owner": owner,
-                "repos": names,
-                "permissions": permissions,
-            }),
-        ))
+        Ok(Answered {
+            text: answer(
+                "200 OK",
+                &json!({
+                    "token": token.token,
+                    "expires_at": token.expires_at,
+                    "owner": owner,
+                    "repos": names,
+                    "permissions": permissions,
+                }),
+            ),
+            token: Some(token.token),
+        })
     }
 
-    async fn token(&self, body: &[u8]) -> String {
+    /// A refusal of an asker who proved nothing: a warning at most once a minute, a debug line
+    /// otherwise.
+    fn refused_unproved(&self, asked: Option<&Asked>, peer: IpAddr, why: &str) {
+        let (namespace, claim, app) = asked.map_or(("", "", ""), |asked| {
+            (
+                asked.namespace.as_str(),
+                asked.claim.as_str(),
+                asked.app.as_str(),
+            )
+        });
+        if self.unproved.due(Instant::now()) {
+            tracing::warn!(%peer, namespace, claim, app, why, "refused a token");
+        } else {
+            tracing::debug!(%peer, namespace, claim, app, why, "refused a token");
+        }
+    }
+
+    async fn token(&self, body: &[u8], peer: IpAddr) -> Answered {
         let Some(asked) = serde_json::from_slice::<Asked>(body)
             .ok()
             .filter(Asked::well_spelled)
         else {
-            tracing::warn!(why = "the request cannot be read", "refused a token");
-            return refused(NOT_VOUCHED);
+            self.refused_unproved(None, peer, "the request cannot be read");
+            return refused(NOT_VOUCHED).into();
         };
         let (claim, runner) = match self.claim_and_proof(&asked).await {
             Ok(proved) => proved,
             Err(why) => {
-                tracing::warn!(namespace = %asked.namespace, claim = %asked.claim, app = %asked.app, %why, "refused a token");
-                return refused(NOT_VOUCHED);
+                self.refused_unproved(Some(&asked), peer, &why);
+                return refused(NOT_VOUCHED).into();
             }
         };
-        match self.mint(&asked, &claim, &runner).await {
+        match self.mint(&asked, &claim, &runner, peer).await {
             Ok(answered) => answered,
             Err(why) => {
                 tracing::warn!(
                     namespace = %asked.namespace, claim = %asked.claim, pool = %claim.spec.pool,
-                    requester = %claim.spec.requester, app = %asked.app, %why, "refused a token"
+                    requester = %claim.spec.requester, app = %asked.app, %peer, %why,
+                    "refused a token"
                 );
-                refused(&why)
+                refused(&why).into()
             }
         }
     }
@@ -923,15 +1044,32 @@ impl Serving {
         }
     }
 
-    async fn respond(&self, method: &str, target: &str, body: &[u8]) -> String {
+    async fn respond(&self, method: &str, target: &str, body: &[u8], peer: IpAddr) -> Answered {
         match (method, target) {
-            ("POST", NEXT_KEY_PATH) => self.next_key(),
+            ("POST", NEXT_KEY_PATH) => self.next_key().into(),
             ("POST", CHALLENGE_PATH) => match self.challenges.make() {
-                Ok(challenge) => answer("200 OK", &json!({ "challenge": challenge })),
-                Err(why) => answer("500 Internal Server Error", &json!({ "refused": why })),
+                Ok(challenge) => answer("200 OK", &json!({ "challenge": challenge })).into(),
+                Err(why) => answer("500 Internal Server Error", &json!({ "refused": why })).into(),
             },
-            ("POST", TOKEN_PATH) => self.token(body).await,
-            _ => answer("404 Not Found", &json!({ "refused": "no such request" })),
+            ("POST", TOKEN_PATH) => self.token(body, peer).await,
+            _ => answer("404 Not Found", &json!({ "refused": "no such request" })).into(),
+        }
+    }
+
+    /// Revokes `token`, which reached no one. Best effort: if this fails too, it lives its hour.
+    async fn revoke(&self, token: &str, peer: IpAddr) {
+        let revoked = match self.github.as_ref() {
+            Ok(github) => github.revoke(token).await,
+            Err(why) => Err(why.clone()),
+        };
+        match revoked {
+            Ok(()) => {
+                tracing::warn!(%peer, "a minted token's answer could not be written: GitHub revoked it")
+            }
+            Err(why) => tracing::warn!(
+                %peer, %why,
+                "a minted token's answer could not be written, and it could not be revoked: it lives its hour"
+            ),
         }
     }
 }
@@ -939,17 +1077,28 @@ impl Serving {
 async fn serve_one(
     stream: &mut (impl AsyncRead + AsyncWrite + Unpin),
     serving: &Serving,
+    peer: IpAddr,
 ) -> std::io::Result<()> {
     let read = tokio::time::timeout(REQUEST_WITHIN, read_request(stream)).await;
     let answered = match read {
-        Ok(Ok(Some((method, target, body)))) => serving.respond(&method, &target, &body).await,
+        Ok(Ok(Some((method, target, body)))) => {
+            serving.respond(&method, &target, &body, peer).await
+        }
         Ok(Err(why)) => return Err(why),
         _ => {
-            tracing::warn!(why = "no request could be read", "refused a token");
-            answer("400 Bad Request", &json!({ "refused": "no request read" }))
+            serving.refused_unproved(None, peer, "no request could be read");
+            answer("400 Bad Request", &json!({ "refused": "no request read" })).into()
         }
     };
-    stream.write_all(answered.as_bytes()).await?;
+    // Flushed, so a token TLS still held back counts as not written.
+    let written = match stream.write_all(answered.text.as_bytes()).await {
+        Ok(()) => stream.flush().await,
+        Err(why) => Err(why),
+    };
+    if let Some(token) = undelivered(&written, answered.token) {
+        serving.revoke(&token, peer).await;
+    }
+    written?;
     stream.shutdown().await
 }
 
@@ -984,23 +1133,34 @@ async fn serve_until_broken(
         challenges: Challenges::default(),
         github,
         cluster,
+        paces: Paces::default(),
+        unproved: AtMostEvery::new(SAID_EVERY),
     });
     tracing::info!(port = PORT, "serving the mint port");
     let open = Arc::new(Semaphore::new(CONNECTIONS));
-    let mut said_full = None;
+    let per_source = Arc::new(PerSource::default());
+    // Each said at most once a minute, so a flood of connections is not a flood of log.
+    let (said_full, said_one_full) = (AtMostEvery::new(SAID_EVERY), AtMostEvery::new(SAID_EVERY));
     loop {
-        let stream = match listener.accept().await {
-            Ok((stream, _)) => stream,
+        let (stream, peer) = match listener.accept().await {
+            Ok((stream, from)) => (stream, plain(from.ip())),
             Err(why) => {
                 tracing::warn!(%why, "a connection to the mint port was not accepted");
                 tokio::time::sleep(Duration::from_millis(500)).await;
                 continue;
             }
         };
+        let Some(slot) = per_source.admit(peer) else {
+            if said_one_full.due(Instant::now()) {
+                tracing::warn!(
+                    %peer, most = limits::MOST_FROM_ONE_SOURCE,
+                    "one address holds all the mint port lets it: its connections are being dropped"
+                );
+            }
+            continue;
+        };
         let Ok(permit) = open.clone().try_acquire_owned() else {
-            // Said at most once a minute, so a flood of connections is not a flood of log.
-            if said_full.is_none_or(|said: Instant| said.elapsed() >= Duration::from_secs(60)) {
-                said_full = Some(Instant::now());
+            if said_full.due(Instant::now()) {
                 tracing::warn!(
                     most = CONNECTIONS,
                     "the mint port is full: connections are being dropped"
@@ -1010,12 +1170,12 @@ async fn serve_until_broken(
         };
         let (acceptor, serving) = (acceptor.clone(), serving.clone());
         tokio::spawn(async move {
-            let _permit = permit;
+            let _held = (permit, slot);
             let served = tokio::time::timeout(CONNECTION_WITHIN, async {
                 let mut stream = tokio::time::timeout(REQUEST_WITHIN, acceptor.accept(stream))
                     .await
                     .map_err(std::io::Error::other)??;
-                serve_one(&mut stream, &serving).await
+                serve_one(&mut stream, &serving, peer).await
             })
             .await;
             if let Ok(Err(why)) = served {

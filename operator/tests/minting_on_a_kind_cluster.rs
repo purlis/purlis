@@ -9,8 +9,10 @@
 //! The runner's link key is read out of its pod, as only the cluster's admin could, and the proof
 //! is made with it here: `openssl` does the X25519 agreement with a key that already exists. The
 //! requests go through `curl`, pinned to the signing key every Pool's status names, as a runner
-//! does. Then the runner image's own client asks from inside its pod (#4207). What runs a chat's
-//! tool on that token is tested apart, and a token's revoke goes to GitHub, not this stand-in.
+//! does, and reach the port from inside the runner's pod ([`Relay`]): the operator answers a runner
+//! only from its pod's own address. Then the runner image's own client asks from inside its pod
+//! (#4207). What runs a chat's tool on that token is tested apart, and a token's revoke goes to
+//! GitHub, not this stand-in.
 
 use base64::Engine as _;
 use k8s_openapi::api::core::v1::{Pod, Secret};
@@ -25,6 +27,7 @@ use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use std::io::Write as _;
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -44,6 +47,11 @@ const CLAIM: &str = "e2e-mint";
 const EARLIER: &str = "e2e-mint-earlier";
 const TOKEN: &str = "e2e-token-minted-for-the-kind-job";
 const FORWARDED: u16 = 18443;
+/// Where [`Relay`] takes this machine's connections into the runner's pod.
+const RELAYED: u16 = 18444;
+
+/// The port on this machine [`post`] asks at: [`FORWARDED`] or [`RELAYED`].
+static ASKING_AT: AtomicU16 = AtomicU16::new(FORWARDED);
 
 fn runner_image() -> String {
     std::env::var("PURLIS_RUNNER_IMAGE").expect("PURLIS_RUNNER_IMAGE")
@@ -213,6 +221,65 @@ impl Drop for Forward {
     }
 }
 
+/// **A way to the port from inside a runner's pod**, for as long as the test runs: each connection
+/// to [`RELAYED`] on this machine is carried by a `kubectl exec` of `bash` in the pod's `runner`
+/// container, which opens the port's address there. So the port sees the pod's own address, as it
+/// does a runner's, while the proof is still made here.
+struct Relay;
+
+impl Relay {
+    fn start(namespace: &str, pod: &str, address: &str) -> Relay {
+        let listener =
+            std::net::TcpListener::bind(("127.0.0.1", RELAYED)).expect("the relay's port");
+        let (namespace, pod) = (namespace.to_owned(), pod.to_owned());
+        // The pod's side: what comes in goes to the port, and what the port answers comes back
+        // till it closes, which ends the run. Its input is named, as a job in the background of a
+        // shell with no job control reads nothing otherwise.
+        let script = format!(
+            "exec 3<>/dev/tcp/{address}/{} || exit 1; exec 4<&0; cat <&4 >&3 2>/dev/null & cat <&3",
+            mint::PORT
+        );
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(stream) = stream else {
+                    continue;
+                };
+                let (namespace, pod, script) = (namespace.clone(), pod.clone(), script.clone());
+                std::thread::spawn(move || relay_one(stream, &namespace, &pod, &script));
+            }
+        });
+        Relay
+    }
+}
+
+fn relay_one(mut asker: std::net::TcpStream, namespace: &str, pod: &str, script: &str) {
+    let Ok(mut run) = Command::new("kubectl")
+        .args(["-n", namespace, "exec", "-i", pod, "-c", "runner", "--"])
+        .args(["bash", "-c", script])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+    else {
+        return;
+    };
+    let (Some(mut into), Some(mut out), Ok(mut back)) =
+        (run.stdin.take(), run.stdout.take(), asker.try_clone())
+    else {
+        let _ = run.kill();
+        let _ = run.wait();
+        return;
+    };
+    let up = std::thread::spawn(move || {
+        let _ = std::io::copy(&mut asker, &mut into);
+    });
+    let _ = std::io::copy(&mut out, &mut back);
+    let _ = back.shutdown(std::net::Shutdown::Both);
+    let _ = run.kill();
+    let _ = run.wait();
+    let _ = up.join();
+}
+
 /// `sha256//<base64>` of the Ed25519 key `signing_key`, as `curl --pinnedpubkey` reads it.
 fn pin_of(signing_key: &str) -> String {
     let hex = signing_key.strip_prefix("ed25519:").expect("a key");
@@ -248,7 +315,10 @@ fn post(pin: &str, path: &str, body: &Value) -> (u16, Value) {
             "\n%{http_code}",
             "--data-binary",
             "@-",
-            &format!("https://127.0.0.1:{FORWARDED}{path}"),
+            &format!(
+                "https://127.0.0.1:{}{path}",
+                ASKING_AT.load(Ordering::SeqCst)
+            ),
         ])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -753,6 +823,21 @@ async fn a_vouched_runner_gets_a_token_covering_exactly_the_intersection_and_eve
         }
     })
     .await;
+    // From here on this test asks from inside the runner's pod, as the runner would.
+    let _relay = Relay::start(&runner_ns, &pod, &address);
+    ASKING_AT.store(RELAYED, Ordering::SeqCst);
+    eventually(
+        "the port to answer from the runner's pod",
+        Duration::from_secs(30),
+        || {
+            let pin = pin.clone();
+            async move {
+                let (status, _) = post(&pin, CHALLENGE_PATH, &json!({}));
+                (status == 200).then_some(())
+            }
+        },
+    )
+    .await;
 
     // A certificate of any other key is not the operator's: curl refuses it.
     let wrong = post(
@@ -784,6 +869,12 @@ async fn a_vouched_runner_gets_a_token_covering_exactly_the_intersection_and_eve
 
     // A tool line naming another App (ruling Q6).
     refused_saying(&ask(&pin, &link_key, CLAIM, "Iv23liOther"), "Iv23liOther");
+
+    // **From another address than the runner's pod, its right proof gets nothing**: this
+    // machine's forward reaches the port from inside the operator's own pod.
+    ASKING_AT.store(FORWARDED, Ordering::SeqCst);
+    refused_saying(&ask(&pin, &link_key, CLAIM, APP), mint::NOT_FROM_ITS_POD);
+    ASKING_AT.store(RELAYED, Ordering::SeqCst);
 
     // The mint: exactly the intersection, by name, from one installation.
     let minted = ask(&pin, &link_key, CLAIM, APP);
@@ -892,6 +983,28 @@ async fn a_vouched_runner_gets_a_token_covering_exactly_the_intersection_and_eve
     assert_eq!(answered["repos"], json!(["app", "web"]));
     assert_eq!(answered["operator"], json!(said.operator_key));
 
+    // **A Claim is minted for a few times a minute at most**: quick asks past that are told how
+    // long to wait, and GitHub is not asked for them.
+    let tokens_then = asked.lock().expect("the record").tokens.len();
+    let quick: Vec<(u16, Value)> = (0..=mint::limits::MOST_MINTS)
+        .map(|_| ask(&pin, &link_key, CLAIM, APP))
+        .collect();
+    let paced = quick
+        .iter()
+        .find(|answered| answered.0 != 200)
+        .expect("an ask past the pace refused");
+    refused_saying(paced, mint::PACED);
+    // A mint of the minute before this one may age out meanwhile, so a mint can follow a refusal.
+    for answered in quick.iter().filter(|answered| answered.0 != 200) {
+        refused_saying(answered, mint::PACED);
+    }
+    let minted_now = quick.iter().filter(|answered| answered.0 == 200).count();
+    assert_eq!(
+        asked.lock().expect("the record").tokens.len(),
+        tokens_then + minted_now,
+        "a paced ask reached GitHub"
+    );
+
     // A repo outside the allow-list alone; more than one owner; nothing at all. Patched by the
     // requester, as only they may.
     let patched = |repos: &'static [&'static str]| {
@@ -921,11 +1034,13 @@ async fn a_vouched_runner_gets_a_token_covering_exactly_the_intersection_and_eve
 
     // A revoked `use` stops new tokens: the operator asks before each mint.
     revoke(&admin, "e2e-mint-use").await;
+    // Waited for by its words: an ask that would still mint may be paced meanwhile.
     let refused = eventually("the right to go", Duration::from_secs(30), || {
         let (pin, link_key) = (pin.clone(), link_key.clone());
         async move {
             let answered = ask(&pin, &link_key, CLAIM, APP);
-            (answered.0 == 403).then_some(answered)
+            let said = answered.1["refused"].as_str().unwrap_or_default();
+            (answered.0 == 403 && said.contains("may not use the pool")).then_some(answered)
         }
     })
     .await;
@@ -1034,6 +1149,8 @@ async fn a_vouched_runner_gets_a_token_covering_exactly_the_intersection_and_eve
         .await
         .expect("its pod");
     assert!(!mint::marked(&unmarked_pod), "its pod bears no mark");
+    // Its statement holds and its proof is right: the words name the mark.
+    refused_saying(&ask(&pin, &earlier_key, EARLIER, APP), mint::NOT_MARKED);
     let tokens_then = asked.lock().expect("the record").tokens.len();
     as_writer
         .patch(
@@ -1052,6 +1169,11 @@ async fn a_vouched_runner_gets_a_token_covering_exactly_the_intersection_and_eve
         let refused = ask(&pin, &earlier_key, EARLIER, APP);
         assert_eq!(refused.0, 403, "{refused:?}");
         assert!(refused.1.get("token").is_none(), "{refused:?}");
+        let said = refused.1["refused"].as_str().unwrap_or_default();
+        assert!(
+            said == mint::NOT_MARKED || said == mint::NOT_VOUCHED,
+            "{said:?} names neither the mark nor the statement gone"
+        );
         tokio::time::sleep(Duration::from_secs(10)).await;
     }
     assert_eq!(

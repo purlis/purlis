@@ -260,11 +260,24 @@ impl GitHub {
             .map_err(|_| "GitHub's answer holds no token that could be read".to_owned())?;
         if let Err(why) = checked(&token, names, permissions) {
             // Best effort: it is in no one's hands, and lives its hour at most if this fails.
-            let _ = self
-                .call(Method::DELETE, "/installation/token", &token.token, None)
-                .await;
+            let _ = self.revoke(&token.token).await;
             return Err(why);
         }
         Ok(token)
+    }
+
+    /// Revokes `token` (`DELETE /installation/token`, authorized by the token itself): one that is
+    /// in no one's hands. GitHub answers 204 where it took it.
+    pub async fn revoke(&self, token: &str) -> Result<(), String> {
+        let (status, _) = self
+            .call(Method::DELETE, "/installation/token", token, None)
+            .await?;
+        if status != StatusCode::NO_CONTENT {
+            return Err(format!(
+                "GitHub did not revoke the token (it answered {})",
+                status.as_u16()
+            ));
+        }
+        Ok(())
     }
 }
