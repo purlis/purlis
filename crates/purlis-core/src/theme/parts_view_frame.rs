@@ -157,6 +157,7 @@ pub(super) const VIEW_FRAME: Family = Family {
     around: &[],
     fills: &[],
     under: &[],
+    later: &[],
 };
 
 /// **The frame's colours as `panel.css` draws them**: no ground of its own (the panel's shows),
@@ -218,6 +219,7 @@ pub(super) const VIEW_NAV: Family = Family {
     around: &[],
     fills: &[],
     under: &[],
+    later: &[],
 };
 
 /// **A page's colours as `panel.css` draws them**: muted words at rest; the pointer's ground and

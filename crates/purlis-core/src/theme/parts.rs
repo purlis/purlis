@@ -474,6 +474,26 @@ pub struct Part {
     pub properties: &'static [Prop],
 }
 
+/// **What a released family or part joined after it shipped** (#3226): a state its family's
+/// `states` list gained, or a property one of its parts' `properties` list gained, each of which
+/// the manifest already had. Its list says it, as ever; this says since when, so the manifest as
+/// of an earlier version ([`manifest_as_of`]) leaves it out and a released digest is unchanged.
+/// Written `since: super::NEXT`, which the release step numbers as any other `NEXT`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Joined {
+    /// A state the family's root is now keyed in.
+    State(State),
+    /// A property the part of this name now takes.
+    Property(&'static str, Prop),
+}
+
+/// One addition to a released family's or part's list ([`Joined`]), and the version it came in.
+#[derive(Debug, Clone, Copy)]
+pub struct Later {
+    pub joined: Joined,
+    pub since: u32,
+}
+
 /// **One component family**: its parts, the first its root, which carries the variant and the
 /// state; its variants; the manifest version it came in; and the grounds it is drawn on.
 #[derive(Debug, Clone, Copy)]
@@ -533,9 +553,22 @@ pub struct Family {
     /// ([`FIELD_HELP_GROUNDS`]). Its words are held to these, but a fallback never
     /// paints them, since the part does not.
     under: &'static [(&'static str, &'static [&'static str])],
+    /// **What its lists gained after it shipped** (#3226), each with the version it came in: a
+    /// state in [`Family::states`] or a property in a part's list that came later than what holds
+    /// it. Empty for a family whose lists are as it first shipped them.
+    pub later: &'static [Later],
 }
 
 impl Family {
+    /// **The version `joined` came into this family's lists in**: its own `since` where
+    /// [`Family::later`] dates it, else that of what holds it (#3226).
+    pub fn joined_since(&self, joined: Joined) -> u32 {
+        self.later
+            .iter()
+            .find(|one| one.joined == joined)
+            .map_or(0, |one| one.since)
+    }
+
     /// The attribute `state` is keyed on, on this family's root.
     fn attribute(&self, state: State) -> &'static str {
         if let Some((_, own)) = own_states(self).iter().find(|(one, _)| *one == state) {
@@ -5612,64 +5645,7 @@ pub fn manifest_as_of(version: u32) -> Value {
     let families: Vec<Value> = MANIFEST
         .iter()
         .filter(|family| family.since <= version)
-        .map(|family| {
-            let mut said = json!({
-                "name": family.name,
-                "description": family.description,
-                "since": family.since,
-                "focused": family.focused,
-                "states": family.states.iter().filter(|state| state.since() <= version).map(|state| state.name()).collect::<Vec<_>>(),
-                "parts": family.parts.iter().filter(|part| part.since <= version).map(|part| {
-                    let mut said = json!({
-                        "name": part.name,
-                        "description": part.description,
-                        "since": part.since,
-                        "properties": part.properties.iter().filter(|p| p.since() <= version).map(|p| p.name()).collect::<Vec<_>>(),
-                    });
-                    // Only what a family has that the first did not, so the button's entry
-                    // reads as it did at version 2.
-                    if family.around.contains(&part.name) {
-                        said["around"] = Value::Bool(true);
-                    }
-                    // Drawn apart from the root, in no variant of it and only in its own states
-                    // (#3656). Said from the next release on: what version 12 shipped keeps its
-                    // contract.
-                    if version >= APART_SINCE
-                        && let Some(carried) = drawn_apart(family, part.name)
-                    {
-                        let states: Vec<&str> = carried.iter().map(|one| one.name()).collect();
-                        said["apart"] = json!(states);
-                    }
-                    if MARKS.contains(&(family.name, part.name)) {
-                        said["mark_height"] = json!({
-                            "least": 0,
-                            "most": geometry::show(MOST_MARK).parse::<i64>().unwrap_or_default(),
-                            "unit": "px",
-                        });
-                    }
-                    said
-                }).collect::<Vec<_>>(),
-                "variants": family.variants.iter().filter(|variant| variant.since <= version).map(|variant| json!({
-                    "name": variant.name,
-                    "description": variant.description,
-                    "since": variant.since,
-                    "consent": variant.consent.is_some(),
-                })).collect::<Vec<_>>(),
-            });
-            // Only what a family has that the others do not (#3143): drawn in marks, and keyed on
-            // attributes of its own in a state.
-            if marked(family).is_some() {
-                said["marks"] = Value::Bool(true);
-            }
-            if !own_states(family).is_empty() {
-                said["attributes"] = own_states(family)
-                    .iter()
-                    .map(|(state, attribute)| (state.name().to_owned(), Value::from(*attribute)))
-                    .collect::<Map<String, Value>>()
-                    .into();
-            }
-            said
-        })
+        .map(|family| family_as_of(family, version))
         .collect();
     json!({
         "version": VERSION,
@@ -5683,8 +5659,70 @@ pub fn manifest_as_of(version: u32) -> Value {
     })
 }
 
+/// **One family's entry in the manifest as it stood at `version`**: its parts, variants and
+/// states that came in by then, each part with the properties it took by then ([`Joined`]).
+pub(super) fn family_as_of(family: &Family, version: u32) -> Value {
+    let mut said = json!({
+        "name": family.name,
+        "description": family.description,
+        "since": family.since,
+        "focused": family.focused,
+        "states": family.states.iter().filter(|state| state.since() <= version && family.joined_since(Joined::State(**state)) <= version).map(|state| state.name()).collect::<Vec<_>>(),
+        "parts": family.parts.iter().filter(|part| part.since <= version).map(|part| {
+            let mut said = json!({
+                "name": part.name,
+                "description": part.description,
+                "since": part.since,
+                "properties": part.properties.iter().filter(|p| p.since() <= version && family.joined_since(Joined::Property(part.name, **p)) <= version).map(|p| p.name()).collect::<Vec<_>>(),
+            });
+            // Only what a family has that the first did not, so the button's entry
+            // reads as it did at version 2.
+            if family.around.contains(&part.name) {
+                said["around"] = Value::Bool(true);
+            }
+            // Drawn apart from the root, in no variant of it and only in its own states
+            // (#3656). Said from the next release on: what version 12 shipped keeps its
+            // contract.
+            if version >= APART_SINCE
+                && let Some(carried) = drawn_apart(family, part.name)
+            {
+                let states: Vec<&str> = carried.iter().map(|one| one.name()).collect();
+                said["apart"] = json!(states);
+            }
+            if MARKS.contains(&(family.name, part.name)) {
+                said["mark_height"] = json!({
+                    "least": 0,
+                    "most": geometry::show(MOST_MARK).parse::<i64>().unwrap_or_default(),
+                    "unit": "px",
+                });
+            }
+            said
+        }).collect::<Vec<_>>(),
+        "variants": family.variants.iter().filter(|variant| variant.since <= version).map(|variant| json!({
+            "name": variant.name,
+            "description": variant.description,
+            "since": variant.since,
+            "consent": variant.consent.is_some(),
+        })).collect::<Vec<_>>(),
+    });
+    // Only what a family has that the others do not (#3143): drawn in marks, and keyed on
+    // attributes of its own in a state.
+    if marked(family).is_some() {
+        said["marks"] = Value::Bool(true);
+    }
+    if !own_states(family).is_empty() {
+        said["attributes"] = own_states(family)
+            .iter()
+            .map(|(state, attribute)| (state.name().to_owned(), Value::from(*attribute)))
+            .collect::<Map<String, Value>>()
+            .into();
+    }
+    said
+}
+
 /// **Whether the manifest holds anything no release has shipped yet**: a family, a part, a
-/// variant, a state or a property `since` [`NEXT`].
+/// variant, a state or a property `since` [`NEXT`], or a state or a property a released family
+/// or part joined since ([`Family::later`]).
 pub fn has_unreleased() -> bool {
     APART_SINCE > VERSION
         || STATES.iter().any(|state| state.since() > VERSION)
@@ -5696,6 +5734,7 @@ pub fn has_unreleased() -> bool {
                     .variants
                     .iter()
                     .any(|variant| variant.since > VERSION)
+                || family.later.iter().any(|one| one.since > VERSION)
         })
 }
 

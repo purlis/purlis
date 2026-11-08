@@ -102,6 +102,7 @@ pub(super) const ACTIVITY: Family = Family {
     under: &[],
     corner_most: None,
     around: &[],
+    later: &[],
 };
 
 /// **An item's colours as `app/src/ui/activity/activity.css` draws them** (R118): muted at rest,

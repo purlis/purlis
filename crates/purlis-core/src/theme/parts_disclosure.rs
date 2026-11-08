@@ -73,6 +73,7 @@ pub(super) const DISCLOSURE: Family = Family {
     around: &[],
     fills: &[],
     under: &[],
+    later: &[],
 };
 
 /// **The disclosure's colours as `disclosure.css` draws them**: no ground and no edge of its own

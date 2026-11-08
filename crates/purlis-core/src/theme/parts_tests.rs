@@ -1743,6 +1743,10 @@ fn every_since() -> Vec<(String, u32, u32)> {
             let name = format!("{}.{}", family.name, variant.name);
             said.push((name, variant.since, family.since));
         }
+        for later in family.later {
+            let name = format!("{}: {:?}", family.name, later.joined);
+            said.push((name, later.since, family.since));
+        }
     }
     said
 }
@@ -2755,5 +2759,134 @@ fn the_dialogs_family_default_is_what_dialog_css_draws() {
     for variant in ["dialog", "alert"] {
         let held = parts::dialog_defaults_json(variant);
         assert_eq!(held, drawn, "{variant}");
+    }
+}
+
+/// `family` as a later pull request would give it `joined`, since the version after the last
+/// release (#3226): its list holding it, and its `later` dating it.
+fn joined_later(family: &parts::Family, joined: parts::Joined) -> parts::Family {
+    let mut grown = *family;
+    let next = parts::VERSION + 1;
+    match joined {
+        parts::Joined::State(state) => {
+            let mut states = family.states.to_vec();
+            states.push(state);
+            grown.states = states.leak();
+        }
+        parts::Joined::Property(name, property) => {
+            let parts: Vec<parts::Part> = family
+                .parts
+                .iter()
+                .map(|part| {
+                    let mut part = *part;
+                    if part.name == name {
+                        let mut properties = part.properties.to_vec();
+                        properties.push(property);
+                        part.properties = properties.leak();
+                    }
+                    part
+                })
+                .collect();
+            grown.parts = parts.leak();
+        }
+    }
+    grown.later = vec![parts::Later {
+        joined,
+        since: next,
+    }]
+    .leak();
+    grown
+}
+
+#[test]
+fn a_state_or_a_property_a_released_family_joins_is_left_out_of_what_the_release_shipped() {
+    // `VERSION + 1` here, not the marker, which the release step replaces where it is written.
+    let next = parts::VERSION + 1;
+    let popover = parts::family("popover").expect("the popover family");
+    assert!(!popover.states.contains(&parts::State::Focused));
+    let button = parts::family("button").expect("the button family");
+    let label =
+        |family: &parts::Family| family.parts.iter().find(|one| one.name == "label").copied();
+    assert!(
+        !label(button)
+            .expect("its label")
+            .properties
+            .contains(&Prop::Padding)
+    );
+    for (family, joined, at, name) in [
+        (
+            popover,
+            parts::Joined::State(parts::State::Focused),
+            "/states",
+            "focused",
+        ),
+        (
+            button,
+            parts::Joined::Property("label", Prop::Padding),
+            "/parts/1/properties",
+            "padding",
+        ),
+    ] {
+        let grown = joined_later(family, joined);
+        // What the last release shipped is what it was: its digest stays.
+        assert_eq!(
+            parts::family_as_of(&grown, parts::VERSION),
+            parts::family_as_of(family, parts::VERSION),
+            "{joined:?}"
+        );
+        // From the next release on, the list holds it.
+        let listed = parts::family_as_of(&grown, next);
+        let said = listed.pointer(at).and_then(Value::as_array).expect(at);
+        assert!(said.contains(&json!(name)), "{joined:?}: {said:?}");
+    }
+}
+
+#[test]
+fn what_a_released_family_joined_later_is_in_its_lists_and_came_after_what_holds_it() {
+    let next = parts::VERSION + 1;
+    for family in parts::MANIFEST {
+        let mut seen = Vec::new();
+        for later in family.later {
+            assert!(
+                !seen.contains(&later.joined),
+                "{}: {:?} twice",
+                family.name,
+                later.joined
+            );
+            seen.push(later.joined);
+            assert!(later.since <= next, "{}: {:?}", family.name, later.joined);
+            let (held_since, own_since) = match later.joined {
+                parts::Joined::State(state) => {
+                    assert!(family.states.contains(&state), "{}: {state:?}", family.name);
+                    (family.since, state.since())
+                }
+                parts::Joined::Property(name, property) => {
+                    let part = family
+                        .parts
+                        .iter()
+                        .find(|one| one.name == name)
+                        .unwrap_or_else(|| panic!("{}.{name}", family.name));
+                    assert!(
+                        part.properties.contains(&property),
+                        "{}.{name}: {property:?}",
+                        family.name
+                    );
+                    (part.since, property.since())
+                }
+            };
+            // Later than what holds it, else it is no addition but part of what first shipped.
+            assert!(
+                later.since > held_since,
+                "{}: {:?}",
+                family.name,
+                later.joined
+            );
+            assert!(
+                later.since >= own_since,
+                "{}: {:?}",
+                family.name,
+                later.joined
+            );
+        }
     }
 }

@@ -161,6 +161,7 @@ pub(super) const MESSAGE: Family = Family {
     // Its mark's round, at rest: the hover surface, which each state's tint draws over.
     fills: &[("mark", "surface.hover")],
     under: &[],
+    later: &[],
 };
 
 /// **A row as `message.css` draws it**: no ground of its own at rest, the hover surface under the

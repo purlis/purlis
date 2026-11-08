@@ -207,6 +207,28 @@ test("a literal VERSION + 1 as a since is found, in a field and in a since() arm
   assert.deepEqual(literals(LITERAL_RS, 14), []);
 });
 
+test("a state or a property a released family joins later is numbered like any addition (#3226)", () => {
+  const later = `pub(super) const POPOVER: Family = Family {
+    name: "popover",
+    since: 6,
+    later: &[
+        Later { joined: Joined::State(State::Focused), since: super::NEXT },
+        Later { joined: Joined::Property("root", Prop::Padding), since: 13 },
+    ],
+};
+`;
+  assert.deepEqual(
+    markers(later).map((one) => one.line),
+    [5],
+  );
+  assert.match(replace(later, 13), /Joined::State\(State::Focused\), since: 13 \}/);
+  // A literal version past the last release, in a later entry, is refused as any other.
+  assert.deepEqual(
+    literals(later, 13).map((one) => one.line),
+    [6],
+  );
+});
+
 test("--check refuses a literal VERSION + 1, and the release step gives it its version", () => {
   const root = tree({
     [PARTS]: LITERAL_RS,
