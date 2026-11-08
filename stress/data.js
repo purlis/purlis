@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794147150592,
+  "lastUpdate": 1794152547500,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -8796,6 +8796,42 @@ window.BENCHMARK_DATA = {
             "value": 308.6,
             "unit": "MB",
             "extra": "median of 6 samples: 412.8, 411.7, 328.4, 285.4, 288.9, 232.4 MB; window 223.8 MB, session host 84.9 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "3854519ae2e5d278a2b40e0fd65a240b0ad26051",
+          "message": "Row tooltips can be hovered and come back after Esc; control tooltips keep their width (#5038, #3364) (#5784)\n\n* A row's tooltip can be hovered, and comes back after Esc (#5038)\n\nA list row's tooltip went the moment the pointer left the row, so the\npointer could not cross onto it, and Esc's dismissal lasted until the\npointer left the row: a tooltip the keyboard raised and Esc took down\nnever came back on the keyboard's next visit.\n\n- It stays TOOLTIP_CLOSE_DELAY after the pointer leaves the row, and while\n  the pointer is on it; leaving it for its row keeps it, leaving it for\n  anything else takes it down after the same delay. The row answers only\n  pointer events on its own element: React hands it the tooltip's too.\n- Esc's dismissal ends on the pointer's next rest on the row or the\n  keyboard's next visit to it (WCAG 2.2 SC 1.4.13).\n- It is anchored once, where it opened, and never remounted while it is\n  up: the review nit from #3346 that #3364 carries, in the same component,\n  so a screen reader is handed it once.\n- ARowAcrossTheWindow walks onto the tooltip, and Esc then back by the\n  keyboard, ending where it ended, so its picture stays.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6WTXMBPJZN5B8QZJJV11BN9\nPurlis-Persona: steward\n\n* A control's tooltip keeps its width at the window's edge (#3364)\n\nTooltipSurface (the hint on a button or on words) used React Aria's flip\nalone. Where its target's end had no room, React Aria flipped it to the\nstart and set only its right edge, so near the window's edge, or beside\nwords across the window, it shrank to a column of words.\n\n- The measure-then-choose step of #3346 is one hook, useRoom, which both\n  AnchoredTooltip and TooltipSurface use: as it opens and before it is\n  painted, its max-content width is measured, the side is chosen with\n  room for all of it (sideWithRoom: the end, else the start, else under\n  the target), and the width is held. R166 holds: end first, flipped to\n  start, 10 px. A strip's tooltip still stands below its target.\n- The hook owns the tooltip's ref, so the measurement reads a ref of its\n  own, as the React Compiler's rules want.\n- Story AtTheWindowsEdge: words across the foot of the window and a\n  control pinned to its end; both tooltips keep their full width.\n\nThe #3346 review nit (re-anchor without remounting) is in the #5038\ncommit, in RowTip, where the two meet.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6WTXMBPJZN5B8QZJJV11BN9\nPurlis-Persona: steward\n\n* Review: a row's tooltip hands its row stay and leaving directly (#5038)\n\nFrom the two-axis review: Shown takes stay and leaving rather than a Hold\nof two forwarders, the keyboard's say is one plain boolean, rowAround is\nthe one selector for a row's element, and a test holds that a click or a\nright-click on a hoverable row tooltip does nothing of its row's.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6WTXMBPJZN5B8QZJJV11BN9\nPurlis-Persona: steward\n\n* Review: a control's tooltip is measured again as its words change (#3364)\n\nFrom the two-axis review: a hint whose words change while it is open (a\nbusy button's) kept the width and side it opened with. useRoom now\nwatches what the tooltip holds and measures again. AtTheWindowsEdge\nwalks Esc and holds R166's 10 px after the flip.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6WTXMBPJZN5B8QZJJV11BN9\nPurlis-Persona: steward\n\n* Esc takes a pointer's row tooltip down for good (#5038)\n\nA pointer resting on a row's tooltip when Esc took it down never left the\nrow (it was on the tooltip as the tooltip went), so the pointer's tooltip\nstayed pending and came back beside the keyboard's on the keyboard's next\nvisit, and stayed there as the keyboard went on (ARowAcrossTheWindow's\npicture showed two). Esc now ends the pointer's tooltip and its timers;\nthe next rest of the pointer brings it back.\n\nSkillsViewCards' picture moves on purpose: the walk takes the first\ncard's tooltip down with Esc and ends back on that card, where it now\ncomes back.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6WTXMBPJZN5B8QZJJV11BN9\nPurlis-Persona: steward\n\n* A tooltip with nothing laid out keeps R166's placement (#3364)\n\nWhere nothing is laid out (jsdom, a tooltip not yet drawn), useRoom\nmeasured a 0 px tooltip in a 0 px window, and sideWithRoom chose under\nthe target for a tooltip that stands beside it: a menu's tooltip opened\nfrom the strip came out under its row (TabChip.window.test.tsx). With no\nwidth measured, nothing is chosen and React Aria's placement stands.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6WTXMBPJZN5B8QZJJV11BN9\nPurlis-Persona: steward\n\n* Story baselines from the stories run of c2770a376 (#5038, #3364)\n\nPulled with tools/story-baselines-pull.mjs from run 42456415978, kept to\nthe 62 cells that failed there, and reviewed:\n\n- AtTheWindowsEdge (new): the control's tooltip flipped to its start at\n  its whole width, 10 px from it; the words' over them.\n- SkillsViewCards: the first card's tooltip is back after the Esc that\n  took it down on the way in (#5038).\n- TooNarrowToOpenBeside: the greyed beside icon's tooltip keeps its width\n  near the window's end (#3364).\n- TitleBar ChosenStates, PaneRail Bar, ChipNotices DismissedByEsc,\n  Tooltip OnWords / IconButtonDetail: a tooltip 1 px wider, its measured\n  width rounded up and held.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6WTXMBPJZN5B8QZJJV11BN9\nPurlis-Persona: steward\n\n* SkillsViewCards waits for its tooltip before its picture (#5038)\n\nThe walk ends on the first card, whose tooltip comes back with the\nkeyboard after the Esc on the way in; nothing waited for it, so a cell's\npicture caught it or not by timing (two cells missed their picture on\n00fab6ada). The walk now waits for it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6WTXMBPJZN5B8QZJJV11BN9\nPurlis-Persona: steward\n\n* Story baselines from the stories run of 875844e19 (#5038, #3364)\n\nPulled from run 42460066366 and kept to the 30 cells it names, reviewed:\nSkillsViewCards' two compact cells, now with the first card's tooltip\nback as the walk waits for it; AtTheWindowsEdge's purlis-classic cells,\nmissing from the last pull; and the Tooltip stories' purlis-classic cells,\na tooltip 1 px wider, its measured width rounded up and held.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6WTXMBPJZN5B8QZJJV11BN9\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-08T11:30:59Z",
+          "tree_id": "778031770fc02ab5eb4240ba66b4a7f0f6b028b7",
+          "url": "https://github.com/purlis/purlis/commit/3854519ae2e5d278a2b40e0fd65a240b0ad26051"
+        },
+        "date": 1794152542288,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 2290,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1901, 2290, 3217 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 319.9,
+            "unit": "MB",
+            "extra": "median of 6 samples: 445.9, 372.8, 339.7, 287.9, 300.2, 229.3 MB; window 236.4 MB, session host 79.6 MB"
           }
         ]
       }
