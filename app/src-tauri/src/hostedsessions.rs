@@ -2684,6 +2684,11 @@ impl HostLink {
     /// **From where this window last logged them** (#4219): the lines the link read past the
     /// project's kept cursor, those its runner wrote while no window read its log among them, are
     /// told it first; a project with none kept is told those since the link came up.
+    ///
+    /// **Only at a hold** (#5657): a project none of whose chats is started or put back is not
+    /// held, so its runner's lines wait, in the runner's log, for its next hold, which reads on
+    /// from its cursor. Reading them sooner would mean a link, and a hold that wakes an idle
+    /// runner (#4403), for each project at every window start.
     pub(crate) fn hear_skill_runs(&self, project: &str, tell: crate::host::SkillRunsHeard) {
         self.shared.hand_off(project, tell);
     }
