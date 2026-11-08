@@ -282,14 +282,20 @@ written down in `app/.storybook/pictures.ts` rather than left to its defaults (#
 
 | Option | Value | Why |
 | --- | --- | --- |
-| `threshold` | 0.015 | How far apart two pixels may be on pixelmatch's scale (the YIQ distance, 0 to 1; a grey one level brighter of 255 is about 0.0038). The default, 0.1, let Purlis light's `wash.warning` change from a grey-brown to amber (#3169, about 0.061) and an accent change from green to blue (#5263, 0.083) with no picture failing, and would let any of Purlis light's surfaces be drawn as its neighbour (0.018 to 0.038). 0.015 fails each of those and passes two drawings a rounding apart (two levels in a channel, 0.0076 at most). A faint wash turned at one luminance can still pass (Purlis light's `accent.wash`, at .14, moves 0.013 from green to blue). |
-| `allowedMismatchedPixels` | 0 | No pixel past the threshold may differ. A small control's whole fill is a few hundred pixels, so an allowance big enough to pass noise would let a small swatch through. |
-| `includeAA` | false (the default) | A pixel the comparator finds is antialiasing at an edge is left out, which is what differs between two drawings of one tree. Chromium draws its words greyscale too (above). |
+| `threshold` | 0.035 | How far apart two pixels may be on pixelmatch's scale (the YIQ distance, 0 to 1; a grey one level brighter of 255 is about 0.0038). The default, 0.1, let Purlis light's `wash.warning` change from a grey-brown to amber (#3169, about 0.061) and an accent change from green to blue (#5263, 0.083) with no picture failing. Two `stories` runs of one tree (#5884) drew a button still settling after Enter (`UndoTurn`'s `Undone`, WebKit) up to 0.031 apart over about 1,550 pixels, so the threshold sits above that. |
+| `allowedMismatchedPixels` | 32 | The same two runs drew up to 24 pixels further apart than that, as far as 0.06, in a few stories each time and never the same ones. A flat fill a change of theme reaches is hundreds of pixels at least (a count's pill, a swatch of `EveryFlatFill`), so it still fails. |
+| `includeAA` | false (the default) | A pixel the comparator finds is antialiasing at an edge is left out. Chromium draws its words greyscale too (above). |
 
-`app/.storybook/pictures.test.ts` runs the comparator itself on those changes, and on a rounding.
+What it still lets through: a change under 0.035 on the scale, such as one of Purlis light's surfaces
+drawn as the one next to it but for a menu on the raised strip (0.018 to 0.034, where the menu is
+0.038), `accent.surface` turned toward another accent at one luminance (#5263, 0.033) or a faint
+wash turned at one luminance (`accent.wash` at .14, 0.013); and a change of 32 pixels or fewer.
+Settling a story such as `Undone` before its picture is what would let the threshold come down.
+
+`app/.storybook/pictures.test.ts` runs the comparator itself on those changes, and on the noise.
 `EveryFlatFill` (`app/src/theme/FlatFills.stories.tsx`) pictures every surface step, wash and
-chosen ground in each cell, so a change of one fails at least that story whichever others draw
-it. A re-run of the stories on an unchanged tree stays green: that is the check that the threshold
+chosen ground in each cell, so a change of one past the threshold fails at least that story,
+whichever others draw it. A re-run of the stories on an unchanged tree stays green: that is the check that the threshold
 is above the noise.
 
 **Which `stories` run counts.** The pull request's own run, on the branch merged into its base,

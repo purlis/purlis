@@ -97,29 +97,37 @@ describe("the picture comparison (#3178)", () => {
   });
 
   it("fails a picture whose accent changed between hues of one luminance", () => {
-    // #5263: an accent given over Purlis light went from green to blue. The primary's fill and
-    // the selected row's edge are the accent itself; the update pill's ground is
-    // `accent.surface` turned toward it (`tint.ts`' `toward`), at the luminance it had.
+    // #5263: an accent given over Purlis light went from green to blue: the primary's fill and
+    // the selected row's edge are the accent itself.
     const green = PURLIS_LIGHT["terminal.ansi.green"];
     const blue = PURLIS_LIGHT["terminal.ansi.blue"];
     const ground = PURLIS_LIGHT["surface.base"];
     expect(fails(green, blue, ground)).toBe(true);
-    const surface = PURLIS_LIGHT["accent.surface"];
-    expect(fails(toward(surface, green), toward(surface, blue), ground)).toBe(true);
-    // The control: the comparator's own default let the accent through.
+    // The control: the comparator's own default let it through.
     expect(fails(green, blue, ground, DEFAULT_THRESHOLD)).toBe(false);
   });
 
-  it("fails a surface of Purlis light's drawn as its neighbour", () => {
-    // Each step of Purlis light's grounds onto the next: the raised strip drawn as the window.
-    const steps = ["surface.deep", "surface.base", "surface.raised", "surface.overlay"];
-    for (const [at, token] of steps.slice(1).entries()) {
-      const before = PURLIS_LIGHT[token];
-      const after = PURLIS_LIGHT[steps[at]];
-      expect(fails(before, after, before), `${token} drawn as ${steps[at]}`).toBe(true);
-      // The control: the comparator's own default let it through.
-      expect(fails(before, after, before, DEFAULT_THRESHOLD), token).toBe(false);
-    }
+  it("fails a menu drawn on the raised strip's ground, Purlis light's widest surface step", () => {
+    const [raised, overlay] = [PURLIS_LIGHT["surface.raised"], PURLIS_LIGHT["surface.overlay"]];
+    expect(fails(overlay, raised, overlay)).toBe(true);
+    expect(fails(overlay, raised, overlay, DEFAULT_THRESHOLD)).toBe(false);
+  });
+
+  it("passes what two runs of one tree drew apart: a few pixels, or a faint patch", () => {
+    // Measured on two `stories` runs of #5884: up to 24 pixels as far apart as 0.06, and a
+    // button still settling over about 1,550 pixels at up to 0.031.
+    const ground = "#ffffff";
+    const few = swatch("#17171b", ground);
+    const moved = few.slice();
+    for (let at = 0; at < PICTURE_COMPARISON.comparatorOptions.allowedMismatchedPixels; at++)
+      moved.set([40, 40, 40], at * 4 * 7);
+    const apart = diff(few, moved, undefined, SIDE, SIDE, {
+      threshold: PICTURE_COMPARISON.comparatorOptions.threshold,
+    });
+    expect(apart).toBeGreaterThan(0);
+    expect(apart).toBeLessThanOrEqual(PICTURE_COMPARISON.comparatorOptions.allowedMismatchedPixels);
+    // About 0.031 on the scale: eight levels of grey.
+    expect(fails("#d0d0d0", "#c8c8c8", ground)).toBe(false);
   });
 
   it("passes a fill a rounding apart: two levels in each channel", () => {

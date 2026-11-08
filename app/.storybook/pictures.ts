@@ -8,10 +8,10 @@
  * `pictures.test.ts` holds the changes it names. The same options decide when a picture is
  * stable enough to compare: two shots in a row no further apart than this.
  */
-export const PICTURE_THRESHOLD = 0.015;
+export const PICTURE_THRESHOLD = 0.035;
 
 /** The pixels a picture may differ from its baseline by, past the threshold. */
-export const PICTURE_PIXELS_ALLOWED = 0;
+export const PICTURE_PIXELS_ALLOWED = 32;
 
 /** What `toMatchScreenshot` is given in every story project (`vitest.project.ts`). */
 export const PICTURE_COMPARISON = {
