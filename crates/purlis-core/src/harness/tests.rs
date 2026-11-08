@@ -941,6 +941,8 @@ fn every_charter_tool_a_claude_code_chat_runs_without_asking_is_ruled_in_by_name
         // the app asks once itself (#3829, ruled 2026-10-29).
         "todo_add",
         "todo_done",
+        // And its reopen, the same workspace's todos (#3416, under #3829).
+        "todo_reopen",
         "memory_add",
         "persona_remember",
         "workspace_section",
