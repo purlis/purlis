@@ -163,6 +163,18 @@ row("index-rebuild", {
   quiet: settled.quiet,
 });
 
+// DIAGNOSTIC (#5672), to be reverted: the build's CPU and two rebuilds at once after it.
+{
+  const { rmSync } = await import("node:fs");
+  const timeFlag = process.platform === "darwin" ? "-l" : "-v";
+  for (const n of [1, 2, 3]) {
+    rmSync(join(project, ".charter", "index"), { recursive: true, force: true });
+    const ran = spawnSync("/usr/bin/time", [timeFlag, resolve(values["scale-project"]), "index", "--project", project], { cwd: project, env, encoding: "utf8" });
+    console.log(`scale-run | diag ${n} | ${ran.stdout.trim()} | ${ran.stderr.replace(/\n\s*/g, " | ").slice(0, 1500)}`);
+  }
+  console.log(`scale-run | diag cpus | ${(await import("node:os")).cpus().length}`);
+}
+
 row("hook", {
   samples: samples([purlis, "hook", "sessionstart"], {
     input: (n) => JSON.stringify({ session_id: `scale-${n}`, hook_event_name: "SessionStart", cwd: inWorkspace }),
