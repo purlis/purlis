@@ -50,6 +50,7 @@ impl Skill {
 struct Built {
     cli: clap::Command,
     tools: BTreeSet<&'static str>,
+    skills: BTreeSet<String>,
 }
 
 impl Built {
@@ -61,6 +62,7 @@ impl Built {
         Built {
             cli,
             tools: crate::mcp::every_tool().map(|tool| tool.name).collect(),
+            skills: shipped().into_iter().map(|skill| skill.name).collect(),
         }
     }
 }
@@ -75,7 +77,44 @@ const RULES: &[(&str, Rule)] = &[
     ("has a description a harness lists", description_is_listable),
     ("says purlis in its description", description_says_purlis),
     ("says each settled pair one way", says_no_losing_side),
+    ("uses the glossary's words", uses_the_glossary_s_words),
+    ("names a skill purlis ships", skills_are_real),
 ];
+
+/// **Words the glossary avoids** (#5723, spec #5714's Q31): `CONTEXT.md`'s `_Avoid_` words that
+/// drifted into what a chat is told, each beside the word it says instead. Matched on the prose
+/// only, as whole words in any case and across a line break, so a tool's name (`ask_operator`),
+/// a command and a path, which are code, keep theirs. "the user" is two words, because "user"
+/// alone is also a harness's word (`user` scope, `$USER`). "plane" stays where a command or a
+/// path says it, until ADR 0072's rename.
+const AVOID: &[(&[&str], &str)] = &[
+    (&["control", "plane"], "the plane"),
+    (&["sub-agent"], "a helper"),
+    (&["sub-agents"], "helpers"),
+    (&["subagent"], "a helper"),
+    (&["subagents"], "helpers"),
+    (&["the", "user"], "the person"),
+    (&["operator"], "the person"),
+    (&["operators"], "people"),
+];
+
+/// Each avoided word `prose` says, with what it says instead, once per time it is said.
+fn avoided(prose: &str) -> Vec<(String, &'static str)> {
+    let lower = prose.to_lowercase();
+    let words: Vec<&str> = lower
+        .split(|c: char| !(c.is_alphanumeric() || c == '-' || c == '_'))
+        .filter(|word| !word.is_empty())
+        .collect();
+    let mut out = Vec::new();
+    for at in 0..words.len() {
+        for (avoid, instead) in AVOID {
+            if words[at..].starts_with(avoid) {
+                out.push((avoid.join(" "), *instead));
+            }
+        }
+    }
+    out
+}
 
 /// **The losing side of each settled pair** (#5722, spec #5714's Q28): words a skill, the
 /// briefing or a tool description said that another place contradicted, each beside the ruling
@@ -185,6 +224,88 @@ fn code(page: &str) -> Vec<String> {
         }
     }
     spans(&mut prose, &mut out);
+    out
+}
+
+/// The paragraphs of `page` outside its fenced blocks, code spans and all.
+fn paragraphs(page: &str) -> Vec<String> {
+    let mut fenced: Option<char> = None;
+    let mut paragraph = String::new();
+    let mut out = Vec::new();
+    for line in page.lines() {
+        if let Some(mark) = fence(line) {
+            match fenced {
+                None => {
+                    out.push(std::mem::take(&mut paragraph));
+                    fenced = Some(mark);
+                }
+                Some(open) if open == mark => fenced = None,
+                Some(_) => {}
+            }
+        } else if fenced.is_none() {
+            if line.trim().is_empty() {
+                out.push(std::mem::take(&mut paragraph));
+            } else {
+                paragraph.push_str(line);
+                paragraph.push('\n');
+            }
+        }
+    }
+    out.push(paragraph);
+    out.retain(|paragraph| !paragraph.is_empty());
+    out
+}
+
+/// The prose of `page`: what [`code`] leaves, each paragraph with its code spans taken out.
+fn prose(page: &str) -> String {
+    paragraphs(page)
+        .iter()
+        .map(|paragraph| {
+            paragraph
+                .split('`')
+                .step_by(2)
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// The skills `page` names in its prose: a code span the word skill follows ("the
+/// `purlis-persona` skill"), and a `purlis-…` word it follows outside code ("the purlis-persona
+/// skill").
+fn skills_named(page: &str) -> Vec<String> {
+    let is_skill = |after: &str| {
+        after
+            .split(|c: char| !c.is_alphanumeric())
+            .find(|word| !word.is_empty())
+            == Some("skill")
+    };
+    let mut out = Vec::new();
+    for paragraph in paragraphs(page) {
+        let parts: Vec<&str> = paragraph.split('`').collect();
+        for at in (1..parts.len().saturating_sub(1)).step_by(2) {
+            if parts[at + 1].starts_with(char::is_whitespace) && is_skill(parts[at + 1]) {
+                out.push(parts[at].trim().to_owned());
+            }
+        }
+        for text in parts.iter().step_by(2) {
+            for (at, _) in text.match_indices("purlis-") {
+                let starts = text[..at]
+                    .chars()
+                    .next_back()
+                    .is_none_or(|c| !(c.is_alphanumeric() || "-_/".contains(c)));
+                let name: String = text[at..]
+                    .chars()
+                    .take_while(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == '-')
+                    .collect();
+                let name = name.trim_end_matches('-');
+                if starts && is_skill(&text[at + name.len()..]) {
+                    out.push(name.to_owned());
+                }
+            }
+        }
+    }
     out
 }
 
@@ -442,6 +563,21 @@ fn says_no_losing_side(skill: &Skill, _: &Built) -> Vec<String> {
         .collect()
 }
 
+fn uses_the_glossary_s_words(skill: &Skill, _: &Built) -> Vec<String> {
+    avoided(&prose(&skill.page))
+        .into_iter()
+        .map(|(word, instead)| format!("says “{word}” where the glossary says {instead}"))
+        .collect()
+}
+
+fn skills_are_real(skill: &Skill, built: &Built) -> Vec<String> {
+    skills_named(&skill.page)
+        .into_iter()
+        .filter(|name| !built.skills.contains(name))
+        .map(|name| format!("names the skill `{name}`, which purlis does not ship"))
+        .collect()
+}
+
 /// Each skill, by name, with every line a rule has against it.
 fn check(skills: &[Skill], built: &Built) -> Vec<String> {
     let mut out = Vec::new();
@@ -672,7 +808,7 @@ fn a_comment_a_wrapped_span_and_purlis_as_an_argument_are_read_as_a_shell_and_ma
 fn a_skill_that_says_the_losing_side_of_a_settled_pair_is_named_with_the_ruling() {
     for (page, ruling) in [
         ("Run the login: run it by its\nname with `-s=<s>`.", "(a)"),
-        ("Ask the user to Supply the value by stdin.", "(h)"),
+        ("Ask them to Supply the value by stdin.", "(h)"),
         ("Ask once, with **AskUserQuestion**.", "(i)"),
         ("Write the persona. Commit it. Personas are shared.", "(f)"),
     ] {
@@ -729,6 +865,188 @@ fn the_briefing_and_every_tool_description_say_no_losing_side() {
             losing_sides(text)
                 .into_iter()
                 .map(move |ruling| format!("{what} says the losing side, against {ruling}"))
+        })
+        .collect();
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
+
+#[test]
+fn a_skill_that_says_a_word_the_glossary_avoids_is_named_with_the_word_it_says_instead() {
+    for (page, word) in [
+        ("A control\nplane orchestrates repos.", "“control plane”"),
+        ("Start a sub-agent for it.", "“sub-agent”"),
+        ("Two subagents read it.", "“subagents”"),
+        ("Tell The User what it says.", "“the user”"),
+        ("Prune only with the operator's yes.", "“operator”"),
+    ] {
+        let found = problems(&format!("{GOOD}{page}\n"));
+        assert_eq!(found.len(), 1, "{page}: {found:?}");
+        assert!(
+            found[0].contains(word) && found[0].contains("(uses the glossary's words)"),
+            "{found:?}"
+        );
+    }
+    let page = "---\nname: purlis-example\ndescription: Ask the operator in purlis.\n---\n";
+    assert_eq!(
+        problems(page),
+        [
+            "purlis-example: says “operator” where the glossary says the person (uses the \
+             glossary's words)"
+        ]
+    );
+    // A tool's name, a command and a path are code, and keep their words; so does a word that
+    // only contains one.
+    for page in [
+        "Ask the person with `ask_operator`.",
+        "Run `purlis persona use operator`.",
+        "```bash\nls ~/control plane/the user\n```",
+        "A helper reads; the user-level settings stay; a cooperator is no operator-like word.",
+    ] {
+        assert_eq!(
+            problems(&format!("{GOOD}{page}\n")),
+            Vec::<String>::new(),
+            "{page}"
+        );
+    }
+}
+
+#[test]
+fn a_skill_named_in_prose_that_purlis_does_not_ship_is_named() {
+    for (page, name) in [
+        ("Use the `secrets` skill for it.", "secrets"),
+        ("That is the purlis-secret skill's.", "purlis-secret"),
+        ("(the `purlis-persnoa` skill)", "purlis-persnoa"),
+    ] {
+        let found = problems(&format!("{GOOD}{page}\n"));
+        assert_eq!(
+            found,
+            [format!(
+                "purlis-example: names the skill `{name}`, which purlis does not ship (names a \
+                 skill purlis ships)"
+            )],
+            "{page}"
+        );
+    }
+    for page in [
+        "Use the `purlis-secrets` skill, or the purlis-persona skill.",
+        "A `secrets` file is no skill; `purlis-secrets` is one.",
+        "Run `purlis skill list`; a project skill is the project's.",
+    ] {
+        assert_eq!(
+            problems(&format!("{GOOD}{page}\n")),
+            Vec::<String>::new(),
+            "{page}"
+        );
+    }
+}
+
+/// What a chat is told at its start in the cases whose words are purlis's own: the gate, the
+/// plane root, a record that cannot be resumed, a persona that is gone.
+fn briefings() -> Vec<(String, String)> {
+    use purlis_core::{active, briefing, sessionrecord};
+    let dir = tempfile::tempdir().expect("a folder");
+    let root = std::fs::canonicalize(dir.path()).expect("a real path");
+    std::fs::write(root.join("charter.toml"), "schema = 1\n").expect("charter.toml");
+    for ws in ["alpha", "beta"] {
+        std::fs::create_dir_all(root.join("workspaces").join(ws)).expect("a workspace");
+        std::fs::write(
+            root.join("workspaces").join(ws).join("workspace.md"),
+            format!("# {ws}\n\n## Vision\n\nShip {ws}.\n"),
+        )
+        .expect("workspace.md");
+    }
+    let outside = root.parent().expect("a parent").to_path_buf();
+    /// What is asked, from where, with which variables and in which permission mode.
+    type Case<'a> = (
+        &'a str,
+        &'a std::path::Path,
+        &'a [(&'a str, &'a str)],
+        &'a str,
+    );
+    let cases: [Case; 6] = [
+        ("the gate", &outside, &[], "default"),
+        ("the unattended gate", &outside, &[], "bypassPermissions"),
+        (
+            "a chat launched at the plane root",
+            &outside,
+            &[(active::PLANE_ROOT_ENV, "1")],
+            "default",
+        ),
+        ("a chat standing at the plane root", &root, &[], "default"),
+        (
+            "a record that cannot be resumed",
+            &outside,
+            &[(sessionrecord::RESUMING_ENV, "nowhere.md")],
+            "default",
+        ),
+        (
+            "a persona that is gone",
+            &outside,
+            &[(active::PERSONA_ENV, "ghost")],
+            "default",
+        ),
+    ];
+    cases
+        .into_iter()
+        .map(|(what, cwd, env, mode)| {
+            let lookup = |name: &str| {
+                env.iter()
+                    .find(|(key, _)| *key == name)
+                    .map(|(_, value)| (*value).to_owned())
+            };
+            let payload = serde_json::json!({ "permission_mode": mode });
+            let ask = briefing::Ask {
+                root: &root,
+                cwd,
+                payload: &payload,
+                env: &lookup,
+                now: chrono::Utc::now(),
+            };
+            (
+                format!("the briefing of {what}"),
+                briefing::parts(&ask, None).join("\n\n"),
+            )
+        })
+        .collect()
+}
+
+/// The glossary's words hold beyond the skills: in what every chat is told at its start, and in
+/// every purlis tool's description and arguments.
+#[test]
+fn the_briefing_and_every_tool_description_use_the_glossary_s_words() {
+    use purlis_core::briefing;
+    let mut said = briefings();
+    assert!(
+        said.iter()
+            .any(|(_, text)| text.contains("Confirm the workspace")),
+        "the gate was not rendered: {said:?}"
+    );
+    for (what, text) in [
+        ("the sandboxed note", briefing::SANDBOXED_NOTE),
+        ("the unsandboxed note", briefing::UNSANDBOXED_NOTE),
+        (
+            "the branch-folder note",
+            briefing::BRANCH_FOLDER_COMMIT_NOTE,
+        ),
+        ("the one route", purlis_core::handoff::ONE_ROUTE),
+        ("the one route's tools", briefing::ONE_ROUTE_TOOLS),
+        ("the one route's task", briefing::ONE_ROUTE_IS_A_TASK),
+        ("the one route's limit", briefing::ONE_ROUTE_ONLY_THEN),
+    ] {
+        said.push((what.to_owned(), text.to_owned()));
+    }
+    for tool in crate::mcp::every_tool() {
+        said.push((
+            format!("the `{}` tool", tool.name),
+            format!("{} {}", tool.description, (tool.schema)()),
+        ));
+    }
+    let wrong: Vec<String> = said
+        .iter()
+        .flat_map(|(what, text)| {
+            avoided(&prose(text))
+                .into_iter()
+                .map(move |(word, instead)| format!("{what} says “{word}”, not {instead}"))
         })
         .collect();
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));
