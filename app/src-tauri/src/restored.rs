@@ -485,8 +485,8 @@ pub(crate) fn resuming(
 /// by its id.
 ///
 /// **A task is told to carry on only while its dispatch is at work** (#1546): one whose record
-/// another hand ended while it waited is started told nothing, as any chat that did not start
-/// is (`dispatchrestart::still_at_work`).
+/// another hand ended while it waited is not told to carry on (`dispatchrestart::still_at_work`).
+/// What the restart ended of its own work is still told (#5752).
 pub(crate) fn retrying(
     held: &Held,
     id: &str,
@@ -502,7 +502,7 @@ pub(crate) fn retrying(
             )
     });
     if ended {
-        held.chats().tell_nothing(id);
+        held.chats().tell_no_carry_on(id);
     }
     let started = coming_back_as(held, id, start);
     if let Ok(task) = &started {

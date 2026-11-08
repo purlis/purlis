@@ -4887,6 +4887,8 @@ impl Planes {
                                 left_in: now.left_in,
                                 resumable: false,
                                 with_the_runner: true,
+                                // Said as the chat ending with its runner, with nothing to resume.
+                                ended: None,
                             });
                         }
                         if let Some(held) = me.get().and_then(std::sync::Weak::upgrade)
@@ -4943,6 +4945,7 @@ impl Planes {
                                 left_in,
                                 resumable,
                                 with_the_runner,
+                                ended: crate::hostlost::ended_with_it(&held.chats, session),
                             });
                         }
                     }

@@ -15,7 +15,8 @@ export const LOST = "chat-lost-with-the-host";
  * The session host the chat ran in ended unexpectedly, and the chat's program ended with it.
  * The core keeps how that left the chat's run (`chat-lost-with-the-host`), and this says it:
  * **failed**, in the middle of a turn that is lost, or **hibernated**, idle at a turn's end
- * with nothing lost. A chat whose host was a pool's runner, gone for good, says that instead:
+ * with nothing lost, unless it was waiting on work of its own, which ended with the host and is
+ * named (#5752). A chat whose host was a pool's runner, gone for good, says that instead:
  * its conversation went with the runner's home, so nothing can be resumed (#4350). It offers
  *
  * - **Resume**: the chat's restart on its conversation (`onRestart`), one click, where it has a
@@ -44,13 +45,21 @@ export function HostLostNotice({
       .finally(read);
   };
 
+  // What it had running of its own ended with the host (#5752): named, never "nothing was lost".
+  // A chat on a gone runner says only that, since nothing of it can be resumed.
+  const ended = lost.with_the_runner ? null : lost.ended;
   const said = lost.with_the_runner
     ? `${offScreen ? "That chat" : "This chat"} ended with its pool's runner, which this machine no longer keeps, and its conversation was on that runner.`
     : lost.left_in === "hibernated"
-      ? `purlis's session host stopped unexpectedly while ${chat} was waiting for you, so nothing was lost.`
+      ? ended
+        ? `purlis's session host stopped unexpectedly while ${chat} was waiting on work of its own.`
+        : `purlis's session host stopped unexpectedly while ${chat} was waiting for you, so nothing was lost.`
       : `purlis's session host stopped unexpectedly in the middle of ${chat}'s turn, so that turn was lost.`;
+  const what = ended ? ` What it had running of its own ended with the host: ${ended}.` : "";
   const next = lost.resumable
-    ? " Resume starts it again on its conversation."
+    ? ended
+      ? " Resume starts it again on its conversation and tells it what ended."
+      : " Resume starts it again on its conversation."
     : lost.with_the_runner
       ? " Start a new chat to go on."
       : " It named no conversation to resume, so start a new chat to go on.";
@@ -77,6 +86,7 @@ export function HostLostNotice({
       onDismiss={putAway}
     >
       {said}
+      {what}
       {next}
     </Notice>
   );
