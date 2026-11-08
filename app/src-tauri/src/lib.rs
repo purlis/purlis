@@ -4204,6 +4204,7 @@ pub fn run() {
             if let Some(logs) = purlis_core::applog::log_dir_for(&app.config().identifier) {
                 panics::keep_in(&logs);
             }
+            panics::send_waiting();
             app.manage(Quitting::default());
             app.manage(updates::Installed::default());
             app.manage(skillset::SetUpdateUndos::default());

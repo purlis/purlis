@@ -104,13 +104,23 @@ pub trait Post: Send + Sync {
     fn post(&self, request: &Request) -> Result<Answer, String>;
 }
 
+/// Why the intake did not take a report.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Failed {
+    /// No answer came: this machine is offline, or the intake cannot be reached. The report
+    /// waits on this machine and is sent when the intake answers again (#5693, Q24).
+    NoAnswer(String),
+    /// The intake answered, and did not take it.
+    Refused(String),
+}
+
 /// Where reports go: the Report intake, as a [`super::Reports`] holds it.
 pub trait Intake: Send + Sync {
     /// The DSN an envelope names in its header.
     fn dsn(&self) -> &str;
 
     /// Sends `envelope`'s bytes, and answers with the address it was kept at, or why not.
-    fn send(&self, envelope: &[u8], event_id: &str) -> Result<String, String>;
+    fn send(&self, envelope: &[u8], event_id: &str) -> Result<String, Failed>;
 }
 
 /// The intake at a Sentry DSN, over `post`.
@@ -130,25 +140,28 @@ impl<P: Post> Intake for Sentry<P> {
         self.dsn.as_str()
     }
 
-    fn send(&self, envelope: &[u8], event_id: &str) -> Result<String, String> {
-        let answer = self.post.post(&Request {
-            url: self.dsn.envelope_url(),
-            headers: vec![
-                (
-                    "content-type".to_string(),
-                    "application/x-sentry-envelope".to_string(),
-                ),
-                ("x-sentry-auth".to_string(), self.dsn.auth()),
-            ],
-            body: envelope.to_vec(),
-        })?;
+    fn send(&self, envelope: &[u8], event_id: &str) -> Result<String, Failed> {
+        let answer = self
+            .post
+            .post(&Request {
+                url: self.dsn.envelope_url(),
+                headers: vec![
+                    (
+                        "content-type".to_string(),
+                        "application/x-sentry-envelope".to_string(),
+                    ),
+                    ("x-sentry-auth".to_string(), self.dsn.auth()),
+                ],
+                body: envelope.to_vec(),
+            })
+            .map_err(Failed::NoAnswer)?;
         if (200..300).contains(&answer.status) {
             Ok(format!("purlis's report service, event {event_id}"))
         } else {
-            Err(format!(
+            Err(Failed::Refused(format!(
                 "purlis's report service answered {}",
                 answer.status
-            ))
+            )))
         }
     }
 }

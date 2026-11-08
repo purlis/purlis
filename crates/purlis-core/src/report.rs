@@ -800,6 +800,12 @@ pub enum Outcome {
     Drafted { draft: Draft, route: Route },
     /// Filed, at `address`.
     Sent { address: String },
+    /// Not sent: the same report was sent before from this machine in the same purlis version,
+    /// and is now counted `repeats` times after it (#5693, Q15).
+    Counted { repeats: u32 },
+    /// Not sent yet: the Report intake gave no answer, and it waits on this machine to go when it
+    /// answers again (#5693, Q24), listed as waiting to send.
+    Queued,
     /// Not filed, and why.
     Refused(Refusal),
 }
@@ -840,6 +846,10 @@ pub enum Refusal {
     NoIntake,
     /// The Report intake did not take a Crash report, for the reason given: nothing was listed.
     NotSent(String),
+    /// Five drafts were sent unread today: this one is not sent, and falls back to asking
+    /// (#5693, Q2b). Crash reports are never capped: they cannot ask, and their fingerprint
+    /// bounds them instead.
+    CapReached,
 }
 
 /// The one module every report passes through: evidence from a source in, an outcome out.
@@ -1020,23 +1030,85 @@ impl Reports {
             return Outcome::Refused(Refusal::NoIntake);
         };
         let crash = crash::CrashReport::of_panic(record, &self.known, intake.dsn());
-        match intake.send(crash.bytes.as_bytes(), &crash.event_id) {
+        if let Some(repeats) = SentList::count_repeat(root, &crash.fingerprint) {
+            return Outcome::Counted { repeats };
+        }
+        // The reports that waited go first, so the intake hears them oldest first.
+        self.send_waiting();
+        let told = SentList::untold_repeats(root);
+        let bytes = crash::with_repeats(&crash.bytes, &told);
+        let listed = |address: String, bytes: String| Sent {
+            at: now(),
+            title: crash.title.clone(),
+            to: SentTo::Intake,
+            address,
+            bytes,
+            fingerprint: Some(crash.fingerprint.clone()),
+            repeats: 0,
+            repeats_sent: 0,
+            unread_draft: false,
+            waiting: false,
+        };
+        match intake.send(bytes.as_bytes(), &crash.event_id) {
             Ok(address) => {
                 // The report has left: a list that cannot be written does not unsend it.
-                let _ = SentList::add(
-                    root,
-                    Sent {
-                        at: chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(),
-                        title: crash.title,
-                        to: SentTo::Intake,
-                        address: address.clone(),
-                        bytes: crash.bytes,
-                    },
-                );
+                let _ = SentList::add_telling(root, listed(address.clone(), bytes), &told);
                 Outcome::Sent { address }
             }
-            Err(why) => Outcome::Refused(Refusal::NotSent(why)),
+            // It waits without the counts: they ride on whatever leaves first.
+            Err(intake::Failed::NoAnswer(why)) => {
+                match SentList::wait(root, listed(String::new(), crash.bytes.clone())) {
+                    Ok(true) => Outcome::Queued,
+                    Ok(false) => Outcome::Refused(Refusal::NotSent(format!(
+                        "{why}, and {} reports already wait to send",
+                        sent::WAITING_AT_MOST
+                    ))),
+                    Err(err) => Outcome::Refused(Refusal::NotSent(format!(
+                        "{why}, and it could not be kept to send later: {err}"
+                    ))),
+                }
+            }
+            Err(intake::Failed::Refused(why)) => Outcome::Refused(Refusal::NotSent(why)),
         }
+    }
+
+    /// Sends the reports that wait on this machine (#5693, Q24), oldest first, until the intake
+    /// gives no answer or does not take one, and answers how many left. Each carries the counts of
+    /// repeats not yet told, as any report that leaves does. Nothing is sent without a yes to
+    /// Crash reports: a person who said no since keeps theirs here until they go stale.
+    pub fn send_waiting(&self) -> usize {
+        let Some((intake, root)) = &self.intake else {
+            return 0;
+        };
+        if !self
+            .consent
+            .unwrap_or_else(Consent::here)
+            .allows(Stream::CrashReports)
+        {
+            return 0;
+        }
+        let mut left = 0;
+        for waited in SentList::waiting(root) {
+            let told = SentList::untold_repeats(root);
+            let bytes = crash::with_repeats(&waited.bytes, &told);
+            let Ok(address) = intake.send(bytes.as_bytes(), &crash::event_id_of(&waited.bytes))
+            else {
+                break;
+            };
+            let _ = SentList::left(
+                root,
+                &waited.bytes,
+                Sent {
+                    at: now(),
+                    address,
+                    bytes,
+                    ..waited.clone()
+                },
+                &told,
+            );
+            left += 1;
+        }
+        left
     }
 
     fn draft(&self, evidence: Evidence) -> Result<Draft, Refusal> {
@@ -1058,6 +1130,11 @@ impl Reports {
         };
         made.map_err(|Refused(said)| Refusal::Unusable(said))
     }
+}
+
+/// Now, UTC, RFC 3339 to the second, as the sent list keeps it.
+fn now() -> String {
+    chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string()
 }
 
 /// The stream `evidence` from `source` belongs to, or none for a person's own report.

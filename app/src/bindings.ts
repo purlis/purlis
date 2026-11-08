@@ -15308,6 +15308,11 @@ export type SentReport = {
 	address: string,
 	/**  Exactly what was sent. */
 	bytes: string,
+	/**
+	 *  Not sent yet (#5693): the report service could not be reached, and it waits on this
+	 *  machine; `at` is when it was made, `address` is empty, and `bytes` is what will go.
+	 */
+	waiting: boolean,
 };
 
 /**  One session record, as the palette and the Sessions panel name it. */

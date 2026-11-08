@@ -66,6 +66,16 @@ fn report(place: Option<&str>, message: &str) {
     );
 }
 
+/// Sends the Crash reports that wait on this machine (#5693): made while the Report intake could
+/// not be reached, most often by an app that panicked offline and is gone. Each start tries them
+/// once, oldest first, on a thread of its own, so the window never waits on the network; a
+/// report made later sends whatever still waits before itself.
+pub fn send_waiting() {
+    let _ = std::thread::Builder::new()
+        .name("reports-waiting".into())
+        .spawn(|| purlis_core::report::Reports::for_a_crash().send_waiting());
+}
+
 fn now() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

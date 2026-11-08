@@ -12,7 +12,9 @@ import type { RowIds } from "./components";
 
 /**
  * **The sent list** (#5689, spec #5683, Q13): every report this machine sent in the last 90
- * days, newest first, each opening exactly the bytes that left. The core keeps it
+ * days, newest first, each opening exactly the bytes that left. A report made while purlis's
+ * report service could not be reached is listed as "Waiting to send" (#5693, Q24) and opens the
+ * bytes that will go. The core keeps it
  * (`<config>/reports-sent.json`, `purlis_core::report::SentList`); the window only reads
  * it. It is the local viewer ruling O9 asks for: a real viewer, not a summary.
  */
@@ -38,7 +40,7 @@ export function SentReports({ ids }: { ids: RowIds }) {
             <ListRow key={at} id={at} textValue={one.title}>
               <RowLabel>{one.title}</RowLabel>
               <RowDescription>
-                {one.to} · {when(one.at)}
+                {one.waiting ? "Waiting to send" : one.to} · {when(one.at)}
               </RowDescription>
             </ListRow>
           ))}
@@ -47,7 +49,11 @@ export function SentReports({ ids }: { ids: RowIds }) {
       {open !== undefined && (
         <Dialog
           title={open.title}
-          description={`Exactly what was sent to ${open.to}, ${when(open.at)}.`}
+          description={
+            open.waiting
+              ? `Exactly what will be sent to ${open.to} once it can be reached. Made ${when(open.at)}.`
+              : `Exactly what was sent to ${open.to}, ${when(open.at)}.`
+          }
           size="wide"
           onClose={() => setOpen(undefined)}
           cancel={{ children: "Close" }}

@@ -24,6 +24,7 @@ const SENT: SentReport = {
   to: "purlis's report service",
   address: "purlis's report service, event 9f1c",
   bytes: BYTES,
+  waiting: false,
 };
 
 let sent: SentReport[] = [];
@@ -58,4 +59,16 @@ it("an entry of the sent list opens exactly the bytes that were sent", async () 
 it("a machine that sent nothing says so", async () => {
   render(<SentReports ids={ids} />);
   expect(await screen.findByText("No report has been sent from this machine.")).toBeTruthy();
+});
+
+it("a report made offline is listed as waiting to send, and opens the bytes that will go", async () => {
+  sent = [{ ...SENT, address: "", waiting: true }];
+  render(<SentReports ids={ids} />);
+
+  const row = await screen.findByRole("row", { name: new RegExp(SENT.title) });
+  expect(within(row).getByText(/Waiting to send/)).toBeTruthy();
+  await userEvent.click(row);
+
+  const dialog = await screen.findByRole("dialog", { name: SENT.title });
+  expect(within(dialog).getByText(/will be sent to purlis's report service/)).toBeTruthy();
 });
