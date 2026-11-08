@@ -701,11 +701,7 @@ pub async fn keep_vault_blocked(
     // Off the window's thread (#5424): a Run grant's ask open on the vault is answered Don't
     // allow, and that answer is audited on disk.
     crate::off_the_window("keeping the vault blocked", move || {
-        {
-            // Not between an Always allow's tool line and its answer (#5617).
-            let _one = held.run_answers();
-            vault_kept_blocked(&held, network.as_ref(), session, &vault);
-        }
+        keep_blocked_pressed(&held, network.as_ref(), session, &vault);
         crate::askoutcome::kept_blocked(
             held.chats(),
             session,
@@ -715,6 +711,26 @@ pub async fn keep_vault_blocked(
         Ok(())
     })
     .await
+}
+
+/// **The person pressed Keep blocked on `vault` for chat `session`** (#5617). Held at once: the
+/// chat's later tries raise nothing and its grants on the vault are taken back, though a press on
+/// another ask holds the answers, its audit perhaps waiting on a stalled session host. A press
+/// that comes to the answers after this gives nothing on the vault ([`crate::secretasks`]). The
+/// asks open on it are then answered with [`crate::planes::Held::run_answers`] held, so this never
+/// lands between an Always allow's tool line and its answer; a grant a press under way gave
+/// meanwhile is taken back then.
+pub(crate) fn keep_blocked_pressed(
+    held: &crate::planes::Held,
+    network: Option<&purlis_core::sandboxblock::record::Record>,
+    session: u32,
+    vault: &str,
+) -> Vec<(u32, String)> {
+    held.vault_refusals().keep_blocked(session, vault);
+    // Its asks are answered below, under the answers' lock.
+    let _ = held.secret_asks().keep_vault_blocked(session, vault);
+    let _one = held.run_answers();
+    vault_kept_blocked(held, network, session, vault)
 }
 
 /// What Keep blocked does to what the app holds for chat `session` and `vault`: its later tries
@@ -729,8 +745,8 @@ pub async fn keep_vault_blocked(
 /// the persona, and the vault given to it, by the person's own earlier press, for every chat and
 /// every teammate. Keep blocked is for one chat on a vault its persona may not use, and has never
 /// taken back what a persona holds; removing the tool, or the vault in the Allowed list, does
-/// (ADR 0112, amended 2026-11-05). One pressed while Keep blocked is carried out waits for it,
-/// and finds its ask answered before it writes anything.
+/// (ADR 0112, amended 2026-11-08, "Keep blocked leaves what a persona holds"). One pressed while
+/// Keep blocked is carried out waits for it, and finds its ask answered before it writes anything.
 pub(crate) fn vault_kept_blocked(
     held: &crate::planes::Held,
     network: Option<&purlis_core::sandboxblock::record::Record>,

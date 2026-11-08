@@ -13678,7 +13678,7 @@ fn keep_blocked_through_a_vaults_own_ask_says_no_ask_stayed_up() {
             "the vault's own ask is answered first"
         );
 
-        let stayed = crate::vaultroute::vault_kept_blocked(&held, None, 3, "team");
+        let stayed = crate::vaultroute::keep_blocked_pressed(&held, None, 3, "team");
 
         assert_eq!(stayed, Vec::<(u32, String)>::new());
         assert!(held.secret_asks().open_runs().is_empty());
@@ -13753,6 +13753,122 @@ fn always_allow_pressed_as_keep_blocked_lands_leaves_no_tool_line() {
             "and the persona was not given the vault"
         );
         assert!(held.secret_asks().given_runs().is_empty());
+        waits.join().expect("it settles");
+    });
+}
+
+/// #5617: Keep blocked takes the chat's grants on the vault back at once, though a press on another
+/// ask is under way and holds the answers: a stalled audit of that press doesn't keep a chat's
+/// Allow for this chat in force.
+#[test]
+fn keep_blocked_takes_a_chats_grant_back_at_once_while_a_press_is_under_way() {
+    use purlis_core::secrets::ask::run::Offer;
+    let plane = Plane::new().a_persona("ops", "");
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let logs = tempfile::tempdir().expect("a folder for the log");
+    {
+        use purlis_core::eventlog::{ArgsKey, Log, Recorder};
+        held.hooks()
+            .record_into(crate::hooks::Events::here(Recorder::new(
+                Log::open(logs.path(), "DEVICE").expect("a log"),
+                ArgsKey::open(logs.path()).expect("a key"),
+            )));
+    }
+    vault_team_no_persona_is_tagged_for(&plane);
+
+    std::thread::scope(|scope| {
+        let (open, waits) = raised(
+            scope,
+            &held,
+            curl_on_team_not_its(&plane, Offer::Program, &[]),
+        );
+        crate::secretasks::run_grant_filled(
+            &held,
+            None,
+            open.id,
+            crate::secretasks::RunGrantPress::Chat,
+            Vec::new(),
+        )
+        .expect("allowed for this chat");
+        waits.join().expect("it settles");
+        assert_eq!(held.secret_asks().given_runs().len(), 1);
+
+        // A press on another ask is under way, its audit stalled.
+        let pressing = held.run_answers();
+        let keeping =
+            scope.spawn(|| crate::vaultroute::keep_blocked_pressed(&held, None, 3, "team"));
+        let began = std::time::Instant::now();
+        while !held.secret_asks().given_runs().is_empty()
+            && began.elapsed() < std::time::Duration::from_secs(5)
+        {
+            std::thread::yield_now();
+        }
+        assert!(
+            held.secret_asks().given_runs().is_empty(),
+            "the chat's grant on the vault is taken back at once"
+        );
+        drop(pressing);
+        assert_eq!(
+            keeping.join().expect("it ends"),
+            Vec::<(u32, String)>::new()
+        );
+    });
+}
+
+/// #5617: a press that comes to the answers after Keep blocked was pressed for its chat and vault
+/// gives nothing, though Keep blocked has not answered its ask yet.
+#[test]
+fn a_press_after_keep_blocked_was_pressed_gives_nothing() {
+    use purlis_core::secrets::ask::run::Offer;
+    let plane = Plane::new().a_persona("ops", "");
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let logs = tempfile::tempdir().expect("a folder for the log");
+    {
+        use purlis_core::eventlog::{ArgsKey, Log, Recorder};
+        held.hooks()
+            .record_into(crate::hooks::Events::here(Recorder::new(
+                Log::open(logs.path(), "DEVICE").expect("a log"),
+                ArgsKey::open(logs.path()).expect("a key"),
+            )));
+    }
+    vault_team_no_persona_is_tagged_for(&plane);
+    let manifest = plane.root.join(purlis_core::plane::MANIFEST);
+    let before = std::fs::read_to_string(&manifest).ok();
+
+    std::thread::scope(|scope| {
+        let (open, waits) = raised(
+            scope,
+            &held,
+            curl_on_team_not_its(&plane, Offer::Program, &[]),
+        );
+        // Keep blocked was pressed, and waits for the answers.
+        held.vault_refusals().keep_blocked(3, "team");
+        let pressed = crate::secretasks::run_grant_filled(
+            &held,
+            None,
+            open.id,
+            crate::secretasks::RunGrantPress::Always,
+            Vec::new(),
+        );
+        assert!(pressed.is_err(), "{pressed:?}");
+        assert_eq!(
+            std::fs::read_to_string(&manifest).ok(),
+            before,
+            "no tool line"
+        );
+        assert_eq!(purlis_core::sandbox::local::granted_vaults(&plane.root), []);
+        assert!(held.secret_asks().given_runs().is_empty());
+        let stayed = {
+            let _one = held.run_answers();
+            crate::vaultroute::vault_kept_blocked(&held, None, 3, "team")
+        };
+        assert_eq!(stayed, Vec::<(u32, String)>::new());
         waits.join().expect("it settles");
     });
 }

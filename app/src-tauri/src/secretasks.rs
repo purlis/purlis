@@ -267,6 +267,19 @@ fn run_grant_carried_out(
     if !answer.is_offered_by(&open.offer) {
         return Err("That answer isn't offered on this notice.".to_owned());
     }
+    // Keep blocked was pressed on this vault for this chat, and waits to answer the asks open on
+    // it (#5617): nothing that opens the vault is given, written or audited meanwhile.
+    if open.not_its_vault
+        && answer.goes_on()
+        && held
+            .vault_refusals()
+            .kept_blocked(open.bound.chat, &open.bound.vault)
+    {
+        return Err(format!(
+            "You kept vault {} blocked for this chat, so nothing was allowed.",
+            open.bound.vault
+        ));
+    }
     // The vault's own Allow holds to what a refused vault's does: never past policy's lock.
     if answer == RunAnswer::AllowVault {
         let locks = purlis_core::sandbox::policy::Locks::of(held.root());
