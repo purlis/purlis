@@ -719,8 +719,9 @@ impl Session {
 /// **Before, never after.** Once the program is waited for, its id can be handed to another
 /// process, and a group signalled by that id could be a stranger's: another chat's. So what is
 /// waited for is marked, and nothing is signalled for it again. A process that left the group
-/// on purpose (a session or a group of its own) is not reached, as before: that is how a
-/// program outlives its chat.
+/// (a session or a group of its own) is not reached here, where the program has gone and its
+/// descendants with it are nobody's; one that left while the program still runs is reached when
+/// the program is ended ([`end`], #5749).
 struct Held {
     child: Box<dyn Child + Send + Sync>,
     /// Whether the program has been waited for, after which its id is no longer its own.
@@ -826,8 +827,19 @@ impl Stopper {
     /// whole is under a second and a half, so fifty chats stopped at once are gone well inside
     /// the kill switch's five seconds.
     pub fn stop(self) {
-        interrupt(&self.child);
-        end(&self.child);
+        // What it started outside its group is read before the interrupt: a program that
+        // leaves on it hands those to the system's first process, where nothing finds them.
+        #[cfg(unix)]
+        {
+            let strays = strays(&self.child);
+            interrupt(&self.child);
+            end_with(&self.child, &strays);
+        }
+        #[cfg(not(unix))]
+        {
+            interrupt(&self.child);
+            end(&self.child);
+        }
     }
 }
 
@@ -908,28 +920,60 @@ const REAPING: Duration = Duration::from_secs(5);
 #[cfg(unix)]
 const HANGUP_GRACE: Duration = Duration::from_millis(500);
 
-/// Hangs up the program's process group, then kills whatever is left of it, then reaps.
+/// Hangs up the program's process group, and what it started outside it, then kills whatever
+/// is left of either, then reaps.
 #[cfg(unix)]
 fn end(child: &Mutex<Held>) {
+    let strays = strays(child);
+    end_with(child, &strays);
+}
+
+/// What the program, while it still runs, has started outside its process group (#5749):
+/// nothing, once it has ended.
+#[cfg(unix)]
+fn strays(child: &Mutex<Held>) -> crate::process::Strays {
+    let mut child = lock(child);
+    if !matches!(child.try_wait(), Ok(None)) {
+        return crate::process::Strays::default();
+    }
+    child
+        .process_id()
+        .map(crate::process::Strays::of)
+        .unwrap_or_default()
+}
+
+/// [`end`], with `strays` read before anything was signalled.
+#[cfg(unix)]
+fn end_with(child: &Mutex<Held>, strays: &crate::process::Strays) {
     use rustix::process::{Pid, Signal, kill_process_group};
 
     let mut child = lock(child);
     // A program that has already ended has had its group ended as that was found ([`Held`]).
-    if !matches!(child.try_wait(), Ok(None)) {
+    let running = matches!(child.try_wait(), Ok(None));
+    if !running && strays.is_empty() {
         return;
     }
     // portable-pty starts every program as the leader of a new session, so its process group
     // id is its pid, and the group holds everything it started that did not leave on purpose.
     // Until it is reaped below, the leader keeps that id from being reused.
-    let Some(group) = child.process_id().and_then(|pid| Pid::from_raw(pid as i32)) else {
+    let group = running
+        .then(|| child.process_id().and_then(|pid| Pid::from_raw(pid as i32)))
+        .flatten();
+    if running && group.is_none() {
         let _ = child.kill();
-        let _ = child.wait();
-        return;
-    };
-    let _ = kill_process_group(group, Signal::HUP);
+    }
+    if let Some(group) = group {
+        let _ = kill_process_group(group, Signal::HUP);
+    }
+    strays.hang_up();
     thread::sleep(HANGUP_GRACE);
-    let _ = kill_process_group(group, Signal::KILL);
-    let _ = child.wait();
+    if let Some(group) = group {
+        let _ = kill_process_group(group, Signal::KILL);
+    }
+    strays.kill();
+    if running {
+        let _ = child.wait();
+    }
 }
 
 #[cfg(not(unix))]
@@ -2028,6 +2072,68 @@ mod tests {
             matches!(output.try_recv(), Err(TryRecvError::Disconnected)),
             "the session was still holding the closed view's queue"
         );
+    }
+
+    /// A program that starts a `sleep` in a session of its own, as Claude Code starts a
+    /// background shell, after `before`, and stays; and that `sleep`'s pid, with a guard that
+    /// ends it whatever the test does.
+    fn a_program_with_a_shell_of_its_own(before: &str) -> (Session, u32, stand_in::Ends) {
+        let session = sh(&format!(
+            "{before}perl -e 'use POSIX (); POSIX::setsid(); exec @ARGV or die' sleep 600 \
+             </dev/null >/dev/null 2>&1 & echo \"shell $!\"; while :; do sleep 600 & wait; done"
+        ));
+        let screen = screen_until(&session, shows("shell "));
+        let shell: u32 = screen
+            .lines
+            .iter()
+            .find_map(|line| line.trim().strip_prefix("shell ")?.trim().parse().ok())
+            .expect("it says its shell's pid");
+        let ends = stand_in::Ends::group(shell);
+        assert!(alive(shell), "precondition: its shell runs");
+        (session, shell, ends)
+    }
+
+    /// Whether `pid` has gone within a few seconds.
+    fn gone_soon(pid: u32) -> bool {
+        let until = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < until {
+            if !alive(pid) {
+                return true;
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
+        false
+    }
+
+    #[test]
+    fn ending_a_session_ends_what_its_program_started_in_a_session_of_its_own() {
+        // #5749: Claude Code's background shell leads a session of its own, out of reach of
+        // the program's group.
+        let (session, shell, _ends) = a_program_with_a_shell_of_its_own("");
+
+        session.end();
+
+        assert!(gone_soon(shell), "its shell {shell} outlived the session");
+    }
+
+    #[test]
+    fn a_stop_ends_what_a_program_that_left_on_its_interrupt_started_in_a_session_of_its_own() {
+        // The program goes on the interrupt, so its shell is no descendant of anyone's by the
+        // time the stop would hang up on it: it was read before.
+        let (session, shell, _ends) = a_program_with_a_shell_of_its_own("trap 'exit 0' INT; ");
+
+        session.stopper().stop();
+
+        assert!(gone_soon(shell), "its shell {shell} outlived the stop");
+    }
+
+    #[test]
+    fn dropping_a_session_ends_what_its_program_started_in_a_session_of_its_own() {
+        let (session, shell, _ends) = a_program_with_a_shell_of_its_own("");
+
+        drop(session);
+
+        assert!(gone_soon(shell), "its shell {shell} outlived the session");
     }
 
     #[test]

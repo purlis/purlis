@@ -72,3 +72,85 @@ fn a_process_record_is_read_past_a_name_that_holds_spaces_and_parentheses() {
     assert!(!in_group_and_running("", "77"));
     assert!(!in_group_and_running("77 (git)", "77"));
 }
+
+/// One row of a process table: `(pid, parent, group)`.
+fn row(pid: u32, parent: u32, group: u32) -> Listed {
+    Listed { pid, parent, group }
+}
+
+#[test]
+fn what_a_program_started_in_a_group_of_its_own_is_a_stray_and_its_own_group_is_not() {
+    // The harness, 100, leads its group. Its helper stays in that group; a shell it started
+    // detached (Claude Code's background Bash) leads a session of its own, 200, and that shell's
+    // `sleep` is in 200's group; a grandchild that left 200's too leads 300. A stranger, 400,
+    // and its child, are nobody's.
+    let table = [
+        row(100, 1, 100),
+        row(101, 100, 100),
+        row(200, 100, 200),
+        row(201, 200, 200),
+        row(300, 201, 300),
+        row(400, 1, 400),
+        row(401, 400, 400),
+    ];
+
+    let strays = strays_in(&table, 100);
+
+    assert_eq!(
+        strays,
+        [
+            Stray {
+                pid: 200,
+                leads: true
+            },
+            Stray {
+                pid: 201,
+                leads: false
+            },
+            Stray {
+                pid: 300,
+                leads: true
+            },
+        ]
+    );
+}
+
+#[test]
+fn a_program_that_started_nothing_outside_its_group_has_no_strays() {
+    let table = [row(100, 1, 100), row(101, 100, 100), row(102, 101, 100)];
+
+    assert!(strays_in(&table, 100).is_empty());
+    assert!(strays_in(&table, 999).is_empty(), "nor one not listed");
+}
+
+#[test]
+fn a_table_that_says_a_process_is_its_own_ancestor_is_walked_once() {
+    // A table read while processes come and go can say anything: a pid reused as its own
+    // ancestor's parent must not loop.
+    let table = [row(100, 1, 100), row(200, 100, 200), row(100, 200, 100)];
+
+    assert_eq!(
+        strays_in(&table, 100),
+        [Stray {
+            pid: 200,
+            leads: true
+        }]
+    );
+}
+
+#[test]
+fn a_ps_listing_and_a_proc_stat_line_read_as_rows() {
+    assert_eq!(
+        listed_by_ps("  100     1   100\n  200   100   200\nnot a row\n"),
+        [row(100, 1, 100), row(200, 100, 200)]
+    );
+    assert_eq!(
+        listed_in_stat(201, "201 (sleep (a) b) S 200 200 1 0 -1 4194304"),
+        Some(row(201, 200, 200))
+    );
+    assert_eq!(
+        listed_in_stat(77, "77 (git) Z 1 77 77 0"),
+        None,
+        "an exited one"
+    );
+}

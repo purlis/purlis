@@ -453,8 +453,13 @@ impl Run for Terminals {
         let Ok(group) = i32::try_from(process) else {
             return;
         };
+        // What it started outside its group (a shell of its own, as Claude Code starts one in
+        // the background) is read while it still runs, and ends with it (#5749).
+        let strays = purlis_terminal::process::Strays::of(process);
         let group = nix::unistd::Pid::from_raw(group);
-        if nix::sys::signal::killpg(group, nix::sys::signal::Signal::SIGKILL).is_ok() {
+        let ended = nix::sys::signal::killpg(group, nix::sys::signal::Signal::SIGKILL).is_ok();
+        strays.kill();
+        if ended {
             crate::say(&format!(
                 "chat {} of {} was still running after its session host ended, and is ended now",
                 left.number,
