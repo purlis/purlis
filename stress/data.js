@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794164160392,
+  "lastUpdate": 1794169723837,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -17660,6 +17660,42 @@ window.BENCHMARK_DATA = {
             "value": 992.4,
             "unit": "MB",
             "extra": "median of 6 samples: 954.7, 972.7, 988.8, 996.1, 996.8, 1058.4 MB; window 672.6 MB, session host 319.9 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "a55fcb9b5f18459c9722fdfeeb29fd8bf913898e",
+          "message": "CI: only main saves a cache, and two Linux jobs restore a gate's cache instead of their own (#5858) (#5867)\n\nThe repository's Actions cache sat at 10.9 GB against its 10 GB cap and turned over in under\nthree hours. Pull requests and merge queue branches saved npm caches through setup-node's\ncache: npm; Pool setup's run and recorded behaviour kept Rust caches of their own (1.7 and\n0.76 GB) for builds scenario-linux and rust already cache.\n\n- ./.github/actions/npm-ci restores npm's cache and saves it on main alone; every setup-node\n  says package-manager-cache: false.\n- Pool setup restores scenario-linux's cache, recorded restores rust's; neither saves.\n- mutants saves only on main; fedora's nightly registry cache is gone.\n- the_workflows_run_only_what_they_pinned.rs fails on any workflow or action step that could\n  save a cache on a ref other than main.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6Y24W06SRH6B9S3SQRMNQ0Z\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-08T18:09:59Z",
+          "tree_id": "11d703db1a0e9fa9b7ee85f00138ef3e2331d162",
+          "url": "https://github.com/purlis/purlis/commit/a55fcb9b5f18459c9722fdfeeb29fd8bf913898e"
+        },
+        "date": 1794169719130,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 2261.1,
+            "unit": "MB",
+            "extra": "median of 3 samples: 2051.9, 2261.1, 2565.1 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 977.4,
+            "unit": "MB",
+            "extra": "median of 6 samples: 934.2, 954.5, 970.1, 984.8, 985, 1056.1 MB; window 654.8 MB, session host 322.7 MB"
           }
         ]
       }
