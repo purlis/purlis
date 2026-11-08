@@ -948,7 +948,7 @@ mod tests {
     #[test]
     fn three_refused_lanes_are_one_ask() {
         let root = tempfile::tempdir().unwrap();
-        assert!(crate::asking::signing_waiting(root.path(), false).is_none());
+        assert!(crate::asking::signing_waiting(root.path(), || false).is_none());
         for piece in ["tab-names", "empty-tab", "pane-foot"] {
             let folder =
                 purlis_core::worktree::path_for(root.path(), "smart-ide", "purlis", piece).unwrap();
@@ -957,7 +957,7 @@ mod tests {
         }
         // A lane whose folder has gone waits on nothing.
         retry::note_refused(root.path(), refused("gone")).unwrap();
-        let ask = crate::asking::signing_waiting(root.path(), false).unwrap();
+        let ask = crate::asking::signing_waiting(root.path(), || false).unwrap();
         assert!(
             ask.says
                 .starts_with("3 lanes can't merge: purlis/purlis only accepts signed commits"),
@@ -975,7 +975,7 @@ mod tests {
             ask.options.iter().map(|one| one.label.clone()).collect()
         };
         assert_eq!(labels(&ask), ["Set up signing", "Dismiss"]);
-        let on = crate::asking::signing_waiting(root.path(), true).unwrap();
+        let on = crate::asking::signing_waiting(root.path(), || true).unwrap();
         assert_eq!(labels(&on), ["Sign and retry all 3", "Dismiss"]);
 
         retry::note_refused(
@@ -989,7 +989,7 @@ mod tests {
         for piece in ["tab-names", "empty-tab"] {
             retry::note_pushed(root.path(), "smart-ide", "purlis", piece, true);
         }
-        let one_left = crate::asking::signing_waiting(root.path(), true).unwrap();
+        let one_left = crate::asking::signing_waiting(root.path(), || true).unwrap();
         assert!(
             one_left.says.starts_with("1 lane can't merge"),
             "{}",
@@ -1003,10 +1003,10 @@ mod tests {
         assert_eq!(labels(&one_left), ["Sign and retry", "Dismiss"]);
 
         retry::note_pushed(root.path(), "smart-ide", "purlis", "pane-foot", true);
-        let all_sent = crate::asking::signing_waiting(root.path(), true).unwrap();
+        let all_sent = crate::asking::signing_waiting(root.path(), || true).unwrap();
         assert_eq!(all_sent.says, "3 lanes signed and sent ✓");
         assert_eq!(labels(&all_sent), ["Dismiss"]);
         retry::forget_sent(root.path()).unwrap();
-        assert!(crate::asking::signing_waiting(root.path(), true).is_none());
+        assert!(crate::asking::signing_waiting(root.path(), || true).is_none());
     }
 }

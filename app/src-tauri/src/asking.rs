@@ -3074,11 +3074,14 @@ pub const SIGN_AND_RETRY_ALL: &str = "retry-all";
 /// up signing; once on, Sign and retry all N; and Dismiss, which drops them all. Once every one
 /// was signed and sent it says so, with Dismiss. A lane that failed again stays listed, with its
 /// reason, and a lane whose folder has gone is dropped. Nothing where nothing waits.
-pub fn signing_waiting(root: &std::path::Path, on: bool) -> Option<Shown> {
+pub fn signing_waiting(root: &std::path::Path, on: impl FnOnce() -> bool) -> Option<Shown> {
     let waiting = purlis_core::signingsetup::retry::waiting_here(root);
     if waiting.is_empty() {
         return None;
     }
+    // Whether this Mac has a key is asked only where a lane waits: the keychain and the machine
+    // store are no business of a project with nothing waiting on signing.
+    let on = on();
     let still: Vec<_> = waiting.iter().filter(|one| !one.sent).collect();
     let counted = |n: usize| {
         if n == 1 {
@@ -3731,7 +3734,7 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
                     .map(|old| old_harness_plugins(&old)),
             )
             // The lanes a forge refused for unsigned commits (#5633): one Ask for them all.
-            .chain(signing_waiting(root, signing_on()))
+            .chain(signing_waiting(root, signing_on))
             .collect(),
     }
 }
