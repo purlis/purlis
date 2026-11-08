@@ -454,3 +454,60 @@ fn a_chat_restarted_alone_with_only_crons_the_harness_sets_again_is_told_nothing
     };
     assert_eq!(super::of_the_chat_restarted(&ended), None);
 }
+
+/// Many long pieces, and as many tasks as each list names and more, restored and reported.
+fn a_full_line_with_task_news(carry_on: bool) -> Option<String> {
+    use super::tasks::{News, Reported, Restored, Standing};
+    let long = "x ".repeat(200);
+    let pieces: Vec<Piece> = (0..crate::ownwork::pieces::MOST_PIECES)
+        .map(|n| Piece {
+            prompt: Some(long.clone()),
+            schedule: Some(long.clone()),
+            ..Piece::new(Kind::Shell, &format!("b{n}"), &long).expect("a piece")
+        })
+        .collect();
+    let news = News {
+        restored: (0..30)
+            .map(|chat| Restored {
+                chat: 100_000 + chat,
+                standing: Standing::Ended,
+            })
+            .collect(),
+        reported: (0..30)
+            .map(|chat| Reported {
+                chat: 200_000 + chat,
+                ended: "ended without a report, as the person stopped it",
+            })
+            .collect(),
+    };
+    let lines = (0..crate::ownwork::last::LINES)
+        .map(|_| "y".repeat(400))
+        .collect::<Vec<_>>();
+    let last = |_: &Piece| Last::Lines {
+        lines: lines.clone(),
+        path: "/tmp/out".to_owned(),
+    };
+    super::with_news(
+        &Ended {
+            pieces: &pieces,
+            mid_turn: true,
+            last: &last,
+            ..Ended::default()
+        },
+        carry_on,
+        &news,
+    )
+}
+
+#[test]
+fn a_full_wake_line_with_the_news_of_many_tasks_stays_within_its_bound_5754() {
+    for carry_on in [false, true] {
+        let line = a_full_line_with_task_news(carry_on).expect("a wake line");
+        assert!(line.len() <= MOST_BYTES, "{} bytes: {line}", line.len());
+        assert!(
+            line.contains("chat 100000:"),
+            "the tasks are still told: {line}"
+        );
+        assert!(line.contains("chat 200000 reported"), "{line}");
+    }
+}

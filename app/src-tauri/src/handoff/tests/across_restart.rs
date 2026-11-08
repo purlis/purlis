@@ -14,6 +14,9 @@ use purlis_core::reopen::{Choice, Record};
 
 use super::*;
 
+/// What the chat that asked is told of its tasks across a restart (#5754).
+mod tasks;
+
 const A_SIZE: purlis_core::engine::Size = purlis_core::engine::Size {
     columns: 80,
     rows: 24,
