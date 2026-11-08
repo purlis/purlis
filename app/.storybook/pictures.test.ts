@@ -24,7 +24,8 @@ type Diff = (
   options: { threshold: number },
 ) => number;
 
-/** The very comparator Vitest's `pixelmatch` runs: the copy `@vitest/browser` resolves. */
+/** The very comparator Vitest's `pixelmatch` runs (`@blazediff/core`, pixelmatch's algorithm):
+ *  the copy `@vitest/browser` resolves, so an upgrade that moves it moves this too. */
 const diff: Diff = (() => {
   const own = createRequire(import.meta.url);
   const browser = createRequire(own.resolve("@vitest/browser"));
