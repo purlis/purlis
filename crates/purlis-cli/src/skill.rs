@@ -2689,8 +2689,8 @@ fn install_from_an_extension(
         {
             voice::err(format!(
                 "{} is no skill source here: an extension is one once this machine approved it, \
-                 the project has it on, and it declares skill-source. Check it with `purlis \
-                 extension list`.",
+                 the project has it on, and it declares skill-source. Check it in the window's \
+                 Extensions.",
                 esc(id)
             ));
             return Ok(1);
@@ -2761,7 +2761,7 @@ fn install_from_an_extension(
 
 /// What an install says where it cannot start an extension to ask.
 const NO_EXTENSIONS_HERE: &str = "purlis cannot start its extensions here, so the source was not \
-                                  asked. Check them with `purlis extension list`, then try again.";
+                                  asked. Check them in the window's Extensions, then try again.";
 
 /// **What an install was handed besides its skills**: the grant and each new name, or the code it
 /// stops with once it has said why.

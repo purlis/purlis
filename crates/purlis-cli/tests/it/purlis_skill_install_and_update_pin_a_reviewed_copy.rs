@@ -658,7 +658,8 @@ fn an_extension_that_is_no_skill_source_here_is_asked_nothing() {
 fn an_install_names_its_source_or_an_extension() {
     let project = Project::new();
     let out = project.run(&["skill", "install"], "");
-    assert_eq!(out.status.code(), Some(2), "{}", text(&out));
+    assert!(!out.status.success(), "{}", text(&out));
+    assert!(text(&out).contains("<URL>"), "{}", text(&out));
     let out = project.run(
         &[
             "skill",
@@ -669,5 +670,7 @@ fn an_install_names_its_source_or_an_extension() {
         ],
         "",
     );
-    assert_eq!(out.status.code(), Some(2), "{}", text(&out));
+    assert!(!out.status.success(), "{}", text(&out));
+    assert!(text(&out).contains("cannot be used with"), "{}", text(&out));
+    assert!(!project.root().join("skills").exists());
 }

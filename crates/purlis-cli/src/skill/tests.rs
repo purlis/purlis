@@ -215,7 +215,8 @@ fn an_extensions_browse_lists_each_skill_escaped_with_what_its_files_do_and_wher
     assert_eq!(
         browse_text(&browse),
         format!(
-            "the extension acme at revision r7:\n  {SHOWN}  Ships it. · runs a script\n  notify  \
+            "the extension acme at revision r7:\n  {SHOWN}  Ships it. · runs a script · hides \
+             text\n  notify  \
              Tells the team. · its files are read when you review it\n"
         )
     );
