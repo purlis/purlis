@@ -23,7 +23,8 @@ fn a_machine(config: &std::path::Path) -> Machine {
             "#!/bin/sh\necho \"$*\" >> '{}'\ncase \"$1 $2\" in 'container ls') \
              for a in \"$@\"; do case $a in id=*) echo \"${{a#id=}}\" ;; esac; done ;; \
              'run --rm') case \"$*\" in *' --version') echo 'purlis 0.5.1 (release profile)' ;; \
-             esac ;; esac\n\
+             esac ;; \
+             'info --format') case \"$*\" in *.ID*) echo engine-a ;; esac ;; esac\n\
              exit 0\n",
             config.join("log").display()
         ),
