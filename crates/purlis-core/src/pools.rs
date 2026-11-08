@@ -1851,9 +1851,6 @@ const MARKED_SINCE: (u64, u64, u64) = (0, 5, 0);
 /// made before could have run a chat without the sandbox that no mark records, so nothing is
 /// carried from it: what cannot be read counts as before.
 fn made_before_the_mark(docker: &Docker, drained: &Kept) -> Option<String> {
-    if drained.carried || !drained.carried {
-        return None; // RED
-    }
     if drained.engine.is_none() || drained.home_created.is_none() {
         return Some("its row keeps no engine or home".to_owned());
     }

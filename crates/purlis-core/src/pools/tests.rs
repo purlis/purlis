@@ -571,6 +571,8 @@ fn a_drained_runner_carries_its_sign_ins_to_the_pools_runner_then_goes_with_its_
     let config = tempfile::tempdir().unwrap();
     let ours = desktop();
     let fake = a_docker(&runner_answers());
+    fake.set("engine", "engine-a\n");
+    home_prints(&fake, HOME_CREATED);
     a_pool_added(config.path(), &fake, &ours);
     let new_image = crate::dockerpool::Image::pinned(NEW).unwrap();
     let successor = crate::dockerpool::successor_name("first", &new_image);
@@ -714,7 +716,7 @@ fn the_first_purlis_a_desktop_can_mark_is_0_5_0() {
 fn a_drained_runner_is_unpaired_before_its_sign_ins_are_carried() {
     let config = tempfile::tempdir().unwrap();
     let fake = a_docker(&runner_answers());
-    a_pool_draining(config.path(), &fake);
+    a_pool_draining_since_the_mark(config.path(), &fake);
     let log_at_unpair = std::cell::RefCell::new(None);
     let unpair = |_: &runners::Kept| {
         *log_at_unpair.borrow_mut() = Some(fake.file("log"));
@@ -788,7 +790,7 @@ fn a_running_runner_that_was_not_unpaired_stays_and_carries_nothing() {
 fn a_stopped_runner_that_could_not_be_unpaired_is_drained() {
     let config = tempfile::tempdir().unwrap();
     let fake = a_docker(&runner_answers());
-    a_pool_draining(config.path(), &fake);
+    a_pool_draining_since_the_mark(config.path(), &fake);
     let mut stopped = inspected();
     stopped[0]["State"]["Running"] = false.into();
     fake.set("inspect", &stopped.to_string());
@@ -1064,7 +1066,7 @@ fn a_held_runner_is_removed_by_the_person_and_any_other_is_refused() {
 fn signing_out_of_a_pool_reaches_its_draining_runners_and_nothing_is_carried_for_it() {
     let config = tempfile::tempdir().unwrap();
     let fake = a_docker(&runner_answers());
-    a_pool_draining(config.path(), &fake);
+    a_pool_draining_since_the_mark(config.path(), &fake);
     // Docker answers for the draining runner, as it was made.
     fake.set("inspect", &inspected().to_string());
     fake.set(
@@ -1288,6 +1290,8 @@ fn a_copy_container_an_earlier_carry_left_is_removed_before_the_next_carry() {
     let config = tempfile::tempdir().unwrap();
     let ours = desktop();
     let fake = a_docker(&runner_answers());
+    fake.set("engine", "engine-a\n");
+    home_prints(&fake, HOME_CREATED);
     a_pool_added(config.path(), &fake, &ours);
     let new_image = crate::dockerpool::Image::pinned(NEW).unwrap();
     let successor = crate::dockerpool::successor_name("first", &new_image);
