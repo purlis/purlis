@@ -142,6 +142,9 @@ export class Refused extends Error {}
 /** How many times a download that broke off is resumed before the pull gives up. */
 export const ATTEMPTS = 4;
 
+/** curl's exit when the server will not resume a download from where it stopped. */
+const RANGE_REFUSED = 33;
+
 /**
  * Fetches `artifact` (as the API lists a run's artifact) into the file `to` with `curl`, resuming
  * from where an attempt stopped, up to {@link ATTEMPTS} times: `gh run download` neither resumes
@@ -156,6 +159,7 @@ function download({ exec, run, artifact, to }) {
   const have = () => (existsSync(to) ? statSync(to).size : 0);
   const said = [];
   let why = "";
+  let stopped = 0;
   for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
     const got = exec(
       "curl",
@@ -175,12 +179,14 @@ function download({ exec, run, artifact, to }) {
     );
     if (got.status === 0 && have() === size) return said;
     why = (got.stderr || got.error?.message || `curl exited ${got.status}`).trim();
-    // More than the whole, or a whole that does not end the download, is no artifact to resume.
-    if (have() >= size) rmSync(to, { force: true });
-    said.push(`the download of the baselines (${size} bytes) stopped at ${have()} bytes: ${why}`);
+    stopped = have();
+    // More than the whole, or a whole that does not end the download, is no artifact to resume;
+    // and where the storage does not resume one (curl's 33), the next attempt starts again.
+    if (stopped >= size || got.status === RANGE_REFUSED) rmSync(to, { force: true });
+    said.push(`the download of the baselines (${size} bytes) stopped at ${stopped} bytes: ${why}`);
   }
   throw new Refused(
-    `the download of the baselines (${size} bytes) stopped at ${have()} bytes after ${ATTEMPTS} attempts: ${why}`,
+    `the download of the baselines (${size} bytes) stopped at ${stopped} bytes after ${ATTEMPTS} attempts: ${why}`,
   );
 }
 
@@ -196,17 +202,19 @@ function unpack({ exec, run, zip, into }) {
   for (const name of names) (seen.has(name) ? twice : seen).add(name);
   const said = [];
   if (twice.size > 0) {
-    // `unzip -v` ends each entry's line with its CRC-32 and its name.
+    // `unzip -v` starts each entry's line with its length and ends it with its CRC-32 and name.
     const listed = run("unzip", ["-v", zip]).split("\n");
     for (const name of [...twice].sort()) {
-      const crcs = new Set(
-        listed.flatMap((line) =>
-          line.endsWith(`  ${name}`)
-            ? [line.slice(0, -name.length - 2).trim().split(/\s+/).pop()]
-            : [],
-        ),
-      );
-      if (crcs.size !== 1)
+      const copies = listed.flatMap((line) => {
+        if (!line.endsWith(`  ${name}`)) return [];
+        const fields = line.slice(0, -name.length - 2).trim().split(/\s+/);
+        return [`${fields[0]} ${fields.pop()}`];
+      });
+      if (copies.length < 2)
+        throw new Refused(
+          `${name} is in the artifact more than once, and unzip's listing does not show its copies, so nothing was taken`,
+        );
+      if (new Set(copies).size !== 1)
         throw new Refused(
           `${name} is in the artifact more than once, and the copies differ, so nothing was taken: the stories run that drew it says why`,
         );

@@ -175,7 +175,19 @@ const TOKEN = "token-the-stub-gh-hands-out";
  * appending when told to continue, and fails when it wrote less than the whole. `unzip` is the
  * real one. Every call is kept in `calls`.
  */
-const githubOf = ({ behind = "0", artifact = ARTIFACT_OF(), stops = [], calls = [] } = {}) => {
+const githubOf = ({
+  behind = "0",
+  artifact = ARTIFACT_OF(),
+  stops = [],
+  calls = [],
+  listed = (zip) => ({
+    id: 42,
+    size_in_bytes: zip.length,
+    expired: false,
+    archive_download_url: "https://api.github.com/repos/purlis/purlis/actions/artifacts/42/zip",
+  }),
+  resumes = true,
+} = {}) => {
   const left = [...stops];
   return (command, args, options = {}) => {
     calls.push({ command, args, input: options.input });
@@ -184,6 +196,8 @@ const githubOf = ({ behind = "0", artifact = ARTIFACT_OF(), stops = [], calls = 
     if (command === "unzip") return spawnSync(command, args, options);
     if (command === "curl") {
       const out = args[args.indexOf("--output") + 1];
+      if (args.includes("--continue-at") && !resumes)
+        return { status: 33, stdout: "", stderr: "curl: (33) HTTP server doesn't seem to support byte ranges. Cannot resume.\n" };
       const from = args.includes("--continue-at") && existsSync(out) ? statSync(out).size : 0;
       const to = left.length > 0 ? left.shift() : artifact.length;
       writeFileSync(out, artifact.subarray(from, Math.max(from, to)), { flag: from > 0 ? "a" : "w" });
@@ -195,14 +209,7 @@ const githubOf = ({ behind = "0", artifact = ARTIFACT_OF(), stops = [], calls = 
     if (args[0] === "pr") return said(`${HEAD} ${FROM}\n`);
     if (args[0] === "api" && args.includes("-X")) return said(JSON.stringify([runOf({})]));
     if (args[0] === "api" && args[1].includes("/artifacts?name=story-baselines"))
-      return said(
-        JSON.stringify({
-          id: 42,
-          size_in_bytes: artifact.length,
-          expired: false,
-          archive_download_url: "https://api.github.com/repos/purlis/purlis/actions/artifacts/42/zip",
-        }),
-      );
+      return said(JSON.stringify(listed(artifact)));
     if (args[0] === "api") return said(`${behind}\n`);
     return { status: 1, stdout: "", stderr: `not stubbed: ${command} ${args.join(" ")}` };
   };
@@ -408,4 +415,47 @@ test("an artifact as large as a whole run's, its listing over a megabyte, is tak
   assert.ok(many.reduce((sum, [name]) => sum + name.length + 1, 0) > 1024 * 1024);
   pull({ pr: "7", repo: FROM, root, tmp, exec: githubOf({ artifact: ARTIFACT_OF(many) }) });
   assert.deepEqual(readFileSync(join(root, "app", many[8999][0].slice(4))), DRAWN_PNG);
+});
+
+test("a store that will not resume a download is started again from nothing", (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), "pull-tmp-"));
+  const root = checkout();
+  t.after(() => [tmp, root].forEach((dir) => rmSync(dir, { recursive: true, force: true })));
+  const calls = [];
+  const said = pull({ pr: "7", repo: FROM, root, tmp, exec: githubOf({ stops: [100], resumes: false, calls }) });
+  assert.deepEqual(readFileSync(join(root, "app", PICTURE)), DRAWN_PNG);
+  const curls = calls.filter((call) => call.command === "curl");
+  assert.deepEqual(
+    curls.map((call) => call.args.includes("--continue-at")),
+    [false, true, false],
+  );
+  assert.match(said[1], /stopped at 100 bytes: curl: \(33\)/);
+});
+
+test("a run that kept no baselines, or whose baselines expired, is refused before any download", (t) => {
+  const root = checkout();
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  for (const [listed, why] of [
+    [() => null, /kept no baselines/],
+    [(zip) => ({ id: 42, size_in_bytes: zip.length, expired: true }), /have expired/],
+  ]) {
+    const calls = [];
+    assert.throws(
+      () => pull({ pr: "7", repo: FROM, root, exec: githubOf({ listed, calls }) }),
+      (error) => error instanceof Refused && why.test(error.message),
+    );
+    assert.equal(calls.some((call) => call.command === "curl"), false);
+  }
+});
+
+test("an artifact with no drawn.json is refused, and nothing is written", (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), "pull-tmp-"));
+  const root = checkout();
+  t.after(() => [tmp, root].forEach((dir) => rmSync(dir, { recursive: true, force: true })));
+  const artifact = zipOf([[`app/${PICTURE}`, DRAWN_PNG]]);
+  assert.throws(
+    () => pull({ pr: "7", repo: FROM, root, tmp, exec: githubOf({ artifact }) }),
+    (error) => error instanceof Refused && /hold no drawn.json/.test(error.message),
+  );
+  assert.equal(existsSync(join(root, "app", PICTURE)), false);
 });
