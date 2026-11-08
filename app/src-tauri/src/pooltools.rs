@@ -703,6 +703,8 @@ pub fn run_on_its_runner(
     // And only those purlis cloned or the person saved from the window.
     let config_root = purlis_core::forge::apptoken::record_root();
     let read = |persona: &str, tool: &Tool| match tool.mint {
+        // Its App's key is read to mint with, through a link too (#5795).
+        Some(_) if let Some(why) = out_of_reach(&ctx, persona, tool) => Err(why),
         Some(_) => minted(
             &ctx,
             tool,
@@ -845,7 +847,9 @@ fn watch_the_asker(mut reader: Box<dyn std::io::BufRead + Send>, gone: Arc<Atomi
 /// The value of each of `tool`'s keys, read from its vault here: each the one copy, wiped as
 /// it is dropped, a refusal part way through too (#3420).
 fn read(ctx: &Ctx, persona: &str, tool: &Tool) -> Result<Vec<(String, Zeroizing<String>)>, String> {
-    let _ = persona;
+    if let Some(why) = out_of_reach(ctx, persona, tool) {
+        return Err(why);
+    }
     let vault =
         purlis_core::secrets::cmd::provider(ctx, &tool.vault).map_err(|e| e.message.to_string())?;
     let mut values: Vec<(String, Zeroizing<String>)> = Vec::new();
@@ -863,7 +867,6 @@ fn read(ctx: &Ctx, persona: &str, tool: &Tool) -> Result<Vec<(String, Zeroizing<
 
 /// Why none of `tool`'s keys is read for `persona`: one is a link into a vault it may not use,
 /// judged as the core judges every read of a link (#5795), its App's key to mint with too.
-#[allow(dead_code)]
 fn out_of_reach(ctx: &Ctx, persona: &str, tool: &Tool) -> Option<String> {
     let keys: Vec<&str> = tool.values.iter().map(|value| value.key.as_str()).collect();
     brokered::read_out_of_reach(ctx, persona, &tool.vault, &keys)

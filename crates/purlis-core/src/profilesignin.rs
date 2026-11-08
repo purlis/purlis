@@ -246,6 +246,18 @@ pub fn read(
                 reference.vault
             )
         })?;
+        // Through a link too: one into a vault the persona may not use is read for no start
+        // (#5795).
+        if let Some(why) = brokered::read_out_of_reach(
+            ctx,
+            persona.unwrap_or_default(),
+            &reference.vault,
+            &[reference.key.as_str()],
+        ) {
+            return Err(format!(
+                "this chat's profile names {variable}, and nothing was started: {why}"
+            ));
+        }
         let refused = |why: &str| {
             format!(
                 "this chat's profile names {variable} as '{}' in vault '{}', and it could not be \
