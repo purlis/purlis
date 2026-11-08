@@ -767,6 +767,7 @@ macro_rules! app_commands {
                 views::run_action,
                 views::extension_commands,
                 views::reopened_views,
+                views::worked_here,
                 views::window_views,
                 views::window_focus,
                 views::reopened_focus,

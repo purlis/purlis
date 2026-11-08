@@ -378,7 +378,7 @@ fn would_go(one: &Candidate, keep_branches: bool) -> String {
         (_, true) | (Commits::NoBranch, _) => "",
         (Commits::InHistory, false) => ", keeping its branch (its base has changed it since)",
         (Commits::OnBase | Commits::Carried, false) => ", and delete its branch",
-        (Commits::InMergedRequest(_), false) => {
+        (Commits::InMergedRequest(_) | Commits::InClosedRequestOnOrigin(_), false) => {
             return format!(
                 "Would remove {}, and delete its branch ({})",
                 one.folder.named(),
@@ -418,7 +418,10 @@ fn remove_one(
             Commits::OnBase | Commits::NoBranch => {
                 worktree::remove(plane, ws, repo, piece, false, delete)
             }
-            Commits::Carried | Commits::InHistory | Commits::InMergedRequest(_) => {
+            Commits::Carried
+            | Commits::InHistory
+            | Commits::InMergedRequest(_)
+            | Commits::InClosedRequestOnOrigin(_) => {
                 worktree::remove_keeping_branch(plane, ws, repo, piece)
             }
         };
@@ -431,7 +434,12 @@ fn remove_one(
             let gone = removed.branch_deleted
                 || (delete
                     && (one.gone
-                        || matches!(one.commits, Commits::Carried | Commits::InMergedRequest(_)))
+                        || matches!(
+                            one.commits,
+                            Commits::Carried
+                                | Commits::InMergedRequest(_)
+                                | Commits::InClosedRequestOnOrigin(_)
+                        ))
                     && standing::drop_carried(plane, ws, repo, branch));
             if gone {
                 lines.push(Say::Done(format!("Deleted branch {branch}").into()));

@@ -105,6 +105,7 @@ pub(super) const CHAT_MARK: Family = Family {
     around: &[],
     fills: &[],
     under: &[],
+    later: &[],
 };
 
 /// **The mark's words at rest**: it draws none of its own but the state's, which are heard and

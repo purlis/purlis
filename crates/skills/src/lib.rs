@@ -41,6 +41,7 @@ mod beside;
 pub mod budget;
 pub mod change;
 pub mod compat;
+pub mod copies;
 mod declared;
 pub mod fence;
 pub mod grade;
@@ -367,6 +368,10 @@ pub enum Reason {
     /// A workspace or persona skill whose level's folder was made while a chat that could have
     /// made it was running (SK-9): the sentence that says which, and when it reaches chats.
     MadeWhileAChatRan(String),
+    /// A plane skill the chat's harness has the same copy of, from the person's own folders or a
+    /// plugin, which it lists in its place (#5737, [`SkillSet::without_copies_of`]): named by
+    /// whose that copy is, so the one skill takes one slot.
+    SameAs { kept: Owner },
 }
 
 impl Reason {
@@ -480,6 +485,17 @@ impl std::fmt::Display for Reason {
                 f.write_str("archived: it never loads until it is restored from its tab")
             }
             Self::MadeWhileAChatRan(why) => f.write_str(why),
+            Self::SameAs { kept: Owner::You } => {
+                f.write_str("the same as your own copy, which is listed in its place")
+            }
+            Self::SameAs { kept } => write!(
+                f,
+                "the same as the copy {} brings, which is listed in its place",
+                match kept {
+                    Owner::Plugin(name) => format!("plugin {name}"),
+                    other => other.to_string(),
+                }
+            ),
         }
     }
 }

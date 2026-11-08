@@ -99,6 +99,7 @@ pub(super) const METER: Family = Family {
     // Its track's own fill, the subtle hairline's colour.
     fills: &[("track", "border.subtle")],
     under: &[],
+    later: &[],
 };
 
 /// **How a meter's fill stands on its track** ([`super::Tracked`]): the track is its third part,

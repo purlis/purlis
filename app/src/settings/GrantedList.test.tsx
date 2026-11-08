@@ -2,13 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, describe, expect, it, onTestFinished } from "vitest";
-import { cleanup, render, renderHook, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, renderHook, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { commands, type SandboxGrant } from "../bindings";
 import { networkGroup, grantSaid } from "./GrantedList";
 import type { LiveSetting } from "./groups";
-import { useSandboxCommands } from "../sandboxAsked";
+import { runGrantsMoved, useSandboxCommands } from "../sandboxAsked";
 import { SETTINGS_ACTION, type SettingsActionAsk } from "./links";
 
 /**
@@ -502,6 +502,23 @@ describe("the Allowed list's answers (#1543)", () => {
     landFirst([CHAT]);
     await new Promise((settle) => setTimeout(settle, 20));
     expect(screen.getByText("Nothing is allowed beyond the Open hosts.")).toBeInTheDocument();
+  });
+});
+
+describe("the Allowed list told of a grant taken back (#5617)", () => {
+  it("reads again when a press that gives or takes back a Run grant returns, so one Keep blocked took back leaves it", async () => {
+    let listed: SandboxGrant[] = [CHAT];
+    mockIPC((cmd) => (cmd === "sandbox_grants" ? listed : null));
+    render(<Granted />);
+    const list = await screen.findByRole("list", { name: "Allowed" });
+    expect(
+      within(list).getByRole("button", { name: "Remove reaching api.example.com" }),
+    ).toBeInTheDocument();
+    listed = [];
+    act(() => runGrantsMoved());
+    expect(
+      await screen.findByText("Nothing is allowed beyond the Open hosts."),
+    ).toBeInTheDocument();
   });
 });
 

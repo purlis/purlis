@@ -246,6 +246,18 @@ pub fn read(
                 reference.vault
             )
         })?;
+        // Through a link too: one into a vault the persona may not use is read for no start
+        // (#5795).
+        if let Some(why) = brokered::read_out_of_reach(
+            ctx,
+            persona.unwrap_or_default(),
+            &reference.vault,
+            &[reference.key.as_str()],
+        ) {
+            return Err(format!(
+                "this chat's profile names {variable}, and nothing was started: {why}"
+            ));
+        }
         let refused = |why: &str| {
             format!(
                 "this chat's profile names {variable} as '{}' in vault '{}', and it could not be \
@@ -255,8 +267,18 @@ pub fn read(
             )
         };
         let mut once = || {
-            cmd::provider(ctx, &reference.vault)
-                .and_then(|vault| cmd::get_value(ctx, &vault, &reference.key))
+            let got = cmd::provider(ctx, &reference.vault)
+                .and_then(|vault| cmd::get_value(ctx, &vault, &reference.key));
+            // And again once read: a link written meanwhile is seen, and the value goes unused.
+            match brokered::read_out_of_reach(
+                ctx,
+                persona.unwrap_or_default(),
+                &reference.vault,
+                &[reference.key.as_str()],
+            ) {
+                Some(why) => Err(crate::secrets::VaultError::new(why)),
+                None => got,
+            }
         };
         let value = match missing {
             None => once().map_err(|e| refused(&e.message))?,

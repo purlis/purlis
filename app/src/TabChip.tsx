@@ -443,8 +443,10 @@ function TasksButton({
     const last = seenAt.current;
     seenAt.current = at;
     // The engine's own "it is still here", sent when the layout moves under a pointer that
-    // has not: the same point again. Not the person's hand, and it arms nothing.
-    if (last !== undefined && last.x === at.x && last.y === at.y) return;
+    // has not: the same point again. Not the person's hand, and it arms nothing. Nor does a
+    // move from a point never seen (#3521): a button drawn under a parked pointer may hear a
+    // move before any word that the pointer came on, and that move only says where it is.
+    if (last === undefined || (last.x === at.x && last.y === at.y)) return;
     // A button is down: a selection being dragged over the strip, or the press that begins a
     // tab's drag. Not a pointer coming to rest.
     if (event.buttons !== 0 || event.pointerType === "touch" || isOpen.current || dragging()) {

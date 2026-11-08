@@ -94,6 +94,7 @@ pub(super) const TABLE: Family = Family {
     around: &["frame", "head", "bar"],
     fills: &[],
     under: &[],
+    later: &[],
 };
 
 /// **A table's row as `app/src/ui/table/table.css` draws it**, which a test holds to that file:

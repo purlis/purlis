@@ -1660,7 +1660,20 @@ export const PlaneView = memo(function PlaneView({
    * forbids a chat's name outside a plane. A design that held one "pins" object would be the
    * design ADR 0039 predicted would discover this in review.
    */
-  const [pinnedWorkspaces, setPinnedWorkspaces] = useState<string[]>([]);
+  const [storePins, setStorePins] = useState<string[]>([]);
+  /**
+   * **Made here, so pinned at once** (#1926, ADR 0054): a workspace this window has just made,
+   * counted pinned from the moment `workspace_create` answers until the store's answer names
+   * it. The window hears of a new workspace twice, the disk watcher's read of the plane and the
+   * pin `makeWorkspace` asks for, and the read can land first; without this, the strip draws
+   * the new workspace unpinned until the pin does. Let go when the store names it, when the
+   * pin is refused, or when it is unpinned.
+   */
+  const [madePins, setMadePins] = useState<string[]>([]);
+  const pinnedWorkspaces = useMemo(
+    () => [...storePins, ...madePins.filter((name) => !storePins.includes(name))],
+    [madePins, storePins],
+  );
   /**
    * **Dormant pins** (V91c as amended, NO-1): pins whose workspace is gone. They stay in the
    * machine store, in their place in the order, and are drawn as dormant chips that open nothing
@@ -2463,7 +2476,12 @@ export const PlaneView = memo(function PlaneView({
         // `undefined` where a list belongs and take the strip down on the next render. A
         // window must not go blank because one command answered oddly.
         const said = answer.data as Partial<typeof answer.data> | null | undefined;
-        setPinnedWorkspaces(Array.isArray(said?.workspaces) ? said.workspaces : []);
+        const pins = Array.isArray(said?.workspaces) ? said.workspaces : [];
+        setStorePins(pins);
+        setMadePins((was) => {
+          const still = was.filter((name) => !pins.includes(name));
+          return still.length === was.length ? was : still;
+        });
         setPinOrder(Array.isArray(said?.order) ? said.order : []);
         // Named, drawn dormant, and never written away (V91c as amended, #3651): a dormant pin
         // is the operator's to forget.
@@ -6294,6 +6312,11 @@ export const PlaneView = memo(function PlaneView({
       const said = await commands
         .pinWorkspace(plane, workspace, pinned)
         .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
+      // A pin refused, or let go, is no longer one this window holds for the store (#1926).
+      if (said.status === "error" || !pinned)
+        setMadePins((was) =>
+          was.includes(workspace) ? was.filter((one) => one !== workspace) : was,
+        );
       if (said.status === "error") return { ok: false, refused: said.error };
       setPinning((asked) => asked + 1);
       // Settings › You › This machine lists the pins, and may be on screen (#1240).
@@ -6412,11 +6435,16 @@ export const PlaneView = memo(function PlaneView({
   const makeWorkspace = useCallback(
     async (name: string, vision: string, live: boolean, repos: string[]) => {
       setBusyMaking(true);
+      // **Made here, so pinned** from before it is made (#1926): its folder is on disk before
+      // `workspace_create` answers, and the watcher's read of the plane may land first. A
+      // refused make lets it go again.
+      setMadePins((was) => (was.includes(name) ? was : [...was, name]));
       const answer = await commands
         .workspaceCreate(plane, name, vision.trim() === "" ? null : vision, live)
         .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
       setBusyMaking(false);
       if (answer.status === "error") {
+        setMadePins((was) => was.filter((one) => one !== name));
         setWorkspaceTrouble(answer.error);
         return;
       }
@@ -6424,8 +6452,9 @@ export const PlaneView = memo(function PlaneView({
       setWorkspaceTrouble(undefined);
       forgetEndedClones(plane, name);
       // **Made here, so pinned** (ADR 0054): the operator made it in order to work in it, and
-      // the workspace strip draws what is pinned. A pin the store refused leaves the
-      // workspace made and says why, beside what charter said about making it.
+      // the workspace strip draws what is pinned, and has counted it pinned since the make was
+      // asked for (above). A pin the store refused leaves the workspace made and says why,
+      // beside what charter said about making it.
       const pinned = await pinWorkspace(name, true);
       // Said in the app's own words, hung from the new workspace's chip (#3648); the core's
       // lines, where it landed and whether it is LOCAL or LIVE, are kept behind Details, less

@@ -443,6 +443,7 @@ pub fn preview(
         plane: root,
         workspace,
         repo: &[],
+        own: &[],
         routed: None,
     };
     let set = super::ask(built_in, Some(at), persona, harness.skills(), None, None);

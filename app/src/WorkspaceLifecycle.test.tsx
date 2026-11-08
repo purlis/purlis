@@ -4,6 +4,7 @@
 import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render as renderBare,
@@ -12,6 +13,7 @@ import {
   within,
 } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
+import { emit } from "@tauri-apps/api/event";
 import { menuNames } from "./menus.testkit";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
@@ -99,6 +101,12 @@ function core(
     stillAbsent?: string[];
     /** The core's sentence `workspace_starts_fresh` answers with. */
     startsFresh?: string;
+    /** `pin_workspace` answers only once this settles, and the store holds what it pinned:
+     *  for a disk watcher's read that lands before the pin does (#1926). */
+    pinLands?: Promise<void>;
+    /** `workspace_create` answers only once this settles, its folder already made: for a
+     *  watcher's read that lands while the make is under way (#1926). */
+    createLands?: Promise<void>;
   } = {},
 ) {
   const asked: { cmd: string; args: Record<string, unknown> }[] = [];
@@ -107,7 +115,8 @@ function core(
   const refusesOver = over.refusesOver ?? atRisk;
   const gone: string[] = [];
   const made: string[] = [];
-  mockIPC((cmd, args) => {
+  const pinned = ["beta"];
+  const answer = async (cmd: string, args: unknown) => {
     const got = (args ?? {}) as Record<string, unknown>;
     asked.push({ cmd, args: got });
     if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
@@ -121,9 +130,14 @@ function core(
     if (cmd === "plane_pins")
       return {
         project: false,
-        workspaces: ["beta"].filter((name) => !gone.includes(name)),
+        workspaces: pinned.filter((name) => !gone.includes(name)),
         missing: [],
       };
+    if (cmd === "pin_workspace" && over.pinLands !== undefined) {
+      await over.pinLands;
+      if (got.pinned === true) pinned.push(String(got.workspace));
+      return null;
+    }
     if (cmd === "plane_sidebar")
       return {
         root: PLANE,
@@ -217,6 +231,7 @@ function core(
         throw `invalid workspace name '${name}' (use letters, digits, '.', '_', '-'; must not start with a dot)`;
       // Made, so the plane lists it when it is read again, as the core's does.
       made.push(name);
+      await over.createLands;
       const ready = `✓ Workspace '${name}' ready (LOCAL) → workspaces/${name}/`;
       // As `wscmd/create.rs` says it with no vision: a line written for an agent (#3344).
       return got.vision == null
@@ -227,6 +242,9 @@ function core(
         : [ready];
     }
     return null;
+  };
+  mockIPC(answer, {
+    shouldMockEvents: over.pinLands !== undefined || over.createLands !== undefined,
   });
   return { asked, calls: (cmd: string) => asked.filter((one) => one.cmd === cmd) };
 }
@@ -649,6 +667,79 @@ describe("making a workspace", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: "Create workspace" }));
 
     await vi.waitFor(() => expect(calls("plane_sidebar").length).toBeGreaterThan(before));
+  });
+
+  it("draws the new workspace pinned when the disk watcher's read lands before its pin (#1926)", async () => {
+    // The window hears of a made workspace twice: the watcher's read of the plane and the pin
+    // `makeWorkspace` asks the store for. Here the read comes first and the pin's answer waits,
+    // so a window that waits for the store would draw gamma unpinned, or not at all, until it
+    // lands: the flash ADR 0054's strip must not have.
+    let land = () => {};
+    const pinLands = new Promise<void>((settle) => (land = settle));
+    const { calls } = core({ pinLands });
+    render(<App />);
+    await settled();
+    const dialog = await askToCreate();
+    await userEvent.type(within(dialog).getByLabelText("Name"), "gamma");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Create workspace" }));
+    await vi.waitFor(() => expect(calls("pin_workspace")).toHaveLength(1));
+
+    const read = calls("plane_sidebar").length;
+    await act(() =>
+      emit("plane-changed", {
+        plane: PLANE,
+        changes: [{ kind: "workspaces", workspace: "gamma", persona: null, path: "" }],
+        answers: [{ answer: "sidebar" }],
+      }),
+    );
+    await vi.waitFor(() => expect(calls("plane_sidebar").length).toBeGreaterThan(read));
+
+    // Pinned from the moment it is made: among the pins, never the dashed chip that offers one.
+    await waitFor(() => expect(strip()).toEqual(["beta", "gamma", "alpha"]));
+    expect(screen.queryByRole("button", { name: "Pin gamma" })).toBeNull();
+
+    land();
+    await waitFor(() => expect(workspaceInFront()).toBe("gamma"));
+    expect(strip()).toEqual(["beta", "gamma"]);
+  });
+  it("draws the new workspace pinned when the disk watcher's read lands while it is being made (#1926)", async () => {
+    // Its folder is on disk before `workspace_create` answers: a LIVE make is long enough for
+    // the watcher's read to land in between.
+    let land = () => {};
+    const createLands = new Promise<void>((settle) => (land = settle));
+    const { calls } = core({ createLands });
+    render(<App />);
+    await settled();
+    const dialog = await askToCreate();
+    await userEvent.type(within(dialog).getByLabelText("Name"), "gamma");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Create workspace" }));
+    await vi.waitFor(() => expect(calls("workspace_create")).toHaveLength(1));
+
+    const read = calls("plane_sidebar").length;
+    await act(() =>
+      emit("plane-changed", {
+        plane: PLANE,
+        changes: [{ kind: "workspaces", workspace: "gamma", persona: null, path: "" }],
+        answers: [{ answer: "sidebar" }],
+      }),
+    );
+    await vi.waitFor(() => expect(calls("plane_sidebar").length).toBeGreaterThan(read));
+    await waitFor(() => expect(strip()).toEqual(["beta", "gamma", "alpha"]));
+
+    land();
+    await waitFor(() => expect(workspaceInFront()).toBe("gamma"));
+  });
+
+  it("lets go of a name it held as pinned when the make is refused (#1926)", async () => {
+    core({ loggedOut: true });
+    render(<App />);
+    await settled();
+    const dialog = await askToCreate();
+    await userEvent.type(within(dialog).getByLabelText("Name"), "a/b");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Create workspace" }));
+    await within(dialog).findByRole("alert");
+
+    expect(strip()).toEqual(["beta", "alpha"]);
   });
 });
 

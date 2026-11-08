@@ -5,7 +5,8 @@
 //! takes nothing from under anyone.
 //!
 //! - no uncommitted change, less purlis's own layer;
-//! - every commit on its base, or carried there by a squash merge;
+//! - every commit on its base, carried there by a squash merge, inside a merged request's head,
+//!   or inside the head of a closed one that is on origin;
 //! - no ignored path beyond the folders only a build or the harness writes, and links;
 //! - its task, where purlis cut it for one, has ended;
 //! - no open chat that has declared neither `done` nor `abandoned` holds it;
@@ -21,7 +22,7 @@ use crate::hookwire::alive;
 use crate::worktree::{self, git, standing};
 
 pub mod merged;
-pub use merged::{Forge, Request};
+pub use merged::{Forge, Found, Request};
 
 /// How a finished folder's commits stand against its base.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -40,6 +41,10 @@ pub enum Commits {
     /// merged, by its number ([`merged::holding`], #5439): its commits are part of what merged.
     /// Only `git branch -D` deletes it.
     InMergedRequest(u64),
+    /// Neither on its base nor carried, but its tip is inside the head of a request that
+    /// closed without merging, by its number, and that head is on a branch of origin
+    /// ([`merged::holding`], #4500). Only `git branch -D` deletes it.
+    InClosedRequestOnOrigin(u64),
 }
 
 impl Commits {
@@ -50,6 +55,10 @@ impl Commits {
             Self::InMergedRequest(number) => {
                 format!("its commits are in pull request {number}, which merged")
             }
+            Self::InClosedRequestOnOrigin(number) => format!(
+                "its commits are in pull request {number}, which closed without merging, and \
+                 on origin"
+            ),
             Self::OnBase | Self::InHistory | Self::NoBranch => "it is on its base".to_owned(),
         }
     }
@@ -67,10 +76,16 @@ pub enum NotFinished {
     /// A commit its base does not have, and whether a merged request holds it could not be
     /// told, and why: offline, or no forge for the clone (#5439).
     AheadUnasked(String),
+    /// A commit its base does not have, inside the head of the request by this number, which
+    /// closed without merging, on no branch of origin (#4500).
+    ClosedNotOnOrigin(u64),
     /// Ignored paths that are the task's, not a build's.
     Ignored(Vec<String>),
     /// Other folders link into it, each as `<repo> · <piece>`.
     LinkedInto(Vec<String>),
+    /// More than one of the others, each said (#4500): a refusal names every reason at once,
+    /// so a second try does not meet a new one.
+    Several(Vec<NotFinished>),
 }
 
 impl NotFinished {
@@ -97,14 +112,35 @@ impl NotFinished {
                 "it holds files git ignores that are not a build's ({})",
                 named(paths)
             ),
+            Self::ClosedNotOnOrigin(number) => format!(
+                "its pull request {number} closed without merging, and its commits are on no \
+                 branch of origin"
+            ),
             Self::LinkedInto(by) => format!("{} links into it", by.join(" and ")),
+            Self::Several(each) => each
+                .iter()
+                .map(Self::why)
+                .collect::<Vec<_>>()
+                .join(", and "),
         }
     }
 }
 
+/// **How a branch neither on its base nor carried stands by its request** ([`merged::holding`]):
+/// one reading for a folder and for a branch whose folder is gone, so the two cannot differ.
+pub fn by_its_request(found: Result<Found, String>) -> Result<Commits, NotFinished> {
+    match found {
+        Ok(Found::Merged(number)) => Ok(Commits::InMergedRequest(number)),
+        Ok(Found::ClosedOnOrigin(number)) => Ok(Commits::InClosedRequestOnOrigin(number)),
+        Ok(Found::ClosedNotOnOrigin(number)) => Err(NotFinished::ClosedNotOnOrigin(number)),
+        Ok(Found::Nothing) => Err(NotFinished::Ahead),
+        Err(why) => Err(NotFinished::AheadUnasked(why)),
+    }
+}
+
 /// **How the folder `piece` of `repo` stands by its own files and commits**: `Ok` with how
-/// its commits stand where nothing in it would be lost with it, else the first reason it is
-/// not finished. A branch neither on its base nor carried is asked of `forge`: its tip may be
+/// its commits stand where nothing in it would be lost with it, else every reason it is not
+/// finished (#4500): one, or [`NotFinished::Several`]. A branch neither on its base nor carried is asked of `forge`: its tip may be
 /// inside a merged request's head. Links into it, its task and its chat are read apart.
 pub fn own(
     plane: &Path,
@@ -133,28 +169,39 @@ pub fn own(
         .map(|line| line.get(3..).unwrap_or(line).to_owned())
         .filter(|path| !crate::guest::is_purlis_own(&hidden, path))
         .collect();
+    // Every reason is read, not the first (#4500): a removal refused for one and then, on its
+    // next try, for another takes the person two tries.
+    let mut not = Vec::new();
     if !changes.is_empty() {
-        return Err(NotFinished::Uncommitted(changes));
+        not.push(NotFinished::Uncommitted(changes));
     }
     let commits = match found.branch.as_deref() {
         Some(branch) => match standing::landed(plane, ws, repo, piece, branch) {
-            standing::Landed::Yes { .. } => Commits::OnBase,
-            standing::Landed::Carried { .. } => Commits::Carried,
-            _ if standing::change_in_history(plane, ws, repo, piece, branch) => Commits::InHistory,
-            _ => match merged::holding(plane, ws, repo, branch, forge) {
-                Ok(Some(number)) => Commits::InMergedRequest(number),
-                Ok(None) => return Err(NotFinished::Ahead),
-                Err(why) => return Err(NotFinished::AheadUnasked(why)),
-            },
+            standing::Landed::Yes { .. } => Ok(Commits::OnBase),
+            standing::Landed::Carried { .. } => Ok(Commits::Carried),
+            _ if standing::change_in_history(plane, ws, repo, piece, branch) => {
+                Ok(Commits::InHistory)
+            }
+            // Asked of the forge only where nothing else keeps the folder (on review, #4500):
+            // a prune of many dirty folders would ask it of each, and the commits are said
+            // beside the changes all the same.
+            _ if !not.is_empty() => Err(NotFinished::Ahead),
+            _ => by_its_request(merged::holding(plane, ws, repo, branch, forge)),
         },
-        None if detached_on_its_base(plane, ws, repo, &found.path) => Commits::NoBranch,
-        None => return Err(NotFinished::Ahead),
+        None if detached_on_its_base(plane, ws, repo, &found.path) => Ok(Commits::NoBranch),
+        None => Err(NotFinished::Ahead),
     };
+    let commits = commits.map_err(|why| not.push(why)).ok();
     match crate::piececmd::ignored_kept(plane, ws, repo, piece) {
-        Some(Ok(kept)) if kept.is_empty() => Ok(commits),
-        Some(Ok(kept)) => Err(NotFinished::Ignored(kept)),
-        Some(Err(why)) => Err(unread(why)),
-        None => Err(unread(format!("{repo} · {piece} is not there"))),
+        Some(Ok(kept)) if kept.is_empty() => {}
+        Some(Ok(kept)) => not.push(NotFinished::Ignored(kept)),
+        Some(Err(why)) => not.push(unread(why)),
+        None => not.push(unread(format!("{repo} · {piece} is not there"))),
+    }
+    match (commits, not.len()) {
+        (Some(commits), 0) => Ok(commits),
+        (_, 1) => Err(not.remove(0)),
+        _ => Err(NotFinished::Several(not)),
     }
 }
 
@@ -173,11 +220,7 @@ pub fn branch_only(
         standing::Landed::Unknown => return None,
         standing::Landed::Yes { .. } => Ok(Commits::OnBase),
         standing::Landed::Carried { .. } => Ok(Commits::Carried),
-        standing::Landed::No => match merged::holding(plane, ws, repo, branch, forge) {
-            Ok(Some(number)) => Ok(Commits::InMergedRequest(number)),
-            Ok(None) => Err(NotFinished::Ahead),
-            Err(why) => Err(NotFinished::AheadUnasked(why)),
-        },
+        standing::Landed::No => by_its_request(merged::holding(plane, ws, repo, branch, forge)),
     })
 }
 

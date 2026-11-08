@@ -1573,6 +1573,8 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "window_layout",
     "window_showing",
     "window_views",
+    // Who has worked in each workspace, off the reopen record (#3593): a read.
+    "worked_here",
     "workspace_at_risk",
     "workspace_create",
     "workspace_focused",

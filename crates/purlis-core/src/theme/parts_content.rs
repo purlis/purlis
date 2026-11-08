@@ -125,6 +125,7 @@ pub(super) const CARD: Family = Family {
     around: &["facts-label", "facts-value", "tile", "tile-value"],
     fills: &[],
     under: &[],
+    later: &[],
 };
 
 /// **A card's colours as `app/src/ui/card/card.css` draws them**: the raised ground behind the
@@ -242,6 +243,7 @@ pub(super) const NOTICE: Family = Family {
     around: &[],
     fills: &[],
     under: &[],
+    later: &[],
 };
 
 /// **The ground a Notice's card stands on in `variant`** (#4210), as `notice.css` draws a card
@@ -356,6 +358,7 @@ pub(super) const BADGE: Family = Family {
     around: &[],
     fills: &[],
     under: &[],
+    later: &[],
 };
 
 /// **A badge's colours as `app/src/ui/badge/badge.css` draws them**: a pill on the count's ground,
@@ -440,6 +443,7 @@ pub(super) const COUNT: Family = Family {
     around: &[],
     fills: &[],
     under: &[],
+    later: &[],
 };
 
 /// **A count's colours as `app/src/ui/badge/badge.css` draws them.**
@@ -486,6 +490,7 @@ pub(super) const SEPARATOR: Family = Family {
     around: &[],
     fills: &[],
     under: &[],
+    later: &[],
 };
 
 /// **A separator's colour as `app/src/ui/separator/separator.css` draws it**: the subtle hairline.

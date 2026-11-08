@@ -7,6 +7,7 @@ import { asksMoved } from "./asks";
 import { useAskPersona } from "./AskPersona";
 import { useDispatchesHeld } from "./dispatchesHeld";
 import { Notice, NoticeOf, type NoticeAction } from "./Notice";
+import { runGrantsMoved } from "./sandboxAsked";
 import { useVaultRefusals } from "./vaultRefusals";
 
 /** What a press answers: the sentence the Notice then says, or nothing for Keep blocked. */
@@ -173,9 +174,11 @@ export function VaultRefusedNotice({
           if (label !== undefined && itsAsk !== undefined) onWay?.(label, itsAsk);
         }
         // Whatever the press answered, the Notice draws what the core holds now (qw385), and
-        // so does the Inbox, which lists it too (#5160).
+        // so does the Inbox, which lists it too (#5160), and the Allowed list, since Keep
+        // blocked takes back the chat's Run grants on the vault (#5617).
         read();
         asksMoved(plane);
+        runGrantsMoved();
       })
       .catch((err: unknown) => setSaid(`purlis could not do that: ${String(err)}`))
       .finally(() => setBusy(false));

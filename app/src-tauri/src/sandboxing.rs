@@ -2539,11 +2539,14 @@ fn revoke_run_grant(held: &crate::planes::Held, number: u32) -> Result<(), Strin
     let Some(one) = asks.given_runs().into_iter().find(|one| one.id == number) else {
         return Err("purlis did not remove it: it is no longer there.".to_owned());
     };
-    held.hooks().record_run_grant(
-        held.root(),
-        one.bound.chat,
-        &Audited::revoked(&one.bound, one.once),
-    )?;
+    // Given ahead of its run, its keys are not in its command yet: named as its grant was (#5617).
+    let taken_back = Audited::revoked(&one.bound, one.once);
+    let taken_back = match &one.ahead_keys {
+        Some(keys) => taken_back.handing(keys),
+        None => taken_back,
+    };
+    held.hooks()
+        .record_run_grant(held.root(), one.bound.chat, &taken_back)?;
     asks.revoke_run(number, crate::asking::the_window())?;
     Ok(())
 }

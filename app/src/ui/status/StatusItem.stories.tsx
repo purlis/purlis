@@ -153,7 +153,7 @@ function OverPurlis() {
   };
   // Each turned the same way, or its kin as drawn where the theme draws it as its kin
   // (`vocabulary::follow_kin`), or where turning would bring it nearer a colour than the rules
-  // the engine hands this theme allow and than the theme's own is (`vocabulary::holds_as_apart`).
+  // the engine hands this theme allow and than the theme's own is (`vocabulary::HeldApart`).
   const held = (token: Token): string => {
     const kin = DRAWN_IN_THE_ACCENT[token];
     // Drawn as its kin, it is that kin as drawn here, turned or not (#5157). The fill under the
@@ -163,7 +163,7 @@ function OverPurlis() {
       return token === "accent.fill-hover" ? toward(value(token), held("accent.fill")) : value(kin);
     }
     // What the theme draws as its accent is the accent given (#5157). The engine also passes over
-    // a colour that would lose a contrast (`check::keeps_contrast`): of this blue's, only a link
+    // a colour that would lose a contrast (`check::KeepsContrast`): of this blue's, only a link
     // over Purlis Classic light, on the ground this story draws it on.
     const asAccent =
       value(token) === value("accent.base") &&

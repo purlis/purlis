@@ -6,7 +6,7 @@ import { commands, type PlaneId, type SandboxGrant } from "../bindings";
 import { Notice } from "../Notice";
 import { inTheWindow } from "../personaHostsAllow";
 import { useReadOnlySaid } from "../ReadOnlyLine";
-import { sandboxCommandReturned } from "../sandboxAsked";
+import { sandboxCommandReturned, useRunGrantsMoved } from "../sandboxAsked";
 import { Field, type RowIds } from "./components";
 import { DISPATCH } from "./dispatch";
 import { linkToGroup, openVault, settingsPlace, showPersona } from "./links";
@@ -140,9 +140,11 @@ export function AllowedRows({ plane, file, ids }: { plane: PlaneId; file: string
           newest() && setSaid(`purlis could not list what is allowed: ${String(err)}`),
       );
   }, [plane]);
-  // Read again when an Allow on Blocked lately returns.
+  // Read again when an Allow on Blocked lately returns, and when a press that gives or takes back
+  // a Run grant does: a run's notice gives one, and Keep blocked takes a chat's back (#5617).
   const allowed = useAllowedHere();
-  useEffect(read, [read, allowed]);
+  const runGrants = useRunGrantsMoved();
+  useEffect(read, [read, allowed, runGrants]);
 
   const remove = (one: SandboxGrant) => {
     setSaid(undefined);

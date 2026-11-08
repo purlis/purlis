@@ -330,6 +330,7 @@ fn what_a_router_hides_is_hidden_wherever_the_chat_s_set_is_routed_with_its_line
             plane: root,
             workspace: Some("smart-ide"),
             repo: &[],
+            own: &[],
             routed: skills.routed.as_deref(),
         },
         None,

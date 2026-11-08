@@ -760,6 +760,16 @@ fn keys_named(wanted: &Wanted) -> impl Iterator<Item = &str> {
         .filter_map(|spec| spec.split_once('=').map(|(_, key)| key))
 }
 
+/// Each key `wanted` hands over: [`keys_named`]'s and each `--dotenv` entry's
+/// (`ENVVAR=NAME:key`), for a judge that must see them all (#5795).
+fn keys_handed(wanted: &Wanted) -> impl Iterator<Item = &str> {
+    keys_named(wanted).chain(wanted.dotenv.iter().filter_map(|spec| {
+        spec.split_once('=')
+            .and_then(|(_, entry)| entry.split_once(':'))
+            .map(|(_, key)| key)
+    }))
+}
+
 /// **Each key `wanted` hands over that `vault` lacks** (#5242), once, in order: none under it, or
 /// a link whose entry is gone, which the run's one notice asks a value for. Told by the
 /// provider's kind of failure, never its sentence; a vault that can't be read lacks nothing here,
@@ -772,6 +782,11 @@ fn fills_missing(asker: &Asker, ctx: &Ctx, wanted: &Wanted) -> Vec<super::ask::r
     let mut fills: Vec<super::ask::run::Fill> = Vec::new();
     for key in keys_named(wanted) {
         if fills.iter().any(|fill| fill.key == key) {
+            continue;
+        }
+        // A link into a vault the persona may not use is neither read nor asked for: its run is
+        // refused (#5795).
+        if read_out_of_reach(ctx, persona, &wanted.vault, &[key]).is_some() {
             continue;
         }
         let lacks = cmd::get_value(ctx, &v, key).map(zeroize::Zeroizing::new);
@@ -1055,35 +1070,97 @@ pub fn no_program_is_handed(ctx: &Ctx, vault: &str, keys: &[&str]) -> Option<Str
 /// [`no_program_is_handed`] refuses, and a key that is a link into a vault `persona` may not use
 /// (D-5246-1, the person's ruling amending D-5080-11). A Run grant's notice names only the
 /// persona's vault, so a value read through such a link would go where the person never read;
-/// however the link came to be, before the picker and the press were narrowed too. A link that
-/// can't be read is refused, failing closed. A declared tool is not judged so: it reads through a
-/// link as it always did.
+/// however the link came to be, before the picker and the press were narrowed too: the judge
+/// every read of a link is held to ([`read_out_of_reach`], #5795).
 fn handed_to_no_granted_program(
     ctx: &Ctx,
     persona: Option<&str>,
     vault: &str,
     keys: &[&str],
 ) -> Option<String> {
-    no_program_is_handed(ctx, vault, keys).or_else(|| {
-        let persona = persona.unwrap_or_default();
-        keys.iter()
-            .find_map(|&key| {
-                match super::links::of(ctx, vault, key) {
-            Ok(None) => None,
-            Ok(Some(to)) => authorise(ctx, Some(persona), &to.vault).err().map(|_| {
+    no_program_is_handed(ctx, vault, keys)
+        .or_else(|| read_out_of_reach(ctx, persona.unwrap_or_default(), vault, keys))
+}
+
+/// **Why `persona` may read none of `keys` of `vault`** (#5795, the person's ruling: judge a link
+/// when it is read): one is a link into a vault `persona` may not use, which is whatever
+/// [`authorise`] would not open for it. A link to another entry of the same vault reaches no new
+/// vault and is not judged, as the press does not judge it ([`read_through_by`]). Asked before a value is read for
+/// a declared tool's run, a run under a Run grant, a browser fill, a login (declared or granted)
+/// and a profile's sign-in, and again once it is read ([`read_judged`]). A fill or a granted login
+/// counts as a reader of its vault, so this covers links made before #5745's press check and a
+/// persona that came to use the link's vault later, by a tag, an Allow, Always allow or a lifted
+/// lock. Fails closed: a link that can't be read refuses, and so does this machine's grants file
+/// where it can't be read, which counts as a refusal here and not as no grants. What the chat
+/// hears names the key and its own vault, never the other vault (D-5246-8), nor anything of the
+/// grants file, which holds other vaults' names: that goes to the log.
+pub fn read_out_of_reach(ctx: &Ctx, persona: &str, vault: &str, keys: &[&str]) -> Option<String> {
+    for &key in keys {
+        let to = match super::links::of(ctx, vault, key) {
+            Ok(None) => continue,
+            // Another entry of the same vault: no new vault is reached, as the press judges it
+            // too ([`read_through_by`]).
+            Ok(Some(to)) if to.vault == vault => continue,
+            Ok(Some(to)) => to,
+            Err(_) => {
+                return Some(format!(
+                    "purlis could not read where {key} in vault {vault} leads, so it read none \
+                     of it"
+                ));
+            }
+        };
+        if !crate::sandbox::policy::Locks::of(&ctx.root).forbids_vault_grants()
+            && let Err(e) = crate::sandbox::local::try_granted_vaults(&ctx.root)
+        {
+            tracing::warn!(
+                "purlis: read nothing through {key} in vault {vault}: this machine's vault \
+                 grants at {} did not read ({e})",
+                crate::sandbox::local::path(&ctx.root).display()
+            );
+            return Some(format!(
+                "{key} in vault {vault} is a link, and purlis could not read which vaults this \
+                 machine allows each persona, so it read none of it. The person can find why in \
+                 purlis's log."
+            ));
+        }
+        if authorise(ctx, Some(persona), &to.vault).is_err() {
+            return Some(if persona.is_empty() {
+                format!(
+                    "{key} in vault {vault} reads an entry of another vault, and this chat runs \
+                     as no persona, so purlis read none of it"
+                )
+            } else {
                 format!(
                     "{key} in vault {vault} reads an entry of a vault {persona} may not use, so \
-                     no program is handed it; the person can link it to an entry {persona} may \
-                     use, or fill it"
+                     purlis read none of it. The person can link it to an entry {persona} may \
+                     use, or fill it."
                 )
-            }),
-            Err(_) => Some(format!(
-                "purlis could not read where {key} in vault {vault} leads, so no program is \
-                 handed it"
-            )),
+            });
         }
-            })
-    })
+    }
+    None
+}
+
+/// **`read`, judged by [`read_out_of_reach`] before and after it**: a link written between the
+/// first judgement and the read is seen by the second, and what was read is then dropped unused.
+/// `refused` turns the judge's sentence into `read`'s error.
+pub fn read_judged<T, E>(
+    ctx: &Ctx,
+    persona: &str,
+    vault: &str,
+    keys: &[&str],
+    read: impl FnOnce() -> Result<T, E>,
+    refused: impl Fn(String) -> E,
+) -> Result<T, E> {
+    if let Some(why) = read_out_of_reach(ctx, persona, vault, keys) {
+        return Err(refused(why));
+    }
+    let got = read();
+    if let Some(why) = read_out_of_reach(ctx, persona, vault, keys) {
+        drop(got);
+        return Err(refused(why));
+    }
+    got
 }
 
 /// **[`no_program_is_handed`] for many keys, the project's file and the links index read once**
@@ -2297,9 +2374,21 @@ fn read_for_fill(
     key: &str,
 ) -> Result<Option<purlis_session_protocol::browsing::Secret>, String> {
     let ctx = reading_for(asker);
+    let persona = asker.persona.as_deref().unwrap_or_default();
     let provider = cmd::provider(&ctx, vault).map_err(|e| e.message.to_string())?;
-    match cmd::get_value(&ctx, &provider, key) {
-        Ok(value) => Ok(Some(purlis_session_protocol::browsing::Secret::new(value))),
+    if let Some(why) = read_out_of_reach(&ctx, persona, vault, &[key]) {
+        return Err(why);
+    }
+    let got = cmd::get_value(&ctx, &provider, key).map(zeroize::Zeroizing::new);
+    // And again once read: a link written meanwhile is seen, and what was read goes unused.
+    if let Some(why) = read_out_of_reach(&ctx, persona, vault, &[key]) {
+        return Err(why);
+    }
+    match got {
+        // Moved out whole: what is left behind is wiped as it is dropped.
+        Ok(mut value) => Ok(Some(purlis_session_protocol::browsing::Secret::new(
+            std::mem::take(&mut *value),
+        ))),
         // A key the vault holds no value under is the person's to add (#5116, #5054): told by
         // the provider's kind of failure, never by its sentence.
         Err(e) if e.kind == super::Kind::NotFound => Ok(None),
@@ -2326,6 +2415,11 @@ fn read_login(
         return Err(format!("{name} is not a browser login"));
     };
     let vault = &ready.tool.vault;
+    let persona = asker.persona.as_deref().unwrap_or_default();
+    let keys: Vec<&str> = user_key.into_iter().chain([pass_key]).collect();
+    if let Some(why) = read_out_of_reach(ctx, persona, vault, &keys) {
+        return Err(why);
+    }
     let v = cmd::provider(ctx, vault).map_err(|e| e.message.to_string())?;
     let refused = |e: &super::VaultError| {
         format!(
@@ -2333,7 +2427,7 @@ fn read_login(
             e.message
         )
     };
-    let read = |key: &str| {
+    let read_once = |key: &str| {
         let mut once = || cmd::get_value(ctx, &v, key);
         let Some(missing) = missing else {
             return once().map(Secret::new).map_err(|e| refused(&e));
@@ -2362,6 +2456,14 @@ fn read_login(
                 super::ask::Unread::Vault(e) => refused(&e),
                 super::ask::Unread::Asked(line) => format!("{line}, so nothing was filled"),
             })
+    };
+    // Judged again once read: a link written meanwhile, a Fill's among them, is seen (#5795).
+    let read = |key: &str| {
+        let got = read_once(key);
+        match read_out_of_reach(ctx, persona, vault, &[key]) {
+            Some(why) => Err(why),
+            None => got,
+        }
     };
     let identity = identity_of_ready(asker, name, ready)?;
     let user = user_key.map(read).transpose()?;
@@ -3165,6 +3267,19 @@ pub(crate) fn serve_recorded(
     {
         return refuse(&mut *writer, 1, why.clone());
     }
+    // Every key it hands over that is a link into a vault the persona may not use refuses the
+    // run before anything is read or asked (#5795): no notice for one key, then a refusal for
+    // another. Each read is judged again as it happens, below.
+    if handed.is_none()
+        && let Some(why) = read_out_of_reach(
+            &ctx,
+            persona,
+            &wanted.vault,
+            &keys_handed(&wanted).collect::<Vec<_>>(),
+        )
+    {
+        return refuse(&mut *writer, 1, why);
+    }
     // A declared tool's run on a vault its persona may not use, that lacks a key too: one notice
     // with its fields and the vault's own Allow (#5242). Lacking none, the app's refused vault's
     // notice asks, as before (#5160).
@@ -3534,6 +3649,11 @@ pub(crate) fn serve_recorded(
             }
             // And only those purlis cloned or the person saved from the window.
             let config_root = crate::forge::apptoken::record_root();
+            // The App's key is read to mint, through a link too: judged as any read (#5795).
+            let minted_from: Vec<&str> = tool.values.iter().map(|one| one.key.as_str()).collect();
+            if let Some(why) = read_out_of_reach(&ctx, persona, &tool.vault, &minted_from) {
+                return refuse(&mut *writer, 1, why);
+            }
             let token = match crate::forge::apptoken::token_from_vault(
                 &ctx,
                 &crate::forge::apptoken::For {
@@ -3552,6 +3672,9 @@ pub(crate) fn serve_recorded(
                 Ok(token) => token,
                 Err(why) => return refuse(&mut *writer, 1, why),
             };
+            if let Some(why) = read_out_of_reach(&ctx, persona, &tool.vault, &minted_from) {
+                return refuse(&mut *writer, 1, why);
+            }
             exec::prepare_from(
                 &|key| minted_for(tool, key, &token),
                 &req,
@@ -3570,7 +3693,16 @@ pub(crate) fn serve_recorded(
             loop {
                 let missed: std::sync::Mutex<Option<String>> = std::sync::Mutex::default();
                 let read = |key: &str| {
+                    // A link into a vault the persona may not use is read for no run (#5795),
+                    // and asked of nobody: `Kind::Other` raises no Secret ask.
+                    if let Some(why) = read_out_of_reach(&ctx, persona, &wanted.vault, &[key]) {
+                        return Err(super::VaultError::new(why));
+                    }
                     let got = cmd::get_value(&ctx, v, key).map(zeroize::Zeroizing::new);
+                    // And again once read: a link written meanwhile is seen (#5795).
+                    if let Some(why) = read_out_of_reach(&ctx, persona, &wanted.vault, &[key]) {
+                        return Err(super::VaultError::new(why));
+                    }
                     // A Linked entry whose entry is gone is asked for too (#5075), naming
                     // the gone entry to the person alone.
                     let asks = got.as_ref().is_err_and(|e| {

@@ -99,6 +99,7 @@ pub(super) const CARD_BUTTON: Family = Family {
     around: &[],
     fills: &[],
     under: &[],
+    later: &[],
 };
 
 /// **A pressed card's colours as `card.css` draws them.** A door stands on the control's ground

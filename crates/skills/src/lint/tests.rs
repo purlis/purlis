@@ -345,3 +345,124 @@ fn a_skill_whose_folder_is_not_listed_or_that_names_a_folder_a_glob_or_another_p
         Vec::<Option<String>>::new()
     );
 }
+
+/// The programs a shell script's lint names as missing on a machine with none of them.
+fn missing_from(script: &str) -> Vec<String> {
+    let others = [("scripts/run.sh".to_owned(), script.to_owned())];
+    says(&found(&skill("", ""), &others, true))
+        .into_iter()
+        .map(|line| {
+            line.strip_prefix("scripts/run.sh calls ")
+                .and_then(|rest| rest.strip_suffix(", which this machine does not have"))
+                .unwrap_or(&line)
+                .to_owned()
+        })
+        .collect()
+}
+
+#[test]
+fn words_inside_a_quoted_jq_program_or_css_are_data_and_not_programs_a_script_calls() {
+    let script = r#"#!/usr/bin/env bash
+gh issue list --json number -q '.[] | [.number, (.labels|join(","))] | @tsv' |
+while read -r n; do echo "$n"; done
+jq -n -r --arg repo "$REPO" '
+  ($ms | sort_by(.title) | map(
+    "<tr><td>\(.title | @html)</td></tr>"
+  ) | join("\n")) as $rows |
+"<html><style>
+body{font:15px/1.5 system-ui;color:var(--fg)}
+h1{font-size:1.4rem;margin:0}h2{font-size:1.1rem}
+</style>\($rows)</html>"' > "$OUT"
+cat <<'EOF'
+body{font:15px/1.5 system-ui;margin:0} a{color:inherit}
+EOF
+printf '%s\n' "a | b; c & d (e)"
+"#;
+    assert_eq!(missing_from(script), ["gh", "jq", "cat"]);
+}
+
+#[test]
+fn a_program_a_substitution_runs_is_found_inside_double_quotes_a_default_and_an_unquoted_heredoc() {
+    let script = r#"#!/usr/bin/env bash
+title="$(curl -s "$URL" | yq '.title | @sh')"
+echo "made by `whoami` on ${HOST:-$(hostname)}"
+cat <<EOF
+built $(date +%F) by $(id -un)
+EOF
+"#;
+    assert_eq!(
+        missing_from(script),
+        ["curl", "yq", "whoami", "hostname", "cat", "date", "id"]
+    );
+}
+
+#[test]
+fn what_a_script_hands_a_shell_is_read_as_a_script_wherever_the_shell_is_called() {
+    let script = r#"#!/usr/bin/env bash
+bash -c 'kubectl get pods | awk "{print \$1}"'
+sh -ec "helm list; terraform plan"
+eval "make build"
+eval "$(brew shellenv)"
+find . -name '*.log' -exec sh -c 'gzip "$1"' _ {} \;
+xargs -I{} bash -c 'rsync {} host:'
+bash -s <<'EOF'
+docker ps
+EOF
+cat <<'EOF' | sh
+podman ps
+EOF
+"#;
+    assert_eq!(
+        missing_from(script),
+        [
+            "kubectl",
+            "awk",
+            "helm",
+            "terraform",
+            "make",
+            "brew",
+            "find",
+            "gzip",
+            "xargs",
+            "rsync",
+            "docker",
+            "cat",
+            "podman",
+        ]
+    );
+}
+
+#[test]
+fn a_heredoc_for_another_program_and_a_here_string_are_data() {
+    let script = r#"#!/usr/bin/env bash
+ssh host <<EOF
+remote-only-tool
+EOF
+bash ./job.sh <<'EOF'
+input-not-a-command
+EOF
+read -r a <<< "$x"
+jqq .
+"#;
+    assert_eq!(missing_from(script), ["ssh", "jqq"]);
+}
+
+#[test]
+fn arithmetic_an_array_a_test_and_a_case_pattern_or_comment_run_nothing() {
+    let script = r#"#!/usr/bin/env bash
+(( count++ ))
+arr=(one two three)
+case "$1" in
+  # stop) the old way
+  start|go) helm install x ;;
+  'stop') make stop ;;
+  (*) usage ;;
+esac
+[[ $x =~ ^(a|b)$ && -n $y ]] && npm test
+if [[ $x =~ ^(foo|bar)$ ]]; then pnpm i; fi
+"#;
+    assert_eq!(
+        missing_from(script),
+        ["helm", "make", "usage", "npm", "pnpm"]
+    );
+}

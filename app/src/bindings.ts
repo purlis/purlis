@@ -5067,6 +5067,14 @@ export const commands = {
 	 *  record put back. The window opens a tab for each; nothing in one is asked until it is drawn.
 	 */
 	reopenedViews: (plane: PlaneId) => typedError<ViewTab[], string>(__TAURI_INVOKE("reopened_views", { plane })),
+	/**
+	 *  **Who has worked in each workspace of this project**, kept past their chats and past a
+	 *  relaunch (#3593): what the Personas view's In this workspace draws with the workspace's session
+	 *  records and the chats the window sees. Read off this clone's reopen record
+	 *  ([`purlis_core::reopen::worked::read`]), off the window's thread, and apart from the panels,
+	 *  so it costs their 100 ms nothing.
+	 */
+	workedHere: (plane: PlaneId) => typedError<WorkedIn[], string>(__TAURI_INVOKE("worked_here", { plane })),
 	/**  What view tabs the window has open now, so the record brings them back at the next launch. */
 	windowViews: (plane: PlaneId, views: ViewTab[]) => typedError<null, string>(__TAURI_INVOKE("window_views", { plane, views })),
 	/**
@@ -16218,6 +16226,16 @@ export type SkillBudget = {
 	 *  pins. Null where its pins are read.
 	 */
 	pins_together: SkillPinsTogether | null,
+	/**
+	 *  **Whether its program still drops descriptions from its listing** (#5736), in the core's
+	 *  words, naming who takes the most room. Null where it does not.
+	 */
+	drops: string | null,
+	/**
+	 *  **Copies of one name whose content differs, both listed to it** (#5737), in the core's
+	 *  words, naming each pair. Null where there are none.
+	 */
+	twins: string | null,
 };
 
 /**  **What a typed skill budget would do to new chats** (#5353), as the Change… dialog says it. */
@@ -19180,6 +19198,12 @@ export type WithAskingChat = {
 export type WithoutSandbox = {
 	/**  What the person typed as the reason, or null. */
 	reason: string | null,
+};
+
+/**  The personas one workspace's chats ran as, as the reopen record keeps them (#3593). */
+export type WorkedIn = {
+	workspace: string,
+	personas: string[],
 };
 
 /**  A file of a workspace's own files, as the light editor draws it, and whether purlis keeps it. */

@@ -3051,6 +3051,12 @@ them (#5427, ADR 0078 §7, session protocol 1.78), which the file diff reads as 
       `de-steuer-id`, `br-cpf`, `nl-bsn`) is found only in its grouped form or behind its
       name (`BSN: `, `CPF `, `Aadhaar no. `). Unformatted and unnamed, it can't be told from
       any other number, so the scan doesn't look for it (#1793).
+    - **A second limit:** a card number, or a national ID in its grouped form, is not read
+      where it is part of something else (#5822): joined by `-` or `_` to a letter or digit,
+      as in a file's or branch's name (a session record named for the issues it closed); a decimal's
+      part, after a digit and `.` or before `.` and a digit (a cost in dollars); or written
+      straight after `#`, as an issue or PR number is. Behind its name (`Aadhaar: `) a
+      national ID is read as before.
   - An optional `[builtin]` table with `enabled = false`, which turns purlis's own entries off.
   - An entry that can't be read, or that breaks one of these rules, allows nothing, and the scan
     says so.
@@ -6657,6 +6663,7 @@ down rather than read off the code.
 | `tabs[].focused` | str | default `""` | the focused pane, as a path from the root: `a` for a split's first child and `b` for its second (`""` a tab of one pane, `"ba"` the first child of the second). Pane numbers are launch-local, so a pane is named by its path. Read as far as it goes in the tree and then on into each first child, so it always ends at a pane; at most 16 steps |
 | `tabs[].tree` | object | an empty pane | a **node**: a split, `{"direction": "row" \| "column", "share": <0..1000>, "a": <node>, "b": <node>}`, where `row` is side by side, `column` one above the other, and `share` is the first child's share in tenths of a percent (a new split is 500); or a pane, `{"chat": <number>}`, `{"view": {"from", "view", "key", "title", "split"}}` (a `views[]` entry's own fields under the same rules, without the tab's), or `{"empty": true}`. **Held on the way in**: a node that is none of these, a view that fails its rules, and chat `0` read as an empty pane; a direction that is not `column` reads as `row`; a share that is not a whole number up to 1000 reads as 500; a chat named in an earlier pane reads as an empty pane, so no chat is shown twice; a split deeper than 16 reads as an empty pane. One-job splits (a terminal editor, a forge login) are never written |
 | `strip` | str | default `""`; written only with `tabs` | the strip the project window drew: a workspace's name, or empty for the strip outside every workspace. Read only with `tabs` |
+| `worked` | object | absent; written only when it names someone | **who has worked in each workspace** (#3593): `{"<workspace>": ["<persona>", …]}`, each list sorted. Every write carries forward what the record on disk held and adds the persona of each chat it holds whose directory is in a workspace, so a persona stays named after its chat closes, through a relaunch and a Start fresh. A workspace no longer under `workspaces/` is dropped as the record is written or read, so one made again under its name starts with nobody. A name that is not a workspace's or a persona's is left out, and so is anything past 256 workspaces or 64 personas in one; a value that is not such an object is read as absent. Read by the window as it takes the project (`worked_here`) for the Personas view's **In this workspace**, with the workspace's session records and the chats it sees (`purlis_core::reopen::worked`) |
 
 Which harness a chat runs is **not** recorded: it is read from `program`'s file name, so a
 record cannot disagree with what is about to be started. Only a harness purlis has
