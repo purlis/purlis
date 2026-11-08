@@ -1,0 +1,194 @@
+[
+  {
+    "query": "purlis quit again the moment I pressed Cmd+V to paste a merge request link into the chat. That's the third time today.",
+    "should_trigger": true
+  },
+  {
+    "query": "I relaunched purlis and only one of my three projects came back; the other chats are just gone from the list.",
+    "should_trigger": true
+  },
+  {
+    "query": "I pressed Retry on the chats that didn't restore and it just sits there. Nothing happens.",
+    "should_trigger": true
+  },
+  {
+    "query": "Why does purlis take four minutes to open with about thirty chats?",
+    "should_trigger": true
+  },
+  {
+    "query": "This chat's terminal froze half-drawn. Typing and clicking do nothing, but the chat is clearly still running.",
+    "should_trigger": true
+  },
+  {
+    "query": "Moving the chat to my Docker pool fails with 'git could not stage the uncommitted work: unknown option: --attr-source'.",
+    "should_trigger": true
+  },
+  {
+    "query": "The skill I installed from source says 'Unknown skill' every time it tries to load its sibling skill.",
+    "should_trigger": true
+  },
+  {
+    "query": "I clicked Ask a chat to write outcome evals on the Grades tab and no chat ever opened.",
+    "should_trigger": true
+  },
+  {
+    "query": "purlis worktree done failed with 'could not write the piece log for workspace' from inside the task.",
+    "should_trigger": true
+  },
+  {
+    "query": "purlis worktree commit --all said it committed, but none of my new files are in the commit.",
+    "should_trigger": true
+  },
+  {
+    "query": "The sandbox refused the branch folder purlis worktree add just cut for this task, so I'll clone the repo into my scratchpad and work there instead.",
+    "should_trigger": true
+  },
+  {
+    "query": "git reset --hard in this purlis branch folder failed halfway on the vault fixtures, so I'll do a mixed reset and check the rest out by hand.",
+    "should_trigger": true
+  },
+  {
+    "query": "Every dispatch call now answers 'the purlis app did not answer', so I'll just do the other lanes' work myself in this chat.",
+    "should_trigger": true
+  },
+  {
+    "query": "The window says this lane is waiting on its own work, but the run it's waiting on was killed by the restart 45 minutes ago.",
+    "should_trigger": true
+  },
+  {
+    "query": "I lowered my sandbox level to off and this chat still runs sandboxed. Nothing says why.",
+    "should_trigger": true
+  },
+  {
+    "query": "The needs-you bell went away even though I never answered the question. A background turn seems to have cleared it.",
+    "should_trigger": true
+  },
+  {
+    "query": "After I split the pane, both halves show the wrong chat names.",
+    "should_trigger": true
+  },
+  {
+    "query": "Since I moved a pane there's a dashed line across the top of the purlis window that won't go away.",
+    "should_trigger": true
+  },
+  {
+    "query": "purlis opened with no theme at all, everything unstyled, right after the extensions failed to load.",
+    "should_trigger": true
+  },
+  {
+    "query": "Why did purlis open that chat in the other pane and not the one I had focused?",
+    "should_trigger": true
+  },
+  {
+    "query": "You should have used the purlis-handoff skill for that instead of writing the brief yourself.",
+    "should_trigger": true
+  },
+  {
+    "query": "I said 'store this token in the vault' and you never loaded purlis-secrets. You pasted it into .env instead.",
+    "should_trigger": true
+  },
+  {
+    "query": "Why didn't the smart close skill start when I said close this chat with a record? You wrote it by hand.",
+    "should_trigger": true
+  },
+  {
+    "query": "purlis persona recall says --query is not a flag, but the purlis-persona skill tells me to use it.",
+    "should_trigger": true
+  },
+  {
+    "query": "Write trigger tests for purlis-handoff so it starts when someone says 'hand this off to a new chat'.",
+    "should_trigger": false
+  },
+  {
+    "query": "purlis-secrets missed two of its trigger tests on Codex; rewrite its description so it starts on those.",
+    "should_trigger": false
+  },
+  {
+    "query": "Improve the deploy skill from its last runs and grades.",
+    "should_trigger": false
+  },
+  {
+    "query": "Draft a new skill for our release checklist in the project's skills folder.",
+    "should_trigger": false
+  },
+  {
+    "query": "Add ten more near-miss queries to purlis-report's triggers.json.",
+    "should_trigger": false
+  },
+  {
+    "query": "Stop asking me before every cargo test in this chat; just allow it.",
+    "should_trigger": false
+  },
+  {
+    "query": "The sandbox blocked crates.io. Allow that host for this chat.",
+    "should_trigger": false
+  },
+  {
+    "query": "Why was purlis worktree update refused? It said the update has to run alone in its call.",
+    "should_trigger": false
+  },
+  {
+    "query": "Let this chat write to ~/Library/Caches/ms-playwright; the sandbox keeps refusing it.",
+    "should_trigger": false
+  },
+  {
+    "query": "List the guard rules purlis has for git push.",
+    "should_trigger": false
+  },
+  {
+    "query": "My React component re-renders on every keystroke. Find out why.",
+    "should_trigger": false
+  },
+  {
+    "query": "The integration test in our payments service fails with a 500 on refund.",
+    "should_trigger": false
+  },
+  {
+    "query": "cargo build fails in my crate with a borrow checker error on line 88.",
+    "should_trigger": false
+  },
+  {
+    "query": "Our app crashes when a user pastes a long URL into the search box.",
+    "should_trigger": false
+  },
+  {
+    "query": "The login page of our site got slow after the last deploy. Profile it.",
+    "should_trigger": false
+  },
+  {
+    "query": "Why did my migration drop the users table? I wrote it last week.",
+    "should_trigger": false
+  },
+  {
+    "query": "Claude Code's /compact hangs and never returns, even in a plain terminal without purlis.",
+    "should_trigger": false
+  },
+  {
+    "query": "In plain Codex outside purlis, Esc no longer interrupts the model.",
+    "should_trigger": false
+  },
+  {
+    "query": "opencode's own model picker forgets my choice every time I restart it, purlis or not.",
+    "should_trigger": false
+  },
+  {
+    "query": "I typed purlis worktre add and it says unknown command. Oh, typo. What's the right spelling?",
+    "should_trigger": false
+  },
+  {
+    "query": "I pointed this workspace at the wrong repo path by mistake. How do I change it?",
+    "should_trigger": false
+  },
+  {
+    "query": "I picked the high-contrast theme earlier and now I'd like the normal one back.",
+    "should_trigger": false
+  },
+  {
+    "query": "git push failed because I forgot to set the upstream on my branch.",
+    "should_trigger": false
+  },
+  {
+    "query": "Move this machine to the dev channel of purlis.",
+    "should_trigger": false
+  }
+]
