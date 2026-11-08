@@ -423,7 +423,9 @@ fn filled_first(
             // Filled under another name, the key is still missing: read after the Allow, and
             // refused there as before.
             Held::Filled { .. } => asked.push(key),
-            Held::Declined { line } | Held::Refused { line } => return Err(line.into()),
+            Held::Declined { line } | Held::Refused { line } | Held::CallerGone { line } => {
+                return Err(line.into());
+            }
             Held::StillOpen { line } => {
                 return Err(Refused {
                     why: line,

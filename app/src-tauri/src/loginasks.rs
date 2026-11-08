@@ -29,7 +29,7 @@
 
 use std::path::Path;
 use std::sync::{Mutex, MutexGuard, PoisonError, mpsc};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use purlis_core::hookwire::{Answer, BrowseAsk, Browsing};
 use purlis_core::loginask::{self, FindsForm, Proposal, Suggested};
@@ -603,55 +603,9 @@ fn asked_about_the_login(
 pub(crate) const ASKER_GONE: &str = "the call ended while the person was asked, so its notice \
                                      went and nothing was filled";
 
-/// **How a wait on the person ended** ([`waited`]).
-#[derive(Debug, PartialEq, Eq)]
-pub(crate) enum Ended<H> {
-    /// The press.
-    Heard(H),
-    /// The chat closed, and its waits with it.
-    Closed,
-    /// Nobody answered in time: the notice went.
-    NotAnswered,
-    /// The call's asker hung up: the notice went.
-    AskerGone,
-}
-
-/// How often a waiting call looks whether its asker hung up.
-const LOOKS_AGAIN: Duration = Duration::from_secs(1);
-
-/// **The answer `heard` brings**, waited for `at_most`, looking every [`LOOKS_AGAIN`] whether
-/// the call's asker is `gone`: past the time, or with nobody waiting any more, `settle` ends the
-/// notice. It answers the press that ended it in that very moment, where one did, and that press
-/// wins. A login's wait and a secret fill's both wait here.
-pub(crate) fn waited<H>(
-    heard: &mpsc::Receiver<H>,
-    at_most: Duration,
-    gone: &dyn Fn() -> bool,
-    settle: &dyn Fn() -> Option<H>,
-) -> Ended<H> {
-    let until = Instant::now() + at_most;
-    loop {
-        let left = until.saturating_duration_since(Instant::now());
-        match heard.recv_timeout(left.min(LOOKS_AGAIN)) {
-            Ok(one) => return Ended::Heard(one),
-            Err(mpsc::RecvTimeoutError::Disconnected) => return Ended::Closed,
-            Err(mpsc::RecvTimeoutError::Timeout) => {
-                let hung_up = gone();
-                if !hung_up && Instant::now() < until {
-                    continue;
-                }
-                if let Some(one) = settle() {
-                    return Ended::Heard(one);
-                }
-                return if hung_up {
-                    Ended::AskerGone
-                } else {
-                    Ended::NotAnswered
-                };
-            }
-        }
-    }
-}
+/// A login's wait and a secret fill's both wait on [`waited`], as the Secret ask a fill raises
+/// does.
+pub(crate) use purlis_core::askwait::{Ended, waited};
 
 /// **The answer to the login notice numbered `id`** ([`waited`]).
 fn waited_for_the_person(
