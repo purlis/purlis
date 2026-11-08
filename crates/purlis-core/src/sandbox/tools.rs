@@ -1760,6 +1760,24 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "ftp",
     "sqlite3",
     "tcpdump",
+    // run a command a flag, an address or a template names (#5619, found by #5595's review):
+    // `xcodebuild`'s build phases, `msgexec`'s command, `leaks --atExit --`, `pyenv exec` and its
+    // shims, `erb`'s Ruby, `helm`'s `--post-renderer` and plugins, `socat`'s `EXEC:` and
+    // `SYSTEM:`, `ncat --exec` and `nc -e`, and `tar --to-command`, `-I` and
+    // `--use-compress-program`. Each is refused whole, not by its flag: a flag can be spelled
+    // many ways, and a name refused only takes away an Allow.
+    "xcodebuild",
+    "msgexec",
+    "leaks",
+    "pyenv",
+    "erb",
+    "helm",
+    "socat",
+    "ncat",
+    "nc",
+    "netcat",
+    "tar",
+    "bsdtar",
 ];
 
 /// **The programs a Run grant may be wider than one exact command for** (the person's ruling on

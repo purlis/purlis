@@ -1903,3 +1903,70 @@ fn a_refused_program_named_with_a_suffix_or_a_sibling_name_is_offered_no_run_gra
         refused_as_running_others(name);
     }
 }
+
+// #5619: programs that run others, found by #5595's adversarial review.
+
+#[test]
+fn xcodebuild_runs_a_project_s_build_phases_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("xcodebuild");
+}
+
+#[test]
+fn msgexec_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("msgexec");
+}
+
+#[test]
+fn leaks_runs_the_command_after_at_exit_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("leaks");
+}
+
+#[test]
+fn pyenv_runs_its_shims_and_exec_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("pyenv");
+}
+
+#[test]
+fn erb_runs_the_ruby_in_its_template_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("erb");
+}
+
+#[test]
+fn helm_runs_a_post_renderer_and_plugins_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("helm");
+}
+
+#[test]
+fn socat_runs_what_an_exec_address_names_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("socat");
+}
+
+#[test]
+fn ncat_runs_what_exec_names_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("ncat");
+}
+
+#[test]
+fn nc_runs_what_e_names_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("nc");
+}
+
+#[test]
+fn netcat_runs_what_e_names_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("netcat");
+}
+
+#[test]
+fn tar_runs_a_to_command_or_compressor_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("tar");
+}
+
+#[test]
+fn bsdtar_runs_a_compressor_it_is_told_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("bsdtar");
+}
+
+#[test]
+fn gtar_runs_a_to_command_or_compressor_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("gtar");
+}

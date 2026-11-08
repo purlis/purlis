@@ -1446,7 +1446,6 @@ fn the_forms_a_run_grant_refuses_by_name_leave_curl_and_the_usual_tools_offered(
         "aws",
         "gcloud",
         "printenv",
-        "helm",
         "terraform",
         "gpg",
         "gpg2",
