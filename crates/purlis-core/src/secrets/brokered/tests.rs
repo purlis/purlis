@@ -17,6 +17,7 @@ use std::sync::Mutex;
 const TOKEN: &str = "s3cret-value";
 const KUBECONFIG: &str = "apiVersion: v1\nclusters: [k8s-s3cret]\n";
 
+mod links_read;
 mod one_notice;
 mod run_grants;
 
