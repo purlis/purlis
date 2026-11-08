@@ -35,6 +35,9 @@ pub struct Optimise<'a> {
     pub proposer_key: Option<&'a str>,
     /// Whether to put the proposal in the skill's `SKILL.md`.
     pub write: bool,
+    /// Whether it runs in CI (`CI=true`), where a Codex grade may bypass the trust Codex asks
+    /// for its hooks ([`crate::launch::CODEX_EXEC`]): off CI, a Codex grade is refused.
+    pub in_ci: bool,
 }
 
 /// **What it came to**, each said in Markdown with no key in it.
@@ -79,6 +82,15 @@ fn run(asked: &Optimise<'_>, keys: &[&str]) -> Result<Optimised, String> {
     let Some(proposer_key) = asked.proposer_key.filter(|key| !key.trim().is_empty()) else {
         return Ok(Optimised::Skipped(no_key("ANTHROPIC_API_KEY")));
     };
+    if ask.harness == ci::Harness::Codex && !asked.in_ci {
+        return Err(
+            "The description optimiser grades Codex only in CI (`CI=true`): a Codex grade runs \
+             purlis's hooks with `--dangerously-bypass-hook-trust`, which skips the trust Codex \
+             asks you for, so on your own machine nothing was started. Run it in CI, or with \
+             `CI=true` on a machine you keep for it."
+                .to_owned(),
+        );
+    }
     let skill_md = ask.plugin.join("skills").join(skill).join("SKILL.md");
     let text = std::fs::read_to_string(&skill_md)
         .map_err(|why| format!("{} could not be read: {why}", skill_md.display()))?;
@@ -169,6 +181,7 @@ fn graded(ask: &Ask<'_>, plugin: &Path, records: PathBuf, skill: &str) -> Result
         crowd: ask.crowd,
         cwd: ask.cwd,
         pinned: ask.pinned,
+        latest: ask.latest,
         skills: vec![skill.to_owned()],
         key: ask.key,
         records,

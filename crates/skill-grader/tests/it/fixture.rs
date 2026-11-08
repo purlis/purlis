@@ -192,6 +192,7 @@ impl Fixture {
                 Harness::Codex => "0.167.0",
                 Harness::Opencode => "1.19.5",
             },
+            latest: false,
             skills: vec!["purlis-secrets".to_owned()],
             key,
             records: self.dir.path().join("records"),

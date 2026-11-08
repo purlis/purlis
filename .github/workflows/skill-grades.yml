@@ -34,7 +34,9 @@ name: skill-grades
 # job, which holds no key, hands them to `skill-grader nightly` (which decides, and has tests)
 # and carries out what it says: one issue per skill and harness, labelled `skill-triggers`,
 # opened when the skill drops below its bar there, rewritten while it stays below, and closed
-# the night it meets it again; and, on a night every harness was graded and every skill met its
+# the night it meets it again; a harness none of whose runs said what it started (its key's spend
+# limit reached, say) is said in the summary as not graded, and its issues are left as they are;
+# and, on a night every harness was graded and every skill met its
 # bar, the versions it ran proposed as the pins, on the one branch `skill-grades/pins`, so one
 # pull request carries them however many nights stay green. A harness without its key grades
 # nothing, so no night proposes pins until all three are provisioned.
@@ -77,8 +79,9 @@ on:
 # Nothing by default: each job names what it needs.
 permissions: {}
 
+# A night's grade has a group of its own, so a run started by hand on main never cancels it.
 concurrency:
-  group: skill-grades-${{ github.ref }}
+  group: skill-grades-${{ github.event_name == 'schedule' && 'nightly' || github.ref }}
   cancel-in-progress: true
 
 env:
@@ -189,9 +192,14 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           SKILLS: ${{ needs.select.outputs.skills }}
+          EVENT: ${{ github.event_name }}
         run: |
           set -euo pipefail
+          # Each night's harness is its latest, so a version it does not say is not the pin's.
+          latest=()
+          if [ "$EVENT" = schedule ]; then latest=(--latest); fi
           target/debug/skill-grader grade \
+            "${latest[@]}" \
             --harness claude-code \
             --skills "$SKILLS" \
             --program "$(command -v claude)" \
@@ -283,9 +291,14 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           SKILLS: ${{ needs.select.outputs.skills }}
+          EVENT: ${{ github.event_name }}
         run: |
           set -euo pipefail
+          # Each night's harness is its latest, so a version it does not say is not the pin's.
+          latest=()
+          if [ "$EVENT" = schedule ]; then latest=(--latest); fi
           target/debug/skill-grader grade \
+            "${latest[@]}" \
             --harness codex \
             --skills "$SKILLS" \
             --program "$(command -v codex)" \
@@ -377,9 +390,14 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           SKILLS: ${{ needs.select.outputs.skills }}
+          EVENT: ${{ github.event_name }}
         run: |
           set -euo pipefail
+          # Each night's harness is its latest, so a version it does not say is not the pin's.
+          latest=()
+          if [ "$EVENT" = schedule ]; then latest=(--latest); fi
           target/debug/skill-grader grade \
+            "${latest[@]}" \
             --harness opencode \
             --skills "$SKILLS" \
             --program "$(command -v opencode)" \
@@ -463,6 +481,7 @@ jobs:
           cat "$RUNNER_TEMP/acts.tsv"
           while IFS=$'\t' read -r verb number file title; do
             case "$verb" in
+              note) echo "::warning title=skill-grades::$title"; echo "$title" >> "$GITHUB_STEP_SUMMARY" ;;
               create) gh issue create --title "$title" --label skill-triggers --body-file "$file" ;;
               edit) gh issue edit "$number" --body-file "$file" ;;
               close)

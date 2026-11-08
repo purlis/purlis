@@ -56,7 +56,11 @@ fn a_run_that_prints_its_key_leaves_no_key_in_the_records_it_writes() {
             "leaked-anthropic-key-1234",
         ),
         (Harness::Codex, "CODEX_API_KEY", "leaked-openai-key-1234"),
-        (Harness::Opencode, "ANTHROPIC_API_KEY", "leaked-anthropic-key-5678"),
+        (
+            Harness::Opencode,
+            "ANTHROPIC_API_KEY",
+            "leaked-anthropic-key-5678",
+        ),
     ] {
         let fixture = leaking(harness, variable);
         let ask = fixture.ask(Some(key));

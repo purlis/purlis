@@ -36,6 +36,9 @@ pub struct Ask<'a> {
     pub cwd: &'a Path,
     /// The harness version the pin file names, said where the runs ran another.
     pub pinned: &'a str,
+    /// Whether the harness installed is its latest rather than the pin, as each night's is: a
+    /// version the runs do not say is then [`LATEST_UNKNOWN`], never the pin.
+    pub latest: bool,
     /// The built-ins to grade ([`select::touched`]).
     pub skills: Vec<String>,
     /// The model provider's key, from the `skill-grades` environment: none, or blank, skips.
@@ -59,6 +62,10 @@ pub enum Graded {
         card: Box<ci::Report>,
     },
 }
+
+/// **The version recorded for a night's latest harness that did not say its version**: never
+/// the pin, which it may not be, and never proposed as one ([`nightly::bump`]).
+pub const LATEST_UNKNOWN: &str = "latest (unknown)";
 
 /// **A harness by its word**, as the pin file, the CLI and an artifact's name spell it:
 /// `claude-code`, `codex` or `opencode`, its serde name in a report.
@@ -116,7 +123,13 @@ pub fn grade(ask: &Ask<'_>) -> Graded {
     let (version, model) = launch::ran_as(ask, &ran);
     let on = ci::On {
         harness: ask.harness,
-        version: version.unwrap_or_else(|| ask.pinned.to_owned()),
+        version: version.unwrap_or_else(|| {
+            if ask.latest {
+                LATEST_UNKNOWN.to_owned()
+            } else {
+                ask.pinned.to_owned()
+            }
+        }),
         model: model.unwrap_or_else(|| launch::MODEL_NOT_SAID.to_owned()),
     };
     let runs: Vec<ci::Run> = ran.into_iter().map(|ran| ran.run).collect();

@@ -6,7 +6,8 @@
 //! propose the versions the night ran as the new pins. `.github/workflows/skill-grades.yml`
 //! fetches the open issues and carries the decisions out; nothing here calls GitHub.
 
-use purlis_skills::grade::ci::{Graded, Harness, Report};
+use purlis_skills::grade::RUNS;
+use purlis_skills::grade::ci::{Graded, Harness, Report, Score, Why};
 
 /// **An open issue labelled `skill-triggers`**, as `gh api` prints it.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
@@ -54,6 +55,10 @@ pub fn title(skill: &str, harness: Harness) -> String {
 pub fn issues(cards: &[Report], open: &[OpenIssue], run_url: &str) -> Vec<Act> {
     let mut acts = Vec::new();
     for card in cards {
+        // Nothing about any skill's bar is known: its issues are left as they are.
+        if unread_runs(card).is_some() {
+            continue;
+        }
         for skill in &card.skills {
             let Graded::Scored(score) = skill else {
                 continue;
@@ -85,6 +90,54 @@ pub fn issues(cards: &[Report], open: &[OpenIssue], run_url: &str) -> Vec<Act> {
         }
     }
     acts
+}
+
+/// **How many runs `card` had, where none of them said what it started**: a harness every run
+/// of which failed (a spend limit reached, a harness that cannot start), so nothing was graded
+/// on it. None where any run read, or nothing was scored.
+fn unread_runs(card: &Report) -> Option<u32> {
+    let counted = |score: Option<Score>| {
+        score.is_some_and(|score| score.recall.of > 0 || score.false_triggers.of > 0)
+    };
+    let mut unread = 0_u32;
+    let mut scored = false;
+    for skill in &card.skills {
+        let Graded::Scored(score) = skill else {
+            continue;
+        };
+        if counted(score.crowded) || counted(score.bare) {
+            return None;
+        }
+        scored = true;
+        let prompts = score
+            .failing
+            .iter()
+            .filter(|failing| failing.why == Why::NotRun)
+            .count();
+        unread = unread.saturating_add(
+            u32::try_from(prompts)
+                .unwrap_or(u32::MAX)
+                .saturating_mul(u32::from(RUNS)),
+        );
+    }
+    scored.then_some(unread)
+}
+
+/// **A line for each harness the night could not grade**, because none of its runs said what
+/// it started: the run's summary says it, in place of an issue per skill.
+pub fn not_graded(cards: &[Report]) -> Vec<String> {
+    cards
+        .iter()
+        .filter_map(|card| {
+            let runs = unread_runs(card)?;
+            Some(format!(
+                "Skill trigger grades on {} {}: not graded, since none of its {runs} runs said                  what it started. Its key's spend limit may be reached, or the harness may not                  start; the run's skill-grades-runs-{} artifact holds what each run printed.",
+                card.on.harness.shown(),
+                card.on.version,
+                crate::word(card.on.harness)
+            ))
+        })
+        .collect()
 }
 
 /// The harness version and model the night ran: its own line, as a verdict names the version
@@ -139,7 +192,7 @@ pub fn bump(pins: &str, cards: &[Report]) -> Result<Option<Bump>, String> {
         else {
             return Ok(None);
         };
-        if !green(card) {
+        if !green(card) || card.on.version == crate::LATEST_UNKNOWN {
             return Ok(None);
         }
         if card.on.version != version {

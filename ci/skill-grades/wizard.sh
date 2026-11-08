@@ -242,6 +242,9 @@ note "This key runs Claude Code and opencode. A pull request touching purlis-sec
 note "48 trigger tests 3 times among the crowd and 3 times bare on each: 576 short runs. Claude"
 note "Code's cost per run is in the grade's records (the result line's total_cost_usd), and"
 note "opencode's in its step_finish lines' cost, so the first grade tells you what one costs."
+note "Each night grades every built-in: 718 trigger tests, 6 runs each on each harness, so"
+note "8,616 short runs a night on this key, about 260,000 a month. A night that reaches the"
+note "limit says that harness was not graded in its summary, and opens no issue for it."
 step "Open the workspace, find its limits, and set the monthly spend limit."
 ask SPEND_LIMIT "The monthly limit you set, in USD (for the summary only):"
 confirm "Is the spend limit on $WORKSPACE saved at \$$SPEND_LIMIT?" || {
@@ -275,8 +278,9 @@ fi
 stage "OpenAI: the budget"
 if [[ $WITH_OPENAI == yes ]]; then
   say "Set a monthly budget on $PROJECT that stops its requests when it is reached."
-  note "A pull request touching purlis-secrets runs 288 short Codex runs; the first grade's"
-  note "usage on the project's page tells you what one costs."
+  note "A pull request touching purlis-secrets runs 288 short Codex runs, and each night"
+  note "4,308 (every built-in's 718 trigger tests, 6 runs each), about 130,000 a month; the"
+  note "first grade's usage on the project's page tells you what one costs."
   step "Open the project's limits, and set the monthly budget."
   ask OPENAI_LIMIT "The monthly budget you set, in USD (for the summary only):"
   confirm "Is the budget on $PROJECT saved at \$$OPENAI_LIMIT, and does it stop requests past it?" || {

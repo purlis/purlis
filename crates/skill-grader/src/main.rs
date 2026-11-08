@@ -72,6 +72,10 @@ enum Step {
         /// The file the scorecard is written to, as JSON, for the nightly to read.
         #[arg(long)]
         scorecard: Option<PathBuf>,
+        /// The harness installed is its latest, not the pin (the nightly): a version the runs
+        /// do not say is recorded as `latest (unknown)`.
+        #[arg(long)]
+        latest: bool,
     },
     /// Propose a rewritten description for one built-in from its failing trigger tests, grade
     /// it, and print both scores. A developer's tool, run on your own keys through `purlis
@@ -110,9 +114,10 @@ enum Step {
     },
     /// The nightly's decisions, from each harness's scorecard and the open `skill-triggers`
     /// issues on stdin (one JSON object per line, `number` and `title`): one line per act on
-    /// stdout, `<verb>\t<issue>\t<file>\t<title>`, with `verb` one of `create`, `edit`,
-    /// `close` (the file is the closing comment) and `bump` (the pin file is rewritten in
-    /// place and the file is the pull request's description).
+    /// stdout, `<verb>\t<issue>\t<file>\t<title>`, with `verb` one of `note` (the title is a
+    /// line for the run's summary: a harness not graded), `create`, `edit`, `close` (the file
+    /// is the closing comment) and `bump` (the pin file is rewritten in place and the file is
+    /// the pull request's description).
     Nightly {
         /// A folder of scorecards, one JSON file per harness graded; missing when none was.
         #[arg(long)]
@@ -151,6 +156,7 @@ fn main() -> ExitCode {
             summary,
             parallel,
             scorecard,
+            latest,
         } => {
             let pin = match pinned(&pins, skill_grader::word(harness)) {
                 Ok(pin) => pin,
@@ -174,6 +180,7 @@ fn main() -> ExitCode {
                 crowd: &crowd,
                 cwd: &cwd,
                 pinned: &pin,
+                latest,
                 skills,
                 key: key.as_deref(),
                 records,
@@ -273,6 +280,7 @@ fn main() -> ExitCode {
                     crowd: &crowd,
                     cwd: &cwd,
                     pinned: &pin,
+                    latest: false,
                     skills: vec![skill.clone()],
                     key: key.as_deref(),
                     records,
@@ -282,6 +290,7 @@ fn main() -> ExitCode {
                 proposer: &proposer,
                 proposer_key: proposer_key.as_deref(),
                 write,
+                in_ci: std::env::var("CI").is_ok_and(|ci| ci == "true"),
             };
             match skill_grader::optimise::optimise(&asked) {
                 // Run by hand, a missing key is a mistake to say, not a grade to skip.
@@ -353,6 +362,9 @@ fn nightly(
             .map_err(|why| format!("{} was not written: {why}", file.display()))?;
         Ok(file)
     };
+    for line in nightly::not_graded(&cards) {
+        said.push_str(&format!("note\t-\t-\t{line}\n"));
+    }
     let acts = nightly::issues(&cards, &open, run_url);
     for (n, act) in acts.iter().enumerate() {
         let line = match act {

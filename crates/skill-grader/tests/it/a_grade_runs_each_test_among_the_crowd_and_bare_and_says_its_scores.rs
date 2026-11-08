@@ -58,3 +58,25 @@ fn a_skill_the_crowd_hides_is_below_its_bar_and_the_bare_score_shows_it_is_crowd
         assert!(summary.contains(said), "no {said:?} in:\n{summary}");
     }
 }
+
+#[test]
+fn a_harness_that_does_not_say_its_version_is_recorded_as_the_latest_unknown_on_the_latest_and_as_its_pin_otherwise()
+ {
+    let mut fixture =
+        crate::fixture::fixture_on(purlis_skills::grade::ci::Harness::Opencode, true, true);
+    let behind = fixture.dir.path().join("silent");
+    std::fs::create_dir_all(&behind).unwrap();
+    let script = format!(
+        "#!/bin/sh\n[ \"$1\" = --version ] && exit 1\nexec '{}' \"$@\"\n",
+        fixture.program.display()
+    );
+    fixture.program = stand_in::program(&behind, "opencode", &script);
+    for (latest, recorded) in [(true, skill_grader::LATEST_UNKNOWN), (false, "1.19.5")] {
+        let mut ask = fixture.ask(Some("sk-ant"));
+        ask.latest = latest;
+        let Graded::Done { card, summary, .. } = grade(&ask) else {
+            panic!("it graded nothing");
+        };
+        assert_eq!(card.on.version, recorded, "{summary}");
+    }
+}

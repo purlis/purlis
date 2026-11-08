@@ -187,3 +187,47 @@ fn no_bump_is_proposed_unless_every_harness_was_graded_green_on_a_newer_version(
         assert_eq!(nightly::bump(PINS, cards), Ok(None));
     }
 }
+
+/// A report on which no run of the harness said anything (a spend limit reached, or a harness
+/// that cannot start): every run is unread.
+fn nothing_ran(harness: Harness) -> Report {
+    let mut fixture = fixture(true, true);
+    fixture.program = std::path::PathBuf::from("/usr/bin/false");
+    let Graded::Done { card, .. } = grade(&fixture.ask(Some("sk-test"))) else {
+        panic!("it graded nothing");
+    };
+    let mut card = *card;
+    card.on.harness = harness;
+    card
+}
+
+#[test]
+fn a_night_no_run_of_a_harness_ran_files_no_issue_and_says_that_harness_was_not_graded() {
+    let cards = [
+        nothing_ran(Harness::Opencode),
+        card(false, Harness::Codex, "0.170.0"),
+    ];
+    let acts = nightly::issues(&cards, &[open(9, "purlis-secrets", Harness::Opencode)], RUN);
+    let [Act::Create { title, .. }] = acts.as_slice() else {
+        panic!("not one issue, on Codex alone: {acts:?}");
+    };
+    assert_eq!(title, &nightly::title("purlis-secrets", Harness::Codex));
+    let said = nightly::not_graded(&cards);
+    let [line] = said.as_slice() else {
+        panic!("not one line: {said:?}");
+    };
+    for words in ["opencode", "not graded", "none of its 24 runs"] {
+        assert!(line.contains(words), "no {words:?} in {line:?}");
+    }
+    assert_eq!(nightly::bump(PINS, &cards), Ok(None));
+}
+
+#[test]
+fn a_version_the_night_could_not_read_is_never_proposed_as_a_pin() {
+    let cards = [
+        card(true, Harness::ClaudeCode, "2.1.400"),
+        card(true, Harness::Codex, skill_grader::LATEST_UNKNOWN),
+        card(true, Harness::Opencode, "1.19.5"),
+    ];
+    assert_eq!(nightly::bump(PINS, &cards), Ok(None));
+}

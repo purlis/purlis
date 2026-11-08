@@ -46,7 +46,13 @@ pub fn markdown(card: &Report, pinned: &str) -> String {
         on.version,
         on.model
     );
-    if on.version != pinned {
+    if on.version == crate::LATEST_UNKNOWN {
+        let _ = writeln!(
+            out,
+            "The latest {} ran, and did not say its version; the pin file names {pinned}.\n",
+            on.harness.shown()
+        );
+    } else if on.version != pinned {
         let _ = writeln!(
             out,
             "The runs said they ran {}; the pin file names {pinned}.\n",

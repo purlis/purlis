@@ -290,6 +290,21 @@ fn each_night_every_harness_is_graded_on_its_latest_version_and_keeps_its_scorec
             said.contains("if [ \"$EVENT\" = schedule ]; then version=latest; else"),
             "{name}: the nightly does not install the latest: {said}"
         );
+        let grading = grade
+            .steps()
+            .into_iter()
+            .find(|step| run_lines(step).join(" ").contains("skill-grader grade"))
+            .unwrap_or_else(|| panic!("{name} grades nothing"));
+        assert_eq!(
+            step_value(&grading, "env", "EVENT"),
+            Some("${{ github.event_name }}")
+        );
+        let grades = run_lines(&grading).join("\n");
+        assert!(
+            grades.contains("if [ \"$EVENT\" = schedule ]; then latest=(--latest); fi")
+                && grades.contains("\"${latest[@]}\""),
+            "{name}: the nightly's grade does not say it ran the latest: {grades}"
+        );
         let said = said_by(grade);
         assert!(
             said.contains(&format!(
@@ -311,6 +326,27 @@ fn each_night_every_harness_is_graded_on_its_latest_version_and_keeps_its_scorec
             "{name}: a red grade keeps its scorecard too"
         );
     }
+}
+
+#[test]
+fn a_run_started_by_hand_or_by_a_push_never_cancels_the_nightly() {
+    let (text, _) = workflow();
+    assert!(
+        text.contains(
+            "\nconcurrency:\n  group: skill-grades-${{ github.event_name == 'schedule' && 'nightly' || github.ref }}\n  cancel-in-progress: true\n"
+        ),
+        "the nightly shares its concurrency group with other runs on main"
+    );
+}
+
+#[test]
+fn the_nightly_says_in_its_summary_each_harness_it_could_not_grade() {
+    let (_, jobs) = workflow();
+    let said = said_by(job_named(&jobs, NIGHTLY, FILE));
+    assert!(
+        said.contains("note) echo \"::warning title=skill-grades::$title\"; echo \"$title\" >> \"$GITHUB_STEP_SUMMARY\" ;;"),
+        "the nightly does not carry out a note: {said}"
+    );
 }
 
 #[test]

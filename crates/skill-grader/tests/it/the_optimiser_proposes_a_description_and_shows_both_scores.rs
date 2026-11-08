@@ -87,6 +87,8 @@ impl Optimiser {
             proposer: &self.fixture.program,
             proposer_key: Some(KEY),
             write,
+            // Off CI, as a developer runs it: Claude Code needs no trust bypassed.
+            in_ci: false,
         })
     }
 
@@ -218,6 +220,7 @@ fn without_a_key_nothing_is_started_and_it_says_why() {
         proposer: &optimiser.fixture.program,
         proposer_key: None,
         write: false,
+        in_ci: false,
     })
     .unwrap();
     let Optimised::Skipped(said) = optimised else {
@@ -226,4 +229,22 @@ fn without_a_key_nothing_is_started_and_it_says_why() {
     assert!(said.contains("ANTHROPIC_API_KEY"), "{said}");
     assert!(said.contains("purlis secret exec"), "{said}");
     assert!(!optimiser.fixture.argv.exists(), "a harness was started");
+}
+
+#[test]
+fn off_ci_it_refuses_to_grade_codex_since_that_bypasses_the_trust_codex_asks_for_its_hooks() {
+    let fixture = crate::fixture::fixture_on(Harness::Codex, true, true);
+    let refused = optimise(&Optimise {
+        ask: fixture.ask(Some(KEY)),
+        skill: "purlis-secrets",
+        proposer: &fixture.program,
+        proposer_key: Some(KEY),
+        write: false,
+        in_ci: false,
+    })
+    .expect_err("it graded Codex off CI");
+    for said in ["--dangerously-bypass-hook-trust", "CI=true", "Codex"] {
+        assert!(refused.contains(said), "no {said:?} in: {refused}");
+    }
+    assert!(!fixture.argv.exists(), "a harness was started");
 }
