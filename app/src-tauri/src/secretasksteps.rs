@@ -92,23 +92,34 @@ impl Steps {
                 chat,
                 step,
             });
-            // Its writer gone, the plane is closing: nothing is left to write it.
-            if let Err(TrySendError::Full(_)) = told {
-                if let Some(ask) = ask_of(step) {
-                    unraised
-                        .lock()
-                        .unwrap_or_else(PoisonError::into_inner)
-                        .insert(ask);
+            match told {
+                Err(TrySendError::Full(_)) => {
+                    if let Some(ask) = ask_of(step) {
+                        unraised
+                            .lock()
+                            .unwrap_or_else(PoisonError::into_inner)
+                            .insert(ask);
+                    }
+                    // Said as a stall begins, and again with its count as it ends.
+                    if dropped.fetch_add(1, Ordering::Relaxed) == 0 {
+                        tracing::info!(
+                            "purlis: a secret ask's {} was not recorded (the session host is not \
+                             answering, and {MOST_QUEUED} steps wait on it)",
+                            step.kind()
+                        );
+                    }
                 }
-                // Said once, and then once for each queue's worth more, not for every step.
-                let dropped = dropped.fetch_add(1, Ordering::Relaxed) + 1;
-                if dropped == 1 || dropped.is_multiple_of(MOST_QUEUED) {
-                    tracing::info!(
-                        "purlis: {dropped} secret ask steps were not recorded so far, the latest a \
-                         {} (the session host is not answering, and {MOST_QUEUED} steps wait on it)",
-                        step.kind()
-                    );
+                Ok(()) => {
+                    let lost = dropped.swap(0, Ordering::Relaxed);
+                    if lost > 0 {
+                        tracing::info!(
+                            "purlis: {lost} secret ask steps were not recorded while the session \
+                             host was not answering"
+                        );
+                    }
                 }
+                // Its writer gone, the plane is closing: nothing is left to write it.
+                Err(TrySendError::Disconnected(_)) => {}
             }
         })
     }
