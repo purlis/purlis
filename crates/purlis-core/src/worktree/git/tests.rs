@@ -2101,3 +2101,48 @@ fn a_git_with_nothing_to_tune_writes_no_index() {
     let dir = tempfile::tempdir().expect("a directory");
     assert!(run_status_writing_index(dir.path(), Tuning::for_git(Some((2, 30)), false)).is_none());
 }
+
+/// What the child below is told: the address it asks.
+const ROUTED_ASK: &str = "WORKTREE_GIT_TEST_ROUTED_ASK";
+
+/// An ask on its own route reaches the address itself, whatever proxy or certificate authority
+/// the environment names; an ordinary network call goes through the environment's proxy.
+#[test]
+fn an_ask_on_its_own_route_takes_no_proxy_or_certificate_authority_from_the_environment() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let ca = dir.path().join("ca.pem");
+    std::fs::write(&ca, "not a certificate\n").expect("a file");
+    let proxy = "http://127.0.0.1:1";
+    let mut env: Vec<(&str, &std::ffi::OsStr)> =
+        vec![(ROUTED_ASK, "https://127.0.0.1:9/x.git".as_ref())];
+    for name in CREDENTIAL_ENV {
+        let lower = name.to_ascii_lowercase();
+        if lower.ends_with("_proxy") {
+            let value = if lower == "no_proxy" { "" } else { proxy };
+            env.push((name, value.as_ref()));
+        }
+    }
+    env.push(("SSL_CERT_FILE", ca.as_os_str()));
+    crate::testrun::rerun(
+        &["worktree::git::tests::the_ask_the_parent_set_up_takes_its_own_route"],
+        &env,
+    );
+}
+
+/// The child of the test above: nothing unless it was started with [`ROUTED_ASK`].
+#[test]
+fn the_ask_the_parent_set_up_takes_its_own_route() {
+    let Some(address) = std::env::var_os(ROUTED_ASK) else {
+        return;
+    };
+    let address = address.to_string_lossy().into_owned();
+    let args = ["ls-remote", "--heads", "--", address.as_str()];
+    let at = Path::new("/");
+    let routed = run_network_in_no_repository(at, None, &args).expect("git runs");
+    assert!(!routed.ok());
+    assert!(routed.err.contains("port 1 "), "{}", routed.err);
+    let own = run_network_in_no_repository_on_its_own_route(at, None, &args).expect("git runs");
+    assert!(!own.ok());
+    assert!(!own.err.contains("port 1 "), "{}", own.err);
+    assert!(own.err.contains("port 9 "), "{}", own.err);
+}

@@ -1078,6 +1078,7 @@ fn programs_held(
         link: extra.link.clone(),
         network: false,
         writes_index: false,
+        own_route: extra.own_route,
     };
     let listed = match config_listing(dir, &args[..at], &lister)? {
         Ok(listed) => listed,
@@ -1085,7 +1086,10 @@ fn programs_held(
     };
     let said = String::from_utf8_lossy(&listed);
     if network {
-        match network::held(&said, extra.credentials && proxy_in_env()) {
+        match network::held(
+            &said,
+            extra.credentials && !extra.own_route && proxy_in_env(),
+        ) {
             Ok(settings) => extra.config.extend(settings),
             Err(kind) => return Ok(Err(refused_raw(kind.refusal()))),
         }
@@ -1160,6 +1164,14 @@ fn config_listing(
         listing::keep(asked, &listed.out, started);
     }
     Ok(Ok(without))
+}
+
+/// The variables of [`CREDENTIAL_ENV`] that choose a network call's route and whom it trusts:
+/// every proxy, and the certificate authorities. A call on its own route is given none of them
+/// ([`run_network_in_no_repository_on_its_own_route`]).
+fn is_route(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    lower.ends_with("_proxy") || lower.starts_with("ssl_cert_")
 }
 
 /// Whether this process's environment names a proxy git's network call is given
@@ -1345,6 +1357,8 @@ struct Extra {
     /// Whether a `status` may write the index back ([`run_status_writing_index`]): every other
     /// `status` purlis runs holds back git's optional locks (FD-11).
     writes_index: bool,
+    /// Whether the variables [`is_route`] names are kept out of [`CREDENTIAL_ENV`].
+    own_route: bool,
 }
 
 /// The work tree and git directory a call in `dir` is held to where `dir` is in a linked
@@ -1821,6 +1835,9 @@ fn spawn_with(dir: &Path, args: &[&str], extra: &Extra) -> Result<Child, GitUnav
     }
     if extra.credentials {
         for name in CREDENTIAL_ENV {
+            if extra.own_route && is_route(name) {
+                continue;
+            }
             if let Some(value) = std::env::var_os(name) {
                 cmd.env(name, value);
             }
@@ -2502,12 +2519,42 @@ pub fn run_network_in_no_repository(
     )
 }
 
+/// [`run_network_in_no_repository`] **on its own route**: no proxy and no certificate authority
+/// from this process's environment ([`is_route`]), only what git's own configuration names.
+/// For an ask whose answer decides what a check leaves out, made from a process whose
+/// environment a chat may have set (a hook git runs for it): a route and a trust of the
+/// chat's choosing could answer for the remote.
+pub fn run_network_in_no_repository_on_its_own_route(
+    dir: &Path,
+    helper: Option<&str>,
+    args: &[&str],
+) -> Result<Run, GitUnavailable> {
+    run_network_shaped(
+        dir,
+        helper,
+        args,
+        vec![("GIT_DIR".to_owned(), "/dev/null".into())],
+        true,
+    )
+}
+
 /// [`run_network`], with `more` variables in git's environment.
 fn run_network_with(
     dir: &Path,
     helper: Option<&str>,
     args: &[&str],
     more: Vec<(String, std::ffi::OsString)>,
+) -> Result<Run, GitUnavailable> {
+    run_network_shaped(dir, helper, args, more, false)
+}
+
+/// [`run_network_with`], on its own route where `own_route` says so ([`is_route`]).
+fn run_network_shaped(
+    dir: &Path,
+    helper: Option<&str>,
+    args: &[&str],
+    more: Vec<(String, std::ffi::OsString)>,
+    own_route: bool,
 ) -> Result<Run, GitUnavailable> {
     let mut config: Vec<String> = NETWORK_RULE.iter().map(|s| (*s).to_string()).collect();
     if let Some(helper) = helper {
@@ -2521,6 +2568,7 @@ fn run_network_with(
         config,
         credentials: true,
         network: true,
+        own_route,
         pass,
         ..Extra::default()
     };

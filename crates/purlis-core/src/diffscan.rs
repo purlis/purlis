@@ -602,10 +602,13 @@ fn address_has(dir: &Path, helper: Option<&str>, url: &str) -> Option<Vec<String
 }
 
 /// What the address `url` says it has, asked with git run in `from` and in no repository: a
-/// `.git` there, or above it, is not read, so nothing written in it says where `url` goes.
+/// `.git` there, or above it, is not read, so nothing written in it says where `url` goes. It
+/// is asked on git's own route ([`git::run_network_in_no_repository_on_its_own_route`]): the
+/// hook runs with the environment of the push that ran it, and a proxy and a certificate
+/// authority named there could answer for the remote.
 fn address_asked_from(from: &Path, helper: Option<&str>, url: &str) -> Option<Vec<String>> {
     let asked = git::isolated(&git::Isolated::default(), || {
-        git::run_network_in_no_repository(
+        git::run_network_in_no_repository_on_its_own_route(
             from,
             helper,
             &["ls-remote", "--heads", "--tags", "--", url],
@@ -737,16 +740,31 @@ pub fn pushed_knowing(repo: &Path, updates: &str, known: &[String]) -> Result<Sc
 /// refs are what a chat can write, so they never shrink what is read; and a ref the remote
 /// named on git's standard input already leaves out all it reaches.
 pub fn pushed_without_asking(repo: &Path, updates: &str) -> Result<Scan, String> {
-    pushed_within(repo, updates, &[], Some(UNASKED_AT_MOST))
+    pushed_without_asking_saying(repo, updates, too_much_unasked)
 }
 
+/// [`pushed_without_asking`], where a push past [`UNASKED_AT_MOST`] is refused in the words
+/// `too_much` gives for the commits it would send and the most read: for a push whose way to a
+/// remote that can be asked is not the one a chat's push has (a plane's save).
+pub fn pushed_without_asking_saying(
+    repo: &Path,
+    updates: &str,
+    too_much: TooMuch,
+) -> Result<Scan, String> {
+    pushed_within(repo, updates, &[], Some((UNASKED_AT_MOST, too_much)))
+}
+
+/// The sentence a push past what is read for a remote that cannot be asked is refused in, from
+/// the commits it would send and the most that is read.
+pub type TooMuch = fn(usize, usize) -> String;
+
 /// The scan of [`pushed_knowing`], refused where `at_most` is given and the push sends more
-/// commits than that.
+/// commits than its bound, in the words its sentence gives.
 fn pushed_within(
     repo: &Path,
     updates: &str,
     known: &[String],
-    at_most: Option<usize>,
+    at_most: Option<(usize, TooMuch)>,
 ) -> Result<Scan, String> {
     let commit_of = |oid: &str| {
         git::run_in_hook(
@@ -809,10 +827,10 @@ fn pushed_within(
     let mut range = sends;
     range.extend(has);
     range.extend(known.iter().map(|id| format!("^{id}")));
-    if let Some(most) = at_most {
+    if let Some((most, too_much)) = at_most {
         let sent = commits_in(repo, &range)?;
         if sent > most {
-            return Err(too_much_unasked(sent, most));
+            return Err(too_much(sent, most));
         }
     }
     let ask = |head: &[&str]| {
