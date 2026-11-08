@@ -256,7 +256,7 @@ impl SkillSet {
                 description: e.skill.description.clone(),
                 pinned: parts.pins.contains(e.skill.name.as_str()),
                 chars: cost(std::iter::once(listed), budget).chars
-                    - crate::budget::folder_named_once(&e.skill, budget),
+                    - crate::budget::folder_named_once(&e.skill, budget, listed_by(e)),
             })
             .collect();
         let mut besides = cost(parts.fixed(), budget);
@@ -564,16 +564,19 @@ fn cost<'a>(
     // A skill the harness finds itself (a repo's, where its route is the harness's own) is
     // listed by the harness, with its whole path; the rest by purlis's briefing or plugin.
     crate::budget::spent_listed(
-        listed.map(|(e, declared)| {
-            let by = if e.route == Route::Own {
-                crate::budget::ListedBy::Harness
-            } else {
-                crate::budget::ListedBy::Purlis
-            };
-            (&e.skill, declared, by)
-        }),
+        listed.map(|(e, declared)| (&e.skill, declared, listed_by(e))),
         budget,
     )
+}
+
+/// Who lists `e`: its harness, with its whole path, where its route is the harness's own; else
+/// purlis's briefing or plugin.
+fn listed_by(e: &Effective) -> crate::budget::ListedBy {
+    if e.route == Route::Own {
+        crate::budget::ListedBy::Harness
+    } else {
+        crate::budget::ListedBy::Purlis
+    }
 }
 
 /// Whether the built-in router may hide `e` where nothing pins it: a skill purlis hands from the

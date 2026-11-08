@@ -196,10 +196,11 @@ pub fn spent_listed<'a>(
 
 /// **The characters of the folder the listing names `skill` under**, where `budget` lists paths
 /// and the listing names one ([`crate::read::listed_under`]): counted once for every skill in it,
-/// so no one skill's.
-pub(crate) fn folder_named_once(skill: &Skill, budget: Budget) -> usize {
+/// so no one skill's. A skill its harness lists (`by` [`ListedBy::Harness`]) is named with its
+/// whole path, so it has none.
+pub(crate) fn folder_named_once(skill: &Skill, budget: Budget, by: ListedBy) -> usize {
     crate::read::listed_under(skill)
-        .filter(|_| budget.lists_paths)
+        .filter(|_| budget.lists_paths && by == ListedBy::Purlis)
         .map_or(0, |folder| folder.to_string_lossy().chars().count())
 }
 

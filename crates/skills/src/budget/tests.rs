@@ -287,3 +287,26 @@ fn a_skill_the_harness_lists_itself_costs_its_whole_path_whatever_its_folder() {
     );
     assert_eq!(spent.chars, "Reviews.Says little.".len() + paths);
 }
+
+#[test]
+fn a_skill_the_harness_lists_itself_has_no_folder_named_once_to_take_off_its_cost() {
+    // The review of #5797: a router candidate's cost takes off the folder the listing names
+    // once, which only purlis's own listing does. One its harness lists keeps its whole path.
+    let tmp = tempfile::tempdir().unwrap();
+    let own = tmp.path().join("codex-home/skills");
+    skill(&own, "review", "Reviews.", "");
+    let skills = crate::read(&own);
+    let with_paths = Budget {
+        lists_paths: true,
+        ..ROOMY
+    };
+    let folder = own.to_string_lossy().chars().count();
+    assert_eq!(
+        folder_named_once(&skills[0], with_paths, ListedBy::Purlis),
+        folder
+    );
+    assert_eq!(
+        folder_named_once(&skills[0], with_paths, ListedBy::Harness),
+        0
+    );
+}
