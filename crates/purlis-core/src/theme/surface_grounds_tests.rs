@@ -293,9 +293,9 @@ fn a_tree_filled_where_every_family_in_it_reads_is_drawn_as_written() {
 }
 
 #[test]
-fn a_surface_with_no_fill_stands_on_each_of_its_parent_s_grounds_until_a_theme_fills_it() {
-    // Unfilled, a tree is measured nowhere; filled, once for each ground it is drawn on, which
-    // takes the place of the default fill it does not draw.
+fn a_surface_with_no_fill_stands_on_its_parent_s_grounds_until_a_theme_fills_it() {
+    // Unfilled, a tree is measured nowhere; filled, its default is the no fill it draws, which
+    // stands for each ground the tree is drawn on.
     let unfilled = super::rules(&shaped(json!({}), json!({})).parts);
     assert!(
         super::surfaces_set(&unfilled)
@@ -309,13 +309,15 @@ fn a_surface_with_no_fill_stands_on_each_of_its_parent_s_grounds_until_a_theme_f
         .filter(|(surface, ..)| surface.name == "tree")
         .map(|(_, _, default, set)| (default, set))
         .collect();
+    assert_eq!(on, [("transparent", "accent.surface")]);
+    let tree = family("tree").expect("the tree family");
     assert_eq!(
-        on,
-        [
-            ("surface.base", "accent.surface"),
-            ("surface.raised", "accent.surface"),
-            ("surface.sunken", "accent.surface"),
-        ]
+        super::defaults_under(tree, &"transparent"),
+        ["surface.base", "surface.raised", "surface.sunken"]
+    );
+    assert_eq!(
+        super::defaults_under(tree, &"surface.overlay"),
+        ["surface.overlay"]
     );
 }
 
@@ -323,16 +325,43 @@ fn a_surface_with_no_fill_stands_on_each_of_its_parent_s_grounds_until_a_theme_f
 fn a_field_s_error_is_read_on_a_table_s_fill_and_its_help_never_is() {
     // A table's rows stand on the window's own ground, which a field's error is read on and its
     // help is not: on a table's fill, the error stands anew and the help is drawn nowhere.
+    let table = family("table").expect("the table family");
+    let field = family("field").expect("the field family");
+    assert!(
+        super::drawn_on(table, "transparent", "surface.sunken").any(|one| one.name == "field"),
+        "a field is drawn on a table's fill"
+    );
     let theme = filled_grey("table", "surface.sunken", "#4a4a46");
+    let help = field
+        .parts
+        .iter()
+        .position(|part| part.name == "help")
+        .expect("a field's help");
+    let variant = field.looks()[0];
+    let look = super::drawn(&[], field, variant, &[]);
+    let on = surface_ground(&theme, table, "surface.sunken");
+    assert_eq!(
+        super::under_part(
+            &theme,
+            &on,
+            Some(super::defaults_under(table, &"transparent")),
+            field,
+            help,
+            variant,
+            &look
+        ),
+        Vec::<String>::new(),
+        "a field's help is drawn nowhere on a table"
+    );
     let rules = super::rules(&theme.parts);
     let broken = super::broken_on(
         &theme,
         &[],
         std::slice::from_ref(&theme),
         &rules,
-        family("field").expect("the field family"),
-        family("table").expect("the table family"),
-        "surface.base",
+        field,
+        table,
+        "transparent",
         "surface.sunken",
     )
     .map(|(floor, _)| floor);
