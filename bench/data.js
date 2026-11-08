@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794121957631,
+  "lastUpdate": 1794124326604,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -43218,6 +43218,48 @@ window.BENCHMARK_DATA = {
             "value": 102.433909,
             "unit": "ms",
             "extra": "median of 5 runs: 101.693, 101.888, 102.434, 102.484, 102.615 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "e05551dbf91ccf1875803f2e091b03d148233748",
+          "message": "Restart wake: a chat waiting on its own shell is told the restart ended it (#5747) (#5777)\n\n* Restart wake: a chat waiting on its own shell is told the restart ended it (#5747)\n\nOwn work rides the record of open chats (reopen.json's per-chat own_work, Clone\nstate, no version bump), written from each own-harness Stop. A launch hands\neach chat brought back on its conversation one wake line (purlis_core::wakeline)\nnaming the work in flight the restart ended; a task owing its report gets\nCARRY_ON inside that same line. A chat the host kept running gets none.\n\nBrings in #5717's across-restart scenarios: the shell one is the fix's test,\nthe wake-up one is ignored for #5751.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6WKJYRHW0HD45HDPX60N7JZ\nPurlis-Persona: steward\n\n* Restart wake: record what the Stop said, from the chat's own harness only; ADR 0068 amendment and terms (#5747)\n\nReview fixes. The record takes the own work the chat's own Stop said, stamped\non the app's clock, and not the board's reading, which is empty while a prompt\nor notice shows and after the hour's lapse. A Stop under another conversation\n(a nested harness) never clears it, as its_own_model judges a model.\n\nAdds the ADR 0068 amendment of 2026-11-08 and the CONTEXT.md terms Own work and\nWake line that #5716 merged without. OwnWork::in_flight replaces three copies\nof the same filter. Also corrects stale test wording and the changelog's\npromise, which now names only quit and update.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6WKJYRHW0HD45HDPX60N7JZ\nPurlis-Persona: steward\n\n* Restart wake: the ADR 0068 amendment and CONTEXT.md terms in their ruled wording (#5747)\n\nTakes the text of the person's ruling of 2026-11-08 (from the unpushed commits\n491dae1 and 412d15d of #5716's branch) in place of this PR's reconstruction,\nwith the store as the tracer built it noted under the amendment.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6WKJYRHW0HD45HDPX60N7JZ\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-08T06:54:24Z",
+          "tree_id": "e4a7d15fa9f2b3fb2d2edc2379275756d36349c4",
+          "url": "https://github.com/purlis/purlis/commit/e05551dbf91ccf1875803f2e091b03d148233748"
+        },
+        "date": 1794124320980,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.32658149999999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.320, 0.326, 0.327, 0.336, 0.337 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6569005,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.511, 16.611, 16.657, 16.686, 16.825 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.21796900000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.907, 100.989, 101.218, 101.368, 102.188 ms"
           }
         ]
       }
