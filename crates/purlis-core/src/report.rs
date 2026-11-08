@@ -524,6 +524,39 @@ impl Draft {
         Draft::assemble(Kind::Bug, title, text, Vec::new())
     }
 
+    /// A failure inside purlis its hook caught in a chat (#5697): the call, its exit and its
+    /// error, scrubbed, and the harness it ran under. Made from what the hook handed over alone.
+    fn of_internal(
+        caught: &crate::caught::Caught,
+        harness: Option<crate::harness::Harness>,
+        harness_version: Option<&str>,
+        known: &Known,
+    ) -> Result<Draft, Refused> {
+        let harness = harness.map_or("not known", |harness| harness.name());
+        let harness_version = harness_version
+            .filter(|said| a_version(said))
+            .unwrap_or("not known");
+        let (call, call_scrubbed) = known.scrub(&caught.call);
+        let (error, scrubbed) = known.scrub(&caught.error);
+        let exit = caught
+            .exit
+            .map_or_else(|| "none (a tool)".to_owned(), |exit| exit.to_string());
+        let text = format!(
+            "purlis failed inside itself in a chat: `{call}` ended with an internal failure.\n\n\
+             - **call:** `{call}`\n\
+             - **exit:** {exit}\n\
+             - **harness:** {harness}\n\
+             - **harness version:** {harness_version}\n\
+             - **purlis version:** {}\n\n\
+             What it said, scrubbed:\n\n```\n{}\n```\n\n\
+             purlis drafted this from its own hook. The agent may add what it was doing below.",
+            crate::adopt::app_version(),
+            error.replace("```", "'''"),
+        );
+        let title = cut_title(&format!("Internal failure in {call}"));
+        Draft::assemble(Kind::Bug, title, text, merge(call_scrubbed, scrubbed))
+    }
+
     fn assemble(
         kind: Kind,
         title: String,
@@ -851,6 +884,31 @@ pub enum PurlisFailure {
         harness: Option<crate::harness::Harness>,
         harness_version: Option<String>,
     },
+    /// A `purlis` command or a purlis tool that failed inside purlis in a chat (#5697), as its
+    /// hook caught it ([`crate::caught`]), from the chat running `harness`, whose version is
+    /// `harness_version` as the app heard it.
+    Internal {
+        caught: crate::caught::Caught,
+        harness: Option<crate::harness::Harness>,
+        harness_version: Option<String>,
+    },
+}
+
+impl PurlisFailure {
+    /// The call that failed, as the chat is told of its draft: the command or tool, or the
+    /// operation the sandbox blocked.
+    pub fn call(&self) -> String {
+        match self {
+            Self::Internal { caught, .. } => caught.call.clone(),
+            Self::SandboxBlock { block, .. } => {
+                format!(
+                    "purlis's own {} ({})",
+                    block.operation.word(),
+                    block.kind.word()
+                )
+            }
+        }
+    }
 }
 
 /// What became of a report.
@@ -1318,6 +1376,63 @@ impl Reports {
         Ok(one)
     }
 
+    /// [`Self::hold`], once: where a draft of the same report from the same chat already waits
+    /// in the Inbox, that draft, and `false`; else the new one, and `true` (#5697). So a failure
+    /// of purlis's own met again and again in one chat is one draft, and its chat told once.
+    pub fn hold_once(
+        &self,
+        evidence: Evidence,
+        source: &Caller,
+        from: CameFrom,
+    ) -> Result<(Held, bool), Refusal> {
+        self.consented(&evidence, source)?;
+        let draft = self.draft(evidence.clone())?;
+        let waiting = self.held().into_iter().find(|one| {
+            one.from.session == from.session
+                && one.from.project == from.project
+                && one.title == draft.title
+        });
+        match waiting {
+            Some(one) => Ok((one, false)),
+            None => self.hold(evidence, source, from).map(|one| (one, true)),
+        }
+    }
+
+    /// **Chat `session`'s words, added to the draft `id` purlis made in that chat** (#5697):
+    /// what the agent was doing when purlis failed, scrubbed, after the draft's own words.
+    /// Refused as no longer held for a draft of another chat's, or one filed or dismissed.
+    pub fn add_to_held(&self, id: &str, session: u32, text: &str) -> Result<Held, Refusal> {
+        let text = text.trim();
+        if text.is_empty() {
+            return Err(Refusal::Unusable(
+                "there is nothing to add: say what you were doing".to_string(),
+            ));
+        }
+        if !self
+            .held()
+            .iter()
+            .any(|one| one.id == id && one.from.session == Some(session))
+        {
+            return Err(Refusal::NotHeld);
+        }
+        let (words, scrubbed) = self.known.scrub(text);
+        let added = format!("\n\n**What the agent was doing:**\n\n{words}");
+        if self
+            .held()
+            .iter()
+            .find(|one| one.id == id)
+            .is_some_and(|one| one.body.chars().count() + added.chars().count() > BODY_MAX)
+        {
+            return Err(Refusal::Unusable(format!(
+                "the report would be over {BODY_MAX} characters with these words. Shorten them."
+            )));
+        }
+        self.change_held(id, |one| {
+            one.body.push_str(&added);
+            one.scrubbed = merge(std::mem::take(&mut one.scrubbed), scrubbed);
+        })
+    }
+
     /// Every draft held for the Inbox, oldest first.
     pub fn held(&self) -> Vec<Held> {
         self.root
@@ -1509,6 +1624,11 @@ impl Reports {
                 harness,
                 harness_version,
             }) => Draft::of_sandbox_block(&block, harness, harness_version.as_deref()),
+            Evidence::PurlisFailure(PurlisFailure::Internal {
+                caught,
+                harness,
+                harness_version,
+            }) => Draft::of_internal(&caught, harness, harness_version.as_deref(), &self.known),
             Evidence::AgentDraft(AgentDraft {
                 kind, text, title, ..
             }) => Draft::described(kind, &text, title.as_deref(), &self.known),
@@ -1552,6 +1672,10 @@ fn line_of(evidence: &Evidence, known: &Known) -> String {
             call: Some((call, exit)),
             ..
         }) => format!("{} · exit {exit} · {versions}", known.scrub(call.trim()).0),
+        Evidence::PurlisFailure(PurlisFailure::Internal { caught, .. }) => match caught.exit {
+            Some(exit) => format!("{} · exit {exit} · {versions}", caught.call),
+            None => format!("{} · failed · {versions}", caught.call),
+        },
         _ => versions,
     }
 }

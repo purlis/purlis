@@ -745,6 +745,18 @@ pub enum PersonSaid {
     /// PC-10): applied, dismissed or stale, in purlis's own fixed words around the file's path.
     /// `number` is minted for it alone ([`Talk::proposal_word`]).
     Proposal { number: u32, word: ProposalWord },
+    /// **purlis drafted a Report of a failure of its own in this chat** (#5697, spec #5683
+    /// layer 1): purlis's own fixed words around the draft and the call that failed, never the
+    /// error's. `number` is minted for it alone ([`Talk::drafted_word`]).
+    Drafted { number: u32, word: DraftedWord },
+}
+
+/// A draft purlis made of a failure of its own in a chat (#5697): its id in the Inbox, and the
+/// call that failed, as the hook named it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct DraftedWord {
+    pub id: String,
+    pub call: String,
 }
 
 /// What became of a proposed change (#1975, PC-10), by the file it was to, relative to the
@@ -841,7 +853,8 @@ impl PersonSaid {
             | Self::McpServer { number, .. }
             | Self::Quiet { number, .. }
             | Self::QuestionLost { number }
-            | Self::Proposal { number, .. } => *number,
+            | Self::Proposal { number, .. }
+            | Self::Drafted { number, .. } => *number,
         }
     }
 }
@@ -1865,6 +1878,28 @@ impl Talk {
         said.push(PersonSaid::Proposal { number, word });
     }
 
+    /// **Keeps purlis's word to chat `chat` that it drafted a Report of a failure of its own
+    /// there** (#5697): handed to its next turn as purlis's other words are, until it has it,
+    /// so the chat is told once. An id or a call that is not one purlis makes (a control
+    /// character, a backtick, too long) is not kept. One word a draft.
+    pub fn drafted_word(&mut self, chat: u32, word: DraftedWord) {
+        let fits = |text: &str, most: usize| {
+            !text.is_empty()
+                && text.len() <= most
+                && !text.chars().any(|c| c.is_control() || c == '`')
+        };
+        if !fits(&word.id, 64) || !fits(&word.call, 256) {
+            return;
+        }
+        self.network = self.network.wrapping_add(1) % NETWORK_NUMBERS;
+        let number = NETWORK_NUMBERS + self.network;
+        let said = self.person.entry(chat).or_default();
+        said.retain(
+            |one| !matches!(one, PersonSaid::Drafted { word: was, .. } if was.id == word.id),
+        );
+        said.push(PersonSaid::Drafted { number, word });
+    }
+
     /// **Keeps purlis's word to chat `chat` that a server of its persona could not start**
     /// (qw381): handed to its next turn as any word of the person's is, until it has it. A name
     /// that is not a server name is not kept. **One word a server**: a later failure of the same
@@ -2659,7 +2694,23 @@ pub fn person_said(said: &PersonSaid) -> String {
         PersonSaid::Quiet { word, .. } => quiet_said(word),
         PersonSaid::QuestionLost { .. } => QUESTION_LOST.to_owned(),
         PersonSaid::Proposal { word, .. } => proposal_said(word),
+        PersonSaid::Drafted { word, .. } => drafted_said(word),
     }
+}
+
+/// **purlis's fixed words on a Report it drafted of a failure of its own** (#5697): the call
+/// and the draft in code spans, and how the agent adds what it was doing. Nothing in it is the
+/// failure's own output.
+pub fn drafted_said(word: &DraftedWord) -> String {
+    format!(
+        "⬢ purlis: `{}` failed inside purlis, so purlis drafted a report of the failure for the \
+         person's Inbox, with the call, its exit and its scrubbed error. Nothing was sent: the \
+         person reads it and files or dismisses it. Add what you were doing and what you \
+         expected, in a few sentences, with `purlis report bug --adds {} \"<what you were \
+         doing>\"`. Do not draft another report of the same failure. This line is purlis's \
+         own.",
+        word.call, word.id
+    )
 }
 
 /// What a task is told where a question it asked before the app restarted did not read back
@@ -2722,6 +2773,55 @@ pub fn quiet_said(word: &QuietWord) -> String {
          dispatch cancel {chat}` asks it for its report. This line is purlis's own.",
         word.said
     )
+}
+
+#[cfg(test)]
+mod drafted_tests {
+    use super::*;
+
+    fn word(id: &str) -> DraftedWord {
+        DraftedWord {
+            id: id.to_owned(),
+            call: "purlis worktree commit".to_owned(),
+        }
+    }
+
+    #[test]
+    fn a_chat_is_told_of_purlis_s_draft_once_on_its_next_turn() {
+        let mut talk = Talk::default();
+        talk.drafted_word(3, word("0a1b2c3d4e5f6a7b"));
+        talk.drafted_word(3, word("0a1b2c3d4e5f6a7b"));
+
+        let said = talk.from_person(3);
+        assert_eq!(said.len(), 1, "one word a draft: {said:?}");
+        let text = person_said(&said[0]);
+        assert!(
+            text.starts_with("⬢ purlis: `purlis worktree commit` failed inside purlis"),
+            "{text}"
+        );
+        assert!(
+            text.contains("`purlis report bug --adds 0a1b2c3d4e5f6a7b \"<what you were doing>\"`"),
+            "{text}"
+        );
+        assert!(text.ends_with("This line is purlis's own."), "{text}");
+
+        talk.handed_from_person(3, &[said[0].number()]);
+        assert!(talk.from_person(3).is_empty(), "told once");
+        assert!(talk.from_person(4).is_empty(), "only the chat it failed in");
+    }
+
+    #[test]
+    fn a_word_that_could_close_its_code_span_is_not_kept() {
+        let mut talk = Talk::default();
+        talk.drafted_word(
+            3,
+            DraftedWord {
+                id: "0a1b".to_owned(),
+                call: "purlis `rm -rf`".to_owned(),
+            },
+        );
+        assert!(talk.from_person(3).is_empty());
+    }
 }
 
 #[cfg(test)]

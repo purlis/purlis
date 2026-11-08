@@ -128,10 +128,7 @@ impl ServerHandler for Server {
                 tokio::task::spawn_blocking(move || crate::browsing::tool(&name, &args))
                     .await
                     .unwrap_or_else(|e| {
-                        (
-                            Err(format!("the tool failed inside purlis: {e}")),
-                            Vec::new(),
-                        )
+                        (Err(purlis_core::caught::tool_failed_inside(e)), Vec::new())
                     });
             return Ok(done_with(said, attached));
         }
@@ -143,10 +140,7 @@ impl ServerHandler for Server {
                 tokio::task::spawn_blocking(move || crate::themepreview::tool(&args))
                     .await
                     .unwrap_or_else(|e| {
-                        (
-                            Err(format!("the tool failed inside purlis: {e}")),
-                            Vec::new(),
-                        )
+                        (Err(purlis_core::caught::tool_failed_inside(e)), Vec::new())
                     });
             return Ok(done_with(said, attached));
         }
@@ -197,12 +191,7 @@ impl ServerHandler for Server {
         if name == chattools::PERSONA_WHERE {
             let (said, attached) = tokio::task::spawn_blocking(crate::whereworking::tool)
                 .await
-                .unwrap_or_else(|e| {
-                    (
-                        Err(format!("the tool failed inside purlis: {e}")),
-                        Vec::new(),
-                    )
-                });
+                .unwrap_or_else(|e| (Err(purlis_core::caught::tool_failed_inside(e)), Vec::new()));
             return Ok(done_with(said, attached));
         }
         if name == chattools::DISPATCH {
@@ -370,7 +359,7 @@ async fn blocking(
 ) -> Result<String, String> {
     tokio::task::spawn_blocking(body)
         .await
-        .unwrap_or_else(|e| Err(format!("the tool failed inside purlis: {e}")))
+        .unwrap_or_else(|e| Err(purlis_core::caught::tool_failed_inside(e)))
 }
 
 /// `session_record`: the one operation `purlis session record` run in the chat performs

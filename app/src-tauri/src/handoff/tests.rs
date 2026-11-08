@@ -3268,6 +3268,8 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             text: "purlis worktree update refused a clean branch".to_owned(),
             title: None,
             call: None,
+            caught: None,
+            adds: None,
         })),
     ];
     let mut kinds: Vec<usize> = asks.iter().map(kind).collect();

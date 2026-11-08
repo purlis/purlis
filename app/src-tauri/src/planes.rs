@@ -3684,6 +3684,15 @@ impl Planes {
                     if hooks::its_own_to_retry(&block, chat_dir.as_deref()) {
                         return;
                     }
+                    // purlis's own block is a purlis bug (#1338): drafted for the Inbox by the
+                    // road every failure of purlis's own takes (#5697).
+                    if block.line.sandbox_blocked.ours {
+                        crate::reportdrafts::own_block(
+                            &strong,
+                            block.line.chat,
+                            block.line.sandbox_blocked,
+                        );
+                    }
                     crate::taskblocks::heard(strong.chats(), &told);
                     // The chat now waits on the person for this Notice, until its turn moves
                     // on: what the chat that asked for it is told (#1663). purlis's own block
