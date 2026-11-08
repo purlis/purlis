@@ -150,7 +150,7 @@ describe("the doctor's Notice line", function () {
     writeFileSync(THE_RUNS_GIT_CONFIG, "");
     try {
       // The doctor asked again, from its status item: the read this spec's finding comes from.
-      await asksTheDoctorAgain();
+      const found = await asksTheDoctorAgain();
       await showView("Notices");
       await browser
         .waitUntil(async () => /^Doctor: \d+ findings?/.test((await doctorLine()) ?? ""), {
@@ -158,7 +158,9 @@ describe("the doctor's Notice line", function () {
           interval: 500,
         })
         .catch(async () => {
-          throw new Error(`the doctor's line never stood; the views say: ${await viewsSay()}`);
+          throw new Error(
+            `the doctor's line never stood; the doctor found: ${found}; the views say: ${await viewsSay()}`,
+          );
         });
 
       // No update for it, under either list.

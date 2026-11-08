@@ -101,7 +101,7 @@ describe("a machine with no git identity", function () {
     try {
       // The doctor asked again, as the person does from its status item: the read this spec is
       // about.
-      await asksTheDoctorAgain();
+      const found = await asksTheDoctorAgain();
 
       let said = "";
       await browser.waitUntil(
@@ -116,7 +116,15 @@ describe("a machine with no git identity", function () {
       // Its list, opened from the line: the finding, as the Doctor dialog's row says it.
       await $(LINE).$("button=Show findings").click();
       const row = await $(ROW);
-      await row.waitForDisplayed({ timeout: 20_000 });
+      await row.waitForDisplayed({ timeout: 20_000 }).catch(async () => {
+        const line = await browser.execute(
+          (at: string) => document.querySelector<HTMLElement>(at)?.innerText ?? "(none)",
+          LINE,
+        );
+        throw new Error(
+          `no git identity row in the doctor's line; the doctor found: ${found}; the line says: ${line}`,
+        );
+      });
       await expect(row).toHaveText(expect.stringContaining("not set: user.name, user.email"));
       await expect(row.$("button=Fix")).toBeExisting();
     } finally {

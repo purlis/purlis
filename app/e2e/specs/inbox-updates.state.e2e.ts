@@ -208,13 +208,13 @@ describe("the Notices' Dismiss all, with an ask waiting in Asks", function () {
     // The Notice: the doctor, asked again, finds no identity.
     writeFileSync(THE_RUNS_GIT_CONFIG, "");
     try {
-      await asksTheDoctorAgain();
+      const found = await asksTheDoctorAgain();
       await showView("Notices");
       await browser
         .waitUntil(doctorLineStands, { timeout: 60_000, interval: 500 })
         .catch(async () => {
           throw new Error(
-            `the doctor's finding never stood as its Notice line; the views say: ${await inboxSays()}`,
+            `the doctor's finding never stood as its Notice line; the doctor found: ${found}; the views say: ${await inboxSays()}`,
           );
         });
     } finally {

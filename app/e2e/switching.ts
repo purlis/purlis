@@ -127,8 +127,9 @@ export async function openedWithTheDoctorHeard(plane: string): Promise<void> {
 }
 
 /** **Runs the doctor again for the project in front**, as the person does: its status item opens
- *  the Doctor dialog, which checks again in full; the dialog is closed once it has answered. */
-export async function asksTheDoctorAgain(): Promise<void> {
+ *  the Doctor dialog, which checks again in full; the dialog is closed once it has answered.
+ *  Answers the rows it found that are not ok, for a failure to name. */
+export async function asksTheDoctorAgain(): Promise<string> {
   await $('[data-testid="status-doctor"]').click();
   const dialog = $('[role="dialog"]');
   await dialog.waitForDisplayed({ timeout: 20_000 });
@@ -139,7 +140,14 @@ export async function asksTheDoctorAgain(): Promise<void> {
     },
     { timeout: 90_000, interval: 250, timeoutMsg: "the full doctor never answered" },
   );
+  // What it found, for a spec's failure to say: the rows that are not ok.
+  const found = await browser.execute(() =>
+    [...document.querySelectorAll<HTMLElement>('[role="dialog"] li.doctor-row:not(.doctor-ok)')]
+      .map((row) => row.innerText.replace(/\s+/g, " ").trim())
+      .join("; "),
+  );
   await escapeUntilClosed(() => dialog.isDisplayed());
+  return found;
 }
 
 /**
