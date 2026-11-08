@@ -338,6 +338,33 @@ for kind in plain cased; do
   fi
 done
 
+# **A pin by one spelling, moved through another** (ruled 2026-11-08). purlis pins each folder
+# above a denied path as an entry, `(deny file-write* (literal "<path>"))`, in one spelling. On a
+# disk that compares names case-folded, a move of `.LOCAL/share` is matched as the folder is on
+# disk, which the plain rule above measures for a regex. Asserted for a literal: where a spelling
+# gets through, pins and literal denials need a rule that matches every case.
+pinned=$(cd "$(mktemp -d "$top/pin.XXXXXX")" && pwd -P)
+mkdir -p "$pinned/.local/share/opencode" "$pinned/free"
+pins="(version 1)
+(allow default)
+(deny file-write* (literal \"$pinned/.local\"))
+(deny file-write* (literal \"$pinned/.local/share\"))"
+pin_moved() {
+  if sandbox-exec -p "$pins" /bin/sh -c "mv '$pinned/$1' '$pinned/moved'" >/dev/null 2>&1; then
+    mv "$pinned/moved" "$pinned/$2" 2>/dev/null || :
+    echo yes
+  else
+    echo no
+  fi
+}
+expect "$(pin_moved free free)" yes "pin: a folder nothing pins is moved"
+for spelling in .local/share .LOCAL/share .local/SHARE .Local/Share; do
+  expect "$(pin_moved "$spelling" .local/share)" no "pin: a pinned folder moved as $spelling"
+done
+for spelling in .local .LOCAL .Local; do
+  expect "$(pin_moved "$spelling" .local)" no "pin: a pinned folder moved as $spelling"
+done
+
 # The profiles purlis emits, each applied whole, against the same probes.
 if [ -n "$emitted" ]; then
   # yes or no: whether `script` succeeds under the profile in the file `$sb`.
