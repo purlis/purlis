@@ -1,6 +1,6 @@
 ---
 name: purlis-compact
-description: Compact and improve a purlis workspace's or persona's memory — find duplicates and stale entries with purlis's optimize and dedupe reports, prune only with the operator's yes, and fold durable lessons into workspace.md or persona.md. Use when asked to compact, tidy, prune, dedupe or improve a workspace's or persona's memory.
+description: Compact and improve a purlis workspace's or persona's memory — find duplicates and stale entries with purlis's optimize and dedupe reports, prune only with the operator's yes, and fold durable lessons into the workspace's charter through purlis's tools, or into persona.md. Use when asked to compact, tidy, prune, dedupe or improve a workspace's or persona's memory.
 ---
 
 # Compact & improve
@@ -56,8 +56,15 @@ Done when every finding is applied, merged, kept on purpose, or declined by the 
 ## 3. Improve the charter
 
 A lesson that has held across several memories, or that every chat in this workspace or persona
-should act on from its first turn, belongs in the charter. Write it there in a sentence that
-says what to do and why, then archive the memories it replaces.
+should act on from its first turn, belongs in the charter. Write it in a sentence that says what
+to do and why, then archive the memories it replaces.
 
-Show the operator the charter's diff. Done when they have read it. Both files are committed, so
-the change travels with the plane's next save.
+- **A workspace's charter** changes only through purlis's tools, which write it for this chat
+  and so work from a sandboxed chat, where the charter file itself cannot be written: a rule
+  every later chat should act on → the `workspace_section` tool, `section` `decisions`; a term
+  the work coined → `workspace_section`, `section` `glossary`; a changed goal → the
+  `workspace_vision` tool. Never open the charter file to change it by hand.
+- **A persona's charter** is its `persona.md`.
+
+Show the operator what you added to the charter. Done when they have read it. Both charters are
+committed, so the change travels with the plane's next save.

@@ -1,6 +1,6 @@
 ---
 name: purlis-smart-close
-description: Close this chat by writing its session record — a summary of this session into its workspace's sessions/ — and folding what lasts into workspace.md. Use when asked to smart close, to wrap up or close this chat with a record, or to write a session record.
+description: Close this purlis chat by writing its session record — a summary of this session into its workspace's sessions/ — and folding what lasts into the workspace's charter with purlis's tools. Use when asked to smart close, to wrap up or close this chat with a record, or to write a session record.
 ---
 
 # Smart close
@@ -22,19 +22,23 @@ Read back over this conversation. Collect, for the record:
 Keep credentials out: name the vault a secret lives in, never its value. Done when you can write
 each of the five in a few lines.
 
-## 2. Fold what lasts into workspace.md
+## 2. Fold what lasts into the workspace's charter
 
-In a workspace, open its `workspace.md`. Move what should outlive this session into the section
-it belongs to:
+In a workspace, put what should outlive this session into the workspace's charter with purlis's
+tools, one entry per call. They write it for this chat, so they work from a sandboxed chat, where
+the charter file itself cannot be written:
 
-- a decision every later chat should act on → `## Context & decisions`;
-- a term this work coined → `## Glossary`;
-- a changed goal → `purlis workspace vision "<the goal>"`.
+- a decision every later chat should act on → the `workspace_section` tool, `section`
+  `decisions`, `text` the decision and why;
+- a term this work coined → the `workspace_section` tool, `section` `glossary`, `text`
+  the term, a dash and what it means;
+- a changed goal → the `workspace_vision` tool, `text` the goal. A harness without purlis's
+  tools runs `purlis workspace vision "<the goal>"` instead.
 
-Leave `## Sessions` alone; that line is purlis's. At the plane root there is no `workspace.md`; a
-lesson for every persona goes to the `persona_remember` tool with `shared`, or to
+Never open the charter file to change it by hand. At the plane root there is no workspace
+charter; a lesson for every persona goes to the `persona_remember` tool with `shared`, or to
 `purlis persona remember <persona> --shared "<fact>"` with this chat's own persona. Done when
-each lasting decision, term or goal change is in its section, or there was none.
+each lasting decision, term or goal change is written, or there was none.
 
 ## 3. Write the record
 
