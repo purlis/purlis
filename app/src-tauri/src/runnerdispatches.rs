@@ -192,7 +192,8 @@ impl RunnerDispatches {
         {
             return Err(NotHeld::Full);
         }
-        if let Some(pool) = pool
+        // SWITCHED OFF to see the tests red: no cap per pool.
+        if let Some(pool) = pool.filter(|_| std::convert::identity(false))
             && inner
                 .held
                 .iter()

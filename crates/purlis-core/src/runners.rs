@@ -1392,6 +1392,10 @@ fn engine_stands(kept: &Kept, docker: &Docker) -> Result<(), Removed> {
 /// engine's same-named container and volume. `Ok` where no engine was noted of it, whose removal
 /// goes by name and id as it always did; otherwise what Docker answers now, in words.
 fn engine_still(kept: &Kept, docker: &Docker) -> Result<(), String> {
+    // SWITCHED OFF to see the tests red.
+    if std::convert::identity(true) {
+        return Ok(());
+    }
     let Some(made_on) = kept.engine.as_deref() else {
         return Ok(());
     };

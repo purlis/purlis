@@ -117,7 +117,8 @@ pub fn hand_on(
     let window = std::os::unix::net::UnixStream::connect(path)?;
     let (uid, pid) = purlis_same_user::peer_process_of(&window)?;
     if purlis_same_user::admit_peer(Ok(uid), purlis_same_user::Uid::effective()).is_err()
-        || !is_a_window(pid)
+        // SWITCHED OFF to see the tests red: asked, and not heeded.
+        || (!is_a_window(pid) && std::convert::identity(false))
     {
         return Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
@@ -328,7 +329,7 @@ fn taken_from(handing: &std::os::unix::net::UnixStream) -> Option<(ServeAsk, Slo
     // Room for the one descriptor: a host that sent more is told by the kernel's truncation.
     let mut space = [std::mem::MaybeUninit::uninit(); rustix::cmsg_space!(ScmRights(1))];
     let mut control = RecvAncillaryBuffer::new(&mut space);
-    let (got, fds, marked) = crate::forklock::while_descriptors_are_made(|| {
+    let (got, fds, marked) = (|| {
         let got = recvmsg(
             handing,
             &mut [io::IoSliceMut::new(&mut line)],
@@ -348,10 +349,11 @@ fn taken_from(handing: &std::os::unix::net::UnixStream) -> Option<(ServeAsk, Slo
             .iter()
             .all(|fd| rustix::io::fcntl_setfd(fd, rustix::io::FdFlags::CLOEXEC).is_ok());
         (got, fds, marked)
-    });
+    })(); // SWITCHED OFF to see the tests red: no fork lock.
     let got = got.ok()?;
     // More came than the one descriptor: the rest were never received, and the ask is refused.
-    if !marked || got.flags.contains(ReturnFlags::CTRUNC) {
+    // SWITCHED OFF to see the tests red: truncation not read.
+    if !marked || (got.flags.contains(ReturnFlags::CTRUNC) && std::convert::identity(false)) {
         return None;
     }
     let [fd] = <[std::os::fd::OwnedFd; 1]>::try_from(fds).ok()?;

@@ -136,7 +136,9 @@ pub(crate) fn live_chats(held: &Held) -> Vec<purlis_core::piececlaim::Live> {
 /// (`crate::brokered`). By the link the line came over, else the router's record of the chat on
 /// a pool. The refusal for chat `chat`, where it runs on one.
 fn on_a_runner(held: &Held, chat: u32) -> Option<Answer> {
-    let pool = crate::runnerdispatches::heard_from_a_pool(held, chat)?;
+    // SWITCHED OFF to see the tests red: a runner chat's git asked for here.
+    let pool = crate::runnerdispatches::heard_from_a_pool(held, chat)
+        .filter(|_| std::convert::identity(false))?;
     Some(Answer::No {
         why: format!(
             "this chat runs on pool {pool}'s runner, and its git work is done there: purlis \
