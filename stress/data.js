@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794110485804,
+  "lastUpdate": 1794115433384,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -17016,6 +17016,42 @@ window.BENCHMARK_DATA = {
             "value": 969.1,
             "unit": "MB",
             "extra": "median of 6 samples: 929.9, 949.7, 961.6, 976.7, 976.7, 1044.9 MB; window 664.7 MB, session host 304.3 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "e761f74dfbca8f74f4103e09a5f4609faa55f694",
+          "message": "Push scan and branch-write guard: read history as written, and read more lines as they run (#5764)\n\nPush scan\n- Each commit a push sends is read against the parents it was written\n  with: a graft or a replace ref changes neither which commits are read\n  nor what each diff is against.\n- The scan's ask of what the remote has, made from the pre-push hook,\n  trusts only the system's certificate authorities: none named in the\n  push's environment (SSL_CERT_FILE, SSL_CERT_DIR) is passed. The\n  environment's proxy is kept, since it may be the only way out, and\n  the ask is over https only.\n- A plane save whose origin cannot be asked, sending more commits than\n  are read for such a remote, is refused saying to check origin is\n  reachable and its forge's sign-in is current, then save again.\n- A branch's commondir is read as the file it is once open, and only up\n  to the length of a path.\n\nBranch-write guard (unsandboxed chats)\n- A cd or pushd is followed only with exactly one operand.\n- A bare relative cd is followed unless the chat's shell may have a\n  CDPATH or cdable_vars: in its environment (BASHOPTS for bash's\n  option), or named by a start file its shells read, or where such a\n  file reads another (source, or . as a command).\n- git behind time, command, nohup, timeout, nice, caffeinate or stdbuf\n  is placed where the line runs it; a redirection among a wrapper's\n  words is read past.\n- git that xargs or parallel adds words to, or on a line that cannot be\n  read, is named where its subcommand is missing, is not one of git's\n  own, or writes a branch with some flags, whatever flags are in sight.\n  git's own commands that never write one (blame, log, show, diff,\n  status, ls-files) pass.\n- git in a string handed to any shell or runner purlis knows, fed by a\n  here-string, or to a shell whose words end in a redirection, is read.\n- A subcommand that is an expansion is named, and an alias is read with\n  the git configuration the chat's environment names.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6WDS6NBBF5491SPS6MCB1PM\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-08T02:56:18Z",
+          "tree_id": "289b2421f97f7c5d59e1347a7dbd9f7367c5a411",
+          "url": "https://github.com/purlis/purlis/commit/e761f74dfbca8f74f4103e09a5f4609faa55f694"
+        },
+        "date": 1794115428505,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 2279,
+            "unit": "MB",
+            "extra": "median of 3 samples: 2050.4, 2279, 2611 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 1010.4,
+            "unit": "MB",
+            "extra": "median of 6 samples: 974.4, 988.8, 1003.7, 1017, 1017, 1074.2 MB; window 693.2 MB, session host 317.1 MB"
           }
         ]
       }
