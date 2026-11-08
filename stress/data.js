@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794110431666,
+  "lastUpdate": 1794110485804,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -16980,6 +16980,42 @@ window.BENCHMARK_DATA = {
             "value": 991.7,
             "unit": "MB",
             "extra": "median of 6 samples: 952.9, 969.5, 984.3, 999, 999.6, 1076.6 MB; window 677.3 MB, session host 314 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "25fb258e17aa27ea48d4759dd1a5acf03c9c7d02",
+          "message": "Stories: It Warns waits for its warning lines to be visible (#5762) (#5763)\n\nThe dialog's scrim fades in from opacity 0, and WebKit can start that\nfade after the line is drawn, so a one-shot toBeVisible right after\nfindByTestId failed now and then. untilVisible, new in stories.testkit,\nwaits for it and names the step when it fails.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6WDG56FF20RQ6Q800FMRSGX\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-08T02:25:47Z",
+          "tree_id": "fad71027109c6d7f5b3a69e59befa3f3813f39d5",
+          "url": "https://github.com/purlis/purlis/commit/25fb258e17aa27ea48d4759dd1a5acf03c9c7d02"
+        },
+        "date": 1794110481472,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 2390.8,
+            "unit": "MB",
+            "extra": "median of 3 samples: 2124.5, 2390.8, 2581.8 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 969.1,
+            "unit": "MB",
+            "extra": "median of 6 samples: 929.9, 949.7, 961.6, 976.7, 976.7, 1044.9 MB; window 664.7 MB, session host 304.3 MB"
           }
         ]
       }
