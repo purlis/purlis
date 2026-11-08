@@ -451,3 +451,58 @@ fn a_charter_toml_key_conflict_is_settled_in_the_resolve_folder_with_no_marker()
     assert!(!landed.contains("evil.example"), "{landed}");
     assert!(!landed.contains("<<<<<<<"), "{landed}");
 }
+
+/// **A resolve folder is held only while its gitfile is the one cut for it**: it names this
+/// plane's own `.git/worktrees/<folder>` entry, and that entry names it back. Repointed (here at
+/// the root's own `.git`), nothing runs git in it: Continue and Skip refuse and say so, and
+/// Abort removes the folder without asking git there. The root is never touched.
+#[test]
+fn a_resolve_folder_whose_gitfile_is_repointed_is_refused_and_the_root_is_untouched() {
+    let two = conflicting();
+    let before = two.head();
+    cut(&two.mine, "release").unwrap();
+    let folder = path(&two.mine);
+    write(&folder, "shared.md", "one, both\ntwo\nthree\n");
+    let root_git = two.mine.join(".git");
+    std::fs::write(
+        folder.join(".git"),
+        format!("gitdir: {}\n", root_git.display()),
+    )
+    .unwrap();
+    let index = std::fs::read(root_git.join("index")).unwrap();
+
+    assert!(held(&two.mine).is_none());
+    // Still shown as open, so the window offers Abort, with nothing read from the folder.
+    assert_eq!(conflicts(&two.mine), Some(Conflicts::default()));
+    for refused in [
+        carry_on(&two.mine, &shown(&["shared.md"]), &[], &mut said),
+        skip(&two.mine),
+    ] {
+        assert!(
+            matches!(&refused, Settled::Refused(why) if why.contains("not the one purlis made")),
+            "{refused:?}"
+        );
+    }
+    root_is_as_it_was(&two, &before);
+    assert_eq!(
+        std::fs::read(root_git.join("index")).unwrap(),
+        index,
+        "the root's index moved"
+    );
+
+    assert_eq!(abort(&two.mine), Settled::Aborted);
+    assert!(!folder.exists());
+    root_is_as_it_was(&two, &before);
+    assert_eq!(
+        std::fs::read(root_git.join("index")).unwrap(),
+        index,
+        "the root's index moved"
+    );
+    assert_eq!(run(&two.mine, &["status", "--porcelain"]), "");
+    assert_eq!(
+        run(&two.mine, &["worktree", "list", "--porcelain"])
+            .matches("worktree ")
+            .count(),
+        1
+    );
+}

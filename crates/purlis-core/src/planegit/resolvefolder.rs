@@ -147,15 +147,95 @@ impl Held {
 
 /// **The resolve open in the plane at `root`**, or `None`: its record, while the folder is there.
 pub fn held(root: &Path) -> Option<Held> {
-    let text = std::fs::read_to_string(git_dir_of(root).join(RECORD)).ok()?;
-    let held: Held = serde_json::from_str(&text).ok()?;
-    (held.holds() && path(root).join(".git").is_file()).then_some(held)
+    match open(root) {
+        Open::Held(held) => Some(held),
+        Open::None | Open::NotOurs(_) => None,
+    }
+}
+
+/// What the plane at `root` has of a resolve.
+enum Open {
+    /// No resolve, or a record with no folder.
+    None,
+    /// A resolve, its folder the one cut for it.
+    Held(Held),
+    /// A record and a folder whose gitfile is not the one cut for it, and why: nothing runs git
+    /// in it.
+    NotOurs(String),
+}
+
+/// The resolve open at `root`, checked: its record, and its folder's gitfile the one cut for it.
+fn open(root: &Path) -> Open {
+    let Some(held) = std::fs::read_to_string(git_dir_of(root).join(RECORD))
+        .ok()
+        .and_then(|text| serde_json::from_str::<Held>(&text).ok())
+        .filter(Held::holds)
+    else {
+        return Open::None;
+    };
+    if std::fs::symlink_metadata(path(root).join(".git")).is_err() {
+        return Open::None;
+    }
+    match folder_is_ours(root) {
+        Ok(()) => Open::Held(held),
+        Err(why) => Open::NotOurs(why),
+    }
+}
+
+/// What a press says of a resolve folder whose gitfile is not the one cut for it.
+const NOT_OURS: &str = "The resolve folder's link to this project's git is not the one purlis \
+     made, so purlis runs nothing in it. Abort removes the folder, and nothing here changes.";
+
+/// **Whether the resolve folder is the one cut for this plane**, or why not: its `.git` is a
+/// plain file naming this plane's own `worktrees/<entry>` in its common git directory, and that
+/// entry's `gitdir` names the folder's `.git` back. Asked before git runs in the folder, which a
+/// chat can write: git follows that file to whatever it names.
+fn folder_is_ours(root: &Path) -> Result<(), String> {
+    use std::io::Read;
+    let not_ours = || NOT_OURS.to_owned();
+    let gitfile = path(root).join(".git");
+    if !std::fs::symlink_metadata(&gitfile).is_ok_and(|meta| meta.is_file()) {
+        return Err(not_ours());
+    }
+    let mut text = String::new();
+    std::fs::File::open(&gitfile)
+        .and_then(|file| file.take(4096).read_to_string(&mut text))
+        .map_err(|_| not_ours())?;
+    let named = text
+        .trim_end_matches(['\n', '\r'])
+        .strip_prefix("gitdir: ")
+        .ok_or_else(not_ours)?;
+    let named = path(root).join(named);
+    let real = |path: &Path| std::fs::canonicalize(path).map_err(|_| not_ours());
+    let entry = real(&named)?;
+    let common = line_of(
+        root,
+        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+    )
+    .ok_or_else(not_ours)?;
+    let worktrees = real(&Path::new(&common).join("worktrees"))?;
+    if entry.parent() != Some(worktrees.as_path()) || !entry.is_dir() {
+        return Err(not_ours());
+    }
+    let mut back = String::new();
+    std::fs::File::open(entry.join("gitdir"))
+        .and_then(|file| file.take(4096).read_to_string(&mut back))
+        .map_err(|_| not_ours())?;
+    let back = Path::new(back.trim_end_matches(['\n', '\r']));
+    if real(back)? != real(&gitfile)? {
+        return Err(not_ours());
+    }
+    Ok(())
 }
 
 /// The files of the open resolve, by who may settle them, as they stand in the folder now.
 pub fn conflicts(root: &Path) -> Option<Conflicts> {
-    let held = held(root)?;
-    Some(sorted(&path(root), &held))
+    match open(root) {
+        Open::Held(held) => Some(sorted(&path(root), &held)),
+        // Still open, so the window offers Abort; nothing is read from the folder.
+        Open::NotOurs(_) => Some(Conflicts::default()),
+        Open::None => None,
+    }
 }
 
 /// **Cut the resolve folder** for a merge of HEAD and the remote-tracking `target` whose files a
@@ -455,8 +535,10 @@ pub fn carry_on(root: &Path, shown: &[String], keys: &[Chosen], say: Sink) -> Se
     if let Err(why) = super::git_files_refused(root) {
         return Settled::Refused(format!("Nothing was carried on: {why}."));
     }
-    let Some(held) = held(root) else {
-        return Settled::Refused(NONE_OPEN.into());
+    let held = match open(root) {
+        Open::Held(held) => held,
+        Open::NotOurs(why) => return Settled::Refused(why),
+        Open::None => return Settled::Refused(NONE_OPEN.into()),
     };
     let folder = path(root);
     let outside: Vec<&String> = shown
@@ -515,8 +597,10 @@ pub fn skip(root: &Path) -> Settled {
     let Some(_claim) = Claim::of(root) else {
         return Settled::Refused(BUSY.into());
     };
-    let Some(held) = held(root) else {
-        return Settled::Refused(NONE_OPEN.into());
+    let held = match open(root) {
+        Open::Held(held) => held,
+        Open::NotOurs(why) => return Settled::Refused(why),
+        Open::None => return Settled::Refused(NONE_OPEN.into()),
     };
     let folder = path(root);
     // Skip keeps this machine's value for no key: each stands as the remote's.
@@ -997,19 +1081,18 @@ fn in_the_way(err: &str) -> Vec<String> {
 /// Remove whatever an open or half-cut resolve left: the folder, its branch and the record.
 fn clear(root: &Path) {
     let folder = path(root);
-    if folder.exists() {
+    // git runs on the folder only while its gitfile is the one cut for it.
+    if folder.exists() && folder_is_ours(root).is_ok() {
         let folder_arg = folder.to_string_lossy();
-        let removed = git::run_untimed(
+        let _ = git::run_untimed(
             root,
             &["worktree", "remove", "--force", "--force", &folder_arg],
-        )
-        .is_ok_and(|run| run.ok());
-        if !removed {
-            // Never through a link: only a folder of this plane's state folder is removed.
-            if std::fs::symlink_metadata(&folder).is_ok_and(|meta| meta.is_dir()) {
-                let _ = std::fs::remove_dir_all(&folder);
-            }
-        }
+        );
+    }
+    // Whatever is left, removed by the file system: never through a link, and only a folder of
+    // this plane's state folder.
+    if std::fs::symlink_metadata(&folder).is_ok_and(|meta| meta.is_dir()) {
+        let _ = std::fs::remove_dir_all(&folder);
     }
     let _ = git::run(root, &["worktree", "prune"], WRITE);
     let branch = format!("refs/heads/{BRANCH}");
