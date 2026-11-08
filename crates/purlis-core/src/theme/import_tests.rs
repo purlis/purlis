@@ -739,6 +739,10 @@ fn a_property_list_nested_deeper_than_a_preset_is_refused_before_it_is_parsed() 
         import(SourceKind::Iterm, "two.itermcolors", two).is_ok(),
         "a preset nests two"
     );
+    let refused_for = |source: &[u8]| {
+        import(SourceKind::Iterm, "edge.itermcolors", source).is_err_and(|why| why.contains("deep"))
+    };
+    assert!(!refused_for(&nested_plist(8)), "eight deep is as deep as it may");
 }
 
 #[test]

@@ -530,11 +530,11 @@ pub fn follow_kin(
             let edge_to_come = token == RING && alike && !given.contains_key(EDGE);
             let apart = HeldApart::of(token, under, |token| Some(is(token).to_owned()));
             let contrast = super::check::KeepsContrast::of(token, &was);
-            let edge = super::check::KeepsContrast::of(EDGE, &was);
+            let edge = edge_to_come.then(|| super::check::KeepsContrast::of(EDGE, &was));
             let keeps = |one: &str| {
                 apart.holds(one)
                     && contrast.keeps(one, &is)
-                    && (!edge_to_come || edge.keeps(one, &is))
+                    && edge.as_ref().is_none_or(|edge| edge.keeps(one, &is))
                     && (token != FIRST_SERIES || apart_from_the_series(one, &is, &was))
             };
             let holding = tries.iter().find(|one| keeps(one)).cloned().or_else(|| {

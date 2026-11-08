@@ -1356,9 +1356,9 @@ fn toward(
 /// hold when it is drawn, for a token a floor names. Only the pairs `token` is drawn in are
 /// measured: a walk measures one token at a time.
 ///
-/// `None` once they reach `fewer_than`: a point no better than the best so far is never taken, so
-/// the floors are held, which is most of what a walk costs (#3597), only for a point whose
-/// contrast findings alone leave it a chance.
+/// `None` once they reach `fewer_than`, since a point no better than the best so far is never
+/// taken. Holding the floors is most of what a walk costs (#3597), so it is skipped for a point
+/// whose contrast findings alone already reach `fewer_than`.
 fn findings_for(theme: &ResolvedTheme, token: &'static str, fewer_than: usize) -> Option<usize> {
     let pairs: Vec<&super::check::Pair> = super::check::PAIRS
         .iter()
