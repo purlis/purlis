@@ -5413,8 +5413,10 @@ impl Planes {
         // Every plane's saving stops at once, against one short deadline, so a save at quit
         // never overlaps the session host's; a host that does not answer is ended first
         // (#2002).
+        let roots: Vec<_> = all.iter().map(|held| held.root.clone()).collect();
         crate::autosave::stop_every_saver_by(
             all.iter().filter_map(|held| held.take_saver()).collect(),
+            &roots,
             std::time::Instant::now() + crate::autosave::QUIT_STOPS_WITHIN,
             &*self.end_the_host,
         );

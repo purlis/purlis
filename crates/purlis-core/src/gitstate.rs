@@ -16,6 +16,9 @@
 //! lock from an abandoned one: the holder may be a `git commit` with an editor open, or another
 //! machine's view of a network mount. So charter states the three facts the person deciding
 //! needs — the path, the size and the age — and leaves the `rm` to them, `ps` first.
+//!
+//! The one exception is a lock left by a step purlis itself marked and was cut off inside, old
+//! and with no git process working in the root ([`crate::planegit::recover`], #5824 F3).
 
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};

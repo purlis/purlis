@@ -303,6 +303,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [The shipped plugin's `hooks/hooks.json`](#the-shipped-plugins-hookshooksjson)
   - [2c. Git config purlis sets](#2c-git-config-purlis-sets)
   - [`<git dir>/purlis-save.lock`](#git-dirpurlis-savelock)
+  - [`<git dir>/purlis-op.json`](#git-dirpurlis-opjson)
   - [2d. purlis-private caches in this area](#2d-purlis-private-caches-in-this-area)
   - [`.charter/cache/harness-wiring.json`](#chartercacheharness-wiringjson)
   - [`.charter/unrecorded/<sha256[:32]>.json`](#charterunrecordedsha25632json)
@@ -5630,6 +5631,21 @@ always does. Two differences show (#1413):
 - **Written/locked by:** `purlis_core::planegit::Claim` (`crates/purlis-core/src/planegit.rs`).
 - **Git:** inside the git directory, so never tracked. In a linked worktree it is that
   worktree's own git directory, as its index is.
+
+### `<git dir>/purlis-op.json`
+
+- **Format:** JSON object: `op` (`"rebase"` or `"merge"`), `branch` (`refs/heads/<name>`),
+  `orig_head`, `onto` and `base` (commit ids), `pid`, and, once a recovery has begun to move
+  the root, `stop_head` (the HEAD the step was cut off at).
+- **Status:** **internal** — the marker of a root git step that can be cut off part-way
+  (#5824 F3, D3). Written before the step and removed when it returns, however it ended, so
+  only a step a quit, a crash or sleep killed leaves one. A save or the window's look that
+  finds it beside a stopped rebase or merge, or a detached HEAD, recovers the root off to the
+  side; a stop without it is the person's and is left alone.
+- **Tier:** Clone state, transient — exists only while a step runs, or after one was killed
+  until it is recovered; deleted ⇒ such a stop is read as the person's.
+- **Written by:** `purlis_core::planegit::recover` (`crates/purlis-core/src/planegit/recover.rs`).
+- **Git:** inside the git directory, so never tracked.
 
 ### 2d. purlis-private caches in this area
 

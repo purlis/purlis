@@ -1750,6 +1750,62 @@ mod pr_saves {
         merged_then_fetched_keeps_newer_work("merged-squash.test", "squash");
     }
 
+    /// #5824 F1, D1: what was committed after the request's head is carried onto the target as
+    /// one commit made off to the side, never replayed by a `git rebase` at the root, whose
+    /// stop (or a quit in the middle of it) leaves the plane part-way.
+    fn newer_saves_settle_without_a_rebase(host: &str, how: &str) {
+        let plane = plane(host, "pr");
+        plane.opened("work.md", 12);
+        for file in ["later-1.md", "later-2.md"] {
+            std::fs::write(plane.root.join(file), file).unwrap();
+            git(&plane.root, &["add", "-A"]);
+            git(&plane.root, &["commit", "-q", "-m", file]);
+        }
+        let at = merge(&plane, how);
+        let asked = plane.merged(12, &at);
+
+        let incoming = planegit::fetch(&plane.root, true).expect("the fetch");
+
+        assert!(was_asked(&asked), "{how}: {incoming:?}");
+        let reflog = git(&plane.root, &["reflog", "--format=%gs", "HEAD"]);
+        assert!(
+            !reflog.contains("rebase"),
+            "{how}: a rebase ran at the root:\n{reflog}"
+        );
+        let git_dir = plane.root.join(".git");
+        for stop in ["rebase-merge", "rebase-apply", "MERGE_HEAD"] {
+            assert!(!git_dir.join(stop).exists(), "{how}: {stop} left behind");
+        }
+        assert_eq!(
+            git(&plane.root, &["rev-parse", "HEAD^"]),
+            plane.remote("release"),
+            "{how}: the newer saves sit on the remote's release as one commit"
+        );
+        assert_eq!(
+            git(
+                &plane.root,
+                &["rev-list", "--count", "--no-walk=unsorted", "HEAD^@"]
+            ),
+            "1",
+            "{how}: one parent, not a merge with the plane's own history"
+        );
+        for file in ["later-1.md", "later-2.md", "work.md", "theirs.md"] {
+            assert!(plane.root.join(file).is_file(), "{how}: {file} is kept");
+        }
+        assert_eq!(git(&plane.root, &["status", "--porcelain"]), "", "{how}");
+    }
+
+    #[test]
+    fn a_merged_requests_newer_saves_settle_without_a_rebase_at_the_root() {
+        purlis_core::unsteered!();
+        if !in_child() {
+            return;
+        }
+        for how in ["merge", "squash", "rebase"] {
+            newer_saves_settle_without_a_rebase(&format!("settle-{how}.test"), how);
+        }
+    }
+
     #[test]
     fn a_save_after_a_squash_merge_replays_the_newer_commit_and_opens_a_fresh_pr() {
         purlis_core::unsteered!();

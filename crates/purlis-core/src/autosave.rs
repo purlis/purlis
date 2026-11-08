@@ -401,5 +401,30 @@ impl Looks {
     }
 }
 
+/// **End whoever saves these planes only while no root write runs** (#5824 F9): `end` is called
+/// holding every one's [`crate::planegit::Claim`], each waited for within `bound` all told, so a
+/// save in flight finishes first and none can start while the savers end. `false`, and `end`
+/// never called, where a root write still holds one at the bound: a git step killed at a plane
+/// root leaves it part-way, so the savers are left to finish, and the save at quit, which waits
+/// on the same claim, skips.
+pub fn end_savers_once_no_root_write_runs(
+    roots: &[std::path::PathBuf],
+    bound: Duration,
+    end: &dyn Fn(),
+) -> bool {
+    let until = Instant::now() + bound;
+    let mut held = Vec::with_capacity(roots.len());
+    for root in roots {
+        let left = until.saturating_duration_since(Instant::now());
+        match crate::planegit::Claim::within(root, left) {
+            Some(claim) => held.push(claim),
+            None => return false,
+        }
+    }
+    end();
+    drop(held);
+    true
+}
+
 #[cfg(test)]
 mod tests;
