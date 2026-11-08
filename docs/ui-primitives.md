@@ -1260,7 +1260,11 @@ old `.ui-list` class: `eslint.config.js` refuses both (`purlis/list-family`, an 
   on a right-click, or by Shift+F10 or the menu key while the row has the keyboard, on its first
   row (`useContextMenu`, `askForAMenu` in `ui/menu/ContextMenu.tsx`); the tooltip shows under the
   pointer after the window's delay, at once while the keyboard is on the row, is the row's
-  description while it is shown, and Esc takes it down (`RowTip.tsx`).
+  description while it is shown, and Esc takes it down (`RowTip.tsx`). As every tooltip, it meets
+  WCAG 1.4.13 (#5038): the pointer can cross onto it and it stays, going a moment after the
+  pointer has left both; Esc's dismissal lasts until the pointer rests on the row again or the
+  keyboard comes to it again; and it stays where it opened while it is up, never drawn afresh
+  (#3364).
 - **A drag is never the only way**: whatever dropping a row does, its menu or a key does too
   (Shift+Enter on a search hit hands it to a chat).
 - **Drawn by its parts** (ADR 0103): the list is `data-scope="list" data-part="body"`, a row the

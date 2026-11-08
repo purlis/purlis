@@ -15,7 +15,7 @@ import { userEvent } from "@testing-library/user-event";
 import { useState } from "react";
 import { Button } from "../button/Button";
 import { Menu, MenuItem, MenuWords } from "../menu/Menu";
-import { TOOLTIP_DELAY } from "../tooltip/Tooltip";
+import { TOOLTIP_CLOSE_DELAY, TOOLTIP_DELAY } from "../tooltip/Tooltip";
 import { drawnWith } from "../../cascade.testkit";
 import {
   List,
@@ -312,8 +312,104 @@ describe("a row's own tooltip, menu and keys (ADR 0104, 2026-10-24)", () => {
         vi.advanceTimersByTime(TOOLTIP_DELAY + 10);
       });
       expect(screen.getByRole("tooltip")).toHaveTextContent("2026-10-10 09:12");
+      // It stays a moment after the pointer leaves, for the pointer to cross onto it, then goes.
       await user.unhover(row());
+      expect(screen.queryByRole("tooltip")).not.toBeNull();
+      await act(async () => {
+        vi.advanceTimersByTime(TOOLTIP_CLOSE_DELAY + 10);
+      });
       expect(screen.queryByRole("tooltip")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("can be hovered: the pointer crossing onto it keeps it, and leaving it takes it down (WCAG 1.4.13, #5038)", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      render(<Tipped />);
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      await user.hover(row());
+      await act(async () => {
+        vi.advanceTimersByTime(TOOLTIP_DELAY + 10);
+      });
+      const tip = screen.getByRole("tooltip");
+      await user.unhover(row());
+      await user.hover(tip);
+      await act(async () => {
+        vi.advanceTimersByTime(TOOLTIP_CLOSE_DELAY * 10);
+      });
+      expect(screen.getByRole("tooltip")).toHaveTextContent("2026-10-10 09:12");
+      // Back onto its row and off again: it stays while the pointer is on either.
+      await user.hover(row());
+      await act(async () => {
+        vi.advanceTimersByTime(TOOLTIP_CLOSE_DELAY * 10);
+      });
+      expect(screen.getByRole("tooltip")).toHaveTextContent("2026-10-10 09:12");
+      await user.hover(screen.getByRole("tooltip"));
+      await user.unhover(screen.getByRole("tooltip"));
+      await act(async () => {
+        vi.advanceTimersByTime(TOOLTIP_CLOSE_DELAY + 10);
+      });
+      expect(screen.queryByRole("tooltip")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("comes back on the keyboard's next visit after Esc (#5038)", async () => {
+    render(<Tipped />);
+    await userEvent.tab();
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    await userEvent.keyboard("{ArrowDown}");
+    await userEvent.keyboard("{ArrowUp}");
+    expect(row()).toHaveFocus();
+    expect(screen.getByRole("tooltip")).toHaveTextContent("2026-10-10 09:12");
+  });
+
+  it("comes back on the pointer's next rest after Esc, wherever Esc took it down (#5038)", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      render(<Tipped />);
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      // The keyboard's tooltip taken down, then the pointer rests on the row.
+      await user.tab();
+      await user.keyboard("{Escape}");
+      expect(screen.queryByRole("tooltip")).toBeNull();
+      await user.hover(row());
+      await act(async () => {
+        vi.advanceTimersByTime(TOOLTIP_DELAY + 10);
+      });
+      expect(screen.getByRole("tooltip")).toHaveTextContent("2026-10-10 09:12");
+      // The pointer's taken down, then the pointer leaves and rests on it again.
+      await user.keyboard("{Escape}");
+      expect(screen.queryByRole("tooltip")).toBeNull();
+      await user.unhover(row());
+      await user.hover(row());
+      await act(async () => {
+        vi.advanceTimersByTime(TOOLTIP_DELAY + 10);
+      });
+      expect(screen.getByRole("tooltip")).toHaveTextContent("2026-10-10 09:12");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps its first anchor and its element when the pointer rests on a row the keyboard opened it on (#3364)", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      render(<Tipped />);
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      await user.tab();
+      const first = screen.getByRole("tooltip");
+      await user.hover(row());
+      await act(async () => {
+        vi.advanceTimersByTime(TOOLTIP_DELAY + 10);
+      });
+      // The same element: a screen reader is not handed the tooltip a second time.
+      expect(screen.getByRole("tooltip")).toBe(first);
+      expect(row()).toHaveAccessibleDescription("2026-10-10 09:12");
     } finally {
       vi.useRealTimers();
     }

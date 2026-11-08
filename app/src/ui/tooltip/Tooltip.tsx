@@ -36,6 +36,7 @@ import {
   Children,
   cloneElement,
   isValidElement,
+  type PointerEvent,
   type ReactElement,
   type ReactNode,
   type Ref,
@@ -559,7 +560,8 @@ export function AnchoredTooltip({
   side?: "end" | "start";
   /** The pointer is on it, or has left it (WCAG 1.4.13, hoverable): its drawer keeps it then. */
   onPointerEnter?: () => void;
-  onPointerLeave?: () => void;
+  /** Where the pointer went is the event's `relatedTarget` (a row's own tooltip, back to it). */
+  onPointerLeave?: (event: PointerEvent<HTMLDivElement>) => void;
   children: Tip;
 }) {
   const shown = useProjectShown();
