@@ -550,9 +550,9 @@ pub fn run_grant_given(
 
 /// **Why `link`'s entry may not fill a field of `open`'s notice**, where it may not (#5080): one
 /// a browser login, a secret-fill line or a `mint` line of any persona holds (`handed`, read
-/// once for every key judged), one in a vault the persona may not use (`may_use`), other than
-/// the run's own, and one another persona of the run's vault may not use (`read_through`, #5745),
-/// which would read it through the link.
+/// once for every key judged), one in a vault the persona may not use (`may_use`), the run's own
+/// too, since the gate refuses a key that links there (#5744, D-5246-1), and one another persona
+/// of the run's vault may not use (`read_through`, #5745), which would read it through the link.
 fn picked_refused(
     handed: &purlis_core::secrets::brokered::NoProgram,
     may_use: &dyn Fn(&str) -> bool,
@@ -579,7 +579,7 @@ fn picked_refused(
     }
     // The broker's own rule, which fails closed: no persona, an unreadable registry or a vault
     // it can't read are none the persona may use.
-    if link.vault != open.bound.vault && !may_use(&link.vault) {
+    if !may_use(&link.vault) {
         return Some(format!(
             "{} can't use vault {}, so its entries can't fill this notice. Pick another \
              entry, or type a value.",
@@ -700,12 +700,9 @@ pub fn run_entries_for(held: &crate::planes::Held, id: u32) -> Result<Vec<Entrie
     Ok(links::pickable(&ctx, None)
         .map_err(|e| e.message.to_string())?
         .into_iter()
-        // Only a vault the persona may use, and the run's own, and one every persona of the run's
-        // vault may use: what a pick is held to.
-        .filter(|one| {
-            (one.vault == open.bound.vault || may_use(&one.vault))
-                && read_through(&one.vault).is_none()
-        })
+        // Only a vault the persona may use, the run's own too where it may not (#5744), and one
+        // every persona of the run's vault may use: what a pick is held to.
+        .filter(|one| may_use(&one.vault) && read_through(&one.vault).is_none())
         .map(|one| match one.keys {
             Ok(keys) => EntriesOf {
                 keys: keys

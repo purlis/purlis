@@ -13156,6 +13156,65 @@ fn a_runs_field_linked_to_a_browser_logins_key_is_refused_with_nothing_linked_or
     );
 }
 
+/// **#5744**: a run on a vault its persona may not use (`finance`, not `ops`'s) is offered none of
+/// that vault's own entries, and a press picking one is refused before anything is linked, since
+/// the gate refuses a key that links into a vault the persona may not use (D-5246-1). So the
+/// picker, the press and the gate agree, and the person is never asked to allow a run the gate
+/// then refuses.
+#[test]
+fn a_runs_field_picked_from_its_own_refused_vault_is_not_offered_or_runs() {
+    let plane = Plane::new().a_persona("ops", "");
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    team_and_a_kept_entry(&plane);
+    let mut need = curl_lacking_token(&plane);
+    need.bound.vault = "finance".to_owned();
+    need.not_its_vault = true;
+
+    let ran = held_while(&held, need, |open| {
+        let listed = crate::secretasks::run_entries_for(&held, open.id).expect("listed");
+        assert!(
+            listed.iter().all(|one| one.vault != "finance"),
+            "the run's own refused vault is not offered: {listed:?}"
+        );
+        let pressed = crate::secretasks::run_grant_given(
+            &held,
+            None,
+            open.id,
+            crate::secretasks::RunGrantPress::Once,
+            picked_in("TOKEN", "finance", "STRIPE"),
+        );
+        assert!(
+            pressed
+                .as_ref()
+                .is_err_and(|why| why.contains("can't use vault finance")),
+            "{pressed:?}"
+        );
+        let ctx =
+            purlis_core::secrets::Ctx::new(&plane.root, purlis_core::secrets::Env::from_process());
+        assert_eq!(
+            purlis_core::secrets::links::of(&ctx, "finance", "TOKEN").expect("read"),
+            None,
+            "nothing linked"
+        );
+        assert!(held.secret_asks().given_runs().is_empty(), "nothing given");
+        crate::secretasks::run_grant_filled(
+            &held,
+            None,
+            open.id,
+            crate::secretasks::RunGrantPress::Refuse,
+            Vec::new(),
+        )
+        .expect("kept off");
+    });
+    assert!(
+        matches!(ran, purlis_core::secrets::ask::run::RunHeld::Refused { .. }),
+        "{ran:?}"
+    );
+}
+
 /// **#5745** (the person's ruling, 2026-11-08: refuse such links): a run's field links into
 /// the run's vault, which every persona of that vault reads. So where `billing` may use `team`
 /// too and not `keep`, the picker offers none of `keep`'s entries, though `ops` may use them, and
