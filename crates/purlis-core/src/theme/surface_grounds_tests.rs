@@ -233,3 +233,113 @@ fn a_list_s_row_in_a_dialog_is_read_on_the_dialog_s_fill() {
     let broken = breaks(&theme, "list", "dialog", "surface.hover");
     assert!(broken.is_some(), "{broken:?}");
 }
+
+#[test]
+fn a_tree_filled_where_a_badge_in_its_rows_vanishes_brings_the_tree_back() {
+    // A tree's row draws no fill of its own: before #5863 nothing was measured on a fill a theme
+    // gives it, so its badges could vanish there and pass.
+    let theme = filled_grey("tree", "surface.sunken", "#303030");
+    let fell = fell_in(&theme);
+    assert!(
+        fell.iter()
+            .any(|one| one.starts_with("tree.root:") && one.contains("what a badge draws on it")),
+        "{fell:?}"
+    );
+    // Read on each ground under it, the tree falls once.
+    assert_eq!(
+        fell.iter()
+            .filter(|one| one.starts_with("tree.root:"))
+            .count(),
+        1,
+        "{fell:?}"
+    );
+    // Drawn as its default, the row stands on its parent's ground again.
+    // The fallback is written after the rule it takes the place of, so the last fill the row's
+    // rules set is the one drawn.
+    let sheet = super::stylesheet(&theme);
+    let last = sheet.lines().map(str::trim_start).rfind(|line| {
+        line.starts_with(":where([data-scope=\"tree\"][data-part=\"root\"]) {")
+            && line.contains("background-color")
+    });
+    assert!(
+        last.is_some_and(|line| line.contains("background-color: transparent")),
+        "the tree draws no fill of its own: {last:?}"
+    );
+}
+
+#[test]
+fn a_table_filled_where_a_badge_in_its_rows_vanishes_brings_the_table_back() {
+    let theme = filled_grey("table", "surface.sunken", "#303030");
+    let fell = fell_in(&theme);
+    assert!(
+        fell.iter()
+            .any(|one| one.starts_with("table.root:") && one.contains("what a badge draws on it")),
+        "{fell:?}"
+    );
+}
+
+#[test]
+fn a_tree_filled_where_every_family_in_it_reads_is_drawn_as_written() {
+    // The window's raised ground under a tree's rows: what stands on them reads there.
+    let theme = shaped(json!({}), json!({ "tree.root.fill": "surface.raised" }));
+    assert_eq!(fell_in(&theme), Vec::<String>::new());
+    assert!(
+        super::stylesheet(&theme).lines().any(|line| line
+            .trim_start()
+            .starts_with(":where([data-scope=\"tree\"][data-part=\"root\"])")
+            && line.contains("background-color: var(--surface-raised)")),
+        "the tree draws the fill it was given"
+    );
+}
+
+#[test]
+fn a_surface_with_no_fill_stands_on_each_of_its_parent_s_grounds_until_a_theme_fills_it() {
+    // Unfilled, a tree is measured nowhere; filled, once for each ground it is drawn on, which
+    // takes the place of the default fill it does not draw.
+    let unfilled = super::rules(&shaped(json!({}), json!({})).parts);
+    assert!(
+        super::surfaces_set(&unfilled)
+            .iter()
+            .all(|(surface, ..)| surface.name != "tree")
+    );
+    let filled =
+        super::rules(&shaped(json!({}), json!({ "tree.root.fill": "accent.surface" })).parts);
+    let on: Vec<_> = super::surfaces_set(&filled)
+        .into_iter()
+        .filter(|(surface, ..)| surface.name == "tree")
+        .map(|(_, _, default, set)| (default, set))
+        .collect();
+    assert_eq!(
+        on,
+        [
+            ("surface.base", "accent.surface"),
+            ("surface.raised", "accent.surface"),
+            ("surface.sunken", "accent.surface"),
+        ]
+    );
+}
+
+#[test]
+fn a_field_s_error_is_read_on_a_table_s_fill_and_its_help_never_is() {
+    // A table's rows stand on the window's own ground, which a field's error is read on and its
+    // help is not: on a table's fill, the error stands anew and the help is drawn nowhere.
+    let theme = filled_grey("table", "surface.sunken", "#4a4a46");
+    let rules = super::rules(&theme.parts);
+    let broken = super::broken_on(
+        &theme,
+        &[],
+        std::slice::from_ref(&theme),
+        &rules,
+        family("field").expect("the field family"),
+        family("table").expect("the table family"),
+        "surface.base",
+        "surface.sunken",
+    )
+    .map(|(floor, _)| floor);
+    assert!(
+        broken
+            .as_deref()
+            .is_some_and(|floor| floor.contains("the error's words")),
+        "{broken:?}"
+    );
+}

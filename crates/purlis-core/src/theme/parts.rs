@@ -3501,7 +3501,9 @@ type SurfaceSet = (&'static Family, &'static str, &'static str, &'static str);
 
 /// **The fills a theme's parts set on the surfaces other families are drawn on**: each surface's
 /// look whose root draws, at rest, another fill than its family default's, with that default and
-/// the fill drawn in its place. A family drawn on the default is drawn on the fill set.
+/// the fill drawn in its place. A family drawn on the default is drawn on the fill set. A look
+/// whose default draws no fill (a tree's row, a table's) stands on its parent's ground until a
+/// theme fills it (#5863): each ground the surface is drawn on takes the default's place, once.
 fn surfaces_set(rules: &[Rule]) -> Vec<SurfaceSet> {
     let mut found = Vec::new();
     for surface in MANIFEST {
@@ -3513,7 +3515,18 @@ fn surfaces_set(rules: &[Rule]) -> Vec<SurfaceSet> {
         for variant in surface.looks() {
             let default = (surface.defaults)(variant, &[]).fill;
             let set = drawn(rules, surface, variant, &[]).fill;
-            if default != TRANSPARENT && set != TRANSPARENT && set != default {
+            if set == TRANSPARENT || set == default {
+                continue;
+            }
+            if default == TRANSPARENT {
+                found.extend(
+                    surface
+                        .grounds
+                        .iter()
+                        .filter(|ground| **ground != set)
+                        .map(|ground| (surface, variant, *ground, set)),
+                );
+            } else {
                 found.push((surface, variant, default, set));
             }
         }
@@ -3527,9 +3540,9 @@ fn surfaces_set(rules: &[Rule]) -> Vec<SurfaceSet> {
 /// can be more than one surface's (the overlay is a popover's and a dialog's), so where a family
 /// stands is said here, not read from its grounds. `app/src/theme/grounds.test.ts` finds it from
 /// the components and holds this table to them, exactly: a family drawn on a new surface fails
-/// there until it is named here. A surface drawn with no fill of its own in every look (a table, a
-/// tree) is named too, though nothing on it is measured on a fill a theme sets there
-/// ([`surfaces_set`]).
+/// there until it is named here. A surface drawn with no fill of its own (a table's row, a
+/// tree's) leaves its parent's ground showing, so what stands in it is named on that parent too;
+/// once a theme fills it, what stands in it is measured on that fill ([`surfaces_set`], #5863).
 const STANDS_ON: &[(&str, &[&str])] = &[
     (
         "card",
@@ -3978,6 +3991,14 @@ fn held_on_surfaces(
     // it is of, and is keyed by how many looks there are.
     let mut known: Readings = Vec::new();
     for (surface, variant, default, set) in surfaces_set(rules) {
+        // A look with no fill of its own is read once for each ground it stands on (#5863): once
+        // it falls on one, it draws its default on all of them, and nothing is left to read.
+        if fell[before..]
+            .iter()
+            .any(|one| one.part == named(surface, variant, &[]))
+        {
+            continue;
+        }
         for family in drawn_on(surface, default, set) {
             // The consent floors hold in every tint, a surface's fill under a consent variant
             // included (ADR 0097 §6), as they do where a theme's parts reach the family itself.
