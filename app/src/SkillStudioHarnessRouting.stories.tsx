@@ -374,6 +374,53 @@ export const HarnessSkills: Story = {
   },
 };
 
+/**
+ * **Harness skills, with project skills a program's chats start without**: one a repo's copy
+ * takes the name of (SK-53), one the program has the same copy of (#5843), each under the
+ * program with its mark and the reason its chat is told. Enter opens it beside the list.
+ */
+export const HarnessSkillsLeftOut: Story = {
+  args: {
+    answer: studio([], {
+      workspace: "smart-ide",
+      workspaces: ["smart-ide"],
+      router: ROUTER,
+      harnesses: HARNESSES.map((one) =>
+        one.harness === "claude"
+          ? {
+              ...one,
+              repo_left_out: [
+                skill("lint-ts", {
+                  on: false,
+                  left_out: "repo svc has its own copy, which a chat started in svc gets instead",
+                  folder: "skills/lint-ts",
+                }),
+              ],
+              same_left_out: [
+                skill("my-notes", {
+                  on: false,
+                  left_out: "the same as your own copy, which is listed in its place",
+                  folder: "skills/my-notes",
+                }),
+              ],
+            }
+          : one,
+      ),
+    }),
+  },
+  play: async ({ canvas }) => {
+    const grid = await canvas.findByRole("grid", { name: "Each program's own skills" });
+    await expect(within(grid).getByText("Left out by a repo")).toBeVisible();
+    await expect(within(grid).getByText("Same as its own copy")).toBeVisible();
+    await userEvent.click(within(grid).getByText("Same as its own copy"));
+    await waitFor(() =>
+      expect(
+        canvas.getByText("Left out: the same as your own copy, which is listed in its place"),
+      ).toBeInTheDocument(),
+    );
+  },
+};
+
 /** **Harness skills, narrow**: page-and-back, a skill drawn alone with its way back. */
 export const HarnessSkillsNarrow: Story = {
   args: { width: 460, narrow: true },

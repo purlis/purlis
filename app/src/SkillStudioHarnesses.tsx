@@ -72,7 +72,7 @@ export type LeftOutBy = "repo" | "same";
 /** The mark a project skill a program's chats start without carries, by why. */
 const LEFT_OUT_MARK: Record<LeftOutBy, string> = {
   repo: "Left out by a repo",
-  same: "Listed once",
+  same: "Same as its own copy",
 };
 
 /** **One group of the page**, under its program's name. */

@@ -323,7 +323,7 @@ describe("the Harness skills page (#3692)", () => {
     renderStudio(AT_THE_ROOT, "harness");
 
     const row = await screen.findByTestId(`same-left-out-${programs[0].harness}-tdd`);
-    expect(row).toHaveTextContent("Listed once");
+    expect(row).toHaveTextContent("Same as its own copy");
     expect(row).toHaveTextContent("the same as your own copy, which is listed in its place");
     expect(row).not.toHaveTextContent("Left out by a repo");
     await user.click(row);

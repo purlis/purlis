@@ -1243,7 +1243,8 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                             "repo_left_out": one.repo_left_out.iter()
                                 .map(|row| left_out_json(one, row, row_json(row)))
                                 .collect::<Vec<_>>(),
-                            // Each it has the same copy of, left out naming it (#5843).
+                            // Each it has the same copy of, left out naming it (#5843): no
+                            // repo's copy clashes with these, so no clashes beside them.
                             "same_left_out": one.same_left_out.iter().map(row_json)
                                 .collect::<Vec<_>>(),
                             // Its own catalogue, which purlis's budget never counts (#3324).
@@ -1287,8 +1288,8 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                     // What it has the same copy of, listed once (#5843).
                     if !one.same_left_out.is_empty() {
                         print!(
-                            "\n{} has its own copy of these, the same file for file, so its chats \
-                             start without them:\n{}",
+                            "\n{} has an identical copy of these itself, so its chats start \
+                             without them:\n{}",
                             one.harness.title(),
                             table(&one.same_left_out, &|_| Vec::new())
                         );

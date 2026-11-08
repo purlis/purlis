@@ -135,10 +135,12 @@ pub struct PlaneSkills<'a> {
     /// harness is handed, the narrower repo copy wins and the plane's is left out (SK-6, decision
     /// 51). Empty for a chat in no clone.
     pub repo: &'a [OutsideSkill],
-    /// **The skills its harness finds itself** (#5736): the person's own and its plugins', as
-    /// the chat's start read them with the plugins it has. purlis's budget never counts them
-    /// ([`SkillSet::routed`]); Claude Code's limit is handed with them in it. Empty where they
-    /// were not read.
+    /// **The skills its harness finds itself** (#5736, #5737): the person's own and its
+    /// plugins', as the chat's start read them with the plugins it has. A plane skill the same as
+    /// one of them is left out ([`SkillSet::without_copies_of`]), and purlis's budget never counts
+    /// them ([`SkillSet::routed`]). Claude Code's limit reads them from
+    /// [`crate::harness::Kit::own`], which a chat the plane's skills do not reach has too
+    /// (#5842). Empty where they were not read.
     pub own: &'a [OutsideSkill],
     /// What the chat's router extension answered at its start (SK-15b), which every routing of
     /// its set applies again: `None` for a chat routed by the built-in router.
