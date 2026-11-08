@@ -495,14 +495,14 @@ fn every_later_code_name_is_denied_at_any_depth_of_the_chat_directory() {
         .replace('.', "\\\\.");
     assert!(
         profile.contains(&format!(
-            "(deny file-write* file-link (regex \"^{root}/(.*/)?\\\\.git/config(/.*)?$\"))"
+            "(deny file-write* file-link (regex \"^{root}/(.*/)?\\\\.[gG][iI][tT]/[cC][oO][nN][fF][iI][gG](/.*)?$\"))"
         )),
         "{profile}"
     );
     // The `.git` itself, so a directory holding a config is never moved into its place.
     assert!(
         profile.contains(&format!(
-            "(deny file-write* file-link (regex \"^{root}/(.*/)?\\\\.git$\"))"
+            "(deny file-write* file-link (regex \"^{root}/(.*/)?\\\\.[gG][iI][tT]$\"))"
         )),
         "{profile}"
     );
@@ -1481,7 +1481,12 @@ fn every_denial_class_is_held_by_every_harness_charter_compiles_for() {
                     Harness::ClaudeCode => ("**/.git/config".to_owned(), false),
                     Harness::Codex | Harness::Opencode => {
                         let escaped = root.display().to_string().replace('.', "\\\\.");
-                        (format!("^{escaped}/(.*/)?\\\\.git/config(/.*)?$"), false)
+                        (
+                            format!(
+                                "^{escaped}/(.*/)?\\\\.[gG][iI][tT]/[cC][oO][nN][fF][iI][gG](/.*)?$"
+                            ),
+                            false,
+                        )
                     }
                 },
             };

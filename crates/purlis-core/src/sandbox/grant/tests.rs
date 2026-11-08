@@ -695,10 +695,11 @@ fn a_wrapped_chat_writes_a_granted_folder_with_every_denial_after_it() {
             .find("(deny file-write* file-link (subpath")
             .expect("the classes are denied");
         assert!(allowed < denial, "a denial comes after the grant");
-        // The later-code names are denied at any depth of the granted folder too.
+        // The later-code names are denied at any depth of the granted folder too, under every
+        // spelling.
         assert!(
             profile.contains(&format!(
-                "(deny file-write* file-link (regex \"^{}/(.*/)?\\\\.git/config(/.*)?$\"))",
+                "(deny file-write* file-link (regex \"^{}/(.*/)?\\\\.[gG][iI][tT]/[cC][oO][nN][fF][iI][gG](/.*)?$\"))",
                 crate::sandbox::seatbelt::escaped(&cache.display().to_string())
                     .replace('\\', "\\\\")
             )),

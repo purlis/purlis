@@ -120,12 +120,57 @@ fn a_claude_code_chat_on_a_runner_needs_the_kernel_and_no_program() {
 }
 
 #[test]
-fn a_wrapped_claude_code_chat_records_no_held_project_git() {
+fn a_wrapped_claude_code_chat_never_writes_the_project_roots_git_folder_and_records_it_held() {
     let place = place(FULL, true);
-    std::fs::create_dir_all(place.plane.path().join(".git")).unwrap();
+    let root = super::real(place.plane.path());
+    let held = root.join(".git");
+    std::fs::create_dir_all(held.join("refs/heads")).unwrap();
     let applied = started(&place, &place.home.join("work"));
     assert!(matches!(applied.form(), Form::ClaudeWrapped(_)));
-    assert_eq!(applied.confines().roots_git, None);
+    assert_eq!(applied.confines().roots_git, Some(held.clone()));
+    let Form::ClaudeWrapped(wrap) = applied.form_in(Some(&root)) else {
+        panic!("not wrapped");
+    };
+    let profile = profile_of(
+        &wrap,
+        &root,
+        &place.home.join("tmp"),
+        &place.home.join("s.sock"),
+    );
+    assert!(!writes(&profile, &held.join("refs/heads/main")));
+    assert!(!writes(&profile, &held.join("HEAD")));
+    assert!(writes(&profile, &root.join("notes.md")));
+}
+
+#[test]
+fn a_wrapped_claude_code_chat_in_a_branch_folder_never_writes_its_clones_git_folder() {
+    let place = place(FULL, true);
+    let root = super::real(place.plane.path());
+    let workspace = root.join("workspaces/w");
+    let clone_git = workspace.join("repos/a/.git");
+    let record = clone_git.join("worktrees/p1");
+    std::fs::create_dir_all(&record).unwrap();
+    std::fs::write(record.join("commondir"), "../..\n").unwrap();
+    let piece = workspace.join(".worktrees/a/p1");
+    std::fs::create_dir_all(&piece).unwrap();
+    std::fs::write(
+        piece.join(".git"),
+        format!("gitdir: {}\n", record.display()),
+    )
+    .unwrap();
+    let applied = started(&place, &place.home.join("work"));
+    let Form::ClaudeWrapped(wrap) = applied.form_in(Some(&piece)) else {
+        panic!("not wrapped");
+    };
+    let profile = profile_of(
+        &wrap,
+        &piece,
+        &place.home.join("tmp"),
+        &place.home.join("s.sock"),
+    );
+    assert!(!writes(&profile, &record.join("index")));
+    assert!(!writes(&profile, &clone_git.join("refs/heads/p1")));
+    assert!(writes(&profile, &piece.join("src.rs")));
 }
 
 #[test]

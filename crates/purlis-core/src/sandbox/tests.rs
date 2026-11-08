@@ -2886,7 +2886,7 @@ fn a_chat_in_a_branch_folder_is_given_nothing_under_its_clones_git_directory() {
     // And the folder's own `.git` file is held there, so the link cannot be rewritten.
     let rules = seatbelt::planted_rules(cwd).expect("rules");
     assert!(
-        rules.iter().any(|rule| rule.contains("\\\\.git$")),
+        rules.iter().any(|rule| rule.contains("\\\\.[gG][iI][tT]$")),
         "{rules:?}"
     );
     // Claude Code: no write is added, and the worktree's git directory stays denied by name.
@@ -3419,7 +3419,7 @@ fn a_project_root_whose_git_is_a_file_keeps_it_as_it_was() {
 }
 
 #[test]
-fn only_a_chat_whose_sandbox_holds_the_project_roots_git_whole_records_it_so() {
+fn every_harness_s_chat_records_the_project_roots_git_as_held() {
     let plane = plane_saying(ON);
     let root = plane.path().canonicalize().expect("real");
     std::fs::create_dir_all(root.join(".git")).unwrap();
@@ -3432,9 +3432,12 @@ fn only_a_chat_whose_sandbox_holds_the_project_roots_git_whole_records_it_so() {
         started(Harness::ClaudeCode).confines().roots_git,
         Some(root.join(".git"))
     );
-    // Their wraps hold the folder by its name alone: the app saves nothing there for them.
     for harness in [Harness::Codex, Harness::Opencode] {
-        assert_eq!(started(harness).confines().roots_git, None, "{harness:?}");
+        assert_eq!(
+            started(harness).confines().roots_git,
+            Some(root.join(".git")),
+            "{harness:?}"
+        );
     }
 }
 
@@ -5174,7 +5177,7 @@ fn the_toolchains_preset_gives_a_chat_its_projects_own_caches_and_only_with_it()
             );
             // The later-code names stay denied at any depth inside each.
             let regex = format!(
-                "^{}/(.*/)?\\.git/config(/.*)?$",
+                "^{}/(.*/)?\\.[gG][iI][tT]/[cC][oO][nN][fF][iI][gG](/.*)?$",
                 seatbelt::escaped(&tree.display().to_string())
             );
             let planted = format!(
