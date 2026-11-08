@@ -1012,6 +1012,14 @@ pub fn add_vetted(
             why: layered.refusal(&path),
         });
     }
+    // Said once purlis is done writing there, so no chat's look tells this folder as one that
+    // appeared (#5702). Outside a sandbox only: a chat that runs this itself can't write it.
+    if let Err(why) = crate::sandbox::arrived::made_by_the_app(plane, &path) {
+        tracing::debug!(
+            "purlis: {} was not recorded as made ({why})",
+            path.display()
+        );
+    }
     Ok(Added {
         path,
         branch,

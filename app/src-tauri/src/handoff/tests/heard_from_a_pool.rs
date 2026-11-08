@@ -237,3 +237,114 @@ fn a_dispatch_heard_from_a_pool_with_no_task_name_is_refused_and_not_held() {
     assert!(matches!(said, Answer::No { .. }), "{said:?}");
     assert!(held.runner_dispatches().every().is_empty());
 }
+
+/// What the person is asked when chat `chat` names `curl` ahead of its run for `TOKEN` of vault
+/// `team`, heard over `pool`'s link or this machine's (`None`): the plain Secret asks listed, the
+/// Run grant notices listed, and what the chat heard once the person said no to whichever came.
+fn curl_named_ahead(
+    pool: Option<&str>,
+) -> (
+    Vec<purlis_core::secrets::ask::Open>,
+    Vec<purlis_core::secrets::ask::run::OpenRun>,
+    Answer,
+) {
+    use purlis_core::harness::asks::{Admitted, Answerer};
+    use purlis_core::secrets::ask::run::RunAnswer;
+    let plane = Plane::new().a_persona("ops", "");
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    std::fs::write(
+        plane.root.join("vaults.json"),
+        r#"{"vaults": {"team": {"provider": "plain-file", "config": {"file": "t.json"}, "persona": "ops"}}}"#,
+    )
+    .expect("a registry");
+    let chat = a_chat_as(&held, &plane.root, Some("ops"), &plane.root);
+    let line = purlis_core::secrets::ask::SecretAsk {
+        chat,
+        key: "TOKEN".to_owned(),
+        purpose: "the API the chat calls".to_owned(),
+        vault: Some("team".to_owned()),
+        replace: None,
+        program: Some("curl".to_owned()),
+    };
+    std::thread::scope(|scope| {
+        let pool = pool.map(str::to_owned);
+        let asking = scope
+            .spawn(|| crate::hooks::heard_from(pool, || crate::secretasks::asked(&held, &line)));
+        let (plain, runs) = loop {
+            let (plain, runs) = (held.secret_asks().open(), held.secret_asks().open_runs());
+            if !plain.is_empty() || !runs.is_empty() {
+                break (plain, runs);
+            }
+            assert!(
+                !asking.is_finished(),
+                "the ask ended without asking the person"
+            );
+            std::thread::yield_now();
+        };
+        let window = Answerer::admitted(Admitted::LocalUi).expect("the window");
+        for open in &runs {
+            held.secret_asks()
+                .answer_run(open.id, RunAnswer::Refuse, window)
+                .expect("Don't allow");
+        }
+        let ctx =
+            purlis_core::secrets::Ctx::new(&plane.root, purlis_core::secrets::Env::from_process());
+        for open in &plain {
+            held.secret_asks()
+                .answer(
+                    &ctx,
+                    open.id,
+                    purlis_core::secrets::ask::Answer::Decline,
+                    window,
+                )
+                .expect("Not now");
+        }
+        (plain, runs, asking.join().expect("it ends"))
+    })
+}
+
+/// **D-5244-4**: a chat on a pool's runner runs its commands there, where no Run grant reaches, so
+/// its `secret_ask` naming `curl` ahead is the plain Fill: no Allow is offered, and no grant can
+/// come of the person's answer.
+#[cfg(unix)]
+#[test]
+fn a_secret_ask_naming_curl_heard_from_a_pool_is_the_plain_fill_with_no_allow() {
+    let (plain, runs, said) = curl_named_ahead(Some(POOL));
+
+    assert_eq!(runs.len(), 0, "no Run grant notice: {runs:?}");
+    assert_eq!(
+        plain
+            .iter()
+            .map(|open| open.key.as_str())
+            .collect::<Vec<_>>(),
+        ["TOKEN"],
+        "the plain Fill for the key"
+    );
+    assert!(
+        matches!(
+            &said,
+            Answer::Secret(purlis_core::secrets::ask::Said::Declined { key, .. }) if key == "TOKEN"
+        ),
+        "{said:?}"
+    );
+}
+
+/// The same ask from this machine's chat offers curl's Allow for this chat in its one notice
+/// (#5244), so the test above is about where the line came from and nothing else.
+#[cfg(unix)]
+#[test]
+fn the_same_secret_ask_from_this_machine_is_one_notice_offering_the_allow() {
+    let (plain, runs, _) = curl_named_ahead(None);
+
+    assert_eq!(plain.len(), 0, "no plain Fill beside it: {plain:?}");
+    assert_eq!(runs.len(), 1, "one notice");
+    assert!(runs[0].ahead, "asked ahead of its run");
+    assert_eq!(
+        runs[0].offer,
+        purlis_core::secrets::ask::run::Offer::Program,
+        "with the program's Allow"
+    );
+}

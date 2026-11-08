@@ -1135,6 +1135,35 @@ fn a_vault_the_persona_may_not_use_is_still_asked_and_never_answered_filled_at_o
     assert_eq!(asks.open().len(), 1, "still open");
 }
 
+/// #5246's review: a picked entry is held to the rule a typed value is. A chat that names a vault
+/// its persona may not use gets no link planted in it, which that vault's own persona's tools
+/// would read.
+#[test]
+fn a_link_into_a_vault_the_persona_may_not_use_is_refused_as_a_fill_is() {
+    let project = project_with_needs();
+    let root = project.path();
+    let asks = Asks::new(root);
+    raised_now(root, &asks, &line(7, "NEW", Some("others"))).expect("asked");
+    let refused = asks
+        .answer(
+            &ctx(root),
+            asks.open()[0].id,
+            Answer::Link(crate::secrets::links::Target {
+                vault: "team".into(),
+                key: "TOKEN".into(),
+            }),
+            window(),
+        )
+        .expect_err("not the persona's to use");
+    assert!(refused.contains("Allow it for devops first"), "{refused}");
+    assert_eq!(
+        crate::secrets::links::of(&ctx(root), "others", "NEW").unwrap(),
+        None,
+        "nothing linked"
+    );
+    assert_eq!(asks.open().len(), 1, "still open");
+}
+
 #[test]
 fn a_fill_never_replaces_a_value_a_vault_holds_already() {
     let project = project_with_needs();
@@ -1832,7 +1861,8 @@ fn a_started_chat_waits_longer_than_the_app_holds_its_ask() {
 
 const PICKED: &str = "str1pe-v4lue";
 
-/// [`project`], with a second vault `own` holding `STRIPE`: the entry the person picks.
+/// [`project`], with a second vault `own`, which `devops` may use too, holding `STRIPE`: the
+/// entry the person picks; and `elsewhere`, tagged for nobody, holding `PROD_PW`.
 fn project_with_an_entry() -> tempfile::TempDir {
     let tmp = project();
     let root = tmp.path();
@@ -1840,7 +1870,8 @@ fn project_with_an_entry() -> tempfile::TempDir {
         root.join("vaults.json"),
         serde_json::json!({ "vaults": {
             "team": {"provider": "plain-file", "config": {"file": "team.json"}, "persona": "devops"},
-            "own": {"provider": "plain-file", "config": {"file": "own.json"}},
+            "own": {"provider": "plain-file", "config": {"file": "own.json"}, "persona": "devops"},
+            "elsewhere": {"provider": "plain-file", "config": {"file": "elsewhere.json"}},
         }})
         .to_string(),
     )
@@ -1850,7 +1881,53 @@ fn project_with_an_entry() -> tempfile::TempDir {
         serde_json::json!({"STRIPE": PICKED}).to_string(),
     )
     .unwrap();
+    std::fs::write(
+        root.join("elsewhere.json"),
+        serde_json::json!({"PROD_PW": "pr0d-v4lue"}).to_string(),
+    )
+    .unwrap();
     tmp
+}
+
+/// **D-5246-1** (the person's ruling, amending D-5080-11): a press that picks an entry is judged
+/// as the run's picker is, before anything is written: none of a vault the asking persona may not
+/// use, and none a browser login fills, whatever the window listed.
+#[test]
+fn a_picked_entry_the_persona_may_not_use_or_a_browser_fills_is_refused_and_nothing_linked() {
+    let project = project_with_an_entry();
+    let root = project.path();
+    std::fs::write(
+        root.join("charter.toml"),
+        "[sandbox.personas.qa.tools.shop]\nvault = \"own\"\nbrowser = \
+         \"https://shop.example.test/login\"\nkey = \"STRIPE\"\n",
+    )
+    .unwrap();
+    let asks = Asks::new(root);
+    held_for_nothing(&asks, need(7, "MISSING"));
+    let id = asks.open()[0].id;
+    for (vault, key, says) in [
+        ("elsewhere", "PROD_PW", "can't use vault elsewhere"),
+        ("own", "STRIPE", "browser"),
+    ] {
+        let refused = asks
+            .answer(
+                &ctx(root),
+                id,
+                Answer::Link(crate::secrets::links::Target {
+                    vault: vault.into(),
+                    key: key.into(),
+                }),
+                window(),
+            )
+            .expect_err("refused");
+        assert!(refused.contains(says), "{vault}/{key}: {refused}");
+    }
+    assert_eq!(
+        crate::secrets::links::of(&ctx(root), "team", "MISSING").unwrap(),
+        None,
+        "nothing linked"
+    );
+    assert_eq!(asks.open().len(), 1, "still open");
 }
 
 fn stripe_in_own() -> Answer {

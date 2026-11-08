@@ -1100,6 +1100,11 @@ export const commands = {
 	 *  program loads beside purlis's (SK-37).
 	 */
 	beside_a_built_in: string[],
+	/**
+	 *  **Where Claude Code would still drop skills' descriptions** (#5736): the limit the chat's
+	 *  listing needs is past Claude Code's own, with who takes the most room.
+	 */
+	crowded: ListingCrowded | null,
 } | null, string>(__TAURI_INVOKE("chat_skills_missing", { plane, session })),
 	putAwayChatSkillsMissing: __WINDOW_ONLY_RESULT,
 	/**
@@ -2735,6 +2740,12 @@ export type AlertRow = {
 	 *  in place of the command the terminal status line names.
 	 */
 	way: AlertWay,
+	/**
+	 *  **When what it says was found**, in seconds since the epoch, where purlis keeps that
+	 *  (#5702): a chat's arrived files, from the look that last told them. The Inbox says the
+	 *  Notice's age from it, and without it from when the window first drew the Notice.
+	 */
+	since?: number | null,
 };
 
 /**
@@ -7407,6 +7418,26 @@ export type ListeningProgram = {
 	/**  Its program's name, without its folder. */
 	program: string,
 	port: number,
+};
+
+/**  One of [`ListingCrowded::biggest`]: a plugin, whole, or one of the person's own skills. */
+export type ListingContributor = {
+	name: string,
+	plugin: boolean,
+	chars: number,
+};
+
+/**
+ *  **A chat whose listing needs more than Claude Code holds** (#5736): the core's
+ *  `harness::claude::Crowded`, for the window.
+ */
+export type ListingCrowded = {
+	/**  Characters its listing needs: purlis's skills, the person's own, and Claude Code's own. */
+	needs: number,
+	/**  The most Claude Code holds, in characters. */
+	most: number,
+	/**  What takes the most of the person's own room, biggest first. */
+	biggest: ListingContributor[],
 };
 
 /**  What switching a workspace would do, for the confirmation that asks first. */
@@ -13710,6 +13741,11 @@ export type SkillsMissing = {
 	 *  program loads beside purlis's (SK-37).
 	 */
 	beside_a_built_in: string[],
+	/**
+	 *  **Where Claude Code would still drop skills' descriptions** (#5736): the limit the chat's
+	 *  listing needs is past Claude Code's own, with who takes the most room.
+	 */
+	crowded: ListingCrowded | null,
 };
 
 /**
@@ -14036,6 +14072,11 @@ export type StatsRow = {
 	/**  Tokens spent inside them, or null where no run said its tokens. */
 	tokens: number | null,
 	ms: number,
+	/**
+	 *  Times a built-in skill should have started and did not (#5738): counted by harness, and
+	 *  0 in every other grouping.
+	 */
+	misses: number,
 };
 
 /**  Where a chat's stop stands. */

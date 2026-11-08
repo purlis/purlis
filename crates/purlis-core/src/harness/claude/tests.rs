@@ -73,6 +73,7 @@ fn a_sandbox_compiled_for_another_harness_arms_no_claude_code_chat() {
         Kit {
             skills: None,
             laid_out: None,
+            own_listing: 0,
             binary: std::path::Path::new("/bin/charter"),
             plugin: Some(std::path::Path::new("/app/plugin")),
             persona: None,
@@ -100,6 +101,7 @@ fn the_claude_code_adapter_arms_a_chat_with_the_bundled_plugin_for_that_chat_alo
         Kit {
             skills: None,
             laid_out: None,
+            own_listing: 0,
             binary: std::path::Path::new("/bin/charter"),
             plugin: Some(std::path::Path::new("/app/plugin")),
             persona: None,
@@ -139,6 +141,7 @@ fn a_grades_chat_loads_purlis_s_server_alone_with_its_read_tools() {
             Kit {
                 skills: None,
                 laid_out: None,
+                own_listing: 0,
                 binary: std::path::Path::new("/bin/charter"),
                 plugin: Some(std::path::Path::new("/app/plugin")),
                 persona: None,
@@ -244,6 +247,7 @@ fn denied_in(cwd: &std::path::Path, graded: bool, judging: bool) -> Vec<serde_js
         Kit {
             skills: None,
             laid_out: None,
+            own_listing: 0,
             binary: std::path::Path::new("/bin/charter"),
             plugin: Some(std::path::Path::new("/app/plugin")),
             persona: None,
@@ -276,6 +280,7 @@ fn a_claude_code_chat_is_handed_charter_s_mcp_server_for_that_chat_alone() {
         Kit {
             skills: None,
             laid_out: None,
+            own_listing: 0,
             binary: std::path::Path::new("/bin/charter"),
             plugin: Some(std::path::Path::new("/app/plugin")),
             persona: None,
@@ -314,6 +319,7 @@ fn armed_as(
         Kit {
             skills: None,
             laid_out: None,
+            own_listing: 0,
             binary: std::path::Path::new("/bin/charter"),
             plugin: Some(std::path::Path::new("/app/plugin")),
             persona: Some(crate::harness::As {
@@ -480,6 +486,7 @@ fn a_task_chat_runs_the_read_only_purlis_commands_its_brief_runs_without_asking(
         Kit {
             skills: None,
             laid_out: None,
+            own_listing: 0,
             binary: std::path::Path::new("/bin/charter"),
             plugin: Some(std::path::Path::new("/app/plugin")),
             persona: None,
@@ -569,6 +576,7 @@ fn allowed_to(graded: bool) -> Vec<serde_json::Value> {
         Kit {
             skills: None,
             laid_out: None,
+            own_listing: 0,
             binary: std::path::Path::new("/bin/charter"),
             plugin: Some(std::path::Path::new("/app/plugin")),
             persona: None,
@@ -751,6 +759,7 @@ fn a_persona_chat_in_a_workspace_is_handed_the_rules_that_name_them() {
         Kit {
             skills: None,
             laid_out: None,
+            own_listing: 0,
             binary: std::path::Path::new("/bin/charter"),
             plugin: Some(std::path::Path::new("/app/plugin")),
             persona: Some(crate::harness::As {
@@ -857,6 +866,7 @@ fn started_in(manifest: &str, project: Option<&str>) -> (Vec<String>, serde_json
         Kit {
             skills: None,
             laid_out: None,
+            own_listing: 0,
             binary: std::path::Path::new("/bin/charter"),
             plugin: Some(std::path::Path::new("/app/plugin")),
             persona: None,
@@ -1358,6 +1368,7 @@ fn a_judges_chat_starts_with_the_tools_that_read_and_no_other() {
             Kit {
                 skills: None,
                 laid_out: None,
+                own_listing: 0,
                 binary: std::path::Path::new("/bin/charter"),
                 plugin: Some(std::path::Path::new("/app/plugin")),
                 persona: None,
@@ -1402,6 +1413,7 @@ fn an_outcome_chats_writes_are_allowed_by_its_guard_alone() {
         Kit {
             skills: None,
             laid_out: None,
+            own_listing: 0,
             binary: std::path::Path::new("/bin/charter"),
             plugin: Some(std::path::Path::new("/app/plugin")),
             persona: None,
@@ -1497,6 +1509,7 @@ fn an_outcome_chat_starts_with_its_own_tools_and_no_settings_file() {
             Kit {
                 skills: None,
                 laid_out: None,
+                own_listing: 0,
                 binary: std::path::Path::new("/bin/charter"),
                 plugin: Some(std::path::Path::new("/app/plugin")),
                 persona: None,
@@ -1569,6 +1582,7 @@ fn an_outcome_chat_holds_no_tool_of_a_server() {
         Kit {
             skills: None,
             laid_out: None,
+            own_listing: 0,
             binary: std::path::Path::new("/bin/charter"),
             plugin: Some(std::path::Path::new("/app/plugin")),
             persona: None,
@@ -1614,10 +1628,19 @@ fn a_chats_settings_hand_claude_code_its_listing_limit_as_a_string_in_env() {
 
 /// What the chat armed with `skills` is handed as its limit on its skill listing.
 fn listing_limit_handed(skills: Option<crate::skills::PlaneSkills<'_>>) -> String {
+    listing_limit_handed_beside(skills, 0)
+}
+
+/// [`listing_limit_handed`] for a chat whose harness lists `own_listing` characters of its own.
+fn listing_limit_handed_beside(
+    skills: Option<crate::skills::PlaneSkills<'_>>,
+    own_listing: usize,
+) -> String {
     let hooks = adapter().arm(
         Kit {
             skills,
             laid_out: None,
+            own_listing,
             binary: std::path::Path::new("/bin/charter"),
             plugin: Some(std::path::Path::new("/app/plugin")),
             persona: None,
@@ -1700,11 +1723,13 @@ fn claude_codes_own_number_is_the_limit_it_is_handed_and_codexs_is_not() {
 #[test]
 fn the_limit_holds_claude_codes_own_entries_and_the_list_with_a_margin() {
     // The largest limit any model has of its own, which no handed one goes below.
-    assert_eq!(listing_limit(0), 40_000);
+    assert_eq!(listing_limit(0, 0), 40_000);
     let budget = ADAPTER.skill_budget();
-    assert!(listing_limit(budget.chars) > (6_848 + budget.chars) * 11 / 10);
-    assert_eq!(listing_limit(30_000), 40_532);
-    assert_eq!(listing_limit(usize::MAX), usize::MAX);
+    assert!(listing_limit(budget.chars, 0) > (6_848 + budget.chars) * 11 / 10);
+    assert_eq!(listing_limit(30_000, 0), 40_532);
+    // Never past Claude Code's own ceiling (#5736).
+    assert_eq!(listing_limit(usize::MAX, 0), 100_000);
+    assert_eq!(listing_limit(0, usize::MAX), 100_000);
 }
 
 /// A pin is never hidden, so a list its pins take past the budget has to fit the limit too.
@@ -1755,6 +1780,7 @@ fn an_outcome_chat_with_a_shell_runs_it_unasked_and_one_without_asks() {
             Kit {
                 skills: None,
                 laid_out: None,
+                own_listing: 0,
                 binary: std::path::Path::new("/bin/charter"),
                 plugin: Some(std::path::Path::new("/app/plugin")),
                 persona: None,
@@ -1784,4 +1810,62 @@ fn an_outcome_chat_with_a_shell_runs_it_unasked_and_one_without_asks() {
     assert!(!asks_for_bash(&settings), "{settings}");
     let settings = armed(false);
     assert!(asks_for_bash(&settings), "{settings}");
+}
+
+/// #5736: the person's own skills and plugins are listed by Claude Code against the same limit,
+/// so the limit handed counts them, and they do not take the room of purlis's.
+#[test]
+fn a_large_own_catalogue_is_counted_in_the_limit_handed_to_claude_code_5736() {
+    let budget = ADAPTER.skill_budget().chars;
+    let handed: usize = listing_limit_handed_beside(None, 50_000).parse().unwrap();
+    assert!(
+        handed >= 50_000 + budget + 6_848,
+        "the limit holds the person's own, purlis's and Claude Code's own: {handed}"
+    );
+    // The default budget, the person's 50,000, Claude Code's own 6,848, and a tenth over all.
+    assert_eq!(handed, 79_032);
+    assert_eq!(
+        listing_limit_handed_beside(None, 0),
+        "40000",
+        "none of their own"
+    );
+}
+
+/// #5736: past the largest limit Claude Code sets itself, the limit is that, and no more.
+#[test]
+fn past_claude_codes_own_ceiling_the_limit_handed_is_the_ceiling_5736() {
+    assert_eq!(listing_limit_handed_beside(None, 200_000), "100000");
+}
+
+/// #5736: a listing that needs more than Claude Code holds names the three biggest parts of the
+/// person's own catalogue, biggest first; one that fits says nothing.
+#[test]
+fn a_listing_past_claude_codes_ceiling_names_its_biggest_contributors_5736() {
+    let contributor = |name: &str, plugin, chars| crate::skills::Contributor {
+        name: name.to_owned(),
+        plugin,
+        chars,
+    };
+    let own = |chars| crate::skills::OwnListing {
+        catalogue: crate::skills::OwnCatalogue {
+            skills: 40,
+            chars,
+            manual: 0,
+        },
+        contributors: vec![
+            contributor("superpowers", true, 50_000),
+            contributor("figma", true, 30_000),
+            contributor("langfuse", false, 9_000),
+            contributor("notes", false, 1_000),
+        ],
+    };
+    let set = crate::skills::SkillSet::default();
+    let budget = ADAPTER.skill_budget();
+
+    assert_eq!(crowded(&set, budget, &own(60_000)), None, "it fits");
+    let said = crowded(&set, budget, &own(90_000)).expect("past the ceiling");
+    assert_eq!(said.needs, (15_000 + 90_000 + 6_848) * 11 / 10);
+    assert_eq!(said.most, 100_000);
+    let named: Vec<&str> = said.biggest.iter().map(|one| one.name.as_str()).collect();
+    assert_eq!(named, ["superpowers", "figma", "langfuse"]);
 }

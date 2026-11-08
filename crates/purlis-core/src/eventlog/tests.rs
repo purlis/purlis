@@ -4215,3 +4215,6 @@ fn a_runs_start_says_the_tree_it_ran_as_its_log_row_does() {
         "its row says the same"
     );
 }
+
+#[path = "tests/corrections.rs"]
+mod corrections;

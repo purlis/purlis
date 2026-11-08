@@ -85,6 +85,7 @@ fn host_armed(harness: Harness, here: &Here) -> (Vec<String>, Vec<(String, Strin
         }),
         graded: false,
         laid_out: linked.as_deref(),
+        own_listing: 0,
         judging: false,
         writes_its_piece: false,
         runs_a_shell: false,

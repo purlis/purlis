@@ -914,8 +914,12 @@ pub fn briefed(
     );
     // Only what purlis hands: the harness lists its own and the repo's itself. A plane skill is
     // named by the `SKILL.md` purlis wrote for it, and one it refused is not named at all.
-    let skills: Vec<Skill> = set
-        .effective
+    // **The built-in skills first** (#5736): a router never hides one, and listed first they
+    // are the first a harness that reads the list against a limit of its own reads, whatever
+    // the plane's skills are named.
+    let mut effective = set.effective;
+    effective.sort_by_key(|e| e.origin != Origin::BuiltIn);
+    let skills: Vec<Skill> = effective
         .into_iter()
         .filter(|e| e.route != Route::Own)
         .filter_map(|e| {
@@ -1379,7 +1383,7 @@ pub fn stamp_of(chat: &Running<'_>) -> Stamp {
 /// ([`lay_out_for_chat`]), what its adapter arms it with ([`for_chat`]), Use skill…
 /// ([`for_use_skill`]) and its restart's stamp ([`stamp_of`]) are worked out by, so they agree
 /// (#3245).
-fn routed(
+pub(crate) fn routed(
     built_in: Option<&Path>,
     at: Option<PlaneSkills<'_>>,
     persona: Option<&str>,
@@ -2200,8 +2204,23 @@ pub(crate) fn grouped(n: usize) -> String {
 /// left out. A repo's skills are not
 /// in it: purlis's budget counts those already, as the chat's set holds them.
 fn own_catalogue(harness: Harness, outside: &[OutsideSkill]) -> OwnCatalogue {
+    let listed = own_listed(harness, outside);
+    let spent = purlis_skills::budget::spent(
+        listed.iter().map(|(one, said)| (&one.skill, said)),
+        harness.skill_budget(),
+    );
+    OwnCatalogue {
+        skills: spent.skills,
+        chars: spent.chars,
+        manual: spent.manual,
+    }
+}
+
+/// The skills of `outside` in `harness`'s own catalogue ([`own_catalogue`]), each with what it
+/// declares, manual-only read as the harness reads it.
+fn own_listed(harness: Harness, outside: &[OutsideSkill]) -> Vec<(&OutsideSkill, Declared)> {
     let reads_the_key = harness.skill_frontmatter().manual == ManualOnly::Read;
-    let listed: Vec<(&Skill, Declared)> = outside
+    outside
         .iter()
         .filter(|one| one.origin == Origin::Harness && !one.off && one.unread.is_none())
         // purlis's own plugin's skills are its built-in ones, and a plugin it pins off is never
@@ -2216,17 +2235,81 @@ fn own_catalogue(harness: Harness, outside: &[OutsideSkill]) -> OwnCatalogue {
             let mut said = declared(&one.skill);
             said.manual = (reads_the_key && said.manual)
                 || kept_manual_beside(harness, (&one.root, &one.skill.path), one.origin);
-            (&one.skill, said)
+            (one, said)
         })
-        .collect();
-    let spent = purlis_skills::budget::spent(
-        listed.iter().map(|(skill, said)| (*skill, said)),
-        harness.skill_budget(),
-    );
-    OwnCatalogue {
-        skills: spent.skills,
-        chars: spent.chars,
-        manual: spent.manual,
+        .collect()
+}
+
+/// **What a chat's harness lists of its own catalogue, as the chat starts** (#5736): the
+/// [`OwnCatalogue`] of what it finds itself, and who takes that room.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct OwnListing {
+    pub catalogue: OwnCatalogue,
+    /// What takes the room, biggest first: each plugin whole, as it is turned off whole, and
+    /// each of the person's own skills by itself. Nothing manual-only, which takes none.
+    pub contributors: Vec<Contributor>,
+}
+
+/// **One part of a harness's own catalogue** ([`OwnListing::contributors`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Contributor {
+    /// The plugin's name, or the skill's.
+    pub name: String,
+    /// Whether it is a plugin, whose skills are counted together.
+    pub plugin: bool,
+    /// Characters of the listing it takes, as [`OwnCatalogue::chars`] counts them.
+    pub chars: usize,
+}
+
+/// **What a chat on `harness`, started in `at` with the environment `env` in the plane at
+/// `plane` (in `workspace`), would be listed of its harness's own catalogue** (#5736): the
+/// plugins it has there and the person's own skills, each turned off for the project's chats
+/// left out, read as the studio reads them.
+pub fn own_at_start(
+    harness: Harness,
+    plane: &Path,
+    workspace: Option<&str>,
+    env: &crate::harness_plugin::Env<'_>,
+    at: &crate::harness_plugin::ChatFolder,
+) -> OwnListing {
+    let adapter = harness.adapter().plugins();
+    let off = adapter.plugins_here(env, at).unwrap_or_default().off;
+    let choices = crate::harness_plugin::Choices::read_in(plane, workspace);
+    let found = crate::harness_plugin::harness_skills_but(adapter, env, &choices, &off);
+    own_listing(harness, &found)
+}
+
+/// [`OwnListing`] of `outside` on `harness`.
+fn own_listing(harness: Harness, outside: &[OutsideSkill]) -> OwnListing {
+    let budget = harness.skill_budget();
+    let mut contributors: Vec<Contributor> = Vec::new();
+    for (one, said) in own_listed(harness, outside) {
+        let chars =
+            purlis_skills::budget::spent(std::iter::once((&one.skill, &said)), budget).chars;
+        if chars == 0 {
+            continue;
+        }
+        let (name, plugin) = match &one.owner {
+            Owner::Plugin(name) => (name.clone(), true),
+            Owner::You | Owner::Repo(_) => (one.id.clone(), false),
+        };
+        match contributors
+            .iter_mut()
+            .find(|had| had.plugin && plugin && had.name == name)
+        {
+            Some(had) => had.chars += chars,
+            None => contributors.push(Contributor {
+                name,
+                plugin,
+                chars,
+            }),
+        }
+    }
+    // Biggest first, and by name where two take the same.
+    contributors.sort_by(|a, b| b.chars.cmp(&a.chars).then_with(|| a.name.cmp(&b.name)));
+    OwnListing {
+        catalogue: own_catalogue(harness, outside),
+        contributors,
     }
 }
 
