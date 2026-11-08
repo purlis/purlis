@@ -306,7 +306,7 @@ fn a_chat_starting_beside_it_is_told_to_name_it_to_the_operator() {
         told.contains(&f.clone.join("AGENTS.md").display().to_string()),
         "{told}"
     );
-    assert!(told.contains("Tell the operator"), "{told}");
+    assert!(told.contains("Tell the person"), "{told}");
 }
 
 // ---- review of #819 -----------------------------------------------------------------------

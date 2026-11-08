@@ -18,7 +18,7 @@
 //! but the walk **stops at the git root**. `workspaces/<ws>/.worktrees/<repo>/<piece>` is a
 //! git root of its own, so a chat started there finds none of the plane's layer — not the
 //! settings that carry `env` and the ask/deny rules, and not the persona agents either. The
-//! `purlis-working-in-a-clone` skill states the same boundary in the operator's words.
+//! `purlis-repo-work` skill states the same boundary in the operator's words.
 //!
 //! # Write, rather than refuse
 //!

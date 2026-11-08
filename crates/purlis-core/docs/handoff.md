@@ -27,8 +27,9 @@ Work this chat needs an answer from, for its own persona or another, is `purlis 
 (with `--in workspace:<name>` when it must run elsewhere). A handoff is fire-and-forget: the
 person's work moves to a chat they will read themselves.
 
-**Does this chat need the answer?** Then it is not a handoff. To continue *this turn*, with
-work its own persona owns, it is a sub-agent. Otherwise it is a **task** (*A task for a
+**Does this chat need the answer?** Then it is not a handoff. To continue *this turn* with
+read-only work its own persona owns (searching, reading, reviewing), it is a sub-agent. Work
+that writes is a task, like the rest. Otherwise it is a **task** (*A task for a
 persona*, below): listed under this chat, waited on, told more and cancelled.
 
 **Will you read the new chat yourself?** Then it is a handoff: a chat that works on its own,
