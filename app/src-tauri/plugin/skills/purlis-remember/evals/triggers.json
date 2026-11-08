@@ -1,0 +1,178 @@
+[
+  {
+    "query": "Remember that the staging database is rebuilt every Sunday night.",
+    "should_trigger": true
+  },
+  {
+    "query": "Make a note for next time: the release build needs the pinned toolchain.",
+    "should_trigger": true
+  },
+  {
+    "query": "Add a todo to write the migration guide.",
+    "should_trigger": true
+  },
+  {
+    "query": "What did we decide about the cache eviction policy?",
+    "should_trigger": true
+  },
+  {
+    "query": "Keep in mind for every persona that main is protected and needs a pull request.",
+    "should_trigger": true
+  },
+  {
+    "query": "Record in workspace.md that we chose SQLite over Postgres, and why.",
+    "should_trigger": true
+  },
+  {
+    "query": "Should this lesson go in the workspace's memory or the persona's?",
+    "should_trigger": true
+  },
+  {
+    "query": "Mark the 'fix flaky upload test' todo as done.",
+    "should_trigger": true
+  },
+  {
+    "query": "File the todo about the broken export as an issue on GitHub.",
+    "should_trigger": true
+  },
+  {
+    "query": "Search all our memories for anything about rate limits.",
+    "should_trigger": true
+  },
+  {
+    "query": "Note that the vendor API returns 429s above ten requests a second.",
+    "should_trigger": true
+  },
+  {
+    "query": "Add 'event sourcing' to this workspace's glossary.",
+    "should_trigger": true
+  },
+  {
+    "query": "Our goal changed: we're shipping the CLI first now. Update the workspace's vision.",
+    "should_trigger": true
+  },
+  {
+    "query": "Remember, as the reviewer persona, to always check migrations for a down step.",
+    "should_trigger": true
+  },
+  {
+    "query": "Have we run into this sandbox error before? Check memory.",
+    "should_trigger": true
+  },
+  {
+    "query": "What's on this workspace's todo list?",
+    "should_trigger": true
+  },
+  {
+    "query": "Turn todo 'cleanup-old-flags' into an issue in the api repo.",
+    "should_trigger": true
+  },
+  {
+    "query": "Don't forget for next time that the e2e suite needs a release build.",
+    "should_trigger": true
+  },
+  {
+    "query": "Write down what we learned about the flaky WebKit test so the next chat knows.",
+    "should_trigger": true
+  },
+  {
+    "query": "Is there anything in memory about why we dropped the Python plugin?",
+    "should_trigger": true
+  },
+  {
+    "query": "Save this as a fact for all personas: deploys freeze on Fridays.",
+    "should_trigger": true
+  },
+  {
+    "query": "Put a todo on the infra workspace to rotate the TLS certificates.",
+    "should_trigger": true
+  },
+  {
+    "query": "Tidy this workspace's memory; it's full of duplicates.",
+    "should_trigger": false
+  },
+  {
+    "query": "Dedupe the steward persona's memory.",
+    "should_trigger": false
+  },
+  {
+    "query": "Prune the stale memories from this workspace.",
+    "should_trigger": false
+  },
+  {
+    "query": "Move the workspace memories every persona should know into shared memory.",
+    "should_trigger": false
+  },
+  {
+    "query": "Archive the memories that are no longer true.",
+    "should_trigger": false
+  },
+  {
+    "query": "Smart close this chat.",
+    "should_trigger": false
+  },
+  {
+    "query": "We're done for today; wrap up and write the session record.",
+    "should_trigger": false
+  },
+  {
+    "query": "Summarise this chat for whoever picks it up tomorrow and close it.",
+    "should_trigger": false
+  },
+  {
+    "query": "Remember this API token for the deploy script.",
+    "should_trigger": false
+  },
+  {
+    "query": "Store the database password somewhere safe so you have it next time.",
+    "should_trigger": false
+  },
+  {
+    "query": "Save my SSH key so the next chat can use it.",
+    "should_trigger": false
+  },
+  {
+    "query": "Add a TODO comment above this function.",
+    "should_trigger": false
+  },
+  {
+    "query": "Why is this process using so much memory?",
+    "should_trigger": false
+  },
+  {
+    "query": "Write a function that memoizes the results of fetchUser.",
+    "should_trigger": false
+  },
+  {
+    "query": "Open a GitHub issue about the login bug.",
+    "should_trigger": false
+  },
+  {
+    "query": "What did the last commit change?",
+    "should_trigger": false
+  },
+  {
+    "query": "Add a note to the README about installing on Linux.",
+    "should_trigger": false
+  },
+  {
+    "query": "Implement a todo list app in React.",
+    "should_trigger": false
+  },
+  {
+    "query": "Search the codebase for uses of parseConfig.",
+    "should_trigger": false
+  },
+  {
+    "query": "Increase the Node heap size to 4 GB.",
+    "should_trigger": false
+  },
+  {
+    "query": "Recall the last API response and print it again.",
+    "should_trigger": false
+  },
+  {
+    "query": "Mark this pull request as ready for review.",
+    "should_trigger": false
+  }
+]
