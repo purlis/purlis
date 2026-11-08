@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794164550272,
+  "lastUpdate": 1794172326137,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -43848,6 +43848,48 @@ window.BENCHMARK_DATA = {
             "value": 101.79478,
             "unit": "ms",
             "extra": "median of 5 runs: 100.255, 101.753, 101.795, 102.028, 103.492 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "36965ba7572404cde03da47c4c24c7a195dcfbba",
+          "message": "Listing limit without the plane's skills; studio previews list an identical pair once (#5842, #5843) (#5869)\n\n* Claude Code's listing limit holds the person's own skills in a chat the plane's skills don't reach (#5842)\n\nThe arming read the person's own catalogue only through the plane's skills, so a chat the\nplane's skills don't reach was handed the 40,000 floor alone. harness::Kit now carries the\nskills the harness finds itself (Kit::own) apart from the plane's, and Claude Code's limit is\nworked out from them either way. Tested where a chat starts, in the session host's compose.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6Y4W205YFJ2AF6866VY1QZA\nPurlis-Persona: steward\n\n* Skill studio previews list an identical skill pair once (#5843)\n\nEach harness's preview drops from the plane's set every skill that harness has the same copy\nof (SkillSet::without_copies_of, purlis's own plugins left out of the comparison), before it\nroutes the chat at the workspace's root and in each clone, as a chat's start does. The copy\nleft out is listed under its harness (HarnessInTheStudio::same_left_out) naming the copy kept:\na 'Listed once' row on Harness skills, and in purlis skill list and show.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6Y4W205YFJ2AF6866VY1QZA\nPurlis-Persona: steward\n\n* Review fixes: a same-copy row says 'Same as its own copy', and a story draws both left-out rows (#5842, #5843)\n\nFrom the branch's two-axis review: the Harness skills mark names its cause as its sibling\n'Left out by a repo' does; a story draws a repo's and a same-copy left-out row for axe, the\nkeyboard and a screenshot; PlaneSkills::own's doc points at Kit::own; the CLI sentence and the\nchangelog headline read plainer; ADR 0102's amendment records the sandboxed preview's edge.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6Y4W205YFJ2AF6866VY1QZA\nPurlis-Persona: steward\n\n* Story baselines for Harness skills with left-out rows (#5843)\n\nDrawn by this pull request's stories run (42513695698) and pulled with\ntools/story-baselines-pull.mjs: the new HarnessSkillsLeftOut story, every theme, both engines.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6Y4W205YFJ2AF6866VY1QZA\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-08T20:32:03Z",
+          "tree_id": "57aacf39bbc7cb97e5503e5fd52bcd82a9800581",
+          "url": "https://github.com/purlis/purlis/commit/36965ba7572404cde03da47c4c24c7a195dcfbba"
+        },
+        "date": 1794172320303,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5609035,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.543, 0.553, 0.561, 0.562, 0.577 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.197972,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.160, 16.195, 16.198, 16.200, 16.283 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.8231155,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.415, 100.605, 100.823, 101.783, 101.838 ms"
           }
         ]
       }
