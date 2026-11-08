@@ -146,13 +146,19 @@ impl Wrap {
     /// given.
     pub fn on_profile(&mut self, folders: &super::signin::ProfileFolders) -> Option<PathBuf> {
         let own = |dir: &Option<PathBuf>| dir.as_ref().map(|dir| dir.join("opencode"));
+        // Compared as the kernel names each, so one spelled through a link is the same folder.
+        let same = |dir: &Path, current: &Option<PathBuf>| {
+            current
+                .as_deref()
+                .is_some_and(|current| super::real(dir) == super::real(current))
+        };
         if let Some(config) = own(&folders.config)
-            && Some(&config) != self.config.as_ref()
+            && !same(&config, &self.config)
         {
             self.config = super::claude_wrap::held_folder(&config);
         }
         let data = own(&folders.data)?;
-        if Some(&data) == self.data.as_ref() {
+        if same(&data, &self.data) {
             return None;
         }
         let default = self.data.take();
@@ -284,6 +290,53 @@ pub fn floor_profile(
     )
 }
 
+/// In the folder of the chat's own profile, `mine`, only what a turn writes is written, at the
+/// floor too, where nothing else lists it: what is in its data folder's written folders and its
+/// database, and its config folder's `.gitignore`. Nothing else there is written or linked, so no
+/// plugin, setting or git config is left for a later run on that profile, which may be one
+/// without the sandbox; and neither config folder nor a folder between it and `mine` moves.
+fn held_in_its_profile(own: &mut Own, wrap: &Wrap, mine: &Path) -> Result<(), &'static str> {
+    let Some(data) = &wrap.data else {
+        return Ok(());
+    };
+    let mut written = vec![under(
+        data,
+        &format!(
+            "(opencode\\.db(-wal|-shm|-journal)?|({})/.+)$",
+            DATA_WRITTEN.join("|")
+        ),
+    )];
+    let config = wrap
+        .config
+        .as_ref()
+        .filter(|config| config.starts_with(mine));
+    if let Some(config) = config {
+        written.push(format!(
+            "{}$",
+            under(config, &super::seatbelt::escaped(".gitignore"))
+        ));
+    }
+    let written = written.join("|");
+    for name in seatbelt::kernel_strings(mine)? {
+        own.deny.push(format!(
+            "(deny file-write* file-link (require-all (subpath {name}) (require-not (regex {}))))",
+            string(&written)?
+        ));
+    }
+    if let Some(config) = config {
+        for above in config
+            .ancestors()
+            .take_while(|above| above.starts_with(mine))
+        {
+            for name in seatbelt::kernel_strings(above)? {
+                own.deny
+                    .push(format!("(deny file-write* (literal {name}))"));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// What a wrapped opencode keeps for itself.
 fn own(wrap: &Wrap) -> Result<Own, &'static str> {
     let mut own = Own {
@@ -303,6 +356,7 @@ fn own(wrap: &Wrap) -> Result<Own, &'static str> {
     // folders above it, looked up and never listed.
     if let Some((profiles, mine)) = wrap.carved() {
         super::codex::carve(&mut own, &profiles, &mine)?;
+        held_in_its_profile(&mut own, wrap, &mine)?;
     }
     if let Some(data) = &wrap.data {
         own.allow.push(format!(

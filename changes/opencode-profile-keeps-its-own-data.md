@@ -1,8 +1,9 @@
 ### Fixed
 
 - **A sandboxed opencode chat on a profile purlis made keeps its data in that profile.** Its
-  sessions, logs and sign-in are read and written in the profile's own folders, inside purlis's
-  sandbox, and the chat stays out of opencode's default folder and every other profile.
+  sessions and logs are written, and its settings and sign-in read, in the profile's own folders,
+  inside purlis's sandbox, and the chat stays out of opencode's default folder and every other
+  profile.
 
 ### Changed
 

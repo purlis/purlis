@@ -3279,6 +3279,31 @@ fn opencodes_default_folder_is_carried_only_from_a_runner_that_left_its_mark() {
     }
 }
 
+/// **A runner's marks are read only in its data home**: a folder of another name under
+/// `.local/share`, which a chat could make, leaves no mark, and every spelling of the data home is
+/// looked in.
+#[cfg(unix)]
+#[test]
+fn a_mark_counts_only_in_the_runners_data_home() {
+    let spellings: Vec<&str> = crate::names::DATA_HOME.spellings().collect();
+    assert!(
+        COPY_PROFILES.contains(&format!("for data in {}; do", spellings.join(" "))),
+        "the script looks in every spelling: {spellings:?}"
+    );
+    let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let signed = from.path().join(".claude/.credentials.json");
+    std::fs::create_dir_all(signed.parent().unwrap()).unwrap();
+    std::fs::write(&signed, "a sign-in").unwrap();
+    let elsewhere = from.path().join(".local/share/made-by-a-chat/profiles");
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    std::fs::write(elsewhere.join(crate::profilestore::DEFAULTS_HELD), "").unwrap();
+
+    let ran = carried(from.path(), to.path());
+
+    assert!(ran.status.success(), "{ran:?}");
+    assert_eq!(std::fs::read_dir(the_stage(to.path())).unwrap().count(), 0);
+}
+
 /// **A carry takes nothing through a link inside the old home either**: a profile's folder that
 /// is a link to a harness's default folder there is passed over.
 #[cfg(unix)]

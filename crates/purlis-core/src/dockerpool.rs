@@ -71,7 +71,8 @@ pub const PURLIS: &str = "/usr/local/bin/purlis";
 /// names its data home or Codex's by a variable carries nothing, since the runner reads it
 /// elsewhere. A harness's default folder is carried only from a runner that left
 /// [`crate::profilestore::DEFAULTS_HELD`], and opencode's only from one that left
-/// [`crate::profilestore::OPENCODE_DEFAULT_HELD`] too. What
+/// [`crate::profilestore::OPENCODE_DEFAULT_HELD`] too, each in its data home under one of its
+/// spellings (`crate::names::DATA_HOME`), never in another folder a chat could make. What
 /// it makes is the runner's user's alone. A file that cannot be carried is said and passed over:
 /// the profile is then signed in again, as before any was carried, and the drain goes on. A
 /// profile named in the colon-separated list after the two folders is not carried at all (#4145).
@@ -82,10 +83,10 @@ from=$1 to=$2 stage=$3 old_stage=$4 skip=$5
 shift 5
 from=$(cd -P "$from" && pwd -P) || exit 1
 held= opencode_held=
-for mark in "$from"/.local/share/*/profiles/.default-folders-held; do
+for data in purlis charter; do
+  mark=$from/.local/share/$data/profiles/.default-folders-held
   [ -f "$mark" ] && [ ! -L "$mark" ] && held=1
-done
-for mark in "$from"/.local/share/*/profiles/.opencode-default-folder-held; do
+  mark=$from/.local/share/$data/profiles/.opencode-default-folder-held
   [ -f "$mark" ] && [ ! -L "$mark" ] && opencode_held=1
 done
 cd -P "$to" || exit 1

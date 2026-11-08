@@ -452,6 +452,56 @@ fn a_chat_on_a_profile_made_here_writes_in_that_profile_and_is_kept_from_opencod
 }
 
 #[test]
+fn in_its_own_profile_a_chat_writes_only_what_a_turn_writes_at_the_floor_too() {
+    // The carve gives a chat its own profile's folder back; at the floor every folder no rule
+    // holds is written, so the folder is held to what a turn writes, or a plugin or git config
+    // could be left there for the next run on that profile.
+    let work = "/Users/op/data/profiles/work";
+    for level in [Level::Full, Level::Floor] {
+        let wrap = opencode::Wrap {
+            os: Os::MacOs,
+            level,
+            held: Vec::new(),
+            denied: Vec::new(),
+            hosts: Vec::new(),
+            widened: Box::default(),
+            granted: Vec::new(),
+            data: Some(PathBuf::from(format!("{work}/data/opencode"))),
+            state: None,
+            config: Some(PathBuf::from(format!("{work}/config/opencode"))),
+            cache: None,
+            planes: Vec::new(),
+            profiles: Some(PathBuf::from("/Users/op/data/profiles")),
+        };
+        let profile = opencode::profile(
+            &wrap,
+            Path::new("/Users/op/plane"),
+            Path::new("/Users/op/tmp"),
+            &[4040],
+            None,
+        )
+        .expect("a profile");
+        let data = format!("{work}/data/opencode").replace('.', "\\\\.");
+        let config = format!("{work}/config/opencode");
+        let held = format!(
+            "(deny file-write* file-link (require-all (subpath \"{work}\") (require-not (regex \
+             \"^{data}/(opencode\\\\.db(-wal|-shm|-journal)?|(log|storage)/.+)$|^{config}/\\\\.gitignore$\"))))"
+        );
+        assert!(
+            profile.contains(&held),
+            "{level:?}: {held} missing:\n{profile}"
+        );
+        for folder in [config.as_str(), &format!("{work}/config"), work] {
+            let rule = format!("(deny file-write* (literal \"{folder}\"))");
+            assert!(
+                profile.contains(&rule),
+                "{level:?}: {rule} missing:\n{profile}"
+            );
+        }
+    }
+}
+
+#[test]
 fn nothing_a_later_opencode_loads_is_written() {
     // Ruling V73a: its credentials, which can name a remote config that starts servers, and a
     // snapshot repository's config, hooks and directory, which git reads when opencode runs it.
@@ -968,6 +1018,13 @@ mod live {
             (
                 "its settings written",
                 format!("echo x > '{}/opencode/opencode.json'", config.display()),
+            ),
+            (
+                "a plugin planted",
+                format!(
+                    "mkdir -p '{0}/opencode/plugin' && echo x > '{0}/opencode/plugin/x.js'",
+                    config.display()
+                ),
             ),
         ] {
             assert!(!tried(script), "{what} under the wrap");

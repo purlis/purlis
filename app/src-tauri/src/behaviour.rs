@@ -4007,6 +4007,7 @@ fn a_sandboxed_opencode_chat_on_a_profile_its_runner_made_writes_its_own_data(ta
              if cat \"$XDG_CONFIG_HOME/opencode/opencode.json\" >/dev/null 2>&1; then echo 'SETTINGS read.'; else echo 'SETTINGS refused.'; fi\n\
              if echo x > \"$HOME/.local/share/opencode/storage/planted\" 2>/dev/null; then echo 'DEFAULT written.'; else echo 'DEFAULT unwritten.'; fi\n\
              if cat \"$HOME/.local/share/opencode/auth.json\" >/dev/null 2>&1; then echo 'DEFAULT read.'; else echo 'DEFAULT unread.'; fi\n\
+             if mkdir -p \"$XDG_CONFIG_HOME/opencode/plugin\" 2>/dev/null && echo x > \"$XDG_CONFIG_HOME/opencode/plugin/x.js\" 2>/dev/null; then echo 'PLUGIN planted.'; else echo 'PLUGIN unplanted.'; fi\n\
              if ls \"$XDG_DATA_HOME/../../\" >/dev/null 2>&1; then echo 'PROFILES listed.'; else echo 'PROFILES unlisted.'; fi\n\
              printf 'TRIED.\\n'\n\
              read line\n",
@@ -4031,6 +4032,7 @@ fn a_sandboxed_opencode_chat_on_a_profile_its_runner_made_writes_its_own_data(ta
         "SETTINGS read.",
         "DEFAULT unwritten.",
         "DEFAULT unread.",
+        "PLUGIN unplanted.",
         "PROFILES unlisted.",
     ] {
         pane.shows(said);
