@@ -1099,7 +1099,7 @@ impl Reports {
         let line = line_of(&evidence, &self.known);
         let draft = self.draft(evidence)?;
         let one = Held {
-            id: held::new_id(&draft.title, &draft.body),
+            id: held::new_id(),
             at: now(),
             kind: draft.kind.into(),
             title: draft.title,

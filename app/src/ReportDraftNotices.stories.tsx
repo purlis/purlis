@@ -235,7 +235,7 @@ const SENT: InboxUpdate = {
   at: Math.floor(Date.parse("2026-11-08T10:05:00Z") / 1000),
   session: 4,
   chain: ["steward 4"],
-  says: `Sent a report to purlis/purlis: ${TITLE}`,
+  says: `Sent a report on GitHub: ${TITLE}`,
   read: false,
 };
 

@@ -103,7 +103,7 @@ export function reportSentUpdates(sent: readonly SentDraft[]): UpdateNoted[] {
     at: secondsOf(one.at),
     session: one.session,
     chain: [one.chat],
-    says: `Sent a report${one.to === "github" ? " to purlis/purlis" : ""}: ${one.title}`,
+    says: `Sent a report${one.to === "github" ? " on GitHub" : ""}: ${one.title}`,
   }));
 }
 

@@ -62,7 +62,8 @@ export function ReportDraftNotices({
     void commands
       .reportDrafts(plane)
       .then((answer) => {
-        if (answer.status === "ok") setDrafts(answer.data);
+        // A core that answers no list (an older build, a test's) holds no drafts.
+        if (answer.status === "ok") setDrafts(Array.isArray(answer.data) ? answer.data : []);
       })
       .catch(() => undefined);
   }, [plane]);

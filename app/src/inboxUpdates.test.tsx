@@ -281,7 +281,7 @@ describe("each source, said as updates", () => {
         "report-sent",
         4,
         ["steward 4"],
-        "Sent a report to purlis/purlis: Update refuses",
+        "Sent a report on GitHub: Update refuses",
       ],
       ["report-sent:d2", "report-sent", null, ["deep"], "Sent a report: Picker is slow"],
     ]);

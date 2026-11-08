@@ -84,7 +84,7 @@ impl From<purlis_core::report::Sent> for SentReport {
             title: sent.title,
             to: match sent.to {
                 purlis_core::report::SentTo::Intake => "purlis's report service".to_owned(),
-                purlis_core::report::SentTo::GitHub => "purlis/purlis on GitHub".to_owned(),
+                purlis_core::report::SentTo::GitHub => "purlis's issues on GitHub".to_owned(),
             },
             address: sent.address,
             bytes: sent.bytes,

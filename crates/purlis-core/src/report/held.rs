@@ -17,9 +17,7 @@ use std::io;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
-
-use super::{Kind, UPSTREAM};
+use super::Kind;
 
 /// The file, inside [`crate::machine::DIR`].
 pub const FILE: &str = "report-drafts.json";
@@ -157,18 +155,7 @@ impl HeldDrafts {
     }
 }
 
-/// A new draft's id: its digest's words and when it was held, so two drafts of the same words
-/// are still two.
-pub(super) fn new_id(title: &str, body: &str) -> String {
-    let mut hash = Sha256::new();
-    for part in [UPSTREAM, title, body] {
-        hash.update(part.as_bytes());
-        hash.update([0u8]);
-    }
-    hash.update(uuid::Uuid::new_v4().as_bytes());
-    hash.finalize()
-        .iter()
-        .take(8)
-        .map(|b| format!("{b:02x}"))
-        .collect()
+/// A new draft's id: random, so two drafts of the same words are still two.
+pub(super) fn new_id() -> String {
+    uuid::Uuid::new_v4().simple().to_string()[..16].to_owned()
 }
