@@ -26,6 +26,7 @@
 
 use std::collections::{HashSet, VecDeque};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -66,6 +67,8 @@ enum Told {
 pub struct Steps {
     sending: Mutex<Option<SyncSender<Told>>>,
     unraised: Unraised,
+    /// How many steps the full queue turned away, for the log.
+    dropped: Arc<AtomicUsize>,
 }
 
 impl Steps {
@@ -79,6 +82,7 @@ impl Steps {
         let send = self.sender(events);
         let plane = plane.to_path_buf();
         let unraised = Arc::clone(&self.unraised);
+        let dropped = Arc::clone(&self.dropped);
         Arc::new(move |chat, step| {
             let Some(send) = &send else {
                 return;
@@ -96,11 +100,15 @@ impl Steps {
                         .unwrap_or_else(PoisonError::into_inner)
                         .insert(ask);
                 }
-                tracing::info!(
-                    "purlis: a secret ask's {} was not recorded (the session host is not \
-                     answering, and {MOST_QUEUED} steps wait on it)",
-                    step.kind()
-                );
+                // Said once, and then once for each queue's worth more, not for every step.
+                let dropped = dropped.fetch_add(1, Ordering::Relaxed) + 1;
+                if dropped == 1 || dropped.is_multiple_of(MOST_QUEUED) {
+                    tracing::info!(
+                        "purlis: {dropped} secret ask steps were not recorded so far, the latest a \
+                         {} (the session host is not answering, and {MOST_QUEUED} steps wait on it)",
+                        step.kind()
+                    );
+                }
             }
         })
     }
@@ -299,12 +307,19 @@ mod tests {
             .recv_timeout(Duration::from_secs(10))
             .expect("the host takes the first write and stalls");
 
+        // Ask 1's raise finds room in the queue.
+        tell(Some(1), raised(1));
         // Told under the asks' lock while the host stalls: each returns at once.
-        let told = 20 * MOST_WAITING as u32;
-        for ask in 1..=told {
+        let told = 20 * MOST_QUEUED as u32;
+        for ask in 2..=told {
             tell(Some(1), raised(ask));
         }
-        // The last ask's raise was dropped: its fill is not written without it.
+        // Ask 1's answer finds no room: its raise, queued, goes unwritten with it.
+        tell(Some(1), Step::Declined { ask: 1, waiting: 0 });
+        release.send(()).expect("the host is there");
+        steps.written();
+        // With room again, the last ask's answer is told: its raise was dropped, so it is not
+        // written either.
         tell(
             Some(1),
             Step::Declined {
@@ -312,23 +327,25 @@ mod tests {
                 waiting: 0,
             },
         );
-        release.send(()).expect("the host is there");
         steps.written();
 
         let written = written.lock().unwrap_or_else(PoisonError::into_inner);
-        assert!(
-            written.len() <= MOST_QUEUED + 2,
-            "{} steps were held for a stalled host",
-            written.len()
-        );
         assert!(
             written.len() > 1,
             "the steps queued before it filled are written"
         );
         assert!(
             !written.iter().any(|step| ask_of(*step) == Some(told)),
-            "a raise not written takes its ask's later steps with it: {:?}",
-            written.last()
+            "a raise not written takes its ask's later steps with it"
+        );
+        assert!(
+            !written.iter().any(|step| ask_of(*step) == Some(1)),
+            "a step not written takes its ask's raise still queued with it"
+        );
+        assert!(
+            written.len() <= MOST_QUEUED + 1,
+            "{} steps were held for a stalled host",
+            written.len()
         );
     }
 }
