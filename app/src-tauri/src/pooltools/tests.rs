@@ -67,8 +67,13 @@ fn a_gate(ask: &brokered::Ask) -> Gate<'_> {
         pools_in: Some(PathBuf::from("/config")),
         tools: &kubectl_declared_and_allowed,
         authorised: &every_vault_allowed,
+        reach: &nothing_out_of_reach,
         owned: &owned_builds,
     }
+}
+
+fn nothing_out_of_reach(_persona: &str, _tool: &Tool) -> Option<String> {
+    None
 }
 
 fn refused(gate: &Gate<'_>) -> String {
@@ -1112,4 +1117,47 @@ fn a_runner_chats_key_linked_into_a_vault_its_persona_may_not_use_is_never_read(
     );
     assert!(!why.contains("other"), "names no other vault: {why}");
     assert!(!why.contains("n0t-yours"), "never the value: {why}");
+}
+
+/// A runner chat's key out of reach is refused before the person is asked anything (#5795): no
+/// Secret ask for a key it lacks, and no Allow for a run that would be refused once allowed.
+#[test]
+fn a_runner_chats_key_out_of_reach_is_refused_before_anything_is_asked() {
+    let desktop = a_desktop_missing_the_key();
+    let root = desktop.path();
+    let (asks, tools) = (SecretAsks::new(root), PoolTools::default());
+    let ask = kubectl_asked();
+    let out_of_reach = |persona: &str, tool: &Tool| {
+        Some(format!(
+            "{} in vault {} reads an entry of a vault {persona} may not use",
+            tool.values[0].key, tool.vault
+        ))
+    };
+    let gate = Gate {
+        root,
+        reach: &out_of_reach,
+        ..a_gate(&ask)
+    };
+    let keys = keys_in(root);
+    let gone = AtomicBool::new(false);
+    let reads = |_: &str, _: &Tool| -> Result<Vec<(String, Zeroizing<String>)>, String> {
+        panic!("nothing is read")
+    };
+
+    let refused = decided(
+        &gate,
+        &Missing {
+            asks: &asks,
+            keys: &keys,
+            within: Duration::from_secs(60),
+        },
+        &waiting(&tools, &gone, &reads, Duration::from_secs(60)),
+        &mut Vec::new(),
+    )
+    .map(|_| ())
+    .unwrap_err();
+
+    assert!(refused.why.contains("may not use"), "{}", refused.why);
+    assert!(asks.open().is_empty(), "no Secret ask");
+    assert!(tools.waiting().is_empty(), "no Allow");
 }

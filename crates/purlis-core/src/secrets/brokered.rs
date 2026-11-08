@@ -760,6 +760,16 @@ fn keys_named(wanted: &Wanted) -> impl Iterator<Item = &str> {
         .filter_map(|spec| spec.split_once('=').map(|(_, key)| key))
 }
 
+/// Each key `wanted` hands over: [`keys_named`]'s and each `--dotenv` entry's
+/// (`ENVVAR=NAME:key`), for a judge that must see them all (#5795).
+fn keys_handed(wanted: &Wanted) -> impl Iterator<Item = &str> {
+    keys_named(wanted).chain(wanted.dotenv.iter().filter_map(|spec| {
+        spec.split_once('=')
+            .and_then(|(_, entry)| entry.split_once(':'))
+            .map(|(_, key)| key)
+    }))
+}
+
 /// **Each key `wanted` hands over that `vault` lacks** (#5242), once, in order: none under it, or
 /// a link whose entry is gone, which the run's one notice asks a value for. Told by the
 /// provider's kind of failure, never its sentence; a vault that can't be read lacks nothing here,
@@ -3262,7 +3272,7 @@ pub(crate) fn serve_recorded(
             &ctx,
             persona,
             &wanted.vault,
-            &keys_named(&wanted).collect::<Vec<_>>(),
+            &keys_handed(&wanted).collect::<Vec<_>>(),
         )
     {
         return refuse(&mut *writer, 1, why);

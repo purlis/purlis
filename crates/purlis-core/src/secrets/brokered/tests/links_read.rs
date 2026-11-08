@@ -234,3 +234,38 @@ fn a_key_out_of_reach_is_never_asked_for_beside_one_a_run_lacks() {
         ["ABSENT"]
     );
 }
+
+/// A run with a key out of reach is refused before its one notice asks for anything (#5795, #5242):
+/// not a value for the key it lacks, nor the vault's Allow, which would grant the persona the vault
+/// for good for a run that is then refused.
+#[test]
+fn a_run_with_a_key_out_of_reach_is_refused_before_its_notice_asks_for_another() {
+    use crate::sandbox::tools::{Handed, Ready, Tool, Value};
+    let project = project();
+    let root = project.path();
+    linked_out(root);
+    let mut chat = asker(root, Some("qa"));
+    let mut tool = Tool::one("printenv", "team", "X", Handed::Env, "MISSING");
+    tool.values.push(Value {
+        var: "Y".into(),
+        handed: Handed::Env,
+        key: "ABSENT".into(),
+    });
+    chat.confines.as_mut().unwrap().tools.push(Ready {
+        tool,
+        program: PathBuf::from("/usr/bin/printenv"),
+    });
+    let mut want = wanted(root, "team", vec!["/usr/bin/printenv".into(), "X".into()]);
+    want.env = vec!["X=MISSING".into(), "Y=ABSENT".into()];
+    let asks = crate::secrets::ask::Asks::new(root);
+
+    let frames = served_asking(&chat, want, &asks, Duration::from_secs(60));
+
+    says_out_of_reach(refused_and_nothing_ran(&frames), "qa");
+    assert!(asks.open().is_empty(), "no Secret ask");
+    assert!(asks.open_runs().is_empty(), "no run's notice");
+    assert!(
+        crate::sandbox::local::granted_vaults(root).is_empty(),
+        "nothing granted"
+    );
+}

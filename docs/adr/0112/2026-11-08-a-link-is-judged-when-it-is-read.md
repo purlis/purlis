@@ -20,12 +20,14 @@ A fill and a granted login each count as a reader of their vault, though neither
 to be one its persona may use. A link to another entry of the same vault reaches no new vault, so
 it is not judged, as the press does not judge it.
 
-A run's keys are all judged before anything is read or asked of the person. A key out of reach is
-never offered on the run's notice, and the run is refused before the person is asked to fill
-another key it lacks.
+A run's keys are all judged before anything is read or asked of the person, `--dotenv` entries
+included, and a runner chat's before its Secret asks and its Allow. A key out of reach is never
+offered on the run's notice, and the run is refused before the person is asked to fill another key
+it lacks.
 
-A link is judged again once its value is read, so a link written between the first judgement and
-the read is seen, and what was read goes unused.
+A link is judged again once its value is read, so a link that is there by then is seen, and what
+was read goes unused. A link written and taken away again between the two is not; only the person
+writes links.
 
 So it no longer matters when the link was made or how the persona came to use its vault: by a tag,
 an Allow (a refused vault's, or Always allow's), or a policy lock lifted. A link made before #5745's

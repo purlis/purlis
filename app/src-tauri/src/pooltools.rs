@@ -237,6 +237,10 @@ pub struct Gate<'a> {
     pub tools: ToolsOf<'a>,
     /// Whether the persona may use the vault here (`brokered::authorise`).
     pub authorised: &'a dyn Fn(&str, &str) -> Result<(), String>,
+    /// Why the persona named first may read none of the tool's keys here: one is a link into a
+    /// vault it may not use (#5795, `brokered::read_out_of_reach`). Judged before anything is
+    /// asked of the person, and again as the values are read.
+    pub reach: &'a dyn Fn(&str, &Tool) -> Option<String>,
     /// The pool as it is now, with the runner the chat's link reached, where that runner is shown
     /// to be the person's own (`Bound::over_the_link`).
     pub owned: &'a dyn Fn(&Path, &str) -> Result<Bound, NotSent>,
@@ -450,6 +454,11 @@ pub fn decided(
     writer: &mut dyn Write,
 ) -> Result<Approved, Refused> {
     let unbound = unbound(gate)?;
+    // A key out of reach is refused before the person is asked anything: no Secret ask for a key
+    // it lacks, and no Allow for a run that is refused once allowed (#5795).
+    if let Some(why) = (gate.reach)(&unbound.persona, &unbound.tool) {
+        return Err(why.into());
+    }
     let checked = match bound(gate, &unbound.tool) {
         Ok(bound) => unbound.on(bound),
         Err(not) => {
@@ -742,6 +751,7 @@ pub fn run_on_its_runner(
         pools_in: held.chats().pools_in(),
         tools: &tools::declared_and_allowed_here,
         authorised: &authorised,
+        reach: &|persona: &str, tool: &Tool| out_of_reach(&ctx, persona, tool),
         owned: &owned,
     };
     // A key the vault here holds no value under is asked of the person first (#5077), its names
@@ -866,6 +876,12 @@ fn values_of(ctx: &Ctx, tool: &Tool) -> Result<Vec<(String, Zeroizing<String>)>,
         values.push((value.key.clone(), read));
     }
     Ok(values)
+}
+
+/// Why none of `tool`'s keys is read for `persona`: one is a link into a vault it may not use.
+fn out_of_reach(ctx: &Ctx, persona: &str, tool: &Tool) -> Option<String> {
+    let keys: Vec<&str> = tool.values.iter().map(|value| value.key.as_str()).collect();
+    brokered::read_out_of_reach(ctx, persona, &tool.vault, &keys)
 }
 
 /// `read` of `tool`'s keys for `persona`, refused where one is a link into a vault it may not
