@@ -2685,7 +2685,8 @@ fn the_shipped_names_are_the_bundles_skills() {
 }
 
 /// #3686: Make my own copy copies a built-in skill's `SKILL.md` alone, so every built-in skill
-/// is that one file. One that ships more files makes the copy carry them first.
+/// is that one file, beside its `evals/` (its trigger tests for the CI grader, spec #5714),
+/// which a copy leaves behind. One that ships more files makes the copy carry them first.
 #[test]
 fn each_built_in_skill_is_its_skill_md_alone() {
     let bundle = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../app/src-tauri/plugin/skills");
@@ -2694,8 +2695,13 @@ fn each_built_in_skill_is_its_skill_md_alone() {
         let held: Vec<String> = std::fs::read_dir(folder)
             .unwrap()
             .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|name| name != "evals")
             .collect();
         assert_eq!(held, ["SKILL.md"], "{}", skill.name);
+        let evals = folder.join("evals");
+        if evals.exists() {
+            assert!(evals.is_dir(), "{}: evals is a folder", skill.name);
+        }
     }
 }
 
