@@ -488,19 +488,17 @@ pub fn keep_mcp_servers(state: &Path, servers: Option<&serde_json::Value>) {
     }
 }
 
-/// Below `dir`, without following a link: every link taken out.
-fn no_links_below(dir: &Path) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let Ok(kind) = entry.file_type() else {
-            continue;
-        };
-        if kind.is_symlink() {
-            let _ = std::fs::remove_file(entry.path());
-        } else if kind.is_dir() {
-            no_links_below(&entry.path());
-        }
+/// Below `dir`, without following a link: every link taken out. It runs in the session host
+/// while another chat on the profile may move folders under it, so it walks by descriptor
+/// ([`super::walk`]): a folder swapped for one holding a link leads nowhere.
+#[cfg(unix)]
+pub(super) fn no_links_below(dir: &Path) {
+    if let Some(at) = super::walk::open(dir, Path::new("")) {
+        super::walk::no_links_below(&at);
     }
 }
+
+/// Nothing is swept where there is no descriptor-relative walk to do it safely; no Claude Code
+/// chat is wrapped there either.
+#[cfg(not(unix))]
+pub(super) fn no_links_below(_dir: &Path) {}

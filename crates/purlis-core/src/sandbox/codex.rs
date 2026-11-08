@@ -368,31 +368,40 @@ fn write_new(path: &Path, bytes: &[u8]) {
 const DAY_DIRS: [&str; 2] = ["sessions", "archived_sessions"];
 
 /// Below `dir`, without following a link: every link taken out, and every folder that is not
-/// `folders` deep in a day's tree (`YYYY/MM/DD`), with all it holds; a regular file stays.
-fn tidy(dir: &Path, folders: usize) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
+/// `folders` deep in a day's tree (`YYYY/MM/DD`), with all it holds; a regular file stays. It runs
+/// in the session host while another chat on the profile may move folders under it, so it walks
+/// by descriptor ([`super::walk`]): a folder swapped for one holding a link leads nowhere.
+#[cfg(unix)]
+pub(super) fn tidy(dir: &Path, folders: usize) {
+    if let Some(at) = super::walk::open(dir, Path::new("")) {
+        tidy_at(&at, folders);
+    }
+}
+
+/// Nothing is tidied where there is no descriptor-relative walk to do it safely; no Codex chat is
+/// wrapped there either.
+#[cfg(not(unix))]
+pub(super) fn tidy(_dir: &Path, _folders: usize) {}
+
+#[cfg(unix)]
+fn tidy_at(dir: &std::os::fd::OwnedFd, folders: usize) {
+    use rustix::fs::FileType;
     let width = [4, 2, 2];
     let level = 3 - folders.min(3);
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let Ok(kind) = entry.file_type() else {
-            continue;
-        };
-        let name = entry.file_name();
+    for (name, kind) in super::walk::listed(dir) {
         let dated = folders > 0
-            && name.to_str().is_some_and(|name| {
+            && name.to_str().is_ok_and(|name| {
                 name.len() == width[level] && name.bytes().all(|b| b.is_ascii_digit())
             });
-        if kind.is_symlink() {
-            let _ = std::fs::remove_file(&path);
-        } else if kind.is_dir() {
-            if dated {
-                tidy(&path, folders - 1);
-            } else {
-                let _ = std::fs::remove_dir_all(&path);
+        match kind {
+            FileType::Symlink => super::walk::unlink_if_a_link(dir, &name),
+            FileType::Directory if dated => {
+                if let Some(below) = super::walk::descend(dir, &name) {
+                    tidy_at(&below, folders - 1);
+                }
             }
+            FileType::Directory => super::walk::remove_tree(dir, &name),
+            _ => {}
         }
     }
 }

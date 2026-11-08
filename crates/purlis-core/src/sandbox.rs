@@ -7773,6 +7773,8 @@ pub mod signin;
 pub mod team;
 pub mod tools;
 pub mod tunnel;
+#[cfg(unix)]
+mod walk;
 pub mod wrapper;
 
 #[cfg(test)]
@@ -7797,6 +7799,8 @@ mod persona_tests;
 mod reach_tests;
 #[cfg(test)]
 mod signin_tests;
+#[cfg(all(test, unix))]
+mod walks_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
