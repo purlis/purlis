@@ -786,9 +786,7 @@ fn fills_missing(asker: &Asker, ctx: &Ctx, wanted: &Wanted) -> Vec<super::ask::r
         }
         // A link into a vault the persona may not use is neither read nor asked for: its run is
         // refused (#5795).
-        if std::env::var_os("PURLIS_5795_ROUND3").is_some()
-            && read_out_of_reach(ctx, persona, &wanted.vault, &[key]).is_some()
-        {
+        if read_out_of_reach(ctx, persona, &wanted.vault, &[key]).is_some() {
             continue;
         }
         let lacks = cmd::get_value(ctx, &v, key).map(zeroize::Zeroizing::new);
@@ -1102,11 +1100,7 @@ pub fn read_out_of_reach(ctx: &Ctx, persona: &str, vault: &str, keys: &[&str]) -
             Ok(None) => continue,
             // Another entry of the same vault: no new vault is reached, as the press judges it
             // too ([`read_through_by`]).
-            Ok(Some(to))
-                if to.vault == vault && std::env::var_os("PURLIS_5795_ROUND3").is_some() =>
-            {
-                continue;
-            }
+            Ok(Some(to)) if to.vault == vault => continue,
             Ok(Some(to)) => to,
             Err(_) => {
                 return Some(format!(
@@ -3274,7 +3268,6 @@ pub(crate) fn serve_recorded(
     // run before anything is read or asked (#5795): no notice for one key, then a refusal for
     // another. Each read is judged again as it happens, below.
     if handed.is_none()
-        && std::env::var_os("PURLIS_5795_ROUND3").is_some()
         && let Some(why) = read_out_of_reach(
             &ctx,
             persona,

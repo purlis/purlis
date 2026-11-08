@@ -456,9 +456,7 @@ pub fn decided(
     let unbound = unbound(gate)?;
     // A key out of reach is refused before the person is asked anything: no Secret ask for a key
     // it lacks, and no Allow for a run that is refused once allowed (#5795).
-    if std::env::var_os("PURLIS_5795_ROUND3").is_some()
-        && let Some(why) = (gate.reach)(&unbound.persona, &unbound.tool)
-    {
+    if let Some(why) = (gate.reach)(&unbound.persona, &unbound.tool) {
         return Err(why.into());
     }
     let checked = match bound(gate, &unbound.tool) {
