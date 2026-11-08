@@ -428,3 +428,66 @@ fn wget2_with_a_plugin_it_loads_is_offered_no_run_grant() {
         &[&["--plugin-dirs=/tmp", "https://example.com"]],
     );
 }
+
+// The third review of #5876.
+
+#[test]
+fn rsync_hands_an_operands_host_to_ssh_so_one_after_a_double_dash_starting_with_a_dash_is_refused()
+{
+    refused(
+        "rsync",
+        "an operand starting with -",
+        &[
+            &["-a", "--", "-oProxyCommand=x:path", "dst"],
+            &["--", "a", "-ox:b"],
+        ],
+    );
+    offered("rsync", &["-a -- src host:dst"]);
+}
+
+#[test]
+fn ssh_with_a_jump_host_or_name_a_shell_would_read_is_offered_no_run_grant() {
+    refused(
+        "ssh",
+        "-J",
+        &[&["-J", "bastion;x", "host"], &["-Jx$(y)", "host"]],
+    );
+    refused("ssh", "-o ProxyJump", &[&["-o", "ProxyJump=a|b", "host"]]);
+    refused("ssh", "-o Hostname", &[&["-o", "Hostname=a`b`", "host"]]);
+    refused("ssh", "-o User", &[&["-o", "User=a;b", "host"]]);
+    offered(
+        "ssh",
+        &[
+            "-J deploy@bastion.example.com:2222 host",
+            "-J a,b host",
+            "-o ProxyJump=bastion host",
+            "-o Hostname=10.0.0.5 host",
+            "-o User=deploy host",
+            "-o UserKnownHostsFile=/dev/null host",
+            "-o HostKeyAlias=web host",
+        ],
+    );
+}
+
+#[test]
+fn ssh_keygen_and_ssh_add_are_read_by_their_own_flags_not_sshs() {
+    offered("ssh-keygen", &["-F host", "-t ed25519 -f key -N x"]);
+    refused("ssh-keygen", "-D", &[&["-D", "/tmp/x.so"]]);
+    refused(
+        "ssh-keygen",
+        "-w",
+        &[&["-t", "ed25519-sk", "-w", "/tmp/x.so"]],
+    );
+    refused("ssh-add", "-s", &[&["-s", "/tmp/x.so"]]);
+    refused("ssh-add", "-S", &[&["-S", "/tmp/x.so", "key"]]);
+    offered("ssh-add", &["key", "-l"]);
+}
+
+#[test]
+fn mysql_with_its_editor_or_pager_command_in_dash_e_is_offered_no_run_grant() {
+    refused(
+        "mysql",
+        "-e with a shell command",
+        &[&["-e", "edit"], &["-e", "pager sh"]],
+    );
+}
