@@ -95,7 +95,10 @@ export const SigningCheck: StoryObj<typeof PoolSignInConfirm> = {
   },
 };
 
-/** `purlis signing check` on GitLab (#5793): the window names the GitLab it asks. */
+/**
+ * `purlis signing check` on GitLab (#5793): the window names the GitLab it asks. Its pictures
+ * are drawn after the dialog has settled; the first ones, from #5873, were not.
+ */
 export const SigningCheckOnGitLab: StoryObj<typeof PoolSignInConfirm> = {
   beforeEach: () => {
     mockIPC(
