@@ -118,6 +118,24 @@ fn laid_out(root: &Path, bundle: &Path, persona: Option<&str>) -> Vec<String> {
     names
 }
 
+/// The skill tools' view of a Claude Code chat in `smart-ide`, on no persona, handed the set's
+/// folder `handed`.
+fn claude_code_asking<'a>(
+    root: &'a Path,
+    bundle: &'a Path,
+    handed: &'a Path,
+) -> crate::skilltools::Asking<'a> {
+    crate::skilltools::Asking {
+        plane: root,
+        workspace: Some("smart-ide"),
+        persona: None,
+        harness: Some("claude-code"),
+        route: Some(crate::skills::Route::Plugin),
+        built_in: Some(bundle),
+        handed: Some(handed),
+    }
+}
+
 #[test]
 fn above_the_budget_an_opencode_chat_is_handed_the_index_as_purlis_skill_index() {
     let (tmp, bundle) = a_plane_of(MOST + 5);
@@ -235,15 +253,7 @@ fn a_narrowing_skill_the_router_hid_is_loaded_since_the_harness_was_never_handed
         !laid_out(root, &bundle, None).contains(&"audit".to_owned()),
         "the router hid it"
     );
-    let asking = crate::skilltools::Asking {
-        plane: root,
-        workspace: Some("smart-ide"),
-        persona: None,
-        harness: Some("claude-code"),
-        route: Some(crate::skills::Route::Plugin),
-        built_in: Some(&bundle),
-        handed: Some(&handed),
-    };
+    let asking = claude_code_asking(root, &bundle, &handed);
     let mut args = serde_json::Map::new();
     args.insert("name".to_owned(), serde_json::Value::from("audit"));
     let started = std::cell::RefCell::new(Vec::new());
@@ -276,15 +286,7 @@ fn a_narrowing_skill_the_router_keeps_for_its_pin_is_started_by_the_harness_s_ow
     assert!(pin(root, &pinned, "audit", true).unwrap());
     let handed = the_folder(root, &bundle, None);
     assert!(laid_out(root, &bundle, None).contains(&"audit".to_owned()));
-    let asking = crate::skilltools::Asking {
-        plane: root,
-        workspace: Some("smart-ide"),
-        persona: None,
-        harness: Some("claude-code"),
-        route: Some(crate::skills::Route::Plugin),
-        built_in: Some(&bundle),
-        handed: Some(&handed),
-    };
+    let asking = claude_code_asking(root, &bundle, &handed);
     let mut args = serde_json::Map::new();
     args.insert("name".to_owned(), serde_json::Value::from("audit"));
     let refused = crate::skilltools::call(&asking, "skill_load", &args, &|_| {
@@ -312,15 +314,7 @@ fn a_handed_manual_only_narrowing_skill_the_person_named_is_loaded_never_sent_to
         laid_out(root, &bundle, None).contains(&"audit".to_owned()),
         "the harness was handed it"
     );
-    let asking = crate::skilltools::Asking {
-        plane: root,
-        workspace: Some("smart-ide"),
-        persona: None,
-        harness: Some("claude-code"),
-        route: Some(crate::skills::Route::Plugin),
-        built_in: Some(&bundle),
-        handed: Some(&handed),
-    };
+    let asking = claude_code_asking(root, &bundle, &handed);
     let mut args = serde_json::Map::new();
     args.insert("name".to_owned(), serde_json::Value::from("audit"));
     args.insert("person_asked".to_owned(), serde_json::Value::Bool(true));

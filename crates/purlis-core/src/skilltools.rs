@@ -23,9 +23,9 @@
 //! is not loaded into the chat: the load is refused, opens no run, and says how to start it with
 //! the harness's own skill tool, whose start opens the run. That holds only for a skill the
 //! harness was handed: one the router hid, or one made since the chat started, is not one its
-//! own tool knows (#4510), and not for a manual-only skill on a harness whose own tool refuses
-//! to start one for the model, as Claude Code's does (#5880). Anywhere else the skill is loaded
-//! and the answer says "Narrowing not applied", never silently.
+//! own tool knows (#4510). Nor does it hold for a manual-only skill on a harness whose own tool
+//! refuses to start one for the model, as Claude Code's does (#5880). Anywhere else the skill is
+//! loaded and the answer says "Narrowing not applied", never silently.
 //!
 //! **A manual-only skill is loaded only when the person asked for it** (#4529): a harness never
 //! starts one by itself, so neither does this tool, unless the call says [`PERSON_ASKED`]. Without
@@ -188,12 +188,16 @@ impl Asking<'_> {
     /// narrows** ([`crate::harness::HarnessAdapter::narrowed_start`]), where purlis armed the
     /// harness with the skill. `None` for a chat that names no harness, for a plane skill its
     /// harness was not handed ([`Self::handed`]), whose own skill tool would only answer that it
-    /// knows no such skill (#4510), and for a `manual` skill on a harness that reads
-    /// `disable-model-invocation` itself ([`crate::skills::ManualOnly::Read`]), whose own skill
-    /// tool refuses to start it for the model even once the person named it (#5880).
-    fn narrowed_start(&self, effective: &Effective, manual: bool) -> Option<String> {
+    /// knows no such skill (#4510), and for a manual-only skill (`loaded.manual`) on a harness
+    /// that reads `disable-model-invocation` itself ([`crate::skills::ManualOnly::Read`]), whose
+    /// own skill tool refuses to start it for the model even once the person named it (#5880).
+    fn narrowed_start(
+        &self,
+        effective: &Effective,
+        loaded: &purlis_skills::Loaded,
+    ) -> Option<String> {
         self.harness?;
-        if manual && self.honours().manual == crate::skills::ManualOnly::Read {
+        if loaded.manual && self.honours().manual == crate::skills::ManualOnly::Read {
             return None;
         }
         if effective.origin.of_the_plane()
@@ -328,7 +332,7 @@ fn load(
         ));
     }
     if loaded.narrowing.any()
-        && let Some(words) = chat.narrowed_start(effective, loaded.manual)
+        && let Some(words) = chat.narrowed_start(effective, &loaded)
     {
         return Ok(format!(
             "`{skill}` narrows this chat: it {}. This harness applies that only when it starts \

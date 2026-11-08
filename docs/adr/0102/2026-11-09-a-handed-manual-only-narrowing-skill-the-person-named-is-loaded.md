@@ -1,12 +1,12 @@
 # A handed manual-only narrowing skill the person named is loaded, saying its narrowing is not applied
 
-**Amends [ADR 0102](../0102-a-skill-router-decides-what-a-chat-sees-and-nothing-it-hides-is-out-of-reach.md), 2026-11-09**, ticket #5880. #4510 left this case open (PR #5875). It follows the rule of [ADR 0063's record of 2026-11-06](../0063/2026-11-06-a-narrowing-skill-its-harness-was-not-handed-is-loaded.md).
+**Amends [ADR 0102](../0102-a-skill-router-decides-what-a-chat-sees-and-nothing-it-hides-is-out-of-reach.md), 2026-11-09**, ticket #5880. #4510 left this case open (PR #5875). It narrows §2 of ADR 0063's record [a load that would lose its narrowing is refused](../0063/2026-10-21-a-load-that-would-lose-its-narrowing-is-refused-and-sent-to-the-harness-s-own-start.md), as [its record of 2026-11-06](../0063/2026-11-06-a-narrowing-skill-its-harness-was-not-handed-is-loaded.md) did for a skill the harness was not handed.
 
 ## The problem
 
 A Claude Code chat is handed a plane skill that is manual-only (`disable-model-invocation: true`) and also narrows the chat (`disallowed-tools` or `context: fork`). The person names it in prose, so the chat calls `skill_load` with `person_asked`. Because the skill narrows and the harness holds it, `skill_load` refused it and answered *"Start it with this harness's own skill tool as `skills:<name>`"*. Claude Code reads `disable-model-invocation` itself, so its Skill tool refuses a model-started `skills:<name>`. The chat stopped there, with nothing left to try.
 
-That answer is the only text that sends the chat to `skills:<name>`. Before calling `skill_load`, the chat could not try the Skill tool by itself: a manual-only skill is left out of Claude Code's listing. The briefing, the index skill and the MCP server's instructions (`NOT_KNOWN`) all point to `skill_load`. Reproduced in `skills/routing/tests.rs` (`a_handed_manual_only_narrowing_skill_…_5880`).
+That answer is the only text that sends the chat to `skills:<name>`. Before calling `skill_load`, the chat could not try the Skill tool by itself: a manual-only skill is left out of Claude Code's listing. The briefing, the index skill and the MCP server's instructions (`NOT_KNOWN`) all point to `skill_load`. `skills/routing/tests.rs` (`a_handed_manual_only_narrowing_skill_…_5880`) drives `skill_load` through this case, and it failed with exactly that answer before the change.
 
 ## The decision
 
@@ -16,7 +16,7 @@ A harness that keeps a manual-only skill out some other way (`Listing`, `Without
 
 ## Rejected
 
-- **Ask the person to type `/skills:<name>`.** That would keep the narrowing, but the person already named the skill, and the chat would end its turn on a request to name it again. The person can still type it to get the narrowing, and the changelog says so. The model's answer does not suggest it, so a turn never ends on a second request.
+- **Ask the person to type `/skills:<name>`.** That would keep the narrowing, but the person already named the skill, and the chat would end its turn on a request to name it again. The person can still type the skill's slash command to get the narrowing, and the changelog says so. The model's answer does not suggest it, so a turn never ends on a second request.
 - **Hand Claude Code a manual-only narrowing skill without `disable-model-invocation`.** Its own tool could then start the skill, but so could the model, unasked. That breaks what manual-only means.
 - **Decide in the adapter.** `narrowed_start` names how a harness starts a skill. Whether the harness refuses a manual-only one already comes from `skill_frontmatter`'s `manual`, so the check reads that instead of adding a second answer.
 
