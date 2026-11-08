@@ -593,6 +593,9 @@ jobs:
           cargo nextest run --locked -p purlis-core --test it --no-run
       - name: The runner image of this build, and the parity suite's around it, by digest
         if: steps.scope.outputs.run == 'true'
+        env:
+          # runner-image/fetch-forge-programs.sh fetches gh's package through the API with it.
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           docker run --detach --publish 127.0.0.1:5000:5000 --name registry registry:3@sha256:01cd312e67026f06f5d89c3e133a4a9adc7cb9eeb9b1194e0b2954dfd770efd2
@@ -600,7 +603,12 @@ jobs:
           mkdir -p "$context"
           cp target/debug/purlis "$context/purlis"
           cp -R app/src-tauri/plugin "$context/plugin"
-          docker build --file runner-image/Dockerfile --tag purlis-runner:parity "$context"
+          # gh's and glab's packages, fetched and checked against the Dockerfile's sums before the
+          # build, which then runs none of its ADDs (runner-image/fetch-forge-programs.sh).
+          arch=$(dpkg --print-architecture)
+          runner-image/fetch-forge-programs.sh "$arch" "$RUNNER_TEMP/forge-programs"
+          docker build --file runner-image/Dockerfile --build-context "forge-programs-$arch=$RUNNER_TEMP/forge-programs" \
+            --tag purlis-runner:parity "$context"
           # The runner image as it ships, with no harness, and one an update moves it to, for the
           # test of a person's whole way through a pool (`behaviour::pool_journey`).
           docker tag purlis-runner:parity localhost:5000/purlis-runner:shipped
@@ -714,7 +722,8 @@ jobs:
       # cargo-deny itself, the version `EmbarkStudios/cargo-deny-action` v2.1.1 runs, checked
       # against its published SHA-256. Run here rather than in that action's container so its
       # findings can be read: each is an annotation on `Cargo.lock` (qw390), the one place a
-      # failure shows without the job's log.
+      # failure shows without the job's log. The download retries: a GitHub 504 on it once
+      # dropped two pull requests from the merge queue (#5787, #5792).
       - name: Install cargo-deny
         if: needs.changes.outputs.rust != 'false'
         env:
@@ -722,7 +731,8 @@ jobs:
           DENY_SHA256: "9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f"
         run: |
           name="cargo-deny-$DENY_VERSION-x86_64-unknown-linux-musl"
-          curl --fail --silent --show-error --location -o /tmp/deny.tgz \
+          curl --fail --silent --show-error --location \
+            --retry 5 --retry-all-errors --retry-delay 5 --connect-timeout 20 -o /tmp/deny.tgz \
             "https://github.com/EmbarkStudios/cargo-deny/releases/download/$DENY_VERSION/$name.tar.gz"
           echo "$DENY_SHA256  /tmp/deny.tgz" | sha256sum --check --strict
           tar -xzf /tmp/deny.tgz -C /tmp
@@ -766,13 +776,14 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
-          cache: npm
-          cache-dependency-path: app/package-lock.json
+          package-manager-cache: false
       - name: Nothing the web checks read has changed
         if: needs.changes.outputs.web == 'false'
         run: echo "::notice::nothing the web checks read has changed; only the tools' tests run"
-      - run: npm ci
+      - uses: ./.github/actions/npm-ci
         if: needs.changes.outputs.web != 'false' || (matrix.part == 2 && needs.changes.outputs.rust != 'false')
+        with:
+          directory: app
       # Every npm package the app ships, and every vendored asset (app/icons/vendored.json), is
       # under a licence deny.toml allows (FM-3, #1106). It reads the lockfile and nothing else,
       # under a second, so it gates as part of this job rather than as evidence.
@@ -881,6 +892,7 @@ jobs:
       - if: steps.scope.outputs.measure == 'true'
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
+          package-manager-cache: false
           node-version-file: .nvmrc
       - name: The change's bench, in release
         if: steps.scope.outputs.measure == 'true'
@@ -1068,11 +1080,11 @@ jobs:
         if: needs.changes.outputs.app != 'false'
         with:
           node-version-file: .nvmrc
-          cache: npm
-          cache-dependency-path: app/package-lock.json
-      - run: npm ci
+          package-manager-cache: false
+      - uses: ./.github/actions/npm-ci
         if: needs.changes.outputs.app != 'false'
-        working-directory: app
+        with:
+          directory: app
       # Every Rust crate and npm package this platform's build ships has its licence text
       # (#1784). `vite build` generates the notices from the locked graph and fails on the same
       # thing; this names it as a step of its own. Nothing is committed, so nothing can be stale.
@@ -1262,6 +1274,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
+          package-manager-cache: false
           node-version-file: .nvmrc
       # A user to build and test as, owning the checkout, with its own rustup.
       - name: A normal user, with Rust
@@ -1274,13 +1287,9 @@ jobs:
           echo "$RUSTUP_SHA256  $init" | sha256sum -c -
           chmod 755 "$init"
           runuser -u ci -- env HOME=/home/ci "$init" -y --profile minimal --default-toolchain none
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            /home/ci/.cargo/registry/index
-            /home/ci/.cargo/registry/cache
-          key: fedora-registry-${{ hashFiles('Cargo.lock') }}
-          restore-keys: fedora-registry-
+      # No registry cache (#5858): a night's cache was read the next night or never, and the
+      # repository's caches turned over in under three hours at their 10 GB, so it was gone by
+      # then and only pushed out caches the gates read.
       - name: Build the app
         run: |
           chown -R ci: /home/ci
@@ -1476,6 +1485,7 @@ jobs:
       - if: steps.scope.outputs.run == 'true'
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
+          package-manager-cache: false
           node-version: "22"
       - name: The studio probe, confined by Seatbelt
         if: steps.scope.outputs.run == 'true'
@@ -1551,6 +1561,7 @@ jobs:
       - if: steps.scope.outputs.run == 'true'
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
+          package-manager-cache: false
           node-version: ${{ matrix.node }}
       - name: A server on the chat's port listens on its socket
         if: steps.scope.outputs.run == 'true'
@@ -1579,9 +1590,13 @@ jobs:
         run: echo "::notice::nothing Rust reads has changed; the recorded behaviour is not replayed, and only the whole-tree and window guards run"
       # On every change: the whole-tree guards below need the toolchain when nothing else does.
       - uses: ./.github/actions/rust-toolchain
+      # Restores the `rust` job's cache and saves none (#5858), as `rust-doctests` does: `rust`
+      # builds these tests' crates in the same profile, and a cache of this job's own was 0.76 GB
+      # of the repository's 10.
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          shared-key: rust
+          save-if: false
       # **The whole-tree guards** (`WHOLE_TREE_GUARDS` in `tools/ci-scope.mjs`): Rust tests that
       # read every file of the repository, docs and tools included, so a change that leaves Rust
       # out of scope can still fail them (a new tool with no licence header). The `rust` job runs
@@ -1705,9 +1720,12 @@ jobs:
           tauri: true
           packages: xvfb dbus-x11 bubblewrap socat
       - uses: ./.github/actions/rust-toolchain
+      # Pool setup's run restores `scenario-linux`'s cache, the same app build, and saves none
+      # (#5858): a cache of its own was 1.7 GB of the repository's 10.
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          save-if: ${{ github.ref == 'refs/heads/main' && !matrix.pool }}
+          shared-key: ${{ matrix.pool && 'scenario-linux' || '' }}
           # The outcome bars build `dev-release` (#4351): a cache of their own, since main's
           # debug one would be an exact hit, and rust-cache writes nothing over an exact hit.
           key: ${{ matrix.outcome && 'dev-release' || '' }}
@@ -1768,11 +1786,11 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
-          cache: npm
-          cache-dependency-path: app/package-lock.json
-      - run: npm ci
+          package-manager-cache: false
+      - uses: ./.github/actions/npm-ci
         if: ${{ !matrix.sandbox }}
-        working-directory: app
+        with:
+          directory: app
       # **Claude Code's own sandbox, on the settings purlis writes** (#2211). Claude Code builds its
       # sandbox itself, so the real one is run: the version purlis supports
       # (`tests/fixtures/harness-versions/claude.txt`), this machine's build of it from npm with no
@@ -1876,6 +1894,9 @@ jobs:
       # again. apt asks each of its own files again too (`Acquire::Retries`).
       - name: The runner image of this build, for Pool setup's run, by digest
         if: matrix.pool
+        env:
+          # runner-image/fetch-forge-programs.sh fetches gh's package through the API with it.
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           again() {
@@ -1892,7 +1913,10 @@ jobs:
           docker run --detach --publish 127.0.0.1:5000:5000 --name registry "$registry"
           context="$RUNNER_TEMP/runner"
           cp -R app/src-tauri/plugin "$context/plugin"
-          again docker build --file runner-image/Dockerfile --tag purlis-runner:scenario "$context"
+          arch=$(dpkg --print-architecture)
+          runner-image/fetch-forge-programs.sh "$arch" "$RUNNER_TEMP/forge-programs"
+          again docker build --file runner-image/Dockerfile --build-context "forge-programs-$arch=$RUNNER_TEMP/forge-programs" \
+            --tag purlis-runner:scenario "$context"
           # Its Dockerfile copies nothing in, so its context is an empty folder: stdin, as before,
           # would be read once and empty on a second try.
           mkdir -p "$RUNNER_TEMP/pool-runner"

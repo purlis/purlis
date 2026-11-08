@@ -596,9 +596,11 @@ impl From<TemplateArg> for Template {
 
 /// What a chat is told when it asks to change a skill: a chat's change becomes a draft the
 /// person accepts in the studio (spec #2762 decisions 26 and 38), never a write.
-const FROM_A_CHAT: &str = "A chat does not change skills itself: its change becomes a draft the \
-                           person accepts in the Skill studio. Nothing was written. Run it from \
-                           a terminal, or ask the person to.";
+const FROM_A_CHAT: &str = "A chat does not change skills itself, and this change is not one it \
+                           can leave as a draft: nothing was written. A chat drafts a skill with \
+                           `purlis skill edit <name> --from <file>` or `purlis skill new`, which \
+                           the person accepts in the Skill studio. Ask the person for anything \
+                           else.";
 
 /// **Whether this command runs at the person's own terminal** (#5357), and not in a chat, read
 /// the ways purlis already tells them apart, any one of which is a chat:
@@ -904,6 +906,129 @@ fn proposed_from_a_chat(change: SetChange) -> Result<Code, String> {
     crate::brokered::propose_skill_set(change)
 }
 
+/// **The template `skill new` names**, and `with` handed it and the templates to make it from:
+/// purlis's own, and each extension's that declares `skill-template`, asked through the
+/// executor's gate as the studio asks them (ADR 0101).
+fn templated<T>(
+    root: &Path,
+    template: TemplateArg,
+    extension_template: &Option<Vec<String>>,
+    with: impl FnOnce(&purlis_core::skills::studio::Templates<'_>, &TemplateId) -> T,
+) -> T {
+    let template = match extension_template.as_deref() {
+        Some([extension, template]) => TemplateId::Extension {
+            extension: extension.clone(),
+            template: template.clone(),
+        },
+        _ => TemplateId::BuiltIn(template.into()),
+    };
+    let executor = Executor::with_built_in(purlis_core::extension::BuiltIn::of_this_program());
+    purlis_core::skills::studio::with_studio(&executor, root, |studio| {
+        with(
+            &purlis_core::skills::studio::Templates { studio },
+            &template,
+        )
+    })
+}
+
+/// **A chat's edit or new skill, left as a draft** (#5815; spec #2762 decisions 26 and 38):
+/// `purlis skill edit <name> --from <file>` and `purlis skill new`, checked as at the person's
+/// terminal, then handed to the app, which keeps the new `SKILL.md` in the Skill studio's Drafts
+/// for the person to review as a diff and accept or decline. Nothing in the skill's folder is
+/// written. `None` for any other command, which a chat is refused.
+fn drafted_from_a_chat(
+    root: &Path,
+    built_in: Option<&Path>,
+    command: &SkillCommand,
+) -> Option<Result<Code, String>> {
+    let refused = |why: String| {
+        voice::err(esc(&why).to_string());
+        Ok(1)
+    };
+    let waits = |kept: Result<crate::brokered::Kept, String>, what: String, folder: &str| match kept
+    {
+        Ok(crate::brokered::Kept::Drafted) => {
+            voice::ok(
+                esc(&format!(
+                    "A draft of {what} waits for the person in the Skill studio, under Drafts, \
+                     to review as a diff and accept or decline. Nothing in {folder} was written."
+                ))
+                .to_string(),
+            );
+            Ok(0)
+        }
+        Ok(crate::brokered::Kept::Said(code)) => Ok(code),
+        Err(why) => refused(why),
+    };
+    Some(match command {
+        SkillCommand::Edit {
+            name,
+            from: Some(from),
+            at,
+        } => {
+            let level = at.level();
+            let checked = verbs::text_of(root, &level, name).and_then(|(_, was)| {
+                let now = new_text(Some(from), &was)?;
+                let (folder, changed) = verbs::edit_checked(root, &level, name, &was, &now)?;
+                let folder = folder
+                    .strip_prefix(root)
+                    .map_err(|_| format!("{name} is not in this project"))?
+                    .to_path_buf();
+                Ok((folder, changed.then_some(now)))
+            });
+            match checked {
+                Err(why) => refused(why),
+                Ok((_, None)) => {
+                    voice::info(esc(&verbs::unchanged(name)).to_string());
+                    Ok(0)
+                }
+                Ok((folder, Some(now))) => waits(
+                    crate::brokered::draft_skill_file(root, &folder.join("SKILL.md"), now),
+                    format!("{name}'s instructions"),
+                    &folder.display().to_string(),
+                ),
+            }
+        }
+        SkillCommand::New {
+            name,
+            description,
+            template,
+            extension_template,
+            at,
+        } => {
+            let level = at.level();
+            let mut said = |line: purlis_core::repocmd::Say| crate::speak(line);
+            let cx = verbs::Ctx {
+                plane: root,
+                built_in,
+                by: By::Command,
+                say: &mut said,
+            };
+            let checked = templated(
+                root,
+                *template,
+                extension_template,
+                |templates, template| {
+                    verbs::new_checked(&cx, &level, name, description, templates, template)
+                },
+            );
+            match checked {
+                Ok((folder, text)) => waits(
+                    crate::brokered::draft_skill_file(
+                        root,
+                        &Path::new(&folder).join("SKILL.md"),
+                        text,
+                    ),
+                    format!("{name}, a new {level} skill,"),
+                    &folder,
+                ),
+                Err(why) => refused(why),
+            }
+        }
+        _ => return None,
+    })
+}
+
 /// **The person's change to several skills**: its review printed, asked once at their terminal,
 /// then made as one commit. No flag skips the question (#5357).
 fn made_here(
@@ -1007,6 +1132,11 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             Some(Err(why)) => {
                 voice::err(esc(&why).to_string());
                 Ok(1)
+            }
+            None if let Some(drafted) =
+                drafted_from_a_chat(root, built_in.as_deref(), &command) =>
+            {
+                drafted
             }
             None => {
                 // A turn in a workspace rewrites its manifest, which a sandboxed chat is told it
@@ -1224,33 +1354,21 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             template,
             extension_template,
             at,
-        } => {
-            let template = match extension_template.as_deref() {
-                Some([extension, template]) => TemplateId::Extension {
-                    extension: extension.clone(),
-                    template: template.clone(),
-                },
-                _ => TemplateId::BuiltIn(template.into()),
-            };
-            // purlis's own templates, and each extension's that declares `skill-template`, asked
-            // through the executor's gate as the studio asks them (ADR 0101).
-            let executor =
-                Executor::with_built_in(purlis_core::extension::BuiltIn::of_this_program());
-            done(purlis_core::skills::studio::with_studio(
-                &executor,
-                root,
-                |studio| {
-                    verbs::create(
-                        &mut cx,
-                        &at.level(),
-                        &name,
-                        &description,
-                        &purlis_core::skills::studio::Templates { studio },
-                        &template,
-                    )
-                },
-            ))
-        }
+        } => done(templated(
+            root,
+            template,
+            &extension_template,
+            |templates, template| {
+                verbs::create(
+                    &mut cx,
+                    &at.level(),
+                    &name,
+                    &description,
+                    templates,
+                    template,
+                )
+            },
+        )),
         SkillCommand::Edit { name, from, at } => {
             let level = at.level();
             let (_, was) = match verbs::text_of(root, &level, &name) {
@@ -3173,6 +3291,52 @@ fn summary_text(summary: &purlis_core::skills::review::Summary, pad: &str) -> St
     out
 }
 
+/// **The grade a source carries for a skill**, as the terminal prints it (ADR 0100, amended
+/// 2026-11-08): whose it is and that purlis has not checked it before any figure. Nothing where
+/// the source carries none.
+fn grade_text(grade: Option<&source::SourceGrade>) -> String {
+    let rate = |percent: Option<u8>| percent.map_or("not run".to_owned(), |p| format!("{p}%"));
+    match grade {
+        None => String::new(),
+        Some(source::SourceGrade::LeftOut { whose, why }) => format!(
+            "  Grade: {}'s grade file is left out: {}\n",
+            esc(whose),
+            esc(why)
+        ),
+        Some(source::SourceGrade::Shown {
+            whose,
+            newest,
+            this_version,
+            more,
+        }) => {
+            let version = if *this_version {
+                "graded on this version"
+            } else {
+                "graded on an earlier version"
+            };
+            let mut out = format!(
+                "  Grade: {}'s grade, as published — not checked by purlis\n    \
+                 {} with it, {} without it, {version}\n    {}, {} grader, {}, {}: {}\n",
+                esc(whose),
+                rate(newest.with),
+                rate(newest.without),
+                esc(&newest.harness),
+                esc(&newest.grader),
+                counted(usize::from(newest.runs), "run", "runs"),
+                esc(&newest.date),
+                esc(&newest.ended),
+            );
+            if *more > 0 {
+                out.push_str(&format!(
+                    "    The file holds {}.\n",
+                    counted(*more, "earlier grade", "earlier grades")
+                ));
+            }
+            out
+        }
+    }
+}
+
 /// The review of installing `skills` from `from` at `at` (a commit or a revision), as the
 /// terminal prints it, for any kind of source (#5760).
 fn skills_review_text(
@@ -3200,6 +3364,7 @@ fn skills_review_text(
             esc(&skill.description)
         ));
         out.push_str(&summary_text(&skill.summary, "  "));
+        out.push_str(&grade_text(skill.grade.as_ref()));
         out.push_str(&already_text(skill, widenings, "install"));
         for line in &skill.notes {
             out.push_str(&format!("  {}\n", esc(line)));
@@ -3336,6 +3501,7 @@ fn update_text(update: &source::UpdateReview) -> String {
         out.push_str("Removed:\n");
         out.push_str(&summary_text(&update.changes.removed, "  "));
     }
+    out.push_str(&grade_text(update.review.grade.as_ref()));
     let changes = |files: &[source::FileChange], out: &mut String| {
         for file in files {
             let change = match file.change {

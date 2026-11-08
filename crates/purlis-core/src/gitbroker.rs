@@ -39,6 +39,36 @@ use crate::pieces::Who;
 use crate::repocmd::{self, Say};
 use crate::worktree::git;
 
+/// **A push refused for unsigned commits, kept as work waiting on signing** (#5630): the window
+/// puts the setup in front of the person on the lane and in the chat, and the chat is told the
+/// same in its answer. It never runs setup itself.
+fn waits_on_signing(
+    root: &Path,
+    ws: &str,
+    (repo, piece): (&str, &str),
+    asker: &Asker,
+    refused: crate::pieceupdate::UnsignedRefused,
+    now: chrono::DateTime<chrono::Utc>,
+) {
+    let waiting = crate::signingsetup::retry::Waiting {
+        ws: ws.to_owned(),
+        repo: repo.to_owned(),
+        piece: piece.to_owned(),
+        branch: refused.branch,
+        kind: refused.kind,
+        host: refused.host,
+        path: refused.path,
+        commit: refused.commit,
+        chat: Some(asker.chat),
+        at: now.timestamp(),
+        sent: false,
+        why: None,
+    };
+    if let Err(why) = crate::signingsetup::retry::note_refused(root, waiting) {
+        tracing::warn!("purlis: a push refused for unsigned commits was not kept: {why}");
+    }
+}
+
 /// What the app knows of the chat that asks: its own record, never the ask's.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Asker {
@@ -255,7 +285,24 @@ fn isolated_answer(
                 }
                 // `lease` is the `--force-with-lease` typed, which asks for nothing a plain
                 // push does not (#3895).
-                GitWork::WorktreePush { .. } => crate::pieceupdate::push(&at, &reach, &mut say),
+                GitWork::WorktreePush { .. } => {
+                    let (code, unsigned) = crate::pieceupdate::push_told(&at, &reach, &mut say);
+                    if let Some(refused) = unsigned {
+                        waits_on_signing(root, &ask.workspace, (repo, piece), asker, refused, now);
+                    } else if code == 0 {
+                        if let Some(config) = asker.config.as_deref() {
+                            crate::pieceupdate::note_if_signed(&at, config);
+                        }
+                        crate::signingsetup::retry::note_pushed(
+                            root,
+                            &ask.workspace,
+                            repo,
+                            piece,
+                            false,
+                        );
+                    }
+                    code
+                }
                 _ => 1,
             });
             match ran {
@@ -290,19 +337,13 @@ fn isolated_answer(
                 now,
                 || {
                     let ran = in_a_checked_folder(root, &ask.workspace, repo, piece, &held, || {
-                        // What git ignores there goes with the folder: refused, named (#3879).
-                        if let Some(why) =
-                            crate::piececmd::ignored_would_go(root, &ask.workspace, repo, piece)
-                        {
-                            say(Say::Fail(why.into()));
-                            return 1;
-                        }
-                        crate::piececmd::remove(
+                        // What git ignores there goes with the folder: refused, named (#3879),
+                        // with every other reason it is kept (#4500).
+                        crate::piececmd::remove_for_a_chat(
                             root,
                             &ask.workspace,
                             repo,
                             piece,
-                            false,
                             *delete_branch,
                             crate::finished::Forge::asking(&crate::finished::merged::of_the_plane(
                                 root,

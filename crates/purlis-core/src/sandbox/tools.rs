@@ -1760,6 +1760,110 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "ftp",
     "sqlite3",
     "tcpdump",
+    // run a command a flag, an address or a template names (#5619, found by #5595's review):
+    // `xcodebuild`'s build phases, `msgexec`'s command, `leaks --atExit --`, `pyenv exec` and its
+    // shims, `erb`'s Ruby, `helm`'s `--post-renderer` and plugins, `socat`'s `EXEC:` and
+    // `SYSTEM:`, `ncat --exec` and `nc -e`, and `tar --to-command`, `-I` and
+    // `--use-compress-program`. Each is refused whole, not by its flag: a flag can be spelled
+    // many ways, and a name refused only takes away an Allow.
+    "xcodebuild",
+    "msgexec",
+    "leaks",
+    "pyenv",
+    "erb",
+    "helm",
+    "socat",
+    "ncat",
+    "nc",
+    "netcat",
+    "tar",
+    "bsdtar",
+    // the same family (#5619's review): `op run --` and `aws-vault exec --` run the command after
+    // them; version managers run their shims and an `exec` or `run`; `msgfilter` runs its filter;
+    // `xctrace`, `valgrind` and `hyperfine` run what they launch, trace or time; `helmfile` runs
+    // its hooks.
+    "op",
+    "aws-vault",
+    "rbenv",
+    "asdf",
+    "mise",
+    "direnv",
+    "pipenv",
+    "conda",
+    "volta",
+    "msgfilter",
+    "xctrace",
+    "valgrind",
+    "hyperfine",
+    "helmfile",
+    // secret injectors, which run the command after them with what they fetched: the closest
+    // kin of `op run` and `aws-vault exec`
+    "doppler",
+    "infisical",
+    "sops",
+    "chamber",
+    "envconsul",
+    "summon",
+    "envchain",
+    "dotenvx",
+    "teller",
+    "berglas",
+    "aws-sso",
+    "granted",
+    "assume",
+    // environment managers and project runners, which run a command or what a file says
+    "mamba",
+    "micromamba",
+    "rtx",
+    "goenv",
+    "jenv",
+    "fnm",
+    "nix",
+    "nix-shell",
+    "devbox",
+    "pixi",
+    "hatch",
+    "pdm",
+    "rye",
+    "tox",
+    "nox",
+    // more secret injectors (#5619's third review)
+    "saml2aws",
+    "aws-okta",
+    "bws",
+    "dotenv",
+    "phase",
+    "awsume",
+    // programs that run what a chat wrote: a script, its tests, its hooks or its stack
+    "bunx",
+    "tsx",
+    "pytest",
+    "watchexec",
+    "entr",
+    "pre-commit",
+    "pulumi",
+    "cdk",
+    // programs that run what a file a chat wrote says (#5619's fourth review): `terraform`'s
+    // `local-exec` and `external`, a playbook, a Vagrantfile, a template, a test suite
+    "terraform",
+    "tofu",
+    "terragrunt",
+    "ansible",
+    "ansible-playbook",
+    "vagrant",
+    "packer",
+    "cdktf",
+    "sst",
+    "serverless",
+    "jest",
+    "vitest",
+    "mocha",
+    "rspec",
+    // Kept offered, Allow once on the exact command alone (#5799 holds the rest of this ruling):
+    // `kubectl`, `psql`, `ssh`, `scp`, `rsync` and the like are the usual reason a chat is handed
+    // a key at all. A kubeconfig's `exec:` plugin, `psql -f`'s `\!`, `ssh -o ProxyCommand` or
+    // `rsync -e` can run another program, but each is said in the command the person reads, or
+    // in a file the command names, which the notice's caution warns of.
 ];
 
 /// **The programs a Run grant may be wider than one exact command for** (the person's ruling on

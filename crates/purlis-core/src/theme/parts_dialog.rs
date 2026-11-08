@@ -104,6 +104,7 @@ pub(super) const DIALOG: Family = Family {
     around: &[],
     fills: &[],
     under: &[],
+    later: &[],
 };
 
 /// **The dialog's colours as `app/src/ui/dialog/dialog.css` draws them**, which a test holds to

@@ -490,6 +490,24 @@ fn allow(
             level: sandbox::grant::Level::You,
         },
     )?;
+    // Kept blocked for this chat while the audit waited on the session host (#5617).
+    if refusals.kept_blocked(session, vault) {
+        let taken_back = audit(
+            Some(session),
+            &sandbox::grant::Audited {
+                granted: false,
+                what: sandbox::local::VAULT,
+                target: &target,
+                level: sandbox::grant::Level::You,
+            },
+        );
+        if let Err(unrecorded) = taken_back {
+            tracing::warn!("purlis: a vault Keep blocked overtook was not audited ({unrecorded})");
+        }
+        return Err(format!(
+            "You kept vault {vault} blocked for this chat, so nothing was allowed."
+        ));
+    }
     sandbox::local::grant_vault(root, &grant.vault, &grant.persona)
         .map_err(|why| format!("purlis could not keep it, so nothing was allowed: {why}"))?;
     if let Err(why) = sandbox::local::record_made(
@@ -701,7 +719,7 @@ pub async fn keep_vault_blocked(
     // Off the window's thread (#5424): a Run grant's ask open on the vault is answered Don't
     // allow, and that answer is audited on disk.
     crate::off_the_window("keeping the vault blocked", move || {
-        vault_kept_blocked(&held, network.as_ref(), session, &vault);
+        keep_blocked_pressed(&held, network.as_ref(), session, &vault);
         crate::askoutcome::kept_blocked(
             held.chats(),
             session,
@@ -713,28 +731,99 @@ pub async fn keep_vault_blocked(
     .await
 }
 
+/// **Audits each Run grant Keep blocked took back** (#5617), as one removed from the Allowed list
+/// is: taken back, at its own level, naming its keys. It was taken back whether or not the audit
+/// is written, so a failure is said in the log.
+pub(crate) fn audit_kept_back(
+    held: &crate::planes::Held,
+    taken_back: &[purlis_core::secrets::ask::run::GivenRun],
+) {
+    for one in taken_back {
+        let taken_back = purlis_core::secrets::ask::run::Audited::revoked(&one.bound, one.once);
+        // Given ahead of its run, its keys are not in its command yet: named as its grant was.
+        let taken_back = match &one.ahead_keys {
+            Some(keys) => taken_back.handing(keys),
+            None => taken_back,
+        };
+        let audited = held
+            .hooks()
+            .record_run_grant(held.root(), one.bound.chat, &taken_back);
+        if let Err(unrecorded) = audited {
+            tracing::warn!(
+                "purlis: a Run grant Keep blocked took back was not audited ({unrecorded})"
+            );
+        }
+    }
+}
+
+/// **The person pressed Keep blocked on `vault` for chat `session`** (#5617). Held at once: the
+/// chat's later tries raise nothing and its grants on the vault are taken back, though a press on
+/// another ask holds the answers, its audit perhaps waiting on a stalled session host. A press
+/// that comes to the answers after this gives nothing on the vault ([`crate::secretasks`]). The
+/// asks open on it are then answered with [`crate::planes::Held::run_answers`] held, so this never
+/// lands between an Always allow's tool line and its answer; a grant a press under way gave
+/// meanwhile is taken back then.
+pub(crate) fn keep_blocked_pressed(
+    held: &crate::planes::Held,
+    network: Option<&purlis_core::sandboxblock::record::Record>,
+    session: u32,
+    vault: &str,
+) -> Vec<(u32, String)> {
+    held.vault_refusals().keep_blocked(session, vault);
+    // Its asks are answered below, under the answers' lock.
+    let kept = held.secret_asks().keep_vault_blocked_taking(session, vault);
+    audit_kept_back(held, &kept.taken_back);
+    let _one = held.run_answers(session);
+    vault_kept_blocked(held, network, session, vault)
+}
+
 /// What Keep blocked does to what the app holds for chat `session` and `vault`: its later tries
 /// raise nothing, and a Run grant's ask already open on the vault is answered Don't allow, since
 /// its Allow would open what the person just kept blocked. The asks hold it too, so a run the
-/// gate let past before it raises no ask after it (#5424).
+/// gate let past before it raises no ask after it (#5424). Carried out with
+/// [`crate::planes::Held::run_answers`] held, by its caller (#5617). Answers which of those asks
+/// stayed up, and why: one a Keep blocked answered in its turn, through a vault's own ask, is not
+/// one of them.
+///
+/// **An Always allow pressed before it stays** (#5617, accepted): its tool line is committed for
+/// the persona, and the vault given to it, by the person's own earlier press, for every chat and
+/// every teammate. Keep blocked is for one chat on a vault its persona may not use, and has never
+/// taken back what a persona holds; removing the tool, or the vault in the Allowed list, does
+/// (ADR 0112, amended 2026-11-08, "Keep blocked leaves what a persona holds"). One pressed while
+/// Keep blocked is carried out waits for it, and finds its ask answered before it writes anything.
 pub(crate) fn vault_kept_blocked(
     held: &crate::planes::Held,
     network: Option<&purlis_core::sandboxblock::record::Record>,
     session: u32,
     vault: &str,
-) {
+) -> Vec<(u32, String)> {
     held.vault_refusals().keep_blocked(session, vault);
-    for id in held.secret_asks().keep_vault_blocked(session, vault) {
+    let mut stayed = Vec::new();
+    let kept = held.secret_asks().keep_vault_blocked_taking(session, vault);
+    audit_kept_back(held, &kept.taken_back);
+    for id in kept.open {
         let answered = crate::secretasks::run_grant_answered(
             held,
             network,
             id,
             crate::secretasks::RunGrantPress::Refuse,
         );
-        if let Err(why) = answered {
+        // Keep blocked through a vault's own ask keeps the vault blocked in its turn, and that
+        // answers the rest: an ask closed by then did not stay up.
+        let still_open = || {
+            held.secret_asks()
+                .open_runs()
+                .iter()
+                .any(|one| one.id == id)
+        };
+        if let Err(why) = answered
+            && still_open()
+        {
             tracing::warn!("purlis: a run grant's ask stayed up after Keep blocked: {why}");
+            stayed.push((id, why));
         }
     }
+    stayed
 }
 
 /// **Puts a refused vault's Notice away, and tells the chat nothing** (#1987): Dispatch to

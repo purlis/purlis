@@ -186,6 +186,23 @@ pub fn make(config_root: &Path, store: &dyn keyring::Store) -> Result<Signer, St
     keep(store, &service, &Signer::generate()?)
 }
 
+/// **A new key made and kept in place of the one this device keeps** (Replace key, #5632): the
+/// old one is gone from the keychain once the new one reads back.
+pub fn replace(config_root: &Path, store: &dyn keyring::Store) -> Result<Signer, String> {
+    replace_with(config_root, store, &Signer::generate()?)
+}
+
+/// [`replace`] with `signer`, made already: a test's own key, known to its recordings.
+pub fn replace_with(
+    config_root: &Path,
+    store: &dyn keyring::Store,
+    signer: &Signer,
+) -> Result<Signer, String> {
+    let service = service(config_root)?;
+    let _held = crate::machine::Lock::named(config_root, LOCK);
+    keep(store, &service, signer)
+}
+
 /// **The person's own key kept** in place of any this device keeps: `openssh` as the file
 /// holds it, opened with `passphrase` where it has one. An Ed25519 key only.
 pub fn take(
@@ -252,6 +269,18 @@ pub fn signed_copy(
     parents: &HashMap<String, String>,
     signer: &Signer,
 ) -> Result<String, String> {
+    signed_copy_as(dir, id, parents, signer, None)
+}
+
+/// [`signed_copy`], made as `email` where one is given (#5631): its committer's email, and its
+/// author's where the author was the same person, put in before it is signed.
+pub fn signed_copy_as(
+    dir: &Path,
+    id: &str,
+    parents: &HashMap<String, String>,
+    signer: &Signer,
+    email: Option<&str>,
+) -> Result<String, String> {
     let read = git::run_with_input(dir, &["cat-file", "commit", id], Vec::new(), git::READ)
         .map_err(|why| why.to_string())?;
     if read.code != Some(0) {
@@ -260,6 +289,10 @@ pub fn signed_copy(
     let header = signature_header(dir)?;
     let payload = unsigned(&read.out, parents)
         .ok_or_else(|| format!("commit {id} does not read as a commit, so it was not signed"))?;
+    let payload = match email {
+        Some(email) => as_email(&payload, email),
+        None => payload,
+    };
     let signature = signer.sign(&payload)?;
     let object = with_signature(&payload, header, &signature);
     let wrote = git::run_with_input(
@@ -292,6 +325,17 @@ pub fn sign_made(
     before: &[&str],
     signer: &Signer,
 ) -> Result<String, String> {
+    sign_made_as(dir, head, before, signer, None)
+}
+
+/// [`sign_made`], each commit made as `email` where one is given ([`signed_copy_as`]).
+pub fn sign_made_as(
+    dir: &Path,
+    head: &str,
+    before: &[&str],
+    signer: &Signer,
+    email: Option<&str>,
+) -> Result<String, String> {
     let mut args = vec!["rev-list", "--reverse", "--topo-order", head, "--not"];
     args.extend(before.iter().copied());
     let listed = git::run(dir, &args, git::READ).map_err(|why| why.to_string())?;
@@ -309,7 +353,7 @@ pub fn sign_made(
         .map(str::trim)
         .filter(|line| !line.is_empty())
     {
-        let new = signed_copy(dir, id, &copies, signer)?;
+        let new = signed_copy_as(dir, id, &copies, signer, email)?;
         copies.insert(id.to_owned(), new.clone());
         last = new;
     }
@@ -339,6 +383,65 @@ pub fn sign_branch(
         moved(dir, branch_ref, &signed, head)?;
     }
     Ok(signed)
+}
+
+/// [`sign_branch`], each commit made as `email` where one is given (Sign and retry, #5630,
+/// #5631): a commit refused for an email the forge won't verify goes again as the one chosen.
+pub fn sign_branch_as(
+    dir: &Path,
+    branch_ref: &str,
+    head: &str,
+    before: &[&str],
+    signer: &Signer,
+    email: Option<&str>,
+) -> Result<String, String> {
+    let signed = sign_made_as(dir, head, before, signer, email)?;
+    if signed != head {
+        moved(dir, branch_ref, &signed, head)?;
+    }
+    Ok(signed)
+}
+
+/// **The unsigned commit object `payload`, made as `email`**: its committer's email replaced,
+/// and its author's where the author's was the committer's, so the person's own commits go as
+/// the address they chose and a co-author's stay theirs. Its message is left as it is.
+pub fn as_email(payload: &[u8], email: &str) -> Vec<u8> {
+    let Some(end) = payload.windows(2).position(|pair| pair == b"\n\n") else {
+        return payload.to_vec();
+    };
+    let headers = String::from_utf8_lossy(&payload[..end]).into_owned();
+    let email_of = |line: &str| -> Option<String> {
+        let open = line.find('<')?;
+        let close = line[open..].find('>')? + open;
+        Some(line[open + 1..close].to_owned())
+    };
+    let with = |line: &str| -> String {
+        match (line.find('<'), line.find('>')) {
+            (Some(open), Some(close)) if open < close => {
+                format!("{}<{email}>{}", &line[..open], &line[close + 1..])
+            }
+            _ => line.to_owned(),
+        }
+    };
+    let committer = headers
+        .lines()
+        .find(|line| line.starts_with("committer "))
+        .and_then(email_of);
+    let lines: Vec<String> = headers
+        .lines()
+        .map(|line| {
+            let the_persons = line.starts_with("committer ")
+                || (line.starts_with("author ") && email_of(line) == committer);
+            if the_persons {
+                with(line)
+            } else {
+                line.to_owned()
+            }
+        })
+        .collect();
+    let mut out = lines.join("\n").into_bytes();
+    out.extend_from_slice(&payload[end..]);
+    out
 }
 
 /// `branch_ref` moved to `signed` from `was` alone, or why it was left.
@@ -377,6 +480,28 @@ fn signature_header(dir: &Path) -> Result<&'static str, String> {
             "this repository's objects are named by {other}, which purlis does not sign"
         )),
     }
+}
+
+/// **Whether commit `id` in the repository at `dir` carries a signature**: a signature header
+/// before the end of its headers. `false` where git cannot read it.
+pub fn is_signed(dir: &Path, id: &str) -> bool {
+    let Ok(read) = git::run_with_input(dir, &["cat-file", "commit", id], Vec::new(), git::READ)
+    else {
+        return false;
+    };
+    if read.code != Some(0) {
+        return false;
+    }
+    let end = read
+        .out
+        .windows(2)
+        .position(|pair| pair == b"\n\n")
+        .unwrap_or(read.out.len());
+    read.out[..end].split(|byte| *byte == b'\n').any(|line| {
+        SIGNATURE_HEADERS
+            .iter()
+            .any(|header| line.starts_with(format!("{header} ").as_bytes()))
+    })
 }
 
 /// Whether `id` is a full object id.

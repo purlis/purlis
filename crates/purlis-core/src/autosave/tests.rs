@@ -416,3 +416,80 @@ fn the_next_save_pushed_onto_the_request_starts_the_looks_over() {
     assert!(second[0] >= wait, "{second:?}");
     assert_eq!(second[1] - second[0], 60, "{second:?}");
 }
+
+// -- a root write in flight at quit (#5824 F9) --------------------------------------------- //
+
+/// A save in flight in the plane at `root`: it holds the plane's claim for `for_`, then commits
+/// a file, as a save's last root step does, and lets go. Answers when it let go.
+fn a_save_in_flight(root: &std::path::Path, for_: Duration) -> std::thread::JoinHandle<Instant> {
+    let root = root.to_path_buf();
+    let (held, holding) = std::sync::mpsc::channel();
+    let saving = std::thread::spawn(move || {
+        let claim = crate::planegit::Claim::of(&root).expect("the claim");
+        held.send(()).unwrap();
+        std::thread::sleep(for_);
+        std::fs::write(root.join("in-flight.md"), "saved").unwrap();
+        for args in [&["add", "-A"][..], &["commit", "-q", "-m", "in flight"]] {
+            assert!(crate::testgit::run(&root, args).ok(), "git {args:?}");
+        }
+        drop(claim);
+        Instant::now()
+    });
+    holding.recv().unwrap();
+    saving
+}
+
+#[test]
+fn quit_waits_for_a_save_in_flight_and_never_kills_it() {
+    let (_dir, _plane, repo) = quitting_clone(COMMIT_ON);
+    let saving = a_save_in_flight(&repo.path, Duration::from_millis(700));
+    let ended = std::sync::Mutex::new(None);
+
+    let stopped = end_savers_once_no_root_write_runs(
+        std::slice::from_ref(&repo.path),
+        Duration::from_secs(20),
+        &|| *ended.lock().unwrap() = Some(Instant::now()),
+    );
+
+    let let_go = saving.join().expect("the save in flight finished");
+    assert!(stopped);
+    let ended = ended.lock().unwrap().expect("the savers were ended");
+    assert!(
+        ended >= let_go,
+        "the savers were ended while the save was writing"
+    );
+    let saved = crate::testgit::run(&repo.path, &["log", "-1", "--format=%s"]).out;
+    assert_eq!(
+        saved.trim(),
+        "in flight",
+        "the save in flight finished its commit"
+    );
+    assert!(!repo.path.join(".git/index.lock").exists());
+}
+
+#[test]
+fn quit_ends_no_saver_while_a_root_write_outlasts_its_bound() {
+    let (_dir, _plane, repo) = quitting_clone(COMMIT_ON);
+    let saving = a_save_in_flight(&repo.path, Duration::from_millis(1500));
+    let ended = std::sync::atomic::AtomicBool::new(false);
+    let started = Instant::now();
+
+    let stopped = end_savers_once_no_root_write_runs(
+        std::slice::from_ref(&repo.path),
+        Duration::from_millis(300),
+        &|| ended.store(true, std::sync::atomic::Ordering::SeqCst),
+    );
+
+    assert!(!stopped);
+    assert!(
+        started.elapsed() < Duration::from_millis(1400),
+        "it waited past its bound"
+    );
+    assert!(
+        !ended.load(std::sync::atomic::Ordering::SeqCst),
+        "a saver writing was ended"
+    );
+    saving.join().expect("the save in flight finished");
+    let saved = crate::testgit::run(&repo.path, &["log", "-1", "--format=%s"]).out;
+    assert_eq!(saved.trim(), "in flight");
+}

@@ -23,6 +23,7 @@ import { MoveNotice } from "./MoveNotice";
 import { TaskQuietNotice } from "./TaskQuietNotice";
 import { PersonaGrantsNotice } from "./PersonaGrantsNotice";
 import { DispatchGrantNotice } from "./DispatchGrantNotice";
+import { SigningRefusalNotice } from "./SigningRefusal";
 import { TasksSharingNotice } from "./TasksSharingNotice";
 import { BrowserLoginNotice } from "./BrowserLoginNotice";
 import { WorkspaceRemovalNotice } from "./WorkspaceRemovalNotice";
@@ -393,6 +394,9 @@ export function ChatNotices({
       <SecretFillNotice plane={plane} session={session} asks={drawn} onWay={onAnswer} />
       {/* A skill this chat drafted (#2772): ready in the Skill studio, which alone asks for it. */}
       <DraftReadyNotice plane={plane} session={session} />
+      {/* A push of this chat's the forge refused for unsigned commits (#5630): Set up signing,
+          then Sign and retry. */}
+      <SigningRefusalNotice plane={plane} session={session} />
       {/* Two of this chat's tasks in one folder with no branch of their own (#1511). */}
       <TasksSharingNotice plane={plane} session={session} />
       {/* A chat off screen stopped on its harness's permission prompt: said where the person is. */}

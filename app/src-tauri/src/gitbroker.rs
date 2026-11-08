@@ -52,7 +52,13 @@ fn signing_isolation(held: &Held) -> purlis_core::worktree::git::Isolated {
         };
         let keyring = purlis_core::commitsign::this_builds_keyring(&config);
         match purlis_core::commitsign::kept(&config, &*keyring) {
-            Ok(signer) => isolation.signing(signer),
+            // Signed as the email the person chose for chat commits, where they chose one
+            // (#5631): one the forge verifies, so the signature shows as Verified.
+            Ok(Some(signer)) => match purlis_core::signingsetup::commit_email(&config) {
+                Some(email) => isolation.signing(Some(signer)).as_email(&email),
+                None => isolation.signing(Some(signer)),
+            },
+            Ok(None) => isolation,
             Err(why) => {
                 tracing::warn!("purlis: a chat's commits are made unsigned: {why}");
                 isolation
@@ -251,6 +257,11 @@ pub fn answer(held: &Held, ask: &GitAsk) -> Answer {
         held.tree_moved();
     }
     let answer = told(held, ask.chat, answered);
+    // A push refused for unsigned commits, or one that went, changes the one Ask for the lanes
+    // waiting on signing (#5633).
+    if matches!(ask.work, GitWork::WorktreePush { .. }) {
+        held.hooks().asks_teller()();
+    }
     match &answer {
         Answer::Said { code, .. } => tracing::info!(
             "purlis: chat {} asked the app to {what} in workspace '{}'; it ran, exit {code}",

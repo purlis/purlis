@@ -155,6 +155,37 @@ const DEBUGGING = {
   ],
   left_out: [],
   lint: [],
+  grade: null,
+};
+
+/** The grade superpowers published for systematic-debugging (#4346): the newest of two. */
+const PUBLISHED = (thisVersion: boolean) => ({
+  whose: "superpowers",
+  newest: {
+    date: "2026-11-02",
+    harness: "claude-code",
+    grader: "built-in",
+    with: 92,
+    without: 40,
+    runs: 3,
+    ended: "Finished",
+  },
+  this_version: thisVersion,
+  more: 1,
+  left_out: null,
+});
+
+/** The grade each story's skill carries, by the name its review is asked for. */
+const GRADES: Record<string, unknown> = {
+  "graded-this-version": PUBLISHED(true),
+  "graded-earlier": PUBLISHED(false),
+  "graded-malformed": {
+    whose: "superpowers",
+    newest: null,
+    this_version: false,
+    more: 0,
+    left_out: 'a grade\'s "with" rate is 140, outside 0 to 100',
+  },
 };
 
 const OFFER = {
@@ -354,6 +385,12 @@ function core({
                 ],
               },
             ],
+            accepted: { commit: "3".repeat(40), skills: [] },
+          };
+        if ((args as { names: string[] }).names[0] in GRADES)
+          return {
+            commit: commit("3"),
+            skills: [{ ...DEBUGGING, grade: GRADES[(args as { names: string[] }).names[0]] }],
             accepted: { commit: "3".repeat(40), skills: [] },
           };
         return {
@@ -579,6 +616,39 @@ export const InstallReview: Story = {
     await expect(within(review).getByRole("button", { name: "Install" })).toBeVisible();
   },
 };
+
+/** The install review of a skill whose source carries a grade, the grade scrolled into view. */
+function gradedReview(skill: string, said: string): Story {
+  return {
+    args: { at: { at: "install", source: SOURCE, label: SUPERPOWERS.label, skill } },
+    play: async ({ canvas }) => {
+      const review = await canvas.findByTestId("install-review");
+      const grade = await within(review).findByTestId("grade-systematic-debugging");
+      await expect(grade).toHaveTextContent(said);
+      grade.scrollIntoView({ block: "center" });
+      await expect(within(review).getByRole("button", { name: "Install" })).toBeVisible();
+    },
+  };
+}
+
+/** **A grade the source carries, measured on this version** (#4346): whose it is and that purlis
+ *  has not checked it on a line of their own, before any figure. */
+export const InstallReviewGraded = gradedReview(
+  "graded-this-version",
+  "superpowers's grade, as published — not checked by purlis",
+);
+
+/** **A grade the source carries, measured on an earlier version** (#4346). */
+export const InstallReviewGradedEarlier = gradedReview(
+  "graded-earlier",
+  "Graded on an earlier version",
+);
+
+/** **A grade file left out** (#4346): why, and nothing from it. */
+export const InstallReviewGradeLeftOut = gradedReview(
+  "graded-malformed",
+  "Nothing from it is shown.",
+);
 
 /** **The install review at the project level, granted to ops** (#4185): the grant picked under
  *  Lands in, and the line saying the install grants the project skill it relies on to ops too. */

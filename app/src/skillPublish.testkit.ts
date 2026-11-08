@@ -56,6 +56,7 @@ export const REVIEW: PublishReviewView = {
       ended: "whole",
     },
   ],
+  grade_files: ["deploy.grades.json"],
   accepted: { base: "main", commit: "5".repeat(40), digest: "d".repeat(64) },
 };
 

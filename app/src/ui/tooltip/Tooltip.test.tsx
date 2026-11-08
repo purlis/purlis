@@ -778,3 +778,91 @@ describe("a button's tooltip", () => {
     expect(screen.getByRole("button", { name: "Publish" })).toBeDisabled();
   });
 });
+
+describe("a control's tooltip at the window's edge (#3364)", () => {
+  /** A window 1024 px wide, a tooltip whose words take 300 px, and its target's box. */
+  function laidOut(target: { left: number; right: number }) {
+    vi.spyOn(document.documentElement, "clientWidth", "get").mockReturnValue(1024);
+    const real = Element.prototype.getBoundingClientRect;
+    vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: Element,
+    ) {
+      if (this.textContent === "purlis" && this.tagName === "SPAN")
+        return DOMRect.fromRect({
+          x: target.left,
+          y: 300,
+          width: target.right - target.left,
+          height: 20,
+        });
+      if (
+        this.getAttribute("data-scope") === "tooltip" &&
+        this.getAttribute("data-part") === "root"
+      )
+        // Its words take 15 px a letter, to 300 px at most, as its widest.
+        return DOMRect.fromRect({
+          x: 0,
+          y: 0,
+          width: Math.min(300, (this.textContent ?? "").length * 15),
+          height: 40,
+        });
+      return real.call(this);
+    });
+  }
+  afterEach(() => vi.restoreAllMocks());
+
+  const opened = async () => {
+    await pointerIn();
+    await user.hover(screen.getByText("purlis"));
+    await wait(TOOLTIP_DELAY + 50);
+    const tip = shownTip();
+    if (tip === null) throw new Error("no tooltip");
+    return tip;
+  };
+
+  it("stands at its target's end, at its whole width, where the end has room (R166)", async () => {
+    laidOut({ left: 100, right: 160 });
+    render(<Path />);
+    const tip = await opened();
+    expect(tip).toHaveAttribute("data-placement", "right");
+    expect(tip.style.inlineSize).toBe("300px");
+  });
+
+  it("flips to its target's start at its whole width, where only the start has room", async () => {
+    laidOut({ left: 900, right: 960 });
+    render(<Path />);
+    const tip = await opened();
+    expect(tip).toHaveAttribute("data-placement", "left");
+    expect(tip.style.inlineSize).toBe("300px");
+  });
+
+  it("stands under a target across the window, at its whole width, never a column of words", async () => {
+    laidOut({ left: 40, right: 1000 });
+    render(<Path />);
+    const tip = await opened();
+    expect(tip).toHaveAttribute("data-placement", "bottom");
+    expect(tip.style.inlineSize).toBe("300px");
+  });
+
+  it("is measured again when its words change while it is open", async () => {
+    laidOut({ left: 100, right: 160 });
+    function Changing() {
+      const [tip, setTip] = useState("Short");
+      return (
+        <>
+          <Tooltip tip={tip}>
+            <span>purlis</span>
+          </Tooltip>
+          <button type="button" onClick={() => setTip("Words that are longer now")}>
+            Change
+          </button>
+        </>
+      );
+    }
+    render(<Changing />);
+    const tip = await opened();
+    expect(tip.style.inlineSize).toBe("75px");
+    act(() => screen.getByRole("button", { name: "Change" }).click());
+    await wait(0);
+    expect(shownTip()?.style.inlineSize).toBe("300px");
+  });
+});

@@ -619,6 +619,7 @@ fn a_claude_code_chat_may_run_charter_session_record_and_read_charter_without_as
             // And what writes only the chat's own scope, and its question to the person (#3829).
             "mcp__purlis__todo_add",
             "mcp__purlis__todo_done",
+            "mcp__purlis__todo_reopen",
             "mcp__purlis__memory_add",
             "mcp__purlis__persona_remember",
             "mcp__purlis__workspace_section",
@@ -941,6 +942,8 @@ fn every_charter_tool_a_claude_code_chat_runs_without_asking_is_ruled_in_by_name
         // the app asks once itself (#3829, ruled 2026-10-29).
         "todo_add",
         "todo_done",
+        // And its reopen, the same workspace's todos (#3416, under #3829).
+        "todo_reopen",
         "memory_add",
         "persona_remember",
         "workspace_section",

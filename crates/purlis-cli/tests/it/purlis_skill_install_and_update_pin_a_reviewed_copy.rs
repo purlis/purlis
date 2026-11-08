@@ -677,3 +677,102 @@ fn an_install_names_its_source_or_an_extension() {
     assert!(text(&out).contains("cannot be used with"), "{}", text(&out));
     assert!(!project.root().join("skills").exists());
 }
+
+/// The grade file of `skill` as a publish writes it: one row, on a tree that is no version here.
+fn grades_of(skill: &str) -> String {
+    let tree = "a".repeat(40);
+    format!(
+        r#"{{"format":1,"skill":"{skill}","grades":[{{"date":"2026-11-02","tree":"{tree}","harness":"claude-code","grader":"built-in","with":92,"without":40,"runs":3,"ended":"whole"}}]}}"#
+    )
+}
+
+const DEPLOY_MD: &str = "---\nname: deploy\ndescription: Ships it.\n---\n\nShip it.\n";
+const NOTIFY_MD: &str = "---\nname: notify\ndescription: Tells the team.\n---\n\nTell them.\n";
+
+#[test]
+fn install_prints_a_grade_the_source_carries_as_its_publishers_not_purliss() {
+    let project = Project::new();
+    let grades = grades_of("deploy");
+    project.publish(&[
+        ("skills/deploy/SKILL.md", DEPLOY_MD),
+        ("skills/deploy.grades.json", &grades),
+    ]);
+
+    let declined = project.run(
+        &[
+            "skill",
+            "install",
+            &project.url(),
+            "deploy",
+            "--folder",
+            "skills",
+        ],
+        "n\n",
+    );
+
+    let said = text(&declined);
+    assert!(
+        said.contains(
+            "  Grade: source's grade, as published — not checked by purlis\n    \
+             92% with it, 40% without it, graded on an earlier version\n    \
+             claude-code, built-in grader, 3 runs, 2026-11-02: Finished\n"
+        ),
+        "{said}"
+    );
+}
+
+#[test]
+fn install_leaves_out_a_grade_file_it_cannot_read_and_says_why() {
+    let project = Project::new();
+    project.publish(&[
+        ("skills/notify/SKILL.md", NOTIFY_MD),
+        ("skills/notify.grades.json", "{not json"),
+    ]);
+
+    let declined = project.run(
+        &[
+            "skill",
+            "install",
+            &project.url(),
+            "notify",
+            "--folder",
+            "skills",
+        ],
+        "n\n",
+    );
+
+    let said = text(&declined);
+    assert!(
+        said.contains(
+            "  Grade: source's grade file is left out: it is not a grade file purlis reads\n"
+        ),
+        "{said}"
+    );
+    assert!(!said.contains("graded on"), "{said}");
+}
+
+#[test]
+fn update_prints_the_grade_the_newer_commit_carries() {
+    let project = Project::new();
+    let url = project.url();
+    let installed = project.run(
+        &[
+            "skill", "install", &url, "notify", "--folder", "skills", "--yes",
+        ],
+        "",
+    );
+    assert!(installed.status.success(), "{}", text(&installed));
+    let grades = grades_of("notify");
+    project.publish(&[
+        ("skills/notify/SKILL.md", NOTIFY_MD),
+        ("skills/notify.grades.json", &grades),
+    ]);
+
+    let declined = project.run(&["skill", "update", "notify"], "n\n");
+
+    let said = text(&declined);
+    assert!(
+        said.contains("  Grade: source's grade, as published — not checked by purlis\n"),
+        "{said}"
+    );
+}

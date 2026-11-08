@@ -285,6 +285,20 @@ pub const WINDOW_ONLY: &[&str] = &[
     "signing_add_key",
     "signing_key_listed",
     "signing_check",
+    // Work a forge refused for unsigned commits, and Sign and retry (#5630, #5633): signed with
+    // this device's key and pushed again, behind the person's press in the window alone.
+    "signing_waiting",
+    "signing_sign_and_retry",
+    "signing_forget",
+    // The email chat commits use, from the account's verified addresses (#5631).
+    "signing_emails",
+    "signing_use_email",
+    // The card's management (#5632): the accounts' keys read, another device's removed,
+    // Replace key and Remove signing, each behind the person's press in the window alone.
+    "signing_accounts_keys",
+    "signing_remove_other",
+    "signing_replace_key",
+    "signing_remove_everywhere",
     // Agent identity (#4485): GitHub's App flow, the tool lines and the key, each the person's.
     "agent_identities",
     "agent_identity_create",
@@ -1537,6 +1551,8 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "window_layout",
     "window_showing",
     "window_views",
+    // Who has worked in each workspace, off the reopen record (#3593): a read.
+    "worked_here",
     "workspace_at_risk",
     "workspace_create",
     "workspace_focused",

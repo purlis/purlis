@@ -436,6 +436,39 @@ fn allow_follows_a_refusal_an_audit_and_the_apps_own_record_of_the_chat() {
     assert_eq!(*heard.lock().unwrap(), []);
 }
 
+/// #5617: Keep blocked pressed while the refused vault's own Allow waits on its audit holds: the
+/// Allow gives nothing once the audit returns.
+#[test]
+fn allow_whose_audit_returns_after_keep_blocked_gives_nothing() {
+    let project = project();
+    let root = project.path();
+    let refusals = Refusals::default();
+    let (_, tell) = told();
+    refused(
+        &plane(root),
+        &refusals,
+        &asker(root, Some("steward")),
+        false,
+        "devops",
+        &tell,
+    );
+    let chat = steward();
+    let pressed = allow(
+        root,
+        &refusals,
+        &chat,
+        "devops",
+        &|_, _| {
+            // The person presses Keep blocked while the audit waits on the session host.
+            refusals.keep_blocked(chat.session, "devops");
+            Ok(())
+        },
+        1,
+    );
+    assert!(pressed.is_err(), "{pressed:?}");
+    assert_eq!(sandbox::local::granted_vaults(root), []);
+}
+
 #[test]
 fn policy_forbids_the_allow_and_the_notice_says_who_locked_it() {
     use sandbox::policy::{Locks, set_for_this_test};

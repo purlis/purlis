@@ -71,6 +71,8 @@ fn the_window_is_shown_the_chats_skills_with_what_each_takes_and_its_budget() {
             still_over: None,
             pinned_by: Vec::new(),
             pins_together: None,
+            drops: None,
+            twins: None,
         })
     );
     assert!(shown.skills.iter().all(|one| one.hidden.is_none()));

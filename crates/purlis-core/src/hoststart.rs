@@ -177,6 +177,7 @@ pub fn plane_skills_laid_out(
         plane: root,
         workspace,
         repo: &[],
+        own: &[],
         routed: None,
     });
     laid_out_on(at, persona, kit, harness)
@@ -230,6 +231,11 @@ pub struct ChatSkills {
     /// The variables of its environment that say where its harness keeps its config, where it
     /// was started with any: a profile may point it at another account's folder.
     pub plugins_env: Vec<(String, String)>,
+    /// **The skills its harness finds itself, as it has them at its start** (#5736): the
+    /// person's own and those of its plugins, read before it is routed ([`Self::own_read`]). Claude
+    /// Code's listing limit is handed with them in it, and a plane skill the same as one of them
+    /// is left out. Empty where nothing here can say.
+    pub own: Vec<crate::skills::OutsideSkill>,
 }
 
 impl ChatSkills {
@@ -254,6 +260,47 @@ impl ChatSkills {
                 },
             )
         });
+        self
+    }
+
+    /// **These skills, with the skills its harness finds itself** (#5736, #5737): the person's
+    /// own and those of the plugins it would have in `cwd` with `env`, `reads_project` saying
+    /// whether its folder's settings count, read before it is routed and armed, so its router,
+    /// its listing limit and what is laid out for it see the same. purlis's own plugins are its
+    /// built-in skills and the plane's it hands, never the person's, and a Try it's chat has
+    /// every harness skill off, so neither is read. The plugins it holds are read apart
+    /// ([`Self::plugins_read`]), once its arming has said whether its folder's settings load.
+    #[must_use]
+    pub fn own_read(
+        mut self,
+        harness: Option<Harness>,
+        cwd: Option<&Path>,
+        reads_project: bool,
+        env: &[(String, String)],
+    ) -> Self {
+        let Some(harness) = harness.filter(|_| !self.tried) else {
+            return self;
+        };
+        let adapter = harness.adapter().plugins();
+        let env = crate::harness_plugin::Env::of(env);
+        let Some(plugins) = adapter.plugins_here(
+            &env,
+            &crate::harness_plugin::ChatFolder {
+                cwd: cwd.map(Path::to_path_buf),
+                reads_project,
+            },
+        ) else {
+            return self;
+        };
+        self.own = crate::harness_plugin::harness_skills_but(
+            adapter,
+            &env,
+            &crate::harness_plugin::Choices::read_in(&self.root, self.workspace.as_deref()),
+            &plugins.off,
+        )
+        .into_iter()
+        .filter(|one| crate::skills::the_persons(harness, one))
+        .collect();
         self
     }
 
@@ -301,6 +348,7 @@ impl ChatSkills {
             arm_router,
             plugins: None,
             plugins_env: Vec::new(),
+            own: Vec::new(),
         }
     }
 
@@ -340,6 +388,7 @@ impl ChatSkills {
                 plane: &self.root,
                 workspace: self.workspace.as_deref(),
                 repo: &self.repo,
+                own: &self.own,
                 routed: None,
             },
             self.persona.as_deref(),
@@ -843,6 +892,7 @@ pub fn compose_ready(
             Some(&cwd),
             persona.as_deref(),
         )
+        .own_read(ready.harness, Some(&cwd), sandbox.is_none(), &ready.env)
         .plugins_read(ready.harness, Some(&cwd), sandbox.is_none(), &ready.env)
         .routed_by(built_in.as_deref(), ready.harness, beside.router().as_ref())
     });
@@ -1470,6 +1520,7 @@ pub fn armed(arming: &Arming<'_>) -> Result<Armed, String> {
         plane: skills_root,
         workspace,
         repo: &skills.repo,
+        own: &skills.own,
         routed: skills.routed.as_deref(),
     });
     let linked = laid_out_on(at, skills.persona.as_deref(), kit, harness);

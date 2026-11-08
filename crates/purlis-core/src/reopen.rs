@@ -41,6 +41,7 @@ pub use studio::{StudioJob, StudioWork};
 pub mod layout;
 pub use layout::Layout;
 pub mod upgrade;
+pub mod worked;
 
 /// The one version of this file this app writes and reads. A record of any other version is
 /// ignored whole, the way the frame's own manifest is: a format that changed means the
@@ -323,6 +324,17 @@ pub struct Chat {
     /// own in flight, and every record written before this field — not a format change, for
     /// [`Self::pinned`]'s reason.
     pub own_work: Option<crate::ownwork::OwnWork>,
+    /// **Each piece of its own work by name** (#5750): recorded as its tool starts it, and
+    /// replaced by what each turn's end says is in flight ([`crate::ownwork::pieces`]). What the
+    /// wake line names, where [`Self::own_work`] holds counts. Empty for a chat with none, and
+    /// every record written before this field — not a format change, for [`Self::pinned`]'s
+    /// reason.
+    pub own_pieces: Vec<crate::ownwork::pieces::Piece>,
+    /// **Whether a turn of the chat's own was under way** (#5750): from its prompt to its end, so
+    /// a restart that ended the program then cut that turn mid-way, and the chat brought back is
+    /// told so. `false` for every record written before this field, for [`Self::pinned`]'s
+    /// reason.
+    pub mid_turn: bool,
 }
 
 impl Chat {
@@ -1077,8 +1089,14 @@ pub fn write(plane_root: &Path, record: &Record) -> std::io::Result<()> {
     no_link_on_the_way(plane_root, &file)?;
     let dir = file.parent().expect("the record's path has a directory");
     crate::rewrite::create_dir_all(dir)?;
-    let text = serde_json::to_string_pretty(&OnDisk::from(record))
-        .expect("the record is plain data serde can always write");
+    // **Who worked where outlives the chats** (#3593): what the record on disk held, with each
+    // persona chat this one holds, so a chat that closed is still counted after a relaunch.
+    let worked = worked::carried(plane_root, &record.chats);
+    let text = serde_json::to_string_pretty(&OnDisk {
+        worked: worked::on_disk(worked),
+        ..OnDisk::from(record)
+    })
+    .expect("the record is plain data serde can always write");
     crate::rewrite::replace(
         plane_root,
         &file,
@@ -1424,6 +1442,16 @@ struct OnDisk {
         deserialize_with = "lenient"
     )]
     strip: Option<String>,
+    /// Who has worked in each workspace, kept after their chats close (#3593): see [`worked`].
+    /// **Absent while no persona chat has been recorded in a workspace**, so such a plane writes
+    /// the record it always wrote; a value that does not read is absent. Not a version bump, for
+    /// [`Chat::pinned`]'s reason.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "lenient"
+    )]
+    worked: Option<worked::OnDisk>,
 }
 
 /// A value that does not read as `T` reads as absent, never as a record that does not read.
@@ -1776,6 +1804,39 @@ struct ChatOnDisk {
         deserialize_with = "lenient"
     )]
     own_work: Option<crate::ownwork::OwnWork>,
+    /// Each piece of its own work, or absent — see [`Chat::own_pieces`]. A piece that does not
+    /// read whole, or is not of its shape, is left out, and so is any past
+    /// [`crate::ownwork::pieces::MOST_PIECES`].
+    #[serde(
+        default,
+        skip_serializing_if = "Vec::is_empty",
+        deserialize_with = "sound_pieces"
+    )]
+    own_pieces: Vec<crate::ownwork::pieces::Piece>,
+    /// Whether a turn was under way — see [`Chat::mid_turn`].
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    mid_turn: bool,
+}
+
+/// The pieces of own work a record holds, each that reads whole and is of its shape, the latest
+/// [`crate::ownwork::pieces::MOST_PIECES`] of them: a record a chat's line wrote into is read
+/// leniently, as its other keys are.
+fn sound_pieces<'de, D>(de: D) -> Result<Vec<crate::ownwork::pieces::Piece>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let read: Vec<serde_json::Value> =
+        lenient::<_, Vec<serde_json::Value>>(de)?.unwrap_or_default();
+    let mut kept = Vec::new();
+    for one in read {
+        if let Some(piece) = serde_json::from_value::<crate::ownwork::pieces::Piece>(one)
+            .ok()
+            .and_then(crate::ownwork::pieces::Piece::sound)
+        {
+            crate::ownwork::pieces::started(&mut kept, piece);
+        }
+    }
+    Ok(kept)
 }
 
 fn is_zero(n: &u32) -> bool {
@@ -2022,6 +2083,8 @@ impl From<&Record> for OnDisk {
                     routing: chat.routing.clone(),
                     studio: chat.studio.as_ref().map(studio::StudioOnDisk::of),
                     own_work: chat.own_work.and_then(crate::ownwork::OwnWork::in_flight),
+                    own_pieces: chat.own_pieces.clone(),
+                    mid_turn: chat.mid_turn,
                 })
                 .collect(),
             dealt: highest_dealt(record),
@@ -2034,6 +2097,8 @@ impl From<&Record> for OnDisk {
             focus: record.focus.as_ref().map(FocusOnDisk::from),
             tabs,
             strip,
+            // Filled by [`write`], which carries what the record on disk held forward.
+            worked: None,
         }
     }
 }
@@ -2119,6 +2184,8 @@ impl From<ChatOnDisk> for Chat {
             unrecorded: false,
             studio: chat.studio.and_then(studio::StudioOnDisk::sound),
             own_work: chat.own_work.and_then(crate::ownwork::OwnWork::in_flight),
+            own_pieces: chat.own_pieces,
+            mid_turn: chat.mid_turn,
         }
     }
 }

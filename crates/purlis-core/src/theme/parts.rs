@@ -474,6 +474,26 @@ pub struct Part {
     pub properties: &'static [Prop],
 }
 
+/// **What a released family or part joined after it shipped** (#3226): a state its family's
+/// `states` list gained, or a property one of its parts' `properties` list gained, each of which
+/// the manifest already had. Its list says it, as ever; this says since when, so the manifest as
+/// of an earlier version ([`manifest_as_of`]) leaves it out and a released digest is unchanged.
+/// Written `since: super::NEXT`, which the release step numbers as any other `NEXT`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Joined {
+    /// A state the family's root is now keyed in.
+    State(State),
+    /// A property the part of this name now takes.
+    Property(&'static str, Prop),
+}
+
+/// One addition to a released family's or part's list ([`Joined`]), and the version it came in.
+#[derive(Debug, Clone, Copy)]
+pub struct Later {
+    pub joined: Joined,
+    pub since: u32,
+}
+
 /// **One component family**: its parts, the first its root, which carries the variant and the
 /// state; its variants; the manifest version it came in; and the grounds it is drawn on.
 #[derive(Debug, Clone, Copy)]
@@ -533,9 +553,22 @@ pub struct Family {
     /// ([`FIELD_HELP_GROUNDS`]). Its words are held to these, but a fallback never
     /// paints them, since the part does not.
     under: &'static [(&'static str, &'static [&'static str])],
+    /// **What its lists gained after it shipped** (#3226), each with the version it came in: a
+    /// state in [`Family::states`] or a property in a part's list that came later than what holds
+    /// it. Empty for a family whose lists are as it first shipped them.
+    pub later: &'static [Later],
 }
 
 impl Family {
+    /// **The version `joined` came into this family's lists in**, where [`Family::later`] dates
+    /// it (#3226); else 0, and the state's, the property's and the holder's own `since` say it.
+    pub fn joined_since(&self, joined: Joined) -> u32 {
+        self.later
+            .iter()
+            .find(|one| one.joined == joined)
+            .map_or(0, |one| one.since)
+    }
+
     /// The attribute `state` is keyed on, on this family's root.
     fn attribute(&self, state: State) -> &'static str {
         if let Some((_, own)) = own_states(self).iter().find(|(one, _)| *one == state) {
@@ -736,6 +769,47 @@ fn apart_in_nothing(
     })
 }
 
+/// **A part's own look in a state of its own, inside its root** (#3269): a tab's × under the
+/// pointer takes the quiet hover, its fill and the primary words (`tabs.css`, #4756), whatever
+/// the tab around it is in. Its keys stay its root's (`tabs.closer.hover.text` is the × of a tab
+/// under the pointer), so the colours a theme's rules and a fallback set for the part reach it
+/// everywhere but in this state ([`targets`]): what the window draws there is this look, and
+/// the floors hold it over the root's fill as drawn in each set of the root's states it can be
+/// in at once ([`Held::part_states`]).
+#[derive(Debug, Clone, Copy)]
+pub(super) struct PartState {
+    pub(super) family: &'static str,
+    pub(super) part: &'static str,
+    /// The root's state that holds whenever this one does: the pointer on the × is on its tab.
+    pub(super) within: State,
+    /// What marks the state on the part's own element, and how a sentence says it.
+    pub(super) marked: &'static str,
+    pub(super) said: &'static str,
+    pub(super) fill: &'static str,
+    pub(super) words: &'static str,
+}
+
+/// The parts with a look of their own in a state of their own ([`PartState`]).
+pub(super) const PART_STATES: &[PartState] = &[PartState {
+    family: "tabs",
+    part: "closer",
+    within: State::Hover,
+    marked: ":hover",
+    said: "under the pointer",
+    fill: "surface.hover",
+    words: "text.primary",
+}];
+
+/// The states of its own `part` of `family` has, each with its look.
+fn part_states<'a>(
+    family: &'a Family,
+    part: &'a str,
+) -> impl Iterator<Item = &'static PartState> + 'a {
+    PART_STATES
+        .iter()
+        .filter(move |one| one.family == family.name && one.part == part)
+}
+
 /// **What a part drawn apart is drawn in**, by family and part (#4000): a switcher row's count
 /// is drawn in its row, so a fill a theme gives the row is under it too.
 const APART_IN: &[(&str, &str, &str)] = &[("titlebar", "row-count", "row")];
@@ -750,7 +824,8 @@ fn holder_of(family: &Family, part: &str) -> Option<usize> {
 
 /// **What a part drawn apart takes no key of**, by family and part (#4000): an unavailable
 /// switcher row stays in the faint tier `titlebar.css` draws it in, which the check holds on the
-/// popover as a mark (`text.faint` on `surface.overlay`), so a theme's row keys never reach it.
+/// popover as a mark (`text.faint` on `surface.overlay`), so a theme's row colours never reach
+/// it ([`targets`]). Its corner does, as every row's (#3196): availability is no shape.
 const APART_EXCEPT: &[(&str, &str, &str)] = &[("titlebar", "row", ":not([data-unavailable])")];
 
 /// The sets of states a part drawn apart is measured in: at rest, each of its own states but
@@ -2719,7 +2794,7 @@ fn unreadable(
     states: &[State],
     look: &Drawn,
 ) -> Option<(String, Option<f64>)> {
-    unreadable_by(0.0, theme, on, rules, family, variant, states, look)
+    unreadable_by(0.0, theme, on, None, rules, family, variant, states, look)
 }
 
 /// **Parts drawn on an opaque ground of their own**, so the root's fill is not under them: a
@@ -2733,11 +2808,14 @@ const ON_A_GROUND_OF_THEIR_OWN: &[(&str, &str)] = &[("titlebar", "count"), ("tab
 /// reads the root's fill itself, and one drawn around the root, on a ground of its own or on its
 /// variant's stands on `on` alone. A part with a fill of a theme's own over what its parent paints
 /// ([`Family::under`]) is laid over that too (#4406): a tab's count over the tasks menu it sums up (#5341). A
-/// part drawn on fewer grounds than its family stands on those in place of `on` (#3384), which
-/// keeps it off any surface a theme fills: no such family is in [`STANDS_ON`].
+/// part drawn on fewer grounds than its family stands on those in place of `on` (#3384). On a
+/// surface's fill a theme sets (`surface`, the default fill it takes the place of, #3268), such a
+/// part stands on that fill where the surface's default is one of its grounds, and is drawn
+/// nowhere on it where it is not: a field's help is read on a dialog's fill, never a pane's.
 fn under_part(
     theme: &ResolvedTheme,
     on: &[String],
+    surface: Option<&str>,
     family: &Family,
     at: usize,
     variant: &str,
@@ -2755,9 +2833,12 @@ fn under_part(
         }
         return laid_over(theme, parent, &laid_over(theme, look.fill, on));
     }
-    let fewer = stands_on
-        .filter(|grounds| grounds.len() > 1)
-        .map(|grounds| laid(theme, grounds));
+    let several = stands_on.filter(|grounds| grounds.len() > 1);
+    let fewer = match (several, surface) {
+        (Some(grounds), Some(default)) if !grounds.contains(&default) => return Vec::new(),
+        (Some(grounds), None) => Some(laid(theme, grounds)),
+        _ => None,
+    };
     let on = fewer.as_deref().unwrap_or(on);
     if at == 0
         || ground == look.fill
@@ -2770,12 +2851,14 @@ fn under_part(
     laid_over(theme, look.fill, on)
 }
 
-/// **What a look breaks of the reading floors, or comes within `margin` of breaking**.
+/// **What a look breaks of the reading floors, or comes within `margin` of breaking**, on `on`: the
+/// family's grounds, or a surface's fill a theme sets in place of `surface`, its default (#3268).
 #[allow(clippy::too_many_arguments)]
 fn unreadable_by(
     margin: f64,
     theme: &ResolvedTheme,
     on: &[String],
+    surface: Option<&str>,
     rules: &[Rule],
     family: &Family,
     variant: &str,
@@ -2789,7 +2872,7 @@ fn unreadable_by(
         }
         // With more contrast asked for, the reading floors are raised (#2925).
         let floor = theme.least.floor(floor_of(family, part));
-        let under = under_part(theme, on, family, at, variant, look);
+        let under = under_part(theme, on, surface, family, at, variant, look);
         if let Some(ratio) = lowest(theme, &under, look.grounds[at], look.words[at])
             && ratio < floor + margin
         {
@@ -3129,6 +3212,12 @@ fn held_from(
                     held.apart(one);
                 }
             }
+            held.part_states(theme);
+            if held.near(coarse, |copy, one| copy.part_states(one)) {
+                for one in tints() {
+                    held.part_states(one);
+                }
+            }
             for states in &singles {
                 held.consented(drawn_in, states);
             }
@@ -3432,78 +3521,201 @@ fn surfaces_set(rules: &[Rule]) -> Vec<SurfaceSet> {
     found
 }
 
-/// **The surfaces each family with a consent variant is drawn on** (#3083): a button stands on
-/// a panel, in a popover and in a dialog, and a menu's row in the popover a menu is. A ground
-/// token a family names can be more than one surface's (the overlay is a popover's and a
-/// dialog's), so where a family stands is said here, not read from its grounds.
+/// **The families drawn on each surface a theme can fill** (#3083, #3268): by the surface, each
+/// family whose root the window draws inside the surface's root, out to the first element that
+/// covers what is under it, through the components that place it. A ground token a family names
+/// can be more than one surface's (the overlay is a popover's and a dialog's), so where a family
+/// stands is said here, not read from its grounds. `app/src/theme/grounds.test.ts` finds it from
+/// the components and holds this table to them, exactly: a family drawn on a new surface fails
+/// there until it is named here. A surface drawn with no fill of its own in every look (a table, a
+/// tree) is named too, though nothing on it is measured on a fill a theme sets there
+/// ([`surfaces_set`]).
 const STANDS_ON: &[(&str, &[&str])] = &[
-    ("panel", &["button"]),
-    ("popover", &["button", "menu"]),
-    ("dialog", &["button"]),
-    // A card's ask and a Notice hold answers (#2912, `content::HOLDS_ANSWERS`).
-    ("card", &["button"]),
-    ("notice", &["button"]),
+    (
+        "card",
+        &[
+            "badge",
+            "button",
+            "checkbox",
+            "count",
+            "field",
+            "meter",
+            "text-input",
+            "textarea",
+            "tooltip",
+        ],
+    ),
+    ("card-button", &["badge"]),
+    ("code", &["tooltip"]),
+    ("combobox", &["tooltip"]),
+    (
+        "dialog",
+        &["button", "field", "list", "text-input", "tooltip"],
+    ),
+    ("list", &["tooltip"]),
+    ("menu", &["chat-mark", "tooltip"]),
+    (
+        "message",
+        &[
+            "badge",
+            "button",
+            "card",
+            "checkbox",
+            "field",
+            "notice",
+            "option-card",
+            "popover",
+            "radio",
+            "secret-ask",
+            "segmented-control",
+            "select",
+            "switch",
+            "text-input",
+            "textarea",
+            "tooltip",
+        ],
+    ),
+    (
+        "notice",
+        &[
+            "badge",
+            "button",
+            "card",
+            "checkbox",
+            "count",
+            "field",
+            "meter",
+            "option-card",
+            "popover",
+            "radio",
+            "select",
+            "slider",
+            "switch",
+            "text-input",
+            "textarea",
+            "tooltip",
+        ],
+    ),
+    ("pane-foot", &["badge", "button", "tooltip"]),
+    (
+        "panel",
+        &[
+            "badge",
+            "button",
+            "card",
+            "card-button",
+            "chat-mark",
+            "checkbox",
+            "combobox",
+            "count",
+            "disclosure",
+            "empty-state",
+            "field",
+            "list",
+            "message",
+            "meter",
+            "notice",
+            "option-card",
+            "page-tabs",
+            "panel-separator",
+            "popover",
+            "radio",
+            "review-page",
+            "select",
+            "slider",
+            "steps",
+            "switch",
+            "text-input",
+            "textarea",
+            "tooltip",
+            "view-frame",
+            "view-nav",
+        ],
+    ),
+    (
+        "popover",
+        &[
+            "button",
+            "field",
+            "menu",
+            "message",
+            "meter",
+            "notice",
+            "text-input",
+            "tooltip",
+        ],
+    ),
+    (
+        "review-page",
+        &[
+            "badge",
+            "button",
+            "checkbox",
+            "disclosure",
+            "empty-state",
+            "field",
+            "list",
+            "message",
+            "meter",
+            "notice",
+            "option-card",
+            "popover",
+            "radio",
+            "select",
+            "switch",
+            "text-input",
+            "tooltip",
+        ],
+    ),
+    ("segmented-control", &["segment", "tooltip"]),
+    ("select", &["tooltip"]),
+    (
+        "table",
+        &[
+            "badge",
+            "button",
+            "card",
+            "checkbox",
+            "field",
+            "message",
+            "notice",
+            "option-card",
+            "popover",
+            "radio",
+            "select",
+            "slider",
+            "steps",
+            "switch",
+            "text-input",
+            "textarea",
+            "tooltip",
+        ],
+    ),
+    ("text-input", &["tooltip"]),
+    ("textarea", &["tooltip"]),
+    (
+        "tree",
+        &[
+            "badge", "button", "count", "message", "meter", "notice", "popover", "tooltip",
+        ],
+    ),
+    (
+        "view-frame",
+        &[
+            "count",
+            "panel-separator",
+            "popover",
+            "select",
+            "tooltip",
+            "view-nav",
+        ],
+    ),
 ];
 
-/// **The fill-taking families no consent family stands on**, each with why (#3083 review): a
-/// family whose root takes a fill and whose default fill is a ground a family with a consent
-/// variant names is in [`STANDS_ON`] or here, and a test holds every one to one list or the
-/// other, so a new Allow or danger answer on a filled surface cannot go unmeasured unseen.
-/// Every family is measured on a filled surface once #3268 lands.
-#[cfg(test)]
-pub(super) const HOLDS_NO_CONSENT: &[(&str, &str)] = &[
-    (
-        "code",
-        "a box of text to copy holds its ghost Copy button, never an Allow or a danger answer",
-    ),
-    (
-        "text-input",
-        "a field's box holds the words typed into it, never an answer",
-    ),
-    (
-        "textarea",
-        "a field's box holds the words typed into it, never an answer",
-    ),
-    (
-        "editor",
-        "its toolbar holds ghost and plain buttons, never an Allow or a danger answer (#3268)",
-    ),
-    ("tooltip", "it holds words only"),
-    (
-        "badge",
-        "a waiting badge is filled with the warning wash and holds its own words only (#4795)",
-    ),
-    (
-        "count",
-        "a waiting count is filled with the warning wash and holds its own number only (#4795)",
-    ),
-    (
-        "status-item",
-        "the status bar's waiting pill is filled with the warning wash and holds its own icon \
-         and words only (#4795)",
-    ),
-    (
-        "separator",
-        "it is a line between two groups, and holds nothing",
-    ),
-    ("select", "a control's box holds its value and its chevron"),
-    (
-        "combobox",
-        "a control's box holds its value and its chevron",
-    ),
-    (
-        "option-card",
-        "a choice holds its title, its detail and its check, never an answer",
-    ),
-    (
-        "list",
-        "a card row holds Use and its fix, plain buttons, never an Allow or a danger answer \
-         (#3669)",
-    ),
-];
-
-/// The families drawn on `surface` whose grounds name its `default` fill but not `set`: what a
-/// surface whose fill a theme turns from `default` to `set` brings a new ground under.
+/// **The families drawn on `surface` that a fill `set` in place of its `default` brings a new
+/// ground under** (#3268): each [`STANDS_ON`] says is drawn there, whose grounds do not name `set`
+/// already, or one of whose parts read on grounds of their own ([`Family::under`]) is drawn on
+/// `default` and not read on `set`.
 fn drawn_on(
     surface: &'static Family,
     default: &str,
@@ -3515,8 +3727,10 @@ fn drawn_on(
         .map_or(&[], |(_, families)| *families);
     MANIFEST.iter().filter(move |family| {
         on.contains(&family.name)
-            && family.grounds.contains(&default)
-            && !family.grounds.contains(&set)
+            && (!family.grounds.contains(&set)
+                || family.under.iter().any(|(_, grounds)| {
+                    grounds.len() > 1 && grounds.contains(&default) && !grounds.contains(&set)
+                }))
     })
 }
 
@@ -3623,21 +3837,39 @@ fn broken_on(
     rules: &[Rule],
     family: &Family,
     surface: &Family,
+    default: &str,
     set: &str,
 ) -> Option<(String, Option<f64>)> {
     let sets = sets_read(rules, family);
     let looks = looks_in(rules, family, &sets);
+    // What the fill set breaks, which a default broken on the default too is not (#3268).
+    let reads = |margin: f64, one: &ResolvedTheme, on: &[String], look: &LookOn<'_>| {
+        let (variant, states, look) = (look.0, look.1, &look.2);
+        unreadable_by(
+            margin,
+            one,
+            on,
+            Some(default),
+            rules,
+            family,
+            variant,
+            states,
+            look,
+        )
+        .filter(|_| {
+            !a_default_broken_on_the_default_too(
+                one, rules, family, surface, default, variant, states, look,
+            )
+        })
+    };
     let on = surface_ground(theme, surface, set);
-    for (variant, states, look) in &looks {
-        if let Some(broken) = unreadable_by(0.0, theme, &on, rules, family, variant, states, look) {
+    for look in &looks {
+        if let Some(broken) = reads(0.0, theme, &on, look) {
             return Some(broken);
         }
     }
     if tints_reach(theme, set, &looks) {
         // Only a look a coarse reading finds near a floor is read at every degree.
-        let reads = |margin: f64, one: &ResolvedTheme, on: &[String], look: &LookOn<'_>| {
-            unreadable_by(margin, one, on, rules, family, look.0, look.1, &look.2)
-        };
         let coarse_on: Vec<_> = coarse
             .iter()
             .map(|one| (one, surface_ground(one, surface, set)))
@@ -3678,6 +3910,55 @@ fn broken_on(
     None
 }
 
+/// **Whether `look` is `family`'s default and breaks on `surface`'s default fill too** (#3268): the
+/// family default's, as the floors never hold a default look against a theme ([`held_from`]), and
+/// no reason for the surface to draw its default.
+#[allow(clippy::too_many_arguments)]
+fn a_default_broken_on_the_default_too(
+    theme: &ResolvedTheme,
+    rules: &[Rule],
+    family: &Family,
+    surface: &Family,
+    default: &str,
+    variant: &str,
+    states: &[State],
+    look: &Drawn,
+) -> bool {
+    *look == drawn(&[], family, variant, states) && {
+        let was = surface_ground(theme, surface, default);
+        unreadable_by(
+            0.0,
+            theme,
+            &was,
+            Some(default),
+            rules,
+            family,
+            variant,
+            states,
+            look,
+        )
+        .is_some()
+    }
+}
+
+/// A family read on a surface's fill: the family, the surface, its default fill, the fill set and
+/// how many looks of the theme the consent floors are held in.
+type Reading = (
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+    usize,
+);
+
+/// Each family read on a surface's fill, with the floor it breaks there and by how much, if any.
+type Readings = Vec<(Reading, Option<(String, Option<f64>)>)>;
+
+/// Drops what was read of `surface` itself on another's fill: a fall has changed its rules.
+fn forget(known: &mut Readings, surface: &Family) {
+    known.retain(|((one, ..), _)| *one != surface.name);
+}
+
 /// **Each surface whose fill a theme sets, held under what is drawn on it** (#3099, from
 /// #3083): every family drawn on the surface's default ground is measured on the fill set in its
 /// place, and a surface under which one breaks a floor draws its family default there, said in
@@ -3690,6 +3971,12 @@ fn held_on_surfaces(
     fell: &mut Vec<Fell>,
 ) -> bool {
     let before = fell.len();
+    // What each family breaks on a surface's fill, read once for every look of the surface that
+    // sets the same fill (a panel's three, #3268). `broken_on` reads only the family's own rules,
+    // the surface's grounds and the looks of the theme in hand, which only ever grow from the
+    // theme alone to every tint: so a reading holds until a fall changes the rules of the family
+    // it is of, and is keyed by how many looks there are.
+    let mut known: Readings = Vec::new();
     for (surface, variant, default, set) in surfaces_set(rules) {
         for family in drawn_on(surface, default, set) {
             // The consent floors hold in every tint, a surface's fill under a consent variant
@@ -3698,9 +3985,18 @@ fn held_on_surfaces(
             if consent && drawn_in.len() == 1 && !theme.tint.tabs().is_empty() {
                 drawn_in.extend(every_tinted(theme));
             }
-            if let Some((floor, ratio)) =
-                broken_on(theme, coarse, drawn_in, rules, family, surface, set)
-            {
+            let key = (family.name, surface.name, default, set, drawn_in.len());
+            let broken = if let Some((_, said)) = known.iter().find(|(one, _)| *one == key) {
+                said.clone()
+            } else {
+                let broken = broken_on(
+                    theme, coarse, drawn_in, rules, family, surface, default, set,
+                );
+                known.push((key, broken.clone()));
+                broken
+            };
+            if let Some((floor, ratio)) = broken {
+                forget(&mut known, surface);
                 Held {
                     family: surface,
                     rules: &mut *rules,
@@ -3739,6 +4035,7 @@ fn held_on_surfaces(
                 .find_map(|one| apart_broken_on(one, rules, surface, variant, set, 0.0));
         }
         if let Some((family, floor, ratio)) = broken {
+            forget(&mut known, surface);
             Held {
                 family: surface,
                 rules: &mut *rules,
@@ -3961,6 +4258,7 @@ impl Held<'_> {
                         margin,
                         one,
                         &on,
+                        None,
                         self.rules,
                         self.family,
                         variant,
@@ -3987,31 +4285,74 @@ impl Held<'_> {
         }
     }
 
-    /// **Whether a part drawn apart from the root comes near a floor in the `coarse` tints**: read
-    /// on a copy, since a reading near a floor is no fall, for [`Self::apart`] at every degree.
-    fn apart_near(&self, coarse: &[ResolvedTheme]) -> bool {
-        let family = self.family;
-        if coarse.is_empty()
-            || !family
-                .parts
-                .iter()
-                .any(|part| drawn_apart(family, part.name).is_some())
-        {
-            return false;
-        }
+    /// **Whether `read` finds a floor come near in the `coarse` tints**: read on a copy, with
+    /// [`NEAR_A_FLOOR`] as its margin, since a reading near a floor is no fall.
+    fn near(&self, coarse: &[ResolvedTheme], read: impl Fn(&mut Held<'_>, &ResolvedTheme)) -> bool {
         let mut rules = self.rules.clone();
         let mut fell = self.fell.clone();
         let before = fell.len();
         let mut copy = Held {
-            family,
+            family: self.family,
             rules: &mut rules,
             fell: &mut fell,
             margin: NEAR_A_FLOOR,
         };
         for one in coarse {
-            copy.apart(one);
+            read(&mut copy, one);
         }
         fell.len() > before
+    }
+
+    /// **Each part's own look in its own state, on its root as drawn** (#3269): a tab's × under
+    /// the pointer, its words on its fill laid over the tab's fill in every set of the tab's states
+    /// it is drawn in then (under the pointer, alone or chosen too), in each look the window draws.
+    /// The look is the family's own and no rule reaches it ([`PART_STATES`]), so where it breaks
+    /// a floor only because the theme's rules changed the root's fill under it, that look of the
+    /// root draws its default back; where its default breaks too, the token floors hold it.
+    fn part_states(&mut self, theme: &ResolvedTheme) {
+        let family = self.family;
+        for own in PART_STATES.iter().filter(|one| one.family == family.name) {
+            let Some(part) = family.parts.iter().find(|one| one.name == own.part) else {
+                continue;
+            };
+            let floor = theme.least.floor(floor_of(family, part)) + self.margin;
+            let mut sets = singles_of(family);
+            sets.extend(combined(family));
+            for states in sets.iter().filter(|one| one.contains(&own.within)) {
+                for variant in family
+                    .looks()
+                    .into_iter()
+                    .filter(|one| family.draws(one, states))
+                {
+                    let read = |rules: &[Rule]| {
+                        let under = drawn(rules, family, variant, states).fill;
+                        let on = laid_over(theme, under, &grounds(theme, family));
+                        lowest(theme, &on, own.fill, own.words)
+                    };
+                    let Some(ratio) = read(self.rules).filter(|ratio| *ratio < floor) else {
+                        continue;
+                    };
+                    if read(&[]).is_some_and(|ratio| ratio < floor) {
+                        continue;
+                    }
+                    self.fall(
+                        variant,
+                        states,
+                        format!(
+                            "the {}'s words contrast {floor}:1 with its fill {}",
+                            own.part, own.said
+                        ),
+                        Some(ratio),
+                    );
+                }
+            }
+        }
+    }
+
+    /// **Whether a part drawn apart from the root comes near a floor in the `coarse` tints**: read
+    /// on a copy, since a reading near a floor is no fall, for [`Self::apart`] at every degree.
+    fn apart_near(&self, coarse: &[ResolvedTheme]) -> bool {
+        self.near(coarse, |copy, one| copy.apart(one))
     }
 
     /// Each consent variant the window draws while `states` hold, held to the consent floors in
@@ -5024,6 +5365,32 @@ fn written_to(rule: &Rule, property: Prop) -> Option<&'static str> {
 fn targets(rule: &Rule, property: Prop, sized: bool) -> Vec<String> {
     let own = selector(rule, sized);
     let part = rule.family.parts[rule.part].name;
+    // **A part's own state draws its own fill and words** (#3269): the fill or the words a theme
+    // or a fallback sets for the part never reach it there, where [`PART_STATES`] says what is
+    // drawn; anything else does, its size and corners as a state never changes them.
+    if rule.part != 0 && matches!(property, Prop::Fill | Prop::Text) {
+        let not: String = part_states(rule.family, part)
+            .map(|one| format!(":not({})", one.marked))
+            .collect();
+        if !not.is_empty() {
+            let at = format!(
+                "[data-scope=\"{}\"][data-part=\"{part}\"]",
+                rule.family.name
+            );
+            return vec![own.replace(&at, &format!("{at}{not}"))];
+        }
+    }
+    // **What a part drawn apart takes no colour of** ([`APART_EXCEPT`], #4000): an unavailable
+    // switcher row keeps its faint tier, and takes the row's corner like every other (#3196).
+    if property.in_state()
+        && let Some((_, _, not)) = APART_EXCEPT
+            .iter()
+            .find(|(name, one, _)| *name == rule.family.name && *one == part)
+    {
+        // `own` is the part's one `:where(…)`: the exception goes inside it, last.
+        let inside = own.strip_suffix(')').unwrap_or(&own);
+        return vec![format!("{inside}{not})")];
+    }
     // **A chat pane's band draws its Notices' ground and words itself** (#3142, #2912): the
     // state washes, never tinted, and the primary tier on them. A theme's Notice colours reach a
     // Notice anywhere else, so none can draw a band Notice in the terminal's own fill.
@@ -5314,12 +5681,8 @@ fn selector(rule: &Rule, sized: bool) -> String {
             .chain(rule.also.iter().copied())
             .map(|one| rule.family.attribute(one))
             .collect();
-        let except = APART_EXCEPT
-            .iter()
-            .find(|(name, one, _)| *name == rule.family.name && *one == part)
-            .map_or("", |(_, _, not)| *not);
         return format!(
-            ":where([data-scope=\"{}\"][data-part=\"{part}\"]{state}{except})",
+            ":where([data-scope=\"{}\"][data-part=\"{part}\"]{state})",
             rule.family.name
         );
     }
@@ -5612,64 +5975,7 @@ pub fn manifest_as_of(version: u32) -> Value {
     let families: Vec<Value> = MANIFEST
         .iter()
         .filter(|family| family.since <= version)
-        .map(|family| {
-            let mut said = json!({
-                "name": family.name,
-                "description": family.description,
-                "since": family.since,
-                "focused": family.focused,
-                "states": family.states.iter().filter(|state| state.since() <= version).map(|state| state.name()).collect::<Vec<_>>(),
-                "parts": family.parts.iter().filter(|part| part.since <= version).map(|part| {
-                    let mut said = json!({
-                        "name": part.name,
-                        "description": part.description,
-                        "since": part.since,
-                        "properties": part.properties.iter().filter(|p| p.since() <= version).map(|p| p.name()).collect::<Vec<_>>(),
-                    });
-                    // Only what a family has that the first did not, so the button's entry
-                    // reads as it did at version 2.
-                    if family.around.contains(&part.name) {
-                        said["around"] = Value::Bool(true);
-                    }
-                    // Drawn apart from the root, in no variant of it and only in its own states
-                    // (#3656). Said from the next release on: what version 12 shipped keeps its
-                    // contract.
-                    if version >= APART_SINCE
-                        && let Some(carried) = drawn_apart(family, part.name)
-                    {
-                        let states: Vec<&str> = carried.iter().map(|one| one.name()).collect();
-                        said["apart"] = json!(states);
-                    }
-                    if MARKS.contains(&(family.name, part.name)) {
-                        said["mark_height"] = json!({
-                            "least": 0,
-                            "most": geometry::show(MOST_MARK).parse::<i64>().unwrap_or_default(),
-                            "unit": "px",
-                        });
-                    }
-                    said
-                }).collect::<Vec<_>>(),
-                "variants": family.variants.iter().filter(|variant| variant.since <= version).map(|variant| json!({
-                    "name": variant.name,
-                    "description": variant.description,
-                    "since": variant.since,
-                    "consent": variant.consent.is_some(),
-                })).collect::<Vec<_>>(),
-            });
-            // Only what a family has that the others do not (#3143): drawn in marks, and keyed on
-            // attributes of its own in a state.
-            if marked(family).is_some() {
-                said["marks"] = Value::Bool(true);
-            }
-            if !own_states(family).is_empty() {
-                said["attributes"] = own_states(family)
-                    .iter()
-                    .map(|(state, attribute)| (state.name().to_owned(), Value::from(*attribute)))
-                    .collect::<Map<String, Value>>()
-                    .into();
-            }
-            said
-        })
+        .map(|family| family_as_of(family, version))
         .collect();
     json!({
         "version": VERSION,
@@ -5683,8 +5989,71 @@ pub fn manifest_as_of(version: u32) -> Value {
     })
 }
 
+/// **One family's entry in the manifest as it stood at `version`**: its parts, variants and
+/// states that came in by then, each part with the properties it took by then ([`Joined`]).
+pub(super) fn family_as_of(family: &Family, version: u32) -> Value {
+    let mut said = json!({
+        "name": family.name,
+        "description": family.description,
+        "since": family.since,
+        "focused": family.focused,
+        "states": family.states.iter().filter(|state| state.since() <= version && family.joined_since(Joined::State(**state)) <= version).map(|state| state.name()).collect::<Vec<_>>(),
+        "parts": family.parts.iter().filter(|part| part.since <= version).map(|part| {
+            let mut said = json!({
+                "name": part.name,
+                "description": part.description,
+                "since": part.since,
+                "properties": part.properties.iter().filter(|p| p.since() <= version && family.joined_since(Joined::Property(part.name, **p)) <= version).map(|p| p.name()).collect::<Vec<_>>(),
+            });
+            // Only what a family has that the first did not, so the button's entry
+            // reads as it did at version 2.
+            if family.around.contains(&part.name) {
+                said["around"] = Value::Bool(true);
+            }
+            // Drawn apart from the root, in no variant of it and only in its own states
+            // (#3656). Said from the next release on: what version 12 shipped keeps its
+            // contract.
+            if version >= APART_SINCE
+                && let Some(carried) = drawn_apart(family, part.name)
+            {
+                let states: Vec<&str> = carried.iter().map(|one| one.name()).collect();
+                said["apart"] = json!(states);
+            }
+            if MARKS.contains(&(family.name, part.name)) {
+                said["mark_height"] = json!({
+                    "least": 0,
+                    "most": geometry::show(MOST_MARK).parse::<i64>().unwrap_or_default(),
+                    "unit": "px",
+                });
+            }
+            said
+        }).collect::<Vec<_>>(),
+        "variants": family.variants.iter().filter(|variant| variant.since <= version).map(|variant| json!({
+            "name": variant.name,
+            "description": variant.description,
+            "since": variant.since,
+            "consent": variant.consent.is_some(),
+        })).collect::<Vec<_>>(),
+    });
+    // Only what a family has that the others do not (#3143): drawn in marks, and keyed on
+    // attributes of its own in a state.
+    if marked(family).is_some() {
+        said["marks"] = Value::Bool(true);
+    }
+    if !own_states(family).is_empty() {
+        said["attributes"] = own_states(family)
+            .iter()
+            .filter(|(state, _)| family.joined_since(Joined::State(*state)) <= version)
+            .map(|(state, attribute)| (state.name().to_owned(), Value::from(*attribute)))
+            .collect::<Map<String, Value>>()
+            .into();
+    }
+    said
+}
+
 /// **Whether the manifest holds anything no release has shipped yet**: a family, a part, a
-/// variant, a state or a property `since` [`NEXT`].
+/// variant, a state or a property `since` [`NEXT`], or a state or a property a released family
+/// or part joined since ([`Family::later`]).
 pub fn has_unreleased() -> bool {
     APART_SINCE > VERSION
         || STATES.iter().any(|state| state.since() > VERSION)
@@ -5696,6 +6065,7 @@ pub fn has_unreleased() -> bool {
                     .variants
                     .iter()
                     .any(|variant| variant.since > VERSION)
+                || family.later.iter().any(|one| one.since > VERSION)
         })
 }
 

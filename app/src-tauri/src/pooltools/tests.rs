@@ -67,8 +67,13 @@ fn a_gate(ask: &brokered::Ask) -> Gate<'_> {
         pools_in: Some(PathBuf::from("/config")),
         tools: &kubectl_declared_and_allowed,
         authorised: &every_vault_allowed,
+        reach: &nothing_out_of_reach,
         owned: &owned_builds,
     }
+}
+
+fn nothing_out_of_reach(_persona: &str, _tool: &Tool) -> Option<String> {
+    None
 }
 
 fn refused(gate: &Gate<'_>) -> String {
@@ -280,7 +285,7 @@ fn deciding(
             owned: &now,
             ..a_gate(&ask)
         };
-        let read = move |tool: &Tool| {
+        let read = move |_persona: &str, tool: &Tool| {
             *reads.lock().unwrap() += 1;
             Ok(vec![(
                 tool.values[0].key.clone(),
@@ -468,7 +473,7 @@ fn a_pool_that_changed_while_its_vault_was_read_is_sent_nothing() {
                 owned: &now,
                 ..a_gate(&ask)
             };
-            let read = move |tool: &Tool| {
+            let read = move |_persona: &str, tool: &Tool| {
                 *owned.lock().unwrap() = builds("b");
                 Ok(vec![(
                     tool.values[0].key.clone(),
@@ -788,8 +793,8 @@ fn a_runner_run(
         ..a_gate(&ask)
     };
     let ctx = ctx_of(root);
-    let reads = |tool: &Tool| {
-        let values = super::read(&ctx, tool)?;
+    let reads = |persona: &str, tool: &Tool| {
+        let values = super::read(&ctx, persona, tool)?;
         read.lock()
             .unwrap()
             .extend(values.iter().map(|(_, value)| value.to_string()));
@@ -1076,4 +1081,112 @@ fn a_runner_not_shown_to_be_yours_is_declined_but_one_unreachable_just_now_is_no
         (declined.code, waits.code),
         (1, brokered::WAITING_ON_THE_PERSON)
     );
+}
+
+/// A runner chat's tool whose key is a link into a vault its persona may not use is read for no
+/// run on this desktop (#5795): the link is judged as it is read, whenever it was made.
+#[test]
+fn a_runner_chats_key_linked_into_a_vault_its_persona_may_not_use_is_never_read() {
+    let desktop = a_desktop_missing_the_key();
+    let root = desktop.path();
+    std::fs::write(
+        root.join("vaults.json"),
+        serde_json::json!({ "vaults": {
+            "team": {"provider": "plain-file", "config": {"file": "team.json"}, "persona": "devops"},
+            "other": {"provider": "plain-file", "config": {"file": "other.json"}},
+        }})
+        .to_string(),
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("other.json"),
+        serde_json::json!({"kubeconfig": "n0t-yours"}).to_string(),
+    )
+    .unwrap();
+    let ctx = ctx_of(root);
+    let team = purlis_core::secrets::cmd::provider(&ctx, "team").unwrap();
+    purlis_core::secrets::links::link(&ctx, &team, "kubeconfig", "other", "kubeconfig").unwrap();
+
+    let why = super::read(&ctx, "devops", &kubectl())
+        .map(|values| values.len())
+        .unwrap_err();
+
+    assert!(
+        why.contains("kubeconfig in vault team reads an entry of a vault devops may not use"),
+        "{why}"
+    );
+    assert!(!why.contains("other"), "names no other vault: {why}");
+    assert!(!why.contains("n0t-yours"), "never the value: {why}");
+}
+
+/// A runner chat's key out of reach is refused before the person is asked anything (#5795): no
+/// Secret ask for a key it lacks, and no Allow for a run that would be refused once allowed.
+#[test]
+fn a_runner_chats_key_out_of_reach_is_refused_before_anything_is_asked() {
+    let desktop = a_desktop_missing_the_key();
+    let root = desktop.path();
+    let (asks, tools) = (SecretAsks::new(root), PoolTools::default());
+    let ask = kubectl_asked();
+    let out_of_reach = |persona: &str, tool: &Tool| {
+        Some(format!(
+            "{} in vault {} reads an entry of a vault {persona} may not use",
+            tool.values[0].key, tool.vault
+        ))
+    };
+    let gate = Gate {
+        root,
+        reach: &out_of_reach,
+        ..a_gate(&ask)
+    };
+    let keys = keys_in(root);
+    let gone = AtomicBool::new(false);
+    let reads = |_: &str, _: &Tool| -> Result<Vec<(String, Zeroizing<String>)>, String> {
+        panic!("nothing is read")
+    };
+
+    let refused = decided(
+        &gate,
+        &Missing {
+            asks: &asks,
+            keys: &keys,
+            within: Duration::from_secs(60),
+        },
+        &waiting(&tools, &gone, &reads, Duration::from_secs(60)),
+        &mut Vec::new(),
+    )
+    .map(|_| ())
+    .unwrap_err();
+
+    assert!(refused.why.contains("may not use"), "{}", refused.why);
+    assert!(asks.open().is_empty(), "no Secret ask");
+    assert!(tools.waiting().is_empty(), "no Allow");
+}
+
+/// What a runner chat's gate judges up front is the core's judge on the tool's keys (#5795).
+#[test]
+fn a_runner_chats_gate_judges_the_tools_keys_by_the_cores_judge() {
+    let desktop = a_desktop_missing_the_key();
+    let root = desktop.path();
+    std::fs::write(
+        root.join("vaults.json"),
+        serde_json::json!({ "vaults": {
+            "team": {"provider": "plain-file", "config": {"file": "team.json"}, "persona": "devops"},
+            "other": {"provider": "plain-file", "config": {"file": "other.json"}},
+        }})
+        .to_string(),
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("other.json"),
+        serde_json::json!({"kubeconfig": "n0t-yours"}).to_string(),
+    )
+    .unwrap();
+    let ctx = ctx_of(root);
+    assert_eq!(super::out_of_reach(&ctx, "devops", &kubectl()), None);
+    let team = purlis_core::secrets::cmd::provider(&ctx, "team").unwrap();
+    purlis_core::secrets::links::link(&ctx, &team, "kubeconfig", "other", "kubeconfig").unwrap();
+
+    let why = super::out_of_reach(&ctx, "devops", &kubectl()).expect("refused");
+
+    assert!(why.contains("may not use"), "{why}");
 }

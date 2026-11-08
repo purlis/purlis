@@ -424,6 +424,26 @@ export async function clearEndedPanes(session?: number, most = 200): Promise<voi
 }
 
 /**
+ * **Presses the close question's main answer, whatever it says by now** (#5609), and answers
+ * with the words it pressed, or `""` when no close question offers one yet. **Run in the page**,
+ * as {@link aDialogOffers} is, so each look finds the question afresh.
+ */
+export function pressTheCloseAnswer(): string {
+  for (const dialog of document.querySelectorAll('[role="alertdialog"]')) {
+    // Its title, either way: "Close project <name>?" or "Close project <name> and end …?".
+    if (!(dialog.textContent ?? "").includes("Close project")) continue;
+    const answer = [...dialog.querySelectorAll("button")].find((one) => {
+      const said = (one.textContent ?? "").trim();
+      return said === "Close project" || said.startsWith("Close and end");
+    });
+    if (answer === undefined || answer.disabled) continue;
+    answer.click();
+    return (answer.textContent ?? "").trim();
+  }
+  return "";
+}
+
+/**
  * Closes a project by its button on the rail (a selector for it), with Delete, the key that
  * closes a focused project (#2915: the rail has no `×`), and answers the question it asks when it
  * has chats open (`ClosingProject`, charter-app#239). A project with nothing open closes without
@@ -435,19 +455,31 @@ export async function closeProject(button: string): Promise<void> {
     document.querySelector<HTMLElement>(css)?.focus();
   }, button);
   await browser.keys(["Delete"]);
-  // Looked for afresh, by its answer, at every look (#2126).
+  // Looked for afresh, by its title, at every look (#2126). Its main button's words are not
+  // waited for: they count the project's chats as they are now, and a chat that ends while the
+  // question is up turns "Close and end 1 chat" into "Close project" under the press (#5609).
   const asked = await browser
     .waitUntil(
-      async () => browser.execute(aDialogOffers, "alertdialog", "", "Close and end", true),
+      async () => browser.execute(aDialogOffers, "alertdialog", "Close project", "Cancel", false),
       { timeout: 3_000 },
     )
     .then(() => true)
     .catch(() => false);
   if (asked) {
-    const answer = await $('[role="alertdialog"]').$("button*=Close and end");
-    await answer.waitForClickable({ timeout: 20_000 });
-    await answer.click();
-    await theDialogHasGone("alertdialog", "", "the question about closing the project never went");
+    let pressed = "";
+    await browser.waitUntil(
+      async () => (pressed = await browser.execute(pressTheCloseAnswer)) !== "",
+      {
+        timeout: 20_000,
+        interval: 250,
+        timeoutMsg: "the question about closing the project offered no answer to press",
+      },
+    );
+    await theDialogHasGone(
+      "alertdialog",
+      "Close project",
+      `the question about closing the project never went, after a press of ${pressed}`,
+    );
   }
   await everyCloseHasLetGo();
 }

@@ -117,6 +117,7 @@ pub(super) const PANE_PREVIEW: Family = Family {
         ("words", "surface.overlay"),
     ],
     under: &[],
+    later: &[],
 };
 
 /// **Its colours as `pane-preview.css` draws them**: no ground of the family's own, words in the

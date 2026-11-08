@@ -3410,6 +3410,21 @@ impl Hooks {
         moved
     }
 
+    /// Whoever is told what a chat's turn put out ([`Self::when_output`]), told `output` as the
+    /// socket tells them once the board has judged it the chat's own run's: a test's line reaches
+    /// what a harness's line reaches.
+    #[cfg(test)]
+    pub(crate) fn output_as_the_socket_does(&self, output: purlis_core::hookwire::TurnOutput) {
+        let listener = self
+            .output
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        if let Some(listener) = listener {
+            listener(output);
+        }
+    }
+
     /// Who is told every report on this socket from now on, after the board has had it, whether
     /// or not it moved anything.
     pub fn when_reported(&self, heard: Heard) {

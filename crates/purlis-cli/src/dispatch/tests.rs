@@ -219,3 +219,49 @@ fn a_chat_held_to_move_is_told_a_refusal_holds_for_that_place() {
         "{said}"
     );
 }
+
+/// **A silent app is told apart from a closed connection and an unreadable reply** (#5772):
+/// each used to read "the purlis app did not answer", so a chat could not tell an app that
+/// is running but busy from one that is gone. A timeout names how long this command waited.
+#[test]
+fn an_ask_that_runs_out_of_time_says_the_app_is_busy_not_gone() {
+    use std::io;
+    let within = std::time::Duration::from_secs(2);
+    for kind in [io::ErrorKind::WouldBlock, io::ErrorKind::TimedOut] {
+        let failed = failed_of(Err(io::Error::from(kind)), within);
+        assert!(matches!(failed, Err(Failed::NoAnswer(Silence::OutOfTime(t))) if t == within));
+    }
+    let said = no_answer_said(&Silence::OutOfTime(within));
+    assert_eq!(
+        said,
+        "purlis dispatch: the purlis app did not answer within 2 seconds. It is running but \
+         busy, so try again in a moment. `purlis dispatch list` shows where this chat's tasks \
+         stand."
+    );
+
+    let closed = failed_of(
+        Err(io::Error::new(io::ErrorKind::UnexpectedEof, "closed")),
+        within,
+    );
+    assert!(matches!(closed, Err(Failed::NoAnswer(Silence::Closed))));
+    assert!(no_answer_said(&Silence::Closed).contains("closed the connection"));
+
+    let unreadable = failed_of(Err(io::Error::other("not json")), within);
+    assert!(matches!(
+        unreadable,
+        Err(Failed::NoAnswer(Silence::Unreadable))
+    ));
+    assert!(no_answer_said(&Silence::Unreadable).contains("could not read"));
+
+    // An answer that is not a task's is not one this command can use either.
+    let wrong = failed_of(Ok(Answer::Alive {}), within);
+    assert!(matches!(wrong, Err(Failed::NoAnswer(Silence::Unreadable))));
+    // And no sentence says the app is gone: `the_app` says that where nothing connected.
+    for silence in [
+        Silence::OutOfTime(within),
+        Silence::Closed,
+        Silence::Unreadable,
+    ] {
+        assert!(!no_answer_said(&silence).contains("no purlis app"));
+    }
+}

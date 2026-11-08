@@ -1224,6 +1224,12 @@ pub(crate) mod pretend {
             lock(&self.seen.ran_in).push((number, ran));
         }
 
+        /// Chat `number`, left running, is no longer in the host: its program ended there after
+        /// a window that comes back judged it kept, so it is started rather than reattached.
+        pub fn forgets_it_left(&self, number: u32) {
+            lock(&self.seen.left).retain(|(one, _)| *one != number);
+        }
+
         /// Browser `browser` runs from before this window: a window that comes back takes it
         /// back with its chat, or ends it (#2025).
         pub fn leaves_a_browser(&self, browser: purlis_session_protocol::session::HeldProgram) {

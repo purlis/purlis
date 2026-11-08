@@ -8,7 +8,7 @@
 use serde_json::{Value, json};
 
 use super::super::{ResolvedTheme, load};
-use super::{Consented, MANIFEST, consent_broken, fallen, family, surface_ground};
+use super::{Consented, consent_broken, fallen, family, surface_ground};
 
 /// A dark theme over Purlis Classic that sets `tokens` and `parts`, as read.
 fn shaped(tokens: Value, parts: Value) -> ResolvedTheme {
@@ -57,23 +57,21 @@ fn a_popover_filled_in_the_words_of_the_buttons_in_it_draws_its_own_fill() {
 }
 
 #[test]
-fn every_surface_a_consent_family_stands_on_is_one_of_its_grounds() {
+fn every_surface_a_family_stands_on_takes_a_fill_and_is_named_once() {
+    // Who stands where is found from the components (`app/src/theme/grounds.test.ts`); here, that
+    // the table names surfaces a theme can fill and families the manifest has.
+    let mut seen = Vec::new();
     for (surface, families) in super::STANDS_ON {
-        let surface = family(surface).expect("a surface");
-        for variant in surface.looks() {
-            let fill = (surface.defaults)(variant, &[]).fill;
-            for name in *families {
-                let one = family(name).expect("a family");
-                assert!(
-                    one.variants.iter().any(|variant| variant.consent.is_some()),
-                    "{name} has a consent variant"
-                );
-                assert!(
-                    one.grounds.contains(&fill),
-                    "{name} on {}: {fill}",
-                    surface.name
-                );
-            }
+        assert!(!seen.contains(surface), "{surface} is named twice");
+        seen.push(surface);
+        let one = family(surface).expect("a surface");
+        assert!(
+            one.parts[0].properties.contains(&super::Prop::Fill),
+            "{surface}"
+        );
+        for name in *families {
+            assert!(family(name).is_some(), "{name} on a {surface}");
+            assert_ne!(name, surface, "a {surface} on itself");
         }
     }
 }
@@ -139,45 +137,99 @@ fn a_surface_under_a_consent_answer_is_measured_in_every_tint() {
     assert_eq!(super::drawn_in(), 1);
 }
 
+/// What `name` breaks on `surface`'s fill `set` in place of its first look's default, read alone.
+fn breaks(theme: &ResolvedTheme, name: &str, surface: &str, set: &str) -> Option<String> {
+    let surface = family(surface).expect("a surface");
+    let default = (surface.defaults)(surface.looks()[0], &[]).fill;
+    let rules = super::rules(&theme.parts);
+    super::broken_on(
+        theme,
+        &[],
+        std::slice::from_ref(theme),
+        &rules,
+        family(name).expect("a family"),
+        surface,
+        default,
+        set,
+    )
+    .map(|(floor, _)| floor)
+}
+
+/// A dark Classic whose `surface` is filled with the ground `token`, drawn `grey` (`#4a4a46`:
+/// quiet words near 3:1 on it, the primary's near 6.5:1), with the popover's own words in the
+/// strongest colour, so what falls is what is drawn on it.
+fn filled_grey(surface: &str, token: &str, grey: &str) -> ResolvedTheme {
+    shaped(
+        json!({ token: grey }),
+        json!({
+            format!("{surface}.root.fill"): token,
+            "popover.root.text": "text.primary",
+            "popover.header.text": "text.primary",
+            "popover.footer.text": "text.primary",
+            "popover.key.text": "text.primary",
+        }),
+    )
+}
+
 #[test]
-fn every_filled_surface_under_a_consent_family_is_said_to_hold_it_or_not() {
-    use super::Prop;
-    let consent: Vec<&super::Family> = MANIFEST
-        .iter()
-        .filter(|one| one.variants.iter().any(|variant| variant.consent.is_some()))
-        .collect();
-    let mut unsaid = Vec::new();
-    for surface in MANIFEST {
-        if !surface.parts[0].properties.contains(&Prop::Fill) {
-            continue;
-        }
-        let fills: Vec<&str> = surface
-            .looks()
-            .into_iter()
-            .map(|variant| (surface.defaults)(variant, &[]).fill)
-            .collect();
-        let under = consent.iter().any(|family| {
-            !std::ptr::eq(*family, surface)
-                && fills.iter().any(|fill| family.grounds.contains(fill))
-        });
-        let said = super::STANDS_ON
-            .iter()
-            .any(|(name, _)| *name == surface.name)
-            || super::HOLDS_NO_CONSENT
-                .iter()
-                .any(|(name, _)| *name == surface.name);
-        if under && !said {
-            unsaid.push(surface.name);
-        }
-    }
-    assert!(unsaid.is_empty(), "{unsaid:?}");
-    // Each said once, of a family the manifest has.
-    for (name, why) in super::HOLDS_NO_CONSENT {
-        assert!(family(name).is_some(), "{name}");
-        assert!(!why.is_empty(), "{name} says why");
-        assert!(
-            !super::STANDS_ON.iter().any(|(one, _)| one == name),
-            "{name} is in both lists"
-        );
-    }
+fn a_badge_on_a_panel_filled_where_its_words_vanish_brings_the_panel_back() {
+    // A badge holds no answer, so before #3268 nothing measured it on a panel's fill.
+    let theme = filled_grey("panel", "surface.sunken", "#303030");
+    let fell = fell_in(&theme);
+    assert!(
+        fell.iter()
+            .any(|one| one.starts_with("panel.root.") && one.contains("what a badge draws on it")),
+        "{fell:?}"
+    );
+}
+
+#[test]
+fn a_field_s_help_on_a_popover_filled_where_it_vanishes_brings_the_popover_back() {
+    // The field's own grounds name the sunken ground already: only its help, read on grounds of
+    // its own (#4648), stands anew on the popover's fill (#3268).
+    let theme = filled_grey("popover", "surface.sunken", "#4a4a46");
+    let fell = fell_in(&theme);
+    assert!(
+        fell.iter().any(|one| one.starts_with("popover.root.")
+            && one.contains("what a field draws on it: the help's words")),
+        "{fell:?}"
+    );
+}
+
+#[test]
+fn a_field_s_help_is_read_on_a_dialog_s_fill_and_never_on_a_pane_s() {
+    // A field's help is drawn in a dialog and on a raised ground, never on a pane's own: on a
+    // dialog's fill it is read, on a panel's it is drawn nowhere.
+    let dialog = filled_grey("dialog", "surface.sunken", "#4a4a46");
+    let on_the_dialog = breaks(&dialog, "field", "dialog", "surface.sunken");
+    assert!(
+        on_the_dialog
+            .as_deref()
+            .is_some_and(|floor| floor.contains("the help's words")),
+        "{on_the_dialog:?}"
+    );
+    // On a panel's, its error is read (a field that can refuse stands on a pane) and its help,
+    // read before it, is not.
+    let panel = filled_grey("panel", "surface.sunken", "#4a4a46");
+    let on_the_panel = breaks(&panel, "field", "panel", "surface.sunken");
+    assert!(
+        on_the_panel
+            .as_deref()
+            .is_some_and(|floor| floor.contains("the error's words")),
+        "{on_the_panel:?}"
+    );
+}
+
+#[test]
+fn a_list_s_row_in_a_dialog_is_read_on_the_dialog_s_fill() {
+    // A list's rows stand in the palette's dialog (`Palette.tsx`): their quiet words on its fill,
+    // a ground the list's own grounds do not name.
+    let dialog = family("dialog").expect("the dialog family");
+    assert!(
+        super::drawn_on(dialog, "surface.overlay", "surface.hover").any(|one| one.name == "list"),
+        "a list is drawn on a dialog"
+    );
+    let theme = filled_grey("dialog", "surface.hover", "#4a4a46");
+    let broken = breaks(&theme, "list", "dialog", "surface.hover");
+    assert!(broken.is_some(), "{broken:?}");
 }

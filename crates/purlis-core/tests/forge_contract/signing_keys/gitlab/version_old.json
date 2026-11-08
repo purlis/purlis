@@ -1,0 +1,9 @@
+{
+  "source": "GitLab REST API v4, docs.gitlab.com/api/version (GET /version, any signed-in account): 15.6.2-ee",
+  "exchanges": [
+    {
+      "call": {"endpoint": {"rest": {"method": null, "path": "version"}}, "fields": []},
+      "reply": {"code": 0, "out": "{\"version\": \"15.6.2-ee\", \"revision\": \"abc123\"}", "err": "", "status": 200}
+    }
+  ]
+}

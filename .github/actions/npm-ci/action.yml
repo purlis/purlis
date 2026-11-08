@@ -1,0 +1,34 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+# `npm ci`, from a cache of npm's downloads that only `main` saves (#5858). setup-node's own
+# `cache: npm` saves on every ref that misses, so each pull request or merge-queue branch whose
+# lockfile `main` had not cached yet (a Dependabot bump, most of all) saved 0.1 GB of its own, and
+# the repository's 10 GB of caches evicted what `main` saved to make room. Here a pull request
+# restores `main`'s cache and saves nothing, as the Rust and Linux packages caches do.
+#
+# The key is setup-node's own shape (OS, architecture, the lockfile's hash). The caller runs
+# setup-node with `package-manager-cache: false`, which
+# `the_workflows_run_only_what_they_pinned.rs` holds every workflow to.
+name: npm ci
+description: Runs npm ci in a folder, from npm's download cache, which only main saves.
+inputs:
+  directory:
+    description: The folder whose package-lock.json `npm ci` installs (app, site).
+    required: true
+runs:
+  using: composite
+  steps:
+    - id: restore
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.npm
+        key: npm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles(format('{0}/package-lock.json', inputs.directory)) }}
+    - shell: bash
+      working-directory: ${{ inputs.directory }}
+      run: npm ci
+    - if: github.ref == 'refs/heads/main' && steps.restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.npm
+        key: ${{ steps.restore.outputs.cache-primary-key }}

@@ -378,7 +378,20 @@ fn a_sandboxed_chats_clone_and_worktree_are_made_by_the_app_and_say_what_the_ter
         none.is_empty(),
         "the terminal said a brokered note: {none:?}"
     );
+    // But how to enter the new folder (#5770): the terminal is told to start a chat there,
+    // and the sandboxed chat, which cannot write it, is told what works instead.
+    let entering = |line: &&str| line.contains("enter:") || line.starts_with("•          ");
+    let (chat_enters, rest): (Vec<&str>, Vec<&str>) = rest.lines().partition(entering);
+    let (terminal_enters, terminal_said): (Vec<&str>, Vec<&str>) =
+        terminal_said.lines().partition(entering);
     assert_eq!(rest, terminal_said);
+    assert!(
+        terminal_enters.concat().contains("EnterWorktree"),
+        "{terminal_enters:?}"
+    );
+    let chat_enters = chat_enters.concat();
+    assert!(!chat_enters.contains("EnterWorktree"), "{chat_enters}");
+    assert!(chat_enters.contains("--in worktree"), "{chat_enters}");
     let Ok(Ask::Git(git)) = asked.recv_timeout(Duration::from_secs(5)) else {
         panic!("the app was not asked to cut a worktree");
     };

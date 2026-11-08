@@ -138,6 +138,7 @@ pub(super) const SECRET_ASK: Family = Family {
         ("foot", "surface.raised"),
     ],
     under: &[],
+    later: &[],
 };
 
 /// **The body's colours as `secret-ask.css` draws them**: no ground of its own (the card's

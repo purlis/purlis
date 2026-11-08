@@ -7113,33 +7113,234 @@ fn only_the_chats_own_harness_ending_its_turn_says_what_it_left_running_5747() {
             ..purlis_core::state::Detail::default()
         },
     };
-    assert_eq!(its_own_turn_end(&own, Some(ID)), Some(a_shell));
+    assert_eq!(its_own_word(&own, Some(ID)), Some(Heard::Ended(a_shell)));
     // What its own `Stop` said, a prompt or a notice notwithstanding, and nothing at all too.
     let nothing = purlis_core::hookwire::Report {
         detail: purlis_core::state::Detail::default(),
         ..own.clone()
     };
     assert_eq!(
-        its_own_turn_end(&nothing, Some(ID)),
-        Some(purlis_core::ownwork::Said::default())
+        its_own_word(&nothing, Some(ID)),
+        Some(Heard::Ended(purlis_core::ownwork::Said::default()))
     );
     // A harness nested in the chat, under another conversation, says nothing of the chat's.
-    assert_eq!(
-        its_own_turn_end(&own, Some(OTHER)),
-        None,
-        "a nested harness's"
-    );
-    assert_eq!(its_own_turn_end(&own, None), None);
+    assert_eq!(its_own_word(&own, Some(OTHER)), None, "a nested harness's");
+    assert_eq!(its_own_word(&own, None), None);
     let helper = purlis_core::hookwire::Report {
         agent: Some("helper".to_owned()),
         ..own.clone()
     };
-    assert_eq!(its_own_turn_end(&helper, Some(ID)), None, "a helper's");
-    let start = purlis_core::hookwire::Report {
+    assert_eq!(its_own_word(&helper, Some(ID)), None, "a helper's");
+    // A turn's start and its end on an error say whether a turn is under way (#5750); a fresh
+    // session start says nothing, and `/clear` clears it all.
+    let event = |event| purlis_core::hookwire::Report {
+        event,
+        ..own.clone()
+    };
+    assert_eq!(
+        its_own_word(
+            &event(purlis_core::state::Event::UserPromptSubmit),
+            Some(ID)
+        ),
+        Some(Heard::Began)
+    );
+    assert_eq!(
+        its_own_word(&event(purlis_core::state::Event::StopFailure), Some(ID)),
+        Some(Heard::Failed)
+    );
+    assert_eq!(
+        its_own_word(&event(purlis_core::state::Event::SessionStart), Some(ID)),
+        None,
+        "a session's start"
+    );
+    let cleared = purlis_core::hookwire::Report {
         event: purlis_core::state::Event::SessionStart,
+        detail: purlis_core::state::Detail {
+            started: purlis_core::state::Started::Cleared,
+            ..purlis_core::state::Detail::default()
+        },
         ..own
     };
-    assert_eq!(its_own_turn_end(&start, Some(ID)), None, "only a Stop");
+    assert_eq!(its_own_word(&cleared, Some(ID)), Some(Heard::Cleared));
+}
+
+fn a_piece(id: &str) -> purlis_core::ownwork::pieces::Piece {
+    purlis_core::ownwork::pieces::Piece::new(
+        purlis_core::ownwork::pieces::Kind::Shell,
+        id,
+        "npm test",
+    )
+    .expect("a piece")
+}
+
+fn said_of_its_own(
+    chat: u32,
+    turn_output: purlis_core::hookwire::Output,
+) -> purlis_core::hookwire::TurnOutput {
+    purlis_core::hookwire::TurnOutput {
+        chat,
+        turn_output,
+        speaker: purlis_core::hookwire::Speaker::default(),
+    }
+}
+
+#[test]
+fn a_piece_of_own_work_is_recorded_as_its_tool_starts_it_and_the_turn_s_end_corrects_it_5750() {
+    use purlis_core::hookwire::Output;
+    let dir = tempfile::tempdir().unwrap();
+    let (chats, wrote) = recorded();
+    let session = chats
+        .start(&chat(&a_claude(dir.path()), "ide.7", Some(ID)), SIZE)
+        .unwrap();
+
+    // Written as the tool starts it, with no turn's end heard: a kill writes nothing more.
+    chats.heard_own_output(&said_of_its_own(
+        session,
+        Output::OwnWorkStarted {
+            piece: a_piece("b1"),
+        },
+    ));
+    let last = lock(&wrote).last().cloned().expect("a record was written");
+    assert_eq!(last.chats[0].own_pieces, vec![a_piece("b1")]);
+
+    // A piece of no shape is never kept.
+    let before = lock(&wrote).len();
+    chats.heard_own_output(&said_of_its_own(
+        session,
+        Output::OwnWorkStarted {
+            piece: purlis_core::ownwork::pieces::Piece {
+                id: "../x".to_owned(),
+                ..a_piece("b2")
+            },
+        },
+    ));
+    assert_eq!(lock(&wrote).len(), before, "nothing changed");
+
+    // The turn's end is the authority: what it does not name has ended.
+    chats.heard_own_output(&said_of_its_own(
+        session,
+        Output::OwnWorkInFlight {
+            pieces: vec![a_piece("b3")],
+        },
+    ));
+    let last = lock(&wrote).last().cloned().expect("a record was written");
+    assert_eq!(last.chats[0].own_pieces, vec![a_piece("b3")]);
+
+    // And the quit's own write keeps it.
+    let mut at_quit = None;
+    chats.write_last(|record| at_quit = Some(record.clone()));
+    assert_eq!(
+        at_quit.expect("written").chats[0].own_pieces,
+        vec![a_piece("b3")]
+    );
+    let _ = chats.close(session);
+}
+
+#[test]
+fn a_turn_under_way_is_recorded_from_its_prompt_to_its_end_and_clear_forgets_everything_5750() {
+    use purlis_core::hookwire::{Conversation, Output, Report};
+    use purlis_core::state::{Detail, Event, Started};
+    let dir = tempfile::tempdir().unwrap();
+    let (chats, wrote) = recorded();
+    let session = chats
+        .start(&chat(&a_claude(dir.path()), "ide.7", Some(ID)), SIZE)
+        .unwrap();
+    let its_own = |event, detail| Report {
+        chat: session,
+        event,
+        conversation: Conversation::Named(ID.to_owned()),
+        pid: None,
+        agent: None,
+        detail,
+    };
+    let last = || lock(&wrote).last().cloned().expect("a record was written");
+
+    chats.heard_own_work(
+        &its_own(Event::UserPromptSubmit, Detail::default()),
+        Some(ID),
+    );
+    assert!(last().chats[0].mid_turn, "a turn is under way");
+    chats.heard_own_work(&its_own(Event::Stop, Detail::default()), Some(ID));
+    assert!(!last().chats[0].mid_turn, "the turn ended");
+
+    // An interrupt fires no `Stop`: the chat sitting idle at its prompt ends the mark.
+    chats.heard_own_work(
+        &its_own(Event::UserPromptSubmit, Detail::default()),
+        Some(ID),
+    );
+    chats.heard_own_work(
+        &its_own(
+            Event::Notification,
+            Detail {
+                idle: true,
+                ..Detail::default()
+            },
+        ),
+        Some(ID),
+    );
+    assert!(!last().chats[0].mid_turn, "it sits idle");
+
+    // A wake-up whose time came fired, and began a turn: it is no longer on the record.
+    chats.heard_own_output(&said_of_its_own(
+        session,
+        Output::OwnWorkStarted {
+            piece: purlis_core::ownwork::pieces::Piece {
+                due_at: Some(1),
+                ..purlis_core::ownwork::pieces::Piece::new(
+                    purlis_core::ownwork::pieces::Kind::WakeUp,
+                    "w1",
+                    "",
+                )
+                .expect("a piece")
+            },
+        },
+    ));
+    assert_eq!(last().chats[0].own_pieces.len(), 1);
+    chats.heard_own_work(
+        &its_own(Event::UserPromptSubmit, Detail::default()),
+        Some(ID),
+    );
+    assert!(last().chats[0].own_pieces.is_empty(), "it fired");
+    chats.heard_own_work(&its_own(Event::Stop, Detail::default()), Some(ID));
+
+    // `/clear` begins a conversation with nothing of the old one's on the record.
+    chats.heard_own_work(
+        &its_own(Event::UserPromptSubmit, Detail::default()),
+        Some(ID),
+    );
+    chats.heard_own_output(&said_of_its_own(
+        session,
+        Output::OwnWorkStarted {
+            piece: a_piece("b1"),
+        },
+    ));
+    chats.holds_own_work(
+        session,
+        Some(purlis_core::ownwork::OwnWork {
+            shells: 1,
+            ..purlis_core::ownwork::OwnWork::default()
+        }),
+    );
+    chats.heard_own_work(
+        &its_own(
+            Event::SessionStart,
+            Detail {
+                started: Started::Cleared,
+                ..Detail::default()
+            },
+        ),
+        Some(ID),
+    );
+    let cleared = last();
+    assert_eq!(
+        (
+            cleared.chats[0].own_work,
+            cleared.chats[0].own_pieces.len(),
+            cleared.chats[0].mid_turn
+        ),
+        (None, 0, false)
+    );
+    let _ = chats.close(session);
 }
 
 #[test]

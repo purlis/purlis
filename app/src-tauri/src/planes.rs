@@ -240,6 +240,23 @@ impl Records {
 /// comes from.
 type Read = Result<reopen::Record, std::io::Error>;
 
+/// **An answer about one chat's Run grants being carried out** ([`Held::run_answers`]): the next
+/// for that chat waits until this is dropped.
+pub struct RunAnswering<'a> {
+    held: &'a Held,
+    chat: u32,
+}
+
+impl Drop for RunAnswering<'_> {
+    fn drop(&mut self) {
+        let (busy, ended) = &self.held.run_answers;
+        busy.lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(&self.chat);
+        ended.notify_all();
+    }
+}
+
 /// What the app holds for one open plane: its board, its chats, and where it is.
 pub struct Held {
     id: PlaneId,
@@ -316,6 +333,9 @@ pub struct Held {
     pool_tools: crate::pooltools::PoolTools,
     /// The Secret asks the chats' brokered runs wait on (#5068, ADR 0109).
     secret_asks: Arc<purlis_core::secrets::ask::Asks>,
+    /// The chats whose answer to a Run grant's ask, or Keep blocked on a vault, is being carried
+    /// out, and a wait for one to end ([`Self::run_answers`], #5617).
+    run_answers: (Mutex<std::collections::HashSet<u32>>, Condvar),
     /// Where the chats' browsers run: the window's session host, where it has one.
     browser_driver: Option<Arc<dyn crate::chatbrowsers::Driver>>,
     /// Told each time a browser is added to its chats' or taken from them (#2024).
@@ -769,6 +789,21 @@ impl Held {
         &self.secret_asks
     }
 
+    /// **One of the person's answers about chat `chat`'s Run grants at a time** (#5617): a Run
+    /// grant's press and Keep blocked on a vault each hold this while they are carried out, until
+    /// what it answers is dropped. Always allow writes its tool line before its ask is answered,
+    /// so a Keep blocked carried out in between would leave that line behind the ask it closed;
+    /// held, the press after it finds its ask answered first. Another chat's answers never wait.
+    pub fn run_answers(&self, chat: u32) -> RunAnswering<'_> {
+        let (busy, ended) = &self.run_answers;
+        let mut busy = busy.lock().unwrap_or_else(PoisonError::into_inner);
+        while busy.contains(&chat) {
+            busy = ended.wait(busy).unwrap_or_else(PoisonError::into_inner);
+        }
+        busy.insert(chat);
+        RunAnswering { held: self, chat }
+    }
+
     /// Where the chats' browsers run: none where the window has no session host.
     pub fn browser_driver(&self) -> Option<&Arc<dyn crate::chatbrowsers::Driver>> {
         self.browser_driver.as_ref()
@@ -1014,10 +1049,18 @@ impl Held {
     /// than [`crate::inputlanes::A_TURN_WAITS_AT_MOST`], as most of it is asked on the window's
     /// thread: past it, nothing is typed and the answer is a refusal.
     pub fn type_in_turn(&self, session: u32, bytes: &[u8]) -> Result<(), String> {
-        self.lanes
-            .in_turn_within(session, crate::inputlanes::A_TURN_WAITS_AT_MOST, || {
-                self.chats.sessions().input(session, bytes)
-            })?
+        let started = std::time::Instant::now();
+        let mut host = None;
+        let typed =
+            self.lanes
+                .in_turn_within(session, crate::inputlanes::A_TURN_WAITS_AT_MOST, || {
+                    let sent = std::time::Instant::now();
+                    let typed = self.chats.sessions().input(session, bytes);
+                    host = Some(sent.elapsed());
+                    typed
+                });
+        typed_slowly(session, started.elapsed(), host);
+        typed?
     }
 
     /// Whether chat `session` can be sent anything now: not while its runner is reconnecting,
@@ -3513,6 +3556,9 @@ impl Planes {
                     if let purlis_core::hookwire::Output::Final { text } = &output.turn_output {
                         held.hooks.skill_runs().said(output.chat, text.clone());
                     }
+                    // Each piece of its own work, as its tool starts it and as its turn's end
+                    // says it, kept in the record as it changes (#5750).
+                    held.chats().heard_own_output(&output);
                     crate::dispatched::said(&held, output);
                 }
             })
@@ -4850,6 +4896,8 @@ impl Planes {
                                 left_in: now.left_in,
                                 resumable: false,
                                 with_the_runner: true,
+                                // Said as the chat ending with its runner, with nothing to resume.
+                                ended: None,
                             });
                         }
                         if let Some(held) = me.get().and_then(std::sync::Weak::upgrade)
@@ -4906,6 +4954,7 @@ impl Planes {
                                 left_in,
                                 resumable,
                                 with_the_runner,
+                                ended: crate::hostlost::ended_with_it(&held.chats, session),
                             });
                         }
                     }
@@ -5164,6 +5213,7 @@ impl Planes {
             browser_driver: self.browser_driver.clone(),
             pool_tools: crate::pooltools::PoolTools::default(),
             secret_asks,
+            run_answers: (Mutex::default(), Condvar::new()),
             browsers_listed,
             browser_timeline,
             proposals: crate::proposals::Proposals::default(),
@@ -5375,8 +5425,10 @@ impl Planes {
         // Every plane's saving stops at once, against one short deadline, so a save at quit
         // never overlaps the session host's; a host that does not answer is ended first
         // (#2002).
+        let roots: Vec<_> = all.iter().map(|held| held.root.clone()).collect();
         crate::autosave::stop_every_saver_by(
             all.iter().filter_map(|held| held.take_saver()).collect(),
+            &roots,
             std::time::Instant::now() + crate::autosave::QUIT_STOPS_WITHIN,
             &*self.end_the_host,
         );
@@ -6155,6 +6207,32 @@ pub(crate) use purlis_core::hookchannel::{how_its_run_ended, its_children_end};
 #[path = "planes/tab_windows.rs"]
 mod tab_windows;
 pub use tab_windows::TabWindow;
+
+/// A line typed into a chat's pane past this is said in the log, with where the time went.
+const TYPING_IS_SLOW_PAST: std::time::Duration = std::time::Duration::from_millis(500);
+
+/// **A slow line typed into chat `session`'s pane, said with where the time went** (#5772):
+/// waiting for the chat's input lane, or for the session host to take the bytes. `host` is how
+/// long the host took, or `None` where the lane never came free and nothing was sent.
+fn typed_slowly(session: u32, took: std::time::Duration, host: Option<std::time::Duration>) {
+    if took < TYPING_IS_SLOW_PAST {
+        return;
+    }
+    let lane = took.saturating_sub(host.unwrap_or_default());
+    match host {
+        Some(host) => tracing::warn!(
+            "purlis: a line typed into chat {session} took {} ms: {} ms waiting for its input \
+             lane, {} ms for the session host to take it",
+            took.as_millis(),
+            lane.as_millis(),
+            host.as_millis()
+        ),
+        None => tracing::warn!(
+            "purlis: a line for chat {session} waited {} ms for its input lane and was not typed",
+            took.as_millis()
+        ),
+    }
+}
 
 #[cfg(test)]
 mod tests;

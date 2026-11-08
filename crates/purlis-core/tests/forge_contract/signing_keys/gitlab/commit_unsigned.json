@@ -1,0 +1,9 @@
+{
+  "source": "GitLab REST API v4, docs.gitlab.com/api/commits (Get signature of a commit; read 2026-11-08): an unsigned commit is answered 404 Not Found",
+  "exchanges": [
+    {
+      "call": {"endpoint": {"rest": {"method": null, "path": "projects/platform%2Fbilling/repository/commits/0123abc/signature"}}, "fields": []},
+      "reply": {"code": 1, "out": "", "err": "{\"message\":\"404 Signature Not Found\"}", "status": 404}
+    }
+  ]
+}

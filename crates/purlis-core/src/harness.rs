@@ -427,6 +427,16 @@ impl Harness {
         self.adapter().skill_limit_past(budget)
     }
 
+    /// [`HarnessAdapter::listing_drops`]: whether this harness would still drop descriptions.
+    pub fn listing_drops(
+        self,
+        room: usize,
+        listed: usize,
+        own: &[crate::skills::Share],
+    ) -> Option<crate::skills::Drops> {
+        self.adapter().listing_drops(room, listed, own)
+    }
+
     /// **Whether purlis arms a prompt hook on this harness** that hands a turn context of its
     /// own (SK-15c): where a router that reads prompts points a prompt at skills its list leaves
     /// out. Claude Code's and Codex's `UserPromptSubmit`, opencode's `chat.message` in purlis's

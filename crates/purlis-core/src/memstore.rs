@@ -29,7 +29,7 @@ pub const INDEX: &str = "MEMORY.md";
 mod holding;
 mod near;
 #[cfg(unix)]
-pub(crate) use holding::{NoGates, rewrite_index, write_in};
+pub(crate) use holding::{NoGates, listed_held, rewrite_index, write_in};
 
 /// A store's lock, taken by [`lock_store`] and let go when this is dropped.
 pub(crate) enum StoreLock {

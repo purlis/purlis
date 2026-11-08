@@ -2,32 +2,65 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * **You › Accounts › Signed commits** (#5628, `prototype/commit-signing`): the card not set up,
- * with no GitHub account to add the key to, on and verified, and on with no Check run. Each is
+ * **You › Accounts › Signed commits** (#5628, #5629, `prototype/commit-signing`): the card not
+ * set up, with no forge account to add the key to, on and verified, on with no Check run, on
+ * with GitHub and GitLab accounts, and with a GitLab too old to verify signed commits. Each is
  * drawn, held to axe, walked by the keyboard, and pictured in every pictured theme cell
  * (`docs/component-stories.md`). The core is faked at its command boundary.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent, waitFor, within } from "storybook/test";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import type { SigningState } from "../bindings";
+import type { SigningAccount, SigningAccountKeys, SigningState } from "../bindings";
 import { expectFocusInSight } from "../stories.testkit";
 import { SettingGroup, SettingRow } from "./components";
 import type { LiveSetting } from "./groups";
 import { signedCommits } from "./signing";
 
-const ACCOUNT = {
+const ACCOUNT: SigningAccount = {
+  kind: "github",
   login: "octocat",
   host: "github.com",
   forge: "GitHub",
   may_add: true,
   verified_as: null,
+  verifies: true,
+};
+
+const GITLAB: SigningAccount = {
+  kind: "gitlab",
+  login: "sam",
+  host: "gitlab.example.org",
+  forge: "GitLab",
+  may_add: true,
+  verified_as: null,
+  verifies: true,
+};
+
+/** GitHub's account, holding this Mac's key and the person's laptop's. */
+const HELD: SigningAccountKeys = {
+  kind: "github",
+  host: "github.com",
+  has_key: true,
+  others: [{ id: "17", title: "purlis · Studio Mac mini" }],
+  may_remove: true,
+  keys_page: "https://github.com/settings/keys",
+};
+
+/** GitLab's account, without this Mac's key yet. */
+const GITLAB_WITHOUT: SigningAccountKeys = {
+  kind: "gitlab",
+  host: "gitlab.example.org",
+  has_key: false,
+  others: [],
+  may_remove: true,
+  keys_page: "https://gitlab.example.org/-/user_settings/ssh_keys",
 };
 
 const OFF: SigningState = {
   on: false,
   title: "purlis · studio",
-  account: ACCOUNT,
+  accounts: [ACCOUNT],
 };
 
 const ON: SigningState = {
@@ -57,12 +90,15 @@ const meta = {
   component: Card,
   beforeEach: ({ parameters }) => {
     const state = (parameters.signing as SigningState | undefined) ?? OFF;
+    const keys = (parameters.keys as SigningAccountKeys[] | undefined) ?? [];
     mockIPC((cmd) =>
       cmd === "signing_state"
         ? state
-        : cmd === "signing_key_shown"
-          ? { fingerprint: "SHA256:q3VbT1sMk2pQ1", public_key: "ssh-ed25519 AAAA example" }
-          : null,
+        : cmd === "signing_accounts_keys"
+          ? keys
+          : cmd === "signing_key_shown"
+            ? { fingerprint: "SHA256:q3VbT1sMk2pQ1", public_key: "ssh-ed25519 AAAA example" }
+            : null,
     );
     return () => clearMocks();
   },
@@ -84,12 +120,14 @@ export const NotSetUp: Story = {
   },
 };
 
-/** **No GitHub account**: sign in first, and no setup offered. */
+/** **No forge account**: sign in first, and no setup offered. */
 export const NoAccount: Story = {
-  parameters: { signing: { ...OFF, account: null } },
+  parameters: { signing: { ...OFF, accounts: [] } },
   play: async ({ canvasElement }) => {
     await waitFor(() =>
-      expect(within(canvasElement).getByText(/Sign in to GitHub above first/)).toBeVisible(),
+      expect(
+        within(canvasElement).getByText(/Sign in to GitHub or GitLab above first/),
+      ).toBeVisible(),
     );
     await expect(
       within(canvasElement).queryByRole("button", { name: "Set up signing" }),
@@ -100,7 +138,7 @@ export const NoAccount: Story = {
 /** **On, verified**: the account Verified on GitHub ✓, the email it commits as, and Details. */
 export const OnVerified: Story = {
   parameters: {
-    signing: { ...ON, account: { ...ACCOUNT, verified_as: "octocat@example.com" } },
+    signing: { ...ON, accounts: [{ ...ACCOUNT, verified_as: "octocat@example.com" }] },
   },
   play: async ({ canvasElement }) => {
     const details = await waitFor(() =>
@@ -121,10 +159,82 @@ export const OnNotChecked: Story = {
   parameters: { signing: ON },
   play: async ({ canvasElement }) => {
     const check = await waitFor(() =>
-      within(canvasElement).getByRole("button", { name: "Check signing on octocat" }),
+      within(canvasElement).getByRole("button", { name: "Check signing on octocat on GitHub" }),
     );
     await userEvent.tab();
     await expect(check).toHaveFocus();
     expectFocusInSight();
+  },
+};
+
+/** **On, GitHub and GitLab**: a row per account; GitLab Verified, GitHub still to check (#5629). */
+export const OnGitHubAndGitLab: Story = {
+  parameters: {
+    signing: { ...ON, accounts: [ACCOUNT, { ...GITLAB, verified_as: "sam@example.org" }] },
+  },
+  play: async ({ canvasElement }) => {
+    await waitFor(() =>
+      expect(within(canvasElement).getByText("Verified on GitLab ✓")).toBeVisible(),
+    );
+    await expect(
+      within(canvasElement).getByRole("button", { name: "Check signing on octocat on GitHub" }),
+    ).toBeVisible();
+  },
+};
+
+/** **A GitLab too old to verify**: said plainly, and no setup offered for it (#5629). */
+export const OldGitLab: Story = {
+  parameters: { signing: { ...OFF, accounts: [{ ...GITLAB, verifies: false }] } },
+  play: async ({ canvasElement }) => {
+    await waitFor(() =>
+      expect(
+        within(canvasElement).getByText(/This server can't verify signed commits/),
+      ).toBeVisible(),
+    );
+    await expect(
+      within(canvasElement).queryByRole("button", { name: "Set up signing" }),
+    ).toBeNull();
+  },
+};
+
+/** **On, managed** (#5632): GitHub Verified, GitLab without the key (Add to this account), the
+ *  other Mac's key with Remove, Replace key and Remove signing. */
+export const OnManaged: Story = {
+  parameters: {
+    signing: {
+      ...ON,
+      accounts: [{ ...ACCOUNT, verified_as: "octocat@example.com" }, GITLAB],
+    },
+    keys: [HELD, GITLAB_WITHOUT],
+  },
+  play: async ({ canvasElement }) => {
+    const add = await waitFor(() =>
+      within(canvasElement).getByRole("button", { name: "Add to this account: sam on GitLab" }),
+    );
+    await expect(
+      within(canvasElement).getByRole("list", { name: "Your other devices' signing keys" }),
+    ).toHaveTextContent("purlis · Studio Mac mini");
+    add.focus();
+    await expect(add).toHaveFocus();
+    expectFocusInSight();
+  },
+};
+
+/** **Remove signing's confirmation**: the accounts it is removed from, and what stays signed. */
+export const RemoveSigning: Story = {
+  parameters: {
+    signing: { ...ON, accounts: [{ ...ACCOUNT, verified_as: "octocat@example.com" }] },
+    keys: [HELD],
+    screenshot: "page",
+  },
+  play: async ({ canvasElement }) => {
+    await waitFor(() =>
+      within(canvasElement).getByRole("list", { name: "Your other devices' signing keys" }),
+    );
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "Remove signing…" }));
+    const confirm = await waitFor(() =>
+      within(document.body).getByRole("dialog", { name: "Remove signing from this Mac?" }),
+    );
+    await expect(confirm).toHaveTextContent("Commits already signed stay as they are");
   },
 };

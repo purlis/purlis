@@ -1213,6 +1213,20 @@ struct AnsweredFile {
 struct Files {
     revision: String,
     files: Vec<AnsweredFile>,
+    /// The grade the source carries for the skill, read by [`grade_of`] (ADR 0101, amended
+    /// 2026-11-08).
+    #[serde(default, rename = "grade")]
+    _grade: Option<serde_json::Value>,
+}
+
+/// **The grade a source's files answer `doc` hands beside the files** (ADR 0101, amended
+/// 2026-11-08), as the bytes a git source's grade file would hold, or `None` where it hands
+/// none. What it holds is read as the review reads a grade file
+/// ([`crate::skills::source::carried`]).
+pub fn grade_of(doc: &serde_json::Map<String, serde_json::Value>) -> Option<Vec<u8>> {
+    doc.get("grade")
+        .filter(|grade| !grade.is_null())
+        .and_then(|grade| serde_json::to_vec(grade).ok())
 }
 
 /// **One skill's files**, read from a source's answer `doc` to a question at `revision`: each a

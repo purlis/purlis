@@ -271,3 +271,181 @@ mod the_check {
         );
     }
 }
+
+// GitLab (#5629).
+
+fn gitlab() -> Forge {
+    Forge::default_of(Kind::GitLab)
+}
+
+fn gitlab_recording(case: &str, signer: &Signer) -> Recorded {
+    crate::forge::signingkeys::recording_of("gitlab", case, &[("@KEY@", &signer.public_line())])
+}
+
+fn pushed(kind: Kind, host: &str, repo: &str, commit: &str, at: i64) -> SignedPush {
+    SignedPush {
+        kind,
+        host: host.to_owned(),
+        repo: repo.to_owned(),
+        commit: commit.to_owned(),
+        at,
+    }
+}
+
+/// GitLab's Check asks about the newest signed chat commit the app pushed to that GitLab, since
+/// GitLab makes no signed commit of its own.
+#[test]
+fn gitlabs_check_reads_the_newest_signed_push_to_that_gitlab() {
+    let config = tempfile::tempdir().unwrap();
+    assert_eq!(last_signed_push(config.path(), &gitlab()), None);
+    note_signed_push(
+        config.path(),
+        pushed(Kind::GitLab, "gitlab.com", "platform/billing", "0aa", 1),
+    )
+    .unwrap();
+    note_signed_push(
+        config.path(),
+        pushed(Kind::GitHub, "github.com", "octo/hello", "0bb", 2),
+    )
+    .unwrap();
+    note_signed_push(
+        config.path(),
+        pushed(Kind::GitLab, "git.example.org", "acme/api", "0cc", 3),
+    )
+    .unwrap();
+    note_signed_push(
+        config.path(),
+        pushed(Kind::GitLab, "gitlab.com", "platform/billing", "0dd", 4),
+    )
+    .unwrap();
+    let last = last_signed_push(config.path(), &gitlab()).unwrap();
+    assert_eq!(
+        (last.repo.as_str(), last.commit.as_str()),
+        ("platform/billing", "0dd")
+    );
+    // One per repository: the push it replaced is gone.
+    assert_eq!(signed_pushes(config.path()).len(), 3);
+}
+
+#[test]
+fn a_pushed_commit_gitlab_verifies_with_this_devices_key_is_verified() {
+    let signer = Signer::generate().unwrap();
+    let recorded = gitlab_recording("commit_verified", &signer);
+    let checked =
+        check_a_pushed_commit(&recorded, &gitlab(), &signer, "platform/billing", "0123abc")
+            .unwrap();
+    assert!(checked.verified);
+}
+
+#[test]
+fn a_pushed_commit_signed_with_another_key_says_nothing_of_this_one() {
+    let signer = Signer::generate().unwrap();
+    let other = Signer::generate().unwrap();
+    // GitLab verified it, with `other`'s key.
+    let recorded = gitlab_recording("commit_verified", &other);
+    let checked =
+        check_a_pushed_commit(&recorded, &gitlab(), &signer, "platform/billing", "0123abc")
+            .unwrap();
+    assert!(!checked.verified);
+    assert_eq!(checked.reason, "other_key");
+}
+
+#[test]
+fn the_email_chosen_for_chat_commits_is_kept_until_it_is_cleared() {
+    let config = tempfile::tempdir().unwrap();
+    assert_eq!(commit_email(config.path()), None);
+    set_commit_email(config.path(), Some("sam@example.com")).unwrap();
+    assert_eq!(
+        commit_email(config.path()).as_deref(),
+        Some("sam@example.com")
+    );
+    for bad in [
+        "",
+        "sam",
+        "sam@local",
+        "a b@example.com",
+        "x@y.z\nuser.name=evil",
+    ] {
+        assert!(
+            set_commit_email(config.path(), Some(bad)).is_err(),
+            "{bad:?}"
+        );
+    }
+    assert_eq!(
+        commit_email(config.path()).as_deref(),
+        Some("sam@example.com")
+    );
+    set_commit_email(config.path(), None).unwrap();
+    assert_eq!(commit_email(config.path()), None);
+    set_commit_email(config.path(), None).unwrap();
+}
+
+#[test]
+fn githubs_verified_addresses_are_offered_primary_first_and_the_noreply_last() {
+    let signer = Signer::generate().unwrap();
+    let recorded = recording("emails", &signer);
+    let found = verified_emails(&recorded, &github()).unwrap();
+    let emails: Vec<_> = found.iter().map(|one| one.email.as_str()).collect();
+    assert_eq!(
+        emails,
+        [
+            "octocat@example.com",
+            "work@example.org",
+            "583231+octocat@users.noreply.github.com"
+        ]
+    );
+    assert!(found[0].primary && found[2].private);
+    assert!(recorded.unspent().is_empty());
+}
+
+#[test]
+fn gitlabs_confirmed_addresses_are_offered_and_an_unconfirmed_one_is_not() {
+    let signer = Signer::generate().unwrap();
+    let recorded = gitlab_recording("emails", &signer);
+    let found = verified_emails(&recorded, &gitlab()).unwrap();
+    let emails: Vec<_> = found.iter().map(|one| one.email.as_str()).collect();
+    assert_eq!(emails, ["sam@example.org", "sam@billing.example.org"]);
+}
+
+#[test]
+fn an_account_with_no_verified_address_offers_none_and_its_settings_page_is_named() {
+    let signer = Signer::generate().unwrap();
+    let recorded = recording("emails_none", &signer);
+    assert!(verified_emails(&recorded, &github()).unwrap().is_empty());
+    assert_eq!(
+        email_settings(&github()),
+        "https://github.com/settings/emails"
+    );
+    assert_eq!(
+        email_settings(&forge_of(Kind::GitLab, "git.example.org")),
+        "https://git.example.org/-/user_settings/profile"
+    );
+}
+
+#[test]
+fn a_chat_commit_is_made_as_the_email_chosen_for_it() {
+    let isolation = crate::worktree::git::Isolated::identity(Some("Sam"), Some("sam@laptop.local"))
+        .as_email("sam@example.com");
+    assert_eq!(
+        isolation,
+        crate::worktree::git::Isolated::identity(Some("Sam"), Some("sam@example.com"))
+    );
+    // A value git would not read as one line changes nothing.
+    let kept = crate::worktree::git::Isolated::identity(Some("Sam"), Some("sam@laptop.local"));
+    assert_eq!(kept.clone().as_email("a\nuser.name=x"), kept);
+}
+
+#[test]
+fn a_commit_gitlab_verified_without_naming_this_devices_key_gets_no_tick() {
+    let signer = Signer::generate().unwrap();
+    let recorded = Recorded::parse(
+        r#"{"source": "GitLab's answer for a commit it signed itself, naming no key", "exchanges": [
+        {"call": {"endpoint": {"rest": {"method": null, "path": "projects/platform%2Fbilling/repository/commits/0123abc/signature"}}, "fields": []},
+         "reply": {"code": 0, "out": "{\"signature_type\": \"SSH\", \"verification_status\": \"verified_system\"}", "err": "", "status": 200}}]}"#,
+    )
+    .unwrap();
+    let checked =
+        check_a_pushed_commit(&recorded, &gitlab(), &signer, "platform/billing", "0123abc")
+            .unwrap();
+    assert!(!checked.verified);
+}

@@ -105,7 +105,10 @@ for a box a person gives a value to. Inside a state a theme sets only fill, text
 and shadow: a state never changes size.
 
 **Mark every addition `since: NEXT`**: `super::NEXT` in the family's own file, `parts::NEXT` in a
-test, never imported and never a literal number. Leave `parts::VERSION` and the digest table
+test, never imported and never a literal number. A state a released family gains, or a property
+a released part gains, that the manifest already has goes in its list as usual and is dated in
+the family's `later` (`Later { joined: Joined::State(State::Focused), since: super::NEXT }`), so
+what the release shipped keeps its digest. Leave `parts::VERSION` and the digest table
 alone; the release numbers them. Then write again what is generated from the manifest, never by
 hand: the schema, the docs family table and, for a built-in theme, the stories' copy
 (`docs/component-stories.md#when-a-component-family-is-done` has each command). On a conflict in

@@ -111,6 +111,7 @@ pub(super) const STEPS: Family = Family {
     around: &[],
     fills: &[],
     under: &[],
+    later: &[],
 };
 
 /// **A step's line as `steps.css` draws it**: no ground of its own, its words in the primary tier.

@@ -414,10 +414,77 @@ fn or_finished(held: &Held, asker: u32, of: u32, why: String, asked: &str) -> St
 
 /// Answers one ask after a dispatched task. `connection` is the listener's number for the
 /// connection it came on, which a wait asks after.
+///
+/// **Nothing is typed into a pane before the answer goes back** (#5772): the asker waits on
+/// it within a hook's budget, and typing waits on the chat's input lane and the session host,
+/// which under load took longer than that budget and read to the asker as an app that did not
+/// answer. Every chat this ask wakes is collected and woken on a thread of its own once it
+/// returns ([`woken_after`]). A wait is answered in minutes and wakes as it goes, so it is not.
 pub fn answer(held: &Held, asked: &Asked, connection: u64) -> Answer {
+    if matches!(asked.what, What::Wait { .. } | What::AwaitAnswer { .. }) {
+        return answer_now(held, asked, connection, &mut Timed::default());
+    }
+    let started = std::time::Instant::now();
+    let mut timed = Timed::default();
+    let answer = woken_after(held, || answer_now(held, asked, connection, &mut timed));
+    timed.said_if_slow(asked.chat, &asked.what, started.elapsed());
+    answer
+}
+
+/// How long an ask's steps took, said in the log only where the whole ask was slow (#5772):
+/// enough to name, next time an asker is told the app did not answer, which step it was.
+#[derive(Default)]
+struct Timed {
+    /// Delivering what the asker queued while the app did not answer.
+    queue: std::time::Duration,
+}
+
+/// An ask that took longer than this has its steps said in the log.
+const AN_ASK_IS_SLOW_PAST: std::time::Duration = std::time::Duration::from_secs(1);
+
+impl Timed {
+    fn said_if_slow(&self, chat: u32, what: &What, took: std::time::Duration) {
+        if took < AN_ASK_IS_SLOW_PAST {
+            return;
+        }
+        let rest = took.saturating_sub(self.queue);
+        tracing::warn!(
+            "purlis: chat {chat}'s dispatch ask ({}) took {} ms: {} ms delivering what it had \
+             queued, {} ms answering",
+            what_named(what),
+            took.as_millis(),
+            self.queue.as_millis(),
+            rest.as_millis()
+        );
+    }
+}
+
+/// An ask's kind, as the log names it: never what it carries.
+fn what_named(what: &What) -> &'static str {
+    match what {
+        What::List => "list",
+        What::Tell { .. } => "tell",
+        What::TellAll { .. } => "tell all",
+        What::Note { .. } => "note",
+        What::Question { .. } => "question",
+        What::Route { .. } => "route",
+        What::Answer { .. } => "answer",
+        What::Output { .. } => "output",
+        What::Deliver { .. } => "deliver",
+        What::Read { .. } => "read",
+        What::Close { .. } => "close",
+        What::Cancel { .. } => "cancel",
+        What::Wait { .. } => "wait",
+        What::AwaitAnswer { .. } => "await answer",
+        _ => "other",
+    }
+}
+
+fn answer_now(held: &Held, asked: &Asked, connection: u64, timed: &mut Timed) -> Answer {
     let asker = asked.chat;
     // What this chat queued while the app did not answer goes first (#3902): a message sent
     // now never overtakes one it sent before, and a list says where each stands.
+    let queue_started = std::time::Instant::now();
     if matches!(
         asked.what,
         What::Tell { .. }
@@ -431,6 +498,7 @@ pub fn answer(held: &Held, asked: &Asked, connection: u64) -> Answer {
     ) {
         deliver_queued(held, asker, None);
     }
+    timed.queue = queue_started.elapsed();
     // **A chat that waits on another does not wait on that one's queue** (#3902): a wait
     // delivers what the task it waits on queued, and a task's wait for its answer what its
     // asking chat queued, each time it looks again ([`wait`], [`await_answer`]).
@@ -1458,6 +1526,105 @@ pub(crate) fn sender_ending(held: &Held, chat: u32) {
             "purlis: the chats a closing chat's messages were left for are not woken ({why}); \
              each reads them on its next turn"
         );
+    }
+}
+
+/// **Runs `run` with every chat it would wake collected, and wakes them on a thread of their
+/// own once it has returned** (#5772): what a dispatch ask and a report do, so neither the
+/// asker's answer nor the reports after this one wait on typing into a pane. Within a
+/// collection already under way (a drain inside an ask), the outer one wakes them.
+fn woken_after<T>(held: &Held, run: impl FnOnce() -> T) -> T {
+    let outer = WAKES.with(|wakes| {
+        let mut wakes = wakes.borrow_mut();
+        let outer = wakes.is_none();
+        if outer {
+            *wakes = Some(Vec::new());
+        }
+        outer
+    });
+    let ran = run();
+    if outer {
+        let wakes = WAKES
+            .with(|wakes| wakes.borrow_mut().take())
+            .unwrap_or_default();
+        wake_later(held, wakes);
+    }
+    ran
+}
+
+/// Wakes `wakes` in order on a thread of its own. A thread that will not start wakes them
+/// here: late is better than never, and a chat not woken reads them only on its next turn.
+fn wake_later(held: &Held, wakes: Vec<Wake>) {
+    if wakes.is_empty() {
+        return;
+    }
+    let weak = held.weak();
+    let (tx, rx) = std::sync::mpsc::channel::<Vec<Wake>>();
+    let spawned = std::thread::Builder::new()
+        .name("purlis-queue-wake".into())
+        .spawn(move || {
+            let Ok(wakes) = rx.recv() else { return };
+            let Some(held) = weak.upgrade() else { return };
+            for wake in wakes {
+                wake_now(&held, wake);
+            }
+            #[cfg(test)]
+            woke_later::done();
+        });
+    match spawned {
+        Ok(_) => {
+            #[cfg(test)]
+            woke_later::started();
+            let _ = tx.send(wakes);
+        }
+        Err(why) => {
+            tracing::warn!("purlis: a thread to wake chats did not start ({why}); woken here");
+            for wake in wakes {
+                wake_now(held, wake);
+            }
+        }
+    }
+}
+
+/// What a test waits on: every [`wake_later`] thread started on this process has woken its
+/// chats. A test that reads what was typed after an ask calls [`woke_later::settled`] first.
+#[cfg(test)]
+pub(crate) mod woke_later {
+    use std::sync::{Condvar, Mutex};
+
+    static RUNNING: Mutex<usize> = Mutex::new(0);
+    static SETTLED: Condvar = Condvar::new();
+
+    pub(super) fn started() {
+        *RUNNING
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) += 1;
+    }
+
+    pub(super) fn done() {
+        let mut running = RUNNING
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        *running = running.saturating_sub(1);
+        SETTLED.notify_all();
+    }
+
+    /// Waits, up to ten seconds, until no wake thread is running.
+    pub(crate) fn settled() {
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let mut running = RUNNING
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        while *running > 0 {
+            let left = until.saturating_duration_since(std::time::Instant::now());
+            if left.is_zero() {
+                return;
+            }
+            running = SETTLED
+                .wait_timeout(running, left)
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .0;
+        }
     }
 }
 
@@ -3039,6 +3206,13 @@ fn type_line(held: &Held, chat: u32, line: &str) -> Result<(), String> {
 /// A report reached the project from chat `report.chat`'s harness: whatever was waiting for
 /// that chat to move is looked at again.
 pub fn heard(held: &Held, report: &Report) {
+    // **Nothing is typed from the report thread** (#5772): reports are heard one at a time in
+    // order, and a line typed here waits on the chat's lane and the session host, holding up
+    // every report behind it. The chats it wakes are woken on a thread of their own.
+    woken_after(held, || heard_now(held, report));
+}
+
+fn heard_now(held: &Held, report: &Report) {
     // A chat a Reopen started was heard from: its harness brought the conversation back.
     reopen_settled(held, report.chat, false);
     // The app hears from it, so what it queued while the app did not answer is delivered

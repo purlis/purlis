@@ -33,6 +33,7 @@ use purlis_skills::tree;
 use serde::{Deserialize, Serialize};
 use sha2::Digest as _;
 
+use super::carried::{self, plain};
 use super::fetch::{Handing, REMOTE, Scratch, handing};
 use super::outgoing::{self, OutSkill, Outgoing, Purpose, Stop};
 use super::{Commit, Source};
@@ -264,6 +265,9 @@ pub struct PublishReview {
     pub author: (String, String),
     /// The grades the description holds.
     pub grades: Vec<GradeSent>,
+    /// **Each grade file the commit carries beside a skill's folder** (ADR 0100, amended
+    /// 2026-11-08): its path in the source, and its bytes. None for a skill with no grade.
+    pub carried: Vec<(String, Vec<u8>)>,
     /// Whether the person's account may push to the source, as its forge says (#4342). A no
     /// sends the branch to their fork ([`Route`]); nothing else refuses on it. `None` where the
     /// forge does not say, cannot be asked, or the review is stopped already.
@@ -295,6 +299,7 @@ impl PublishReview {
             self.author.1.as_str(),
             self.body.as_str(),
             route.as_str(),
+            &carried_digest(&self.carried),
         ]
         .map(|field| format!("{}:{field}", field.len()))
         .join("\n");
@@ -364,10 +369,16 @@ fn reviewed(
         let held = scratch.git(&["ls-tree", "--name-only", "refs/purlis/base", "--", &folder])?;
         lands.push((folder, held.ok() && !held.out.trim().is_empty()));
     }
+    let carried = carried_of(plane, scratch, &outgoing.skills, &lands)?;
     // Named by what it holds and where it goes: the same files elsewhere are another request.
     let digest = {
         let folders: Vec<&str> = lands.iter().map(|land| land.0.as_str()).collect();
-        let place = format!("{}\n{base}\n{}", outgoing.digest(), folders.join("\n"));
+        let place = format!(
+            "{}\n{base}\n{}\n{}",
+            outgoing.digest(),
+            folders.join("\n"),
+            carried_digest(&carried)
+        );
         crate::runnerlink::hex_of(&sha2::Sha256::digest(place.as_bytes()))
     };
     let title = title_of(&outgoing.skills, lands.first().is_some_and(|land| land.1));
@@ -394,6 +405,7 @@ fn reviewed(
         title,
         author,
         grades,
+        carried,
         body,
         may_push: None,
         route: Route::Source,
@@ -456,14 +468,6 @@ fn title_of(skills: &[OutSkill], replaces: bool) -> String {
         0 | 1 => format!("{verb} the skill {name}"),
         n => format!("{verb} the skill {name} and {} it refers to", n - 1),
     }
-}
-
-/// `text` held to characters that mean nothing in a table or to a terminal.
-fn plain(text: &str) -> String {
-    text.chars()
-        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | ' '))
-        .take(64)
-        .collect()
 }
 
 fn percent(value: Option<f64>) -> String {
@@ -537,6 +541,135 @@ fn tree_now(plane: &Path, folder: &Path) -> Option<String> {
     let spec = format!("HEAD:{rel}");
     let run = git::run(plane, &["rev-parse", &spec], git::READ).ok()?;
     run.ok().then(|| run.line().trim().to_owned())
+}
+
+/// **The grade file each of `skills` carries beside its folder**, `lands` their folders: the rows
+/// the description holds, each with the tree it measured. A grade of the version that goes is
+/// tied to the tree git gives the folder as it goes (`scratch`, holding the source's commit), so
+/// the files that stay behind do not make it an earlier one. None is written where the place
+/// beside the folder is inside a skill the source holds (decision 21).
+fn carried_of(
+    plane: &Path,
+    scratch: &Scratch,
+    skills: &[OutSkill],
+    lands: &[(String, bool)],
+) -> Result<Vec<(String, Vec<u8>)>, String> {
+    let mut out = Vec::new();
+    for (skill, (folder, _)) in skills.iter().zip(lands) {
+        let Some(path) = carried::beside(folder) else {
+            continue;
+        };
+        if inside_a_skill(scratch, &path)? {
+            continue;
+        }
+        let graded = grades::read_followed(plane, &skill.level, &skill.name).grades;
+        if graded.is_empty() {
+            continue;
+        }
+        let now = skill
+            .level
+            .named(plane, &skill.name)
+            .and_then(|folder| tree_now(plane, &folder));
+        let going = tree_in(scratch, &skill.files)?;
+        // The same grades the description lists, so the file never holds one it does not.
+        let rows: Vec<carried::Row> = graded
+            .iter()
+            .take(MOST_GRADES)
+            .filter_map(|one| {
+                let tree = if now.as_deref() == Some(one.tree.as_str()) {
+                    going.clone()
+                } else {
+                    one.tree.clone()
+                };
+                carried::row_of(one, tree)
+            })
+            .collect();
+        if let Some(bytes) = carried::file_of(&skill.name, rows) {
+            out.push((path, bytes));
+        }
+    }
+    Ok(out)
+}
+
+/// Whether `path` in the source's commit is inside a skill's folder: a folder above it holds a
+/// `SKILL.md`.
+fn inside_a_skill(scratch: &Scratch, path: &str) -> Result<bool, String> {
+    let parts: Vec<&str> = path.split('/').collect();
+    for depth in 0..parts.len() {
+        let above = parts[..depth].join("/");
+        let instructions = if above.is_empty() {
+            purlis_skills::FILE.to_owned()
+        } else {
+            format!("{above}/{}", purlis_skills::FILE)
+        };
+        let held = scratch.git(&[
+            "ls-tree",
+            "--name-only",
+            "refs/purlis/base",
+            "--",
+            &instructions,
+        ])?;
+        if held.ok() && !held.out.trim().is_empty() {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// **The tree git gives a folder holding `files`**, written into `scratch` in the source's own
+/// object format, as the commit will hold it.
+fn tree_in(scratch: &Scratch, files: &[outgoing::OutFile]) -> Result<String, String> {
+    let mut listed: Vec<(Vec<String>, &'static str, String)> = Vec::new();
+    for file in files {
+        let blob = scratch.git_raw(&["hash-object", "-w", "--stdin"], file.bytes.clone())?;
+        if blob.code != Some(0) {
+            return Err("a file of the skill could not be written".to_owned());
+        }
+        let mode = if file.executable { "100755" } else { "100644" };
+        let oid = String::from_utf8_lossy(&blob.out).trim().to_owned();
+        listed.push((file.parts.clone(), mode, oid));
+    }
+    folder_in_scratch(scratch, &listed)
+}
+
+/// The tree of `listed` (each its path's parts, mode and blob), its folders made first.
+fn folder_in_scratch(
+    scratch: &Scratch,
+    listed: &[(Vec<String>, &'static str, String)],
+) -> Result<String, String> {
+    let mut lines = String::new();
+    let mut folders: Vec<&str> = Vec::new();
+    for (parts, mode, oid) in listed {
+        match parts.as_slice() {
+            [name] => lines.push_str(&format!("{mode} blob {oid}\t{name}\n")),
+            [first, ..] if !folders.contains(&first.as_str()) => folders.push(first),
+            _ => {}
+        }
+    }
+    for folder in folders {
+        let inner: Vec<(Vec<String>, &'static str, String)> = listed
+            .iter()
+            .filter(|(parts, _, _)| parts.len() > 1 && parts[0] == folder)
+            .map(|(parts, mode, oid)| (parts[1..].to_vec(), *mode, oid.clone()))
+            .collect();
+        let tree = folder_in_scratch(scratch, &inner)?;
+        lines.push_str(&format!("040000 tree {tree}\t{folder}\n"));
+    }
+    let made = scratch.git_raw(&["mktree"], lines.into_bytes())?;
+    if made.code != Some(0) {
+        return Err("the skill's folder could not be written".to_owned());
+    }
+    Ok(String::from_utf8_lossy(&made.out).trim().to_owned())
+}
+
+/// What the grade files hold, as one line of what a yes is a yes to.
+fn carried_digest(carried: &[(String, Vec<u8>)]) -> String {
+    let mut hash = sha2::Sha256::new();
+    for (path, bytes) in carried {
+        hash.update(format!("{}:{path}\n{}:", path.len(), bytes.len()).as_bytes());
+        hash.update(bytes);
+    }
+    crate::runnerlink::hex_of(&hash.finalize())
 }
 
 /// The grades that go with `skills`, each skill's newest first.
@@ -870,6 +1003,15 @@ fn commit_of(scratch: &Scratch, review: &PublishReview) -> Result<(String, Strin
             if !added.ok() {
                 return Err(failed("a file could not be added", &added));
             }
+        }
+    }
+    for (path, bytes) in &review.carried {
+        let blob = scratch.git_raw(&["hash-object", "-w", "--stdin"], bytes.clone())?;
+        let blob = String::from_utf8_lossy(&blob.out).trim().to_owned();
+        let entry = format!("100644,{blob},{path}");
+        let added = scratch.git(&["update-index", "--add", "--replace", "--cacheinfo", &entry])?;
+        if !added.ok() {
+            return Err(failed("a grade file could not be added", &added));
         }
     }
     let tree = scratch.git(&["write-tree", "--missing-ok"])?;

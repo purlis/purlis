@@ -171,6 +171,7 @@ fn a_harness_lists_charter_s_tools() {
             "todo_list",
             "todo_add",
             "todo_done",
+            "todo_reopen",
             "memory_search",
             "memory_add",
             "persona_remember",
@@ -433,6 +434,31 @@ fn a_todo_recorded_over_mcp_lands_in_the_chat_s_own_workspace() {
             > 0
     );
     assert!(!p.path().join("workspaces/beta/todos").exists());
+}
+
+#[test]
+fn a_todo_closed_over_mcp_is_listed_as_done_and_reopened_over_mcp() {
+    // #3416: a chat that marked the wrong todo done undoes it without a shell command.
+    let p = project();
+    let mut server = Server::start(p.path(), "alpha");
+    server.initialize(false);
+    server.call("todo_add", json!({ "text": "Wire the MCP server" }));
+    let open = text(&server.call("todo_list", json!({})));
+    let slug = open.split_whitespace().next().expect("a slug").to_owned();
+    let closed = server.call("todo_done", json!({ "slug": slug }));
+    assert_ne!(closed["isError"], true, "{closed}");
+    assert!(text(&server.call("todo_list", json!({}))).starts_with("No open todos"));
+
+    let done = text(&server.call("todo_list", json!({ "done": true })));
+    assert!(
+        done.contains(&slug) && done.contains("Wire the MCP server"),
+        "{done}"
+    );
+
+    let reopened = server.call("todo_reopen", json!({ "slug": slug }));
+    assert_ne!(reopened["isError"], true, "{reopened}");
+    assert!(text(&server.call("todo_list", json!({}))).contains("Wire the MCP server"));
+    assert!(text(&server.call("todo_list", json!({ "done": true }))).starts_with("No done todos"));
 }
 
 #[test]

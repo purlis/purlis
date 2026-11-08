@@ -523,7 +523,7 @@ fn the_commit_lands_on_the_folders_branch_with_the_named_files_and_the_persons_i
         lines,
         [
             Say::Done(format!("committed {id} on piece: 2 files").into()),
-            Say::Warn(super::UNSIGNED.into()),
+            Say::Info(super::UNSIGNED.into()),
         ]
     );
     assert_eq!(t.git(&["rev-parse", "HEAD^"]), before);
@@ -601,7 +601,7 @@ fn a_hook_of_the_repository_does_not_run_and_each_one_there_is_named() {
 
     assert!(!ran.exists(), "a hook of the repository ran");
     // This tree has no signing key, so the answer ends with the line that says so.
-    assert_eq!(lines.last(), Some(&Say::Warn(super::UNSIGNED.into())));
+    assert_eq!(lines.last(), Some(&Say::Info(super::UNSIGNED.into())));
     assert_eq!(
         lines[1..lines.len() - 1],
         ["pre-commit", "commit-msg", "post-commit"].map(|name| Say::Warn(

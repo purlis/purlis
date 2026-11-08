@@ -26,6 +26,14 @@
  *
  * The list of grounds found must be the manifest's list, exactly, so a new surface a button is
  * placed on fails here until the manifest names it, and the parts check measures it. *
+ * **Where each family stands** (#3268) is read the same way, for every family: each element that
+ * is a family's root (its `data-scope` and a `root` part or none, written out, spread from a helper
+ * or handed to `createElement`) stands on every family's root around it, out to the first element
+ * that covers what is under it, through the components that place it. A component is followed to
+ * the file its name is imported from, never to another of the same name. The surfaces found must
+ * be `STANDS_ON` (in `parts.rs`), exactly, so a family drawn on a new surface fails here until the
+ * engine measures it on a fill a theme sets there.
+ *
  * **Where each see-through ground is laid** (#4796) is read the same way: every rule that paints a
  * token purlis ships see-through is followed to the grounds under the element it paints, and those
  * must be `WASH_LAID_ON` (in `parts.rs`), exactly, so a wash drawn on a new ground fails here until
@@ -40,7 +48,7 @@
 
 /// <reference types="node" />
 import { readdirSync, readFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join, posix, relative } from "node:path";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import { FAMILY_THEMES } from "./families.testkit";
@@ -418,9 +426,53 @@ function washRulesOf(css: string[], washes: ReadonlySet<Token>): WashRule[] {
 /** A class an element carries, and whether it carries it always or only on a condition. */
 type Carried = { name: string; always: boolean };
 
+/** **Where a name a component renders is declared** (#3268): the file, or the folder an import
+ *  names, without its extension, and the name it is declared by there. */
+type Origin = { path: string; name: string };
+
+/** Each name `source` declares at its top or imports, with where it is declared. */
+function originsIn(source: ts.SourceFile): Map<string, Origin> {
+  const own = source.fileName.replace(/\.tsx?$/, "");
+  const found = new Map<string, Origin>();
+  for (const statement of source.statements) {
+    if (ts.isFunctionDeclaration(statement) && statement.name)
+      found.set(statement.name.text, { path: own, name: statement.name.text });
+    if (ts.isVariableStatement(statement))
+      for (const one of statement.declarationList.declarations)
+        if (ts.isIdentifier(one.name)) found.set(one.name.text, { path: own, name: one.name.text });
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier))
+      continue;
+    // A package's name is no file of the window's: what it renders is none of ours.
+    const specifier = statement.moduleSpecifier.text;
+    const path = specifier.startsWith(".")
+      ? posix.join(posix.dirname(source.fileName), specifier).replace(/\.tsx?$/, "")
+      : `package:${specifier}`;
+    const bindings = statement.importClause?.namedBindings;
+    if (bindings !== undefined && ts.isNamedImports(bindings))
+      for (const one of bindings.elements)
+        found.set(one.name.text, { path, name: (one.propertyName ?? one.name).text });
+    const fallback = statement.importClause?.name;
+    if (fallback !== undefined) found.set(fallback.text, { path, name: "default" });
+  }
+  return found;
+}
+
+/** Whether `unit` is the one `origin` names: declared in its file, or in its folder. */
+function declaredAt(unit: Unit, origin: Origin): boolean {
+  const file = unit.file.replace(/\.tsx?$/, "");
+  return unit.name === origin.name && (file === origin.path || file.startsWith(`${origin.path}/`));
+}
+
 /** One element around a button: the grounds it may draw, and whether it draws one at rest
  *  always, which hides what is under it. */
-type Frame = { tokens: Set<Token>; covers: boolean; classes: Set<string>; painted: Painting };
+type Frame = {
+  tokens: Set<Token>;
+  covers: boolean;
+  classes: Set<string>;
+  painted: Painting;
+  /** The family whose root this element is (#3268), if it is one. */
+  scope?: string;
+};
 
 /** What one element is painted, read whole (#4876): each background a rule that reaches it may
  *  paint, and whether one it carries all of, as written and at rest, covers what is under it. */
@@ -434,7 +486,12 @@ type Unit = {
   found: Set<Token>;
   loose: boolean;
   childrenAt: Frame[][];
-  uses: { name: string; frames: Frame[] }[];
+  uses: { name: string; frames: Frame[]; from?: Origin }[];
+  /** Each family whose root it draws, with the families' roots around it in the unit (#3268). */
+  stands: Map<string, Set<string>>;
+  /** Each family whose root it draws with nothing around it in the unit that covers what is
+   *  under it: it stands on whatever the unit is placed on too. */
+  standsLoose: Set<string>;
 };
 
 function sources(dir: string): { name: string; text: string }[] {
@@ -468,6 +525,137 @@ function beneath(frames: Frame[]): { tokens: Set<Token>; covered: boolean } {
     if (frames[at].painted.covers) return { tokens, covered: true };
   }
   return { tokens, covered: false };
+}
+
+/** An element that is `scope`'s root and draws nothing a rule names (#3268). */
+function rootFrame(scope: string): Frame {
+  return {
+    tokens: new Set(),
+    covers: false,
+    classes: new Set(),
+    painted: { tokens: new Set(), covers: false },
+    scope,
+  };
+}
+
+/** **The families' roots around what `frames` hold** (#3268), innermost first, out to the first
+ *  element that covers what is under it, as a rule read whole paints it or a class drawn at rest
+ *  does; and whether one does. A root around it that covers nothing (a list's row, drawn with no
+ *  fill) leaves what is under it showing, so the roots outside it count too. */
+function rootsAround(frames: Frame[]): { scopes: string[]; covered: boolean } {
+  const scopes: string[] = [];
+  for (let at = frames.length - 1; at >= 0; at -= 1) {
+    const one = frames[at];
+    if (one.scope !== undefined) scopes.push(one.scope);
+    if (one.covers || one.painted.covers) return { scopes, covered: true };
+  }
+  return { scopes, covered: false };
+}
+
+/** **Each family's root part, by the family** (#3268), as the engine's manifest names its first
+ *  part: `root` for most, a tab's `tab` and an activity bar's `item`. */
+let rootPartsOnce: Map<string, string> | undefined;
+function rootParts(): Map<string, string> {
+  if (rootPartsOnce !== undefined) return rootPartsOnce;
+  rootPartsOnce = new Map();
+  for (const name of readdirSync(THEME).filter((one) => /^parts_\w+\.rs$/.test(one))) {
+    if (name.endsWith("_tests.rs")) continue;
+    const text = readFileSync(join(THEME, name), "utf8");
+    for (const [, family, part] of text.matchAll(
+      /Family \{\s*name: "([^"]+)",[\s\S]*?parts: &\[\s*Part \{\s*name: "([^"]+)"/g,
+    ))
+      rootPartsOnce.set(family, part);
+  }
+  return rootPartsOnce;
+}
+
+/** Whether `part` is `scope`'s root: none written, or the part the manifest names first (`root`
+ *  for a family it does not have). */
+function isRootPart(scope: string, part: Scoped["part"] | string): boolean {
+  return part === undefined || part === (rootParts().get(scope) ?? "root");
+}
+
+/** What an object of attributes says of a family's element: its `data-scope`, and its
+ *  `data-part`, written out (`"root"`) or as the name of a parameter that gives it. */
+type Scoped = { scope: string; part?: string | { parameter: string } };
+
+/** The family `object` names the element of, if it writes `"data-scope"` out (#3268). */
+function scopedBy(object: ts.ObjectLiteralExpression): Scoped | undefined {
+  let scope: string | undefined;
+  let part: Scoped["part"];
+  for (const one of object.properties) {
+    if (!ts.isPropertyAssignment(one)) continue;
+    const name = ts.isStringLiteral(one.name) ? one.name.text : undefined;
+    if (name === "data-scope" && ts.isStringLiteral(one.initializer)) scope = one.initializer.text;
+    if (name === "data-part")
+      part = ts.isStringLiteral(one.initializer)
+        ? one.initializer.text
+        : ts.isIdentifier(one.initializer)
+          ? { parameter: one.initializer.text }
+          : undefined;
+  }
+  return scope === undefined ? undefined : { scope, part };
+}
+
+/** **Each helper that returns a family's attributes to spread** (#3268): `panelRoot(variant)`,
+ *  `tabsPart("root")`, by its name, with the parameters it takes in order. */
+type Helpers = Map<string, { scoped: Scoped; parameters: string[] }>;
+
+function helpersIn(sources: ts.SourceFile[]): Helpers {
+  const found: Helpers = new Map();
+  const returned = (body: ts.Node): ts.ObjectLiteralExpression | undefined => {
+    let out: ts.ObjectLiteralExpression | undefined;
+    const visit = (node: ts.Node) => {
+      if (out !== undefined || (node !== body && ts.isFunctionLike(node))) return;
+      if (ts.isReturnStatement(node) && node.expression !== undefined) {
+        let value: ts.Expression = node.expression;
+        while (ts.isParenthesizedExpression(value) || ts.isAsExpression(value))
+          value = value.expression;
+        if (ts.isObjectLiteralExpression(value)) out = value;
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(body);
+    return out;
+  };
+  for (const source of sources)
+    for (const statement of source.statements) {
+      const fn = ts.isFunctionDeclaration(statement) ? statement : undefined;
+      const object = fn?.body === undefined ? undefined : returned(fn.body);
+      const scoped = object === undefined ? undefined : scopedBy(object);
+      if (fn?.name !== undefined && scoped !== undefined)
+        found.set(fn.name.text, {
+          scoped,
+          parameters: fn.parameters.map((one) => one.name.getText(source)),
+        });
+    }
+  return found;
+}
+
+/** The family whose root `expression`, spread on an element or handed to `createElement`, makes
+ *  it (#3268): an object that writes `"data-scope"` out, such an object handed to a helper
+ *  (`parted({ … })`), or a helper that returns one (`panelRoot(variant)`). A part given by a
+ *  parameter is the argument the helper is called with; an element with no part is the root. */
+function rootIn(expression: ts.Expression, helpers: Helpers): string | undefined {
+  const isRoot = (scoped: Scoped | undefined, part = scoped?.part) =>
+    scoped !== undefined && isRootPart(scoped.scope, part) ? scoped.scope : undefined;
+  if (ts.isObjectLiteralExpression(expression)) return isRoot(scopedBy(expression));
+  if (!ts.isCallExpression(expression)) return undefined;
+  const helper = ts.isIdentifier(expression.expression)
+    ? helpers.get(expression.expression.text)
+    : undefined;
+  if (helper !== undefined) {
+    const part = helper.scoped.part;
+    if (typeof part !== "object") return isRoot(helper.scoped);
+    const argument = expression.arguments[helper.parameters.indexOf(part.parameter)];
+    // A part the call does not write out may be any of them: the root is the one that matters.
+    return argument === undefined || !ts.isStringLiteral(argument)
+      ? undefined
+      : isRoot(helper.scoped, argument.text);
+  }
+  for (const argument of expression.arguments)
+    if (ts.isObjectLiteralExpression(argument)) return isRoot(scopedBy(argument));
+  return undefined;
 }
 
 const CONDITIONAL = (node: ts.Node) =>
@@ -540,6 +728,13 @@ class Reader {
     fresh.forEach((units, name) => this.units.set(name, units));
   }
 
+  /** The helpers that return a family's attributes to spread, from every file (#3268). */
+  private foundHelpers?: Helpers;
+  private get helpers(): Helpers {
+    this.foundHelpers ??= helpersIn(this.parsed().map(([source]) => source));
+    return this.foundHelpers;
+  }
+
   /** Each file, parsed with its variables once for every pass. */
   private parsedFiles?: [ts.SourceFile, Held][];
   private parsed(): [ts.SourceFile, Held][] {
@@ -556,7 +751,11 @@ class Reader {
     return this.parsedFiles;
   }
 
+  /** Each file's names and where they are declared, by the file. */
+  private readonly origins = new Map<string, Map<string, Origin>>();
+
   private readFile(source: ts.SourceFile, held: Held, into: Map<string, Unit[]>): void {
+    if (!this.origins.has(source.fileName)) this.origins.set(source.fileName, originsIn(source));
     // The family's members this file names: imported from the family's module, or its own.
     const own = /(^|\/)ui\/button\/Button\.tsx$/.test(source.fileName);
     for (const statement of source.statements) {
@@ -586,7 +785,7 @@ class Reader {
     };
     const top = (node: ts.Node) => {
       const name = unitOf(node);
-      if (name !== undefined && hasJsx(node)) {
+      if (name !== undefined && (hasJsx(node) || createsElement(node))) {
         const unit: Unit = {
           name,
           file: source.fileName,
@@ -594,6 +793,8 @@ class Reader {
           loose: false,
           childrenAt: [],
           uses: [],
+          stands: new Map(),
+          standsLoose: new Set(),
         };
         into.set(name, [...(into.get(name) ?? []), unit]);
         const body = ts.isVariableDeclaration(node) ? node.initializer : node;
@@ -696,6 +897,21 @@ class Reader {
           scope.text === "button" &&
           (part === undefined || (ts.isStringLiteral(part) && part.text === "root"))) ||
         (FAMILY.has(named) && this.family.has(`${source.fileName}:${named}`));
+      // The family whose root this element is, as written or spread (#3268).
+      const written =
+        scope !== undefined &&
+        ts.isStringLiteral(scope) &&
+        (part === undefined || (ts.isStringLiteral(part) && isRootPart(scope.text, part.text)))
+          ? scope.text
+          : undefined;
+      const root =
+        written ??
+        attributes
+          .filter(ts.isJsxSpreadAttribute)
+          .map((one) => rootIn(one.expression, this.helpers))
+          .find((one) => one !== undefined) ??
+        (isButton ? "button" : undefined);
+      if (root !== undefined) this.standsAt(unit, root, frames);
       let inside = frames;
       if (isButton) {
         carried.forEach((one) => this.buttonClasses.add(one.name));
@@ -708,6 +924,7 @@ class Reader {
           covers: false,
           classes: new Set(carried.map((one) => one.name)),
           painted: { tokens: new Set(), covers: false },
+          scope: root,
         };
         // A see-through ground a rule read whole may paint on this element is drawn over what
         // is under it: in this component, where one of its grounds covers what is under it,
@@ -783,16 +1000,32 @@ class Reader {
           ground.tokens.forEach((token) => frame.tokens.add(token));
           if (ground.rest && one.always) frame.covers = true;
         }
-        if (frame.tokens.size > 0 || frame.classes.size > 0 || frame.painted.tokens.size > 0)
+        if (
+          frame.tokens.size > 0 ||
+          frame.classes.size > 0 ||
+          frame.painted.tokens.size > 0 ||
+          frame.scope !== undefined
+        )
           inside = [...frames, frame];
       }
       const component = /^[A-Z]/.test(tag) && !isButton ? tag.split(".").pop() : undefined;
-      if (component !== undefined) unit.uses.push({ name: component, frames: inside });
-      // What a component is given is placed where it places its `children`, or around them.
-      const places: Frame[][] =
+      const use =
         component === undefined
+          ? undefined
+          : {
+              name: component,
+              frames: inside,
+              from: tag.includes(".")
+                ? undefined
+                : this.origins.get(source.fileName)?.get(component),
+            };
+      if (use !== undefined) unit.uses.push(use);
+      // What a component is given is placed where it places its `children`, or around them: the
+      // component its name is declared by, never another of the same name (#3268).
+      const places: Frame[][] =
+        use === undefined
           ? []
-          : (this.units.get(component)?.flatMap((one) => one.childrenAt) ?? []);
+          : this.rendered(use, source.fileName).flatMap((one) => one.childrenAt);
       const given = places.length === 0 ? [inside] : places.map((at) => [...inside, ...at]);
       for (const one of attributes) for (const at of given) again(one, at);
       if (ts.isJsxElement(node))
@@ -813,8 +1046,31 @@ class Reader {
       unit.childrenAt.push(frames);
       return;
     }
+    // A family's root drawn by `createElement` (a card, #3268): what it is handed after its
+    // attributes is placed in it.
+    if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === "createElement"
+    ) {
+      const [, attributes, ...held] = node.arguments;
+      const root = attributes === undefined ? undefined : rootIn(attributes, this.helpers);
+      if (root !== undefined) {
+        this.standsAt(unit, root, frames);
+        const inside: Frame[] = [...frames, rootFrame(root)];
+        again(attributes, frames);
+        for (const one of held)
+          if (ts.isIdentifier(one) && one.text === "children") unit.childrenAt.push(inside);
+          else again(one, inside);
+        return;
+      }
+    }
     if (ts.isCallExpression(node) && ts.isIdentifier(node.expression))
-      unit.uses.push({ name: node.expression.text, frames });
+      unit.uses.push({
+        name: node.expression.text,
+        frames,
+        from: this.origins.get(source.fileName)?.get(node.expression.text),
+      });
     if (held.isJsx(node)) return;
     ts.forEachChild(node, (child) => again(child, frames));
   }
@@ -854,6 +1110,70 @@ class Reader {
     if (drawn.covered) drawn.tokens.forEach((token) => laid.on.add(token));
     else laid.loose = true;
     this.laid.set(rule, laid);
+  }
+
+  /** **The units a use renders** (#3268): the one its name is declared by, an import's or the
+   *  file's own; a name declared nowhere at the file's top (a function inside a component) is one
+   *  of the file's own; and a name another file declares is never taken for it. */
+  private rendered({ name, from }: Unit["uses"][number], file: string): Unit[] {
+    const named = this.units.get(from?.name ?? name) ?? [];
+    if (from !== undefined) return named.filter((one) => declaredAt(one, from));
+    return named.filter((one) => one.file === file);
+  }
+
+  /** That a root of `family` is drawn in `unit` inside `frames` (#3268). */
+  private standsAt(unit: Unit, family: string, frames: Frame[]): void {
+    const around = rootsAround(frames);
+    const on = unit.stands.get(family) ?? new Set<string>();
+    around.scopes.filter((one) => one !== family).forEach((one) => on.add(one));
+    unit.stands.set(family, on);
+    if (!around.covered) unit.standsLoose.add(family);
+  }
+
+  /** **Where each family's root is drawn** (#3268): by family, each family's root around it out
+   *  to the first element that covers what is under it, through the components that place it,
+   *  with the components it was found in. */
+  stands(): Map<string, Map<string, string[]>> {
+    const all = [...this.units.values()].flat();
+    const key = (unit: Unit) => `${unit.file}:${unit.name}`;
+    const loose = new Map<string, Set<string>>(
+      all.map((unit) => [key(unit), new Set(unit.standsLoose)]),
+    );
+    for (let changed = true; changed;) {
+      changed = false;
+      for (const unit of all) {
+        const mine = loose.get(key(unit)) ?? new Set<string>();
+        for (const use of unit.uses) {
+          if (rootsAround(use.frames).covered) continue;
+          for (const one of this.rendered(use, unit.file))
+            for (const family of loose.get(key(one)) ?? [])
+              if (!mine.has(family)) {
+                mine.add(family);
+                changed = true;
+              }
+        }
+        loose.set(key(unit), mine);
+      }
+    }
+    const found = new Map<string, Map<string, string[]>>();
+    const add = (family: string, on: string, where: string) => {
+      const of = found.get(family) ?? new Map<string, string[]>();
+      of.set(on, [...(of.get(on) ?? []), where]);
+      found.set(family, of);
+    };
+    for (const unit of all) {
+      const where = `${unit.file}: ${unit.name}`;
+      for (const [family, on] of unit.stands) on.forEach((one) => add(family, one, where));
+      for (const use of unit.uses) {
+        const around = rootsAround(use.frames).scopes;
+        for (const one of this.rendered(use, unit.file))
+          for (const family of loose.get(key(one)) ?? [])
+            around
+              .filter((surface) => surface !== family)
+              .forEach((surface) => add(family, surface, `${where} > ${one.file}: ${one.name}`));
+      }
+    }
+    return found;
   }
 
   /** Every ground a button is drawn on: each unit's own, and through the units it renders,
@@ -1023,6 +1343,17 @@ function placed(node: ts.Node): boolean {
   return ts.isJsxExpression(at.parent);
 }
 
+/** Whether `node` draws an element by `createElement` (a card's root, #3268). */
+function createsElement(node: ts.Node): boolean {
+  if (
+    ts.isCallExpression(node) &&
+    ts.isIdentifier(node.expression) &&
+    node.expression.text === "createElement"
+  )
+    return true;
+  return ts.forEachChild(node, (child) => createsElement(child) || undefined) === true;
+}
+
 function hasJsx(node: ts.Node): boolean {
   if (ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node) || ts.isJsxFragment(node))
     return true;
@@ -1043,6 +1374,7 @@ function readGrounds(
   anchored: Map<string, Anchored>;
   unread: Unread;
   inline: string[];
+  stands: Map<string, Map<string, string[]>>;
 } {
   const { byClass, window, unread } = groundsOfClasses(css);
   // What a helper's spread attributes or the theme engine's layout words draw, by class.
@@ -1076,6 +1408,7 @@ function readGrounds(
     anchored: reader.anchored,
     unread,
     inline: [...reader.inline].sort(),
+    stands: reader.stands(),
   };
 }
 
@@ -1135,6 +1468,20 @@ const WITHIN: readonly string[] = [
 ];
 
 // --- The tests ------------------------------------------------------------------------------
+
+/** The window, read once for the tests below, with the see-through grounds the families name. */
+let windowReadOnce: ReturnType<typeof readGrounds> | undefined;
+function windowRead(): ReturnType<typeof readGrounds> {
+  if (windowReadOnce !== undefined) return windowReadOnce;
+  const seeThrough = shippedSeeThrough();
+  const familyWashes = new Set(
+    [...engineGrounds().values()]
+      .flat()
+      .filter((token): token is Token => seeThrough.has(token as Token)),
+  );
+  windowReadOnce = readGrounds(sources(SRC), sheets(), seeThrough, familyWashes);
+  return windowReadOnce;
+}
 
 describe("the grounds a button is drawn on", () => {
   const css = (rules: string) => [`:root { background: var(--surface-base); }\n${rules}`];
@@ -1245,7 +1592,8 @@ describe("the grounds a button is drawn on", () => {
       ),
       file(
         "Pane.tsx",
-        `export function Pane() {
+        `import { Note } from "./Note";
+         export function Pane() {
            return <div className="top"><Note at="pane"><button data-scope="button">Allow</button></Note></div>;
          }`,
       ),
@@ -1489,14 +1837,7 @@ describe("the grounds a button is drawn on", () => {
     expect(found).toEqual(["surface.base", "surface.raised"]);
   });
 
-  /** The window, read once for the tests below, with the see-through grounds the families name. */
-  const SEE_THROUGH = shippedSeeThrough();
-  const familyWashes = new Set(
-    [...engineGrounds().values()]
-      .flat()
-      .filter((token): token is Token => SEE_THROUGH.has(token as Token)),
-  );
-  const read = readGrounds(sources(SRC), sheets(), SEE_THROUGH, familyWashes);
+  const read = windowRead();
 
   it("are, in the window, exactly the grounds the button family's manifest lists", () => {
     const listed = engineGrounds().get("button");
@@ -1530,6 +1871,196 @@ describe("the grounds a button is drawn on", () => {
 
   it("are never reached only by what an element holds, or the rule is listed with why", () => {
     expect([...new Set(read.unread.within)].sort()).toEqual([...WITHIN].sort());
+  });
+});
+
+// --- Where each family stands (#3268) ---------------------------------------------------------
+
+/** **The engine's `STANDS_ON`** (in `parts.rs`): by surface, the families measured on a fill a
+ *  theme sets on it. */
+function engineStandsOn(): Map<string, string[]> {
+  const parts = readFileSync(join(THEME, "parts.rs"), "utf8");
+  const table = /\nconst STANDS_ON: &\[\(&str, &\[&str\]\)\] = &\[([\s\S]*?)\n\];/.exec(parts);
+  const found = new Map<string, string[]>();
+  for (const [, surface, list] of (table?.[1] ?? "").matchAll(/\(\s*"([\w-]+)",\s*&\[([^\]]*)\]/g))
+    found.set(
+      surface,
+      [...list.matchAll(/"([\w-]+)"/g)].map(([, family]) => family),
+    );
+  return found;
+}
+
+/** **The families whose root takes a fill**, as the published schema names their keys: each a
+ *  surface a theme can fill under what is drawn on it. */
+function fillable(): Set<string> {
+  const schema = JSON.parse(
+    readFileSync(
+      join(THEME, "..", "..", "..", "..", "docs", "schema", "theme.v2.schema.json"),
+      "utf8",
+    ),
+  ) as unknown;
+  const keys = new Set<string>();
+  const walk = (value: unknown) => {
+    if (Array.isArray(value)) value.forEach(walk);
+    else if (value !== null && typeof value === "object")
+      for (const [key, inner] of Object.entries(value)) {
+        keys.add(key);
+        walk(inner);
+      }
+  };
+  walk(schema);
+  return new Set([...keys].flatMap((key) => /^([\w-]+)\.root\.fill$/.exec(key)?.[1] ?? []));
+}
+
+/** Each `surface family` pair of `on` (by surface, the families on it), of the families the
+ *  manifest has, on a surface whose root takes a fill. */
+function pairsOf(on: ReadonlyMap<string, Iterable<string>>): string[] {
+  const families = new Set(engineGrounds().keys());
+  const surfaces = fillable();
+  const pairs: string[] = [];
+  for (const [surface, standing] of on)
+    for (const family of standing)
+      if (families.has(family) && surfaces.has(surface)) pairs.push(`${surface} ${family}`);
+  return [...new Set(pairs)].sort();
+}
+
+/** `stands` (by family, the surfaces around it) turned round: by surface, the families on it. */
+function bySurface(
+  stands: ReadonlyMap<string, ReadonlyMap<string, unknown>>,
+): Map<string, string[]> {
+  const on = new Map<string, string[]>();
+  for (const [family, surfaces] of stands)
+    for (const surface of surfaces.keys()) on.set(surface, [...(on.get(surface) ?? []), family]);
+  return on;
+}
+
+describe("where each family is drawn on a surface a theme fills (#3268)", () => {
+  const css = (rules: string) => [`:root { background: var(--surface-base); }\n${rules}`];
+  const file = (name: string, text: string) => ({ name, text });
+  /** Each family's roots around it, as `family: surface…`. */
+  const standing = (files: { name: string; text: string }[], sheet = "") =>
+    [...readGrounds(files, css(sheet)).stands]
+      .map(([family, on]) => `${family}: ${[...on.keys()].sort().join(" ")}`)
+      .sort();
+
+  it("is each family's root around its own, through the components that place it", () => {
+    const found = standing([
+      file(
+        "ui/popover/Popover.tsx",
+        `export function Popover({ children }) {
+           return <div data-scope="popover" data-part="root">{children}</div>;
+         }`,
+      ),
+      file(
+        "ui/field/Field.tsx",
+        `export function TextField() {
+           return <div data-scope="field" data-part="root"><input data-scope="text-input" data-part="root" /></div>;
+         }`,
+      ),
+      file(
+        "Ask.tsx",
+        `import { Popover } from "./ui/popover/Popover";
+         import { TextField } from "./ui/field/Field";
+         export function Ask() { return <Popover><TextField /></Popover>; }`,
+      ),
+    ]);
+    expect(found).toEqual(["field: popover", "text-input: field popover"]);
+  });
+
+  it("takes the part a family's manifest names first as its root, a tab's tab", () => {
+    const found = standing([
+      file(
+        "Pane.tsx",
+        `export function Pane() {
+           return <div data-scope="panel" data-part="root"><div data-scope="page-tabs" data-part="tab" /></div>;
+         }`,
+      ),
+    ]);
+    expect(found).toEqual(["page-tabs: panel"]);
+  });
+
+  it("stops at the first element that covers what is under it", () => {
+    const found = standing(
+      [
+        file(
+          "Pane.tsx",
+          `export function Pane() {
+             return <div data-scope="panel" data-part="root"><div className="well"><div data-scope="list" data-part="root" /></div></div>;
+           }`,
+        ),
+      ],
+      ".well { background: var(--surface-sunken); }",
+    );
+    expect(found).toEqual([]);
+  });
+
+  it("reads a root spread from a helper, or drawn by createElement", () => {
+    const found = standing([
+      file(
+        "ui/panel/Panel.tsx",
+        `export function panelRoot(variant) { return { "data-scope": "panel", "data-part": "root", "data-variant": variant }; }
+         export function Panel({ children }) { return <section {...panelRoot("side")}>{children}</section>; }`,
+      ),
+      file(
+        "ui/card/Card.tsx",
+        `export function Card({ children, ...rest }) {
+           return createElement("div", parted({ ...rest, "data-scope": "card", "data-part": "root" }), children);
+         }`,
+      ),
+      file(
+        "View.tsx",
+        `import { Panel } from "./ui/panel/Panel";
+         import { Card } from "./ui/card/Card";
+         export function View() { return <Panel><Card><span data-scope="badge" data-part="root" /></Card></Panel>; }`,
+      ),
+    ]);
+    expect(found).toEqual(["badge: card panel", "card: panel"]);
+  });
+
+  it("follows a component to the file it is imported from, never another of the same name", () => {
+    const found = standing([
+      file(
+        "ui/dialog/Dialog.tsx",
+        `export function Rows({ children }) { return <div data-scope="dialog" data-part="root">{children}</div>; }`,
+      ),
+      file(
+        "Doctor.tsx",
+        `function Rows() { return <span data-scope="badge" data-part="root" />; }
+         export function Doctor() { return <div data-scope="notice" data-part="root"><Rows /></div>; }`,
+      ),
+      file(
+        "Setup.tsx",
+        `import { Rows } from "./ui/dialog/Dialog";
+         export function Setup() { return <Rows><span data-scope="meter" data-part="root" /></Rows>; }`,
+      ),
+    ]);
+    expect(found).toEqual(["badge: notice", "meter: dialog"]);
+  });
+
+  it("is, in the window, exactly what STANDS_ON says", () => {
+    const read = windowRead();
+    const listed = engineStandsOn();
+    expect(listed.size, "STANDS_ON in parts.rs").toBeGreaterThan(0);
+    const found = pairsOf(bySurface(read.stands));
+    const said = pairsOf(listed);
+    // A pair the table does not say is named with the components it is drawn in.
+    const unsaid = found
+      .filter((pair) => !said.includes(pair))
+      .map((pair) => {
+        const [surface, family] = pair.split(" ");
+        return `${pair}: ${(read.stands.get(family)?.get(surface) ?? []).slice(0, 2).join("; ")}`;
+      });
+    expect(unsaid).toEqual([]);
+    expect(said.filter((pair) => !found.includes(pair))).toEqual([]);
+  });
+
+  it("names only surfaces a theme can fill and families the manifest has", () => {
+    const families = new Set(engineGrounds().keys());
+    const surfaces = fillable();
+    for (const [surface, on] of engineStandsOn()) {
+      expect(surfaces, surface).toContain(surface);
+      for (const family of on) expect(families, `${family} on a ${surface}`).toContain(family);
+    }
   });
 });
 

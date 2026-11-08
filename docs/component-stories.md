@@ -154,13 +154,14 @@ theme test's list or an ADR's index:
 | its lint rules | `app/src/ui/<family>/lint.js`: `rules`; `off`, the files a rule is still off in; `rawButtons`, its controls still drawn as a raw `<button>` | `eslint.ui-rules.js`, every rule an error |
 | its lint tests | `app/src/ui/<family>/lint.test.ts`, on `../lint.testkit` | required beside `lint.js` (`ui/lint.test.ts`) |
 | what the theme tests hold it to | `app/src/ui/<family>/theme.testkit.ts`: `faint`, `quiet`, `spreadGrounds`, `classless`, `groundParts`, and `forced` (what its forced sheet draws) | `theme/families.testkit.ts` |
+| what the forced-colours scenario draws and reads | `app/src/ui/<family>/forced-colors.probe.ts`: its controls' markup and, by `data-p`, their computed values with forced colours active | `app/e2e/forcedProbes.ts` (a glob, at load) |
 | the cascade tests | nothing: `cascade.testkit.ts` reads what `styles.css` imports, as built | `ui/stylesheets.ts` |
 | an ADR amendment | `docs/adr/<nnnn>/<yyyy-mm-dd>-<slug>.md` | the folder; no index is kept |
 
 The files written again from the manifest (the schema, the docs family table, the stories'
 theme copy) are generated one entry per line in the families' order, so git merges two
-families' additions; on a conflict, take main's and write them again. One shared list is left:
-the forced-colours end-to-end probe (`app/e2e/specs/forced-colors.e2e.ts`), #3481.
+families' additions; on a conflict, take main's and write them again. No shared list is left: the
+forced-colours end-to-end probe was the last, and each family's is in its own folder now (#3481).
 
 ## Running them
 

@@ -116,6 +116,16 @@
             "timeout": 5
           }
         ]
+      },
+      {
+        "matcher": "Monitor|Workflow|CronCreate|ScheduleWakeup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CHARTER_HOOK_BINARY}\" hook posttooluse-ownwork",
+            "timeout": 5
+          }
+        ]
       }
     ],
     "PostToolUseFailure": [

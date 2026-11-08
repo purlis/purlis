@@ -467,3 +467,45 @@ fn an_extensions_browse_reads_no_more_than_the_most_it_marks() {
     );
     assert_eq!(browse.skills[ext::MOST_MARKED].marks, None);
 }
+
+#[test]
+fn an_extensions_grade_is_shown_as_its_own_on_the_files_it_handed() {
+    let tmp = plane();
+    let r1 = held("r1", text(DEPLOY));
+    let files: Vec<(Vec<String>, bool, Vec<u8>)> = vec![
+        (vec!["SKILL.md".to_owned()], false, DEPLOY.to_vec()),
+        (
+            vec!["scripts".to_owned(), "ship.sh".to_owned()],
+            false,
+            SHIP.to_vec(),
+        ),
+    ];
+    // The tree git gives these files, worked out by git itself.
+    let remote = Upstream::new();
+    let tree = remote.tree(&[
+        ("SKILL.md", "100644", DEPLOY),
+        ("scripts/ship.sh", "100644", SHIP),
+    ]);
+    assert_eq!(
+        crate::skills::source::carried::tree_id(files.iter().map(|(parts, x, bytes)| (
+            parts.as_slice(),
+            *x,
+            bytes.as_slice()
+        ))),
+        tree
+    );
+    let r1 = r1.with_grade("deploy", grades_json("deploy", &tree));
+    let review = r1.review(tmp.path(), &names(&["deploy"]), &Level::project());
+    let Some(SourceGrade::Shown {
+        whose,
+        this_version,
+        ..
+    }) = &review.skills[0].grade
+    else {
+        panic!("{:?}", review.skills[0].grade);
+    };
+    assert_eq!(whose, "acme-registry");
+    assert!(*this_version);
+    // The skill it brought along handed none.
+    assert_eq!(review.skills[1].grade, None);
+}

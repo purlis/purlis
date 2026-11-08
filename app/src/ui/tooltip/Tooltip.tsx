@@ -13,7 +13,8 @@
  * - **One placement and one delay** ({@link TOOLTIP_PLACEMENT}, {@link TOOLTIP_OFFSET},
  *   {@link TOOLTIP_DELAY}, {@link TOOLTIP_CLOSE_DELAY}), which no call site can change: beside
  *   its target at the target's end, 10 px from it, flipped to its start where the window has no
- *   room (R166); on a strip ({@link TIPS_BELOW}), below its target, clear of the strip's row
+ *   room (R166), and under it where neither side has room for its whole width, which it keeps
+ *   (#3328, #3364); on a strip ({@link TIPS_BELOW}), below its target, clear of the strip's row
  *   (#3361).
  * - **WCAG 1.4.13** (content on hover or focus): it opens under the pointer after the delay and
  *   at once on the keyboard's focus; **Esc dismisses it** without moving the focus, and is the
@@ -36,6 +37,7 @@ import {
   Children,
   cloneElement,
   isValidElement,
+  type PointerEvent,
   type ReactElement,
   type ReactNode,
   type Ref,
@@ -196,11 +198,16 @@ export function TooltipSurface({ children }: { children: Tip }) {
     () => trigger?.current?.closest("[data-tauri-drag-region]") != null,
     [trigger],
   );
-  const placement = placementFor(trigger?.current);
+  // Beside its target (R166), it keeps its width (#3364): a strip's stands below it, where it has
+  // the window's width.
+  const beside = placementFor(trigger?.current) === TOOLTIP_PLACEMENT;
+  const [own, room] = useRoom(trigger, "end", open && beside);
   return (
     <AriaTooltip
-      placement={placement}
+      ref={own}
+      placement={beside ? placementOf(room?.side ?? "end") : "bottom"}
       offset={TOOLTIP_OFFSET}
+      style={heldWidth(room)}
       data-scope="tooltip"
       data-part="root"
       data-pointer={isFocusVisible ? undefined : ""}
@@ -210,6 +217,63 @@ export function TooltipSurface({ children }: { children: Tip }) {
     </AriaTooltip>
   );
 }
+
+/** Where a tooltip has room for its whole width, and that width, in px. */
+interface Room {
+  side: TooltipSide;
+  width: number;
+}
+
+/**
+ * **Room for a tooltip's whole width** (#3328, #3364). React Aria flips a tooltip only to the
+ * other side, and sets one that flipped to the start by its right edge, so it takes only the room
+ * left of its target: near the window's edge, or beside a target across it, a column of words.
+ * So, while `measuring`, as it opens and before it is painted, its width is measured as its words
+ * have it, and the side is chosen with room for all of it (`sideWithRoom`): `preferred`, else the
+ * other, else under its target. It hands back the ref the tooltip's element takes, and the room:
+ * `null` until it is measured, and while it is not.
+ */
+function useRoom(
+  anchor: RefObject<Element | null> | undefined,
+  preferred: "end" | "start",
+  measuring: boolean,
+): [RefObject<HTMLDivElement | null>, Room | null] {
+  const own = useRef<HTMLDivElement>(null);
+  const [room, setRoom] = useState<Room | null>(null);
+  useLayoutEffect(() => {
+    const target = anchor?.current;
+    const tip = own.current;
+    if (!measuring || target == null || tip === null) return;
+    const measure = () => {
+      const was = tip.style.inlineSize;
+      tip.style.inlineSize = "max-content";
+      const width = Math.ceil(tip.getBoundingClientRect().width);
+      tip.style.inlineSize = was;
+      // Nothing laid out, nothing to choose by: React Aria's placement stands (R166).
+      if (width === 0) return;
+      const rtl = getComputedStyle(target).direction === "rtl";
+      const box = target.getBoundingClientRect();
+      const view = document.documentElement.clientWidth;
+      const side = sideWithRoom(preferred, box, width, TOOLTIP_OFFSET, view, rtl);
+      setRoom((now) => (now?.side === side && now.width === width ? now : { side, width }));
+    };
+    measure();
+    // **Words that change while it is open are measured again** (a busy button's hint): what it
+    // holds is watched, not its size, which it holds itself.
+    if (typeof MutationObserver !== "function") return;
+    const watching = new MutationObserver(measure);
+    watching.observe(tip, { childList: true, characterData: true, subtree: true });
+    return () => watching.disconnect();
+  }, [anchor, preferred, measuring]);
+  return [own, measuring ? room : null];
+}
+
+/** React Aria's placement for a side: the end is R166's. */
+const placementOf = (side: TooltipSide): AriaTooltipProps["placement"] =>
+  side === "end" ? TOOLTIP_PLACEMENT : side;
+
+/** The width a tooltip holds once measured. */
+const heldWidth = (room: Room | null) => (room === null ? undefined : { inlineSize: room.width });
 
 /** A second line under a tooltip's first: the `detail` part. */
 export function TooltipDetail({ id, children }: { id?: string; children: Tip }) {
@@ -559,29 +623,13 @@ export function AnchoredTooltip({
   side?: "end" | "start";
   /** The pointer is on it, or has left it (WCAG 1.4.13, hoverable): its drawer keeps it then. */
   onPointerEnter?: () => void;
-  onPointerLeave?: () => void;
+  /** Where the pointer went is the event's `relatedTarget` (a row's own tooltip, back to it). */
+  onPointerLeave?: (event: PointerEvent<HTMLDivElement>) => void;
   children: Tip;
 }) {
   const shown = useProjectShown();
-  const own = useRef<HTMLDivElement>(null);
-  const [room, setRoom] = useState<{ side: TooltipSide; width: number } | null>(null);
-  // Measured as it opens, before it is painted: its width as its words have it, and the side
-  // with room for that width.
-  useLayoutEffect(() => {
-    const target = anchor.current;
-    const tip = own.current;
-    if (target === null || tip === null) return;
-    const was = tip.style.inlineSize;
-    tip.style.inlineSize = "max-content";
-    const width = Math.ceil(tip.getBoundingClientRect().width);
-    tip.style.inlineSize = was;
-    const rtl = getComputedStyle(target).direction === "rtl";
-    const box = target.getBoundingClientRect();
-    const view = document.documentElement.clientWidth;
-    setRoom({ side: sideWithRoom(side, box, width, TOOLTIP_OFFSET, view, rtl), width });
-  }, [anchor, side, shown]);
+  const [own, room] = useRoom(anchor, side, shown);
   if (!shown) return null;
-  const placed = room?.side ?? side;
   return (
     // Open for as long as it is drawn: whoever draws it takes it down.
     <TooltipTriggerStateContext.Provider value={ALWAYS_OPEN}>
@@ -589,9 +637,9 @@ export function AnchoredTooltip({
         ref={mergeRefs(own, tooltipRef)}
         triggerRef={anchor}
         isOpen
-        placement={placed === "end" ? TOOLTIP_PLACEMENT : placed}
+        placement={placementOf(room?.side ?? side)}
         offset={TOOLTIP_OFFSET}
-        style={room === null || room.width === 0 ? undefined : { inlineSize: room.width }}
+        style={heldWidth(room)}
         data-scope="tooltip"
         data-part="root"
         data-pointer=""

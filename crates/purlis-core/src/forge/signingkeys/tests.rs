@@ -130,3 +130,107 @@ fn a_key_added_by_hand_is_noticed_in_the_public_list_with_no_scope() {
     let nothing = Recorded::parse(r#"{"source": "nothing", "exchanges": []}"#).unwrap();
     assert!(listed_publicly_over(&nothing, &github(), "../x").is_err());
 }
+
+// GitLab (#5629): user keys with the usage type Signing, the commit signature API, and the
+// server's version.
+
+fn gitlab() -> Forge {
+    Forge::default_of(Kind::GitLab)
+}
+
+fn gitlab_recording(case: &str, signer: &Signer) -> Recorded {
+    recording_of("gitlab", case, &[("@KEY@", &signer.public_line())])
+}
+
+#[test]
+fn gitlab_adds_the_key_as_signing_only_and_lists_only_the_keys_that_may_sign() {
+    let signer = Signer::generate().unwrap();
+    // The recording holds the call purlis must send: `usage_type=signing`, never GitLab's
+    // default `auth_and_signing`.
+    let recorded = gitlab_recording("added_then_listed", &signer);
+    let added = add_over(&recorded, &gitlab(), &signer, "purlis · studio").unwrap();
+    assert_eq!(added.id, 77);
+    assert!(added.is(&signer));
+
+    let listed = listed_over(&recorded, &gitlab()).unwrap();
+    assert_eq!(listed.this_device(&signer).map(|key| key.id), Some(77));
+    let titles: Vec<_> = listed.keys.iter().map(|key| key.title.as_str()).collect();
+    // The login-only key is no signing key.
+    assert_eq!(titles, ["purlis · laptop", "purlis · studio"]);
+    assert!(recorded.unspent().is_empty());
+}
+
+#[test]
+fn gitlab_answers_a_key_it_has_already_with_the_one_it_has() {
+    let signer = Signer::generate().unwrap();
+    let recorded = gitlab_recording("already_taken", &signer);
+    let added = add_over(&recorded, &gitlab(), &signer, "purlis · studio").unwrap();
+    assert_eq!(added.id, 77);
+    assert!(recorded.unspent().is_empty());
+}
+
+#[test]
+fn gitlab_removes_a_key_by_its_id() {
+    let signer = Signer::generate().unwrap();
+    let recorded = gitlab_recording("removed", &signer);
+    remove_over(&recorded, &gitlab(), 12).unwrap();
+    assert!(recorded.unspent().is_empty());
+}
+
+#[test]
+fn gitlabs_public_list_counts_a_key_only_where_it_may_sign() {
+    let signer = Signer::generate().unwrap();
+    let recorded = gitlab_recording("publicly_listed", &signer);
+    let listed = listed_publicly_over(&recorded, &gitlab(), "sam").unwrap();
+    assert_eq!(listed.this_device(&signer).map(|key| key.id), Some(77));
+
+    let recorded = gitlab_recording("publicly_auth_only", &signer);
+    let listed = listed_publicly_over(&recorded, &gitlab(), "sam").unwrap();
+    assert_eq!(listed.this_device(&signer), None);
+}
+
+#[test]
+fn gitlab_shows_a_pushed_signed_commit_as_verified() {
+    let signer = Signer::generate().unwrap();
+    let recorded = gitlab_recording("commit_verified", &signer);
+    let checked = check_over(&recorded, &gitlab(), "platform/billing", "0123abc").unwrap();
+    assert!(checked.verified);
+    assert_eq!(checked.reason, "valid");
+}
+
+#[test]
+fn gitlabs_other_email_reads_as_githubs_unverified_email() {
+    let signer = Signer::generate().unwrap();
+    let recorded = gitlab_recording("commit_email_unverified", &signer);
+    let checked = check_over(&recorded, &gitlab(), "platform/billing", "0123abc").unwrap();
+    assert!(!checked.verified);
+    assert_eq!(checked.reason, "unverified_email");
+}
+
+#[test]
+fn gitlab_has_no_signature_for_an_unsigned_commit_and_no_tick_comes_of_it() {
+    let signer = Signer::generate().unwrap();
+    let recorded = gitlab_recording("commit_unsigned", &signer);
+    let why = check_over(&recorded, &gitlab(), "platform/billing", "0123abc").unwrap_err();
+    assert!(why.contains("unsigned"), "{why}");
+}
+
+#[test]
+fn a_gitlab_project_may_sit_in_nested_groups_and_nothing_else_reads_as_one() {
+    assert!(project_named("acme/platform/billing").is_ok());
+    assert!(project_named("billing").is_err());
+    assert!(project_named("acme/../x").is_err());
+    assert!(project_named("acme//x").is_err());
+}
+
+#[test]
+fn a_gitlab_older_than_the_first_that_verifies_ssh_signatures_cannot_verify() {
+    let signer = Signer::generate().unwrap();
+    let old = gitlab_recording("version_old", &signer);
+    assert!(!verifies_over(&old, &gitlab()).unwrap());
+    let current = gitlab_recording("version_current", &signer);
+    assert!(verifies_over(&current, &gitlab()).unwrap());
+    // GitHub verifies them, and is not asked.
+    let nothing = Recorded::parse(r#"{"source": "nothing", "exchanges": []}"#).unwrap();
+    assert!(verifies_over(&nothing, &github()).unwrap());
+}

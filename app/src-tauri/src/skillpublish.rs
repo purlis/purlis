@@ -94,6 +94,8 @@ pub struct PublishReviewView {
     /// References to a skill that is not there, by name.
     pub broken: Vec<String>,
     pub grades: Vec<PublishGrade>,
+    /// Each grade file the commit carries beside a skill's folder, by its path in the source.
+    pub grade_files: Vec<String>,
     /// The request's description, whole.
     pub body: String,
     /// The person's own fork the branch goes on, where the forge says their account may not push
@@ -256,6 +258,7 @@ fn view_of(review: &PublishReview, forge: &OnTheForge) -> PublishReviewView {
         broken: review.outgoing.broken.iter().map(|one| esc(one)).collect(),
         body: esc(&review.body),
         fork: fork_of(&review.route),
+        grade_files: review.carried.iter().map(|(path, _)| esc(path)).collect(),
         grades: review
             .grades
             .iter()

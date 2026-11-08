@@ -38,12 +38,13 @@ import { ASKS_CHANGED, answerAsk } from "./permissionAsks";
 import { listenForChats } from "./chatEvents";
 import { askRemoveWorkspace } from "./removeWorkspaceAsk";
 import { askOpenBrowser, OPEN_VIEW, TAKE_OVER } from "./browserNeedsYou";
-import { sandboxCommandReturned } from "./sandboxAsked";
+import { runGrantsMoved, sandboxCommandReturned } from "./sandboxAsked";
 import { askOpenProposal } from "./proposedChangeOpen";
 import { proposeOldKeysRemoval } from "./oldHarnessPlugins";
 import { askOpenRunnerWrite } from "./runnerWriteOpen";
 import { askOpenRunnerDispatch } from "./runnerDispatchOpen";
 import { askProfileSignIn } from "./settings/links";
+import { askSigningSetUp, signAndRetryAll, SIGNING_WAITING_CHANGED } from "./signingAsked";
 import { refusalsAnswered } from "./vaultRefusals";
 
 /**
@@ -406,6 +407,26 @@ export async function answerTaken(
           return { status: "ok" };
         }
         break;
+      case "signing": {
+        // The lanes a forge refused for unsigned commits (#5633): Set up signing opens the
+        // dialog in the project's window, ending in Sign and retry all; once on, Sign and retry
+        // all sends each again; once all went, Dismiss puts it away.
+        if (option === "set-up") {
+          askSigningSetUp(plane);
+          opened = true;
+          return { status: "ok" };
+        }
+        if (option === "retry-all") {
+          const done = await signAndRetryAll(plane);
+          return typeof done === "string" ? { status: "error", error: done } : { status: "ok" };
+        }
+        if (option === "dismiss") {
+          const gone = await commands.signingForget(plane, null);
+          window.dispatchEvent(new Event(SIGNING_WAITING_CHANGED));
+          return gone;
+        }
+        break;
+      }
       case "old-harness-plugins": {
         // The old `[harness_plugins]` keys (#3467): Remove holds purlis's proposed change for
         // each file and opens the first one's tab, where Apply is pressed; nothing is written
@@ -506,14 +527,18 @@ export async function answerTaken(
         // the command that waits goes on at once.
         const press = RUN_PRESS_OF[option];
         if (press === undefined) break;
-        return commands.answerRunGrant(
-          plane,
-          path.id,
-          press,
-          run?.values ?? [],
-          run?.links ?? [],
-          run?.remember ?? [],
-        );
+        // An Allow gives a Run grant, and Keep blocked takes the chat's back: the Allowed list
+        // reads again either way (#5617).
+        return commands
+          .answerRunGrant(
+            plane,
+            path.id,
+            press,
+            run?.values ?? [],
+            run?.links ?? [],
+            run?.remember ?? [],
+          )
+          .finally(runGrantsMoved);
       }
       case "secret":
         // A key a chat's brokered run missed (#5068, ADR 0109): Fill stores the value typed in
@@ -546,10 +571,15 @@ export async function answerTaken(
           return commands
             .allowRefusedVault(plane, ask.session, path.vault)
             .finally(() => refusalsAnswered(plane));
+        // Keep blocked also takes back the chat's Run grants on the vault: the Allowed list reads
+        // again (#5617).
         if (option === "keep")
           return commands
             .keepVaultBlocked(plane, ask.session, path.vault, reason?.trim() || null)
-            .finally(() => refusalsAnswered(plane));
+            .finally(() => {
+              refusalsAnswered(plane);
+              runGrantsMoved();
+            });
         break;
       case "take-over": {
         // A browser whose page needs the person (#2015): Take over takes the session host's

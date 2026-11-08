@@ -52,8 +52,11 @@
 //! made to one of those paths after the merge does not count against it. Then the local branch
 //! is moved onto the remote's: `reset --keep` when nothing was committed since the push, which
 //! keeps uncommitted work and refuses rather than overwrite it — the next look tries again —
-//! or a rebase of the newer commits onto it. A merge commit that does not hold the work blocks
-//! the plane, and nothing is moved.
+//! or, with commits made since, one commit made off to the side that carries them onto it
+//! ([`super::bringin::When::MergedAt`]), which the root moves onto with the same `reset
+//! --keep`. Never a rebase at the root (#5824 D1): it replays the generated `## Sessions`
+//! line's conflict on every commit, and one cut off by a quit leaves the root part-way. A merge
+//! commit that does not hold the work blocks the plane, and nothing is moved.
 
 use super::bringin::BroughtIn;
 use super::*;
@@ -1001,7 +1004,8 @@ pub(super) enum Settled {
 
 /// Settle the pull request this clone last opened, if it has merged or closed since.
 ///
-/// `sign` is whether commits a rebase replays are signed, as the save's own commit is.
+/// `sign` is whether the commit that carries newer saves onto the target is signed, as the
+/// save's own commit is.
 /// `fetch` is the origin URL and credential helper to fetch the target branch with, for a
 /// caller that has not just fetched it; `None` when it has ([`super::fetch`]). `caller` is who
 /// the forge is asked as.
@@ -1233,7 +1237,9 @@ pub(super) fn settle(
     if newer == 0 {
         // `--keep` keeps uncommitted work, and refuses rather than overwrite a file with some:
         // then the plane waits, and the next look tries again.
-        match git::run(root, &["reset", "-q", "--keep", &theirs], WRITE) {
+        // Untimed: a reset checks out a tree, and a deadline that kills it leaves the root
+        // half-written (#5824 F9).
+        match git::run_untimed(root, &["reset", "-q", "--keep", &theirs]) {
             Ok(run) if run.ok() => {}
             Ok(run) => {
                 return Settled::Waiting(format!(
@@ -1250,67 +1256,37 @@ pub(super) fn settle(
             }
         }
     } else {
-        if !changed_paths(root).is_empty() {
-            // Newer commits are replayed onto the remote's branch, which needs a clean tree:
-            // the next save commits first, and settles then.
-            return Settled::Waiting(format!(
-                "{request} merged, and {target} moves onto the remote's with the \
-                 next save"
-            ));
-        }
-        let run = git::run(
-            root,
-            &[
-                "-c",
-                gpgsign(sign),
-                "rebase",
-                "-q",
-                "--onto",
-                &theirs,
-                &head,
-            ],
-            WRITE,
-        );
-        if !run.as_ref().is_ok_and(git::Run::ok) {
-            let _ = git::run(root, &["rebase", "--abort"], WRITE);
-            let said = match &run {
-                Ok(run) => tail(run),
-                Err(unavailable) => unavailable.to_string(),
-            };
-            // The newer commits would not replay, one by one: what they wrote may still merge,
-            // whole, with what purlis generates rebuilt (#5338).
-            match super::bringin::bring_in(
-                root,
-                target,
-                sign,
-                super::bringin::When::MergedAt(&head),
-            ) {
-                BroughtIn::Moved(_) | BroughtIn::Nothing => {}
-                BroughtIn::Waiting(why) => return Settled::Waiting(why),
-                BroughtIn::Conflict(conflicts) => {
-                    let detail = super::bringin::said_conflict(target, &conflicts);
-                    say(Say::Fail(format!("Blocked: {detail}.").into()));
-                    return Settled::Blocked(record_push(
-                        root,
-                        PushResult {
-                            detail,
-                            conflicts,
-                            ..PushResult::of(Outcome::Conflict, target)
-                        },
-                        &resolve(root, "HEAD").unwrap_or_default(),
-                    ));
-                }
-                BroughtIn::Failed(why) => {
-                    return blocked(
-                        format!(
-                            "{request} merged, but the {} made since would \
-                             not replay onto {target}: {said}. Nor would they merge: {why}",
-                            counted(newer, "commit", "commits")
-                        ),
-                        false,
-                        say,
-                    );
-                }
+        // The newer commits are carried onto the remote's branch as one commit made off to the
+        // side, with the request's head as the merge base, and the root moves onto it with one
+        // `reset --keep` (#5824 D1). Never a `git rebase` here: it replays the generated
+        // `## Sessions` line's conflict on every commit that wrote a record, and a quit in the
+        // middle of it leaves the root part-way (#5824 F1, F2).
+        match super::bringin::bring_in(root, target, sign, super::bringin::When::MergedAt(&head)) {
+            BroughtIn::Moved(_) | BroughtIn::Nothing => {}
+            BroughtIn::Waiting(why) => return Settled::Waiting(why),
+            BroughtIn::Conflict(conflicts) => {
+                let detail = super::bringin::said_conflict(target, &conflicts);
+                say(Say::Fail(format!("Blocked: {detail}.").into()));
+                return Settled::Blocked(record_push(
+                    root,
+                    PushResult {
+                        detail,
+                        conflicts,
+                        ..PushResult::of(Outcome::Conflict, target)
+                    },
+                    &resolve(root, "HEAD").unwrap_or_default(),
+                ));
+            }
+            BroughtIn::Failed(why) => {
+                return blocked(
+                    format!(
+                        "{request} merged, but the {} made since would not carry onto \
+                         {target}: {why}",
+                        counted(newer, "commit", "commits")
+                    ),
+                    false,
+                    say,
+                );
             }
         }
     }

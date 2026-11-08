@@ -762,3 +762,16 @@ fn purlis_and_purlis_classic_draw_every_style_in_a_face_of_its_own() {
         }
     }
 }
+
+#[test]
+fn the_pairs_kept_for_a_token_are_every_pair_that_names_it_once_and_in_order() {
+    let mut tokens: Vec<&str> = PAIRS.iter().flat_map(|pair| pair.tokens()).collect();
+    tokens.extend(["no.such-token", ""]);
+    for token in tokens {
+        let scanned: Vec<&super::Pair> = PAIRS
+            .iter()
+            .filter(|pair| pair.tokens().any(|one| one == token))
+            .collect();
+        assert_eq!(super::pairs_naming(token), scanned, "{token}");
+    }
+}
