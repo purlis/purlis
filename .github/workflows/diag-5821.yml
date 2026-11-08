@@ -1,0 +1,33 @@
+# TEMPORARY (#5821): what a runner receives for gh's release asset. Reverted before review.
+name: diag-5821
+on:
+  push:
+    branches: [5821-runner-gh-download-35k5eb9m]
+permissions:
+  contents: read
+jobs:
+  fetch:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: curl the release download URL
+        run: |
+          url=https://github.com/cli/cli/releases/download/v2.103.3/gh_2.103.3_linux_amd64.deb
+          for i in 1 2 3 4; do
+            echo "=== try $i"
+            curl -sSL -D- -o x -w 'status=%{http_code} final=%{url_effective} size=%{size_download}\n' "$url" || true
+            sha256sum x; file x; head -c 512 x | xxd | head -n 32
+            sleep 5
+          done
+      - name: gh release download, with GITHUB_TOKEN
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for i in 1 2 3; do
+            echo "=== try $i"
+            rm -f gh_2.103.3_linux_amd64.deb
+            gh release download v2.103.3 -R cli/cli -p gh_2.103.3_linux_amd64.deb && ls -l gh_2.103.3_linux_amd64.deb && sha256sum gh_2.103.3_linux_amd64.deb && file gh_2.103.3_linux_amd64.deb || true
+          done
