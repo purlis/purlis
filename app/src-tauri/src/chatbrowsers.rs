@@ -2201,6 +2201,13 @@ impl ChatBrowsers {
         }
     }
 
+    /// Chat `session`'s browser allowed, as the person's Allow on its Ask leaves it, for a test
+    /// that starts past the Ask.
+    #[cfg(test)]
+    pub fn allowed_now(&self, session: u32) {
+        self.lock().entry(session).or_default().posture = Posture::Allowed { open_web: false };
+    }
+
     /// What the person said chat `session`'s browser may reach.
     #[cfg(test)]
     pub fn posture(&self, session: u32) -> Posture {

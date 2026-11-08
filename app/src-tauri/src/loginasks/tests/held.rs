@@ -16,8 +16,7 @@ use purlis_core::reopen::Chat;
 use super::*;
 
 /// A project whose vault `qa`, persona qa's, holds [`QA_HOLDS`], held by the window on a session
-/// host that runs nothing, with Always for qa's browser: each word a chat is told of an Ask's
-/// answer is kept in `told`.
+/// host that runs nothing: each word a chat is told of an Ask's answer is kept in `told`.
 struct Project {
     _dir: tempfile::TempDir,
     _planes: Planes,
@@ -43,7 +42,6 @@ impl Project {
         .expect("the project's file");
         std::fs::write(root.join("vaults.json"), VAULTS).expect("a registry");
         std::fs::write(root.join("q.json"), QA_HOLDS).expect("vault qa");
-        sandbox::local::keep_browser_always(&root, "qa", false).expect("Always for qa's browser");
         let host = crate::host::pretend::Pretend::default();
         let planes = Planes::telling(Arc::new(|_| {}), crate::Shipped::default(), None)
             .running_sessions_on(Arc::new(move |_, _: &Path| Box::new(host.clone())));
@@ -63,7 +61,7 @@ impl Project {
         }
     }
 
-    /// A chat that runs as persona qa.
+    /// A chat that runs as persona qa, whose browser the person allowed.
     fn a_chat(&self) -> u32 {
         let chat = Chat {
             program: "/bin/sh".to_owned(),
@@ -77,7 +75,16 @@ impl Project {
             columns: 80,
             rows: 24,
         };
-        self.held.chats().start(&chat, size).expect("it runs")
+        let chat = self.held.chats().start(&chat, size).expect("it runs");
+        self.held.browsers().allowed_now(chat);
+        // What a login's notice waits behind, each said where it doesn't hold.
+        assert!(self.held.browsers().may_browse(chat, false), "its browser");
+        assert!(!self.held.chats().sandboxed_by_its_host(chat), "its host");
+        let asker = self.held.chats().login_asker(self.held.root(), chat);
+        assert!(asker.is_some(), "who asks for its logins");
+        let persona = self.held.chats().secret_grants_of(chat);
+        assert_eq!(persona.as_deref(), Some("qa"), "its persona");
+        chat
     }
 
     /// Chat `chat`'s `browser_login` of `login` on `site`, whose form is on that page, its asker
