@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794152249842,
+  "lastUpdate": 1794154761807,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -43638,6 +43638,48 @@ window.BENCHMARK_DATA = {
             "value": 101.36507449999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.943, 100.983, 101.365, 101.401, 101.466 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "744cd93efb4cbea22b706d97249d01a4c2cbb06e",
+          "message": "Worktree remove: a closed PR's head on origin lets a folder go, and a refusal names every reason (#4500) (#5836)\n\n* worktree remove: a closed request's head on origin lets a folder go, a refusal names every reason, Astro and Vite caches don't keep it (#4500)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6XFQGQFBEQ7FTT50D2PWQ44\nPurlis-Persona: steward\n\n* rustfmt (#4500)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6XFQGQFBEQ7FTT50D2PWQ44\nPurlis-Persona: steward\n\n* worktree remove: origin is asked, not remembered; a closed head is fetched; a dirty folder asks no forge (review of #4500)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6XFQGQFBEQ7FTT50D2PWQ44\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-08T14:31:14Z",
+          "tree_id": "a51663effc861ac83d9eecbaeff4715ccd0fb5f6",
+          "url": "https://github.com/purlis/purlis/commit/744cd93efb4cbea22b706d97249d01a4c2cbb06e"
+        },
+        "date": 1794154754572,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.694205,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.668, 0.675, 0.694, 0.709, 0.712 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.682082,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.235, 16.578, 16.682, 16.817, 16.890 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.2118085,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.373, 101.142, 101.212, 102.704, 103.197 ms"
           }
         ]
       }
