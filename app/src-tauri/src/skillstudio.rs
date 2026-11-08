@@ -146,7 +146,9 @@ pub(crate) fn with_the_projects_needs(
         return;
     }
     let old = crate::oldplugins::notice_of(root, waiting);
-    studio.needs = needs::with_old_keys(std::mem::take(&mut studio.needs), old.as_ref());
+    // The project's stopped grades, each saying when Resume can run (#5718).
+    let stopped = crate::skillgrade::resumed::needs(root);
+    studio.needs = needs::with_old_keys(std::mem::take(&mut studio.needs), old.as_ref(), stopped);
 }
 
 /// The level a skill comes from, as the studio draws it.

@@ -159,6 +159,8 @@ fn part(skill: &str, router_passes: bool) -> SkillPart {
             outcome_usd: None,
             outcomes: Vec::new(),
             failed: None,
+            resets_at: None,
+            earlier: None,
         },
     }
 }

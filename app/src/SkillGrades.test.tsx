@@ -40,7 +40,15 @@ function row(grade: string, over: Partial<GradeRow> = {}): GradeRow {
     outcome: "graded",
     arms: { with: 86, without: 68, previous: 80 },
     outcome_arms: null,
-    spent: { chats: 36, tokens: 300000, cost_usd: 1.92, limit_usd: 3 },
+    spent: {
+      chats: 36,
+      tokens: 300000,
+      cost_usd: 1.92,
+      limit_usd: 3,
+      resumed: false,
+      earlier_tokens: null,
+      earlier_usd: null,
+    },
     after_edit: false,
     ...over,
   };
@@ -61,7 +69,15 @@ const GRADES = [
     ended: "Interrupted: not scored",
     arms: { with: null, without: null, previous: null },
     outcome_arms: null,
-    spent: { chats: 2, tokens: null, cost_usd: 0.21, limit_usd: null },
+    spent: {
+      chats: 2,
+      tokens: null,
+      cost_usd: 0.21,
+      limit_usd: null,
+      resumed: false,
+      earlier_tokens: null,
+      earlier_usd: null,
+    },
   }),
 ];
 

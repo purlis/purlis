@@ -819,6 +819,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // person's press in their window after the estimate showed what they may spend.
     "skill_grades_start",
     "skill_grades_stop",
+    // A stopped grade resumed (#5718): as a grade, it runs chats on the person's profile and
+    // spends, on their press in their window after its plan showed what is left and its cap.
+    "skill_grade_resume",
     // A grade of a router started (SK-15e, #3233): as a skill's grade, it runs chats on the
     // person's profile and records the grade in the project. Stopped by `skill_grade_stop`.
     "router_grade_start",
@@ -1443,6 +1446,9 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     // only.
     "skill_grades_plan",
     "skill_grades_running",
+    // What resuming a stopped grade, or several, would run and spend (#5718): read only.
+    "skill_grade_resume_plan",
+    "skill_grades_resume_plan",
     // A skill's grades, for its Grades tab (S6, #3688), and a draft's (#2780): read only.
     "skill_grades",
     "skill_draft_grade",

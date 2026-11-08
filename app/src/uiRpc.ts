@@ -1206,6 +1206,46 @@ export const commands = {
 	/**  **What grading the copy of `skill` at `level` would run**, before anything runs. */
 	skillGradePlan: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null, model: string | null, evals: string[], grader: string | null) => typedError<SkillGradePlan, string>(__TAURI_INVOKE("skill_grade_plan", { plane, level, skill, profile, model, evals, grader })),
 	skillGradeStart: __WINDOW_ONLY_RESULT,
+	/**
+	 *  **What resuming the stopped grade `grade` would run** (#5718): `None` where this machine keeps
+	 *  no stopped grade of that id (it finished, was resumed, a newer grade of its copy began, or it
+	 *  ran on another machine).
+	 */
+	skillGradeResumePlan: (plane: PlaneId, grade: string) => typedError<{
+	grade: string,
+	skill: string,
+	/**  How it stopped, in a sentence (`Stopped at the token cap`). */
+	ended: string,
+	/**
+	 *  **Why Resume is not offered**, where it is not: what changed since it stopped, or why what
+	 *  it graded cannot be read now. Grade again is then the one way on.
+	 */
+	refused: string | null,
+	/**
+	 *  **When the program's usage limit resets**, an RFC 3339 time, while it has not: Resume
+	 *  waits for it.
+	 */
+	waits_until: string | null,
+	/**  The chats left, and what they would spend at what its chats spent each, where they said. */
+	left: number,
+	tokens_left: number | null,
+	usd_left: number | null,
+	/**  The cap and the dollar limit a resume is held to, which count only its own spend. */
+	token_cap: number | null,
+	cap_set_here: boolean,
+	limit_usd: number | null,
+	/**  What the stopped grade spent, which the resumed one's scorecard adds to its own. */
+	earlier_tokens: number | null,
+	earlier_usd: number | null,
+	/**  The profile and the model its chats run on, as the stopped grade's did. */
+	profile: string | null,
+	model: string | null,
+	/**  What pressing Resume consents to; `None` where it is refused. */
+	consent: string | null,
+	/**  A grade of the skill running now, which Resume waits for. */
+	running: string | null,
+} | null, string>(__TAURI_INVOKE("skill_grade_resume_plan", { plane, grade })),
+	skillGradeResume: __WINDOW_ONLY_RESULT,
 	/**  **What the page of the draft `draft` says of its grade.** */
 	skillDraftGrade: (plane: PlaneId, draft: string) => typedError<SkillDraftGrade, string>(__TAURI_INVOKE("skill_draft_grade", { plane, draft })),
 	/**  **What grading the draft `draft` would run**, before anything runs. */
@@ -1215,6 +1255,12 @@ export const commands = {
 	skillGradeStop: __WINDOW_ONLY_RESULT,
 	/**  **What grading the copies `skills` would run and spend**, before anything runs. */
 	skillGradesPlan: (plane: PlaneId, skills: ([SkillLevel, string])[]) => typedError<SkillGradesPlan, string>(__TAURI_INVOKE("skill_grades_plan", { plane, skills })),
+	/**
+	 *  **What resuming the stopped grades `grades` together would run and spend** (#5718, the
+	 *  operator's ruling 6): each stopped skill's chats left and what they would spend, under one new
+	 *  limit the person sets; a grade that cannot be resumed now is left out with why.
+	 */
+	skillGradesResumePlan: (plane: PlaneId, grades: string[]) => typedError<SkillGradesPlan, string>(__TAURI_INVOKE("skill_grades_resume_plan", { plane, grades })),
 	skillGradesStart: __WINDOW_ONLY_RESULT,
 	skillGradesStop: __WINDOW_ONLY_RESULT,
 	/**  **The batch running in `plane`**, at its latest step, where one runs. */
@@ -3287,6 +3333,11 @@ export type BatchPick = {
 	level: SkillLevel,
 	name: string,
 	consent: string,
+	/**
+	 *  **The stopped grade it resumes** (#5718), where Select's Resume picked it: only its
+	 *  unfinished cases run.
+	 */
+	resume?: string | null,
 };
 
 /**
@@ -3305,6 +3356,11 @@ export type BatchSkill = {
 	 *  refused.
 	 */
 	consent: string,
+	/**
+	 *  **The stopped grade it resumes** (#5718), where the batch resumes one: its chats are those
+	 *  left, and its estimate what they would spend.
+	 */
+	resume: string | null,
 };
 
 /**
@@ -6460,7 +6516,11 @@ export type GradeEnded = "whole" | "stopped" | "chats-did-not-start" |
 /**  A chat did not say what it spent, so the cap could not be held. */
 "spend-not-reported" | 
 /**  A fault in purlis ended it before it was scored (#3353): recorded as interrupted. */
-"failed";
+"failed" | 
+/**  Its program's usage limit was reached (#5718). */
+"usage-limit" | 
+/**  Its program could not reach its service (#5718). */
+"unreachable";
 
 /**
  *  What a grade's chats spent before, worked out for this one (`grades::Estimate`): both
@@ -6633,6 +6693,11 @@ export type GradeScorecard = {
 	 */
 	evals: ScoredEval[],
 	outcome_arms: GradeArms | null,
+	/**
+	 *  **When the program's usage limit resets**, an RFC 3339 time, where it stopped there and
+	 *  was told (#5718).
+	 */
+	resets_at: string | null,
 };
 
 /**
@@ -6644,6 +6709,13 @@ export type GradeSpent = {
 	tokens: number | null,
 	cost_usd: number | null,
 	limit_usd: number | null,
+	/**
+	 *  **Whether it resumed a stopped grade** (#5718): its tokens and cost are then both runs',
+	 *  and these the earlier run's, where it said.
+	 */
+	resumed: boolean,
+	earlier_tokens: number | null,
+	earlier_usd: number | null,
 };
 
 /**  Who a grant is for, as the window sends it ([`sandbox::grant::Level`]). */
@@ -7969,10 +8041,17 @@ export type NeedFix =
  *  Leave the old keys, which no file can be proposed without: said once
  *  (`dismiss_old_harness_plugins`).
  */
-{ kind: "leave-old-keys" };
+{ kind: "leave-old-keys" } | 
+/**
+ *  Open a stopped grade's scorecard (#5718), where Resume shows its plan: a skill's, or its
+ *  draft's where `draft` names one.
+ */
+{ kind: "open-grade"; name: string; grade: string; draft: string | null };
 
 /**  **What kind of decision an item is**, in the order the page groups them. */
-export type NeedKind = "review" | "clash" | "problem" | "pins" | "tidy-up";
+export type NeedKind = "review" | 
+/**  A grade that stopped short, which Resume can go on from (#5718). */
+"resume" | "clash" | "problem" | "pins" | "tidy-up";
 
 /**
  *  **One persona the vault view may remember a need for** (#5240): names only, read from no
@@ -13193,6 +13272,42 @@ export type SkillGradePlan = {
 	 *  from the folder, which may be no commit.
 	 */
 	draft: boolean,
+};
+
+/**  **What resuming a stopped grade would run, as the window shows it before Resume is pressed.** */
+export type SkillGradeResumePlan = {
+	grade: string,
+	skill: string,
+	/**  How it stopped, in a sentence (`Stopped at the token cap`). */
+	ended: string,
+	/**
+	 *  **Why Resume is not offered**, where it is not: what changed since it stopped, or why what
+	 *  it graded cannot be read now. Grade again is then the one way on.
+	 */
+	refused: string | null,
+	/**
+	 *  **When the program's usage limit resets**, an RFC 3339 time, while it has not: Resume
+	 *  waits for it.
+	 */
+	waits_until: string | null,
+	/**  The chats left, and what they would spend at what its chats spent each, where they said. */
+	left: number,
+	tokens_left: number | null,
+	usd_left: number | null,
+	/**  The cap and the dollar limit a resume is held to, which count only its own spend. */
+	token_cap: number | null,
+	cap_set_here: boolean,
+	limit_usd: number | null,
+	/**  What the stopped grade spent, which the resumed one's scorecard adds to its own. */
+	earlier_tokens: number | null,
+	earlier_usd: number | null,
+	/**  The profile and the model its chats run on, as the stopped grade's did. */
+	profile: string | null,
+	model: string | null,
+	/**  What pressing Resume consents to; `None` where it is refused. */
+	consent: string | null,
+	/**  A grade of the skill running now, which Resume waits for. */
+	running: string | null,
 };
 
 /**

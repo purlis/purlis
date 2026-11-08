@@ -494,6 +494,7 @@ fn grade_after(
                     follower: None,
                     draft: None,
                     batch: None,
+                    resume: None,
                 },
                 planned,
             );

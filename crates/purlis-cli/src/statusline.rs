@@ -235,6 +235,9 @@ pub fn run(
         // not start.
         if let Some(chat) = ambient.chat_id.as_deref() {
             usage::record_spend(plane, chat, &payload);
+            // And when its usage limit resets, where one is reached: what a grade stopped there
+            // says Resume waits for (#5718).
+            usage::record_limit(plane, chat, &payload);
         }
     }
     if the_app_owns_this_surface(ambient) {

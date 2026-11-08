@@ -1331,6 +1331,52 @@ fn a_notification_says_which_prompt_its_terminal_shows_or_that_it_only_informs()
 }
 
 #[test]
+fn a_turn_an_error_ended_says_which_kind_by_the_harnesses_own_category() {
+    // #5718: Claude Code's `StopFailure` names its error's category in `error`; what it printed
+    // (`error_details`) is never read.
+    use crate::state::Failed;
+    let env = env_of(&[(SOCKET_ENV, "/tmp/s.sock"), (CHAT_ENV, "7")]);
+    let failed = |event: Event, error: Option<&str>| {
+        let mut payload = serde_json::json!({
+            "session_id": "11111111-2222-4333-8444-555555555555",
+            "error_details": "You've hit your limit · resets 2pm",
+        });
+        if let Some(error) = error {
+            payload["error"] = error.into();
+        }
+        Report::read(event, &payload.to_string(), &env)
+            .expect("a report")
+            .detail
+            .failed
+    };
+    assert_eq!(
+        failed(Event::StopFailure, Some("rate_limit")),
+        Some(Failed::UsageLimit)
+    );
+    assert_eq!(
+        failed(Event::StopFailure, Some("server_error")),
+        Some(Failed::Unreachable)
+    );
+    for error in [
+        Some("overloaded"),
+        Some("authentication_failed"),
+        Some("billing_error"),
+        None,
+    ] {
+        assert_eq!(failed(Event::StopFailure, error), Some(Failed::Other));
+    }
+    assert_eq!(
+        failed(Event::Stop, Some("rate_limit")),
+        None,
+        "only a failure says"
+    );
+    assert_eq!(
+        Event::StopFailure.said(crate::state::Detail::default()),
+        crate::harness::model::Said::Turn(crate::harness::model::Turn::Ended)
+    );
+}
+
+#[test]
 fn a_hook_reports_the_chat_its_environment_names() {
     // Measured on claude 2.1.276: the payload carries `session_id`, and it is the same
     // value as `$CLAUDE_CODE_SESSION_ID` (ADR 0024, C7).
