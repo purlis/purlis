@@ -1,8 +1,10 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! The app's half of [`purlis_core::files::turns`] (N3, #5405): as a chat's own harness starts a
-//! turn and ends one, or its program ends, the branch's state is recorded as that turn's refs.
+//! **What records a chat's turns as it is heard** (N3, #5405): as a chat's own harness starts a
+//! turn and ends one, or its program ends, the branch's state is recorded as that turn's refs
+//! ([`super`]). The window's for the chats it runs here, and a runner's host's for the chats it
+//! runs there (#5427): the same code, on the hook path each already hears.
 //!
 //! **Never on the hook's thread.** A hook waits for its line to be taken and has 50 ms (the spec's
 //! limit), and staging a folder can take longer. So a boundary is queued and recorded on a thread
@@ -12,15 +14,16 @@
 //! the turn shows no diff.
 //!
 //! **Only what ran here.** A chat on a runner works in a folder of the runner's: what the folder
-//! here holds says nothing of its turn, so it records none.
+//! here holds says nothing of its turn, so the window records none of it. The runner's host
+//! records it there, and the window fetches it with the runner's code.
 
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 
-use purlis_core::files::{Branch, turns};
-use purlis_core::hookwire::Report;
-use purlis_core::state::Event;
+use super::super::{Branch, Refused};
+use crate::hookwire::Report;
+use crate::state::Event;
 
 /// What a chat's thread does next.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -39,11 +42,11 @@ struct Queued {
 
 /// The chats with boundaries queued, by id. A chat is here only while its thread runs.
 #[derive(Clone, Default)]
-pub struct TurnRecorder {
+pub struct Recorder {
     queues: Arc<Mutex<HashMap<String, VecDeque<Queued>>>>,
 }
 
-impl TurnRecorder {
+impl Recorder {
     /// Chat `chat`, working in `cwd`, was reported: a turn's boundary when the report is its own
     /// harness's prompt or `Stop`, and nothing otherwise. A helper's end is no end of it.
     pub fn heard(&self, plane: &Path, chat: &str, cwd: &Path, report: &Report) {
@@ -124,13 +127,8 @@ impl TurnRecorder {
 
 /// One boundary, where `cwd` is a folder of a workspace's repo. A chat working anywhere else has
 /// no branch, so it has no turn to record.
-fn record(
-    plane: &Path,
-    chat: &str,
-    cwd: &Path,
-    boundary: Boundary,
-) -> Result<(), purlis_core::files::Refused> {
-    let Some(place) = turns::place_of(plane, cwd) else {
+fn record(plane: &Path, chat: &str, cwd: &Path, boundary: Boundary) -> Result<(), Refused> {
+    let Some(place) = super::place_of(plane, cwd) else {
         return Ok(());
     };
     let branch = match place.piece.as_deref() {
@@ -138,30 +136,29 @@ fn record(
         None => Branch::repo(&place.ws, &place.repo),
     };
     match boundary {
-        Boundary::Began => turns::began(plane, branch, chat).map(drop),
-        Boundary::Ended => turns::ended(plane, branch, chat).map(drop),
-        Boundary::Removed => turns::forget(plane, &place.ws, &place.repo, chat),
+        Boundary::Began => super::began(plane, branch, chat).map(drop),
+        Boundary::Ended => super::ended(plane, branch, chat).map(drop),
+        Boundary::Removed => super::forget(plane, &place.ws, &place.repo, chat),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use purlis_core::files::{FileDiff, InTurn, TurnChanged};
 
     const CHAT: &str = "01J9CHAT0000000000000000TN";
 
     fn report(event: Event, payload: &str) -> Report {
         Report::read(event, payload, &|name| match name {
-            purlis_core::hookwire::CHAT_ENV => Some("7".to_owned()),
-            purlis_core::hookwire::HARNESS_ENV => Some("claude-code".to_owned()),
+            crate::hookwire::CHAT_ENV => Some("7".to_owned()),
+            crate::hookwire::HARNESS_ENV => Some("claude-code".to_owned()),
             _ => None,
         })
         .expect("a report of chat 7")
     }
 
     fn git(dir: &Path, args: &[&str]) -> String {
-        let done = purlis_core::forklock::output(
+        let done = crate::forklock::output(
             std::process::Command::new("git")
                 .arg("-C")
                 .arg(dir)
@@ -192,11 +189,11 @@ mod tests {
         }
     }
 
-    /// The boundaries as a chat's reports bring them, off the caller's thread and in order, read
-    /// as the file diff reads them. The whole chat, through its hooks, is
+    /// The boundaries as a chat's reports bring them, off the caller's thread and in order. The
+    /// file diff reads them in `tests/it/a_turn_undo_matches_git.rs`. The whole chat, through its hooks, is
     /// `behaviour::a_turn_is_recorded_by_its_hooks_and_its_diff_is_what_it_edited`.
     #[test]
-    fn a_prompt_and_a_stop_record_a_turn_the_file_diff_reads_and_removal_takes_it() {
+    fn a_prompt_and_a_stop_record_a_turn_and_removal_takes_it() {
         let plane = tempfile::tempdir().expect("a plane");
         let plane = std::fs::canonicalize(plane.path())
             .map(|path| (plane, path))
@@ -207,7 +204,7 @@ mod tests {
         std::fs::write(folder.join("a.txt"), "one\n").expect("a file");
         git(&folder, &["add", "."]);
         git(&folder, &["commit", "-qm", "first"]);
-        let recorder = TurnRecorder::default();
+        let recorder = Recorder::default();
 
         // A helper's end is no end of the chat's turn: nothing is queued for it.
         let helper = report(Event::Stop, r#"{"agent_id":"helper"}"#);
@@ -227,27 +224,6 @@ mod tests {
         assert!(recorder.recording(CHAT));
         until("the turn's end", || !recorder.recording(CHAT));
         assert!(refs(&folder).contains("/1/end"));
-
-        let read = purlis_core::files::turn_changed(
-            &crate::reader(),
-            &plane.1,
-            Branch::repo("ws", "app"),
-            "a.txt",
-            None,
-        )
-        .expect("it reads");
-        let TurnChanged::Of {
-            number: 1,
-            file: InTurn::Changed(shown),
-            ..
-        } = read
-        else {
-            panic!("a.txt is what the turn changed: {read:?}");
-        };
-        let FileDiff::Text { base, head, .. } = shown.diff else {
-            panic!("a.txt is text");
-        };
-        assert_eq!((base.as_str(), head.as_str()), ("one\n", "one\nTWO\n"));
 
         // The program's end after the turn's own moves nothing.
         let at = format!("refs/purlis/turns/{CHAT}/1/end");

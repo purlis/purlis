@@ -1,0 +1,94 @@
+{
+  "source": "GitHub REST API version 2022-11-28, docs.github.com/en/rest/commits/commits (Get a commit, HEAD of the default branch) and docs.github.com/en/rest/git/commits (Create a commit: a signature is checked as GitHub would a pushed commit's, and the answer carries its verification). The signature is the test's own, put in for @SIGNATURE@. Verified.",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "repos/octo/hello/commits/HEAD"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"sha\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"commit\": {\"tree\": {\"sha\": \"4b825dc642cb6eb9a060e54bf8d69288fbee4904\"}, \"message\": \"latest\"}}",
+        "err": "",
+        "status": 200
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": "POST",
+            "path": "repos/octo/hello/git/commits"
+          }
+        },
+        "fields": [
+          {
+            "text": [
+              "message",
+              "purlis checks that this device's signing key is verified\n"
+            ]
+          },
+          {
+            "text": [
+              "tree",
+              "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+            ]
+          },
+          {
+            "text": [
+              "author[name]",
+              "Octo Cat"
+            ]
+          },
+          {
+            "text": [
+              "author[email]",
+              "octocat@example.invalid"
+            ]
+          },
+          {
+            "text": [
+              "author[date]",
+              "2026-11-07T16:00:00Z"
+            ]
+          },
+          {
+            "text": [
+              "committer[name]",
+              "Octo Cat"
+            ]
+          },
+          {
+            "text": [
+              "committer[email]",
+              "octocat@example.invalid"
+            ]
+          },
+          {
+            "text": [
+              "committer[date]",
+              "2026-11-07T16:00:00Z"
+            ]
+          },
+          {
+            "text": [
+              "signature",
+              "@SIGNATURE@"
+            ]
+          }
+        ]
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"sha\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\", \"tree\": {\"sha\": \"4b825dc642cb6eb9a060e54bf8d69288fbee4904\"}, \"message\": \"purlis checks that this device's signing key is verified\\n\", \"verification\": {\"verified\": true, \"reason\": \"valid\", \"signature\": \"-----BEGIN SSH SIGNATURE-----\", \"payload\": \"tree\", \"verified_at\": null}}",
+        "err": "",
+        "status": 201
+      }
+    }
+  ]
+}

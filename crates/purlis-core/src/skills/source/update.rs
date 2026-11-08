@@ -24,11 +24,12 @@ use super::fetch::{SourceFile, fetch};
 use super::install::{Written, level_parts, paths_fit};
 use super::lock::{self, Kept, Locked};
 use super::review::{
-    Accepted, SkillReview, digest_of, met_at, review_of, sha256, summary_of, wrote,
+    Accepted, SkillReview, digest_of, met_at, review_of, reviews_of, sha256, summary_of, wrote,
 };
 use super::widen::{self, Widening};
-use super::{Commit, Remote, Source, listed, write};
+use super::{Origin, Pin, Remote, SkillSource, Source, listed, write};
 use crate::skills::Grant;
+use crate::skills::studio::Studio;
 use crate::skills::verbs::{self, Ctx, Level};
 
 mod gained;
@@ -36,14 +37,14 @@ pub mod set;
 
 pub use gained::Gained;
 
-/// **A newer commit for an installed skill**, offered, never applied by itself.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+/// **A newer commit or revision for an installed skill**, offered, never applied by itself.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Offer {
     pub name: String,
     pub level: Level,
-    pub remote: Remote,
-    pub pinned: Commit,
-    pub newer: Commit,
+    pub source: Origin,
+    pub pinned: Pin,
+    pub newer: Pin,
     /// Whether the copy was edited here since it was installed.
     pub edited: bool,
 }
@@ -65,18 +66,26 @@ pub struct Unconfirmed {
 }
 
 /// What asking every installed skill's source answered.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Updates {
     pub offers: Vec<Offer>,
     pub unasked: Vec<Unasked>,
     pub unconfirmed: Vec<Unconfirmed>,
 }
 
-/// The source `locked` was installed from, with the sign-in this machine gives it.
+/// The git source `locked` was installed from, with the sign-in this machine gives it; refused
+/// for one an extension's source answered, which is asked through the studio
+/// ([`super::extension`]).
 fn source_of(plane: &Path, locked: &Locked) -> Result<Source, String> {
-    let listed = listed::listed_as(plane, &locked.source)?;
+    let Origin::Git(remote) = &locked.source else {
+        return Err(format!(
+            "{} came from {}, which purlis asks through its extensions: update it on its own",
+            locked.name, locked.source
+        ));
+    };
+    let listed = listed::listed_as(plane, remote)?;
     Ok(Source {
-        remote: locked.source.clone(),
+        remote: remote.clone(),
         folder: None,
         sign_in: listed.and_then(|one| one.sign_in),
     })
@@ -90,13 +99,19 @@ enum May {
     Never(String),
 }
 
+/// An extension's source is asked where this machine approved the extension and the project has
+/// it on, as every studio question is (ADR 0101): the approval is this machine's consent, and the
+/// executor's gate holds it.
 fn may(plane: &Path, kept: Kept, locked: &Locked) -> May {
+    let Origin::Git(remote) = &locked.source else {
+        return May::Ask;
+    };
     if kept == Kept::Local {
         return May::Ask;
     }
-    match listed::confirmed(plane, &locked.source) {
+    match listed::confirmed(plane, remote) {
         Ok(true) => May::Ask,
-        Ok(false) => match locked.source.check(true) {
+        Ok(false) => match remote.check(true) {
             Ok(()) => May::Confirm,
             Err(why) => May::Never(why),
         },
@@ -147,9 +162,11 @@ fn pinned_sha(locked: &Locked, path: &str, bytes: &[u8]) -> String {
 }
 
 /// **Asks each source of an installed skill this machine may contact for its newest commit** —
-/// its refs alone, nothing fetched or written — and answers each skill whose pin is older, each
-/// that could not be asked, and each source that waits to be confirmed here.
-pub fn updates(plane: &Path) -> Updates {
+/// its refs alone, nothing fetched or written — or, for an extension's source, its newest
+/// revision, through `studio` (its listing alone), and answers each skill whose pin is older,
+/// each that could not be asked, and each source that waits to be confirmed here. With no
+/// `studio`, an extension's source is not asked and says so.
+pub fn updates(plane: &Path, studio: Option<Studio<'_>>) -> Updates {
     let (locked, unread) = lock::every(plane);
     let mut out = Updates::default();
     for why in unread {
@@ -159,15 +176,18 @@ pub fn updates(plane: &Path) -> Updates {
             why,
         });
     }
-    let mut asked: Vec<(Remote, Result<Commit, String>)> = Vec::new();
+    let mut asked: Vec<(Origin, Result<Pin, String>)> = Vec::new();
     for (kept, one) in &locked {
         match may(plane, *kept, one) {
             May::Ask => {}
             May::Confirm => {
-                match out.unconfirmed.iter_mut().find(|u| u.remote == one.source) {
+                let Origin::Git(remote) = &one.source else {
+                    continue;
+                };
+                match out.unconfirmed.iter_mut().find(|u| u.remote == *remote) {
                     Some(waiting) => waiting.skills.push(one.name.clone()),
                     None => out.unconfirmed.push(Unconfirmed {
-                        remote: one.source.clone(),
+                        remote: remote.clone(),
                         skills: vec![one.name.clone()],
                     }),
                 }
@@ -182,21 +202,32 @@ pub fn updates(plane: &Path) -> Updates {
                 continue;
             }
         }
-        let newest = match asked.iter().find(|(remote, _)| *remote == one.source) {
+        let newest = match asked.iter().find(|(origin, _)| *origin == one.source) {
             Some((_, answer)) => answer.clone(),
             None => {
-                let answer = source_of(plane, one).and_then(|source| super::newest(plane, &source));
+                let answer = match &one.source {
+                    Origin::Git(_) => source_of(plane, one)
+                        .and_then(|source| super::newest(plane, &source))
+                        .map(Pin::Commit),
+                    Origin::Extension(id) => match studio {
+                        Some(studio) => super::extension::newest(studio, id).map(Pin::Revision),
+                        None => Err(format!(
+                            "{} is asked only where purlis can start its extensions",
+                            one.source
+                        )),
+                    },
+                };
                 asked.push((one.source.clone(), answer.clone()));
                 answer
             }
         };
         match newest {
-            Ok(commit) if commit != one.commit => out.offers.push(Offer {
+            Ok(pin) if pin != one.pin => out.offers.push(Offer {
                 name: one.name.clone(),
                 level: one.level.0.clone(),
-                remote: one.source.clone(),
-                pinned: one.commit.clone(),
-                newer: commit,
+                source: one.source.clone(),
+                pinned: one.pin.clone(),
+                newer: pin,
                 edited: edited(plane, one).is_none_or(|changed| !changed.is_empty()),
             }),
             Ok(_) => {}
@@ -209,7 +240,8 @@ pub fn updates(plane: &Path) -> Updates {
     }
     let answered: Vec<Remote> = asked
         .into_iter()
-        .filter_map(|(remote, answer)| answer.is_ok().then_some(remote))
+        .filter(|(_, answer)| answer.is_ok())
+        .filter_map(|(origin, _)| origin.remote().cloned())
         .collect();
     super::checked::asked(plane, &answered);
     out
@@ -309,8 +341,8 @@ fn file_changes(was: &[SourceFile], now: &[SourceFile]) -> Vec<FileChange> {
 pub struct UpdateReview {
     pub name: String,
     pub level: Level,
-    pub pinned: Commit,
-    pub newer: Commit,
+    pub pinned: Pin,
+    pub newer: Pin,
     /// Whether the pinned commit could be read from the source; where not, the diff is from the
     /// copy installed here.
     pub from_pin: bool,
@@ -414,17 +446,37 @@ fn named_at_source(parts: &[String], bytes: Vec<u8>, locked: &Locked) -> Vec<u8>
 pub fn update_review(plane: &Path, level: &Level, name: &str) -> Result<UpdateReview, String> {
     let (held, at) = locked_at(plane, level, name)?;
     let locked = &held.lock.skills[at];
-    let at_source = locked.at_source().to_owned();
     let source = source_of(plane, locked)?;
     let fetched = fetch(plane, &source, None)?;
-    if fetched.commit == locked.commit {
+    let newer = Pin::Commit(fetched.commit.clone());
+    if newer == locked.pin {
         return Err(format!(
             "{name} is pinned to its source's newest commit already"
         ));
     }
+    let pinned = match &locked.pin {
+        Pin::Commit(commit) => fetched.files_at(plane, commit, &locked.folder)?,
+        Pin::Revision(_) => None,
+    };
+    reviewed_update(plane, level, name, locked, &fetched, newer, pinned)
+}
+
+/// **The review of updating `locked`, the skill `name` at `level`, to what `source` holds at
+/// `newer`**, its files at the pin `pinned` where the source still holds them: the diff is from
+/// those, else from the copy here. The same review for every source.
+pub(super) fn reviewed_update(
+    plane: &Path,
+    level: &Level,
+    name: &str,
+    locked: &Locked,
+    source: &dyn SkillSource,
+    newer: Pin,
+    pinned: Option<Vec<SourceFile>>,
+) -> Result<UpdateReview, String> {
+    let at_source = locked.at_source().to_owned();
     let dir = tree::folder_parts(&locked.folder)
         .ok_or_else(|| format!("{:?} is no folder", locked.folder))?;
-    let (found, _) = fetched.skills()?;
+    let (found, _) = source.skills()?;
     let one = found
         .iter()
         .find(|f| f.dir == dir)
@@ -435,8 +487,7 @@ pub fn update_review(plane: &Path, level: &Level, name: &str) -> Result<UpdateRe
             one.name
         ));
     }
-    let now = fetched.files_of(&one.dir)?;
-    let pinned = fetched.files_at(plane, &locked.commit, &locked.folder)?;
+    let (now, left) = source.files(one)?;
     let from_pin = pinned.is_some();
     let mut parts = level_parts(level)?;
     parts.push(name.to_owned());
@@ -457,18 +508,13 @@ pub fn update_review(plane: &Path, level: &Level, name: &str) -> Result<UpdateRe
     };
     let was = pinned.unwrap_or_else(|| here.clone());
     let met_here = met_at(plane, level);
-    let reviewed = fetched.review_with(std::slice::from_ref(&at_source), &met_here)?;
-    let mut skills = reviewed.skills.into_iter();
+    let reviewed = reviews_of(source, std::slice::from_ref(&at_source), &met_here)?;
+    let mut skills = reviewed.into_iter();
     let review = skills.next().unwrap_or_else(|| {
         let held_names: Vec<String> = found.iter().map(|f| f.name.clone()).collect();
-        review_of(
-            one,
-            &now,
-            tree::left_in(&fetched.left, &one.dir),
-            None,
-            &held_names,
-            &|other| other != at_source && met_here(other),
-        )
+        review_of(one, &now, left, None, &held_names, &|other| {
+            other != at_source && met_here(other)
+        })
     });
     let brought: Vec<SkillReview> = skills.collect();
     let grant = grant_here(plane, level, name);
@@ -483,8 +529,8 @@ pub fn update_review(plane: &Path, level: &Level, name: &str) -> Result<UpdateRe
         gained,
         name: name.to_owned(),
         level: level.clone(),
-        pinned: locked.commit.clone(),
-        newer: fetched.commit.clone(),
+        pinned: locked.pin.clone(),
+        newer,
         from_pin,
         changes: summary::changes(&summary_of(&was), &review.summary),
         files: file_changes(&was, &now),
@@ -511,8 +557,8 @@ pub(super) struct Planned {
     pub(super) name: String,
     /// Its lockfile entry as it is now.
     pub(super) locked: Locked,
-    /// The commit it moves to.
-    pub(super) newer: Commit,
+    /// The commit or revision it moves to.
+    pub(super) newer: Pin,
     /// What it newly lets the skill do (#5354), read against the pinned commit as its review is.
     pub(super) gained: Vec<Gained>,
     files: Vec<SourceFile>,
@@ -538,7 +584,7 @@ impl Planned {
         } else {
             wrote(&self.files)
         };
-        entry.commit = self.newer.clone();
+        entry.pin = self.newer.clone();
         entry.digest = digest_of(&files_wrote);
         entry.files = files_wrote;
         entry
@@ -556,7 +602,7 @@ impl Planned {
                     level: lock::AtLevel(self.level.clone()),
                     source: self.locked.source.clone(),
                     folder: skill.folder.clone(),
-                    commit: self.newer.clone(),
+                    pin: self.newer.clone(),
                     digest: digest_of(&their_wrote),
                     files: their_wrote,
                     brought_by: Some(self.name.clone()),
@@ -622,9 +668,9 @@ impl Wrote {
 }
 
 /// **Checks an update** of the installed skill `name` at `level` to what `accepted` says,
-/// writing nothing: the newer commit fetched again and checked against the reviewed digests,
-/// every skill it brings along free where it lands, and `grant` the grant the review showed
-/// ([`UpdateReview::grant`]).
+/// writing nothing: the newer commit fetched again and checked against the reviewed digests
+/// ([`plan_from`]). Refused for a skill an extension's source answered, which is updated on its
+/// own ([`super::extension::update`]).
 pub(super) fn plan(
     cx: &Ctx<'_>,
     level: &Level,
@@ -634,13 +680,52 @@ pub(super) fn plan(
 ) -> Result<Planned, String> {
     let plane = cx.plane;
     let (held, at) = locked_at(plane, level, name)?;
+    let locked = &held.lock.skills[at];
+    let source = source_of(plane, locked)?;
+    let fetched = fetch(plane, &source, Some(accepted.commit()?))?;
+    let pinned = match &locked.pin {
+        Pin::Commit(commit) => fetched.files_at(plane, commit, &locked.folder)?,
+        Pin::Revision(_) => None,
+    };
+    plan_from(
+        cx,
+        level,
+        name,
+        accepted,
+        grant,
+        &fetched,
+        Pin::Commit(fetched.commit.clone()),
+        pinned,
+    )
+}
+
+/// **Checks an update** of the installed skill `name` at `level` to what `accepted` says, from
+/// what `source` holds at `newer`, writing nothing: the review read again and checked against the
+/// reviewed digests, every skill it brings along free where it lands, and `grant` the grant the
+/// review showed ([`UpdateReview::grant`]). `pinned` is the files at the pin, where the source
+/// still holds them, which what it gains is read against as its review read it.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn plan_from(
+    cx: &Ctx<'_>,
+    level: &Level,
+    name: &str,
+    accepted: &Accepted,
+    grant: Option<&Grant>,
+    source: &dyn SkillSource,
+    newer: Pin,
+    pinned: Option<Vec<SourceFile>>,
+) -> Result<Planned, String> {
+    let plane = cx.plane;
+    let (held, at) = locked_at(plane, level, name)?;
     let locked = held.lock.skills[at].clone();
     let at_source = locked.at_source().to_owned();
-    let source = source_of(plane, &locked)?;
-    let fetched = fetch(plane, &source, Some(&accepted.commit))?;
-    let reviewed = fetched.review_with(std::slice::from_ref(&at_source), &met_at(plane, level))?;
-    if !accepted.is(&reviewed.accepted())
-        || reviewed.skills.first().is_none_or(|s| s.name != at_source)
+    let reviewed = reviews_of(
+        source,
+        std::slice::from_ref(&at_source),
+        &met_at(plane, level),
+    )?;
+    if !accepted.is(&Accepted::of(&newer, &reviewed))
+        || reviewed.first().is_none_or(|s| s.name != at_source)
     {
         return Err(
             "what the source holds is not what was reviewed, so nothing was updated: review it \
@@ -650,7 +735,7 @@ pub(super) fn plan(
     }
     let dir = tree::folder_parts(&locked.folder)
         .ok_or_else(|| format!("{:?} is no folder", locked.folder))?;
-    let (found, _) = fetched.skills()?;
+    let (found, _) = source.skills()?;
     let find = |wanted: &str| {
         found
             .iter()
@@ -665,12 +750,7 @@ pub(super) fn plan(
     }
     // A skill it brings along takes no built-in skill's name, as an install's does not. A
     // reference to one is met already (#4155), so none is brought: this is the guard (S12).
-    if let Some(skill) = reviewed
-        .skills
-        .iter()
-        .skip(1)
-        .find(|s| cx.reserved(&s.name))
-    {
+    if let Some(skill) = reviewed.iter().skip(1).find(|s| cx.reserved(&s.name)) {
         return Err(format!(
             "this update brings along {}, whose name belongs to purlis, so nothing \
              was updated",
@@ -686,16 +766,16 @@ pub(super) fn plan(
         ));
     }
     let level_dir = level_parts(level)?;
-    let now = fetched.files_of(&one.dir)?;
+    let (now, _) = source.files(one)?;
     paths_fit(&level_dir, name, &now)?;
     let files = match locked.source_name.is_some() {
         true => super::install::under_new_name(&now, name)?,
         false => now.clone(),
     };
     let mut brought = Vec::new();
-    for skill in reviewed.skills.iter().skip(1) {
+    for skill in reviewed.iter().skip(1) {
         let other = find(&skill.name)?;
-        let their = fetched.files_of(&other.dir)?;
+        let (their, _) = source.files(other)?;
         verbs::free_at(plane, level, &skill.name, &skill.name)
             .and_then(|_| paths_fit(&level_dir, &skill.name, &their))
             .map_err(|why| format!("{why}, so nothing was updated"))?;
@@ -705,10 +785,10 @@ pub(super) fn plan(
             files: their,
         });
     }
-    let widenings = widenings_of(plane, level, grant, &reviewed.skills);
+    let widenings = widenings_of(plane, level, grant, &reviewed);
     // What it gains is read as its review read it: from the pinned commit, or the copy here where
     // the source no longer holds that.
-    let was = match fetched.files_at(plane, &locked.commit, &locked.folder)? {
+    let was = match pinned {
         Some(pinned) => pinned,
         None => {
             let mut parts = level_dir.clone();
@@ -724,11 +804,11 @@ pub(super) fn plan(
                 .collect()
         }
     };
-    let gained = gained::gained(&was, &now, &reviewed.skills[1..]);
+    let gained = gained::gained(&was, &now, &reviewed[1..]);
     Ok(Planned {
         level: level.clone(),
         name: name.to_owned(),
-        newer: fetched.commit.clone(),
+        newer,
         locked,
         gained,
         files,
@@ -842,11 +922,23 @@ pub fn update(
     accepted: &Accepted,
     grant: Option<&Grant>,
 ) -> Result<PathBuf, String> {
-    let plane = cx.plane;
-    crate::settings::writable(plane)?;
+    crate::settings::writable(cx.plane)?;
     let planned = plan(cx, level, name, accepted, grant)?;
+    write_update(cx, level, name, grant, &planned)
+}
+
+/// **Writes the update `planned` checked** ([`write_planned`]) and moves the pins, as one commit.
+/// Where the lockfile cannot be written, what this update made is taken back.
+pub(super) fn write_update(
+    cx: &mut Ctx<'_>,
+    level: &Level,
+    name: &str,
+    grant: Option<&Grant>,
+    planned: &Planned,
+) -> Result<PathBuf, String> {
+    let plane = cx.plane;
     let (held, at) = locked_at(plane, level, name)?;
-    let wrote = write_planned(plane, &planned)?;
+    let wrote = write_planned(plane, planned)?;
     let mut lock = held.lock.clone();
     lock.skills[at] = planned.entry();
     lock.skills.extend(planned.brought_entries());

@@ -868,3 +868,161 @@ fn an_outcome_evals_shell_writes_only_its_own_folders_and_reaches_no_host() {
         "{refused:?}"
     );
 }
+
+/// **Two Claude Code chats each write a temporary folder of their own, and not the other's**
+/// (#5675), through Claude Code's own sandbox, each started with the environment and
+/// `--settings` of the line purlis builds for it under its own confinement. Before, every chat
+/// on the machine was handed the one `/tmp/claude-<uid>`, so one chat's file of a name took the
+/// place of another's. Binds the chats' proxies; runs where `PURLIS_CLAUDE_CODE` names Claude
+/// Code, as CI sets it.
+#[test]
+fn two_claude_code_chats_each_write_a_temporary_folder_of_their_own_and_not_the_others() {
+    purlis_core::unsteered!();
+    use std::os::unix::fs::{DirBuilderExt, MetadataExt};
+    let Some(program) = std::env::var_os("PURLIS_CLAUDE_CODE").map(PathBuf::from) else {
+        return;
+    };
+    let scratch = tempfile::tempdir().expect("a folder");
+    let at = scratch.path().canonicalize().expect("a real folder");
+    let home = at.join("home");
+    let bin = at.join("bin");
+    let root = at.join("project");
+    let tmp = at.join("tmp");
+    for folder in [&home.join(".claude"), &bin, &tmp] {
+        fs::create_dir_all(folder).expect("a folder");
+    }
+    lay_out(&root, LEVELS[0].2);
+    let machine = Machine {
+        env: purlis_core::secrets::Env::of(&[("PATH", &bin.display().to_string())]),
+        home: Some(home.clone()),
+        os: Os::this(),
+    };
+    let decided = sandbox::decide(Harness::ClaudeCode, &root, &machine, &|_| true, None, None)
+        .expect("decided")
+        .expect("a sandbox in force");
+    let Decided::Sandboxed(mut applied) = decided else {
+        panic!("not sandboxed: {decided:?}");
+    };
+    applied.answered(SUPPORTED);
+    let Form::ClaudeCode(compiled) = applied.form_in(Some(&root)) else {
+        panic!("not Claude Code's settings");
+    };
+    compiled.make_empty();
+    let armed = json!({
+        "sandbox": compiled.sandbox,
+        "permissions": { "deny": compiled.deny },
+    });
+    let screened = purlis_core::harness::claude::project::screen_with(Some(&root), None);
+    let confinements = [
+        applied.confine().expect("started").expect("a proxy"),
+        applied.confine().expect("started").expect("a proxy"),
+    ];
+    let lines = confinements.each_ref().map(|confinement| {
+        applied
+            .line(
+                sandbox::Words {
+                    program: program.display().to_string(),
+                    command: Vec::new(),
+                    armed: vec!["--settings".to_owned(), armed.to_string()],
+                    charters: Vec::new(),
+                },
+                &sandbox::At {
+                    cwd: Some(&root),
+                    hook_socket: None,
+                    confinement: Some(confinement),
+                    no_opt_out: false,
+                    purlis: None,
+                },
+            )
+            .expect("a line")
+    });
+    let temps = confinements
+        .each_ref()
+        .map(|confinement| confinement.tmp().expect("a temporary folder").to_path_buf());
+    assert_ne!(temps[0], temps[1], "each chat its own temporary folder");
+    // Where Claude Code roots each chat's files: `claude-<uid>` in the folder it is named.
+    let uid = fs::metadata(&at).expect("this user's folder").uid();
+    let rooted = temps
+        .each_ref()
+        .map(|temp| temp.join(format!("claude-{uid}")));
+    for folder in &rooted {
+        fs::DirBuilder::new()
+            .mode(0o700)
+            .recursive(true)
+            .create(folder)
+            .expect("its folder");
+    }
+    let script = at.join("temporary-folders.sh");
+    fs::write(
+        &script,
+        "printf 'tmp=%s\\n' \"$TMPDIR\"\n\
+         (echo mine > \"$TMPDIR/body.md\") 2>/dev/null && echo own=written || echo own=refused\n\
+         (echo theirs > \"$1/body.md\") 2>/dev/null && echo other=written || echo other=refused\n",
+    )
+    .expect("the script");
+    for (chat, line) in lines.iter().enumerate() {
+        let what = format!("chat {chat}");
+        let settings = line
+            .args
+            .iter()
+            .position(|word| word == "--settings")
+            .and_then(|flag| line.args.get(flag + 1))
+            .expect("its settings");
+        let file = at.join(format!("claude-{chat}.json"));
+        fs::write(&file, settings).expect("the settings");
+        // A script the call runs, as the probes are run: Claude Code's own permission check
+        // reads a command's words, and a write it can see outside the project is not run.
+        let other = rooted[1 - chat].display();
+        let command = format!("/bin/sh '{}' '{other}'", script.display());
+        let env: Vec<(&str, &Path)> = line
+            .env
+            .iter()
+            .map(|(key, value)| (key.as_str(), Path::new(value)))
+            .collect();
+        let said = ran_with(
+            &program,
+            &home,
+            &tmp,
+            &root,
+            &file,
+            &screened.setting_sources(),
+            &what,
+            command,
+            &env,
+        );
+        let named = said
+            .lines()
+            .find_map(|line| line.trim().strip_prefix("tmp="))
+            .map(PathBuf::from)
+            .unwrap_or_else(|| panic!("{what}: no $TMPDIR said:\n{said}"));
+        let real = |path: &Path| path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        assert!(
+            real(&named).starts_with(real(&temps[chat])),
+            "{what}: $TMPDIR {named:?} is not in its own folder {:?}",
+            temps[chat]
+        );
+        assert!(
+            said.lines().any(|line| line.trim() == "own=written"),
+            "{what}: its own temporary folder was not written:\n{said}"
+        );
+        assert!(
+            said.lines().any(|line| line.trim() == "other=refused"),
+            "{what}: the other chat's temporary folder was written:\n{said}"
+        );
+    }
+    for (chat, folder) in rooted.iter().enumerate() {
+        assert!(
+            !folder.join("body.md").exists()
+                || fs::read_to_string(folder.join("body.md")).expect("read") == "mine\n",
+            "chat {chat}'s file was overwritten by the other chat"
+        );
+    }
+    // As a chat ends, its folder goes.
+    let [first, _second] = confinements;
+    drop(first);
+    assert!(
+        !temps[0].exists(),
+        "{:?} stayed once its chat ended",
+        temps[0]
+    );
+}

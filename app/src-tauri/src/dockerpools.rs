@@ -223,6 +223,17 @@ pub struct PoolVersion {
     /// branch, a clone only there, or one whose folder here was removed or renamed, keeps the
     /// runner. Empty where none does.
     pub left: Vec<String>,
+    /// **Its older runners kept as they could not be checked for such work** (ruled 2026-11-08),
+    /// each by name with what is left of it: the Pools group names each in a line of its own.
+    pub not_checked: Vec<PoolNotChecked>,
+}
+
+/// **An older runner of a pool kept unchecked** (ruled 2026-11-08): its name, and what is left of
+/// it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct PoolNotChecked {
+    pub runner: String,
+    pub left: crate::poolfollow::NotChecked,
 }
 
 /// **A project an older runner of a pool waits on** (#5461): it still has to bring back what its
@@ -920,6 +931,10 @@ pub fn version_on(
         left: crate::poolfollow::left_on(&machine.config, name)
             .iter()
             .map(|one| crate::devices::shown_safely(one))
+            .collect(),
+        not_checked: crate::poolfollow::not_checked_on(&machine.config, name)
+            .into_iter()
+            .map(|(runner, left)| PoolNotChecked { runner, left })
             .collect(),
     })
 }

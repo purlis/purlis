@@ -813,6 +813,14 @@ export const commands = {
 	forgeDeviceSignInStart: __WINDOW_ONLY_RESULT,
 	forgeDeviceSignInWait: __WINDOW_ONLY_RESULT,
 	forgeDeviceSignInCancel: __WINDOW_ONLY,
+	forgeSigningPermissionStart: __WINDOW_ONLY_RESULT,
+	forgeSigningPermissionWait: __WINDOW_ONLY_RESULT,
+	signingState: __WINDOW_ONLY_RESULT,
+	signingKeyShown: __WINDOW_ONLY_RESULT,
+	signingMakeKey: __WINDOW_ONLY_RESULT,
+	signingAddKey: __WINDOW_ONLY_RESULT,
+	signingKeyListed: __WINDOW_ONLY_RESULT,
+	signingCheck: __WINDOW_ONLY_RESULT,
 	agentIdentities: __WINDOW_ONLY_RESULT,
 	agentIdentityCreate: __WINDOW_ONLY_RESULT,
 	agentIdentityCreateCancel: __WINDOW_ONLY,
@@ -1198,6 +1206,46 @@ export const commands = {
 	/**  **What grading the copy of `skill` at `level` would run**, before anything runs. */
 	skillGradePlan: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null, model: string | null, evals: string[], grader: string | null) => typedError<SkillGradePlan, string>(__TAURI_INVOKE("skill_grade_plan", { plane, level, skill, profile, model, evals, grader })),
 	skillGradeStart: __WINDOW_ONLY_RESULT,
+	/**
+	 *  **What resuming the stopped grade `grade` would run** (#5718): `None` where this machine keeps
+	 *  no stopped grade of that id (it finished, was resumed, a newer grade of its copy began, or it
+	 *  ran on another machine).
+	 */
+	skillGradeResumePlan: (plane: PlaneId, grade: string) => typedError<{
+	grade: string,
+	skill: string,
+	/**  How it stopped, in a sentence (`Stopped at the token cap`). */
+	ended: string,
+	/**
+	 *  **Why Resume is not offered**, where it is not: what changed since it stopped, or why what
+	 *  it graded cannot be read now. Grade again is then the one way on.
+	 */
+	refused: string | null,
+	/**
+	 *  **When the program's usage limit resets**, an RFC 3339 time, while it has not: Resume
+	 *  waits for it.
+	 */
+	waits_until: string | null,
+	/**  The chats left, and what they would spend at what its chats spent each, where they said. */
+	left: number,
+	tokens_left: number | null,
+	usd_left: number | null,
+	/**  The cap and the dollar limit a resume is held to, which count only its own spend. */
+	token_cap: number | null,
+	cap_set_here: boolean,
+	limit_usd: number | null,
+	/**  What the stopped grade spent, which the resumed one's scorecard adds to its own. */
+	earlier_tokens: number | null,
+	earlier_usd: number | null,
+	/**  The profile and the model its chats run on, as the stopped grade's did. */
+	profile: string | null,
+	model: string | null,
+	/**  What pressing Resume consents to; `None` where it is refused. */
+	consent: string | null,
+	/**  A grade of the skill running now, which Resume waits for. */
+	running: string | null,
+} | null, string>(__TAURI_INVOKE("skill_grade_resume_plan", { plane, grade })),
+	skillGradeResume: __WINDOW_ONLY_RESULT,
 	/**  **What the page of the draft `draft` says of its grade.** */
 	skillDraftGrade: (plane: PlaneId, draft: string) => typedError<SkillDraftGrade, string>(__TAURI_INVOKE("skill_draft_grade", { plane, draft })),
 	/**  **What grading the draft `draft` would run**, before anything runs. */
@@ -1207,6 +1255,12 @@ export const commands = {
 	skillGradeStop: __WINDOW_ONLY_RESULT,
 	/**  **What grading the copies `skills` would run and spend**, before anything runs. */
 	skillGradesPlan: (plane: PlaneId, skills: ([SkillLevel, string])[]) => typedError<SkillGradesPlan, string>(__TAURI_INVOKE("skill_grades_plan", { plane, skills })),
+	/**
+	 *  **What resuming the stopped grades `grades` together would run and spend** (#5718, the
+	 *  operator's ruling 6): each stopped skill's chats left and what they would spend, under one new
+	 *  limit the person sets; a grade that cannot be resumed now is left out with why.
+	 */
+	skillGradesResumePlan: (plane: PlaneId, grades: string[]) => typedError<SkillGradesPlan, string>(__TAURI_INVOKE("skill_grades_resume_plan", { plane, grades })),
 	skillGradesStart: __WINDOW_ONLY_RESULT,
 	skillGradesStop: __WINDOW_ONLY_RESULT,
 	/**  **The batch running in `plane`**, at its latest step, where one runs. */
@@ -1358,6 +1412,13 @@ export const commands = {
 	skillUpdates: __WINDOW_ONLY_RESULT,
 	skillUpdateReview: __WINDOW_ONLY_RESULT,
 	skillUpdate: __WINDOW_ONLY_RESULT,
+	skillExtensionSources: __WINDOW_ONLY_RESULT,
+	skillExtensionSourceBrowse: __WINDOW_ONLY_RESULT,
+	skillExtensionInstallReview: __WINDOW_ONLY_RESULT,
+	skillExtensionInstallSetReview: __WINDOW_ONLY_RESULT,
+	skillExtensionInstall: __WINDOW_ONLY_RESULT,
+	skillExtensionUpdateReview: __WINDOW_ONLY_RESULT,
+	skillExtensionUpdate: __WINDOW_ONLY_RESULT,
 	skillStudioSwitch: __WINDOW_ONLY_RESULT,
 	/**
 	 *  **The skills chat `session` has, as Use skill… offers them, and its skill budget**: nothing
@@ -2727,6 +2788,12 @@ export type AlertRow = {
 	 *  in place of the command the terminal status line names.
 	 */
 	way: AlertWay,
+	/**
+	 *  **When what it says was found**, in seconds since the epoch, where purlis keeps that
+	 *  (#5702): a chat's arrived files, from the look that last told them. The Inbox says the
+	 *  Notice's age from it, and without it from when the window first drew the Notice.
+	 */
+	since?: number | null,
 };
 
 /**
@@ -3161,7 +3228,12 @@ export type Asks =
 /**  `purlis profile sign-in --pool`. */
 "sign-in" | 
 /**  `purlis pool remove-profile`: its runner forgets the profile, and its sign-in there. */
-"take-off";
+"take-off" | 
+/**
+ *  `purlis signing check` (#5625): the window asks GitHub how a pushed commit shows. Its
+ *  `profile` is the repository (`owner/name`) and its `pool` the commit.
+ */
+"signing-check";
 
 /**  What a chat's row says while it is at its task limit. */
 export type AtLimit = {
@@ -3261,6 +3333,11 @@ export type BatchPick = {
 	level: SkillLevel,
 	name: string,
 	consent: string,
+	/**
+	 *  **The stopped grade it resumes** (#5718), where Select's Resume picked it: only its
+	 *  unfinished cases run.
+	 */
+	resume?: string | null,
 };
 
 /**
@@ -3279,6 +3356,11 @@ export type BatchSkill = {
 	 *  refused.
 	 */
 	consent: string,
+	/**
+	 *  **The stopped grade it resumes** (#5718), where the batch resumes one: its chats are those
+	 *  left, and its estimate what they would spend.
+	 */
+	resume: string | null,
 };
 
 /**
@@ -4671,9 +4753,11 @@ export type DiscardAgainst =
 export type DiscardAnswer = 
 /**
  *  It is written. `now` is the file's diff without the hunk, or `null` when nothing of its
- *  change is left to draw; `unrecorded` says why the log did not take it, if it did not.
+ *  change is left to draw; `unrecorded` says why the log did not take it, if it did not;
+ *  `untold` names each chat in the folder whose agent is not told of it
+ *  ([`crate::staleclones::untold_in`]).
  */
-{ kind: "discarded"; now: WhatChanged | null; unrecorded: string | null } | 
+{ kind: "discarded"; now: WhatChanged | null; unrecorded: string | null; untold: string[] } | 
 /**  Nothing was written: these chats are not idle, and the choice is the operator's. */
 { kind: "busy"; chats: BusyChat[] } | 
 /**  Nothing was written: the file changed on disk since the diff was drawn. */
@@ -5633,6 +5717,16 @@ export type ExtensionRow = {
 	ask: ExtensionAsk | null,
 };
 
+/**
+ *  **An extension's skill source**, as the studio lists one: the extension's id, the name it
+ *  gives itself, and how many skills are installed from it here.
+ */
+export type ExtensionSkillSource = {
+	id: string,
+	label: string,
+	installed: number,
+};
+
 /**  One theme an approved extension is contributing, as the window receives it. */
 export type ExtensionTheme = {
 	/**  The extension it came from, so the window can say whose theme it is drawing. */
@@ -6424,7 +6518,11 @@ export type GradeEnded = "whole" | "stopped" | "chats-did-not-start" |
 /**  A chat did not say what it spent, so the cap could not be held. */
 "spend-not-reported" | 
 /**  A fault in purlis ended it before it was scored (#3353): recorded as interrupted. */
-"failed";
+"failed" | 
+/**  Its program's usage limit was reached (#5718). */
+"usage-limit" | 
+/**  Its program could not reach its service (#5718). */
+"unreachable";
 
 /**
  *  What a grade's chats spent before, worked out for this one (`grades::Estimate`): both
@@ -6597,6 +6695,11 @@ export type GradeScorecard = {
 	 */
 	evals: ScoredEval[],
 	outcome_arms: GradeArms | null,
+	/**
+	 *  **When the program's usage limit resets**, an RFC 3339 time, where it stopped there and
+	 *  was told (#5718).
+	 */
+	resets_at: string | null,
 };
 
 /**
@@ -6608,6 +6711,13 @@ export type GradeSpent = {
 	tokens: number | null,
 	cost_usd: number | null,
 	limit_usd: number | null,
+	/**
+	 *  **Whether it resumed a stopped grade** (#5718): its tokens and cost are then both runs',
+	 *  and these the earlier run's, where it said.
+	 */
+	resumed: boolean,
+	earlier_tokens: number | null,
+	earlier_usd: number | null,
 };
 
 /**  Who a grant is for, as the window sends it ([`sandbox::grant::Level`]). */
@@ -7933,10 +8043,17 @@ export type NeedFix =
  *  Leave the old keys, which no file can be proposed without: said once
  *  (`dismiss_old_harness_plugins`).
  */
-{ kind: "leave-old-keys" };
+{ kind: "leave-old-keys" } | 
+/**
+ *  Open a stopped grade's scorecard (#5718), where Resume shows its plan: a skill's, or its
+ *  draft's where `draft` names one.
+ */
+{ kind: "open-grade"; name: string; grade: string; draft: string | null };
 
 /**  **What kind of decision an item is**, in the order the page groups them. */
-export type NeedKind = "review" | "clash" | "problem" | "pins" | "tidy-up";
+export type NeedKind = "review" | 
+/**  A grade that stopped short, which Resume can go on from (#5718). */
+"resume" | "clash" | "problem" | "pins" | "tidy-up";
 
 /**
  *  **One persona the vault view may remember a need for** (#5240): names only, read from no
@@ -8015,6 +8132,23 @@ export type NotASkill = {
 	folder: string,
 	why: string,
 };
+
+/**
+ *  **How a draining runner that cannot be asked came to be so**, as Docker says now, and so what
+ *  is left of it (ruled 2026-11-08): the window names which in its own words, so a person reads
+ *  what is there and what can be done with it.
+ */
+export type NotChecked = 
+/**
+ *  Its container had stopped before its drain, and has not run since: it is there, stopped,
+ *  and is checked once it runs again.
+ */
+"stopped" | 
+/**
+ *  Its container was removed outside purlis, and only its home volume is left, which nothing
+ *  can check.
+ */
+"home_only";
 
 /**
  *  What a runner holds, set against what the window has open: the chats and browsers of its own
@@ -9573,6 +9707,15 @@ export type PoolNamedBy = {
 };
 
 /**
+ *  **An older runner of a pool kept unchecked** (ruled 2026-11-08): its name, and what is left of
+ *  it.
+ */
+export type PoolNotChecked = {
+	runner: string,
+	left: NotChecked,
+};
+
+/**
  *  **A project an older runner of a pool waits on** (#5461): it still has to bring back what its
  *  chats left there, and only an open project does.
  */
@@ -9910,6 +10053,11 @@ export type PoolVersion = {
 	 *  runner. Empty where none does.
 	 */
 	left: string[],
+	/**
+	 *  **Its older runners kept as they could not be checked for such work** (ruled 2026-11-08),
+	 *  each by name with what is left of it: the Pools group names each in a line of its own.
+	 */
+	not_checked: PoolNotChecked[],
 };
 
 /**  What the Pools group draws: the pools, and the limits a new pool gets by default. */
@@ -11618,6 +11766,11 @@ export type RunnerOnTheList = {
 	 *  may let go of with it. Empty where none keeps it.
 	 */
 	left: string[],
+	/**
+	 *  **A draining runner kept as it could not be checked for such work**, and what is left of
+	 *  it (ruled 2026-11-08): a stopped container, or only its home. None where it was checked.
+	 */
+	not_checked: NotChecked | null,
 	on: OnADevice,
 };
 
@@ -12720,6 +12873,60 @@ export type SidebarWorkspace = {
 	live: boolean,
 };
 
+/**  The forge account setup adds the key to. */
+export type SigningAccount = {
+	login: string,
+	host: string,
+	/**  The forge, as a sentence names it: `GitHub`. */
+	forge: string,
+	/**  Whether its sign-in may add a signing key already, so setup asks for no permission. */
+	may_add: boolean,
+	/**
+	 *  The email the last Check in this window found verified, for "Verified on GitHub ✓".
+	 *  Only the forge's own answer sets it, and it lasts the window's life.
+	 */
+	verified_as: string | null,
+};
+
+/**  How adding the key went. */
+export type SigningAdded = 
+/**  GitHub has it now, or had it already. */
+"added" | 
+/**  The sign-in may not add it: setup asks for the permission, or the person adds it by hand. */
+"needs_permission";
+
+/**  What Check found: GitHub's own verdict on a signed test commit. */
+export type SigningCheck = {
+	verified: boolean,
+	/**
+	 *  GitHub's reason, such as `valid`, `unverified_email` or `unknown_key`: the window words
+	 *  it.
+	 */
+	reason: string,
+	/**  The email the test commit was made as: chat commits use it too. */
+	email: string,
+	/**  The repository the test commit was made in. */
+	repo: string,
+};
+
+/**  This device's key as Details and the by-hand step show it: never its private half. */
+export type SigningKeyShown = {
+	/**  `SHA256:…`, as GitHub shows it. */
+	fingerprint: string,
+	/**  The public line to paste on GitHub's page. */
+	public_key: string,
+};
+
+/**  What the card shows: whether this device has a signing key, and the GitHub account it goes to. */
+export type SigningState = {
+	/**  "On": this device has a signing key (ADR 0116 §1). Nothing else turns it on. */
+	on: boolean,
+	/**  What the key is titled on the forge: `purlis · <device>`. */
+	title: string,
+	/**  The GitHub account on github.com setup adds the key to, where one is signed in. */
+	account: SigningAccount | null,
+};
+
 /**
  *  A skill a chat would have loaded that could not be loaded (SK-8): the core's `Broken`, for
  *  the window. purlis-core keeps no UI typing crate, so its level is the studio's `Level`.
@@ -13067,6 +13274,42 @@ export type SkillGradePlan = {
 	 *  from the folder, which may be no commit.
 	 */
 	draft: boolean,
+};
+
+/**  **What resuming a stopped grade would run, as the window shows it before Resume is pressed.** */
+export type SkillGradeResumePlan = {
+	grade: string,
+	skill: string,
+	/**  How it stopped, in a sentence (`Stopped at the token cap`). */
+	ended: string,
+	/**
+	 *  **Why Resume is not offered**, where it is not: what changed since it stopped, or why what
+	 *  it graded cannot be read now. Grade again is then the one way on.
+	 */
+	refused: string | null,
+	/**
+	 *  **When the program's usage limit resets**, an RFC 3339 time, while it has not: Resume
+	 *  waits for it.
+	 */
+	waits_until: string | null,
+	/**  The chats left, and what they would spend at what its chats spent each, where they said. */
+	left: number,
+	tokens_left: number | null,
+	usd_left: number | null,
+	/**  The cap and the dollar limit a resume is held to, which count only its own spend. */
+	token_cap: number | null,
+	cap_set_here: boolean,
+	limit_usd: number | null,
+	/**  What the stopped grade spent, which the resumed one's scorecard adds to its own. */
+	earlier_tokens: number | null,
+	earlier_usd: number | null,
+	/**  The profile and the model its chats run on, as the stopped grade's did. */
+	profile: string | null,
+	model: string | null,
+	/**  What pressing Resume consents to; `None` where it is refused. */
+	consent: string | null,
+	/**  A grade of the skill running now, which Resume waits for. */
+	running: string | null,
 };
 
 /**
@@ -13522,12 +13765,12 @@ export type SkillTemplate = {
  */
 export type SkillTemplateId = { kind: "blank" } | { kind: "steps" } | { kind: "extension"; extension: string; template: string };
 
-/**  One newer commit offered for an installed skill. */
+/**  One newer commit, or an extension's newer revision, offered for an installed skill. */
 export type SkillUpdateOffer = {
 	name: string,
 	level: SkillLevel,
 	label: string,
-	remote: SourceRemote,
+	source: SourceOrigin,
 	pinned: SourceCommit,
 	newer: SourceCommit,
 	edited: boolean,
@@ -13735,6 +13978,12 @@ export type SourceOffering =
 "catalogue" | 
 /**  A collection someone else keeps that people use widely. */
 "well-known";
+
+/**
+ *  **Where an installed skill came from** (#3092): a git source, by its repository and branch,
+ *  or an extension's source, by the extension's id; `label` as a person reads it either way.
+ */
+export type SourceOrigin = { kind: "git"; remote: SourceRemote; label: string } | { kind: "extension"; id: string; label: string };
 
 /**  A repository and the branch read from it. */
 export type SourceRemote = {
@@ -14891,9 +15140,10 @@ export type TurnPick = {
 export type UndoAnswer = 
 /**
  *  Every file is back. `unrecorded` says why the log did not take it, `unmarked` why the turn
- *  is not marked undone, if either.
+ *  is not marked undone, if either; `untold` names each chat in the folder whose agent is not
+ *  told of it ([`crate::staleclones::untold_in`]).
  */
-{ kind: "undone"; unrecorded: string | null; unmarked: string | null } | 
+{ kind: "undone"; unrecorded: string | null; unmarked: string | null; untold: string[] } | 
 /**  Nothing was written: these chats are not idle, and an undo waits until they are. */
 { kind: "busy"; chats: BusyChat[] };
 

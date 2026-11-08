@@ -325,12 +325,130 @@ fn an_undo_is_refused_by_name_while_the_folders_chat_works_and_once_idle_is_told
         answer,
         UndoAnswer::Undone {
             unrecorded: None,
-            unmarked: None
+            unmarked: None,
+            untold: Vec::new(),
         }
     );
     assert_eq!(
         std::fs::read_to_string(folder.join(FILE)).expect("the file"),
         before
+    );
+    assert_eq!(
+        told(&held, &id, chat).as_deref(),
+        Some(
+            "The operator undid a turn since your last turn, so these files are as they were \
+             before it. Read them again before you change them: `src/lib.rs` in `svc`."
+        )
+    );
+}
+
+/// #5427: **Undo a turn of a chat on a pool's runner is that runner's to carry out**, through the
+/// link (session protocol 1.78), under its own idle check: what it waits on is said by name as a
+/// chat here would be, and once it has put the files back the window keeps the edit, tells the
+/// chat at its next turn and marks its copy of the turn undone. A refusal of the runner's is said
+/// in its words. The runner's own side is `purlis_core::hookchannel::HostedTurns`.
+#[test]
+fn an_undo_of_a_pool_runners_turn_is_asked_of_its_runner_and_its_answer_kept_here() {
+    use crate::humanedits::{UndoAnswer, undo_in};
+    use purlis_core::eventlog::{ArgsKey, Log, Recorder};
+    use purlis_core::humanedit::{EditKind, EditedFile, EditedLines, HumanEdit};
+    use purlis_session_protocol::session::{self as wire, UndoWaitsOn};
+    let plane = Plane::new();
+    let host = Pretend::default();
+    let logs = plane.root.join("events");
+    let events = crate::hooks::Events::here(Recorder::new(
+        Log::open(&logs, "DEVICE").expect("a log"),
+        ArgsKey::open(&logs).expect("a key"),
+    ));
+    let planes = planes_on(&host).recording_events(Some(events.clone()));
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let folder = a_folder_with_the_agents_change(&plane.root);
+    let at = Branch::piece("alpha", "svc", "piece");
+    let chat = a_chat_in(&held, &folder);
+    host.runs_on_pool(chat, "builds");
+    host.records_turns_of_chat(chat);
+    let chat_id = held.chats().id_of(chat).expect("the chat's id");
+    its_prompt_is_recorded(&events, held.root(), chat);
+    // The runner's turn, as its fetch keeps it here: under the pool, never as this machine's.
+    files::turns::began(held.root(), at, &chat_id).expect("the turn begins");
+    std::fs::write(folder.join(FILE), "the runner's\n").expect("its edit");
+    files::turns::ended(held.root(), at, &chat_id).expect("the turn ends");
+    for side in ["start", "end"] {
+        let own = format!("refs/purlis/turns/{chat_id}/1/{side}");
+        let copy = format!("refs/purlis/runners/builds/turns/{chat_id}/1/{side}");
+        git(&folder, &["update-ref", &copy, &own]);
+        git(&folder, &["update-ref", "-d", &own]);
+    }
+    let on_disk = std::fs::read_to_string(folder.join(FILE)).expect("the file");
+    let turn = files::TurnKey {
+        chat: chat_id.clone(),
+        number: 1,
+    };
+
+    // The runner says its chat is running: nothing is written, and it is named as here.
+    host.answers_undo_with(Some(wire::Answer::UndoWaits {
+        chats: vec![UndoWaitsOn {
+            number: chat,
+            state: "is running".into(),
+        }],
+    }));
+    let UndoAnswer::Busy { chats } = undo_in(&held, at, &turn).expect("an answer") else {
+        panic!("the runner's working chat holds the undo back");
+    };
+    assert_eq!(chats.len(), 1);
+    assert_eq!(chats[0].state, "is running");
+    assert!(!chats[0].name.is_empty());
+    assert_eq!(
+        host.undone_on_runners(),
+        [("builds".to_owned(), turn.clone())]
+    );
+    assert_eq!(
+        std::fs::read_to_string(folder.join(FILE)).expect("the file"),
+        on_disk,
+        "nothing of this machine's folder is written"
+    );
+
+    // The runner refuses one, in its words.
+    host.answers_undo_with(None);
+    let refused = undo_in(&held, at, &turn).unwrap_err();
+    assert!(refused.contains("the runner refused it"), "{refused}");
+
+    // The runner put the files back: kept here as the edit, told, and the copy marked undone.
+    let edit = HumanEdit {
+        kind: EditKind::UndoneTurn,
+        repo: "svc".into(),
+        piece: Some("piece".into()),
+        files: vec![EditedFile {
+            path: FILE.into(),
+            lines: vec![EditedLines { start: 1, count: 3 }],
+        }],
+        busy: false,
+        chats: Vec::new(),
+        chat_ids: Vec::new(),
+    };
+    host.answers_undo_with(Some(wire::Answer::TurnUndone {
+        edit: edit.body(),
+        unmarked: None,
+    }));
+    let answer = undo_in(&held, at, &turn).expect("the undo");
+    assert_eq!(
+        answer,
+        UndoAnswer::Undone {
+            unrecorded: None,
+            unmarked: None,
+            untold: Vec::new(),
+        }
+    );
+    // The copy is marked undone: `git` asserts the ref is there.
+    git(
+        &folder,
+        &[
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            &format!("refs/purlis/runners/builds/turns/{chat_id}/1/undone"),
+        ],
     );
     assert_eq!(
         told(&held, &id, chat).as_deref(),
@@ -498,7 +616,8 @@ fn a_whole_chat_has_its_turns_hunk_discarded_and_its_next_turn_undone_and_is_tol
         answer,
         UndoAnswer::Undone {
             unrecorded: None,
-            unmarked: None
+            unmarked: None,
+            untold: Vec::new(),
         }
     );
     assert_eq!(
@@ -519,4 +638,70 @@ fn a_whole_chat_has_its_turns_hunk_discarded_and_its_next_turn_undone_and_is_tol
     let briefed = std::fs::read_to_string(&told).unwrap_or_default();
     assert!(briefed.contains("`src/lib.rs` in `svc`"), "{briefed}");
     assert!(!briefed.contains("turn 2"), "{briefed}");
+}
+
+/// **A chat its agent can't be told in is named with the edit** (#5477): a chat on a harness
+/// the project declares runs at level 1, its terminal alone, so no prompt hook carries the line,
+/// and the window is told so with the discard. A chat on a harness purlis arms a prompt hook on
+/// is told at its next turn, and a shell has no agent to tell, so neither is named.
+#[test]
+fn a_discard_names_the_folders_chat_whose_harness_has_no_prompt_hook_as_not_told() {
+    let plane = Plane::new();
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let folder = a_folder_with_the_agents_change(&plane.root);
+    let declared = purlis_core::harness_declaration::parse(
+        "name = \"shelly\"\nprogram = \"shelly\"\n",
+        purlis_core::harness_declaration::Origin::Project,
+        "harnesses/shelly.toml",
+    )
+    .expect("a declaration");
+    let start = |name: &str, ready: purlis_core::start::Ready| {
+        let chat = Chat {
+            program: ready.program.clone(),
+            name: name.to_owned(),
+            cwd: Some(folder.clone()),
+            ..Default::default()
+        };
+        held.chats()
+            .start_ready(&chat, &ready, STARTING)
+            .expect("it runs")
+    };
+    let shell = crate::chats::tests::a_shell_ready;
+    start(
+        "on shelly",
+        purlis_core::start::Ready {
+            declared: Some(declared),
+            ..shell()
+        },
+    );
+    start(
+        "on codex",
+        purlis_core::start::Ready {
+            harness: Some(purlis_core::harness::Harness::Codex),
+            ..shell()
+        },
+    );
+    start("a shell", shell());
+
+    let at = Branch::piece("alpha", "svc", "piece");
+    let shown =
+        files::what_changed(&crate::reader(), held.root(), at, FILE).expect("the file's diff");
+    let FileDiff::Text { hunks, .. } = shown.diff else {
+        panic!("a text file's diff");
+    };
+    let ask = Discard {
+        path: FILE.to_owned(),
+        target: Target::Hunk(hunks[0]),
+        against: Against::Opened(shown.stamp.expect("a stamp")),
+        turn: None,
+    };
+    let DiscardAnswer::Discarded { untold, .. } =
+        discard_in(&held, at, &ask, true).expect("the discard")
+    else {
+        panic!("the hunk is discarded");
+    };
+    assert_eq!(untold, ["on shelly"]);
 }

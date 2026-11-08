@@ -544,3 +544,33 @@ fn a_runner_holds_the_projects_skill_folders_whatever_its_own_flag_says() {
         assert!(!held(&place(FLOOR, false)), "by its own flag, which is off");
     }
 }
+
+/// #5675: a Claude Code chat's own temporary folder is made where Claude Code roots its
+/// sandbox's `$TMPDIR` in it, `<folder>/claude-<uid>` within 44 bytes, and not in macOS's long
+/// `/var/folders/…/T`, past which Claude Code falls back to the `/tmp/claude-<uid>` every chat
+/// shares.
+#[test]
+fn a_claude_code_chats_own_temporary_folder_is_made_where_claude_code_roots_its_tmpdir() {
+    let mac = Path::new("/var/folders/wl/hs3pdt2j0t9gyc_l73py38l80000gp/T/");
+    assert_eq!(claude_wrap::tmp_base(mac, 501), PathBuf::from("/tmp"));
+    assert_eq!(
+        claude_wrap::tmp_base(Path::new("/tmp"), 1001),
+        PathBuf::from("/tmp")
+    );
+    assert_eq!(
+        claude_wrap::tmp_base(Path::new("/run/t"), 1001),
+        PathBuf::from("/run/t"),
+        "a short temporary folder of the system's is kept"
+    );
+    // Made where it can be: in `/tmp`, or, where that is refused, in the system's own.
+    let own = claude_wrap::own_tmp().expect("a folder of its own");
+    assert!(own.path().is_dir());
+    let uid = rustix::process::getuid().as_raw();
+    let rooted = own.path().join(format!("claude-{uid}"));
+    let base = claude_wrap::tmp_base(&std::env::temp_dir(), uid);
+    assert!(
+        own.path().parent() != Some(base.as_path())
+            || rooted.as_os_str().len() <= claude_wrap::ROOTED_TMP_MAX,
+        "{rooted:?} is past what Claude Code roots its sandbox's $TMPDIR in"
+    );
+}

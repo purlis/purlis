@@ -108,7 +108,7 @@ const tabOf = (tabs: Tabs, number: number) =>
   tabs.order.find((id) => panesOf(tabs, id).some((one) => one.session === number)) ?? -1;
 
 describe("where a task is drawn, as rows of the catalogue (#1489, V100-38)", () => {
-  it("offers each task a tab of its own and a pane beside its session, and no way back from nowhere", () => {
+  it("offers each task a tab of its own and a pane beside the chat that asked for it, and no way back from nowhere", () => {
     const rows = rowsOf(sessions());
 
     expect(rows.get(ownTabId(2))).toMatchObject({
@@ -161,7 +161,7 @@ describe("where a task is drawn, as rows of the catalogue (#1489, V100-38)", () 
     });
   });
 
-  it("gives a task beside its session a minimise on its pane, and leaves the session's pane its close", () => {
+  it("gives a task beside the chat that asked a minimise on its pane, and leaves the session's pane its close", () => {
     const tabs = openBeside(sessions(), 2, askedByOf(all), "talk");
     const id = tabOf(tabs, 1);
     const [own, beside] = panesOf(tabs, id);
@@ -282,7 +282,7 @@ describe("starting a task fresh (fix round 1, M2; #1609)", () => {
   });
 });
 
-describe("opening the task in front beside its session (#1499, #1489)", () => {
+describe("opening the task in front beside the chat that asked for it (#1499, #1489, #5679)", () => {
   it("is one row, which runs for the task the tab in front shows", () => {
     const shown = switchTabTo(sessions(), 2, askedByOf(all));
     const rows = catalogue({
@@ -294,7 +294,11 @@ describe("opening the task in front beside its session (#1499, #1489)", () => {
     }).filter((row) => row.id === BESIDE_ID);
 
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ available: true, does: { verb: "beside", session: 2 } });
+    expect(rows[0]).toMatchObject({
+      title: "Open the task in front beside the chat that asked for it",
+      available: true,
+      does: { verb: "beside", session: 2 },
+    });
   });
 
   it("cannot run where the chat in front is not a task, and says what does it", () => {

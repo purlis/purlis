@@ -1177,7 +1177,8 @@ export type Doing = {
   paneBack: () => void;
   /** Gives a task a tab of its own, in front. */
   ownTab: (session: number) => void;
-  /** Opens a task beside its session, split from its pane, with the keyboard in it. */
+  /** Opens a task beside the chat that asked for it, split from its pane, with the keyboard
+   *  in it. */
   beside: (session: number) => void;
   /** Takes a task's own tab or pane away. The task goes on, a row in the Chats list. */
   sendBack: (session: number) => void;
@@ -4978,11 +4979,11 @@ export function briefId(session: number): string {
 /** What Brief shows that its title cannot fit. */
 export const BRIEF_SAYS = "What this task was sent, as it was sent. Read-only.";
 
-/** The catalogue's id for opening the task in front beside its session. */
+/** The catalogue's id for opening the task in front beside the chat that asked for it. */
 export const BESIDE_ID = "chat.beside";
 
-/** The catalogue's id for the row that opens task `session` beside its session (#1489):
- *  what Space on its row in the Chats list presses. */
+/** The catalogue's id for the row that opens task `session` beside the chat that asked for it
+ *  (#1489): what Space on its row in the Chats list presses. */
 export function besideId(session: number): string {
   return `chat.beside:${session}`;
 }
@@ -5017,7 +5018,7 @@ export const TASK_NOT_FRESH =
 export const OWN_TAB_NOTE =
   "It gets a tab on the strip with − in place of ×. − sends it back and ends nothing. Its row in the Chats list stays.";
 
-/** What opening a task beside its session does that its title cannot fit. */
+/** What opening a task beside the chat that asked for it does that its title cannot fit. */
 export const BESIDE_NOTE =
   "Splits the pane of the chat it opens beside: that chat on one side, the task on the other. Space on its row in the Chats list.";
 
@@ -5032,6 +5033,13 @@ export const ONLY_A_TASK_OPENS_BESIDE =
  * **What sending a task back is called** (#1489, #5667): out of a tab of its own or a pane
  * beside a chat, back to being its row in the Chats list, which never left (`BACK_NOTE`). One
  * title wherever it is pressed: its minimise, its menus, the palette and its tab's chip.
+ *
+ * **It names no chat, on purpose** (#5679). Opening beside names the chat because the pane
+ * opens next to that chat's. Sending back lands on the task's own row, wherever the Chats list
+ * draws it: under the chat that asked while that chat is open, and at the top, marked "asked
+ * by … (closed)", once it is not. The asker's name would not change what the press does. It
+ * would give the title a second form that moves when the asker closes, and every place that
+ * says it would need the list of open chats to choose between the two.
  */
 export function backTitle(name: string): string {
   return `Send ${name} back to its row`;
@@ -5039,12 +5047,12 @@ export function backTitle(name: string): string {
 
 /**
  * **Where a task is drawn, as rows** (#1489, V100-38): for each task, a row that moves it to a
- * tab of its own, one that opens it beside its session, and, while it has a tab or a pane of
- * its own, one that sends it back. The rows a task's menu in the Chats list, its line in its
+ * tab of its own, one that opens it beside the chat that asked for it, and, while it has a tab
+ * or a pane of its own, one that sends it back. The rows a task's menu in the Chats list, its line in its
  * tab's menu and its pane's controls all press, and what the palette lists.
  *
  * A row that cannot run stays, with its reason: a task already in its own tab, one already
- * beside its session, one whose session has no tab to open it beside.
+ * beside it, one whose asker has no pane in this window to open it beside.
  */
 export function placeRows(
   tabs: Tabs,
@@ -5094,16 +5102,16 @@ export function placeRows(
 }
 
 /**
- * **Open the task in front beside its session** (`chat.beside`, #1499, #1489): the palette's
- * row for the task the focused pane shows. Space on a row of the Chats list presses that
- * row's own (`besideId`), so what opens is the row the key was pressed on.
+ * **Open the task in front beside the chat that asked for it** (`chat.beside`, #1499, #1489,
+ * #5679): the palette's row for the task the focused pane shows. Space on a row of the Chats
+ * list presses that row's own (`besideId`), so what opens is the row the key was pressed on.
  */
 function besideInFront(
   tabs: Tabs,
   listed: readonly ListedChat[],
   nameOf: (session: number) => string,
 ): Offer {
-  const title = "Open the task in front beside its session";
+  const title = "Open the task in front beside the chat that asked for it";
   const askedBy = askedByOf(listed);
   const shown = focusedChat(tabs);
   if (shown === undefined || askedBy(shown) === undefined)

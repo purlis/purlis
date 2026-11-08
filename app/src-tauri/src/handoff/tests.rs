@@ -13156,6 +13156,101 @@ fn a_runs_field_linked_to_a_browser_logins_key_is_refused_with_nothing_linked_or
     );
 }
 
+/// **D-5246-1** (the person's ruling, amending D-5080-11): a plain Secret ask's picker lists what
+/// a run's does, only vaults its persona may use and no entry a browser login fills, since the link
+/// it makes is read by every later run of that key, whose notice names only the persona's vault.
+#[test]
+fn a_secret_asks_picker_lists_only_entries_its_persona_may_hand_on() {
+    let plane = Plane::new().a_persona("ops", "");
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    team_and_a_kept_entry(&plane);
+    let manifest = plane.root.join(purlis_core::plane::MANIFEST);
+    let mut file = std::fs::read_to_string(&manifest).unwrap_or_default();
+    file.push_str(
+        "\n[sandbox.personas.qa.tools.shop]\nvault = \"keep\"\nbrowser = \
+         \"https://shop.example.test/login\"\nkey = \"SHOP_PW\"\n",
+    );
+    std::fs::write(&manifest, &file).expect("a teammate's login line");
+    let ctx =
+        purlis_core::secrets::Ctx::new(&plane.root, purlis_core::secrets::Env::from_process());
+    let line = purlis_core::secrets::ask::SecretAsk {
+        chat: 3,
+        key: "DEPLOY_TOKEN".to_owned(),
+        purpose: "it's finance's STRIPE".to_owned(),
+        vault: Some("team".to_owned()),
+        replace: None,
+        program: None,
+    };
+    let chat = purlis_core::secrets::ask::Chat {
+        chat: 3,
+        persona: Some("ops"),
+        harness: None,
+        asker: None,
+    };
+
+    let listed = std::thread::scope(|scope| {
+        let asks = held.secret_asks();
+        let asking = scope.spawn(|| {
+            purlis_core::secrets::ask::raised_within(
+                &ctx,
+                asks,
+                chat,
+                &line,
+                std::time::Duration::from_secs(30),
+                &|| {},
+            )
+        });
+        let open = loop {
+            if let Some(open) = held.secret_asks().open().into_iter().next() {
+                break open;
+            }
+            assert!(
+                !asking.is_finished(),
+                "the ask ended without asking the person"
+            );
+            std::thread::yield_now();
+        };
+        let listed = crate::secretasks::entries_for(&held, open.id).expect("listed");
+        held.secret_asks()
+            .answer(
+                &ctx,
+                open.id,
+                purlis_core::secrets::ask::Answer::Decline,
+                purlis_core::harness::asks::Answerer::admitted(
+                    purlis_core::harness::asks::Admitted::LocalUi,
+                )
+                .expect("the window"),
+            )
+            .expect("Not now");
+        asking.join().expect("it ends").expect("declined");
+        listed
+    });
+
+    let names: Vec<_> = listed
+        .iter()
+        .map(|one| (one.vault.as_str(), one.keys.clone()))
+        .collect();
+    assert!(
+        names.iter().all(|(vault, _)| *vault != "finance"),
+        "not another persona's vault: {names:?}"
+    );
+    assert!(
+        names
+            .iter()
+            .all(|(_, keys)| !keys.contains(&"SHOP_PW".to_owned())),
+        "not a browser login's entry: {names:?}"
+    );
+    assert!(
+        names
+            .iter()
+            .any(|(vault, keys)| *vault == "keep" && keys.contains(&"SHARED".to_owned())),
+        "what it may hand on is still listed: {names:?}"
+    );
+}
+
 /// #5080, #5240: Remember ticked on a run's notice writes the need line the person read into the
 /// persona's definition, once the value is stored; a field typed and picked at once is refused.
 #[test]

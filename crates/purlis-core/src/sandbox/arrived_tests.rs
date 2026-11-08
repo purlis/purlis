@@ -862,8 +862,70 @@ fn a_clone_the_app_says_it_made_is_not_told_and_what_it_holds_is_where_the_chat_
         &fix.folder,
         &["clone", "-q", remote.to_str().expect("a path"), "other"],
     );
-    // Its `.git` is the app's; its branches, in the chat's folder, are the chat's to write.
-    assert_eq!(fix.look(), ["made/.vscode", "other/.git", "other/.vscode"]);
+    // Its `.git` and what it held as the app made it are the app's (#5702); the other clone's
+    // branches, in the chat's folder, are the chat's to write, so they vouch for nothing.
+    assert_eq!(fix.look(), ["other/.git", "other/.vscode"]);
+    // Replaced by the chat, a name the app made is told: another folder moved into its place.
+    // Made while the first is there, as a disk may give a freed number to the next thing made.
+    file(&fix.folder.join("new/tasks.json"), "the chat's\n");
+    fs::remove_dir_all(fix.folder.join("made/.vscode")).expect("gone");
+    fs::rename(fix.folder.join("new"), fix.folder.join("made/.vscode")).expect("moved");
+    assert_eq!(fix.look(), ["made/.vscode"]);
+}
+
+/// #5702: `purlis worktree add` in a chat's folder, where the chat may write the clone's `.git`,
+/// told the new branch folder's `.git` file as an arrival. Said by the app as it makes it, the
+/// folder is not told, and the vouching rule of #5514 stands for every other.
+#[test]
+fn a_branch_folder_the_app_made_is_not_told_where_the_chat_may_write_its_clone() {
+    let fix = Fixture::new();
+    let clone = clone_behind(&fix);
+    git(&clone, &["pull", "-q", "--ff-only"]);
+    fix.begin();
+    let cut = |name: &str| {
+        let folder = fix.folder.join(".worktrees").join(name);
+        git(
+            &clone,
+            &[
+                "worktree",
+                "add",
+                "-q",
+                "-b",
+                name,
+                folder.to_str().expect("a path"),
+            ],
+        );
+        folder
+    };
+    let made = cut("made");
+    file(&made.join(".claude/settings.local.json"), "{}\n");
+    arrived::made_by_the_app(&fix.plane, &made).expect("said");
+    // The chat's own `git worktree add`, which the app did not make.
+    cut("theirs");
+    assert_eq!(
+        fix.look(),
+        [".worktrees/theirs/.git", ".worktrees/theirs/.vscode"]
+    );
+
+    // What appears in it afterwards is told, and so is its `.git` put back another way.
+    file(&made.join(".envrc"), "x\n");
+    assert_eq!(fix.look(), [".worktrees/made/.envrc"]);
+    let words = fs::read_to_string(made.join(".git")).expect("its .git");
+    file(&fix.folder.join("another"), &words);
+    fs::rename(fix.folder.join("another"), made.join(".git")).expect("moved over it");
+    assert_eq!(fix.look(), [".worktrees/made/.git"]);
+}
+
+/// What the app made is held to what it held then: a name that appears in it later is told.
+#[test]
+fn a_name_the_app_did_not_make_in_a_folder_it_made_is_told() {
+    let fix = Fixture::new();
+    fix.begin();
+    let top = fix.folder.join("made");
+    file(&top.join(".mcp.json"), "{}\n");
+    arrived::made_by_the_app(&fix.plane, &top).expect("said");
+    file(&top.join("sub/.envrc"), "x\n");
+    assert_eq!(fix.look(), ["made/sub/.envrc"]);
 }
 
 #[test]
@@ -1278,4 +1340,26 @@ fn a_placeholder_is_still_cleared_after_the_chat_starts_again() {
         &proc,
     );
     assert!(!left.exists());
+}
+
+#[test]
+fn a_notice_says_when_the_look_that_told_it_was_and_put_away_forgets_it() {
+    let fix = Fixture::new();
+    fix.begin();
+    let before = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("after the epoch")
+        .as_secs();
+    file(&fix.folder.join("moved/.envrc"), "export A=1\n");
+    assert_eq!(fix.look(), ["moved/.envrc"]);
+    let told = arrived::told(&fix.plane);
+    assert!(told[0].at.is_some_and(|at| at >= before), "{told:?}");
+    // A look that adds nothing keeps the time of the one that did.
+    let at = told[0].at;
+    assert_eq!(fix.look(), Vec::<String>::new());
+    assert_eq!(arrived::told(&fix.plane)[0].at, at);
+    arrived::put_away(&fix.plane, CHAT).expect("put away");
+    file(&fix.folder.join("other/.envrc"), "export B=1\n");
+    assert_eq!(fix.look(), ["other/.envrc"]);
+    assert!(arrived::told(&fix.plane)[0].at.is_some());
 }

@@ -497,9 +497,23 @@ use crate::view::{Limits, Views};
 /// ([`ArmedSkill`]), at most [`MOST_ARMED_SKILLS`], so a window shows a runner's chat the set its
 /// runner handed it. It gives the chat nothing: the window only lists and types them. A host
 /// before 1.77 says none, and the window says the runner does not say them.
+///
+/// 1.78 has a runner's host record its chats' turns and carry them back with its code (#5427,
+/// ADR 0068 as amended 2026-11-08): `give_code` may carry `with_turns`, and the host then names
+/// and bundles every `refs/purlis/turns/…` the repository holds beside its branches; and
+/// [`Command::UndoTurn`] has the host put back the files of a turn of one of its chats under its
+/// own idle check. A host before 1.78 records no turn of a chat on it: it is asked for none and
+/// sent no undo, and the window says why such a chat has no turn.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 77,
+    minor: 78,
+};
+
+/// The version that first records its chats' turns, gives them with its code and undoes one
+/// (#5427): no turn is asked of a host before, nor an undo sent to one.
+pub const KNOWS_TURNS: Version = Version {
+    major: 1,
+    minor: 78,
 };
 
 /// The version that first starts every login clean on its own site (#5272): no login is sent to
@@ -1206,6 +1220,11 @@ pub enum Command {
         have: Vec<String>,
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         with_work: bool,
+        /// Name and bundle the repository's turns too (1.78, #5427): every
+        /// `refs/purlis/turns/<chat>/<n>/<side>` it holds, answered among `heads`. A host before
+        /// 1.78 ignores it, and names none.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        with_turns: bool,
     },
     /// The client writes a chat's conversation into the host's harness folder (1.44, #2048), as
     /// the chat moves there: on a code stream named `transfer`, as `take_code` reads a bundle,
@@ -1244,6 +1263,23 @@ pub enum Command {
     /// **Every repository in the projects the host keeps** (1.69, #4569): answered
     /// [`Answer::ReposHeld`]. The window's alone ([`crate::grants::Power::Code`]), relayed for it.
     ReposHeld,
+    /// **Undo a turn of a chat this host runs** (1.78, #5427; ADR 0081 as amended 2026-11-05):
+    /// every file turn `number` of chat `chat` changed in `workspace`'s clone `repo` (its branch
+    /// folder `piece`, where one is named) of `project` is put back as the turn's start had it,
+    /// and the turn is marked undone, under the host's own idle check. Answered
+    /// [`Answer::TurnUndone`]; [`Answer::UndoWaits`] with nothing written while a chat working
+    /// there is not idle, or still recording its last turn; refused [`NOT_ALLOWED`] for a turn
+    /// that is not the latest not yet undone, or one whose files changed since it ended, naming
+    /// the file. The window's alone ([`crate::grants::Power::Code`]), relayed for it.
+    UndoTurn {
+        project: String,
+        workspace: String,
+        repo: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        piece: Option<String>,
+        chat: String,
+        number: u32,
+    },
     /// The person cancels the engine's download for browser `program`'s start (1.37, #2207):
     /// the download stops, nothing of it is kept, and the start is refused in words that say
     /// so. Answered [`Answer::Done`], also where nothing is downloading for it. The window's
@@ -1296,6 +1332,17 @@ pub struct CodeRef {
     pub name: String,
     /// The commit, as forty hexadecimal digits.
     pub oid: String,
+}
+
+/// **A chat an undo waits on** (1.78, #5427): [`Answer::UndoWaits`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UndoWaitsOn {
+    /// Its number on the host.
+    pub number: u32,
+    /// What it is doing, as a sentence goes on after its name: "is running". UI text, so on the
+    /// wire it is `doing`, not `state`: a `state` is a snake_case word a program reads (V76).
+    #[serde(rename = "doing")]
+    pub state: String,
 }
 
 /// **One repository a host holds** (1.69, #4569): what [`Answer::ReposHeld`] lists.
@@ -2223,6 +2270,17 @@ pub enum Answer {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         unread: Vec<String>,
     },
+    /// A turn's files are back: [`Command::UndoTurn`] (1.78). `edit` is the record of what was
+    /// put back, the human edit the window keeps and tells the chat of, as the core writes it;
+    /// `unmarked` why the turn could not be marked undone, if it could not.
+    TurnUndone {
+        edit: serde_json::Value,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        unmarked: Option<String>,
+    },
+    /// Nothing was written: these chats working there are not idle (1.78), each by its number on
+    /// the host and how a sentence says what it is doing.
+    UndoWaits { chats: Vec<UndoWaitsOn> },
     /// Whether the profile a runner keeps is signed in there, as its harness says:
     /// [`Command::KeepProfile`] (1.43).
     ProfileKept { standing: ProfileStanding },
@@ -2766,6 +2824,7 @@ wire_words!(Command {
     GiveConversation => "give_conversation",
     ClonesOf => "clones_of",
     ReposHeld => "repos_held",
+    UndoTurn => "undo_turn",
     CancelEngineDownload => "cancel_engine_download",
     NoteProgram => "note_program",
     LogEnd => "log_end",
@@ -2833,7 +2892,8 @@ impl Command {
             | Command::TakeConversation { .. }
             | Command::GiveConversation { .. }
             | Command::ClonesOf { .. }
-            | Command::ReposHeld => Power::Code,
+            | Command::ReposHeld
+            | Command::UndoTurn { .. } => Power::Code,
             Command::LogEnd => Power::EventLog,
             Command::AskGrade { .. } => Power::AskGrade,
             Command::AnswerGrade { .. } | Command::GradeStep { .. } => Power::RunGrade,
@@ -2907,6 +2967,8 @@ wire_words!(Answer {
     Conversation => "conversation",
     Clones => "clones",
     ReposHeld => "repos_held",
+    TurnUndone => "turn_undone",
+    UndoWaits => "undo_waits",
     ProfileKept => "profile_kept",
     Profiles => "profiles",
     SettingsHeld => "settings_held",
@@ -3364,6 +3426,7 @@ impl Lane {
             | Command::GiveConversation { .. }
             | Command::ClonesOf { .. }
             | Command::ReposHeld
+            | Command::UndoTurn { .. }
             // Waits on the window, which may be asked more meanwhile.
             | Command::AskGrade { .. }
             // Never behind the start it cancels, which waits on the download.
@@ -4235,6 +4298,7 @@ impl Client {
             transfer,
             have,
             with_work: true,
+            with_turns: false,
         })
         .await
     }
@@ -4331,8 +4395,57 @@ impl Client {
             transfer,
             have,
             with_work: false,
+            with_turns: false,
         })
         .await
+    }
+
+    /// [`Client::give_code`], with the repository's turns among the refs answered (1.78,
+    /// #5427): only of a host of [`KNOWS_TURNS`] or later.
+    pub async fn give_code_with_turns(
+        &self,
+        project: &str,
+        repo: &str,
+        transfer: u64,
+        have: Vec<String>,
+    ) -> Result<Vec<CodeRef>, CallError> {
+        self.code(Command::GiveCode {
+            project: project.to_owned(),
+            repo: repo.to_owned(),
+            transfer,
+            have,
+            with_work: false,
+            with_turns: true,
+        })
+        .await
+    }
+
+    /// **Have the host undo turn `number` of chat `chat`** in `workspace`'s clone `repo` of
+    /// `project`, its branch folder `piece` where one is named (1.78, #5427).
+    #[allow(clippy::too_many_arguments)]
+    pub async fn undo_turn(
+        &self,
+        project: &str,
+        workspace: &str,
+        repo: &str,
+        piece: Option<&str>,
+        chat: &str,
+        number: u32,
+    ) -> Result<Answer, CallError> {
+        match self
+            .call(Command::UndoTurn {
+                project: project.to_owned(),
+                workspace: workspace.to_owned(),
+                repo: repo.to_owned(),
+                piece: piece.map(str::to_owned),
+                chat: chat.to_owned(),
+                number,
+            })
+            .await?
+        {
+            answer @ (Answer::TurnUndone { .. } | Answer::UndoWaits { .. }) => Ok(answer),
+            other => Err(unexpected(&other)),
+        }
     }
 
     async fn code(&self, command: Command) -> Result<Vec<CodeRef>, CallError> {

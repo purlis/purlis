@@ -18,7 +18,7 @@ use specta::Type;
 use purlis_core::settings::Which;
 use purlis_core::skills::review as summary;
 use purlis_core::skills::source::{
-    self, Accepted, AcceptedSkill, Commit, Remote, Source, VaultEntry,
+    self, Accepted, AcceptedSkill, Commit, Origin, Pin, Remote, Source, VaultEntry,
 };
 use purlis_core::skills::tree;
 
@@ -138,6 +138,16 @@ impl From<&Commit> for SourceCommit {
         SourceCommit {
             id: commit.as_str().to_owned(),
             short: commit.short().to_owned(),
+        }
+    }
+}
+
+/// A pin, a git source's commit or an extension's revision, as the window shows a commit.
+impl From<&Pin> for SourceCommit {
+    fn from(pin: &Pin) -> Self {
+        SourceCommit {
+            id: pin.as_str().to_owned(),
+            short: pin.short().to_owned(),
         }
     }
 }
@@ -502,7 +512,7 @@ pub struct ReviewedSkill {
 impl From<&Accepted> for Reviewed {
     fn from(accepted: &Accepted) -> Self {
         Reviewed {
-            commit: accepted.commit.as_str().to_owned(),
+            commit: accepted.pin.as_str().to_owned(),
             skills: accepted
                 .skills
                 .iter()
@@ -519,8 +529,10 @@ impl TryFrom<&Reviewed> for Accepted {
     type Error = String;
     fn try_from(reviewed: &Reviewed) -> Result<Accepted, String> {
         Ok(Accepted {
-            commit: Commit::parse(&reviewed.commit)
-                .ok_or_else(|| "That review is not one purlis gave.".to_owned())?,
+            pin: Pin::Commit(
+                Commit::parse(&reviewed.commit)
+                    .ok_or_else(|| "That review is not one purlis gave.".to_owned())?,
+            ),
             skills: reviewed
                 .skills
                 .iter()
@@ -574,13 +586,46 @@ pub enum InstallSetReview {
     },
 }
 
-/// One newer commit offered for an installed skill.
+/// **Where an installed skill came from** (#3092): a git source, by its repository and branch,
+/// or an extension's source, by the extension's id; `label` as a person reads it either way.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum SourceOrigin {
+    Git { remote: SourceRemote, label: String },
+    Extension { id: String, label: String },
+}
+
+impl From<&Origin> for SourceOrigin {
+    fn from(origin: &Origin) -> Self {
+        match origin {
+            Origin::Git(remote) => SourceOrigin::Git {
+                label: esc(&remote.to_string()),
+                remote: remote.into(),
+            },
+            Origin::Extension(id) => SourceOrigin::Extension {
+                id: esc(id),
+                label: esc(id),
+            },
+        }
+    }
+}
+
+impl SourceOrigin {
+    pub(crate) fn core(&self) -> Origin {
+        match self {
+            SourceOrigin::Git { remote, .. } => Origin::Git(remote.core()),
+            SourceOrigin::Extension { id, .. } => Origin::Extension(id.clone()),
+        }
+    }
+}
+
+/// One newer commit, or an extension's newer revision, offered for an installed skill.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct SkillUpdateOffer {
     pub name: String,
     pub level: SkillLevel,
     pub label: String,
-    pub remote: SourceRemote,
+    pub source: SourceOrigin,
     pub pinned: SourceCommit,
     pub newer: SourceCommit,
     pub edited: bool,
@@ -805,7 +850,7 @@ pub(crate) async fn skill_sources_checked(
 /// Seconds since the epoch as the window reads a number: exact for every second before the year
 /// 285 million.
 #[allow(clippy::cast_precision_loss)]
-fn seconds(at: u64) -> f64 {
+pub(crate) fn seconds(at: u64) -> f64 {
     at as f64
 }
 
@@ -822,7 +867,7 @@ fn checked_shown(root: &std::path::Path) -> Result<Vec<SourceChecked>, String> {
                 remote: (&remote).into(),
                 at: last.map(|at| seconds(at.at)),
                 skills: last.and_then(|at| at.skills),
-                installed: source::checked::installed_from(&locked, &remote),
+                installed: source::checked::installed_from(&locked, &Origin::Git(remote.clone())),
             }
         })
         .collect())
@@ -1113,13 +1158,19 @@ pub(crate) async fn skill_install(
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_updates(
+    views: tauri::State<'_, crate::views::Views>,
     planes: tauri::State<'_, crate::planes::Planes>,
     plane: crate::planes::PlaneId,
 ) -> Result<SkillUpdates, String> {
     let held = planes.held(&plane)?;
+    let executor = views.executor();
     crate::off_the_window("asking the skill sources", move || {
         flag_on()?;
-        let found = source::updates(held.root());
+        // An extension's source is asked its newest revision through the executor's gate, as
+        // every studio question is (ADR 0101).
+        let found = purlis_core::skills::studio::with_studio(&executor, held.root(), |studio| {
+            source::updates(held.root(), studio)
+        });
         Ok(SkillUpdates {
             offers: found
                 .offers
@@ -1128,7 +1179,7 @@ pub(crate) async fn skill_updates(
                     label: one.level.to_string(),
                     level: (&one.level).into(),
                     name: esc(&one.name),
-                    remote: (&one.remote).into(),
+                    source: (&one.source).into(),
                     pinned: (&one.pinned).into(),
                     newer: (&one.newer).into(),
                     edited: one.edited,
@@ -1170,25 +1221,30 @@ pub(crate) async fn skill_update_review(
     crate::off_the_window("reviewing the update", move || {
         flag_on()?;
         let update = source::update_review(held.root(), &(&level).into(), &name)?;
-        Ok(UpdateReview {
-            name: esc(&update.name),
-            pinned: (&update.pinned).into(),
-            newer: (&update.newer).into(),
-            from_pin: update.from_pin,
-            added: (&update.changes.added).into(),
-            removed: (&update.changes.removed).into(),
-            files: files_shown(&update.files),
-            edited: update.edited.iter().map(|e| esc(e)).collect(),
-            local_edits: files_shown(&update.local_edits),
-            skill: (&update.review).into(),
-            brought: update.brought.iter().map(Into::into).collect(),
-            grant: update.grant.clone().map(Into::into),
-            widenings: update.widenings.iter().map(Into::into).collect(),
-            accepted: (&update.accepted()).into(),
-            gained: update.gained.iter().copied().map(Into::into).collect(),
-        })
+        Ok(update_shown(&update))
     })
     .await
+}
+
+/// An update's review as the window shows it.
+pub(crate) fn update_shown(update: &source::UpdateReview) -> UpdateReview {
+    UpdateReview {
+        name: esc(&update.name),
+        pinned: (&update.pinned).into(),
+        newer: (&update.newer).into(),
+        from_pin: update.from_pin,
+        added: (&update.changes.added).into(),
+        removed: (&update.changes.removed).into(),
+        files: files_shown(&update.files),
+        edited: update.edited.iter().map(|e| esc(e)).collect(),
+        local_edits: files_shown(&update.local_edits),
+        skill: (&update.review).into(),
+        brought: update.brought.iter().map(Into::into).collect(),
+        grant: update.grant.clone().map(Into::into),
+        widenings: update.widenings.iter().map(Into::into).collect(),
+        accepted: (&update.accepted()).into(),
+        gained: update.gained.iter().copied().map(Into::into).collect(),
+    }
 }
 
 /// **Accepts an update** that was reviewed: the pin moves, as one commit. `grant` is the grant
@@ -1214,6 +1270,8 @@ pub(crate) async fn skill_update(
     })
     .await
 }
+
+pub(crate) mod extension;
 
 #[cfg(test)]
 mod tests;

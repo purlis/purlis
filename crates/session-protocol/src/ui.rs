@@ -274,6 +274,17 @@ pub const WINDOW_ONLY: &[&str] = &[
     "forge_device_sign_in_start",
     "forge_device_sign_in_wait",
     "forge_device_sign_in_cancel",
+    // Signed commits, set up from the window (#5628, ADR 0116 §2): GitHub asked for signing
+    // setup's permission, this device's signing key made, added to the account, watched for and
+    // checked. The key is the app's and never a chat's, so no link reaches any of them.
+    "forge_signing_permission_start",
+    "forge_signing_permission_wait",
+    "signing_state",
+    "signing_key_shown",
+    "signing_make_key",
+    "signing_add_key",
+    "signing_key_listed",
+    "signing_check",
     // Agent identity (#4485): GitHub's App flow, the tool lines and the key, each the person's.
     "agent_identities",
     "agent_identity_create",
@@ -808,6 +819,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // person's press in their window after the estimate showed what they may spend.
     "skill_grades_start",
     "skill_grades_stop",
+    // A stopped grade resumed (#5718): as a grade, it runs chats on the person's profile and
+    // spends, on their press in their window after its plan showed what is left and its cap.
+    "skill_grade_resume",
     // A grade of a router started (SK-15e, #3233): as a skill's grade, it runs chats on the
     // person's profile and records the grade in the project. Stopped by `skill_grade_stop`.
     "router_grade_start",
@@ -845,6 +859,15 @@ pub const WINDOW_ONLY: &[&str] = &[
     "skill_updates",
     "skill_update_review",
     "skill_update",
+    // Extension skill sources (#3092, #3089): each asks an extension the person approved, and an
+    // install or an update is one commit to the project, of what the person's review read.
+    "skill_extension_sources",
+    "skill_extension_source_browse",
+    "skill_extension_install_review",
+    "skill_extension_install_set_review",
+    "skill_extension_install",
+    "skill_extension_update_review",
+    "skill_extension_update",
     // A publish and an export: the person's own press in their window (#2781).
     "skill_publish_review",
     "skill_publish",
@@ -1423,6 +1446,9 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     // only.
     "skill_grades_plan",
     "skill_grades_running",
+    // What resuming a stopped grade, or several, would run and spend (#5718): read only.
+    "skill_grade_resume_plan",
+    "skill_grades_resume_plan",
     // A skill's grades, for its Grades tab (S6, #3688), and a draft's (#2780): read only.
     "skill_grades",
     "skill_draft_grade",

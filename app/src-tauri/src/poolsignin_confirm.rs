@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! **A pool sign-in started from the command is confirmed in the window**, and so is a profile
-//! taken off a pool from the command (#5174). `purlis profile sign-in --pool` and `purlis pool
+//! taken off a pool from the command (#5174), and a commit `purlis signing check` asks GitHub
+//! about with the window's sign-in (#5625). `purlis profile sign-in --pool` and `purlis pool
 //! remove-profile` ask over the window line (`purlis_core::windowline`), and the answer is the
 //! person's press in the dialog (`PoolSignInConfirm.tsx`), through commands only the window may
 //! call (`ui::WINDOW_ONLY`).
@@ -34,6 +35,9 @@ pub enum Asks {
     SignIn,
     /// `purlis pool remove-profile`: its runner forgets the profile, and its sign-in there.
     TakeOff,
+    /// `purlis signing check` (#5625): the window asks GitHub how a pushed commit shows. Its
+    /// `profile` is the repository (`owner/name`) and its `pool` the commit.
+    SigningCheck,
 }
 
 /// What the person is asked.

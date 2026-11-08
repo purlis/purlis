@@ -184,6 +184,36 @@ pub struct Detail {
         skip_serializing_if = "crate::skillspan::PromptMarks::is_empty"
     )]
     pub prompt_marks: crate::skillspan::PromptMarks,
+    /// On a `StopFailure`: which kind of error ended the turn, as the harness's own category
+    /// names it (#5718). Absent on every other event, and from an older hook.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failed: Option<Failed>,
+}
+
+/// **Which kind of error ended a turn** (#5718), read from the harness's own category of it
+/// (Claude Code's `StopFailure` `error`), never from what it printed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Failed {
+    /// Its usage limit was reached (`rate_limit`).
+    UsageLimit,
+    /// It could not reach its service (`server_error`, which Claude Code names a connection's
+    /// failure by).
+    Unreachable,
+    /// Any other: a service at capacity, a sign-in, a bill, a request it refused, or one purlis
+    /// does not know.
+    Other,
+}
+
+impl Failed {
+    /// The kind the category `error` names.
+    pub fn of(error: Option<&str>) -> Self {
+        match error {
+            Some("rate_limit") => Self::UsageLimit,
+            Some("server_error") => Self::Unreachable,
+            _ => Self::Other,
+        }
+    }
 }
 
 /// **What a harness's notification says it is** (#1691): a prompt its terminal shows, of the
@@ -303,6 +333,9 @@ pub enum Event {
     Notification,
     SubagentStop,
     Stop,
+    /// **A turn an API error ended**, in place of its `Stop` (#5718): [`Detail::failed`] says
+    /// which kind of error, as the harness named it.
+    StopFailure,
     SessionEnd,
 }
 
@@ -317,6 +350,7 @@ impl Event {
             "notification" => Self::Notification,
             "subagentstop" => Self::SubagentStop,
             "stop" => Self::Stop,
+            "stopfailure" => Self::StopFailure,
             "sessionend" => Self::SessionEnd,
             // Every other word is a TOOL hook (`hookreg`), answered by the guards and never
             // reported: a tool call carries no chat state the app draws.
@@ -357,6 +391,8 @@ impl Event {
                 crate::ownwork::Said::helpers_of_an_older_hook(),
             )),
             Self::Stop => Said::Turn(Turn::Ended),
+            // An error ended the turn: the next move is the person's, as at any turn's end.
+            Self::StopFailure => Said::Turn(Turn::Ended),
             Self::SessionEnd => Said::Session(match detail.ending {
                 Ending::Cleared => Session::ClearedAway,
                 Ending::ForGood => Session::Ended,
@@ -372,6 +408,7 @@ impl Event {
             Self::Notification => "notification",
             Self::SubagentStop => "subagentstop",
             Self::Stop => "stop",
+            Self::StopFailure => "stopfailure",
             Self::SessionEnd => "sessionend",
         }
     }

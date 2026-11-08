@@ -296,6 +296,9 @@ impl Report {
                         .unwrap_or_default(),
                     _ => crate::skillspan::PromptMarks::default(),
                 },
+                // Which kind of error ended the turn, by the harness's own category (#5718).
+                failed: (event == Event::StopFailure)
+                    .then(|| crate::state::Failed::of(field("error").as_deref())),
             },
         })
     }

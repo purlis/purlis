@@ -53,6 +53,7 @@ import { EndingChat } from "../EndingChat";
 import { AskFirst } from "../ExtensionAction";
 import { Extensions } from "../Extensions";
 import { ForgeDeviceSignIn } from "../ForgeDeviceSignIn";
+import { SigningSetupDialog } from "../SigningSetupDialog";
 import { ForgeGitLabSignIn } from "../ForgeGitLabSignIn";
 import { ForgeTokenSignIn } from "../ForgeTokenSignIn";
 import { AddDockerPoolHost } from "../AddDockerPool";
@@ -85,6 +86,7 @@ import { RenameChat } from "../RenameChat";
 import { WorkspaceWriteDialog } from "../WorkspaceWrites";
 import { RenameWorkspace } from "../RenameWorkspace";
 import { AddVision } from "../AddVision";
+import { ResumeQuestion } from "../GradeResume";
 import { DeprecateDialog, OwnersDialog } from "../SkillPage";
 import { NewSkillDialog } from "../NewSkillDialog";
 import { DeleteDialog, MoveDialog, RenameDialog } from "../SkillChangeDialogs";
@@ -451,6 +453,18 @@ const SKILL: StudioSkill = {
 function dialogCore() {
   mockIPC((cmd) => {
     switch (cmd) {
+      case "signing_state":
+        return {
+          on: false,
+          title: "purlis · studio",
+          account: {
+            login: "octocat",
+            host: "github.com",
+            forge: "GitHub",
+            may_add: false,
+            verified_as: null,
+          },
+        };
       case "pool_sign_in_asked":
         return { id: 1, asks: "sign-in", profile: "work", pool: "team", code: "A1B2C3" };
       case "installed_extensions":
@@ -1054,6 +1068,14 @@ const DIALOGS: Opened[] = [
     },
   },
   {
+    name: "Set up signing, at its first step",
+    file: "SigningSetupDialog.tsx",
+    open: async () => {
+      render(<SigningSetupDialog onClose={nothing} />);
+      await screen.findByText(/macOS will ask next/);
+    },
+  },
+  {
     name: "the GitLab browser sign-in, waiting for the browser",
     file: "ForgeGitLabSignIn.tsx",
     open: async () => {
@@ -1419,6 +1441,37 @@ const DIALOGS: Opened[] = [
           renaming={false}
           onRename={nothing}
           onCancel={nothing}
+        />,
+      ),
+  },
+  {
+    name: "resuming a stopped grade, from its scorecard (#5718)",
+    file: "GradeResume.tsx",
+    open: async () =>
+      render(
+        <ResumeQuestion
+          plane={PLANE}
+          plan={{
+            grade: "01STOPPED",
+            skill: "deploy",
+            ended: "Stopped at the token cap",
+            refused: null,
+            waits_until: null,
+            left: 14,
+            tokens_left: 40000,
+            usd_left: 0.3,
+            token_cap: 200000,
+            cap_set_here: true,
+            limit_usd: 1.5,
+            earlier_tokens: 240000,
+            earlier_usd: 1.71,
+            profile: "work",
+            model: "sonnet",
+            consent: "be5ume",
+            running: null,
+          }}
+          onClose={nothing}
+          onResumed={nothing}
         />,
       ),
   },

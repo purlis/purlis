@@ -63,3 +63,34 @@ export const TakingOff: StoryObj<typeof PoolSignInConfirm> = {
     await untilFocused(() => cancel, "Shift+Tab goes back to Cancel");
   },
 };
+
+/** `purlis signing check` (#5625): the window asks GitHub how a pushed commit shows, on a yes. */
+export const SigningCheck: StoryObj<typeof PoolSignInConfirm> = {
+  beforeEach: () => {
+    mockIPC(
+      (cmd) =>
+        cmd === "pool_sign_in_asked"
+          ? {
+              id: 1,
+              asks: "signing-check",
+              profile: "octo/hello",
+              pool: "0123abc",
+              code: "A1B2C3",
+            }
+          : null,
+      { shouldMockEvents: true },
+    );
+    return () => clearMocks();
+  },
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement.ownerDocument.body);
+    const cancel = await page.findByRole("button", { name: "Cancel" });
+    await untilFocused(() => cancel, "It starts on Cancel");
+    const check = page.getByRole("button", { name: "Check it" });
+    await waitFor(() => expect(check).toBeEnabled(), { timeout: 4000 });
+    await userEvent.tab();
+    await untilFocused(() => check, "Tab reaches Check it");
+    await userEvent.keyboard("{Shift>}{Tab}{/Shift}");
+    await untilFocused(() => cancel, "Shift+Tab goes back to Cancel");
+  },
+};

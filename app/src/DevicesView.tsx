@@ -41,6 +41,7 @@ import { removePool } from "./pools";
 import { RemovePool } from "./settings/pools";
 import { HeldRunnerNotice } from "./HeldRunnerNotice";
 import { KeptRunnerNotice } from "./KeptRunnerNotice";
+import { notCheckedFact } from "./notChecked";
 import {
   arranged,
   contactSaid,
@@ -144,11 +145,13 @@ function DeviceSection({
     runner === undefined ? undefined : contactSaid(answerOf(asked)?.contacted ?? null, now),
     held
       ? "An older runner purlis kept with what its chats left, until you bring their conversations back or discard them"
-      : runner?.draining === true && runner.left.length > 0
-        ? "An older runner purlis keeps, since it holds work purlis can't bring back"
-        : runner?.draining === true
-          ? "An older runner: it keeps its chats until they end, then purlis removes it"
-          : undefined,
+      : runner?.draining === true && runner.not_checked != null
+        ? notCheckedFact(runner.not_checked)
+        : runner?.draining === true && runner.left.length > 0
+          ? "An older runner purlis keeps, since it holds work purlis can't bring back"
+          : runner?.draining === true
+            ? "An older runner: it keeps its chats until they end, then purlis removes it"
+            : undefined,
   ].filter((one) => one !== undefined);
   const more = notOpenSaid(asked);
   const nothing = row.chats.length === 0 && row.browsers.length === 0 && more === undefined;
@@ -317,13 +320,16 @@ export function DevicesView({ now = new Date() }: { now?: Date }) {
                 onDone={() => void rereadDevices()}
               />,
             ]
-          : row.runner !== undefined && row.runner.draining && row.runner.left.length > 0
+          : row.runner !== undefined &&
+              row.runner.draining &&
+              (row.runner.left.length > 0 || row.runner.not_checked != null)
             ? [
                 <KeptRunnerNotice
                   key={`kept:${row.key}`}
                   runner={row.runner.runner}
                   pool={row.runner.pool}
                   left={row.runner.left}
+                  notChecked={row.runner.not_checked}
                   onDone={() => void rereadDevices()}
                   onNotGone={() => void rereadDevices()}
                 />,

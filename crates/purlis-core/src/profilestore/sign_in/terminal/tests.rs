@@ -7,7 +7,9 @@ use super::super::driven::{LONGEST, drive_with};
 use super::super::{Login, Standing};
 use super::*;
 
-const PAGE: &str = "https://claude.ai/oauth/authorize?code=true&state=recorded";
+const PAGE: &str = "https://claude.ai/oauth/authorize?code=true&client_id=9d1c250a-e61b-44d9-88ed-\
+                    5944d1962f5e&response_type=code&redirect_uri=https%3A%2F%2Fplatform.claude.com\
+                    %2Foauth%2Fcode%2Fcallback&state=recorded";
 
 /// A terminal that writes down what it was told, in order.
 #[derive(Default)]
@@ -29,7 +31,7 @@ fn claude(then: &str) -> Login {
         program: "/bin/sh".to_owned(),
         args: vec![
             "-c".to_owned(),
-            format!("printf 'visit: {PAGE}\\nPaste code here if prompted > '; {then}"),
+            format!("printf 'visit: %s\\nPaste code here if prompted > ' '{PAGE}'; {then}"),
         ],
         env: Vec::new(),
         cleared: Vec::new(),

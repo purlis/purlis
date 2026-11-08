@@ -197,7 +197,15 @@ const SCORECARD: RouterGradeScorecard = {
   ended: "Finished",
   outcome: "graded",
   arms: { router: 90, built_in: 80 },
-  spent: { chats: 60, tokens: 240000, cost_usd: 1.84, limit_usd: 15 },
+  spent: {
+    chats: 60,
+    tokens: 240000,
+    cost_usd: 1.84,
+    limit_usd: 15,
+    resumed: false,
+    earlier_tokens: null,
+    earlier_usd: null,
+  },
   asked: 0,
   skills: [
     {

@@ -508,7 +508,20 @@ impl HarnessAdapter for ClaudeCode {
                     words.charters,
                 ]
                 .concat(),
-                env: Vec::new(),
+                // Its own temporary folder (#5675): Claude Code roots its temporary files
+                // and its sandbox's `$TMPDIR` there, not in the `/tmp/claude-<uid>` every chat
+                // on the machine would share.
+                env: at
+                    .confinement
+                    .and_then(crate::sandbox::Confinement::tmp)
+                    .map(|tmp| {
+                        (
+                            crate::sandbox::claude_wrap::TMP_ENV.to_owned(),
+                            tmp.display().to_string(),
+                        )
+                    })
+                    .into_iter()
+                    .collect(),
             }),
             _ => Err(super::adapter::not_compiled_for(Harness::ClaudeCode)),
         }

@@ -750,11 +750,12 @@ fn members_of(
             })
             .collect());
     };
-    let members: Vec<set::Member> = set::installed_from(root, &remote, None)
-        .into_iter()
-        .map(|one| one.member)
-        .filter(|member| !at.named() || member.level == at.level())
-        .collect();
+    let members: Vec<set::Member> =
+        set::installed_from(root, &source::Origin::Git(remote.clone()), None)
+            .into_iter()
+            .map(|one| one.member)
+            .filter(|member| !at.named() || member.level == at.level())
+            .collect();
     if members.is_empty() {
         return Err(nothing_from(&remote));
     }
@@ -773,7 +774,7 @@ fn names_of(
         return Ok(names.to_vec());
     };
     let mut found: Vec<String> = Vec::new();
-    for one in set::installed_from(root, &remote, None) {
+    for one in set::installed_from(root, &source::Origin::Git(remote.clone()), None) {
         let at_the_projects_level = one.member.level == Level::project();
         if (!project || at_the_projects_level) && !found.contains(&one.member.name) {
             found.push(one.member.name);
@@ -1495,7 +1496,13 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             }
         },
         SkillCommand::Update { name: None, .. } => {
-            let found = source::updates(root);
+            // An extension's source is asked its newest revision through the executor's gate, as
+            // the studio asks it (ADR 0101).
+            let executor =
+                Executor::with_built_in(purlis_core::extension::BuiltIn::of_this_program());
+            let found = purlis_core::skills::studio::with_studio(&executor, root, |studio| {
+                source::updates(root, studio)
+            });
             for one in &found.unasked {
                 voice::warn(esc(&format!("{} ({}): {}", one.name, one.level, one.why)).to_string());
             }
@@ -1573,6 +1580,9 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             ..
         } => {
             let level = at.level();
+            if from_an_extension(root, &level, &name) {
+                return update_from_an_extension(&mut cx, &level, &name, yes);
+            }
             let update = match source::update_review(root, &level, &name) {
                 Ok(update) => update,
                 Err(why) => {
@@ -2994,6 +3004,61 @@ fn already_text(skill: &source::SkillReview, widenings: &[source::Widening], by:
     out
 }
 
+/// Whether the installed skill `name` at `level` came from an extension's source.
+fn from_an_extension(root: &std::path::Path, level: &Level, name: &str) -> bool {
+    source::lock::read(root, source::Kept::of(level)).is_ok_and(|held| {
+        held.lock
+            .skills
+            .iter()
+            .any(|one| one.is(level, name) && matches!(one.source, source::Origin::Extension(_)))
+    })
+}
+
+/// `purlis skill update <name>` for a skill an extension's source answered (#3089): its review,
+/// asked through the executor's gate, printed and asked about, then the update from what that
+/// review read, the extension not asked again.
+fn update_from_an_extension(
+    cx: &mut verbs::Ctx<'_>,
+    level: &Level,
+    name: &str,
+    yes: bool,
+) -> Result<Code, String> {
+    let root = cx.plane;
+    let executor = Executor::with_built_in(purlis_core::extension::BuiltIn::of_this_program());
+    purlis_core::skills::studio::with_studio(&executor, root, |studio| {
+        let Some(studio) = studio else {
+            voice::err("purlis cannot start its extensions here, so the source was not asked.");
+            return Ok(1);
+        };
+        let (update, held) = match source::extension::update_review(studio, root, level, name) {
+            Ok(read) => read,
+            Err(why) => {
+                voice::err(esc(&why).to_string());
+                return Ok(1);
+            }
+        };
+        print!("{}", update_text(&update));
+        if !yes
+            && !asked(&format!(
+                "Update {} to {}?",
+                esc(name),
+                esc(update.newer.short())
+            ))
+        {
+            voice::info("Nothing was changed.");
+            return Ok(1);
+        }
+        done(source::extension::update(
+            cx,
+            &held,
+            level,
+            name,
+            &update.accepted(),
+            update.grant.as_ref(),
+        ))
+    })
+}
+
 /// An update's review as the terminal prints it: the summary's changes, then each file's diff,
 /// the edits made here, and the skills that come along. Every field escaped.
 fn update_text(update: &source::UpdateReview) -> String {
@@ -3001,13 +3066,16 @@ fn update_text(update: &source::UpdateReview) -> String {
         "Update of {} at {}: {} -> {}\n",
         esc(&update.name),
         update.level,
-        update.pinned.short(),
-        update.newer.short()
+        esc(update.pinned.short()),
+        esc(update.newer.short())
     );
     if !update.from_pin {
-        out.push_str(
-            "The pinned commit is no longer in the source: compared with the copy here.\n",
-        );
+        out.push_str(match update.pinned {
+            source::Pin::Commit(_) => {
+                "The pinned commit is no longer in the source: compared with the copy here.\n"
+            }
+            source::Pin::Revision(_) => "Compared with the copy here.\n",
+        });
     }
     if update.changes.is_empty() {
         out.push_str("The summary does not change.\n");

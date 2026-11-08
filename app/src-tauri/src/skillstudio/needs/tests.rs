@@ -318,7 +318,7 @@ fn the_old_plugin_keys_are_a_tidy_up_after_every_other_kind() {
         removable: true,
     };
 
-    let needs = with_old_keys(of(&studio), Some(&old));
+    let needs = with_old_keys(of(&studio), Some(&old), Vec::new());
 
     assert_eq!(
         kinds(&needs),
@@ -329,7 +329,7 @@ fn the_old_plugin_keys_are_a_tidy_up_after_every_other_kind() {
     );
     assert_eq!(needs[1].fix, NeedFix::RemoveOldKeys);
     assert_eq!(needs[1].tag.as_deref(), Some("charter.toml"));
-    assert_eq!(with_old_keys(Vec::new(), None), []);
+    assert_eq!(with_old_keys(Vec::new(), None, Vec::new()), []);
 
     // Keys no file can be proposed without are left, which asks no more.
     let kept = old_keys(&crate::oldplugins::OldHarnessPlugins {

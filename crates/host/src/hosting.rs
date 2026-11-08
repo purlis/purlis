@@ -3124,6 +3124,27 @@ impl Hosting {
         Ok(Answer::Done)
     }
 
+    /// **Undo a turn of a chat this host runs** (1.78, #5427): in a project it keeps itself, by
+    /// the project's hook channel, which hears its chats and keeps their turns and board, so the
+    /// undo is under this host's own idle check. A project with no channel records no turn.
+    async fn undo_turn(
+        &self,
+        project: &str,
+        turn: crate::hearing::TurnToUndo,
+        peer: &Peer,
+    ) -> Result<Answer, Refusal> {
+        self.kept_project_held(project, peer)?;
+        let channel = self
+            .held_channel(project, peer)?
+            .ok_or_else(records_no_turns)?;
+        tokio::task::spawn_blocking(move || channel.undo_turn(&turn))
+            .await
+            .map_err(|why| Refusal {
+                code: session::NOT_STARTED.into(),
+                why: format!("the undo did not finish: {why}"),
+            })?
+    }
+
     /// The hook channel of `project`, where it has one, for the link `peer` came on, which must
     /// hold the project.
     fn held_channel(
@@ -3899,8 +3920,13 @@ impl session::Host for Hosting {
                 transfer,
                 have,
                 with_work,
+                with_turns,
             } => {
-                let way = crate::code::Way::Out { have, with_work };
+                let way = crate::code::Way::Out {
+                    have,
+                    with_work,
+                    with_turns,
+                };
                 self.move_code(&project, repo, transfer, way, peer).await
             }
             Command::TakeConversation {
@@ -3940,6 +3966,23 @@ impl session::Host for Hosting {
                 self.clones_of(&project, workspace, peer).await
             }
             Command::ReposHeld => self.repos_held().await,
+            Command::UndoTurn {
+                project,
+                workspace,
+                repo,
+                piece,
+                chat,
+                number,
+            } => {
+                let turn = crate::hearing::TurnToUndo {
+                    workspace,
+                    repo,
+                    piece,
+                    chat,
+                    number,
+                };
+                self.undo_turn(&project, turn, peer).await
+            }
             Command::StartProgram(start) => {
                 if let Some(projects) = self.projects_kept_in() {
                     self.code().program_starting(&projects)?;
@@ -4699,6 +4742,14 @@ fn stop_together(programs: Vec<Arc<dyn Running>>) {
         while !thread.is_finished() && std::time::Instant::now() < deadline {
             std::thread::sleep(Duration::from_millis(10));
         }
+    }
+}
+
+/// What a host whose project hears no hooks answers an undo: it records no turn there.
+pub(crate) fn records_no_turns() -> Refusal {
+    Refusal {
+        code: session::NOT_ALLOWED.into(),
+        why: "this host records no turns of its chats, so it has none to undo".into(),
     }
 }
 

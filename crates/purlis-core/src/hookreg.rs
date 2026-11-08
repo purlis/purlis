@@ -61,7 +61,7 @@ impl Handler {
 }
 
 /// Every hook the Rust `charter` answers, in the order a session meets them.
-pub const HANDLERS: [Handler; 16] = [
+pub const HANDLERS: [Handler; 17] = [
     Handler {
         name: "sessionstart",
         event: "SessionStart",
@@ -157,6 +157,15 @@ pub const HANDLERS: [Handler; 16] = [
     Handler {
         name: "stop",
         event: "Stop",
+        matcher: None,
+        timeout: 5,
+    },
+    // A turn an API error ended, in place of its `Stop` (#5718): Claude Code's own category of
+    // the error, which is how a grade's chat that met the usage limit or lost the network is
+    // told, so the grade stops there and says why. Claude Code ignores what it answers.
+    Handler {
+        name: "stopfailure",
+        event: "StopFailure",
         matcher: None,
         timeout: 5,
     },
@@ -274,6 +283,7 @@ mod tests {
             "notification",
             "subagentstop",
             "stop",
+            "stopfailure",
             "sessionend",
         ] {
             assert!(

@@ -17,6 +17,7 @@ fn on(why: Option<&str>) -> On {
         models: vec!["sonnet".into()],
         model: Some("sonnet".into()),
         evals_refused: None,
+        harness: Some("claude".into()),
     }
 }
 

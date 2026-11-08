@@ -59,6 +59,26 @@ describe("a pool sign-in confirmed in the window", () => {
     expect(state.answers).toEqual([{ id: 4, yes: true }]);
   });
 
+  it("asks of a commit `purlis signing check` asks GitHub about, and answers the same way (#5625)", async () => {
+    const state = core({
+      ...ASK,
+      asks: "signing-check",
+      profile: "octo/hello",
+      pool: "0123abc",
+    });
+    render(<PoolSignInConfirm />);
+    expect(await screen.findByRole("alertdialog")).toBeTruthy();
+    expect(screen.getByText("Check 0123abc in octo/hello on GitHub?")).toBeTruthy();
+    expect(screen.getByText(/whether this commit shows as Verified/)).toBeTruthy();
+    expect(screen.getByText("A1B2C3")).toBeTruthy();
+    const yes = screen.getByRole("button", { name: "Check it" });
+    await waitFor(() => expect((yes as HTMLButtonElement).disabled).toBe(false), {
+      timeout: SIGN_IN_ARMS_AFTER_MS + 2000,
+    });
+    await userEvent.click(yes);
+    expect(state.answers).toEqual([{ id: 4, yes: true }]);
+  });
+
   it("draws nothing while nothing is asked", async () => {
     const state = core(null);
     render(<PoolSignInConfirm />);

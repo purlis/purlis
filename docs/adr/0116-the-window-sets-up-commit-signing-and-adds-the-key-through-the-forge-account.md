@@ -84,3 +84,8 @@ who never opens a terminal gets there. The prototype is on the branch `prototype
   wording, with a **Set up signing** link while signing is not set up.
 - On builds without a stable code signature, macOS asks again for the Keychain after each
   update; the sentence before that prompt stays until it does not.
+
+## Amendments
+
+The amendments to this decision are files of their own in [`0116/`](0116/), one per amendment,
+named `<yyyy-mm-dd>-<slug>.md`.

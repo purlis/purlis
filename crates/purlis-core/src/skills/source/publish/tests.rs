@@ -512,6 +512,8 @@ fn a_grade_goes_as_a_summary_with_no_chat_text_path_cost_or_device() {
         outcome_tokens: None,
         outcome_usd: None,
         failed: None,
+        resets_at: None,
+        earlier: None,
     };
     let graded = Graded {
         v: 1,

@@ -12,7 +12,7 @@ use purlis_skills::tree;
 use super::fetch::fetch;
 use super::lock::{self, Kept, Locked};
 use super::review::{self, Accepted, AcceptedSkill, Reviewed, Unread, digest_of, wrote};
-use super::{Source, listed, widen, write};
+use super::{Origin, Pin, SkillSource, Source, listed, widen, write};
 use crate::skills::Grant;
 use crate::skills::verbs::{self, Ctx, Level};
 
@@ -163,6 +163,47 @@ pub fn install_named(
     grant: Option<&Grant>,
     renames: &Renames,
 ) -> Result<Vec<PathBuf>, String> {
+    crate::settings::writable(cx.plane)?;
+    verbs::level_is_there(cx.plane, level)?;
+    let fetched = fetch(cx.plane, source, Some(accepted.commit()?))?;
+    let origin = Origin::Git(source.remote.clone());
+    let made = install_from(
+        cx,
+        &fetched,
+        &origin,
+        &Pin::Commit(fetched.commit.clone()),
+        level,
+        accepted,
+        grant,
+        renames,
+    )?;
+    if Kept::of(level) == Kept::Shared
+        && let Err(why) = listed::confirm_here(cx, &source.remote)
+    {
+        cx.warn(format!(
+            "The source was not confirmed on this machine: {why}"
+        ));
+    }
+    Ok(made)
+}
+
+/// **Installs what `accepted` says from `source`**, which answers `origin` at `pin`, at `level`
+/// (ADR 0100 §2, §8): the same review read again from what `source` holds now, refused where any
+/// digest differs from the one accepted, then each skill copied under its own name or the one
+/// `renames` gives it, pinned in the level's lockfile, granted, and committed with the lockfile
+/// as one change. All or nothing. The copy and the pin are the same for every source, the git one
+/// and each extension's.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn install_from(
+    cx: &mut Ctx<'_>,
+    source: &dyn SkillSource,
+    origin: &Origin,
+    pin: &Pin,
+    level: &Level,
+    accepted: &Accepted,
+    grant: Option<&Grant>,
+    renames: &Renames,
+) -> Result<Vec<PathBuf>, String> {
     let plane = cx.plane;
     crate::settings::writable(plane)?;
     verbs::level_is_there(plane, level)?;
@@ -171,15 +212,14 @@ pub fn install_named(
     if names.is_empty() {
         return Err("no skill was named to install".to_owned());
     }
-    let fetched = fetch(plane, source, Some(&accepted.commit))?;
     // The files each review read are the ones copied: read once, so a set that fit one read for
     // its review fits it for its install too (#4024).
     // A skill they refer to that is met at `level` already is left as it is, as the review left
     // it (#4032, #4155).
     let reviewed =
-        review::reviewed(&fetched, &names, &review::met_at(plane, level)).map_err(Unread::said)?;
+        review::reviewed(source, &names, &review::met_at(plane, level)).map_err(Unread::said)?;
     let now = Accepted {
-        commit: fetched.commit.clone(),
+        pin: pin.clone(),
         skills: reviewed
             .iter()
             .map(|one| AcceptedSkill {
@@ -258,9 +298,9 @@ pub fn install_named(
             name: name.clone(),
             source_name: renamed.then(|| skill.name.clone()),
             level: lock::AtLevel(level.clone()),
-            source: source.remote.clone(),
+            source: origin.clone(),
             folder: skill.folder.clone(),
-            commit: fetched.commit.clone(),
+            pin: pin.clone(),
             digest: digest_of(recorded),
             files: recorded.clone(),
             brought_by: skill.brought_by.clone(),
@@ -303,13 +343,6 @@ pub fn install_named(
         written.take_back();
         return Err(why);
     }
-    if kept == Kept::Shared
-        && let Err(why) = listed::confirm_here(cx, &source.remote)
-    {
-        cx.warn(format!(
-            "The source was not confirmed on this machine: {why}"
-        ));
-    }
     // Each is a new skill: the grades of one that had its name before are none of its own
     // (#4104).
     for name in &shown {
@@ -318,7 +351,7 @@ pub fn install_named(
     cx.done(format!(
         "{} installed at {level}, pinned to {}",
         shown.join(", "),
-        fetched.commit.short()
+        pin.short()
     ));
     widen::said_done(cx, &widenings, "what was installed");
     if kept == Kept::Shared {

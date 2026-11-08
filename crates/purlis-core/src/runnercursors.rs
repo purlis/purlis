@@ -28,7 +28,8 @@ pub const FILE: &str = "runner-log-cursors.json";
 /// The format's version. Another one reads as no cursor.
 const VERSION: u32 = 1;
 
-/// The most cursors kept, a runner's in a project each: past it, the lowest go first.
+/// The most cursors kept, a runner's in a project each: past it, those of the runner kept least
+/// lately go first, its lowest first (#5657).
 pub const MOST_CURSORS: usize = 256;
 
 /// The longest device id kept: a ULID is 26 characters.
@@ -43,10 +44,20 @@ type Cursors = BTreeMap<String, BTreeMap<String, u64>>;
 /// One read-modify-write at a time in this process: each link keeps its own runner's.
 static WRITING: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+/// By runner device, when a cursor of it was last kept, as a turn: the higher, the later (#5657).
+/// A runner made again mints a new device, whose log's `seq` starts again at the bottom, and
+/// nothing removes the cursors of the device it replaced: so which runner's go first is said by
+/// this, never by comparing one device's `seq` with another's.
+type Turns = BTreeMap<String, u64>;
+
 #[derive(Serialize, Deserialize)]
 struct OnDisk {
     version: u32,
     cursors: Cursors,
+    /// Absent from a file an earlier build wrote: each of its devices reads as kept before any
+    /// other.
+    #[serde(default)]
+    kept_last: Turns,
 }
 
 /// Whether `id` is one a cursor is kept under, a runner's device or a project's: short, of
@@ -61,13 +72,18 @@ fn an_id(id: &str) -> bool {
 
 /// Every cursor kept under `config_root`: none for no file, or one this build does not read.
 fn read(config_root: &Path) -> Cursors {
+    read_with_turns(config_root).0
+}
+
+/// Every cursor kept under `config_root`, with when each device's was last kept.
+fn read_with_turns(config_root: &Path) -> (Cursors, Turns) {
     crate::machine::read_beside(config_root, FILE, MOST_BYTES, "the runner log cursors")
         .ok()
         .flatten()
         .and_then(|text| serde_json::from_str::<OnDisk>(&text).ok())
         .filter(|on_disk| on_disk.version == VERSION)
         .map(|on_disk| {
-            on_disk
+            let cursors: Cursors = on_disk
                 .cursors
                 .into_iter()
                 .filter(|(device, _)| an_id(device))
@@ -78,7 +94,13 @@ fn read(config_root: &Path) -> Cursors {
                         .collect();
                     (device, projects)
                 })
-                .collect()
+                .collect();
+            let kept_last = on_disk
+                .kept_last
+                .into_iter()
+                .filter(|(device, _)| cursors.contains_key(device))
+                .collect();
+            (cursors, kept_last)
         })
         .unwrap_or_default()
 }
@@ -107,28 +129,36 @@ pub fn keep(config_root: &Path, device: &str, project: &str, seq: u64) -> io::Re
     let _one = WRITING
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let mut cursors = read(config_root);
+    let (mut cursors, mut kept_last) = read_with_turns(config_root);
     cursors
         .entry(device.to_owned())
         .or_default()
         .insert(project.to_owned(), seq);
+    let turn = kept_last
+        .values()
+        .max()
+        .map_or(1, |last| last.saturating_add(1));
+    kept_last.insert(device.to_owned(), turn);
     while cursors.values().map(BTreeMap::len).sum::<usize>() > MOST_CURSORS {
-        let lowest = cursors
+        // A `seq` is compared only within one device's log.
+        let first_to_go = cursors
             .iter()
             .flat_map(|(kept, projects)| {
+                let when = kept_last.get(kept).copied().unwrap_or(0);
                 projects
                     .iter()
-                    .map(move |(of, seq)| (kept.clone(), of.clone(), *seq))
+                    .map(move |(of, seq)| (when, *seq, kept.clone(), of.clone()))
             })
-            .filter(|(kept, of, _)| !(kept == device && of == project))
-            .min_by_key(|(_, _, seq)| *seq);
-        let Some((kept, of, _)) = lowest else {
+            .filter(|(_, _, kept, of)| !(kept == device && of == project))
+            .min();
+        let Some((_, _, kept, of)) = first_to_go else {
             break;
         };
         if let Some(projects) = cursors.get_mut(&kept) {
             projects.remove(&of);
             if projects.is_empty() {
                 cursors.remove(&kept);
+                kept_last.remove(&kept);
             }
         }
     }
@@ -137,6 +167,7 @@ pub fn keep(config_root: &Path, device: &str, project: &str, seq: u64) -> io::Re
     let text = serde_json::to_string(&OnDisk {
         version: VERSION,
         cursors,
+        kept_last,
     })
     .map_err(io::Error::other)?;
     crate::machine::write_beside(config_root, &dir.join(FILE), (text + "\n").as_bytes())

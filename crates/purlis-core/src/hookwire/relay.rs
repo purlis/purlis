@@ -395,14 +395,18 @@ pub struct Relaying {
     carry_waits: std::sync::atomic::AtomicBool,
 }
 
+/// What [`Keeping::heard_from`] is told: chat `chat` was heard from, with line `heard`.
+pub type HeardFrom = Box<dyn Fn(u32, &Heard) + Send + Sync + 'static>;
+
 /// **How the host keeps what its hook channel hears** (#2003): it writes the event log, and
 /// looks at a chat's hook spool soon after one of its lines comes, as the window did.
 pub struct Keeping {
     /// Writes one entry in the event log, durably: the hook is told its line is taken only once
     /// this answers `Ok`.
     pub record: Box<dyn Fn(Entry) -> io::Result<()> + Send + Sync + 'static>,
-    /// Chat `chat` was heard from: its spool is looked at soon after.
-    pub heard_from: Box<dyn Fn(u32) + Send + Sync + 'static>,
+    /// Chat `chat` was heard from, with line `heard`: its spool is looked at soon after, and a
+    /// runner's host records the boundary of its turn the line is (#5427).
+    pub heard_from: HeardFrom,
     /// A report, a tool call or a refused commit was handed on, and the window it went to went
     /// before it replied ([`Relaying::let_go`]): the host's own board hears it, as it hears a
     /// line no window took (#2006). A window that is only slow is not this: it still moves its
@@ -568,7 +572,7 @@ impl Relaying {
     /// records what the window carried back of it.
     fn taken(self: &Arc<Self>, chat: u32, heard: &Heard) -> io::Result<()> {
         if let Some(keeping) = &self.keeping {
-            (keeping.heard_from)(chat);
+            (keeping.heard_from)(chat, heard);
         }
         let Some((id, replied)) = self.exchange(heard) else {
             return Err(io::Error::other(NOBODY_HEARS));

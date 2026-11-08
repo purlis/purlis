@@ -13,7 +13,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use super::{Commit, Remote};
+use super::{Commit, Origin, Pin, Remote, Revision};
 use crate::skills::verbs::Level;
 
 /// The shared lockfile's name, at the plane root.
@@ -22,8 +22,13 @@ pub const FILE: &str = "skills.lock";
 /// The local lockfile's name, beside it.
 pub const LOCAL_FILE: &str = "skills.local.lock";
 
-/// The version of the lockfile's shape this purlis writes.
+/// The version of the lockfile's shape a file of git entries alone is written as.
 pub const VERSION: u32 = 1;
+
+/// **The version a file holding an entry copied from an extension's source is written as**
+/// (#3089): an older purlis, which reads git entries alone, refuses it whole rather than misread
+/// it. The newest version this purlis reads.
+pub const EXTENSION_VERSION: u32 = 2;
 
 /// Which of the two lockfiles: the committed one the team shares, or this machine's.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -87,25 +92,160 @@ pub struct Wrote {
 
 /// **One installed skill**, as its lockfile records it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "OnDisk", into = "OnDisk")]
 pub struct Locked {
     pub name: String,
     /// Its name at the source, where it was installed under a new one (ADR 0100, amended
     /// 2026-11-01): what an update finds it by.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_name: Option<String>,
     pub level: AtLevel,
-    /// The repository and branch it was copied from.
-    pub source: Remote,
+    /// The repository and branch it was copied from, or the extension whose source answered it.
+    pub source: Origin,
     /// Its folder in the source, `/` between the parts; empty for a source that is one skill.
     pub folder: String,
-    /// The commit it was copied from.
-    pub commit: Commit,
+    /// The commit it was copied from, or its extension's revision: a git source's is a commit,
+    /// an extension's a revision, as it is read.
+    pub pin: Pin,
     /// The digest of the copy as a whole ([`super::digest_of`]).
     pub digest: String,
     pub files: Vec<Wrote>,
     /// The skill whose install brought it along, as a skill it refers to.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub brought_by: Option<String>,
+}
+
+/// Where an entry was copied from, as the file spells it: `url` and `branch`, or `extension`.
+/// Unknown keys are left unread, as a git source's always were.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SourceOnDisk {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    branch: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    extension: Option<String>,
+}
+
+/// **An entry as the file spells it**: a git source with its `commit`, or an extension's with its
+/// `revision`, never a mix ([`Locked`] is read from it failing closed).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct OnDisk {
+    name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    source_name: Option<String>,
+    level: AtLevel,
+    source: SourceOnDisk,
+    folder: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    commit: Option<Commit>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    revision: Option<Revision>,
+    digest: String,
+    files: Vec<Wrote>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    brought_by: Option<String>,
+}
+
+impl TryFrom<OnDisk> for Locked {
+    type Error = String;
+    fn try_from(one: OnDisk) -> Result<Self, Self::Error> {
+        let (source, pin) = match (one.source, one.commit, one.revision) {
+            (
+                SourceOnDisk {
+                    url: Some(url),
+                    branch,
+                    extension: None,
+                },
+                Some(commit),
+                None,
+            ) => (Origin::Git(Remote { url, branch }), Pin::Commit(commit)),
+            (
+                SourceOnDisk {
+                    url: None,
+                    branch: None,
+                    extension: Some(id),
+                },
+                None,
+                Some(revision),
+            ) if crate::extension::project::id_ok(&id) => {
+                (Origin::Extension(id), Pin::Revision(revision))
+            }
+            _ => {
+                return Err(format!(
+                    "{:?} is pinned neither as a git source's commit nor as an extension's \
+                     revision",
+                    one.name
+                ));
+            }
+        };
+        Ok(Locked {
+            name: one.name,
+            source_name: one.source_name,
+            level: one.level,
+            source,
+            folder: one.folder,
+            pin,
+            digest: one.digest,
+            files: one.files,
+            brought_by: one.brought_by,
+        })
+    }
+}
+
+impl From<Locked> for OnDisk {
+    fn from(one: Locked) -> OnDisk {
+        let (source, commit, revision) = match (one.source, one.pin) {
+            (Origin::Git(remote), Pin::Commit(commit)) => (
+                SourceOnDisk {
+                    url: Some(remote.url),
+                    branch: remote.branch,
+                    extension: None,
+                },
+                Some(commit),
+                None,
+            ),
+            (Origin::Extension(id), Pin::Revision(revision)) => (
+                SourceOnDisk {
+                    url: None,
+                    branch: None,
+                    extension: Some(id),
+                },
+                None,
+                Some(revision),
+            ),
+            // Never made: every entry is built from its source's own pin. Written as it is, so
+            // reading it back refuses the file rather than misread it.
+            (Origin::Git(remote), Pin::Revision(revision)) => (
+                SourceOnDisk {
+                    url: Some(remote.url),
+                    branch: remote.branch,
+                    extension: None,
+                },
+                None,
+                Some(revision),
+            ),
+            (Origin::Extension(id), Pin::Commit(commit)) => (
+                SourceOnDisk {
+                    url: None,
+                    branch: None,
+                    extension: Some(id),
+                },
+                Some(commit),
+                None,
+            ),
+        };
+        OnDisk {
+            name: one.name,
+            source_name: one.source_name,
+            level: one.level,
+            source,
+            folder: one.folder,
+            commit,
+            revision,
+            digest: one.digest,
+            files: one.files,
+            brought_by: one.brought_by,
+        }
+    }
 }
 
 impl Locked {
@@ -199,11 +339,21 @@ pub fn read(plane: &Path, kept: Kept) -> Result<Read, String> {
                 one.name
             )));
         }
-        if let Err(why) = one.source.check(false) {
+        if let Origin::Git(remote) = &one.source
+            && let Err(why) = remote.check(false)
+        {
             return Err(refused(why));
         }
     }
-    if lock.version > VERSION {
+    // An extension's entry is written only in a file of its version, which an older purlis
+    // refuses: one in an older file was not written by purlis.
+    if lock.version > EXTENSION_VERSION
+        || (lock.version < EXTENSION_VERSION
+            && lock
+                .skills
+                .iter()
+                .any(|one| matches!(one.source, Origin::Extension(_))))
+    {
         return Err(refused(format!("it is version {}", lock.version)));
     }
     Ok(Read {
@@ -237,7 +387,15 @@ pub fn every(plane: &Path) -> (Vec<(Kept, Locked)>, Vec<String>) {
 /// **Writes `lock` as the lockfile `kept`**, only while it is still the `was` it was read as.
 pub fn write(plane: &Path, kept: Kept, was: Option<&str>, lock: &Lockfile) -> Result<(), String> {
     let mut lock = lock.clone();
-    lock.version = VERSION;
+    lock.version = if lock
+        .skills
+        .iter()
+        .any(|one| matches!(one.source, Origin::Extension(_)))
+    {
+        EXTENSION_VERSION
+    } else {
+        VERSION
+    };
     lock.skills
         .sort_by(|a, b| (a.level.0.rel(), &a.name).cmp(&(b.level.0.rel(), &b.name)));
     let text = serde_json::to_string_pretty(&lock).map_err(|why| why.to_string())? + "\n";

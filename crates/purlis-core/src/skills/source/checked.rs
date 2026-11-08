@@ -158,12 +158,12 @@ fn write(plane: &Path, mut sources: Vec<Checked>) -> std::io::Result<()> {
     crate::rewrite::replace(plane, &file, &bytes, crate::rewrite::Mode::Private)
 }
 
-/// **How many skills are installed from `remote`**, at any level, as the lockfiles this machine
+/// **How many skills are installed from `origin`**, at any level, as the lockfiles this machine
 /// reads say: each skill counted once, whatever number of levels hold it.
-pub fn installed_from(locked: &[(lock::Kept, lock::Locked)], remote: &Remote) -> u32 {
+pub fn installed_from(locked: &[(lock::Kept, lock::Locked)], origin: &super::Origin) -> u32 {
     let mut names: Vec<&str> = locked
         .iter()
-        .filter(|(_, one)| one.source == *remote)
+        .filter(|(_, one)| one.source == *origin)
         .map(|(_, one)| one.name.as_str())
         .collect();
     names.sort_unstable();

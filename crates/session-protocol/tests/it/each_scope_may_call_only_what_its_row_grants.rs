@@ -454,6 +454,7 @@ fn every_command() -> Vec<Command> {
             transfer: 2,
             have: Vec::new(),
             with_work: false,
+            with_turns: true,
         },
         Command::TakeConversation {
             project: "01J9PRJCT00000000000000000".into(),
@@ -477,6 +478,14 @@ fn every_command() -> Vec<Command> {
         },
         // Every repository a host holds (1.69, #4569): the window's, and relayed.
         Command::ReposHeld,
+        Command::UndoTurn {
+            project: "01J9PRJCT00000000000000000".into(),
+            workspace: "app".into(),
+            repo: "web".into(),
+            piece: None,
+            chat: "01J9CHAT0000000000000000TN".into(),
+            number: 1,
+        },
         // Where the host's own event log ends (1.41, #3393): the window's, and relayed.
         Command::LogEnd,
         // A grade asked for from a terminal, and the window running it (1.63, SK-61).
@@ -604,6 +613,7 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "give_conversation",
             "clones_of",
             "repos_held",
+            "undo_turn",
             "log_end",
             "answer_grade",
             "grade_step",
@@ -694,6 +704,8 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "give_conversation",
             "clones_of",
             "repos_held",
+            // A turn of a runner chat undone by the window (1.78, #5427).
+            "undo_turn",
             // The runner's own event log, read by its desktop's window (1.41, #3393).
             "log_end",
         ],

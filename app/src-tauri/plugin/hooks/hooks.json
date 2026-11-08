@@ -152,6 +152,17 @@
         ]
       }
     ],
+    "StopFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CHARTER_HOOK_BINARY}\" hook stopfailure",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "SubagentStop": [
       {
         "hooks": [

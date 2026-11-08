@@ -821,6 +821,38 @@ fn a_skills_files_are_plain_paths_inside_its_folder_at_the_revision_asked() {
 }
 
 #[test]
+fn a_skills_files_whose_paths_are_one_on_a_disk_that_ignores_case_are_refused() {
+    let answered = |paths: &[&str]| {
+        let mut files = vec![serde_json::json!({ "path": "SKILL.md", "text": "" })];
+        files.extend(
+            paths
+                .iter()
+                .map(|path| serde_json::json!({ "path": path, "text": "x" })),
+        );
+        files_of(
+            "x",
+            "r1",
+            &doc(serde_json::json!({ "revision": "r1", "files": files })),
+        )
+    };
+    for paths in [
+        &["skill.md"][..],
+        &["notes.md", "NOTES.md"],
+        &["scripts/run.sh", "Scripts/check.sh"],
+        &["refs", "REFS/a.md"],
+        &["refs", "refs/a.md"],
+    ] {
+        let refused = answered(paths).expect_err(&format!("{paths:?} was taken"));
+        assert!(
+            refused.contains("one file or folder on a disk that ignores case")
+                || refused.contains("both a file and a folder"),
+            "{paths:?}: {refused}"
+        );
+    }
+    assert!(answered(&["scripts/run.sh", "scripts/check.sh", "refs/a.md"]).is_ok());
+}
+
+#[test]
 fn a_lints_findings_are_lines_of_words_within_bounds() {
     let said = findings_of(
         "x",

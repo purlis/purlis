@@ -122,7 +122,7 @@ const OFFER = {
   name: "notify",
   level: PROJECT,
   label: "project",
-  remote: SOURCE.remote,
+  source: { kind: "git", remote: SOURCE.remote, label: SOURCE.remote.label },
   pinned: commit("b"),
   newer: commit("c"),
   edited: true,
@@ -192,6 +192,7 @@ type Asked = { cmd: string; args: Record<string, unknown> }[];
 function core({
   offers = [] as unknown[],
   unconfirmed = [] as unknown[],
+  extensions = [] as unknown[],
   answers = {} as Record<string, (args: Record<string, unknown>) => unknown>,
 } = {}): Asked {
   const asked: Asked = [];
@@ -219,6 +220,8 @@ function core({
         return [];
       case "skill_sources":
         return [SOURCE];
+      case "skill_extension_sources":
+        return extensions;
       case "skill_sources_offered":
         return [ANTHROPIC];
       case "skill_updates":
@@ -1583,5 +1586,117 @@ describe("Install all… past the budget (#5355)", () => {
       "purlis could not work out whether this goes past Claude Code's skill budget",
     );
     expect(within(over).queryByRole("button", { name: "Make room…" })).toBeNull();
+  });
+});
+
+/** An extension that declares `skill-source` (#3092). */
+const ACME = { id: "acme-registry", label: "Acme registry", installed: 0 };
+
+/** What Acme's source offers, at its revision. */
+const ACME_BROWSE = {
+  ...BROWSE,
+  commit: { id: "v7.2", short: "v7.2" },
+  skills: BROWSE.skills.map((one) => ({ ...one, marks: null })),
+  not_skills: [],
+};
+
+/** The update of notify, a skill from Acme's source. */
+const ACME_OFFER = {
+  ...OFFER,
+  source: { kind: "extension", id: ACME.id, label: ACME.id },
+  pinned: { id: "v7.1", short: "v7.1" },
+  newer: { id: "v7.2", short: "v7.2" },
+};
+
+describe("an extension's skill source (#3092)", () => {
+  it("is listed beside the git sources and browsed through the same page", async () => {
+    const asked = core({
+      extensions: [ACME],
+      answers: { skill_extension_source_browse: () => ACME_BROWSE },
+    });
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "sources");
+    const rows = await screen.findAllByTestId("skill-source");
+    expect(rows).toHaveLength(2);
+    expect(rows[1]).toHaveTextContent("Acme registry");
+    expect(rows[1]).toHaveTextContent("The extension acme-registry");
+    await user.click(within(rows[1] as HTMLElement).getByText("Acme registry"));
+    const page = await screen.findByTestId("skill-source-page");
+    expect(await within(page).findByText("v7.2")).toBeInTheDocument();
+    expect(within(page).getByText(/at revision/)).toBeInTheDocument();
+    expect(asked.find((one) => one.cmd === "skill_extension_source_browse")?.args.id).toBe(ACME.id);
+    expect(did(asked, "skill_source_browse")).toBe(false);
+    // It goes with its extension, so it is never removed here.
+    expect(within(page).queryByRole("button", { name: "Remove source…" })).toBeNull();
+    expect(within(page).getByRole("button", { name: "Review updates…" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+  });
+
+  it("installs through the same review, from what that review read", async () => {
+    const asked = core({
+      extensions: [ACME],
+      answers: {
+        skill_extension_source_browse: () => ACME_BROWSE,
+        skill_extension_install_review: () => ({
+          ...REVIEW,
+          commit: { id: "v7.2", short: "v7.2" },
+          accepted: { ...ACCEPTED, commit: "v7.2" },
+        }),
+      },
+    });
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "sources");
+    await user.click(await screen.findByText("Acme registry"));
+    const page = await screen.findByTestId("skill-source-page");
+    await user.click(await within(page).findByRole("button", { name: "Review install: deploy" }));
+    const review = await screen.findByTestId("install-review");
+    expect(await within(review).findByTestId("install-commit")).toHaveTextContent(
+      "at revision v7.2",
+    );
+    expect(asked.find((one) => one.cmd === "skill_extension_install_review")?.args).toMatchObject({
+      id: ACME.id,
+      names: ["deploy"],
+    });
+    await user.click(within(review).getByRole("button", { name: "Install" }));
+    await waitFor(() => expect(did(asked, "skill_extension_install")).toBe(true));
+    const install = asked.find((one) => one.cmd === "skill_extension_install");
+    expect(install?.args).toMatchObject({ id: ACME.id, level: PROJECT });
+    expect(install?.args.reviewed).toEqual({ ...ACCEPTED, commit: "v7.2" });
+    expect(did(asked, "skill_install")).toBe(false);
+  });
+
+  it("offers its update from the extension's source and accepts it through the extension", async () => {
+    const asked = core({
+      offers: [ACME_OFFER],
+      extensions: [ACME],
+      answers: {
+        skill_extension_update_review: () => ({
+          ...UPDATE,
+          pinned: ACME_OFFER.pinned,
+          newer: ACME_OFFER.newer,
+          from_pin: false,
+          accepted: { ...UPDATE.accepted, commit: "v7.2" },
+        }),
+      },
+    });
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "sources");
+    expect(await screen.findByTestId("skill-updates")).toHaveTextContent(
+      "notify from acme-registry",
+    );
+    await user.click(screen.getByRole("button", { name: "Review update" }));
+    const review = await screen.findByTestId("update-review");
+    expect(
+      await within(review).findByText(/compares the extension's newer revision with the copy here/),
+    ).toBeInTheDocument();
+    await user.click(within(review).getByRole("button", { name: "Accept update" }));
+    await waitFor(() => expect(did(asked, "skill_extension_update")).toBe(true));
+    expect(asked.find((one) => one.cmd === "skill_extension_update")?.args.reviewed).toEqual({
+      commit: "v7.2",
+      skills: [{ name: "notify", digest: "sha256:n1" }],
+    });
+    expect(did(asked, "skill_update_review") || did(asked, "skill_update")).toBe(false);
   });
 });

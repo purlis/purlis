@@ -1,0 +1,273 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+use super::*;
+use crate::forge::recorded::Recorded;
+use crate::forge::signingkeys::{recording, recording_with};
+use crate::secrets::keyring;
+
+fn on_account(signer: &Signer) -> Asked {
+    Asked::KeyOnAccount {
+        key: signer.public_line(),
+    }
+}
+
+/// No key, then made (in the fenced file keychain), then not on the account, then added by
+/// the window's sign-in and listed, then a pushed commit Verified: the whole of setup that does
+/// not wait on the person, as the forge answers it.
+#[test]
+fn no_key_then_made_then_added_then_listed_then_verified() {
+    let config = tempfile::tempdir().unwrap();
+    let keys = tempfile::tempdir().unwrap();
+    crate::machine::device_id(config.path()).unwrap();
+    let store = keyring::FileStore::at(keys.path().join("keyring.json"));
+
+    assert_eq!(
+        crate::commitsign::kept(config.path(), &store).unwrap(),
+        None
+    );
+    let (signer, had) = key_made(config.path(), &store).unwrap();
+    assert!(!had);
+    assert_eq!(
+        crate::commitsign::kept(config.path(), &store).unwrap(),
+        Some(signer.clone())
+    );
+    let (again, had) = key_made(config.path(), &store).unwrap();
+    assert!(had);
+    assert_eq!(again, signer, "a second setup keeps the key it made");
+
+    // Whether the account has it is read from GitHub's public list of its signing keys.
+    let none = recording("publicly_none", &signer);
+    assert_eq!(
+        answered_over(&none, &github(), "octocat", &on_account(&signer)).unwrap(),
+        Heard::KeyOnAccount { on: false }
+    );
+
+    let added = recording("added_then_listed", &signer);
+    signingkeys::add_over(&added, &github(), &signer, "purlis · studio").unwrap();
+    assert!(
+        signingkeys::listed_over(&added, &github())
+            .unwrap()
+            .this_device(&signer)
+            .is_some()
+    );
+    assert!(added.unspent().is_empty());
+    let public = recording("publicly_listed", &signer);
+    assert_eq!(
+        answered_over(&public, &github(), "octocat", &on_account(&signer)).unwrap(),
+        Heard::KeyOnAccount { on: true }
+    );
+
+    let verified = recording("commit_verified", &signer);
+    let asked = Asked::Check {
+        repo: "octo/hello".to_owned(),
+        commit: "0123abc".to_owned(),
+        code: "A1B2C3".to_owned(),
+    };
+    let Heard::Checked(checked) = answered_over(&verified, &github(), "octocat", &asked).unwrap()
+    else {
+        panic!("a check is answered with what the forge said of the commit");
+    };
+    assert!(checked.verified);
+}
+
+#[test]
+fn what_is_not_one_public_key_is_refused_before_anything_is_sent() {
+    let recorded = Recorded::parse(r#"{"source": "nothing", "exchanges": []}"#).unwrap();
+    for key in [
+        "",
+        "ssh-ed25519",
+        "not a key at all",
+        "ssh-ed25519 AAAA\nssh-rsa BBBB",
+    ] {
+        let asked = Asked::KeyOnAccount {
+            key: key.to_owned(),
+        };
+        assert!(
+            answered_over(&recorded, &github(), "octocat", &asked).is_err(),
+            "{key:?}"
+        );
+    }
+}
+
+#[test]
+fn the_key_is_removed_from_the_keychain() {
+    let config = tempfile::tempdir().unwrap();
+    let keys = tempfile::tempdir().unwrap();
+    crate::machine::device_id(config.path()).unwrap();
+    let store = keyring::FileStore::at(keys.path().join("keyring.json"));
+    key_made(config.path(), &store).unwrap();
+    assert!(key_removed(config.path(), &store).unwrap());
+    assert_eq!(
+        crate::commitsign::kept(config.path(), &store).unwrap(),
+        None
+    );
+    assert!(!key_removed(config.path(), &store).unwrap());
+}
+
+#[cfg(unix)]
+mod over_the_window_line {
+    use std::time::Duration;
+
+    use super::*;
+    use crate::windowline::{self, Answered, Said};
+
+    /// The command asks over the line; the window answers with its own transport (here a
+    /// recording); the command hears what the forge said, and holds no sign-in of its own.
+    #[test]
+    fn the_command_hears_what_the_window_asked_github() {
+        let dir = tempfile::tempdir().unwrap();
+        let socket = dir.path().join("purlis").join("window.sock");
+        let signer = Signer::generate().unwrap();
+        let line = signer.public_line();
+        let recorded = std::sync::Arc::new(recording("publicly_listed", &signer));
+        let theirs = std::sync::Arc::clone(&recorded);
+        windowline::serve_on(&socket, move |asked| match asked {
+            windowline::Asked::Signing(asked) => {
+                match answered_over(theirs.as_ref(), &github(), "octocat", &asked) {
+                    Ok(heard) => Said::Signing(heard),
+                    Err(why) => Said::Refused { why },
+                }
+            }
+            _ => Said::Refused {
+                why: "not this test's".to_owned(),
+            },
+        })
+        .unwrap();
+        let within = Duration::from_secs(10);
+        let reached = reach(Asked::KeyOnAccount { key: line }, |asked| {
+            windowline::ask_on(&socket, asked, within)
+        });
+        assert_eq!(reached, Reached::Heard(Heard::KeyOnAccount { on: true }));
+    }
+
+    #[test]
+    fn no_window_no_answer_and_another_questions_answer_are_told_apart() {
+        let asked = || Asked::Check {
+            repo: "octo/hello".to_owned(),
+            commit: "0123abc".to_owned(),
+            code: "A1B2C3".to_owned(),
+        };
+        assert_eq!(reach(asked(), |_| Answered::NoWindow), Reached::NoWindow);
+        assert_eq!(reach(asked(), |_| Answered::NoAnswer), Reached::NoAnswer);
+        assert_eq!(
+            reach(asked(), |_| Answered::Said(Said::Asked { note: None })),
+            Reached::OtherAnswer
+        );
+        assert_eq!(
+            reach(asked(), |_| Answered::Said(Said::Refused {
+                why: "not signed in".to_owned()
+            })),
+            Reached::Refused("not signed in".to_owned())
+        );
+    }
+
+    /// The profile lines' answer never takes a signing ask for a profile's.
+    #[test]
+    fn a_signing_ask_is_no_profiles() {
+        let dir = tempfile::tempdir().unwrap();
+        let said = windowline::answer(
+            dir.path(),
+            windowline::Asked::Signing(Asked::KeyOnAccount { key: "k".into() }),
+            |_| panic!("no forget"),
+            |_, _| panic!("no keep"),
+            |_, _, _| panic!("no approve"),
+            |_, _, _| panic!("no take-off"),
+        );
+        assert!(matches!(said, Said::Refused { .. }));
+    }
+}
+
+mod the_check {
+    use super::*;
+
+    const TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+    const WHEN: i64 = 1_794_067_200;
+
+    fn who() -> Who {
+        Who {
+            name: "Octo Cat".to_owned(),
+            email: "octocat@example.invalid".to_owned(),
+        }
+    }
+
+    /// The recording `case`, this test's own signature of the test commit put in.
+    fn signed(case: &str, signer: &Signer) -> Recorded {
+        let signature = signer.sign(&test_commit(TREE, &who(), WHEN)).unwrap();
+        recording_with(case, &[("@SIGNATURE@", &signature)])
+    }
+
+    #[test]
+    fn a_test_commit_github_verifies_is_verified() {
+        let signer = Signer::generate().unwrap();
+        let recorded = signed("test_commit_verified", &signer);
+        let checked =
+            check_with_a_test_commit(&recorded, &github(), &signer, "octo/hello", &who(), WHEN)
+                .unwrap();
+        assert!(checked.verified);
+        assert!(recorded.unspent().is_empty());
+    }
+
+    #[test]
+    fn a_test_commit_whose_email_github_does_not_know_is_not_verified_and_says_why() {
+        let signer = Signer::generate().unwrap();
+        let recorded = signed("test_commit_email_unverified", &signer);
+        let checked =
+            check_with_a_test_commit(&recorded, &github(), &signer, "octo/hello", &who(), WHEN)
+                .unwrap();
+        assert!(!checked.verified);
+        assert_eq!(checked.reason, "unverified_email");
+    }
+
+    /// The test commit is the object git itself writes for the same fields, byte for byte: what
+    /// GitHub rebuilds from them and checks the signature over.
+    #[test]
+    fn the_test_commit_is_what_git_writes_for_the_same_fields() {
+        let repo = tempfile::tempdir().unwrap();
+        crate::testgit::run(repo.path(), &["init", "-q"]);
+        let date = format!("{WHEN} +0000");
+        let made = crate::forklock::output(
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(repo.path())
+                .args(["commit-tree", TREE, "-m", TEST_MESSAGE.trim_end()])
+                .env("GIT_CONFIG_GLOBAL", "/dev/null")
+                .env("GIT_CONFIG_NOSYSTEM", "1")
+                .env("GIT_AUTHOR_NAME", "Octo Cat")
+                .env("GIT_AUTHOR_EMAIL", "octocat@example.invalid")
+                .env("GIT_AUTHOR_DATE", &date)
+                .env("GIT_COMMITTER_NAME", "Octo Cat")
+                .env("GIT_COMMITTER_EMAIL", "octocat@example.invalid")
+                .env("GIT_COMMITTER_DATE", &date),
+        )
+        .unwrap();
+        assert!(
+            made.status.success(),
+            "{}",
+            String::from_utf8_lossy(&made.stderr)
+        );
+        let id = String::from_utf8(made.stdout).unwrap();
+        let raw = crate::forklock::output(
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(repo.path())
+                .args(["cat-file", "commit", id.trim()]),
+        )
+        .unwrap()
+        .stdout;
+        assert_eq!(
+            String::from_utf8(raw).unwrap(),
+            String::from_utf8(test_commit(TREE, &who(), WHEN)).unwrap()
+        );
+    }
+
+    #[test]
+    fn with_no_repository_named_the_accounts_own_latest_is_checked_in() {
+        let signer = Signer::generate().unwrap();
+        let recorded = recording("own_repo", &signer);
+        assert_eq!(
+            a_repo_to_check_in(&recorded, &github()).unwrap().as_deref(),
+            Some("octo/hello")
+        );
+    }
+}

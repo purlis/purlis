@@ -188,6 +188,19 @@ pub struct Open {
     pub studio: Option<purlis_core::reopen::StudioJob>,
 }
 
+/// **Why a branch has no turn**: a chat working in its folder that records none, by name
+/// ([`Chats::no_turns_from_in`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NoTurnsFrom {
+    /// Its program reports no turns: a shell, or a harness purlis has no hooks for (#5405).
+    Unreported { chat: String },
+    /// It runs on runner `runner`, in a folder of the runner's (#5427).
+    OnARunner { chat: String, runner: String },
+    /// It runs on a runner of pool `pool`, in a folder of the runner's, too old to record its
+    /// turns there (#5427: before session protocol 1.78).
+    OnAPool { chat: String, pool: String },
+}
+
 /// Who an open chat is beyond this launch, and the directory it works in.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChatAt {
@@ -2143,23 +2156,20 @@ impl Chats {
         }
     }
 
-    /// **The name of a chat open in this branch's folder whose program reports no turns** (#5405):
-    /// a shell, or a harness purlis has no hooks for. What says why the branch has no turn.
-    pub fn silent_about_turns_in(
+    /// **A chat open in this branch's folder that records no turns, and why** (#5405, #5427): one
+    /// whose program reports none (a shell, or a harness purlis has no hooks for), or one on a
+    /// runner or a pool's runner, whose folder is the runner's. What says why the branch has no
+    /// turn.
+    pub fn no_turns_from_in(
         &self,
         plane: &Path,
         ws: &str,
         repo: &str,
         piece: Option<&str>,
-    ) -> Option<String> {
+    ) -> Option<NoTurnsFrom> {
         let open = lock(&self.open);
-        open.values()
-            .filter(|one| {
-                !one.chat
-                    .harness()
-                    .is_some_and(purlis_core::harness::Harness::prompt_hook)
-            })
-            .find(|one| {
+        open.iter()
+            .filter(|(_, one)| {
                 one.chat
                     .cwd
                     .as_deref()
@@ -2168,7 +2178,27 @@ impl Chats {
                         place.ws == ws && place.repo == repo && place.piece.as_deref() == piece
                     })
             })
-            .map(|one| one.chat.name.clone())
+            .find_map(|(session, one)| {
+                let chat = one.chat.name.clone();
+                // A pool's runner first: a chat on one is told by its pool, not its machine. A
+                // runner of 1.78 records its turns, which come back with its code (#5427).
+                if let Some(pool) = self.sessions.pool_of(*session) {
+                    return (!self.sessions.records_turns_of(*session))
+                        .then_some(NoTurnsFrom::OnAPool { chat, pool });
+                }
+                let runner = one.confinement.as_ref().and_then(|held| held.runner());
+                if let Some(runner) = runner {
+                    return Some(NoTurnsFrom::OnARunner {
+                        chat,
+                        runner: runner.to_owned(),
+                    });
+                }
+                (!one
+                    .chat
+                    .harness()
+                    .is_some_and(purlis_core::harness::Harness::prompt_hook))
+                .then_some(NoTurnsFrom::Unreported { chat })
+            })
     }
 
     /// **The chats open here, each with its id, its name and the workspace it works in**, in
@@ -5208,12 +5238,9 @@ impl Chats {
             _ => all,
         };
         let mut env = env;
-        env.extend(armed);
         // What the wrap sets wins over a profile's or the arming's value of the same name: its
-        // proxy, its temp directory. Sorting cannot decide it, since the session applies the
-        // pairs in order and two of one name would leave the later one standing.
-        env.retain(|(key, _)| !wrapped.iter().any(|(set, _)| set == key));
-        env.extend(wrapped);
+        // proxy, its temp directory, but an outcome eval shell's own temp folder (#4476).
+        purlis_core::hoststart::wrapped_over(&mut env, armed, wrapped);
         // A cluster on this Mac the person pointed this chat's kubectl at (qw384b): its own
         // copy, in its own folder, named for it alone and ahead of any kubeconfig of theirs.
         if let (false, Some(config), Some(confinement)) = (

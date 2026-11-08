@@ -15,7 +15,9 @@
 //!   unpaired first over a link of its own, and one that stopped during its drain is held for
 //!   the person ([`purlis_core::pools::DrainLook::Held`]), as is one that had stopped before it
 //!   or was removed outside purlis whose home holds a chat's conversation
-//!   ([`purlis_core::pools::held_for_its_conversations`], #4633);
+//!   ([`purlis_core::pools::held_for_its_conversations`], #4633). One of those two whose home
+//!   holds none cannot be checked for work a fetch does not bring without being woken, so it stays
+//!   unchecked until it runs again or the person lets it go ([`NotChecked`]);
 //! - **a pool of a team's own image is never moved**: its row says its runner is behind
 //!   (`crate::dockerpools::docker_pool_version`).
 //!
@@ -329,14 +331,39 @@ pub fn forget_waiting(config: &std::path::Path, pool: &str) {
 }
 
 /// **What pool `pool`'s draining runners hold that no fetch brings here, as the last look found
-/// it** (ruled 2026-11-07), in sentences: what keeps each, which the Pools group says.
+/// it** (ruled 2026-11-07), in sentences: what keeps each, which the Pools group says. One kept
+/// unchecked says nothing here: [`not_checked_on`] names it.
 #[cfg(unix)]
 pub fn left_on(config: &std::path::Path, pool: &str) -> Vec<String> {
     lock_left()
         .iter()
         .filter(|((home, of, _), _)| home == config && of == pool)
-        .flat_map(|(_, left)| left.iter().cloned())
+        .flat_map(|(_, left)| left.found().iter().cloned())
         .collect()
+}
+
+/// **Pool `pool`'s draining runners kept unchecked, each by its name and what is left of it**
+/// (ruled 2026-11-08): the Pools group names each in a line of its own.
+#[cfg(unix)]
+pub fn not_checked_on(config: &std::path::Path, pool: &str) -> Vec<(String, NotChecked)> {
+    lock_left()
+        .iter()
+        .filter(|((home, of, _), _)| home == config && of == pool)
+        .filter_map(|((_, _, runner), left)| match left {
+            Left::NotChecked(how) => Some((runner.clone(), *how)),
+            Left::Found(_) => None,
+        })
+        .collect()
+}
+
+/// **Whether the draining runner `runner` of pool `pool` is kept unchecked, and what is left of
+/// it** (ruled 2026-11-08): what Devices says of it and asks before the person lets it go.
+#[cfg(unix)]
+pub fn not_checked_by(config: &std::path::Path, pool: &str, runner: &str) -> Option<NotChecked> {
+    match lock_left().get(&(config.to_path_buf(), pool.to_owned(), runner.to_owned())) {
+        Some(Left::NotChecked(how)) => Some(*how),
+        _ => None,
+    }
 }
 
 /// **What the draining runner `runner` of pool `pool` holds that no fetch brings here, as the
@@ -346,7 +373,7 @@ pub fn left_on(config: &std::path::Path, pool: &str) -> Vec<String> {
 pub fn left_by(config: &std::path::Path, pool: &str, runner: &str) -> Vec<String> {
     lock_left()
         .get(&(config.to_path_buf(), pool.to_owned(), runner.to_owned()))
-        .cloned()
+        .map(|left| left.found().to_vec())
         .unwrap_or_default()
 }
 
@@ -379,11 +406,16 @@ pub fn let_go(
         kept.pool().to_owned(),
         kept.name().to_owned(),
     );
-    if lock_left().get(&at).is_none_or(Vec::is_empty) {
+    if lock_left().get(&at).is_none_or(Left::is_empty) {
         return Err(format!(
             "Runner {runner} is not kept for work left on it, so it goes once its chats end and \
              their work is brought back."
         ));
+    }
+    // **One kept unchecked is let go without being woken** (ruled 2026-11-07): nothing runs on a
+    // container stopped or removed, and what the person was shown is all that is known of it.
+    if let Some(unasked) = unasked(machine, &kept) {
+        return let_go_unasked(machine, &kept, unasked, shown);
     }
     let to = ToARunner::of_kept(machine, &kept)?;
     // What runs there now would go with it.
@@ -424,7 +456,7 @@ pub fn let_go(
     let more = now
         .iter()
         .any(|one| !shown.contains(&crate::devices::shown_safely(one)));
-    lock_left().insert(at, now);
+    lock_left().insert(at, Left::Found(now));
     if more {
         return Err(format!(
             "Runner {runner} now holds work you were not shown, so it stays. Look at what it \
@@ -439,9 +471,132 @@ pub fn let_go(
     removed.left().map_or(Ok(()), Err)
 }
 
+/// **How a draining runner that cannot be asked came to be so**, as Docker says now, and so what
+/// is left of it (ruled 2026-11-08): the window names which in its own words, so a person reads
+/// what is there and what can be done with it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum NotChecked {
+    /// Its container had stopped before its drain, and has not run since: it is there, stopped,
+    /// and is checked once it runs again.
+    Stopped,
+    /// Its container was removed outside purlis, and only its home volume is left, which nothing
+    /// can check.
+    HomeOnly,
+}
+
+/// **Whether the draining runner `kept` cannot be asked now**, and why: `None` for one whose
+/// container runs, or of which Docker says nothing sure, which is asked as before.
 #[cfg(unix)]
-fn lock_left() -> std::sync::MutexGuard<'static, std::collections::BTreeMap<Waiting, Vec<String>>> {
-    static LEFT: std::sync::Mutex<std::collections::BTreeMap<Waiting, Vec<String>>> =
+fn unasked(machine: &Machine, kept: &purlis_core::runners::Kept) -> Option<NotChecked> {
+    if kept.engine.is_some()
+        && matches!(
+            machine.docker.missing(&kept.made, kept.engine.as_deref()),
+            Ok(Some(purlis_core::dockerpool::Missing::Removed(_)))
+        )
+    {
+        return Some(NotChecked::HomeOnly);
+    }
+    match machine
+        .ran(kept)
+        .map(|ran| purlis_core::pools::drain_look(kept, ran))
+    {
+        Ok(DrainLook::StoppedBefore) => Some(NotChecked::Stopped),
+        _ => None,
+    }
+}
+
+/// [`let_go`] of a runner that cannot be asked (`how`): what a fetch would still bring keeps it,
+/// as does a look's line the person was not `shown`. It goes as a drain removes one stopped, or
+/// as one removed outside purlis is forgotten.
+#[cfg(unix)]
+fn let_go_unasked(
+    machine: &Machine,
+    kept: &purlis_core::runners::Kept,
+    how: NotChecked,
+    shown: &[String],
+) -> Result<(), String> {
+    let runner = kept.name();
+    // A fetch can still reach a stopped one, never one whose container is gone, which went
+    // whatever it owed before it was kept unchecked (#4168).
+    let owed = match how {
+        NotChecked::Stopped => {
+            purlis_core::pools::work_owed_from(&machine.config, kept.pool(), runner)?
+        }
+        NotChecked::HomeOnly => Vec::new(),
+    };
+    if !owed.is_empty() {
+        let into: Vec<String> = owed
+            .iter()
+            .map(|owing| owing.plane.display().to_string())
+            .collect();
+        return Err(format!(
+            "Runner {runner} still has work to bring back into {}, so it stays until that is \
+             fetched.",
+            into.join(", ")
+        ));
+    }
+    let said = left_by(&machine.config, kept.pool(), runner);
+    if said
+        .iter()
+        .any(|one| !shown.contains(&crate::devices::shown_safely(one)))
+    {
+        return Err(format!(
+            "Runner {runner} now holds work you were not shown, so it stays. Look at what it \
+             holds in Devices and let it go again."
+        ));
+    }
+    // Started again since, it is asked as any running one is.
+    if unasked(machine, kept) != Some(how) {
+        return Err(format!(
+            "Runner {runner} runs again, so it stays until a look checks what it holds."
+        ));
+    }
+    let removed = match how {
+        // Unpaired if it answers, as a drain tries; stopped, it goes all the same.
+        NotChecked::Stopped => {
+            let to = ToARunner::of_kept(machine, kept)?;
+            let unpair = |_: &purlis_core::runners::Kept| crate::runnerlinks::unpair(&to);
+            purlis_core::pools::drain(&machine.config, &machine.docker, runner, Some(&unpair))
+        }
+        NotChecked::HomeOnly => {
+            purlis_core::pools::drain_removed(&machine.config, &machine.docker, runner)
+        }
+    }
+    .map_err(|why| why.to_string())?;
+    forget_waiting_on(&machine.config, kept.pool(), runner);
+    removed.left().map_or(Ok(()), Err)
+}
+
+/// **What keeps a draining runner**, as the last look found it (ruled 2026-11-07): work it holds
+/// that no fetch brings, a sentence each, or that it could not be checked for any. A runner goes
+/// only once it is checked, and one that cannot be asked is not woken to be checked (#2051):
+/// started again, a look checks it; Let it go in Devices lets it go unchecked.
+#[cfg(unix)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Left {
+    Found(Vec<String>),
+    NotChecked(NotChecked),
+}
+
+#[cfg(unix)]
+impl Left {
+    fn found(&self) -> &[String] {
+        match self {
+            Self::Found(left) => left,
+            Self::NotChecked(_) => &[],
+        }
+    }
+
+    /// Whether nothing keeps the runner: one kept unchecked is kept.
+    fn is_empty(&self) -> bool {
+        matches!(self, Self::Found(left) if left.is_empty())
+    }
+}
+
+#[cfg(unix)]
+fn lock_left() -> std::sync::MutexGuard<'static, std::collections::BTreeMap<Waiting, Left>> {
+    static LEFT: std::sync::Mutex<std::collections::BTreeMap<Waiting, Left>> =
         std::sync::Mutex::new(std::collections::BTreeMap::new());
     LEFT.lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -536,22 +691,37 @@ pub fn follow_and_drain(
         }
         // Removed on the word of the engine that made it (#4168), it holds no chat and cannot be
         // asked. A runner kept before its engine was has no such word: it stays as below.
-        if kept.engine.is_some()
-            && matches!(
-                machine.docker.missing(&kept.made, kept.engine.as_deref()),
-                Ok(Some(purlis_core::dockerpool::Missing::Removed(_)))
-            )
-        {
-            lock_waiting().remove(&(
+        let gone = kept.engine.as_ref().and_then(|engine| {
+            machine
+                .docker
+                .missing(&kept.made, Some(engine))
+                .ok()
+                .flatten()
+        });
+        if let Some(purlis_core::dockerpool::Missing::Removed(gone)) = gone {
+            let at = (
                 machine.config.clone(),
                 kept.pool().to_owned(),
                 kept.name().to_owned(),
-            ));
+            );
+            lock_waiting().remove(&at);
             // What its chats left in its home is kept as after an update (#4633).
             if let Some(line) =
                 kept_for_its_conversations(machine, &kept, "was removed outside purlis")
             {
+                lock_left().remove(&at);
                 said.push(line);
+                continue;
+            }
+            // **Nor does a home go unchecked** (ruled 2026-11-07): with no container, nothing
+            // lists what it holds, so it stays until the person lets it go.
+            if gone.home_kept {
+                said.push(format!(
+                    "draining runner {} was removed outside purlis and its home is not checked, \
+                     so it stays until it is let go in Devices",
+                    kept.name()
+                ));
+                lock_left().insert(at, Left::NotChecked(NotChecked::HomeOnly));
                 continue;
             }
             said.push(
@@ -597,8 +767,9 @@ pub fn follow_and_drain(
         let look = machine
             .ran(&kept)
             .map(|ran| purlis_core::pools::drain_look(&kept, ran));
-        // Only a runner that runs is asked what it holds: one stopped goes without being woken.
+        // Only a runner that runs is asked what it holds: one stopped is not woken to be asked.
         let runs = matches!(look, Ok(DrainLook::Ask) | Err(_));
+        let stopped_before = matches!(look, Ok(DrainLook::StoppedBefore));
         let chats = match look {
             _ if kept.unpaired => Ok(0),
             Ok(DrainLook::Held) => {
@@ -619,6 +790,7 @@ pub fn follow_and_drain(
                     kept_for_its_conversations(machine, &kept, "had stopped before its drain")
                 {
                     lock_waiting().remove(&at);
+                    lock_left().remove(&at);
                     said.push(line);
                     continue;
                 }
@@ -674,6 +846,17 @@ pub fn follow_and_drain(
         // clones that are here, so the runner lists every repository it holds, and each is proved
         // home as a fresh runner's is. What is not stays on it, with the runner, and the Pools
         // group says so.
+        // One that had stopped before its drain is not woken to list it (#2051): it stays,
+        // unchecked, until it runs again or the person lets it go.
+        if !kept.unpaired && stopped_before {
+            said.push(format!(
+                "draining runner {} had stopped before its drain and is not checked, so it stays \
+                 until it runs again or is let go in Devices",
+                kept.name()
+            ));
+            lock_left().insert(at, Left::NotChecked(NotChecked::Stopped));
+            continue;
+        }
         if !kept.unpaired && runs {
             let left = match left_on(&to) {
                 Ok(left) => left,
@@ -685,7 +868,7 @@ pub fn follow_and_drain(
                     kept.name(),
                     left.join("; ")
                 ));
-                lock_left().insert(at, left);
+                lock_left().insert(at, Left::Found(left));
                 continue;
             }
             lock_left().remove(&at);

@@ -232,6 +232,9 @@ pub enum Held {
     /// Policy refuses asks for a key the persona does not declare (#5078): nothing was asked,
     /// and `line` is what the chat is told.
     Refused { line: String },
+    /// The command's caller hung up while it waited ([`Asks::hold_while`]): it stopped waiting,
+    /// and the ask went where nobody else needs it. `line` is what the chat would be told.
+    CallerGone { line: String },
 }
 
 /// **Why [`Asks::read_asking`] read nothing.** Its `Display` is what the asker is told.
@@ -539,6 +542,14 @@ fn still_open_said(vault: &str, key: &str) -> String {
     )
 }
 
+/// What a command whose caller hung up while it waited is answered: nobody reads it.
+fn caller_gone_said(vault: &str, key: &str) -> String {
+    format!(
+        "the call ended while the person was asked for {}, so it stopped waiting",
+        vault_and_key(vault, key)
+    )
+}
+
 /// What a chat whose runner could not be confirmed as the person's own just now hears.
 fn unconfirmed_said(vault: &str, key: &str) -> String {
     format!(
@@ -790,6 +801,20 @@ impl Asks {
     /// nothing asked, where this chat declined it before. `say` tells the command, as it starts
     /// to wait, what it waits on.
     pub fn hold(&self, need: Need, within: Duration, say: &mut dyn FnMut(&str)) -> Held {
+        self.hold_while(need, within, &|| false, say)
+    }
+
+    /// **[`Asks::hold`], for a command whose caller may hang up**: it looks every
+    /// [`crate::askwait::LOOKS_AGAIN`] whether its caller is `gone`, and where it is, it stops
+    /// waiting at once and is no chat to nudge, and an ask nobody else needs goes from the
+    /// person's window ([`Held::CallerGone`]).
+    pub fn hold_while(
+        &self,
+        need: Need,
+        within: Duration,
+        gone: &dyn Fn() -> bool,
+        say: &mut dyn FnMut(&str),
+    ) -> Held {
         let Need {
             chat,
             persona,
@@ -909,29 +934,52 @@ impl Asks {
                 line: declined_said(&vault, &key),
             },
         };
-        match answered.recv_timeout(within) {
-            Ok(settled) => settled_as(settled),
-            // Its chat closed meanwhile.
-            Err(mpsc::RecvTimeoutError::Disconnected) => Held::StillOpen {
-                line: still_open_said(&vault, &key),
-            },
-            Err(mpsc::RecvTimeoutError::Timeout) => {
-                // Stops waiting, unless it was answered as the hold ran out.
-                let mut inner = self.inner();
+        let at = (vault.clone(), key.clone());
+        // What the last look found, so `settle` knows which way the wait ends.
+        let hung_up = std::cell::Cell::new(false);
+        let looked = || {
+            let now = gone();
+            hung_up.set(now);
+            now
+        };
+        // Stops waiting, unless it was answered in that very moment, which wins. Its caller gone,
+        // it leaves in the same hold of the lock, so no answer finds it as one to nudge.
+        let settle = || {
+            let mut inner = self.inner();
+            if hung_up.get() {
+                let waiting = left(&mut inner, &at, n);
+                if waiting.is_some() {
+                    self.save(&inner);
+                }
+                drop(inner);
+                if let Some(waiting) = waiting {
+                    self.trace(chat, "caller gone", &vault, &key, waiting);
+                    return None;
+                }
+            } else {
                 let still = inner
                     .open
-                    .get_mut(&(vault.clone(), key.clone()))
+                    .get_mut(&at)
                     .and_then(|asked| asked.waiters.iter_mut().find(|w| w.n == n))
                     .map(|waiter| waiter.tell = None)
                     .is_some();
                 drop(inner);
-                if !still && let Ok(settled) = answered.try_recv() {
-                    return settled_as(settled);
-                }
-                Held::StillOpen {
-                    line: still_open_said(&vault, &key),
+                if still {
+                    return None;
                 }
             }
+            answered.try_recv().ok()
+        };
+        match crate::askwait::waited(&answered, within, &looked, &settle) {
+            crate::askwait::Ended::Heard(settled) => settled_as(settled),
+            // Its chat closed meanwhile, or the hold ran out: the ask stays open, and the chat
+            // is nudged when it is answered.
+            crate::askwait::Ended::Closed | crate::askwait::Ended::NotAnswered => Held::StillOpen {
+                line: still_open_said(&vault, &key),
+            },
+            crate::askwait::Ended::AskerGone => Held::CallerGone {
+                line: caller_gone_said(&vault, &key),
+            },
         }
     }
 
@@ -1100,9 +1148,10 @@ impl Asks {
         }
         match self.hold(need, within, say) {
             Held::Filled { .. } => read().map_err(Unread::Vault),
-            Held::Declined { line } | Held::StillOpen { line } | Held::Refused { line } => {
-                Err(Unread::Asked(line))
-            }
+            Held::Declined { line }
+            | Held::StillOpen { line }
+            | Held::Refused { line }
+            | Held::CallerGone { line } => Err(Unread::Asked(line)),
         }
     }
 
@@ -1146,6 +1195,51 @@ impl Asks {
         by: Answerer,
     ) -> Result<Answered, String> {
         self.answer_as(ctx, id, answer, Named::as_asked(), by)
+    }
+
+    /// Whether the person may link asked key `key` of vault `vault` to entry `to`, judged as the
+    /// press comes and before anything is written. Where `into_too`, refused where `vault` is one
+    /// the asking persona may not use, as [`fillable`] refuses a Fill (a vault the project does
+    /// not have yet is left to the link's own write, as before). Always refused for an entry the
+    /// run's picker would not list (D-5246-1, amending D-5080-11): one of a vault the persona may
+    /// not use, or one no program is handed ([`super::brokered::NoProgram`]). A link is for good
+    /// and every run reads through it, while the notice of a run names only the persona's vault.
+    fn linkable(
+        &self,
+        ctx: &Ctx,
+        vault: &str,
+        key: &str,
+        into_too: bool,
+        to: &super::links::Target,
+    ) -> Result<(), String> {
+        let persona = self
+            .inner()
+            .open
+            .get(&(vault.to_owned(), key.to_owned()))
+            .map(|asked| asked.persona.clone())
+            .unwrap_or_default();
+        if into_too {
+            let doc = super::registry::load_registry(ctx).map_err(|e| e.message.to_string())?;
+            if super::registry::vault_in(&doc, vault).is_ok() {
+                super::brokered::authorise(ctx, Some(&persona), vault).map_err(|why| {
+                    format!(
+                        "{why} Allow it for {persona} first, or link the key into {persona}'s \
+                         own vault."
+                    )
+                })?;
+            }
+        }
+        if super::brokered::authorise(ctx, Some(&persona), &to.vault).is_err() {
+            return Err(format!(
+                "{persona} can't use vault {}, so its entries can't fill this ask. Pick another \
+                 entry, or type a value.",
+                to.vault
+            ));
+        }
+        if let Some(why) = super::brokered::no_program_is_handed(ctx, &to.vault, &[&to.key]) {
+            return Err(format!("{why}. Pick another entry, or type a value."));
+        }
+        Ok(())
     }
 
     /// **[`Self::answer`], storing a fill as `named`** (#5072): in another vault or under
@@ -1249,6 +1343,14 @@ impl Asks {
                         "an entry is linked under the asked name, {}",
                         vault_and_key(&vault, &key)
                     ));
+                }
+                // Only into a vault the persona may use, as a Fill is (#5246's review): a link
+                // planted in another persona's vault is read by that persona's tools. A replace
+                // was judged so as it was asked. And only to an entry the run's picker would
+                // list (D-5246-1), whatever the window listed.
+                if let Err(why) = self.linkable(ctx, &vault, &key, reason.is_none(), to) {
+                    still_open();
+                    return Err(why);
                 }
                 if let Err(e) = linked_to(ctx, &vault, &key, reason.as_ref(), to) {
                     still_open();
@@ -1407,6 +1509,23 @@ impl Asks {
         Self::forget_runs(&mut inner, chat);
         self.save(&inner);
     }
+}
+
+/// **The waiter `n` on the ask for `at` left with its caller**: it is no chat to nudge, and an
+/// ask nobody needs any more goes, as one does when its chat closes. How many still wait on it,
+/// where the waiter was still there.
+fn left(inner: &mut Inner, at: &(String, String), n: u64) -> Option<usize> {
+    let asked = inner.open.get_mut(at)?;
+    let before = asked.waiters.len();
+    asked.waiters.retain(|waiter| waiter.n != n);
+    if asked.waiters.len() == before {
+        return None;
+    }
+    let waiting = waiting_on(asked);
+    if !asked.needed() {
+        inner.open.remove(at);
+    }
+    Some(waiting)
 }
 
 /// What a brokered command is told where the person stored its key under another vault or
@@ -1697,7 +1816,8 @@ pub fn raised_within(
             key: line.key.clone(),
             reason: DECLINED_BY_POLICY.to_owned(),
         },
-        Held::StillOpen { .. } => Said::Pending {
+        // A `secret_ask` line's hold never looks for a caller gone.
+        Held::StillOpen { .. } | Held::CallerGone { .. } => Said::Pending {
             vault,
             key: line.key.clone(),
         },

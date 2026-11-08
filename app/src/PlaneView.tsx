@@ -5288,11 +5288,21 @@ export const PlaneView = memo(function PlaneView({
   }, [inboxAsked, inboxGroup, plane, showSideView]);
   /** Whether this project's Inbox is open on screen, told to the core: no notification is sent
    *  about what the person is reading (#1694, I-7). */
-  useInboxOpenTold(
-    plane,
-    inFront &&
-      arrangement.some((one) => !one.collapsed && viewOpenIn(one, presentViews) === "inbox"),
+  const inboxShown = arrangement.some(
+    (one) => !one.collapsed && viewOpenIn(one, presentViews) === "inbox",
   );
+  useInboxOpenTold(plane, inFront && inboxShown);
+  /** **Opening the Inbox reads the alerts again** (#5702): what a chat's last turn found in its
+   *  folders is listed when the person comes to look, not at the next minute's read. Only as it
+   *  opens: a project brought to the front with its Inbox open is no opening, and a switch sends
+   *  nothing more for it (`projectSwitch.cost.test.tsx`). */
+  const rereadAlerts = alerts?.does.reread;
+  const inboxWasShown = useRef(inboxShown);
+  useEffect(() => {
+    const opened = inboxShown && !inboxWasShown.current;
+    inboxWasShown.current = inboxShown;
+    if (opened && inFront) rereadAlerts?.();
+  }, [inboxShown, inFront, rereadAlerts]);
 
   /** A file ⌘P found here (FM-7), opened in its file tab the way the explorer opens one. */
   const fileHandled = useRef(fileAsked?.at);
@@ -10155,9 +10165,9 @@ export const PlaneView = memo(function PlaneView({
     [],
   );
 
-  /** Moves a task from its line in a tab's menu (#1489): to a tab of its own, beside its
-   *  session, or back. The catalogue's own rows, read as they stand when pressed, and held
-   *  as one function for the window's life, as {@link showFromChip} is. */
+  /** Moves a task from its line in a tab's menu (#1489): to a tab of its own, beside the
+   *  chat that asked for it, or back. The catalogue's own rows, read as they stand when
+   *  pressed, and held as one function for the window's life, as {@link showFromChip} is. */
   const placeNow = useRef<(session: number, where: TaskPlace) => void>(() => undefined);
   useEffect(() => {
     placeNow.current = (session, where) => {
@@ -10167,6 +10177,12 @@ export const PlaneView = memo(function PlaneView({
   });
   const placeFromChip = useCallback(
     (session: number, where: TaskPlace) => placeNow.current(session, where),
+    [],
+  );
+  /** The catalogue's row a task's line in a tab's menu presses to move it (#5679): read as the
+   *  line is drawn, so its button says that row's title. */
+  const placeRowFromChip = useCallback(
+    (session: number, where: TaskPlace) => byNow.current(placeRowId(session, where)),
     [],
   );
   /** What a tab's chats used, for its menu (#1500): read only as the window asks. */
@@ -10279,6 +10295,7 @@ export const PlaneView = memo(function PlaneView({
           ends={taskEndsOf}
           onPress={pressTaskEnd}
           onPlace={placeFromChip}
+          placeOf={placeRowFromChip}
           used={usedFromChip}
           // The limits of this pane's own chat, the menu's first row (#1498).
           limits={runningSaid(rows[0])}
@@ -10299,6 +10316,7 @@ export const PlaneView = memo(function PlaneView({
       isDragging,
       nameOf,
       placeFromChip,
+      placeRowFromChip,
       pressTaskEnd,
       showPickedIn,
       stopAllOf,

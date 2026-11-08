@@ -79,6 +79,47 @@ fn a_page_in_a_terminals_link_is_the_same_page() {
     );
 }
 
+/// **A Claude Code page is opened only as its own login asks**: for its own client, a code, and
+/// the browser sent back to the page that shows the code, each named once. A runner that rewrote
+/// it could otherwise ask the person's account for another client, or send the code elsewhere.
+#[test]
+fn a_claude_page_naming_another_client_or_return_is_never_opened() {
+    let client = "client_id=9d1c250a-e61b-44d9-88ed-5944d1962f5e";
+    let back = "redirect_uri=https%3A%2F%2Fplatform.claude.com%2Foauth%2Fcode%2Fcallback";
+    for page in [
+        PAGE.replace(client, "client_id=another-client"),
+        PAGE.replace(client, &format!("{client}&client_id=another-client")),
+        PAGE.replace(client, "client%5Fid=another-client"),
+        PAGE.replace(client, ""),
+        PAGE.replace(
+            back,
+            "redirect_uri=https%3A%2F%2Fevil.example%2Foauth%2Fcode%2Fcallback",
+        ),
+        PAGE.replace(
+            back,
+            &format!("{back}&redirect_uri=https%3A%2F%2Fevil.example"),
+        ),
+        PAGE.replace(back, ""),
+        PAGE.replace("response_type=code", "response_type=token"),
+    ] {
+        let mut driven = claude();
+        let said = driven.read(&format!("If the browser didn't open, visit: {page}\n"));
+
+        assert!(
+            matches!(said.as_slice(), [Event::CouldNotFollow { .. }]),
+            "{page}: {said:?}"
+        );
+    }
+    // A version from before its code page moved to the platform sends the browser back to the
+    // console's.
+    let console = PAGE.replace(
+        back,
+        "redirect_uri=https%3A%2F%2Fconsole.anthropic.com%2Foauth%2Fcode%2Fcallback",
+    );
+    let said = claude().read(&format!("If the browser didn't open, visit: {console}\n"));
+    assert_eq!(said, [Event::Open { url: console }]);
+}
+
 /// **Only the harness's own sign-in pages are opened**, by their host and path exactly: any
 /// other page, on any host, its vendor's own among them, and purlis cannot follow the sign-in,
 /// and says what it printed.
@@ -835,7 +876,7 @@ fn a_login_in_a_terminal_is_checked_however_it_ended() {
 fn a_login_that_goes_quiet_after_its_page_or_its_code_cannot_be_followed() {
     let now = Instant::now();
     let mut quiet = claude();
-    quiet.read("Sign in at: https://claude.ai/oauth/authorize?code=true\n");
+    quiet.read(&format!("Sign in at: {PAGE}\n"));
     quiet.read("Which organisation?\n");
 
     assert!(quiet.waited(now + NEXT_WITHIN / 2).is_none());

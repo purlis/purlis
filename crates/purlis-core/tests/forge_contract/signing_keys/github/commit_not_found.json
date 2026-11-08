@@ -1,0 +1,9 @@
+{
+  "source": "GitHub REST API version 2022-11-28, docs.github.com/en/rest/commits/commits (Get a commit: its commit.verification): 404 Not Found for a commit the repository does not have",
+  "exchanges": [
+    {
+      "call": {"endpoint": {"rest": {"method": null, "path": "repos/octo/hello/commits/0123abc"}}, "fields": []},
+      "reply": {"code": 1, "out": "", "err": "No commit found for SHA: 0123abc (HTTP 404)", "status": 404}
+    }
+  ]
+}
