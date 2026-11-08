@@ -109,10 +109,16 @@ const PASTED: &[&str] = &["ProxyJump", "Hostname", "User"];
 /// Whether `value` holds anything but what a host, a user, a port and a list of jumps are
 /// spelled with, which a shell might read.
 fn shell_would_read(value: &str) -> bool {
-    !value.chars().all(|c| {
-        c.is_ascii_alphanumeric()
-            || matches!(c, '.' | '-' | '_' | '@' | ':' | ',' | '/' | '[' | ']')
-    })
+    // A jump list's user or host starting with `-` would be an option of the ssh it runs.
+    let dashed = value
+        .split([',', '@'])
+        .map(|part| part.strip_prefix("ssh://").unwrap_or(part))
+        .any(|part| part.starts_with('-'));
+    dashed
+        || !value.chars().all(|c| {
+            c.is_ascii_alphanumeric()
+                || matches!(c, '.' | '-' | '_' | '@' | ':' | ',' | '/' | '[' | ']')
+        })
 }
 
 /// psql's `-c` or `--command` holding a backslash command: `\!` runs a shell, and `\copy …
@@ -297,6 +303,31 @@ const PROGRAMS: &[Flags] = &[
         mysql_spelling: false,
         operands_reach_ssh: false,
     },
+    // mysql's and mariadb's own tools, before the client's row, which their names' first part
+    // would reach. No letter is taken to have a value: each word after one is read.
+    Flags {
+        attached: "",
+        names: &[
+            "mysqldump",
+            "mariadb-dump",
+            "mysqladmin",
+            "mariadb-admin",
+            "mysqlimport",
+            "mariadb-import",
+            "mysqlcheck",
+            "mariadb-check",
+            "mysqlshow",
+            "mariadb-show",
+        ],
+        valued: "",
+        refused: "",
+        in_a_cluster: &[],
+        long: &["defaults-file", "defaults-extra-file", "plugin-dir"],
+        value: none,
+        long_valued: &[],
+        mysql_spelling: true,
+        operands_reach_ssh: false,
+    },
     Flags {
         attached: "p",
         names: &["mysql", "mariadb"],
@@ -333,14 +364,24 @@ pub fn names_a_command(name: &str, args: &[String]) -> Option<String> {
     ))
 }
 
+/// Whether `operand`, as `[user@]host:path` or `[user@]host::module`, hands ssh a user or a host
+/// starting with `-`: rsync passes the user as `-l user` and the host as a word of its own, each
+/// of which would then be an option of ssh's (#5876's fourth review).
+fn hands_ssh_a_dash(operand: &str) -> bool {
+    let Some((remote, _)) = operand.split_once(':') else {
+        return false;
+    };
+    remote.split('@').any(|part| part.starts_with('-'))
+}
+
 /// The first form of `args` that `program` refuses.
 fn refused_form(program: &Flags, args: &[String]) -> Option<String> {
     let mut words = args.iter();
     while let Some(word) = words.next() {
         if word == "--" {
             // rsync hands an operand's host to ssh as a word of its own.
-            let reaches =
-                program.operands_reach_ssh && words.any(|operand| operand.starts_with('-'));
+            let reaches = program.operands_reach_ssh
+                && words.any(|operand| operand.starts_with('-') || hands_ssh_a_dash(operand));
             return reaches.then(|| "an operand starting with -".to_owned());
         }
         if let Some(long) = word.strip_prefix("--") {
@@ -378,6 +419,9 @@ fn refused_form(program: &Flags, args: &[String]) -> Option<String> {
             continue;
         }
         let Some(cluster) = word.strip_prefix('-').filter(|rest| !rest.is_empty()) else {
+            if program.operands_reach_ssh && hands_ssh_a_dash(word) {
+                return Some("an operand starting with -".to_owned());
+            }
             continue;
         };
         if let Some(one) = program

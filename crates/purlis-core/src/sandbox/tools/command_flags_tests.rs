@@ -491,3 +491,59 @@ fn mysql_with_its_editor_or_pager_command_in_dash_e_is_offered_no_run_grant() {
         &[&["-e", "edit"], &["-e", "pager sh"]],
     );
 }
+
+// The fourth review of #5876.
+
+#[test]
+fn rsync_hands_a_user_and_host_to_ssh_as_words_of_their_own_so_one_starting_with_a_dash_is_refused()
+{
+    refused(
+        "rsync",
+        "an operand starting with -",
+        &[
+            &["-a", "u@-ox:path", "dst"],
+            &["-a", "--", "u@-ox:path", "dst"],
+            &["src", "u@-ox::module"],
+        ],
+    );
+    offered(
+        "rsync",
+        &[
+            "-a src deploy@host:dst",
+            "-a src host::module",
+            "-a -- src host:dst",
+        ],
+    );
+}
+
+#[test]
+fn ssh_with_a_jump_or_host_starting_with_a_dash_is_offered_no_run_grant() {
+    refused(
+        "ssh",
+        "-J",
+        &[
+            &["-J", "-ox", "host"],
+            &["-J", "u@-ox", "host"],
+            &["-J", "a,-ox", "host"],
+        ],
+    );
+    refused("ssh", "-o ProxyJump", &[&["-o", "ProxyJump=-ox", "host"]]);
+    refused("ssh", "-o Hostname", &[&["-o", "Hostname=-ox", "host"]]);
+}
+
+#[test]
+fn mysqls_own_tools_are_not_read_by_the_clients_flags() {
+    refused(
+        "mariadb-dump",
+        "--plugin-dir",
+        &[&["-e", "--plugin-dir=/tmp/x", "shop"]],
+    );
+    refused(
+        "mysqldump",
+        "--defaults-file",
+        &[&["-e", "--defaults_file=/tmp/x", "shop"]],
+    );
+    offered("mariadb-dump", &["-e --single-transaction shop"]);
+    offered("mysqladmin", &["-h db status"]);
+    refused("mysql-8.0", "--pager", &[&["--pager=x"]]);
+}
