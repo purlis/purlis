@@ -6,7 +6,6 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { toward } from "../src/theme/tint";
 import { PICTURE_COMPARISON } from "./pictures";
 
 /**
