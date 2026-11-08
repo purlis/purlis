@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 
 use crate::forge::Caller;
 
-use super::{Evidence, Outcome, Refusal, Reports};
+use super::{Evidence, Outcome, Reports};
 
 /// A native crash: the minidump the crash handler wrote, and when.
 #[derive(Clone, PartialEq, Eq)]
@@ -48,9 +48,10 @@ pub fn crashes_dir(config_root: &Path) -> PathBuf {
 }
 
 /// Hands every minidump waiting in `crashes` to `reports`, oldest first, as a Crash report from a
-/// trigger (nobody is at the keyboard), and answers with each outcome. A minidump is removed once
-/// it is sent, may not go, or is older than [`KEPT_FOR_SECS`]; one the intake did not take waits
-/// for the next launch. A file still being written (not `.dmp`, or in a folder) is left alone.
+/// trigger (nobody is at the keyboard), and answers with each outcome. A minidump the intake gave
+/// no answer for ([`Outcome::Queued`]) waits here for a later launch (#5693, Q24); one that is
+/// sent, may not go, was refused, or is older than [`KEPT_FOR_SECS`] is removed. A file still
+/// being written (not `.dmp`, or in a folder) is left alone.
 pub fn report_waiting(reports: &Reports, crashes: &Path) -> Vec<Outcome> {
     let now = chrono::Utc::now().timestamp().unsigned_abs();
     let mut outcomes = Vec::new();
@@ -66,7 +67,7 @@ pub fn report_waiting(reports: &Reports, crashes: &Path) -> Vec<Outcome> {
             Evidence::NativeCrash(NativeCrash { at, minidump }),
             &Caller::trigger(),
         );
-        if !matches!(said, Outcome::Refused(Refusal::NotSent(_))) {
+        if said != Outcome::Queued {
             let _ = std::fs::remove_file(&path);
         }
         outcomes.push(said);

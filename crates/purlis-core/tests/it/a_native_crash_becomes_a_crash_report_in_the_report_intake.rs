@@ -13,7 +13,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use purlis_core::forge::Caller;
-use purlis_core::report::intake::{Dsn, Recorded, Sentry};
+use purlis_core::report::intake::{Answer, Dsn, Post, Recorded, Request, Sentry};
 use purlis_core::report::{
     Consent, Evidence, Known, NativeCrash, Outcome, Refusal, Reports, SentList, Stream, native,
 };
@@ -208,12 +208,47 @@ fn a_minidump_waiting_on_the_next_launch_is_sent_and_then_removed() {
     assert!(!left.exists(), "a minidump sent is not kept");
 }
 
+/// An intake that never answers, as an offline machine gets.
+struct Offline;
+
+impl Post for Offline {
+    fn post(&self, _: &Request) -> Result<Answer, String> {
+        Err("no route to the intake".into())
+    }
+}
+
 #[test]
-fn a_minidump_the_intake_did_not_take_waits_for_the_next_launch() {
+fn a_minidump_the_intake_gave_no_answer_for_waits_for_the_next_launch() {
     let home = tempfile::tempdir().unwrap();
     let crashes = native::crashes_dir(home.path());
     let left = left_by_the_handler(&crashes, now() - 60);
-    let recorded = recorded(503);
+    let offline = Reports::new(Known::default())
+        .with_consent(Consent {
+            crash_reports: Some(true),
+            agent_drafts: None,
+            asked: true,
+        })
+        .sending_to(
+            Arc::new(Sentry::new(Dsn::parse(DSN).unwrap(), Offline)),
+            home.path(),
+        );
+
+    let said = native::report_waiting(&offline, &crashes);
+
+    assert_eq!(said, [Outcome::Queued]);
+    assert!(left.exists(), "kept, to be sent on a later launch");
+    assert!(
+        SentList::read(home.path()).is_empty(),
+        "not listed: it has not left"
+    );
+}
+
+#[test]
+fn a_minidump_the_intake_refused_is_not_sent_again() {
+    let home = tempfile::tempdir().unwrap();
+    let crashes = native::crashes_dir(home.path());
+    let left = left_by_the_handler(&crashes, now() - 60);
+    let recorded = recorded(413);
 
     let said = native::report_waiting(&reports(&recorded, home.path(), Some(true)), &crashes);
 
@@ -221,7 +256,7 @@ fn a_minidump_the_intake_did_not_take_waits_for_the_next_launch() {
         matches!(said[..], [Outcome::Refused(Refusal::NotSent(_))]),
         "{said:?}"
     );
-    assert!(left.exists(), "kept, to be sent on a later launch");
+    assert!(!left.exists());
 }
 
 #[test]

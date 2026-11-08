@@ -132,7 +132,9 @@ fn said(outcome: &purlis_core::report::Outcome) -> String {
         Outcome::Refused(Refusal::NoIntake) => {
             "not sent: this build has no report service".to_owned()
         }
-        Outcome::Refused(Refusal::NotSent(why)) => format!("kept for the next launch: {why}"),
+        Outcome::Queued => "kept for a later launch: the report service gave no answer".to_owned(),
+        Outcome::Counted { repeats } => format!("counted, {repeats} times"),
+        Outcome::Refused(Refusal::NotSent(why)) => format!("not sent: {why}"),
         Outcome::Refused(other) => format!("not sent: {other:?}"),
         Outcome::Drafted { .. } => "drafted".to_owned(),
     }
