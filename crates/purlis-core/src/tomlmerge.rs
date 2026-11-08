@@ -302,5 +302,4 @@ fn apply(
 }
 
 #[cfg(test)]
-#[path = "tomlmerge_tests.rs"]
 mod tests;
