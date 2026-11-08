@@ -20,7 +20,7 @@ use purlis_core::skills::grades::{self, Planned, resumable};
 use purlis_core::skills::verbs::Level;
 use purlis_core::skills::verbs::drafts;
 
-use super::{Begin, DraftBegun, On, begin, chats_on, flag_on, running_of, terms, ticked_ids};
+use super::{Begin, DraftBegun, On, begin, chats_on, running_of, terms, ticked_ids};
 use crate::planes::{PlaneId, Planes};
 
 /// **What resuming a stopped grade would run, as the window shows it before Resume is pressed.**
@@ -213,7 +213,6 @@ pub(crate) async fn skill_grade_resume_plan(
 ) -> Result<Option<SkillGradeResumePlan>, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("reading what a resume would run", move || {
-        flag_on()?;
         Ok(
             resumable::of(held.root(), &grade)
                 .map(|stopped| plan_of(held.root(), &plane, &stopped)),
@@ -235,7 +234,6 @@ pub(crate) async fn skill_grade_resume(
 ) -> Result<String, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("resuming a grade", move || {
-        flag_on()?;
         begin_resume(app, held, plane, &grade, &consent, None)
     })
     .await
