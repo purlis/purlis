@@ -276,7 +276,7 @@ impl Grants {
         };
         let proposal = &wait.proposal;
         let kept = (
-            wait.chat.clone().unwrap_or_default(),
+            proposal.persona.clone(),
             proposal.login.clone(),
             proposal.origin.clone(),
         );
@@ -577,14 +577,8 @@ fn asked_about_the_login(
         );
         return no(asked_on_a_runner_said(login, pool));
     }
-    let _ = gone;
-    let waited = waited_for_the_person(
-        grants,
-        id,
-        &heard,
-        loginask::THE_PERSON_IS_WAITED_FOR,
-        &|| false,
-    );
+    let waited =
+        waited_for_the_person(grants, id, &heard, loginask::THE_PERSON_IS_WAITED_FOR, gone);
     match waited {
         Ended::Heard(Heard::Allowed) => None,
         Ended::Heard(Heard::Kept(reason)) => no(match &replaces {
@@ -698,9 +692,15 @@ fn let_go_unanswered(
                 held.upgrade()
                     .filter(|held| held.login_grants().end(id, Heard::Gone))
             });
-            let _ = (session, login);
             if let Some(held) = went {
                 held.chats().asks_may_have_moved();
+                held.chats().tell_outcome(
+                    session,
+                    purlis_core::askoutcome::Outcome {
+                        about: purlis_core::askoutcome::About::BrowserLogin { login },
+                        answer: purlis_core::askoutcome::Answer::NotAnswered,
+                    },
+                );
             }
         });
     if let Err(why) = watched {

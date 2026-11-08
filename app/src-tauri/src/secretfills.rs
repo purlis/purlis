@@ -192,9 +192,8 @@ enum Whose {
 
 impl Whose {
     fn of(session: u32, persona: Option<&str>) -> Self {
-        // Reverted to show the per-persona tests red: no persona's name is ever this.
         match persona {
-            Some(persona) if persona.contains('\0') => Self::Persona(persona.to_owned()),
+            Some(persona) if !persona.is_empty() => Self::Persona(persona.to_owned()),
             _ => Self::Chat(session),
         }
     }
@@ -776,9 +775,8 @@ fn heard(
         }
     };
     let at_most = purlis_core::loginask::THE_PERSON_IS_WAITED_FOR;
-    let _ = gone;
     Ok(
-        match crate::loginasks::waited(&heard, at_most, &|| false, &settle) {
+        match crate::loginasks::waited(&heard, at_most, gone, &settle) {
             Ended::Heard(heard) => heard,
             Ended::Closed => Heard::Gone,
             Ended::NotAnswered => {
