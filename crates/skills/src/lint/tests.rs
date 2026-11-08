@@ -382,10 +382,11 @@ printf '%s\n' "a | b; c & d (e)"
 }
 
 #[test]
-fn a_program_a_script_really_calls_is_found_inside_a_substitution_a_shell_string_or_a_heredoc_fed_to_a_shell() {
+fn a_program_a_script_really_calls_is_found_inside_a_substitution_a_shell_string_or_a_heredoc_fed_to_a_shell()
+ {
     let script = r#"#!/usr/bin/env bash
 title="$(curl -s "$URL" | yq '.title | @sh')"
-echo "made by `whoami`"
+echo "made by `whoami` on ${HOST:-$(hostname)}"
 bash -c 'kubectl get pods | awk "{print \$1}"'
 sh -ec "helm list; terraform plan"
 eval "make build"
@@ -410,8 +411,23 @@ esac
     assert_eq!(
         missing_from(script),
         [
-            "curl", "yq", "whoami", "kubectl", "awk", "helm", "terraform", "make", "ssh", "cat",
-            "date", "id", "docker", "sort_by", "usage", "npm",
+            "curl",
+            "yq",
+            "whoami",
+            "hostname",
+            "kubectl",
+            "awk",
+            "helm",
+            "terraform",
+            "make",
+            "ssh",
+            "cat",
+            "date",
+            "id",
+            "docker",
+            "sort_by",
+            "usage",
+            "npm",
         ]
     );
 }

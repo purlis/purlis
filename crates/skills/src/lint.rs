@@ -403,7 +403,7 @@ fn tools_missing(skill: &SkillFiles<'_>, has: &dyn Fn(&str) -> bool) -> Vec<Find
     };
     let injected: Vec<String> = injections(skill.text)
         .iter()
-        .flat_map(|command| programs(command))
+        .flat_map(|command| shell::programs(command))
         .collect();
     said(injected, Place::Injected);
     for (path, text) in skill.others {
@@ -520,9 +520,8 @@ fn script_programs(path: &str, text: &str) -> Vec<String> {
     if shell {
         let own = functions(text);
         out.extend(
-            shell_lines(text)
-                .iter()
-                .flat_map(|line| programs(line))
+            shell::programs(text)
+                .into_iter()
                 .filter(|program| !own.contains(program)),
         );
     }
@@ -548,189 +547,7 @@ fn functions(text: &str) -> Vec<String> {
         .collect()
 }
 
-/// A shell script's command lines: comments, here-documents and the shebang taken out, and a
-/// line that ends in `\` joined to the next.
-fn shell_lines(text: &str) -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
-    let mut joining = String::new();
-    let mut until: Option<String> = None;
-    let mut cases = 0usize;
-    for line in text.lines() {
-        if let Some(end) = &until {
-            if line.trim() == end {
-                until = None;
-            }
-            continue;
-        }
-        let mut line = line.trim();
-        if line.starts_with('#') {
-            continue;
-        }
-        // A function's head, `name() {`, runs nothing; nor does a `case` arm's pattern.
-        if let Some(at) = line.find("()")
-            && line[..at]
-                .trim()
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || "_-".contains(c))
-        {
-            line = &line[at + 2..];
-        }
-        if line.starts_with("case ") {
-            cases += 1;
-        } else if line.starts_with("esac") {
-            cases = cases.saturating_sub(1);
-        } else if cases > 0
-            && let Some(at) = line.find(')')
-            && !line[..at].contains('(')
-        {
-            line = &line[at + 1..];
-        }
-        if let Some(at) = line.find("<<") {
-            let word = line[at + 2..]
-                .trim_start_matches(['-', '~'])
-                .split_whitespace()
-                .next()
-                .unwrap_or_default()
-                .trim_matches(['\'', '"']);
-            if !word.is_empty() {
-                until = Some(word.to_owned());
-            }
-        }
-        if let Some(body) = line.strip_suffix('\\') {
-            joining.push_str(body);
-            joining.push(' ');
-            continue;
-        }
-        joining.push_str(line);
-        out.push(std::mem::take(&mut joining));
-    }
-    if !joining.is_empty() {
-        out.push(joining);
-    }
-    out
-}
-
-/// What the shell runs no program for: its keywords and its builtins.
-const SHELL_OWN: &[&str] = &[
-    "if",
-    "then",
-    "else",
-    "elif",
-    "fi",
-    "for",
-    "while",
-    "until",
-    "do",
-    "done",
-    "case",
-    "esac",
-    "in",
-    "function",
-    "select",
-    "time",
-    "!",
-    "{",
-    "}",
-    "[[",
-    "]]",
-    "[",
-    "]",
-    "test",
-    "echo",
-    "printf",
-    "cd",
-    "export",
-    "local",
-    "return",
-    "exit",
-    "set",
-    "unset",
-    "shift",
-    "read",
-    "source",
-    ".",
-    "eval",
-    "exec",
-    "trap",
-    "wait",
-    "true",
-    "false",
-    "break",
-    "continue",
-    "declare",
-    "typeset",
-    "readonly",
-    "let",
-    "alias",
-    "unalias",
-    "type",
-    "command",
-    "builtin",
-    "hash",
-    "pwd",
-    "pushd",
-    "popd",
-    "getopts",
-    "umask",
-    "ulimit",
-    "jobs",
-    "fg",
-    "bg",
-    "kill",
-    "shopt",
-    "mapfile",
-    "readarray",
-    "disown",
-    "caller",
-    "complete",
-    "enable",
-    "help",
-    "logout",
-    "times",
-    "dirs",
-    "suspend",
-    "fc",
-    "history",
-    ":",
-    "noglob",
-    "nohup",
-    "sudo",
-];
-
-/// The shell's words a command may start with before the program it runs: `if grep …`,
-/// `then jq …`, `sudo make …`.
-const LEADING: &[&str] = &[
-    "if", "then", "else", "elif", "while", "until", "do", "!", "time", "exec", "sudo", "nohup",
-    "noglob", "builtin",
-];
-
-/// The programs one command line calls: the first word of each command a pipe, a list or a
-/// substitution starts, past what sets a variable for it and the shell's leading words. A
-/// variable, an option, a redirection, the skill's own file (`./`, a `$` path) and the shell's
-/// own words are no program.
-fn programs(line: &str) -> Vec<String> {
-    let line = match line.find(" #") {
-        Some(at) => &line[..at],
-        None => line,
-    };
-    line.split(['|', ';', '&', '(', ')', '`', '\n'])
-        .filter_map(|command| {
-            let word = command
-                .split_whitespace()
-                .map(|word| word.trim_matches(['"', '\'']))
-                .find(|word| {
-                    !(word.contains('=') && !word.starts_with('=')) && !LEADING.contains(word)
-                })?;
-            let calls = !word.is_empty()
-                && !word.starts_with(['$', '-', '.', '~', '{', '#', '*'])
-                && !word.ends_with(['{', '}'])
-                && !word.contains(['$', '*', '?', '[', ']', '=', '<', '>'])
-                && !word.chars().all(|c| c.is_ascii_digit())
-                && !SHELL_OWN.contains(&word);
-            calls.then(|| word.to_owned())
-        })
-        .collect()
-}
+mod shell;
 
 #[cfg(test)]
 mod tests;
