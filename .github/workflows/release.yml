@@ -1276,18 +1276,13 @@ jobs:
       # `syft_<version>_checksums.txt`. Moving to a new syft is both lines, by hand.
       - name: syft, at one version and checksum, reads each platform's bundle
         env:
-          GH_TOKEN: ${{ github.token }}
           SYFT_VERSION: 1.52.0
           SYFT_SHA256: caeedb81fb0491615f1ebd1761e4145d41ee86dd2cc7bf80669f9f5ad9d6133d
         run: |
           set -euo pipefail
-          # Through the API, asked up to four times: github.com's release download links answered
-          # Actions runners with 5xx for hours on 2026-11-08 while the API served the same file.
-          for try in 1 2 3 4; do
-            gh release download "v${SYFT_VERSION}" --repo anchore/syft --pattern "syft_${SYFT_VERSION}_linux_amd64.tar.gz" --output "$RUNNER_TEMP/syft.tar.gz" --clobber && break
-            [ "$try" = 4 ] && exit 1
-            echo "::warning::try $try of 4 to fetch syft_${SYFT_VERSION}_linux_amd64.tar.gz failed"; sleep $((try * 15))
-          done
+          # Asked again on any error, five more times (#5840): github.com's release links answered
+          # Actions runners with 5xx for hours on 2026-11-08. No token: this job holds none.
+          curl -fsSL --proto '=https' --retry 5 --retry-all-errors --retry-delay 20 -o "$RUNNER_TEMP/syft.tar.gz" "https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/syft_${SYFT_VERSION}_linux_amd64.tar.gz"
           echo "$SYFT_SHA256  $RUNNER_TEMP/syft.tar.gz" | sha256sum -c -
           tar -xzf "$RUNNER_TEMP/syft.tar.gz" -C "$RUNNER_TEMP" syft
           "$RUNNER_TEMP/syft" version
