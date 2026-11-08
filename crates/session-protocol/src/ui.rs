@@ -1423,6 +1423,9 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "reopened_layout",
     "reopened_views",
     "repo_instructions",
+    // What each repo's own folder changed, for the closed repo rows (#3489): a read, as
+    // `branch_status` is.
+    "repos_changed",
     "resize_session",
     "reveal_branch_path",
     // Where the chats the away summary counts run, and their runners' branches (#2051): a read.

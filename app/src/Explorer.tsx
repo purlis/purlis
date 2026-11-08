@@ -61,6 +61,7 @@ import {
   type StatusRead,
 } from "./branchStatus";
 import { PLANE_ROOT, isPlaneRoot, type Place } from "./pieceViews";
+import { useRepoChanges } from "./repoChanges";
 import { Badge } from "./ui/badge/Badge";
 import { CatalogueMenu, catalogueMenu } from "./Menus";
 import { NotClonedHere, notClonedRows, type Cloning } from "./NotCloned";
@@ -479,12 +480,31 @@ export function Explorer({
   // The cockpit's branch is read whether or not its files are open: its header counts them.
   if (cockpit !== undefined && !branches.some((one) => branchKey(one) === branchKey(cockpit.ref)))
     branches.push(cockpit.ref);
-  // A closed repo's row says how many files it changed (#3343): each repo's is read, open or not.
-  if (has("files") && onWs)
-    for (const repo of repos)
-      if (!branches.some((one) => one.repo === repo && one.piece === null))
-        branches.push({ repo, piece: null });
   const statuses = useBranchStatus(plane, workspace, branches);
+  // A closed repo's row says how many files it changed (#3343), and none of them reads its
+  // status for it (#3489): every closed row's count is one ask, which the core answers from what
+  // it keeps per clone until the clone moves. An opened repo's status is read as a branch's is.
+  const closedRepos =
+    has("files") && onWs
+      ? repos.filter((repo) => !branches.some((one) => one.repo === repo && one.piece === null))
+      : [];
+  const repoChanges = useRepoChanges(plane, workspace, closedRepos);
+  const closedMarks = useMemo(
+    () =>
+      new Map(
+        [...repoChanges.values()].flatMap((one) =>
+          one.changes === null
+            ? []
+            : [
+                [
+                  branchKey({ repo: one.repo, piece: null }),
+                  { mark: one.changes.mark, count: one.changes.count },
+                ] as const,
+              ],
+        ),
+      ),
+    [repoChanges],
+  );
   const cockpitStatus = cockpit === undefined ? undefined : statuses.get(branchKey(cockpit.ref));
   const apart = useAheadBehind(plane, workspace, cockpit?.ref, cockpitStatus);
   // Indexed once per answer, not per folder per keystroke: a branch of 10,000 changes is walked
@@ -495,7 +515,7 @@ export function Explorer({
         [...statuses].flatMap(([key, read]) =>
           // A status with nothing in it indexes nothing. The core always answers one; the check is
           // for a test's mocked core that answers every command it was not told about with `null`
-          // (`theme/chrome.test.tsx`), which the closed repo rows' reads (#3343) now reach.
+          // (`theme/chrome.test.tsx`), which an opened repo row's read reaches.
           read.status === undefined || read.status === null
             ? []
             : [[key, indexed(read.status)] as const],
@@ -540,6 +560,7 @@ export function Explorer({
     wsRepos: onWs ? repos : undefined,
     statuses,
     indexes,
+    closedMarks,
     changedOnly,
     // Where the filter finds by name, the tree is not narrowed: the files found are drawn instead.
     filter: finds ? "" : filter.trim().toLocaleLowerCase(),
@@ -2025,6 +2046,9 @@ export type FilesOf = {
   statuses: ReadonlyMap<string, StatusRead>;
   /** The same, indexed by path and by folder, by {@link branchKey}. */
   indexes: ReadonlyMap<string, Indexed>;
+  /** What each closed repo's own folder changed, by {@link branchKey} (#3489): its row's mark
+   *  and count, from one ask for every closed row, where no status of it is read. */
+  closedMarks?: ReadonlyMap<string, Marked>;
   /** Whether each branch's files are collapsed to what it changed. */
   changedOnly: boolean;
   /** What the file rows are narrowed to, lower-cased; `""` narrows nothing. */
@@ -2543,7 +2567,9 @@ function FilesRow({
   const key = fileFold(at.place.workspace, branch);
   const open = isOpen(at.files, branch, always);
   const level = open ? levelOf(at.files, branch) : undefined;
-  const marked = at.files.indexes.get(branchKey(branch))?.marks.get(branch.folder);
+  const marked =
+    at.files.indexes.get(branchKey(branch))?.marks.get(branch.folder) ??
+    (branch.folder === "" ? at.files.closedMarks?.get(branchKey(branch)) : undefined);
   const picked = bare ? undefined : pickOf(at, branch.folder, true);
   const press = usePickingPress(at, picked, () => {
     if (!always) at.fold(key, !open);

@@ -1061,11 +1061,14 @@ pub fn tree_moved(root: &Path) {
 
 /// Something at or under `dir` changed — a plane its watcher saw move, a plane or a clone a save
 /// or a fetch let go of, a setting written: the next shared standing of every plane and every
-/// clone there ([`shared_standing`], [`crate::reposave::shared_standing`]) reads git again. The
-/// one call for both stores, since a plane's settings are what each of its clones reads too.
+/// clone there ([`shared_standing`], [`crate::reposave::shared_standing`]), and the next count of
+/// what each clone changed ([`crate::files::repo_changes`]), reads git again. The one call for
+/// every store, since a plane's settings are what each of its clones reads too.
 pub fn touch(dir: &Path) {
     PLANES.touch_within(dir);
     crate::reposave::touch_within(dir);
+    // What each clone's own folder changed, for the explorer's closed repo rows (#3489).
+    crate::files::counts_touch_within(dir);
 }
 
 /// `git rev-list --count <range>`, or `None` when git cannot count it — a ref that is not there.

@@ -351,6 +351,89 @@ pub async fn branch_status(
     .map_err(|err| format!("reading what the branch changed did not finish: {err}"))?
 }
 
+/// What one repo's own folder changed, rolled up onto its top: a closed repo row of the explorer
+/// (#3343, #3489).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct RepoChanged {
+    pub repo: String,
+    /// Its own folder's mark and how many files it holds that changed; `null` when it changed
+    /// nothing, or when it was refused.
+    pub changes: Option<FolderChanges>,
+    /// Why it could not be read, in the sentence the window shows; `null` when it was.
+    pub trouble: Option<String>,
+}
+
+/// What each of `repos` changed in its own folder, rolled up onto its top: what the explorer's
+/// closed repo rows say, for every repo of a workspace in one ask (#3489).
+// Each repo's answer is kept per clone in the core (`purlis_core::files::repo_changes`), on the
+// store the save standings share and the one watch per repo touches, so an ask with nothing moved
+// reads no status at all, and one after a write reads only the repo it was in. A repo that is
+// read is read by the bounded reader, as `branch_status` is, each on a thread of its own whose
+// reads the reader's own line bounds. Not a doc comment, because the generated bindings carry
+// those.
+#[tauri::command]
+#[specta::specta]
+pub async fn repos_changed(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    workspace: String,
+    repos: Vec<String>,
+) -> Result<Vec<RepoChanged>, String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    tauri::async_runtime::spawn_blocking(move || {
+        let reader = crate::reader();
+        changed_in(&root, &workspace, &repos, |branch| {
+            files::status(&reader, &root, branch)
+        })
+    })
+    .await
+    .map_err(|err| format!("reading what the repos changed did not finish: {err}"))
+}
+
+/// [`repos_changed`]'s answer, each repo's from `read` where the core has none kept.
+fn changed_in(
+    plane: &Path,
+    workspace: &str,
+    repos: &[String],
+    read: impl Fn(Branch<'_>) -> Result<files::Status, files::Refused> + Sync,
+) -> Vec<RepoChanged> {
+    std::thread::scope(|scope| {
+        let asked: Vec<_> = repos
+            .iter()
+            .map(|repo| {
+                let read = &read;
+                scope.spawn(move || files::repo_changes(plane, workspace, repo, read))
+            })
+            .collect();
+        repos
+            .iter()
+            .zip(asked)
+            .map(|(repo, asked)| {
+                let answer = asked
+                    .join()
+                    .unwrap_or_else(|_| Err("reading what it changed stopped".to_string()));
+                let (changes, trouble) = match answer {
+                    Ok(rolled) => (rolled.map(folder_changes), None),
+                    Err(why) => (None, Some(why)),
+                };
+                RepoChanged {
+                    repo: repo.clone(),
+                    changes,
+                    trouble,
+                }
+            })
+            .collect()
+    })
+}
+
+fn folder_changes(one: files::Rolled) -> FolderChanges {
+    FolderChanges {
+        folder: one.folder,
+        mark: one.mark.into(),
+        count: u32::try_from(one.count).unwrap_or(u32::MAX),
+    }
+}
+
 /// How far a branch is from the branch it was cut from: the branch cockpit's header (FM-5).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct AheadBehind {
