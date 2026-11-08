@@ -2134,7 +2134,8 @@ _Avoid_: eval engine, judge
 
 **Trigger test**:
 A fixture of a skill's that tests whether a harness picks the skill when it should and leaves it
-alone when it should not. A **grade** runs each one as real chats.
+alone when it should not. A **grade** runs each one as real chats; a built-in skill's are run by
+the **CI grader** instead.
 
 **Outcome eval**:
 A fixture of a skill's that tests how well the skill does its job on a task. A **grade** runs one
@@ -2144,7 +2145,8 @@ only where the person ticks it on the plan or names it at a terminal, and a judg
 One run of a grading framework on a copy of a skill: its trigger tests, and any outcome evals
 ticked or named, run as real chats in each **arm**, scored and recorded in the **eval record** against the
 version the copy held. A grade shows what it runs and spends before it starts, and starts only on
-the person's press, or their yes at a terminal (ADR 0105).
+the person's press, or their yes at a terminal (ADR 0105). What the **CI grader** runs is never a
+grade.
 _Avoid_: test run, benchmark, eval (alone)
 
 **Arm** (of a grade):
@@ -2158,11 +2160,51 @@ The project's committed log of grades, one row per grade, beside the skill log. 
 a skill's version by what its folder held. Results never go in the skill's folder.
 _Avoid_: results file, benchmark
 
+**CI grader**:
+The CI job that grades purlis's built-in skills' trigger tests on every harness purlis supports,
+starting each harness headless on a throwaway runner with purlis's plugin, the session-start
+briefing and purlis's MCP tools, among a **crowd fixture**. It reads skill starts from the
+harness's machine-readable output and scores them by a grade's rules, and holds each built-in skill
+to its **trigger bar**: on a pull request for the built-in skills it touches, and nightly for all.
+It measures only what a harness chooses given the listing. It is not a **grade**: it never runs in
+the window, never writes the eval record, and never grades a skill the person made (ADR 0105,
+amended 2026-11-08).
+_Avoid_: grade (for what it runs), headless grade, trigger CI, eval job
+
+**Trigger bar**:
+What a built-in skill's trigger tests must score in the **CI grader**, declared beside them:
+**strict** (at least 95% recall, at most 5% false triggers) for a skill whose miss leaks a secret,
+loses work or loses context, and **standard** (at least 85% recall, at most 5% false triggers) for
+the rest.
+_Avoid_: threshold, SLA, tier (alone)
+
+**Crowd fixture**:
+About forty skills purlis writes itself, committed with the **CI grader**, whose names and
+descriptions are modelled on kinds of skills people commonly install, so a built-in skill is graded
+in a listing as full as a person's. A bare run without it is reported beside the crowded one.
+_Avoid_: distractor skills, noise, fake skills, third-party skills (none are copied)
+
+**Miss**:
+A built-in skill that should have started and did not. In a chat it is recorded as a
+`skill.missed` event, with the skill, the harness and its version, the persona and its signal (a
+**correction**, or a report the person files saying a purlis skill should have started), and never
+the prompt; the Skill studio shows misses per built-in skill and harness, and nothing is uploaded.
+In the **CI grader** it is a prompt that should start the skill and did not, including one that
+started another built-in skill, which is also that skill's false trigger.
+_Avoid_: non-trigger, false negative
+
+**Correction**:
+The person starting a built-in skill themselves, by its slash command or **Use skill…**, in the
+prompt right after an agent turn that did not start it. It records a **miss**. A chat's first
+prompt is never one, and neither is a start of a skill the agent started in the turn before.
+_Avoid_: override, manual trigger, retry
+
 The skills' relationships: a **project skill** reaches a workspace only through a **grant**; a
 **persona skill** adds to what the chat has where it runs; when two levels hold a skill of the
 same name the narrower wins (persona, then workspace, then project, and local over shared), and
 a built-in skill's name is never taken; a **grading framework** produces **trigger tests** and
-**outcome evals**, and **skill runs** supply the live signals.
+**outcome evals**, and **skill runs** supply the live signals, as **misses** do for built-in
+skills, which the **CI grader** holds to their **trigger bars**.
 
 **Vault**:
 A named set of secrets purlis keeps in the system keyring and hands to a command, never to
