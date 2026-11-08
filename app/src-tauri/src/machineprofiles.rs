@@ -442,9 +442,9 @@ fn signing_in_here(profile: purlis_core::profiles::Profile) -> crate::signinwatc
 /// **With `pool`, it is signed in on that pool's runner** (#2049): the line is this machine's
 /// own `purlis profile sign-in --pool --in-terminal`, which checks the pool each time it runs and
 /// then runs the runner's own sign-in in that tab, in the runner's folder for the profile
-/// ([`crate::poolprofiles::sign_in_line`]); nothing of this machine's sign-in goes there. The runner is asked again until it says the profile is signed in there or the
-/// person closes the shell (#4009). With `device`, by the harness's device-code flow there
-/// (#4044).
+/// ([`crate::poolprofiles::sign_in_line`]); nothing of this machine's sign-in goes there. The
+/// runner is asked again until it says the profile is signed in there or the person closes the
+/// shell (#4009). With `device`, by the harness's device-code flow there (#4044).
 #[tauri::command]
 #[specta::specta]
 pub fn type_profile_sign_in(
