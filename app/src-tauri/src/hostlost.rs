@@ -68,7 +68,7 @@ pub fn ended_with_it(chats: &crate::chats::Chats, session: u32) -> Option<String
     chats
         .own_work_of(session)
         .as_ref()
-        .and_then(purlis_core::wakeline::ended)
+        .and_then(purlis_core::wakeline::counted)
 }
 
 /// Told each chat whose program ended with its host. The event carries its project.

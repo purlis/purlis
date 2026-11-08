@@ -3690,23 +3690,33 @@ impl Chats {
     }
 
     /// **The wake line for chat `session`, started again as `again` on its conversation after its
-    /// program ended with its session host** (#5752, spec #5743): what it had left running of
-    /// its own, which the host's end ended, or none. None for a chat whose program did not end
-    /// with its host: a restart of a running chat ends its work on purpose, and that is the
-    /// "now" restarts' to tell (#5743).
+    /// program ended with its session host** (#5752, spec #5743): what the host's end ended of
+    /// it (what it had left running of its own, each piece by name, a turn cut mid-way), as its
+    /// record holds it, or none. None for a chat whose program did not end with its host: a
+    /// restart of a running chat ends its work on purpose, and that is the "now" restarts' to
+    /// tell (#5743).
     fn wake_line_after_its_host(&self, session: u32, again: &Chat) -> Option<String> {
         if !self.sessions.lost_with_its_host(session) {
             return None;
         }
-        let own_work = self.own_work_of(session).filter(|_| again.resume.is_some());
-        purlis_core::wakeline::of(own_work.as_ref(), false)
+        let own = lock(&self.own_work)
+            .get(&session)
+            .cloned()
+            .unwrap_or_default();
+        let chat = Chat {
+            own_work: own.work,
+            own_pieces: own.pieces,
+            mid_turn: own.mid_turn,
+            ..again.clone()
+        };
+        purlis_core::wakeline::of_chat(&chat, false)
     }
 
     /// What chat `session` had left running of its own as its last turn ended, as its record
     /// holds it ([`Self::heard_own_work`]): kept after its program ends, until it is started
     /// again or closed.
     pub(crate) fn own_work_of(&self, session: u32) -> Option<purlis_core::ownwork::OwnWork> {
-        lock(&self.own_work).get(&session).copied()
+        lock(&self.own_work).get(&session).and_then(|own| own.work)
     }
 
     /// **Starts chat `session` again without the sandbox** (#1342): the person's own choice, from

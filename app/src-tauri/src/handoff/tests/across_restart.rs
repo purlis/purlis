@@ -1438,6 +1438,8 @@ fn a_shell_a_chat_started_in_a_session_of_its_own_ends_when_the_next_host_settle
          the crashed one left"
     );
     planes.close(&id).expect("it closes");
+}
+
 // ---------------------------------------------------------------------------------------------
 // Every reopen path gives the wake line (#5752, spec #5743), and only a reopen does.
 //
@@ -1491,13 +1493,17 @@ fn is_told_its_shell_ended(host: &Pretend, chat: u32, how: &str) {
 
 /// Asserts chat `chat` on `host` was given no wake line. Judged by the line the core makes for
 /// a chat with one background shell, and by the words it opens and ends with, so it holds
-/// whatever the line comes to say (#5808 owns its content).
+/// whatever the line comes to say (#5750 and #5751 own its content).
 fn is_given_no_wake_line(host: &Pretend, chat: u32, how: &str) {
+    let one_shell = purlis_core::ownwork::OwnWork {
+        shells: 1,
+        ..purlis_core::ownwork::OwnWork::default()
+    };
     let line = purlis_core::wakeline::of(
-        Some(&purlis_core::ownwork::OwnWork {
-            shells: 1,
-            ..purlis_core::ownwork::OwnWork::default()
-        }),
+        &purlis_core::wakeline::Ended {
+            own_work: Some(&one_shell),
+            ..purlis_core::wakeline::Ended::default()
+        },
         false,
     )
     .expect("the core makes a wake line for one shell");
