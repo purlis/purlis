@@ -477,19 +477,19 @@ impl<'a> Linter<'a> {
         let mut issues = Vec::new();
         for entry in &written {
             let shown = crate::personas::one_line(entry);
+            if let Some(plane) = Reference::written_left(entry) {
+                issues.push(Issue::warn(format!(
+                    "`skills:` entry '{shown}' names a skill purlis no longer ships: it is the \
+                     project skill `{plane}` now. Write that"
+                )));
+                continue;
+            }
             match Reference::parse(entry) {
                 None => issues.push(Issue::warn(format!(
                     "`skills:` entry '{shown}' names no skill, so its chats load nothing for \
                      it. Write `purlis:<name>` for a built-in skill, `<plugin>:<name>` for a \
                      plugin's, or a skill's name"
                 ))),
-                Some(Reference::Named(_)) if Reference::written_left(entry).is_some() => {
-                    issues.push(Issue::warn(format!(
-                        "`skills:` entry '{shown}' names a skill purlis no longer ships: it is \
-                         the project skill `{}` now. Write that",
-                        Reference::written_left(entry).unwrap_or_default()
-                    )))
-                }
                 Some(Reference::BuiltIn(skill)) if Reference::written_old(entry) => {
                     issues.push(Issue::warn(format!(
                         "`skills:` entry '{shown}' has the old prefix: it names \

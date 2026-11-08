@@ -52,7 +52,7 @@ impl Reference {
         let Some((prefix, name)) = written.split_once(':') else {
             return Some(match renamed(written) {
                 Some(own) => Self::built_in(own.to_owned()),
-                None => Self::built_in(written.to_owned()).left_or(written),
+                None => Self::built_in(written.to_owned()).bare(written),
             });
         };
         let (prefix, name) = (prefix.trim(), name.trim());
@@ -77,9 +77,10 @@ impl Reference {
         }
     }
 
-    /// A bare `written` that is no built-in's name ([`Self::built_in`] kept it built in) is a
-    /// plane or harness skill's name, as written.
-    fn left_or(self, written: &str) -> Self {
+    /// **A bare entry `written`, read through [`Self::built_in`]**: the plane skill a built-in
+    /// that left the bundle went to ([`LEFT`]), else the plane or harness skill of the name as
+    /// written, since a bare name is a built-in's only by [`RENAMED`].
+    fn bare(self, written: &str) -> Self {
         match self {
             Self::BuiltIn(_) => Self::Named(written.to_owned()),
             named => named,

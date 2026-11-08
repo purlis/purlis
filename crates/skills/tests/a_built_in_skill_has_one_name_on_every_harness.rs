@@ -182,7 +182,7 @@ fn only_a_purlis_prefixed_name_is_reserved() {
 
 /// Every name the window-building skill had while purlis shipped it: `purlis-building-ui`, and
 /// the names before it took a shorter one (ADR 0099 as amended 2026-11-01).
-const BUILDING_OLD_NAMES: [&str; 8] = [
+const BUILDING_OLD_NAMES: [&str; 9] = [
     "purlis-building-ui",
     "purlis:purlis-building-ui",
     "purlis:building-ui",
@@ -191,6 +191,7 @@ const BUILDING_OLD_NAMES: [&str; 8] = [
     "purlis:purlis-building-purlis-ui",
     "purlis:building-purlis-ui",
     "charter:building-purlis-ui",
+    "charter:purlis-building-purlis-ui",
 ];
 
 /// The plane skill the window-building guide became when it left the bundle (#5725).
@@ -221,10 +222,10 @@ fn every_name_of_the_building_skill_reads_as_the_plane_skill_it_left_for_5725() 
                 std::slice::from_ref(&reference),
                 route,
             );
-            assert!(
-                names_of(&set).contains(&BUILDING_ON_THE_PLANE),
-                "{old} {route:?}: {:?}",
-                names_of(&set)
+            assert_eq!(
+                names_of(&set),
+                [BUILDING_ON_THE_PLANE, "purlis-handoff"],
+                "{old} {route:?}"
             );
             assert!(
                 set.left_out.is_empty(),
