@@ -2379,3 +2379,237 @@ fn rsync_with_a_remote_shell_is_offered_no_run_grant_and_the_chat_hears_to_leave
 fn psql_with_a_file_of_commands_is_offered_no_run_grant_and_the_chat_hears_to_leave_it_out() {
     refused_for_its_flag("psql", &["-f", "x.sql"], "-f");
 }
+
+// #5833: more programs that run others, or run what a chat wrote.
+
+// #5833: programs that run the command after them, or a command they name.
+
+#[test]
+fn consul_template_runs_the_command_after_it_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("consul-template");
+}
+
+#[test]
+fn railway_runs_the_command_after_it_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("railway");
+}
+
+#[test]
+fn aws_runas_runs_the_command_after_it_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("aws-runas");
+}
+
+#[test]
+fn vals_runs_the_command_after_it_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("vals");
+}
+
+#[test]
+fn gomplate_runs_the_command_after_it_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("gomplate");
+}
+
+#[test]
+fn envdir_runs_the_command_after_it_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("envdir");
+}
+
+#[test]
+fn chpst_runs_the_command_after_it_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("chpst");
+}
+
+#[test]
+fn systemd_run_runs_the_command_after_it_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("systemd-run");
+}
+
+#[test]
+fn telepresence_runs_the_command_after_it_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("telepresence");
+}
+
+#[test]
+fn run0_runs_the_command_after_it_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("run0");
+}
+
+#[test]
+fn firejail_runs_the_command_after_it_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("firejail");
+}
+
+#[test]
+fn flatpak_runs_the_command_after_it_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("flatpak");
+}
+
+#[test]
+fn flatpak_spawn_runs_the_command_after_it_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("flatpak-spawn");
+}
+
+#[test]
+fn rr_runs_the_command_after_it_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("rr");
+}
+
+#[test]
+fn pkgx_runs_the_command_after_it_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("pkgx");
+}
+
+#[test]
+fn flox_runs_the_command_after_it_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("flox");
+}
+
+// #5833: programs that run what a file a chat wrote says.
+
+#[test]
+fn task_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("task");
+}
+
+#[test]
+fn skaffold_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("skaffold");
+}
+
+#[test]
+fn tilt_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("tilt");
+}
+
+#[test]
+fn dagger_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("dagger");
+}
+
+#[test]
+fn earthly_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("earthly");
+}
+
+#[test]
+fn act_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("act");
+}
+
+#[test]
+fn firebase_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("firebase");
+}
+
+#[test]
+fn netlify_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("netlify");
+}
+
+#[test]
+fn vercel_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("vercel");
+}
+
+#[test]
+fn wrangler_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("wrangler");
+}
+
+#[test]
+fn chezmoi_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("chezmoi");
+}
+
+#[test]
+fn mage_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("mage");
+}
+
+#[test]
+fn invoke_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("invoke");
+}
+
+#[test]
+fn fab_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("fab");
+}
+
+#[test]
+fn cdk8s_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("cdk8s");
+}
+
+// #5833: build tools and test runners, which build and run what a chat wrote.
+
+#[test]
+fn sbt_builds_and_runs_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("sbt");
+}
+
+#[test]
+fn mix_builds_and_runs_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("mix");
+}
+
+#[test]
+fn playwright_builds_and_runs_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("playwright");
+}
+
+#[test]
+fn cypress_builds_and_runs_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("cypress");
+}
+
+/// `phpunit` is refused before any Run grant is weighed, as every name `php` starts is: it runs
+/// what it is told, so it may be no tool either.
+#[test]
+fn phpunit_builds_and_runs_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
+    let project = project();
+    let asks = Asks::new(project.path());
+    let mut want = printenv(project.path(), &["."]);
+    want.command[0] = "phpunit".to_owned();
+    let frames = run_with(&the_chat(project.path()), want, &asks, Duration::ZERO);
+    assert!(asks.open_runs().is_empty(), "{frames:?}");
+    assert!(
+        refusal(&frames).0.contains("runs whatever it is told"),
+        "{frames:?}"
+    );
+}
+
+#[test]
+fn gitlab_runner_builds_and_runs_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("gitlab-runner");
+}
+
+#[test]
+fn circleci_builds_and_runs_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("circleci");
+}
+
+#[test]
+fn stack_builds_and_runs_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("stack");
+}
+
+#[test]
+fn cabal_builds_and_runs_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("cabal");
+}
+
+#[test]
+fn dune_builds_and_runs_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("dune");
+}
+
+#[test]
+fn zig_builds_and_runs_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("zig");
+}
+
+#[test]
+fn lein_builds_and_runs_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("lein");
+}

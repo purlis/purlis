@@ -1867,6 +1867,59 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "sed",
     "aria2c",
     "kustomize",
+    // more of the family (#5833). Run the command after them, or one they name:
+    // `consul-template -exec`, `railway run`, `aws-runas`, `vals exec`, `gomplate -- cmd`,
+    // `envdir` and `chpst`, `systemd-run` and `run0` (systemd's own `sudo`), `telepresence … --`,
+    // `firejail`, `flatpak run` and `flatpak-spawn --host`, `rr record`, `pkgx` and
+    // `flox activate --`.
+    "consul-template",
+    "railway",
+    "aws-runas",
+    "vals",
+    "gomplate",
+    "envdir",
+    "chpst",
+    "systemd-run",
+    "run0",
+    "telepresence",
+    "firejail",
+    "flatpak",
+    "flatpak-spawn",
+    "rr",
+    "pkgx",
+    "flox",
+    // Run what a file a chat wrote says: a Taskfile, a skaffold.yaml, a Tiltfile, a dagger
+    // module, an Earthfile, a workflow `act` runs, `firebase emulators:exec`, `netlify dev` and
+    // `build`, `vercel build`, `wrangler`'s build, `chezmoi`'s scripts, a magefile, `invoke`'s
+    // and `fab`'s tasks, a cdk8s app.
+    "task",
+    "skaffold",
+    "tilt",
+    "dagger",
+    "earthly",
+    "act",
+    "firebase",
+    "netlify",
+    "vercel",
+    "wrangler",
+    "chezmoi",
+    "mage",
+    "invoke",
+    "fab",
+    "cdk8s",
+    // Build tools and test runners, which build and run what a chat wrote, and the CI runners
+    // that run a pipeline file locally. (`phpunit` is refused already, by `php`'s prefix.)
+    "sbt",
+    "mix",
+    "playwright",
+    "cypress",
+    "gitlab-runner",
+    "circleci",
+    "stack",
+    "cabal",
+    "dune",
+    "zig",
+    "lein",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused
