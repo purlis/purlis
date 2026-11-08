@@ -2968,8 +2968,8 @@ mod tests {
                 .trim()
                 .to_owned();
 
-            let scan =
-                pushed_knowing(&repo, &update(&merge, NOTHING), &[published.clone()]).unwrap();
+            let known = std::slice::from_ref(&published);
+            let scan = pushed_knowing(&repo, &update(&merge, NOTHING), known).unwrap();
 
             assert!(!scan.changes_the_allowlist, "merged onto {ours}");
         }
