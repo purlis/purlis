@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794162522129,
+  "lastUpdate": 1794164550272,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -43806,6 +43806,48 @@ window.BENCHMARK_DATA = {
             "value": 101.933577,
             "unit": "ms",
             "extra": "median of 5 runs: 101.505, 101.780, 101.934, 102.198, 103.642 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "a55fcb9b5f18459c9722fdfeeb29fd8bf913898e",
+          "message": "CI: only main saves a cache, and two Linux jobs restore a gate's cache instead of their own (#5858) (#5867)\n\nThe repository's Actions cache sat at 10.9 GB against its 10 GB cap and turned over in under\nthree hours. Pull requests and merge queue branches saved npm caches through setup-node's\ncache: npm; Pool setup's run and recorded behaviour kept Rust caches of their own (1.7 and\n0.76 GB) for builds scenario-linux and rust already cache.\n\n- ./.github/actions/npm-ci restores npm's cache and saves it on main alone; every setup-node\n  says package-manager-cache: false.\n- Pool setup restores scenario-linux's cache, recorded restores rust's; neither saves.\n- mutants saves only on main; fedora's nightly registry cache is gone.\n- the_workflows_run_only_what_they_pinned.rs fails on any workflow or action step that could\n  save a cache on a ref other than main.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6Y24W06SRH6B9S3SQRMNQ0Z\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-08T18:09:59Z",
+          "tree_id": "11d703db1a0e9fa9b7ee85f00138ef3e2331d162",
+          "url": "https://github.com/purlis/purlis/commit/a55fcb9b5f18459c9722fdfeeb29fd8bf913898e"
+        },
+        "date": 1794164544935,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5167930000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.504, 0.516, 0.517, 0.528, 0.541 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.531461,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.058, 16.285, 16.531, 16.532, 16.582 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.79478,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.255, 101.753, 101.795, 102.028, 103.492 ms"
           }
         ]
       }
