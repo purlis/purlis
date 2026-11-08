@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794132981882,
+  "lastUpdate": 1794139000346,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -43428,6 +43428,48 @@ window.BENCHMARK_DATA = {
             "value": 100.9345965,
             "unit": "ms",
             "extra": "median of 5 runs: 100.557, 100.910, 100.935, 101.258, 101.315 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "a6dbc232b3e286fdfaa694afe4978597ab459a48",
+          "message": "A cluster runner's sign-in runs over its link, and Open in terminal types purlis (#5792)\n\n* A cluster runner's sign-in is held to the pod it had right before its exec\n\nkubectl exec reaches a runner's pod by its name. The uid of the pod of that\nname is read right before the exec, and again once the exec reached it, on\nthe first thing the sign-in prints: before any step is said or anything is\npassed to it. A pod made again under the name in between stops the sign-in,\nand nothing of it counts. A status check over exec is read again the same\nway once it answered. A login held so is never typed into a shell.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6WWZBRHVYKX08QKVK0FGBY4\nPurlis-Persona: steward\n\n* Open in terminal types purlis profile sign-in --pool, checked each time it runs\n\nThe line Open in terminal types on a pool's profile was the runner's\nsign-in itself, checked only as the window made it. It is now this\nmachine's own purlis profile sign-in <name> --pool <pool> --in-terminal,\nwhich passes the gate the window's sign-in passes each time it runs, a\nline run again from a shell's history too, and then runs the runner's\nown sign-in in that terminal for the person to drive. A cluster runner's\nshows nothing before its pod's uid held.\n\nIt asks the running window first, as the command's other pool sign-in\ndoes. The window answers a line it just typed with the click that typed\nit, once, within a minute, with no dialog; any other run is asked of the\nperson.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6WWZBRHVYKX08QKVK0FGBY4\nPurlis-Persona: steward\n\n* A sign-out's login names no pin either\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6WWZBRHVYKX08QKVK0FGBY4\nPurlis-Persona: steward\n\n* A cluster runner's sign-in runs over the desktop's link to it\n\nSession protocol 1.79: start_sign_in has the runner run its own purlis\nprofile sign-in with pipes, held to the link it was asked on;\nsign_in_next reads what it printed, sign_in_input types to it, and\nend_sign_in or the link's end ends it. The link proves the runner by\nthe key pinned at its pairing. It is the paired desktop's alone, on its\nown link, as sign_in_redirect is; a relaying host and any other host\nrefuse it, and the runner runs it only for a profile it keeps for that\ndesktop.\n\nThe window's sign-ins on a cluster pool, driven or in the strip's\nterminal, go this way where the runner speaks 1.79: driven::Started lets\na login started elsewhere be driven as one run here. A runner before\n1.79, and the command line, still sign in through kubectl exec held to\nthe pod's uid.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6WWZBRHVYKX08QKVK0FGBY4\nPurlis-Persona: steward\n\n* A test's Codex login is started before it is driven\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6WWZBRHVYKX08QKVK0FGBY4\nPurlis-Persona: steward\n\n* A sign-in started over the link is the login, beside the runner it started on\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6WWZBRHVYKX08QKVK0FGBY4\nPurlis-Persona: steward\n\n* Ending a sign-in over the link is sorted as purlis's own tuning\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6WWZBRHVYKX08QKVK0FGBY4\nPurlis-Persona: steward\n\n* The runner's sign-in over the link is read as a Typed by the core\n\nThe command line holds no sign-in of a forge, and its source names none:\nhow a sign-in asked over the link is run is the core's to read.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6WWZBRHVYKX08QKVK0FGBY4\nPurlis-Persona: steward\n\n* The UI's bindings carry type_profile_sign_in's words for the line it types on a pool\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6WWZBRHVYKX08QKVK0FGBY4\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-08T10:22:10Z",
+          "tree_id": "8364097f2cc2b0a2bbb799df24bf7bdf02d554a0",
+          "url": "https://github.com/purlis/purlis/commit/a6dbc232b3e286fdfaa694afe4978597ab459a48"
+        },
+        "date": 1794138995122,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.712217,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.706, 0.707, 0.712, 0.718, 0.725 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4952665,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.374, 16.472, 16.495, 16.549, 16.609 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.493503,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.811, 101.465, 101.494, 102.111, 103.021 ms"
           }
         ]
       }
