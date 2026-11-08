@@ -580,22 +580,35 @@ fn plan(
 /// What the sweep writes for the file at `path`, recorded as `was`: nothing when its stat has
 /// not moved.
 fn change(path: &Path, rel: &str, was: Option<&Recorded>) -> Option<Change> {
-    let Ok(meta) = std::fs::metadata(path) else {
-        return was.map(|was| Change::Delete(was.id));
+    let stamp = |meta: &std::fs::Metadata| {
+        let mtime = meta
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map_or(0, |d| d.as_nanos() as i64);
+        (meta.len() as i64, mtime)
     };
-    let size = meta.len() as i64;
-    let mtime = meta
-        .modified()
-        .ok()
-        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-        .map_or(0, |d| d.as_nanos() as i64);
-    if let Some(was) = was
-        && was.size == size
-        && was.mtime == mtime
-    {
-        return None;
-    }
-    let Some(text) = std::fs::read(path).ok().and_then(crate::memstore::text_of) else {
+    let (size, mtime, bytes) = match was {
+        // A file with no row is read whatever its stat says: opened first, and its stat taken
+        // from the open file, it costs one lookup of its path and not two. On a first build that
+        // is every file, and the second lookup was 30% of the system time of reading them (#5672).
+        None => {
+            let (meta, bytes) = opened(path)?;
+            let (size, mtime) = stamp(&meta);
+            (size, mtime, Some(bytes))
+        }
+        Some(was) => {
+            let Ok(meta) = std::fs::metadata(path) else {
+                return Some(Change::Delete(was.id));
+            };
+            let (size, mtime) = stamp(&meta);
+            if was.size == size && was.mtime == mtime {
+                return None;
+            }
+            (size, mtime, std::fs::read(path).ok())
+        }
+    };
+    let Some(text) = bytes.and_then(crate::memstore::text_of) else {
         // Not readable as text: not a memory to the scan either.
         return was.map(|was| Change::Delete(was.id));
     };
@@ -628,6 +641,17 @@ fn change(path: &Path, rel: &str, was: Option<&Recorded>) -> Option<Change> {
             hash,
         },
     })
+}
+
+/// The file at `path` opened, with its stat as the open file has it and its bytes: what
+/// [`std::fs::metadata`] and then [`std::fs::read`] answer, the path looked up once.
+fn opened(path: &Path) -> Option<(std::fs::Metadata, Vec<u8>)> {
+    use std::io::Read;
+    let mut file = std::fs::File::open(path).ok()?;
+    let meta = file.metadata().ok()?;
+    let mut bytes = Vec::with_capacity(usize::try_from(meta.len()).unwrap_or(0).saturating_add(1));
+    file.read_to_end(&mut bytes).ok()?;
+    Some((meta, bytes))
 }
 
 /// `work` done on each of `items` across the machine's threads, the answers in `items`' order.
