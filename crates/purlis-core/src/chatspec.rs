@@ -44,6 +44,9 @@ pub struct Reporting<'a> {
 pub fn spec(app: impl IntoIterator<Item = (OsString, OsString)>, chat: &Terminal<'_>) -> Spec {
     let mut spec = Spec::new(chat.program, chat.size).args(chat.args);
     spec.cwd = chat.cwd.map(Into::into);
+    // A harness's background shells lead sessions of their own, out of its group's reach, and
+    // end with it all the same (#5749). A person's own shell keeps what it detached.
+    spec.ends_what_left_its_group = chat.starting.harness.is_some();
     // **A chat starts from an empty environment plus a keep-list** (`crate::chatenv`).
     spec.env_clear = true;
     spec.env = crate::chatenv::compose(app, &chat.starting);

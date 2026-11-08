@@ -167,6 +167,8 @@ ulid = "3"
 purlis-session-protocol = { path = "../../crates/session-protocol", features = ["any-stream"] }
 # A program that stands in for a terminal's, behind the session host (#1998).
 purlis-host = { workspace = true, features = ["test-support"] }
+# When a chat's harness started, as the next host reads it of a program a crashed one left (#5749).
+purlis-same-user.workspace = true
 tempfile.workspace = true
 # A screenshot's pixels, read to tell a value kept out was painted over (#2243): the version
 # purlis-browser-engine's tests read them with.

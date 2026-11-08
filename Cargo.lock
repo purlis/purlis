@@ -5951,6 +5951,7 @@ dependencies = [
  "purlis-core",
  "purlis-host",
  "purlis-linux-sandbox",
+ "purlis-same-user",
  "purlis-session-protocol",
  "purlis-unicode",
  "rfd 0.16.1",
