@@ -4117,10 +4117,6 @@ pub(crate) mod ondisk;
 mod prsave;
 pub mod recover;
 pub mod resolve;
-#[cfg(test)]
-mod soak;
-#[cfg(test)]
-mod twoclones;
 mod update;
 pub use merging::{MergeState, Merging, Seen, changed_since};
 pub use prsave::{MergedAsItStands, settled_at, stamp_is_unusable};

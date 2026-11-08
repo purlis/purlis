@@ -18,7 +18,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use super::bringin::{BroughtIn, When, bring_in};
+use crate::planegit::bringin::{BroughtIn, When, bring_in};
 use super::twoclones::{Two, commit, read, run, write};
 
 const WS: &str = "workspaces/alpha";

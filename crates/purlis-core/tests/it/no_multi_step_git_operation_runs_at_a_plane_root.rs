@@ -75,9 +75,7 @@ fn rust_files(path: &Path, out: &mut Vec<PathBuf>) {
 /// Whether `relative` is a file of tests, which runs git as a test's own setup (the soak's
 /// stand-in forge merges by every method on purpose).
 fn is_tests(relative: &str) -> bool {
-    relative.ends_with("/tests.rs")
-        || relative.ends_with("/twoclones.rs")
-        || relative.ends_with("/soak.rs")
+    relative.ends_with("/tests.rs") || relative.contains("/tests/")
 }
 
 /// The file's lines up to its inline test module, each without its `//` comment.

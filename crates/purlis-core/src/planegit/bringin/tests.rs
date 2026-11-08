@@ -9,7 +9,7 @@ use super::*;
 
 const PLANE_WS: &str = "workspaces/alpha";
 
-use super::super::twoclones::{Two, commit, read, run, write};
+use super::super::tests::twoclones::{Two, commit, read, run, write};
 
 const CHARTER: &str = "# alpha\n\n## Vision\n\nShip it\n\n## Context\n\nOne.\n\nTwo.\n\nThree.\n\n## Sessions\n\nNo session records yet.\n";
 

@@ -7,7 +7,7 @@
 use std::path::Path;
 
 use super::*;
-use crate::planegit::twoclones::{Two, commit, read, run, write};
+use crate::planegit::tests::twoclones::{Two, commit, read, run, write};
 
 const SHARED: &str = "one\ntwo\nthree\nfour\nfive\n";
 

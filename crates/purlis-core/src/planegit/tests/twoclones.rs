@@ -7,38 +7,38 @@
 use std::path::{Path, PathBuf};
 
 /// git for the test's own setup, which must go through.
-pub(super) fn run(dir: &Path, args: &[&str]) -> String {
+pub(in crate::planegit) fn run(dir: &Path, args: &[&str]) -> String {
     let done = crate::testgit::run(dir, args);
     assert!(done.ok(), "git {args:?}: {done:?}");
     done.out.trim().to_owned()
 }
 
-pub(super) fn write(dir: &Path, file: &str, text: &str) {
+pub(in crate::planegit) fn write(dir: &Path, file: &str, text: &str) {
     let path = dir.join(file);
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(path, text).unwrap();
 }
 
-pub(super) fn read(dir: &Path, file: &str) -> String {
+pub(in crate::planegit) fn read(dir: &Path, file: &str) -> String {
     std::fs::read_to_string(dir.join(file)).unwrap()
 }
 
-pub(super) fn commit(dir: &Path, message: &str) {
+pub(in crate::planegit) fn commit(dir: &Path, message: &str) {
     run(dir, &["add", "-A"]);
     run(dir, &["commit", "-q", "-m", message]);
 }
 
 /// This machine's plane and another's, on one commit, with `release` as the target. `fetch`
 /// lands what the other made and updates this one's remote-tracking branch.
-pub(super) struct Two {
+pub(in crate::planegit) struct Two {
     _dir: tempfile::TempDir,
-    pub(super) bare: PathBuf,
-    pub(super) mine: PathBuf,
-    pub(super) theirs: PathBuf,
+    pub(in crate::planegit) bare: PathBuf,
+    pub(in crate::planegit) mine: PathBuf,
+    pub(in crate::planegit) theirs: PathBuf,
 }
 
 impl Two {
-    pub(super) fn new(seed: &[(&str, &str)]) -> Two {
+    pub(in crate::planegit) fn new(seed: &[(&str, &str)]) -> Two {
         let dir = tempfile::tempdir().unwrap();
         let top = dir.path().canonicalize().unwrap();
         let (bare, mine, theirs) = (top.join("bare"), top.join("mine"), top.join("theirs"));
@@ -74,13 +74,13 @@ impl Two {
         }
     }
 
-    pub(super) fn land_theirs(&self, message: &str) {
+    pub(in crate::planegit) fn land_theirs(&self, message: &str) {
         commit(&self.theirs, message);
         run(&self.theirs, &["push", "-q", "origin", "release"]);
         run(&self.mine, &["fetch", "-q", "origin"]);
     }
 
-    pub(super) fn head(&self) -> String {
+    pub(in crate::planegit) fn head(&self) -> String {
         run(&self.mine, &["rev-parse", "HEAD"])
     }
 }
