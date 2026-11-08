@@ -457,13 +457,17 @@ function dialogCore() {
         return {
           on: false,
           title: "purlis · studio",
-          account: {
-            login: "octocat",
-            host: "github.com",
-            forge: "GitHub",
-            may_add: false,
-            verified_as: null,
-          },
+          accounts: [
+            {
+              kind: "github",
+              login: "octocat",
+              host: "github.com",
+              forge: "GitHub",
+              may_add: false,
+              verified_as: null,
+              verifies: true,
+            },
+          ],
         };
       case "pool_sign_in_asked":
         return { id: 1, asks: "sign-in", profile: "work", pool: "team", code: "A1B2C3" };

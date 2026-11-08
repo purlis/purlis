@@ -1,0 +1,13 @@
+{
+  "source": "GitLab REST API v4, docs.gitlab.com/api/user_keys (read 2026-11-08): a key the account has already is answered 400 with \"has already been taken\"; then List all SSH keys finds it. The key is the test's own, put in for @KEY@.",
+  "exchanges": [
+    {
+      "call": {"endpoint": {"rest": {"method": "POST", "path": "user/keys"}}, "fields": [{"text": ["title", "purlis · studio"]}, {"text": ["key", "@KEY@"]}, {"text": ["usage_type", "signing"]}]},
+      "reply": {"code": 1, "out": "", "err": "{\"message\":{\"key\":[\"has already been taken\"],\"fingerprint_sha256\":[\"has already been taken\"]}}", "status": 400}
+    },
+    {
+      "call": {"endpoint": {"rest": {"method": null, "path": "user/keys"}}, "fields": [{"typed": ["per_page", "100"]}]},
+      "reply": {"code": 0, "out": "[{\"id\": 77, \"title\": \"purlis · studio\", \"key\": \"@KEY@\", \"usage_type\": \"signing\"}]", "err": "", "status": 200}
+    }
+  ]
+}

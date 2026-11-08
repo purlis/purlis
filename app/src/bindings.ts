@@ -1801,7 +1801,8 @@ export const commands = {
 	forgeSigningPermissionWait: (flow: number) => typedError<ForgeAccountRow, string>(__TAURI_INVOKE("forge_signing_permission_wait", { flow })),
 	/**
 	 *  **What the Signed commits card shows.** Asks the keychain only whether the key is there, never
-	 *  for the key, so opening Settings never makes macOS ask ([`signing_key_shown`] reads it).
+	 *  for the key, so opening Settings never makes macOS ask ([`signing_key_shown`] reads it). A
+	 *  GitLab's version is asked once a window, to tell a server that can't verify signed commits.
 	 */
 	signingState: () => typedError<SigningState, string>(__TAURI_INVOKE("signing_state")),
 	/**
@@ -1815,21 +1816,29 @@ export const commands = {
 	 */
 	signingMakeKey: () => typedError<string, string>(__TAURI_INVOKE("signing_make_key")),
 	/**
-	 *  **Step 2: the key added to the GitHub account** with the window's sign-in, under
-	 *  `purlis · <device>`. One GitHub has already is added again as nothing.
+	 *  **Step 2: the key added to the account on `forge`** with the window's sign-in, under
+	 *  `purlis · <device>`: on GitLab as a signing key only. One the forge has already is added again
+	 *  as nothing.
 	 */
-	signingAddKey: () => typedError<SigningAdded, string>(__TAURI_INVOKE("signing_add_key")),
+	signingAddKey: (forge: SigningForge) => typedError<SigningAdded, string>(__TAURI_INVOKE("signing_add_key", { forge })),
 	/**
-	 *  **Whether GitHub lists this device's key on the account yet**, from its public list, which
+	 *  **Whether `forge` lists this device's key on the account yet**, from its public list, which
 	 *  needs no permission: how the by-hand path notices the person added it.
 	 */
-	signingKeyListed: () => typedError<boolean, string>(__TAURI_INVOKE("signing_key_listed")),
+	signingKeyListed: (forge: SigningForge) => typedError<boolean, string>(__TAURI_INVOKE("signing_key_listed", { forge })),
 	/**
-	 *  **Step 3, Check**: a test commit signed with this device's key, made in `repo` (`owner/name`)
-	 *  or, with none, in the account's own most recently pushed repository, and GitHub's own verdict
-	 *  on it. Never on a branch. A verdict of Verified is kept for the card while the window runs.
+	 *  **Step 3, Check**, on the account on `forge`.
+	 * 
+	 *  - **GitHub**: a test commit signed with this device's key, made in `repo` (`owner/name`) or,
+	 *    with none, in the account's own most recently pushed repository, and GitHub's own verdict
+	 *    on it. Never on a branch.
+	 *  - **GitLab**, which makes no signed commit of its own (#5629): GitLab's verdict on `commit` of
+	 *    `repo` where setup was opened for one, else on the newest signed chat commit the app
+	 *    pushed to that GitLab. With none yet, the reason is `nothing_pushed` and nothing is verified.
+	 * 
+	 *  A verdict of Verified is kept for the card while the window runs.
 	 */
-	signingCheck: (repo: string | null) => typedError<SigningCheck, string>(__TAURI_INVOKE("signing_check", { repo })),
+	signingCheck: (forge: SigningForge, repo: string | null, commit: string | null) => typedError<SigningCheck, string>(__TAURI_INVOKE("signing_check", { forge, repo, commit })),
 	/**
 	 *  **What the Agent identity tab draws**, read fresh. Each row proves itself against GitHub, so
 	 *  it shows what it acts as now.
@@ -15708,40 +15717,57 @@ export type SidebarWorkspace = {
 	live: boolean,
 };
 
-/**  The forge account setup adds the key to. */
+/**  A forge account setup adds the key to. */
 export type SigningAccount = {
+	/**  `github` or `gitlab`. */
+	kind: string,
 	login: string,
 	host: string,
-	/**  The forge, as a sentence names it: `GitHub`. */
+	/**  The forge, as a sentence names it: `GitHub`, `GitLab`. */
 	forge: string,
-	/**  Whether its sign-in may add a signing key already, so setup asks for no permission. */
+	/**
+	 *  Whether its sign-in may add a signing key already, so setup asks for no permission:
+	 *  GitLab's `api` always may.
+	 */
 	may_add: boolean,
 	/**
-	 *  The email the last Check in this window found verified, for "Verified on GitHub ✓".
+	 *  The email the last Check in this window found verified, for "Verified on <forge> ✓".
 	 *  Only the forge's own answer sets it, and it lasts the window's life.
 	 */
 	verified_as: string | null,
+	/**
+	 *  Whether the forge verifies SSH-signed commits: a GitLab older than 15.7 does not, and is
+	 *  offered no setup (#5629).
+	 */
+	verifies: boolean,
 };
 
 /**  How adding the key went. */
 export type SigningAdded = 
-/**  GitHub has it now, or had it already. */
+/**  The forge has it now, or had it already. */
 "added" | 
 /**  The sign-in may not add it: setup asks for the permission, or the person adds it by hand. */
 "needs_permission";
 
-/**  What Check found: GitHub's own verdict on a signed test commit. */
+/**  What Check found: the forge's own verdict on a signed commit. */
 export type SigningCheck = {
 	verified: boolean,
 	/**
-	 *  GitHub's reason, such as `valid`, `unverified_email` or `unknown_key`: the window words
-	 *  it.
+	 *  The forge's reason, in GitHub's words, such as `valid`, `unverified_email` or
+	 *  `unknown_key`, or `nothing_pushed` where GitLab has no signed chat commit to read yet:
+	 *  the window words it.
 	 */
 	reason: string,
-	/**  The email the test commit was made as: chat commits use it too. */
+	/**  The email the commit was made as: chat commits use it too. */
 	email: string,
-	/**  The repository the test commit was made in. */
+	/**  The repository the commit is in. */
 	repo: string,
+};
+
+/**  Which forge account a signing step acts on: its forge (`github`, `gitlab`) and host. */
+export type SigningForge = {
+	kind: string,
+	host: string,
 };
 
 /**  This device's key as Details and the by-hand step show it: never its private half. */
@@ -15752,14 +15778,17 @@ export type SigningKeyShown = {
 	public_key: string,
 };
 
-/**  What the card shows: whether this device has a signing key, and the GitHub account it goes to. */
+/**  What the card shows: whether this device has a signing key, and the forge accounts it goes to. */
 export type SigningState = {
 	/**  "On": this device has a signing key (ADR 0116 §1). Nothing else turns it on. */
 	on: boolean,
 	/**  What the key is titled on the forge: `purlis · <device>`. */
 	title: string,
-	/**  The GitHub account on github.com setup adds the key to, where one is signed in. */
-	account: SigningAccount | null,
+	/**
+	 *  Each forge account signed in on this machine, one per forge and host, GitHub and GitLab
+	 *  alike, in the order they were added.
+	 */
+	accounts: SigningAccount[],
 };
 
 /**

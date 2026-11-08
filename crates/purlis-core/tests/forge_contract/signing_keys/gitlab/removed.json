@@ -1,0 +1,9 @@
+{
+  "source": "GitLab REST API v4, docs.gitlab.com/api/user_keys (read 2026-11-08): Delete an SSH key for the authenticated user (DELETE /user/keys/:key_id, 204 No Content)",
+  "exchanges": [
+    {
+      "call": {"endpoint": {"rest": {"method": "DELETE", "path": "user/keys/12"}}, "fields": []},
+      "reply": {"code": 0, "out": "", "err": "", "status": 204}
+    }
+  ]
+}

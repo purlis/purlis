@@ -271,3 +271,81 @@ mod the_check {
         );
     }
 }
+
+// GitLab (#5629).
+
+fn gitlab() -> Forge {
+    Forge::default_of(Kind::GitLab)
+}
+
+fn gitlab_recording(case: &str, signer: &Signer) -> Recorded {
+    crate::forge::signingkeys::recording_of("gitlab", case, &[("@KEY@", &signer.public_line())])
+}
+
+fn pushed(kind: Kind, host: &str, repo: &str, commit: &str, at: i64) -> SignedPush {
+    SignedPush {
+        kind,
+        host: host.to_owned(),
+        repo: repo.to_owned(),
+        commit: commit.to_owned(),
+        at,
+    }
+}
+
+/// GitLab's Check asks about the newest signed chat commit the app pushed to that GitLab, since
+/// GitLab makes no signed commit of its own.
+#[test]
+fn gitlabs_check_reads_the_newest_signed_push_to_that_gitlab() {
+    let config = tempfile::tempdir().unwrap();
+    assert_eq!(last_signed_push(config.path(), &gitlab()), None);
+    note_signed_push(
+        config.path(),
+        pushed(Kind::GitLab, "gitlab.com", "platform/billing", "0aa", 1),
+    )
+    .unwrap();
+    note_signed_push(
+        config.path(),
+        pushed(Kind::GitHub, "github.com", "octo/hello", "0bb", 2),
+    )
+    .unwrap();
+    note_signed_push(
+        config.path(),
+        pushed(Kind::GitLab, "git.example.org", "acme/api", "0cc", 3),
+    )
+    .unwrap();
+    note_signed_push(
+        config.path(),
+        pushed(Kind::GitLab, "gitlab.com", "platform/billing", "0dd", 4),
+    )
+    .unwrap();
+    let last = last_signed_push(config.path(), &gitlab()).unwrap();
+    assert_eq!(
+        (last.repo.as_str(), last.commit.as_str()),
+        ("platform/billing", "0dd")
+    );
+    // One per repository: the push it replaced is gone.
+    assert_eq!(signed_pushes(config.path()).len(), 3);
+}
+
+#[test]
+fn a_pushed_commit_gitlab_verifies_with_this_devices_key_is_verified() {
+    let signer = Signer::generate().unwrap();
+    let recorded = gitlab_recording("commit_verified", &signer);
+    let checked =
+        check_a_pushed_commit(&recorded, &gitlab(), &signer, "platform/billing", "0123abc")
+            .unwrap();
+    assert!(checked.verified);
+}
+
+#[test]
+fn a_pushed_commit_signed_with_another_key_says_nothing_of_this_one() {
+    let signer = Signer::generate().unwrap();
+    let other = Signer::generate().unwrap();
+    // GitLab verified it, with `other`'s key.
+    let recorded = gitlab_recording("commit_verified", &other);
+    let checked =
+        check_a_pushed_commit(&recorded, &gitlab(), &signer, "platform/billing", "0123abc")
+            .unwrap();
+    assert!(!checked.verified);
+    assert_eq!(checked.reason, "other_key");
+}

@@ -50,9 +50,18 @@ pub enum Heard {
     Checked(Checked),
 }
 
-/// The forge a signing ask goes to: GitHub, on github.com. GitLab comes with #5629.
+/// The forge `purlis signing` asks about: GitHub, on github.com. The window's setup goes to any
+/// signed-in account's forge, GitLab's included ([`forge_of`]).
 pub fn github() -> Forge {
     Forge::default_of(Kind::GitHub)
+}
+
+/// The forge of `kind` on `host`.
+pub fn forge_of(kind: Kind, host: &str) -> Forge {
+    Forge {
+        kind,
+        host: host.to_owned(),
+    }
 }
 
 /// **The window's answer to `asked`** for the account `login`, sent over `transport` (the
@@ -318,6 +327,7 @@ pub fn check_with_a_test_commit(
         .get("verification")
         .ok_or_else(|| format!("{shown} named no signature check for the test commit"))?;
     Ok(Checked {
+        key: None,
         verified: said
             .get("verified")
             .and_then(serde_json::Value::as_bool)
@@ -362,6 +372,82 @@ pub fn a_repo_to_check_in(
         .and_then(|repo| repo.get("full_name"))
         .and_then(serde_json::Value::as_str)
         .map(str::to_owned))
+}
+
+// ---------------------------------------------------------------------------------------
+// GitLab's Check (#5629): a signed commit already pushed
+// ---------------------------------------------------------------------------------------
+
+/// **A signed chat commit the app pushed**, as the GitLab Check finds one: GitLab has no API
+/// that makes a signed commit, so its Check asks about one already there (#5629).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct SignedPush {
+    pub kind: Kind,
+    pub host: String,
+    /// The repository's path on the forge: `owner/name`, or a GitLab project's full path.
+    pub repo: String,
+    pub commit: String,
+    /// When it was pushed, in seconds since the epoch.
+    pub at: i64,
+}
+
+/// How many signed pushes are kept: the newest, per forge, is the one asked about.
+const PUSHES_KEPT: usize = 20;
+
+/// Where this device's signed pushes are kept, under its config home: the app writes it, as the
+/// brokered push it made for a chat; no chat writes there.
+fn pushes_file(config_root: &Path) -> std::path::PathBuf {
+    config_root.join("signing").join("pushed.json")
+}
+
+/// The signed pushes kept, newest first; none where the file is missing or does not read.
+pub fn signed_pushes(config_root: &Path) -> Vec<SignedPush> {
+    std::fs::read_to_string(pushes_file(config_root))
+        .ok()
+        .and_then(|text| serde_json::from_str(&text).ok())
+        .unwrap_or_default()
+}
+
+/// **`push` kept as the newest signed push**, the oldest dropped past [`PUSHES_KEPT`].
+pub fn note_signed_push(config_root: &Path, push: SignedPush) -> Result<(), String> {
+    let mut kept = signed_pushes(config_root);
+    kept.retain(|was| !(was.kind == push.kind && was.host == push.host && was.repo == push.repo));
+    kept.insert(0, push);
+    kept.truncate(PUSHES_KEPT);
+    let file = pushes_file(config_root);
+    if let Some(folder) = file.parent() {
+        std::fs::create_dir_all(folder).map_err(|why| why.to_string())?;
+    }
+    let text = serde_json::to_string_pretty(&kept).map_err(|why| why.to_string())?;
+    crate::plane::write_private(config_root, &file, text.as_bytes()).map_err(|why| why.to_string())
+}
+
+/// The newest signed push to `forge`, where the app has made one.
+pub fn last_signed_push(config_root: &Path, forge: &Forge) -> Option<SignedPush> {
+    signed_pushes(config_root)
+        .into_iter()
+        .find(|push| push.kind == forge.kind && push.host == forge.host)
+}
+
+/// **Check on GitLab** (ADR 0116 §6, #5629): what GitLab says of `commit` in `repo`, a commit
+/// already pushed and signed with `signer`. Verified only where GitLab says `verified` and the
+/// key it names is this device's: a commit signed with another key says nothing of this one.
+pub fn check_a_pushed_commit(
+    transport: &dyn Transport,
+    forge: &Forge,
+    signer: &Signer,
+    repo: &str,
+    commit: &str,
+) -> Result<Checked, String> {
+    let checked = signingkeys::check_over(transport, forge, repo, commit)?;
+    match &checked.key {
+        Some(key) if !signingkeys::same_key(key, &signer.public_line()) => Ok(Checked {
+            verified: false,
+            reason: "other_key".to_owned(),
+            key: checked.key.clone(),
+        }),
+        _ => Ok(checked),
+    }
 }
 
 #[cfg(test)]

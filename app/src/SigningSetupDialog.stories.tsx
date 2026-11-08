@@ -2,35 +2,52 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * **Set up signing** (#5628, `prototype/commit-signing` A with C's steps that run on): the
- * three-step dialog in each state a person can meet. Drawn with the core faked at its command
+ * **Set up signing** (#5628, #5629, `prototype/commit-signing` A with C's steps that run on): the
+ * three-step dialog in each state a person can meet, on GitHub and on GitLab. Drawn with the core faked at its command
  * boundary, held to axe, walked by the keyboard, and pictured in every pictured theme cell.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent, waitFor, within } from "storybook/test";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import type { SigningCheck, SigningState } from "./bindings";
+import type { SigningAccount, SigningCheck, SigningForge, SigningState } from "./bindings";
 import { SigningSetupDialog } from "./SigningSetupDialog";
 import { expectFocusInSight } from "./stories.testkit";
 
-const ACCOUNT = {
+const ACCOUNT: SigningAccount = {
+  kind: "github",
   login: "octocat",
   host: "github.com",
   forge: "GitHub",
   may_add: false,
   verified_as: null,
+  verifies: true,
 };
+
+const GITLAB: SigningAccount = {
+  kind: "gitlab",
+  login: "sam",
+  host: "gitlab.example.org",
+  forge: "GitLab",
+  may_add: true,
+  verified_as: null,
+  verifies: true,
+};
+
+const ON_GITLAB: SigningForge = { kind: "gitlab", host: "gitlab.example.org" };
 
 const OFF: SigningState = {
   on: false,
   title: "purlis · studio",
-  account: ACCOUNT,
+  accounts: [ACCOUNT],
 };
 
 const ON: SigningState = {
   ...OFF,
   on: true,
 };
+
+/** A Check that never answers: the story stays on the step before it. */
+const NEVER = new Promise<SigningCheck>(() => undefined) as unknown as SigningCheck;
 
 /** The core, faked: `state` as setup opens, and how each step answers. */
 function theCore({
@@ -88,8 +105,8 @@ function theCore({
   });
 }
 
-function Shown() {
-  return <SigningSetupDialog onClose={() => undefined} />;
+function Shown({ forge = null }: { forge?: SigningForge | null }) {
+  return <SigningSetupDialog forge={forge} onClose={() => undefined} />;
 }
 
 const meta = {
@@ -206,7 +223,7 @@ export const ByHand: Story = {
 export const CheckNotVerified: Story = {
   beforeEach: () => {
     theCore({
-      state: { ...ON, account: { ...ACCOUNT, may_add: true } },
+      state: { ...ON, accounts: [{ ...ACCOUNT, may_add: true }] },
       added: "added",
       checked: {
         verified: false,
@@ -230,7 +247,7 @@ export const CheckNotVerified: Story = {
 /** **Verified on GitHub ✓**: GitHub's own answer, and Done. */
 export const Verified: Story = {
   beforeEach: () => {
-    theCore({ state: { ...ON, account: { ...ACCOUNT, may_add: true } }, added: "added" });
+    theCore({ state: { ...ON, accounts: [{ ...ACCOUNT, may_add: true }] }, added: "added" });
     return () => clearMocks();
   },
   play: async () => {
@@ -240,5 +257,82 @@ export const Verified: Story = {
     done.focus();
     await expect(done).toHaveFocus();
     expectFocusInSight();
+  },
+};
+
+/** **GitLab, adding**: the key added as a signing key with the sign-in purlis has, no consent. */
+export const GitLabAdding: Story = {
+  args: { forge: ON_GITLAB },
+  beforeEach: () => {
+    theCore({ state: { ...ON, accounts: [GITLAB] }, added: "added", checked: NEVER });
+    return () => clearMocks();
+  },
+  play: async () => {
+    const dialog = await theDialog();
+    await within(dialog).findByText(/as a signing key, with the sign-in purlis already has/);
+    await expect(dialog).toHaveTextContent("Add it to GitLab");
+    await expect(within(dialog).queryByRole("button", { name: "I'll add it myself" })).toBeNull();
+  },
+};
+
+/** **Verified on GitLab ✓**: GitLab's own answer on a signed commit a chat pushed there. */
+export const GitLabVerified: Story = {
+  args: { forge: ON_GITLAB },
+  beforeEach: () => {
+    theCore({
+      state: { ...ON, accounts: [GITLAB] },
+      added: "added",
+      checked: {
+        verified: true,
+        reason: "valid",
+        email: "sam@example.org",
+        repo: "platform/billing",
+      },
+    });
+    return () => clearMocks();
+  },
+  play: async () => {
+    const dialog = await theDialog();
+    await within(dialog).findByText("Verified on GitLab ✓");
+    const done = within(dialog).getByRole("button", { name: "Done" });
+    done.focus();
+    await expect(done).toHaveFocus();
+    expectFocusInSight();
+  },
+};
+
+/** **GitLab, nothing pushed yet**: signing is on; the ✓ waits for GitLab to see a signed commit. */
+export const GitLabNothingPushed: Story = {
+  args: { forge: ON_GITLAB },
+  beforeEach: () => {
+    theCore({
+      state: { ...ON, accounts: [GITLAB] },
+      added: "added",
+      checked: { verified: false, reason: "nothing_pushed", email: "sam@example.org", repo: "" },
+    });
+    return () => clearMocks();
+  },
+  play: async () => {
+    const dialog = await theDialog();
+    await within(dialog).findByText(/the ✓ shows once a chat pushes its first signed commit/);
+    await expect(dialog).not.toHaveTextContent("Verified on GitLab ✓");
+    const done = within(dialog).getByRole("button", { name: "Done" });
+    done.focus();
+    await expect(done).toHaveFocus();
+    expectFocusInSight();
+  },
+};
+
+/** **A GitLab too old to verify**: said plainly, and no step offered. */
+export const GitLabTooOld: Story = {
+  args: { forge: ON_GITLAB },
+  beforeEach: () => {
+    theCore({ state: { ...OFF, accounts: [{ ...GITLAB, verifies: false }] } });
+    return () => clearMocks();
+  },
+  play: async () => {
+    const dialog = await theDialog();
+    await within(dialog).findByText(/This server can't verify signed commits/);
+    await expect(within(dialog).queryByRole("button", { name: "Make my key" })).toBeNull();
   },
 };

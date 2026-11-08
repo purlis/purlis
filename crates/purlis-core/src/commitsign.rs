@@ -379,6 +379,28 @@ fn signature_header(dir: &Path) -> Result<&'static str, String> {
     }
 }
 
+/// **Whether commit `id` in the repository at `dir` carries a signature**: a signature header
+/// before the end of its headers. `false` where git cannot read it.
+pub fn is_signed(dir: &Path, id: &str) -> bool {
+    let Ok(read) = git::run_with_input(dir, &["cat-file", "commit", id], Vec::new(), git::READ)
+    else {
+        return false;
+    };
+    if read.code != Some(0) {
+        return false;
+    }
+    let end = read
+        .out
+        .windows(2)
+        .position(|pair| pair == b"\n\n")
+        .unwrap_or(read.out.len());
+    read.out[..end].split(|byte| *byte == b'\n').any(|line| {
+        SIGNATURE_HEADERS
+            .iter()
+            .any(|header| line.starts_with(format!("{header} ").as_bytes()))
+    })
+}
+
 /// Whether `id` is a full object id.
 fn is_id(id: &str) -> bool {
     matches!(id.len(), 40 | 64) && id.bytes().all(|b| b.is_ascii_hexdigit())

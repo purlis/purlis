@@ -5,7 +5,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import type { ForgeAccountRow, ForgeDeviceCode, SigningCheck, SigningState } from "./bindings";
+import type {
+  ForgeAccountRow,
+  ForgeDeviceCode,
+  SigningAccount,
+  SigningCheck,
+  SigningState,
+} from "./bindings";
 import { NEW_SIGNING_KEY_PAGE, SigningSetupDialog } from "./SigningSetupDialog";
 import { accountsGroup } from "./settings/accounts";
 import type { LiveSetting } from "./settings/groups";
@@ -18,18 +24,33 @@ import type { LiveSetting } from "./settings/groups";
 
 const PUBLIC = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK2Vb9test purlis signs commits made for chats";
 
-const ACCOUNT = {
+const ACCOUNT: SigningAccount = {
+  kind: "github",
   login: "octocat",
   host: "github.com",
   forge: "GitHub",
   may_add: false,
   verified_as: null,
+  verifies: true,
 };
+
+const GITLAB: SigningAccount = {
+  kind: "gitlab",
+  login: "sam",
+  host: "gitlab.example.org",
+  forge: "GitLab",
+  may_add: true,
+  verified_as: null,
+  verifies: true,
+};
+
+const ON_GITHUB = { kind: "github", host: "github.com" };
+const ON_GITLAB = { kind: "gitlab", host: "gitlab.example.org" };
 
 const OFF: SigningState = {
   on: false,
   title: "purlis · studio",
-  account: ACCOUNT,
+  accounts: [ACCOUNT],
 };
 
 const ON: SigningState = {
@@ -164,7 +185,9 @@ describe("SigningSetupDialog", () => {
     expect(dialog).toHaveTextContent("as octocat@example.com");
     // Added once, after the permission: not tried before it.
     expect(commandsSent("signing_add_key").length).toBe(1);
-    expect(commandsSent("signing_check")).toEqual([{ cmd: "signing_check", args: { repo: null } }]);
+    expect(commandsSent("signing_check")).toEqual([
+      { cmd: "signing_check", args: { forge: ON_GITHUB, repo: null, commit: null } },
+    ]);
     await userEvent.click(within(dialog).getByRole("button", { name: "Done" }));
     expect(closed).toHaveBeenCalled();
   });
@@ -172,7 +195,7 @@ describe("SigningSetupDialog", () => {
   it("says the key couldn't be kept when macOS was told no, and makes it on Try again", async () => {
     makeRefused =
       "macOS said no, so purlis couldn't keep the key. Try again and choose Always Allow.";
-    state = { ...structuredClone(OFF), account: { ...ACCOUNT, may_add: true } };
+    state = { ...structuredClone(OFF), accounts: [{ ...ACCOUNT, may_add: true }] };
     render(<SigningSetupDialog onClose={vi.fn()} />);
     const dialog = await theDialog();
     await userEvent.click(await within(dialog).findByRole("button", { name: "Make my key" }));
@@ -233,7 +256,7 @@ describe("SigningSetupDialog", () => {
   });
 
   it("an account that may add keys already runs on from the key to Verified by itself", async () => {
-    state = { ...structuredClone(ON), account: { ...ACCOUNT, may_add: true } };
+    state = { ...structuredClone(ON), accounts: [{ ...ACCOUNT, may_add: true }] };
     render(<SigningSetupDialog onClose={vi.fn()} />);
     const dialog = await theDialog();
     expect(await within(dialog).findByText("Verified on GitHub ✓")).toBeTruthy();
@@ -241,7 +264,7 @@ describe("SigningSetupDialog", () => {
   });
 
   it("names why GitHub didn't verify the test commit, and checks again", async () => {
-    state = { ...structuredClone(ON), account: { ...ACCOUNT, may_add: true } };
+    state = { ...structuredClone(ON), accounts: [{ ...ACCOUNT, may_add: true }] };
     checked = { ...VERIFIED, verified: false, reason: "unverified_email" };
     render(<SigningSetupDialog onClose={vi.fn()} />);
     const dialog = await theDialog();
@@ -277,6 +300,83 @@ describe("SigningSetupDialog", () => {
   });
 });
 
+describe("SigningSetupDialog on GitLab (#5629)", () => {
+  it("a GitLab account with no key runs on from the key to Verified on GitLab, with no consent", async () => {
+    state = { ...structuredClone(OFF), accounts: [GITLAB] };
+    checked = { ...VERIFIED, email: "sam@example.org", repo: "platform/billing" };
+    render(<SigningSetupDialog forge={ON_GITLAB} onClose={vi.fn()} />);
+    const dialog = await theDialog();
+    expect(dialog).toHaveTextContent("Add it to GitLab");
+    await userEvent.click(await within(dialog).findByRole("button", { name: "Make my key" }));
+    expect(await within(dialog).findByText("Verified on GitLab ✓")).toBeTruthy();
+    expect(commandsSent("forge_signing_permission_start")).toEqual([]);
+    expect(commandsSent("signing_add_key")).toEqual([
+      { cmd: "signing_add_key", args: { forge: ON_GITLAB } },
+    ]);
+    expect(commandsSent("signing_check")).toEqual([
+      { cmd: "signing_check", args: { forge: ON_GITLAB, repo: null, commit: null } },
+    ]);
+  });
+
+  it("from a refusal, asks GitLab about the commit it refused", async () => {
+    state = { ...structuredClone(ON), accounts: [GITLAB] };
+    render(
+      <SigningSetupDialog
+        forge={ON_GITLAB}
+        repo="platform/billing"
+        commit="0123abc"
+        onClose={vi.fn()}
+      />,
+    );
+    const dialog = await theDialog();
+    await within(dialog).findByText(/Verified on GitLab ✓/);
+    expect(commandsSent("signing_check")[0]?.args).toEqual({
+      forge: ON_GITLAB,
+      repo: "platform/billing",
+      commit: "0123abc",
+    });
+  });
+
+  it("with no signed commit pushed to GitLab yet, shows no ✓ and says when it will", async () => {
+    state = { ...structuredClone(ON), accounts: [GITLAB] };
+    checked = { verified: false, reason: "nothing_pushed", email: "sam@example.org", repo: "" };
+    const closed = vi.fn();
+    render(<SigningSetupDialog forge={ON_GITLAB} onClose={closed} />);
+    const dialog = await theDialog();
+    expect(
+      await within(dialog).findByText(/shows once a chat pushes its first signed commit/),
+    ).toBeTruthy();
+    expect(dialog).not.toHaveTextContent("Verified on GitLab ✓");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Done" }));
+    expect(closed).toHaveBeenCalled();
+  });
+
+  it("a GitLab sign-in that may not add keys goes by hand to GitLab's page, with Usage type Signing", async () => {
+    state = { ...structuredClone(ON), accounts: [{ ...GITLAB, may_add: false }] };
+    render(<SigningSetupDialog forge={ON_GITLAB} onClose={vi.fn()} />);
+    const dialog = await theDialog();
+    await within(dialog).findByText(/Waiting for it to appear on sam/);
+    expect(dialog).toHaveTextContent("Usage type Signing");
+    expect(commandsSent("forge_signing_permission_start")).toEqual([]);
+    await waitFor(() =>
+      expect(commandsSent("plugin:opener|open_url")[0]?.args).toMatchObject({
+        url: "https://gitlab.example.org/-/user_settings/ssh_keys",
+      }),
+    );
+  });
+
+  it("a GitLab too old to verify signed commits says so, and offers no step", async () => {
+    state = { ...structuredClone(OFF), accounts: [{ ...GITLAB, verifies: false }] };
+    render(<SigningSetupDialog forge={ON_GITLAB} onClose={vi.fn()} />);
+    const dialog = await theDialog();
+    expect((await within(dialog).findByRole("alert")).textContent).toContain(
+      "This server can't verify signed commits",
+    );
+    expect(within(dialog).queryByRole("button", { name: "Make my key" })).toBeNull();
+    expect(commandsSent("signing_make_key")).toEqual([]);
+  });
+});
+
 describe("the Signed commits card", () => {
   const card = () =>
     accountsGroup().settings.find((one) => one.id === "you.accounts.signing") as LiveSetting;
@@ -298,17 +398,17 @@ describe("the Signed commits card", () => {
     expect(await theDialog()).toBeTruthy();
   });
 
-  it("with no GitHub account, says to sign in first and offers no setup", async () => {
-    state = { ...structuredClone(OFF), account: null };
+  it("with no forge account, says to sign in first and offers no setup", async () => {
+    state = { ...structuredClone(OFF), accounts: [] };
     render(<Card />);
-    expect(await screen.findByText(/Sign in to GitHub above first/)).toBeTruthy();
+    expect(await screen.findByText(/Sign in to GitHub or GitLab above first/)).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Set up signing" })).toBeNull();
   });
 
   it("on, shows the account Verified on GitHub with the email it commits as, and SSH only in Details", async () => {
     state = {
       ...structuredClone(ON),
-      account: { ...ACCOUNT, may_add: true, verified_as: "octocat@example.com" },
+      accounts: [{ ...ACCOUNT, may_add: true, verified_as: "octocat@example.com" }],
     };
     render(<Card />);
     expect(await screen.findByText("On")).toBeTruthy();
@@ -322,10 +422,33 @@ describe("the Signed commits card", () => {
     expect(screen.getByText(/purlis signing setup --key/)).toBeTruthy();
   });
 
+  it("an old GitLab, alone, gets the plain message and no setup", async () => {
+    state = { ...structuredClone(OFF), accounts: [{ ...GITLAB, verifies: false }] };
+    render(<Card />);
+    expect(await screen.findByText(/This server can't verify signed commits/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Set up signing" })).toBeNull();
+  });
+
+  it("on, shows a row per account on either forge", async () => {
+    state = {
+      ...structuredClone(ON),
+      accounts: [ACCOUNT, { ...GITLAB, verified_as: "sam@example.org" }],
+    };
+    render(<Card />);
+    expect(await screen.findByText("Verified on GitLab ✓")).toBeTruthy();
+    expect(screen.getByText("Commits as sam@example.org")).toBeTruthy();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Check signing on octocat on GitHub" }),
+    );
+    expect(await theDialog()).toBeTruthy();
+  });
+
   it("on, with no Check run in this window, offers Check rather than a ✓", async () => {
     state = structuredClone(ON);
     render(<Card />);
-    expect(await screen.findByRole("button", { name: "Check signing on octocat" })).toBeTruthy();
+    expect(
+      await screen.findByRole("button", { name: "Check signing on octocat on GitHub" }),
+    ).toBeTruthy();
     expect(screen.queryByText("Verified on GitHub ✓")).toBeNull();
   });
 });

@@ -1888,10 +1888,38 @@ fn pushed(
             ));
         }
     }
+    if reach.for_a_chat {
+        noted_if_signed(piece.root, &here.clone, &ours);
+    }
     say(Say::Done(
         format!("{label}: {branch} pushed to {remote}").into(),
     ));
     Ok(0)
+}
+
+/// **A signed chat commit pushed, kept for GitLab's Check** (#5629): GitLab makes no signed
+/// commit of its own, so its Check asks about the newest one the app pushed there. Only a tip
+/// that carries a signature, on a forge the plane knows, is kept; nothing is said either way.
+fn noted_if_signed(root: &Path, clone: &Path, tip: &str) {
+    if !crate::commitsign::is_signed(clone, tip) {
+        return;
+    }
+    let (Ok(repo), Some(config)) = (
+        crate::forge::pr::Repo::of_clone(root, clone),
+        crate::machine::config_root(),
+    ) else {
+        return;
+    };
+    let push = crate::signingsetup::SignedPush {
+        kind: repo.forge.kind,
+        host: repo.forge.host,
+        repo: repo.path,
+        commit: tip.to_owned(),
+        at: chrono::Utc::now().timestamp(),
+    };
+    if let Err(why) = crate::signingsetup::note_signed_push(&config, push) {
+        tracing::warn!("purlis: a signed push was not noted for the signing check: {why}");
+    }
 }
 
 /// What a remote said it has, asked just now.
