@@ -164,8 +164,29 @@ async function press(label: string): Promise<void> {
     },
     await button,
   );
-  if (label === ALLOW) await pressGrant(button);
-  else await button.click();
+  if (label !== ALLOW) {
+    await button.click();
+    return;
+  }
+  // **Pressed again where the window says so** (`NOTICE_MOVED_JUST_NOW`): in the Notices view, in
+  // the Panel's right half, a tall Notice stands scrolled, and a line above it that changes height
+  // (the doctor's, when it checks again) slides its Allow on screen. The guard holds that press
+  // and asks the person to read it and press again, which is what this does, at most twice more.
+  for (let tries = 0; tries < 3; tries += 1) {
+    await pressGrant(button);
+    const held = await browser
+      .waitUntil(
+        () =>
+          browser.execute(() =>
+            [...document.querySelectorAll<HTMLElement>('[role="status"]')].some((one) =>
+              one.innerText.includes("moved just now"),
+            ),
+          ),
+        { timeout: 2_500, interval: 250 },
+      )
+      .catch(() => false);
+    if (!held || !(await button.isExisting())) return;
+  }
 }
 
 /** Opens Settings for the project in front, at the Project level. */
