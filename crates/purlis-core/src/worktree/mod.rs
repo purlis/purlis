@@ -1765,6 +1765,9 @@ pub fn ref_records_linked(git_dir: &Path) -> Option<PathBuf> {
         })
 }
 
+/// The most a `commondir` holds that is read: a path as long as a system takes, and its line's end.
+const COMMONDIR_READ: u64 = 4096 + 2;
+
 /// The common directory `git_dir`'s `commondir` names, as git reads it (relative to `git_dir`,
 /// or absolute), `None` where there is no `commondir`, or the path that could not be read.
 fn common_dir(git_dir: &Path) -> Result<Option<PathBuf>, PathBuf> {
@@ -1774,7 +1777,12 @@ fn common_dir(git_dir: &Path) -> Result<Option<PathBuf>, PathBuf> {
         Ok(meta) if meta.is_file() && !linked(&file) => {}
         _ => return Err(file),
     }
-    let said = std::fs::read_to_string(&file).map_err(|_| file.clone())?;
+    // Read as it is once open, with no link followed and no wait: a name swapped for a link or
+    // a pipe after the look above reaches nothing. A path and its newline, no more.
+    let said = crate::sandbox::arrived::read_regular(&file, COMMONDIR_READ + 1)
+        .filter(|bytes| bytes.len() as u64 <= COMMONDIR_READ)
+        .and_then(|bytes| String::from_utf8(bytes).ok())
+        .ok_or_else(|| file.clone())?;
     let said = said.trim_end_matches(['\n', '\r']);
     if said.is_empty() {
         return Err(file);

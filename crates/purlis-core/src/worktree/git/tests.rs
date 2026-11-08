@@ -2101,3 +2101,79 @@ fn a_git_with_nothing_to_tune_writes_no_index() {
     let dir = tempfile::tempdir().expect("a directory");
     assert!(run_status_writing_index(dir.path(), Tuning::for_git(Some((2, 30)), false)).is_none());
 }
+
+/// What the child below is told: the address it asks.
+const ROUTED_ASK: &str = "WORKTREE_GIT_TEST_ROUTED_ASK";
+
+/// An ask that trusts only the system's certificate authorities still goes out through the
+/// proxy the environment names, as an ordinary network call does: a sandboxed chat's only way
+/// out is a proxy, and so is many a corporate network's.
+#[test]
+fn an_ask_trusting_only_the_system_still_goes_through_the_environments_proxy() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let ca = dir.path().join("ca.pem");
+    std::fs::write(&ca, "not a certificate\n").expect("a file");
+    let proxy = "http://127.0.0.1:1";
+    let mut env: Vec<(&str, &std::ffi::OsStr)> =
+        vec![(ROUTED_ASK, "https://127.0.0.1:9/x.git".as_ref())];
+    for name in CREDENTIAL_ENV {
+        let lower = name.to_ascii_lowercase();
+        if lower.ends_with("_proxy") {
+            let value = if lower == "no_proxy" { "" } else { proxy };
+            env.push((name, value.as_ref()));
+        }
+    }
+    env.push(("SSL_CERT_FILE", ca.as_os_str()));
+    crate::testrun::rerun(
+        &["worktree::git::tests::the_ask_the_parent_set_up_goes_through_the_proxy"],
+        &env,
+    );
+}
+
+/// The child of the test above: nothing unless it was started with [`ROUTED_ASK`].
+#[test]
+fn the_ask_the_parent_set_up_goes_through_the_proxy() {
+    let Some(address) = std::env::var_os(ROUTED_ASK) else {
+        return;
+    };
+    let address = address.to_string_lossy().into_owned();
+    let args = ["ls-remote", "--heads", "--", address.as_str()];
+    let at = Path::new("/");
+    let routed = run_network_in_no_repository(at, None, &args).expect("git runs");
+    assert!(!routed.ok());
+    assert!(routed.err.contains("port 1 "), "{}", routed.err);
+    let trusting =
+        run_network_in_no_repository_trusting_the_system(at, None, &args).expect("git runs");
+    assert!(!trusting.ok());
+    assert!(trusting.err.contains("port 1 "), "{}", trusting.err);
+}
+
+/// A call that trusts only the system is given every proxy and every other variable the
+/// environment sets, and no certificate authority; an ordinary call is given them all.
+#[test]
+fn a_call_trusting_only_the_system_keeps_the_proxies_and_drops_the_certificate_authorities() {
+    let var = |name: &str| Some(std::ffi::OsString::from(format!("set-{name}")));
+    let names = |system_trust| -> Vec<&str> {
+        credential_env_from(&var, system_trust)
+            .into_iter()
+            .map(|(name, _)| name)
+            .collect()
+    };
+    assert_eq!(names(false), CREDENTIAL_ENV);
+    let trusting = names(true);
+    for name in [
+        "HTTPS_PROXY",
+        "https_proxy",
+        "HTTP_PROXY",
+        "http_proxy",
+        "ALL_PROXY",
+        "NO_PROXY",
+        "no_proxy",
+    ] {
+        assert!(trusting.contains(&name), "{name} is kept");
+    }
+    for name in ["SSL_CERT_FILE", "SSL_CERT_DIR"] {
+        assert!(!trusting.contains(&name), "{name} is dropped");
+    }
+    assert_eq!(trusting.len(), CREDENTIAL_ENV.len() - 2);
+}
