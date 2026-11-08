@@ -120,11 +120,17 @@ impl Marker {
 }
 
 /// A step under way at a root, for as long as it is held: the marker is removed when it drops.
+///
+/// No step this build runs at a root is multi-step any more (#5855): a replay and a resolve are
+/// made off to the side, and the root moves with one `reset --keep`. So nothing marks one; the
+/// tests write the marker a build from before that left, which recovery still reads.
+#[cfg(test)]
 #[derive(Debug)]
 pub(super) struct Marked {
     path: PathBuf,
 }
 
+#[cfg(test)]
 impl Drop for Marked {
     fn drop(&mut self) {
         let _ = std::fs::remove_file(&self.path);
@@ -133,6 +139,7 @@ impl Drop for Marked {
 
 /// Write the marker for `op` at `root`, going `onto` from `base`. `None` where the root is on
 /// no branch or the marker could not be written: the step then runs unmarked, as it did before.
+#[cfg(test)]
 pub(super) fn mark(root: &Path, op: Op, onto: &str, base: &str) -> Option<Marked> {
     let marker = Marker {
         op,

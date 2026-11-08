@@ -5660,10 +5660,13 @@ always does. Two differences show (#1413):
   `orig_head`, `onto` and `base` (commit ids), `pid`, and, once a recovery has begun to move
   the root, `stop_head` (the HEAD the step was cut off at).
 - **Status:** **internal** — the marker of a root git step that can be cut off part-way
-  (#5824 F3, D3). Written before the step and removed when it returns, however it ended, so
-  only a step a quit, a crash or sleep killed leaves one. A save or the window's look that
-  finds it beside a stopped rebase or merge, or a detached HEAD, recovers the root off to the
-  side; a stop without it is the person's and is left alone.
+  (#5824 F3, D3). A build from before #5855 wrote it before such a step and removed it when the
+  step returned, however it ended, so only a step a quit, a crash or sleep killed left one. This
+  build runs no such step at a root (a replay and a resolve are made off to the side, and the
+  root moves with one `reset --keep`), so it writes none, and still reads one an older build
+  left: a save or the window's look that finds it beside a stopped rebase or merge, or a
+  detached HEAD, recovers the root off to the side; a stop without it is the person's and is
+  left alone.
 - **Tier:** Clone state, transient — exists only while a step runs, or after one was killed
   until it is recovered; deleted ⇒ such a stop is read as the person's.
 - **Written by:** `purlis_core::planegit::recover` (`crates/purlis-core/src/planegit/recover.rs`).

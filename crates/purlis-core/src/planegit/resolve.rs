@@ -108,7 +108,7 @@ pub fn abort(root: &Path) -> Settled {
         );
     }
     let rebase = rebase_in_progress(root);
-    let verb = if rebase { "rebase" } else { "merge" };
+    let stop = if rebase { "replay" } else { "stopped merge" };
     // One step that puts a stop away, allowed at the root (#5824 F2).
     let aborted = if rebase {
         git::run_untimed(root, &["rebase", "--abort"])
@@ -117,7 +117,7 @@ pub fn abort(root: &Path) -> Settled {
     };
     if stopped_at_the_root(root) {
         return Settled::Refused(format!(
-            "git did not abort the {verb}: {}",
+            "git did not abort the {stop}: {}",
             match aborted {
                 Ok(run) => one_line(&tail(&run)),
                 Err(unavailable) => unavailable.to_string(),
@@ -131,9 +131,8 @@ pub fn abort(root: &Path) -> Settled {
 /// Whether a rebase or a merge is stopped at the root itself.
 fn stopped_at_the_root(root: &Path) -> bool {
     rebase_in_progress(root)
-        || gitstate::stopped(root).is_some_and(|stopped| {
-            stopped.operation.map(gitstate::Operation::kind) == Some("merge")
-        })
+        || gitstate::stopped(root)
+            .is_some_and(|stopped| stopped.operation == Some(gitstate::Operation::Merge))
 }
 
 /// **What follows a Resolve that finished**: a push of what is committed, as the project's mode

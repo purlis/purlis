@@ -1814,8 +1814,7 @@ pub(crate) const WRITE: Duration = Duration::from_secs(120);
 enum Rebased {
     /// The plane's commits were replayed onto the remote's.
     Replayed,
-    /// The trees conflict: git stopped with files it calls unmerged.
-    /// Carries those files, read before the rebase is undone.
+    /// The trees conflict, in these files. Nothing moved: the replay is made off to the side.
     Conflict(Vec<String>),
     /// git did not replay the commits for a reason that is no conflict: it could not write a
     /// file, the disk is full, it refused, or it died. Carries git's own words. A rebase may
@@ -1895,35 +1894,38 @@ fn fetched_for_the_retry(root: &Path, helper: &str, https: &str, branch: &str) -
 
 /// [`rebase_onto_fetched`], onto `onto`: the fetched commit for a save's retry, the remote-tracking
 /// branch for the window's Update ([`update::update`]).
+///
+/// **Made off to the side** (#5855, #5824 D2): the plane's own commits are replayed with
+/// `merge-tree` and `commit-tree` ([`replay`]), each keeping its author, date and message and
+/// signed as the save signs, and the root then moves onto the last of them with one `reset
+/// --keep`, which refuses rather than overwrite uncommitted work. Nothing at the root is ever
+/// part-way: a conflict, a signer that refuses or the deadline changes nothing there, and a
+/// conflict is the window's Resolve to settle in a resolve folder ([`resolvefolder`]).
 fn rebase_onto(root: &Path, onto: &str, sign: bool, deadline: Duration) -> Rebased {
     let stops = sandbox_would_stop(root, onto);
     if !stops.is_empty() {
         return Rebased::Held(stops);
     }
-    // Marked while it runs, so one a quit or a crash cuts off is recovered off to the side
-    // ([`recover`], #5824 F3). The marker goes when this returns, a stop for a conflict
-    // included: that stop is the person's to settle.
-    let onto_id = line_of(
-        root,
-        &["rev-parse", "--verify", "-q", &format!("{onto}^{{commit}}")],
-    );
-    let base = onto_id.as_deref().and_then(|onto_id| {
-        line_of(root, &["merge-base", "HEAD", onto_id]).map(|base| (onto_id.to_owned(), base))
-    });
-    let _marked = base
-        .as_ref()
-        .and_then(|(onto_id, base)| recover::mark(root, recover::Op::Rebase, onto_id, base));
     let started = std::time::Instant::now();
-    let mut rebase: Vec<&str> = vec!["-c", gpgsign(sign)];
-    rebase.extend(["rebase", onto]);
-    match git::run(root, &rebase, deadline) {
+    let tip = match replay::replay(root, "HEAD", onto, sign, deadline) {
+        replay::Replayed::Onto(tip) => tip,
+        replay::Replayed::Conflict(files) => return Rebased::Conflict(files),
+        replay::Replayed::Unsigned(signer) => return Rebased::Unsigned(signer),
+        replay::Replayed::OutOfTime => return Rebased::OutOfTime,
+        replay::Replayed::Failed(said) => return Rebased::Failed(said),
+    };
+    let stops = sandbox_would_stop(root, &tip);
+    if !stops.is_empty() {
+        return Rebased::Held(stops);
+    }
+    // One step: it checks out the tree and moves the branch, or refuses having moved nothing.
+    // A run with no exit code is out of time only once the deadline has passed: git killed by a
+    // signal of somebody else's has no code either.
+    let left = deadline.saturating_sub(started.elapsed());
+    match git::run(root, &["reset", "-q", "--keep", &tip], left) {
         Ok(run) if run.ok() => Rebased::Replayed,
         Ok(run) if run.code.is_none() && started.elapsed() >= deadline => Rebased::OutOfTime,
-        Ok(run) if sign && run.err.contains(UNWRITTEN) => Rebased::Unsigned(signer_said(&run.err)),
-        Ok(run) => match gitstate::unmerged(root) {
-            unmerged if unmerged.is_empty() => Rebased::Failed(tail(&run)),
-            unmerged => Rebased::Conflict(unmerged),
-        },
+        Ok(run) => Rebased::Failed(tail(&run)),
         Err(unavailable) => Rebased::Failed(unavailable.to_string()),
     }
 }
@@ -2328,7 +2330,7 @@ fn push_head_within(
                 match rebase_onto_fetched(root, &onto_id, sign, deadline) {
                     Rebased::Replayed => {}
                     Rebased::Conflict(conflicts) => {
-                        let _ = git::run(root, &["rebase", "--abort"], WRITE);
+                        // Nothing was started at the root: the replay was made off to the side.
                         say(Say::Warn(
                         "Committed locally, but rebase hit a conflict — resolve manually, then \
                          `purlis save`."

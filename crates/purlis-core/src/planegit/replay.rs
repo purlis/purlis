@@ -217,7 +217,8 @@ fn written(
             }
         }
         Ok(run) if run.code.is_none() => Err(Replayed::OutOfTime),
-        Ok(run) if sign && run.err.contains(UNWRITTEN) => {
+        // `commit-tree` says the signer failed in its own words, with or without git's line.
+        Ok(run) if sign && (run.err.contains(UNWRITTEN) || run.err.contains("failed to sign")) => {
             Err(Replayed::Unsigned(signer_said(&run.err)))
         }
         Ok(run) => Err(Replayed::Failed(tail(&run))),
