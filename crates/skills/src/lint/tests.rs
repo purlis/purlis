@@ -345,3 +345,73 @@ fn a_skill_whose_folder_is_not_listed_or_that_names_a_folder_a_glob_or_another_p
         Vec::<Option<String>>::new()
     );
 }
+
+/// The programs a shell script's lint names as missing on a machine with none of them.
+fn missing_from(script: &str) -> Vec<String> {
+    let others = [("scripts/run.sh".to_owned(), script.to_owned())];
+    says(&found(&skill("", ""), &others, true))
+        .into_iter()
+        .map(|line| {
+            line.strip_prefix("scripts/run.sh calls ")
+                .and_then(|rest| rest.strip_suffix(", which this machine does not have"))
+                .unwrap_or(&line)
+                .to_owned()
+        })
+        .collect()
+}
+
+#[test]
+fn words_inside_a_quoted_jq_program_or_css_are_data_and_not_programs_a_script_calls() {
+    let script = r#"#!/usr/bin/env bash
+gh issue list --json number -q '.[] | [.number, (.labels|join(","))] | @tsv' |
+while read -r n; do echo "$n"; done
+jq -n -r --arg repo "$REPO" '
+  ($ms | sort_by(.title) | map(
+    "<tr><td>\(.title | @html)</td></tr>"
+  ) | join("\n")) as $rows |
+"<html><style>
+body{font:15px/1.5 system-ui;color:var(--fg)}
+h1{font-size:1.4rem;margin:0}h2{font-size:1.1rem}
+</style>\($rows)</html>"' > "$OUT"
+cat <<'EOF'
+body{font:15px/1.5 system-ui;margin:0} a{color:inherit}
+EOF
+printf '%s\n' "a | b; c & d (e)"
+"#;
+    assert_eq!(missing_from(script), ["gh", "jq", "cat"]);
+}
+
+#[test]
+fn a_program_a_script_really_calls_is_found_inside_a_substitution_a_shell_string_or_a_heredoc_fed_to_a_shell() {
+    let script = r#"#!/usr/bin/env bash
+title="$(curl -s "$URL" | yq '.title | @sh')"
+echo "made by `whoami`"
+bash -c 'kubectl get pods | awk "{print \$1}"'
+sh -ec "helm list; terraform plan"
+eval "make build"
+ssh host <<EOF
+remote-only-tool
+EOF
+cat <<EOF
+built $(date +%F) by $(id -un)
+EOF
+bash -s <<'EOF'
+docker ps | sort_by
+EOF
+(( count++ ))
+arr=(one two three)
+case "$1" in
+  start|go) helm install x ;;
+  'stop') make stop ;;
+  *) usage ;;
+esac
+[[ $x =~ ^(a|b)$ && -n $y ]] && npm test
+"#;
+    assert_eq!(
+        missing_from(script),
+        [
+            "curl", "yq", "whoami", "kubectl", "awk", "helm", "terraform", "make", "ssh", "cat",
+            "date", "id", "docker", "sort_by", "usage", "npm",
+        ]
+    );
+}
