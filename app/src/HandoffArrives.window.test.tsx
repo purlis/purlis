@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { StrictMode } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
@@ -10,6 +10,8 @@ import App from "./App";
 import type { OpenChat } from "./bindings";
 import { onTheWire } from "./chatEvents.testkit";
 import { aTabForEachChat } from "./laidOut.testkit";
+import { showNotices } from "./test-strips";
+import { forgetInboxOpen, inboxOpenAtLaunch } from "./test-inbox";
 
 /**
  * **A chat another chat started is announced, never put on screen** (#4759, spec #4750 stories
@@ -478,8 +480,11 @@ describe("an ask from a chat in no pane (#4759)", () => {
   });
 });
 
-describe("what the Notices centre says of a chat in no pane (#5217)", () => {
-  it("is a card: whose it is, its state, Go to chat, a ×, and Retry its one primary", async () => {
+describe("what the Notices view says of a chat in no pane (#5217, #5649)", () => {
+  // The Notices centre is listed in Updates since #5644: the window opens on it here.
+  beforeEach(inboxOpenAtLaunch);
+  afterEach(forgetInboxOpen);
+  it("is a row: whose it is, its state, Go to chat, a ×, and Retry its one leading link", async () => {
     const { arrive, mcpFails } = core();
     mcpFails(2, "github");
     opened();
@@ -487,23 +492,23 @@ describe("what the Notices centre says of a chat in no pane (#5217)", () => {
     arrive({ session: 2, label: "fix the login" });
 
     const said = await screen.findByText(/could not start, twice/, undefined, { timeout: 5000 });
-    const card = said.closest('[data-scope="notice"][data-part="root"]') as HTMLElement;
-    const head = card.querySelector('[data-part="head"]') as HTMLElement;
-    expect(head).toHaveTextContent("Problem");
-    expect(head).not.toHaveTextContent("could not start");
-    expect(within(head).getByRole("button", { name: /^Go to chat/ })).toHaveAttribute(
+    const card = said.closest('[data-scope="message"][data-part="root"]') as HTMLElement;
+    const part = (name: string) =>
+      card.querySelector(`[data-scope="message"][data-part="${name}"]`) as HTMLElement;
+    expect(part("meta")).toHaveTextContent("Problem");
+    expect(part("top")).not.toHaveTextContent("could not start");
+    const links = within(part("links"));
+    expect(links.getByRole("button", { name: /^Go to chat/ })).toHaveAttribute(
       "data-variant",
       "quiet-link",
     );
-    within(head).getByRole("button", { name: "Dismiss" });
-    expect(within(card).getByRole("button", { name: "Retry" })).toHaveAttribute(
-      "data-variant",
-      "primary",
-    );
-    expect(card.querySelectorAll('[data-variant="primary"]')).toHaveLength(1);
+    within(part("dismiss")).getByRole("button", { name: "Dismiss" });
+    expect(links.getByRole("button", { name: "Retry" })).toHaveAttribute("data-lead");
+    expect(card.querySelectorAll("[data-lead]")).toHaveLength(1);
+    expect(card.querySelector('[data-variant="primary"]')).toBeNull();
 
     // Go to chat shows it, and what it had to say goes to its band.
-    await userEvent.click(within(head).getByRole("button", { name: /^Go to chat/ }));
+    await userEvent.click(links.getByRole("button", { name: /^Go to chat/ }));
     await waitFor(() => expect(screen.getByTestId("pane")).toHaveTextContent("session 2"));
   });
 
@@ -518,25 +523,26 @@ describe("what the Notices centre says of a chat in no pane (#5217)", () => {
     const said = await screen.findByText(/The sandbox blocked a write/, undefined, {
       timeout: 5000,
     });
-    const card = said.closest('[data-scope="notice"][data-part="root"]') as HTMLElement;
+    const card = said.closest('[data-scope="message"][data-part="root"]') as HTMLElement;
     expect(card).toHaveAttribute("data-consent");
-    expect(card.querySelector('[data-part="sub"]')).toHaveTextContent(/^Problem/);
+    expect(card.querySelector('[data-part="meta"]')).toHaveTextContent(/^Problem/);
     expect(card.querySelector('[data-variant="primary"]')).toBeNull();
-    within(card.querySelector('[data-part="head"]') as HTMLElement).getByRole("button", {
+    within(card.querySelector('[data-part="links"]') as HTMLElement).getByRole("button", {
       name: /^Go to chat/,
     });
   });
 
-  it("keeps an arrival among its Results, with Go to chat a quiet link in its head", async () => {
+  it("keeps an arrival among its Results, with Go to chat a quiet link among its links", async () => {
     const { arrive } = core();
     opened();
     await ready();
     arrive({ session: 2, label: "fix the login" });
 
+    await showNotices();
     const results = await screen.findByRole("region", { name: "Results" }, { timeout: 5000 });
     const go = within(results).getByRole("button", { name: "Go to chat" });
     expect(go).toHaveAttribute("data-variant", "quiet-link");
-    expect(go.closest('[data-part="head"]')).not.toBeNull();
+    expect(go.closest('[data-scope="message"][data-part="links"]')).not.toBeNull();
     expect(results.querySelector('[data-variant="primary"]')).toBeNull();
 
     await userEvent.click(go);

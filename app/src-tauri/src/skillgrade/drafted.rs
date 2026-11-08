@@ -280,6 +280,7 @@ pub(crate) async fn skill_draft_grade_start(
                 follower: None,
                 draft: Some(DraftBegun { id: draft, mark }),
                 batch: None,
+                resume: None,
             },
             planned,
         )

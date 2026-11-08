@@ -4,6 +4,7 @@
 import { Fragment, type ReactElement, type ReactNode } from "react";
 import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
 import {
+  Bell,
   Brain,
   FolderGit2,
   FolderTree,
@@ -15,12 +16,14 @@ import {
   MessagesSquare,
   Search,
   Sparkles,
+  TriangleAlert,
   UsersRound,
   type LucideIcon,
 } from "lucide-react";
 import { RailIcon } from "./FileIcon";
 import {
   ActivityCount,
+  ActivityDot,
   ActivityGroup,
   ActivityItem,
   type ActivityVariant,
@@ -170,7 +173,7 @@ export function ActivityBar({
 }
 
 /** A count on a view's tab (B-8, R119, R120): the activity family's own (`ui/activity`). */
-export { ActivityCount };
+export { ActivityCount, ActivityDot };
 
 /**
  * Each of purlis's own views' mark, by what it IS. A `Record` over `OwnViewId`, so a view added
@@ -192,7 +195,11 @@ export const VIEW_MARKS: Record<OwnViewId, LucideIcon> = {
   // #1737: a repo is a folder git keeps, as the cockpit's repo mark has it.
   repos: FolderGit2,
   // The title bar's hand (#1692): the ✋ counts the asks and opens this view.
-  inbox: Hand,
+  asks: Hand,
+  // ADR 0119: the bell, for what happened rather than what asks.
+  updates: Bell,
+  // ADR 0119 (#5645): a warning sign, for what stands wrong until it is fixed.
+  notices: TriangleAlert,
   todos: ListTodo,
   memory: Brain,
   personas: UsersRound,

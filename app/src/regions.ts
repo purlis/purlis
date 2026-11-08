@@ -240,12 +240,19 @@ export const CATALOGUE: Record<RegionId, Definition> = {
     panels: true,
   },
   // **The Panel's halves** (spec #1736, P-1, P-2): Repos in the left one, out of Explorer
-  // (#1737), and Changes after it, out of the left sidebar (#1739); Memory, Todos and Sessions in
+  // (#1737), and Changes after it, out of the left sidebar (#1739); Notices (#5645), Memory, Todos and Sessions in
   // the right one, out of the right sidebar (#1738), and opening on Memory (P-14). A half with no
   // views is never drawn. 34 is the Panel's height (P-12, R126), not a width; how the halves share the
   // width is {@link SPLIT}.
   "panel-left": { name: "Panel, left half", size: 34, views: ["repos", "changes"], half: true },
-  "panel-right": { name: "Panel, right half", size: 34, views: RIGHT_HALF_VIEWS, half: true },
+  // Notices heads its bar (#5645), and the half still opens on Memory (P-14).
+  "panel-right": {
+    name: "Panel, right half",
+    size: 34,
+    views: RIGHT_HALF_VIEWS,
+    half: true,
+    opens: "memory",
+  },
 };
 
 /** Every region there is, in a fixed order, so anything iterating them is deterministic. */
@@ -266,9 +273,10 @@ function homeOf(view: string): RegionId | undefined {
   return REGION_IDS.find((id) => holds(id, view));
 }
 
-/** **The Inbox never moves** (P-4): it is pinned to the right sidebar, so what asks for the
- *  person is never hidden in a half that is put away. */
-const PINNED: readonly ViewId[] = ["inbox"];
+/** **Asks and Updates never move** (P-4, as the Inbox they took the place of did; ADR 0119):
+ *  each is pinned to the right sidebar, so what is for the person is never hidden in a half that
+ *  is put away, and its icon is where it always was. */
+const PINNED: readonly ViewId[] = ["asks", "updates"];
 
 /** The side a region is of, as the default arrangement has it: a view moves only within it
  *  (P-3), wherever a file has put the region's sidebar. */
@@ -521,6 +529,16 @@ const MOST_VIEW = 200;
 
 /** A region id version 1 wrote, by the id it has now. */
 const RENAMED: Record<string, RegionId> = { explorer: "navigation" };
+
+/** **A view an older build kept, by the view that took its place** (#5644, ADR 0119): the
+ *  Inbox became Asks and Updates, and a file that names it opens on Asks, without a word. */
+const RENAMED_VIEWS: Readonly<Record<string, ViewId>> = { inbox: "asks" };
+
+/** The view `view` names now: itself, or the one that took its place. */
+const viewNow = (view: unknown): unknown =>
+  typeof view === "string" && Object.prototype.hasOwnProperty.call(RENAMED_VIEWS, view)
+    ? RENAMED_VIEWS[view]
+    : view;
 
 /** Region ids an older build wrote for a region this one has folded into another, and so
  *  skips without a word: what it drew is still on screen, somewhere else. The `bottom` region
@@ -1103,7 +1121,12 @@ function placements(regions: unknown, said: string[]): Arrangement {
           `${JSON.stringify(id)} is not a region this purlis has (${REGION_IDS.join(", ")}), so it was left out`,
         );
       } else if (!(held.has(id) && id !== placement.id)) {
-        held.set(id, placement);
+        held.set(
+          id,
+          placement.view === undefined
+            ? placement
+            : { ...placement, view: viewNow(placement.view) },
+        );
       }
     }
   } else {

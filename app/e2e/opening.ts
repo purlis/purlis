@@ -589,7 +589,7 @@ export async function noDialogIsLeftUp(): Promise<void> {
 /**
  * **Shows a view of a side** (#1673, #1678): presses its icon on the activity bar unless it is
  * already the open one, since a press of the open view puts the side away. The left side opens
- * on Chats, the right on the Inbox, and the Panel's right half on Memory (#1738), so a spec about
+ * on Chats, the right on Asks (ADR 0119), and the Panel's right half on Memory (#1738), so a spec about
  * the explorer's rows shows the Explorer first and puts Chats back after, leaving the window as
  * the next spec expects it; a spec about another right-hand panel puts Memory back the same way.
  * A view in a half of the Panel is pressed on its Lower icon, wherever it lives (#1738, #1739):
@@ -602,7 +602,9 @@ export async function showView(
     | "Search"
     | "Changes"
     | "Repos"
-    | "Inbox"
+    | "Asks"
+    | "Updates"
+    | "Notices"
     | "Todos"
     | "Memory"
     | "Personas"

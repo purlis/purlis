@@ -1276,7 +1276,51 @@ pub fn files_of(
             purlis_skills::FILE
         ));
     }
+    one_way_on_every_disk(extension, &out)?;
     Ok(out)
+}
+
+/// **Refused where two of `files` would be one on some disk** (#3089): two paths, or two of their
+/// folders, that differ only by case, which a disk that ignores case (macOS's, Windows') writes
+/// as one, or a path that is both a file and a folder. What is reviewed is what is written,
+/// everywhere. A path is ASCII alone ([`purlis_skills::tree::folder_parts`]), so its case folds
+/// as ASCII.
+fn one_way_on_every_disk(extension: &str, files: &[HandedFile]) -> Result<(), String> {
+    // Every file and every folder, by its path folded to lowercase: its spelling, and whether it
+    // is a file.
+    let mut seen: std::collections::BTreeMap<String, (&str, bool)> =
+        std::collections::BTreeMap::new();
+    for file in files {
+        let path = file.path.as_str();
+        let mut ends = path
+            .match_indices('/')
+            .map(|(at, _)| at)
+            .collect::<Vec<_>>();
+        ends.push(path.len());
+        for (i, end) in ends.iter().enumerate() {
+            let spelled = &path[..*end];
+            let is_file = i + 1 == ends.len();
+            match seen.get(&spelled.to_ascii_lowercase()) {
+                None => {
+                    seen.insert(spelled.to_ascii_lowercase(), (spelled, is_file));
+                }
+                Some((was, _)) if *was != spelled => {
+                    return Err(format!(
+                        "'{extension}' answered {was} and {spelled}, which are one file or folder \
+                         on a disk that ignores case, so purlis reads none of them"
+                    ));
+                }
+                Some((_, was_file)) if *was_file || is_file => {
+                    return Err(format!(
+                        "'{extension}' answered {spelled} as both a file and a folder, so purlis \
+                         reads none of them"
+                    ));
+                }
+                Some(_) => {}
+            }
+        }
+    }
+    Ok(())
 }
 
 /// A revision, as an answer names it: present, bounded, and letters, digits and `.-_:+`.

@@ -74,10 +74,20 @@ impl Project {
 
     /// A chat started as persona qa that a handoff narrowed to `held`'s grants, where it says.
     fn a_chat_holding(&self, held: Option<purlis_core::reopen::HeldGrants>) -> u32 {
+        self.started(Some("qa"), held)
+    }
+
+    /// A chat that runs as no persona.
+    fn a_chat_of_no_persona(&self) -> u32 {
+        self.started(None, None)
+    }
+
+    /// A chat started as `persona`, narrowed to `held`'s grants where it says.
+    fn started(&self, persona: Option<&str>, held: Option<purlis_core::reopen::HeldGrants>) -> u32 {
         let chat = Chat {
             program: "/bin/sh".to_owned(),
             name: "1".to_owned(),
-            persona: Some("qa".to_owned()),
+            persona: persona.map(str::to_owned),
             held,
             cwd: Some(self.held.root().to_path_buf()),
             unsandboxed: true,
@@ -204,6 +214,18 @@ fn fills_into(
     chat: u32,
     said: FieldSaid,
 ) -> Answer {
+    fills_into_while(project, browsers, hosted, chat, said, &|| false)
+}
+
+/// [`fills_into`], its asker `gone` where that says.
+fn fills_into_while(
+    project: &Project,
+    browsers: &ChatBrowsers,
+    hosted: &Arc<Hosted>,
+    chat: u32,
+    said: FieldSaid,
+    gone: &dyn Fn() -> bool,
+) -> Answer {
     *hosted.field.lock().unwrap() = Some(said);
     let held = &project.held;
     answered_filling(
@@ -211,7 +233,7 @@ fn fills_into(
         hosted,
         &ask(chat, fill("e12")),
         None,
-        &|asked: &FillAsked| crate::secretfills::asked(held, chat, asked, 1000),
+        &|asked: &FillAsked| crate::secretfills::asked(held, chat, asked, 1000, gone),
     )
 }
 
@@ -352,6 +374,190 @@ fn a_multi_line_field_raises_the_notice_under_either_grant() {
             );
         }
     }
+}
+
+/// The person's ruling of 2026-11-07: two Keep blocked in one chat of a persona end the fill
+/// notices of its other chats, so the next one's call is told so and nothing is put to the
+/// person; a chat that runs as no persona keeps a count of its own and is still asked.
+#[test]
+fn two_kept_blocked_in_one_chat_of_a_persona_end_its_other_chats_fill_notices() {
+    let project = Project::holding(&the_key_held());
+    let (first, second) = (project.a_chat(), project.a_chat());
+    let nobodys = project.a_chat_of_no_persona();
+    let (browsers, hosted) = (ChatBrowsers::default(), Arc::new(Hosted::default()));
+    for chat in [first, second, nobodys] {
+        opens_a_browser(&browsers, &hosted, chat);
+    }
+    let keep = Says::Presses(Press::Keep);
+    let person = Person::saying(&project, &[keep.clone(), keep.clone(), keep]);
+
+    let kept = ["https://a.example.test", "https://b.example.test"].map(|origin| {
+        refusal(fills_into(
+            &project,
+            &browsers,
+            &hosted,
+            first,
+            one_line_on(origin),
+        ))
+    });
+    let next = refusal(fills_into(
+        &project,
+        &browsers,
+        &hosted,
+        second,
+        one_line_on(ORIGIN),
+    ));
+    let nobodys_told = refusal(fills_into(
+        &project,
+        &browsers,
+        &hosted,
+        nobodys,
+        one_line_on(ORIGIN),
+    ));
+
+    let came_up = person.came_up();
+    assert_eq!(
+        came_up
+            .notices
+            .iter()
+            .map(|notice| notice.session)
+            .collect::<Vec<_>>(),
+        [first, first, nobodys],
+        "the second chat of qa was never asked"
+    );
+    for told in kept.iter().chain([&next, &nobodys_told]) {
+        assert!(told.contains(&format!("kept {KEY} blocked")), "{told}");
+    }
+    assert!(handed(&hosted).is_empty());
+}
+
+/// A fill whose call ends while the person is asked takes its notice with it: nothing is left
+/// for them to press, and nothing is filled.
+#[test]
+fn a_fill_whose_call_ends_while_its_notice_waits_takes_the_notice_with_it() {
+    let project = Project::holding(&the_key_held());
+    let chat = project.a_chat();
+    let (browsers, hosted) = (ChatBrowsers::default(), Arc::new(Hosted::default()));
+    opens_a_browser(&browsers, &hosted, chat);
+    // Where the notice outlives its call, the person keeps it blocked after a while, so the
+    // call ends.
+    let held = Arc::clone(&project.held);
+    let done = Arc::new(AtomicBool::new(false));
+    let done_here = Arc::clone(&done);
+    let late = std::thread::spawn(move || {
+        let from = std::time::Instant::now() + Duration::from_secs(10);
+        let mut kept = Vec::new();
+        while !done_here.load(Ordering::SeqCst) {
+            let up = held.secret_fills().waiting().into_iter().next();
+            if let Some(wait) = up.filter(|_| std::time::Instant::now() >= from) {
+                answer(
+                    held.root(),
+                    held.secret_fills(),
+                    &Asked {
+                        session: wait.session,
+                        id: wait.id,
+                        press: Press::Keep,
+                        shown: &wait.digest(),
+                        reason: None,
+                    },
+                    &|_, _| Ok(()),
+                )
+                .expect("the press counts");
+                kept.push(wait);
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        kept
+    });
+    // The asker hangs up once the notice is up.
+    let fills = project.held.secret_fills();
+    let hung_up = || !fills.waiting().is_empty();
+
+    let told = refusal(fills_into_while(
+        &project,
+        &browsers,
+        &hosted,
+        chat,
+        field(FieldKind::OneLine),
+        &hung_up,
+    ));
+
+    done.store(true, Ordering::SeqCst);
+    let kept = late.join().expect("the person's thread");
+    assert!(told.contains("the call ended"), "{told}");
+    assert!(kept.is_empty(), "no notice was left: {kept:?}");
+    assert!(fills.waiting().is_empty());
+    assert!(handed(&hosted).is_empty());
+}
+
+/// A fill whose call ends while it waits on a Secret ask for its key stops waiting, and the ask
+/// goes from the person's window: nothing is left for them to answer, and nothing is filled.
+#[test]
+fn a_fill_whose_call_ends_while_its_secret_ask_waits_takes_the_ask_with_it() {
+    let project = Project::holding(&serde_json::json!({}));
+    let chat = project.a_chat();
+    let (browsers, hosted) = (ChatBrowsers::default(), Arc::new(Hosted::default()));
+    opens_a_browser(&browsers, &hosted, chat);
+    // The person allows the fill once. Where the Secret ask outlives its call, they decline it
+    // after a while, so the call ends.
+    let held = Arc::clone(&project.held);
+    let done = Arc::new(AtomicBool::new(false));
+    let done_here = Arc::clone(&done);
+    let person = std::thread::spawn(move || {
+        let mut declined = Vec::new();
+        let mut up_since = None;
+        while !done_here.load(Ordering::SeqCst) {
+            if let Some(wait) = held.secret_fills().waiting().into_iter().next() {
+                answer(
+                    held.root(),
+                    held.secret_fills(),
+                    &Asked {
+                        session: wait.session,
+                        id: wait.id,
+                        press: Press::Once,
+                        shown: &wait.digest(),
+                        reason: None,
+                    },
+                    &|_, _| Ok(()),
+                )
+                .expect("the press counts");
+            } else if let Some(open) = held.secret_asks().open().into_iter().next() {
+                let since = *up_since.get_or_insert_with(std::time::Instant::now);
+                if since.elapsed() >= Duration::from_secs(10) {
+                    held.secret_asks()
+                        .answer(
+                            &Ctx::new(held.root(), Env::from_process()),
+                            open.id,
+                            SecretAnswer::Decline,
+                            Answerer::admitted(Admitted::LocalUi).expect("the window"),
+                        )
+                        .expect("the answer counts");
+                    declined.push(open);
+                }
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        declined
+    });
+    // The asker hangs up once the Secret ask is up.
+    let asks = project.held.secret_asks();
+    let hung_up = || !asks.open().is_empty();
+
+    let told = refusal(fills_into_while(
+        &project,
+        &browsers,
+        &hosted,
+        chat,
+        field(FieldKind::OneLine),
+        &hung_up,
+    ));
+
+    done.store(true, Ordering::SeqCst);
+    let declined = person.join().expect("the person's thread");
+    assert!(told.contains("the call ended"), "{told}");
+    assert!(declined.is_empty(), "no ask was left: {declined:?}");
+    assert!(asks.open().is_empty());
+    assert!(handed(&hosted).is_empty());
 }
 
 /// The person allows a fill of a key the vault doesn't hold: the Secret ask that follows, asked

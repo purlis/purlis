@@ -57,6 +57,7 @@ fn accepted_whole(root: &Path, name: &str) -> Updating {
         accepted: diff.accepted(),
         grant: diff.grant.clone(),
         allowed: diff.gained.clone(),
+        held: None,
     }
 }
 
@@ -89,7 +90,7 @@ fn two_updates_land_as_one_commit_and_one_undo_puts_both_back() {
     assert_eq!(read(root, "skills/deploy/SKILL.md"), DEPLOY_V2);
     assert_eq!(read(root, "skills/notify/SKILL.md"), NOTIFY_V2);
     let lock = lock::read(root, Kept::Shared).unwrap().lock;
-    assert!(lock.skills.iter().all(|one| one.commit.as_str() == second));
+    assert!(lock.skills.iter().all(|one| one.pin.as_str() == second));
     // One commit after the one before, holding both and the lockfile.
     let parent = run(root, &["rev-parse", "HEAD~1"]).out;
     assert_eq!(parent, head_before);
@@ -119,7 +120,7 @@ fn two_updates_land_as_one_commit_and_one_undo_puts_both_back() {
     assert!(subject.trim().ends_with("skill update undo 2"), "{subject}");
     let status = run(root, &["status", "--porcelain"]).out;
     assert_eq!(status.trim(), "");
-    assert_eq!(updates(root).offers.len(), 2);
+    assert_eq!(updates(root, None).offers.len(), 2);
 }
 
 #[test]

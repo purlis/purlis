@@ -451,6 +451,28 @@ pub(crate) fn report_holds_together(report: &GradeReport, runs: u8) -> bool {
             .all(|why| why.len() <= MOST_REASON_BYTES && !why.chars().any(char::is_control))
         // A Grader's failure says why, and only a Grader's failure does (#3236).
         && report.failed.is_some() == (report.ended == grade::GradeEnd::GraderFailed)
+        // A reset time only of a stop at a usage limit, and a time's own shape (#5718).
+        && report.resets_at.as_deref().is_none_or(|at| {
+            report.ended == grade::GradeEnd::UsageLimit
+                && at.len() <= 64
+                && chrono::DateTime::parse_from_rfc3339(at).is_ok()
+        })
+        && report.earlier.as_ref().is_none_or(|earlier| earlier_holds(report, earlier))
+}
+
+/// **Whether what a resumed grade's report says its earlier run spent holds together** (#5718):
+/// amounts within a row's bounds, and no more than both runs spent.
+fn earlier_holds(report: &GradeReport, earlier: &grade::Earlier) -> bool {
+    let within = |part: Option<u64>, all: Option<u64>| {
+        part.is_none_or(|part| tokens(part) && all.is_some_and(|all| part <= all))
+    };
+    let within_usd = |part: Option<f64>, all: Option<f64>| {
+        part.is_none_or(|part| dollars(part) && all.is_some_and(|all| part <= all * (1.0 + 1e-9)))
+    };
+    within(earlier.tokens, report.spent_tokens)
+        && within(earlier.outcome_tokens, report.outcome_tokens)
+        && within_usd(earlier.usd, report.spent_usd)
+        && within_usd(earlier.outcome_usd, report.outcome_usd)
 }
 
 /// Every arm a grade can compare: the skill, no skill and its previous version.
@@ -1039,18 +1061,38 @@ fn read_where(
     out
 }
 
-/// **How a grade ended, as its row and its scorecard say it.**
+/// **How a grade ended, as its row and its scorecard say it** (#5718: a stop says why, in the
+/// operator's words of 2026-11-08). A usage limit is named by its program where the row says
+/// which ([`ended_said_on`]).
 pub fn ended_said(end: grade::GradeEnd) -> &'static str {
     use grade::GradeEnd;
     match end {
         GradeEnd::Whole => "Finished",
-        GradeEnd::Cancelled => "Stopped",
+        GradeEnd::Cancelled => "Stopped by you",
         GradeEnd::ChatsDidNotStart => "Chats did not start",
-        GradeEnd::OverCap => "Stopped at its token cap",
+        GradeEnd::OverCap => "Stopped at the token cap",
         GradeEnd::OverLimit => "Stopped at its dollar limit",
         GradeEnd::SpendNotReported => "Stopped: spend not reported",
         GradeEnd::Interrupted => "Interrupted: not scored",
         GradeEnd::GraderFailed => "Stopped: its Grader failed",
+        GradeEnd::UsageLimit => "Stopped: the program's usage limit was reached",
+        GradeEnd::Unreachable => "Stopped: network unreachable",
+    }
+}
+
+/// **[`ended_said`], of a grade whose chats ran on the harness `harness`** (its id, as a row
+/// records it): a usage limit is that program's, by its name (#5718).
+pub fn ended_said_on(end: grade::GradeEnd, harness: Option<&str>) -> String {
+    let named = harness.and_then(|word| {
+        crate::harness::Harness::ALL
+            .into_iter()
+            .find(|one| one.name() == word)
+    });
+    match (end, named) {
+        (grade::GradeEnd::UsageLimit, Some(harness)) => {
+            format!("Stopped: {}'s usage limit was reached", harness.title())
+        }
+        (end, _) => ended_said(end).to_owned(),
     }
 }
 
@@ -2330,6 +2372,7 @@ pub mod draft;
 pub mod earlier;
 pub mod kept;
 pub mod price;
+pub mod resumable;
 pub mod routers;
 pub mod underway;
 

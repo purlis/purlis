@@ -168,6 +168,62 @@ fn a_keep_clears_what_a_harness_loads_that_no_desktop_sent() {
     super::super::made::loaded_unsent_cleared(&kept).expect("cleared again");
 }
 
+/// **Claude Code's `hooks` folder does not stay on a runner either**: a desktop never sends it,
+/// so a hook its settings name there runs only what a chat on the runner left.
+#[test]
+fn a_keep_clears_claude_codes_hooks_folder() {
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_signed_in_desktop_profile(dir.path());
+    let runner = homes(dir.path(), "runner");
+    let kept = keep(
+        &runner,
+        &runner_home(dir.path()),
+        &Kept::of(&desktop).expect("it goes"),
+        DESKTOP,
+        7,
+    )
+    .expect("kept");
+    let config = &kept.folders.config;
+    std::fs::create_dir_all(config.join("hooks")).unwrap();
+    std::fs::write(config.join("hooks/on-stop.sh"), "left").unwrap();
+
+    super::super::made::loaded_unsent_cleared(&kept).expect("cleared");
+
+    assert!(!config.join("hooks").exists());
+}
+
+/// **A settings folder reached through a link above it is never cleared**: what the link names,
+/// somewhere else, is left as it is, and the keep is refused.
+#[test]
+fn a_settings_folder_reached_through_a_linked_folder_above_it_is_not_cleared() {
+    let dir = tempfile::tempdir().unwrap();
+    let elsewhere = dir.path().join("elsewhere");
+    std::fs::create_dir_all(elsewhere.join("opencode/plugin")).unwrap();
+    std::fs::write(elsewhere.join("opencode/plugin/kept.ts"), "someone's").unwrap();
+    let config = dir.path().join("runner-home/.config");
+    std::fs::create_dir_all(config.parent().unwrap()).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, &config).unwrap();
+    let record = MachineProfile {
+        name: "opencode".to_owned(),
+        harness: "opencode".to_owned(),
+        title: "opencode (this runner)".to_owned(),
+        folders: Folders { config, data: None },
+        adopted: Some(Adopted {
+            at: 1,
+            variables: Vec::new(),
+        }),
+        imported: None,
+        sign_in: None,
+        pinned: None,
+        sandbox_only: false,
+        kept_for: Some(DESKTOP.to_owned()),
+        rest: Default::default(),
+    };
+
+    assert!(super::super::made::loaded_unsent_cleared(&record).is_err());
+    assert!(elsewhere.join("opencode/plugin/kept.ts").exists());
+}
+
 /// A desktop's Claude Code folder, adopted in place there as `claude` and pinned.
 fn the_desktops_adopted_folder(dir: &Path) -> MachineProfile {
     MachineProfile {
@@ -1325,6 +1381,52 @@ fn a_harness_settings_file_too_large_to_go_refuses_the_chat() {
     assert!(in_batches(&kept).unwrap_err().said.contains("larger than"));
 }
 
+/// **A harness's own settings file that cannot be read refuses the chat in words**: a link, as a
+/// dotfile manager leaves, or a file with another name on the disk is never read, and sent without
+/// it a runner would drop its copy, so a chat there would start with none of its rules.
+#[test]
+fn a_harness_settings_file_that_cannot_be_read_refuses_the_chat() {
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_desktop_profile_with_settings(dir.path());
+    let config = &desktop.folders.config;
+    let kept = Kept::of(&desktop).unwrap().with_settings_of(&desktop);
+    let real = dir.path().join("dotfiles-settings.json");
+    fs::write(&real, r#"{"permissions":{"deny":["Bash(curl:*)"]}}"#).unwrap();
+    let _ = fs::remove_file(config.join("settings.json"));
+    std::os::unix::fs::symlink(&real, config.join("settings.json")).unwrap();
+
+    let refused = in_batches(&kept).unwrap_err();
+    let older = to_send(&kept).unwrap_err();
+
+    assert!(
+        refused.said.contains("settings.json") && refused.said.contains("a link"),
+        "{}",
+        refused.said
+    );
+    assert!(refused.hits.is_empty());
+    assert!(older.contains("settings.json"), "{older}");
+    fs::remove_file(config.join("settings.json")).unwrap();
+    fs::hard_link(&real, config.join("settings.json")).unwrap();
+    let refused = in_batches(&kept).unwrap_err().said;
+    assert!(refused.contains("another name"), "{refused}");
+}
+
+/// A link elsewhere in the settings, which is not a harness's own settings file, is left out and
+/// said, as before, and the rest goes.
+#[test]
+fn a_link_that_is_not_the_harness_settings_file_is_left_out_and_the_rest_goes() {
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_desktop_profile_with_settings(dir.path());
+    let config = &desktop.folders.config;
+    let real = dir.path().join("elsewhere.md");
+    fs::write(&real, "Elsewhere.").unwrap();
+    std::os::unix::fs::symlink(&real, config.join("agents/linked.md")).unwrap();
+
+    let sent = in_batches(&Kept::of(&desktop).unwrap().with_settings_of(&desktop));
+
+    assert!(sent.is_ok(), "{:?}", sent.err());
+}
+
 /// **What a runner has no use for does not go** (#4081): a skill's `node_modules`, `__pycache__`
 /// and `.git` stay behind unsaid, and what a made profile imports on this machine is not changed.
 #[test]
@@ -1879,6 +1981,42 @@ fn what_an_earlier_version_carried_is_cleared_and_not_taken_in() {
         assert!(fs::symlink_metadata(&before).is_err(), "{linked}");
         assert_eq!(file.exists(), linked);
     }
+}
+
+/// **What an earlier version carried is cleared before the store's lock is taken**: a chat can
+/// make that folder as large as it likes, and every keep waits on the lock while it is cleared.
+#[test]
+fn what_an_earlier_version_carried_is_cleared_outside_the_stores_lock() {
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_signed_in_desktop_profile(dir.path());
+    let runner = homes(dir.path(), "runner");
+    let before = dir.path().join("runner/data/carried");
+    fs::create_dir_all(before.join("a/large/tree")).unwrap();
+    let (locked, held) = std::sync::mpsc::channel();
+    let (release, released) = std::sync::mpsc::channel::<()>();
+    let config_root = runner.config_root().to_path_buf();
+    let holder = std::thread::spawn(move || {
+        crate::profilestore::update(&config_root, |_| {
+            locked.send(()).unwrap();
+            released.recv().unwrap();
+        })
+    });
+    held.recv().unwrap();
+    let keeper = std::thread::spawn({
+        let home = runner_home(dir.path());
+        let kept = Kept::of(&desktop).expect("it goes");
+        move || keep(&runner, &home, &kept, DESKTOP, 7)
+    });
+
+    let cleared_by = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while before.exists() && std::time::Instant::now() < cleared_by {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    let cleared = !before.exists();
+    release.send(()).unwrap();
+    holder.join().unwrap().expect("the store was locked");
+    keeper.join().unwrap().expect("kept");
+    assert!(cleared, "the earlier folder waited for the store's lock");
 }
 
 /// **A runner already keeping a profile takes in the sign-in carried to it later** (#4055): its

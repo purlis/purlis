@@ -54,7 +54,7 @@ use purlis_core::secrets::{Ctx, Env};
 use purlis_session_protocol::browsing::{FieldKind, FieldSaid, Secret};
 use sha2::{Digest, Sha256};
 
-use crate::loginasks::{Press, Pressed};
+use crate::loginasks::{Ended, Press, Pressed};
 use crate::planes::{Held, PlaneId, Planes};
 
 /// **A secret fill's notice, as it waits**: names, an origin and the page's words, never a value.
@@ -488,8 +488,15 @@ fn frame_warning(origin: &str, page: Option<&str>) -> Option<String> {
 /// it: or why nothing is filled, in words the chat reads. A line Always wrote, or the person's
 /// Allow for this chat, fills without a notice, never a card's key (SF-4). The call waits here
 /// for the answer, at most [`purlis_core::loginask::THE_PERSON_IS_WAITED_FOR`], under no lock of
-/// the browsers', and then on a Secret ask where the vault holds no such key.
-pub fn asked(held: &Held, session: u32, asked: &FillAsked, now: u64) -> Result<Allowed, String> {
+/// the browsers', and then on a Secret ask where the vault holds no such key. Where the call's
+/// asker is `gone` while the person is asked, the notice goes and nothing is filled.
+pub fn asked(
+    held: &Held,
+    session: u32,
+    asked: &FillAsked,
+    now: u64,
+    gone: &dyn Fn() -> bool,
+) -> Result<Allowed, String> {
     let started = std::time::Instant::now();
     let (origin, warnings) = judged(held, session, asked)?;
     // SF-5: a multi-line text box or an editable area asks each time, whatever was allowed.
@@ -562,7 +569,7 @@ pub fn asked(held: &Held, session: u32, asked: &FillAsked, now: u64) -> Result<A
                 vault_too: false,
             },
         );
-        match heard(held, fills, wait)? {
+        match heard(held, fills, wait, gone)? {
             Heard::Allowed => {
                 // Judged again as the project reads now: policy may have changed while it
                 // waited.
@@ -572,7 +579,7 @@ pub fn asked(held: &Held, session: u32, asked: &FillAsked, now: u64) -> Result<A
             Heard::Gone => return Err(NOT_ANSWERED.to_owned()),
         }
     }
-    let value = read(held, session, asked, &origin, started)?;
+    let value = read(held, session, asked, &origin, started, gone)?;
     // Again once it is read: the pool or its runner may have changed meanwhile.
     if let Some((read, bound)) = &runner
         && read().as_ref() != Ok(bound)
@@ -743,30 +750,45 @@ fn offered(root: &std::path::Path, mut wait: FillWait) -> FillWait {
 }
 
 /// **`wait` raised, and the person's answer**: refused where the chat has a notice up already.
-fn heard(held: &Held, fills: &Fills, wait: FillWait) -> Result<Heard, String> {
+/// Where the call's asker is `gone`, the notice goes with it and nothing is filled.
+fn heard(
+    held: &Held,
+    fills: &Fills,
+    wait: FillWait,
+    gone: &dyn Fn() -> bool,
+) -> Result<Heard, String> {
     let session = wait.session;
     let (id, heard) = fills.raise(wait)?;
     tracing::info!("purlis: chat {session}'s secret fill asks the person");
     held.chats().asks_may_have_moved();
+    // Under the presses' own hold, so a press is either wholly before this or finds the wait
+    // gone: a press in that very moment has ended it, and its answer waits here.
+    let settle = || {
+        let _no_press = fills
+            .answering
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if fills.end(id, Heard::Gone) {
+            None
+        } else {
+            heard.try_recv().ok()
+        }
+    };
+    let at_most = purlis_core::loginask::THE_PERSON_IS_WAITED_FOR;
     Ok(
-        match heard.recv_timeout(purlis_core::loginask::THE_PERSON_IS_WAITED_FOR) {
-            Ok(heard) => heard,
-            Err(mpsc::RecvTimeoutError::Disconnected) => Heard::Gone,
-            Err(mpsc::RecvTimeoutError::Timeout) => {
-                // Under the presses' own hold, so a press is either wholly before this or finds
-                // the wait gone: a press in that very moment has ended it, and its answer waits
-                // here.
-                let _no_press = fills
-                    .answering
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner);
-                let pressed = if fills.end(id, Heard::Gone) {
-                    Heard::Gone
-                } else {
-                    heard.try_recv().unwrap_or(Heard::Gone)
-                };
+        match crate::loginasks::waited(&heard, at_most, gone, &settle) {
+            Ended::Heard(heard) => heard,
+            Ended::Closed => Heard::Gone,
+            Ended::NotAnswered => {
                 held.chats().asks_may_have_moved();
-                pressed
+                Heard::Gone
+            }
+            Ended::AskerGone => {
+                tracing::info!(
+                    "purlis: chat {session}'s secret fill call ended, so its notice went"
+                );
+                held.chats().asks_may_have_moved();
+                return Err(crate::loginasks::ASKER_GONE.to_owned());
             }
         },
     )
@@ -776,12 +798,15 @@ fn heard(held: &Held, fills: &Fills, wait: FillWait) -> Result<Heard, String> {
 /// person on a Secret ask (#5054, ADR 0109), and read again once they added it.
 /// It waits on that ask for what is left of the time the person is waited for on a fill, and at
 /// least as long as a brokered run waits on one. The fill is judged again once the key is added.
+/// Where the call's asker is `gone` meanwhile, it stops waiting, and the ask goes from the
+/// person's window unless another chat waits on it too.
 fn read(
     held: &Held,
     session: u32,
     asked: &FillAsked,
     origin: &str,
     started: std::time::Instant,
+    gone: &dyn Fn() -> bool,
 ) -> Result<Secret, String> {
     not_taken_over(held.browsers(), asked)?;
     let (asker, _) = held
@@ -825,7 +850,7 @@ fn read(
     let moved = || held.chats().asks_may_have_moved();
     match held
         .secret_asks()
-        .hold(need, within, &mut |_: &str| moved())
+        .hold_while(need, within, gone, &mut |_: &str| moved())
     {
         // Only the very vault and key the person allowed for this site go in: a value added
         // under other names is that key's, and a fill of it is a fill of its own.
@@ -848,6 +873,11 @@ fn read(
                     asked.vault, asked.key
                 )
             })
+        }
+        purlis_core::secrets::ask::Held::CallerGone { .. } => {
+            tracing::info!("purlis: chat {session}'s secret fill call ended as its key was asked");
+            moved();
+            Err(crate::loginasks::ASKER_GONE.to_owned())
         }
         purlis_core::secrets::ask::Held::Declined { line }
         | purlis_core::secrets::ask::Held::StillOpen { line }

@@ -16,7 +16,13 @@ import { menuNames } from "./menus.testkit";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import { forgetRepoClones } from "./repoClones";
-import { chipName, openAllWorkspaces, workspaceChips, workspaceInFront } from "./test-strips";
+import {
+  chipName,
+  openAllWorkspaces,
+  showNotices,
+  workspaceChips,
+  workspaceInFront,
+} from "./test-strips";
 import { findOnCard, findResult } from "./actionResult.testkit";
 import { keepUnsaved, unsavedNow, type UnsavedWork } from "./unsavedWork";
 
@@ -729,6 +735,7 @@ describe("picking a new workspace's repos (ADR 0055)", () => {
     // Making it opened it, so nothing offers to open it (#3648).
     expect(within(notice).queryByRole("button", { name: "Open gamma" })).toBeNull();
     // Kept under Results in the Inbox's Notices, with the same ways on.
+    await showNotices();
     const results = await screen.findByRole("region", { name: "Results" });
     expect(within(results).getByText("Workspace gamma is ready")).toBeInTheDocument();
     expect(within(results).getByRole("button", { name: "Add a vision" })).toBeInTheDocument();

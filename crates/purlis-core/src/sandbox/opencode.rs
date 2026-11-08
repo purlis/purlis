@@ -40,6 +40,9 @@
 //!   file was refused (measured). The later-code class ([`super::PLANTED`]) is denied at any
 //!   depth of every directory the chat may write, by name, so a nested clone's `.git/config`
 //!   is held, and so is a `.git` built in the temp directory to be moved in with its parent.
+//!   Each name under every spelling, as Claude Code's own rules hold them. The git folders the
+//!   app alone writes, the project root's and a branch folder's clone's, are denied whole, as
+//!   for every harness ([`super::Applied::form_in`]).
 //! - **The network.** Only charter's egress proxy, on its loopback port, and the socket the
 //!   chat's hooks report on can be reached. opencode's own requests to its model provider go
 //!   through the proxy (measured: a provider on a listed host answered through it), and so
@@ -255,11 +258,20 @@ fn own(wrap: &Wrap) -> Result<Own, &'static str> {
         ));
     }
     if let Some(data) = &wrap.data {
+        // Under every name the kernel may give each, across a firmlink too (#1356).
         for file in CREDENTIALS {
-            own.deny.push(format!(
-                "(deny file-write* file-link (literal {}))",
-                quote(&data.join(file))?
-            ));
+            for name in seatbelt::kernel_strings(&data.join(file))? {
+                own.deny
+                    .push(format!("(deny file-write* file-link (literal {name}))"));
+            }
+        }
+        // Nor is the folder they are in, or one above it, moved away, written under its new
+        // name and moved back: their rules name their paths alone.
+        for above in data.ancestors().filter(|above| above.parent().is_some()) {
+            for name in seatbelt::kernel_strings(above)? {
+                own.deny
+                    .push(format!("(deny file-write* (literal {name}))"));
+            }
         }
         // Every snapshot repository, its config and hooks among them, which git reads and runs
         // when opencode later runs it there: none is written, moved in or made.

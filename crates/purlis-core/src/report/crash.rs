@@ -18,7 +18,6 @@
 
 use regex::Regex;
 use serde_json::json;
-
 use sha2::{Digest, Sha256};
 
 use super::{Known, NativeCrash, Panic, short_place};
@@ -29,9 +28,10 @@ pub(super) struct CrashReport {
     /// What the sent list calls it.
     pub title: String,
     /// The envelope, exactly as it is sent.
-    pub envelope: Vec<u8>,
-    /// What the sent list shows: the envelope, with a minidump named in place of its bytes.
-    pub shown: String,
+    pub bytes: String,
+    /// Where it crashed in which purlis version (#5693, Q15): the same panic again in the same
+    /// version has the same one, and is counted instead of sent.
+    pub fingerprint: String,
 }
 
 impl CrashReport {
@@ -40,6 +40,15 @@ impl CrashReport {
         let (place, _) = known.scrub(&without_paths(&short_place(&record.place)));
         let (message, _) = known.scrub(&without_paths(&record.message));
         let event_id = uuid::Uuid::new_v4().simple().to_string();
+        let version = record
+            .version
+            .as_deref()
+            .unwrap_or(crate::adopt::release_version());
+        let fingerprint: String = Sha256::digest(format!("panic\0{version}\0{place}"))
+            .iter()
+            .take(16)
+            .map(|b| format!("{b:02x}"))
+            .collect();
         let mut event = fixed_fields(&event_id, record.at);
         event["exception"] = json!({"values": [{
             "type": "panic",
@@ -47,17 +56,32 @@ impl CrashReport {
             "mechanism": {"type": "panic", "handled": false},
         }]});
         event["culprit"] = json!(place);
-        let text = format!("{}{}", header(&event_id, dsn), event_item(&event));
+        // Sentry groups by it, so the counts of repeats name the group they belong to.
+        event["fingerprint"] = json!([fingerprint]);
         CrashReport {
+            fingerprint,
             title: format!("purlis panicked at {place}"),
-            envelope: text.clone().into_bytes(),
-            shown: text,
+            bytes: format!("{}{}", header(&event_id, dsn), event_item(&event)),
             event_id,
         }
     }
+}
 
+/// A native crash's Crash report (#5691), ready to send: the envelope is not text, since it
+/// carries the minidump.
+pub(super) struct NativeCrashReport {
+    pub event_id: String,
+    /// What the sent list calls it.
+    pub title: String,
+    /// The envelope, exactly as it is sent.
+    pub envelope: Vec<u8>,
+    /// What the sent list shows: the envelope, with the minidump named in place of its bytes.
+    pub shown: String,
+}
+
+impl NativeCrashReport {
     /// The Crash report of a native crash, with its minidump, for the intake at `dsn`.
-    pub fn of_native_crash(crash: &NativeCrash, dsn: &str) -> CrashReport {
+    pub fn of(crash: &NativeCrash, dsn: &str) -> NativeCrashReport {
         let event_id = uuid::Uuid::new_v4().simple().to_string();
         let event = fixed_fields(&event_id, crash.at);
         let text = format!("{}{}", header(&event_id, dsn), event_item(&event));
@@ -72,7 +96,7 @@ impl CrashReport {
         envelope.push(b'\n');
         let digest = Sha256::digest(&crash.minidump);
         let digest: String = digest.iter().map(|b| format!("{b:02x}")).collect();
-        CrashReport {
+        NativeCrashReport {
             title: "purlis crashed".to_string(),
             envelope,
             shown: format!(
@@ -120,6 +144,42 @@ fn event_item(event: &serde_json::Value) -> String {
     let event = event.to_string();
     let item = json!({"type": "event", "length": event.len(), "content_type": "application/json"});
     format!("{item}\n{event}\n")
+}
+
+/// `envelope` carrying the counts of `repeats` (#5693, Q15): each fingerprint and how many times
+/// its report was made again since it was sent, in the event's `extra`. A repeat is never sent on
+/// its own: its count rides on the next report that leaves. It is the event's own field rather
+/// than an envelope item of its own because an envelope holds one event, and Sentry drops an item
+/// type it does not know. An envelope that is not three lines of JSON, or no repeats, is left as
+/// it is.
+pub(super) fn with_repeats(envelope: &str, repeats: &[(String, u32)]) -> String {
+    let lines: Vec<&str> = envelope.lines().collect();
+    let [header, _, event] = lines[..] else {
+        return envelope.to_string();
+    };
+    let Ok(mut event) = serde_json::from_str::<serde_json::Value>(event) else {
+        return envelope.to_string();
+    };
+    if repeats.is_empty() || !event.is_object() {
+        return envelope.to_string();
+    }
+    event["extra"] = json!({"repeats": repeats
+        .iter()
+        .map(|(fingerprint, count)| json!({"fingerprint": fingerprint, "count": count}))
+        .collect::<Vec<_>>()});
+    let event = event.to_string();
+    let item = json!({"type": "event", "length": event.len(), "content_type": "application/json"});
+    format!("{header}\n{item}\n{event}\n")
+}
+
+/// The event id `envelope`'s header names, or none.
+pub(super) fn event_id_of(envelope: &str) -> String {
+    envelope
+        .lines()
+        .next()
+        .and_then(|header| serde_json::from_str::<serde_json::Value>(header).ok())
+        .and_then(|header| header["event_id"].as_str().map(str::to_string))
+        .unwrap_or_default()
 }
 
 /// The channel this build is for: `stable` for a release build, `dev` for a dev channel build,

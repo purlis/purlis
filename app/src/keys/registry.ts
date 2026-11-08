@@ -376,16 +376,16 @@ export const SHORTCUTS: readonly Shortcut[] = [
     matches: isSide({ show: "changes" }),
   },
   {
-    id: "view.inbox",
-    does: "Show the Inbox",
+    id: "view.asks",
+    does: "Show Asks",
     group: "Window",
     where: "window",
     kind: "key",
     chords: { mac: [cmd("I", { shift: true })], other: [ctl("I", { shift: true })] },
-    said: sideSaid("inbox"),
+    said: sideSaid("asks"),
     yields: ["dialog"],
-    rows: ["view.show:inbox"],
-    matches: isSide({ show: "inbox" }),
+    rows: ["view.show:asks"],
+    matches: isSide({ show: "asks" }),
   },
   {
     id: "region.navigation",
@@ -1001,7 +1001,7 @@ export const SIDE_KEY_IDS: readonly string[] = [
   "region.panel",
   "view.explorer",
   "view.chats",
-  "view.inbox",
+  "view.asks",
 ];
 
 // --- Reading it ------------------------------------------------------------------------------

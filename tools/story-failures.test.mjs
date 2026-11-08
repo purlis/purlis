@@ -738,10 +738,11 @@ test("a story failing on more than its picture is named first, past any number o
   assert.match(headline, /^::error title=No baselines drawn%3A 1 story failed on more than its picture::/);
   assert.match(headline, /Probe K \(src\/Probe.stories.tsx\): keyboard, in webkit \(purlis_light\)$/);
   assert.doesNotMatch(headline, /Picture/);
-  // Probe K's own annotation, then the 24 pictures'.
-  assert.equal(lines.length, 1 + 24);
+  // Probe K's own annotation, then the pictures' up to GitHub's 10 (#3260), the last the 16 more.
+  assert.equal(lines.length, 10);
   assert.match(lines[0], /title=Probe K in webkit/);
-  assert.ok(lines.slice(1).every((line) => /title=Picture \d+ in/.test(line)));
+  assert.ok(lines.slice(1, 9).every((line) => /title=Picture \d+ in/.test(line)));
+  assert.match(lines[9], /title=16 more not shown/);
 });
 
 test("the headline names each blocking story once, with the browsers and cells it failed in", () => {
@@ -951,4 +952,50 @@ test("the reporter keeps where a picture that missed on size stood, and logs it"
     ),
     summary,
   );
+});
+
+// GitHub shows 10 error annotations a step (#3260): a story whose picture failed in every cell
+// of both engines is one annotation a browser, listing its cells, and past 10 the last one says
+// how many more failed and points at the job's summary, which lists every one.
+const everyCell = (browser, story = "Probe P") => ({
+  failed: true,
+  failures: CELLS.map((cell) => ({
+    file: "src/Probe.stories.tsx",
+    story,
+    cell,
+    errors: [failedAt("screenshot", browser)],
+  })),
+  errors: [],
+});
+
+test("a story whose picture alone failed in every cell of both engines is one annotation a browser, listing its cells", () => {
+  const { annotations: lines, summary } = named([
+    { browser: "chromium", report: everyCell("chromium") },
+    { browser: "webkit", report: everyCell("webkit") },
+  ]);
+  assert.equal(lines.length, 2);
+  assert.equal(
+    lines[0],
+    `::error title=Probe P in chromium::src/Probe.stories.tsx: screenshot in ${[...CELLS].sort().join(", ")}: ${WHY.screenshot}`,
+  );
+  assert.match(lines[1], /^::error title=Probe P in webkit::src\/Probe.stories.tsx: screenshot in /);
+  // The summary, never capped, still lists each cell.
+  assert.match(summary, /20 stories failed on their picture alone/);
+});
+
+test("past 10 annotations, the last says how many more failed and points at the job's summary", () => {
+  const { annotations: lines, summary } = named([{ browser: "chromium", report: pictures(13) }]);
+  assert.equal(lines.length, 10);
+  assert.ok(lines.slice(0, 9).every((line, at) => line.includes(`title=Picture ${at} in chromium`)));
+  assert.equal(
+    lines[9],
+    "::error title=4 more not shown::4 more annotations are not shown here, as GitHub shows 10 annotations a step: the job's summary lists every one",
+  );
+  assert.match(summary, /Picture 12 in chromium/);
+});
+
+test("10 annotations are all shown, with no count of more", () => {
+  const { annotations: lines } = named([{ browser: "chromium", report: pictures(10) }]);
+  assert.equal(lines.length, 10);
+  assert.match(lines[9], /title=Picture 9 in chromium/);
 });

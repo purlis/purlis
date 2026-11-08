@@ -2502,6 +2502,27 @@ body {
 .inbox-scope-empty > .inbox-none {
   margin: 0;
 }
+/* **Snooze all** (#5647): its press, its question and its Undo, each a line inside Asks, under
+   the scope switch; and how many are snoozed, with Show them now. */
+.inbox-snooze {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+.inbox-snooze:empty {
+  display: none;
+}
+.inbox-snooze-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.inbox-snooze-line > .inbox-none {
+  margin: 0;
+}
 /* A group's heading. A chat's chain is data, so it is drawn as written; a section of the Inbox
    itself (Notices, Updates) is a section title of the panel family's beside it. */
 .inbox-chain {
@@ -2514,21 +2535,6 @@ body {
 }
 .inbox-chain[data-part="title"] {
   margin: 0 0 var(--space-3);
-}
-/* **An ask is a card** (R132, #2917): the card's fill, the card corner (`radius.lg`, 10 in
-   Purlis), no edge. Its top row is the chat's name in bold with the workspace quiet at the right,
-   then its status line in amber, its words, its answers (the shared button), its reply (the
-   shared field and button), and its ways on at its foot (DS-12). */
-.inbox-ask {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: calc(var(--space-4) + var(--space-1)) var(--space-5);
-  border-radius: var(--radius-lg);
-  background: var(--surface-overlay);
-}
-.inbox-ask + .inbox-ask {
-  margin-top: var(--space-2);
 }
 /* **An ask card's top row** (R132): the chat's name, then the workspace at the row's end. The
    task question card's (`TaskQuiz.tsx`). */
@@ -2551,108 +2557,23 @@ body {
   flex: none;
   max-width: 50%;
 }
-/* **Its status line** (R132): what it waits on and since when, in the waiting amber, over its
-   words. */
-.inbox-ask > .inbox-says > .inbox-meta {
-  grid-area: 1 / 1 / auto / -1;
-  justify-content: flex-start;
-}
-.inbox-ask > .inbox-says > .inbox-meta > .inbox-source {
-  color: var(--state-waiting);
-}
-.inbox-ask > .inbox-says > .inbox-kind,
-.inbox-ask > .inbox-says > .inbox-primary {
-  grid-row: 2;
-}
-/* **An ask card's head, one row in the pane band's style** (#5214): its kind's mark, the chat's
-   name over its status line (what it waits on in the waiting amber, then how long and where,
-   quiet), and at its end Go to chat and the ×. */
-.inbox-card {
-  --inbox-card-indent: calc(1em + var(--space-3));
-}
-.inbox-ask-head {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: var(--space-3);
-  align-items: center;
-  min-width: 0;
-}
-.inbox-ask-head > .inbox-kind {
-  grid-area: auto;
-}
-.inbox-ask-title {
-  display: grid;
-  min-width: 0;
-}
-.inbox-ask-title > .inbox-who {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.inbox-ask-sub {
-  display: flex;
-  align-items: baseline;
-  min-width: 0;
-  white-space: nowrap;
-}
-.inbox-ask-sub > .inbox-meta {
-  flex: none;
-  justify-content: flex-start;
-}
-.inbox-ask-sub > .inbox-meta > .inbox-source {
-  color: var(--state-waiting);
-}
-.inbox-ask-sub > .inbox-meta-dot {
-  flex: none;
-  white-space: pre;
-}
-.inbox-ask-sub > .inbox-where {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.inbox-ask-end {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-/* Its words, under the name, past the mark. */
-.inbox-card > .inbox-says {
-  display: block;
-  padding-inline-start: var(--inbox-card-indent);
-}
-/* **A chat's own words on a card** (#5214): the card's smaller size in the secondary tier, its
-   bold in the primary words. They wear no text role, so these rules are the words' own. */
-.inbox-card .inbox-chat-text,
-.inbox-card .inbox-said,
-.inbox-card .inbox-note {
+/* **A chat's own words in a row** (#5214, #5649): the row's size in the secondary tier, its bold
+   in the primary words. They wear no text role, so these rules are the words' own. */
+.inbox-ask :is(.inbox-chat-text, .inbox-said, .inbox-note) {
   color: var(--text-secondary);
   font-size: var(--font-size-md);
   font-weight: var(--font-weight-regular);
 }
-.inbox-card .inbox-said,
-.inbox-card .inbox-note,
-.inbox-card > .inbox-secondary {
-  padding-inline-start: var(--inbox-card-indent);
-}
-.inbox-card :is(.inbox-chat-text, .inbox-said, .inbox-note) strong {
+.inbox-ask :is(.inbox-chat-text, .inbox-said, .inbox-note) strong {
   color: var(--text-primary);
 }
-/* The reply strip runs to the card's edges and sits at its foot (#5214). */
-.inbox-card:has(> .inbox-reply) {
-  overflow: hidden;
-}
-.inbox-card > .inbox-reply {
+.inbox-reply {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  margin-inline: calc(var(--space-5) * -1);
-  margin-block-end: calc(var(--space-4) * -1);
 }
 .inbox-reply > .inbox-refused {
   margin: 0;
-  padding: 0 var(--space-5) var(--space-2);
 }
 
 /* **A row's words, in three ranks** (qw359, `InboxRow.tsx`): its kind's mark and what needs you
@@ -2804,23 +2725,9 @@ body {
   flex: 1 1 auto;
   margin: 0;
 }
-.inbox-update {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-}
-.inbox-update + .inbox-update {
-  margin-top: var(--space-2);
-}
-/* One read: its words step back to the secondary text and the regular weight, at the body's
-   size. That is no rank of the scale (#1920), so a read update wears no role and this rule is
-   the whole of it. */
+/* One read (#5649): its title steps back (the message family's `data-read`), and its words to the
+   secondary text. */
 .inbox-update[data-read] .ask-says {
-  font-size: var(--font-size-md);
-  font-weight: var(--font-weight-regular);
   color: var(--text-secondary);
 }
 .inbox-unread {
@@ -2830,6 +2737,12 @@ body {
 .inbox-more {
   margin: 0;
   color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+/* A finished task's report, opened in place (#5651): the task's words over the lines it wrote. */
+.inbox-report {
+  margin: 0;
+  white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 .inbox-recent li {
@@ -5411,12 +5324,16 @@ body {
   border: 1px solid var(--border-subtle);
   text-align: start;
 }
-/* **Folded** past six lines (#5214): cut at six of its lines, the last of them fading out. The
-   rest is still in the page, for a screen reader. */
+/* **Folded** past six lines (#5214), three in an Inbox's row (#5649): cut at that many of its
+   lines, the last of them fading out. The rest is still in the page, for a screen reader. */
 .chat-text-body[data-folded="true"] {
   max-block-size: 6lh;
   overflow: hidden;
   mask-image: linear-gradient(to bottom, currentcolor calc(100% - 2lh), transparent);
+}
+.chat-text-body[data-folded="true"][data-fold-at="3"] {
+  max-block-size: 3lh;
+  mask-image: linear-gradient(to bottom, currentcolor calc(100% - 1lh), transparent);
 }
 
 /* =====================================================================================

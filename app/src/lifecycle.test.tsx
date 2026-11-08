@@ -9,6 +9,7 @@ import {
   configure,
   render as renderBare,
   screen,
+  waitFor,
   within,
 } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
@@ -22,7 +23,7 @@ import { aTabForEachChat } from "./laidOut.testkit";
 
 // The Inbox lists a chat that came back as an update too (#1693), after its Notices (#1695):
 // these tests are about the Notice, so the update is not what they find.
-configure({ defaultIgnore: 'script, style, [data-view="inbox"] .inbox-updates *' });
+configure({ defaultIgnore: 'script, style, [data-view="updates"] .inbox-updates *' });
 
 /** What the picker draws. One profile, so picking is one click. */
 const START_OPTIONS = {
@@ -518,6 +519,26 @@ describe("being asked to quit", () => {
     const dialog = within(screen.getByRole("alertdialog"));
     expect(dialog.getByText(/ide\.7 is mid-turn and will be interrupted/)).toBeInTheDocument();
     expect(dialog.queryByText(/cannot yet tell/i)).not.toBeInTheDocument();
+  });
+
+  it("says what a chat waiting on its own work loses, from the board's own work (#5748)", async () => {
+    const { askToQuit } = core(
+      [chat({ session: 7, name: "ide.7" })],
+      [],
+      [{ ...doing(7, "waiting"), own_work: { helpers: 0, workflows: 0, monitors: 1, shells: 2 } }],
+    );
+    render(<App />);
+    await waitFor(() => expect(tabs()).toHaveLength(1));
+
+    await askToQuit();
+
+    const dialog = within(screen.getByRole("alertdialog"));
+    expect(
+      dialog.getByText(
+        /ide\.7 is waiting on its own work: 1 monitor and 2 background shells will end\./,
+      ),
+    ).toBeInTheDocument();
+    expect(dialog.queryByText("No chat is mid-turn.")).toBeNull();
   });
 
   it("says plainly when nothing is mid-turn", async () => {

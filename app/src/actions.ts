@@ -1837,7 +1837,9 @@ const VIEW_NOTES: Record<Exclude<OwnViewId, "search">, string> = {
     "The focused workspace's repos: branch, uncommitted files, branches and pipeline, in the Panel.",
   repos:
     "The focused workspace, its repos and their branches, where the next chat starts, in the Panel.",
-  inbox: "What waits on you in this project, answered in place, on the right.",
+  asks: "What waits on you in this project, answered in place, on the right.",
+  updates: "What happened in the project lately, on the right.",
+  notices: "What stands wrong in this project, with its fix, in the Panel.",
   todos: "What is left to do in the focused workspace, in the Panel.",
   memory: "What the focused workspace remembers, in the Panel.",
   personas: "The project's personas, on the right.",

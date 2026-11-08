@@ -1649,3 +1649,73 @@ fn a_gits_version_is_read_from_each_way_git_spells_it() {
         assert_eq!(version_of(said), wanted, "{said}");
     }
 }
+
+/// **A bundle cut short on its way moves nothing** on either end: a code stream's end can't be
+/// told from a send given up part way, so what is taken rests on git refusing a pack that is not
+/// whole and a ref at a commit the repository does not hold. A send given up before its first
+/// byte is read as no bundle, and its refs, at commits the runner lacks, are refused the same.
+#[test]
+fn a_bundle_cut_short_anywhere_is_refused_by_the_runner_and_nothing_moves() {
+    let world = World::new();
+    let into = world.bundle_path("fix.bundle");
+    let fix = Ref {
+        name: "refs/heads/fix".into(),
+        oid: git(&world.desktop, &["rev-parse", "fix"]),
+    };
+    bundle(&world.desktop, &["refs/heads/fix"], &[], &into).unwrap();
+    let whole = std::fs::read(&into).unwrap();
+    let header = whole.windows(2).position(|two| two == b"\n\n").unwrap() + 2;
+    let mut cuts: Vec<usize> = (1..8).map(|eighth| whole.len() * eighth / 8).collect();
+    cuts.extend([header, header + 1, whole.len() - 20, whole.len() - 1]);
+    let cut = world.bundle_path("cut.bundle");
+
+    for at in cuts {
+        std::fs::write(&cut, &whole[..at]).unwrap();
+        let taken = receive(
+            &world.runner_repo(),
+            Some(&cut),
+            std::slice::from_ref(&fix),
+            None,
+        );
+        assert!(taken.is_err(), "cut at {at} of {}: {taken:?}", whole.len());
+        assert_eq!(
+            held_refs(&world.runner_repo()).unwrap(),
+            Vec::new(),
+            "cut at {at}"
+        );
+    }
+    let unsent = receive(&world.runner_repo(), None, std::slice::from_ref(&fix), None);
+    assert!(unsent.is_err(), "{unsent:?}");
+    assert_eq!(held_refs(&world.runner_repo()).unwrap(), Vec::new());
+}
+
+/// [`a_bundle_cut_short_anywhere_is_refused_by_the_runner_and_nothing_moves`], on the desktop as
+/// it fetches a runner's branches back.
+#[test]
+fn a_bundle_from_the_runner_cut_short_anywhere_is_refused_and_nothing_moves() {
+    let world = World::new();
+    let (runner, work) = a_task_committed_on_a_runner(&world);
+    let into = world.bundle_path("back.bundle");
+    bundle(&runner, &["refs/heads/fix"], &[], &into).unwrap();
+    let whole = std::fs::read(&into).unwrap();
+    let task = Ref {
+        name: "refs/heads/fix".into(),
+        oid: work,
+    };
+    let cut = world.bundle_path("cut-back.bundle");
+
+    for at in [1, whole.len() / 2, whole.len() - 20, whole.len() - 1] {
+        std::fs::write(&cut, &whole[..at]).unwrap();
+        let taken = take_back(
+            &world.desktop,
+            "builds",
+            Some(&cut),
+            std::slice::from_ref(&task),
+        );
+        assert!(taken.is_err(), "cut at {at} of {}: {taken:?}", whole.len());
+        assert_eq!(git(&world.desktop, &["for-each-ref", "refs/remotes/"]), "");
+    }
+    let unsent = take_back(&world.desktop, "builds", None, std::slice::from_ref(&task));
+    assert!(unsent.is_err(), "{unsent:?}");
+    assert_eq!(git(&world.desktop, &["for-each-ref", "refs/remotes/"]), "");
+}

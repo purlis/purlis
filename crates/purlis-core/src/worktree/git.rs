@@ -1078,6 +1078,7 @@ fn programs_held(
         link: extra.link.clone(),
         network: false,
         writes_index: false,
+        system_trust: extra.system_trust,
     };
     let listed = match config_listing(dir, &args[..at], &lister)? {
         Ok(listed) => listed,
@@ -1160,6 +1161,27 @@ fn config_listing(
         listing::keep(asked, &listed.out, started);
     }
     Ok(Ok(without))
+}
+
+/// The variables of [`CREDENTIAL_ENV`] that choose whom a network call trusts: the certificate
+/// authorities. A call that trusts only the system's authorities is given none of them
+/// ([`run_network_in_no_repository_trusting_the_system`]); it keeps every proxy, which may be
+/// its only way out and which cannot read what TLS carries.
+fn is_trust(name: &str) -> bool {
+    name.to_ascii_lowercase().starts_with("ssl_cert_")
+}
+
+/// The variables of [`CREDENTIAL_ENV`] a network call is given, read through `var`: all of them
+/// that are set, but those [`is_trust`] names where `system_trust` says so.
+fn credential_env_from(
+    var: &dyn Fn(&str) -> Option<std::ffi::OsString>,
+    system_trust: bool,
+) -> Vec<(&'static str, std::ffi::OsString)> {
+    CREDENTIAL_ENV
+        .iter()
+        .filter(|name| !(system_trust && is_trust(name)))
+        .filter_map(|name| var(name).map(|value| (*name, value)))
+        .collect()
 }
 
 /// Whether this process's environment names a proxy git's network call is given
@@ -1345,6 +1367,8 @@ struct Extra {
     /// Whether a `status` may write the index back ([`run_status_writing_index`]): every other
     /// `status` purlis runs holds back git's optional locks (FD-11).
     writes_index: bool,
+    /// Whether the variables [`is_trust`] names are kept out of [`CREDENTIAL_ENV`].
+    system_trust: bool,
 }
 
 /// The work tree and git directory a call in `dir` is held to where `dir` is in a linked
@@ -1820,10 +1844,9 @@ fn spawn_with(dir: &Path, args: &[&str], extra: &Extra) -> Result<Child, GitUnav
         cmd.env("GIT_OPTIONAL_LOCKS", "0");
     }
     if extra.credentials {
-        for name in CREDENTIAL_ENV {
-            if let Some(value) = std::env::var_os(name) {
-                cmd.env(name, value);
-            }
+        for (name, value) in credential_env_from(&|name| std::env::var_os(name), extra.system_trust)
+        {
+            cmd.env(name, value);
         }
     }
     for (name, value) in &extra.pass {
@@ -2432,14 +2455,25 @@ pub const HOOK_REPOSITORY_ENV: [&str; 6] = [
     "GIT_ALTERNATE_OBJECT_DIRECTORIES",
 ];
 
+/// History as it was written, for a call that reads what a push or a commit publishes: no
+/// graft gives a commit parents it was not written with, so every commit is read against the
+/// parents its own bytes name. The file named is one that cannot exist. (No object stands in
+/// for another on any call: [`NO_PROGRAMS`] turns `refs/replace` off.)
+pub const AS_WRITTEN_ENV: [(&str, &str); 1] = [("GIT_GRAFT_FILE", "/dev/null/no-grafts")];
+
 /// Run `git -C <dir> <args>` with a deadline, from inside a git hook: [`run`]'s hardening plus
 /// [`HOOK_REPOSITORY_ENV`] and [`CONFIG_LOCATION_ENV`], so it reads the index and the config
-/// the command that ran the hook reads. Read-only callers only.
+/// the command that ran the hook reads, and history as written ([`AS_WRITTEN_ENV`]).
+/// Read-only callers only.
 pub fn run_in_hook(dir: &Path, args: &[&str], timeout: Duration) -> Result<RawRun, GitUnavailable> {
     if let Err(why) = linked(dir, args) {
         return Ok(refused_raw(why));
     }
-    let mut pass = config_location_env(|name| std::env::var_os(name));
+    let mut pass: Vec<(String, std::ffi::OsString)> = AS_WRITTEN_ENV
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), (*value).into()))
+        .collect();
+    pass.extend(config_location_env(|name| std::env::var_os(name)));
     pass.extend(
         HOOK_REPOSITORY_ENV
             .iter()
@@ -2491,12 +2525,43 @@ pub fn run_network_in_no_repository(
     )
 }
 
+/// [`run_network_in_no_repository`] **trusting only the system's certificate authorities**: none
+/// from this process's environment ([`is_trust`]). For an ask whose answer decides what a check
+/// leaves out, made from a process whose environment a chat may have set (a hook git runs for
+/// it): an authority of the chat's choosing, with a proxy, could answer for the remote. The
+/// environment's proxy is kept, since it may be the only way out; it sees the host, not the
+/// answer, and git asks over https only ([`NETWORK_RULE`]).
+pub fn run_network_in_no_repository_trusting_the_system(
+    dir: &Path,
+    helper: Option<&str>,
+    args: &[&str],
+) -> Result<Run, GitUnavailable> {
+    run_network_shaped(
+        dir,
+        helper,
+        args,
+        vec![("GIT_DIR".to_owned(), "/dev/null".into())],
+        true,
+    )
+}
+
 /// [`run_network`], with `more` variables in git's environment.
 fn run_network_with(
     dir: &Path,
     helper: Option<&str>,
     args: &[&str],
     more: Vec<(String, std::ffi::OsString)>,
+) -> Result<Run, GitUnavailable> {
+    run_network_shaped(dir, helper, args, more, false)
+}
+
+/// [`run_network_with`], trusting only the system where `system_trust` says so ([`is_trust`]).
+fn run_network_shaped(
+    dir: &Path,
+    helper: Option<&str>,
+    args: &[&str],
+    more: Vec<(String, std::ffi::OsString)>,
+    system_trust: bool,
 ) -> Result<Run, GitUnavailable> {
     let mut config: Vec<String> = NETWORK_RULE.iter().map(|s| (*s).to_string()).collect();
     if let Some(helper) = helper {
@@ -2510,6 +2575,7 @@ fn run_network_with(
         config,
         credentials: true,
         network: true,
+        system_trust,
         pass,
         ..Extra::default()
     };

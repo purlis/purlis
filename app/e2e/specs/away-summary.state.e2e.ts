@@ -24,10 +24,10 @@ import { endEveryChat, pressAndStart, showView } from "../opening.js";
  * goes to another app and comes back. The clock is put back after.
  */
 
-/** The Inbox view, wherever the right side's bar draws it. */
-const INBOX = '[role="tabpanel"][data-view="inbox"]';
+/** The Notices view, wherever the right side's bar draws it (ADR 0119). */
+const INBOX = '[role="tabpanel"][data-view="notices"]';
 
-/** The summary, as the Inbox lists it among its Notices. */
+/** The summary, as the Notices view lists it. */
 const SUMMARY = `${INBOX} [data-cause="away-summary"]`;
 
 /** The narrowest window purlis supports (ADR 0054, amended 2026-09-26). */
@@ -142,11 +142,11 @@ describe("the away summary in a narrow window (#1551)", () => {
       window.dispatchEvent(new Event("focus"));
     });
 
-    await showView("Inbox");
+    await showView("Notices");
     const summary = await $(SUMMARY);
     await summary.waitForDisplayed({
       timeout: 20_000,
-      timeoutMsg: "no away summary was drawn in the Inbox after the time away",
+      timeoutMsg: "no away summary was drawn in the Notices after the time away",
     });
     await expect(summary).toHaveText(
       expect.stringContaining("While you were away: 1 chat waiting on you"),
@@ -183,7 +183,7 @@ describe("the away summary in a narrow window (#1551)", () => {
     await browser.execute(
       (panel: string, less: number) => {
         const view = document.querySelector<HTMLElement>(panel);
-        if (!view) throw new Error("the Inbox went before it was narrowed");
+        if (!view) throw new Error("the Notices view went before it was narrowed");
         const width = view.getBoundingClientRect().width - less;
         view.style.boxSizing = "border-box";
         view.style.width = `${width}px`;

@@ -158,7 +158,8 @@ function listReader(
         drawn.set(plane, thisRead);
         // An older core lists no task question with its asking chat: none is.
         const with_asking_chat = listed?.with_asking_chat ?? [];
-        const next = { asks, with_asking_chat };
+        // An older core, or a test's mock, lists no snoozed ask (#5647): none is.
+        const next = { asks, with_asking_chat, snoozed: listed?.snoozed ?? [] };
         // **An answer that says what the last one said changes nothing** (#4727): every burst of
         // a busy chat's moves reads the list again, and a fresh list each time drew the whole
         // window again for asks that had not moved. The core's answer is plain data, written

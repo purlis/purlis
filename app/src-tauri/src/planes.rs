@@ -346,7 +346,7 @@ pub struct Held {
     /// Which chats run with their harness's permission prompts off (#1446).
     unattended: crate::handoff::Unattended,
     /// Each turn of a chat, as refs in its branch's clone (#5405).
-    turns: crate::turns::TurnRecorder,
+    turns: purlis_core::files::turns::Recorder,
     /// Which chats were waiting on the person at their last report: what counts a dispatch's
     /// needs-you once per wait (#1452).
     dispatches: crate::dispatches::Waiting,
@@ -684,6 +684,13 @@ impl Held {
         Some((at.id?, at.cwd?))
     }
 
+    /// Chat `session`'s id and folder, wherever it runs: where its turns, or this machine's copies
+    /// of a runner chat's, are kept (#5427).
+    fn turns_kept_of(&self, session: u32) -> Option<(String, PathBuf)> {
+        let at = self.chats.chat_at_or_starting(session)?;
+        Some((at.id?, at.cwd?))
+    }
+
     /// A report the board took, which may be a boundary of chat `report.chat`'s turn (#5405).
     fn turn_heard(&self, report: &purlis_core::hookwire::Report) {
         if let Some((id, cwd)) = self.turn_place(report.chat) {
@@ -692,7 +699,7 @@ impl Held {
     }
 
     /// The turns of its chats, recorded as refs (#5405).
-    pub fn turns(&self) -> &crate::turns::TurnRecorder {
+    pub fn turns(&self) -> &purlis_core::files::turns::Recorder {
         &self.turns
     }
 
@@ -1458,8 +1465,12 @@ impl Held {
         {
             crate::chatbrowsers::timeline_closed(self, &chat);
         }
-        // And so do its turns' refs (#5405).
-        if let Some((id, cwd)) = self.turn_place(session) {
+        // And so do its turns' refs (#5405), and this machine's copies of a runner chat's
+        // (#5427): its runner's host removes its own as it forgets it.
+        if let Some((id, cwd)) = self
+            .turn_place(session)
+            .or_else(|| self.turns_kept_of(session))
+        {
             self.turns.removed(self.root(), &id, &cwd);
         }
         self.proposals.forget(session);
@@ -5152,7 +5163,7 @@ impl Planes {
             held_dispatches: crate::handoff::HeldDispatches::default(),
             at_limits: crate::atlimit::AtLimits::default(),
             unattended: crate::handoff::Unattended::default(),
-            turns: crate::turns::TurnRecorder::default(),
+            turns: purlis_core::files::turns::Recorder::default(),
             dispatches: crate::dispatches::Waiting::default(),
             touched_files: crate::taskchanges::Touched::default(),
             talk_sweep,

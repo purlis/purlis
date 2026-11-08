@@ -36,7 +36,8 @@ describe("a pane's Notice of a chat in no pane (#4759)", () => {
     draw(() => {}, go);
 
     const line = await screen.findByText(/Its MCP server did not start\./);
-    const listed = line.closest('[data-placement="inbox"]');
+    // A row of the Notices view's list (#5649).
+    const listed = line.closest('[data-scope="message"][data-part="root"]');
     expect(listed).not.toBeNull();
     expect(document.querySelector('[data-placement="pane"]')).toBeNull();
     expect(listed).toHaveTextContent("steward 4");

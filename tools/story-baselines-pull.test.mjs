@@ -15,10 +15,12 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  statSync,
   symlinkSync,
   utimesSync,
   writeFileSync,
 } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
@@ -115,24 +117,102 @@ const DRAWN_PNG = Buffer.concat([
 ]);
 const PICTURE = "src/ui/__screenshots__/button.stories.tsx/button_default_light-chromium-linux.png";
 
-/** A `gh` and `git` that answer as GitHub would for pull request 7, whose stories run kept
- * baselines; `behind` is how far the head is behind the base the run merged it with. Its
- * download leaves a `gh-artifact.*.zip` in the temp folder it is given, as `gh` does. */
-const githubOf = ({ tmp, behind = "0" }) => (command, args, options = {}) => {
-  const said = (stdout) => ({ status: 0, stdout, stderr: "" });
-  if (command === "git") return said(`${HEAD}\n`);
-  if (args[0] === "pr") return said(`${HEAD} ${FROM}\n`);
-  if (args[0] === "api" && args.includes("-X")) return said(JSON.stringify([runOf({})]));
-  if (args[0] === "api") return said(`${behind}\n`);
-  if (args[0] === "run") {
-    writeFileSync(join(options.env?.TMPDIR ?? tmp, "gh-artifact.123.zip"), "zip");
-    const into = args[args.indexOf("-D") + 1];
-    mkdirSync(join(into, "app", dirname(PICTURE)), { recursive: true });
-    writeFileSync(join(into, "app", PICTURE), DRAWN_PNG);
-    writeFileSync(join(into, DRAWN), JSON.stringify({ head: HEAD, base: BASE }));
-    return said("");
+/**
+ * A zip of `entries` (`[name, bytes]`, in order, a name as often as it is given), stored, as a
+ * `stories` run's artifact holds them.
+ */
+const zipOf = (entries) => {
+  const locals = [];
+  const centrals = [];
+  let offset = 0;
+  for (const [name, data] of entries) {
+    const bytes = Buffer.from(data);
+    const path = Buffer.from(name, "utf8");
+    const head = Buffer.alloc(30);
+    head.writeUInt32LE(0x04034b50, 0);
+    head.writeUInt16LE(20, 4);
+    head.writeUInt32LE(crc32(bytes), 14);
+    head.writeUInt32LE(bytes.length, 18);
+    head.writeUInt32LE(bytes.length, 22);
+    head.writeUInt16LE(path.length, 26);
+    const central = Buffer.alloc(46);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt16LE(20, 4);
+    central.writeUInt16LE(20, 6);
+    central.writeUInt32LE(crc32(bytes), 16);
+    central.writeUInt32LE(bytes.length, 20);
+    central.writeUInt32LE(bytes.length, 24);
+    central.writeUInt16LE(path.length, 28);
+    central.writeUInt32LE(offset, 42);
+    locals.push(head, path, bytes);
+    centrals.push(central, path);
+    offset += head.length + path.length + bytes.length;
   }
-  return { status: 1, stdout: "", stderr: `not stubbed: ${command} ${args.join(" ")}` };
+  const directory = Buffer.concat(centrals);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(entries.length, 8);
+  end.writeUInt16LE(entries.length, 10);
+  end.writeUInt32LE(directory.length, 12);
+  end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...locals, directory, end]);
+};
+
+/** The artifact a `stories` run keeps: one baseline, and what it was drawn of. */
+const ARTIFACT_OF = (extra = []) =>
+  zipOf([
+    [`app/${PICTURE}`, DRAWN_PNG],
+    ...extra,
+    [DRAWN, JSON.stringify({ head: HEAD, base: BASE })],
+  ]);
+
+const TOKEN = "token-the-stub-gh-hands-out";
+
+/**
+ * A `gh`, `git` and `curl` that answer as GitHub would for pull request 7, whose stories run kept
+ * `artifact` (a zip's bytes); `behind` is how far the head is behind the base the run merged it
+ * with. Each `curl` writes the next of `stops` bytes of the zip (all of it once they run out),
+ * appending when told to continue, and fails when it wrote less than the whole. `unzip` is the
+ * real one. Every call is kept in `calls`.
+ */
+const githubOf = ({
+  behind = "0",
+  artifact = ARTIFACT_OF(),
+  stops = [],
+  calls = [],
+  listed = (zip) => ({
+    id: 42,
+    size_in_bytes: zip.length,
+    expired: false,
+    archive_download_url: "https://api.github.com/repos/purlis/purlis/actions/artifacts/42/zip",
+  }),
+  resumes = true,
+} = {}) => {
+  const left = [...stops];
+  return (command, args, options = {}) => {
+    calls.push({ command, args, input: options.input });
+    const said = (stdout) => ({ status: 0, stdout, stderr: "" });
+    if (command === "git") return said(`${HEAD}\n`);
+    if (command === "unzip") return spawnSync(command, args, options);
+    if (command === "curl") {
+      const out = args[args.indexOf("--output") + 1];
+      if (args.includes("--continue-at") && !resumes)
+        return { status: 33, stdout: "", stderr: "curl: (33) HTTP server doesn't seem to support byte ranges. Cannot resume.\n" };
+      const from = args.includes("--continue-at") && existsSync(out) ? statSync(out).size : 0;
+      const to = left.length > 0 ? left.shift() : artifact.length;
+      writeFileSync(out, artifact.subarray(from, Math.max(from, to)), { flag: from > 0 ? "a" : "w" });
+      return to < artifact.length
+        ? { status: 18, stdout: "", stderr: "curl: (18) end of response with bytes missing\n" }
+        : said("");
+    }
+    if (args[0] === "auth") return said(`${TOKEN}\n`);
+    if (args[0] === "pr") return said(`${HEAD} ${FROM}\n`);
+    if (args[0] === "api" && args.includes("-X")) return said(JSON.stringify([runOf({})]));
+    if (args[0] === "api" && args[1].includes("/artifacts?name=story-baselines"))
+      return said(JSON.stringify(listed(artifact)));
+    if (args[0] === "api") return said(`${behind}\n`);
+    return { status: 1, stdout: "", stderr: `not stubbed: ${command} ${args.join(" ")}` };
+  };
 };
 
 const checkout = () => {
@@ -145,7 +225,7 @@ test("a pull that takes the baselines leaves nothing in the temp folder, and say
   const tmp = mkdtempSync(join(tmpdir(), "pull-tmp-"));
   const root = checkout();
   t.after(() => [tmp, root].forEach((dir) => rmSync(dir, { recursive: true, force: true })));
-  const said = pull({ pr: "7", repo: FROM, root, tmp, exec: githubOf({ tmp }) });
+  const said = pull({ pr: "7", repo: FROM, root, tmp, exec: githubOf() });
   assert.deepEqual(readFileSync(join(root, "app", PICTURE)), DRAWN_PNG);
   assert.match(said.join("\n"), new RegExp(`into ${join(root, "app")}`));
   assert.deepEqual(readdirSync(tmp), []);
@@ -156,7 +236,7 @@ test("a pull refused after the download leaves nothing in the temp folder, and w
   const root = checkout();
   t.after(() => [tmp, root].forEach((dir) => rmSync(dir, { recursive: true, force: true })));
   assert.throws(
-    () => pull({ pr: "7", repo: FROM, root, tmp, exec: githubOf({ tmp, behind: "3" }) }),
+    () => pull({ pr: "7", repo: FROM, root, tmp, exec: githubOf({ behind: "3" }) }),
     (error) => error instanceof Refused && /3 commits behind/.test(error.message),
   );
   assert.equal(existsSync(join(root, "app", PICTURE)), false);
@@ -248,7 +328,134 @@ test("a pull clears a killed pull's folder from the temp folder before it downlo
   leftAt(join(tmp, "story-baselines-kill03"), Date.now() - 2 * DAY);
   leftAt(join(tmp, "story-baselines-alive3"), Date.now());
 
-  pull({ pr: "7", repo: FROM, root, tmp, exec: githubOf({ tmp }) });
+  pull({ pr: "7", repo: FROM, root, tmp, exec: githubOf() });
 
   assert.deepEqual(readdirSync(tmp), ["story-baselines-alive3"]);
+});
+
+test("a path the artifact holds twice, the same both times, is taken once, and said", (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), "pull-tmp-"));
+  const root = checkout();
+  t.after(() => [tmp, root].forEach((dir) => rmSync(dir, { recursive: true, force: true })));
+  const artifact = ARTIFACT_OF([[`app/${PICTURE}`, DRAWN_PNG]]);
+  const said = pull({ pr: "7", repo: FROM, root, tmp, exec: githubOf({ artifact }) });
+  assert.deepEqual(readFileSync(join(root, "app", PICTURE)), DRAWN_PNG);
+  assert.match(said.join("\n"), new RegExp(`app/${PICTURE} is in the artifact twice, the same both times`));
+  assert.deepEqual(readdirSync(tmp), []);
+});
+
+test("a path the artifact holds twice, the copies different, is refused by name, and nothing is written", (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), "pull-tmp-"));
+  const root = checkout();
+  t.after(() => [tmp, root].forEach((dir) => rmSync(dir, { recursive: true, force: true })));
+  const other = Buffer.concat([DRAWN_PNG.subarray(0, -12), chunk("tEXt", Buffer.from("x")), DRAWN_PNG.subarray(-12)]);
+  const artifact = ARTIFACT_OF([[`app/${PICTURE}`, other]]);
+  assert.throws(
+    () => pull({ pr: "7", repo: FROM, root, tmp, exec: githubOf({ artifact }) }),
+    (error) =>
+      error instanceof Refused &&
+      error.message.startsWith(`app/${PICTURE} is in the artifact more than once, and the copies differ`),
+  );
+  assert.equal(existsSync(join(root, "app", PICTURE)), false);
+  assert.deepEqual(readdirSync(tmp), []);
+});
+
+test("a download that breaks off is resumed from where it stopped, and the stop is said", (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), "pull-tmp-"));
+  const root = checkout();
+  t.after(() => [tmp, root].forEach((dir) => rmSync(dir, { recursive: true, force: true })));
+  const artifact = ARTIFACT_OF();
+  const calls = [];
+  const said = pull({ pr: "7", repo: FROM, root, tmp, exec: githubOf({ artifact, stops: [100, 300], calls }) });
+  assert.deepEqual(readFileSync(join(root, "app", PICTURE)), DRAWN_PNG);
+  const curls = calls.filter((call) => call.command === "curl");
+  assert.equal(curls.length, 3);
+  assert.equal(curls[0].args.includes("--continue-at"), false);
+  assert.equal(curls[1].args.includes("--continue-at"), true);
+  assert.match(said[0], new RegExp(`^the download of the baselines \\(${artifact.length} bytes\\) stopped at 100 bytes: curl: \\(18\\)`));
+  assert.match(said[1], /stopped at 300 bytes/);
+});
+
+test("a download that keeps breaking off is refused with its size and where it stopped", (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), "pull-tmp-"));
+  const root = checkout();
+  t.after(() => [tmp, root].forEach((dir) => rmSync(dir, { recursive: true, force: true })));
+  const artifact = ARTIFACT_OF();
+  assert.throws(
+    () => pull({ pr: "7", repo: FROM, root, tmp, exec: githubOf({ artifact, stops: [50, 60, 70, 80] }) }),
+    (error) =>
+      error instanceof Refused &&
+      error.message ===
+        `the download of the baselines (${artifact.length} bytes) stopped at 80 bytes after 4 attempts: curl: (18) end of response with bytes missing`,
+  );
+  assert.equal(existsSync(join(root, "app", PICTURE)), false);
+  assert.deepEqual(readdirSync(tmp), []);
+});
+
+test("gh's token reaches curl on its input, never in its arguments", (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), "pull-tmp-"));
+  const root = checkout();
+  t.after(() => [tmp, root].forEach((dir) => rmSync(dir, { recursive: true, force: true })));
+  const calls = [];
+  pull({ pr: "7", repo: FROM, root, tmp, exec: githubOf({ calls }) });
+  const curl = calls.find((call) => call.command === "curl");
+  assert.equal(curl.input, `Authorization: Bearer ${TOKEN}\n`);
+  assert.equal(calls.some((call) => call.args.some((arg) => arg.includes(TOKEN))), false);
+});
+
+test("an artifact as large as a whole run's, its listing over a megabyte, is taken", (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), "pull-tmp-"));
+  const root = checkout();
+  t.after(() => [tmp, root].forEach((dir) => rmSync(dir, { recursive: true, force: true })));
+  // A run keeps about 12,000 pictures, each named in about 110 characters (#5059).
+  const many = Array.from({ length: 9000 }, (_, i) => [
+    `app/src/ui/__screenshots__/button.stories.tsx/button-a-story-whose-name-runs-on-for-a-while-${i}_purlis-classic_dark_compact-chromium-linux.png`,
+    DRAWN_PNG,
+  ]);
+  assert.ok(many.reduce((sum, [name]) => sum + name.length + 1, 0) > 1024 * 1024);
+  pull({ pr: "7", repo: FROM, root, tmp, exec: githubOf({ artifact: ARTIFACT_OF(many) }) });
+  assert.deepEqual(readFileSync(join(root, "app", many[8999][0].slice(4))), DRAWN_PNG);
+});
+
+test("a store that will not resume a download is started again from nothing", (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), "pull-tmp-"));
+  const root = checkout();
+  t.after(() => [tmp, root].forEach((dir) => rmSync(dir, { recursive: true, force: true })));
+  const calls = [];
+  const said = pull({ pr: "7", repo: FROM, root, tmp, exec: githubOf({ stops: [100], resumes: false, calls }) });
+  assert.deepEqual(readFileSync(join(root, "app", PICTURE)), DRAWN_PNG);
+  const curls = calls.filter((call) => call.command === "curl");
+  assert.deepEqual(
+    curls.map((call) => call.args.includes("--continue-at")),
+    [false, true, false],
+  );
+  assert.match(said[1], /stopped at 100 bytes: curl: \(33\)/);
+});
+
+test("a run that kept no baselines, or whose baselines expired, is refused before any download", (t) => {
+  const root = checkout();
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  for (const [listed, why] of [
+    [() => null, /kept no baselines/],
+    [(zip) => ({ id: 42, size_in_bytes: zip.length, expired: true }), /have expired/],
+  ]) {
+    const calls = [];
+    assert.throws(
+      () => pull({ pr: "7", repo: FROM, root, exec: githubOf({ listed, calls }) }),
+      (error) => error instanceof Refused && why.test(error.message),
+    );
+    assert.equal(calls.some((call) => call.command === "curl"), false);
+  }
+});
+
+test("an artifact with no drawn.json is refused, and nothing is written", (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), "pull-tmp-"));
+  const root = checkout();
+  t.after(() => [tmp, root].forEach((dir) => rmSync(dir, { recursive: true, force: true })));
+  const artifact = zipOf([[`app/${PICTURE}`, DRAWN_PNG]]);
+  assert.throws(
+    () => pull({ pr: "7", repo: FROM, root, tmp, exec: githubOf({ artifact }) }),
+    (error) => error instanceof Refused && /hold no drawn.json/.test(error.message),
+  );
+  assert.equal(existsSync(join(root, "app", PICTURE)), false);
 });

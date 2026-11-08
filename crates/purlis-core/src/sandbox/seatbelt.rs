@@ -278,7 +278,8 @@ pub fn under(dir: &Path, below: &str) -> String {
     format!("^{}/{below}", escaped(&real(dir).display().to_string()))
 }
 
-/// The rules that keep every [`PLANTED`] name, at any depth below `root`, from being written.
+/// The rules that keep every [`PLANTED`] name, at any depth below `root` and under every spelling,
+/// from being written.
 pub fn planted_rules(root: &Path) -> Result<Vec<String>, &'static str> {
     let root = escaped(&real(root).display().to_string());
     PLANTED
@@ -300,7 +301,9 @@ pub fn planted_rules(root: &Path) -> Result<Vec<String>, &'static str> {
                     body.push('/');
                 }
             }
-            let regex = format!("^{root}/(.*/)?{body}{tail}");
+            // Each letter either case, as Claude Code's own rules hold the names: on a disk that
+            // compares names case-folded, a name spelled another way is the same file.
+            let regex = format!("^{root}/(.*/)?{}{tail}", either_case(&body));
             Ok(format!(
                 "(deny file-write* file-link (regex {}))",
                 string(&regex)?
@@ -552,8 +555,15 @@ pub fn profile(
     for root in [&cwd_real, &real(tmp)] {
         pin(kernel_strings(root)?, &mut line)?;
     }
-    // Between a name of the chat's directory and the same side's name of the denied path.
+    // Between a name of a directory the chat may write (its own, and each folder granted to
+    // it) and the same side's name of the denied path; and a granted folder holding a denied
+    // path itself, which could otherwise be moved whole into the chat's own.
     let cwd_names = super::kernel_names(&cwd_real);
+    let granted_names: Vec<PathBuf> = own
+        .roots
+        .iter()
+        .flat_map(|root| super::kernel_names(root))
+        .collect();
     for denial in denied {
         for link in links_on_the_way(&denial.path) {
             pin(kernel_strings_itself(&link)?, &mut line)?;
@@ -562,6 +572,14 @@ pub fn profile(
             for cwd_name in &cwd_names {
                 for ancestor in super::ancestors_within(&path, cwd_name) {
                     pin(kernel_strings(&ancestor)?, &mut line)?;
+                }
+            }
+            for granted in &granted_names {
+                if path != *granted && path.starts_with(granted) {
+                    pin(kernel_strings(granted)?, &mut line)?;
+                    for ancestor in super::ancestors_within(&path, granted) {
+                        pin(kernel_strings(&ancestor)?, &mut line)?;
+                    }
                 }
             }
         }

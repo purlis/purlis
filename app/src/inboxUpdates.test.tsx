@@ -8,8 +8,6 @@ import type {
   AskEnded,
   AwayRefusal,
   ChatBlocked,
-  DoctorReport,
-  DoctorRow,
   FinishedTask,
   InboxUpdate,
   OpenChat,
@@ -23,13 +21,15 @@ import {
   arrivedUpdates,
   awayUpdates,
   browserAskUpdates,
-  doctorUpdates,
+  fromOf,
+  listedFrom,
   listed,
   reasonUpdates,
   resumeUpdates,
   sandboxUpdates,
   smartCloseUpdates,
   taskUpdates,
+  unreadMine,
   useInboxUpdates,
 } from "./inboxUpdates";
 
@@ -89,27 +89,6 @@ describe("each source, said as updates", () => {
   it("leaves out a task that ended a day ago or more", () => {
     const old = new Date(NOW - KEPT_FOR_MS).toISOString();
     expect(taskUpdates([finished("a", "done", old)], nameOf, NOW)).toEqual([]);
-  });
-
-  it("makes each finding of the doctor an update, and no row it does not check", () => {
-    const row = (name: string, status: DoctorRow["status"], checked = true): DoctorRow => ({
-      name,
-      status,
-      detail: `${name} detail`,
-      hint: "",
-      checked,
-      settings: null,
-      fix: null,
-    });
-    const report = {
-      rows: [row("git", "fail"), row("pin", "warn"), row("later", "warn", false), row("ok", "ok")],
-      app_rows: [],
-    } as unknown as DoctorReport;
-    expect(doctorUpdates(report, NOW).map((one) => [one.key, one.says])).toEqual([
-      ["doctor:git:fail", "git: git detail"],
-      ["doctor:pin:warn", "pin: pin detail"],
-    ]);
-    expect(doctorUpdates(undefined, NOW)).toEqual([]);
   });
 
   it("makes a chat that came back an update, resumed or fresh, and a chat that simply started none", () => {
@@ -294,6 +273,11 @@ describe("the list", () => {
     expect(list.map((one) => one.key)).toEqual(["new", "away:here", "old"]);
   });
 
+  it("lists no doctor finding the core kept from before, as the Notices view says them (#5645)", () => {
+    const list = listed([kept("doctor:git:fail", 5, "doctor"), kept("new", 4)], []);
+    expect(list.map((one) => one.key)).toEqual(["new"]);
+  });
+
   it("lists an update its source still lists though the core keeps it no longer", () => {
     // A dispatch refused two days ago is past the day the core keeps, and still answered here.
     const list = listed([kept("new", 4)], [kept("away:old", 1, "refused-away")]);
@@ -301,6 +285,82 @@ describe("the list", () => {
       ["new", false],
       ["away:old", false],
     ]);
+  });
+});
+
+/**
+ * **Mine or Project** (#5646, ADR 0119): each kind of update is the person's own chat's or
+ * task's, under Mine (From your chats), or the project's, under Project (From the project). The
+ * bell counts the unread Mine lines alone.
+ */
+describe("Mine or Project (#5646)", () => {
+  it("puts what the person's own chats and tasks did under Mine", () => {
+    const mine = [
+      "task-done",
+      "task-failed",
+      "resumed",
+      "arrived",
+      "report-undelivered",
+      "commit-refused",
+      "root-update-refused",
+      "smart-close",
+      "refused-away",
+      "browser-ask-ended",
+      "sandbox",
+      "question-closed",
+      "question-failed",
+    ] as const;
+    expect(mine.map(fromOf)).toEqual(mine.map(() => "mine"));
+  });
+
+  it("puts the doctor's findings, which are about the project and not a chat's, under Project", () => {
+    expect(fromOf("doctor")).toBe("project");
+  });
+
+  it("sorts every kind there is, and each under one list", () => {
+    for (const kind of Object.keys(KIND_SAID) as (keyof typeof KIND_SAID)[])
+      expect(["mine", "project"]).toContain(fromOf(kind));
+  });
+
+  it("counts the unread Mine lines, and never a read one or a Project one", () => {
+    const one = (key: string, kind: InboxUpdate["kind"], read: boolean): InboxUpdate => ({
+      key,
+      kind,
+      at: 1,
+      session: null,
+      chain: [],
+      says: key,
+      read,
+    });
+    expect(
+      unreadMine([
+        one("a", "task-done", false),
+        one("b", "task-failed", false),
+        one("c", "task-done", true),
+        one("d", "doctor", false),
+      ]),
+    ).toBe(2);
+    expect(unreadMine(undefined)).toBe(0);
+  });
+
+  it("lists a line the first-open baseline set aside under Project, whatever its kind (#5648)", () => {
+    const done = { kind: "task-done" as const };
+    expect(listedFrom(done)).toBe("mine");
+    expect(listedFrom({ ...done, baselined: true })).toBe("project");
+    expect(
+      unreadMine([
+        {
+          key: "a",
+          ...done,
+          at: 1,
+          session: 3,
+          chain: [],
+          says: "a",
+          read: false,
+          baselined: true,
+        },
+      ]),
+    ).toBe(0);
   });
 });
 

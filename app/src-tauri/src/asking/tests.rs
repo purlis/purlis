@@ -2874,3 +2874,70 @@ fn a_runs_notice_offers_remember_for_an_undeclared_field_and_says_when_others_wa
             .is_none()
     );
 }
+
+/// Chat `session`'s ask `ask`, answered in its pane: enough for Snooze all's split.
+fn asked(session: u32, ask: &str) -> Shown {
+    Shown {
+        session,
+        ask: ask.to_owned(),
+        says: "Waiting on your reply".to_owned(),
+        options: Vec::new(),
+        source: AskSource::Question,
+        chain: vec![format!("steward {session}")],
+        answer: AnswerPath::InItsPane,
+        since: None,
+        held_until: None,
+        writes: None,
+        lines: None,
+        last_message: None,
+        login: None,
+        earlier_messages: None,
+        secret: None,
+        run: None,
+        fill: None,
+    }
+}
+
+fn keys(asks: &[Shown]) -> Vec<&str> {
+    asks.iter().map(|one| one.ask.as_str()).collect()
+}
+
+#[test]
+fn a_snoozed_chats_asks_are_listed_apart_until_it_asks_something_new() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let root = dir.path().join("project");
+    std::fs::create_dir_all(&root).expect("a project");
+    let store = purlis_core::inboxupdates::Store::in_data(&dir.path().join("data"));
+    store
+        .snooze(&root, [(3, vec!["a1".to_owned()])].into_iter().collect())
+        .expect("snoozed");
+    let listing = |asks: Vec<Shown>| Asking {
+        plane: PlaneId::for_tests(Path::new("/p/one")),
+        asks,
+        with_asking_chat: Vec::new(),
+        snoozed: Vec::new(),
+    };
+
+    let split = snoozed_apart(
+        listing(vec![asked(3, "a1"), asked(5, "b1")]),
+        Some(&store),
+        &root,
+    );
+    assert_eq!(keys(&split.asks), ["b1"]);
+    assert_eq!(keys(&split.snoozed), ["a1"]);
+
+    // Chat 3 asks something new: it is back with all its asks, and stays back.
+    let split = snoozed_apart(
+        listing(vec![asked(3, "a1"), asked(3, "a2"), asked(5, "b1")]),
+        Some(&store),
+        &root,
+    );
+    assert_eq!(keys(&split.asks), ["a1", "a2", "b1"]);
+    assert!(split.snoozed.is_empty());
+    let split = snoozed_apart(listing(vec![asked(3, "a1")]), Some(&store), &root);
+    assert_eq!(keys(&split.asks), ["a1"]);
+
+    // No data home: nothing is snoozed.
+    let split = snoozed_apart(listing(vec![asked(3, "a1")]), None, &root);
+    assert_eq!(keys(&split.asks), ["a1"]);
+}

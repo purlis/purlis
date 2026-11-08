@@ -70,6 +70,13 @@ const MARKS: Record<RowKind, typeof Info> = {
   trouble: TriangleAlert,
 };
 
+/** **A row's kind, as its message row's glyph** (#5649): the mark's icon alone, which the row
+ *  draws in its round, tinted mark. */
+export function KindIcon({ kind }: { kind: RowKind }) {
+  const Mark = MARKS[kind];
+  return <Mark />;
+}
+
 /**
  * **A row's kind, as a mark**: an icon in the kind's tone (`data-kind`). Decoration: the row's
  * meta says the kind in words, so the mark is hidden from a screen reader and nothing is told

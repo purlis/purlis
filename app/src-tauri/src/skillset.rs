@@ -139,21 +139,22 @@ pub struct SkillSetTurned {
     pub changed: Vec<String>,
 }
 
-/// **The copies installed from the source `remote`**, read from the lockfiles and asking the
-/// source nothing, each with whether it changed since install and is on in `workspace`.
+/// **The copies installed from `source`**, a git source or an extension's (#3092), read from
+/// the lockfiles and asking the source nothing, each with whether it changed since install and is
+/// on in `workspace`.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_source_installed(
     planes: tauri::State<'_, crate::planes::Planes>,
     plane: crate::planes::PlaneId,
-    remote: SourceRemote,
+    source: crate::skillsources::SourceOrigin,
     workspace: Option<String>,
 ) -> Result<Vec<InstalledCopy>, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("reading what is installed from the source", move || {
         flag_on()?;
         Ok(
-            set::installed_from(held.root(), &remote.core(), workspace.as_deref())
+            set::installed_from(held.root(), &source.core(), workspace.as_deref())
                 .iter()
                 .map(|one| InstalledCopy {
                     member: (&one.member).into(),
@@ -552,6 +553,7 @@ pub struct SkillSetUpdated {
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_set_update(
+    views: tauri::State<'_, crate::views::Views>,
     planes: tauri::State<'_, crate::planes::Planes>,
     undos: tauri::State<'_, SetUpdateUndos>,
     plane: crate::planes::PlaneId,
@@ -567,16 +569,35 @@ pub(crate) async fn skill_set_update(
                 accepted: purlis_core::skills::source::Accepted::try_from(&one.reviewed)?,
                 grant: one.grant.clone().map(Into::into),
                 allowed: one.allowed.iter().copied().map(Into::into).collect(),
+                held: None,
             })
         })
         .collect::<Result<_, String>>()?;
+    let executor = views.executor();
     let (said, undo) = crate::off_the_window("updating the skills", move || {
         flag_on()?;
+        let root = held.root();
+        // A skill from an extension's source copies what its own review read, and only while the
+        // extension is still approved and on here (#5760; ADR 0100, amended 2026-11-08).
+        let mut set = set;
+        for one in &mut set {
+            one.held = crate::skillsources::extension::held_for_a_set(
+                &executor, root, &one.level, &one.name,
+            )?;
+        }
         let mut undo = None;
-        let said = heard(held.root(), |cx| {
+        let said = heard(root, |cx| {
             undo = Some(set_update::update_set(cx, &set)?);
             Ok(())
         })?;
+        // Each review an extension's update copied is used once: the same accept again needs a
+        // new review.
+        let copied: Vec<_> = set
+            .iter()
+            .filter(|one| one.held.is_some())
+            .map(|one| (one.level.clone(), one.name.clone()))
+            .collect();
+        crate::skillsources::extension::release_set(root, &copied);
         // update_set answers an Undo whenever it is done, so this is never met.
         undo.map(|undo| (said, undo)).ok_or_else(|| {
             "The skills were updated, but their Undo was lost: update them back one at a time."

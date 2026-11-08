@@ -164,15 +164,16 @@ const anyChip = () => stripNamed("Tabs").querySelector(".tab[data-chip]") !== nu
  */
 async function stoppedUpdate(name: RegExp) {
   // Pressed only where it is not shown already: a press on the view in front puts the side away.
-  if (screen.queryByRole("tabpanel", { name: "Inbox" }) === null)
+  if (screen.queryByRole("tabpanel", { name: "Updates" }) === null)
     await userEvent.click(
       within(screen.getByRole("tablist", { name: "Attention" })).getByRole("tab", {
-        name: "Inbox",
+        name: "Updates",
       }),
     );
-  const inbox = await screen.findByRole("tabpanel", { name: "Inbox" });
+  const inbox = await screen.findByRole("tabpanel", { name: "Updates" });
   const updates = await within(inbox).findByRole("region", { name: "Updates" });
-  return within(updates).findByText(name);
+  // A line of Mine is named by whose it is and what happened (#5649), as its words read.
+  return within(updates).findByRole("listitem", { name });
 }
 
 const strip = () =>

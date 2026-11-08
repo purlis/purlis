@@ -82,6 +82,9 @@ pub enum Watched {
     /// **A call of it was refused by anything else**: in a judge, a fault of purlis's, such as a
     /// guard that crashed or did not answer, which says nothing of the judge.
     RefusedOtherwise,
+    /// **An error ended its turn**, of the kind its harness's own category names (#5718): its
+    /// usage limit, its service out of reach, or another.
+    Failed(purlis_core::state::Failed),
 }
 
 /// The open skill runs of one project's chats.
@@ -243,6 +246,18 @@ impl SkillRuns {
                 match report.event {
                     purlis_core::state::Event::Stop => {
                         self.tell_watching(report.chat, Watched::TurnEnded);
+                    }
+                    // An error ended its turn, of the kind its harness named (#5718).
+                    purlis_core::state::Event::StopFailure => {
+                        self.tell_watching(
+                            report.chat,
+                            Watched::Failed(
+                                report
+                                    .detail
+                                    .failed
+                                    .unwrap_or(purlis_core::state::Failed::Other),
+                            ),
+                        );
                     }
                     purlis_core::state::Event::SessionStart => {
                         self.tell_watching(report.chat, Watched::Began);

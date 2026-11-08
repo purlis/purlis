@@ -49,7 +49,6 @@ mod createproject;
 mod curation;
 mod layout;
 mod questiontrail;
-mod turns;
 // The Devices view (#2052).
 mod clusterpools;
 mod debug5478; // [DEBUG-5478] temporary diagnostics, removed with the rest of the tag.
@@ -4217,6 +4216,7 @@ pub fn run() {
             if let Some(logs) = purlis_core::applog::log_dir_for(&app.config().identifier) {
                 panics::keep_in(&logs);
             }
+            panics::send_waiting();
             app.manage(Quitting::default());
             app.manage(updates::Installed::default());
             app.manage(skillset::SetUpdateUndos::default());

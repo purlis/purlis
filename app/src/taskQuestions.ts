@@ -22,6 +22,8 @@ import { rowTimeSaid } from "./chatsList";
 export type QuestionsHeld = {
   readonly asks: readonly Shown[];
   readonly with_asking_chat: readonly WithAskingChat[];
+  /** The asks Snooze all put away (#5647), listed apart: none from a core that lists none. */
+  readonly snoozed?: readonly Shown[];
 };
 
 /** Where a task's question stands. `since` is in seconds since 1970: when it was asked, or

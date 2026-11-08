@@ -69,6 +69,7 @@ fn on(checked: Result<String, String>, priced: grading::Priced) -> On {
         models: ["opus", "sonnet", "haiku"].map(str::to_owned).to_vec(),
         model: None,
         evals_refused: None,
+        harness: Some("claude".into()),
     }
 }
 
@@ -393,6 +394,8 @@ fn a_scorecard_has_each_test_once_with_each_arms_chats_one_click_away() {
             outcome_tokens: None,
             outcome_usd: None,
             failed: None,
+            resets_at: None,
+            earlier: None,
         },
         spent: Spent::default(),
         plugins_off: None,
@@ -544,6 +547,8 @@ fn a_scorecard_against_the_previous_version_shows_three_arms_and_both_difference
             outcome_tokens: None,
             outcome_usd: None,
             failed: None,
+            resets_at: None,
+            earlier: None,
         },
         spent: Spent::default(),
         plugins_off: None,
@@ -600,6 +605,9 @@ fn a_scorecard_against_the_previous_version_shows_three_arms_and_both_difference
             tokens: Some(90_000.0),
             cost_usd: Some(1.92),
             limit_usd: Some(3.0),
+            resumed: false,
+            earlier_tokens: None,
+            earlier_usd: None,
         }
     );
     assert!(row.after_edit);

@@ -471,7 +471,7 @@ describe("a window holding more than one project", () => {
     // The hand opens the Inbox of the project something waits in, brought to the front.
     await userEvent.click(hand);
     await waitFor(() => expect(projectTabs()).toEqual(["one*", "two"]));
-    const inbox = await screen.findByRole("tabpanel", { name: "Inbox" });
+    const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
     await userEvent.click(await within(inbox).findByRole("button", { name: "Go to chat one.1" }));
 
     await waitFor(() => expect(projectTabs()).toEqual(["one*", "two"]));
@@ -509,9 +509,9 @@ describe("a window holding more than one project", () => {
     });
     await screen.findByRole("button", { name: "1 thing waits on you" });
 
-    // TWO's own Inbox, with nothing of its own waiting: a line for ONE, which answers nothing.
-    await openTheInbox();
-    const inbox = await screen.findByRole("tabpanel", { name: "Inbox" });
+    // TWO's own Asks, with nothing of its own waiting: a line for ONE, which answers nothing.
+    // The side opens on Asks (#5644).
+    const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
     // This project's scope is empty and says what waits wider (qw359): one press lists it.
     expect(await within(inbox).findByText("1 waits in all projects.")).toBeInTheDocument();
     await userEvent.click(within(inbox).getByRole("button", { name: "Show all projects" }));
@@ -528,7 +528,7 @@ describe("a window holding more than one project", () => {
 
     await userEvent.click(within(others).getByRole("button", { name: "Go to project one" }));
     await waitFor(() => expect(projectTabs()).toEqual(["one*", "two"]));
-    const there = await screen.findByRole("tabpanel", { name: "Inbox" });
+    const there = await screen.findByRole("tabpanel", { name: "Asks" });
     await within(there).findByRole("button", { name: "Go to chat one.1" });
     expect(
       within(there).queryByRole("region", { name: "Other projects in this window" }),

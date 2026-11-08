@@ -194,6 +194,8 @@ fn not_run(ended: GradeEnd) -> ChatRan {
         GradeEnd::Cancelled => ChatEnd::Cancelled,
         GradeEnd::OverCap => ChatEnd::OverCap,
         GradeEnd::OverLimit => ChatEnd::OverLimit,
+        GradeEnd::UsageLimit => ChatEnd::UsageLimit { resets_at: None },
+        GradeEnd::Unreachable => ChatEnd::Unreachable,
         GradeEnd::ChatsDidNotStart => why(DID_NOT_START),
         GradeEnd::SpendNotReported => why(
             "a chat of this grade did not say what it spent, so the grade cannot be held to its \

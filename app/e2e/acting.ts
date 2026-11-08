@@ -468,14 +468,18 @@ export async function untilSays(
 
 /**
  * **Presses an answer that grants as the person does** (#1695, #3217): brought into view, then
- * read for longer than the settle time (`SETTLE_MS`, 1.5 s), then pressed from the keyboard.
+ * given the keyboard and read for longer than the settle time (`SETTLE_MS`, 1.5 s), then pressed
+ * from the keyboard.
  * Not the driver's click: WebDriver's Element Click scrolls its element into view by itself,
  * in the same frame as the click, and a scroll that is not the person's holds the press.
  */
 export async function pressGrant(button: ChainablePromiseElement): Promise<void> {
   await button.scrollIntoView({ block: "nearest", inline: "nearest" });
-  await browser.pause(2_000);
   const element = await button;
   await browser.execute((el: HTMLElement) => el.focus({ preventScroll: true }), element);
+  // The wait comes after the focus, as a person reads with the button in hand: holding the
+  // keyboard can scroll the view the way out stands in (a tall Notice in the Panel's right
+  // half, ADR 0119), and the guard reads that as a move.
+  await browser.pause(2_000);
   await browser.keys(["Enter"]);
 }

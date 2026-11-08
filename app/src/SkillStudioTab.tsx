@@ -459,6 +459,9 @@ export function SkillStudioTab({
   }>();
   /** **The grades Select started** (#5356), by their batch's id, while their page is shown. */
   const [gradesShown, setGradesShown] = useState<string>();
+  // The stopped grades of a batch whose Resume was pressed (#5718): their review, under one
+  // new limit, in the batch's place.
+  const [resuming, setResuming] = useState<string[]>();
   // Whether the Library's built-in skills are folded: those folded away are not shown.
   const [builtInsFolded, setBuiltInsFolded] = useState(true);
   // The studio's own element: where ⌘A takes everything while Select is on.
@@ -1053,6 +1056,28 @@ export function SkillStudioTab({
       }
       case "library":
         return go({ page: "library", scope });
+      // A stopped grade's scorecard, where Resume shows its plan (#5718): a draft's on Drafts.
+      case "open-grade": {
+        if (fix.draft !== null)
+          return go({
+            page: "drafts",
+            scope,
+            item: fix.draft,
+            grading: { at: "scorecard", grade: fix.grade },
+          });
+        const its = (studio?.skills ?? []).find((skill) => skill.name === fix.name);
+        return go({
+          page: "library",
+          scope,
+          ...(its === undefined
+            ? {}
+            : {
+                skill: skillRowId(its),
+                tab: "grades" as const,
+                grading: { at: "scorecard" as const, grade: fix.grade },
+              }),
+        });
+      }
       case "unpin":
         change("The pin was not removed", () => commands.skillPin(plane, fix.by, fix.name, false));
         return;
@@ -1693,12 +1718,29 @@ export function SkillStudioTab({
           )
         : undefined;
     item =
-      gradesShown !== undefined ? (
+      resuming !== undefined ? (
+        <GradeSetReview
+          key={`resume:${resuming.join(",")}`}
+          plane={plane}
+          members={[]}
+          stays={[]}
+          resume={resuming}
+          onCancel={() => setResuming(undefined)}
+          onStarted={(batch) => {
+            setResuming(undefined);
+            setGradesShown(batch);
+          }}
+        />
+      ) : gradesShown !== undefined ? (
         <GradesRunningPage
           key={gradesShown}
           plane={plane}
           batch={gradesShown}
           onBack={() => setGradesShown(undefined)}
+          onResume={(stopped) => {
+            setGradesShown(undefined);
+            setResuming(stopped);
+          }}
           onOpen={(one) => {
             const its = skills.find((skill) => {
               const level = skill.name === one.name ? levelOf(skill, scope) : null;

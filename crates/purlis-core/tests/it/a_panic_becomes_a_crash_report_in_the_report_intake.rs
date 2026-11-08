@@ -122,6 +122,7 @@ fn a_panic_with_a_yes_to_crash_reports_is_sent_once_with_only_the_fixed_fields()
             "environment",
             "event_id",
             "exception",
+            "fingerprint",
             "level",
             "platform",
             "release",
@@ -239,6 +240,11 @@ fn a_sent_report_is_kept_ninety_days_and_then_dropped() {
         to: SentTo::Intake,
         address: "an event".into(),
         bytes: "{}\n".into(),
+        fingerprint: None,
+        repeats: 0,
+        repeats_sent: 0,
+        unread_draft: false,
+        waiting: false,
     };
     SentList::add(home.path(), sent(91, "too old")).unwrap();
     SentList::add(home.path(), sent(89, "kept")).unwrap();

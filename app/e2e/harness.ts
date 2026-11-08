@@ -502,6 +502,7 @@ export function writeReportingShell(
       // payload, the decision the hook prints, and the line that says the chat went on.
       `  --hook ${singleQuoted(permissionHook(charter))} \\`,
       `  --hook ${singleQuoted(skillHook(charter))} \\`,
+      `  --hook ${singleQuoted(secretHook(charter))} \\`,
       `  --hook ${singleQuoted(`[ -f ${singleQuoted(USES_A_SKILL)} ] || ${singleQuoted(charter)} hook stop </dev/null`)} \\`,
       "  --interactive",
       "",
@@ -553,6 +554,61 @@ function permissionHook(charter: string): string {
     ...asks(LONG_ASKED_COMMAND),
     `elif [ -f ${singleQuoted(ASKS_A_PERMISSION)} ]; then`,
     ...asks(ASKED_COMMAND),
+    "fi",
+  ].join("\n");
+}
+
+/**
+ * **While this file is in the run's tree, the reporting harness runs a command that needs a
+ * secret** (#5227, #5246): after its output and before its `stop`, it runs
+ * {@link SECRET_COMMAND} through the real `secret exec`, which the app brokers. `curl` is no tool
+ * the persona declares and the vault lacks {@link SECRET_KEY}, so the run raises its one notice
+ * and waits. A Codex chat's command waits 7.5 s, then exits saying it waits on the person
+ * ({@link WAITING_ON_THE_PERSON}), and a chat nudged by the answer runs it again: the harness does
+ * that, every second for a minute, as long as the run says it still waits. A spec writes the
+ * file before it starts its chat and removes it after.
+ */
+export const RUNS_A_SECRET = join(THE_RUNS_TREE, "runs-a-secret");
+
+/** The vault {@link RUNS_A_SECRET}'s command reads, named after the persona, as in #5227. */
+export const SECRET_VAULT = "steward";
+
+/** The key it hands `curl`, which the vault lacks until the person fills it. */
+export const SECRET_KEY = "some-page";
+
+/** `secret exec`'s status for a run still waiting on the person (`brokered::WAITING_ON_THE_PERSON`). */
+export const WAITING_ON_THE_PERSON = 75;
+
+/**
+ * The command, as the chat writes it: `curl` reads the page the value names, from a folder of the
+ * chat's own project, so what it prints shows the value reached it without the value being said.
+ * `--variable %P` takes the value from the variable `secret exec` hands it in, and
+ * `--expand-url` puts it in the address.
+ */
+export const SECRET_COMMAND = [
+  `secret exec ${SECRET_VAULT} --env P=${SECRET_KEY} --`,
+  `curl -s --variable %P --expand-url "file://$CHARTER_ROOT/e2e-pages/{{P}}"`,
+].join(" ");
+
+/** What the harness says once its command ran, then what it ended with. */
+export const SECRET_RAN = "the secret's command ended with";
+
+/**
+ * The reporting harness's secret hook: nothing unless {@link RUNS_A_SECRET} is there, and then
+ * {@link SECRET_COMMAND}, run again while it says it waits on the person.
+ */
+function secretHook(charter: string): string {
+  return [
+    `if [ -f ${singleQuoted(RUNS_A_SECRET)} ]; then`,
+    "  tries=0",
+    "  while :; do",
+    `    ${singleQuoted(charter)} ${SECRET_COMMAND}`,
+    "    ended=$?",
+    `    [ "$ended" -eq ${WAITING_ON_THE_PERSON} ] && [ "$tries" -lt 60 ] || break`,
+    "    tries=$((tries + 1))",
+    "    sleep 1",
+    "  done",
+    `  echo "${SECRET_RAN} $ended"`,
     "fi",
   ].join("\n");
 }

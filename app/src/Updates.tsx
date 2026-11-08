@@ -11,7 +11,7 @@ import {
   type PlaneId,
   type RelaunchChoice,
 } from "./bindings";
-import { MidTurn, mightBeMidTurn, type Ending } from "./QuitWarning";
+import { MidTurn, wouldInterrupt, type Ending } from "./QuitWarning";
 import { ReleaseNotes } from "./ReleaseNotes";
 import { Choice, SettingActions, SettingRow } from "./settings/components";
 import { channelMoved, useUpdateChannel } from "./updateChannel";
@@ -292,7 +292,7 @@ export function UpdateItem({
       content.current?.querySelector<HTMLElement>('input[type="radio"]:checked')?.focus();
   }, [moved]);
   // Live, so a chat that finishes its turn while the ask is up leaves it.
-  const midTurn = chats.filter(mightBeMidTurn);
+  const midTurn = chats.filter(wouldInterrupt);
   const words = said(state);
   const toRestart = () => {
     if (midTurn.length === 0) return restart(after);

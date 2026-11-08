@@ -7,7 +7,7 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import { InboxAlerts } from "./InboxAlerts";
-import { NoticeList } from "./Notice";
+import { Notice, NoticeList } from "./Notice";
 import type { AlertRow, DoctorFixed, PlaneAlerts } from "./bindings";
 import { forgetThisLaunch, settleLayout } from "./regions";
 import {
@@ -207,7 +207,7 @@ async function drawer() {
   render(<App />);
   await screen.findByRole("tab", { name: /plane/ });
   await userEvent.click(await screen.findByRole("button", { name: /^Notices/ }));
-  return screen.findByRole("tabpanel", { name: "Inbox" });
+  return screen.findByRole("tabpanel", { name: "Notices" });
 }
 
 /** The Inbox's Notices. */
@@ -220,6 +220,35 @@ const row = (open: HTMLElement, cause: string) => {
 /** Whether a row of `cause` is listed. */
 const listed = (cause: string) =>
   document.querySelector(`[data-scope=notice-list] [data-cause="${cause}"]`) !== null;
+
+describe("a chat's arrived files in the Notices (#5702)", () => {
+  it("are read again when the Notices view opens, and say when the look found them", async () => {
+    rows = [];
+    render(<App />);
+    await screen.findByRole("tab", { name: /plane/ });
+    // The right half opens on Memory: the Notices are not open yet.
+    await waitFor(() => expect(calls("alerts_everywhere").length).toBeGreaterThan(0));
+    const before = calls("alerts_everywhere").length;
+    // A turn ends, and its look finds a file that can run later, two hours ago by its record.
+    rows = [
+      {
+        severity: "warn",
+        subject: "files that can run later",
+        detail: "Fix the build: these appeared in a folder it can write: work/moved/.envrc.",
+        workspaces: [],
+        // Two and a half hours: the card's clock may be read a moment before this one.
+        since: Date.now() / 1000 - 2.5 * 60 * 60,
+        way: { kind: "arrived-files", chat: "01M6M3VNN8GNE85XEV3194WJE6" },
+      },
+    ];
+    // Opened from its own button on the activity bar, not the status line's Notices.
+    await userEvent.click(screen.getByRole("tab", { name: "Notices" }));
+    await waitFor(() => expect(calls("alerts_everywhere").length).toBeGreaterThan(before));
+    const open = await screen.findByRole("tabpanel", { name: "Notices" });
+    await waitFor(() => expect(listed("arrived-files:01M6M3VNN8GNE85XEV3194WJE6")).toBe(true));
+    expect(row(open, "arrived-files:01M6M3VNN8GNE85XEV3194WJE6")).toHaveTextContent("2h");
+  });
+});
 
 describe("each alert in the Inbox", () => {
   it("carries its way out, and no command to type", async () => {
@@ -754,7 +783,10 @@ describe("another project's alerts", () => {
     const line = document.querySelector(`[data-cause="alerts-elsewhere:${OUTER}"]`) as HTMLElement;
     expect(line).toHaveTextContent("2 alerts in outer");
     // A failure among them is trouble.
-    expect(line.closest('[data-scope="notice"]')).toHaveAttribute("data-variant", "trouble");
+    expect(line.querySelector('[data-scope="message"][data-part="root"]')).toHaveAttribute(
+      "data-tone",
+      "trouble",
+    );
     await userEvent.click(within(line).getByRole("button", { name: "See them in outer" }));
     expect(openInboxOf).toHaveBeenCalledWith(OUTER);
   });
@@ -819,7 +851,10 @@ describe("a save's red request (`save-request-red`)", () => {
 
     const line = screen.getByRole("status");
     expect(line).toHaveAttribute("data-cause", "save-request-red:this project");
-    expect(line.closest('[data-scope="notice"]')).toHaveAttribute("data-variant", "trouble");
+    expect(line.querySelector('[data-scope="message"][data-part="root"]')).toHaveAttribute(
+      "data-tone",
+      "trouble",
+    );
     expect(line.textContent).toContain(
       "The pull request #12 of this project is red, so purlis did not merge it: 1 check failed: lint.",
     );
@@ -947,5 +982,65 @@ describe("a chat's undelivered messages (#3958)", () => {
       ]),
     );
     await waitFor(() => expect(reread).toHaveBeenCalled());
+  });
+
+  it("lists a chat's arrived files first, above the project's older Notices and its trouble (#5702)", () => {
+    mockIPC(() => null);
+    const alert = (severity: string, subject: string): AlertRow => ({
+      severity,
+      subject,
+      detail: `${subject} is wrong`,
+      workspaces: [],
+      way: { kind: "saving" },
+    });
+    const ARRIVED: AlertRow = {
+      severity: "warn",
+      subject: "files that can run later",
+      detail: "Fix the build: these appeared in a folder it can write: work/moved/.envrc.",
+      workspaces: [],
+      way: { kind: "arrived-files", chat: "01M6M3VNN8GNE85XEV3194WJE6" },
+    };
+    render(
+      <NoticeList>
+        <Notice cause="away-summary" onDismiss={() => undefined}>
+          While you were away
+        </Notice>
+        <Notice cause="window-trouble" tone="trouble" onDismiss={() => undefined}>
+          trouble
+        </Notice>
+        <InboxAlerts
+          plane={PLANE}
+          reading={{
+            at: "read",
+            planes: [
+              {
+                plane: PLANE,
+                alerts: [
+                  alert("bad", "plane root"),
+                  alert("warn", "front door"),
+                  alert("warn", "reinit"),
+                  ARRIVED,
+                ],
+                stopped: null,
+              },
+            ],
+          }}
+          machine={[]}
+          elsewhere={[]}
+          does={{
+            openSettings: vi.fn(),
+            openProject: vi.fn(),
+            openSaving: vi.fn(),
+            reread: vi.fn(),
+            openInboxOf: vi.fn(),
+          }}
+        />
+      </NoticeList>,
+    );
+    const causes = [...document.querySelectorAll("[data-scope=notice-list] [data-cause]")].map(
+      (one) => one.getAttribute("data-cause"),
+    );
+    expect(causes[0]).toBe("arrived-files:01M6M3VNN8GNE85XEV3194WJE6");
+    expect(causes).toHaveLength(6);
   });
 });

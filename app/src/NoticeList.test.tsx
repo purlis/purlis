@@ -64,8 +64,22 @@ describe("the Inbox's Notices", () => {
       </NoticeList>,
     );
 
-    // Two the status line counts, of three it lists.
-    expect(onCount).toHaveBeenLastCalledWith(2, 3);
+    // Two the status line counts, of three it lists, and none says something needs fixing.
+    expect(onCount).toHaveBeenLastCalledWith(2, 3, 0);
+  });
+
+  it("counts what says something needs fixing, for the Notices icon's dot (#5645)", () => {
+    const onCount = vi.fn();
+    render(
+      <NoticeList onCount={onCount}>
+        {news("pin-dormant:able")}
+        <Notice cause="window-trouble" tone="trouble" onDismiss={() => undefined}>
+          trouble
+        </Notice>
+      </NoticeList>,
+    );
+
+    expect(onCount).toHaveBeenLastCalledWith(2, 2, 1);
   });
 
   it("says when an answer to the person's own press arrives, and not for one already listed", () => {

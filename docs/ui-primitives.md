@@ -993,6 +993,35 @@ for a run's one notice, in the Inbox's card. Only the wrapper writes `data-scope
 - **The place sets** `--grip-mark` and `--grip-reach` (a pane's head: the mark's size and the 24px target, which reaches past the mark and moves nothing), or neither.
 - **Where none is drawn:** a one-job program, an empty pane and a view alone in its tab, which moves by its tab. The row's menu, the tab's menu and the palette keep **Move…**, and ⌘⇧M picks up what has the keyboard.
 
+## The message family
+
+**A message of the Inbox's views is a row of its view, not a boxed card** (`app/src/ui/message/`,
+#5649, spec #5638, ADR 0119 decision 6): `MessageRow`, holding `MessageTop` (its title, the chat
+or the thing, cut with an ellipsis, and its time at the right), `MessageMeta` (what it is and
+where, quiet), `MessageBody` (what it says), `MessageLinks` (its ways out as text links in the
+shared small `ButtonRow`) and `MessageForm` (what answers it in the row: a reply box, an ask's
+answers, what a way out opened). Asks, Mine, Project and Notices draw every line with it. No
+screen writes `data-scope="message"`: `purlis/message-family` is an error.
+
+- **Variant A of the variants prototype** (`prototype/inbox`, the person's pick): no box and no
+  edge on the view's ground; a hairline between two rows, from past the mark; the hover fill under
+  the pointer or the keyboard.
+- **Its mark says its state** (`tone`, the variant): `waiting`, `done`, `failed`, `report` or
+  `plain`, a round icon in that colour on a seventh of it. It is decoration (`aria-hidden`): the
+  meta says the state in words (WCAG 1.4.1).
+- **The × takes the time's place** (`dismiss`): hidden until the row is under the pointer or holds
+  the keyboard, and the time hidden then; where nothing hovers, the × always shows. The keyboard
+  reaches it after the row's links and form.
+- **A consent keeps a waiting edge** (`consent`, ADR 0097 §6, the ruling on #5222): a bar in the
+  waiting colour at the row's start, which no theme property reaches. Its answers stay buttons in
+  `MessageForm`, Allow in the `grants` look.
+- **One link leads** (`data-lead` on it): an ask's Answer, a Notice's one answer, in the accent's
+  words. Every other way is a `quiet-link`.
+- **A long ask shows three lines** and "Show all · N lines" (`ChatText`'s `foldAt`, `ASK_FOLD_LINES`).
+- **Drawn by its parts** (ADR 0103): `root`, `mark`, `main`, `top`, `title`, `time`, `meta`,
+  `body`, `links`, `form` and `dismiss`, in `message.css`; a theme's parts reach the same
+  attributes (`message.*`, the next release's manifest version).
+
 ## The pane foot family
 
 **The line under a chat's terminal is the pane foot family** (`app/src/ui/pane-foot/`, #5202,
@@ -2971,9 +3000,9 @@ sends the chord, so a chat with the keyboard keeps it. Each of the right side's 
 palette row too (_Show the Memory view_, and an extension's panel by its own name), and so is the
 region (_Put the Attention region away_).
 
-**The Inbox's key is `⌘⇧I`** (#1692), `Ctrl+Shift+I` off a Mac: `Ctrl` with `Shift` and a letter
-is no byte, so it is the window's while a chat has the keyboard, as `Ctrl+Shift+E` is. It shows
-the Inbox, the right side's first view, and gives the keyboard to its first ask, never to one of
+**Asks' key is `⌘⇧I`** (#1692; the Inbox's until #5644), `Ctrl+Shift+I` off a Mac: `Ctrl` with
+`Shift` and a letter is no byte, so it is the window's while a chat has the keyboard, as
+`Ctrl+Shift+E` is. It shows Asks, the right side's first view, and gives the keyboard to its first ask, never to one of
 the ask's buttons, so the key and a stray Enter after it answer nothing. The title bar's ✋ does
 the same. The Inbox is one Tab stop, on the window's own roving focus (`useTabStop`): ↑ and ↓
 move from an ask to its buttons and on to the next ask, Home and End go to the ends, Enter

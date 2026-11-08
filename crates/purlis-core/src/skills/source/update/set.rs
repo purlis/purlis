@@ -9,9 +9,15 @@
 //! 2026-11-05): each update is accepted with the kinds of new capability the person ticked it
 //! with ([`Gained`]), and one that gains a kind it was not accepted with is refused here, whatever
 //! the window drew, so nothing new runs that no one looked at.
+//!
+//! **A skill from an extension's source is updated from what its own review read** (#5760): its
+//! [`Updating::held`], checked against what was accepted and copied, the extension not asked
+//! again (ADR 0100, amended 2026-11-08). One the set holds no review for is refused, never asked
+//! of the git source.
 
 use std::collections::BTreeSet;
 
+use super::super::extension::{self, Held};
 use super::super::lock::{self, Kept, Locked, Lockfile};
 use super::super::review::Accepted;
 use super::super::widen;
@@ -29,6 +35,9 @@ pub struct Updating {
     pub accepted: Accepted,
     pub grant: Option<Grant>,
     pub allowed: Vec<Gained>,
+    /// What the review of a skill from an extension's source read, to copy from: `None` for a
+    /// git source's, which is fetched again at the accepted commit.
+    pub held: Option<Held>,
 }
 
 /// One lockfile as a set's update found it and as it left it.
@@ -166,8 +175,18 @@ pub fn update_set(cx: &mut Ctx<'_>, set: &[Updating]) -> Result<Undo, String> {
     // Every one is checked before the first is written.
     let mut planned = Vec::new();
     for one in set {
-        let checked = plan(cx, &one.level, &one.name, &one.accepted, one.grant.as_ref())
-            .map_err(|why| format!("{}: {why}", one.name))?;
+        let checked = match &one.held {
+            None => plan(cx, &one.level, &one.name, &one.accepted, one.grant.as_ref()),
+            Some(held) => extension::planned(
+                cx,
+                held,
+                &one.level,
+                &one.name,
+                &one.accepted,
+                one.grant.as_ref(),
+            ),
+        }
+        .map_err(|why| format!("{}: {why}", one.name))?;
         let missing = not_allowed(&checked.gained, &one.allowed);
         if !missing.is_empty() {
             return Err(format!(

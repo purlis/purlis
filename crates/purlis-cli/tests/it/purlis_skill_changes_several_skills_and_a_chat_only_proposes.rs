@@ -53,12 +53,16 @@ impl Project {
                 name: name.to_owned(),
                 source_name: None,
                 level: AtLevel(Level::project()),
-                source: purlis_core::skills::source::Remote {
-                    url: SOURCE.to_owned(),
-                    branch: None,
-                },
+                source: purlis_core::skills::source::Origin::Git(
+                    purlis_core::skills::source::Remote {
+                        url: SOURCE.to_owned(),
+                        branch: None,
+                    },
+                ),
                 folder: format!("skills/{name}"),
-                commit: purlis_core::skills::source::Commit::parse(&"a".repeat(40)).unwrap(),
+                pin: purlis_core::skills::source::Pin::Commit(
+                    purlis_core::skills::source::Commit::parse(&"a".repeat(40)).unwrap(),
+                ),
                 digest: "sha256:0".to_owned(),
                 files: vec![Wrote {
                     path: "SKILL.md".to_owned(),

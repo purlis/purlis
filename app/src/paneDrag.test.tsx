@@ -5,7 +5,7 @@ import { useCallback, useRef, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { UNDO_MS } from "./MemoryEdits";
+import { UNDO_MS } from "./undo";
 import {
   CHAT_ROW,
   dropPane,

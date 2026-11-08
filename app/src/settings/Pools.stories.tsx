@@ -4,7 +4,7 @@
 /**
  * **You › This machine › Pools, and Add a pool** (#2679; the person's ruling of 2026-10-30): the
  * group with no pool yet, saying what a pool is, with Add a pool…; the group with a pool; a pool
- * whose runner was removed outside purlis (#4149); and the
+ * whose runner was removed outside purlis (#4149); one whose older runners are kept unchecked; and the
  * Add a pool dialog with its Image box showing the runner image it is offered.
  * Each is drawn, held to axe, walked by the keyboard, and pictured in every pictured theme cell
  * (`docs/component-stories.md`). The core is faked at its command boundary.
@@ -44,6 +44,7 @@ const LEVEL: PoolVersion = {
   owed: [],
   owed_why: null,
   left: [],
+  not_checked: [],
 };
 
 /** The core, faked: this machine keeps `pools`, whose runner answers `link` and says `version`,
@@ -195,6 +196,35 @@ export const OlderRunnerWaitsOnAProject: Story = {
     await expect(said).toHaveTextContent(/anything not brought back is deleted with it\./);
     // The way out it names is the row's own Remove, there beside it.
     await expect(within(group).getByRole("button", { name: "Remove pool builds" })).toBeVisible();
+    await waitFor(() => expect(within(group).queryByText(/Asking the runner about/)).toBeNull(), {
+      timeout: 5000,
+    });
+  },
+};
+
+/** **Two older runners kept unchecked** (the person's ruling of 2026-11-08): each has a line of
+ *  its own naming it, what is left of it (a stopped container, or only its saved home), what purlis
+ *  does and what lets it go. Words only: no new control, so no keyboard path of its own. */
+export const OlderRunnersNotChecked: Story = {
+  parameters: {
+    pools: [BUILDS],
+    version: {
+      ...LEVEL,
+      draining: 2,
+      not_checked: [
+        { runner: "builds-0a1b2c3d", left: "stopped" },
+        { runner: "builds-4e5f6a7b", left: "home_only" },
+      ],
+    } satisfies PoolVersion,
+  },
+  play: async ({ canvas }) => {
+    const group = await canvas.findByRole("region", { name: "Pools" });
+    await expect(
+      await within(group).findByText(/^Older runner builds-0a1b2c3d stays/),
+    ).toHaveTextContent(/Start it there and purlis checks it/);
+    await expect(within(group).getByText(/^Older runner builds-4e5f6a7b stays/)).toHaveTextContent(
+      /only its saved home is left/,
+    );
     await waitFor(() => expect(within(group).queryByText(/Asking the runner about/)).toBeNull(), {
       timeout: 5000,
     });

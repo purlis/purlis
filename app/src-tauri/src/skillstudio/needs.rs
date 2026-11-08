@@ -28,6 +28,8 @@ use crate::skillchange::SkillPinner;
 #[serde(rename_all = "kebab-case")]
 pub enum NeedKind {
     Review,
+    /// A grade that stopped short, which Resume can go on from (#5718).
+    Resume,
     Clash,
     Problem,
     Pins,
@@ -72,6 +74,13 @@ pub enum NeedFix {
     /// Leave the old keys, which no file can be proposed without: said once
     /// (`dismiss_old_harness_plugins`).
     LeaveOldKeys,
+    /// Open a stopped grade's scorecard (#5718), where Resume shows its plan: a skill's, or its
+    /// draft's where `draft` names one.
+    OpenGrade {
+        name: String,
+        grade: String,
+        draft: Option<String>,
+    },
 }
 
 /// **One item of Needs you**: what it is about, why it needs the person, and its fix.
@@ -390,8 +399,10 @@ pub(crate) fn old_keys(old: &crate::oldplugins::OldHarnessPlugins) -> NeedsYou {
 pub(crate) fn with_old_keys(
     mut items: Vec<NeedsYou>,
     old: Option<&crate::oldplugins::OldHarnessPlugins>,
+    stopped: Vec<NeedsYou>,
 ) -> Vec<NeedsYou> {
     items.extend(old.map(old_keys));
+    items.extend(stopped);
     items.sort_by_key(|one| one.kind);
     items
 }

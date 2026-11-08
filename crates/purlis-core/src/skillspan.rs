@@ -425,7 +425,8 @@ impl Tracker {
         }
         self.expire(key, at_ms);
         let ended = match report.event {
-            Event::Stop => {
+            // A turn an error ended is ended as any turn is (#5718).
+            Event::Stop | Event::StopFailure => {
                 // A turn its prompt was sent in and that never named it: not started.
                 if let Some(held) = self.typed.get_mut(key) {
                     held.retain(|one| !one.sent);

@@ -913,3 +913,244 @@ fn the_built_in_runner_asks_through_the_same_hold() {
     assert_eq!(report.ended, GradeEnd::Whole);
     assert_eq!(report.failed, None);
 }
+
+/// A host that runs as [`Scripted`] does, but ends its chat numbered `at` (from 0) as `end`
+/// says, and every chat after it with no turn: a grade stopped there.
+struct StoppedAt {
+    script: Scripted,
+    at: usize,
+    end: ChatEnd,
+    tokens_then: Option<u64>,
+}
+
+impl Chats for StoppedAt {
+    fn run(&mut self, chat: &RunChat, tokens_left: Option<u64>) -> ChatRan {
+        let n = self.script.asked.len();
+        let ran = self.script.run(chat, tokens_left);
+        if n == self.at {
+            return ChatRan {
+                started: Vec::new(),
+                tokens: self.tokens_then,
+                end: self.end.clone(),
+                ..ran
+            };
+        }
+        ran
+    }
+
+    fn cancelled(&self) -> bool {
+        false
+    }
+}
+
+/// [`request`]'s grade, stopped at its chat numbered `at` with `end`.
+fn stopped_at(at: usize, end: ChatEnd, limits: Option<Limits>) -> (GradeReport, Kept) {
+    let mut host = StoppedAt {
+        script: Scripted::of(a_good_skill),
+        at,
+        end,
+        tokens_then: Some(500),
+    };
+    grade_keeping(&request(), &mut host, limits)
+}
+
+/// What a report scores, without the chats' ids, which a resume's new chats change.
+fn scores(report: &GradeReport) -> serde_json::Value {
+    let mut value = serde_json::to_value(report).unwrap();
+    for test in value["triggers"].as_array_mut().unwrap() {
+        test.as_object_mut().unwrap().remove("chats");
+    }
+    serde_json::json!({
+        "triggers": value["triggers"],
+        "arms": value["arms"].as_array().unwrap().iter().map(|arm| serde_json::json!({
+            "arm": arm["arm"], "pass_rate": arm["pass_rate"], "chats": arm["chats"],
+            "not_run": arm["not_run"],
+        })).collect::<Vec<_>>(),
+        "delta": value["delta"],
+    })
+}
+
+#[test]
+fn a_resume_runs_only_the_cases_a_stopped_grade_did_not_finish() {
+    // Twelve chats: run 1's four and run 2's first finished, its second was cut off by Stop.
+    let (stopped, kept) = stopped_at(5, ChatEnd::Cancelled, None);
+    assert_eq!(stopped.ended, GradeEnd::Cancelled);
+    assert_eq!(kept.left(&request()), 7);
+    let mut host = Scripted::of(a_good_skill);
+    let (resumed, _) = resume(&request(), &mut host, None, kept).unwrap();
+    // The cut-off case (the second test without the skill... in run 2) runs again, whole, then
+    // the rest: none of the five that had their result.
+    assert_eq!(host.asked.len(), 7);
+    assert_eq!(
+        host.asked[0],
+        chat(Arm::Without, "make me a pdf"),
+        "the case cut off on run 2 runs first"
+    );
+    assert_eq!(resumed.ended, GradeEnd::Whole);
+    let whole = grade(&request(), &mut Scripted::of(a_good_skill), None);
+    assert_eq!(scores(&resumed), scores(&whole));
+}
+
+#[test]
+fn a_resumed_case_keeps_its_place_so_each_run_is_scored_as_it_ran() {
+    // A chat that never started in run 1 is no result: the resume runs that case in run 1's place.
+    let (_, kept) = stopped_at(
+        1,
+        ChatEnd::NotStarted {
+            why: "the profile is signed out".into(),
+        },
+        None,
+    );
+    let mut kept = kept;
+    // Stopped by hand after run 1 so the not-started case sits between finished ones.
+    for cells in &mut kept.triggers {
+        for cell in cells {
+            cell.truncate(1);
+        }
+    }
+    assert_eq!(kept.left(&request()), 9);
+    let mut host = Scripted::of(a_good_skill);
+    let (resumed, kept_now) = resume(&request(), &mut host, None, kept).unwrap();
+    assert_eq!(host.asked[0], chat(Arm::Without, "make me a pdf"));
+    assert_eq!(kept_now.triggers[0][1][0].end, ChatEnd::Turn);
+    assert_eq!(kept_now.left(&request()), 0);
+    let whole = grade(&request(), &mut Scripted::of(a_good_skill), None);
+    assert_eq!(scores(&resumed), scores(&whole));
+}
+
+#[test]
+fn a_whole_grade_leaves_nothing_to_resume() {
+    let (report, kept) = grade_keeping(&request(), &mut Scripted::of(a_good_skill), None);
+    assert_eq!(report.ended, GradeEnd::Whole);
+    assert!(!report.ended.resumable());
+    assert_eq!(kept.left(&request()), 0);
+    let mut host = Scripted::of(a_good_skill);
+    resume(&request(), &mut host, None, kept).unwrap();
+    assert!(host.asked.is_empty());
+}
+
+#[test]
+fn a_resume_is_held_to_its_own_cap_and_says_both_runs_spend() {
+    // Five chats of 1,000 tokens, and the one cut off at the cap spent 500.
+    let (stopped, kept) = stopped_at(5, ChatEnd::OverCap, Some(tokens(1_000_000)));
+    assert_eq!(stopped.ended, GradeEnd::OverCap);
+    assert_eq!(stopped.spent_tokens, Some(5_500));
+    let mut host = Scripted::of(a_good_skill);
+    let (resumed, _) = resume(&request(), &mut host, Some(tokens(3_000)), kept).unwrap();
+    // Its cap of 3,000 counts this run's chats alone: three of them, not none.
+    assert_eq!(host.asked.len(), 3);
+    assert_eq!(host.left[0], Some(3_000));
+    assert_eq!(resumed.ended, GradeEnd::OverCap);
+    assert_eq!(resumed.cap, Some(3_000));
+    assert_eq!(resumed.spent_tokens, Some(8_500), "both runs' spend");
+    assert_eq!(
+        resumed.earlier,
+        Some(Earlier {
+            tokens: Some(5_500),
+            ..Earlier::default()
+        })
+    );
+}
+
+#[test]
+fn a_resume_of_a_resume_goes_on_from_both_runs_spend() {
+    let (_, kept) = stopped_at(5, ChatEnd::OverCap, Some(tokens(1_000_000)));
+    let (_, kept) = resume(
+        &request(),
+        &mut Scripted::of(a_good_skill),
+        Some(tokens(3_000)),
+        kept,
+    )
+    .unwrap();
+    assert_eq!(kept.earlier.tokens, Some(8_500));
+    let mut host = Scripted::of(a_good_skill);
+    let (third, _) = resume(&request(), &mut host, None, kept).unwrap();
+    assert_eq!(host.asked.len(), 4);
+    assert_eq!(third.ended, GradeEnd::Whole);
+    assert_eq!(third.spent_tokens, Some(12_500));
+    let whole = grade(&request(), &mut Scripted::of(a_good_skill), None);
+    assert_eq!(scores(&third), scores(&whole));
+}
+
+#[test]
+fn what_a_grade_of_another_shape_ran_is_refused() {
+    let (_, kept) = stopped_at(5, ChatEnd::Cancelled, None);
+    let mut fewer = request();
+    fewer.triggers.pop();
+    assert!(resume(&fewer, &mut Scripted::of(a_good_skill), None, kept.clone()).is_err());
+    let mut more_arms = request();
+    more_arms.arms.push(Arm::Previous);
+    assert!(resume(&more_arms, &mut Scripted::of(a_good_skill), None, kept).is_err());
+}
+
+#[test]
+fn a_chat_that_met_the_usage_limit_stops_the_grade_and_says_when_it_resets() {
+    let end = ChatEnd::UsageLimit {
+        resets_at: Some("2026-11-08T14:00:00Z".into()),
+    };
+    let (report, kept) = stopped_at(2, end, Some(tokens(1_000_000)));
+    assert_eq!(report.ended, GradeEnd::UsageLimit);
+    assert_eq!(report.resets_at.as_deref(), Some("2026-11-08T14:00:00Z"));
+    assert!(report.ended.resumable());
+    assert_eq!(kept.left(&request()), 10);
+}
+
+#[test]
+fn a_service_out_of_reach_stops_the_grade_though_its_chat_said_no_spend() {
+    let mut host = StoppedAt {
+        script: Scripted::of(a_good_skill),
+        at: 0,
+        end: ChatEnd::Unreachable,
+        tokens_then: None,
+    };
+    let report = grade(&request(), &mut host, Some(tokens(1_000_000)));
+    assert_eq!(report.ended, GradeEnd::Unreachable);
+    assert_eq!(host.script.asked.len(), 1);
+    assert_eq!(report.resets_at, None);
+}
+
+#[test]
+fn a_stop_at_the_limit_or_by_hand_may_be_resumed_and_a_finished_or_unscored_one_may_not() {
+    for end in [
+        GradeEnd::Cancelled,
+        GradeEnd::OverCap,
+        GradeEnd::OverLimit,
+        GradeEnd::SpendNotReported,
+        GradeEnd::ChatsDidNotStart,
+        GradeEnd::UsageLimit,
+        GradeEnd::Unreachable,
+    ] {
+        assert!(end.resumable(), "{end:?}");
+    }
+    for end in [
+        GradeEnd::Whole,
+        GradeEnd::Interrupted,
+        GradeEnd::GraderFailed,
+    ] {
+        assert!(!end.resumable(), "{end:?}");
+    }
+}
+
+#[test]
+fn the_new_ends_are_spelled_on_the_wire() {
+    let ran = ChatRan {
+        chat: None,
+        started: Vec::new(),
+        tokens: None,
+        cost_usd: None,
+        ms: 0,
+        end: ChatEnd::UsageLimit {
+            resets_at: Some("2026-11-08T14:00:00Z".into()),
+        },
+        answer: None,
+    };
+    assert_eq!(
+        serde_json::to_value(&ran).unwrap()["end"],
+        "usage-limit",
+        "a Grader reads it as the ADR spells it"
+    );
+    assert_eq!(
+        serde_json::to_value(GradeEnd::Unreachable).unwrap(),
+        "unreachable"
+    );
+}

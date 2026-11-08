@@ -25,7 +25,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use purlis_session_protocol::session::{Exit, Reporting};
+use purlis_session_protocol::session::{Answer, Exit, Refusal, Reporting};
 
 /// Hands line `id`, as JSON, on to whoever holds the project: `false` when nobody is there to
 /// hear it.
@@ -73,6 +73,23 @@ pub trait Channel: Send + Sync + 'static {
     /// No window holds the project now: its last link ended (#2006). A line handed on that
     /// waits for that window's reply is let go of, and heard by the board this channel keeps.
     fn no_window(&self) {}
+    /// **Undo `turn`** (1.78, #5427): its files put back under this channel's idle check of the
+    /// chats it hears, answered [`Answer::TurnUndone`] or [`Answer::UndoWaits`]. A channel that
+    /// records no turns refuses it.
+    fn undo_turn(&self, _turn: &TurnToUndo) -> Result<Answer, Refusal> {
+        Err(crate::hosting::records_no_turns())
+    }
+}
+
+/// **A turn a window asks the host to undo** (1.78, #5427): turn `number` of chat `chat`, in
+/// `workspace`'s clone `repo`, or its branch folder `piece`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TurnToUndo {
+    pub workspace: String,
+    pub repo: String,
+    pub piece: Option<String>,
+    pub chat: String,
+    pub number: u32,
 }
 
 /// A host whose binary hears no hooks: a held project has no channel, and a chat's start keeps

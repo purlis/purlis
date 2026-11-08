@@ -17,6 +17,7 @@ fn runner(pool: &str, runner: &str, draining: bool) -> KeptRunner {
         runner: runner.to_owned(),
         draining,
         left: Vec::new(),
+        not_checked: None,
     }
 }
 

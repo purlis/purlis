@@ -300,6 +300,10 @@ async fn answering_an_ask_is_never_served_on_the_link_even_to_the_window() {
         "inbox_updates",
         "note_inbox_updates",
         "settle_inbox_updates",
+        "snooze_inbox_asks",
+        "wake_inbox_asks",
+        "inbox_first_open",
+        "set_aside_inbox_findings",
     ] {
         assert!(ui::WINDOW_ONLY.contains(&command), "{command}");
     }

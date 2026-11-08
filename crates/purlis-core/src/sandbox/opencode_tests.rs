@@ -420,6 +420,69 @@ fn nothing_a_later_opencode_loads_is_written() {
 }
 
 #[test]
+fn opencodes_data_folder_and_every_folder_above_it_stay_where_they_are() {
+    // Its sign-in is denied by its path alone: a folder above it moved away, written under its
+    // new name and moved back would leave that path written. At the floor every other folder is
+    // written, so this holds there above all.
+    for level in [Level::Full, Level::Floor] {
+        let wrap = opencode::Wrap {
+            os: Os::MacOs,
+            level,
+            held: Vec::new(),
+            denied: Vec::new(),
+            hosts: Vec::new(),
+            widened: Box::default(),
+            granted: Vec::new(),
+            data: Some(PathBuf::from("/Users/op/.local/share/opencode")),
+            state: None,
+            config: None,
+            cache: None,
+            planes: Vec::new(),
+        };
+        let profile = opencode::profile(
+            &wrap,
+            Path::new("/Users/op/plane"),
+            Path::new("/Users/op/tmp"),
+            &[4040],
+            None,
+        )
+        .expect("a profile");
+        for folder in [
+            "/Users/op/.local/share/opencode",
+            "/Users/op/.local/share",
+            "/Users/op/.local",
+            "/Users/op",
+        ] {
+            // Under the firmlink's other name too, which the kernel may give it on macOS (#1356).
+            let names = if cfg!(target_os = "macos") {
+                vec![folder.to_owned(), format!("/System/Volumes/Data{folder}")]
+            } else {
+                vec![folder.to_owned()]
+            };
+            for name in names {
+                let rule = format!("(deny file-write* (literal \"{name}\"))");
+                assert!(
+                    profile.contains(&rule),
+                    "{level:?}: {rule} missing:\n{profile}"
+                );
+            }
+        }
+        for file in ["auth.json", "mcp-auth.json"]
+            .into_iter()
+            .filter(|_| cfg!(target_os = "macos"))
+        {
+            let rule = format!(
+                "(deny file-write* file-link (literal \"/System/Volumes/Data/Users/op/.local/share/opencode/{file}\"))"
+            );
+            assert!(
+                profile.contains(&rule),
+                "{level:?}: {rule} missing:\n{profile}"
+            );
+        }
+    }
+}
+
+#[test]
 fn every_later_code_name_is_denied_at_any_depth_of_the_chat_directory() {
     let plane = plane_saying(ON);
     let applied = wrapped_in(&plane);
@@ -432,14 +495,14 @@ fn every_later_code_name_is_denied_at_any_depth_of_the_chat_directory() {
         .replace('.', "\\\\.");
     assert!(
         profile.contains(&format!(
-            "(deny file-write* file-link (regex \"^{root}/(.*/)?\\\\.git/config(/.*)?$\"))"
+            "(deny file-write* file-link (regex \"^{root}/(.*/)?\\\\.[gG][iI][tT]/[cC][oO][nN][fF][iI][gG](/.*)?$\"))"
         )),
         "{profile}"
     );
     // The `.git` itself, so a directory holding a config is never moved into its place.
     assert!(
         profile.contains(&format!(
-            "(deny file-write* file-link (regex \"^{root}/(.*/)?\\\\.git$\"))"
+            "(deny file-write* file-link (regex \"^{root}/(.*/)?\\\\.[gG][iI][tT]$\"))"
         )),
         "{profile}"
     );
@@ -1418,7 +1481,12 @@ fn every_denial_class_is_held_by_every_harness_charter_compiles_for() {
                     Harness::ClaudeCode => ("**/.git/config".to_owned(), false),
                     Harness::Codex | Harness::Opencode => {
                         let escaped = root.display().to_string().replace('.', "\\\\.");
-                        (format!("^{escaped}/(.*/)?\\\\.git/config(/.*)?$"), false)
+                        (
+                            format!(
+                                "^{escaped}/(.*/)?\\\\.[gG][iI][tT]/[cC][oO][nN][fF][iI][gG](/.*)?$"
+                            ),
+                            false,
+                        )
                     }
                 },
             };

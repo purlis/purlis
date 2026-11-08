@@ -611,3 +611,81 @@ fn an_outcome_chats_shell_is_on_the_wire_only_where_it_has_one() {
     let request = serde_json::to_value(request()).unwrap();
     assert!(request.get("shell").is_none(), "{request}");
 }
+
+/// A host that judges as [`Judged`] does, and stops the grade at its chat numbered `at`.
+struct JudgedStoppedAt {
+    judged: Judged,
+    at: usize,
+}
+
+impl Chats for JudgedStoppedAt {
+    fn run(&mut self, chat: &RunChat, left: Option<u64>) -> ChatRan {
+        let n = self.judged.asked.len();
+        let ran = self.judged.run(chat, left);
+        if n == self.at {
+            return ChatRan {
+                end: ChatEnd::Cancelled,
+                answer: None,
+                ..ran
+            };
+        }
+        ran
+    }
+
+    fn cancelled(&self) -> bool {
+        false
+    }
+}
+
+fn a_fair_host() -> Judged {
+    Judged {
+        asked: Vec::new(),
+        eval_end: turns,
+        judge: fair_judge,
+    }
+}
+
+#[test]
+fn an_eval_run_whose_judge_was_cut_off_runs_again_whole_on_a_resume() {
+    // Run 1 with the skill: its chat (0) and judge (1); without it: its chat (2) and its judge
+    // (3), stopped as it judged.
+    let mut host = JudgedStoppedAt {
+        judged: a_fair_host(),
+        at: 3,
+    };
+    let (stopped, kept) = grade_keeping(&request(), &mut host, None);
+    assert_eq!(stopped.ended, GradeEnd::Cancelled);
+    // Two runs of two arms, and run 1 without the skill, each a chat and its judge.
+    assert_eq!(kept.left(&request()), 10);
+    let mut again = a_fair_host();
+    let (resumed, _) = resume(&request(), &mut again, None, kept).unwrap();
+    assert_eq!(again.asked.len(), 10);
+    assert!(matches!(again.asked[0].kind, ChatKind::Outcome { .. }));
+    assert_eq!(again.asked[0].arm, Arm::Without);
+    let whole = grade(&request(), &mut a_fair_host(), None);
+    let rates = |report: &GradeReport| {
+        report
+            .arms
+            .iter()
+            .map(|arm| {
+                (
+                    arm.arm,
+                    arm.outcome_pass_rate,
+                    arm.outcome_chats,
+                    arm.outcome_not_run,
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    // The cut-off run's chats are put in their place by the ones run again.
+    assert_eq!(rates(&resumed), rates(&whole));
+    assert_eq!(resumed.outcome_delta, whole.outcome_delta);
+    assert_eq!(
+        resumed
+            .outcomes
+            .iter()
+            .map(|one| one.runs)
+            .collect::<Vec<_>>(),
+        [3, 3]
+    );
+}

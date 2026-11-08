@@ -13,7 +13,12 @@ import type { SkillBudgetPreview, StudioBudget } from "./bindings";
 import { ReadOnlySaid } from "./ReadOnlyLine";
 import { Button } from "./ui/button/Button";
 import { SkillBudgetTable } from "./SkillBudget";
-import { expectFocusInSight, untilFocused, untilFocusWithin } from "./stories.testkit";
+import {
+  expectFocusInSight,
+  untilFocused,
+  untilFocusWithin,
+  untilVisible,
+} from "./stories.testkit";
 
 const BUDGET: StudioBudget[] = [
   {
@@ -185,9 +190,19 @@ export const ItWarns: Story = {
   play: async ({ canvas }) => {
     await userEvent.click(canvas.getByRole("button", { name: "Change Codex's skill budget" }));
     const dialog = await within(document.body).findByRole("dialog");
-    await expect(await within(dialog).findByTestId("skill-budget-past-limit")).toBeVisible();
-    await expect(within(dialog).getByTestId("skill-budget-over")).toBeVisible();
-    await expect(within(dialog).getByTestId("skill-budget-by-the-built-in-router")).toBeVisible();
+    // Each waited for: the dialog fades in, and WebKit may start the fade after the line is drawn.
+    await untilVisible(
+      () => within(dialog).queryByTestId("skill-budget-past-limit"),
+      "the dialog says it is past Codex's limit",
+    );
+    await untilVisible(
+      () => within(dialog).queryByTestId("skill-budget-over"),
+      "the dialog says the pins go over it",
+    );
+    await untilVisible(
+      () => within(dialog).queryByTestId("skill-budget-by-the-built-in-router"),
+      "the dialog says it is the built-in router's answer",
+    );
     await userEvent.keyboard("3");
     await expect(within(dialog).getByRole("button", { name: "Change budget" })).toBeEnabled();
   },

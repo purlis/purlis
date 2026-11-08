@@ -120,12 +120,57 @@ fn a_claude_code_chat_on_a_runner_needs_the_kernel_and_no_program() {
 }
 
 #[test]
-fn a_wrapped_claude_code_chat_records_no_held_project_git() {
+fn a_wrapped_claude_code_chat_never_writes_the_project_roots_git_folder_and_records_it_held() {
     let place = place(FULL, true);
-    std::fs::create_dir_all(place.plane.path().join(".git")).unwrap();
+    let root = super::real(place.plane.path());
+    let held = root.join(".git");
+    std::fs::create_dir_all(held.join("refs/heads")).unwrap();
     let applied = started(&place, &place.home.join("work"));
     assert!(matches!(applied.form(), Form::ClaudeWrapped(_)));
-    assert_eq!(applied.confines().roots_git, None);
+    assert_eq!(applied.confines().roots_git, Some(held.clone()));
+    let Form::ClaudeWrapped(wrap) = applied.form_in(Some(&root)) else {
+        panic!("not wrapped");
+    };
+    let profile = profile_of(
+        &wrap,
+        &root,
+        &place.home.join("tmp"),
+        &place.home.join("s.sock"),
+    );
+    assert!(!writes(&profile, &held.join("refs/heads/main")));
+    assert!(!writes(&profile, &held.join("HEAD")));
+    assert!(writes(&profile, &root.join("notes.md")));
+}
+
+#[test]
+fn a_wrapped_claude_code_chat_in_a_branch_folder_never_writes_its_clones_git_folder() {
+    let place = place(FULL, true);
+    let root = super::real(place.plane.path());
+    let workspace = root.join("workspaces/w");
+    let clone_git = workspace.join("repos/a/.git");
+    let record = clone_git.join("worktrees/p1");
+    std::fs::create_dir_all(&record).unwrap();
+    std::fs::write(record.join("commondir"), "../..\n").unwrap();
+    let piece = workspace.join(".worktrees/a/p1");
+    std::fs::create_dir_all(&piece).unwrap();
+    std::fs::write(
+        piece.join(".git"),
+        format!("gitdir: {}\n", record.display()),
+    )
+    .unwrap();
+    let applied = started(&place, &place.home.join("work"));
+    let Form::ClaudeWrapped(wrap) = applied.form_in(Some(&piece)) else {
+        panic!("not wrapped");
+    };
+    let profile = profile_of(
+        &wrap,
+        &piece,
+        &place.home.join("tmp"),
+        &place.home.join("s.sock"),
+    );
+    assert!(!writes(&profile, &record.join("index")));
+    assert!(!writes(&profile, &clone_git.join("refs/heads/p1")));
+    assert!(writes(&profile, &piece.join("src.rs")));
 }
 
 #[test]
@@ -543,4 +588,34 @@ fn a_runner_holds_the_projects_skill_folders_whatever_its_own_flag_says() {
     if !crate::skills::reach_chats_here(&super::real(place(FLOOR, false).plane.path())) {
         assert!(!held(&place(FLOOR, false)), "by its own flag, which is off");
     }
+}
+
+/// #5675: a Claude Code chat's own temporary folder is made where Claude Code roots its
+/// sandbox's `$TMPDIR` in it, `<folder>/claude-<uid>` within 44 bytes, and not in macOS's long
+/// `/var/folders/…/T`, past which Claude Code falls back to the `/tmp/claude-<uid>` every chat
+/// shares.
+#[test]
+fn a_claude_code_chats_own_temporary_folder_is_made_where_claude_code_roots_its_tmpdir() {
+    let mac = Path::new("/var/folders/wl/hs3pdt2j0t9gyc_l73py38l80000gp/T/");
+    assert_eq!(claude_wrap::tmp_base(mac, 501), PathBuf::from("/tmp"));
+    assert_eq!(
+        claude_wrap::tmp_base(Path::new("/tmp"), 1001),
+        PathBuf::from("/tmp")
+    );
+    assert_eq!(
+        claude_wrap::tmp_base(Path::new("/run/t"), 1001),
+        PathBuf::from("/run/t"),
+        "a short temporary folder of the system's is kept"
+    );
+    // Made where it can be: in `/tmp`, or, where that is refused, in the system's own.
+    let own = claude_wrap::own_tmp().expect("a folder of its own");
+    assert!(own.path().is_dir());
+    let uid = rustix::process::getuid().as_raw();
+    let rooted = own.path().join(format!("claude-{uid}"));
+    let base = claude_wrap::tmp_base(&std::env::temp_dir(), uid);
+    assert!(
+        own.path().parent() != Some(base.as_path())
+            || rooted.as_os_str().len() <= claude_wrap::ROOTED_TMP_MAX,
+        "{rooted:?} is past what Claude Code roots its sandbox's $TMPDIR in"
+    );
 }

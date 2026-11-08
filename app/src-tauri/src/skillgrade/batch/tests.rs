@@ -29,6 +29,7 @@ fn plan(
             models: Vec::new(),
             model: None,
             evals_refused: None,
+            harness: None,
         },
     );
     plan.estimate = cost_usd.map(|cost_usd| GradeEstimate {
@@ -151,11 +152,13 @@ fn each_step_says_where_every_skill_is_and_what_the_batch_spent() {
                 level: project(),
                 name: "deploy".into(),
                 consent: "a".into(),
+                resume: None,
             },
             BatchPick {
                 level: project(),
                 name: "lint".into(),
                 consent: "b".into(),
+                resume: None,
             },
         ],
         1.0,
@@ -194,6 +197,7 @@ fn a_grade_a_fault_ends_keeps_what_its_chats_spent_in_the_batch() {
             level: project(),
             name: "deploy".into(),
             consent: "a".into(),
+            resume: None,
         }],
         1.0,
     );

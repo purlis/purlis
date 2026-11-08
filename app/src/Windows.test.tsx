@@ -385,7 +385,7 @@ describe("needs you, across windows", () => {
     // chat goes there.
     const hand = await screen.findByRole("button", { name: "1 chat needs you" });
     await userEvent.click(hand);
-    const inbox = await screen.findByRole("tabpanel", { name: "Inbox" });
+    const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
     // This project's scope is empty and says what waits wider (qw359): one press lists it.
     await userEvent.click(await within(inbox).findByRole("button", { name: "Show all projects" }));
     const group = await within(inbox).findByRole("region", { name: "two.3 · alpha · two" });
@@ -424,7 +424,7 @@ describe("needs you, across windows", () => {
       name: "Nothing has asked for you, but 2 chats can't tell purlis they're waiting",
     });
     await userEvent.click(hand);
-    const inbox = await screen.findByRole("tabpanel", { name: "Inbox" });
+    const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
     const here = await vi.waitFor(() => {
       const found = inbox.querySelector<HTMLElement>(`[data-cause="chat-quiet:${ONE}#2"]`);
       expect(found).not.toBeNull();

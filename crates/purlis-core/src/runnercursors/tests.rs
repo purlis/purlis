@@ -60,3 +60,56 @@ fn past_the_most_cursors_the_lowest_go_first_never_the_one_kept_now() {
     );
     assert_eq!(logged_up_to(home.path(), RUNNER, "P0001"), Some(101));
 }
+
+/// A runner made again mints a new device (`machine::mint_device_id`), whose log starts its `seq`
+/// at the bottom, and nothing removes the cursors of the one it replaced. Its seqs say nothing
+/// of a gone device's: what goes first is the device kept least lately (#5657).
+#[test]
+fn past_the_most_cursors_a_device_kept_least_lately_goes_before_a_live_runners_low_cursors() {
+    let home = tempfile::tempdir().unwrap();
+    let gone = "01JB0GONE000000000000000000";
+    let made_again = "01JB1MADEAGAIN0000000000000";
+    for n in 0..MOST_CURSORS - 1 {
+        keep(home.path(), gone, &format!("P{n:04}"), 5_000 + n as u64).unwrap();
+    }
+
+    keep(home.path(), made_again, PROJECT, 3).unwrap();
+    keep(home.path(), made_again, OTHER, 4).unwrap();
+
+    assert_eq!(
+        logged_up_to(home.path(), made_again, PROJECT),
+        Some(3),
+        "the live runner's cursor stays"
+    );
+    assert_eq!(logged_up_to(home.path(), made_again, OTHER), Some(4));
+    assert_eq!(
+        logged_up_to(home.path(), gone, "P0000"),
+        None,
+        "the gone runner's went"
+    );
+    assert_eq!(
+        read(home.path()).values().map(BTreeMap::len).sum::<usize>(),
+        MOST_CURSORS
+    );
+}
+
+#[test]
+fn a_file_an_earlier_build_wrote_reads_and_its_runners_go_before_one_kept_since() {
+    const EARLIER: &str = "01JB0EARLIER000000000000000";
+    let home = tempfile::tempdir().unwrap();
+    keep(home.path(), RUNNER, PROJECT, 1).unwrap();
+    let file = crate::machine::dir(home.path()).join(FILE);
+    let earlier: BTreeMap<String, u64> = (0..MOST_CURSORS)
+        .map(|n| (format!("P{n:04}"), 9_000 + n as u64))
+        .collect();
+    let earlier = serde_json::json!({ "version": 1, "cursors": { EARLIER: earlier } });
+    std::fs::write(&file, earlier.to_string()).unwrap();
+    assert_eq!(logged_up_to(home.path(), EARLIER, "P0000"), Some(9_000));
+
+    keep(home.path(), RUNNER, PROJECT, 2).unwrap();
+    keep(home.path(), RUNNER, OTHER, 1).unwrap();
+
+    assert_eq!(logged_up_to(home.path(), RUNNER, PROJECT), Some(2));
+    assert_eq!(logged_up_to(home.path(), RUNNER, OTHER), Some(1));
+    assert_eq!(logged_up_to(home.path(), EARLIER, "P0001"), None);
+}

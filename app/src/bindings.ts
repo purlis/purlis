@@ -1384,19 +1384,43 @@ export const commands = {
 	 *  **A project's updates** (#1693): kept a day on this machine, newest first, dismissed ones
 	 *  left out. None where this machine keeps no data home.
 	 */
-	inboxUpdates: (plane: PlaneId) => typedError<InboxUpdate[], string>(__TAURI_INVOKE("inbox_updates", { plane })),
+	inboxUpdates: (plane: PlaneId) => typedError<InboxUpdate_Serialize[], string>(__TAURI_INVOKE("inbox_updates", { plane })),
 	/**
 	 *  **Notes what the window derived from a source** (#1693): each update whose key the project
 	 *  does not keep yet is kept, unread; one it keeps, dismissed or not, is left as it is. One
 	 *  older than a day is not kept. Answers the project's updates as [`inbox_updates`] does.
 	 */
-	noteInboxUpdates: (plane: PlaneId, noted: UpdateNoted[]) => typedError<InboxUpdate[], string>(__TAURI_INVOKE("note_inbox_updates", { plane, noted })),
+	noteInboxUpdates: (plane: PlaneId, noted: UpdateNoted[]) => typedError<InboxUpdate_Serialize[], string>(__TAURI_INVOKE("note_inbox_updates", { plane, noted })),
 	/**
 	 *  **Mark read, or Dismiss** (#1693, I-10): the updates named by `keys`, or every one the
 	 *  project keeps where `keys` is null — Mark all read and Dismiss all. Updates only: no ask is
 	 *  answered here. Answers the project's updates as [`inbox_updates`] does.
 	 */
-	settleInboxUpdates: (plane: PlaneId, keys: string[] | null, how: UpdateSettled) => typedError<InboxUpdate[], string>(__TAURI_INVOKE("settle_inbox_updates", { plane, keys, how })),
+	settleInboxUpdates: (plane: PlaneId, keys: string[] | null, how: UpdateSettled) => typedError<InboxUpdate_Serialize[], string>(__TAURI_INVOKE("settle_inbox_updates", { plane, keys, how })),
+	/**
+	 *  **Snooze all** (#5647, ADR 0119): puts each of `chats` away with the asks it holds, until it
+	 *  holds an ask it did not have. Nothing is answered, and no timer brings it back. Kept on this
+	 *  machine per project, never in the plane.
+	 */
+	snoozeInboxAsks: (plane: PlaneId, chats: SnoozedChat[]) => typedError<null, string>(__TAURI_INVOKE("snooze_inbox_asks", { plane, chats })),
+	/**
+	 *  **Show them now, and Snooze all's Undo** (#5647): brings back the snoozed chats `sessions`,
+	 *  or every one where it is null.
+	 */
+	wakeInboxAsks: (plane: PlaneId, sessions: number[] | null) => typedError<null, string>(__TAURI_INVOKE("wake_inbox_asks", { plane, sessions })),
+	/**
+	 *  **The project opens in the window** (#5648, ADR 0119): its first-open baseline, made where
+	 *  this machine has none. The first time a project opens on a machine with no seen record for
+	 *  it, what is already there counts as seen, and its hosts and presets as told; a project with
+	 *  a record keeps it, so updating purlis clears nothing.
+	 */
+	inboxFirstOpen: (plane: PlaneId) => typedError<InboxBaseline, string>(__TAURI_INVOKE("inbox_first_open", { plane })),
+	/**
+	 *  **The doctor's first report after a fresh first open** (#5648): its findings, `keys`, were
+	 *  already there, and the window puts each away until it changes. Kept once. Answers the
+	 *  project's updates as [`inbox_updates`] does.
+	 */
+	setAsideInboxFindings: (plane: PlaneId, keys: string[]) => typedError<InboxUpdate_Serialize[], string>(__TAURI_INVOKE("set_aside_inbox_findings", { plane, keys })),
 	/**
 	 *  The window says whether it has `plane`'s Inbox open (#1694): while it is, and the window
 	 *  is focused with the project in front, no notification is sent about that project's asks.
@@ -2314,10 +2338,11 @@ export const commands = {
 	 */
 	skillRestore: (plane: PlaneId, id: string, under: string | null) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_restore", { plane, id, under })),
 	/**
-	 *  **The copies installed from the source `remote`**, read from the lockfiles and asking the
-	 *  source nothing, each with whether it changed since install and is on in `workspace`.
+	 *  **The copies installed from `source`**, a git source or an extension's (#3092), read from
+	 *  the lockfiles and asking the source nothing, each with whether it changed since install and is
+	 *  on in `workspace`.
 	 */
-	skillSourceInstalled: (plane: PlaneId, remote: SourceRemote, workspace: string | null) => typedError<InstalledCopy[], string>(__TAURI_INVOKE("skill_source_installed", { plane, remote, workspace })),
+	skillSourceInstalled: (plane: PlaneId, source: SourceOrigin, workspace: string | null) => typedError<InstalledCopy[], string>(__TAURI_INVOKE("skill_source_installed", { plane, source, workspace })),
 	/**
 	 *  **The one review of `act` on `members`**: what each is marked with, who is left naming one that
 	 *  goes, and how many open chats started with them. Reads only.
@@ -2525,6 +2550,50 @@ export const commands = {
 	 *  Refused while a grade runs in the project.
 	 */
 	skillGradeStart: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null, model: string | null, evals: string[], grader: string | null, consent: string) => typedError<string, string>(__TAURI_INVOKE("skill_grade_start", { plane, level, skill, profile, model, evals, grader, consent })),
+	/**
+	 *  **What resuming the stopped grade `grade` would run** (#5718): `None` where this machine keeps
+	 *  no stopped grade of that id (it finished, was resumed, a newer grade of its copy began, or it
+	 *  ran on another machine).
+	 */
+	skillGradeResumePlan: (plane: PlaneId, grade: string) => typedError<{
+	grade: string,
+	skill: string,
+	/**  How it stopped, in a sentence (`Stopped at the token cap`). */
+	ended: string,
+	/**
+	 *  **Why Resume is not offered**, where it is not: what changed since it stopped, or why what
+	 *  it graded cannot be read now. Grade again is then the one way on.
+	 */
+	refused: string | null,
+	/**
+	 *  **When the program's usage limit resets**, an RFC 3339 time, while it has not: Resume
+	 *  waits for it.
+	 */
+	waits_until: string | null,
+	/**  The chats left, and what they would spend at what its chats spent each, where they said. */
+	left: number,
+	tokens_left: number | null,
+	usd_left: number | null,
+	/**  The cap and the dollar limit a resume is held to, which count only its own spend. */
+	token_cap: number | null,
+	cap_set_here: boolean,
+	limit_usd: number | null,
+	/**  What the stopped grade spent, which the resumed one's scorecard adds to its own. */
+	earlier_tokens: number | null,
+	earlier_usd: number | null,
+	/**  The profile and the model its chats run on, as the stopped grade's did. */
+	profile: string | null,
+	model: string | null,
+	/**  What pressing Resume consents to; `None` where it is refused. */
+	consent: string | null,
+	/**  A grade of the skill running now, which Resume waits for. */
+	running: string | null,
+} | null, string>(__TAURI_INVOKE("skill_grade_resume_plan", { plane, grade })),
+	/**
+	 *  **Resumes the stopped grade `grade`** (#5718), on the plan whose consent `consent` is: only its
+	 *  unfinished cases run, held to a new cap of their own. The answer is the new grade's id.
+	 */
+	skillGradeResume: (plane: PlaneId, grade: string, consent: string) => typedError<string, string>(__TAURI_INVOKE("skill_grade_resume", { plane, grade, consent })),
 	/**  **What the page of the draft `draft` says of its grade.** */
 	skillDraftGrade: (plane: PlaneId, draft: string) => typedError<SkillDraftGrade, string>(__TAURI_INVOKE("skill_draft_grade", { plane, draft })),
 	/**  **What grading the draft `draft` would run**, before anything runs. */
@@ -2546,6 +2615,12 @@ export const commands = {
 	skillGradeStop: (plane: PlaneId, grade: string) => typedError<null, string>(__TAURI_INVOKE("skill_grade_stop", { plane, grade })),
 	/**  **What grading the copies `skills` would run and spend**, before anything runs. */
 	skillGradesPlan: (plane: PlaneId, skills: ([SkillLevel, string])[]) => typedError<SkillGradesPlan, string>(__TAURI_INVOKE("skill_grades_plan", { plane, skills })),
+	/**
+	 *  **What resuming the stopped grades `grades` together would run and spend** (#5718, the
+	 *  operator's ruling 6): each stopped skill's chats left and what they would spend, under one new
+	 *  limit the person sets; a grade that cannot be resumed now is left out with why.
+	 */
+	skillGradesResumePlan: (plane: PlaneId, grades: string[]) => typedError<SkillGradesPlan, string>(__TAURI_INVOKE("skill_grades_resume_plan", { plane, grades })),
 	/**
 	 *  **Grades the copies `skills`**, a few at a time, under `limit_usd` (see the module). The
 	 *  answer is the batch's id. Refused while any grade runs in the project.
@@ -2801,6 +2876,55 @@ export const commands = {
 { to: "all" } | 
 /**  The workspaces named. */
 { to: "only"; workspaces: string[] } | null) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_update", { plane, level, name, reviewed, grant })),
+	/**
+	 *  **The extensions' skill sources** (#3092): each extension this machine approved, the project
+	 *  has on, and that declares `skill-source`, in id order. Read from the record of extensions and
+	 *  the lockfiles: no extension is asked.
+	 */
+	skillExtensionSources: (plane: PlaneId) => typedError<ExtensionSkillSource[], string>(__TAURI_INVOKE("skill_extension_sources", { plane })),
+	/**
+	 *  **Browses an extension's skill source** at the revision it names now: its listing, and each
+	 *  skill's files read for its marks (#5760).
+	 */
+	skillExtensionSourceBrowse: (plane: PlaneId, id: string) => typedError<SourceBrowse, string>(__TAURI_INVOKE("skill_extension_source_browse", { plane, id })),
+	/**
+	 *  **The install review** of `names` from an extension's source into `level`: the git source's
+	 *  review, and what it read held for the install.
+	 */
+	skillExtensionInstallReview: (plane: PlaneId, id: string, names: string[], level: SkillLevel) => typedError<InstallReview, string>(__TAURI_INVOKE("skill_extension_install_review", { plane, id, names, level })),
+	/**
+	 *  **The review of installing `names` from an extension's source together** (Install all…): one
+	 *  review, those named that the level holds already left out (#4153), what it read held for the
+	 *  install.
+	 */
+	skillExtensionInstallSetReview: (plane: PlaneId, id: string, names: string[], level: SkillLevel) => typedError<InstallSetReview, string>(__TAURI_INVOKE("skill_extension_install_set_review", { plane, id, names, level })),
+	/**
+	 *  **Installs what was reviewed** from an extension's source at `level`: the bytes its review
+	 *  read, never asked of the extension again.
+	 */
+	skillExtensionInstall: (plane: PlaneId, id: string, level: SkillLevel, reviewed: Reviewed, grant: 
+/**  Chats at the project's root alone. */
+{ to: "root" } | 
+/**  Every workspace's chats too. */
+{ to: "all" } | 
+/**  The workspaces named. */
+{ to: "only"; workspaces: string[] } | null, renames: SkillRename[]) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_extension_install", { plane, id, level, reviewed, grant, renames })),
+	/**
+	 *  **The review of updating `name` at `level`**, a skill from an extension's source, to the
+	 *  revision its source names now; what it read held for the update.
+	 */
+	skillExtensionUpdateReview: (plane: PlaneId, level: SkillLevel, name: string) => typedError<UpdateReview, string>(__TAURI_INVOKE("skill_extension_update_review", { plane, level, name })),
+	/**
+	 *  **Accepts an update** of a skill from an extension's source that was reviewed: from what its
+	 *  review read, the pin moved to the revision, as one commit.
+	 */
+	skillExtensionUpdate: (plane: PlaneId, level: SkillLevel, name: string, reviewed: Reviewed, grant: 
+/**  Chats at the project's root alone. */
+{ to: "root" } | 
+/**  Every workspace's chats too. */
+{ to: "all" } | 
+/**  The workspaces named. */
+{ to: "only"; workspaces: string[] } | null) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_extension_update", { plane, level, name, reviewed, grant })),
 	/**
 	 *  **Turns one of a harness's own skills on or off** (SK-6, #2769) for the chats the studio
 	 *  shows (a plugin's is the plugin's, and refused, #3467): at the project's root on this machine alone (`charter.local.toml`), in a
@@ -5461,6 +5585,12 @@ export type AlertRow = {
 	 *  in place of the command the terminal status line names.
 	 */
 	way: AlertWay,
+	/**
+	 *  **When what it says was found**, in seconds since the epoch, where purlis keeps that
+	 *  (#5702): a chat's arrived files, from the look that last told them. The Inbox says the
+	 *  Notice's age from it, and without it from when the window first drew the Notice.
+	 */
+	since?: number | null,
 };
 
 /**
@@ -5888,6 +6018,13 @@ export type Asking = {
 	 *  Inbox, which read [`Asking::asks`].
 	 */
 	with_asking_chat: WithAskingChat[],
+	/**
+	 *  **The asks Snooze all put away** (#5647, ADR 0119): each held by a chat that holds no
+	 *  ask it did not have when it was snoozed. Listed apart from [`Asking::asks`], so neither
+	 *  the ✋ nor Asks counts them; the Chats view, which reads the board, still says the chat
+	 *  waits. Only [`asks_waiting`] puts any here.
+	 */
+	snoozed?: Shown[],
 };
 
 /**  Which command's question it is. */
@@ -6000,6 +6137,11 @@ export type BatchPick = {
 	level: SkillLevel,
 	name: string,
 	consent: string,
+	/**
+	 *  **The stopped grade it resumes** (#5718), where Select's Resume picked it: only its
+	 *  unfinished cases run.
+	 */
+	resume?: string | null,
 };
 
 /**
@@ -6018,6 +6160,11 @@ export type BatchSkill = {
 	 *  refused.
 	 */
 	consent: string,
+	/**
+	 *  **The stopped grade it resumes** (#5718), where the batch resumes one: its chats are those
+	 *  left, and its estimate what they would spend.
+	 */
+	resume: string | null,
 };
 
 /**
@@ -7410,9 +7557,11 @@ export type DiscardAgainst =
 export type DiscardAnswer = 
 /**
  *  It is written. `now` is the file's diff without the hunk, or `null` when nothing of its
- *  change is left to draw; `unrecorded` says why the log did not take it, if it did not.
+ *  change is left to draw; `unrecorded` says why the log did not take it, if it did not;
+ *  `untold` names each chat in the folder whose agent is not told of it
+ *  ([`crate::staleclones::untold_in`]).
  */
-{ kind: "discarded"; now: WhatChanged | null; unrecorded: string | null } | 
+{ kind: "discarded"; now: WhatChanged | null; unrecorded: string | null; untold: string[] } | 
 /**  Nothing was written: these chats are not idle, and the choice is the operator's. */
 { kind: "busy"; chats: BusyChat[] } | 
 /**  Nothing was written: the file changed on disk since the diff was drawn. */
@@ -8372,6 +8521,16 @@ export type ExtensionRow = {
 	ask: ExtensionAsk | null,
 };
 
+/**
+ *  **An extension's skill source**, as the studio lists one: the extension's id, the name it
+ *  gives itself, and how many skills are installed from it here.
+ */
+export type ExtensionSkillSource = {
+	id: string,
+	label: string,
+	installed: number,
+};
+
 /**  One theme an approved extension is contributing, as the window receives it. */
 export type ExtensionTheme = {
 	/**  The extension it came from, so the window can say whose theme it is drawing. */
@@ -9163,7 +9322,11 @@ export type GradeEnded = "whole" | "stopped" | "chats-did-not-start" |
 /**  A chat did not say what it spent, so the cap could not be held. */
 "spend-not-reported" | 
 /**  A fault in purlis ended it before it was scored (#3353): recorded as interrupted. */
-"failed";
+"failed" | 
+/**  Its program's usage limit was reached (#5718). */
+"usage-limit" | 
+/**  Its program could not reach its service (#5718). */
+"unreachable";
 
 /**
  *  What a grade's chats spent before, worked out for this one (`grades::Estimate`): both
@@ -9336,6 +9499,11 @@ export type GradeScorecard = {
 	 */
 	evals: ScoredEval[],
 	outcome_arms: GradeArms | null,
+	/**
+	 *  **When the program's usage limit resets**, an RFC 3339 time, where it stopped there and
+	 *  was told (#5718).
+	 */
+	resets_at: string | null,
 };
 
 /**
@@ -9347,6 +9515,13 @@ export type GradeSpent = {
 	tokens: number | null,
 	cost_usd: number | null,
 	limit_usd: number | null,
+	/**
+	 *  **Whether it resumed a stopped grade** (#5718): its tokens and cost are then both runs',
+	 *  and these the earlier run's, where it said.
+	 */
+	resumed: boolean,
+	earlier_tokens: number | null,
+	earlier_usd: number | null,
 };
 
 /**  Who a grant is for, as the window sends it ([`sandbox::grant::Level`]). */
@@ -9739,8 +9914,24 @@ export type InTurn =
 /**  The file, compared across the turn. */
 { kind: "changed"; shown: WhatChanged };
 
+/**  **The first-open baseline** (#5648, ADR 0119), as the window reads it. */
+export type InboxBaseline = {
+	/**  When the project first opened on this machine, in seconds since 1970. */
+	at: number,
+	/**  Whether that open set the past aside: false where this machine had seen the project. */
+	fresh: boolean,
+	/**
+	 *  The doctor findings already there, by the causes the window dismisses them by; null
+	 *  until the window has set aside the first report's.
+	 */
+	findings: string[] | null,
+};
+
 /**  One update, as the window draws it. */
-export type InboxUpdate = {
+export type InboxUpdate = InboxUpdate_Serialize | InboxUpdate_Deserialize;
+
+/**  One update, as the window draws it. */
+export type InboxUpdate_Deserialize = {
 	/**  Its source's own name for it: what the window notes, settles and matches it by. */
 	key: string,
 	kind: UpdateKind,
@@ -9754,6 +9945,33 @@ export type InboxUpdate = {
 	says: string,
 	/**  The person has read it. */
 	read: boolean,
+	/**
+	 *  The first-open baseline set it aside (#5648): listed From the project, read. Absent for
+	 *  every other update.
+	 */
+	baselined?: boolean | null,
+};
+
+/**  One update, as the window draws it. */
+export type InboxUpdate_Serialize = {
+	/**  Its source's own name for it: what the window notes, settles and matches it by. */
+	key: string,
+	kind: UpdateKind,
+	/**  When it happened, in seconds since 1970. */
+	at: number,
+	/**  The chat it is about, while that number means one. */
+	session: number | null,
+	/**  Who it is about, the session first: names, as data. */
+	chain: string[],
+	/**  What happened, in one line: data, never markup. */
+	says: string,
+	/**  The person has read it. */
+	read: boolean,
+	/**
+	 *  The first-open baseline set it aside (#5648): listed From the project, read. Absent for
+	 *  every other update.
+	 */
+	baselined?: boolean | null,
 };
 
 /**
@@ -10672,10 +10890,17 @@ export type NeedFix =
  *  Leave the old keys, which no file can be proposed without: said once
  *  (`dismiss_old_harness_plugins`).
  */
-{ kind: "leave-old-keys" };
+{ kind: "leave-old-keys" } | 
+/**
+ *  Open a stopped grade's scorecard (#5718), where Resume shows its plan: a skill's, or its
+ *  draft's where `draft` names one.
+ */
+{ kind: "open-grade"; name: string; grade: string; draft: string | null };
 
 /**  **What kind of decision an item is**, in the order the page groups them. */
-export type NeedKind = "review" | "clash" | "problem" | "pins" | "tidy-up";
+export type NeedKind = "review" | 
+/**  A grade that stopped short, which Resume can go on from (#5718). */
+"resume" | "clash" | "problem" | "pins" | "tidy-up";
 
 /**
  *  **One persona the vault view may remember a need for** (#5240): names only, read from no
@@ -10754,6 +10979,23 @@ export type NotASkill = {
 	folder: string,
 	why: string,
 };
+
+/**
+ *  **How a draining runner that cannot be asked came to be so**, as Docker says now, and so what
+ *  is left of it (ruled 2026-11-08): the window names which in its own words, so a person reads
+ *  what is there and what can be done with it.
+ */
+export type NotChecked = 
+/**
+ *  Its container had stopped before its drain, and has not run since: it is there, stopped,
+ *  and is checked once it runs again.
+ */
+"stopped" | 
+/**
+ *  Its container was removed outside purlis, and only its home volume is left, which nothing
+ *  can check.
+ */
+"home_only";
 
 /**
  *  What a runner holds, set against what the window has open: the chats and browsers of its own
@@ -12312,6 +12554,15 @@ export type PoolNamedBy = {
 };
 
 /**
+ *  **An older runner of a pool kept unchecked** (ruled 2026-11-08): its name, and what is left of
+ *  it.
+ */
+export type PoolNotChecked = {
+	runner: string,
+	left: NotChecked,
+};
+
+/**
  *  **A project an older runner of a pool waits on** (#5461): it still has to bring back what its
  *  chats left there, and only an open project does.
  */
@@ -12649,6 +12900,11 @@ export type PoolVersion = {
 	 *  runner. Empty where none does.
 	 */
 	left: string[],
+	/**
+	 *  **Its older runners kept as they could not be checked for such work** (ruled 2026-11-08),
+	 *  each by name with what is left of it: the Pools group names each in a line of its own.
+	 */
+	not_checked: PoolNotChecked[],
 };
 
 /**  What the Pools group draws: the pools, and the limits a new pool gets by default. */
@@ -14367,6 +14623,11 @@ export type RunnerOnTheList = {
 	 *  may let go of with it. Empty where none keeps it.
 	 */
 	left: string[],
+	/**
+	 *  **A draining runner kept as it could not be checked for such work**, and what is left of
+	 *  it (ruled 2026-11-08): a stopped container, or only its home. None where it was checked.
+	 */
+	not_checked: NotChecked | null,
 	on: OnADevice,
 };
 
@@ -15047,6 +15308,11 @@ export type SentReport = {
 	address: string,
 	/**  Exactly what was sent. */
 	bytes: string,
+	/**
+	 *  Not sent yet (#5693): the report service could not be reached, and it waits on this
+	 *  machine; `at` is when it was made, `address` is empty, and `bytes` is what will go.
+	 */
+	waiting: boolean,
 };
 
 /**  One session record, as the palette and the Sessions panel name it. */
@@ -15888,6 +16154,42 @@ export type SkillGradePlan = {
 	draft: boolean,
 };
 
+/**  **What resuming a stopped grade would run, as the window shows it before Resume is pressed.** */
+export type SkillGradeResumePlan = {
+	grade: string,
+	skill: string,
+	/**  How it stopped, in a sentence (`Stopped at the token cap`). */
+	ended: string,
+	/**
+	 *  **Why Resume is not offered**, where it is not: what changed since it stopped, or why what
+	 *  it graded cannot be read now. Grade again is then the one way on.
+	 */
+	refused: string | null,
+	/**
+	 *  **When the program's usage limit resets**, an RFC 3339 time, while it has not: Resume
+	 *  waits for it.
+	 */
+	waits_until: string | null,
+	/**  The chats left, and what they would spend at what its chats spent each, where they said. */
+	left: number,
+	tokens_left: number | null,
+	usd_left: number | null,
+	/**  The cap and the dollar limit a resume is held to, which count only its own spend. */
+	token_cap: number | null,
+	cap_set_here: boolean,
+	limit_usd: number | null,
+	/**  What the stopped grade spent, which the resumed one's scorecard adds to its own. */
+	earlier_tokens: number | null,
+	earlier_usd: number | null,
+	/**  The profile and the model its chats run on, as the stopped grade's did. */
+	profile: string | null,
+	model: string | null,
+	/**  What pressing Resume consents to; `None` where it is refused. */
+	consent: string | null,
+	/**  A grade of the skill running now, which Resume waits for. */
+	running: string | null,
+};
+
 /**
  *  **One step of a grade**, as [`EVENT`] tells the window: how many of its chats have run, and,
  *  once it is over, how it ended and what it says.
@@ -16341,12 +16643,12 @@ export type SkillTemplate = {
  */
 export type SkillTemplateId = { kind: "blank" } | { kind: "steps" } | { kind: "extension"; extension: string; template: string };
 
-/**  One newer commit offered for an installed skill. */
+/**  One newer commit, or an extension's newer revision, offered for an installed skill. */
 export type SkillUpdateOffer = {
 	name: string,
 	level: SkillLevel,
 	label: string,
-	remote: SourceRemote,
+	source: SourceOrigin,
 	pinned: SourceCommit,
 	newer: SourceCommit,
 	edited: boolean,
@@ -16515,6 +16817,12 @@ export type SmartClosing = {
 	record: SavedRecord | null,
 };
 
+/**  One chat Snooze all puts away (#5647): its session, and the keys of the asks it holds now. */
+export type SnoozedChat = {
+	session: number,
+	asks: string[],
+};
+
 /**  What a source offers. */
 export type SourceBrowse = {
 	commit: SourceCommit,
@@ -16554,6 +16862,12 @@ export type SourceOffering =
 "catalogue" | 
 /**  A collection someone else keeps that people use widely. */
 "well-known";
+
+/**
+ *  **Where an installed skill came from** (#3092): a git source, by its repository and branch,
+ *  or an extension's source, by the extension's id; `label` as a person reads it either way.
+ */
+export type SourceOrigin = { kind: "git"; remote: SourceRemote; label: string } | { kind: "extension"; id: string; label: string };
 
 /**  A repository and the branch read from it. */
 export type SourceRemote = {
@@ -17710,9 +18024,10 @@ export type TurnPick = {
 export type UndoAnswer = 
 /**
  *  Every file is back. `unrecorded` says why the log did not take it, `unmarked` why the turn
- *  is not marked undone, if either.
+ *  is not marked undone, if either; `untold` names each chat in the folder whose agent is not
+ *  told of it ([`crate::staleclones::untold_in`]).
  */
-{ kind: "undone"; unrecorded: string | null; unmarked: string | null } | 
+{ kind: "undone"; unrecorded: string | null; unmarked: string | null; untold: string[] } | 
 /**  Nothing was written: these chats are not idle, and an undo waits until they are. */
 { kind: "busy"; chats: BusyChat[] };
 

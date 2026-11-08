@@ -75,6 +75,9 @@ pub struct SentReport {
     pub address: String,
     /// Exactly what was sent.
     pub bytes: String,
+    /// Not sent yet (#5693): the report service could not be reached, and it waits on this
+    /// machine; `at` is when it was made, `address` is empty, and `bytes` is what will go.
+    pub waiting: bool,
 }
 
 impl From<purlis_core::report::Sent> for SentReport {
@@ -87,6 +90,7 @@ impl From<purlis_core::report::Sent> for SentReport {
             },
             address: sent.address,
             bytes: sent.bytes,
+            waiting: sent.waiting,
         }
     }
 }

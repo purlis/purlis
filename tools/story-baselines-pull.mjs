@@ -24,7 +24,7 @@
 // **This runs the checked-out head's own code**, `tools/story-baselines.mjs` among it: take the
 // baselines of someone else's pull request only in a checkout of code you would run anyway.
 //
-// It needs `gh`, signed in, and `git`.
+// It needs `gh`, signed in, `git`, `curl` and `unzip`.
 import { spawnSync } from "node:child_process";
 import {
   existsSync,
@@ -35,6 +35,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  statSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, parse, resolve } from "node:path";
@@ -138,12 +139,98 @@ export function clearLeftovers({ tmp = tmpdir(), now = Date.now(), idle = IDLE_M
 /** Why a pull took nothing: said to the person, and the tool exits 1. */
 export class Refused extends Error {}
 
+/** How many times a download that broke off is resumed before the pull gives up. */
+export const ATTEMPTS = 4;
+
+/** curl's exit when the server will not resume a download from where it stopped. */
+const RANGE_REFUSED = 33;
+
+/**
+ * Fetches `artifact` (as the API lists a run's artifact) into the file `to` with `curl`, resuming
+ * from where an attempt stopped, up to {@link ATTEMPTS} times: `gh run download` neither resumes
+ * a download that broke off nor takes an artifact that holds a path twice (#5059). gh's token
+ * reaches `curl` on its standard input, never its arguments, and `curl` sends it to GitHub alone,
+ * not to the storage GitHub redirects to. Answers a line for each attempt that stopped; throws
+ * `Refused` naming the artifact's size and where the last attempt stopped.
+ */
+function download({ exec, run, artifact, to }) {
+  const size = artifact.size_in_bytes;
+  const token = run("gh", ["auth", "token"]);
+  const have = () => (existsSync(to) ? statSync(to).size : 0);
+  const said = [];
+  let why = "";
+  let stopped = 0;
+  for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
+    const got = exec(
+      "curl",
+      [
+        "--fail",
+        "--silent",
+        "--show-error",
+        "--location",
+        "--header",
+        "@-",
+        ...(have() > 0 ? ["--continue-at", "-"] : []),
+        "--output",
+        to,
+        artifact.archive_download_url,
+      ],
+      { encoding: "utf8", input: `Authorization: Bearer ${token}\n` },
+    );
+    if (got.status === 0 && have() === size) return said;
+    why = (got.stderr || got.error?.message || `curl exited ${got.status}`).trim();
+    stopped = have();
+    // More than the whole, or a whole that does not end the download, is no artifact to resume;
+    // and where the storage does not resume one (curl's 33), the next attempt starts again.
+    if (stopped >= size || got.status === RANGE_REFUSED) rmSync(to, { force: true });
+    said.push(`the download of the baselines (${size} bytes) stopped at ${stopped} bytes: ${why}`);
+  }
+  throw new Refused(
+    `the download of the baselines (${size} bytes) stopped at ${stopped} bytes after ${ATTEMPTS} attempts: ${why}`,
+  );
+}
+
+/**
+ * Unpacks the zip `zip` into `into` with `unzip`, answering a line for each path it holds more
+ * than once (#5059): copies that are the same are taken once; copies that differ are refused,
+ * since nothing says which is the picture the run meant.
+ */
+function unpack({ exec, run, zip, into }) {
+  const names = run("unzip", ["-Z1", zip]).split("\n");
+  const seen = new Set();
+  const twice = new Set();
+  for (const name of names) (seen.has(name) ? twice : seen).add(name);
+  const said = [];
+  if (twice.size > 0) {
+    // `unzip -v` starts each entry's line with its length and ends it with its CRC-32 and name.
+    const listed = run("unzip", ["-v", zip]).split("\n");
+    for (const name of [...twice].sort()) {
+      const copies = listed.flatMap((line) => {
+        if (!line.endsWith(`  ${name}`)) return [];
+        const fields = line.slice(0, -name.length - 2).trim().split(/\s+/);
+        return [`${fields[0]} ${fields.pop()}`];
+      });
+      if (copies.length < 2)
+        throw new Refused(
+          `${name} is in the artifact more than once, and unzip's listing does not show its copies, so nothing was taken`,
+        );
+      if (new Set(copies).size !== 1)
+        throw new Refused(
+          `${name} is in the artifact more than once, and the copies differ, so nothing was taken: the stories run that drew it says why`,
+        );
+      said.push(`${name} is in the artifact twice, the same both times, so it was taken once`);
+    }
+  }
+  run("unzip", ["-o", "-qq", zip, "-d", into]);
+  return said;
+}
+
 /**
  * Takes pull request `pr`'s baselines from its newest failed `stories` run in `repo` and writes
  * them into `root`'s `app/`, answering the lines that say what it did; throws `Refused` saying
- * why it took nothing. `exec` runs a command as `spawnSync` does (`gh` and `git` here).
+ * why it took nothing. `exec` runs a command as `spawnSync` does (`gh`, `git`, `curl` and `unzip` here).
  *
- * Everything it downloads, `gh`'s own `gh-artifact.*.zip` among it, goes into one
+ * Everything it downloads, the artifact's zip among it, goes into one
  * `story-baselines-*` folder under `tmp`, which it removes when it finishes, taken or refused:
  * the only thing it keeps is the pictures it writes into `app/`. It first clears the folders that
  * killed pulls left there (`clearLeftovers`).
@@ -151,7 +238,8 @@ export class Refused extends Error {}
 export function pull({ pr, repo = REPO, root, tmp = tmpdir(), exec = spawnSync }) {
   clearLeftovers({ tmp });
   const run = (command, args, options = {}) => {
-    const done = exec(command, args, { encoding: "utf8", ...options });
+    // A run's artifact names about 12,000 pictures, over spawnSync's own 1 MB of output.
+    const done = exec(command, args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, ...options });
     if (done.status !== 0)
       throw new Refused(
         `${command} ${args.join(" ")} failed: ${(done.stderr || done.error?.message || "").trim()}`,
@@ -190,21 +278,30 @@ export function pull({ pr, repo = REPO, root, tmp = tmpdir(), exec = spawnSync }
   );
   const chosen = runToTake(runs, head, from);
   if (!chosen.run) throw new Refused(chosen.why);
+  const kept = JSON.parse(
+    run("gh", [
+      "api",
+      `repos/${repo}/actions/runs/${chosen.run.id}/artifacts?name=${ARTIFACT}`,
+      "--jq",
+      ".artifacts[0]",
+    ]) || "null",
+  );
+  if (kept === null)
+    throw new Refused(
+      `the stories run ${chosen.run.html_url} kept no baselines: a story failed on more than its picture there, and its annotations say which`,
+    );
+  if (kept.expired)
+    throw new Refused(
+      `the baselines the stories run ${chosen.run.html_url} kept have expired: re-run its failed jobs, and take that run's`,
+    );
   const work = mkdtempSync(join(tmp, "story-baselines-"));
   try {
+    const zip = join(work, `${ARTIFACT}.zip`);
+    const said = download({ exec, run, artifact: kept, to: zip });
     const into = join(work, "artifact");
-    // `gh run download` keeps the zip it fetches in the temp folder: this one, so it goes too.
-    const scratch = join(work, "gh");
-    mkdirSync(scratch);
-    const got = exec(
-      "gh",
-      ["run", "download", String(chosen.run.id), "-R", repo, "-n", ARTIFACT, "-D", into],
-      { encoding: "utf8", env: { ...process.env, TMPDIR: scratch, TMP: scratch, TEMP: scratch } },
-    );
-    if (got.status !== 0 || !existsSync(join(into, DRAWN)))
-      throw new Refused(
-        `the stories run ${chosen.run.html_url} kept no baselines: a story failed on more than its picture there, and its annotations say which`,
-      );
+    said.push(...unpack({ exec, run, zip, into }));
+    if (!existsSync(join(into, DRAWN)))
+      throw new Refused(`the baselines the stories run ${chosen.run.html_url} kept hold no ${DRAWN}`);
     const drawn = JSON.parse(readFileSync(join(into, DRAWN), "utf8"));
     const wrong = notOf(drawn, head);
     if (wrong) throw new Refused(wrong);
@@ -225,6 +322,7 @@ export function pull({ pr, repo = REPO, root, tmp = tmpdir(), exec = spawnSync }
     const app = join(root, "app");
     const { taken, removed, unchanged } = take(join(into, "app"), app);
     return [
+      ...said,
       ...removed.map((path) => `deleted: ${path}`),
       `${taken.length} baselines written and ${removed.length} deleted (${unchanged.length} already matched) into ${app}, from ${chosen.run.html_url}: ` +
         "review the pictures that changed (git status), then commit and push them",

@@ -317,14 +317,14 @@ describe("a task's question in the band", () => {
     expect(within(quiz).getByRole("textbox", { name: "Your answer" })).toHaveValue("main");
   });
 
-  it("answers in the Inbox from its row", async () => {
+  it("answers in Asks from its row", async () => {
     await aPane([QUESTION]);
     await unfold();
     const quiz = await within(frame()).findByRole("group", { name: "claude 4 asks" });
 
     await userEvent.click(within(quiz).getByRole("button", { name: "Answer" }));
 
-    await waitFor(() => expect(screen.getByRole("region", { name: /^Inbox/ })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole("tabpanel", { name: "Asks" })).toBeInTheDocument());
   });
 
   it("leaves the pane's bell when closed", async () => {

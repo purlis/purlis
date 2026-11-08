@@ -67,7 +67,7 @@ describe("the keys of the left side (#1673, B-10)", () => {
       search: "⌘⇧F",
       changes: "⌃⇧G",
       skills: "⌘⇧X",
-      inbox: "⌘⇧I",
+      asks: "⌘⇧I",
       panel: "⌘J",
       // F6 is a function key, the same on every platform (#1751).
       next: "F6",
@@ -81,7 +81,7 @@ describe("the keys of the left side (#1673, B-10)", () => {
       search: "Ctrl+Shift+F",
       changes: "Ctrl+Shift+G",
       skills: "Ctrl+Shift+X",
-      inbox: "Ctrl+Shift+I",
+      asks: "Ctrl+Shift+I",
       panel: "Ctrl+J",
       next: "F6",
       previous: "Shift+F6",
@@ -144,10 +144,10 @@ describe("the key of the right side (#1678, B-10)", () => {
   });
 });
 
-describe("the key of the Inbox (#1692, I-2)", () => {
-  it("shows the Inbox on ⌘⇧I, and Ctrl+Shift+I everywhere else", () => {
-    expect(sideKeyOf(press("I", { meta: true, shift: true }), true)).toEqual({ show: "inbox" });
-    expect(sideKeyOf(press("I", { ctrl: true, shift: true }), false)).toEqual({ show: "inbox" });
+describe("the key of Asks (#1692, I-2, #5644)", () => {
+  it("shows Asks on ⌘⇧I, and Ctrl+Shift+I everywhere else", () => {
+    expect(sideKeyOf(press("I", { meta: true, shift: true }), true)).toEqual({ show: "asks" });
+    expect(sideKeyOf(press("I", { ctrl: true, shift: true }), false)).toEqual({ show: "asks" });
   });
 
   it("is the window's while a chat has the keyboard, since Ctrl with Shift and a letter is no byte", () => {
@@ -156,14 +156,14 @@ describe("the key of the Inbox (#1692, I-2)", () => {
     );
   });
 
-  it("is not the Inbox's without Shift, which is a terminal's Tab off a Mac", () => {
+  it("is not Asks' without Shift, which is a terminal's Tab off a Mac", () => {
     expect(sideKeyOf(press("i", { meta: true }), true)).toBeUndefined();
     expect(sideKeyOf(press("i", { ctrl: true }), false)).toBeUndefined();
   });
 
   it("is spelled for the platform", () => {
-    expect(sideKeysSaid(true).inbox).toBe("⌘⇧I");
-    expect(sideKeysSaid(false).inbox).toBe("Ctrl+Shift+I");
+    expect(sideKeysSaid(true).asks).toBe("⌘⇧I");
+    expect(sideKeysSaid(false).asks).toBe("Ctrl+Shift+I");
   });
 });
 

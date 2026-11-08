@@ -17,6 +17,7 @@ import type { Change } from "./SkillPage";
 import { BUSY, Held, useRead } from "./SkillRead";
 import { memberKey, saidOf, type Stays } from "./SkillSetReview";
 import { sameLevel } from "./skillChanges";
+import { reviewUpdate } from "./studioSources";
 import { Checkbox } from "./ui/choice/Checkbox";
 import { Fact, Facts } from "./ui/card/Facts";
 import { Disclosure } from "./ui/disclosure/Disclosure";
@@ -102,8 +103,10 @@ export async function readSetUpdates(
       else stays("No update is waiting.");
       continue;
     }
+    // An update from an extension's source is reviewed through it, and the core holds what that
+    // review read for the accept to copy (#5760).
     asked.push(
-      commands.skillUpdateReview(plane, offer.level, offer.name).then((review) => {
+      reviewUpdate(plane, offer).then((review) => {
         if (review.status === "ok") return { member, offer, review: review.data };
         stays(`Its update could not be read: ${review.error}`);
         return undefined;

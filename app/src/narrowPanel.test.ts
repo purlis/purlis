@@ -113,7 +113,7 @@ describe("a Lower icon pressed in a narrow window", () => {
   });
 
   it("of a sidebar's view: the window's own pick, and the half used last stays", () => {
-    expect(narrowPicked(DEFAULT_ARRANGEMENT, "inbox", "left")).toEqual({
+    expect(narrowPicked(DEFAULT_ARRANGEMENT, "asks", "left")).toEqual({
       last: "left",
       forward: true,
     });

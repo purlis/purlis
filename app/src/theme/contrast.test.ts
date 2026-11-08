@@ -118,6 +118,14 @@ const READ_BY_HAND: readonly string[] = [
   // appearance by `ui/notice/noticeCardFill.test.ts`.
   '[data-scope="notice"][data-part="root"][data-layout="card"] > [data-scope="button-row"] [data-scope="button"][data-part="root"][data-variant="secondary"] | background-color: color-mix(in oklab, var(--control-base), var(--text-primary) 14%)',
   '[data-scope="notice"][data-part="root"][data-layout="card"] > [data-scope="button-row"] [data-scope="button"][data-part="root"][data-variant="secondary"]:is( [data-hovered]:not([data-disabled]) | background-color: color-mix(in oklab, var(--control-base), var(--text-primary) 22%)',
+  // A message row's mark (#5649): its state's glyph on a seventh of that same colour over the
+  // view's ground, which no pair names. It is decoration (`aria-hidden`): the row's meta says
+  // its state in words, so nothing is told by the glyph alone (WCAG 1.4.1), and the state
+  // colours themselves are held on the view's grounds in `PAIRS`.
+  '[data-scope="message"][data-variant="waiting"] > [data-part="mark"] | background-color: color-mix(in oklab, var(--state-waiting) 14%, transparent)',
+  '[data-scope="message"][data-variant="done"] > [data-part="mark"] | background-color: color-mix(in oklab, var(--state-success) 14%, transparent)',
+  '[data-scope="message"][data-variant="failed"] > [data-part="mark"] | background-color: color-mix(in oklab, var(--state-failed) 14%, transparent)',
+  '[data-scope="message"][data-variant="report"] > [data-part="mark"] | background-color: color-mix(in oklab, var(--accent-base) 14%, transparent)',
 ];
 
 /** The parts of a selector that say a state, not what is drawn: the pointer on it, the

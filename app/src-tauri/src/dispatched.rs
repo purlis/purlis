@@ -1982,6 +1982,7 @@ fn noted(held: &Held, key: String, kind: purlis_core::inboxupdates::Kind, task: 
         says,
         read: false,
         dismissed: false,
+        baselined: false,
     });
 }
 

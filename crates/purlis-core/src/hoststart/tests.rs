@@ -410,3 +410,54 @@ fn chats_that_write_their_settings_at_once_all_start() {
         }
     }
 }
+
+fn pairs(of: &[(&str, &str)]) -> Vec<(String, String)> {
+    of.iter()
+        .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
+        .collect()
+}
+
+#[test]
+fn an_outcome_eval_shells_own_temp_folder_stands_over_the_one_its_claude_code_line_names() {
+    let temp = crate::sandbox::claude_wrap::TMP_ENV;
+    let mut env = pairs(&[("HOME", "/home")]);
+    wrapped_over(
+        &mut env,
+        pairs(&[(temp, "/eval/temp"), ("TMPDIR", "/eval/temp")]),
+        pairs(&[(temp, "/chat/temp"), ("HTTPS_PROXY", "http://proxy")]),
+    );
+    env.sort();
+    assert_eq!(
+        env,
+        pairs(&[
+            (temp, "/eval/temp"),
+            ("HOME", "/home"),
+            ("HTTPS_PROXY", "http://proxy"),
+            ("TMPDIR", "/eval/temp"),
+        ])
+    );
+}
+
+#[test]
+fn a_chats_claude_code_line_names_its_own_temp_folder_where_nothing_armed_names_one() {
+    let temp = crate::sandbox::claude_wrap::TMP_ENV;
+    let mut env = pairs(&[(temp, "/profile/temp")]);
+    wrapped_over(&mut env, Vec::new(), pairs(&[(temp, "/chat/temp")]));
+    assert_eq!(env, pairs(&[(temp, "/chat/temp")]));
+}
+
+#[test]
+fn a_wrap_that_sets_its_own_tmpdir_names_claude_codes_temp_folder_over_the_armings() {
+    let temp = crate::sandbox::claude_wrap::TMP_ENV;
+    let mut env = Vec::new();
+    wrapped_over(
+        &mut env,
+        pairs(&[(temp, "/eval/temp"), ("TMPDIR", "/eval/temp")]),
+        pairs(&[("TMPDIR", "/wrap/temp"), (temp, "/wrap/temp")]),
+    );
+    env.sort();
+    assert_eq!(
+        env,
+        pairs(&[(temp, "/wrap/temp"), ("TMPDIR", "/wrap/temp")])
+    );
+}

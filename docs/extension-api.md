@@ -23,7 +23,7 @@ shape with no protocol promise:
 
 | Word | What is missing |
 |---|---|
-| `skill-source` | Installing and pinning from it (#3089), and showing in the studio's Browse (#3092). |
+| `skill-source` | Nothing the studio needs: it installs, pins and updates through purlis's review (#3089), shows in Sources (#3092), and installs from `purlis skill install --extension` and updates in Review updates (#5760). It joins version 1 by an amendment of its own. A skill's files whose paths are one on a disk that ignores case are refused. |
 | `skill-lint` | Its findings in the install review (#3090). |
 | `skill-template` | Landing as a draft skill (#3091). |
 

@@ -87,7 +87,8 @@ describe("a Notice's ways out", () => {
   it("are the shared small button in the Inbox's list too", async () => {
     render(<NoticeList>{everyWay("inbox")}</NoticeList>);
     const line = await screen.findByRole("status", { name: "Every way" });
-    const row = line.querySelector('[data-scope="button-row"]') as HTMLElement;
+    // Its ways are the row's links (#5649): each the shared small button.
+    const row = line.querySelector('[data-scope="message"][data-part="links"]') as HTMLElement;
     const ways = within(row).getAllByRole("button");
     expect(ways.map((one) => one.textContent)).toContain("Copy command");
     for (const button of ways) isASharedWrappingButton(button);
@@ -149,12 +150,12 @@ describe("a Notice's surface", () => {
     expect(drawnWith(trouble, "color")).toBe("var(--danger-text)");
   });
 
-  it("is a card of its own in the Notices centre, whose list draws no box (#5217)", async () => {
+  it("is a row of the Notices view, with no box, whose list draws none either (#5649)", async () => {
     render(<NoticeList>{everyWay("inbox")}</NoticeList>);
     const line = await screen.findByRole("status", { name: "Every way" });
-    const card = line.closest('[data-scope="notice"][data-part="root"]') as HTMLElement;
-    expect(card).toHaveAttribute("data-placement", "inbox");
-    expect(drawnWith(card, "border-width")).toBe("1px");
-    expect(drawnWith(card, "background-color")).toBe("var(--surface-raised)");
+    const row = line.querySelector('[data-scope="message"][data-part="root"]') as HTMLElement;
+    expect(line.closest('[data-scope="notice"][data-part="root"]')).toBeNull();
+    expect(drawnWith(row, "border")).toBe("0");
+    expect(drawnWith(row, "background-color")).toBe("transparent");
   });
 });

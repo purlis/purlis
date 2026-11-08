@@ -33,6 +33,16 @@ import { CHAT_EVENTS } from "./chatEvents";
 import { CHANGE, FIRST_LINE } from "./QuizBand";
 import { CLOSE_QUIZ } from "./TaskQuiz";
 
+/** Updates, opened from the right bar (#5644): the updates the Inbox listed after its asks. */
+async function showUpdates() {
+  await userEvent.click(
+    within(screen.getByRole("tablist", { name: "Attention" })).getByRole("tab", {
+      name: "Updates",
+    }),
+  );
+  return screen.findByRole("tabpanel", { name: "Updates" });
+}
+
 /**
  * **The Chats section, against the whole window** (#1447): every running chat of the project
  * in one tree in the left region, nested by which chat started which. A handoff has a tab; a
@@ -1000,7 +1010,7 @@ describe("the needs-you mark rolling up the tree (#1448)", () => {
     move(3, "waiting", 10, [3]);
 
     await userEvent.click(await screen.findByRole("button", { name: "1 thing waits on you" }));
-    const inbox = await screen.findByRole("tabpanel", { name: "Inbox" });
+    const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
     await userEvent.click(await within(inbox).findByRole("button", { name: /^Go to chat / }));
 
     // A Go is a press (#4757): chat 3 works in beta, whose strip comes forward with it.
@@ -1033,8 +1043,10 @@ describe("what needs you (#1448)", () => {
     move(3, "running", 10, [3], [], [{ kind: "report_undelivered", asker: "drop commons" }]);
 
     await userEvent.click(await screen.findByRole("button", { name: "1 thing waits on you" }));
-    const inbox = await screen.findByRole("tabpanel", { name: "Inbox" });
-    // An update of the Inbox's, about that chat (#1694): information, not a decision it waits on.
+    await screen.findByRole("tabpanel", { name: "Asks" });
+    // An update, about that chat (#1694): information, not a decision it waits on, so it is
+    // listed in Updates and not where the hand lands (#5644).
+    const inbox = await showUpdates();
     const said = await within(inbox).findByText(
       /its report has nowhere to go because drop commons has closed or its program has ended/,
     );
@@ -1052,12 +1064,14 @@ describe("what needs you (#1448)", () => {
     move(3, "waiting", 10, [3], [], [{ kind: "report_undelivered", asker: "drop commons" }]);
 
     await userEvent.click(await screen.findByRole("button", { name: /things? waits? on you$/ }));
-    const inbox = await screen.findByRole("tabpanel", { name: "Inbox" });
+    await screen.findByRole("tabpanel", { name: "Asks" });
+    const inbox = await showUpdates();
     const said = await within(inbox).findByText(/its report has nowhere to go because/);
     const row = said.closest("li");
     if (row === null) throw new Error("the update has no row");
     const dismiss = within(row).getByRole("button", { name: /^Dismiss: / });
-    expect(tipOf(dismiss)).toEqual("Put this update away. What the chat asks stays");
+    // An icon button's tooltip is its name, then its hint (#5649: Dismiss is the row's ×).
+    expect(tipOf(dismiss)).toContain("Put this update away. What the chat asks stays");
     await userEvent.click(dismiss);
 
     // Dismissing an update answers no ask: the chat's needs-you item is not ignored.
@@ -1332,7 +1346,7 @@ describe("what the chat that asked is shown of a stop (#1448)", () => {
     move(1, "waiting", 10, [1], [], null, [], ["drop commons"]);
 
     await userEvent.click(await screen.findByRole("button", { name: "1 thing waits on you" }));
-    const inbox = await screen.findByRole("tabpanel", { name: "Inbox" });
+    const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
     const said = await within(inbox).findByText(/drop commons was stopped/);
     expect(said.textContent).not.toContain("reported back");
   });
@@ -1776,7 +1790,7 @@ describe("a chat's state, as a word and a shape (#1484)", () => {
     move(2, "waiting", 12, [2]);
     await both({ word: "needs you", shape: "hand" });
     await userEvent.click(await screen.findByRole("button", { name: "1 thing waits on you" }));
-    const inbox = await screen.findByRole("tabpanel", { name: "Inbox" });
+    const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
     expect(await within(inbox).findByRole("button", { name: "Go to chat talk" })).toBeTruthy();
     // And the row above wears the hand that leads to it, which now points at a row that
     // wears one.

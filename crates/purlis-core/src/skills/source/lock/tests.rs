@@ -11,12 +11,12 @@ fn entry(level: Level) -> Locked {
         source_name: None,
         name: "deploy".into(),
         level: AtLevel(level),
-        source: Remote {
+        source: Origin::Git(Remote {
             url: "https://example.com/skills".into(),
             branch: None,
-        },
+        }),
         folder: "skills/deploy".into(),
-        commit: Commit::parse(&"a".repeat(40)).unwrap(),
+        pin: Pin::Commit(Commit::parse(&"a".repeat(40)).unwrap()),
         digest: "sha256:00".into(),
         files: vec![Wrote {
             path: "SKILL.md".into(),
@@ -105,5 +105,100 @@ fn a_lockfile_naming_a_way_out_is_refused_whole() {
         std::fs::write(root.join(FILE), text).unwrap();
         let why = read(root, Kept::Shared).err().unwrap();
         assert!(!why.contains(FILE), "{why}");
+    }
+}
+
+fn from_extension(level: Level) -> Locked {
+    Locked {
+        source: Origin::Extension("acme-registry".into()),
+        pin: Pin::Revision(Revision::parse("v1.2.3+build.7").unwrap()),
+        folder: "deploy".into(),
+        ..entry(level)
+    }
+}
+
+#[test]
+fn an_extension_sources_entry_is_pinned_by_its_revision_and_makes_the_file_version_two() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let lock = Lockfile {
+        version: VERSION,
+        skills: vec![from_extension(Level::project())],
+    };
+    write(root, Kept::Shared, None, &lock).unwrap();
+    let text = std::fs::read_to_string(root.join(FILE)).unwrap();
+    let doc: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(doc["version"], 2, "{text}");
+    let one = &doc["skills"][0];
+    assert_eq!(
+        one["source"],
+        serde_json::json!({ "extension": "acme-registry" })
+    );
+    assert_eq!(one["revision"], "v1.2.3+build.7");
+    assert!(one.get("commit").is_none(), "{text}");
+    let read_back = read(root, Kept::Shared).unwrap();
+    assert_eq!(read_back.lock.skills, lock.skills);
+
+    // A file of git entries alone stays version 1, so an older purlis still reads it.
+    let git = Lockfile {
+        version: VERSION,
+        skills: vec![entry(Level::project())],
+    };
+    write(root, Kept::Shared, read_back.was.as_deref(), &git).unwrap();
+    let text = std::fs::read_to_string(root.join(FILE)).unwrap();
+    assert!(text.contains("\"version\": 1"), "{text}");
+    assert!(read(root, Kept::Shared).is_ok());
+}
+
+#[test]
+fn an_entry_that_mixes_a_git_source_with_a_revision_or_names_a_bad_extension_is_refused_whole() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let good = || {
+        serde_json::json!({
+            "name": "deploy", "level": "skills", "folder": "deploy",
+            "source": { "extension": "acme-registry" }, "revision": "r1",
+            "digest": "sha256:00", "files": [{ "path": "SKILL.md", "sha256": "sha256:11" }],
+        })
+    };
+    let refused = |one: serde_json::Value| {
+        let doc = serde_json::json!({ "version": 2, "skills": [one] });
+        std::fs::write(root.join(FILE), doc.to_string()).unwrap();
+        read(root, Kept::Shared).is_err()
+    };
+    assert!(!refused(good()), "the good entry reads");
+    std::fs::write(
+        root.join(FILE),
+        serde_json::json!({ "version": 1, "skills": [good()] }).to_string(),
+    )
+    .unwrap();
+    assert!(
+        read(root, Kept::Shared).is_err(),
+        "an extension's entry in a version 1 file"
+    );
+    let mut both = good();
+    both["source"]["url"] = "https://example.com/skills".into();
+    assert!(refused(both), "a source that is both git and an extension");
+    let mut commit = good();
+    commit["commit"] = "a".repeat(40).into();
+    assert!(
+        refused(commit),
+        "a pin that is both a commit and a revision"
+    );
+    let mut git_revision = good();
+    git_revision["source"] = serde_json::json!({ "url": "https://example.com/skills" });
+    assert!(refused(git_revision), "a git source pinned by a revision");
+    let mut no_pin = good();
+    no_pin.as_object_mut().unwrap().remove("revision");
+    assert!(refused(no_pin), "an extension's entry with no revision");
+    for bad in ["../up", "", "a/b", "-dash"] {
+        let mut one = good();
+        one["source"]["extension"] = bad.into();
+        assert!(refused(one), "the extension id {bad:?}");
+    }
+    for bad in ["", "a b", "../x", &"r".repeat(129)] {
+        let mut one = good();
+        one["revision"] = bad.into();
+        assert!(refused(one), "the revision {bad:?}");
     }
 }

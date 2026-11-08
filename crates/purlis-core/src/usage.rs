@@ -655,6 +655,68 @@ pub fn spent(plane: &Path, chat: &str) -> Option<Spent> {
     (sane(&spent) && !spent.is_empty()).then_some(spent)
 }
 
+/// **The file of when chat `chat`'s usage limit resets** (#5718), beside its spend file:
+/// `app/spend/<chat>.limit.json`, or `None` where `chat` could not name one.
+pub fn limit_file(plane: &Path, chat: &str) -> Option<PathBuf> {
+    contain::mintable(chat)
+        .is_ok()
+        .then(|| spend_dir(plane).join(format!("{chat}.limit.json")))
+}
+
+/// **When the usage limit a status-line payload says is reached resets**, in seconds since
+/// 1970 (#5718): the latest `resets_at` of the windows of its `rate_limits` used up whole (Claude
+/// Code's `five_hour`, `seven_day` and the like, each `{used_percentage, resets_at}`). `None`
+/// where no window is used up, or the payload says none.
+pub fn limit_resets(payload: &Value) -> Option<i64> {
+    payload
+        .get("rate_limits")?
+        .as_object()?
+        .values()
+        .filter(|window| {
+            window
+                .get("used_percentage")
+                .and_then(Value::as_f64)
+                .is_some_and(|used| used >= 100.0)
+        })
+        .filter_map(|window| window.get("resets_at").and_then(Value::as_i64))
+        .max()
+}
+
+/// **Writes down when chat `chat`'s usage limit resets**, where `payload` says one is reached,
+/// and takes it away where it says none is ([`limit_resets`]): what a grade's chat stopped at
+/// the limit says Resume waits for (#5718). Whether it was written. Best effort, as [`record`]
+/// is; a payload that says nothing of limits leaves the file as it was.
+pub fn record_limit(plane: &Path, chat: &str, payload: &Value) -> bool {
+    let Some(path) = limit_file(plane, chat) else {
+        return false;
+    };
+    if payload.get("rate_limits").is_none() {
+        return false;
+    }
+    match limit_resets(payload) {
+        Some(at) => {
+            let row = serde_json::json!({ "resets_at": at }).to_string();
+            write_row(plane, &path, format!("{row}\n").as_bytes()).is_ok()
+        }
+        None => {
+            let _ = std::fs::remove_file(&path);
+            false
+        }
+    }
+}
+
+/// **When chat `chat`'s usage limit resets, as an RFC 3339 time**, where its harness last said
+/// one is reached ([`record_limit`]). Read through the same gate as the spend file.
+pub fn limit_reset(plane: &Path, chat: &str) -> Option<String> {
+    let path = limit_file(plane, chat)?;
+    let row = rows_at(plane, &path).into_iter().next()?;
+    let at = serde_json::from_str::<Value>(&row)
+        .ok()?
+        .get("resets_at")?
+        .as_i64()?;
+    chrono::DateTime::from_timestamp(at, 0).map(|at| at.to_rfc3339())
+}
+
 // ---- reading it back ------------------------------------------------------------------------
 //
 // Everything above WRITES the record. What follows is the first reader outside the writer:
@@ -1723,5 +1785,34 @@ mod tests {
         assert!(says(&plane, "s2", 0.125, 500, 100));
 
         assert_eq!(spent(&plane, CHAT), costing(0.625, 4_500, 900));
+    }
+
+    #[test]
+    fn a_usage_limit_reached_is_kept_with_when_it_resets_and_goes_once_it_is_not() {
+        let dir = tempfile::tempdir().unwrap();
+        let plane = std::fs::canonicalize(dir.path()).unwrap();
+        let reached = json!({"session_id": "s1", "rate_limits": {
+            "five_hour": {"used_percentage": 100, "resets_at": 1_762_610_400},
+            "seven_day": {"used_percentage": 40, "resets_at": 1_763_000_000},
+        }});
+        assert_eq!(limit_resets(&reached), Some(1_762_610_400));
+        assert!(record_limit(&plane, CHAT, &reached));
+        assert_eq!(
+            limit_reset(&plane, CHAT).as_deref(),
+            Some("2025-11-08T14:00:00+00:00")
+        );
+        // A payload that says nothing of limits leaves it; one under every limit takes it away.
+        assert!(!record_limit(&plane, CHAT, &json!({"session_id": "s1"})));
+        assert!(limit_reset(&plane, CHAT).is_some());
+        let under = json!({"rate_limits": {"five_hour": {"used_percentage": 12, "resets_at": 1}}});
+        assert_eq!(limit_resets(&under), None);
+        record_limit(&plane, CHAT, &under);
+        assert_eq!(limit_reset(&plane, CHAT), None);
+    }
+
+    #[test]
+    fn a_limits_file_is_named_only_by_a_chat_that_names_one_file() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(limit_file(dir.path(), "../x"), None);
     }
 }

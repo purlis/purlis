@@ -5,6 +5,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Plus, RotateCw } from "lucide-react";
 import {
   commands,
+  type ExtensionSkillSource,
   type InstalledCopy,
   type InstallReview,
   type InstallSetReview,
@@ -35,6 +36,20 @@ import { GrantPicker } from "./SkillLevelPickers";
 import { BUSY, Held, reading, useRead, type Read } from "./SkillRead";
 import { NotRead } from "./SkillPanels";
 import { sourceKey, type SourcesAt } from "./skillStudio";
+import {
+  acceptUpdate,
+  browseSource,
+  extensionSource,
+  gitSource,
+  installFrom,
+  installedFrom,
+  originKey,
+  pinWord,
+  reviewInstall,
+  reviewInstallSet,
+  reviewUpdate,
+  type StudioSource,
+} from "./studioSources";
 import type { Change as StudioChange } from "./SkillPage";
 import { SetChoosePage, SetReviewPage, applySet, memberKey, setTitle } from "./SkillSetReview";
 import { SetUpdateReviewPage, applySetUpdate } from "./SkillSetUpdateReview";
@@ -85,6 +100,13 @@ import { ReviewPage } from "./ui/review-page/ReviewPage";
  *   #4186), the source's diff, the edits made here since the install, then Accept update or Not
  *   now at the foot.
  *
+ * - **An extension's source** (#3092): each extension that declares `skill-source`, approved here
+ *   and on in the project, is a row of Your sources beside the git ones and opens the same page,
+ *   reviews, Install all… and Review updates…, at the revision it names. It goes with its
+ *   extension, so it has no Remove source…. Each update copies what its own review read
+ *   (`studioSources`), several at once included (#5760), and its skills' rows carry what their
+ *   files do, as a git source's do, read to browse and never what is installed.
+ *
  * Both reviews are consent surfaces: they follow the review page's rules (`ui/review-page`), and
  * a main action that cannot be pressed says why.
  */
@@ -113,11 +135,11 @@ const WHO: Record<SkillSource["kept"], string> = {
 
 /** What the Sources page says it holds, under its name. */
 export const SOURCES_LEAD =
-  "A source is a git repository of skills. An install copies a skill into this project, pinned to the commit you reviewed.";
+  "A source is a git repository of skills, or an extension that offers them. An install copies a skill into this project, pinned to the version you reviewed.";
 
 /** The update offered for `name` from the source `key`, if there is one. */
 function offerFor(updates: SkillUpdates | undefined, key: string, name: string) {
-  return updates?.offers.find((one) => sourceKey(one.remote) === key && one.name === name);
+  return updates?.offers.find((one) => originKey(one.source) === key && one.name === name);
 }
 
 /**
@@ -172,7 +194,20 @@ function checkedWhen(at: number | null | undefined, now: Date): string | null {
 }
 
 /** What a source's row and its page say of it under its name, with what its last check found. */
-function aboutSource(source: SkillSource, checked: string | null = null): string {
+function aboutSource(source: StudioSource, checked: string | null = null): string {
+  return source.kind === "git"
+    ? aboutGit(source.source, checked)
+    : aboutExtension(source.extension);
+}
+
+/** What an extension's source's row and page say of it: the extension it is, and how many
+ *  skills are installed from it (#3092). */
+function aboutExtension(extension: ExtensionSkillSource): string {
+  return [`The extension ${extension.id}`, `${extension.installed} installed`].join(" · ");
+}
+
+/** What a git source's row and page say of it. */
+function aboutGit(source: SkillSource, checked: string | null): string {
   return [
     source.remote.url,
     source.folder === null ? null : `folder ${source.folder}`,
@@ -190,6 +225,7 @@ function aboutSource(source: SkillSource, checked: string | null = null): string
 function useSourcesRead(plane: string, changed: number, onTheList: boolean) {
   const [asked, setAsked] = useState(0);
   const [sources, setSources] = useState<Read<readonly SkillSource[]>>();
+  const [extensions, setExtensions] = useState<readonly ExtensionSkillSource[]>([]);
   const [offered, setOffered] = useState<readonly OfferedSource[]>([]);
   const [updates, setUpdates] = useState<Read<SkillUpdates>>();
   const [checked, setChecked] = useState<readonly SourceChecked[]>([]);
@@ -199,6 +235,10 @@ function useSourcesRead(plane: string, changed: number, onTheList: boolean) {
     let live = true;
     void reading(() => commands.skillSources(plane)).then((read) => {
       if (live) setSources(read);
+    });
+    // The extensions' sources (#3092), listed beside the git ones; none where they cannot be read.
+    void reading(() => commands.skillExtensionSources(plane)).then((read) => {
+      if (live) setExtensions(Array.isArray(read.data) ? read.data : []);
     });
     void reading(() => commands.skillSourcesOffered(plane)).then((read) => {
       if (live && read.data !== undefined) setOffered(read.data);
@@ -223,13 +263,27 @@ function useSourcesRead(plane: string, changed: number, onTheList: boolean) {
       live = false;
     };
   }, [plane, changed, asked, answered, onTheList]);
-  return { sources, offered, updates, checked, again: () => setAsked((n) => n + 1) };
+  return {
+    sources,
+    extensions,
+    offered,
+    updates,
+    checked,
+    again: () => setAsked((n) => n + 1),
+  };
 }
 
-/** What the last check of `source` recorded, among `checked`. */
-function checkedOf(checked: readonly SourceChecked[], source: SkillSource) {
-  const key = sourceKey(source.remote);
-  return checked.find((one) => sourceKey(one.remote) === key);
+/** What the last check of `source` recorded, among `checked`: an extension's is not recorded. */
+function checkedOf(checked: readonly SourceChecked[], source: StudioSource) {
+  return checked.find((one) => sourceKey(one.remote) === source.key);
+}
+
+/** Every source the pages show: the git ones `gits`, then each extension's (#3092). */
+function allSources(
+  gits: readonly SkillSource[],
+  extensions: readonly ExtensionSkillSource[],
+): StudioSource[] {
+  return [...gits.map(gitSource), ...extensions.map(extensionSource)];
 }
 
 /**
@@ -298,10 +352,11 @@ export function SkillSourcesPage({
       then,
     );
   };
-  const sources = read.sources?.data ?? [];
   const updates = read.updates?.data;
   const sourceAt =
-    at === undefined ? undefined : sources.find((one) => sourceKey(one.remote) === at.source);
+    at === undefined
+      ? undefined
+      : allSources(read.sources?.data ?? [], read.extensions).find((one) => one.key === at.source);
   const toSource = (one: SourcesAt): SourcesAt => ({
     at: "source",
     source: one.source,
@@ -332,7 +387,7 @@ export function SkillSourcesPage({
         onCancel={() => onGo(sourceAt === undefined ? undefined : toSource(at))}
         onAccept={(offer, review) =>
           changeThen("The skill was not updated", () =>
-            commands.skillUpdate(plane, offer.level, offer.name, review.accepted, review.grant),
+            acceptUpdate(plane, offer, review.accepted, review.grant),
           )
         }
       />
@@ -379,7 +434,7 @@ export function SkillSourcesPage({
         plane={plane}
         title={`Review updates from ${sourceAt.label}`}
         members={(updates?.offers ?? [])
-          .filter((one) => sourceKey(one.remote) === at.source)
+          .filter((one) => originKey(one.source) === at.source)
           .map((one) => ({ level: one.level, name: one.name, label: one.label }))}
         busy={busy}
         onCancel={() => onGo(toSource(at))}
@@ -425,7 +480,7 @@ export function SkillSourcesPage({
             act: at.act,
             members,
             from: sourceAt.label,
-            removes: at.removesSource === true ? sourceAt : null,
+            removes: at.removesSource === true && sourceAt.kind === "git" ? sourceAt.source : null,
             workspace,
             change: (label, run, then) =>
               changeThen(label, run, at.removesSource === true ? undefined : toSource(at), then),
@@ -470,7 +525,7 @@ export function SkillSourcesPage({
         onInstall={(review, level, grant, renames) =>
           changeThen(
             "The skills were not installed",
-            () => commands.skillInstall(plane, sourceAt, level, review.accepted, grant, renames),
+            () => installFrom(plane, sourceAt, level, review.accepted, grant, renames),
             toSource(at),
           )
         }
@@ -490,7 +545,7 @@ export function SkillSourcesPage({
         onInstall={(review, level, grant, renames) =>
           changeThen(
             "The skill was not installed",
-            () => commands.skillInstall(plane, sourceAt, level, review.accepted, grant, renames),
+            () => installFrom(plane, sourceAt, level, review.accepted, grant, renames),
             toSource(at),
           )
         }
@@ -508,16 +563,12 @@ export function SkillSourcesPage({
         onGo={onGo}
         onOpenSkill={onOpenSkill}
         onChecked={read.again}
-        onConfirm={() =>
-          change("The source was not confirmed", () =>
-            commands.skillSourceConfirm(plane, sourceAt.remote),
-          )
+        onConfirm={(remote) =>
+          change("The source was not confirmed", () => commands.skillSourceConfirm(plane, remote))
         }
         workspace={workspace}
-        onRemove={() =>
-          changeThen("The source was not removed", () =>
-            commands.skillSourceRemove(plane, sourceAt.remote),
-          )
+        onRemove={(remote) =>
+          changeThen("The source was not removed", () => commands.skillSourceRemove(plane, remote))
         }
       />
     );
@@ -562,8 +613,8 @@ function SourcesList({
   const review = (offer: SkillUpdateOffer) =>
     onGo({
       at: "update",
-      source: sourceKey(offer.remote),
-      label: offer.remote.label,
+      source: originKey(offer.source),
+      label: offer.source.label,
       skill: offer.name,
     });
   const fixes = offers.map((offer): NoticeAction => ({
@@ -603,9 +654,9 @@ function SourcesList({
                 ? "An installed skill has a newer version: "
                 : "Installed skills have newer versions: "}
               {offers.map((offer, at) => (
-                <span key={`${sourceKey(offer.remote)}\u0000${offer.name}`}>
+                <span key={`${originKey(offer.source)}\u0000${offer.name}`}>
                   {at > 0 && ", "}
-                  {offer.name} from {offer.remote.label}
+                  {offer.name} from {offer.source.label}
                   {offer.edited && " (edited here since it was installed)"}
                 </span>
               ))}
@@ -644,8 +695,9 @@ function SourcesList({
             Your sources
           </h3>
           <Held read={read.sources} what="this project's skill sources" again={read.again}>
-            {(sources) =>
-              sources.length === 0 ? (
+            {(gits) => {
+              const sources = allSources(gits, read.extensions);
+              return sources.length === 0 ? (
                 <EmptyState
                   headline="This project has no skill sources yet"
                   body="A source you add is listed here, with its skills to review and install."
@@ -666,14 +718,14 @@ function SourcesList({
                 <List
                   aria-label="Your sources"
                   onAction={(key) => {
-                    const source = sources.find((one) => sourceKey(one.remote) === key);
+                    const source = sources.find((one) => one.key === key);
                     if (source !== undefined)
                       onGo({ at: "source", source: String(key), label: source.label });
                   }}
                 >
                   {sources.map((source) => {
-                    const key = sourceKey(source.remote);
-                    const waiting = offers.filter((one) => sourceKey(one.remote) === key).length;
+                    const key = source.key;
+                    const waiting = offers.filter((one) => originKey(one.source) === key).length;
                     const unconfirmed = updates?.unconfirmed.some(
                       (one) => sourceKey(one.remote) === key,
                     );
@@ -704,8 +756,8 @@ function SourcesList({
                     );
                   })}
                 </List>
-              )
-            }
+              );
+            }}
           </Held>
         </section>
         {read.offered.length > 0 && (
@@ -875,7 +927,7 @@ function SourcePage({
   plane: string;
   /** The workspace the studio shows, which is what a skill is turned off or on in. */
   workspace: string | null;
-  source: SkillSource;
+  source: StudioSource;
   updates: SkillUpdates | undefined;
   /** When the source was last checked, as recorded (#3840), until its browse here answers. */
   checked: number | null;
@@ -885,15 +937,13 @@ function SourcePage({
   onOpenSkill: (name: string) => void;
   /** Check for updates was pressed: the updates are asked again too. */
   onChecked: () => void;
-  onConfirm: () => void;
-  onRemove: () => void;
+  onConfirm: (remote: SkillSource["remote"]) => void;
+  onRemove: (remote: SkillSource["remote"]) => void;
 }) {
-  const key = sourceKey(source.remote);
-  const { read, again } = useRead(`${key}\u0000${changed}`, () =>
-    commands.skillSourceBrowse(plane, source),
-  );
+  const key = source.key;
+  const { read, again } = useRead(`${key}\u0000${changed}`, () => browseSource(plane, source));
   const installed = useRead(`${key}\u0000${changed}\u0000${workspace ?? ""}`, () =>
-    commands.skillSourceInstalled(plane, source.remote, workspace),
+    installedFrom(plane, source, workspace),
   ).read;
   const copies = Array.isArray(installed?.data) ? installed.data : [];
   const [removing, setRemoving] = useState(false);
@@ -927,7 +977,7 @@ function SourcePage({
   const updatesWhy =
     updates === undefined
       ? "The updates are being read."
-      : updates.offers.some((one) => sourceKey(one.remote) === key)
+      : updates.offers.some((one) => originKey(one.source) === key)
         ? busy
           ? BUSY
           : undefined
@@ -961,7 +1011,8 @@ function SourcePage({
             {read?.data !== undefined && (
               <>
                 {" "}
-                · at <code>{read.data.commit.short}</code>
+                · at {pinWord(source) === "revision" ? "revision " : ""}
+                <code>{read.data.commit.short}</code>
               </>
             )}
           </>
@@ -1020,18 +1071,21 @@ function SourcePage({
           >
             Check for updates
           </Button>
-          <Button
-            size="sm"
-            isDisabled={busy}
-            tooltip={busy ? BUSY : undefined}
-            onPress={() => {
-              // Keeping the skills is what it starts from, each time it opens.
-              setAlsoDeleting(false);
-              setRemoving(true);
-            }}
-          >
-            Remove source…
-          </Button>
+          {/* An extension's source goes with its extension, in Extensions. */}
+          {source.kind === "git" && (
+            <Button
+              size="sm"
+              isDisabled={busy}
+              tooltip={busy ? BUSY : undefined}
+              onPress={() => {
+                // Keeping the skills is what it starts from, each time it opens.
+                setAlsoDeleting(false);
+                setRemoving(true);
+              }}
+            >
+              Remove source…
+            </Button>
+          )}
         </div>
       </ViewListHead>
       <div className="skill-studio-page">
@@ -1045,7 +1099,9 @@ function SourcePage({
                 label: "Confirm it",
                 off: busy ? BUSY : undefined,
                 primary: true,
-                onPress: onConfirm,
+                onPress: () => {
+                  if (source.kind === "git") onConfirm(source.source.remote);
+                },
               },
             ]}
           >
@@ -1135,7 +1191,7 @@ function SourcePage({
           </p>
         )}
       </div>
-      {removing && (
+      {removing && source.kind === "git" && (
         <Dialog
           title={`Remove ${source.label}?`}
           description={
@@ -1178,7 +1234,7 @@ function SourcePage({
                   tooltip: busy ? BUSY : undefined,
                   onPress: () => {
                     setRemoving(false);
-                    onRemove();
+                    onRemove(source.source.remote);
                   },
                 }
           }
@@ -1210,7 +1266,7 @@ function SetChooseRead({
   onReview,
 }: {
   plane: string;
-  source: SkillSource;
+  source: StudioSource;
   act: SkillSetAct;
   workspace: string | null;
   level: SkillLevel;
@@ -1219,9 +1275,8 @@ function SetChooseRead({
   onCancel: () => void;
   onReview: (members: SkillSetMember[], ticked: string[]) => void;
 }) {
-  const { read, again } = useRead(
-    `${sourceKey(source.remote)}\u0000${changed}\u0000${workspace ?? ""}`,
-    () => commands.skillSourceInstalled(plane, source.remote, workspace),
+  const { read, again } = useRead(`${source.key}\u0000${changed}\u0000${workspace ?? ""}`, () =>
+    installedFrom(plane, source, workspace),
   );
   const title = setTitle(act, source.label);
   return !Array.isArray(read?.data) ? (
@@ -1521,7 +1576,7 @@ function InstallReviewPage({
   onInstall,
 }: {
   plane: string;
-  source: SkillSource;
+  source: StudioSource;
   name: string;
   levels: readonly StudioLevel[];
   workspaces: readonly string[];
@@ -1538,9 +1593,8 @@ function InstallReviewPage({
   const [level, setLevel] = useState<SkillLevel>(start);
   // Read again where it lands changes: a skill it refers to that the level holds already is
   // left as it is, not brought along (#4032).
-  const { read, again } = useRead(
-    `${sourceKey(source.remote)}\u0000${name}\u0000${JSON.stringify(level)}`,
-    () => commands.skillInstallReview(plane, source, [name], level),
+  const { read, again } = useRead(`${source.key}\u0000${name}\u0000${JSON.stringify(level)}`, () =>
+    reviewInstall(plane, source, [name], level),
   );
   const picker = picking(
     levels.map((one) => one.level),
@@ -1607,12 +1661,13 @@ function InstallReviewPage({
         {(data) => (
           <>
             <p className="honest" data-testid="install-commit">
-              You are reviewing {source.label} at commit <code>{data.commit.short}</code>:{" "}
-              {counted(data.skills.length, "skill", "skills")}
+              You are reviewing {source.label} at {pinWord(source)} <code>{data.commit.short}</code>
+              : {counted(data.skills.length, "skill", "skills")}
               {risky > 0 && `, ${counted(risky, "risky item", "risky items")} marked`}. What you
-              install stays pinned to this commit; a newer one is offered later, and changes nothing
-              until you accept it. The review is read from the files: a script can do more when it
-              runs, and the chat&apos;s sandbox bounds that. Installing copies all of them or none.
+              install stays pinned to this {pinWord(source)}; a newer one is offered later, and
+              changes nothing until you accept it. The review is read from the files: a script can
+              do more when it runs, and the chat&apos;s sandbox bounds that. Installing copies all
+              of them or none.
             </p>
             {data.skills.map((skill) => (
               <SkillReviewed
@@ -1648,7 +1703,7 @@ function ChooseSkillsPage({
   kept,
 }: {
   plane: string;
-  source: SkillSource;
+  source: StudioSource;
   updates: SkillUpdates | undefined;
   changed: number;
   /** What was ticked when the person came back from the review, kept as they left it. */
@@ -1658,10 +1713,8 @@ function ChooseSkillsPage({
   onUpdate: (name: string) => void;
   onReview: (names: string[]) => void;
 }) {
-  const key = sourceKey(source.remote);
-  const { read, again } = useRead(`${key}\u0000${changed}`, () =>
-    commands.skillSourceBrowse(plane, source),
-  );
+  const key = source.key;
+  const { read, again } = useRead(`${key}\u0000${changed}`, () => browseSource(plane, source));
   const skills = read?.data?.skills ?? [];
   const open = skills.filter((skill) => skill.installed.length === 0).map((skill) => skill.name);
   // Every skill not installed yet, ticked, until the person unticks one (decision 1).
@@ -1915,7 +1968,7 @@ function InstallSetReviewPage({
   onInstall,
 }: {
   plane: string;
-  source: SkillSource;
+  source: StudioSource;
   /** The skills ticked on the list, in its order. */
   named: readonly string[];
   room?: InstallRoom;
@@ -1939,8 +1992,8 @@ function InstallSetReviewPage({
   const { read, again } = useRead(
     names.length === 0
       ? undefined
-      : `${sourceKey(source.remote)}\u0000${JSON.stringify(level)}\u0000${names.join("\u0000")}`,
-    () => commands.skillInstallSetReview(plane, source, [...names], level),
+      : `${source.key}\u0000${JSON.stringify(level)}\u0000${names.join("\u0000")}`,
+    () => reviewInstallSet(plane, source, [...names], level),
   );
   const picker = picking(
     levels.map((one) => one.level),
@@ -2060,12 +2113,13 @@ function InstallSetReviewPage({
             ) : (
               <>
                 <p className="honest" data-testid="install-commit">
-                  You are reviewing {source.label} at commit <code>{data.review.commit.short}</code>
-                  : {counted(data.review.skills.length, "skill", "skills")}
+                  You are reviewing {source.label} at {pinWord(source)}{" "}
+                  <code>{data.review.commit.short}</code>:{" "}
+                  {counted(data.review.skills.length, "skill", "skills")}
                   {risky > 0 && `, ${counted(risky, "risky item", "risky items")} marked`}. Untick a
-                  skill to leave it out. What you install stays pinned to this commit. The review is
-                  read from the files: a script can do more when it runs, and the chat&apos;s
-                  sandbox bounds that. Installing copies all of them or none.
+                  skill to leave it out. What you install stays pinned to this {pinWord(source)}.
+                  The review is read from the files: a script can do more when it runs, and the
+                  chat&apos;s sandbox bounds that. Installing copies all of them or none.
                 </p>
                 {room !== undefined && data.review.skills.length > 0 && (
                   <InstallOver plane={plane} room={room} adding={data.review.skills.length} />
@@ -2191,7 +2245,7 @@ function UpdateReviewPage({
     () =>
       offer === undefined
         ? Promise.resolve({ status: "error" as const, error: "There is no update of it." })
-        : commands.skillUpdateReview(plane, offer.level, offer.name),
+        : reviewUpdate(plane, offer),
   );
   const review = read?.data;
   const why =
@@ -2232,7 +2286,9 @@ function UpdateReviewPage({
             </Facts>
             {!data.from_pin && (
               <p className="honest">
-                The pinned commit is no longer in the source, so this compares with the copy here.
+                {offer.source.kind === "extension"
+                  ? "This compares the extension's newer revision with the copy here."
+                  : "The pinned commit is no longer in the source, so this compares with the copy here."}
               </p>
             )}
             <section aria-labelledby="update-what" className="skill-review">

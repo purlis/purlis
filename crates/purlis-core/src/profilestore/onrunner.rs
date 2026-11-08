@@ -196,6 +196,9 @@ pub fn to_send(kept: &Kept) -> Result<purlis_session_protocol::session::ProfileT
             if !read.left_behind.is_empty() {
                 return Err(too_large());
             }
+            if let Some(why) = its_rules_unread(&kept.harness, folder, &read.unread_listed) {
+                return Err(why);
+            }
             let skipped = read.skipped;
             let mut read = read.files;
             read.retain(|(path, _)| path != super::sent::MCP_SERVERS_FILE);
@@ -228,6 +231,31 @@ pub fn to_send(kept: &Kept) -> Result<purlis_session_protocol::session::ProfileT
         settings,
         ..purlis_session_protocol::session::ProfileToKeep::from(kept.clone())
     })
+}
+
+/// **Why a profile's settings cannot go when its harness's own settings file is there unread**:
+/// a link, a file with another name on the disk, or one that would not open. Sent without it, a
+/// runner drops the copy it holds, and a chat there starts with none of the rules, hooks or
+/// sandbox settings it says, so nothing is sent and the start is refused in words. `unread` is
+/// what the read says of the files the list names ([`super::made::SettingsRead::unread_listed`]).
+fn its_rules_unread(kind: &str, folder: &Path, unread: &[String]) -> Option<String> {
+    let why = unread.iter().find(|why| {
+        why.split_once(": ")
+            .is_some_and(|(path, _)| says_what_a_chat_may_do(kind, path))
+    })?;
+    Some(format!(
+        "its settings file {why}, and without it a chat on the runner would start with none of \
+         its rules, so nothing was sent: keep the file itself in {}, under that one name",
+        folder.display()
+    ))
+}
+
+/// Whether `path` is the file `kind`'s harness reads what a chat may do from: its permissions,
+/// hooks and sandbox.
+fn says_what_a_chat_may_do(kind: &str, path: &str) -> bool {
+    path != super::sent::MCP_SERVERS_FILE
+        && path != "tui.json"
+        && super::sent::rewritten(kind, path)
 }
 
 /// **What the desktop sends a runner of 1.56 or later to keep a profile** (#4081).
@@ -477,6 +505,9 @@ pub fn in_batches_beside(kept: &Kept, held: &[wire::HeldSetting]) -> Result<ToKe
         let files = (read.files.len() + read.left_behind.len()) as u64;
         return Err(refused_over_limit(limits_hit(kept, bytes, files)));
     }
+    if let Some(why) = its_rules_unread(&kept.harness, folder, &read.unread_listed) {
+        return Err(why.into());
+    }
     // Only what the state file says: a file of that name in the folder is no server of its.
     read.files
         .retain(|(path, _)| path != super::sent::MCP_SERVERS_FILE);
@@ -704,6 +735,7 @@ pub fn keep(
         .map_or_else(|| kept.harness.clone(), |d| d.title.clone());
     let folder = homes.folder_of(&kept.name);
     let mut made_folder = false;
+    super::made::clear_carried_before(homes);
     // One change of the store, found or made under its lock: two keeps at once make one record,
     // and the second finds the first's.
     let answer = super::update(homes.config_root(), |store| {

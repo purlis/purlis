@@ -450,6 +450,13 @@ pub const WINDOW_ONLY: &[&str] = &[
     "inbox_updates",
     "note_inbox_updates",
     "settle_inbox_updates",
+    // Snooze all on Asks, and its Show them now and Undo (#5647): the person's own press.
+    "snooze_inbox_asks",
+    "wake_inbox_asks",
+    // The first-open baseline (#5648): the window's own open of a project, and its first
+    // doctor report after it.
+    "inbox_first_open",
+    "set_aside_inbox_findings",
     // Settings' table: every change of what stands.
     "lift_dispatch_never",
     "allow_dispatch_to_any",
@@ -825,6 +832,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // person's press in their window after the estimate showed what they may spend.
     "skill_grades_start",
     "skill_grades_stop",
+    // A stopped grade resumed (#5718): as a grade, it runs chats on the person's profile and
+    // spends, on their press in their window after its plan showed what is left and its cap.
+    "skill_grade_resume",
     // A grade of a router started (SK-15e, #3233): as a skill's grade, it runs chats on the
     // person's profile and records the grade in the project. Stopped by `skill_grade_stop`.
     "router_grade_start",
@@ -862,6 +872,15 @@ pub const WINDOW_ONLY: &[&str] = &[
     "skill_updates",
     "skill_update_review",
     "skill_update",
+    // Extension skill sources (#3092, #3089): each asks an extension the person approved, and an
+    // install or an update is one commit to the project, of what the person's review read.
+    "skill_extension_sources",
+    "skill_extension_source_browse",
+    "skill_extension_install_review",
+    "skill_extension_install_set_review",
+    "skill_extension_install",
+    "skill_extension_update_review",
+    "skill_extension_update",
     // A publish and an export: the person's own press in their window (#2781).
     "skill_publish_review",
     "skill_publish",
@@ -1440,6 +1459,9 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     // only.
     "skill_grades_plan",
     "skill_grades_running",
+    // What resuming a stopped grade, or several, would run and spend (#5718): read only.
+    "skill_grade_resume_plan",
+    "skill_grades_resume_plan",
     // A skill's grades, for its Grades tab (S6, #3688), and a draft's (#2780): read only.
     "skill_grades",
     "skill_draft_grade",

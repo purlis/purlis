@@ -31,6 +31,7 @@ const SENT: SentReport = {
     '{"event_id":"9f1c2a7be0d34b6c8e5f0a1b2c3d4e5f","level":"fatal","platform":"native",' +
     '"release":"purlis@0.42.0","environment":"stable","culprit":"crates/purlis-core/src/plane.rs:12:5",' +
     '"exception":{"values":[{"type":"panic","value":"could not read [path] for [workspace]"}]}}\n',
+  waiting: false,
 };
 
 /** One row, as the Settings tab draws a live setting. */
@@ -161,6 +162,31 @@ export const Sent: Story = {
     await expect(within(dialog).getByText(/"level":"fatal"/)).toBeVisible();
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(within(document.body).queryByRole("dialog")).toBeNull());
+  },
+};
+
+/** **Waiting to send**: a Crash report made offline waits under the one that left (#5693). */
+export const WaitingToSend: Story = {
+  parameters: {
+    consent: { crash_reports: true, agent_drafts: false, asked: true },
+    sent: [
+      SENT,
+      {
+        ...SENT,
+        at: "2026-11-08T09:42:00Z",
+        title: "purlis panicked at crates/purlis-core/src/watch.rs:88:13",
+        address: "",
+        waiting: true,
+      },
+    ],
+  },
+  play: async ({ canvas }) => {
+    const list = await canvas.findByRole("grid", { name: "Reports sent from this machine" });
+    const row = await within(list).findByRole("row", { name: /watch\.rs:88:13/ });
+    await expect(within(row).getByText(/Waiting to send/)).toBeVisible();
+    row.focus();
+    await untilFocused(() => row, "the waiting report takes the keyboard");
+    expectFocusInSight();
   },
 };
 

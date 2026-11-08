@@ -26,7 +26,8 @@ import {
   type SkillLevel,
 } from "./bindings";
 import { counted } from "./dispatches";
-import { Notice } from "./Notice";
+import { ResumeQuestion, resumeFix } from "./GradeResume";
+import { Notice, type NoticeAction } from "./Notice";
 import { ReadOnlyTerminal } from "./ReadOnlyTerminal";
 import { dollarsSaid, GradingHeading } from "./SkillGrade";
 import { NotRead, ReadingRows, useRead } from "./SkillPanels";
@@ -227,10 +228,29 @@ function useGradedAt(
   }, [levelKey]);
 }
 
+/** **What a resumed grade spent, both runs together** (#5718), in a line under its Spent tile:
+ *  `both runs · this run $0.40`, or nothing for a grade that resumed none. */
+export function bothRunsSaid(spent: GradeScorecard["spent"]): string | null {
+  if (!spent.resumed) return null;
+  const now =
+    spent.cost_usd !== null && spent.earlier_usd !== null
+      ? ` · this run ${dollarsSaid(Math.max(0, spent.cost_usd - spent.earlier_usd))}`
+      : "";
+  // Its limit held this run alone, so it is said of this run.
+  const limit = spent.limit_usd === null ? "" : ` of ${dollarsSaid(spent.limit_usd)}`;
+  return `both runs${now}${now === "" ? "" : limit}`;
+}
+
+/** Whether a grade that ended so may have a resume to offer (#5718): it stopped short. */
+function mayResume(outcome: GradeOutcome): boolean {
+  return outcome === "stopped" || outcome === "at-limit";
+}
+
 /**
  * **A grade's scorecard page** (S6): see the module. `onChat` opens one of its kept chats;
- * `onGradeAgain` opens a new plan, where this copy can be graded from here. `onGradedAt` is told
- * the level of the copy the grade was of, once read (#3978).
+ * `onGradeAgain` opens a new plan, where this copy can be graded from here; `onResumed` is told
+ * the grade a resume of it started (#5718). `onGradedAt` is told the level of the copy the grade
+ * was of, once read (#3978).
  */
 export function GradeScorecardPage({
   plane,
@@ -238,6 +258,7 @@ export function GradeScorecardPage({
   grade,
   onChat,
   onGradeAgain,
+  onResumed,
   onGradedAt,
 }: {
   plane: string;
@@ -245,13 +266,25 @@ export function GradeScorecardPage({
   grade: string;
   onChat: (chat: string) => void;
   onGradeAgain?: () => void;
+  onResumed?: (grade: string) => void;
   onGradedAt?: (level: SkillLevel) => void;
 }) {
   const [again, setAgain] = useState(0);
   const [endPutAway, setEndPutAway] = useState(false);
+  const [asking, setAsking] = useState(false);
   const card = useRead(
     () => commands.skillGradeScorecard(plane, name, grade),
     [plane, name, grade, again],
+  );
+  // What a resume of it would run, read only for a grade that stopped short (#5718): none where
+  // this machine keeps nothing to resume it from.
+  const stoppedShort = card.data !== undefined && mayResume(card.data.outcome);
+  const resume = useRead(
+    () =>
+      stoppedShort && onResumed !== undefined
+        ? commands.skillGradeResumePlan(plane, grade)
+        : Promise.resolve({ status: "ok" as const, data: null }),
+    [plane, grade, stoppedShort, again],
   );
   useGradedAt(card.data, onGradedAt);
   if (card.refused !== undefined)
@@ -267,10 +300,21 @@ export function GradeScorecardPage({
     return <ReadingRows what="the grade's scorecard" testid="skill-grading-reading" />;
   const it = card.data;
   const end = OUTCOME_SAID[it.outcome];
+  const plan = resume.data ?? undefined;
+  const resumeWay = resumeFix(plan, () => setAsking(true));
+  const fixes: [NoticeAction, ...NoticeAction[]] | undefined =
+    onGradeAgain === undefined
+      ? undefined
+      : resumeWay === undefined
+        ? [{ label: "Grade again", onPress: onGradeAgain }]
+        : [
+            { ...resumeWay, primary: true },
+            { label: "Grade again", onPress: onGradeAgain },
+          ];
   const spent = it.spent.cost_usd === null ? "" : ` for ${dollarsSaid(it.spent.cost_usd)}`;
   const about = (
     <span data-testid="grade-scorecard-about">
-      {`${end.said} ${it.graded}${it.after_edit ? ", after an edit you saved" : ""}, ${it.draft ? "the draft" : `version ${it.version}`}, on ${it.ran_on}${spent}. ${it.ended}${differenceSaid(it)}`}
+      {`${end.said} ${it.graded}${it.after_edit ? ", after an edit you saved" : ""}${it.spent.resumed ? ", resumed" : ""}, ${it.draft ? "the draft" : `version ${it.version}`}, on ${it.ran_on}${spent}. ${it.ended}${differenceSaid(it)}`}
     </span>
   );
   return (
@@ -280,13 +324,8 @@ export function GradeScorecardPage({
       aria-label={`Scorecard of ${name}`}
     >
       <GradingHeading name={`Grade of ${name} · ${it.graded}`} />
-      {onGradeAgain !== undefined ? (
-        <Notice
-          cause={`skill-grade-end:${grade}`}
-          tone={end.tone}
-          label={end.said}
-          fixes={[{ label: "Grade again", onPress: onGradeAgain }]}
-        >
+      {fixes !== undefined ? (
+        <Notice cause={`skill-grade-end:${grade}`} tone={end.tone} label={end.said} fixes={fixes}>
           {about}
         </Notice>
       ) : (
@@ -302,6 +341,25 @@ export function GradeScorecardPage({
             {about}
           </Notice>
         )
+      )}
+      {plan?.refused != null && (
+        <p className="honest" data-testid="grade-scorecard-resume-refused">
+          {plan.refused}
+        </p>
+      )}
+      {asking && plan !== undefined && onResumed !== undefined && (
+        <ResumeQuestion
+          plane={plane}
+          plan={plan}
+          onClose={() => {
+            setAsking(false);
+            setAgain((n) => n + 1);
+          }}
+          onResumed={(resumed) => {
+            setAsking(false);
+            onResumed(resumed);
+          }}
+        />
       )}
       {it.asked > 0 && (
         <p className="honest" data-testid="grade-scorecard-asked">
@@ -336,7 +394,10 @@ export function GradeScorecardPage({
             label="Spent"
             value={it.spent.cost_usd === null ? "Not said" : dollarsSaid(it.spent.cost_usd)}
             line={[
-              it.spent.limit_usd === null ? null : `of ${dollarsSaid(it.spent.limit_usd)}`,
+              bothRunsSaid(it.spent),
+              it.spent.limit_usd === null || it.spent.resumed
+                ? null
+                : `of ${dollarsSaid(it.spent.limit_usd)}`,
               counted(it.spent.chats, "chat", "chats"),
             ]
               .filter((one) => one !== null)

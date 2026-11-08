@@ -1,13 +1,15 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { realpathSync, renameSync } from "node:fs";
+import { mkdirSync, realpathSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
 import type { Bench, Plan } from "../src/bench.ts";
 import { anEmptyRecord, copyFixturePlane } from "./harness.js";
 import { closeProject, openThroughTheTrustQuestion } from "./opening.js";
 import { attributesOfEach } from "./reading.js";
+import { LOGS } from "./processes.js";
+import { escapeUntilClosed } from "./tooltips.js";
 import { OPEN, summarise, type Switches } from "./switchTimes.js";
 
 export { BUDGET_MS, OPEN, heldToBudget, type Switches } from "./switchTimes.js";
@@ -97,6 +99,77 @@ export async function openFromTheStrip(plane: string): Promise<void> {
     timeout: 30_000,
     timeoutMsg: `${plane} never came to the front`,
   });
+}
+
+/**
+ * **Opens `plane` and waits until its first-open baseline has taken the doctor's first report**
+ * (#5648, ADR 0119): what a project holds the first time it opens on a machine counts as seen,
+ * so a spec that needs a doctor's finding to be new opens its project this way, with nothing to
+ * find, and then makes the finding and {@link asksTheDoctorAgain}. The core's record says when
+ * the window has set that report's findings aside (`findings` is no longer null), which the
+ * status line cannot: its label may still be the last project's.
+ */
+export async function openedWithTheDoctorHeard(plane: string): Promise<void> {
+  await openFromTheStrip(plane);
+  let findings: unknown = null;
+  await browser
+    .waitUntil(
+      async () => {
+        ({ findings } = await ask<{ findings: string[] | null }>("inbox_first_open", { plane }));
+        return findings !== null;
+      },
+      { timeout: 60_000, interval: 500 },
+    )
+    .catch(() => {
+      throw new Error(`the window never set aside the doctor's first report for ${plane}`);
+    });
+}
+
+/** **Runs the doctor again for the project in front**, as the person does: its status item opens
+ *  the Doctor dialog, which checks again in full; the dialog is closed once it has answered.
+ *  Answers the rows it found that are not ok, for a failure to name. */
+export async function asksTheDoctorAgain(): Promise<string> {
+  await $('[data-testid="status-doctor"]').click();
+  const dialog = $('[role="dialog"]');
+  await dialog.waitForDisplayed({ timeout: 20_000 });
+  await browser.waitUntil(
+    async () => {
+      const said = await dialog.getText();
+      return said.includes("each harness profile probed") && !said.includes("Checking again");
+    },
+    { timeout: 90_000, interval: 250, timeoutMsg: "the full doctor never answered" },
+  );
+  // What it found, for a spec's failure to say: the rows that are not ok.
+  const found = await browser.execute(() =>
+    [...document.querySelectorAll<HTMLElement>('[role="dialog"] li.doctor-row:not(.doctor-ok)')]
+      .map((row) => row.innerText.replace(/\s+/g, " ").trim())
+      .join("; "),
+  );
+  await escapeUntilClosed(() => dialog.isDisplayed());
+  return found;
+}
+
+/**
+ * **Keeps what the window showed, for a failure to be read**: a picture of the window and the
+ * Notices view's markup, beside the run's logs (`LOGS`, kept with the run), named by `what`.
+ * Answers where they are, for the failure's message.
+ */
+export async function keepTheNotices(what: string): Promise<string> {
+  mkdirSync(LOGS, { recursive: true });
+  const picture = join(LOGS, `${what}.png`);
+  const markup = join(LOGS, `${what}.html`);
+  await browser.saveScreenshot(picture).catch(() => undefined);
+  const html = await browser.execute(() =>
+    [
+      ...document.querySelectorAll<HTMLElement>(
+        '[role="tabpanel"][data-view="notices"], [data-cause^="doctor-finding"]',
+      ),
+    ]
+      .map((one) => one.outerHTML)
+      .join("\n\n<!-- next -->\n\n"),
+  );
+  writeFileSync(markup, html);
+  return `${picture}, ${markup}`;
 }
 
 /**

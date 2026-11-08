@@ -59,6 +59,7 @@ fn the_plan_says_the_library_its_tested_skills_and_the_chats_before_anything_run
         models: Vec::new(),
         model: None,
         evals_refused: None,
+        harness: None,
     };
     let plan = RouterGradePlan::of(&planned, None, on, None, PromptReading::None);
     assert_eq!(plan.router, "relevance");
@@ -158,6 +159,7 @@ fn on(profile: &str, model: Option<&str>) -> crate::skillgrade::On {
         models: vec!["sonnet".into(), "opus".into()],
         model: model.map(str::to_owned),
         evals_refused: None,
+        harness: None,
     }
 }
 
