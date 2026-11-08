@@ -555,7 +555,7 @@ fn a_task_whose_record_does_not_end_is_not_forgotten_and_nobody_is_told() {
     let held_aside = held.chats().waiting_to_start();
     assert_eq!(held_aside.len(), 1);
     assert_eq!(
-        held_aside[0].told,
+        held_aside[0].told.as_deref(),
         Some(purlis_core::dispatchrestart::CARRY_ON)
     );
     let on_disk = purlis_core::reopen::read_or_refusal(held.root()).expect("the record");

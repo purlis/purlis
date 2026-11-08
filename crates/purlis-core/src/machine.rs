@@ -161,6 +161,10 @@ pub const DIR: &str = "charter";
 /// The store, inside [`DIR`].
 pub const FILE: &str = "machine.json";
 
+/// **The last store that did not parse, kept beside [`FILE`] before it was replaced**
+/// ([`update`]): what a damaged file held, for the person to read back by hand.
+pub const UNREAD: &str = "machine.json.unread";
+
 /// The one version of this file charter writes and reads. Any other version reads as an empty
 /// store: there is no migration that would be honest about an approval recorded under rules
 /// this charter does not know.
@@ -193,6 +197,12 @@ pub const MOST_RECENTS: usize = 64;
 /// acts; a file that claims more was not written by charter.
 pub const MOST_PINNED: usize = 32;
 
+/// **How many planes that name a pool are kept past [`MOST_RECENTS`]** (ruled 2026-11-08): one
+/// whose chats run on a pool ([`Recent::names_a_pool`]) is never let go as older planes are, since
+/// forgetting it forgets its pool and its chats would then start on this machine. Counted apart, so
+/// the file stays bounded as a pin keeps it.
+pub const MOST_POOLED: usize = 64;
+
 /// How many workspaces may be pinned inside one plane.
 ///
 /// The same reason as [`MOST_PINNED`], one scope down: the strip a pin orders holds ten
@@ -219,26 +229,47 @@ pub const FIRST_OPEN_PINS: usize = 3;
 struct Room {
     unpinned: usize,
     pinned: usize,
+    pooled: usize,
+}
+
+/// Which bound an entry counts against: a pin's, a pool's ([`MOST_POOLED`]), or the recents'.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Held {
+    Pinned,
+    Pooled,
+    Plain,
+}
+
+impl Held {
+    fn of(pinned: bool, pooled: bool) -> Held {
+        match (pinned, pooled) {
+            (true, _) => Held::Pinned,
+            (false, true) => Held::Pooled,
+            (false, false) => Held::Plain,
+        }
+    }
 }
 
 impl Room {
     /// Whether one more entry of this kind fits, counting it in if it does.
-    fn fits(&mut self, pinned: bool) -> bool {
-        let (counted, most) = if pinned {
-            (&mut self.pinned, MOST_PINNED)
-        } else {
-            (&mut self.unpinned, MOST_RECENTS)
+    fn fits(&mut self, held: Held) -> bool {
+        let (counted, most) = match held {
+            Held::Pinned => (&mut self.pinned, MOST_PINNED),
+            Held::Pooled => (&mut self.pooled, MOST_POOLED),
+            Held::Plain => (&mut self.unpinned, MOST_RECENTS),
         };
         *counted += 1;
         *counted <= most
     }
 
     /// Why one did not, in the words a dropped row carries.
-    fn why(pinned: bool) -> String {
-        if pinned {
-            format!("is past the {MOST_PINNED} projects purlis pins")
-        } else {
-            format!("is past the {MOST_RECENTS} planes purlis remembers")
+    fn why(held: Held) -> String {
+        match held {
+            Held::Pinned => format!("is past the {MOST_PINNED} projects purlis pins"),
+            Held::Pooled => {
+                format!("is past the {MOST_POOLED} projects purlis keeps that run chats on a pool")
+            }
+            Held::Plain => format!("is past the {MOST_RECENTS} planes purlis remembers"),
         }
     }
 }
@@ -1057,6 +1088,26 @@ pub struct Recent {
     /// what a chat that left [`Self::chats_on_pools`] did there, until a fetch of it has no
     /// failure. Never asked for a chat.
     pub branches_to_fetch: BTreeMap<String, BTreeSet<String>>,
+    /// **Every chat this plane starts on a pool here has a record in
+    /// [`Self::chats_on_pools`]** (ruled 2026-11-08, amending D-4683-1): set once a window's
+    /// restart has taken back the chats from before records. From then on a chat with no record
+    /// is never taken back on a pool's word.
+    pub pool_chats_recorded: bool,
+}
+
+impl Recent {
+    /// **Whether this plane's chats run on a pool here**, or did and have work to bring back: a
+    /// workspace or the project names one, or a chat runs on one, or a pool's branches are owed.
+    pub fn names_a_pool(&self) -> bool {
+        !self.chats_run_on.is_empty()
+            || self.project_chats_run_on.is_some()
+            || !self.chats_on_pools.is_empty()
+            || !self.branches_to_fetch.is_empty()
+    }
+
+    fn held(&self) -> Held {
+        Held::of(self.pinned, self.names_a_pool())
+    }
 }
 
 /// **Where one chat runs**, as [`Recent::chats_on_pools`] keeps it (#4590).
@@ -1432,6 +1483,7 @@ impl Store {
                 project_chats_run_on: None,
                 chats_on_pools: BTreeMap::new(),
                 branches_to_fetch: BTreeMap::new(),
+                pool_chats_recorded: false,
             },
         };
         self.recents.insert(0, entry);
@@ -1449,7 +1501,7 @@ impl Store {
     /// cold launch.
     fn trim(&mut self) {
         let mut room = Room::default();
-        self.recents.retain(|entry| room.fits(entry.pinned));
+        self.recents.retain(|entry| room.fits(entry.held()));
     }
 
     /// Whether another plane may be pinned on this machine.
@@ -1486,9 +1538,11 @@ impl Store {
         // operator just touched it. It counts first, so the oldest of the others goes instead.
         if moved && !pinned {
             let mut room = Room::default();
-            room.fits(false);
+            if let Some(entry) = self.recent(plane) {
+                room.fits(entry.held());
+            }
             self.recents
-                .retain(|entry| entry.plane == plane || room.fits(entry.pinned));
+                .retain(|entry| entry.plane == plane || room.fits(entry.held()));
         }
         Ok(moved)
     }
@@ -1671,6 +1725,21 @@ impl Store {
         {
             entry.owes_the_branches_of(chat);
         }
+    }
+
+    /// **Every chat `plane` starts on a pool has a record from now on** (ruled 2026-11-08):
+    /// [`Recent::pool_chats_recorded`].
+    pub fn mark_pool_chats_recorded(&mut self, plane: &Path) {
+        if let Some(entry) = self.recents.iter_mut().find(|one| one.plane == plane) {
+            entry.pool_chats_recorded = true;
+        }
+    }
+
+    /// Whether [`Self::mark_pool_chats_recorded`] holds for `plane`: never for a plane not
+    /// remembered.
+    pub fn pool_chats_recorded(&self, plane: &Path) -> bool {
+        self.recent(plane)
+            .is_some_and(|entry| entry.pool_chats_recorded)
     }
 
     /// Forgets chat `number` of `plane`, which never started where it was kept (#4590).
@@ -2490,9 +2559,26 @@ pub fn update(config_root: &Path, change: impl FnOnce(&mut Store)) -> io::Result
             format!("purlis will not overwrite a machine store it could not read: {why}"),
         ));
     }
+    if loaded
+        .dropped
+        .iter()
+        .any(|one| matches!(one, Dropped::TheStore(_)))
+    {
+        keep_unread(config_root)?;
+    }
     change(&mut loaded.store);
     write(config_root, &loaded.store)?;
     Ok(loaded)
+}
+
+/// **A store purlis read and could not understand is kept beside the file, as [`UNREAD`],
+/// before it is replaced** (ruled 2026-11-08): a pool one of its planes ran chats on may be in
+/// it, and nothing else would say so. One copy, the latest, 0600 as the store is.
+fn keep_unread(config_root: &Path) -> io::Result<()> {
+    let Some(text) = read_text(config_root)? else {
+        return Ok(());
+    };
+    write_beside(config_root, &dir(config_root).join(UNREAD), text.as_bytes())
 }
 
 /// The lock file's name, beside the store in charter's own `0700` directory.
@@ -2784,14 +2870,7 @@ fn load(doc: &serde_json::Value, dropped: &mut Vec<Dropped>) -> Store {
             .get("pinned")
             .and_then(serde_json::Value::as_bool)
             .unwrap_or(false);
-        if !room.fits(pinned) {
-            dropped.push(Dropped::Recent {
-                plane: named,
-                why: Room::why(pinned),
-            });
-            continue;
-        }
-        recents.push(Recent {
+        let recent = Recent {
             plane,
             opened: number(raw.get("opened")),
             // A `trust` that is not one is NO trust, so the plane is asked about again.
@@ -2810,7 +2889,21 @@ fn load(doc: &serde_json::Value, dropped: &mut Vec<Dropped>) -> Store {
             project_chats_run_on: project_chats_run_on_of(raw.get("projectChatsRunOn"), dropped),
             chats_on_pools: chats_on_pools_of(raw.get("chatsOnPools")),
             branches_to_fetch: branches_to_fetch_of(raw.get("branchesToFetch")),
-        });
+            // Anything but `true` is not yet, which takes back the chats from before records once
+            // more: what this mark guards was the rule before it.
+            pool_chats_recorded: raw
+                .get("poolChatsRecorded")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false),
+        };
+        if !room.fits(recent.held()) {
+            dropped.push(Dropped::Recent {
+                plane: named,
+                why: Room::why(recent.held()),
+            });
+            continue;
+        }
+        recents.push(recent);
     }
 
     let mut windows = Vec::new();
@@ -3240,6 +3333,8 @@ struct RecentOnDisk {
     /// Left out while no branches are still to come back (#4590).
     #[serde(rename = "branchesToFetch", skip_serializing_if = "BTreeMap::is_empty")]
     branches_to_fetch: BTreeMap<String, BTreeSet<String>>,
+    #[serde(rename = "poolChatsRecorded", skip_serializing_if = "is_false")]
+    pool_chats_recorded: bool,
 }
 
 #[derive(serde::Serialize)]
@@ -3307,7 +3402,7 @@ impl From<&Store> for OnDisk {
                 // `load` keep. A `take(MOST_RECENTS)` here would drop a pinned project that
                 // the other two deliberately kept.
                 .scan(Room::default(), |room, entry| {
-                    Some(room.fits(entry.pinned).then_some(entry))
+                    Some(room.fits(entry.held()).then_some(entry))
                 })
                 .flatten()
                 // `to_str` and never `display`, which SUBSTITUTES for a byte that is not
@@ -3336,6 +3431,7 @@ impl From<&Store> for OnDisk {
                         project_chats_run_on: entry.project_chats_run_on.clone(),
                         chats_on_pools: entry.chats_on_pools.clone(),
                         branches_to_fetch: entry.branches_to_fetch.clone(),
+                        pool_chats_recorded: entry.pool_chats_recorded,
                         trust: entry.trust.as_ref().map(|trust| TrustOnDisk {
                             approved: trust.approved,
                             plugins: trust.contributed.plugins.clone(),

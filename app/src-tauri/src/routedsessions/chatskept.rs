@@ -37,6 +37,12 @@ pub trait KeptPlaces: Send + Sync {
     fn fetched(&self, pool: &str, workspace: &str);
     fn chats(&self) -> BTreeMap<u32, ChatOnPool>;
     fn owed(&self) -> BTreeMap<String, BTreeSet<String>>;
+    /// **Whether every chat the project starts on a pool here has a record by now** (ruled
+    /// 2026-11-08): a restart has already taken back the chats from before records, so one with
+    /// none is never taken back on a pool's word.
+    fn all_recorded(&self) -> bool;
+    /// A restart's take-back is done: [`Self::all_recorded`] from now on.
+    fn mark_all_recorded(&self);
 }
 
 /// The records of the project at `plane`, in `config`'s store.
@@ -101,6 +107,17 @@ impl KeptPlaces for OnThisMachine {
     fn owed(&self) -> BTreeMap<String, BTreeSet<String>> {
         purlis_core::pools::branches_to_fetch(&self.config, &self.plane)
     }
+
+    fn all_recorded(&self) -> bool {
+        purlis_core::pools::pool_chats_recorded(&self.config, &self.plane)
+    }
+
+    fn mark_all_recorded(&self) {
+        let marked = purlis_core::pools::mark_pool_chats_recorded(&self.config, &self.plane);
+        if let Err(why) = marked {
+            tracing::warn!("purlis: that every runner chat has a record was not kept: {why}");
+        }
+    }
 }
 
 enum Step {
@@ -120,6 +137,7 @@ enum Step {
         pool: String,
         workspace: String,
     },
+    AllRecorded,
     Settled(Sender<()>),
 }
 
@@ -158,6 +176,7 @@ impl ChatsKept {
                         Step::Leave(number) => writes.leave(number),
                         Step::Forget(number) => writes.forget(number),
                         Step::Fetched { pool, workspace } => writes.fetched(&pool, &workspace),
+                        Step::AllRecorded => writes.mark_all_recorded(),
                         Step::Settled(said) => {
                             let _ = said.send(());
                         }
@@ -220,6 +239,20 @@ impl ChatsKept {
             pool: pool.to_owned(),
             workspace: workspace.to_owned(),
         });
+    }
+
+    /// A restart's take-back is done ([`KeptPlaces::mark_all_recorded`]).
+    pub fn mark_all_recorded(&self) {
+        self.step(Step::AllRecorded);
+    }
+
+    /// Whether every chat on a pool has a record now ([`KeptPlaces::all_recorded`]): `false`
+    /// for a router with no store, which keeps none.
+    pub fn all_recorded(&self) -> bool {
+        self.settled();
+        self.0
+            .as_ref()
+            .is_some_and(|keeping| keeping.places.all_recorded())
     }
 
     /// Once what was asked before this is in the store.
