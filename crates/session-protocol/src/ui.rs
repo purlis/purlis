@@ -627,6 +627,12 @@ pub const WINDOW_ONLY: &[&str] = &[
     "keep_report_consent",
     // The reports this machine sent, with their bytes (#5689): the person's own record.
     "reports_sent",
+    // The report drafts chats wrote for the person (#5694): only the person reads, edits, files
+    // (as themselves) or dismisses one, never a chat or a link.
+    "report_drafts",
+    "edit_report_draft",
+    "file_report_draft",
+    "dismiss_report_draft",
     // Create a project on GitHub or GitLab (#1819): whom the person's account can make a repo
     // for, the folder a name goes into, and the person's Cancel of the creation (the creation
     // itself takes a channel). It makes a repo on their forge account and a folder on this

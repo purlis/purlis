@@ -840,7 +840,9 @@ ADR 0104), each one wrapper under `app/src/ui/` and its own lint rule at error
   (`data-scope="notice-row"`) are the family's layout.
 - **A Notice in the Notices centre is a card in the Inbox card's style** (#5217). A one-line
   `head`: its mark, its `title` (what it names, whose it is, its label, or else its state), its
-  state and age muted beneath (`sub`), Go to chat a quiet link and its ×. Under it, what it says at
+  state and age muted beneath (`sub`), led by the chat it came from where it names one (`from`,
+  the notice family's `whose` part, #5694: a report draft a chat wrote), Go to chat a quiet link
+  and its ×. Under it, what it says at
   the card's size, in purlis's plain words (no Notice in the centre carries a chat's own prose;
   `chatWords` went for want of a caller, #5363); and its ways. One primary, where it has an
   answer, every other way a quiet link. **A consent takes no primary** (ADR 0097 §6): Allow keeps

@@ -26,6 +26,7 @@ import {
   doctorUpdates,
   listed,
   reasonUpdates,
+  reportSentUpdates,
   resumeUpdates,
   sandboxUpdates,
   smartCloseUpdates,
@@ -267,6 +268,25 @@ describe("each source, said as updates", () => {
     expect(said.map((one) => [one.kind, one.session, one.says])).toEqual([
       ["smart-close", 6, "Smart close stopped — it ended"],
     ]);
+  });
+
+  it("makes each report draft the person filed an update on the chat it came from (#5694)", () => {
+    const said = reportSentUpdates([
+      { id: "d1", title: "Update refuses", session: 4, chat: "steward 4", to: "github", at: NOW },
+      { id: "d2", title: "Picker is slow", session: null, chat: "deep", to: "intake", at: NOW },
+    ]);
+    expect(said.map((one) => [one.key, one.kind, one.session, one.chain, one.says])).toEqual([
+      [
+        "report-sent:d1",
+        "report-sent",
+        4,
+        ["steward 4"],
+        "Sent a report to purlis/purlis: Update refuses",
+      ],
+      ["report-sent:d2", "report-sent", null, ["deep"], "Sent a report: Picker is slow"],
+    ]);
+    expect(KIND_SAID["report-sent"]).toBe("Report sent");
+    expect(LIVE.has("report-sent")).toBe(false);
   });
 });
 

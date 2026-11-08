@@ -251,6 +251,7 @@ import {
   seenAt,
   reasonUpdates,
   arrivedUpdates,
+  reportSentUpdates,
   resumeUpdates,
   sandboxUpdates,
   smartCloseKey,
@@ -259,6 +260,7 @@ import {
   useInboxUpdates,
 } from "./inboxUpdates";
 import { useInboxOpenTold } from "./askNotices";
+import { ReportDraftNotices, type SentDraft } from "./ReportDraftNotices";
 import { useAnsweredWhenGone } from "./inboxRules";
 import { usePermissionAsks } from "./permissionAsks";
 import { useDismissals } from "./dismissals";
@@ -7534,6 +7536,8 @@ export const PlaneView = memo(function PlaneView({
   /** **Asks about a chat's browser that ended with it** (#2015), as the core told them, for the
    *  Inbox's updates. */
   const [browserAsksEnded, setBrowserAsksEnded] = useState<readonly AskEnded[]>([]);
+  // The report drafts the person filed in this window (#5694): each is an update of its own.
+  const [sentDrafts, setSentDrafts] = useState<readonly SentDraft[]>([]);
   useEffect(() => {
     let gone = false;
     let stop: (() => void) | undefined;
@@ -10923,6 +10927,7 @@ export const PlaneView = memo(function PlaneView({
       ...smartCloseUpdates(stopped, nameOf, at),
       ...reasonUpdates(foundFor, refusals, nameOf, at),
       ...browserAskUpdates(browserAsksEnded, nameOf),
+      ...reportSentUpdates(sentDrafts),
       // A chat another chat started, announced and not looked at yet (#4759).
       ...arrivedUpdates(
         sidebar === undefined
@@ -10935,6 +10940,7 @@ export const PlaneView = memo(function PlaneView({
   }, [
     sidebar,
     browserAsksEnded,
+    sentDrafts,
     finishedTasks,
     nameOf,
     doctor.report,
@@ -11469,6 +11475,13 @@ export const PlaneView = memo(function PlaneView({
         onShowFinished={showFinished}
         onShowInbox={showInbox}
         onShowChanges={showChangesOf}
+      />
+      {/* What the project's chats drafted with `purlis report`, for the person to read and file
+          (#5694). */}
+      <ReportDraftNotices
+        plane={plane}
+        onGo={(session) => showChat(session)}
+        onSent={(sent) => setSentDrafts((was) => [...was, sent])}
       />
       {alerts !== undefined && (
         <InboxAlerts

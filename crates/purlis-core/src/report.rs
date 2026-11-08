@@ -1088,7 +1088,12 @@ impl Reports {
 
     /// Holds a chat's `evidence` for the person's Inbox, naming the chat it came `from`: only
     /// with the yes to its stream, and nothing is sent (#5694).
-    pub fn hold(&self, evidence: Evidence, source: &Caller, from: CameFrom) -> Result<Held, Refusal> {
+    pub fn hold(
+        &self,
+        evidence: Evidence,
+        source: &Caller,
+        from: CameFrom,
+    ) -> Result<Held, Refusal> {
         self.consented(&evidence, source)?;
         let root = self.kept_under()?;
         let line = line_of(&evidence, &self.known);
@@ -1143,7 +1148,8 @@ impl Reports {
         if let Some(root) = self.root.as_deref() {
             let all = HeldDrafts::read(root);
             if all.iter().any(|one| one.id == id) {
-                let _ = HeldDrafts::write(root, all.into_iter().filter(|one| one.id != id).collect());
+                let _ =
+                    HeldDrafts::write(root, all.into_iter().filter(|one| one.id != id).collect());
             }
         }
     }
@@ -1256,8 +1262,7 @@ impl Reports {
             Evidence::AgentDraft(AgentDraft {
                 kind, text, title, ..
             }) => Draft::described(kind, &text, title.as_deref(), &self.known),
-            Evidence::NativeCrash(never)
-            | Evidence::WindowError(never) => match never {},
+            Evidence::NativeCrash(never) | Evidence::WindowError(never) => match never {},
         };
         made.map_err(|Refused(said)| Refusal::Unusable(said))
     }

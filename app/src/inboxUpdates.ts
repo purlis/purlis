@@ -17,7 +17,8 @@
  * - a sandbox change that asks nothing: a block that is no host ask ({@link sandboxUpdates});
  * - a dispatch refused while nobody was there (#1507): the away list ({@link awayUpdates});
  * - a Smart close that stopped without its record (SI-8f) ({@link smartCloseUpdates});
- * - an Ask about a chat's browser that ended with the browser (#2015) ({@link browserAskUpdates}).
+ * - an Ask about a chat's browser that ended with the browser (#2015) ({@link browserAskUpdates});
+ * - a report a chat drafted, filed by the person (#5694) ({@link reportSentUpdates}).
  *
  * **Kept a day on this machine, never in a project** (`note_inbox_updates`, I-8): the window
  * notes what it derived, by a key of its source's own, and the core keeps it in purlis's data
@@ -52,6 +53,7 @@ import {
 import { ROOT_UPDATE_REFUSED_SAID } from "./chatState";
 import { qualifierOf, shownOf } from "./finished";
 import { finishedBucketOf } from "./taskBuckets";
+import type { SentDraft } from "./ReportDraftNotices";
 
 /** The time now, in ms: when the window first saw an update that has no time of its own. */
 export const seenAt = () => Date.now();
@@ -87,7 +89,23 @@ export const KIND_SAID: Record<UpdateKind, string> = {
   "question-closed": "Question closed",
   "question-failed": "Question not routed",
   arrived: "Arrived",
+  "report-sent": "Report sent",
 };
+
+/**
+ * **A report a chat drafted, filed by the person** (#5694): one update per draft filed in this
+ * window, saying where it went, on the chat it came from.
+ */
+export function reportSentUpdates(sent: readonly SentDraft[]): UpdateNoted[] {
+  return sent.map((one) => ({
+    key: `report-sent:${one.id}`,
+    kind: "report-sent",
+    at: secondsOf(one.at),
+    session: one.session,
+    chain: [one.chat],
+    says: `Sent a report${one.to === "github" ? " to purlis/purlis" : ""}: ${one.title}`,
+  }));
+}
 
 /**
  * **A task that ended, done or come to nothing** (#1693): one update per finished row that

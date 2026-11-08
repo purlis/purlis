@@ -165,6 +165,7 @@ mod remotequestion;
 mod removalasks;
 mod repolist;
 mod reportconsent;
+mod reportdrafts;
 mod restored;
 mod restoring;
 #[cfg(unix)]
@@ -3378,6 +3379,8 @@ fn commands() -> Builder<tauri::Wry> {
             "ENGINE_SANDBOX_NEEDED",
             enginesandbox::ENGINE_SANDBOX_NEEDED,
         )
+        // The event a project's report drafts are read again on (#5694).
+        .constant("REPORT_DRAFTS_CHANGED", reportdrafts::REPORT_DRAFTS_CHANGED)
         // The event a pool's beginning to mint without asking raises its Notice on (#4442).
         .constant(
             "POOL_MINTS_WITHOUT_ASKING",
@@ -4034,6 +4037,7 @@ pub fn run() {
             // remove` in the person's own terminal reaches the pools' runners through this
             // window (#4141): after the adoption, so a folder adopted now counts as a profile.
             poolprofiles::tells_through(app.handle().clone());
+            reportdrafts::tells_through(app.handle().clone());
             #[cfg(unix)]
             poolprofiles::listen_for_the_command_line();
             // From here on this app holds the config home: no rename-local of a later launch,

@@ -59,6 +59,8 @@ pub enum UpdateKind {
     /// A chat another chat started arrived in no pane, and was announced (#4759): a handoff,
     /// or a task that can't report asks.
     Arrived,
+    /// The person filed a report a chat drafted (#5694).
+    ReportSent,
 }
 
 impl From<UpdateKind> for Kind {
@@ -78,6 +80,7 @@ impl From<UpdateKind> for Kind {
             UpdateKind::QuestionClosed => Kind::QuestionClosed,
             UpdateKind::QuestionFailed => Kind::QuestionFailed,
             UpdateKind::Arrived => Kind::Arrived,
+            UpdateKind::ReportSent => Kind::ReportSent,
         }
     }
 }
@@ -99,6 +102,7 @@ impl From<Kind> for UpdateKind {
             Kind::QuestionClosed => UpdateKind::QuestionClosed,
             Kind::QuestionFailed => UpdateKind::QuestionFailed,
             Kind::Arrived => UpdateKind::Arrived,
+            Kind::ReportSent => UpdateKind::ReportSent,
         }
     }
 }
@@ -382,6 +386,7 @@ mod tests {
             UpdateKind::QuestionClosed,
             UpdateKind::QuestionFailed,
             UpdateKind::Arrived,
+            UpdateKind::ReportSent,
         ] {
             assert_eq!(UpdateKind::from(Kind::from(kind)), kind);
         }

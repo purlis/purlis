@@ -13,6 +13,11 @@
 //! command, which a chat may be running, holds no sign-in (ADR 0070 ruling 5). So here the draft
 //! is shown and its digest checked, and the reporter files it through the prefilled link, or from
 //! the app.
+//!
+//! **In a chat the app started, the words go to the person's Inbox** (#5694, spec #5683): the
+//! command hands them to the app over the chat's hook socket, and the app holds the draft for the
+//! person only with their yes to Agent drafts. The person reads it, edits it and files it there.
+//! Nothing is filed from a chat.
 
 use std::io::{IsTerminal, Read, Write};
 use std::path::PathBuf;
@@ -59,6 +64,17 @@ pub struct TextArgs {
     /// printed. Anything else files nothing.
     #[arg(long, value_name = "DIGEST")]
     yes: Option<String>,
+    /// The purlis command or tool that failed, for the report's first line.
+    #[arg(long, value_name = "COMMAND")]
+    call: Option<String>,
+    /// The exit code the failed call ended with.
+    #[arg(
+        long,
+        value_name = "CODE",
+        requires = "call",
+        allow_hyphen_values = true
+    )]
+    exit: Option<i32>,
 }
 
 pub fn run(command: &ReportCommand) -> ExitCode {
@@ -76,6 +92,11 @@ pub fn run(command: &ReportCommand) -> ExitCode {
         Ok(made) => made,
         Err(said) => return refused(&said),
     };
+    if let Evidence::PersonDraft { kind, text, title } = &evidence
+        && let Some(code) = to_the_inbox(*kind, text, title.as_deref(), args)
+    {
+        return code;
+    }
     match reports.take(evidence.clone(), &source) {
         Outcome::Drafted { draft, route } => {
             decide(&reports, &source, evidence, &draft, route, args)
@@ -127,6 +148,64 @@ fn evidence(command: &ReportCommand) -> Result<(Evidence, &TextArgs), String> {
     };
     Ok((evidence, args))
 }
+
+/// How long the app may take to hold a draft: a scrub and one small write.
+const HOLDING_TAKES_AT_MOST: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// In a chat the app started, hands the words to the app for the person's Inbox and says what
+/// became of them; `None` where this is no such chat, so the command drafts here as before.
+fn to_the_inbox(kind: Kind, text: &str, title: Option<&str>, args: &TextArgs) -> Option<ExitCode> {
+    use crate::brokered::NotTaken;
+    use purlis_core::hookwire::{Answer, Ask, ReportDraftAsk};
+    let ask = |chat| {
+        Ask::ReportDraft(Box::new(ReportDraftAsk {
+            chat,
+            feature: kind == Kind::Feature,
+            text: text.to_owned(),
+            title: title.map(str::to_owned),
+            call: args
+                .call
+                .as_ref()
+                .map(|call| (call.clone(), args.exit.unwrap_or(1))),
+        }))
+    };
+    let said = match crate::brokered::asked(ask, HOLDING_TAKES_AT_MOST) {
+        Err(NotTaken::NotAChat) => return None,
+        Err(_) => Err(NOT_HELD.to_owned()),
+        Ok(Ok(Answer::Said { lines, code })) => Ok((lines, code)),
+        Ok(Ok(Answer::No { why })) if why == purlis_core::hookwire::UNKNOWN_LINE => {
+            Err(NOT_HELD.to_owned())
+        }
+        Ok(Ok(Answer::No { why })) => Err(why),
+        Ok(Ok(_)) => Err(NOT_HELD.to_owned()),
+        Ok(Err(e)) => Err(format!(
+            "the app took the draft and did not answer ({e}), so it may be in the person's \
+             Inbox already. Nothing was sent."
+        )),
+    };
+    Some(match said {
+        Ok((lines, code)) => {
+            for line in lines {
+                crate::speak(line);
+            }
+            if args.yes.is_some() {
+                eprintln!(
+                    "charter report: a chat files no report, so --yes did nothing: the person \
+                     files it from their Inbox."
+                );
+            }
+            ExitCode::from(code)
+        }
+        Err(why) => {
+            eprintln!("charter report: {why}");
+            ExitCode::FAILURE
+        }
+    })
+}
+
+/// Why a chat's draft did not reach the Inbox where no app could take it.
+const NOT_HELD: &str = "the purlis app that started this chat did not take the draft: it is not \
+                        running, or older than this command. Nothing was sent.";
 
 /// The reporter's own words, from wherever they were given.
 fn words(args: &TextArgs) -> Result<Option<String>, String> {
