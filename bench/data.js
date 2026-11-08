@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794116379313,
+  "lastUpdate": 1794119035580,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -43134,6 +43134,48 @@ window.BENCHMARK_DATA = {
             "value": 101.6848585,
             "unit": "ms",
             "extra": "median of 5 runs: 101.167, 101.423, 101.685, 101.867, 101.960 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "53e4656ef4428a3484cea276b704cdc24710c936",
+          "message": "Extension skill sources: install from the CLI, update several at once, and marks in Browse (#5760) (#5768)\n\n* Extension skill sources: install from the CLI, update several at once, and marks in Browse (#5760)\n\n- purlis skill install --extension <id>: lists, reviews and installs from\n  an extension's source, the copy what its review read, pinned to the\n  revision. Asked at the person's interactive terminal each time, no\n  --yes; a chat is refused with the git install's sentence.\n- Review updates (#5354) takes an extension's skills: each reviewed\n  through its extension, the set copying each one's held bytes in one\n  commit (update::set::Updating::held), refused whole where any is not\n  what was accepted, another extension's or missing, or the extension is\n  no longer on. New capabilities still start unticked.\n- An extension's Browse reads each skill's files for its marks (the\n  first 32 skills, within one read's bytes), informing only.\n- ADR 0100 amended; changelog fragment.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6WGXWND9VB5VK9EHJD7X9DV\nPurlis-Persona: steward\n\n* ADR 0100 amended for an extension's source from the CLI and in Review updates, and its changelog fragment (#5760)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6WGXWND9VB5VK9EHJD7X9DV\nPurlis-Persona: steward\n\n* Extension skill sources: from the two-axis review (#5760)\n\n- purlis skill install --extension --all reviews what one listing names:\n  one revision, no file asked only to learn the names.\n- A chat passing --yes is told what a git install from a chat is told;\n  --yes is refused after that check, not by clap.\n- The CLI install shares the git install's grant, renames, review,\n  stops and question (install_settled, reviewed_and_asked).\n- An extension's Browse stops marking at the answer that takes what was\n  read past one read's bytes, as a git browse does.\n- Not being able to start the extensions says what to check.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6WGXWND9VB5VK9EHJD7X9DV\nPurlis-Persona: steward\n\n* Extension skill sources: the CLI points at the window's Extensions, and two tests read what purlis says (#5760)\n\n- There is no purlis extension command: a message naming one now points\n  at the window's Extensions.\n- A usage error exits 1, as purlis maps clap's; the test reads its words.\n- A name hidden in a skill's frontmatter is marked \"hides text\" in the\n  listing, which the unit test now expects.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6WGXWND9VB5VK9EHJD7X9DV\nPurlis-Persona: steward\n\n* An extension's source page's baselines, from this pull request's stories run (#5760)\n\nThe page now marks release-notes \"runs a script\". Drawn by the stories\nrun of #5768 and reviewed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6WGXWND9VB5VK9EHJD7X9DV\nPurlis-Persona: steward\n\n* purlis skill install --extension reads every word as a skill's name (#5760)\n\nWith --extension there is no source to name, but clap gave the first\nword to <URL>, so `--extension acme deploy` was refused as a conflict.\nEvery positional word is now a skill's name; --all takes none, and a\ngit source's own options are still refused beside --extension.\n\nAlso: the core's Browse tests read the marks the fixture's script\nearns rather than a list guessed at, and bindings.ts carries the\nbrowse command's new doc comment, as generated.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6WGXWND9VB5VK9EHJD7X9DV\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-08T05:45:13Z",
+          "tree_id": "7c70b37707df013ea61483dd6daf2e5420b630a0",
+          "url": "https://github.com/purlis/purlis/commit/53e4656ef4428a3484cea276b704cdc24710c936"
+        },
+        "date": 1794119029808,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.3341085,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.327, 0.332, 0.334, 0.340, 0.344 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.2158265,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.116, 16.155, 16.216, 16.297, 16.728 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.91871649999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.811, 100.799, 100.919, 101.512, 101.612 ms"
           }
         ]
       }
