@@ -1,6 +1,6 @@
 ---
 name: purlis-browser
-description: Drive a real browser for a task that needs one — a web login, an end-to-end check, verifying a UI, reaching something behind auth — with credentials pulled from a vault so purlis hands the password to the browser instead of you typing it into the conversation. Use when browser automation needs to authenticate, or when several workers each need their own logged-in session.
+description: When a purlis chat must log in to a website with a login from a vault, or needs several browsers each logged in as someone else, drive a real browser the person can watch, where purlis fills the password or a 2FA code from its seed and the value never reaches the chat. Use when asked to log in, sign in or get past a login on a site, to run an end-to-end check or verify a page behind auth, to put an API key or token from a vault into a web form, or to download or upload files on a logged-in site. Not for a browser task with no login and one session — any browser skill does that. Not for a credential a command or an API uses — that is purlis-secrets. Not for how the purlis window looks — that is purlis-theme.
 ---
 
 # Driving a browser with vault credentials

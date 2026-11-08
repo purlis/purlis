@@ -200,7 +200,10 @@ built-in's description is written as a trigger (spec #5714, Q15 and Q30):
 
 The shipped-skill check (`crates/purlis-cli/src/main/tests/shipped_skills.rs`) fails a
 description without the word purlis, over 1,024 characters, or whose "Not for" clauses leave out
-a declared neighbour. The trigger grade measures the rest. A built-in's trigger bar, strict
+a declared neighbour, and a built-in without trigger tests (`evals/triggers.json`), a sources file
+or a trigger bar, so no built-in ships unmeasured. A neighbour purlis does not ship, such as the
+plane's building-purlis-ui skill, is named in the description's prose and its requests are plain
+negatives. The trigger grade measures the rest. A built-in's trigger bar, strict
 (≥95% recall, ≤5% false triggers) or standard (≥85%, ≤5%), is the `Trigger bar:` line of the same
 sources file; moving a skill between bars is a reviewed change.
 

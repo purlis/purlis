@@ -25,13 +25,15 @@ use purlis_skills::change::{MOST_DESCRIPTION, description_problem};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-/// One built-in skill as it ships: its folder's name, its page, its description, and, where it
-/// carries trigger tests, its sources file's text and how many tests it has.
+/// One built-in skill as it ships: its folder's name, its page, its description, how many
+/// trigger tests it carries where its `evals/triggers.json` reads, and its sources file's text
+/// where it has one.
 struct Skill {
     name: String,
     page: String,
     description: Option<String>,
-    sources: Option<(String, usize)>,
+    tests: Option<usize>,
+    sources: Option<String>,
 }
 
 impl Skill {
@@ -44,14 +46,22 @@ impl Skill {
             name: name.to_owned(),
             page: page.to_owned(),
             description,
+            tests: None,
             sources: None,
         }
     }
 
-    /// The same skill, carrying `tests` trigger tests whose sources file says `text`.
-    fn with_sources(mut self, text: &str, tests: usize) -> Self {
-        self.sources = Some((text.to_owned(), tests));
+    /// The same skill, carrying `tests` trigger tests and no sources file.
+    fn with_tests(mut self, tests: usize) -> Self {
+        self.tests = Some(tests);
         self
+    }
+
+    /// The same skill, carrying `tests` trigger tests whose sources file says `text`.
+    fn with_sources(self, text: &str, tests: usize) -> Self {
+        let mut skill = self.with_tests(tests);
+        skill.sources = Some(text.to_owned());
+        skill
     }
 }
 
@@ -93,7 +103,16 @@ const RULES: &[(&str, Rule)] = &[
         "never lowers the sandbox or edits a harness's settings",
         keeps_the_sandbox,
     ),
+    ("carries trigger tests, sources and a tier", is_measured),
 ];
+
+/// **Built-ins leaving the bundle**, each with where it goes: the one place a shipped skill is
+/// not held to carry trigger tests (#5731). An entry goes when its folder does, and the check
+/// fails until it has.
+const LEAVING: &[(&str, &str)] = &[(
+    "purlis-building-ui",
+    "leaves for the plane as its building-purlis-ui skill (#5725)",
+)];
 
 /// **Words the glossary avoids** (#5723, spec #5714's Q31): `CONTEXT.md`'s `_Avoid_` words that
 /// drifted into what a chat is told, each beside the word it says instead. Matched on the prose
@@ -653,18 +672,52 @@ fn keeps_the_sandbox(skill: &Skill, _: &Built) -> Vec<String> {
         .collect()
 }
 
+/// **Every built-in is measured** (#5731, spec #5714's Q2 and Q3): it carries trigger tests in
+/// `evals/triggers.json`, and beside them a sources file a reviewer reads and the CI grader
+/// scores by, naming its trigger bar, its neighbours and where each test came from. So no
+/// built-in ships without a trigger grade to hold it to its bar.
+fn is_measured(skill: &Skill, _: &Built) -> Vec<String> {
+    if LEAVING.iter().any(|(name, _)| *name == skill.name) {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    let tests = skill.tests.unwrap_or(0);
+    if tests == 0 {
+        out.push(
+            "carries no trigger tests (`evals/triggers.json`), so no grade says whether it \
+             starts when it should"
+                .to_owned(),
+        );
+    }
+    match &skill.sources {
+        None => out.push(
+            "has no sources file (`evals/triggers.sources.md`) naming its trigger bar, its \
+             neighbours and where each test came from"
+                .to_owned(),
+        ),
+        Some(text) if tests > 0 => {
+            if let Err(why) = purlis_skills::grade::ci::sources_of(text, tests) {
+                out.push(format!("its trigger tests' sources cannot be read: {why}"));
+            }
+        }
+        Some(_) => {}
+    }
+    out
+}
+
 /// **The house style's "Not for" clause** (#5730, spec #5714's Q15 and Q30): a skill whose
 /// sources file declares neighbours says, after "Not for" in its description, the name of each,
 /// so a harness choosing between two skills reads where one ends. Each neighbour is a skill
 /// purlis ships, since its near-miss tests are that skill's requests.
 fn names_each_neighbour(skill: &Skill, built: &Built) -> Vec<String> {
-    let Some((text, tests)) = &skill.sources else {
+    let Some(text) = &skill.sources else {
         return Vec::new();
     };
-    let neighbours = match purlis_skills::grade::ci::sources_of(text, *tests) {
-        Ok(sources) => sources.neighbours,
-        Err(why) => return vec![format!("its trigger tests' sources cannot be read: {why}")],
+    // A sources file that does not read is named by `is_measured`.
+    let Ok(sources) = purlis_skills::grade::ci::sources_of(text, skill.tests.unwrap_or(0)) else {
+        return Vec::new();
     };
+    let neighbours = sources.neighbours;
     let mut out: Vec<String> = neighbours
         .iter()
         .filter(|name| !built.skills.contains(*name))
@@ -733,16 +786,17 @@ fn shipped() -> Vec<Skill> {
             let page = std::fs::read_to_string(folder.join("SKILL.md")).expect("a skill reads");
             let skill = Skill::of(&name, &page);
             let evals = folder.join("evals");
-            match std::fs::read_to_string(evals.join("triggers.sources.md")) {
-                Ok(text) => {
-                    let tests: Vec<serde_json::Value> =
-                        std::fs::read_to_string(evals.join("triggers.json"))
-                            .ok()
-                            .and_then(|json| serde_json::from_str(&json).ok())
-                            .unwrap_or_default();
-                    skill.with_sources(&text, tests.len())
-                }
-                Err(_) => skill,
+            let tests = std::fs::read_to_string(evals.join("triggers.json"))
+                .ok()
+                .and_then(|json| serde_json::from_str::<Vec<serde_json::Value>>(&json).ok())
+                .map(|tests| tests.len());
+            match (
+                tests,
+                std::fs::read_to_string(evals.join("triggers.sources.md")),
+            ) {
+                (tests, Ok(text)) => skill.with_sources(&text, tests.unwrap_or(0)),
+                (Some(tests), Err(_)) => skill.with_tests(tests),
+                (None, Err(_)) => skill,
             }
         })
         .collect()
@@ -772,6 +826,12 @@ fn every_shipped_skill_passes_every_rule() {
         "shipped skills that break a rule:\n{}",
         wrong.join("\n")
     );
+    for (name, goes) in LEAVING {
+        assert!(
+            built.skills.contains(*name),
+            "`{name}` ({goes}) is shipped no more — take it off LEAVING"
+        );
+    }
     for (word, why) in NOT_TOOLS {
         assert!(
             skills
@@ -788,8 +848,14 @@ fn every_shipped_skill_passes_every_rule() {
 
 // ---- the check's own tests ------------------------------------------------------------ //
 
+/// A sources file for one trigger test that reads: what a measured example skill carries.
+const MEASURED: &str = "Trigger bar: standard\nNeighbours: none\n\n1. a\n";
+
 fn problems(page: &str) -> Vec<String> {
-    check(&[Skill::of("purlis-example", page)], &Built::now())
+    check(
+        &[Skill::of("purlis-example", page).with_sources(MEASURED, 1)],
+        &Built::now(),
+    )
 }
 
 const GOOD: &str = "---\nname: purlis-example\ndescription: Do a thing in purlis. Use when asked to.\n---\n\n# Example\n";
@@ -1143,8 +1209,8 @@ fn a_neighbour_purlis_does_not_ship_and_unreadable_sources_are_named() {
             &Built::now(),
         ),
         [
-            "purlis-example: its trigger tests' sources cannot be read: it names no trigger bar \
-             (a line `Trigger bar: strict` or `Trigger bar: standard`) (says what it is not for)"
+            "purlis-example: carries no trigger tests (`evals/triggers.json`), so no grade says \
+             whether it starts when it should (carries trigger tests, sources and a tier)"
         ]
     );
 }
@@ -1192,6 +1258,61 @@ fn a_sentence_that_says_never_to_lower_the_sandbox_or_edit_a_harness_s_settings_
             "{page}"
         );
     }
+}
+
+#[test]
+fn a_built_in_without_trigger_tests_sources_or_a_tier_is_named() {
+    let page = format!("{GOOD}Do it.\n");
+    let rule = "(carries trigger tests, sources and a tier)";
+    assert_eq!(
+        check(&[Skill::of("purlis-example", &page)], &Built::now()),
+        [
+            format!(
+                "purlis-example: carries no trigger tests (`evals/triggers.json`), so no grade \
+                 says whether it starts when it should {rule}"
+            ),
+            format!(
+                "purlis-example: has no sources file (`evals/triggers.sources.md`) naming its \
+                 trigger bar, its neighbours and where each test came from {rule}"
+            ),
+        ]
+    );
+    assert_eq!(
+        check(
+            &[Skill::of("purlis-example", &page).with_tests(1)],
+            &Built::now()
+        ),
+        [format!(
+            "purlis-example: has no sources file (`evals/triggers.sources.md`) naming its \
+             trigger bar, its neighbours and where each test came from {rule}"
+        )]
+    );
+    assert_eq!(
+        check(
+            &[Skill::of("purlis-example", &page).with_sources("Neighbours: none\n1. a\n", 1)],
+            &Built::now(),
+        ),
+        [format!(
+            "purlis-example: its trigger tests' sources cannot be read: it names no trigger bar \
+             (a line `Trigger bar: strict` or `Trigger bar: standard`) {rule}"
+        )]
+    );
+    assert_eq!(
+        check(
+            &[Skill::of("purlis-example", &page).with_sources(MEASURED, 1)],
+            &Built::now()
+        ),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn a_built_in_leaving_the_bundle_is_not_held_to_carry_trigger_tests() {
+    let page = format!("{GOOD}Do it.\n");
+    assert_eq!(
+        check(&[Skill::of("purlis-building-ui", &page)], &Built::now()),
+        Vec::<String>::new()
+    );
 }
 
 /// What a chat is told at its start in the cases whose words are purlis's own: the gate, the
