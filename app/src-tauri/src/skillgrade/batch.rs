@@ -476,7 +476,6 @@ pub(crate) async fn skill_grades_resume_plan(
 ) -> Result<SkillGradesPlan, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("reading what resuming several grades runs", move || {
-        flag_on()?;
         let root = held.root();
         let mut skills = Vec::new();
         let mut left_out = Vec::new();
