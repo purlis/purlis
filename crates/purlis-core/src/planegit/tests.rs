@@ -1568,7 +1568,7 @@ fn a_rebase_that_really_conflicts_is_still_called_a_conflict() {
     let (pushed, said) = push(&fixture, false);
 
     assert_eq!(pushed.outcome, Outcome::Conflict, "{said}");
-    assert!(said.contains("rebase hit a conflict"), "{said}");
+    assert!(said.contains("Press Resolve"), "{said}");
     assert_eq!(
         pushed.detail, "the remote changed the same lines in: theirs.md",
         "the record says where"
