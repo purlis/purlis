@@ -89,13 +89,14 @@ pub async fn fix_save_request(
     .map_err(|err| format!("the chat did not start: {err}"))?
 }
 
-/// **Resolve a save's conflict in a chat** (qw382): the project's rebase is stopped on a
-/// conflict the window started (`settle_save_conflict`), and a chat is started at the plane
-/// root on a message that names the files and the two sides, asking it to edit them and run
-/// no git. The window stages and continues; the chat's sandbox and A3c are as they are.
+/// **Resolve a save's conflict in a chat** (qw382, #5824 F7): the window has cut a resolve
+/// folder for the conflict (`settle_save_conflict`), and a chat is started at the plane root on a
+/// message that names the folder, the files and the two sides, asking it to edit them there and
+/// run no git. The window stages, commits and moves the project; the chat's sandbox and A3c are
+/// as they are.
 ///
-/// Refused when no rebase is stopped on a conflict, and when a file in conflict is one a
-/// chat's sandbox may not write: that one is the person's to settle, in a terminal.
+/// Refused when no resolve is open, and when a file in conflict is one a chat's sandbox may not
+/// write: that one is the person's to settle, in a terminal.
 ///
 /// The window's alone (`WINDOW_ONLY`): no link and no chat may press it.
 #[tauri::command]
@@ -116,26 +117,28 @@ pub async fn resolve_save_in_a_chat(
 fn resolve_request(held: &Arc<Held>, size: Size) -> Result<Fixing, String> {
     let _one = ONE_AT_A_TIME.lock().unwrap_or_else(PoisonError::into_inner);
     let root = held.root().to_path_buf();
-    let standing = planegit::standing(&root);
-    let found = planegit::resolve::conflicts(&root);
-    if !matches!(standing.stopped_by, Some("rebase" | "merge"))
-        || (found.marked.is_empty() && found.by_hand.is_empty())
-    {
+    let Some(found) = planegit::resolvefolder::conflicts(&root)
+        .filter(|found| !(found.marked.is_empty() && found.by_hand.is_empty()))
+    else {
         return Err(
-            "No replay is stopped on a conflict in this project, so there is nothing for a \
-             chat to settle."
+            "No resolve is open on a conflict in this project, so there is nothing for a chat \
+             to settle."
                 .into(),
         );
-    }
+    };
+    let folder = planegit::resolvefolder::path(&root);
     // A conflict git could not mark is never handed to a chat: the person settles it.
     if !found.by_hand.is_empty() {
-        return Err(planegit::resolve::said_by_hand(&found.by_hand));
+        return Err(planegit::resolvefolder::said_by_hand(
+            &folder,
+            &found.by_hand,
+        ));
     }
     let held_back = planegit::resolve::held_from_chats(&root, &found.marked);
     if !held_back.is_empty() {
         return Err(format!(
             "A chat may not write {}, so it cannot settle this conflict. Settle it in a \
-             terminal here, then Continue, or Abort.",
+             terminal in the resolve folder, then Continue, or Abort.",
             held_back
                 .iter()
                 .map(|path| format!("`{path}`"))
@@ -143,12 +146,18 @@ fn resolve_request(held: &Arc<Held>, size: Size) -> Result<Fixing, String> {
                 .join(", ")
         ));
     }
-    let (remote, own) = planegit::resolve::sides(&root)
+    let (remote, own) = planegit::resolvefolder::sides(&root)
         .ok_or("purlis cannot tell which commits the conflict is between")?;
+    let relative = folder
+        .strip_prefix(&root)
+        .map(|rel| rel.to_string_lossy().replace('\\', "/"))
+        .unwrap_or_else(|_| folder.display().to_string());
     let what = format!("conflict {}", found.marked.join("\0"));
     let files = found.marked;
     fix_with(held, &what, &root, size, || {
-        Ok(purlis_core::savefix::conflict(&files, &remote, &own))
+        Ok(purlis_core::savefix::conflict(
+            &relative, &files, &remote, &own,
+        ))
     })
 }
 

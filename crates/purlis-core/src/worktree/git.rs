@@ -2184,6 +2184,31 @@ pub(crate) fn run_with_index(
     })
 }
 
+/// [`run`], with `vars` set for git: a replayed commit's author and date
+/// (`GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_AUTHOR_DATE`) for a `commit-tree` made off to
+/// the side, as a rebase keeps them (`crate::planegit::replay`).
+pub(crate) fn run_with_vars(
+    dir: &Path,
+    vars: &[(&str, &str)],
+    args: &[&str],
+    timeout: Duration,
+) -> Result<Run, GitUnavailable> {
+    let extra = Extra {
+        pass: vars
+            .iter()
+            .map(|(name, value)| ((*name).to_owned(), std::ffi::OsString::from(value)))
+            .collect(),
+        ..Extra::default()
+    };
+    let extra = match held(dir, args, extra)? {
+        Ok(extra) => extra,
+        Err(answer) => return Ok(as_text(answer)),
+    };
+    counted(dir, args, || {
+        Ok(wait(spawn_with(dir, args, &extra)?, timeout)?)
+    })
+}
+
 /// Run `git -C <dir> <args>` with a deadline.
 ///
 /// **The pipes are drained on their own threads** ([`wait`]). Waiting on the child while its

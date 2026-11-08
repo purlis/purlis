@@ -505,15 +505,23 @@ pub async fn settle_save_conflict(
 /// [`settle_save_conflict`], without a runtime.
 pub fn settle(root: &Path, step: &str, files: &[String]) -> Result<SaveSettled, String> {
     use planegit::resolve::{self, Settled};
+    use planegit::resolvefolder as folder;
     let mut lines: Vec<String> = Vec::new();
+    // A stop an older purlis left at the root is carried on or aborted where it is; every
+    // resolve this build starts is settled in its folder, off to the side (#5824 F7).
+    let at_the_root = folder::held(root).is_none()
+        && purlis_core::gitstate::stopped(root).is_some_and(|stopped| stopped.operation.is_some());
     let settled = {
         let mut say = |line: Say| lines.push(line.to_string());
         match step {
             // The window's own git (#752): its sign-in, offered to the recorded remote alone.
-            "start" => crate::forgeaccounts::window_git(|| resolve::start(root, &mut say)),
-            "continue" => resolve::carry_on(root, files, &mut say),
-            "skip" => resolve::skip(root),
-            "abort" => resolve::abort(root),
+            "start" => crate::forgeaccounts::window_git(|| folder::start(root, &mut say)),
+            "continue" if at_the_root => resolve::carry_on(root, files, &mut say),
+            "continue" => folder::carry_on(root, files, &mut say),
+            "skip" if at_the_root => resolve::skip(root),
+            "skip" => folder::skip(root),
+            "abort" if at_the_root => resolve::abort(root),
+            "abort" => folder::abort(root),
             other => {
                 return Err(format!(
                     "{other} is not a step: start, continue, skip or abort"
@@ -526,9 +534,17 @@ pub fn settle(root: &Path, step: &str, files: &[String]) -> Result<SaveSettled, 
         Settled::Replayed => ("saved", pushed_after(root, &mut lines), Vec::new()),
         Settled::Stopped(files) => (
             "stopped",
-            "git stopped on a conflict. Settle the files below, in a chat or by hand, then \
-             Continue. Abort puts the project back where it was."
-                .to_owned(),
+            if at_the_root {
+                "git stopped on a conflict. Settle the files below, in a chat or by hand, then \
+                 Continue. Abort puts the project back where it was."
+                    .to_owned()
+            } else {
+                format!(
+                    "The files below conflict. Settle them in the resolve folder {}, in a chat \
+                     or by hand, then Continue. Abort removes the folder and changes nothing.",
+                    folder::path(root).display()
+                )
+            },
             files,
         ),
         Settled::Empty => (
@@ -541,7 +557,11 @@ pub fn settle(root: &Path, step: &str, files: &[String]) -> Result<SaveSettled, 
         ),
         Settled::Aborted => (
             "aborted",
-            "Aborted: the project is back where it was before Resolve.".to_owned(),
+            if at_the_root {
+                "Aborted: the project is back where it was before Resolve.".to_owned()
+            } else {
+                "Aborted: the resolve folder is removed, and the project is as it was.".to_owned()
+            },
             Vec::new(),
         ),
         Settled::Refused(why) => ("refused", why, Vec::new()),

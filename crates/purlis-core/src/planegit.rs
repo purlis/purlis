@@ -767,16 +767,24 @@ pub fn standing(root: &Path) -> Standing {
     let rebase_by_hand = stopped.is_none()
         && blocked.is_some()
         && outcome.as_deref() == Some(Outcome::Conflict.word());
-    let stopped_by = stopped.as_ref().map(|stopped| {
-        stopped
-            .operation
-            .map_or("conflicts", gitstate::Operation::kind)
-    });
+    // A resolve open in its folder off to the side (#5824 F7): the root is not stopped, and the
+    // files to settle are the folder's.
+    let resolving = resolvefolder::conflicts(root);
+    let stopped_by = stopped
+        .as_ref()
+        .map(|stopped| {
+            stopped
+                .operation
+                .map_or("conflicts", gitstate::Operation::kind)
+        })
+        .or(resolving.as_ref().map(|_| RESOLVING));
+    let rebase_by_hand = rebase_by_hand && resolving.is_none();
     // A step purlis left part-way that a look could not recover says why, in place of git's
     // generic words (#5824 F3).
     let blocked = stopped
         .as_ref()
         .map(|stopped| recover::said(root).unwrap_or_else(|| stopped.why()))
+        .or_else(|| resolving.as_ref().map(|_| SAID_RESOLVING.to_owned()))
         .or(blocked);
     // Named only while they are why: a stopped merge is settled first.
     if blocked.as_deref() != Some(SECRET_REFUSED) {
@@ -805,10 +813,11 @@ pub fn standing(root: &Path) -> Standing {
     let merge = (plane.mode.value == Some(crate::planesave::Mode::PrMerge) && pr.is_some())
         .then(|| prsave::known_merging(root))
         .flatten();
-    // The files a stopped merge or rebase left unmerged are the ones to settle now, and the keys
-    // named are those of the files still to settle.
-    let conflicts = match stopped {
-        Some(stopped) if !stopped.unmerged.is_empty() => stopped.unmerged,
+    // The files a stopped merge or rebase left unmerged are the ones to settle now, or a resolve
+    // folder's still unsettled, and the keys named are those of the files still to settle.
+    let conflicts = match (stopped, resolving) {
+        (Some(stopped), _) if !stopped.unmerged.is_empty() => stopped.unmerged,
+        (_, Some(left)) => left.marked.into_iter().chain(left.by_hand).collect(),
         _ => conflicts,
     };
     let mut conflict_keys = conflict_keys;
@@ -839,6 +848,12 @@ pub fn standing(root: &Path) -> Standing {
     }
 }
 
+/// [`Standing::stopped_by`] while a resolve is open in its folder ([`resolvefolder`]).
+pub const RESOLVING: &str = "resolve";
+
+/// [`Standing::blocked`] while a resolve is open in its folder.
+pub const SAID_RESOLVING: &str = "a resolve is open: settle the files in the resolve folder, then \
+     Continue, or Abort";
 
 /// Where a look at a save's open request is run from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2472,8 +2487,8 @@ const WHOLE_TREE_FLAGS: [&str; 5] = ["-A", "--all", "--no-ignore-removal", "-u",
 /// #2767; a persona's, #3124), spelled by the one level rule ([`purlis_skills::local_globs`]),
 /// and the lockfile of the skills installed there (ADR 0100 §2, #2773), whatever the plane's
 /// `.gitignore` says, since `skills.local/` is this machine's own and a plane whose `.gitignore`
-/// lost its line would otherwise commit it to the team; and a Try it's throwaway pieces (#2772),
-/// which last as long as their chats.
+/// lost its line would otherwise commit it to the team; a Try it's throwaway pieces (#2772),
+/// which last as long as their chats; and a resolve folder ([`resolvefolder`]).
 pub fn never_staged() -> Vec<String> {
     purlis_skills::local_globs()
         .iter()
@@ -2482,6 +2497,13 @@ pub fn never_staged() -> Vec<String> {
             ":(exclude,literal)skills.local.lock".to_owned(),
             ":(exclude,glob)workspaces/.throwaway/**".to_owned(),
         ])
+        // A resolve folder, under each spelling of the state folder, where `.gitignore` does not
+        // already keep it out (#5824 F7).
+        .chain(
+            crate::names::STATE_DIR
+                .spellings()
+                .map(|state| format!(":(exclude,literal){state}/resolve")),
+        )
         .collect()
 }
 
@@ -3091,6 +3113,10 @@ fn kept_out(path: &str) -> bool {
         || matches!(
             parts.as_slice(),
             ["skills.local.lock"] | ["workspaces", ".throwaway", ..]
+        )
+        || matches!(
+            parts.as_slice(),
+            [state, "resolve", ..] if crate::names::STATE_DIR.spellings().any(|s| s == *state)
         )
 }
 
@@ -4210,7 +4236,9 @@ pub mod merging;
 pub(crate) mod ondisk;
 mod prsave;
 pub mod recover;
+mod replay;
 pub mod resolve;
+pub mod resolvefolder;
 mod update;
 pub use merging::{MergeState, Merging, Seen, changed_since};
 pub use prsave::{MergedAsItStands, settled_at, stamp_is_unusable};
