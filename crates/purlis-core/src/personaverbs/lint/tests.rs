@@ -807,9 +807,11 @@ fn with_the_skill_studio_off_a_skills_line_is_said_to_be_unread_and_not_checked(
 fn a_skills_entry_naming_the_built_in_that_left_says_where_it_went_5725() {
     let bundle = tempfile::tempdir().unwrap();
     skill_folder(&bundle.path().join("skills"), "purlis-handoff");
+    // A home with no skills, so a name the plane lacks is checked against the machine.
+    let home = tempfile::tempdir().unwrap();
     let linted = |p: &Plane| {
         Linter::new(p.root(), p.root())
-            .with_home(None)
+            .with_home(Some(home.path().to_path_buf()))
             .with_built_in(Some(bundle.path().join("skills")))
             .with_studio(true)
             .definition("s")
