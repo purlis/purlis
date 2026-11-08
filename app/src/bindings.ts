@@ -955,6 +955,12 @@ export const commands = {
 	 *  home (#4350).
 	 */
 	with_the_runner: boolean,
+	/**
+	 *  **What it had left running of its own, which ended with its host** (#5752, spec #5743),
+	 *  in purlis's words ("1 background shell, 1 monitor"), from the record of its last turn's
+	 *  end ([`ended_with_it`]). None where it had nothing running: only then was nothing lost.
+	 */
+	ended: string | null,
 } | null, string>(__TAURI_INVOKE("chat_lost_with_the_host", { plane, session })),
 	/**
 	 *  **Dismiss** on the Notice, and what Resume does once it has asked for the chat's restart:
@@ -10509,6 +10515,12 @@ export type LostChat = {
 	 *  home (#4350).
 	 */
 	with_the_runner: boolean,
+	/**
+	 *  **What it had left running of its own, which ended with its host** (#5752, spec #5743),
+	 *  in purlis's words ("1 background shell, 1 monitor"), from the record of its last turn's
+	 *  end ([`ended_with_it`]). None where it had nothing running: only then was nothing lost.
+	 */
+	ended: string | null,
 };
 
 /**  A profile made or imported into, and what its import did. */

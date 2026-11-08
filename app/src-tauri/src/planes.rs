@@ -4879,6 +4879,9 @@ impl Planes {
                                 left_in: now.left_in,
                                 resumable: false,
                                 with_the_runner: true,
+                                ended: me.get().and_then(std::sync::Weak::upgrade).and_then(
+                                    |held| crate::hostlost::ended_with_it(&held.chats, session),
+                                ),
                             });
                         }
                         if let Some(held) = me.get().and_then(std::sync::Weak::upgrade)
@@ -4935,6 +4938,7 @@ impl Planes {
                                 left_in,
                                 resumable,
                                 with_the_runner,
+                                ended: crate::hostlost::ended_with_it(&held.chats, session),
                             });
                         }
                     }

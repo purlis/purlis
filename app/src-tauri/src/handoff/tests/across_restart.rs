@@ -1640,6 +1640,11 @@ fn a_hibernated_chat_is_told_what_its_host_s_crash_ended_as_resume_wakes_it() {
         Some(crate::hostlost::LeftIn::Hibernated),
         "precondition: hibernated"
     );
+    // The Notice names what ended, and does not say nothing was lost.
+    assert_eq!(
+        crate::hostlost::ended_with_it(held.chats(), steward).as_deref(),
+        Some("1 background shell")
+    );
     held.chats().ask_restart(steward).expect("Resume asks");
     let again = held
         .restart_chat(steward, A_SIZE)

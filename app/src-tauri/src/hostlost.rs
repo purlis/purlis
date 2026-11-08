@@ -14,7 +14,9 @@
 //! that picks a conversation back up by its id (`resumes_by_id`, ADR 0076 §5), is
 //! **hibernated** (nothing is lost). The window keeps that for the chat ([`Lost`]) and says it
 //! on the chat's pane, with **Resume** where it has a conversation to resume: the chat's restart
-//! on its conversation (`ask_chat_restart`), one click. In memory only: a relaunch starts with
+//! on its conversation (`ask_chat_restart`), one click. **What it had left running of its own
+//! ended with the host** (#5752): the Notice names it ([`LostChat::ended`]), never "nothing was
+//! lost" for a chat that had any, and Resume tells the chat it ended (its wake line). In memory only: a relaunch starts with
 //! none, and a closed chat's goes with it.
 
 use std::collections::HashMap;
@@ -50,6 +52,20 @@ pub struct LostChat {
     /// Its host was a pool's runner, gone for good, and its conversation went with that runner's
     /// home (#4350).
     pub with_the_runner: bool,
+    /// **What it had left running of its own, which ended with its host** (#5752, spec #5743),
+    /// in purlis's words ("1 background shell, 1 monitor"), from the record of its last turn's
+    /// end ([`ended_with_it`]). None where it had nothing running: only then was nothing lost.
+    pub ended: Option<String>,
+}
+
+/// What chat `session` had left running of its own as its program ended with its host, in
+/// purlis's words: what the Notice names as ended. Read from the record of open chats, which
+/// keeps it until the chat is started again or closed. None where nothing was in flight.
+pub fn ended_with_it(chats: &crate::chats::Chats, session: u32) -> Option<String> {
+    chats
+        .own_work_of(session)
+        .as_ref()
+        .and_then(purlis_core::wakeline::ended)
 }
 
 /// Told each chat whose program ended with its host. The event carries its project.
@@ -133,6 +149,7 @@ pub fn chat_lost_with_the_host(
         left_in: lost.left_in,
         resumable: lost.resumable,
         with_the_runner: lost.with_the_runner,
+        ended: ended_with_it(held.chats(), session),
     }))
 }
 

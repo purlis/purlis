@@ -3639,6 +3639,7 @@ impl Chats {
                 "purlis did not restart chat {session}: it is owed no restart."
             ));
         };
+        let mut woke = false;
         let started = self.again_on_its_conversation(session).and_then(|again| {
             if again.resume.is_none() {
                 let reaches = if told.is_empty() {
@@ -3648,7 +3649,13 @@ impl Chats {
                 };
                 return Err(format!("{}{reaches}", no_conversation(session)));
             }
-            let first = (!told.is_empty()).then(|| told.join("\n\n"));
+            // **A chat whose program ended with its session host is told what ended with it**
+            // (#5752): Resume, failed or hibernated, starts it on its conversation, and its own
+            // work went with the host. Its wake line first, then what it was owed.
+            let wake = self.wake_line_after_its_host(session, &again);
+            woke = wake.is_some();
+            let first: Vec<String> = wake.into_iter().chain(told.iter().cloned()).collect();
+            let first = (!first.is_empty()).then(|| first.join("\n\n"));
             let started =
                 self.start_recorded_told(&again, size, Why::Relaunch, first.as_deref(), None)?;
             if again.unsandboxed && self.confines_of(started).is_some() {
@@ -3660,7 +3667,13 @@ impl Chats {
             Ok(started)
         });
         match started {
-            Ok(started) => self.restarted(session, started, true),
+            Ok(started) => {
+                // Told once: the work it was told of is the old program's, gone with it.
+                if woke {
+                    lock(&self.own_work).remove(&session);
+                }
+                self.restarted(session, started, true)
+            }
             Err(why) => {
                 // Owed still: put back ahead of anything queued since. A restart the person
                 // asked for, with nothing to tell, is not: they were told why, and ask again.
@@ -3675,6 +3688,29 @@ impl Chats {
                 Err(why)
             }
         }
+    }
+
+    /// **The wake line for chat `session`, started again as `again` on its conversation after its
+    /// program ended with its session host** (#5752, spec #5743): what it had left running of
+    /// its own, which the host's end ended, or none. None for a chat whose program did not end
+    /// with its host: a restart of a running chat ends its work on purpose, and that is the
+    /// "now" restarts' to tell (#5743).
+    fn wake_line_after_its_host(&self, session: u32, again: &Chat) -> Option<String> {
+        if !self.sessions.lost_with_its_host(session) {
+            return None;
+        }
+        let chat = Chat {
+            own_work: self.own_work_of(session),
+            ..again.clone()
+        };
+        purlis_core::wakeline::of_chat(&chat, false)
+    }
+
+    /// What chat `session` had left running of its own as its last turn ended, as its record
+    /// holds it ([`Self::heard_own_work`]): kept after its program ends, until it is started
+    /// again or closed.
+    pub(crate) fn own_work_of(&self, session: u32) -> Option<purlis_core::ownwork::OwnWork> {
+        lock(&self.own_work).get(&session).copied()
     }
 
     /// **Starts chat `session` again without the sandbox** (#1342): the person's own choice, from
