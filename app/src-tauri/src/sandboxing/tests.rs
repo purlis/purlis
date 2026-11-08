@@ -1610,11 +1610,22 @@ fn a_block_report_refuses_words_the_sandbox_does_not_report() {
 
 #[test]
 fn only_the_draft_that_was_shown_is_filed() {
+    let not_shown = "The draft is not the one that was shown";
     let shown = sandbox_block_report("connect".to_owned(), "host".to_owned(), None).unwrap();
-    assert!(shown_draft("connect", "host", None, &shown.digest).is_ok());
-    let refused = shown_draft("connect", "host", Some("claude"), &shown.digest).unwrap_err();
-    assert!(refused.contains("nothing was sent"), "{refused}");
-    assert!(shown_draft("write", "host", None, &shown.digest).is_err());
+    // The shown draft passes the digest and goes on to the route, which a test holds no sign-in
+    // for, so it is refused there, unsent, with the link that files it.
+    let routed = filed("connect", "host", None, &shown.digest).unwrap_err();
+    assert!(
+        !routed.contains(not_shown) && routed.contains("It was not filed"),
+        "{routed}"
+    );
+    let refused = filed("connect", "host", Some("claude"), &shown.digest).unwrap_err();
+    assert!(
+        refused.contains(not_shown) && refused.contains("nothing was sent"),
+        "{refused}"
+    );
+    let refused = filed("write", "host", None, &shown.digest).unwrap_err();
+    assert!(refused.contains(not_shown), "{refused}");
 }
 
 #[test]
