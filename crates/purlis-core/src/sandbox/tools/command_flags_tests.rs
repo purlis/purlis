@@ -302,3 +302,71 @@ fn a_program_that_names_no_command_by_its_flags_is_left_as_it_was() {
 fn after_a_double_dash_the_words_are_the_programs_and_not_flags() {
     offered("ssh", &["host -- ls -F"]);
 }
+
+// The review of #5876: a program's other names, and the forms it missed.
+
+#[test]
+fn a_program_named_by_a_suffix_a_version_or_its_newer_build_is_read_by_its_own_flags() {
+    refused(
+        "kubectl.docker",
+        "--kubeconfig",
+        &[&["--kubeconfig=/tmp/x", "get", "pods"]],
+    );
+    refused("psql-16", "-f", &[&["-f", "x.sql"]]);
+    refused("rsync3", "-e", &[&["-e", "x", "a", "host:b"]]);
+    refused(
+        "wget2",
+        "--use-askpass",
+        &[&["--use-askpass=x", "https://example.com"]],
+    );
+    refused("wget2", "-e", &[&["-e", "x", "https://example.com"]]);
+    offered("kubectl.docker", &["get pods -n web"]);
+}
+
+#[test]
+fn ssh_with_the_xauth_program_it_names_is_offered_no_run_grant() {
+    refused(
+        "ssh",
+        "-o XAuthLocation",
+        &[&["-X", "-o", "XAuthLocation=/tmp/x", "host"]],
+    );
+    refused(
+        "scp",
+        "-o XAuthLocation",
+        &[&["-oXAuthLocation=/tmp/x", "a", "host:b"]],
+    );
+}
+
+#[test]
+fn mysql_with_a_shell_escape_a_pager_or_a_file_of_settings_is_offered_no_run_grant() {
+    refused(
+        "mysql",
+        "-e with a shell command",
+        &[
+            &["-e", "\\! sh"],
+            &["-e", "system sh"],
+            &["-e", "SELECT 1; SYSTEM sh"],
+            &["-hdb", "-esystem sh"],
+        ],
+    );
+    refused(
+        "mariadb",
+        "--execute with a shell command",
+        &[&["--execute=\\! sh"]],
+    );
+    refused("mysql", "--pager", &[&["--pager=sh", "-e", "select 1"]]);
+    refused("mysql", "--defaults-file", &[&["--defaults-file=/tmp/x"]]);
+    refused(
+        "mysql",
+        "--defaults-extra-file",
+        &[&["--defaults-extra-file=/tmp/x"]],
+    );
+    refused("mysql", "--plugin-dir", &[&["--plugin-dir=/tmp/x"]]);
+    offered(
+        "mysql",
+        &[
+            "-h db -u app -e select_1",
+            "-h db -P 3306 -u app -D shop -e show_tables",
+        ],
+    );
+}

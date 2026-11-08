@@ -1,10 +1,12 @@
 ### Security
 
 - **A run's notice offers no Allow for a command whose flags name a command.** `ssh`, `scp`,
-  `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are still offered Allow once on the exact
-  command, but not with `ssh -o ProxyCommand` (or `LocalCommand`, `KnownHostsCommand`,
-  `PKCS11Provider`), `-F` or `-I`; `scp -S`, `-D` or `-F`; `sftp -b`, `-S`, `-D` or `-F`;
-  `rsync -e`, `--rsh`, `--rsync-path`, `-M` or `--daemon`; `kubectl --kubeconfig` or kustomize's
-  plugin flags; `psql -f`, `-o` or a backslash command in `-c`; `zip -TT`; or `wget
-  --use-askpass`, `-e` or `--config`. The chat is told to leave the flag out. `sed`, `aria2c` and
-  `kustomize` get no Allow at all. A persona can still declare any of them as a tool (#5799).
+  `sftp`, `rsync`, `kubectl`, `psql`, `mysql`, `mariadb`, `zip` and `wget` are still offered
+  Allow once on the exact command, by any name their builds go by (`kubectl.docker`, `psql-16`,
+  `wget2`), but not with a flag that names a command or a file that can: among them
+  `ssh -o ProxyCommand`, `-o XAuthLocation`, `-F` and `-I`; `scp -S`; `sftp -b`; `rsync -e`,
+  `--rsh` and `--rsync-path`; `kubectl --kubeconfig` and kustomize's plugin flags; `psql -f`, `-o`
+  and a backslash command in `-c`; `mysql --pager`, `--defaults-file` and a shell command in `-e`;
+  `zip -TT`; and `wget --use-askpass`, `-e` and `--config`. The chat is told to leave the flag
+  out. `sed`, `aria2c`, `kustomize`, `sshpass`, `autossh`, `mosh` and `lftp` get no Allow at all.
+  A persona can still declare any of them as a tool (#5799).

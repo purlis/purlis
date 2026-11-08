@@ -1920,6 +1920,13 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "dune",
     "zig",
     "lein",
+    // the closest kin of ssh (#5876's review): `sshpass` runs the command after it, `autossh`
+    // hands ssh whatever it is given, `mosh --ssh=` runs the command it names, and `lftp` runs
+    // commands from its own prompt and scripts, as `ftp` does.
+    "sshpass",
+    "autossh",
+    "mosh",
+    "lftp",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused
@@ -2115,15 +2122,30 @@ const MOST_VARIABLE_SHOWN: usize = 64;
 /// a flavour (`emacs-nox`, `sudo-rs`) and one of git's own programs (`git-shell`). Each form only takes away an Allow, so a name it
 /// catches by chance loses a notice and nothing more.
 fn not_for_a_run_grant(name: &str) -> bool {
-    let name = name.to_ascii_lowercase();
     let refused = |one: &str| {
         !one.is_empty() && (NOT_FOR_A_RUN_GRANT.contains(&one) || runs_what_it_is_told(one))
     };
-    let stem = name.split('.').next().unwrap_or_default();
     // git's own programs are git's: `git-shell` runs what it is told, `git-lfs` runs git.
-    if stem.starts_with("git-") {
+    let lower = name.to_ascii_lowercase();
+    if lower
+        .split('.')
+        .next()
+        .unwrap_or_default()
+        .starts_with("git-")
+    {
         return true;
     }
+    name_forms(name).iter().any(|one| refused(one))
+}
+
+/// **The names `name`'s program may be, as its builds are named** (#5424, #5876): itself
+/// lowercased, its stem before a `.` (`vim.basic`, `kubectl.docker`), without a version (`gcc-13`,
+/// `wget2`), a target's last part (`x86_64-linux-gnu-gcc`), a flavour's first (`emacs-nox`), and
+/// each of those without a GNU `g` or `gnu` (`gm4`, `gnumake`). A form caught by chance takes
+/// away an Allow and nothing more.
+pub(crate) fn name_forms(name: &str) -> Vec<String> {
+    let name = name.to_ascii_lowercase();
+    let stem = name.split('.').next().unwrap_or_default();
     let mut forms = vec![name.as_str(), stem];
     for one in [name.as_str(), stem] {
         let unversioned = without_version(one);
@@ -2142,7 +2164,12 @@ fn not_for_a_run_grant(name: &str) -> bool {
         .iter()
         .filter_map(|one| one.strip_prefix("gnu").or_else(|| one.strip_prefix('g')))
         .collect::<Vec<_>>();
-    forms.iter().chain(&gnu).any(|one| refused(one))
+    forms
+        .iter()
+        .chain(&gnu)
+        .filter(|one| !one.is_empty())
+        .map(|one| (*one).to_owned())
+        .collect()
 }
 
 /// `name` without a version at its end: `gcc-13`, `clang-17.0`, `gcc13` and `ld64` are `gcc`,

@@ -2613,3 +2613,25 @@ fn zig_builds_and_runs_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
 fn lein_builds_and_runs_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
     refused_as_running_others("lein");
 }
+
+// The review of #5876: the closest kin of ssh and the programs that run the command after them.
+
+#[test]
+fn sshpass_runs_the_command_after_it_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("sshpass");
+}
+
+#[test]
+fn autossh_runs_ssh_with_whatever_it_is_handed_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("autossh");
+}
+
+#[test]
+fn mosh_runs_the_ssh_command_it_names_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("mosh");
+}
+
+#[test]
+fn lftp_runs_commands_from_its_own_prompt_and_scripts_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("lftp");
+}

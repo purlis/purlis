@@ -5,7 +5,7 @@
 //! grant that would have it run a command, or read a file that can name one, which the person
 //! reading the exact command would not see run.
 //!
-//! `ssh`, `scp`, `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat
+//! `ssh`, `scp`, `sftp`, `rsync`, `kubectl`, `psql`, `mysql`, `zip` and `wget` are the usual reason a chat
 //! is handed a key, so each stays offered Allow once on the exact command (D-5619-7). Only the
 //! forms below are refused: `ssh -o ProxyCommand`, `-F` and `-I`, `scp -S`, `sftp -b`,
 //! `rsync -e`, `zip -TT`, `wget --use-askpass` and `-e`, `kubectl --kubeconfig`, `psql -f`, `-o`
@@ -24,6 +24,8 @@ struct Flags {
     names: &'static [&'static str],
     /// Short flags that take a value: the rest of their word, or the next word.
     valued: &'static str,
+    /// Short flags whose value is only the rest of their word, never the next (mysql's `-p`).
+    attached: &'static str,
     /// Short flags refused whatever follows them.
     refused: &'static str,
     /// Text refused anywhere in a cluster of short flags: `zip`'s `-TT` is one flag of two letters.
@@ -35,6 +37,9 @@ struct Flags {
     value: fn(flag: &str, value: &str) -> Option<String>,
     /// Long options whose value [`Self::value`] reads, by their whole name.
     long_valued: &'static [&'static str],
+    /// Long options spelled as mysql's: `_` for `-`, and a `loose-`, `enable-` or `maximum-`
+    /// before the name.
+    mysql_spelling: bool,
 }
 
 /// The options of ssh's own configuration that run a command or load code (`ssh_config(5)`).
@@ -47,6 +52,8 @@ const SSH_RUNS: &[&str] = &[
     "SecurityKeyProvider",
     "Include",
     "Match",
+    // run as X11 forwarding starts
+    "XAuthLocation",
 ];
 
 /// `-o Key=Value` or `-o "Key Value"`, where `Key` is one of [`SSH_RUNS`], whatever its case.
@@ -78,12 +85,28 @@ fn psql_command(flag: &str, value: &str) -> Option<String> {
         .then(|| format!("{said} with a backslash command"))
 }
 
+/// mysql's `-e` or `--execute` holding a shell command: `\!` or `system`, and any other
+/// backslash command (`\P` sets a pager it runs).
+fn mysql_execute(flag: &str, value: &str) -> Option<String> {
+    let said = match flag {
+        "e" => "-e",
+        "execute" => "--execute",
+        _ => return None,
+    };
+    let lower = value.to_ascii_lowercase();
+    let system = lower
+        .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+        .any(|word| word == "system");
+    (system || value.contains('\\')).then(|| format!("{said} with a shell command"))
+}
+
 fn none(_flag: &str, _value: &str) -> Option<String> {
     None
 }
 
 const PROGRAMS: &[Flags] = &[
     Flags {
+        attached: "",
         names: &["ssh", "slogin"],
         valued: "BbcDEeFIiJLlmOoPpQRSWw",
         // A config file can name a command; a PKCS#11 library is code ssh loads.
@@ -92,8 +115,10 @@ const PROGRAMS: &[Flags] = &[
         long: &[],
         value: ssh_option,
         long_valued: &[],
+        mysql_spelling: false,
     },
     Flags {
+        attached: "",
         names: &["scp"],
         valued: "cDFiJlOoPSX",
         // `-S` is the program it runs for ssh, `-D` the sftp server it runs, `-F` a config file.
@@ -102,8 +127,10 @@ const PROGRAMS: &[Flags] = &[
         long: &[],
         value: ssh_option,
         long_valued: &[],
+        mysql_spelling: false,
     },
     Flags {
+        attached: "",
         names: &["sftp"],
         valued: "BbcDFiJlOoPRSsX",
         // `-b` a batch file, whose `!` runs a shell, and as `scp`.
@@ -112,8 +139,10 @@ const PROGRAMS: &[Flags] = &[
         long: &[],
         value: ssh_option,
         long_valued: &[],
+        mysql_spelling: false,
     },
     Flags {
+        attached: "",
         names: &["rsync"],
         valued: "BfT@",
         // `-e` the remote shell it runs, `-M` options for the other end's rsync.
@@ -122,8 +151,10 @@ const PROGRAMS: &[Flags] = &[
         long: &["rsh", "rsync-path", "remote-option", "daemon", "config"],
         value: none,
         long_valued: &[],
+        mysql_spelling: false,
     },
     Flags {
+        attached: "",
         names: &["zip"],
         valued: "",
         refused: "",
@@ -131,9 +162,11 @@ const PROGRAMS: &[Flags] = &[
         long: &["unzip-command"],
         value: none,
         long_valued: &[],
+        mysql_spelling: false,
     },
     Flags {
-        names: &["wget"],
+        attached: "",
+        names: &["wget", "wget2"],
         valued: "aABDeiIlnOoPQRtTUwX",
         // `-e` runs a line of wgetrc, `use_askpass` among them.
         refused: "e",
@@ -141,8 +174,10 @@ const PROGRAMS: &[Flags] = &[
         long: &["use-askpass", "execute", "config"],
         value: none,
         long_valued: &[],
+        mysql_spelling: false,
     },
     Flags {
+        attached: "",
         names: &["kubectl"],
         valued: "",
         refused: "",
@@ -157,8 +192,10 @@ const PROGRAMS: &[Flags] = &[
         ],
         value: none,
         long_valued: &[],
+        mysql_spelling: false,
     },
     Flags {
+        attached: "",
         names: &["psql"],
         valued: "cdfFhLopPRTUv",
         // `-f` a file of commands, `-o` an output that may be `|command`.
@@ -167,6 +204,24 @@ const PROGRAMS: &[Flags] = &[
         long: &["file", "output"],
         value: psql_command,
         long_valued: &["command"],
+        mysql_spelling: false,
+    },
+    Flags {
+        attached: "p",
+        names: &["mysql", "mariadb"],
+        valued: "DehPSu",
+        refused: "",
+        in_a_cluster: &[],
+        // A pager it runs, a file of settings that can name one, and plugins it loads.
+        long: &[
+            "pager",
+            "defaults-file",
+            "defaults-extra-file",
+            "plugin-dir",
+        ],
+        value: mysql_execute,
+        long_valued: &["execute"],
+        mysql_spelling: true,
     },
 ];
 
@@ -174,10 +229,11 @@ const PROGRAMS: &[Flags] = &[
 /// would: the form, and that the person may leave it out or declare the program as a tool.
 /// `name` is the program's file name, whatever its case.
 pub fn names_a_command(name: &str, args: &[String]) -> Option<String> {
-    let lower = name.to_ascii_lowercase();
+    // By every name its builds go by: `kubectl.docker`, `psql-16`, `wget2` (#5876's review).
+    let forms = super::name_forms(name);
     let program = PROGRAMS
         .iter()
-        .find(|one| one.names.contains(&lower.as_str()))?;
+        .find(|one| forms.iter().any(|form| one.names.contains(&form.as_str())))?;
     let form = refused_form(program, args)?;
     Some(format!(
         "{name} {form} can run a command it names, so purlis does not offer to allow {name} with \
@@ -200,6 +256,17 @@ fn refused_form(program: &Flags, args: &[String]) -> Option<String> {
             if named.is_empty() {
                 continue;
             }
+            let spelled;
+            let named = if program.mysql_spelling {
+                let lower = named.to_ascii_lowercase().replace('_', "-");
+                spelled = ["loose-", "enable-", "maximum-"]
+                    .iter()
+                    .find_map(|prefix| lower.strip_prefix(prefix).map(str::to_owned))
+                    .unwrap_or(lower);
+                spelled.as_str()
+            } else {
+                named
+            };
             if let Some(one) = program.long.iter().find(|one| one.starts_with(named)) {
                 return Some(format!("--{one}"));
             }
@@ -228,6 +295,9 @@ fn refused_form(program: &Flags, args: &[String]) -> Option<String> {
         for (at, flag) in cluster.char_indices() {
             if program.refused.contains(flag) {
                 return Some(format!("-{flag}"));
+            }
+            if program.attached.contains(flag) {
+                break;
             }
             if program.valued.contains(flag) {
                 let rest = &cluster[at + flag.len_utf8()..];
