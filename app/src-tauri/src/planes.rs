@@ -1872,7 +1872,12 @@ impl Held {
                 .chats
                 .shown_name(open.session)
                 .unwrap_or_else(|| open.name.clone());
-            if waiting.iter().any(|report| report.from == name) {
+            // A task's report names it as purlis's line can carry the name
+            // ([`purlis_core::handback::in_purlis_s_line`]); a handoff's, as it stands.
+            let in_purlis_s_line = purlis_core::handback::in_purlis_s_line(&name);
+            if waiting.iter().any(|report| {
+                report.from == name || (report.task.is_some() && report.from == in_purlis_s_line)
+            }) {
                 self.needs_the_person(
                     open.session,
                     purlis_core::state::Need::ReportUndelivered {

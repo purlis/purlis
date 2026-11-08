@@ -219,14 +219,16 @@ pub fn place_of(record: &Record) -> String {
     )
 }
 
-/// Whether `report` is one purlis wrote in a chat's place: the person stopped the chat, or it
-/// ended owing a report.
-fn purlis_wrote(report: &dispatchrecord::Report) -> bool {
-    report.outcome == Outcome::Stopped
-        || report.text == dispatchrecord::ENDED_WITHOUT_A_REPORT
-        || report.text == crate::handback::UNREPORTED
-        || report.text == crate::handback::ENDED_WITH_ITS_RUNNER
-        || report.text == crate::handback::STOPPED
+/// **Whether `report` is one purlis wrote in a chat's place**, ended as `ended_by` says: the
+/// person stopped the chat before it reported ([`Outcome::Stopped`], which only the app records),
+/// or it ended owing a report ([`dispatchrecord::EndedBy::Unreported`]). Decided by the record's
+/// own facts, never by the report's words: a task may write any sentence purlis writes. A report
+/// sent in the turn a stop gave it is the task's own, though the person ended it.
+fn purlis_wrote(
+    report: &dispatchrecord::Report,
+    ended_by: Option<dispatchrecord::EndedBy>,
+) -> bool {
+    report.outcome == Outcome::Stopped || ended_by == Some(dispatchrecord::EndedBy::Unreported)
 }
 
 /// The lines of one task's `record`, oldest first, for a task `depth` under its session: the
@@ -308,10 +310,13 @@ pub fn lines_of(record: &Record, depth: u32) -> Vec<Line> {
         });
     }
     // The reports a task sent before the one it ended with (#1768), each where it was sent.
+    // Each is one the record ended with before a report of the chat's took its place, and a
+    // record purlis or the person ended is never reported again
+    // ([`dispatchrecord::reported_again`]), so each is the chat's own.
     for earlier in &record.earlier {
         let report = &earlier.report;
         lines.push(Line {
-            by_purlis: purlis_wrote(report),
+            by_purlis: purlis_wrote(report, None),
             outcome: Some(report.outcome),
             files: paths_named(&report.changed),
             ..line(
@@ -328,7 +333,7 @@ pub fn lines_of(record: &Record, depth: u32) -> Vec<Line> {
             _ => Kind::Report,
         };
         lines.push(Line {
-            by_purlis: purlis_wrote(report),
+            by_purlis: purlis_wrote(report, record.ended_by),
             outcome: Some(report.outcome),
             files: paths_named(&report.changed),
             ..line(

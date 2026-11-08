@@ -901,8 +901,10 @@ pub(crate) fn deliver(
     };
     let report = Handback {
         // The stop's word is purlis's own line, so the name is written as that line can
-        // carry it; a report's name is a chat's, as it stands (D-T59-j11).
-        from: if was_stopped {
+        // carry it (D-T59-j11). So is a task's report, the app's or its own: its heading is
+        // purlis's and draws the name in a code span. A handoff's name is a chat's, as it
+        // stands.
+        from: if was_stopped || task.is_some() {
             handback::in_purlis_s_line(&child_name)
         } else {
             child_name.clone()

@@ -442,6 +442,52 @@ fn a_record_still_running_or_never_a_task_s_is_not_reported_again() {
     );
 }
 
+/// **A task purlis or the person ended is never reported again** (#1768): its report is the
+/// app's word on how it ended, and a later report of the chat's does not take its place under
+/// that word.
+#[test]
+fn a_task_purlis_or_the_person_ended_is_not_reported_again() {
+    let (_d, root) = project();
+    for by in [EndedBy::Unreported, EndedBy::Person, EndedBy::Limit] {
+        let task = open(
+            &root,
+            Opening {
+                mode: Mode::Task,
+                ..a_handoff()
+            },
+            at("2026-10-07T12:00:00Z"),
+        )
+        .unwrap();
+        let ended = Ending {
+            report: Some(Report {
+                outcome: Outcome::Failed,
+                text: crate::handback::UNREPORTED.to_owned(),
+                changed: Changed::default(),
+            }),
+            usage: None,
+        };
+        assert!(close_by(&root, &task.id, ended, Some(by), at("2026-10-07T12:01:00Z")).unwrap());
+        let later = Ending {
+            report: Some(done("more")),
+            usage: None,
+        };
+
+        assert!(
+            !reported_again(&root, &task.id, later, at("2026-10-07T12:30:00Z")).unwrap(),
+            "{by:?}"
+        );
+
+        let record = read(&root, &task.id).unwrap();
+        assert_eq!(record.ended_by, Some(by));
+        assert_eq!(
+            record.report.map(|report| report.text),
+            Some(crate::handback::UNREPORTED.to_owned()),
+            "{by:?}"
+        );
+        assert!(record.earlier.is_empty(), "{by:?}");
+    }
+}
+
 #[test]
 fn a_running_dispatch_has_no_end_and_no_report() {
     let (_d, root) = project();

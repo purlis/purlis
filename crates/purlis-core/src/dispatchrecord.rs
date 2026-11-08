@@ -1122,7 +1122,9 @@ fn end(
 /// that report, at `now`, and keeps the one it ended with before in [`Record::earlier`], with
 /// when it was sent: the newest [`MOST_EARLIER`] of them. What the chat said it cost is kept
 /// where the ending says more. `false` for a record that is not there, is still running, is
-/// not a task's or holds no report: those take an ending by [`close_as`], or none.
+/// not a task's or holds no report: those take an ending by [`close_as`], or none. **`false`
+/// too for one purlis or the person ended** ([`Record::ended_by`]): its report is the app's
+/// word on that end, and a later report would sit under that word as if it were the app's.
 pub fn reported_again(
     root: &Path,
     id: &str,
@@ -1133,7 +1135,7 @@ pub fn reported_again(
         let (Some(at), Some(report)) = (record.ended.clone(), record.report.clone()) else {
             return false;
         };
-        if record.mode != Mode::Task {
+        if record.mode != Mode::Task || record.ended_by.is_some() {
             return false;
         }
         let Some(later) = ending.report.as_ref().map(capped_report) else {
