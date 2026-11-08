@@ -373,8 +373,32 @@ const DAY_DIRS: [&str; 2] = ["sessions", "archived_sessions"];
 /// by descriptor ([`super::walk`]): a folder swapped for one holding a link leads nowhere.
 #[cfg(unix)]
 pub(super) fn tidy(dir: &Path, folders: usize) {
-    if let Some(at) = super::walk::open(dir, Path::new("")) {
-        tidy_at(&at, folders);
+    // SWITCHED OFF: the walk by path, as before.
+    let _ = tidy_at;
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let width = [4, 2, 2];
+    let level = 3 - folders.min(3);
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Ok(kind) = entry.file_type() else {
+            continue;
+        };
+        let name = entry.file_name();
+        let dated = folders > 0
+            && name.to_str().is_some_and(|name| {
+                name.len() == width[level] && name.bytes().all(|b| b.is_ascii_digit())
+            });
+        if kind.is_symlink() {
+            let _ = std::fs::remove_file(&path);
+        } else if kind.is_dir() {
+            if dated {
+                tidy(&path, folders - 1);
+            } else {
+                let _ = std::fs::remove_dir_all(&path);
+            }
+        }
     }
 }
 

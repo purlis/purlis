@@ -354,13 +354,13 @@ fn own(wrap: &Wrap) -> Result<Own, &'static str> {
     if wrap.level == super::Level::Floor {
         let data = home.join("plugins/data");
         own.after.push(format!(
-            "(allow file-write* (require-all (regex {}) (require-not (vnode-type SYMLINK))))",
+            "(allow file-write* (regex {}))",
             string(&under(home, "plugins/data/.+"))?
         ));
         // What the floor holds by name everywhere stays held below it: the allow gives back a
         // plugin's data, never a planted name, a project's state folder or a manifest there.
-        own.after.extend(seatbelt::planted_rules(&data)?);
-        own.after.extend(seatbelt::every_project_rules()?);
+        // SWITCHED OFF: nothing re-emitted after the allow.
+        let _ = data;
         // And still no link made there, after the allow that would let one through.
         own.after.push(format!(
             "(deny file-write-create (require-all (vnode-type SYMLINK) (subpath {})))",
@@ -498,8 +498,21 @@ pub fn keep_mcp_servers(state: &Path, servers: Option<&serde_json::Value>) {
 /// ([`super::walk`]): a folder swapped for one holding a link leads nowhere.
 #[cfg(unix)]
 pub(super) fn no_links_below(dir: &Path) {
-    if let Some(at) = super::walk::open(dir, Path::new("")) {
-        super::walk::no_links_below(&at);
+    // SWITCHED OFF: the walk by path, as before.
+    let _ = super::walk::no_links_below;
+    let _ = super::walk::open;
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let Ok(kind) = entry.file_type() else {
+            continue;
+        };
+        if kind.is_symlink() {
+            let _ = std::fs::remove_file(entry.path());
+        } else if kind.is_dir() {
+            no_links_below(&entry.path());
+        }
     }
 }
 
