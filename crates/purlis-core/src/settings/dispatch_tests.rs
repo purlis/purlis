@@ -22,8 +22,8 @@ fn a_grant_is_written_under_dispatch_grants_keeping_every_other_line_and_reads_b
     let after = with(PROJECT, &pair("steward", "devops")).expect("written");
     assert_eq!(
         after,
-        "schema = 1 # ours\n\n[sandbox]\nmode = \"on\"\n\n[dispatch.grants]\nsteward = \
-         [\"devops\"]\n"
+        "schema = 1 # ours\n\n[sandbox]\nmode = \"on\"\n\n[dispatch.grants]\nsteward = [\n    \
+         \"devops\",\n]\n"
     );
     assert_eq!(committed(Some(&after)).pairs, [pair("steward", "devops")]);
 }
@@ -33,7 +33,7 @@ fn a_second_target_joins_its_persona_s_list_and_one_granted_already_changes_noth
     let one = with(PROJECT, &pair("steward", "devops")).expect("written");
     let two = with(&one, &pair("steward", "qa")).expect("written");
     assert!(
-        two.ends_with("[dispatch.grants]\nsteward = [\"devops\", \"qa\"]\n"),
+        two.ends_with("[dispatch.grants]\nsteward = [\n    \"devops\",\n    \"qa\",\n]\n"),
         "{two}"
     );
     assert_eq!(with(&two, &pair("steward", "qa")).expect("the same"), two);

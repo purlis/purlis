@@ -99,7 +99,7 @@ fn with_target(text: &str, asking: &str, target: &str) -> Result<String, String>
         .ok_or_else(|| not_editable(&format!("{TABLE}.{KEY}.{asking}")))?;
     if !targets.iter().any(|one| one.as_str() == Some(target)) {
         targets.push(target);
-        targets.fmt();
+        crate::tomlmerge::as_set(targets);
     }
     Ok(doc.to_string())
 }
@@ -137,7 +137,7 @@ fn without_target(text: &str, asking: &str, target: &str) -> Result<String, Stri
     if targets.len() == before {
         return Ok(text.to_owned());
     }
-    targets.fmt();
+    crate::tomlmerge::as_set(targets);
     if targets.is_empty() {
         grants.remove(asking);
     }
@@ -311,7 +311,7 @@ fn with_list(
     if !how(targets) {
         return Ok(text.to_owned());
     }
-    targets.fmt();
+    crate::tomlmerge::as_set(targets);
     if targets.is_empty() {
         grants.remove(asking);
     }

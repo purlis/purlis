@@ -41,7 +41,8 @@ pub(crate) fn edit(
     if !how(list) {
         return Ok(false);
     }
-    list.fmt();
+    // One site per line, in order: two machines that each add one change different lines (#5824).
+    crate::tomlmerge::as_set(list);
     if list.is_empty() {
         table.remove(KEY);
     }

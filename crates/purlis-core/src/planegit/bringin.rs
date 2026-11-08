@@ -41,6 +41,10 @@
 //! a conflict left in it is theirs. The managed block of `.gitattributes` is set aside the same
 //! way, and the block this build writes is put back.
 //!
+//! `charter.toml` is a person's too, but merged key by key on the parsed TOML
+//! ([`crate::tomlmerge`]): its lists of hosts and grants, which every machine adds to, merge as
+//! sets (#5824 F5), so two machines that each allowed a host do not conflict.
+//!
 //! # Under a chat's sandbox
 //!
 //! A move that cannot finish does not start ([`super::sandbox_would_stop`]). The plane waits,
@@ -61,6 +65,9 @@ const SET_ASIDE: &str = "purlis sets this line aside while it merges";
 
 /// What stands in for the managed block while a `.gitattributes` is merged, so it keeps its place.
 const RULES_SET_ASIDE: &str = "# purlis sets its merge rules aside while it merges";
+
+/// The project's settings, merged key by key ([`crate::tomlmerge`]).
+const SETTINGS: &str = "charter.toml";
 
 /// When [`bring_in`] makes a commit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -191,6 +198,8 @@ enum Generated {
     Memory(String),
     Charter(String),
     Rules,
+    /// The project's `charter.toml`, whose lists of [`crate::tomlmerge::SETS`] merge as sets.
+    Settings,
 }
 
 /// The memory store `path` is in, as its directory, with the rest of the path: a persona's,
@@ -200,9 +209,7 @@ fn memory_store(path: &str) -> Option<(String, &str)> {
     let (name, rest) = rest.split_once('/')?;
     let rest = rest.strip_prefix("memory/")?;
     let named = match top {
-        "personas" => {
-            name == crate::personas::SHARED || crate::contain::persona_name_ok(name)
-        }
+        "personas" => name == crate::personas::SHARED || crate::contain::persona_name_ok(name),
         "workspaces" => crate::contain::workspace_name_ok(name),
         _ => false,
     };
@@ -213,6 +220,9 @@ fn memory_store(path: &str) -> Option<(String, &str)> {
 fn generated(path: &str) -> Option<Generated> {
     if path == ".gitattributes" {
         return Some(Generated::Rules);
+    }
+    if path == SETTINGS {
+        return Some(Generated::Settings);
     }
     if path == format!("{}/{}", sessionrecord::DIR, sessionrecord::INDEX) {
         return Some(Generated::Sessions(None));
@@ -365,6 +375,26 @@ pub(super) fn plan_between(
                         plan.settled.insert(path.clone(), with);
                     }
                     Apart::Marked(_) | Apart::NoFile => plan.person.push(path.clone()),
+                }
+            }
+            Some(Generated::Settings) => {
+                let sides = (
+                    blob(root, &base, path),
+                    blob(root, "HEAD", path),
+                    blob(root, theirs, path),
+                );
+                match sides {
+                    (Some(old), Some(ours), Some(new)) => {
+                        match crate::tomlmerge::merged(&old, &ours, &new) {
+                            Ok(crate::tomlmerge::Merged::Clean(text)) => {
+                                plan.settled.insert(path.clone(), text);
+                            }
+                            Ok(crate::tomlmerge::Merged::Conflict(_)) | Err(_) => {
+                                plan.person.push(path.clone());
+                            }
+                        }
+                    }
+                    _ => plan.person.push(path.clone()),
                 }
             }
             Some(from_sources) => {
@@ -588,7 +618,7 @@ fn rebuilt(
             );
             plan.settled.insert(index, text);
         }
-        Generated::Charter(_) | Generated::Rules => {}
+        Generated::Charter(_) | Generated::Rules | Generated::Settings => {}
     }
     Ok(())
 }

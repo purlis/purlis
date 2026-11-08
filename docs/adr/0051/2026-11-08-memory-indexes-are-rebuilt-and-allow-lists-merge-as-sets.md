@@ -16,3 +16,16 @@ order of their names. A persona's are named by their subject, so its index keeps
 order, with the other machine's new lines after it
 (`a_memory_index_both_sides_added_to_is_rebuilt_not_stitched`). The union rules stay, for git run
 by hand.
+
+**A list every machine adds to is a set (D4).** `[sandbox] hosts` was one long line that every
+Always allow appended to, so any two machines that each allowed a host conflicted. The keys whose
+lists are sets are named in one place, `purlis_core::tomlmerge::SETS`: `[sandbox] hosts`,
+`[sandbox] browser-sites`, a persona's `[sandbox.personas.<name>] hosts` and
+`[dispatch.grants] <persona>`. Their writers write them one item per line, sorted and once each,
+keeping every other line and comment of the file, so two machines that each add one usually change
+different lines. Where git's merge still stops on `charter.toml`, the save merges it on the parsed
+TOML: each set comes out as both sides' items less any either side removed since the two parted,
+so a revoke on one machine holds against the other
+(`hosts_both_machines_allowed_merge_as_a_set_and_a_removal_holds`). *Rejected:* a file of allows
+per machine, because a removal has to hold on every machine. A plane's existing one-line lists are
+rewritten the first time a writer or a merge touches them.

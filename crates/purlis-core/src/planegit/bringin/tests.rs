@@ -528,7 +528,10 @@ fn a_workspace_memory_index_is_rebuilt_in_time_order_with_a_retitle_kept() {
         "20260102-000000-theirs.md",
     );
     let two = Two::new(&[
-        (&index, &format!("# alpha — task memory\n\n- [First]({first})\n")),
+        (
+            &index,
+            &format!("# alpha — task memory\n\n- [First]({first})\n"),
+        ),
         (&format!("{store}/{first}"), "# First\n"),
     ]);
     remember(&two.mine, &store, mine, "Mine");
@@ -552,5 +555,49 @@ fn a_workspace_memory_index_is_rebuilt_in_time_order_with_a_retitle_kept() {
             "# alpha — task memory\n\n- [First, retitled]({first})\n- [Theirs]({theirs})\n\
              - [Mine]({mine})\n"
         )
+    );
+}
+
+/// A `charter.toml` with a comment, a sandbox and its hosts as the writer before #5824 left them:
+/// one line, that every Always allow appended to.
+fn settings(hosts: &str) -> String {
+    format!(
+        "# The project's settings.\n[plane]\nname = \"fixture\"\n\n[sandbox]\nmode = \"on\" # on \
+         for everyone\nhosts = [{hosts}]\n"
+    )
+}
+
+/// **Host allows merge as a set** (#5824 F5, D4): two machines that each allowed a host made a
+/// request that could not merge, on the one line both appended to. The list is merged as a set:
+/// both machines' hosts, without the one this machine removed, written one per line, sorted, with
+/// the file's comments kept.
+#[test]
+fn hosts_both_machines_allowed_merge_as_a_set_and_a_removal_holds() {
+    let two = Two::new(&[("charter.toml", &settings("\"x.example\", \"y.example\""))]);
+    write(
+        &two.mine,
+        "charter.toml",
+        &settings("\"x.example\", \"a.example\""),
+    );
+    commit(&two.mine, "mine: a allowed, y removed");
+    write(
+        &two.theirs,
+        "charter.toml",
+        &settings("\"x.example\", \"y.example\", \"b.example\""),
+    );
+    two.land_theirs("theirs: b allowed");
+    // A chat's sandbox holds `charter.toml`, so the window makes this move; it stands in here
+    // for a chat running the test.
+    let _the_window = crate::sandbox::held::stand_in(&[]);
+
+    assert_eq!(
+        bring_in(&two.mine, "release", false, When::Needed),
+        BroughtIn::Moved(1)
+    );
+
+    assert_eq!(
+        read(&two.mine, "charter.toml"),
+        "# The project's settings.\n[plane]\nname = \"fixture\"\n\n[sandbox]\nmode = \"on\" # on \
+         for everyone\nhosts = [\n    \"a.example\",\n    \"b.example\",\n    \"x.example\",\n]\n"
     );
 }
