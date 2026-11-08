@@ -591,6 +591,7 @@ fn a_try_turns_off_every_harness_skill_and_plugin_on_every_harness() {
         skills: None,
         graded: false,
         laid_out: None,
+        own_listing: 0,
         judging: false,
         writes_its_piece: false,
         runs_a_shell: false,

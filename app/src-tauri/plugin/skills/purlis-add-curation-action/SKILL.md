@@ -1,12 +1,12 @@
 ---
 name: purlis-add-curation-action
-description: Add a curation action to a purlis persona — a chat the operator can open on a workspace, a persona or the plane with a prompt already typed. Use when asked to add, write or change a persona's curation action, or to give a persona a new entry in the Curate menu.
+description: Add a curation action to a purlis persona — a chat the person can open on a workspace, a persona or the plane with a prompt already typed. Use when asked to add, write or change a persona's curation action, or to give a persona a new entry in the Curate menu.
 ---
 
 # Adding a curation action
 
-A **curation action** is a chat the operator opens from a workspace, a persona or the plane,
-with a prompt already typed into it. The operator reads the prompt and presses Enter; nothing
+A **curation action** is a chat the person opens from a workspace, a persona or the plane,
+with a prompt already typed into it. The person reads the prompt and presses Enter; nothing
 sends it for them. The persona that declares the action is the one that runs it.
 
 Each is one file, `personas/<persona>/curation/<id>.md`:
@@ -33,8 +33,8 @@ Use the review skill on the workspace {subject.name}.
 
 ## 1. Ask what it is for
 
-Ask the operator what the chat should do, which subjects it belongs on, and where it should
-run. Draft the prompt as the operator would want to read it before pressing Enter: **one short,
+Ask the person what the chat should do, which subjects it belongs on, and where it should
+run. Draft the prompt as the person would want to read it before pressing Enter: **one short,
 plain line** that says what to do and on which subject. When the work has steps, put them in a
 skill and name the skill in words in that line — never as a `/slash` command, which only one
 harness reads.
@@ -42,7 +42,7 @@ harness reads.
 Keep it short because the harness shows a long paste as a placeholder nobody can read, and
 purlis then opens no chat for it: Claude Code over 800 characters or at 4 lines, Codex over
 1,000 characters. `purlis persona lint` warns when a prompt, filled in for a long subject name,
-would be shown that way. Done when the operator approves the label, the kinds and the prompt.
+would be shown that way. Done when the person approves the label, the kinds and the prompt.
 
 ## 2. Write it
 
@@ -73,6 +73,6 @@ purlis persona lint <persona>
 ```
 
 `curation show` prints what a subject is offered, in order, each with who runs it, where, and
-the prompt as it will be typed. Show the operator what `curation list` says. Done when the new
+the prompt as it will be typed. Show the person what `curation list` says. Done when the new
 action is listed there with no warning, and `persona lint` has no warning about it. The
 file is committed with the persona and travels with the plane's next save.

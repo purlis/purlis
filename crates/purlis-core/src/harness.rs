@@ -325,6 +325,10 @@ pub struct Kit<'a> {
     /// ([`crate::skills::lay_out_for_chat`]): the plane's skills of its set. `None` where it laid
     /// out none: a harness that needs the folder is then handed none of what it holds.
     pub laid_out: Option<&'a std::path::Path>,
+    /// **Characters of what the chat's harness lists of its own catalogue** (#5736,
+    /// [`crate::skills::OwnListing`]): the person's own skills and their plugins', which the
+    /// listing limit handed to Claude Code counts. 0 where none was measured.
+    pub own_listing: usize,
 }
 
 /// The persona a chat runs as, and the project that defines it.

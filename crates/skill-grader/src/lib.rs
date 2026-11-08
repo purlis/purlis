@@ -6,10 +6,13 @@
 //! puts the scores in the run's summary. What a run started, and how a skill scores against its
 //! trigger bar, is [`purlis_skills::grade::ci`]'s; this crate decides what to grade
 //! ([`select`]), starts the harness ([`launch`]), says the result ([`summary`]) and, each
-//! night, decides which issues to file and whether to propose new pins ([`nightly`]).
+//! night, decides which issues to file and whether to propose new pins ([`nightly`]). For a
+//! developer, it proposes a built-in's description from its failing tests and grades it
+//! ([`optimise`]).
 
 pub mod launch;
 pub mod nightly;
+pub mod optimise;
 pub mod select;
 pub mod summary;
 

@@ -73,6 +73,41 @@ enum Step {
         #[arg(long)]
         scorecard: Option<PathBuf>,
     },
+    /// Propose a rewritten description for one built-in from its failing trigger tests, grade
+    /// it, and print both scores. A developer's tool, run on your own keys through `purlis
+    /// secret exec`: the harness's key as `grade` reads it, and `ANTHROPIC_API_KEY` for the
+    /// Claude Code that proposes. It writes nothing unless given `--write`.
+    Optimise {
+        /// The built-in whose description is proposed.
+        skill: String,
+        #[arg(long, default_value = "claude-code", value_parser = harness)]
+        harness: Harness,
+        /// The graded harness's program: `claude`, `codex` or `opencode`.
+        #[arg(long)]
+        program: PathBuf,
+        /// The Claude Code that writes the proposal: `--program` where that is Claude Code.
+        #[arg(long)]
+        proposer: Option<PathBuf>,
+        #[arg(long)]
+        purlis: PathBuf,
+        #[arg(long, default_value = "app/src-tauri/plugin")]
+        plugin: PathBuf,
+        #[arg(long, default_value = "ci/skill-grades/crowd")]
+        crowd: PathBuf,
+        /// The folder each run starts in.
+        #[arg(long)]
+        cwd: PathBuf,
+        #[arg(long, default_value = "ci/skill-grades/pins.toml")]
+        pins: PathBuf,
+        /// Where each run's output is kept: `current/` and `proposed/`.
+        #[arg(long)]
+        records: PathBuf,
+        #[arg(long, default_value_t = 6)]
+        parallel: usize,
+        /// Put the proposal in the skill's `SKILL.md`.
+        #[arg(long)]
+        write: bool,
+    },
     /// The nightly's decisions, from each harness's scorecard and the open `skill-triggers`
     /// issues on stdin (one JSON object per line, `number` and `title`): one line per act on
     /// stdout, `<verb>\t<issue>\t<file>\t<title>`, with `verb` one of `create`, `edit`,
@@ -189,6 +224,77 @@ fn main() -> ExitCode {
                 }
             }
             code
+        }
+        Step::Optimise {
+            skill,
+            harness,
+            program,
+            proposer,
+            purlis,
+            plugin,
+            crowd,
+            cwd,
+            pins,
+            records,
+            parallel,
+            write,
+        } => {
+            let pin = match pinned(&pins, harness.word()) {
+                Ok(pin) => pin,
+                Err(why) => return fail(&why),
+            };
+            let proposer = match (proposer, harness) {
+                (Some(proposer), _) => proposer,
+                (None, Harness::ClaudeCode) => program.clone(),
+                (None, _) => {
+                    return fail(&format!(
+                        "{} does not propose: name a Claude Code with `--proposer`",
+                        harness.name()
+                    ));
+                }
+            };
+            let whole = |path: PathBuf| std::path::absolute(&path).unwrap_or(path);
+            let (program, proposer, purlis, plugin, crowd, records) = (
+                whole(program),
+                whole(proposer),
+                whole(purlis),
+                whole(plugin),
+                whole(crowd),
+                whole(records),
+            );
+            let key = std::env::var(skill_grader::key_name(harness)).ok();
+            let proposer_key = std::env::var("ANTHROPIC_API_KEY").ok();
+            let asked = skill_grader::optimise::Optimise {
+                ask: skill_grader::Ask {
+                    harness,
+                    program: &program,
+                    purlis: &purlis,
+                    plugin: &plugin,
+                    crowd: &crowd,
+                    cwd: &cwd,
+                    pinned: &pin,
+                    skills: vec![skill.clone()],
+                    key: key.as_deref(),
+                    records,
+                    parallel,
+                },
+                skill: &skill,
+                proposer: &proposer,
+                proposer_key: proposer_key.as_deref(),
+                write,
+            };
+            match skill_grader::optimise::optimise(&asked) {
+                // Run by hand, a missing key is a mistake to say, not a grade to skip.
+                Ok(skill_grader::optimise::Optimised::Skipped(said)) => fail(&said),
+                Ok(
+                    skill_grader::optimise::Optimised::Nothing(said)
+                    | skill_grader::optimise::Optimised::Proposed { said, .. },
+                ) => {
+                    println!("{said}");
+                    ExitCode::SUCCESS
+                }
+                Err(why) => fail(&why),
+            }
         }
         Step::Nightly {
             scorecards,

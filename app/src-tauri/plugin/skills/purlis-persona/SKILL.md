@@ -50,10 +50,10 @@ default. `purlis persona list` says so and names the way out: `purlis persona us
 
 1. Read its charter with `purlis persona show <name>` and behave as that role: its
    responsibilities, its focus, its definition of done.
-2. Take credentials from its vault and nowhere else, and never print them. See the `secrets`
+2. Take credentials from its vault and nowhere else, and never print them. See the `purlis-secrets`
    skill.
 3. Stay in role. **A chat's persona does not change.** In a chat purlis started, `purlis
-   persona use` is refused and says the two ways forward: the operator allows the vault, in
+   persona use` is refused and says the two ways forward: the person allows the vault, in
    the Inbox or on this chat's pane, or you dispatch to the persona that owns the work.
 
 ## Give work to another persona: dispatch
@@ -84,8 +84,8 @@ shows who exists.
   **A task that writes to a repo gets a branch of its own**: the `dispatch` tool's `in:
   worktree` (`--in worktree`). purlis cuts a branch folder for it and claims it for the task,
   which commits, updates and pushes there with `purlis worktree commit`, `update` and `push`.
-  From a workspace's own folder, whose clones sit in subfolders, `worktree` uses its one
-  clone; where it holds several, name one with `in: worktree:<repo>`
+  From a workspace's own folder, whose repos sit in subfolders, `worktree` uses its one
+  repo; where it holds several, name one with `in: worktree:<repo>`
   (`--in worktree:<repo>`). Two tasks in one folder share every file, so give each writer its
   own.
 
@@ -95,7 +95,7 @@ shows who exists.
   person's Approve in the window, and so does every dispatch from a chat on a pool's runner.
 
   **A reply noting that the task's harness can't report asks** means nothing the task asks
-  reaches the operator, and it is in no pane. Tell the operator to look at it themselves.
+  reaches the person, and it is in no pane. Tell the person to look at it themselves.
 
   **Before you dispatch, check what is already open**: the roster purlis adds to each turn
   while this chat has open tasks, or `dispatch_list`. A task still at work is waited on
@@ -162,9 +162,9 @@ shows who exists.
 and you cannot answer for them. If they say no, do the work without that persona or tell them
 it is waiting; do not look for another way to be allowed.
 
-**A persona is never a sub-agent.** Do not start one with your harness's agent tool: a
-sub-agent runs inside this chat, with this chat's vault and hosts, so it could not do that
-persona's work anyway. A sub-agent call named for a persona is refused and names the
+**A persona is never a helper.** Do not start one with your harness's agent tool: a
+helper runs inside this chat, with this chat's vault and hosts, so it could not do that
+persona's work anyway. A helper call named for a persona is refused and names the
 dispatch route. A helper that is not named for a persona (your harness's own, such as an
 explorer) still runs, as this chat's persona, for read-only work this chat's own persona owns
 (searching, reading, reviewing). Work that writes, commits, needs its own branch folder or runs
@@ -180,7 +180,7 @@ you access to it. Only an explicit `uses:` shares tools.
 
 ## Memory
 
-A persona remembers across sessions. In a chat purlis started, record with the
+A persona remembers across chats. In a chat purlis started, record with the
 `persona_remember` tool: it writes to the persona this chat runs as (or, with `shared`, to every
 persona), runs without a prompt, and purlis writes it even where the chat's sandbox would not
 let it. The workspace's own memory takes the `memory_add` tool. On the command line, name this
@@ -261,8 +261,8 @@ purlis persona remove <name>      # refused while another persona extends or use
   it; in a terminal chat run `purlis save`.
 - A chat as a persona is started with that persona's MCP servers (`personas/<name>/mcp.json`)
   and its denied tools (`disallowed-tools:`) on Claude Code. If the briefing says a server
-  was not started because nobody approved it, tell the operator: `purlis persona approve-mcp`
+  was not started because nobody approved it, tell the person: `purlis persona approve-mcp`
   is theirs to run in a terminal, and it is refused inside a chat.
-- purlis generates no sub-agent for a persona, and `purlis persona sync-agents` is retired. A
+- purlis generates no helper for a persona, and `purlis persona sync-agents` is retired. A
   project that still has the files it wrote removes them with `purlis doctor --fix
-  persona-agents`, which the operator runs: it changes committed files.
+  persona-agents`, which the person runs: it changes committed files.

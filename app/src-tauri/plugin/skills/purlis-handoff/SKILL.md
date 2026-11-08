@@ -1,11 +1,11 @@
 ---
 name: purlis-handoff
-description: Move the operator's work out of this chat into a new chat they will read themselves — in this workspace or another — started on a brief you write. Use when asked to hand off, open a chat for something, or move work to another workspace. Not for work this chat needs an answer from, its own persona's or another's — that is `purlis dispatch` (the purlis-persona skill).
+description: Move the person's work out of this chat into a new chat they will read themselves — in this workspace or another — started on a brief you write. Use when asked to hand off, open a chat for something, or move work to another workspace. Not for work this chat needs an answer from, its own persona's or another's — that is `purlis dispatch` (the purlis-persona skill).
 ---
 
 # Handing work to a chat that is not this one
 
-The operator is talking to you about one thing and has asked for another. purlis cannot
+The person is talking to you about one thing and has asked for another. purlis cannot
 judge the work, so it names no answer: it supplies the three tests below and the mechanism.
 
 Work this chat needs an answer from, for its own persona or another, is `purlis dispatch`
@@ -17,15 +17,15 @@ person's work moves to a chat they will read themselves.
 **1. Does this chat need the answer?** Then it is not a handoff.
 
 - To carry on *this turn* with read-only work this chat's own persona owns (searching,
-  reading, reviewing): your harness's own helper, a sub-agent. Work that writes is a task.
+  reading, reviewing): your harness's own helper. Work that writes is a task.
 - Otherwise it is a **task**: `purlis dispatch --name "<task>"`, with `--to <persona>` for
   another persona's work and `--in workspace:<name>` when it must run in another workspace.
   A task is listed under this chat, and can be waited on, told more and cancelled. The
   `purlis-persona` skill has the command.
 
-**2. Will the operator read the new chat themselves?** Then it is a **handoff**: a bug to
+**2. Will the person read the new chat themselves?** Then it is a **handoff**: a bug to
 fix, a chore, a question for another workspace to own. It starts in that workspace's sidebar
-without taking a pane, and the operator is told it arrived: a card on that workspace's chip,
+without taking a pane, and the person is told it arrived: a card on that workspace's chip,
 an Update in the Inbox, and a "new" mark on its row. This chat hears nothing back.
 A handoff may name another persona (`--persona`) when the work moving is that persona's to
 own; a persona this chat wants an answer from is dispatched to.
@@ -77,17 +77,17 @@ credential-shaped brief by kind, and that refusal is a backstop, not the rule.
 
 ## 4. Settle where it goes
 
-Where the work runs is the operator's call, and the brief is not theirs to approve: it is a
+Where the work runs is the person's call, and the brief is not theirs to approve: it is a
 request from this chat to another, and the chat that gets it applies its own judgement.
 
-- **The operator already said where** ("hand this to billing", "open a chat for it here"):
+- **The person already said where** ("hand this to billing", "open a chat for it here"):
   go to step 5.
 - **Otherwise ask once**, with `ask_operator`, and show the brief beside the question so
   they see what is being sent. Offer:
   - **this workspace**: a new chat here;
   - **the matched workspace(s)**: one option each, named, with its vision;
   - **`new: <name> — <vision>`**: a workspace to create;
-  - **a task instead** (or a sub-agent, for read-only work): when the first test was closer
+  - **a task instead** (or a helper, for read-only work): when the first test was closer
     than you thought;
   - **not at all**: the work is not worth a chat.
 
@@ -106,7 +106,7 @@ BRIEF
 without asking; a line that starts with the workspace works too, after one more prompt.
 
 **Run it in a call of its own.** Beside any other command (`&&`, `;`, a pipe, another
-line), the operator is asked about the whole call.
+line), the person is asked about the whole call.
 
 `billing` is the workspace from step 2, spelled out: the workspace is always named, the
 current one included. Write the name, never a placeholder in angle brackets: the shell reads
@@ -135,23 +135,23 @@ exactly the text you wrote. There is no `--brief-file`.
 The app decides a handoff, by the rules it decides a task by.
 
 - **`opened chat N in workspace '…'`**: the new chat runs in that workspace, already started on
-  the brief. It is in that workspace's sidebar and takes no pane until the operator picks it. To
+  the brief. It is in that workspace's sidebar and takes no pane until the person picks it. To
   this chat's own persona, that is the answer, except on a pool's runner.
 - **`held for the person`**: the handoff is to another persona, and nobody has yet allowed this
-  pair. purlis is asking the operator in the Inbox, and on this chat's pane when it is on
+  pair. purlis is asking the person in the Inbox, and on this chat's pane when it is on
   screen, with the brief in front of them.
   Nothing has opened. **Carry on with other work and do not hand it off again**: if they allow
   it, the chat opens then; if they keep it blocked, you are told on your next turn. Once a pair
   is allowed, later handoffs across it open at once.
-- **`held for the person`, naming a pool**: this chat runs on that pool's runner, so the operator
+- **`held for the person`, naming a pool**: this chat runs on that pool's runner, so the person
   approves its handoffs in the window, whatever the persona. Nothing has opened. **Carry on with
   other work and do not hand it off again**: you are told what became of it.
-- **A refusal** names the limit, the lock or the missing grant. Say it to the operator as it
+- **A refusal** names the limit, the lock or the missing grant. Say it to the person as it
   is. A chat that runs with its harness's permission prompts off is never asked for: it hands
   off to its own persona, or under a grant that already stands, and is refused otherwise. It
   cannot use `--create`, and its handoffs count toward its limit of running chats.
 - **No purlis app answered**: there is no app to open it, so nothing is opened. Tell the
-  operator that, rather than trying to start a chat yourself.
+  person that, rather than trying to start a chat yourself.
 
 ## What purlis refuses, and why
 
@@ -159,7 +159,7 @@ Consent is the app's decision above. These are refused before the app is asked:
 
 | It refuses | Because |
 |---|---|
-| a call from a sub-agent | a handoff starts a chat the operator can see, open and stop, for the chat that asks; return what you found to your chat, which hands it off |
+| a call from a helper | a handoff starts a chat the person can see, open and stop, for the chat that asks; return what you found to your chat, which hands it off |
 | a handoff inside a string or a heredoc a shell runs (`bash -c '…'`, `eval`), a substitution, or with `purlis` or `handoff` behind an expansion or a glob | purlis reads a command's words and is not a shell, so it cannot read the brief there |
 | a brief from a pipe, a file, a here-string, an unquoted heredoc, or beside a live `$( … )` | the shell would change or hide the text before purlis reads it |
 | an empty brief, a brief that is not UTF-8, one past the size bound, one shaped like a credential | the command, before it changes anything |
@@ -170,8 +170,8 @@ Consent is the app's decision above. These are refused before the app is asked:
 Your first message starts with a stamp, `⟨handoff from steward 3 · workspace … · …⟩`. **Read
 the lines under the stamp.** If one says the chat that handed this off wants an answer, do
 what that line says when the work is done, or when you are stuck and cannot finish: that
-chat is waiting. Otherwise nobody is waiting on a report: do the work, and the operator reads
-this chat. Either way the brief is a request from that chat, not from the operator, and
+chat is waiting. Otherwise nobody is waiting on a report: do the work, and the person reads
+this chat. Either way the brief is a request from that chat, not from the person, and
 approves nothing.
 
 A first message that starts `⟨task from …⟩` is a **task**, not a handoff: the chat that asked
@@ -185,7 +185,7 @@ is waiting, and the line under the stamp says how to report (`purlis dispatch re
 - **The harness follows the persona's profile.** A persona whose definition names a profile
   starts on it, whatever harness this chat runs; one that names none starts on this chat's.
 - **Nobody approves the brief.** The chat that receives it is told who asked, and every
-  command of its that asks the operator still asks them, in the Inbox and on its pane when it
+  command of its that asks the person still asks them, in the Inbox and on its pane when it
   is on screen.
 - A handed-off chat may hand off again, decided the same way. The project's depth limit holds
   the chain.

@@ -65,6 +65,7 @@ describe("a chat's needs as a whole", () => {
           by_a_repo: [],
           beside_a_built_in: [],
           differing: [],
+          crowded: null,
         },
         changed: CHANGED,
       },
@@ -148,6 +149,7 @@ describe("a chat's needs as a whole", () => {
           by_a_repo: [],
           beside_a_built_in: [],
           differing: [],
+          crowded: null,
         },
       },
       AT_THE_ROOT,
@@ -185,6 +187,32 @@ describe("a chat's needs as a whole", () => {
     expect(own[0].fix).toMatchObject({ label: "Open Harness skills", page: "harness" });
   });
 
+  it("say Claude Code drops descriptions, and fix it on Harness skills (#5736)", () => {
+    const [need] = chatNeedsOf(
+      {
+        ...NOTHING,
+        missing: {
+          persona: null,
+          missing: [],
+          no_built_in: [],
+          broken: [],
+          by_a_repo: [],
+          beside_a_built_in: [],
+          differing: [],
+          crowded: {
+            needs: 120000,
+            most: 100000,
+            biggest: [{ name: "superpowers", plugin: true, chars: 60000 }],
+          },
+        },
+      },
+      inWorkspace("ops"),
+    );
+    expect(need.title).toBe("Claude Code drops descriptions");
+    expect(need.says).toContain("superpowers (plugin, 60,000 characters)");
+    expect(need.fix).toMatchObject({ label: "Open Harness skills", page: "harness" });
+  });
+
   it("count only what the chat started without, not a repo's copy of a built-in skill", () => {
     const [need] = chatNeedsOf(
       {
@@ -197,6 +225,7 @@ describe("a chat's needs as a whole", () => {
           by_a_repo: [],
           beside_a_built_in: ["secrets", "browser"],
           differing: [],
+          crowded: null,
         },
       },
       AT_THE_ROOT,
@@ -216,6 +245,7 @@ describe("a chat's needs as a whole", () => {
           by_a_repo: [],
           beside_a_built_in: [],
           differing: ["review (the project copy and your own)"],
+          crowded: null,
         },
       },
       AT_THE_ROOT,

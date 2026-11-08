@@ -757,7 +757,7 @@ fn a_working_tree_git_cannot_read_is_said_not_taken_for_a_clean_one() {
     let said = uncommitted_memory_nudge(&root, &Summaries::Files).unwrap();
     assert!(
         said.starts_with(
-            "⬤ purlis could not read the control plane's working tree, so it cannot say whether \
+            "⬤ purlis could not read the plane's working tree, so it cannot say whether \
              memory is unshared — "
         ),
         "{said}"
@@ -1649,7 +1649,7 @@ fn a_chat_the_app_started_is_told_the_one_route_for_work_that_reports_back() {
              anything that amends a ruling are always passed on, and your own answer is never \
              the person's word. They need no shell; the `purlis dispatch` command does the same, \
              one call at a time. Work that writes, commits, needs its own branch folder or \
-             runs long is a purlis task, through `dispatch`; a harness subagent is for \
+             runs long is a purlis task, through `dispatch`; a harness's helper is for \
              read-only work (searching, reading, reviewing), and from inside one `purlis \
              worktree add`, `commit` and `push` are refused. {} This \
              says where such work goes, not that work should go: what this chat can do itself, \

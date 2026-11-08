@@ -2218,6 +2218,11 @@ export const commands = {
 	 *  a winner, so the tab names the pair.
 	 */
 	differing: string[],
+	/**
+	 *  **Where Claude Code would still drop skills' descriptions** (#5736): the limit the chat's
+	 *  listing needs is past Claude Code's own, with who takes the most room.
+	 */
+	crowded: ListingCrowded | null,
 } | null, string>(__TAURI_INVOKE("chat_skills_missing", { plane, session })),
 	/**  Puts a chat's missing-skills Notice away. */
 	putAwayChatSkillsMissing: (plane: PlaneId, session: number) => typedError<null, string>(__TAURI_INVOKE("put_away_chat_skills_missing", { plane, session })),
@@ -10135,6 +10140,26 @@ export type ListeningProgram = {
 	port: number,
 };
 
+/**  One of [`ListingCrowded::biggest`]: a plugin, whole, or one of the person's own skills. */
+export type ListingContributor = {
+	name: string,
+	plugin: boolean,
+	chars: number,
+};
+
+/**
+ *  **A chat whose listing needs more than Claude Code holds** (#5736): the core's
+ *  `harness::claude::Crowded`, for the window.
+ */
+export type ListingCrowded = {
+	/**  Characters its listing needs: purlis's skills, the person's own, and Claude Code's own. */
+	needs: number,
+	/**  The most Claude Code holds, in characters. */
+	most: number,
+	/**  What takes the most of the person's own room, biggest first. */
+	biggest: ListingContributor[],
+};
+
 /**  What switching a workspace would do, for the confirmation that asks first. */
 export type LivePreview = {
 	/**  Whether it is LIVE now. */
@@ -16442,6 +16467,11 @@ export type SkillsMissing = {
 	 *  a winner, so the tab names the pair.
 	 */
 	differing: string[],
+	/**
+	 *  **Where Claude Code would still drop skills' descriptions** (#5736): the limit the chat's
+	 *  listing needs is past Claude Code's own, with who takes the most room.
+	 */
+	crowded: ListingCrowded | null,
 };
 
 /**
