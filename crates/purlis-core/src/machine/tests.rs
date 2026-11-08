@@ -3025,3 +3025,106 @@ fn a_projects_pool_is_named_while_a_workspace_follows_it_or_its_workspaces_cant_
     assert_eq!(named(Some(&one_follows)), ["mine", "team"]);
     assert_eq!(named(None), ["mine", "team"]);
 }
+
+// ------------------------------------------- a plane that runs chats on a pool stays
+
+/// **A plane whose chats run on a pool does not fall off the end of the recents**: forgetting
+/// it would forget its pool, and its chats would then start on this machine.
+#[test]
+fn a_plane_that_names_a_pool_does_not_fall_off_the_end_of_the_recents() {
+    let mut store = remembering(&["/planes/workspace-pool", "/planes/project-pool"]);
+    store
+        .set_chats_run_on(Path::new("/planes/workspace-pool"), "app", Some("builds"))
+        .unwrap();
+    store
+        .set_project_chats_run_on(Path::new("/planes/project-pool"), Some("builds"))
+        .unwrap();
+
+    for n in 0..MOST_RECENTS + 10 {
+        store.remember(&PathBuf::from(format!("/planes/{n}")), 100 + n as u64);
+    }
+
+    let place = store.chat_place(Path::new("/planes/workspace-pool"), "app", None);
+    assert_eq!(place.pool.as_deref(), Some("builds"));
+    let place = store.chat_place(Path::new("/planes/project-pool"), "app", None);
+    assert_eq!(place.pool.as_deref(), Some("builds"));
+    assert_eq!(store.recents.len(), MOST_RECENTS + 2);
+}
+
+/// [`a_plane_that_names_a_pool_does_not_fall_off_the_end_of_the_recents`], as the store is
+/// written and read back.
+#[test]
+fn a_plane_that_names_a_pool_is_written_and_read_back_past_the_recents_bound() {
+    let machine = machine();
+    let mut store = remembering(&["/planes/pooled"]);
+    store
+        .set_chats_run_on(Path::new("/planes/pooled"), "app", Some("builds"))
+        .unwrap();
+    for n in 0..MOST_RECENTS + 10 {
+        store.remember(&PathBuf::from(format!("/planes/{n}")), 100 + n as u64);
+    }
+
+    write(machine.path(), &store).unwrap();
+    let back = read(machine.path());
+
+    let place = back
+        .store
+        .chat_place(Path::new("/planes/pooled"), "app", None);
+    assert_eq!(place.pool.as_deref(), Some("builds"));
+    assert_eq!(back.store.recents.len(), MOST_RECENTS + 1);
+}
+
+/// A file listing more planes than purlis remembers keeps the oldest when it names a pool.
+#[test]
+fn a_file_past_the_bound_keeps_the_plane_that_names_a_pool() {
+    let machine = machine();
+    std::fs::create_dir_all(dir(machine.path())).unwrap();
+    let mut rows =
+        vec![r#"{"plane":"/planes/pooled","opened":0,"projectChatsRunOn":"builds"}"#.to_owned()];
+    rows.extend(
+        (1..MOST_RECENTS + 5).map(|n| format!(r#"{{"plane":"/planes/{n}","opened":{n}}}"#)),
+    );
+    std::fs::write(
+        file(machine.path()),
+        format!(r#"{{"version":1,"at":0,"recents":[{}]}}"#, rows.join(",")),
+    )
+    .unwrap();
+
+    let back = read(machine.path());
+
+    let place = back
+        .store
+        .chat_place(Path::new("/planes/pooled"), "app", None);
+    assert_eq!(place.pool.as_deref(), Some("builds"));
+    assert_eq!(back.store.recents.len(), MOST_RECENTS + 1);
+}
+
+/// **A store that did not parse is kept beside the file before it is replaced** (ruled
+/// 2026-11-08): a pool it named may be in it, and the replacement would lose it.
+#[test]
+fn a_store_that_did_not_parse_is_kept_beside_before_it_is_replaced() {
+    let machine = machine();
+    std::fs::create_dir_all(dir(machine.path())).unwrap();
+    std::fs::write(file(machine.path()), b"{\"version\":1, cut short").unwrap();
+
+    update(machine.path(), |store| {
+        store.remember(Path::new("/planes/new"), 1)
+    })
+    .unwrap();
+
+    let kept = dir(machine.path()).join(UNREAD);
+    assert_eq!(
+        std::fs::read(&kept).unwrap(),
+        b"{\"version\":1, cut short".to_vec()
+    );
+    assert_eq!(mode_of(&kept) & 0o777, 0o600);
+    update(machine.path(), |store| {
+        store.remember(Path::new("/planes/newer"), 2)
+    })
+    .unwrap();
+    assert_eq!(
+        std::fs::read(&kept).unwrap(),
+        b"{\"version\":1, cut short".to_vec(),
+        "a store that parses leaves the kept copy as it was"
+    );
+}

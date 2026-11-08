@@ -322,9 +322,19 @@ pub fn chat_place(
             }),
         };
     };
-    let place = crate::machine::read(config_root)
-        .store
-        .chat_place(plane, workspace, start);
+    let loaded = crate::machine::read(config_root);
+    // **Where its chats run isn't known while the store can't be read** (ruled 2026-11-08): a
+    // start in a workspace is refused rather than run here in a pool's place. One that chose
+    // where it runs needs nothing the store says, and a platform that keeps no store has no pool.
+    if let (Some(why), None, Ok(())) = (&loaded.unreadable, start, crate::machine::supported()) {
+        return Err(format!(
+            "Where this chat runs is kept in {}, and purlis can't read it ({why}), so the chat \
+             wasn't started. Make it a plain file purlis can read, or move it aside, then start \
+             the chat again.",
+            crate::machine::file(config_root).display()
+        ));
+    }
+    let place = loaded.store.chat_place(plane, workspace, start);
     let Some(pool) = &place.pool else {
         return Ok(place);
     };
