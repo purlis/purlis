@@ -8,6 +8,7 @@ import { userEvent } from "@testing-library/user-event";
 import { StatusBar, placed, type StatusContribution } from "./StatusBar";
 import { StatusCell, StatusItem } from "./StatusItem";
 import { reordered } from "../../statusBarPrefs";
+import { drawnWith } from "../../cascade.testkit";
 
 /**
  * **The status bar's contribution model** (N28, the operator's #2814·5): an item sits left or
@@ -451,5 +452,54 @@ describe("the separator part", () => {
     expect(line).not.toBeNull();
     expect(line).toHaveAttribute("aria-hidden", "true");
     expect(line?.previousElementSibling).toHaveAttribute("data-item", "purlis.project");
+  });
+});
+
+/**
+ * **An item's ring is inside it, and the bar keeps no room for one** (#1922): the bar is a strip
+ * that clips, as a tab strip is, so its items ring inside their own edge (`--focus-ring-inset`)
+ * and the bar is the chrome's height alone, with no padding above and below for a ring outside.
+ */
+describe("the bar's ring and height (#1922)", () => {
+  it("rings a pressable item and a focusable cell inside their own edge", () => {
+    render(
+      <StatusBar
+        aria-label="Status"
+        items={[
+          own("cell", "left", 1, {
+            item: (
+              <StatusCell tooltip="Where" data-testid="cell">
+                where
+              </StatusCell>
+            ),
+          }),
+          own("press", "right", 1, {
+            item: (
+              <StatusItem onPress={() => {}} data-testid="press">
+                Press
+              </StatusItem>
+            ),
+          }),
+        ]}
+      />,
+    );
+    for (const id of ["cell", "press"]) {
+      const item = screen.getByTestId(id);
+      expect(drawnWith(item, "outline", { focusVisible: true }), id).toBe(
+        "var(--focus-ring-width) solid var(--focus-ring)",
+      );
+      expect(drawnWith(item, "outline-offset", { focusVisible: true }), id).toBe(
+        "var(--focus-ring-inset)",
+      );
+    }
+  });
+
+  it("is the chrome's height: no padding above or below, and its start keeps no ring room", () => {
+    render(<StatusBar aria-label="Status" items={[own("a", "left", 1)]} />);
+    const bar = screen.getByRole("contentinfo", { name: "Status" });
+    expect(drawnWith(bar, "padding")).toBe("0 var(--space-4)");
+    const start = bar.querySelector('[data-part="start"]') as HTMLElement;
+    expect(drawnWith(start, "padding")).toBeUndefined();
+    expect(drawnWith(start, "margin")).toBeUndefined();
   });
 });

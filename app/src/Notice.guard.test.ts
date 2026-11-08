@@ -103,6 +103,13 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "words, under the form it refused; the form, kept as it was typed, and Add pool or Check " +
       "its key are the way on",
   },
+  "StatusLine.tsx": {
+    count: 1,
+    why:
+      "what pressing the project item came to, that its directory was copied or the clipboard " +
+      "refused it (#1922): said once for a screen reader beside the item, which is the retry, so " +
+      "it has no way out of its own",
+  },
   "WorkspaceWrites.tsx": {
     count: 3,
     why: ACTION,

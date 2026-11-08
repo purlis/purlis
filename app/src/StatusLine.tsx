@@ -375,32 +375,64 @@ const WORKSPACE_GLYPH = <span aria-hidden="true">⬢</span>;
  * can be just compacted and showed only project name, and on hovering just show directory"*.
  *
  * The whole directory is the window's tooltip (`ui/tooltip`), which opens under the pointer
- * and on keyboard focus alike, so the path is one Tab away and never only a hover's. Words and
- * no control, as a table's shortened heading is (`ControlColumn`, `ui/table/ControlTable.tsx`): it presses
- * nothing, so it is no button. Two projects may share a name; the directory tells them apart,
- * and it is also what `data-directory` hands the scenario specs.
+ * and on keyboard focus alike, so the path is one Tab away and never only a hover's. Two projects
+ * may share a name; the directory tells them apart, and it is also what `data-directory` hands
+ * the scenario specs.
+ *
+ * **A button that copies the directory** (#1922). It was a focusable span, read as "span plane":
+ * focusable for its tooltip and nothing else, which a screen reader names by no role. A status
+ * item that runs a command is a button, so this one does the thing the path is wanted for: puts
+ * it on the clipboard, and says so in a polite status a screen reader reads.
  *
  * A long name is cut with an ellipsis (`.status-project-name`), and is whole in the tooltip's
  * path.
  */
 function ProjectItem({ plane }: { plane: string }) {
+  const [said, setSaid] = useState("");
+  const copy = () => {
+    setSaid("");
+    const put = navigator.clipboard?.writeText(plane);
+    if (put === undefined) {
+      setSaid(COPY_REFUSED);
+      return;
+    }
+    put.then(
+      () => setSaid("Directory copied."),
+      () => setSaid(COPY_REFUSED),
+    );
+  };
   return (
-    <StatusCell
-      tooltip={<code>{plane}</code>}
-      strong
-      shrinks
-      data-testid="status-project"
-      data-directory={plane}
-      icon={
-        <span role="img" aria-label="Project">
-          <FolderRoot aria-hidden="true" />
-        </span>
-      }
-    >
-      {projectName(plane)}
-    </StatusCell>
+    <>
+      <StatusItem
+        tooltip={
+          <>
+            <code>{plane}</code> — press to copy
+          </>
+        }
+        strong
+        shrinks
+        onPress={copy}
+        // Its icon's name and its words, apart: the parts put no space after an icon.
+        aria-label={`Project ${projectName(plane)}`}
+        data-testid="status-project"
+        data-directory={plane}
+        icon={
+          <span role="img" aria-label="Project">
+            <FolderRoot aria-hidden="true" />
+          </span>
+        }
+      >
+        {projectName(plane)}
+      </StatusItem>
+      <span role="status" className="sr-only">
+        {said}
+      </span>
+    </>
   );
 }
+
+/** What the project item says when the clipboard refused its directory. */
+const COPY_REFUSED = "The directory could not be copied: the clipboard refused it.";
 
 /** What the project's Inbox hands the button. */
 export type Alerts = {

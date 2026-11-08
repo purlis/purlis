@@ -2603,16 +2603,20 @@ component library gets added on.
   - **Context on the left, health on the right.** The project and the workspace with its
     counts; then Notices, the doctor and a drifting pin. The left end gives way in a narrow
     window (`.status-context`), the right never does (`.status-health`).
-  - **The line's padding is the ring's room**: `--space-2`, which is `--focus-ring-width` and
-    `--focus-ring-offset` together, so the set's ring is drawn whole at the window's bottom
-    edge. The line is `--size-chrome` and that room tall.
+  - **An item's ring is inside it** (#1922, [ADR 0104's amendment of
+    2026-11-09](adr/0104/2026-11-09-a-status-bar-item-draws-its-focus-ring-inset.md)): the bar
+    is a strip that clips, as a tab strip is, so a `bar` item rings inside its own edge
+    (`--focus-ring-inset`) and the bar keeps no room above or below for a ring. The line is
+    `--size-chrome` tall (24 CSS px at the least, the target's floor). The title bar's pills keep
+    the outside ring.
   - **Severity is a colour and a word.** The doctor's count is in `state.failed` or
     `state.waiting` and reads _"2 blockers"_, _"10 warnings"_; a clean doctor draws no count.
     The Notices count is a number in the neutral count pill beside a bell in `state.waiting`.
     Each item's accessible name says its count (_"Notices: 6"_, _"Doctor: 10 warnings"_).
   - **The project is its name, and its directory is the window's tooltip** (the shared one,
-    #2908): words that press nothing, so a focusable span and no button, as a table's
-    shortened heading is. The tooltip opens under the pointer and on keyboard focus. A long
+    #2908). It is a status item that copies the directory when pressed (#1922), named
+    _"Project <name>"_, and says _"Directory copied."_ in a polite status: a focusable span was
+    read by no role. The tooltip opens under the pointer and on keyboard focus. A long
     name is cut with an ellipsis. The item carries the directory as `data-directory`, which is
     how a scenario learns which project is open.
 - **A side with views has an activity bar** (ADR 0038 as amended 2026-10-10, #1673;
