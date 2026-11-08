@@ -215,8 +215,9 @@ it:
 
 1. Write what the persona owns and how it works.
 2. Delete the `draft: true` line.
-3. Save it: in a sandboxed chat the app saves it; in a terminal chat run `purlis save`.
-   Personas are shared.
+3. Save it: in a sandboxed chat the app saves it; in a terminal chat, run `purlis save` only
+   on the person's yes, since it publishes everything pending (purlis-workspace). Personas are
+   shared.
 
 A persona's author may list the personas it usually works with:
 
@@ -245,7 +246,7 @@ purlis persona remove <name>      # refused while another persona extends or use
 
 - Work as one persona at a time, and never mix two personas' vaults.
 - Editing or removing a persona changes a committed file. In a sandboxed chat the app saves
-  it; in a terminal chat run `purlis save`.
+  it; in a terminal chat, run `purlis save` only on the person's yes (purlis-workspace).
 - A chat as a persona is started with that persona's MCP servers (`personas/<name>/mcp.json`)
   and its denied tools (`disallowed-tools:`) on Claude Code. If the briefing says a server
   was not started because nobody approved it, tell the person: `purlis persona approve-mcp`

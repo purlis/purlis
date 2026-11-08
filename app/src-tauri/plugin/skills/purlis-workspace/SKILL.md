@@ -103,8 +103,8 @@ private again, and stages the removal of what was shared; `purlis save` then pub
 
 `purlis save "<message>"` commits and pushes **everything pending in the plane**, not only what
 this chat changed, and prints what it is about to commit. In a chat the app started, the app
-saves it; in a terminal, `purlis save` runs there. `--pull` first brings in what the remote has;
-`--no-push` commits only.
+saves it; in a terminal, the chat runs `purlis save` only on the person's yes. `--pull` first
+brings in what the remote has; `--no-push` commits only.
 
 Before either one:
 

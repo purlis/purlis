@@ -20,6 +20,10 @@ const FOLDING: [&str; 2] = ["purlis-smart-close", "purlis-tidy-memory"];
 /// The tools that write a workspace's charter for a chat.
 const TOOLS: [&str; 2] = ["`workspace_section`", "`workspace_vision`"];
 
+/// What each of [`FOLDING`] says in its body, so a chat that has the tools is also told not to
+/// reach past them (the review of #5797, where a merge lost it from both).
+const NEVER_BY_HAND: &str = "Never open the charter file to change it by hand.";
+
 fn skills_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../app/src-tauri/plugin/skills")
 }
@@ -113,6 +117,11 @@ fn smart_close_and_the_memory_skill_name_the_tools_that_write_the_charter() {
                 "{folder} folds lessons into a workspace's charter without naming {tool}"
             );
         }
+        let one_line = text.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(
+            one_line.contains(NEVER_BY_HAND),
+            "{folder} does not say “{NEVER_BY_HAND}”"
+        );
     }
 }
 

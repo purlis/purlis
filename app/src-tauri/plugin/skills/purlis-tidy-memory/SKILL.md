@@ -64,7 +64,8 @@ to do and why, then archive the memories it replaces.
   not refused. Add a rule with the `workspace_section` tool and section `decisions`
   (`## Context & decisions`), a term with section `glossary` (`## Glossary`), and a changed goal
   with the `workspace_vision` tool. Both write the workspace this chat works in; for another
-  workspace, give the person the entries to add.
+  workspace, give the person the entries to add. Never open the charter file to change it by
+  hand.
 - **A persona's charter:** the rule goes into its `persona.md`.
 
 Show the person what changed in the charter. Done when they have read it. Both files are

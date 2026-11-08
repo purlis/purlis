@@ -158,6 +158,7 @@ const RULES: &[(&str, Rule)] = &[
     ("skills", skills),
     ("neighbours", neighbours),
     ("sandbox", sandbox),
+    ("save", save),
     ("measured", measured),
 ];
 
@@ -786,6 +787,32 @@ fn sandbox(skill: &Skill, _: &Build) -> Vec<Finding> {
         .collect()
 }
 
+/// **A terminal chat saves only on the person's yes** (the review of #5797): `purlis save`
+/// publishes everything pending in the plane, not only what the chat changed, so a sentence
+/// that tells a terminal chat to run it also says it waits for the person's yes, as
+/// purlis-workspace's "Live and `purlis save` publish" does.
+fn save(skill: &Skill, _: &Build) -> Vec<Finding> {
+    sentences(&skill.text)
+        .into_iter()
+        .filter_map(|(line, sentence)| {
+            let lower = sentence.to_lowercase();
+            let about = lower.contains("`purlis save") && lower.contains("terminal");
+            let asks = lower
+                .split(|c: char| !(c.is_alphanumeric() || c == '\''))
+                .any(|word| word == "yes");
+            (about && !asks).then(|| {
+                (
+                    line,
+                    format!(
+                        "has a terminal chat run `purlis save` without the person's yes: \
+                         “{sentence}”"
+                    ),
+                )
+            })
+        })
+        .collect()
+}
+
 /// **Every built-in is measured** (#5731, spec #5714's Q2 and Q3): it carries trigger tests in
 /// `evals/triggers.json`, and beside them an `evals/sources.json` a reviewer reads and the CI
 /// grader scores by, naming its tier, its neighbours and where each test came from. So no
@@ -1281,6 +1308,36 @@ fn a_sentence_that_says_never_to_lower_the_sandbox_or_edit_a_harness_s_settings_
          edit `.claude/settings.json` by hand.",
         "```bash\ncat .claude/settings.json\n```",
         "Settings › Project › Sandbox shows the level.",
+    ] {
+        assert_eq!(
+            problems(&format!("{GOOD}{page}\n")),
+            Vec::<String>::new(),
+            "{page}"
+        );
+    }
+}
+
+#[test]
+fn a_sentence_that_has_a_terminal_chat_save_without_the_person_s_yes_is_named() {
+    for page in [
+        "Save it: in a sandboxed chat the app saves it; in a terminal chat run `purlis save`.",
+        "In a terminal, `purlis save` runs there.",
+    ] {
+        let found = problems(&format!("{GOOD}{page}\n"));
+        assert_eq!(found.len(), 1, "{page}: {found:?}");
+        assert!(
+            found[0].starts_with("purlis-example:8: save: has a terminal chat run"),
+            "{found:?}"
+        );
+    }
+}
+
+#[test]
+fn a_sentence_that_saves_from_a_terminal_on_the_person_s_yes_is_not_named() {
+    for page in [
+        "In a terminal chat, run `purlis save` only on the person's yes (purlis-workspace).",
+        "In a sandboxed chat the app saves it.",
+        "```bash\npurlis save \"x\"   # in a terminal\n```",
     ] {
         assert_eq!(
             problems(&format!("{GOOD}{page}\n")),

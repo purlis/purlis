@@ -30,8 +30,8 @@ charter. purlis writes its `workspace.md` for this chat, since a sandboxed chat 
 file itself: a lasting decision through the `workspace_section` tool with section `decisions`,
 a term this work coined with section `glossary`, a changed goal through the `workspace_vision`
 tool. Each `workspace_section` call adds one entry and keeps what is there. A harness without
-purlis's tools sets the goal with `purlis workspace vision "<the goal>"`. Leave `## Sessions`
-alone; that line is purlis's. Done when each lasting decision, term, goal change or lesson is
+purlis's tools sets the goal with `purlis workspace vision "<the goal>"`. Never open the
+charter file to change it by hand. Leave `## Sessions` alone; that line is purlis's. Done when each lasting decision, term, goal change or lesson is
 where that rule puts it, or there was none.
 
 ## 3. Write the record
