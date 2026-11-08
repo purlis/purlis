@@ -140,7 +140,7 @@ export const ADraftWaits: Story = {
 };
 
 /** **Read**: the whole draft, marked as an agent's and unreviewed, in fields the person can
- *  change, reached by the keyboard from Read past File. */
+ *  change, reached by the keyboard from Read past the row's ways and its ×. */
 export const ReadOpensTheDraft: Story = {
   beforeEach: () => fake([]),
   play: async ({ canvasElement }) => {
@@ -161,6 +161,12 @@ export const ReadOpensTheDraft: Story = {
     await untilFocused(
       () => canvas.getByRole("button", { name: "Go to chat steward 4" }),
       "Tab reaches Go to chat, the row's last way",
+    );
+    // The row's × is its last stop; what Read opened stands under the whole row, so after it.
+    await userEvent.tab();
+    await untilFocused(
+      () => canvas.getByRole("button", { name: "Dismiss" }),
+      "Tab reaches the row's Dismiss",
     );
     await userEvent.tab();
     const title = canvas.getByRole("textbox", { name: "Title" });

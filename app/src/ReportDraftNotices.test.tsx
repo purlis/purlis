@@ -137,6 +137,33 @@ describe("a report draft in the Inbox (#5694)", () => {
     expect(screen.getByRole("textbox", { name: "Body" })).toHaveProperty("value", DRAFT.body);
   });
 
+  it("is read by the keyboard in the order it is drawn: its ways, its ×, then the opened draft", async () => {
+    core([]);
+    drawn();
+    await waitFor(() => expect(card()).not.toBeNull());
+    const read = screen.getByRole("button", { name: "Read" });
+    read.focus();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(read).toHaveAttribute("aria-expanded", "true"));
+
+    // Read keeps the keyboard (a disclosure moves nothing); what it opened stands under the
+    // whole row, so the row's × comes before it.
+    const order = [
+      screen.getByRole("button", { name: "File" }),
+      screen.getByRole("button", { name: "Always send" }),
+      screen.getByRole("button", { name: "Go to chat steward 4" }),
+      screen.getByRole("button", { name: "Dismiss" }),
+      screen.getByRole("textbox", { name: "Title" }),
+      screen.getByRole("textbox", { name: "Body" }),
+    ];
+    const stops: (Element | null)[] = [];
+    while (stops.length < order.length) {
+      await userEvent.tab();
+      stops.push(document.activeElement);
+    }
+    expect(stops).toEqual(order);
+  });
+
   it("files with the duplicate check and leaves the Inbox once sent", async () => {
     core([{ kind: "sent", to: "intake", address: "event 9f", title: DRAFT.title }]);
     const { onSent } = drawn();
