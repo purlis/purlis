@@ -23,29 +23,29 @@ pub(super) const GRIP: Family = Family {
     name: "grip",
     description: "What a pane or a chat is picked up by: its mark at rest, six dots under the \
                   pointer or the keyboard, with no button ground.",
-    since: super::NEXT,
+    since: 14,
     parts: &[
         Part {
             name: "root",
-            since: super::NEXT,
+            since: 14,
             description: "The grip: as big as the mark it stands for, with no ground of its own.",
             properties: &[],
         },
         Part {
             name: "mark",
-            since: super::NEXT,
+            since: 14,
             description: "The mark it stands for, drawn at rest.",
             properties: &[],
         },
         Part {
             name: "dots",
-            since: super::NEXT,
+            since: 14,
             description: "The dots, in three rows of two, in the mark's place.",
             properties: &[],
         },
         Part {
             name: "dot",
-            since: super::NEXT,
+            since: 14,
             description: "Each of its six dots, drawn under the pointer and with the keyboard.",
             properties: &[Prop::Fill],
         },

@@ -17,29 +17,29 @@ pub(super) const CHAT_MARK: Family = Family {
     name: "chat-mark",
     description: "A chat's mark: who it runs as, with its one state on the corner, the same on \
                   its tab, its row, its pane's head and a folded pane's rail.",
-    since: super::NEXT,
+    since: 14,
     parts: &[
         Part {
             name: "root",
-            since: super::NEXT,
+            since: 14,
             description: "The mark: what holds who it runs as and its badge.",
             properties: &[],
         },
         Part {
             name: "who",
-            since: super::NEXT,
+            since: 14,
             description: "Who the chat runs as: a persona's mark, a shell's or a task's.",
             properties: &[],
         },
         Part {
             name: "badge",
-            since: super::NEXT,
+            since: 14,
             description: "The state's glyph on the mark's corner, in the state's colour.",
             properties: &[Prop::Text],
         },
         Part {
             name: "word",
-            since: super::NEXT,
+            since: 14,
             description: "The state's word, heard and not seen.",
             properties: &[],
         },
@@ -47,37 +47,37 @@ pub(super) const CHAT_MARK: Family = Family {
     variants: &[
         Variant {
             name: "needs",
-            since: super::NEXT,
+            since: 14,
             description: "It needs the person: the hand.",
             consent: None,
         },
         Variant {
             name: "failed",
-            since: super::NEXT,
+            since: 14,
             description: "A task failed, until the chat has been seen: the cross.",
             consent: None,
         },
         Variant {
             name: "working",
-            since: super::NEXT,
+            since: 14,
             description: "A turn runs: the ring.",
             consent: None,
         },
         Variant {
             name: "waiting",
-            since: super::NEXT,
+            since: 14,
             description: "It waits on its tasks or its own work: the hourglass.",
             consent: None,
         },
         Variant {
             name: "idle",
-            since: super::NEXT,
+            since: 14,
             description: "At rest, ready for the person: the pause.",
             consent: None,
         },
         Variant {
             name: "ended",
-            since: super::NEXT,
+            since: 14,
             description: "Its program has ended: the dash.",
             consent: None,
         },

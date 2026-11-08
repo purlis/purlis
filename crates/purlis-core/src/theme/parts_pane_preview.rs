@@ -29,11 +29,11 @@ pub(super) const PANE_PREVIEW: Family = Family {
     name: "pane-preview",
     description: "What a drag draws over the panes: a pane about to be, the size a terminal will \
                   take, the mark on a refused place, and the label and the words by the pointer.",
-    since: super::NEXT,
+    since: 14,
     parts: &[
         Part {
             name: "arriving",
-            since: super::NEXT,
+            since: 14,
             description: "A pane the drop would make, or a side that would fold: its fill and its \
                           edge.",
             properties: &[
@@ -46,25 +46,25 @@ pub(super) const PANE_PREVIEW: Family = Family {
         },
         Part {
             name: "name",
-            since: super::NEXT,
+            since: 14,
             description: "The name on a pane about to be.",
             properties: &[Prop::Text, Prop::FontSize, Prop::Padding],
         },
         Part {
             name: "line",
-            since: super::NEXT,
+            since: 14,
             description: "On the strip, the line where a tab would go.",
             properties: &[Prop::Fill],
         },
         Part {
             name: "opening",
-            since: super::NEXT,
+            since: 14,
             description: "The mark along a tab a drag rests on, until it comes forward.",
             properties: &[Prop::Fill],
         },
         Part {
             name: "size",
-            since: super::NEXT,
+            since: 14,
             description: "The columns and rows a terminal will take, on the pane that will change.",
             properties: &[
                 Prop::Fill,
@@ -76,19 +76,19 @@ pub(super) const PANE_PREVIEW: Family = Family {
         },
         Part {
             name: "refused",
-            since: super::NEXT,
+            since: 14,
             description: "The mark on the pane a refused place means: its edge alone.",
             properties: &[Prop::BorderColour, Prop::BorderWidth, Prop::CornerRadius],
         },
         Part {
             name: "held",
-            since: super::NEXT,
+            since: 14,
             description: "What is held, by the pointer.",
             properties: LABEL,
         },
         Part {
             name: "words",
-            since: super::NEXT,
+            since: 14,
             description: "What letting go would do, or why it can't, by the pointer.",
             properties: LABEL,
         },

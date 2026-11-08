@@ -15,7 +15,7 @@ fn the_secret_ask_is_in_the_manifest_since_next() {
         .iter()
         .find(|one| one["name"] == "secret-ask")
         .expect("the secret ask is in the manifest");
-    assert_eq!(family["since"], parts::NEXT);
+    assert_eq!(family["since"], 14);
     let names: Vec<&str> = family["parts"]
         .as_array()
         .unwrap()
