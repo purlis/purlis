@@ -741,8 +741,8 @@ fn the_studio_says_the_budget_and_what_its_scope_writes_as_its_router_3692() {
         said(&at_root.budget),
         [
             ("Claude Code".to_owned(), 60, 15_000),
-            ("Codex".to_owned(), 30, 6_000),
-            ("opencode".to_owned(), 30, 6_000),
+            ("Codex".to_owned(), 30, 8_000),
+            ("opencode".to_owned(), 30, 8_000),
         ]
     );
     assert!(at_root.past_limits.is_empty());
