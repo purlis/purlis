@@ -568,3 +568,100 @@ fn the_tabs_family_default_is_what_tabs_css_draws() {
         (drawn(toolbar, "background-color"), drawn(toolbar, "color"))
     );
 }
+
+// ---------------------------------------------------------------------------------------
+// A tab's × under the pointer (#3269)
+// ---------------------------------------------------------------------------------------
+
+/// The tabs family's ×, as [`parts::PART_STATES`] declares its look under the pointer.
+fn closer_under_the_pointer() -> parts::PartState {
+    *parts::PART_STATES
+        .iter()
+        .find(|one| one.family == "tabs" && one.part == "closer")
+        .expect("the ×'s own state")
+}
+
+#[test]
+fn a_tabs_x_under_the_pointer_is_declared_as_tabs_css_draws_it() {
+    // A part with a state of its own declares its fill and words in it, held to its stylesheet.
+    let css = include_str!("../../../../app/src/ui/tabs/tabs.css");
+    let own = closer_under_the_pointer();
+    let hovered = format!(
+        "{TAB} [data-part=\"closer\"][data-scope=\"tabs\"]{}",
+        own.marked
+    );
+    assert_eq!(own.within, State::Hover);
+    assert_eq!(
+        (own.fill.to_owned(), own.words.to_owned()),
+        (
+            drawn_in(&declared_in(css, &hovered, "background-color")),
+            drawn_in(&declared_in(css, &hovered, "color")),
+        )
+    );
+}
+
+#[test]
+fn a_themes_x_colours_never_reach_it_under_the_pointer() {
+    // Under the pointer the × draws its own look, which the floors hold: no rule for it reaches
+    // it there, the theme's nor a fallback's.
+    let sheet = sheet_of(json!({ "tabs.closer.text": "text.muted" }));
+    assert!(
+        sheet.contains(&format!(
+            ":where({TAB} [data-scope=\"tabs\"][data-part=\"closer\"]:not(:hover)) {{ color: var(--text-muted); }}"
+        )),
+        "{sheet}"
+    );
+    assert!(!sheet.contains("[data-part=\"closer\"]) {"), "{sheet}");
+    // A corner is no colour: it reaches the × under the pointer too, as a state never changes it.
+    let sheet = sheet_of(json!({ "tabs.closer.corner-radius": 0 }));
+    assert!(
+        sheet.contains(&format!(
+            ":where({TAB} [data-scope=\"tabs\"][data-part=\"closer\"]) {{ border-radius: min(0px, 50%); }}"
+        )),
+        "{sheet}"
+    );
+}
+
+#[test]
+fn a_tabs_hover_fill_the_x_cannot_be_read_on_under_the_pointer_draws_its_default() {
+    // A light pill under the pointer, the tab's words and its × at rest turned dark to read on
+    // it, and a split tab's picture: under the pointer the × is the primary words on a see-through hover, over that pill.
+    let loaded = load(&json!({
+        "name": "Lit",
+        "appearances": [{
+            "id": "dark",
+            "appearance": "dark",
+            "tokens": { "surface.hover": "#ffffff14" },
+        }],
+        "parts": {
+            "tabs.tab.hover.fill": "text.primary",
+            "tabs.tab.hover.text": "surface.base",
+            "tabs.closer.hover.text": "surface.base",
+            "tabs.picture.hover.text": "surface.base",
+        },
+    }));
+    assert!(!loaded.refused, "{:?}", said(&loaded));
+    let fell = parts::fallen(loaded.theme.first());
+    assert!(
+        fell.iter().any(|one| one.part == "tabs.tab.chat.hover"
+            && one.floor.contains("closer's words")
+            && one.floor.contains("under the pointer")),
+        "{fell:?}"
+    );
+    // Its default under the pointer reads, so nothing falls on a theme that leaves the pill be.
+    let plain = load(&json!({
+        "name": "Plain",
+        "appearances": [{
+            "id": "dark",
+            "appearance": "dark",
+            "tokens": { "surface.hover": "#ffffff14" },
+        }],
+        "parts": { "tabs.closer.hover.text": "text.secondary" },
+    }));
+    assert!(!plain.refused, "{:?}", said(&plain));
+    let fell = parts::fallen(plain.theme.first());
+    assert!(
+        !fell.iter().any(|one| one.floor.contains("under the pointer")),
+        "{fell:?}"
+    );
+}

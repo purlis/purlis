@@ -1065,3 +1065,87 @@ fn a_theme_that_colours_the_chip_leaves_the_edged_chips_standing() {
         }
     }
 }
+
+/// What the rules of `titlebar.css` for `part`'s own element draw while `attributes` mark it, in
+/// the order the sheet writes them: its fill and its words, each the last rule's that sets it.
+fn apart_drawn(css: &str, part: &str, attributes: &[&str]) -> (String, String) {
+    let own = format!("[data-part=\"{part}\"][data-scope=\"titlebar\"]");
+    let (mut fill, mut words) = (String::from("transparent"), String::new());
+    let mut rest = css;
+    while let Some(open) = rest.find('{') {
+        let selectors = rest[..open].trim();
+        // Inside an at-rule, its rules are read as the sheet's own.
+        if selectors.starts_with('@') || selectors.contains("\n@") {
+            rest = &rest[open + 1..];
+            continue;
+        }
+        let close = open + rest[open..].find('}').expect("the rule closes");
+        let body = &rest[open + 1..close];
+        rest = &rest[close + 1..];
+        let reaches = selectors.split(',').map(str::trim).any(|one| {
+            one.strip_prefix(&own).is_some_and(|marks| {
+                marks.split_inclusive(']').all(|mark| attributes.contains(&mark))
+            })
+        });
+        if !reaches {
+            continue;
+        }
+        if let Some(value) = declared(body, "background-color") {
+            fill = token(value);
+        }
+        if let Some(value) = declared(body, "color") {
+            words = token(value);
+        }
+    }
+    (fill, words)
+}
+
+#[test]
+fn each_part_drawn_apart_is_declared_in_each_of_its_states_as_titlebar_css_draws_it() {
+    // A part with states of its own declares its fill and words in each (#3269), and the floors
+    // hold what it declares (`Held::apart`): it is what the window draws.
+    let css = css_of(include_str!("../../../../app/src/ui/titlebar/titlebar.css"));
+    for (part, states) in [
+        ("crumb", &[&[][..], &[parts::State::Hover], &[parts::State::Selected]][..]),
+        ("all", &[&[][..], &[parts::State::Hover], &[parts::State::Selected]]),
+        (
+            "pin",
+            &[
+                &[][..],
+                &[parts::State::Hover],
+                &[parts::State::Selected],
+                &[parts::State::Hover, parts::State::Selected],
+            ],
+        ),
+        (
+            "row",
+            &[
+                &[][..],
+                &[parts::State::Hover],
+                &[parts::State::Selected],
+                &[parts::State::Hover, parts::State::Selected],
+            ],
+        ),
+        ("row-count", &[&[][..]]),
+    ] {
+        for states in states {
+            let marks: Vec<&str> = states
+                .iter()
+                .map(|state| match (part, state) {
+                    (_, parts::State::Hover) => "[data-hovered]",
+                    // The row Enter would go to is drawn by its `data-active`, beside the
+                    // `data-selected` a key reaches it by (`Switcher.tsx`).
+                    ("row", parts::State::Selected) => "[data-active]",
+                    (_, parts::State::Selected) => "[data-selected]",
+                    _ => unreachable!("{state:?}"),
+                })
+                .collect();
+            let declared = parts::apart_look_in("titlebar", part, states);
+            assert_eq!(
+                (declared.fill.to_owned(), declared.words.to_owned()),
+                apart_drawn(&css, part, &marks),
+                "titlebar.{part} in {states:?}"
+            );
+        }
+    }
+}

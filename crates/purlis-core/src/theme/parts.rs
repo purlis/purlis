@@ -769,6 +769,45 @@ fn apart_in_nothing(
     })
 }
 
+/// **A part's own look in a state of its own, inside its root** (#3269): a tab's × under the
+/// pointer takes the quiet hover, its fill and the primary words (`tabs.css`, #4756), whatever
+/// the tab around it is in. Its keys stay its root's (`tabs.closer.hover.text` is the × of a tab
+/// under the pointer), so the colours a theme's rules and a fallback set for the part reach it
+/// everywhere but in this state ([`targets`]): what the window draws there is this look, and
+/// the floors hold it over the root's fill as drawn in each set of the root's states it can be
+/// in at once ([`Held::part_states`]).
+#[derive(Debug, Clone, Copy)]
+pub(super) struct PartState {
+    pub(super) family: &'static str,
+    pub(super) part: &'static str,
+    /// The root's state that holds whenever this one does: the pointer on the × is on its tab.
+    pub(super) within: State,
+    /// What marks the state on the part's own element.
+    pub(super) marked: &'static str,
+    pub(super) fill: &'static str,
+    pub(super) words: &'static str,
+}
+
+/// The parts with a look of their own in a state of their own ([`PartState`]).
+pub(super) const PART_STATES: &[PartState] = &[PartState {
+    family: "tabs",
+    part: "closer",
+    within: State::Hover,
+    marked: ":hover",
+    fill: "surface.hover",
+    words: "text.primary",
+}];
+
+/// The states of its own `part` of `family` has, each with its look.
+fn part_states<'a>(
+    family: &'a Family,
+    part: &'a str,
+) -> impl Iterator<Item = &'static PartState> + 'a {
+    PART_STATES
+        .iter()
+        .filter(move |one| one.family == family.name && one.part == part)
+}
+
 /// **What a part drawn apart is drawn in**, by family and part (#4000): a switcher row's count
 /// is drawn in its row, so a fill a theme gives the row is under it too.
 const APART_IN: &[(&str, &str, &str)] = &[("titlebar", "row-count", "row")];
@@ -3162,6 +3201,12 @@ fn held_from(
                     held.apart(one);
                 }
             }
+            held.part_states(theme);
+            if held.near(coarse, |copy, one| copy.part_states(one)) {
+                for one in tints() {
+                    held.part_states(one);
+                }
+            }
             for states in &singles {
                 held.consented(drawn_in, states);
             }
@@ -4020,31 +4065,74 @@ impl Held<'_> {
         }
     }
 
-    /// **Whether a part drawn apart from the root comes near a floor in the `coarse` tints**: read
-    /// on a copy, since a reading near a floor is no fall, for [`Self::apart`] at every degree.
-    fn apart_near(&self, coarse: &[ResolvedTheme]) -> bool {
-        let family = self.family;
-        if coarse.is_empty()
-            || !family
-                .parts
-                .iter()
-                .any(|part| drawn_apart(family, part.name).is_some())
-        {
-            return false;
-        }
+    /// **Whether `read` finds a floor come near in the `coarse` tints**: read on a copy, with
+    /// [`NEAR_A_FLOOR`] as its margin, since a reading near a floor is no fall.
+    fn near(&self, coarse: &[ResolvedTheme], read: impl Fn(&mut Held<'_>, &ResolvedTheme)) -> bool {
         let mut rules = self.rules.clone();
         let mut fell = self.fell.clone();
         let before = fell.len();
         let mut copy = Held {
-            family,
+            family: self.family,
             rules: &mut rules,
             fell: &mut fell,
             margin: NEAR_A_FLOOR,
         };
         for one in coarse {
-            copy.apart(one);
+            read(&mut copy, one);
         }
         fell.len() > before
+    }
+
+    /// **Each part's own look in its own state, on its root as drawn** (#3269): a tab's × under
+    /// the pointer, its words on its fill laid over the tab's fill in every set of the tab's states
+    /// it is drawn in then (under the pointer, alone or chosen too), in each look the window draws.
+    /// The look is the family's own and no rule reaches it ([`PART_STATES`]), so where it breaks
+    /// a floor only because the theme's rules changed the root's fill under it, that look of the
+    /// root draws its default back; where its default breaks too, the token floors hold it.
+    fn part_states(&mut self, theme: &ResolvedTheme) {
+        let family = self.family;
+        for own in PART_STATES.iter().filter(|one| one.family == family.name) {
+            let Some(part) = family.parts.iter().find(|one| one.name == own.part) else {
+                continue;
+            };
+            let floor = theme.least.floor(floor_of(family, part)) + self.margin;
+            let mut sets = singles_of(family);
+            sets.extend(combined(family));
+            for states in sets.iter().filter(|one| one.contains(&own.within)) {
+                for variant in family
+                    .looks()
+                    .into_iter()
+                    .filter(|one| family.draws(one, states))
+                {
+                    let read = |rules: &[Rule]| {
+                        let under = drawn(rules, family, variant, states).fill;
+                        let on = laid_over(theme, under, &grounds(theme, family));
+                        lowest(theme, &on, own.fill, own.words)
+                    };
+                    let Some(ratio) = read(self.rules).filter(|ratio| *ratio < floor) else {
+                        continue;
+                    };
+                    if read(&[]).is_some_and(|ratio| ratio < floor) {
+                        continue;
+                    }
+                    self.fall(
+                        variant,
+                        states,
+                        format!(
+                            "the {}'s words contrast {floor}:1 with its fill under the pointer",
+                            own.part
+                        ),
+                        Some(ratio),
+                    );
+                }
+            }
+        }
+    }
+
+    /// **Whether a part drawn apart from the root comes near a floor in the `coarse` tints**: read
+    /// on a copy, since a reading near a floor is no fall, for [`Self::apart`] at every degree.
+    fn apart_near(&self, coarse: &[ResolvedTheme]) -> bool {
+        self.near(coarse, |copy, one| copy.apart(one))
     }
 
     /// Each consent variant the window draws while `states` hold, held to the consent floors in
@@ -5057,6 +5145,21 @@ fn written_to(rule: &Rule, property: Prop) -> Option<&'static str> {
 fn targets(rule: &Rule, property: Prop, sized: bool) -> Vec<String> {
     let own = selector(rule, sized);
     let part = rule.family.parts[rule.part].name;
+    // **A part's own state draws its own colours** (#3269): a colour a theme or a fallback sets
+    // for the part never reaches it there, where [`PART_STATES`] says what is drawn; its size and
+    // its corners do, as a state never changes them.
+    if rule.part != 0 && property.in_state() {
+        let not: String = part_states(rule.family, part)
+            .map(|one| format!(":not({})", one.marked))
+            .collect();
+        if !not.is_empty() {
+            let at = format!(
+                "[data-scope=\"{}\"][data-part=\"{part}\"]",
+                rule.family.name
+            );
+            return vec![own.replace(&at, &format!("{at}{not}"))];
+        }
+    }
     // **A chat pane's band draws its Notices' ground and words itself** (#3142, #2912): the
     // state washes, never tinted, and the primary tier on them. A theme's Notice colours reach a
     // Notice anywhere else, so none can draw a band Notice in the terminal's own fill.
