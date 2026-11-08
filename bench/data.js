@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794154761807,
+  "lastUpdate": 1794157003605,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -43680,6 +43680,48 @@ window.BENCHMARK_DATA = {
             "value": 101.2118085,
             "unit": "ms",
             "extra": "median of 5 runs: 100.373, 101.142, 101.212, 102.704, 103.197 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "dc601c6d262ed67c45cc5daaf2c04b4bf2b4a6f7",
+          "message": "Parts floors: hold every family drawn on a surface a theme fills (#3268) (#5856)\n\n* Parts floors: hold every family drawn on a surface a theme fills (#3268)\n\ngrounds.test.ts finds where every family's root is drawn, through the\ncomponents that place it, the file a name is imported from, a helper's\nspread attributes and createElement, and holds STANDS_ON to it exactly.\n\nThe engine reads each family STANDS_ON names on a surface's fill set:\nthe root where its grounds do not name the fill, and a part read on\ngrounds of its own (a field's help, its error) where the surface's\ndefault is one of them; elsewhere that part is drawn nowhere on it.\nA family's default look that breaks on the surface's default too is\nno reason to draw that default. A reading is shared by every look of a\nsurface that sets the same fill.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6XM4RRVHGFTPTPYCXSJG53H\nPurlis-Persona: steward\n\n* ADR 0103 amendment and changelog: every family is measured where the components draw it (#3268)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6XM4RRVHGFTPTPYCXSJG53H\nPurlis-Persona: steward\n\n* Review: children are placed by the component a name is imported as; a family's root is its manifest's first part (#3268)\n\nWhere a component places what it is given was still looked up by bare\nname, so another file's component of the same name put families on a\ntooltip they are never drawn on: 14 pairs leave STANDS_ON. A family\nwhose first part is not named root (a page tab's tab, a view list's\nitem) is now found, and stands on a panel and a view's frame.\nThe default-look rule is a named helper, the cache's invalidation is\none function, and the schema is read with JSON.parse.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6XM4RRVHGFTPTPYCXSJG53H\nPurlis-Persona: steward\n\n* STANDS_ON: what main's new components draw (a SigningRefusal in a table, steps on a panel) (#3268)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6XM4RRVHGFTPTPYCXSJG53H\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-08T16:10:30Z",
+          "tree_id": "c7732ca7fce0e4bede7fc07f7c2fce65ffd66206",
+          "url": "https://github.com/purlis/purlis/commit/dc601c6d262ed67c45cc5daaf2c04b4bf2b4a6f7"
+        },
+        "date": 1794156998174,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.539155,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.533, 0.539, 0.539, 0.541, 0.559 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.1346955,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.085, 16.104, 16.135, 16.169, 16.193 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.3691735,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.697, 101.091, 102.369, 102.703, 102.733 ms"
           }
         ]
       }
