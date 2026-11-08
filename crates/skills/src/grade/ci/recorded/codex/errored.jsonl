@@ -1,0 +1,4 @@
+{"type":"thread.started","thread_id":"0199a2b4-af41-7063-c25d-8e9f0a1b2c34"}
+{"type":"turn.started"}
+{"type":"error","message":"stream error: exceeded retry limit, last status: 401 Unauthorized; retrying 1/5 in 189ms…"}
+{"type":"turn.failed","error":{"message":"exceeded retry limit, last status: 401 Unauthorized"}}
