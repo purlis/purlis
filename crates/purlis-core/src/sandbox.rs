@@ -2403,6 +2403,55 @@ fn podman_folders(machine: &Machine) -> Vec<(PathBuf, Reach)> {
     out
 }
 
+/// **gh's and glab's folders where `machine`'s environment names them by a relative path**:
+/// the variables [`forge_folders_moved`] reads, each that names a relative folder, as it is
+/// written. gh and glab take such a value against the folder they run in, so it is held against
+/// each chat's own ([`Applied::forge_folders_here`]).
+fn forge_folders_relative(machine: &Machine) -> Vec<PathBuf> {
+    let named = |name: &str| {
+        machine
+            .env
+            .get(name)
+            .filter(|value| !value.is_empty())
+            .map(PathBuf::from)
+            .filter(|folder| folder.is_relative())
+    };
+    let mut out: Vec<PathBuf> = Vec::new();
+    let relative = named("GH_CONFIG_DIR")
+        .into_iter()
+        .chain(named("GLAB_CONFIG_DIR"))
+        .chain(
+            named("XDG_CONFIG_HOME")
+                .into_iter()
+                .flat_map(|config| [config.join("gh"), config.join("glab-cli")]),
+        )
+        .chain(named("XDG_DATA_HOME").map(|data| data.join("gh")));
+    for folder in relative {
+        if !out.contains(&folder) {
+            out.push(folder);
+        }
+    }
+    out
+}
+
+/// `path` with each `.` dropped and each `..` taking the name before it away, by its words alone:
+/// the path a program that joins a relative value to its folder opens, where nothing on the way
+/// is a link, as a chat's own folder is not.
+fn lexically(path: &Path) -> PathBuf {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    for part in path.components() {
+        match part {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                out.pop();
+            }
+            other => out.push(other),
+        }
+    }
+    out
+}
+
 /// **Where `machine`'s environment moves gh's and glab's folders**: `$GH_CONFIG_DIR`, else
 /// `$XDG_CONFIG_HOME/gh`, for gh's settings and sign-ins; `$XDG_DATA_HOME/gh` for its extensions;
 /// `$GLAB_CONFIG_DIR`, else `$XDG_CONFIG_HOME/glab-cli`, for glab's. Each variable is read whether
@@ -4054,6 +4103,9 @@ pub struct Applied {
     older: Option<(String, ClaudeCodeVersion)>,
     /// The shared folders of the home a chat at the floor finds made ([`usual_home_folders`]).
     usual_folders: Vec<PathBuf>,
+    /// gh's and glab's folders as the person's environment names them by a relative path, which
+    /// each is held at against the chat's own folder ([`forge_folders_relative`]).
+    forge_relative: Vec<PathBuf>,
     /// The persona's tools for this chat (#1407), written as its line is decided.
     tools: Option<Box<tools::Resolved>>,
     /// purlis's own program the wrap starts the chat under on Linux, as it was checked and held
@@ -4630,6 +4682,7 @@ impl Applied {
             .into_iter()
             .chain(git_the_app_writes(&self.root, cwd))
             .chain(self.later_code_by_path(cwd))
+            .chain(self.forge_folders_here(cwd))
             .filter(|denial| !self.denied.contains(denial))
             .collect()
     }
@@ -4655,6 +4708,27 @@ impl Applied {
                 named: None,
                 reach: Reach::AndBelow,
                 any_case: false,
+            })
+            .collect()
+    }
+
+    /// gh's and glab's folders that the person's environment names by a relative path, held at
+    /// the chat's own folder `cwd` (else the project's), where gh and glab run in it read them: as
+    /// [`forge_folders_moved`] holds those named whole. One that is the chat's folder, the
+    /// project's or above either holds nothing, as there.
+    fn forge_folders_here(&self, cwd: Option<&Path>) -> Vec<Denial> {
+        let here = cwd.unwrap_or(&self.root);
+        self.forge_relative
+            .iter()
+            .map(|folder| lexically(&here.join(folder)))
+            .filter(|folder| !here.starts_with(folder) && !self.root.starts_with(folder))
+            .map(|path| Denial {
+                class: Class::LaterCode,
+                path,
+                access: Access::Write,
+                named: None,
+                reach: Reach::AndBelow,
+                any_case: self.os == Os::MacOs,
             })
             .collect()
     }
@@ -6894,6 +6968,7 @@ pub(crate) fn applied_of(
         through_proxy: harness != Harness::ClaudeCode || wrapped,
         older: None,
         usual_folders: usual_home_folders(compiled.level, machine),
+        forge_relative: forge_folders_relative(machine),
         tools: None,
         wrap: None,
     })
@@ -7787,6 +7862,8 @@ mod claude_wrap_tests;
 mod codex_tests;
 #[cfg(test)]
 mod floor_tests;
+#[cfg(test)]
+mod forge_moved_tests;
 #[cfg(all(test, unix))]
 mod git_held_tests;
 #[cfg(test)]
