@@ -650,6 +650,12 @@ pub(crate) fn resolve_in(url: &str, known: &BTreeMap<String, Forge>) -> Option<F
     known.get(&host).cloned()
 }
 
+/// **The server a remote URL is on, as accounts are kept by it**: `host:port` for an HTTPS URL
+/// that names a port (another server than the host's default, #1850), else the host alone.
+pub fn server_of(url: &str) -> String {
+    https_server_of(url).unwrap_or_else(|| host_of(url))
+}
+
 /// `host:port` of an HTTPS URL that names a port, lowercased; `None` for any other URL.
 fn https_server_of(url: &str) -> Option<String> {
     let (scheme, rest) = url.trim().split_once("://")?;

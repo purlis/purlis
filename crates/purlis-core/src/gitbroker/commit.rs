@@ -490,7 +490,7 @@ fn made(
     // Made as the email chosen for the forge account its `origin` is on (#5788), where one was.
     let origin = said(top, &["remote", "get-url", "origin"])?.unwrap_or_default();
     let theirs = identity
-        .for_host(&crate::forge::host_of(&origin))
+        .for_host(&crate::forge::server_of(&origin))
         .pinned(&here.top, &here.git_dir);
     if said(
         top,

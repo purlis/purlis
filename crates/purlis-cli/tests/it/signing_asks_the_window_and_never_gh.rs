@@ -422,3 +422,34 @@ fn check_with_no_window_says_to_open_purlis() {
     assert!(said(&out).contains("Open purlis"), "{}", said(&out));
     gh_never_ran(config);
 }
+
+/// #5788, #5793: `status` names the address each account's chat commits carry, where one was
+/// chosen for it in the window, with no window running.
+#[test]
+fn status_names_the_email_chosen_for_each_account() {
+    let machine = a_machine();
+    let config = machine.path();
+    assert!(purlis(config, &["signing", "setup"], &[]).status.success());
+    signed_in(
+        config,
+        &[
+            ("github", "github.com", "octocat"),
+            ("gitlab", "gitlab.example.org", "sam"),
+        ],
+    );
+    signingsetup::set_commit_email_of(
+        config,
+        &signingsetup::AccountRef::new(Kind::GitLab, "gitlab.example.org", "sam"),
+        Some("sam@example.org"),
+    )
+    .unwrap();
+    let out = purlis(config, &["signing", "status"], &[]);
+    assert!(out.status.success(), "{}", said(&out));
+    let text = said(&out);
+    assert!(
+        text.contains("on GitLab on gitlab.example.org carry sam@example.org"),
+        "{text}"
+    );
+    assert!(!text.contains("on GitHub carry sam@example.org"), "{text}");
+    gh_never_ran(config);
+}

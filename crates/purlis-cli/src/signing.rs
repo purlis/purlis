@@ -118,19 +118,30 @@ fn ran(command: &SigningCommand) -> u8 {
 }
 
 /// The forge accounts the window is signed in to, the first on each host, in the order they
-/// were added: read from its list of them, which holds no token.
-fn accounts(config: &std::path::Path) -> Vec<Forge> {
-    let mut found: Vec<Forge> = Vec::new();
+/// were added, with each one's login: read from its list of them, which holds no token.
+fn signed_in(config: &std::path::Path) -> Vec<(Forge, String)> {
+    let mut found: Vec<(Forge, String)> = Vec::new();
     for account in purlis_core::forge::accounts::listed(config).unwrap_or_default() {
         if account.state == purlis_core::forge::accounts::State::SignedIn
             && !found
                 .iter()
-                .any(|was| was.host.eq_ignore_ascii_case(&account.host))
+                .any(|(was, _)| was.host.eq_ignore_ascii_case(&account.host))
         {
-            found.push(signingsetup::forge_of(account.kind, &account.host));
+            found.push((
+                signingsetup::forge_of(account.kind, &account.host),
+                account.login,
+            ));
         }
     }
     found
+}
+
+/// [`signed_in`]'s forges alone.
+fn accounts(config: &std::path::Path) -> Vec<Forge> {
+    signed_in(config)
+        .into_iter()
+        .map(|(forge, _)| forge)
+        .collect()
 }
 
 /// **The forge account a command is about**: the one signed in on `host`; github.com and
@@ -239,7 +250,7 @@ fn setup(
                 "{named} has the key as a signing key on your account. The commits your chats \
                  make are signed from now on, and show as Verified on {named}."
             ));
-            email_line(forge);
+            email_line(forge, chosen_email(config, forge));
             voice::info(format!(
                 "Once a chat's commit is pushed, `purlis signing check {checked_with}` asks \
                  {named} how it shows."
@@ -425,9 +436,29 @@ fn ask_secret(prompt: &str) -> Result<String, String> {
         .map_err(|why| format!("purlis could not read the passphrase ({why})."))
 }
 
-/// Says which email address the commits carry, which the forge must know as the account's.
-fn email_line(forge: &Forge) {
+/// The email chosen in the window for `forge`'s account to sign chat commits as (#5788), where
+/// one was.
+fn chosen_email(config: &std::path::Path, forge: &Forge) -> Option<String> {
+    let (_, login) = signed_in(config)
+        .into_iter()
+        .find(|(one, _)| one == forge)?;
+    signingsetup::commit_email_of(
+        config,
+        &signingsetup::AccountRef::new(forge.kind, &forge.host, &login),
+    )
+}
+
+/// Says which email address `forge`'s commits carry, which the forge must know as the
+/// account's: the one chosen for that account in the window where one was, else git's own.
+fn email_line(forge: &Forge, chosen: Option<String>) {
     let named = forge_said(forge);
+    if let Some(email) = chosen {
+        voice::info(format!(
+            "Commits a chat makes on {named} carry {email}, the address chosen for that account \
+             in the purlis window."
+        ));
+        return;
+    }
     let settings = match forge.kind {
         Kind::GitHub => "GitHub › Settings › Emails",
         Kind::GitLab => "GitLab › Preferences › Emails",
@@ -478,6 +509,7 @@ fn status(
         forges.push(signingsetup::github());
     }
     for forge in &forges {
+        email_line(forge, chosen_email(config, forge));
         let named = forge_said(forge);
         let host = if forge.kind == Kind::GitLab {
             format!(" --host {}", forge.host)
@@ -494,9 +526,6 @@ fn status(
             )),
             other => voice::warn(not_asked(&other, forge)),
         }
-    }
-    if let Some(forge) = forges.first() {
-        email_line(forge);
     }
     Ok(0)
 }
@@ -526,7 +555,7 @@ fn check(forge: &Forge, repo: &str, commit: &str) -> Result<u8, String> {
     let Reached::Heard(Heard::Checked(checked)) = reached else {
         return Err(not_asked(&reached, forge));
     };
-    let said = checked.said();
+    let said = purlis_core::commitsign::reason_said_on(&checked.reason, &forge_said(forge));
     if checked.verified {
         voice::ok(format!("{commit} in {repo}: {said}."));
         Ok(0)

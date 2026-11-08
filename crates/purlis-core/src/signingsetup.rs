@@ -102,11 +102,16 @@ pub fn forge_of(kind: Kind, host: &str) -> Forge {
 /// **The window's answer to `asked`** for the account `login`, sent over `transport` (the
 /// window's own sign-in, in the app; a recording, in a test). Refused, in a sentence, where the
 /// forge refused it or `key` is not one public key. A Check asks only once the person said yes.
+///
+/// On GitLab a Check is held to `this_key`, this device's key, as the window's own Check is
+/// ([`check_a_pushed_commit`]): a commit signed with another key, or by GitLab itself, says
+/// nothing of this device's, and with no key here there is nothing to check (#5793).
 pub fn answered_over(
     transport: &dyn Transport,
     forge: &Forge,
     login: &str,
     asked: &Asked,
+    this_key: Option<&Signer>,
 ) -> Result<Heard, String> {
     match asked {
         Asked::KeyOnAccount { key, .. } => {
@@ -119,9 +124,19 @@ pub fn answered_over(
                 })
                 .map_err(|refused| refused.said(forge.kind))
         }
-        Asked::Check { repo, commit, .. } => {
-            signingkeys::check_over(transport, forge, repo, commit).map(Heard::Checked)
-        }
+        Asked::Check { repo, commit, .. } => match (forge.kind, this_key) {
+            (Kind::GitLab, Some(signer)) => {
+                check_a_pushed_commit(transport, forge, signer, repo, commit).map(Heard::Checked)
+            }
+            (Kind::GitLab, None) => Err(
+                "this device has no signing key, so GitLab's verdict on a commit says nothing of \
+                 it. Set signing up first"
+                    .to_owned(),
+            ),
+            (Kind::GitHub, _) => {
+                signingkeys::check_over(transport, forge, repo, commit).map(Heard::Checked)
+            }
+        },
     }
 }
 
@@ -146,7 +161,21 @@ pub fn answered_in_the_window(asked: &Asked) -> Result<Heard, String> {
         .ok_or_else(not_signed_in)?;
     let transport =
         signingkeys::window(&forge, &Caller::window()).map_err(|why| why.to_string())?;
-    answered_over(transport.as_ref(), &forge, &account.login, asked)
+    // This device's key is read only for a GitLab Check, which is held to it.
+    let this_key = match asked {
+        Asked::Check { .. } if forge.kind == Kind::GitLab => {
+            let keyring = crate::commitsign::this_builds_keyring(&config);
+            key_kept(&config, keyring.as_ref())?
+        }
+        _ => None,
+    };
+    answered_over(
+        transport.as_ref(),
+        &forge,
+        &account.login,
+        asked,
+        this_key.as_ref(),
+    )
 }
 
 /// How an ask of the window went, from the command's side.
@@ -637,15 +666,19 @@ pub fn commit_email_on(config_root: &Path, kind: Kind, host: &str) -> Option<Str
 /// was chosen (#5788): what the app hands the commits it makes for a chat
 /// ([`crate::worktree::git::Isolated::as_email_on`]).
 pub fn commit_emails_by_host(config_root: &Path) -> Vec<(String, String)> {
+    // The first signed-in account on each host is the one bound there, whether or not it chose
+    // an email: another account's choice on that host is never taken in its place.
+    let mut seen: Vec<String> = Vec::new();
     let mut found: Vec<(String, String)> = Vec::new();
     for account in crate::forge::accounts::listed(config_root).unwrap_or_default() {
         if account.state != crate::forge::accounts::State::SignedIn
-            || found
+            || seen
                 .iter()
-                .any(|(host, _)| host.eq_ignore_ascii_case(&account.host))
+                .any(|host| host.eq_ignore_ascii_case(&account.host))
         {
             continue;
         }
+        seen.push(account.host.clone());
         let one = AccountRef::new(account.kind, &account.host, &account.login);
         if let Some(email) = commit_email_of(config_root, &one) {
             found.push((one.host, email));

@@ -56,17 +56,19 @@ type Add =
   | { at: "asking" }
   | { at: "waiting"; code: ForgeDeviceCode }
   | { at: "declined"; why: string }
-  /** `unread`: the Keychain wouldn't give the key (macOS was told no), so nothing was copied
-   *  and there is no key to show (#5681). */
-  | { at: "by-hand"; copied: boolean; unread?: boolean }
+  /** `unread`: why the key couldn't be read from the Keychain (macOS was told no, or it isn't
+   *  there), so nothing was copied and there is no key to show (#5681). */
+  | { at: "by-hand"; copied: boolean; unread?: string }
   | { at: "trouble"; why: string };
 
 /** The forge's reasons a commit's email is not one of the account's verified ones. */
 export const EMAIL_REASONS = ["unverified_email", "no_user", "bad_email"];
 
 /** The by-hand step, as reading and copying the key went. */
-const byHandAt = (copied: boolean | "unread"): Add =>
-  copied === "unread" ? { at: "by-hand", copied: false, unread: true } : { at: "by-hand", copied };
+const byHandAt = (copied: boolean | { unread: string }): Add =>
+  typeof copied === "object"
+    ? { at: "by-hand", copied: false, unread: copied.unread }
+    : { at: "by-hand", copied };
 
 type Check =
   | { at: "checking" }
@@ -224,13 +226,13 @@ export function SigningSetupDialog({
     });
   };
 
-  /** The public key read (once), then copied: whether it reached the clipboard, or `unread`
-   *  where the Keychain wouldn't give it. */
-  const copyKey = useCallback(async (): Promise<boolean | "unread"> => {
+  /** The public key read (once), then copied: whether it reached the clipboard, or why the
+   *  Keychain didn't give it. */
+  const copyKey = useCallback(async (): Promise<boolean | { unread: string }> => {
     let shown = key;
     if (!shown) {
       const read = await commands.signingKeyShown();
-      if (read.status === "error") return "unread";
+      if (read.status === "error") return { unread: read.error };
       shown = read.data;
       setKey(shown);
     }
@@ -756,8 +758,8 @@ function AddBody({
           <p>Add it on {forge} yourself. purlis watches and carries on once it&apos;s there.</p>
           {add.unread && (
             <p className="trouble said-in-full" role="alert">
-              purlis couldn&apos;t read the key from the Keychain: macOS was told no. Try again, and
-              choose <strong>Always Allow</strong> when macOS asks.
+              purlis couldn&apos;t read the key from the Keychain: {add.unread} Try again, and if
+              macOS asks, choose <strong>Always Allow</strong>.
             </p>
           )}
           <ol>

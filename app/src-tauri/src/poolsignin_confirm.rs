@@ -42,6 +42,21 @@ pub enum Asks {
     SigningCheck,
 }
 
+/// Which command's question, and the forge a signing check asks (#5793).
+#[derive(Debug, Clone, Copy)]
+struct Question<'a> {
+    asks: Asks,
+    on: Option<&'a str>,
+}
+
+#[cfg(test)]
+impl Question<'_> {
+    /// A question that names no forge.
+    fn of(asks: Asks) -> Self {
+        Question { asks, on: None }
+    }
+}
+
 /// What the person is asked.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct PoolSignInAsk {
@@ -101,8 +116,7 @@ struct Waits<'a> {
 /// the windows draw it, and says false where none can; `took_back` has them stop. Only a yes is
 /// `Ok`.
 fn asking(
-    asks: Asks,
-    on: Option<&str>,
+    Question { asks, on }: Question<'_>,
     profile: &str,
     pool: &str,
     code: &str,
@@ -235,8 +249,7 @@ pub fn ask_the_person(
         let _ = app.emit(CHANGED, ());
     };
     asking(
-        asks,
-        on,
+        Question { asks, on },
         profile,
         pool,
         code,
@@ -286,8 +299,7 @@ mod tests {
     fn asked_in_a_thread() -> std::thread::JoinHandle<Result<Option<String>, String>> {
         std::thread::spawn(|| {
             asking(
-                Asks::SignIn,
-                None,
+                Question::of(Asks::SignIn),
                 "work",
                 "team",
                 "A1B2C3",
@@ -313,8 +325,7 @@ mod tests {
         let soon = waits(Duration::from_millis(10), STAYS);
         let ask = |waits: &Waits<'_>, tell: fn() -> bool| {
             asking(
-                Asks::SignIn,
-                None,
+                Question::of(Asks::SignIn),
                 "work",
                 "team",
                 "A1B2C3",
@@ -382,8 +393,7 @@ mod tests {
         // #5174: a yes to taking a profile off answers only that, so it lets no keep through.
         let asker = std::thread::spawn(|| {
             asking(
-                Asks::TakeOff,
-                None,
+                Question::of(Asks::TakeOff),
                 "work",
                 "team",
                 "D4E5F6",
@@ -412,8 +422,7 @@ mod tests {
         the_window_typed("work", "team");
         assert!(
             asking(
-                Asks::TakeOff,
-                None,
+                Question::of(Asks::TakeOff),
                 "work",
                 "team",
                 "D4E5F6",

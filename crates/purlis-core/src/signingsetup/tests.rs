@@ -40,7 +40,7 @@ fn no_key_then_made_then_added_then_listed_then_verified() {
     // Whether the account has it is read from GitHub's public list of its signing keys.
     let none = recording("publicly_none", &signer);
     assert_eq!(
-        answered_over(&none, &github(), "octocat", &on_account(&signer)).unwrap(),
+        answered_over(&none, &github(), "octocat", &on_account(&signer), None).unwrap(),
         Heard::KeyOnAccount { on: false }
     );
 
@@ -55,7 +55,7 @@ fn no_key_then_made_then_added_then_listed_then_verified() {
     assert!(added.unspent().is_empty());
     let public = recording("publicly_listed", &signer);
     assert_eq!(
-        answered_over(&public, &github(), "octocat", &on_account(&signer)).unwrap(),
+        answered_over(&public, &github(), "octocat", &on_account(&signer), None).unwrap(),
         Heard::KeyOnAccount { on: true }
     );
 
@@ -66,7 +66,8 @@ fn no_key_then_made_then_added_then_listed_then_verified() {
         code: "A1B2C3".to_owned(),
         on: None,
     };
-    let Heard::Checked(checked) = answered_over(&verified, &github(), "octocat", &asked).unwrap()
+    let Heard::Checked(checked) =
+        answered_over(&verified, &github(), "octocat", &asked, None).unwrap()
     else {
         panic!("a check is answered with what the forge said of the commit");
     };
@@ -87,7 +88,7 @@ fn what_is_not_one_public_key_is_refused_before_anything_is_sent() {
             on: None,
         };
         assert!(
-            answered_over(&recorded, &github(), "octocat", &asked).is_err(),
+            answered_over(&recorded, &github(), "octocat", &asked, None).is_err(),
             "{key:?}"
         );
     }
@@ -127,7 +128,7 @@ mod over_the_window_line {
         let theirs = std::sync::Arc::clone(&recorded);
         windowline::serve_on(&socket, move |asked| match asked {
             windowline::Asked::Signing(asked) => {
-                match answered_over(theirs.as_ref(), &github(), "octocat", &asked) {
+                match answered_over(theirs.as_ref(), &github(), "octocat", &asked, None) {
                     Ok(heard) => Said::Signing(heard),
                     Err(why) => Said::Refused { why },
                 }
@@ -540,7 +541,7 @@ fn an_ask_names_its_forge_and_one_naming_none_is_about_github() {
     assert_eq!(asked.forge(), gitlab());
     let recorded = gitlab_recording("publicly_listed", &signer);
     assert_eq!(
-        answered_over(&recorded, &asked.forge(), "sam", &asked).unwrap(),
+        answered_over(&recorded, &asked.forge(), "sam", &asked, None).unwrap(),
         Heard::KeyOnAccount { on: true }
     );
     assert_eq!(forge_said(&gitlab()), "GitLab");
@@ -551,5 +552,80 @@ fn an_ask_names_its_forge_and_one_naming_none_is_about_github() {
     assert_eq!(
         new_key_page(&forge_of(Kind::GitLab, "gitlab.example.org")),
         "https://gitlab.example.org/-/user_settings/ssh_keys"
+    );
+}
+
+/// #5793: `purlis signing check` on GitLab is held to this device's key, as the window's own
+/// Check is: a commit GitLab verified with another key is not Verified for this device, and
+/// with no key here nothing is asked of it.
+#[test]
+fn a_gitlab_check_from_the_command_is_held_to_this_devices_key() {
+    let signer = Signer::generate().unwrap();
+    let other = Signer::generate().unwrap();
+    let asked = Asked::Check {
+        repo: "platform/billing".to_owned(),
+        commit: "0123abc".to_owned(),
+        code: "A1B2C3".to_owned(),
+        on: Some(OnForge::of(&gitlab())),
+    };
+    let mine = gitlab_recording("commit_verified", &signer);
+    let Heard::Checked(checked) =
+        answered_over(&mine, &gitlab(), "sam", &asked, Some(&signer)).unwrap()
+    else {
+        panic!("a verdict");
+    };
+    assert!(checked.verified);
+    let theirs = gitlab_recording("commit_verified", &other);
+    let Heard::Checked(checked) =
+        answered_over(&theirs, &gitlab(), "sam", &asked, Some(&signer)).unwrap()
+    else {
+        panic!("a verdict");
+    };
+    assert!(!checked.verified);
+    assert_eq!(checked.reason, "other_key");
+    assert!(crate::commitsign::reason_said_on(&checked.reason, "GitLab").contains("another key"));
+    let nothing = gitlab_recording("commit_verified", &signer);
+    assert!(answered_over(&nothing, &gitlab(), "sam", &asked, None).is_err());
+}
+
+/// #5788: chat commits on a host carry the email of the first account signed in there, the one
+/// bound to it, and never another account's on the same host in its place.
+#[test]
+fn a_hosts_commit_email_is_its_first_accounts_or_none() {
+    let config = tempfile::tempdir().unwrap();
+    let file = crate::forge::accounts::path(config.path());
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    let account = |id: &str, kind: &str, host: &str, login: &str| {
+        serde_json::json!({"id": id, "kind": kind, "host": host, "login": login,
+            "method": "pat", "state": "signed-in"})
+    };
+    std::fs::write(
+        &file,
+        serde_json::json!({"version": 1, "accounts": [
+            account("01A", "github", "github.com", "octocat"),
+            account("01B", "github", "github.com", "hubot"),
+            account("01C", "gitlab", "gitlab.example.org:8443", "sam"),
+        ]})
+        .to_string(),
+    )
+    .unwrap();
+    let hubot = AccountRef::new(Kind::GitHub, "github.com", "hubot");
+    set_commit_email_of(config.path(), &hubot, Some("hubot@example.com")).unwrap();
+    let sam = AccountRef::new(Kind::GitLab, "gitlab.example.org:8443", "sam");
+    set_commit_email_of(config.path(), &sam, Some("sam@example.org")).unwrap();
+    assert_eq!(
+        commit_emails_by_host(config.path()),
+        [(
+            "gitlab.example.org:8443".to_owned(),
+            "sam@example.org".to_owned()
+        )]
+    );
+    assert_eq!(
+        commit_email_on(config.path(), Kind::GitHub, "github.com"),
+        None
+    );
+    assert_eq!(
+        commit_email_on(config.path(), Kind::GitLab, "gitlab.example.org:8443").as_deref(),
+        Some("sam@example.org")
     );
 }

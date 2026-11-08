@@ -305,6 +305,8 @@ describe("SigningSetupDialog", () => {
     );
     const said = await within(dialog).findByRole("alert");
     expect(said.textContent).toContain("couldn't read the key from the Keychain");
+    // The Keychain's own reason, not a guess at it.
+    expect(said.textContent).toContain("macOS said no");
     expect(said.textContent).toContain("Always Allow");
     // No box is promised, and none is drawn: no key was read.
     expect(dialog).not.toHaveTextContent("box below");
