@@ -102,9 +102,10 @@ import { ReviewPage } from "./ui/review-page/ReviewPage";
  *
  * - **An extension's source** (#3092): each extension that declares `skill-source`, approved here
  *   and on in the project, is a row of Your sources beside the git ones and opens the same page,
- *   reviews and Install all…, at the revision it names. It goes with its extension, so it has no
- *   Remove source…, and each of its skills is updated on its own from its row (its update copies
- *   what that review read, `studioSources`).
+ *   reviews, Install all… and Review updates…, at the revision it names. It goes with its
+ *   extension, so it has no Remove source…. Each update copies what its own review read
+ *   (`studioSources`), several at once included (#5760), and its skills' rows carry what their
+ *   files do, as a git source's do, read to browse and never what is installed.
  *
  * Both reviews are consent surfaces: they follow the review page's rules (`ui/review-page`), and
  * a main action that cannot be pressed says why.
@@ -974,15 +975,13 @@ function SourcePage({
   const unconfirmed = updates?.unconfirmed.some((one) => sourceKey(one.remote) === key) === true;
   /** Why Review updates… cannot be pressed: the updates are not read yet, or none waits here. */
   const updatesWhy =
-    source.kind === "extension"
-      ? "A skill from an extension is updated on its own: review it from its row."
-      : updates === undefined
-        ? "The updates are being read."
-        : updates.offers.some((one) => originKey(one.source) === key)
-          ? busy
-            ? BUSY
-            : undefined
-          : "No update is waiting from this source.";
+    updates === undefined
+      ? "The updates are being read."
+      : updates.offers.some((one) => originKey(one.source) === key)
+        ? busy
+          ? BUSY
+          : undefined
+        : "No update is waiting from this source.";
   const at = (skill: string) => ({ source: key, label: source.label, skill });
   const offered = (skill: OfferedSkill) => offerFor(updates, key, skill.name);
   /** Why Install all… cannot be pressed: the skills are not read yet, or none is left. */

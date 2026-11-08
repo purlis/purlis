@@ -292,14 +292,15 @@ function core({
               description: "Drafts the release notes from what merged since the last tag.",
               folder: "release-notes",
               installed: [],
-              marks: null,
+              // What its files do, read to browse as a git source's are (#5760).
+              marks: ["runs a script"],
             },
             {
               name: "incident-review",
               description: "Walks a blameless incident review, timeline first.",
               folder: "incident-review",
               installed: ["project"],
-              marks: null,
+              marks: [],
             },
           ],
           not_skills: [],
@@ -510,8 +511,8 @@ export const WithAnExtensionsSource: Story = {
   },
 };
 
-/** **An extension's source's page** (#3092): its skills at its revision, browsed through the same
- *  page, with no Remove source…, and Review updates… saying why it waits. */
+/** **An extension's source's page** (#3092): its skills at its revision, each marked with what its
+ *  files do (#5760), browsed through the same page, with no Remove source…. */
 export const ExtensionSourcePage: Story = {
   args: {
     extension: true,
@@ -521,6 +522,7 @@ export const ExtensionSourcePage: Story = {
     await canvas.findByTestId("offered-release-notes");
     const page = canvas.getByTestId("skill-source-page");
     await expect(page).toHaveTextContent("at revision 2026.11.3");
+    await expect(canvas.getByTestId("offered-release-notes")).toHaveTextContent("runs a script");
     await expect(canvas.queryByRole("button", { name: "Remove source…" })).toBeNull();
     const review = canvas.getByRole("button", { name: "Review install: release-notes" });
     for (let step = 0; step < 30 && document.activeElement !== review; step++)
