@@ -23,21 +23,57 @@ use crate::forge::transport::Transport;
 use crate::forge::{Caller, Forge, Kind};
 use crate::secrets::keyring::Store;
 
-/// What `purlis signing` asks the window, on the person's behalf.
+/// **The forge account an ask is about**, by its forge and host (#5793): the window asks the
+/// account it is signed in to there.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct OnForge {
+    pub kind: Kind,
+    pub host: String,
+}
+
+impl OnForge {
+    pub fn of(forge: &Forge) -> OnForge {
+        OnForge {
+            kind: forge.kind,
+            host: forge.host.clone(),
+        }
+    }
+}
+
+/// What `purlis signing` asks the window, on the person's behalf. Each names the forge and host
+/// of the account it is about (`on`); an ask that names none is about GitHub on github.com.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Asked {
     /// Whether the account has the public key `key` (one OpenSSH line) as a signing key: read
-    /// from GitHub's public list of the account's signing keys.
-    KeyOnAccount { key: String },
-    /// Whether commit `commit` of `repo` (`owner/name`) shows as Verified. Asked of GitHub only
-    /// on the person's yes in the window, to this repository, this commit and `code`, which the
-    /// command's terminal shows too, as the line's other asks are.
+    /// from the forge's public list of the account's keys (on GitLab, those it may sign with).
+    KeyOnAccount {
+        key: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        on: Option<OnForge>,
+    },
+    /// Whether commit `commit` of `repo` (`owner/name`, or a GitLab project's path) shows as
+    /// Verified. Asked of the forge only on the person's yes in the window, to this repository,
+    /// this commit and `code`, which the command's terminal shows too, as the line's other asks
+    /// are.
     Check {
         repo: String,
         commit: String,
         code: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        on: Option<OnForge>,
     },
+}
+
+impl Asked {
+    /// The forge the ask is about: the one it names, else GitHub on github.com.
+    pub fn forge(&self) -> Forge {
+        let (Asked::KeyOnAccount { on, .. } | Asked::Check { on, .. }) = self;
+        match on {
+            Some(on) => forge_of(on.kind, &on.host.to_ascii_lowercase()),
+            None => github(),
+        }
+    }
 }
 
 /// What the window heard from the forge.
@@ -50,8 +86,7 @@ pub enum Heard {
     Checked(Checked),
 }
 
-/// The forge `purlis signing` asks about: GitHub, on github.com. The window's setup goes to any
-/// signed-in account's forge, GitLab's included ([`forge_of`]).
+/// GitHub, on github.com: what an ask that names no forge is about.
 pub fn github() -> Forge {
     Forge::default_of(Kind::GitHub)
 }
@@ -74,7 +109,7 @@ pub fn answered_over(
     asked: &Asked,
 ) -> Result<Heard, String> {
     match asked {
-        Asked::KeyOnAccount { key } => {
+        Asked::KeyOnAccount { key, .. } => {
             if ssh_key::PublicKey::from_openssh(key).is_err() {
                 return Err("that is not one public key".to_owned());
             }
@@ -93,10 +128,11 @@ pub fn answered_over(
 /// **The running window's answer to `asked` from the command line**, with its own sign-in:
 /// the window asks as itself, since the command holds none (the ruling of 2026-11-07 on #5625).
 /// What comes back is a read: whether the account's public list has a key, or what the forge says
-/// of a commit the person said yes to checking; never a token. Where the window has no sign-in on
-/// github.com, a sentence that says so.
+/// of a commit the person said yes to checking; never a token. The account is the one signed in
+/// on the forge and host the ask names (#5793). Where the window has none there, a sentence
+/// that says so.
 pub fn answered_in_the_window(asked: &Asked) -> Result<Heard, String> {
-    let forge = github();
+    let forge = asked.forge();
     let not_signed_in = || {
         format!(
             "this window is not signed in to {} on {} (Settings › You › Accounts)",
@@ -155,6 +191,25 @@ pub fn said_in_the_window(asked: &Asked) -> crate::windowline::Said {
 
 /// The page where the person adds a signing key to their GitHub account by hand.
 pub const NEW_KEY_PAGE: &str = "https://github.com/settings/ssh/new";
+
+/// **The page where the person adds a signing key by hand on `forge`**: GitHub's new key page,
+/// or the GitLab's SSH keys page, where *Signing* is chosen as the usage type (#5793).
+pub fn new_key_page(forge: &Forge) -> String {
+    match forge.kind {
+        Kind::GitHub => NEW_KEY_PAGE.to_owned(),
+        Kind::GitLab => format!("https://{}/-/user_settings/ssh_keys", forge.host),
+    }
+}
+
+/// **`forge` as a sentence names it**: `GitHub` or `GitLab` on its default host, else with the
+/// host (`GitLab on gitlab.example.org`).
+pub fn forge_said(forge: &Forge) -> String {
+    if forge.host.eq_ignore_ascii_case(forge.kind.default_host()) {
+        forge.kind.display().to_owned()
+    } else {
+        format!("{} on {}", forge.kind.display(), forge.host)
+    }
+}
 
 /// **This device's key**, or `None` where it has none: signing is on exactly while it has one
 /// (ADR 0116 §1).

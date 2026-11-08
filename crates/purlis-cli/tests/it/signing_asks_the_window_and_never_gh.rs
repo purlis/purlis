@@ -14,9 +14,10 @@ use std::path::{Path, PathBuf};
 use std::process::{Output, Stdio};
 use std::sync::{Arc, Mutex};
 
+use purlis_core::forge::Kind;
 use purlis_core::forge::signingkeys::Checked;
 use purlis_core::hookwire::CHAT_ENV;
-use purlis_core::signingsetup::{self, Heard};
+use purlis_core::signingsetup::{self, Heard, OnForge};
 use purlis_core::windowline::{self, Asked, Said};
 
 /// A config home with a `gh` in `bin` that writes `gh-ran` if it is ever run.
@@ -89,6 +90,39 @@ fn shown_code(out: &Output) -> String {
         .nth(1)
         .expect("a code is shown");
     after.split('…').next().unwrap().trim().to_owned()
+}
+
+/// `config` signed in, as the window keeps its accounts (no token here: those are the window's),
+/// to each of `accounts`: (forge, host, login).
+fn signed_in(config: &Path, accounts: &[(&str, &str, &str)]) {
+    let file = purlis_core::forge::accounts::path(config);
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    let listed: Vec<serde_json::Value> = accounts
+        .iter()
+        .enumerate()
+        .map(|(n, (kind, host, login))| {
+            serde_json::json!({
+                "id": format!("01ACCOUNT{n}"),
+                "kind": kind,
+                "host": host,
+                "login": login,
+                "method": "pat",
+                "state": "signed-in",
+            })
+        })
+        .collect();
+    std::fs::write(
+        file,
+        serde_json::json!({ "version": 1, "accounts": listed }).to_string(),
+    )
+    .unwrap();
+}
+
+fn on(kind: Kind, host: &str) -> Option<OnForge> {
+    Some(OnForge {
+        kind,
+        host: host.to_owned(),
+    })
 }
 
 /// A window on `config` that answers each ask with `answer`, and what it was asked.
@@ -179,9 +213,69 @@ fn status_asks_the_window_whether_github_has_this_devices_key() {
     assert_eq!(
         window.asked(),
         [Asked::Signing(signingsetup::Asked::KeyOnAccount {
-            key: the_key_line(&out)
+            key: the_key_line(&out),
+            on: on(Kind::GitHub, "github.com"),
         })]
     );
+    gh_never_ran(config);
+}
+
+/// #5793: `status` asks about every signed-in account, GitLab's included, each by its forge and
+/// host, and says of each whether it has this device's key.
+#[test]
+fn status_asks_the_window_about_each_signed_in_account_gitlabs_included() {
+    let machine = a_machine();
+    let config = machine.path();
+    assert!(purlis(config, &["signing", "setup"], &[]).status.success());
+    signed_in(
+        config,
+        &[
+            ("github", "github.com", "octocat"),
+            ("gitlab", "gitlab.example.org", "sam"),
+        ],
+    );
+    let window = AWindow::answering(config, Said::Signing(Heard::KeyOnAccount { on: true }));
+    let out = purlis(config, &["signing", "status"], &[]);
+    assert!(out.status.success(), "{}", said(&out));
+    let text = said(&out);
+    assert!(text.contains("GitHub has it as a signing key"), "{text}");
+    assert!(
+        text.contains("GitLab on gitlab.example.org has it as a signing key"),
+        "{text}"
+    );
+    let key = the_key_line(&out);
+    assert_eq!(
+        window.asked(),
+        [
+            Asked::Signing(signingsetup::Asked::KeyOnAccount {
+                key: key.clone(),
+                on: on(Kind::GitHub, "github.com"),
+            }),
+            Asked::Signing(signingsetup::Asked::KeyOnAccount {
+                key,
+                on: on(Kind::GitLab, "gitlab.example.org"),
+            }),
+        ]
+    );
+    gh_never_ran(config);
+}
+
+/// #5793: setup for a GitLab account gives GitLab's page and *Signing* as the usage type.
+#[test]
+fn setup_for_a_gitlab_account_gives_gitlabs_page_and_the_signing_usage_type() {
+    let machine = a_machine();
+    let config = machine.path();
+    signed_in(config, &[("gitlab", "gitlab.example.org", "sam")]);
+    let out = purlis(config, &["signing", "setup"], &[]);
+    assert!(out.status.success(), "{}", said(&out));
+    let text = said(&out);
+    assert!(
+        text.contains("https://gitlab.example.org/-/user_settings/ssh_keys"),
+        "{text}"
+    );
+    assert!(text.contains("Usage type: Signing"), "{text}");
+    assert!(!text.contains(signingsetup::NEW_KEY_PAGE), "{text}");
+    assert!(!text.contains("Signing Key"), "{text}");
     gh_never_ran(config);
 }
 
@@ -253,9 +347,69 @@ fn check_asks_the_window_and_says_the_reason_in_plain_words() {
             repo: "octo/hello".to_owned(),
             commit: "0123abc".to_owned(),
             code: shown_code(&out),
+            on: on(Kind::GitHub, "github.com"),
         })]
     );
     assert!(said(&out).contains("Confirm checking 0123abc in octo/hello in the purlis window"));
+    gh_never_ran(config);
+}
+
+/// #5793: `check --host` asks the GitLab account signed in there, on the person's yes.
+#[test]
+fn check_on_a_gitlab_host_asks_gitlab_on_the_persons_yes() {
+    let machine = a_machine();
+    let config = machine.path();
+    signed_in(config, &[("gitlab", "gitlab.example.org", "sam")]);
+    let window = AWindow::answering(
+        config,
+        Said::Signing(Heard::Checked(Checked {
+            verified: true,
+            reason: "valid".to_owned(),
+            key: None,
+        })),
+    );
+    let out = purlis(
+        config,
+        &[
+            "signing",
+            "check",
+            "--host",
+            "gitlab.example.org",
+            "team/billing",
+            "0123abc",
+        ],
+        &[],
+    );
+    assert!(out.status.success(), "{}", said(&out));
+    assert_eq!(
+        window.asked(),
+        [Asked::Signing(signingsetup::Asked::Check {
+            repo: "team/billing".to_owned(),
+            commit: "0123abc".to_owned(),
+            code: shown_code(&out),
+            on: on(Kind::GitLab, "gitlab.example.org"),
+        })]
+    );
+    assert!(
+        said(&out).contains("on GitLab on gitlab.example.org"),
+        "{}",
+        said(&out)
+    );
+    // A host with no account signed in is refused, naming it.
+    let none = purlis(
+        config,
+        &[
+            "signing",
+            "check",
+            "--host",
+            "git.example.net",
+            "a/b",
+            "0123abc",
+        ],
+        &[],
+    );
+    assert_eq!(none.status.code(), Some(1), "{}", said(&none));
+    assert!(said(&none).contains("git.example.net"), "{}", said(&none));
     gh_never_ran(config);
 }
 

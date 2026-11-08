@@ -94,3 +94,30 @@ export const SigningCheck: StoryObj<typeof PoolSignInConfirm> = {
     await untilFocused(() => cancel, "Shift+Tab goes back to Cancel");
   },
 };
+
+/** `purlis signing check` on GitLab (#5793): the window names the GitLab it asks. */
+export const SigningCheckOnGitLab: StoryObj<typeof PoolSignInConfirm> = {
+  beforeEach: () => {
+    mockIPC(
+      (cmd) =>
+        cmd === "pool_sign_in_asked"
+          ? {
+              id: 1,
+              asks: "signing-check",
+              profile: "team/billing",
+              pool: "0123abc",
+              code: "A1B2C3",
+              on: "GitLab on gitlab.example.org",
+            }
+          : null,
+      { shouldMockEvents: true },
+    );
+    return () => clearMocks();
+  },
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement.ownerDocument.body);
+    const cancel = await page.findByRole("button", { name: "Cancel" });
+    await untilFocused(() => cancel, "It starts on Cancel");
+    await expect(page.getByText(/on GitLab on gitlab.example.org\?/)).toBeVisible();
+  },
+};

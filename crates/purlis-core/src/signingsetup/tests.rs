@@ -9,6 +9,7 @@ use crate::secrets::keyring;
 fn on_account(signer: &Signer) -> Asked {
     Asked::KeyOnAccount {
         key: signer.public_line(),
+        on: None,
     }
 }
 
@@ -63,6 +64,7 @@ fn no_key_then_made_then_added_then_listed_then_verified() {
         repo: "octo/hello".to_owned(),
         commit: "0123abc".to_owned(),
         code: "A1B2C3".to_owned(),
+        on: None,
     };
     let Heard::Checked(checked) = answered_over(&verified, &github(), "octocat", &asked).unwrap()
     else {
@@ -82,6 +84,7 @@ fn what_is_not_one_public_key_is_refused_before_anything_is_sent() {
     ] {
         let asked = Asked::KeyOnAccount {
             key: key.to_owned(),
+            on: None,
         };
         assert!(
             answered_over(&recorded, &github(), "octocat", &asked).is_err(),
@@ -135,9 +138,13 @@ mod over_the_window_line {
         })
         .unwrap();
         let within = Duration::from_secs(10);
-        let reached = reach(Asked::KeyOnAccount { key: line }, |asked| {
-            windowline::ask_on(&socket, asked, within)
-        });
+        let reached = reach(
+            Asked::KeyOnAccount {
+                key: line,
+                on: None,
+            },
+            |asked| windowline::ask_on(&socket, asked, within),
+        );
         assert_eq!(reached, Reached::Heard(Heard::KeyOnAccount { on: true }));
     }
 
@@ -147,6 +154,7 @@ mod over_the_window_line {
             repo: "octo/hello".to_owned(),
             commit: "0123abc".to_owned(),
             code: "A1B2C3".to_owned(),
+            on: None,
         };
         assert_eq!(reach(asked(), |_| Answered::NoWindow), Reached::NoWindow);
         assert_eq!(reach(asked(), |_| Answered::NoAnswer), Reached::NoAnswer);
@@ -168,7 +176,10 @@ mod over_the_window_line {
         let dir = tempfile::tempdir().unwrap();
         let said = windowline::answer(
             dir.path(),
-            windowline::Asked::Signing(Asked::KeyOnAccount { key: "k".into() }),
+            windowline::Asked::Signing(Asked::KeyOnAccount {
+                key: "k".into(),
+                on: None,
+            }),
             |_| panic!("no forget"),
             |_, _| panic!("no keep"),
             |_, _, _| panic!("no approve"),
@@ -508,4 +519,37 @@ fn a_commit_gitlab_verified_without_naming_this_devices_key_gets_no_tick() {
         check_a_pushed_commit(&recorded, &gitlab(), &signer, "platform/billing", "0123abc")
             .unwrap();
     assert!(!checked.verified);
+}
+
+/// #5793: an ask names the forge and host of the account it is about; one that names none, as
+/// a command of an older build sends it, is about GitHub on github.com. The window answers a
+/// GitLab account's from GitLab's public list of its keys.
+#[test]
+fn an_ask_names_its_forge_and_one_naming_none_is_about_github() {
+    let old: Asked =
+        serde_json::from_str(r#"{"key_on_account":{"key":"ssh-ed25519 AAAA"}}"#).unwrap();
+    assert_eq!(old.forge(), github());
+    let signer = Signer::generate().unwrap();
+    let asked = Asked::KeyOnAccount {
+        key: signer.public_line(),
+        on: Some(OnForge {
+            kind: Kind::GitLab,
+            host: "GitLab.com".to_owned(),
+        }),
+    };
+    assert_eq!(asked.forge(), gitlab());
+    let recorded = gitlab_recording("publicly_listed", &signer);
+    assert_eq!(
+        answered_over(&recorded, &asked.forge(), "sam", &asked).unwrap(),
+        Heard::KeyOnAccount { on: true }
+    );
+    assert_eq!(forge_said(&gitlab()), "GitLab");
+    assert_eq!(
+        forge_said(&forge_of(Kind::GitLab, "gitlab.example.org")),
+        "GitLab on gitlab.example.org"
+    );
+    assert_eq!(
+        new_key_page(&forge_of(Kind::GitLab, "gitlab.example.org")),
+        "https://gitlab.example.org/-/user_settings/ssh_keys"
+    );
 }

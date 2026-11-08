@@ -10019,6 +10019,11 @@ export type PoolSignInAsk = {
 	pool: string,
 	/**  What the terminal of the command that asks shows. */
 	code: string,
+	/**
+	 *  The forge a signing check asks, as a sentence names it (`GitHub`, `GitLab on
+	 *  gitlab.example.org`, #5793); none for the other questions.
+	 */
+	on?: string | null,
 };
 
 /**
@@ -13149,7 +13154,11 @@ export type SigningWaiting = {
 	path: string,
 	/**  The commit whose push was refused. */
 	commit: string,
-	/**  The app's number for the chat that pushed, while it is open. */
+	/**
+	 *  The app's number now for the chat that pushed, while it is open: looked up by the chat's
+	 *  lasting id each time it is read, so a number given to another chat since never shows it
+	 *  there (#5789).
+	 */
 	chat?: number | null,
 	/**  Signed and sent since: shown as done until the window has shown it. */
 	sent: boolean,

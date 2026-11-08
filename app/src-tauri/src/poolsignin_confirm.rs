@@ -51,6 +51,10 @@ pub struct PoolSignInAsk {
     pub pool: String,
     /// What the terminal of the command that asks shows.
     pub code: String,
+    /// The forge a signing check asks, as a sentence names it (`GitHub`, `GitLab on
+    /// gitlab.example.org`, #5793); none for the other questions.
+    #[specta(optional)]
+    pub on: Option<String>,
 }
 
 struct Waiting {
@@ -98,6 +102,7 @@ struct Waits<'a> {
 /// `Ok`.
 fn asking(
     asks: Asks,
+    on: Option<&str>,
     profile: &str,
     pool: &str,
     code: &str,
@@ -144,6 +149,7 @@ fn asking(
                 profile: profile.to_owned(),
                 pool: purlis_core::shown::short(pool),
                 code: code.to_owned(),
+                on: on.map(str::to_owned),
             },
             answer,
         });
@@ -206,6 +212,7 @@ pub fn take_the_yes(profile: &str, pool: &str) -> bool {
 pub fn ask_the_person(
     app: &tauri::AppHandle,
     asks: Asks,
+    on: Option<&str>,
     profile: &str,
     pool: &str,
     code: &str,
@@ -229,6 +236,7 @@ pub fn ask_the_person(
     };
     asking(
         asks,
+        on,
         profile,
         pool,
         code,
@@ -279,6 +287,7 @@ mod tests {
         std::thread::spawn(|| {
             asking(
                 Asks::SignIn,
+                None,
                 "work",
                 "team",
                 "A1B2C3",
@@ -303,7 +312,16 @@ mod tests {
     fn only_the_answer_to_the_question_asked_counts_and_a_yes_lets_one_keep() {
         let soon = waits(Duration::from_millis(10), STAYS);
         let ask = |waits: &Waits<'_>, tell: fn() -> bool| {
-            asking(Asks::SignIn, "work", "team", "A1B2C3", waits, tell, || ())
+            asking(
+                Asks::SignIn,
+                None,
+                "work",
+                "team",
+                "A1B2C3",
+                waits,
+                tell,
+                || (),
+            )
         };
 
         // No window to ask in.
@@ -365,6 +383,7 @@ mod tests {
         let asker = std::thread::spawn(|| {
             asking(
                 Asks::TakeOff,
+                None,
                 "work",
                 "team",
                 "D4E5F6",
@@ -394,6 +413,7 @@ mod tests {
         assert!(
             asking(
                 Asks::TakeOff,
+                None,
                 "work",
                 "team",
                 "D4E5F6",
