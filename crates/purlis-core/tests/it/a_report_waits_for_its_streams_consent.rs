@@ -55,6 +55,7 @@ fn answered(crash_reports: Option<bool>, agent_drafts: Option<bool>) -> Consent 
         crash_reports,
         agent_drafts,
         asked: true,
+        crash_notice: None,
     }
 }
 

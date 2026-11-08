@@ -1,20 +1,22 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **A Crash report: fixed fields, as a Sentry envelope** (#5689, spec #5683, Q5).
+//! **A Crash report: fixed fields, as a Sentry envelope** (#5689, #5690, spec #5683, Q5).
 //!
 //! A panic is sent with where it panicked, its message, purlis's version and channel, and the
 //! operating system and its version: nothing else. No thread, no backtrace, no host name, no
 //! user. The two free-text fields are scrubbed harder than a draft is, because nobody reads a
 //! Crash report before it leaves: every absolute path goes whole, as `[path]`, before
 //! [`Known::scrub`] takes out what it can identify (environment values, and the names of the
-//! person's projects, workspaces, repos, personas and vaults).
+//! person's projects, workspaces, repos, personas and vaults). An error the window did not catch
+//! is sent the same way, with its name for the panic's type and its script's file name for the
+//! place (#5690).
 
 use regex::Regex;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
-use super::{Draft, Known, Panic, short_place};
+use super::{Draft, Known, Panic, WindowError, short_place};
 
 /// A Crash report, ready to send.
 pub(super) struct CrashReport {
@@ -23,7 +25,7 @@ pub(super) struct CrashReport {
     pub title: String,
     /// The envelope, exactly as it is sent.
     pub bytes: String,
-    /// Where it crashed in which purlis version (#5693, Q15): the same panic again in the same
+    /// Where it crashed in which purlis version (#5693, Q15): the same crash again in the same
     /// version has the same one, and is counted instead of sent. A draft the person filed has
     /// none.
     pub fingerprint: Option<String>,
@@ -34,41 +36,108 @@ impl CrashReport {
     pub fn of_panic(record: &Panic, known: &Known, dsn: &str) -> CrashReport {
         let (place, _) = known.scrub(&without_paths(&short_place(&record.place)));
         let (message, _) = known.scrub(&without_paths(&record.message));
-        let event_id = uuid::Uuid::new_v4().simple().to_string();
-        let now = chrono::Utc::now();
-        let timestamp = record
-            .at
-            .and_then(|at| chrono::DateTime::from_timestamp(i64::try_from(at).ok()?, 0))
-            .unwrap_or(now)
-            .format("%Y-%m-%dT%H:%M:%SZ")
-            .to_string();
         let version = record
             .version
             .as_deref()
             .unwrap_or(crate::adopt::release_version());
-        let fingerprint: String = Sha256::digest(format!("panic\0{version}\0{place}"))
-            .iter()
-            .take(16)
-            .map(|b| format!("{b:02x}"))
-            .collect();
+        let at = record
+            .at
+            .and_then(|at| chrono::DateTime::from_timestamp(i64::try_from(at).ok()?, 0));
+        Fields {
+            platform: "native",
+            kind: "panic".to_string(),
+            mechanism: "panic",
+            fingerprint: fingerprint(&["panic", version, &place]),
+            title: format!("purlis panicked at {place}"),
+            place,
+            message,
+        }
+        .envelope(at, dsn)
+    }
+
+    /// The Crash report of an error the window did not catch (#5690), scrubbed as a panic is:
+    /// its script is named by its file alone, since its address may be a folder of the person's.
+    /// One with no script (a rejection) is told apart from another by its name and message.
+    pub fn of_window_error(error: &WindowError, known: &Known, dsn: &str) -> CrashReport {
+        let (kind, _) = known.scrub(&without_paths(&error.name));
+        let (message, _) = known.scrub(&without_paths(&error.message));
+        let place = error.source.as_deref().map(|source| {
+            let file = source
+                .rsplit(['/', '\\'])
+                .find(|part| !part.is_empty())
+                .unwrap_or(source);
+            let (file, _) = known.scrub(&without_paths(file));
+            match (error.line, error.column) {
+                (Some(line), Some(column)) => format!("{file}:{line}:{column}"),
+                (Some(line), None) => format!("{file}:{line}"),
+                _ => file,
+            }
+        });
+        let version = crate::adopt::release_version();
+        let (fingerprint, title) = match &place {
+            Some(place) => (
+                fingerprint(&["window", version, place]),
+                format!("purlis's window failed at {place}"),
+            ),
+            None => (
+                fingerprint(&["window", version, &kind, &message]),
+                format!("purlis's window failed: {kind}"),
+            ),
+        };
+        Fields {
+            platform: "javascript",
+            kind,
+            mechanism: if error.rejection {
+                "onunhandledrejection"
+            } else {
+                "onerror"
+            },
+            fingerprint,
+            title,
+            place: place.unwrap_or_default(),
+            message,
+        }
+        .envelope(None, dsn)
+    }
+}
+
+/// The fixed fields of a Crash report, already scrubbed.
+struct Fields {
+    platform: &'static str,
+    /// The exception's type: `panic`, or a window error's name.
+    kind: String,
+    /// How it was caught, as Sentry names it.
+    mechanism: &'static str,
+    fingerprint: String,
+    title: String,
+    place: String,
+    message: String,
+}
+
+impl Fields {
+    /// The envelope of these fields, made `at` (now when not known), for the intake at `dsn`.
+    fn envelope(self, at: Option<chrono::DateTime<chrono::Utc>>, dsn: &str) -> CrashReport {
+        let event_id = uuid::Uuid::new_v4().simple().to_string();
+        let now = chrono::Utc::now();
+        let timestamp = at.unwrap_or(now).format("%Y-%m-%dT%H:%M:%SZ").to_string();
         let channel = channel();
         let event = json!({
             "event_id": event_id,
             "timestamp": timestamp,
-            "platform": "native",
+            "platform": self.platform,
             "level": "fatal",
             "release": format!("purlis@{}", crate::adopt::release_version()),
             "environment": channel,
             "tags": {"channel": channel},
             "contexts": {"os": {"name": std::env::consts::OS, "version": os_version()}},
             "exception": {"values": [{
-                "type": "panic",
-                "value": message,
-                "mechanism": {"type": "panic", "handled": false},
+                "type": self.kind,
+                "value": self.message,
+                "mechanism": {"type": self.mechanism, "handled": false},
             }]},
-            "culprit": place,
+            "culprit": self.place,
             // Sentry groups by it, so the counts of repeats name the group they belong to.
-            "fingerprint": [fingerprint],
+            "fingerprint": [self.fingerprint],
         })
         .to_string();
         let header = json!({
@@ -79,12 +148,21 @@ impl CrashReport {
         let item =
             json!({"type": "event", "length": event.len(), "content_type": "application/json"});
         CrashReport {
-            fingerprint: Some(fingerprint),
-            title: format!("purlis panicked at {place}"),
+            fingerprint: Some(self.fingerprint),
+            title: self.title,
             bytes: format!("{header}\n{item}\n{event}\n"),
             event_id,
         }
     }
+}
+
+/// The fingerprint of `parts`: the same crash again in the same version has the same one.
+fn fingerprint(parts: &[&str]) -> String {
+    Sha256::digest(parts.join("\0"))
+        .iter()
+        .take(16)
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 /// `envelope` carrying the counts of `repeats` (#5693, Q15): each fingerprint and how many times

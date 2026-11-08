@@ -73,6 +73,7 @@ fn yes() -> Consent {
         crash_reports: Some(true),
         agent_drafts: None,
         asked: true,
+        crash_notice: None,
     }
 }
 
@@ -153,6 +154,7 @@ fn without_a_yes_to_crash_reports_nothing_is_sent_and_nothing_listed() {
                 crash_reports: unanswered,
                 agent_drafts: Some(true),
                 asked: true,
+                crash_notice: None,
             })
             .sending_to(intake(&recorded), home.path());
 

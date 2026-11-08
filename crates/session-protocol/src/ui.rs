@@ -640,6 +640,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     "edit_report_draft",
     "file_report_draft",
     "dismiss_report_draft",
+    // An error this window did not catch (#5690): the window's own, never a link's, which could
+    // send a Crash report of anything in its name.
+    "report_window_error",
     // Create a project on GitHub or GitLab (#1819): whom the person's account can make a repo
     // for, the folder a name goes into, and the person's Cancel of the creation (the creation
     // itself takes a channel). It makes a repo on their forge account and a folder on this

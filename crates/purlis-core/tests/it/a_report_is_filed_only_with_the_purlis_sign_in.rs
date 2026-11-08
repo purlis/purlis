@@ -174,6 +174,7 @@ fn reports() -> Reports {
         crash_reports: Some(true),
         agent_drafts: Some(true),
         asked: true,
+        crash_notice: None,
     })
 }
 

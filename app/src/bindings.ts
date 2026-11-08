@@ -507,6 +507,13 @@ export const commands = {
 	/**  **Lets a draft go, unsent.** */
 	dismissReportDraft: (id: string) => typedError<null, string>(__TAURI_INVOKE("dismiss_report_draft", { id })),
 	/**
+	 *  Hands an error the window did not catch to the core's Reports, as a panic is handed: whether
+	 *  it may go, what of it goes and where are the core's to say, so without a yes to Crash reports
+	 *  nothing leaves. Answered at once; the send is on a thread of its own, so the window never
+	 *  waits on the network. The window's alone.
+	 */
+	reportWindowError: (error: WindowErrorSeen) => typedError<null, string>(__TAURI_INVOKE("report_window_error", { error })),
+	/**
 	 *  The project's sandbox, for the offer notice and Settings.
 	 * 
 	 *  Off the window's thread (#1949): it reads the project's manifests and the administrator's
@@ -7386,6 +7393,13 @@ export type CommandDoes =
 /**  Runs one of its actions, on nothing in particular. */
 { kind: "run"; action: RowAction };
 
+/**  The crash Notice's state (#5700), as the window names it. */
+export type CrashNoticeSaid = 
+/**  A crash was caught after Not now: the Notice is raised. */
+"due" | 
+/**  The Notice was dismissed or answered: never raised again. */
+"settled";
+
 /**  What the person asked to create. */
 export type CreateOnForge = {
 	forge: ForgeWord,
@@ -13998,6 +14012,11 @@ export type ReportConsent = {
 	crash_reports: boolean | null,
 	agent_drafts: boolean | null,
 	asked: boolean,
+	/**
+	 *  Whether purlis asks again after a crash (#5700): `due` once a crash was caught after Not
+	 *  now, `settled` once its Notice was dismissed or answered, `None` while neither.
+	 */
+	crash_notice: CrashNoticeSaid | null,
 };
 
 /**  A draft held for the project's Inbox, as the window draws its card. */
@@ -18686,6 +18705,22 @@ export type WindowDraft = {
 	 *  Review and allow on it, waits until the draft is reverted, and the strip says so.
 	 */
 	kept_refused: boolean,
+};
+
+/**
+ *  An error the window did not catch (#5690), as its JavaScript saw it: thrown and not caught, or
+ *  a promise rejected with nobody to handle it.
+ */
+export type WindowErrorSeen = {
+	/**  The error's name (`TypeError`), or the window's word for a reason that is no error. */
+	name: string,
+	message: string,
+	/**  The address of the script it was thrown in, when the window knows it. */
+	source: string | null,
+	line: number | null,
+	column: number | null,
+	/**  A promise rejected with nobody to handle it, rather than an error thrown. */
+	rejection: boolean,
 };
 
 /**  One face of a font. */
