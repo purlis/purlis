@@ -1239,6 +1239,11 @@ impl Asks {
         if let Some(why) = super::brokered::no_program_is_handed(ctx, &to.vault, &[&to.key]) {
             return Err(format!("{why}. Pick another entry, or type a value."));
         }
+        // #5745: nor one another persona of the link's vault may not use, which its tools,
+        // declared ones too, would read through the link.
+        if let Some(why) = super::brokered::read_through_by(ctx, vault, &to.vault) {
+            return Err(why);
+        }
         Ok(())
     }
 

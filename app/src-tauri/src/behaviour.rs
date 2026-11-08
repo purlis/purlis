@@ -974,14 +974,16 @@ impl OnTheRunner {
         out.status.success()
     }
 
-    /// The runner has a profile of its own named `name`, of `harness` (`claude` or `codex`,
-    /// whose stand-in the parity image runs, `tests/parity/runner.Dockerfile`), signed in with
-    /// no key, its harness the program `program` is on this machine. A Codex profile is one
-    /// for sandboxed chats only, its folder where purlis makes such a profile's (#2037): under
-    /// the runner's data home, in use once its first browser has started.
+    /// The runner has a profile of its own named `name`, of `harness` (`claude`, `codex` or
+    /// `opencode`, whose stand-in the parity image runs, `tests/parity/runner.Dockerfile`), signed
+    /// in with no key, its harness the program `program` is on this machine. A Codex profile is
+    /// one for sandboxed chats only, its folder where purlis makes such a profile's (#2037), and
+    /// an opencode profile one purlis made there, with its data folder beside its config folder:
+    /// under the runner's data home, in use once its first browser has started.
     fn signs_in_as(&self, harness: &str, name: &str, program: &Path) {
         use purlis_core::profilestore::{Folders, MachineProfile};
-        let folder = if harness == "codex" {
+        let made_here = matches!(harness, "codex" | "opencode");
+        let folder = if made_here {
             let browsers = self.prints(&format!(
                 "ls -d \"$HOME\"/.local/share/*/{} | head -n 1",
                 purlis_core::datahome::BROWSERS
@@ -996,6 +998,13 @@ impl OnTheRunner {
         } else {
             PathBuf::from(format!("/home/purlis/.{harness}-{name}"))
         };
+        // A profile purlis makes keeps its data beside its config (`profilestore::create`).
+        let data = (harness == "opencode").then(|| {
+            folder
+                .parent()
+                .expect("the profile's folder")
+                .join(purlis_core::profilestore::DATA)
+        });
         let config = tempfile::tempdir().expect("a config home to write it in");
         purlis_core::profilestore::update(config.path(), |store| {
             store.profiles.push(MachineProfile {
@@ -1004,7 +1013,7 @@ impl OnTheRunner {
                 title: name.to_owned(),
                 folders: Folders {
                     config: folder.clone(),
-                    data: None,
+                    data: data.clone(),
                 },
                 adopted: None,
                 imported: None,
@@ -1038,6 +1047,21 @@ impl OnTheRunner {
                 &format!(
                     "printf '{{\"parity\":true}}' > '{}'/auth.json",
                     folder.display()
+                ),
+                b"",
+            );
+        }
+        // opencode is signed in by its `auth.json` in its data folder, and finds its settings in
+        // its config folder (`harness_declaration/opencode.toml`).
+        if let Some(data) = &data {
+            self.runs(
+                false,
+                &format!(
+                    "mkdir -p -m 0700 '{data}/opencode' '{config}/opencode' \
+                     && printf '{{\"parity\":true}}' > '{data}/opencode/auth.json' \
+                     && printf '{{}}' > '{config}/opencode/opencode.json'",
+                    data = data.display(),
+                    config = folder.display()
                 ),
                 b"",
             );
@@ -3953,6 +3977,70 @@ fn a_real_claude_code_chat_on_a_runner_is_held_as_a_codex_chat_is(target: &Targe
     browsers.close(&browser).expect("the browser ends");
 }
 
+/// **A sandboxed opencode chat on a profile its runner made writes its own data there** (ruled
+/// 2026-11-08): on a Docker pool's runner, an opencode chat the runner's own host composes, inside
+/// purlis's wrap, on a profile purlis made under the runner's data home, its config and data
+/// folders that profile's. What a turn writes in its data folder is written, its settings are read,
+/// and the runner's own default opencode folder, whose sign-in a pool's next runner could be
+/// given, is neither read nor written; nor is another profile's folder.
+fn a_sandboxed_opencode_chat_on_a_profile_its_runner_made_writes_its_own_data(target: &Target) {
+    let Some(runner) = &target.runner else {
+        return;
+    };
+    // A profile's folder is under the runner's data home, in use once a browser has started.
+    let (browsers, browser, _past) = a_browser_and_what_lies_past_a_chat(target, runner);
+    runner.runs(
+        false,
+        "mkdir -p \"$HOME/.local/share/opencode/storage\" \
+         && echo default > \"$HOME/.local/share/opencode/auth.json\"",
+        b"",
+    );
+    let bin = tempfile::tempdir().expect("a folder for the harness");
+    let program = stand_in::program(
+        bin.path(),
+        "opencode",
+        "#!/bin/sh\n\
+             for word in \"$@\"; do [ \"$word\" = --version ] && { echo '1.18.33'; exit 0; }; done\n\
+             if echo x > \"$XDG_DATA_HOME/opencode/storage/turn\" 2>/dev/null; then echo 'DATA written.'; else echo 'DATA refused.'; fi\n\
+             if echo x > \"$XDG_DATA_HOME/opencode/opencode.db\" 2>/dev/null; then echo 'DATABASE written.'; else echo 'DATABASE refused.'; fi\n\
+             if cat \"$XDG_DATA_HOME/opencode/auth.json\" >/dev/null 2>&1; then echo 'SIGN-IN read.'; else echo 'SIGN-IN refused.'; fi\n\
+             if cat \"$XDG_CONFIG_HOME/opencode/opencode.json\" >/dev/null 2>&1; then echo 'SETTINGS read.'; else echo 'SETTINGS refused.'; fi\n\
+             if echo x > \"$HOME/.local/share/opencode/storage/planted\" 2>/dev/null; then echo 'DEFAULT written.'; else echo 'DEFAULT unwritten.'; fi\n\
+             if cat \"$HOME/.local/share/opencode/auth.json\" >/dev/null 2>&1; then echo 'DEFAULT read.'; else echo 'DEFAULT unread.'; fi\n\
+             if mkdir -p \"$XDG_CONFIG_HOME/opencode/plugin\" 2>/dev/null && echo x > \"$XDG_CONFIG_HOME/opencode/plugin/x.js\" 2>/dev/null; then echo 'PLUGIN planted.'; else echo 'PLUGIN unplanted.'; fi\n\
+             if ls \"$XDG_DATA_HOME/../../\" >/dev/null 2>&1; then echo 'PROFILES listed.'; else echo 'PROFILES unlisted.'; fi\n\
+             printf 'TRIED.\\n'\n\
+             read line\n",
+    );
+    a_profile_of(target, "opencode", "work", &program);
+    let id = target
+        .sessions
+        .open_named(
+            None,
+            &named("write your own data", false),
+            purlis_core::sandbox::plan::Hearing::default(),
+            &|_| {},
+        )
+        .expect("the sandboxed chat starts on the runner")
+        .number;
+    let pane = Pane::on(target, id);
+    pane.shows("TRIED.");
+    for said in [
+        "DATA written.",
+        "DATABASE written.",
+        "SIGN-IN read.",
+        "SETTINGS read.",
+        "DEFAULT unwritten.",
+        "DEFAULT unread.",
+        "PLUGIN unplanted.",
+        "PROFILES unlisted.",
+    ] {
+        pane.shows(said);
+    }
+    target.sessions.close(id).expect("it closes");
+    browsers.close(&browser).expect("the browser ends");
+}
+
 /// **`gh` and `glab` run in a chat on a runner, and a declared tool of them is what its persona
 /// says** (#4354): a Codex chat the runner's own host composes, inside purlis's wrap, on the runner
 /// image as it ships but for the test's own files. With no tool `gh` answers and is not signed in
@@ -4442,6 +4530,18 @@ mod a_real_claude_code_chat_on_a_runner_is_held_as_a_codex_chat_is {
     fn in_a_docker_pool() {
         if let Some(target) = super::in_a_docker_pool() {
             super::a_real_claude_code_chat_on_a_runner_is_held_as_a_codex_chat_is(&target);
+        }
+    }
+}
+
+mod a_sandboxed_opencode_chat_on_a_profile_its_runner_made_writes_its_own_data {
+    /// Run by the parity job, which names a runner image; elsewhere it runs nothing.
+    #[test]
+    fn in_a_docker_pool() {
+        if let Some(target) = super::in_a_docker_pool() {
+            super::a_sandboxed_opencode_chat_on_a_profile_its_runner_made_writes_its_own_data(
+                &target,
+            );
         }
     }
 }

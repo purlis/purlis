@@ -344,6 +344,7 @@ export const commands = {
 	reportConsent: __WINDOW_ONLY_RESULT,
 	keepReportConsent: __WINDOW_ONLY_RESULT,
 	reportsSent: __WINDOW_ONLY_RESULT,
+	reportWindowError: __WINDOW_ONLY_RESULT,
 	/**
 	 *  The project's sandbox, for the offer notice and Settings.
 	 * 
@@ -4574,6 +4575,13 @@ export type CommandDoes =
 { kind: "open"; view: string; title: string } | 
 /**  Runs one of its actions, on nothing in particular. */
 { kind: "run"; action: RowAction };
+
+/**  The crash Notice's state (#5700), as the window names it. */
+export type CrashNoticeSaid = 
+/**  A crash was caught after Not now: the Notice is raised. */
+"due" | 
+/**  The Notice was dismissed or answered: never raised again. */
+"settled";
 
 /**  What the person asked to create. */
 export type CreateOnForge = {
@@ -11159,6 +11167,11 @@ export type ReportConsent = {
 	crash_reports: boolean | null,
 	agent_drafts: boolean | null,
 	asked: boolean,
+	/**
+	 *  Whether purlis asks again after a crash (#5700): `due` once a crash was caught after Not
+	 *  now, `settled` once its Notice was dismissed or answered, `None` while neither.
+	 */
+	crash_notice: CrashNoticeSaid | null,
 };
 
 /**
@@ -15824,6 +15837,22 @@ export type WindowDraft = {
 	 *  Review and allow on it, waits until the draft is reverted, and the strip says so.
 	 */
 	kept_refused: boolean,
+};
+
+/**
+ *  An error the window did not catch (#5690), as its JavaScript saw it: thrown and not caught, or
+ *  a promise rejected with nobody to handle it.
+ */
+export type WindowErrorSeen = {
+	/**  The error's name (`TypeError`), or the window's word for a reason that is no error. */
+	name: string,
+	message: string,
+	/**  The address of the script it was thrown in, when the window knows it. */
+	source: string | null,
+	line: number | null,
+	column: number | null,
+	/**  A promise rejected with nobody to handle it, rather than an error thrown. */
+	rejection: boolean,
 };
 
 /**  One face of a font. */

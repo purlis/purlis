@@ -1,0 +1,5 @@
+### Fixed
+
+- **A run on a vault its persona may not use no longer offers that vault's own entries, unless
+  its notice offers the vault's own Allow.** The run was refused after the person's Allow. Type
+  a value there instead (#5744).

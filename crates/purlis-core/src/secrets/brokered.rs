@@ -1453,6 +1453,62 @@ pub fn vaults_of(ctx: &Ctx, persona: &str) -> Result<Vec<String>, String> {
     Ok(out)
 }
 
+/// **The personas that may use `vault`** (#5745), by name and sorted: the one the registry tags
+/// it for, and each you let use it on this machine, which is whom [`authorise`] opens it for. A
+/// grant that policy's lock holds dormant is not counted, as `authorise` does not open it: lifting
+/// the lock is a later grant (#5795). No personas (an empty list) for a vault the registry
+/// does not hold. An error where the registry, or the vault's own entry in it, does not read, so
+/// "which is not known" is never said as "none".
+pub fn personas_of(ctx: &Ctx, vault: &str) -> Result<Vec<String>, String> {
+    let doc = registry::load_registry(ctx).map_err(|e| e.message.to_string())?;
+    if !registry::vaults(&doc).contains_key(vault) {
+        return Ok(Vec::new());
+    }
+    let registered = registry::vault_in(&doc, vault).map_err(|e| e.message.to_string())?;
+    let mut out: Vec<String> = registered.persona.into_iter().collect();
+    if !crate::sandbox::policy::Locks::of(&ctx.root).forbids_vault_grants() {
+        for one in crate::sandbox::local::granted_vaults(&ctx.root) {
+            if one.vault == vault {
+                out.push(one.persona);
+            }
+        }
+    }
+    out.retain(|one| !one.is_empty());
+    out.sort();
+    out.dedup();
+    Ok(out)
+}
+
+/// **Why a link in `vault` may not read an entry of `to`** (#5745, the person's ruling of
+/// 2026-11-08: refuse such links): some persona that may use `vault` may not use `to`, and would
+/// read `to`'s entry through the link, by a declared tool if by nothing else. Failing closed
+/// where the registry does not read. Said for the person, who sees both vaults' names.
+pub fn read_through_by(ctx: &Ctx, vault: &str, to: &str) -> Option<String> {
+    if vault == to {
+        return None;
+    }
+    let personas = match personas_of(ctx, vault) {
+        Ok(personas) => personas,
+        Err(why) => {
+            return Some(format!(
+                "purlis could not read which personas may use vault {vault}, so nothing is \
+                 linked there ({why}). Check it with `purlis vault verify {vault}`, or type a \
+                 value."
+            ));
+        }
+    };
+    personas
+        .iter()
+        .find(|persona| authorise(ctx, Some(persona), to).is_err())
+        .map(|persona| {
+            format!(
+                "{persona} may use vault {vault} and can't use vault {to}, so it would read \
+                 {to}'s entry through the link. Pick an entry every persona of {vault} may use, \
+                 or type a value."
+            )
+        })
+}
+
 /// `vault` as [`NotTagged`] for a chat started as `persona`, or `None` where there is nothing
 /// to allow: the chat runs as no persona, the vault is not registered, or the persona may use
 /// it already.

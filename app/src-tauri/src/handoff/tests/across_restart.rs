@@ -950,3 +950,152 @@ fn a_handoff_put_back_with_no_conversation_is_told_what_a_fresh_start_is_told() 
         "{steward_told:?}"
     );
 }
+
+// ---------------------------------------------------------------------------------------------
+// A chat waiting only on its own work, across a restart (#5717, #5747): its wake line.
+//
+// A chat whose turn ended on background work of its own (#3878: a `run_in_background` shell, a
+// Monitor, a wake-up of its own) is waiting for that work to wake it. A restart kills the work
+// with the harness that ran it, and the resumed harness never hears of it, so nothing ever
+// wakes the chat: it stops for good. #3887 keeps purlis from restarting such a chat on purpose;
+// these cover a restart it cannot avoid (an update, a crash, a quit).
+// ---------------------------------------------------------------------------------------------
+
+/// How long the chat brought back has to be told of the work the restart cut off.
+const TOLD_WITHIN: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Chat `chat`'s turn ends waiting on `said` of its own, as its Stop hook says (#3878).
+fn its_turn_ends_on_its_own(held: &Held, chat: u32, said: purlis_core::ownwork::Said) {
+    let report = purlis_core::hookwire::Report {
+        chat,
+        event: Event::Stop,
+        conversation: held
+            .board()
+            .conversation(chat)
+            .map_or(purlis_core::hookwire::Conversation::Unknown, |said| {
+                purlis_core::hookwire::Conversation::Named(said)
+            }),
+        pid: Some(4000 + chat),
+        agent: None,
+        detail: purlis_core::state::Detail {
+            own_work: said,
+            ..purlis_core::state::Detail::default()
+        },
+    };
+    let _ = held.hooks().hear_as_the_socket_does(&report);
+    assert!(
+        held.hooks().board().own_work(chat).is_some(),
+        "precondition: the chat waits on its own work"
+    );
+}
+
+/// Every message chat `chat` was given by `host`: what it was started with, and what was typed
+/// into its terminal.
+fn everything_said_to(host: &Pretend, chat: u32) -> Vec<String> {
+    let started = host
+        .asked()
+        .iter()
+        .zip(host.openings())
+        .filter(|((number, _), _)| *number == chat)
+        .flat_map(|(_, opening)| opening.args)
+        .collect::<Vec<_>>();
+    let typed = host
+        .typed(chat)
+        .into_iter()
+        .map(|bytes| String::from_utf8_lossy(&bytes).into_owned());
+    started.into_iter().chain(typed).collect()
+}
+
+/// Waits up to [`TOLD_WITHIN`] for chat `chat` on `host` to be given a message that says
+/// purlis restarted and names `work`, the kind of work the restart cut off. Answers whether it
+/// was, and everything it was given.
+fn told_of_its_lost_work(host: &Pretend, chat: u32, work: &str) -> (bool, Vec<String>) {
+    let names = |line: &String| {
+        let line = line.to_lowercase();
+        line.contains("restart") && line.contains(work)
+    };
+    let until = std::time::Instant::now() + TOLD_WITHIN;
+    loop {
+        let said = everything_said_to(host, chat);
+        if said.iter().any(names) {
+            return (true, said);
+        }
+        if std::time::Instant::now() >= until {
+            return (false, said);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+}
+
+/// A steward chat (no task, no asker) idle on a background shell of its own, `sleep 600` in a
+/// `run_in_background`, when purlis restarts. The shell died with the harness; the chat brought
+/// back on its conversation must be told so, naming the shell, or it waits for ever.
+#[test]
+fn a_chat_waiting_on_its_own_shell_is_told_after_a_restart_that_the_shell_was_cut_off() {
+    let plane = a_plane_with_personas();
+    let host = Pretend::default();
+    let (planes, id, steward) = a_steward_chat(&host, &plane);
+    let held = planes.held(&id).expect("held");
+    its_turn_ends_on_its_own(
+        &held,
+        steward,
+        purlis_core::ownwork::Said {
+            shells: 1,
+            lapses_in: Some(3600),
+            ..purlis_core::ownwork::Said::default()
+        },
+    );
+    let at_quit = quits(&held);
+
+    let (relaunched, _planes, _again, _held, opened) =
+        launches_again(&plane, (host, planes, held), &at_quit);
+
+    assert!(
+        opened.iter().any(|open| open.session == steward),
+        "precondition: the chat came back under its number"
+    );
+    let (told, said) = told_of_its_lost_work(&relaunched, steward, "shell");
+    assert!(
+        told,
+        "within {TOLD_WITHIN:?} of the relaunch, chat {steward} was never told its background \
+         shell was cut off by the restart; it was given only {said:#?}"
+    );
+}
+
+/// The same chat idle on a one-shot wake-up of its own (ScheduleWakeup) that came due while
+/// purlis was down: the harness that would have fired it is gone, so the chat brought back must
+/// be told the wake-up was missed.
+#[test]
+#[ignore = "a missed wake-up in the wake line is #5751's: the tracer (#5747) names work in flight only"]
+fn a_chat_whose_own_wake_up_came_due_while_purlis_was_down_is_told_after_the_restart() {
+    let plane = a_plane_with_personas();
+    let host = Pretend::default();
+    let (planes, id, steward) = a_steward_chat(&host, &plane);
+    let held = planes.held(&id).expect("held");
+    its_turn_ends_on_its_own(
+        &held,
+        steward,
+        purlis_core::ownwork::said(
+            purlis_core::ownwork::InFlight::default(),
+            &[purlis_core::ownwork::WakeUp {
+                due_in: 0,
+                recurring: false,
+            }],
+        ),
+    );
+    let at_quit = quits(&held);
+
+    let (relaunched, _planes, _again, _held, opened) =
+        launches_again(&plane, (host, planes, held), &at_quit);
+
+    assert!(
+        opened.iter().any(|open| open.session == steward),
+        "precondition: the chat came back under its number"
+    );
+    let (told, said) = told_of_its_lost_work(&relaunched, steward, "wake");
+    assert!(
+        told,
+        "within {TOLD_WITHIN:?} of the relaunch, chat {steward} was never told the wake-up it \
+         waited on came due while purlis was down; it was given only {said:#?}"
+    );
+}

@@ -311,6 +311,18 @@ pub struct Chat {
     /// chat, and every record written before this field — not a format change, for
     /// [`Self::pinned`]'s reason.
     pub studio: Option<StudioJob>,
+    /// **What the chat had left running of its own when its turn last ended** (#5747, spec
+    /// #5743): its background shells, monitors, subagents and workflows, as its harness's
+    /// `Stop` said them ([`crate::ownwork`]). Kept here so a restart that ends the chat's
+    /// program can tell the chat brought back what it ended ([`crate::wakeline`]).
+    ///
+    /// **Written each time it changes**, from every turn's end of the chat's own harness, and
+    /// not only at a quit: a crash writes nothing as it goes. The 60-minute lapse that hands the
+    /// chat to the person does not clear it; the next turn's end that says the work is gone
+    /// does, and so does the start that tells the chat. `None` is a chat with nothing of its
+    /// own in flight, and every record written before this field — not a format change, for
+    /// [`Self::pinned`]'s reason.
+    pub own_work: Option<crate::ownwork::OwnWork>,
 }
 
 impl Chat {
@@ -1754,6 +1766,16 @@ struct ChatOnDisk {
         deserialize_with = "lenient"
     )]
     studio: Option<studio::StudioOnDisk>,
+    /// What the chat had left running of its own, or absent — see [`Chat::own_work`]. Absent
+    /// for a chat with none, so a project with no chat waiting on its own work writes the
+    /// record it always wrote. A value that does not read whole, or holds nothing, reads as
+    /// absent.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "lenient"
+    )]
+    own_work: Option<crate::ownwork::OwnWork>,
 }
 
 fn is_zero(n: &u32) -> bool {
@@ -1999,6 +2021,7 @@ impl From<&Record> for OnDisk {
                     plane_skills: chat.plane_skills,
                     routing: chat.routing.clone(),
                     studio: chat.studio.as_ref().map(studio::StudioOnDisk::of),
+                    own_work: chat.own_work.and_then(crate::ownwork::OwnWork::in_flight),
                 })
                 .collect(),
             dealt: highest_dealt(record),
@@ -2095,6 +2118,7 @@ impl From<ChatOnDisk> for Chat {
             // Never on disk ([`Chat::unrecorded`]): a chat that is read back was recorded.
             unrecorded: false,
             studio: chat.studio.and_then(studio::StudioOnDisk::sound),
+            own_work: chat.own_work.and_then(crate::ownwork::OwnWork::in_flight),
         }
     }
 }

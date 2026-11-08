@@ -26,7 +26,7 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { crc32 } from "node:zlib";
 
-import { clearLeftovers, DRAWN, notOf, pull, Refused, runToTake } from "./story-baselines-pull.mjs";
+import { ARTIFACT, clearLeftovers, DRAWN, REDRAWN, notOf, pull, Refused, runToTake } from "./story-baselines-pull.mjs";
 
 const HEAD = "a".repeat(40);
 const BASE = "b".repeat(40);
@@ -167,6 +167,8 @@ const ARTIFACT_OF = (extra = []) =>
   ]);
 
 const TOKEN = "token-the-stub-gh-hands-out";
+const REDRAWN_URL = "https://api.github.com/repos/purlis/purlis/actions/artifacts/43/zip";
+const OTHER = "src/ui/__screenshots__/button.stories.tsx/button_default_dark-webkit-linux.png";
 
 /**
  * A `gh`, `git` and `curl` that answer as GitHub would for pull request 7, whose stories run kept
@@ -187,8 +189,18 @@ const githubOf = ({
     archive_download_url: "https://api.github.com/repos/purlis/purlis/actions/artifacts/42/zip",
   }),
   resumes = true,
+  // The pictures drawn again, a zip's bytes, when the run kept them; `redrawnListed` lists the
+  // copies a run holds under their name (one object, or several after a re-run).
+  redrawn,
+  redrawnListed = (zip) => ({
+    id: 43,
+    size_in_bytes: zip.length,
+    expired: false,
+    archive_download_url: REDRAWN_URL,
+  }),
 } = {}) => {
   const left = [...stops];
+  const served = (url) => (url === REDRAWN_URL ? redrawn : artifact);
   return (command, args, options = {}) => {
     calls.push({ command, args, input: options.input });
     const said = (stdout) => ({ status: 0, stdout, stderr: "" });
@@ -196,6 +208,7 @@ const githubOf = ({
     if (command === "unzip") return spawnSync(command, args, options);
     if (command === "curl") {
       const out = args[args.indexOf("--output") + 1];
+      const artifact = served(args.at(-1));
       if (args.includes("--continue-at") && !resumes)
         return { status: 33, stdout: "", stderr: "curl: (33) HTTP server doesn't seem to support byte ranges. Cannot resume.\n" };
       const from = args.includes("--continue-at") && existsSync(out) ? statSync(out).size : 0;
@@ -208,11 +221,29 @@ const githubOf = ({
     if (args[0] === "auth") return said(`${TOKEN}\n`);
     if (args[0] === "pr") return said(`${HEAD} ${FROM}\n`);
     if (args[0] === "api" && args.includes("-X")) return said(JSON.stringify([runOf({})]));
-    if (args[0] === "api" && args[1].includes("/artifacts?name=story-baselines"))
-      return said(JSON.stringify(listed(artifact)));
+    if (args[0] === "api" && /\/runs\/\d+\/artifacts\?name=/.test(args[1])) {
+      const copies = (name, copy) => [copy].flat().filter(Boolean).map((one) => ({ name, ...one }));
+      return said(
+        JSON.stringify(
+          args[1].endsWith(`=${REDRAWN}`)
+            ? redrawn === undefined
+              ? []
+              : copies(REDRAWN, redrawnListed(redrawn))
+            : copies(ARTIFACT, listed(artifact)),
+        ),
+      );
+    }
     if (args[0] === "api") return said(`${behind}\n`);
     return { status: 1, stdout: "", stderr: `not stubbed: ${command} ${args.join(" ")}` };
   };
+};
+
+/** A checkout that already holds OTHER, a baseline the run's artifacts do not. */
+const checkoutWithOther = () => {
+  const root = checkout();
+  mkdirSync(dirname(join(root, "app", OTHER)), { recursive: true });
+  writeFileSync(join(root, "app", OTHER), DRAWN_PNG);
+  return root;
 };
 
 const checkout = () => {
@@ -241,6 +272,67 @@ test("a pull refused after the download leaves nothing in the temp folder, and w
   );
   assert.equal(existsSync(join(root, "app", PICTURE)), false);
   assert.deepEqual(readdirSync(tmp), []);
+});
+
+test("a run that kept its pictures drawn again is pulled from those alone, and no baseline is deleted (#5791)", (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), "pull-tmp-"));
+  const root = checkoutWithOther();
+  t.after(() => [tmp, root].forEach((dir) => rmSync(dir, { recursive: true, force: true })));
+  const calls = [];
+  const said = pull({
+    pr: "7",
+    repo: FROM,
+    root,
+    tmp,
+    // The whole set would delete OTHER, which it does not hold.
+    exec: githubOf({ calls, redrawn: ARTIFACT_OF() }),
+  });
+  assert.deepEqual(
+    calls.filter((call) => call.command === "curl").map((call) => call.args.at(-1)),
+    [REDRAWN_URL],
+  );
+  assert.deepEqual(readFileSync(join(root, "app", PICTURE)), DRAWN_PNG);
+  assert.deepEqual(readFileSync(join(root, "app", OTHER)), DRAWN_PNG);
+  assert.match(said.at(-1), /^1 baselines written and 0 deleted .* the pictures the run drew again/);
+});
+
+test("with no pictures drawn again kept, the whole set is pulled and deletes the baselines it does not hold", (t) => {
+  const root = checkoutWithOther();
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const said = pull({ pr: "7", repo: FROM, root, exec: githubOf() });
+  assert.deepEqual(readFileSync(join(root, "app", PICTURE)), DRAWN_PNG);
+  assert.equal(existsSync(join(root, "app", OTHER)), false);
+  assert.match(said.join("\n"), new RegExp(`deleted: ${OTHER}`));
+  assert.match(said.at(-1), /1 deleted .* every baseline the run drew/);
+});
+
+test("an expired copy is never the one taken: a re-run's fresh copy is, and with none fresh the whole set is", (t) => {
+  const expired = (zip) => ({
+    id: 41,
+    size_in_bytes: zip.length,
+    expired: true,
+    archive_download_url: "https://api.github.com/repos/purlis/purlis/actions/artifacts/41/zip",
+  });
+  const fresh = (zip) => ({ id: 43, size_in_bytes: zip.length, expired: false, archive_download_url: REDRAWN_URL });
+  for (const [redrawnListed, from, kept] of [
+    [(zip) => [expired(zip), fresh(zip)], REDRAWN_URL, true],
+    [(zip) => [expired(zip)], "https://api.github.com/repos/purlis/purlis/actions/artifacts/42/zip", false],
+  ]) {
+    const root = checkoutWithOther();
+    t.after(() => rmSync(root, { recursive: true, force: true }));
+    const calls = [];
+    pull({ pr: "7", repo: FROM, root, exec: githubOf({ calls, redrawn: ARTIFACT_OF(), redrawnListed }) });
+    assert.deepEqual(
+      calls.filter((call) => call.command === "curl").map((call) => call.args.at(-1)),
+      [from],
+    );
+    assert.equal(existsSync(join(root, "app", OTHER)), kept, from);
+  }
+});
+
+test("the stories workflow keeps both artifacts under the names the pull reads", () => {
+  const workflow = readFileSync(new URL("../.github/workflows/stories.yml", import.meta.url), "utf8");
+  for (const name of [ARTIFACT, REDRAWN]) assert.ok(workflow.includes(`name: ${name}\n`), name);
 });
 
 // A killed pull never reaches its `finally`, so the next pull clears what one left (#5348).

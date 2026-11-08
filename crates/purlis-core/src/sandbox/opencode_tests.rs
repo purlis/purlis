@@ -396,6 +396,112 @@ fn the_profile_writes_the_chat_directory_its_temp_and_only_what_an_opencode_turn
 }
 
 #[test]
+fn a_chat_on_a_profile_made_here_writes_in_that_profile_and_is_kept_from_opencodes_default_folder()
+{
+    // Ruled 2026-11-08: the profile's folders are opencode's, under this machine's profiles,
+    // which every other chat is denied; its default folder, whose sign-in a pool's next runner
+    // may be given, is denied to this one.
+    let plane = plane_saying(ON);
+    let machine = Machine {
+        env: crate::secrets::Env::of(&[(crate::datahome::HOME_VAR, "/Users/op/data")]),
+        home: Some(PathBuf::from("/Users/op")),
+        os: Os::MacOs,
+    };
+    let mut applied = for_start(Harness::Opencode, plane.path(), &machine, &|_| true)
+        .expect("starts")
+        .expect("sandboxed");
+    let work = "/Users/op/data/profiles/work";
+    applied.on_profile(&signin::ProfileFolders {
+        config: Some(PathBuf::from(format!("{work}/config"))),
+        data: Some(PathBuf::from(format!("{work}/data"))),
+        ..signin::ProfileFolders::default()
+    });
+    let confinement = applied.confine().expect("confined").expect("a wrap");
+    let line = line_in(&applied, plane.path(), None, &confinement).expect("starts");
+    let profile = profile_of(&line);
+
+    let data = format!("{work}/data/opencode").replace('.', "\\\\.");
+    let allows = write_allows(profile);
+    for rule in [
+        format!("(regex \"^{data}/opencode\\\\.db(-wal|-shm|-journal)?$\")"),
+        format!("(regex \"^{data}/storage/.+\")"),
+        format!("(literal \"{work}/config/opencode/.gitignore\")"),
+    ] {
+        assert!(allows.contains(&rule), "{rule} missing: {allows:#?}");
+    }
+    assert!(
+        !allows
+            .iter()
+            .any(|rule| rule.contains("/Users/op/.local/share")),
+        "{allows:#?}"
+    );
+    assert!(
+        profile.contains(&format!(
+            "(deny file-read* file-write* file-link (require-all (subpath \"/Users/op/data/profiles\") \
+             (require-not (subpath \"{work}\"))))"
+        )),
+        "{profile}"
+    );
+    assert!(
+        applied.confines().denied.iter().any(|denial| denial.path
+            == Path::new("/Users/op/.local/share/opencode")
+            && denial.access == Access::ReadWrite),
+        "{:?}",
+        applied.confines().denied
+    );
+}
+
+#[test]
+fn in_its_own_profile_a_chat_writes_only_what_a_turn_writes_at_the_floor_too() {
+    // The carve gives a chat its own profile's folder back; at the floor every folder no rule
+    // holds is written, so the folder is held to what a turn writes, or a plugin or git config
+    // could be left there for the next run on that profile.
+    let work = "/Users/op/data/profiles/work";
+    for level in [Level::Full, Level::Floor] {
+        let wrap = opencode::Wrap {
+            os: Os::MacOs,
+            level,
+            held: Vec::new(),
+            denied: Vec::new(),
+            hosts: Vec::new(),
+            widened: Box::default(),
+            granted: Vec::new(),
+            data: Some(PathBuf::from(format!("{work}/data/opencode"))),
+            state: None,
+            config: Some(PathBuf::from(format!("{work}/config/opencode"))),
+            cache: None,
+            planes: Vec::new(),
+            profiles: Some(PathBuf::from("/Users/op/data/profiles")),
+        };
+        let profile = opencode::profile(
+            &wrap,
+            Path::new("/Users/op/plane"),
+            Path::new("/Users/op/tmp"),
+            &[4040],
+            None,
+        )
+        .expect("a profile");
+        let data = format!("{work}/data/opencode").replace('.', "\\\\.");
+        let config = format!("{work}/config/opencode");
+        let held = format!(
+            "(deny file-write* file-link (require-all (subpath \"{work}\") (require-not (regex \
+             \"^{data}/(opencode\\\\.db(-wal|-shm|-journal)?|(log|storage)/.+)$|^{config}/\\\\.gitignore$\"))))"
+        );
+        assert!(
+            profile.contains(&held),
+            "{level:?}: {held} missing:\n{profile}"
+        );
+        for folder in [config.as_str(), &format!("{work}/config"), work] {
+            let rule = format!("(deny file-write* (literal \"{folder}\"))");
+            assert!(
+                profile.contains(&rule),
+                "{level:?}: {rule} missing:\n{profile}"
+            );
+        }
+    }
+}
+
+#[test]
 fn nothing_a_later_opencode_loads_is_written() {
     // Ruling V73a: its credentials, which can name a remote config that starts servers, and a
     // snapshot repository's config, hooks and directory, which git reads when opencode runs it.
@@ -438,6 +544,7 @@ fn opencodes_data_folder_and_every_folder_above_it_stay_where_they_are() {
             config: None,
             cache: None,
             planes: Vec::new(),
+            profiles: None,
         };
         let profile = opencode::profile(
             &wrap,
@@ -823,6 +930,107 @@ mod live {
             );
         }
     }
+    /// **A chat on a profile purlis made writes its own data and reads its own settings**
+    /// (ruled 2026-11-08): the profile's folders are under this machine's profiles, which every
+    /// chat is denied, so the wrap carves the chat's own profile out, as Codex's does, and keeps
+    /// it from opencode's default folder and from every other profile.
+    #[test]
+    fn a_chat_on_a_profile_made_here_writes_its_own_data_and_no_other_folder_of_opencode() {
+        let plane = plane_saying(ON);
+        let cwd = plane.path().join("work");
+        std::fs::create_dir(&cwd).expect("a workspace");
+        let home = tempfile::tempdir().expect("a home");
+        let data_home = home.path().join("purlis-data");
+        let profiles = data_home.join(crate::profilestore::DIR);
+        let (config, data) = (
+            profiles.join("work").join(crate::profilestore::CONFIG),
+            profiles.join("work").join(crate::profilestore::DATA),
+        );
+        std::fs::create_dir_all(config.join("opencode")).expect("its config");
+        std::fs::write(config.join("opencode/opencode.json"), "{}").expect("its settings");
+        std::fs::create_dir_all(data.join("opencode")).expect("its data");
+        std::fs::write(data.join("opencode/auth.json"), "{}").expect("its sign-in");
+        let other = profiles.join("other/data/opencode");
+        std::fs::create_dir_all(&other).expect("another profile");
+        std::fs::write(other.join("auth.json"), "{}").expect("another sign-in");
+        let default = home.path().join(".local/share/opencode");
+        std::fs::create_dir_all(default.join("storage")).expect("the default folder");
+        std::fs::write(default.join("auth.json"), "{}").expect("the default sign-in");
+        let data_home_named = data_home.display().to_string();
+        let machine = Machine {
+            env: crate::secrets::Env::of(&[(crate::datahome::HOME_VAR, data_home_named.as_str())]),
+            home: Some(home.path().to_path_buf()),
+            os: Os::MacOs,
+        };
+        let mut applied = for_start(Harness::Opencode, plane.path(), &machine, &|_| true)
+            .expect("starts")
+            .expect("sandboxed");
+        applied.on_profile(&signin::ProfileFolders {
+            config: Some(config.clone()),
+            data: Some(data.clone()),
+            ..signin::ProfileFolders::default()
+        });
+        let confinement = applied.confine().expect("confined").expect("a wrap");
+        let line = line_in(&applied, &cwd, None, &confinement).expect("starts");
+        let tried = |script: String| run(&line, &script).status.success();
+
+        for (what, script) in [
+            (
+                "its turn",
+                format!("echo x > '{}/opencode/storage/turn'", data.display()),
+            ),
+            (
+                "its database",
+                format!("echo x > '{}/opencode/opencode.db'", data.display()),
+            ),
+            (
+                "its sign-in",
+                format!("cat '{}/opencode/auth.json'", data.display()),
+            ),
+            (
+                "its settings",
+                format!("cat '{}/opencode/opencode.json'", config.display()),
+            ),
+        ] {
+            assert!(tried(script), "{what} under the wrap");
+        }
+        for (what, script) in [
+            (
+                "the default folder written",
+                format!("echo x > '{}/storage/planted'", default.display()),
+            ),
+            (
+                "the default sign-in read",
+                format!("cat '{}/auth.json'", default.display()),
+            ),
+            (
+                "another profile read",
+                format!("cat '{}/auth.json'", other.display()),
+            ),
+            (
+                "the profiles listed",
+                format!("ls '{}'", profiles.display()),
+            ),
+            (
+                "its sign-in written",
+                format!("echo x > '{}/opencode/auth.json'", data.display()),
+            ),
+            (
+                "its settings written",
+                format!("echo x > '{}/opencode/opencode.json'", config.display()),
+            ),
+            (
+                "a plugin planted",
+                format!(
+                    "mkdir -p '{0}/opencode/plugin' && echo x > '{0}/opencode/plugin/x.js'",
+                    config.display()
+                ),
+            ),
+        ] {
+            assert!(!tried(script), "{what} under the wrap");
+        }
+    }
+
     /// A home reached through a link (a dotfiles `~/.config`, a config root under `/var` or
     /// `/tmp`): every denial is still held, because Seatbelt matches the path as the kernel
     /// names it, and the profile writes each denial so. The human scopes' credentials stand for

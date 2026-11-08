@@ -240,6 +240,34 @@ fn what_no_program_is_handed_is_read_once_and_judges_every_key_from_that_read() 
     );
 }
 
+/// #5707: the links index read for a judge of many keys, where it can't be read and a line marks
+/// a key, holds every key, as the one-key judge does: an unmarked key may link to the marked one
+/// for all the judge can tell. With nothing marked, the index is not read and holds nothing.
+#[test]
+fn an_unreadable_links_index_refuses_an_unmarked_key_once_a_mint_line_marks_one() {
+    use crate::secrets::brokered::NoProgram;
+    let dir = project(
+        "[sandbox]\nmode = \"on\"\n[sandbox.personas.qa.tools.gh]\nvault = \"app\"\nkey = \"priv\"\nmint = { app = \"Iv1.abc\" }\n",
+    );
+    let ctx = Ctx::new(dir.path(), Env::of(&[]));
+    std::fs::create_dir_all(&ctx.state).expect("a state folder");
+    std::fs::write(crate::secrets::links::path(&ctx), "{\"links\": ").expect("a corrupt index");
+    assert!(
+        crate::secrets::links::every(&ctx).is_err(),
+        "the index can't be read"
+    );
+    assert!(
+        NoProgram::read(&ctx).refuses("qa", &["other"]).is_some(),
+        "an unmarked key is refused"
+    );
+    std::fs::write(crate::names::manifest(dir.path()), "").expect("no lines");
+    assert_eq!(
+        NoProgram::read(&ctx).refuses("qa", &["other"]),
+        None,
+        "nothing marked, nothing held"
+    );
+}
+
 /// #5582: a key is held through a link either way, one hop, and where a link can't be read
 /// every key is held once a line marks anything; with nothing marked, nothing is.
 #[test]

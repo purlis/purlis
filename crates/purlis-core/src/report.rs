@@ -65,7 +65,7 @@ use crate::forge::{self, Forge, ForgeError, Kind as ForgeKind};
 mod consent;
 mod crash;
 pub mod native;
-pub use consent::{Consent, Stream};
+pub use consent::{Consent, CrashNotice, Stream};
 pub use native::NativeCrash;
 pub mod intake;
 mod sent;
@@ -776,8 +776,27 @@ pub enum Evidence {
     /// A native crash the crash handler kept a minidump of, handed in on the next launch. Only
     /// ever a Crash report: it is sent to the Report intake alone, never filed on a tracker.
     NativeCrash(NativeCrash),
-    /// An uncaught error in the window. Not built yet.
-    WindowError(NotYet),
+    /// An error the window did not catch (#5690): always a Crash report, whoever hands it in.
+    WindowError(WindowError),
+}
+
+/// An error the window did not catch, as its JavaScript saw it (#5690): thrown and not caught, or
+/// a promise rejected with nobody to handle it. What of it is sent is the core's to say
+/// ([`crash`]): the name, the scrubbed message, and the script's file name with its line and
+/// column; never a stack.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WindowError {
+    /// The error's name (`TypeError`), or what the window calls a rejection's reason that is no
+    /// error.
+    pub name: String,
+    pub message: String,
+    /// The address of the script it was thrown in (`tauri://localhost/assets/index-3f2a9c.js`),
+    /// when the window knows it: never for a rejection.
+    pub source: Option<String>,
+    pub line: Option<u32>,
+    pub column: Option<u32>,
+    /// A promise rejected with nobody to handle it, rather than an error thrown.
+    pub rejection: bool,
 }
 
 /// The value an evidence kind that is not built yet holds: none, so it cannot be handed in.
@@ -865,6 +884,9 @@ pub struct Reports {
     /// Where a Crash report goes, and the config root whose sent list records it (#5689). None
     /// in a build with no Report intake.
     intake: Option<(Arc<dyn intake::Intake>, PathBuf)>,
+    /// The config root the answers are read from, where a crash refused after Not now is kept as
+    /// asking again (#5700). None where the answers were given, not read, or there is no home.
+    answers: Option<PathBuf>,
 }
 
 impl std::fmt::Debug for Reports {
@@ -892,6 +914,7 @@ impl Reports {
             known,
             consent: Some(Consent::default()),
             intake: None,
+            answers: None,
         }
     }
 
@@ -902,6 +925,7 @@ impl Reports {
             known: Known::here(plane),
             consent: None,
             intake: None,
+            answers: crate::machine::config_root(),
         }
         .sending_to_the_built_in_intake()
     }
@@ -911,12 +935,13 @@ impl Reports {
     /// planes are read only with a yes to Crash reports: without one nothing is sent, and a
     /// panicking app has no time to spend on folders.
     pub fn for_a_crash() -> Reports {
-        let consent = Consent::here();
+        let root = crate::machine::config_root();
+        let consent = root.as_deref().map_or_else(Consent::default, Consent::read);
         let mut known = Known::here(None);
         if consent.allows(Stream::CrashReports)
-            && let Some(root) = crate::machine::config_root()
+            && let Some(root) = &root
         {
-            for recent in crate::machine::read(&root).store.recents {
+            for recent in crate::machine::read(root).store.recents {
                 known.names.extend(names_of_a_plane(&recent.plane));
             }
         }
@@ -924,6 +949,7 @@ impl Reports {
             known,
             consent: Some(consent),
             intake: None,
+            answers: root,
         }
         .sending_to_the_built_in_intake()
     }
@@ -949,10 +975,21 @@ impl Reports {
         }
     }
 
-    /// The same Reports, held to `consent`.
+    /// The same Reports, held to the answers kept under `config_root`, and keeping there that a
+    /// crash it refused after Not now asks again (#5700).
+    pub fn with_answers_in(self, config_root: &Path) -> Reports {
+        Reports {
+            consent: Some(Consent::read(config_root)),
+            answers: Some(config_root.to_path_buf()),
+            ..self
+        }
+    }
+
+    /// The same Reports, held to `consent`, given rather than read: nothing is kept of it.
     pub fn with_consent(self, consent: Consent) -> Reports {
         Reports {
             consent: Some(consent),
+            answers: None,
             ..self
         }
     }
@@ -971,6 +1008,9 @@ impl Reports {
     /// sent.
     pub fn take(&self, evidence: Evidence, source: &Caller) -> Outcome {
         if let Err(refused) = self.consented(&evidence, source) {
+            if refused == Refusal::NoConsent(Stream::CrashReports) {
+                self.ask_again_after_a_crash();
+            }
             return Outcome::Refused(refused);
         }
         if stream_of(&evidence, source) == Some(Stream::CrashReports) {
@@ -988,6 +1028,24 @@ impl Reports {
                 Outcome::Drafted { draft, route }
             }
             Err(refused) => Outcome::Refused(refused),
+        }
+    }
+
+    /// Keeps, where the answers were read from, that a crash was caught after Not now, so the
+    /// next window asks about Crash reports again with one Notice (#5700). Only once: a Notice
+    /// already due or settled, and every answer the person gave, are left as they are. Nothing
+    /// is said if it cannot be kept: the crash is refused all the same.
+    fn ask_again_after_a_crash(&self) {
+        let Some(root) = &self.answers else {
+            return;
+        };
+        let consent = self.consent.unwrap_or_else(|| Consent::read(root));
+        if consent.wants_the_crash_notice() {
+            let _ = Consent {
+                crash_notice: Some(CrashNotice::Due),
+                ..consent
+            }
+            .write(root);
         }
     }
 
@@ -1027,18 +1085,23 @@ impl Reports {
         let Some((intake, root)) = &self.intake else {
             return Outcome::Refused(Refusal::NoIntake);
         };
-        let record = match evidence {
-            Evidence::Panic { record, .. } => record,
+        let crash = match evidence {
+            Evidence::Panic { record, .. } => {
+                crash::CrashReport::of_panic(record, &self.known, intake.dsn())
+            }
+            Evidence::WindowError(error) => {
+                crash::CrashReport::of_window_error(error, &self.known, intake.dsn())
+            }
             Evidence::NativeCrash(native) => {
                 return self.send_native(native, intake.as_ref(), root);
             }
             _ => {
                 return Outcome::Refused(Refusal::Unusable(
-                    "only a panic or a native crash is sent as a Crash report yet".to_string(),
+                    "only a panic, a window error or a native crash is sent as a Crash report"
+                        .to_string(),
                 ));
             }
         };
-        let crash = crash::CrashReport::of_panic(record, &self.known, intake.dsn());
         if let Some(repeats) = SentList::count_repeat(root, &crash.fingerprint) {
             return Outcome::Counted { repeats };
         }
@@ -1173,11 +1236,15 @@ impl Reports {
                 harness,
                 harness_version,
             }) => Draft::of_sandbox_block(&block, harness, harness_version.as_deref()),
+            // Machine-made, and read by nobody first: it goes only as a Crash report.
+            Evidence::WindowError(_) => Err(Refused(
+                "an error in the window is sent only as a Crash report".to_string(),
+            )),
             Evidence::NativeCrash(_) => Err(Refused(
                 "a native crash is sent only to purlis's report service, as a Crash report"
                     .to_string(),
             )),
-            Evidence::AgentDraft(never) | Evidence::WindowError(never) => match never {},
+            Evidence::AgentDraft(never) => match never {},
         };
         made.map_err(|Refused(said)| Refusal::Unusable(said))
     }

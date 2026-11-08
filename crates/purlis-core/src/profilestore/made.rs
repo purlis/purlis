@@ -423,7 +423,9 @@ pub(super) fn make_in(
 /// ([`clear_carried_before`]).
 pub(super) fn take_carried(homes: &Homes, home: &Path, record: &MachineProfile) {
     if private_dirs(&homes.folders).is_ok() {
-        let _ = std::fs::write(homes.folders.join(super::DEFAULTS_HELD), "");
+        for mark in [super::DEFAULTS_HELD, super::OPENCODE_DEFAULT_HELD] {
+            let _ = std::fs::write(homes.folders.join(mark), "");
+        }
     }
     let carried = super::carried_in(&homes.data);
     // A link for the folder itself: nothing is taken through it, and nothing removed through it.
@@ -435,18 +437,14 @@ pub(super) fn take_carried(homes: &Homes, home: &Path, record: &MachineProfile) 
     };
     let mut batches: Vec<PathBuf> = batches.flatten().map(|entry| entry.path()).collect();
     batches.sort();
-    // opencode's own default folder takes nothing in for now: only what was carried is removed.
-    let takes = record.adopted.is_none() || record.harness != "opencode";
-    let into = super::sign_in_file_of(&record.harness)
-        .filter(|_| takes)
-        .and_then(|file| {
-            let (under, rest) = file.split_once('/')?;
-            let folder = match under {
-                "config" => Some(&record.folders.config),
-                _ => record.folders.data.as_ref(),
-            }?;
-            Some((file, folder.join(rest)))
-        });
+    let into = super::sign_in_file_of(&record.harness).and_then(|file| {
+        let (under, rest) = file.split_once('/')?;
+        let folder = match under {
+            "config" => Some(&record.folders.config),
+            _ => record.folders.data.as_ref(),
+        }?;
+        Some((file, folder.join(rest)))
+    });
     // Where the folders on its way may be made: a profile purlis made has its own folder, and an
     // adopted one the runner's home.
     let made_folder = homes.folder_of(&record.name);

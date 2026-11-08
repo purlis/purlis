@@ -4856,3 +4856,25 @@ mod left_beyond_a_fetch {
         assert!(says(&left, "a folder ran out"), "{left:?}");
     }
 }
+
+/// **Where the machine store can't be read, a start in a workspace is refused** (ruled
+/// 2026-11-08): where its chats run is not known, so none runs on this machine in a pool's place.
+/// The refusal names the file and what to do.
+#[test]
+fn a_start_in_a_workspace_is_refused_while_the_machine_store_cannot_be_read() {
+    let config = tempfile::tempdir().unwrap();
+    let plane = std::path::Path::new("/planes/a");
+    let store = crate::machine::file(config.path());
+    std::fs::create_dir_all(store.parent().unwrap()).unwrap();
+    let elsewhere = config.path().join("elsewhere.json");
+    std::fs::write(&elsewhere, "{}").unwrap();
+    std::os::unix::fs::symlink(&elsewhere, &store).unwrap();
+
+    let refused = chat_place(config.path(), plane, Some("app"), None).unwrap_err();
+
+    assert!(refused.contains(&store.display().to_string()), "{refused}");
+    assert!(refused.contains("Where this chat runs"), "{refused}");
+    let here = crate::machine::StartChoice::ThisMachine;
+    assert!(chat_place(config.path(), plane, Some("app"), Some(&here)).is_ok());
+    assert!(chat_place(config.path(), plane, None, None).is_ok());
+}

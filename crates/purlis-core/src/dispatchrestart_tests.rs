@@ -147,7 +147,7 @@ fn a_working_task_is_brought_back_under_its_session_and_told_to_carry_on() {
     // Both come back, and the task's entry is as it was: who asked, and what it owes.
     assert_eq!(launch.back, record);
     assert!(launch.not_resumed.is_empty());
-    assert_eq!(launch.told(&the_task()), Some(CARRY_ON));
+    assert_eq!(launch.told(&the_task()).as_deref(), Some(CARRY_ON));
     // The chat the person started is told nothing: it resumes as it always did.
     assert_eq!(launch.told(&the_steward()), None);
 }
@@ -227,7 +227,7 @@ fn the_order_the_two_come_back_in_changes_nothing() {
     assert_eq!(numbers(&asker_first.back.chats), [STEWARD, TASK]);
     assert_eq!(numbers(&task_first.back.chats), [TASK, STEWARD]);
     for launch in [&asker_first, &task_first] {
-        assert_eq!(launch.told(&the_task()), Some(CARRY_ON));
+        assert_eq!(launch.told(&the_task()).as_deref(), Some(CARRY_ON));
         assert_eq!(launch.told(&the_steward()), None);
         assert!(launch.is_a_listed_task(TASK_ID));
     }
@@ -380,7 +380,7 @@ fn a_task_whose_asker_is_gone_carries_on_or_ends_and_one_the_person_started_is_n
     let running = dispatchrecord::list(&root);
     // The chat that asked closed before the quit: the task is alone in the record.
     let launch = at_launch(&root, &recorded(vec![the_task()]), &running);
-    assert_eq!(launch.told(&the_task()), Some(CARRY_ON));
+    assert_eq!(launch.told(&the_task()).as_deref(), Some(CARRY_ON));
     assert!(!launch.is_a_listed_task(TASK_ID));
     // With no conversation it would come back blank, owing a report it could not know of: it
     // has ended by itself, as one listed under its asker has (F3).
@@ -1049,7 +1049,7 @@ fn a_second_entry_with_a_task_s_id_is_vouched_for_in_nothing_and_ends_nothing() 
         &dispatchrecord::list(&root),
     );
 
-    assert_eq!(launch.told(&the_task()), Some(CARRY_ON));
+    assert_eq!(launch.told(&the_task()).as_deref(), Some(CARRY_ON));
     assert!(launch.not_resumed.is_empty(), "the copy ends no dispatch");
     assert_eq!(numbers(&launch.back.chats), [STEWARD, TASK, 9]);
     assert!(dispatchrecord::read(&root, &made.id).unwrap().running());
@@ -1335,4 +1335,67 @@ fn a_task_settled_as_the_project_opens_is_kept_for_the_chat_that_asked() {
     let owing = take_back(&root, by_the_steward);
     assert_eq!(owing.len(), 1);
     assert!(owing[0].report.task.as_ref().unwrap().unreported);
+}
+
+// ---- the wake line a launch hands out (#5747) --------------------------------------------------
+
+/// `chat`, recorded as its turn ended with one background shell of its own in flight.
+fn with_a_shell(chat: Chat) -> Chat {
+    Chat {
+        own_work: Some(crate::ownwork::OwnWork {
+            shells: 1,
+            until: Some(1_000),
+            ..crate::ownwork::OwnWork::default()
+        }),
+        ..chat
+    }
+}
+
+#[test]
+fn a_chat_brought_back_with_a_shell_it_had_left_running_is_told_the_restart_ended_it() {
+    let (_d, root) = project();
+    let record = recorded(vec![with_a_shell(the_steward())]);
+
+    let launch = at_launch(&root, &record, &dispatchrecord::list(&root));
+
+    let told = launch
+        .told(&with_a_shell(the_steward()))
+        .expect("a wake line");
+    assert!(told.starts_with("purlis: purlis was restarted"), "{told}");
+    assert!(told.contains("1 background shell"), "{told}");
+}
+
+#[test]
+fn a_chat_the_host_kept_running_is_told_nothing_of_its_own_work() {
+    let (_d, root) = project();
+    let record = recorded(vec![with_a_shell(the_steward())]);
+
+    let launch = at_launch_beside(&root, &record, &dispatchrecord::list(&root), &|_| true);
+
+    assert_eq!(launch.told(&with_a_shell(the_steward())), None);
+}
+
+#[test]
+fn a_chat_started_fresh_is_told_nothing_of_work_from_a_conversation_it_does_not_have() {
+    let (_d, root) = project();
+    let fresh = Chat {
+        resume: None,
+        ..with_a_shell(the_steward())
+    };
+    let launch = at_launch(&root, &recorded(vec![fresh.clone()]), &[]);
+
+    assert_eq!(launch.told(&fresh), None);
+}
+
+#[test]
+fn a_task_owing_its_report_with_a_shell_running_gets_one_wake_line_that_carries_on() {
+    let (_d, root) = project();
+    dispatched(&root);
+    let record = recorded(vec![the_steward(), with_a_shell(the_task())]);
+
+    let launch = at_launch(&root, &record, &dispatchrecord::list(&root));
+
+    let told = launch.told(&with_a_shell(the_task())).expect("a wake line");
+    assert!(told.starts_with(CARRY_ON), "{told}");
+    assert!(told.contains("1 background shell"), "{told}");
 }

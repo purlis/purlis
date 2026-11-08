@@ -291,6 +291,7 @@ jobs:
         if: ${{ !cancelled() && github.event_name == 'pull_request' && (needs.shard.result == 'failure' || steps.check.outcome == 'failure') }}
         env:
           SHARDS_RESULT: ${{ needs.shard.result }}
+          CHECK_OUTCOME: ${{ steps.check.outcome }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
@@ -315,12 +316,32 @@ jobs:
           printf '{"head":"%s","base":"%s"}\n' "$HEAD_SHA" "$BASE_SHA" > "$RUNNER_TEMP/drawn/drawn.json"
           echo "$(grep -c . "$RUNNER_TEMP/gathered.txt" || true) baselines drawn; take them with node tools/story-baselines-pull.mjs ${{ github.event.pull_request.number }}, or the update-baselines label"
           echo "drawn=true" >> "$GITHUB_OUTPUT"
+          # The pictures drawn again alone, when they are the whole change (#5791): the check
+          # above passed, so no baseline is obsolete, and taking them deletes nothing the full
+          # set would.
+          if [ "$SHARDS_RESULT" != success ] && [ "$CHECK_OUTCOME" = success ] && [ -d "$RUNNER_TEMP/redrawn/app" ]; then
+            mkdir -p "$RUNNER_TEMP/redrawn-kept"
+            cp -R "$RUNNER_TEMP/redrawn/app" "$RUNNER_TEMP/redrawn-kept/app"
+            cp "$RUNNER_TEMP/drawn/drawn.json" "$RUNNER_TEMP/redrawn-kept/"
+            echo "redrawn=true" >> "$GITHUB_OUTPUT"
+          fi
       - name: The baselines drawn, kept for the pull request to take
         if: ${{ !cancelled() && steps.drawn.outputs.drawn == 'true' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: story-baselines
           path: ${{ runner.temp }}/drawn/
+          if-no-files-found: error
+          retention-days: 7
+      # The few pictures the pull takes in place of the whole set: only what this run drew
+      # again, so taking them writes and never deletes (`tools/story-baselines-pull.mjs`). The
+      # label's job takes the whole set.
+      - name: The pictures drawn again alone, kept for the pull request to take
+        if: ${{ !cancelled() && steps.drawn.outputs.redrawn == 'true' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: story-redrawn
+          path: ${{ runner.temp }}/redrawn-kept/
           if-no-files-found: error
           retention-days: 7
       - name: Every shard passed
