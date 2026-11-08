@@ -28,7 +28,10 @@
 //!   file the rest is in, a subagent's last message, a workflow's last report, or "output gone".
 //!   By count where the record names no piece (#5747);
 //! - each wake-up that came due while purlis was down: "was due at <time>, missed";
-//! - and the crons and the wake-ups still ahead, as the harness's to set again.
+//! - the crons and the wake-ups still ahead, as the harness's to set again;
+//! - and, for a chat that asked tasks, the news of them ([`tasks`], #5754): each task the launch
+//!   restored and where it stands, and each whose report waits for it, by the chat numbers the
+//!   app dealt and the words a finished task's row is told with. It quotes no report.
 //!
 //! **What the harness does itself as it resumes** (read from Claude Code 2.1.319): it sets again
 //! each cron the conversation created that has not expired, and a wake-up still ahead; of a
@@ -47,6 +50,12 @@ use crate::ownwork::pieces::{Kind, Piece};
 /// The most bytes a wake line is: under a first message's bound
 /// ([`crate::handoff::FIRST_MESSAGE_MAX_BYTES`]), with room left for the start's own words.
 pub const MOST_BYTES: usize = 10 * 1024;
+
+pub mod tasks;
+
+/// How a wake line opens where nothing else opens it: purlis's word that it restarted.
+const RESTARTED: &str =
+    "purlis: purlis was restarted, and this is this chat's conversation brought back.";
 
 /// What the chat is told after the work it had left running is listed: that none of it runs
 /// now, and that starting it again is the chat's to decide.
@@ -123,16 +132,27 @@ impl std::fmt::Debug for Ended<'_> {
 /// owes its report. A chat with neither is told nothing. A task with nothing ended is told
 /// [`CARRY_ON`] alone, word for word.
 pub fn of(ended: &Ended<'_>, carry_on: bool) -> Option<String> {
+    of_within(ended, carry_on, MOST_BYTES)
+}
+
+/// **The wake line for a chat brought back on its conversation after a restart, with the
+/// news of its tasks** (#5754): what [`of`] says, then what [`tasks::said`] says of them. The
+/// news is made first and the rest of the line is fitted to the room it leaves, so the whole
+/// line is held to [`MOST_BYTES`]. A chat with nothing else to be told is told its tasks alone.
+pub fn with_news(ended: &Ended<'_>, carry_on: bool, news: &tasks::News) -> Option<String> {
+    let said = tasks::said(news, carry_on);
+    let line = of_within(ended, carry_on, MOST_BYTES.saturating_sub(said.len()));
+    tasks::joined(line, &said)
+}
+
+/// [`of`], held to `most` bytes.
+fn of_within(ended: &Ended<'_>, carry_on: bool, most: usize) -> Option<String> {
     let parts = Parts::of(ended);
     if !carry_on && !ended.mid_turn && parts.ran.is_empty() && parts.missed.is_empty() {
         return None;
     }
-    let opening = if carry_on {
-        CARRY_ON
-    } else {
-        "purlis: purlis was restarted, and this is this chat's conversation brought back."
-    };
-    Some(told(opening, ended, &parts, carry_on, MISSED))
+    let opening = if carry_on { CARRY_ON } else { RESTARTED };
+    Some(told(opening, ended, &parts, carry_on, MISSED, most))
 }
 
 /// **The wake line for a chat restarted on its own while purlis runs on** (#5753): Restart
@@ -153,19 +173,27 @@ pub fn of_the_chat_restarted(ended: &Ended<'_>) -> Option<String> {
         &parts,
         false,
         MISSED_BEFORE_THE_RESTART,
+        MOST_BYTES,
     ))
 }
 
 /// The line that opens with `opening` and says `parts` of `ended`: the turn cut mid-way, what
 /// ended, what was missed (introduced by `missed`) and what the harness sets again. `also` where
-/// the opening already told the chat something else of the restart.
-fn told(opening: &str, ended: &Ended<'_>, parts: &Parts, also: bool, missed: &str) -> String {
+/// the opening already told the chat something else of the restart. Held to `most` bytes.
+fn told(
+    opening: &str,
+    ended: &Ended<'_>,
+    parts: &Parts,
+    also: bool,
+    missed: &str,
+    most: usize,
+) -> String {
     let mut line = opening.to_owned();
     if ended.mid_turn {
         line.push(' ');
         line.push_str(CUT_MID_WAY);
     }
-    let room = |line: &str| MOST_BYTES.saturating_sub(line.len() + CLOSING);
+    let room = |line: &str| most.saturating_sub(line.len() + CLOSING);
     if !parts.ran.is_empty() {
         let also = if also { " also" } else { "" };
         line.push_str(&format!(
@@ -356,6 +384,16 @@ fn at(secs: i64) -> String {
 /// pieces, a turn cut mid-way) is told only where it resumes a conversation: a chat started
 /// fresh has none of that work's turns to come back to. `carry_on` as for [`of`].
 pub fn of_chat(chat: &crate::reopen::Chat, carry_on: bool) -> Option<String> {
+    of_chat_with_news(chat, carry_on, &tasks::News::default())
+}
+
+/// [`of_chat`], with the news of the chat's tasks (#5754) after it, the whole held to
+/// [`MOST_BYTES`] ([`with_news`]).
+pub fn of_chat_with_news(
+    chat: &crate::reopen::Chat,
+    carry_on: bool,
+    news: &tasks::News,
+) -> Option<String> {
     let conversation = chat.resume.as_ref().map(ToString::to_string);
     let last = |piece: &Piece| {
         crate::ownwork::last::of(piece, conversation.as_deref().unwrap_or_default())
@@ -371,7 +409,7 @@ pub fn of_chat(chat: &crate::reopen::Chat, carry_on: bool) -> Option<String> {
     } else {
         Ended::default()
     };
-    of(&ended, carry_on)
+    with_news(&ended, carry_on, news)
 }
 
 /// The work in flight `own_work` counts, as a list: "1 background shell, 2 monitors". None
