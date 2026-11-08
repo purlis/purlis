@@ -1,0 +1,203 @@
+{
+  "tier": "strict",
+  "neighbours": [
+    "purlis-persona",
+    "purlis-smart-close"
+  ],
+  "prompts": [
+    {
+      "query": "Hand this off to a new chat in the themes workspace; I'll pick it up there.",
+      "source": "Mined session record 20261030-144841-3798-thread-landed-purlis-worktree-taught-to-san.md: the ticket came as \"a handoff from 'themes'\"."
+    },
+    {
+      "query": "Open a chat in the reporting workspace for the crash-report idea and write it a brief.",
+      "source": "decisions.md of spec #5714: its brief is \"handoff from the `reporting` chat\"."
+    },
+    {
+      "query": "Move the release-build memory A/B out of this chat into its own chat; I'll read it later.",
+      "source": "Mined session record 20261106-225742-purlis-0-5-0-published-dev-builds-fixed-release-.md: \"its A/B handed off\"."
+    },
+    {
+      "query": "This bug isn't what we're doing here. Start a separate chat for it and give it everything it needs.",
+      "source": "Skill text: \"The person is talking to you about one thing and has asked for another\" and \"The brief is the whole context\"."
+    },
+    {
+      "query": "Spin off a new chat to grill the follow-up spec; I'll talk to it myself.",
+      "source": "decisions.md of spec #5714: the grilling chat was itself started from a handoff; test 2 of the skill (the person reads it)."
+    },
+    {
+      "query": "Hand off the flaky e2e test to the git-ci-cd workspace.",
+      "source": "Skill text: \"a bug to fix, a chore, a question for another workspace to own\"; a real workspace of this project."
+    },
+    {
+      "query": "Can you start a fresh chat in this workspace for the docs rewrite? Write it a brief.",
+      "source": "Skill text: test 3, \"Yes → a new chat here\"."
+    },
+    {
+      "query": "Park this idea in a new chat for later; I don't want it in this conversation.",
+      "source": "Skill text: description (\"open a chat for something\"); plausible phrasing a person types."
+    },
+    {
+      "query": "Send the CI cleanup to whichever workspace owns CI, as a new chat.",
+      "source": "Skill text: \"Find the workspace\" (match the ask against each vision)."
+    },
+    {
+      "query": "Make a new workspace for the billing integration and hand the work there.",
+      "source": "Skill text: \"always also offer a new workspace, with a name and a one-line vision\"."
+    },
+    {
+      "query": "Give the storybook baseline chore its own chat that I can check on tomorrow.",
+      "source": "Mined session record 20261102-144558-4564-task-rows-say-who-they-re-waiting-on-pr-477.md: baselines as a chore; plausible phrasing a person types."
+    },
+    {
+      "query": "This belongs to the skills workspace, not here. Hand it over with a brief.",
+      "source": "Skill text: test 3, \"No → another workspace\"; a real workspace of this project."
+    },
+    {
+      "query": "Open a new chat as the reviewer persona for this PR's review; I'll talk to it directly.",
+      "source": "Skill text: \"A handoff may name another persona (`--persona`) when the work moving is that persona's to own\"."
+    },
+    {
+      "query": "Write a handoff brief and start a chat for the dependency upgrade.",
+      "source": "Skill text: \"Write the brief\"; the skill's own word."
+    },
+    {
+      "query": "Split the security audit off into its own chat in the smart-ide workspace.",
+      "source": "Mined session record 20261102-044257-security-review-of-pr-4589-chrome-crash-frames-n.md: a review run in its own chat; plausible phrasing a person types."
+    },
+    {
+      "query": "I want to carry on with the migration in a new chat with a clean context. Set it up with everything it needs.",
+      "source": "Skill text: \"No pointer to this transcript ... everything it needs is in this text\"; plausible phrasing a person types."
+    },
+    {
+      "query": "Which workspace should the theme-export bug go to? Open a chat there for it.",
+      "source": "Skill text: \"Find the workspace\" and the proposal rules."
+    },
+    {
+      "query": "File this as a chat in another workspace instead of fixing it now.",
+      "source": "Skill text: description (\"move work to another workspace\"); plausible phrasing a person types."
+    },
+    {
+      "query": "Move the onboarding copy work out of this chat; I'll follow it in the sidebar.",
+      "source": "Skill text: \"It starts in that workspace's sidebar without taking a pane\"."
+    },
+    {
+      "query": "Start a separate purlis chat for the 0.5.1 release prep and brief it fully.",
+      "source": "Mined session record 20261106-225742-purlis-0-5-0-published-dev-builds-fixed-release-.md: release work; plausible phrasing a person types."
+    },
+    {
+      "query": "Hand this research question off; it's not this workspace's job.",
+      "source": "Mined session record 20261102-005536-research-4580-what-opens-or-assumes-a-tab-today.md: research done in a chat of its own."
+    },
+    {
+      "query": "Kick off a new chat to fix the runner retire-step bug while we keep going here.",
+      "source": "Mined session record 20261103-061040-4941-a-runner-host-s-retire-covers-past-parts-an.md: the bug, moved to its own chat; plausible phrasing a person types."
+    },
+    {
+      "query": "Dispatch the test run as a task and wait for its report before we merge.",
+      "source": "Near miss (purlis-persona): this chat needs the answer (decisions.md of spec #5714 Q30); this ticket's own brief was a dispatched task.",
+      "belongs_to": "purlis-persona"
+    },
+    {
+      "query": "Ask the skills persona which option it prefers and bring its answer back here.",
+      "source": "Near miss (purlis-persona): Mined session record 20261102-120712-4585-prototype-a-chat-s-actions-in-its-pane-acce.md, \"I asked `skills`, which chose (a)\".",
+      "belongs_to": "purlis-persona"
+    },
+    {
+      "query": "Have the reviewer persona review PR 4361 and tell me what it finds.",
+      "source": "Near miss (purlis-persona): Mined session record 20261101-031011-review-of-pr-4361-hot-count-role-3098-fix-first-.md; the answer comes back.",
+      "belongs_to": "purlis-persona"
+    },
+    {
+      "query": "Run this ticket as a task in its own branch folder and report back when it's done.",
+      "source": "Near miss (purlis-persona): the shape of every task of spec #5714's run, which reports to the asking chat.",
+      "belongs_to": "purlis-persona"
+    },
+    {
+      "query": "Create a persona for release management with its own vault.",
+      "source": "Near miss (purlis-persona): its description, \"create one\".",
+      "belongs_to": "purlis-persona"
+    },
+    {
+      "query": "Which persona should own the CI dashboard work?",
+      "source": "Near miss (purlis-persona): its description, \"deciding which persona a piece of work belongs to\".",
+      "belongs_to": "purlis-persona"
+    },
+    {
+      "query": "Smart close this chat.",
+      "source": "Near miss (purlis-smart-close): its own name; ending this chat, not starting another.",
+      "belongs_to": "purlis-smart-close"
+    },
+    {
+      "query": "Wrap up: write the session record and close.",
+      "source": "Near miss (purlis-smart-close): Mined session record 20261104-041744-5019-end-leaves-the-ended-band-pr-5104.md (End… and Smart close).",
+      "belongs_to": "purlis-smart-close"
+    },
+    {
+      "query": "We're done here. Summarise the session for the next chat and end it.",
+      "source": "Near miss (purlis-smart-close): \"for the next chat\" reads like a brief, but this chat ends (decisions.md of spec #5714 Q30).",
+      "belongs_to": "purlis-smart-close"
+    },
+    {
+      "query": "Write a session record of what we did today.",
+      "source": "Near miss (purlis-smart-close): its description, \"write a session record\".",
+      "belongs_to": "purlis-smart-close"
+    },
+    {
+      "query": "Open a new terminal tab and run the dev server.",
+      "source": "plausible phrasing a person types: a new tab, no chat."
+    },
+    {
+      "query": "Hand me the list of failing tests.",
+      "source": "plausible phrasing a person types: \"hand\" with nothing moving."
+    },
+    {
+      "query": "Write a brief for the design review meeting.",
+      "source": "plausible phrasing a person types: \"brief\" for a meeting, not a chat."
+    },
+    {
+      "query": "Close the PR without merging it.",
+      "source": "plausible phrasing a person types: closing a pull request."
+    },
+    {
+      "query": "Pass the user id to the API handler instead of the email.",
+      "source": "plausible phrasing a person types: passing a value in code."
+    },
+    {
+      "query": "Fix the failing test in app/src-tauri/src/handoff/tests.rs.",
+      "source": "Mined session record 20261103-102608-4961-review-blockers-fixed-old-carries-marker-re.md: work on purlis's own handoff code, no handoff."
+    },
+    {
+      "query": "Add a new chat message type to the websocket protocol.",
+      "source": "plausible phrasing a person types: \"chat\" as a product feature."
+    },
+    {
+      "query": "Summarise this thread in three bullets.",
+      "source": "plausible phrasing a person types: a summary that stays in this chat."
+    },
+    {
+      "query": "Rebase this branch onto main and push it.",
+      "source": "plausible phrasing a person types: repo work."
+    },
+    {
+      "query": "Move this function into its own module.",
+      "source": "plausible phrasing a person types: \"move\" in code."
+    },
+    {
+      "query": "Draft an email handing the project over to the new contractor.",
+      "source": "plausible phrasing a person types: a handover outside purlis."
+    },
+    {
+      "query": "Start the docker containers for local development.",
+      "source": "plausible phrasing a person types: \"start\" with no chat."
+    },
+    {
+      "query": "What changed in the last five commits?",
+      "source": "plausible phrasing a person types: a question for this chat."
+    },
+    {
+      "query": "Open the settings file in my editor.",
+      "source": "plausible phrasing a person types: \"open\" a file."
+    }
+  ]
+}

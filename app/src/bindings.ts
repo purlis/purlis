@@ -17335,6 +17335,11 @@ export type StatsRow = {
 	/**  Tokens spent inside them, or null where no run said its tokens. */
 	tokens: number | null,
 	ms: number,
+	/**
+	 *  Times a built-in skill should have started and did not (#5738): counted by harness, and
+	 *  0 in every other grouping.
+	 */
+	misses: number,
 };
 
 /**  Where a chat's stop stands. */

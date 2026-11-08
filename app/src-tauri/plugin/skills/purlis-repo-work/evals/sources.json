@@ -1,0 +1,197 @@
+{
+  "tier": "standard",
+  "neighbours": [
+    "purlis-persona",
+    "purlis-secrets",
+    "purlis-change"
+  ],
+  "prompts": [
+    {
+      "query": "Work on the api repo: add a health endpoint and run its tests.",
+      "source": "Skill text: description, \"build, test, change and commit\"."
+    },
+    {
+      "query": "Clone the frontend repo for this workspace and build it.",
+      "source": "Skill text: \"Make sure it is cloned\"; Mined session record 20261107-215238-5648-the-first-open-baseline-makes-a-fresh-clone.md."
+    },
+    {
+      "query": "Fix the failing test in the billing repo and commit it.",
+      "source": "Skill text: \"Commit to the repo you are in\"."
+    },
+    {
+      "query": "I want three branches of the web repo going at once.",
+      "source": "Skill text: description, \"several branches of one repo at once\"."
+    },
+    {
+      "query": "Make a branch folder for the login fix in the api repo.",
+      "source": "Skill text: \"Several branches at once: branch folders\"."
+    },
+    {
+      "query": "Commit my change in this branch folder.",
+      "source": "Skill text: `purlis worktree commit` (decisions.md of spec #5714 Q28 b)."
+    },
+    {
+      "query": "Is the docs repo cloned in this workspace yet?",
+      "source": "Skill text: \"Make sure it is cloned\"."
+    },
+    {
+      "query": "Change the CLI repo's argument parser and commit to its own history.",
+      "source": "Skill text: \"Commit to the repo you are in\"."
+    },
+    {
+      "query": "Follow the worker repo's own CLAUDE.md conventions while you fix its bug.",
+      "source": "Skill text: \"Adopt the repo's own conventions before editing\"."
+    },
+    {
+      "query": "Run the linter in the mobile repo and fix what it reports.",
+      "source": "plausible phrasing a person types."
+    },
+    {
+      "query": "Start a branch folder per issue in the backend repo so they don't collide.",
+      "source": "Mined session record 20261105-142502-5321-the-branch-folder-list-answers-with-names-f.md: a branch folder per piece of work."
+    },
+    {
+      "query": "Remove the branch folder for the feature that merged.",
+      "source": "Mined session record 20261031-201616-worktree-remove-takes-merged-pieces-and-regenera.md."
+    },
+    {
+      "query": "Bring my branch folder up to date with main.",
+      "source": "Skill text: `purlis worktree update`."
+    },
+    {
+      "query": "Show the test results on the branch's diff.",
+      "source": "Skill text: \"Show a check's results on the branch's diff\"."
+    },
+    {
+      "query": "Push the branch I worked on in the api repo.",
+      "source": "Skill text: `purlis worktree push`; plausible phrasing a person types."
+    },
+    {
+      "query": "Where do repo-specific settings go, the repo's .claude folder or this workspace's?",
+      "source": "Skill text: \"The boundary that is easy to get wrong\"."
+    },
+    {
+      "query": "Build and test the sdk repo this workspace owns.",
+      "source": "Skill text: description, \"a repo a purlis workspace owns\"."
+    },
+    {
+      "query": "Refactor the payments module in the shop repo, then commit.",
+      "source": "plausible phrasing a person types."
+    },
+    {
+      "query": "Open a new branch of the infra repo to try the Terraform upgrade.",
+      "source": "Skill text: branch folders; plausible phrasing a person types."
+    },
+    {
+      "query": "Which branch folders of the web repo exist right now?",
+      "source": "Skill text: `purlis worktree list`; plausible phrasing a person types."
+    },
+    {
+      "query": "Do the work on the api repo from this purlis chat, inside the workspace.",
+      "source": "Skill text: \"Know the workspace, and stay inside it\"."
+    },
+    {
+      "query": "Rebase my branch folder in the api repo onto the latest main.",
+      "source": "plausible phrasing a person types."
+    },
+    {
+      "query": "Ask the reviewer persona to review my branch and tell me what it finds.",
+      "source": "Near miss (purlis-persona): work that needs another persona's charter (decisions.md of spec #5714 Q28 d).",
+      "belongs_to": "purlis-persona"
+    },
+    {
+      "query": "Dispatch the release work on the api repo to the release persona and wait for its answer.",
+      "source": "Near miss (purlis-persona): its description, \"dispatch\".",
+      "belongs_to": "purlis-persona"
+    },
+    {
+      "query": "Get the security persona's opinion on this diff before I merge.",
+      "source": "Near miss (purlis-persona): this chat needs another persona's answer.",
+      "belongs_to": "purlis-persona"
+    },
+    {
+      "query": "Create a persona for work on the infra repo.",
+      "source": "Near miss (purlis-persona): its description, \"create one\".",
+      "belongs_to": "purlis-persona"
+    },
+    {
+      "query": "Have the qa persona run its checks and report back to this chat.",
+      "source": "Near miss (purlis-persona): a dispatch whose report this chat reads.",
+      "belongs_to": "purlis-persona"
+    },
+    {
+      "query": "Deploy the api with the token in the deploy vault.",
+      "source": "Near miss (purlis-secrets): a credential a command needs.",
+      "belongs_to": "purlis-secrets"
+    },
+    {
+      "query": "Run the integration tests against staging with the database password from the vault.",
+      "source": "Near miss (purlis-secrets): its description, \"a database password\".",
+      "belongs_to": "purlis-secrets"
+    },
+    {
+      "query": "Store the npm publish token in the release vault.",
+      "source": "Near miss (purlis-secrets): its description, \"when asked to store one\".",
+      "belongs_to": "purlis-secrets"
+    },
+    {
+      "query": "Use the cloud keys in the ops vault to list the storage buckets.",
+      "source": "Near miss (purlis-secrets): a credential for a command.",
+      "belongs_to": "purlis-secrets"
+    },
+    {
+      "query": "Add a new dialog to purlis's own app with the component families in app/src/ui.",
+      "source": "Boundary (the plane's building-purlis-ui skill, decisions.md of spec #5714 Q30): code in a purlis checkout; a plain negative."
+    },
+    {
+      "query": "Fix the screenshot baseline of the Notice story in my purlis checkout.",
+      "source": "Boundary (the plane's building-purlis-ui skill, decisions.md of spec #5714 Q30): code in a purlis checkout; a plain negative."
+    },
+    {
+      "query": "Explain what a git worktree is.",
+      "source": "plausible phrasing a person types: a question about git, no repo to work in."
+    },
+    {
+      "query": "Write a haiku about version control.",
+      "source": "plausible phrasing a person types: unrelated."
+    },
+    {
+      "query": "What's the difference between merge and rebase?",
+      "source": "plausible phrasing a person types: a question about git."
+    },
+    {
+      "query": "Recommend a branching strategy for a small team.",
+      "source": "plausible phrasing a person types: advice, no repo."
+    },
+    {
+      "query": "Summarise this article on monorepos.",
+      "source": "plausible phrasing a person types: \"repo\" in reading."
+    },
+    {
+      "query": "Convert this JSON to YAML.",
+      "source": "plausible phrasing a person types: unrelated."
+    },
+    {
+      "query": "Draft an email to the team about the outage.",
+      "source": "plausible phrasing a person types: unrelated."
+    },
+    {
+      "query": "What does HTTP 418 mean?",
+      "source": "plausible phrasing a person types: unrelated."
+    },
+    {
+      "query": "Bump the api repo's client version and update the web and mobile repos that use it, as one change.",
+      "source": "Near miss (purlis-change): its description, \"an API bump and the repos that consume it\".",
+      "belongs_to": "purlis-change"
+    },
+    {
+      "query": "Which of the three pull requests in my cross-repo change should merge first?",
+      "source": "Near miss (purlis-change): its description, \"land them in order\".",
+      "belongs_to": "purlis-change"
+    },
+    {
+      "query": "Plan the tickets for this sprint.",
+      "source": "plausible phrasing a person types: unrelated."
+    }
+  ]
+}

@@ -458,7 +458,8 @@ impl<'a> Linter<'a> {
     }
 
     /// **The entries of `name`'s own `skills:` list** (#2934): one that names nothing, one written
-    /// with the old `charter:` prefix, and one its chats start without
+    /// by a built-in skill's name from before a rename (#5724), one written with the old
+    /// `charter:` prefix, and one its chats start without
     /// ([`crate::skills::persona::unresolved`]), each with its fix. Read through
     /// [`Reference`](crate::skills::Reference), as a chat's start reads the list. With the
     /// project's skills reaching no chat, nothing reads the list, and that is what is said of it.
@@ -482,6 +483,12 @@ impl<'a> Linter<'a> {
                      it. Write `purlis:<name>` for a built-in skill, `<plugin>:<name>` for a \
                      plugin's, or a skill's name"
                 ))),
+                Some(Reference::BuiltIn(skill)) if Reference::written_renamed(entry).is_some() => {
+                    issues.push(Issue::warn(format!(
+                        "`skills:` entry '{shown}' is the old name of `purlis:{skill}`, which its \
+                         chats get; write that"
+                    )))
+                }
                 Some(Reference::BuiltIn(skill)) if Reference::written_old(entry) => {
                     issues.push(Issue::warn(format!(
                         "`skills:` entry '{shown}' has the old prefix: it names \

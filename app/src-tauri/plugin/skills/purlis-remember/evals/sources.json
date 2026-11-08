@@ -1,0 +1,197 @@
+{
+  "tier": "standard",
+  "neighbours": [
+    "purlis-tidy-memory",
+    "purlis-smart-close",
+    "purlis-secrets"
+  ],
+  "prompts": [
+    {
+      "query": "Remember that the staging database is rebuilt every Sunday night.",
+      "source": "Skill text: description, \"remember this\"; a verified fact about a system (Where a fact goes, 2)."
+    },
+    {
+      "query": "Make a note for next time: the release build needs the pinned toolchain.",
+      "source": "Skill text: description, \"make a note for next time\"; Mined session record 20261108-023505-5720-smart-close-and-compact-fold-into-workspace.md (a toolchain gotcha recorded for later chats)."
+    },
+    {
+      "query": "Add a todo to write the migration guide.",
+      "source": "Skill text: description, \"add a todo\"; `todo_add`."
+    },
+    {
+      "query": "What did we decide about the cache eviction policy?",
+      "source": "Skill text: description, \"what did we decide\"; Recall."
+    },
+    {
+      "query": "Keep in mind for every persona that main is protected and needs a pull request.",
+      "source": "Skill text: \"True for every persona, anywhere in this project\" (shared memory)."
+    },
+    {
+      "query": "Record in workspace.md that we chose SQLite over Postgres, and why.",
+      "source": "Skill text: Where a fact goes, 1 (`workspace_section` with section `decisions`)."
+    },
+    {
+      "query": "Should this lesson go in the workspace's memory or the persona's?",
+      "source": "decisions.md of spec #5714 Q29: the one rule for where a fact goes."
+    },
+    {
+      "query": "Mark the 'fix flaky upload test' todo as done.",
+      "source": "Skill text: description, \"mark a todo done\"; `todo_done`."
+    },
+    {
+      "query": "File the todo about the broken export as an issue on GitHub.",
+      "source": "Skill text: description, \"file a todo as an issue\"; `purlis ws todo promote`; Mined session record 20261103-074516-skill-studio-docs-todos-filled-five-mismatches-f.md."
+    },
+    {
+      "query": "Search all our memories for anything about rate limits.",
+      "source": "Skill text: `purlis recall` (every memory at once)."
+    },
+    {
+      "query": "Note that the vendor API returns 429s above ten requests a second.",
+      "source": "Skill text: description, \"note that\"; a verified fact about a system."
+    },
+    {
+      "query": "Add 'event sourcing' to this workspace's glossary.",
+      "source": "Skill text: section `glossary`."
+    },
+    {
+      "query": "Our goal changed: we're shipping the CLI first now. Update the workspace's vision.",
+      "source": "Skill text: the `workspace_vision` tool."
+    },
+    {
+      "query": "Remember, as the reviewer persona, to always check migrations for a down step.",
+      "source": "Skill text: Where a fact goes, 3 (this persona's memory)."
+    },
+    {
+      "query": "Have we run into this sandbox error before? Check memory.",
+      "source": "Skill text: Recall; Mined session record 20261106-234233-5498-the-project-index-adr-0079-recall-on-it-the.md."
+    },
+    {
+      "query": "What's on this workspace's todo list?",
+      "source": "Skill text: `todo_list`."
+    },
+    {
+      "query": "Turn todo 'cleanup-old-flags' into an issue in the api repo.",
+      "source": "Skill text: `--repo` takes the repo's name in this workspace."
+    },
+    {
+      "query": "Don't forget for next time that the e2e suite needs a release build.",
+      "source": "plausible phrasing a person types."
+    },
+    {
+      "query": "Write down what we learned about the flaky WebKit test so the next chat knows.",
+      "source": "plausible phrasing a person types."
+    },
+    {
+      "query": "Is there anything in memory about why we dropped the Python plugin?",
+      "source": "Skill text: \"what did we decide\"; plausible phrasing a person types."
+    },
+    {
+      "query": "Save this as a fact for all personas: deploys freeze on Fridays.",
+      "source": "Skill text: shared memory, `--shared`."
+    },
+    {
+      "query": "Put a todo on the infra workspace to rotate the TLS certificates.",
+      "source": "Skill text: `purlis ws todo \"<text>\"` with `-w <workspace>`."
+    },
+    {
+      "query": "Tidy this workspace's memory; it's full of duplicates.",
+      "source": "Near miss (purlis-tidy-memory): its description, \"tidy\" (decisions.md of spec #5714 Q30).",
+      "belongs_to": "purlis-tidy-memory"
+    },
+    {
+      "query": "Dedupe the steward persona's memory.",
+      "source": "Near miss (purlis-tidy-memory): its description, \"dedupe\".",
+      "belongs_to": "purlis-tidy-memory"
+    },
+    {
+      "query": "Prune the stale memories from this workspace.",
+      "source": "Near miss (purlis-tidy-memory): its description, \"prune\".",
+      "belongs_to": "purlis-tidy-memory"
+    },
+    {
+      "query": "Move the workspace memories every persona should know into shared memory.",
+      "source": "Near miss (purlis-tidy-memory): moving memory that is already there.",
+      "belongs_to": "purlis-tidy-memory"
+    },
+    {
+      "query": "Archive the memories that are no longer true.",
+      "source": "Near miss (purlis-tidy-memory): its description, \"archive\".",
+      "belongs_to": "purlis-tidy-memory"
+    },
+    {
+      "query": "Smart close this chat.",
+      "source": "Near miss (purlis-smart-close): its name, as typed.",
+      "belongs_to": "purlis-smart-close"
+    },
+    {
+      "query": "We're done for today; wrap up and write the session record.",
+      "source": "Near miss (purlis-smart-close): its description, \"wrap up\", \"write a session record\".",
+      "belongs_to": "purlis-smart-close"
+    },
+    {
+      "query": "Summarise this chat for whoever picks it up tomorrow and close it.",
+      "source": "Near miss (purlis-smart-close): a summary of a chat that is ending.",
+      "belongs_to": "purlis-smart-close"
+    },
+    {
+      "query": "Remember this API token for the deploy script.",
+      "source": "Near miss (purlis-secrets): a credential is never memory (Skill text: \"Never a secret\").",
+      "belongs_to": "purlis-secrets"
+    },
+    {
+      "query": "Store the database password somewhere safe so you have it next time.",
+      "source": "Near miss (purlis-secrets): its description, store a credential.",
+      "belongs_to": "purlis-secrets"
+    },
+    {
+      "query": "Save my SSH key so the next chat can use it.",
+      "source": "Near miss (purlis-secrets): Mined session record 20261105-050425-5240-secret-need-remembered-only-when-asked-pr-5.md (a secret need, not a memory).",
+      "belongs_to": "purlis-secrets"
+    },
+    {
+      "query": "Add a TODO comment above this function.",
+      "source": "plausible phrasing a person types: a TODO in code."
+    },
+    {
+      "query": "Why is this process using so much memory?",
+      "source": "plausible phrasing a person types: RAM, not purlis memory."
+    },
+    {
+      "query": "Write a function that memoizes the results of fetchUser.",
+      "source": "plausible phrasing a person types: caching in code."
+    },
+    {
+      "query": "Open a GitHub issue about the login bug.",
+      "source": "plausible phrasing a person types: an issue with no todo behind it."
+    },
+    {
+      "query": "What did the last commit change?",
+      "source": "plausible phrasing a person types: git history, which the repo records."
+    },
+    {
+      "query": "Add a note to the README about installing on Linux.",
+      "source": "plausible phrasing a person types: \"note\" in a doc."
+    },
+    {
+      "query": "Implement a todo list app in React.",
+      "source": "plausible phrasing a person types: \"todo\" as a product."
+    },
+    {
+      "query": "Search the codebase for uses of parseConfig.",
+      "source": "plausible phrasing a person types: a code search, not recall."
+    },
+    {
+      "query": "Increase the Node heap size to 4 GB.",
+      "source": "plausible phrasing a person types: memory as a setting."
+    },
+    {
+      "query": "Recall the last API response and print it again.",
+      "source": "plausible phrasing a person types: \"recall\" in a session."
+    },
+    {
+      "query": "Mark this pull request as ready for review.",
+      "source": "plausible phrasing a person types: \"mark ... done\" elsewhere."
+    }
+  ]
+}

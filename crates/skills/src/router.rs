@@ -246,18 +246,25 @@ impl SkillSet {
     /// rest of the listing spends that no router hides, and the chat's `budget`.
     pub fn candidates(&self, budget: Budget, pins: &[String]) -> Candidates {
         let parts = Parts::of(self, pins);
+        // A folder the listing names once (Q38) is not one candidate's: it is counted with what
+        // no router hides, so the candidates and `besides` add up to what the listing spends.
+        let skills: Vec<Candidate> = parts
+            .could
+            .iter()
+            .map(|listed @ (e, _)| Candidate {
+                name: e.skill.name.clone(),
+                description: e.skill.description.clone(),
+                pinned: parts.pins.contains(e.skill.name.as_str()),
+                chars: cost(std::iter::once(listed), budget).chars
+                    - crate::budget::folder_named_once(&e.skill, budget, listed_by(e)),
+            })
+            .collect();
+        let mut besides = cost(parts.fixed(), budget);
+        besides.chars = cost(parts.listed.iter(), budget).chars
+            - skills.iter().map(|one| one.chars).sum::<usize>();
         Candidates {
-            skills: parts
-                .could
-                .iter()
-                .map(|listed @ (e, _)| Candidate {
-                    name: e.skill.name.clone(),
-                    description: e.skill.description.clone(),
-                    pinned: parts.pins.contains(e.skill.name.as_str()),
-                    chars: cost(std::iter::once(listed), budget).chars,
-                })
-                .collect(),
-            besides: cost(parts.fixed(), budget),
+            skills,
+            besides,
             index: budget.line(INDEX, INDEX_DESCRIPTION.chars().count()),
             budget,
         }
@@ -447,7 +454,8 @@ impl SkillSet {
 pub struct Candidates {
     pub skills: Vec<Candidate>,
     /// What the listing spends on what no router hides (the built-in skills, the harness's and
-    /// the repos' own), before any of [`Self::skills`] and the index.
+    /// the repos' own), before any of [`Self::skills`] and the index, with each folder the
+    /// listing names once for the candidates (spec #5714's Q38).
     pub besides: crate::Spent,
     /// **What the index costs of the budget's characters** (#4680): one more skill, listed
     /// whenever a router hides any, counted as [`Self::besides`] is.
@@ -553,7 +561,22 @@ fn cost<'a>(
     listed: impl Iterator<Item = &'a (&'a Effective, crate::Declared)>,
     budget: Budget,
 ) -> crate::Spent {
-    crate::budget::spent(listed.map(|(e, declared)| (&e.skill, declared)), budget)
+    // A skill the harness finds itself (a repo's, where its route is the harness's own) is
+    // listed by the harness, with its whole path; the rest by purlis's briefing or plugin.
+    crate::budget::spent_listed(
+        listed.map(|(e, declared)| (&e.skill, declared, listed_by(e))),
+        budget,
+    )
+}
+
+/// Who lists `e`: its harness, with its whole path, where its route is the harness's own; else
+/// purlis's briefing or plugin.
+fn listed_by(e: &Effective) -> crate::budget::ListedBy {
+    if e.route == Route::Own {
+        crate::budget::ListedBy::Harness
+    } else {
+        crate::budget::ListedBy::Purlis
+    }
 }
 
 /// Whether the built-in router may hide `e` where nothing pins it: a skill purlis hands from the

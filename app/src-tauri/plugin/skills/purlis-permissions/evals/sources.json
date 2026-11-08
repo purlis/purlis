@@ -1,0 +1,208 @@
+{
+  "tier": "strict",
+  "neighbours": [
+    "purlis-secrets",
+    "purlis-browser",
+    "purlis-repo-work"
+  ],
+  "prompts": [
+    {
+      "query": "Stop asking me every time I run cargo test.",
+      "source": "Spec #5714 user story 56, \"stop asking me about this command\"."
+    },
+    {
+      "query": "Why was this blocked?",
+      "source": "Spec #5714 user story 56, \"why was this blocked\"."
+    },
+    {
+      "query": "Allow this host so the chat can reach crates.io.",
+      "source": "Spec #5714 user story 56, \"allow this host\"."
+    },
+    {
+      "query": "The sandbox blocked npm install from reaching registry.npmjs.org — what do I do?",
+      "source": "Briefing's SANDBOXED_NOTE: a host it may not reach, and the Notice's choices."
+    },
+    {
+      "query": "Make the harness always ask me before terraform apply runs.",
+      "source": "Skill text: `purlis guard ask 'terraform apply *'`."
+    },
+    {
+      "query": "Can you add a permission so git status never prompts again in this plane?",
+      "source": "Skill text: `purlis guard allow`; plausible phrasing a person types."
+    },
+    {
+      "query": "List the ask and allow rules purlis has for this plane.",
+      "source": "Skill text: `purlis guard list`."
+    },
+    {
+      "query": "I keep getting a permission prompt for gh pr view. Make it stop, just on my machine.",
+      "source": "Skill text: `purlis guard allow ... --local`."
+    },
+    {
+      "query": "Why can't this chat write to ~/Library/Caches? It says operation not permitted.",
+      "source": "crates/purlis-core/src/sandboxblock.rs: a program's own \"Operation not permitted\" read as a block."
+    },
+    {
+      "query": "The chat says the sandbox refused the Docker socket. Can we let it through?",
+      "source": "Briefing's SANDBOXED_NOTE: a blocked local socket (Docker's) may get a Notice the person can answer."
+    },
+    {
+      "query": "How do I lower the sandbox level for this chat?",
+      "source": "Briefing's SANDBOXED_NOTE: the level is the person's alone, in Settings › Project › Sandbox › Your level."
+    },
+    {
+      "query": "I lowered my sandbox level but the chat is still sandboxed. Why?",
+      "source": "Briefing's SANDBOXED_NOTE: \"If they say they lowered it and this chat is still sandboxed, do not guess why\"."
+    },
+    {
+      "query": "Allow api.github.com for every chat in this project.",
+      "source": "Notice's Always allow, \"for a host only, for everyone in the project\" (SANDBOXED_NOTE)."
+    },
+    {
+      "query": "Should I press Allow for this chat or Always allow on that Notice?",
+      "source": "Briefing's SANDBOXED_NOTE: the Notice's three choices."
+    },
+    {
+      "query": "Allowing cargo build in the workspace didn't stop the prompts. What's wrong?",
+      "source": "crates/purlis-core/src/guardcmd.rs: an allow rule reaches the plane root only."
+    },
+    {
+      "query": "Add an ask rule so the chat always checks with me before kubectl delete.",
+      "source": "Skill text: `purlis guard ask`; plausible phrasing a person types."
+    },
+    {
+      "query": "The command got refused by a purlis guard. Why, and how do I get past it?",
+      "source": "Skill text: section 3, a purlis guard refused it; crates/purlis-core/docs/hooks.md, the guards."
+    },
+    {
+      "query": "Why did purlis refuse my git checkout in the branch folder?",
+      "source": "crates/purlis-core/docs/hooks.md: the branch-move guard; plausible phrasing a person types."
+    },
+    {
+      "query": "go build fails with x509 OSStatus -26276 inside the chat. Is that the sandbox?",
+      "source": "crates/purlis-core/src/sandboxblock.rs: Go's certificate check failing on the system service the sandbox keeps from it."
+    },
+    {
+      "query": "Let this chat reach pypi.org; pip install keeps timing out on the proxy.",
+      "source": "crates/purlis-core/src/sandboxblock.rs: an egress proxy's refusal; plausible phrasing a person types."
+    },
+    {
+      "query": "Stop prompting for npm run test in this project, for everyone.",
+      "source": "Skill text: `purlis guard allow` without `--local`, committed for everyone."
+    },
+    {
+      "query": "Put back the prompt before a report gets filed.",
+      "source": "Skill text: `purlis guard report`."
+    },
+    {
+      "query": "The dev server can't listen on port 5173 in the chat. How do I allow that?",
+      "source": "app/src-tauri/src/hooks.rs BlockOffer::Listen: listening on a port of this Mac's loopback."
+    },
+    {
+      "query": "This command needs my AWS token from the vault. How do I run it?",
+      "source": "Near miss (purlis-secrets): a credential a command needs, not a permission.",
+      "belongs_to": "purlis-secrets"
+    },
+    {
+      "query": "Store this API key so the chat can use it without seeing it.",
+      "source": "Near miss (purlis-secrets): its description, \"when asked to store one\".",
+      "belongs_to": "purlis-secrets"
+    },
+    {
+      "query": "Run the migration with the database password from the prod vault.",
+      "source": "Near miss (purlis-secrets): a declared tool run with a vault.",
+      "belongs_to": "purlis-secrets"
+    },
+    {
+      "query": "Why can't the chat read my vault file directly?",
+      "source": "Near miss (purlis-secrets): the vault guard on reads; that skill says how to use one.",
+      "belongs_to": "purlis-secrets"
+    },
+    {
+      "query": "Log in to the staging dashboard with the saved credentials.",
+      "source": "Near miss (purlis-browser): a website login is the `browser_login` tool.",
+      "belongs_to": "purlis-browser"
+    },
+    {
+      "query": "The site keeps asking me to sign in. Use the browser login for it.",
+      "source": "Near miss (purlis-browser): a website login, not a sandbox host.",
+      "belongs_to": "purlis-browser"
+    },
+    {
+      "query": "Open the admin page in the browser and check the new form works.",
+      "source": "Near miss (purlis-browser): browser work.",
+      "belongs_to": "purlis-browser"
+    },
+    {
+      "query": "git commit was refused in this worktree — commit it the right way.",
+      "source": "Near miss (purlis-repo-work): committing from a branch folder.",
+      "belongs_to": "purlis-repo-work"
+    },
+    {
+      "query": "Push this branch folder and open a pull request.",
+      "source": "Near miss (purlis-repo-work): pushing from a branch folder.",
+      "belongs_to": "purlis-repo-work"
+    },
+    {
+      "query": "Cut a branch folder for the auth fix in the api repo.",
+      "source": "Near miss (purlis-repo-work): `purlis worktree add`.",
+      "belongs_to": "purlis-repo-work"
+    },
+    {
+      "query": "Set the environment variable DEBUG=true for my Claude sessions.",
+      "source": "The harness's own settings: an env var (its config skill's \"set X=Y\")."
+    },
+    {
+      "query": "Switch Claude Code to the dark theme.",
+      "source": "The harness's own settings: a theme (its config skill sends it to /config)."
+    },
+    {
+      "query": "Use the opus model by default from now on.",
+      "source": "The harness's own settings: the model."
+    },
+    {
+      "query": "Whenever Claude finishes a turn, play a sound — add a hook for that.",
+      "source": "The harness's own settings: a hook (its config skill's \"when claude stops\")."
+    },
+    {
+      "query": "Rebind ctrl+s to submit the prompt.",
+      "source": "The harness's own settings: keybindings."
+    },
+    {
+      "query": "Change my status line to show the git branch.",
+      "source": "The harness's own settings: the status line."
+    },
+    {
+      "query": "Turn on vim mode in the prompt editor.",
+      "source": "The harness's own settings: an editor preference."
+    },
+    {
+      "query": "Add a permission check to the REST API so only admins can delete users.",
+      "source": "plausible phrasing a person types: \"permission\" in code."
+    },
+    {
+      "query": "Our app's file upload is blocked by CORS. Fix the server headers.",
+      "source": "plausible phrasing a person types: \"blocked\" in code."
+    },
+    {
+      "query": "Write a firewall rule that allows port 443 on the load balancer.",
+      "source": "plausible phrasing a person types: \"allow\" a port in infrastructure."
+    },
+    {
+      "query": "chmod the deploy script so it's executable.",
+      "source": "plausible phrasing a person types: file permissions in a repo."
+    },
+    {
+      "query": "Why is the CI job blocked waiting for approval?",
+      "source": "plausible phrasing a person types: \"blocked\" on a forge."
+    },
+    {
+      "query": "Add an allowlist of email domains to the signup form.",
+      "source": "plausible phrasing a person types: \"allowlist\" in code."
+    },
+    {
+      "query": "Review the IAM policy in this Terraform module for least privilege.",
+      "source": "plausible phrasing a person types: permissions in code."
+    }
+  ]
+}

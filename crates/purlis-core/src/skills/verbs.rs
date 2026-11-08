@@ -516,7 +516,7 @@ pub fn new_checked(
 /// not allow, one of purlis's own ([`Ctx::not_built_in`]), or one `level`
 /// already holds; and for a description that breaks a rule ([`change::description_problem`]) or
 /// is the built-in's word for word. A built-in skill is its `SKILL.md` alone (held by a test of the bundle), so
-/// that one file is what is copied.
+/// that one file is what is copied; its `evals/` (trigger tests for the CI grader) stay behind.
 pub fn copy_built_in(
     cx: &mut Ctx<'_>,
     name: &str,

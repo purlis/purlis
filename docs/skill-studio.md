@@ -340,7 +340,7 @@ Every chat program has room for only so many skills in a chat's list before it s
 descriptions. purlis keeps each chat under that line with a **skill budget**: how many skills,
 and how many characters of their descriptions, one chat's list may hold. The studio's **Routing**
 page shows each program's budget. By default it is 60 skills and 15,000 characters on Claude
-Code, and 30 skills and 6,000 characters on Codex and opencode.
+Code, and 30 skills and 8,000 characters on Codex and opencode.
 
 ![The Routing page: the built-in router, and each program's budget](../app/src/__screenshots__/SkillStudioHarnessRouting.stories.tsx/skillstudioharnessrouting-routing-built-in_purlis_light-chromium-linux.png)
 
