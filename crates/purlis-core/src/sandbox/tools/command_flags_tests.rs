@@ -637,3 +637,30 @@ fn scp_and_sftp_with_a_jump_and_a_host_a_shell_would_read_are_offered_no_run_gra
     );
     offered("sftp", &["-J b deploy@host", "-J b host:dir"]);
 }
+
+// The seventh review of #5876.
+
+#[test]
+fn scp_and_sftp_uris_hosts_are_held_to_a_jumps_rule_and_a_slash_before_a_colon_is_a_local_path() {
+    refused(
+        "scp",
+        "a destination a shell would read",
+        &[
+            &["-J", "b", "scp://h$(x)/f", "."],
+            &["-J", "b", "a", "scp://u@[h;x]:22/f"],
+        ],
+    );
+    refused(
+        "sftp",
+        "a destination a shell would read",
+        &[&["-J", "b", "sftp://h|x"]],
+    );
+    offered(
+        "scp",
+        &[
+            "-J b scp://deploy@host:2222/f .",
+            "-J b ./dir;x/y:z host:dst",
+        ],
+    );
+    offered("sftp", &["-J b sftp://deploy@[::1]:22/dir"]);
+}

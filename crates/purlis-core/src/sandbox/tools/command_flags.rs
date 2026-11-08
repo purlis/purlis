@@ -431,19 +431,31 @@ fn hands_ssh_a_dash(operand: &str) -> bool {
     remote_part(operand).is_some_and(|remote| remote.split('@').any(dash_first))
 }
 
-/// `operand`'s `[user@]host` before the first `:` outside brackets (`[::1]:path` is host `::1`),
-/// where it has one.
+/// `operand`'s `[user@]host`, where it names a remote one: before the first `:` outside brackets
+/// (`[::1]:path` is host `::1`), unless a `/` comes first, which makes it a local path as scp and
+/// rsync read it; or a `scp://`, `sftp://` or `ssh://` URI's authority, up to its first `/`
+/// (#5876's seventh review).
 fn remote_part(operand: &str) -> Option<&str> {
+    for scheme in ["scp://", "sftp://", "ssh://"] {
+        if operand
+            .get(..scheme.len())
+            .is_some_and(|head| head.eq_ignore_ascii_case(scheme))
+        {
+            let authority = &operand[scheme.len()..];
+            return Some(authority.split('/').next().unwrap_or(authority));
+        }
+    }
     let mut inside = false;
     let end = operand.char_indices().find_map(|(at, c)| {
         match c {
             '[' => inside = true,
             ']' => inside = false,
-            ':' if !inside => return Some(at),
+            '/' if !inside => return Some(None),
+            ':' if !inside => return Some(Some(at)),
             _ => {}
         }
         None
-    })?;
+    })??;
     Some(&operand[..end])
 }
 

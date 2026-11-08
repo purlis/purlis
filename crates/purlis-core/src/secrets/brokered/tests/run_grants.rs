@@ -2669,6 +2669,9 @@ fn mysql_server_side_and_shell_like_tools_run_what_they_name_so_they_are_offered
         "mysqltest",
         "mariadb-test",
         "mysqlsh",
+        "mariadbd-multi",
+        "mysqltest_embedded",
+        "mariadb-test-embedded",
     ] {
         refused_as_running_others(name);
     }
