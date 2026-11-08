@@ -26,6 +26,14 @@
  *
  * The list of grounds found must be the manifest's list, exactly, so a new surface a button is
  * placed on fails here until the manifest names it, and the parts check measures it. *
+ * **Where each family stands** (#3268) is read the same way, for every family: each element that
+ * is a family's root (its `data-scope` and a `root` part or none, written out, spread from a helper
+ * or handed to `createElement`) stands on every family's root around it, out to the first element
+ * that covers what is under it, through the components that place it. A component is followed to
+ * the file its name is imported from, never to another of the same name. The surfaces found must
+ * be `STANDS_ON` (in `parts.rs`), exactly, so a family drawn on a new surface fails here until the
+ * engine measures it on a fill a theme sets there.
+ *
  * **Where each see-through ground is laid** (#4796) is read the same way: every rule that paints a
  * token purlis ships see-through is followed to the grounds under the element it paints, and those
  * must be `WASH_LAID_ON` (in `parts.rs`), exactly, so a wash drawn on a new ground fails here until

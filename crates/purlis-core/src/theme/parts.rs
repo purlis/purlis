@@ -3527,9 +3527,9 @@ fn surfaces_set(rules: &[Rule]) -> Vec<SurfaceSet> {
 /// can be more than one surface's (the overlay is a popover's and a dialog's), so where a family
 /// stands is said here, not read from its grounds. `app/src/theme/grounds.test.ts` finds it from
 /// the components and holds this table to them, exactly: a family drawn on a new surface fails
-/// there until it is named here. A surface whose every look is drawn with no fill of its own (a
-/// table, a tree) is named too, and measured once a theme's fill there is one it draws by
-/// default.
+/// there until it is named here. A surface drawn with no fill of its own in every look (a table, a
+/// tree) is named too, though nothing on it is measured on a fill a theme sets there
+/// ([`surfaces_set`]).
 const STANDS_ON: &[(&str, &[&str])] = &[
     (
         "card",
