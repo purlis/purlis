@@ -179,7 +179,7 @@ mod at_start {
             None,
         );
         let providers = crate::secrets::cmd::provider(&plane.ctx, "providers").unwrap();
-        crate::secrets::links::link(&plane.ctx, &providers, "anthropic", "billing", "card")
+        crate::secrets::links::link_over(&plane.ctx, &providers, "anthropic", "billing", "card")
             .unwrap();
 
         let why = read(&plane.ctx, Some("dev"), &work_key(), None).unwrap_err();

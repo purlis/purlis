@@ -1627,7 +1627,9 @@ pub fn granted_vaults(root: &Path) -> Vec<VaultGrant> {
 
 /// [`granted_vaults`], or why this machine's file can't be read (#5795): for a judge that must
 /// not take "not known" as "none". No file yet, or no config home to keep one in, grants nothing
-/// and is no error; a file that is there and does not read, or is not this shape, is one.
+/// and is no error; a file that is there and does not read, or is not this shape, is one. An empty
+/// file is one too: purlis never writes one, so it is a file cut short, where `read` would take
+/// it as no grants.
 pub fn try_granted_vaults(root: &Path) -> io::Result<Vec<VaultGrant>> {
     let file = path(root);
     if file.as_os_str().is_empty() {

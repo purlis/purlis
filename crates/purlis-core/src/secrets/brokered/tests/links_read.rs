@@ -121,6 +121,47 @@ fn a_link_read_while_this_machines_grants_cant_be_read_is_refused() {
     assert!(!why.contains("n0t-yours"), "never the value: {why}");
 }
 
+/// A link whose entry is gone, into a vault the persona may not use, is refused, and the person is
+/// asked for nothing: a Fill would go where the persona may not read.
+#[test]
+fn a_gone_link_into_a_vault_the_persona_may_not_use_is_refused_and_nothing_is_asked() {
+    let project = project();
+    linked_out(project.path());
+    std::fs::write(project.path().join("other.json"), "{}").unwrap();
+    let asks = crate::secrets::ask::Asks::new(project.path());
+
+    let frames = served_asking(
+        &asker(project.path(), Some("devops")),
+        reads_missing(project.path()),
+        &asks,
+        Duration::from_secs(60),
+    );
+
+    says_out_of_reach(refused_and_nothing_ran(&frames), "devops");
+    assert!(asks.open().is_empty(), "asked nobody");
+}
+
+/// A chat on no persona hears it so, not a blank where a persona's name would be.
+#[test]
+fn a_fill_for_a_chat_on_no_persona_through_a_link_is_refused_saying_so() {
+    let project = project();
+    linked_out(project.path());
+    let chat = Asker {
+        confines: None,
+        ..asker(project.path(), None)
+    };
+
+    let why = fill_value(&chat, "team", "MISSING")
+        .map(|value| value.map(|value| value.expose().to_owned()))
+        .unwrap_err();
+
+    assert!(
+        why.contains("MISSING in vault team reads an entry of another vault, and this chat runs as no persona"),
+        "{why}"
+    );
+    assert!(!why.contains("  "), "no blank for a name: {why}");
+}
+
 #[test]
 fn a_fill_reading_a_link_into_a_vault_its_persona_may_not_use_is_refused() {
     let project = project();

@@ -16,8 +16,12 @@ opens for it. The readers judged are:
 - a chat profile's sign-in credential;
 - a runner chat's tool, read on the desktop.
 
-A fill, a granted login and a profile's sign-in each count as a reader of their vault, though none
-of them needs the vault to be one their persona may use.
+A fill and a granted login each count as a reader of their vault, though neither needs the vault
+to be one its persona may use. Such a reader is held to the rule for every link it reads, one
+inside the same vault included: it was allowed one key, not every entry that key may lead to.
+
+A link is judged again once its value is read, so a link written between the first judgement and
+the read is seen, and what was read goes unused.
 
 So it no longer matters when the link was made or how the persona came to use its vault: by a tag,
 an Allow (a refused vault's, or Always allow's), or a policy lock lifted. A link made before #5745's
@@ -25,7 +29,8 @@ press check is judged as well. The press check stays, so a link no persona of it
 through is still refused up front.
 
 It fails closed. A link that can't be read is refused. So is this machine's grants file where it
-is there and can't be read, which counts as a refusal here and not as no grants. The chat hears
+is there and can't be read, an empty file included, which counts as a refusal here and not as no
+grants. Why it can't be read goes to purlis's log, since the file holds other vaults' names. The chat hears
 which key, in which of its own vaults, reads an entry of a vault its persona may not use. It never
 hears the other vault's name (D-5246-8). Nothing is asked of the person, because a refusal of this
 kind raises no Secret ask.

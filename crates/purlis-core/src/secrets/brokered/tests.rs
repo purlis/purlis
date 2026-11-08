@@ -5467,6 +5467,8 @@ fn a_run_whose_linked_entry_is_gone_asks_naming_the_gone_entry_and_runs_once_fil
     let ctx = Ctx::new(project.path(), Env::of(&[]));
     let team = crate::secrets::cmd::provider(&ctx, "team").unwrap();
     crate::secrets::links::link(&ctx, &team, "MISSING", "other", "TOKEN").unwrap();
+    // The link reads a vault `devops` may use: one it may not is read for no run (#5795).
+    crate::sandbox::local::grant_vault(project.path(), "other", "devops").unwrap();
     std::fs::write(project.path().join("other.json"), "{}").unwrap();
     let asks = crate::secrets::ask::Asks::new(project.path());
     let frames = std::thread::scope(|scope| {
