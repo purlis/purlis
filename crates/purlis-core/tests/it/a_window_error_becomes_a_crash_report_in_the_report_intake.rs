@@ -56,6 +56,7 @@ fn crash_reports(answer: Option<bool>) -> Consent {
         crash_reports: answer,
         agent_drafts: Some(true),
         asked: true,
+        ..Consent::default()
     }
 }
 

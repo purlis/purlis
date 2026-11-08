@@ -38,6 +38,7 @@ fn reports(recorded: &Arc<Recorded>, root: &Path, crash_reports: Option<bool>) -
             crash_reports,
             agent_drafts: None,
             asked: true,
+            ..Consent::default()
         })
         .sending_to(
             Arc::new(Sentry::new(Dsn::parse(DSN).unwrap(), recorded.clone())),
@@ -227,6 +228,7 @@ fn a_minidump_the_intake_gave_no_answer_for_waits_for_the_next_launch() {
             crash_reports: Some(true),
             agent_drafts: None,
             asked: true,
+            ..Consent::default()
         })
         .sending_to(
             Arc::new(Sentry::new(Dsn::parse(DSN).unwrap(), Offline)),
