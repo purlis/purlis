@@ -2201,6 +2201,13 @@ impl ChatBrowsers {
         }
     }
 
+    /// Chat `session`'s browser allowed, as the person's Allow on its Ask leaves it, for a test
+    /// that starts past the Ask.
+    #[cfg(test)]
+    pub fn allowed_now(&self, session: u32) {
+        self.lock().entry(session).or_default().posture = Posture::Allowed { open_web: false };
+    }
+
     /// What the person said chat `session`'s browser may reach.
     #[cfg(test)]
     pub fn posture(&self, session: u32) -> Posture {
@@ -4312,9 +4319,10 @@ pub fn answered(held: &crate::planes::Held, browse: &BrowseAsk, connection: u64)
     held.browsers()
         .identify(browse.chat, held.chats().id_of(browse.chat));
     let folder = || crate::browserfiles::chat_folder(held, browse.chat);
-    // A secret fill asks the person, and reads its value once they allow it (#5115).
+    // A secret fill asks the person, and reads its value once they allow it (#5115); its notice
+    // goes where the call's asker hung up meanwhile.
     let fills = |asked: &crate::secretfills::FillAsked| {
-        crate::secretfills::asked(held, browse.chat, asked, now)
+        crate::secretfills::asked(held, browse.chat, asked, now, &gone)
     };
     let (answer, raised) = held.browsers().answer(
         held.browser_driver(),

@@ -12,6 +12,9 @@ use purlis_core::sandbox::tools::Tool;
 
 use super::*;
 
+#[path = "tests/held.rs"]
+mod held;
+
 const VAULTS: &str = r#"{"vaults":{
     "qa":{"provider":"plain-file","config":{"file":"q.json"},"persona":"qa"},
     "prod":{"provider":"plain-file","config":{"file":"p.json"},"persona":"ops"}
@@ -1105,7 +1108,7 @@ fn a_call_whose_asker_hung_up_ends_its_wait_and_its_notice() {
 
     let waited = waited_for_the_person(&grants, id, &heard, Duration::from_secs(600), &gone);
 
-    assert_eq!(waited, Waited::AskerGone);
+    assert_eq!(waited, Ended::AskerGone);
     assert!(
         started.elapsed() < Duration::from_secs(60),
         "it looked again, and stopped"
@@ -1122,7 +1125,7 @@ fn a_wait_nobody_answers_ends_its_notice_and_a_press_in_time_is_heard() {
     let here = || false;
     assert_eq!(
         waited_for_the_person(&grants, id, &heard, Duration::from_millis(20), &here),
-        Waited::NotAnswered
+        Ended::NotAnswered
     );
     assert!(grants.waiting().is_empty(), "the notice went");
 
@@ -1130,7 +1133,7 @@ fn a_wait_nobody_answers_ends_its_notice_and_a_press_in_time_is_heard() {
     grants.end(id, Heard::Kept(None));
     assert_eq!(
         waited_for_the_person(&grants, id, &heard, Duration::from_secs(600), &here),
-        Waited::Heard(Heard::Kept(None))
+        Ended::Heard(Heard::Kept(None))
     );
 }
 
