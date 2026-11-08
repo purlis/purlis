@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   FIRST_ASK,
   aDialogOffers,
+  pressTheCloseAnswer,
   showsTheQuestion,
   whatCameInsteadOfThePicker,
   whatThePickerOffers,
@@ -122,6 +123,65 @@ describe("a dialog that offers an answer, as a spec waits for it", () => {
   it("is gone once the dialog has gone", () => {
     offering("alertdialog", "End chat one?", ["Close"]).remove();
     expect(aDialogOffers("alertdialog", "End chat one", "Close", false)).toBe(false);
+  });
+});
+
+/**
+ * **The close question is answered by its main button, whatever its words are when pressed**
+ * (#5609). `ClosingProject` counts the project's chats on every render: asked while a chat is
+ * still ending, its button reads "Close and end 1 chat", and once that chat has gone the same
+ * button reads "Close project". On the merge queue's macOS runner the chat went between the look
+ * that saw the question and the press, and a press that looked for "Close and end" found nothing
+ * for 20 s; the spec's `after` stopped there with this machine's project open and in front, and
+ * ten spec files after it failed in it.
+ */
+describe("the question a project's close asks, as a spec answers it", () => {
+  /** The question as `ClosingProject` draws it, with its main button reading `main`. */
+  function theQuestion(main: string): HTMLButtonElement {
+    const dialog = document.createElement("section");
+    dialog.setAttribute("role", "alertdialog");
+    dialog.append("Close project local-project?");
+    const cancel = document.createElement("button");
+    cancel.textContent = "Cancel";
+    const answer = document.createElement("button");
+    answer.textContent = main;
+    dialog.append(cancel, answer);
+    document.body.append(dialog);
+    return answer;
+  }
+
+  /** Counts the presses `button` takes. */
+  function counting(button: HTMLElement): () => number {
+    let pressed = 0;
+    button.addEventListener("click", () => pressed++);
+    return () => pressed;
+  }
+
+  it("presses Close and end while the question counts a chat", () => {
+    const pressed = counting(theQuestion("Close and end 1 chat"));
+    expect(pressTheCloseAnswer()).toBe("Close and end 1 chat");
+    expect(pressed()).toBe(1);
+  });
+
+  it("presses Close project once the chat it counted has ended under it", () => {
+    const answer = theQuestion("Close and end 1 chat");
+    const pressed = counting(answer);
+    answer.textContent = "Close project";
+    expect(pressTheCloseAnswer()).toBe("Close project");
+    expect(pressed()).toBe(1);
+  });
+
+  it("presses nothing, and never Cancel, while no close question is up", () => {
+    const other = document.createElement("section");
+    other.setAttribute("role", "alertdialog");
+    other.append("End chat one?");
+    const cancel = document.createElement("button");
+    cancel.textContent = "Cancel";
+    other.append(cancel);
+    document.body.append(other);
+    const pressed = counting(cancel);
+    expect(pressTheCloseAnswer()).toBe("");
+    expect(pressed()).toBe(0);
   });
 });
 
