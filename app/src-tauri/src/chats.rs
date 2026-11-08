@@ -3756,7 +3756,11 @@ impl Chats {
     fn told_with_its_wake_line(&self, session: u32, told: &[String]) -> Option<String> {
         let own_work = lock(&self.own_work).get(&session).copied();
         let wake = purlis_core::wakeline::of_the_chat_restarted(own_work.as_ref());
-        let first: Vec<&str> = told.iter().map(String::as_str).chain(wake.as_deref()).collect();
+        let first: Vec<&str> = told
+            .iter()
+            .map(String::as_str)
+            .chain(wake.as_deref())
+            .collect();
         (!first.is_empty()).then(|| first.join("\n\n"))
     }
 

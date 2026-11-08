@@ -71,7 +71,6 @@ impl PlaneId {
     }
 }
 
-
 /// **When a restart of one chat may go ahead** ([`Held::restart_chat`], #5753).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum When {
@@ -95,8 +94,7 @@ pub const WAITS_ON_A_PERMISSION_PROMPT: &str =
     "It is waiting on a permission prompt, so it restarts once that is answered.";
 
 /// Why a restart at a pause waits while the chat waits on its own work (#5753).
-pub const WAITS_ON_ITS_OWN_WORK: &str =
-    "It is waiting on work of its own running in the background, so it restarts once that \
+pub const WAITS_ON_ITS_OWN_WORK: &str = "It is waiting on work of its own running in the background, so it restarts once that \
      work wakes it and its turn ends. Restart now ends that work.";
 
 #[cfg(test)]

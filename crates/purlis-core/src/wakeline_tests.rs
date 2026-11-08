@@ -77,7 +77,10 @@ fn a_wake_line_is_a_first_message_a_harness_can_be_started_with() {
 #[test]
 fn a_chat_restarted_alone_is_told_its_restart_ended_what_it_had_left_running() {
     let line = super::of_the_chat_restarted(Some(&one_shell())).expect("a wake line");
-    assert!(line.starts_with("purlis: this chat was restarted"), "{line}");
+    assert!(
+        line.starts_with("purlis: this chat was restarted"),
+        "{line}"
+    );
     assert!(!line.contains("purlis was restarted"), "{line}");
     assert!(line.contains(": 1 background shell."), "{line}");
     assert!(
@@ -89,5 +92,8 @@ fn a_chat_restarted_alone_is_told_its_restart_ended_what_it_had_left_running() {
 #[test]
 fn a_chat_restarted_alone_with_nothing_of_its_own_running_is_told_nothing() {
     assert_eq!(super::of_the_chat_restarted(None), None);
-    assert_eq!(super::of_the_chat_restarted(Some(&OwnWork::default())), None);
+    assert_eq!(
+        super::of_the_chat_restarted(Some(&OwnWork::default())),
+        None
+    );
 }

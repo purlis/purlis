@@ -1113,7 +1113,7 @@ fn a_chat_whose_own_wake_up_came_due_while_purlis_was_down_is_told_after_the_res
 
 /// A steward chat whose turn ended on one background shell of its own, a wait that lapses in
 /// `lapses_in` seconds.
-fn a_steward_waiting_on_its_shell(lapses_in: i64) -> (Plane, Pretend, Planes, Arc<Held>, u32) {
+fn a_steward_waiting_on_its_shell(lapses_in: u32) -> (Plane, Pretend, Planes, Arc<Held>, u32) {
     let plane = a_plane_with_personas();
     let host = Pretend::default();
     let (planes, id, steward) = a_steward_chat(&host, &plane);
@@ -1200,7 +1200,9 @@ fn containing_project_settings_on_a_chat_waiting_on_its_own_shell_tells_it_the_s
 #[test]
 fn the_cores_restart_waits_while_the_chat_waits_on_its_own_work() {
     let (_plane, host, _planes, held, steward) = a_steward_waiting_on_its_shell(3600);
-    held.chats().ask_restart(steward).expect("a restart is asked");
+    held.chats()
+        .ask_restart(steward)
+        .expect("a restart is asked");
     let starts = host.asked().len();
 
     let answered = held.restart_chat(steward, A_SIZE, crate::planes::When::AtAPause);
@@ -1222,7 +1224,9 @@ fn the_cores_restart_waits_while_the_chat_waits_on_its_own_work() {
 fn after_the_lapse_the_chat_needs_you_and_a_restart_goes_ahead_and_names_the_ended_shell() {
     let (_plane, host, _planes, held, steward) = a_steward_waiting_on_its_shell(1);
     its_wait_lapses(&held, steward);
-    held.chats().ask_restart(steward).expect("a restart is asked");
+    held.chats()
+        .ask_restart(steward)
+        .expect("a restart is asked");
 
     let again = held
         .restart_chat(steward, A_SIZE, crate::planes::When::AtAPause)

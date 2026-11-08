@@ -1613,8 +1613,12 @@ export const commands = {
 	 *  The window asks once the chat's turn has ended; a chat owed no restart is refused, and one
 	 *  waiting on a permission prompt is not restarted yet. The answer is the new one as the
 	 *  window draws it, in the old one's place.
+	 * 
+	 *  **`now` is the person's Restart now** (#5753): it goes ahead while the chat waits on work
+	 *  of its own, which a restart at a pause waits for, and the chat brought back is told what
+	 *  the restart ended.
 	 */
-	restartChat: (plane: PlaneId, session: number, columns: number, rows: number) => typedError<ChatRestart, string>(__TAURI_INVOKE("restart_chat", { plane, session, columns, rows })),
+	restartChat: (plane: PlaneId, session: number, columns: number, rows: number, now: boolean) => typedError<ChatRestart, string>(__TAURI_INVOKE("restart_chat", { plane, session, columns, rows, now })),
 	/**
 	 *  **The chats this project has open that run under a sandbox other than the one the
 	 *  project's settings decide for them now** (#1428), or none. The window asks when the
