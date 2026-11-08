@@ -4548,6 +4548,17 @@ impl Applied {
         }
     }
 
+    /// **What the chat's start readies outside the sandbox, once nothing more can refuse it**: a
+    /// wrapped Claude Code's config folder ([`claude_wrap::prepare`]), for a chat in `cwd`. Called
+    /// by each start after its line and every later check (its settings' file), just before it
+    /// spawns the chat, so a start refused after its line was built marks nothing trusted and
+    /// changes nothing in the folder. Nothing for any other form.
+    pub fn ready_to_start(&self, cwd: &Path) {
+        if let Form::ClaudeWrapped(wrap) = &*self.form {
+            claude_wrap::prepare(wrap, cwd);
+        }
+    }
+
     /// The form as compiled for the project, before the manifests of a chat's own folders are
     /// added: what a chat is handed is [`Self::form_in`] its folder.
     pub fn form(&self) -> &Form {

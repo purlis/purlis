@@ -5346,6 +5346,10 @@ impl Chats {
             )?,
             _ => all,
         };
+        // Past every refusal: what the sandbox readies outside it before the chat starts.
+        if let (Some(applied), false, Some(cwd)) = (sandbox, reattaching, chat.cwd.as_deref()) {
+            applied.ready_to_start(cwd);
+        }
         let mut env = env;
         // What the wrap sets wins over a profile's or the arming's value of the same name: its
         // proxy, its temp directory, but an outcome eval shell's own temp folder (#4476).

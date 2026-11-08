@@ -341,6 +341,44 @@ fn the_whole_line_runs_in_the_wrap_with_its_traffic_and_temp_folder_its_own() {
     assert!(applied.claude_ssh_route(Some(&confinement)).is_none());
 }
 
+/// A start can still be refused after its line is built (its settings' file, its terminal), so
+/// the line readies nothing in the profile's folder: no folder made, no link taken out, no trust
+/// marked. The start readies it once nothing more can refuse it.
+#[test]
+fn a_wrapped_chat_s_line_readies_nothing_until_its_start_is_past_every_refusal() {
+    let place = place(FULL, true);
+    let home = place.home.join("work");
+    std::fs::create_dir_all(&home).expect("its folder");
+    let applied = started(&place, &home);
+    let cwd = place.plane.path().join("w");
+    std::fs::create_dir(&cwd).expect("a folder");
+    let confinement = applied.confine().expect("confined").expect("a proxy");
+    applied
+        .line(
+            Words {
+                program: "/opt/claude".to_owned(),
+                command: Vec::new(),
+                armed: Vec::new(),
+                charters: Vec::new(),
+            },
+            &At {
+                cwd: Some(&cwd),
+                confinement: Some(&confinement),
+                purlis: Some(Path::new("/opt/purlis")),
+                ..At::default()
+            },
+        )
+        .expect("it starts");
+    assert!(!home.join("todos").exists(), "a folder was made");
+    assert!(
+        !home.join(claude_wrap::STATE_FILE).exists(),
+        "the trust was marked"
+    );
+    applied.ready_to_start(&cwd);
+    assert!(home.join("todos").is_dir());
+    assert!(home.join(claude_wrap::STATE_FILE).is_file());
+}
+
 #[test]
 fn a_chat_with_no_config_folder_purlis_can_hold_is_not_started() {
     let place = place(FULL, true);

@@ -971,6 +971,10 @@ pub fn compose_ready(
         Some(id) => settings_in_a_file(kit.chat_settings.as_deref(), root, id, args)?,
         None => args,
     };
+    // Past every refusal: what the sandbox readies outside it before the chat starts.
+    if let Some(applied) = sandbox {
+        applied.ready_to_start(&cwd);
+    }
     // The same test as what holds their folders in the home (`kept_by_purlis`).
     let mut wrapped = wrapped;
     if sandbox.is_some() && crate::sandbox::Machine::this().is_a_runner() {
