@@ -1418,7 +1418,12 @@ fn every_denial_class_is_held_by_every_harness_charter_compiles_for() {
                     Harness::ClaudeCode => ("**/.git/config".to_owned(), false),
                     Harness::Codex | Harness::Opencode => {
                         let escaped = root.display().to_string().replace('.', "\\\\.");
-                        (format!("^{escaped}/(.*/)?\\\\.[gG][iI][tT]/[cC][oO][nN][fF][iI][gG](/.*)?$"), false)
+                        (
+                            format!(
+                                "^{escaped}/(.*/)?\\\\.[gG][iI][tT]/[cC][oO][nN][fF][iI][gG](/.*)?$"
+                            ),
+                            false,
+                        )
                     }
                 },
             };
