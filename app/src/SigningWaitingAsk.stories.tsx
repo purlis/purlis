@@ -54,6 +54,10 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 async function reached(canvasElement: HTMLElement, name: string) {
+  // The Ask's answers open from its card's Answer.
+  await userEvent.click(
+    await waitFor(() => within(canvasElement).getByRole("button", { name: "Answer purlis" })),
+  );
   const button = await waitFor(() => within(canvasElement).getByRole("button", { name }));
   button.focus();
   await expect(button).toHaveFocus();
@@ -74,7 +78,6 @@ export const AfterSetup: Story = {
   args: { ask: AFTER },
   play: async ({ canvasElement }) => {
     await reached(canvasElement, "Sign and retry all 3");
-    await userEvent.keyboard("{Tab}");
   },
 };
 

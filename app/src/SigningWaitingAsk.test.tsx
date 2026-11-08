@@ -98,7 +98,7 @@ afterEach(() => {
 const commandsSent = (cmd: string) => sent.filter((one) => one.cmd === cmd);
 
 describe("the one notice for lanes waiting on signing", () => {
-  it("is drawn once in the Inbox, listing every lane", () => {
+  it("is drawn once in the Inbox, listing every lane", async () => {
     render(
       <Inbox
         plane={PLANE}
@@ -111,7 +111,8 @@ describe("the one notice for lanes waiting on signing", () => {
     expect(screen.getAllByText(/3 lanes can't merge/)).toHaveLength(1);
     for (const piece of ["tab-names", "empty-tab", "pane-foot"])
       expect(document.body.textContent).toContain(`purlis · ${piece}`);
-    expect(screen.getByRole("button", { name: "Set up signing" })).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Answer purlis" }));
+    expect(await screen.findByRole("button", { name: "Set up signing" })).toBeTruthy();
   });
 
   it("Set up signing opens the dialog in the project's window, ending in Sign and retry all 3", async () => {
