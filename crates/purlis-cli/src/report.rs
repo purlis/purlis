@@ -75,6 +75,10 @@ pub struct TextArgs {
         allow_hyphen_values = true
     )]
     exit: Option<i32>,
+    /// In a chat: add the words to the draft purlis made of a failure of its own in this chat,
+    /// the one its note named, rather than draft a report of their own (#5697).
+    #[arg(long, value_name = "DRAFT", conflicts_with_all = ["call", "title", "yes"])]
+    adds: Option<String>,
 }
 
 pub fn run(command: &ReportCommand) -> ExitCode {
@@ -167,9 +171,12 @@ fn to_the_inbox(kind: Kind, text: &str, title: Option<&str>, args: &TextArgs) ->
                 .call
                 .as_ref()
                 .map(|call| (call.clone(), args.exit.unwrap_or(1))),
+            caught: None,
+            adds: args.adds.clone(),
         }))
     };
     let said = match crate::brokered::asked(ask, HOLDING_TAKES_AT_MOST) {
+        Err(NotTaken::NotAChat) if args.adds.is_some() => Err(ADDS_ONLY_IN_A_CHAT.to_owned()),
         Err(NotTaken::NotAChat) => return None,
         Err(_) => Err(NOT_HELD.to_owned()),
         Ok(Ok(Answer::Said { lines, code })) => Ok((lines, code)),
@@ -202,6 +209,10 @@ fn to_the_inbox(kind: Kind, text: &str, title: Option<&str>, args: &TextArgs) ->
         }
     })
 }
+
+/// Why `--adds` did nothing outside a chat the app started.
+const ADDS_ONLY_IN_A_CHAT: &str = "--adds adds to a draft purlis made in a chat the app started, \
+                                   and this is no such chat. Nothing was changed.";
 
 /// Why a chat's draft did not reach the Inbox where no app could take it.
 const NOT_HELD: &str = "the purlis app that started this chat did not take the draft: it is not \

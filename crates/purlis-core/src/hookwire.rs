@@ -1744,6 +1744,29 @@ pub struct ReportDraftAsk {
     /// The purlis command or tool that failed, and its exit code.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub call: Option<(String, i32)>,
+    /// **A failure inside purlis its own hook caught in this chat** (#5697), in place of the
+    /// chat's words: drafted from it alone, as `report::PurlisFailure::Internal`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub caught: Option<crate::caught::Caught>,
+    /// The draft purlis made in this chat that `text` is added to, rather than a draft of its
+    /// own (#5697): what the agent was doing when purlis failed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub adds: Option<String>,
+}
+
+impl ReportDraftAsk {
+    /// The ask a hook in chat `chat` makes of the failure of purlis's own it `caught` (#5697).
+    pub fn caught(chat: u32, caught: crate::caught::Caught) -> Self {
+        Self {
+            chat,
+            feature: false,
+            text: String::new(),
+            title: None,
+            call: None,
+            caught: Some(caught),
+            adds: None,
+        }
+    }
 }
 
 /// **A value a chat proposes for a pool's limit** ([`Ask::ProposeLimit`]). Judged by the app

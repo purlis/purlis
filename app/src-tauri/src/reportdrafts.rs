@@ -15,11 +15,12 @@
 //! the Report intake only. This module only keeps time: a thread wakes when the hold ends and asks
 //! the core to send what is due, and the app's start sends what a quit left due.
 
+use purlis_core::dispatchtalk::DraftedWord;
 use purlis_core::forge::Caller;
 use purlis_core::hookwire::{Answer, ReportDraftAsk};
 use purlis_core::report::{
     AgentDraft, CameFrom, Evidence, Filing, HOLD_SECS, Held as HeldDraft, HeldKind, How, Kind,
-    Refusal, Reports, SentTo, Stream,
+    PurlisFailure, Refusal, Reports, SentTo, Stream,
 };
 
 use crate::planes::{Held, PlaneId, Planes};
@@ -92,6 +93,25 @@ pub fn asked(held: &Held, ask: &ReportDraftAsk) -> Answer {
     if let Err(why) = held.brokered().allow(ask.chat, std::time::Instant::now()) {
         return no(why);
     }
+    if let Some(id) = &ask.adds {
+        return added(held, ask.chat, id, &ask.text);
+    }
+    if let Some(caught) = &ask.caught {
+        let harness = held.chats().started_as(ask.chat).flatten();
+        let failure = PurlisFailure::Internal {
+            caught: caught.clone(),
+            harness,
+            harness_version: harness.and_then(purlis_core::sandbox::program::version_heard),
+        };
+        return match failed(held, ask.chat, name, failure) {
+            Ok(()) => Answer::Said {
+                lines: vec![purlis_core::repocmd::Say::Done(HELD_SAID.into())],
+                code: 0,
+            },
+            Err(Refusal::NoConsent(Stream::AgentDrafts)) => no(NOT_ALLOWED.to_owned()),
+            Err(refused) => no(said_of(&refused)),
+        };
+    }
     let evidence = Evidence::AgentDraft(AgentDraft {
         kind: if ask.feature {
             Kind::Feature
@@ -127,6 +147,78 @@ pub fn asked(held: &Held, ask: &ReportDraftAsk) -> Answer {
         }
         Err(Refusal::NoConsent(Stream::AgentDrafts)) => no(NOT_ALLOWED.to_owned()),
         Err(refused) => no(said_of(&refused)),
+    }
+}
+
+/// **A failure of purlis's own in chat `chat`, called `name`, held as a draft** (#5697, spec
+/// #5683 layer 1): an internal failure its hook caught, or a sandbox block of purlis's own
+/// operation (#1338), both by this one road. Held once: the same failure again from the same
+/// chat while its draft waits in the Inbox holds nothing more. A new draft is told to the chat
+/// on its next turn, once, with the way to add what it was doing.
+pub fn failed(held: &Held, chat: u32, name: String, failure: PurlisFailure) -> Result<(), Refusal> {
+    let call = failure.call();
+    let from = CameFrom {
+        session: Some(chat),
+        chat: name,
+        project: held.root().display().to_string(),
+    };
+    let (one, new) = Reports::here(Some(held.root())).hold_once(
+        Evidence::PurlisFailure(failure),
+        &Caller::chat(&chat.to_string()),
+        from,
+    )?;
+    if new {
+        // Under Always send (#5695) it leaves once its hold is over, unless the person undoes it.
+        if one.sends_at.is_some() {
+            send_after_the_hold();
+        }
+        changed();
+        held.tasks()
+            .ledger()
+            .talk
+            .drafted_word(chat, DraftedWord { id: one.id, call });
+        held.chats().asks_may_have_moved();
+    }
+    Ok(())
+}
+
+/// A sandbox block of purlis's own operation in chat `chat` (#1338), held as a draft by the
+/// road every failure of purlis's own takes ([`failed`]). Nothing is said where it is not
+/// held: the block's Notice is shown all the same.
+pub fn own_block(held: &Held, chat: u32, block: purlis_core::sandboxblock::Block) {
+    let Some(name) = held.chats().shown_name(chat) else {
+        return;
+    };
+    let harness = held.chats().started_as(chat).flatten();
+    let _ = failed(
+        held,
+        chat,
+        name,
+        PurlisFailure::SandboxBlock {
+            block,
+            harness,
+            harness_version: harness.and_then(purlis_core::sandbox::program::version_heard),
+        },
+    );
+}
+
+/// What a chat is told when its words were added to a draft purlis made.
+pub const ADDED_SAID: &str = "Your words are added to the draft in the person's Inbox. Nothing \
+                              was sent.";
+
+/// Chat `chat`'s words `text`, added to the draft `id` purlis made of a failure in that chat.
+fn added(held: &Held, chat: u32, id: &str, text: &str) -> Answer {
+    match Reports::here(Some(held.root())).add_to_held(id, chat, text) {
+        Ok(_) => {
+            changed();
+            Answer::Said {
+                lines: vec![purlis_core::repocmd::Say::Done(ADDED_SAID.into())],
+                code: 0,
+            }
+        }
+        Err(refused) => Answer::No {
+            why: said_of(&refused),
+        },
     }
 }
 

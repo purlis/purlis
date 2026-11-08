@@ -144,6 +144,9 @@ pub fn handler(name: &str) -> Option<Handler> {
         // What these hooks find goes to the app ([`blocks`]); the chat is told of what the app
         // took once it has ([`told_after`]), never from here.
         BLOCKED | BLOCKED_ON_FAILURE => says_nothing,
+        // A purlis tool that failed (#5697): what failed inside purlis goes to the app as a
+        // draft ([`tell_the_app_what_failed`]); the chat is told on its next turn, not here.
+        purlis_core::caught::TOOL_WORD => says_nothing,
         _ => return None,
     })
 }
@@ -165,7 +168,7 @@ fn says_nothing(_: &Hook) -> Answer {
 /// call that came back, and of one that failed. The first also hears a background command's
 /// output read back by another tool (#1683), which `sandboxblock` reads only of such a file.
 pub const BLOCKED: &str = "posttooluse-blocked";
-pub const BLOCKED_ON_FAILURE: &str = "posttoolusefailure-blocked";
+pub const BLOCKED_ON_FAILURE: &str = purlis_core::caught::COMMAND_WORD;
 
 /// What a block word found in a call's result, as the chat is told of it.
 #[derive(Debug, Default)]
@@ -535,4 +538,33 @@ pub fn list(json: bool) -> ExitCode {
         print!("{}", purlis_core::hookreg::table());
     }
     ExitCode::SUCCESS
+}
+
+/// How long a hook waits for the app to hold a draft of purlis's own failure: a scrub and one
+/// small write. The hook answers the harness nothing of it either way.
+const HOLDING_A_FAILURE_TAKES_AT_MOST: std::time::Duration = std::time::Duration::from_secs(3);
+
+/// **A failure of purlis's own in the call `word` heard come back, handed to the app** (#5697,
+/// spec #5683 layer 1): an internal-failure exit of a `purlis` command, or a purlis tool that
+/// failed inside purlis ([`purlis_core::caught::of_hook`]). The app holds it as a Report draft
+/// for the person's Inbox, with the person's yes to Agent drafts, and tells the chat on its next
+/// turn. Nothing is said here: a refusal, no chat, or no app is the same silence.
+pub fn tell_the_app_what_failed(word: &str, payload: &str) {
+    if word != BLOCKED_ON_FAILURE && word != purlis_core::caught::TOOL_WORD {
+        return;
+    }
+    let Ok(data) = serde_json::from_str::<serde_json::Value>(payload) else {
+        return;
+    };
+    let Some(caught) = purlis_core::caught::of_hook(word, &data) else {
+        return;
+    };
+    let _ = crate::brokered::asked(
+        |chat| {
+            purlis_core::hookwire::Ask::ReportDraft(Box::new(
+                purlis_core::hookwire::ReportDraftAsk::caught(chat, caught),
+            ))
+        },
+        HOLDING_A_FAILURE_TAKES_AT_MOST,
+    );
 }

@@ -31,7 +31,7 @@ use crate::a_report_is_filed_only_with_the_purlis_sign_in::{Machine, issue};
 
 const DSN: &str = concat!("https://f00dfeed1234", "@", "o1.ingest.de.sentry.io/4508");
 
-fn recorded_intake() -> Arc<Recorded> {
+pub(crate) fn recorded_intake() -> Arc<Recorded> {
     let text = std::fs::read_to_string(
         Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/intake_contract/sentry/envelope.json"),
     )
