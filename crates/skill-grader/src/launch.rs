@@ -142,7 +142,9 @@ pub fn args(ask: &Ask<'_>, setting: ci::Setting, query: &str) -> Vec<String> {
     ));
     // After `--mcp-config`, which takes every word up to the next flag. No shell: a run is
     // handed the provider's key in its environment, and a skill starts by its Skill tool.
-    args.extend(["--max-turns", MOST_TURNS, "--disallowedTools", "Bash"].map(str::to_owned));
+    // `--disallowedTools` takes a list too, so its value is joined with `=`: written apart, it
+    // would swallow the query and leave `-p` without a prompt.
+    args.extend(["--max-turns", MOST_TURNS, "--disallowedTools=Bash"].map(str::to_owned));
     args.push(query.to_owned());
     args
 }
@@ -447,6 +449,8 @@ fn opencode(
         for tool in purlis_core::opencode::EFFECTFUL {
             config["permission"][tool] = "deny".into();
         }
+        // Nor the web: a graded run holds the provider's key, and a trigger test needs no page.
+        config["permission"]["webfetch"] = "deny".into();
         config["agent"]["build"]["steps"] = steps.into();
         *value = config.to_string();
     }

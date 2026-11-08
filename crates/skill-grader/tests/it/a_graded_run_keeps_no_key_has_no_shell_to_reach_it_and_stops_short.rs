@@ -88,10 +88,29 @@ fn claude_code_is_started_with_its_shell_denied() {
         purlis_skills::grade::ci::Setting::Crowded,
         "store this token",
     );
-    let denied = words
-        .windows(2)
-        .any(|pair| pair[0] == "--disallowedTools" && pair[1] == "Bash");
-    assert!(denied, "{words:?}");
+    // Joined with `=`: `--disallowedTools` takes a list, so written apart it would swallow the
+    // query that comes after it and leave `-p` without a prompt.
+    assert!(
+        words.iter().any(|word| word == "--disallowedTools=Bash"),
+        "{words:?}"
+    );
+    assert!(
+        !words.iter().any(|word| word == "--disallowedTools"),
+        "{words:?}"
+    );
+    assert_eq!(
+        words.last().map(String::as_str),
+        Some("store this token"),
+        "{words:?}"
+    );
+    let before = &words[words.len() - 2];
+    assert!(
+        !matches!(
+            before.as_str(),
+            "--mcp-config" | "--disallowedTools" | "--allowedTools"
+        ),
+        "the query follows a flag that takes a list: {words:?}"
+    );
 }
 
 #[test]
@@ -130,7 +149,7 @@ fn opencode_is_denied_every_tool_that_runs_a_command_or_writes_and_stops_after_t
     };
     let config: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
-    for tool in ["bash", "edit", "write"] {
+    for tool in ["bash", "edit", "write", "webfetch"] {
         assert_eq!(config["permission"][tool], "deny", "{tool}: {config}");
     }
     assert_eq!(
