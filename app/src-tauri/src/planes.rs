@@ -4887,6 +4887,8 @@ impl Planes {
                                 left_in: now.left_in,
                                 resumable: false,
                                 with_the_runner: true,
+                                // Said as the chat ending with its runner, with nothing to resume.
+                                ended: None,
                             });
                         }
                         if let Some(held) = me.get().and_then(std::sync::Weak::upgrade)
@@ -4943,6 +4945,7 @@ impl Planes {
                                 left_in,
                                 resumable,
                                 with_the_runner,
+                                ended: crate::hostlost::ended_with_it(&held.chats, session),
                             });
                         }
                     }
@@ -5413,8 +5416,10 @@ impl Planes {
         // Every plane's saving stops at once, against one short deadline, so a save at quit
         // never overlaps the session host's; a host that does not answer is ended first
         // (#2002).
+        let roots: Vec<_> = all.iter().map(|held| held.root.clone()).collect();
         crate::autosave::stop_every_saver_by(
             all.iter().filter_map(|held| held.take_saver()).collect(),
+            &roots,
             std::time::Instant::now() + crate::autosave::QUIT_STOPS_WITHIN,
             &*self.end_the_host,
         );

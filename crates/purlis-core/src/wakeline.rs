@@ -319,9 +319,34 @@ fn at(secs: i64) -> String {
     )
 }
 
+/// **The wake line for `chat`, one of the record of open chats, as it is started again on its
+/// conversation** after its program ended: by a quit, an update, a crash of the window past its
+/// grace or of the session host (#5752). What the restart ended of it (its own work, its
+/// pieces, a turn cut mid-way) is told only where it resumes a conversation: a chat started
+/// fresh has none of that work's turns to come back to. `carry_on` as for [`of`].
+pub fn of_chat(chat: &crate::reopen::Chat, carry_on: bool) -> Option<String> {
+    let conversation = chat.resume.as_ref().map(ToString::to_string);
+    let last = |piece: &Piece| {
+        crate::ownwork::last::of(piece, conversation.as_deref().unwrap_or_default())
+    };
+    let ended = if conversation.is_some() {
+        Ended {
+            own_work: chat.own_work.as_ref(),
+            pieces: &chat.own_pieces,
+            mid_turn: chat.mid_turn,
+            now: chrono::Utc::now().timestamp(),
+            last: &last,
+        }
+    } else {
+        Ended::default()
+    };
+    of(&ended, carry_on)
+}
+
 /// The work in flight `own_work` counts, as a list: "1 background shell, 2 monitors". None
-/// where none is in flight.
-fn counted(own_work: &OwnWork) -> Option<String> {
+/// where none is in flight. What the host-crash notice names as ended with the host (#5752),
+/// and what the wake line counts as ended with the restart.
+pub fn counted(own_work: &OwnWork) -> Option<String> {
     let kinds = [
         (own_work.shells, "background shell", "background shells"),
         (own_work.monitors, "monitor", "monitors"),
@@ -331,7 +356,7 @@ fn counted(own_work: &OwnWork) -> Option<String> {
     let named: Vec<String> = kinds
         .into_iter()
         .filter(|(count, _, _)| *count > 0)
-        .map(|(count, one, many)| format!("{count} {}", if count == 1 { one } else { many }))
+        .map(|(count, one, many)| crate::counts::counted(count, one, many))
         .collect();
     (!named.is_empty()).then(|| named.join(", "))
 }

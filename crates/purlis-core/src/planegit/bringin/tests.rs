@@ -3,88 +3,13 @@
 
 //! Bringing a target in, against real git: two clones of one plane, and no forge.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use super::*;
 
 const PLANE_WS: &str = "workspaces/alpha";
 
-/// git for the test's own setup, which must go through.
-fn run(dir: &Path, args: &[&str]) -> String {
-    let done = crate::testgit::run(dir, args);
-    assert!(done.ok(), "git {args:?}: {done:?}");
-    done.out.trim().to_owned()
-}
-
-fn write(dir: &Path, file: &str, text: &str) {
-    let path = dir.join(file);
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    std::fs::write(path, text).unwrap();
-}
-
-fn read(dir: &Path, file: &str) -> String {
-    std::fs::read_to_string(dir.join(file)).unwrap()
-}
-
-fn commit(dir: &Path, message: &str) {
-    run(dir, &["add", "-A"]);
-    run(dir, &["commit", "-q", "-m", message]);
-}
-
-/// This machine's plane and another's, on one commit, with `release` as the target. `fetch`
-/// lands what the other made and updates this one's remote-tracking branch.
-struct Two {
-    _dir: tempfile::TempDir,
-    mine: PathBuf,
-    theirs: PathBuf,
-}
-
-impl Two {
-    fn new(seed: &[(&str, &str)]) -> Two {
-        let dir = tempfile::tempdir().unwrap();
-        let top = dir.path().canonicalize().unwrap();
-        let (bare, mine, theirs) = (top.join("bare"), top.join("mine"), top.join("theirs"));
-        std::fs::create_dir_all(&bare).unwrap();
-        run(&bare, &["init", "-q", "--bare", "-b", "release", "."]);
-        std::fs::create_dir_all(&mine).unwrap();
-        run(&mine, &["init", "-q", "-b", "release", "."]);
-        run(&mine, &["config", "user.name", "Mine"]);
-        run(&mine, &["config", "user.email", "mine@example.invalid"]);
-        run(&mine, &["remote", "add", "origin", bare.to_str().unwrap()]);
-        write(&mine, "charter.toml", "[plane]\nname = \"fixture\"\n");
-        for (file, text) in seed {
-            write(&mine, file, text);
-        }
-        commit(&mine, "seed");
-        run(&mine, &["push", "-q", "origin", "release"]);
-        run(
-            &top,
-            &[
-                "clone",
-                "-q",
-                bare.to_str().unwrap(),
-                theirs.to_str().unwrap(),
-            ],
-        );
-        run(&theirs, &["config", "user.name", "Theirs"]);
-        run(&theirs, &["config", "user.email", "theirs@example.invalid"]);
-        Two {
-            _dir: dir,
-            mine,
-            theirs,
-        }
-    }
-
-    fn land_theirs(&self, message: &str) {
-        commit(&self.theirs, message);
-        run(&self.theirs, &["push", "-q", "origin", "release"]);
-        run(&self.mine, &["fetch", "-q", "origin"]);
-    }
-
-    fn head(&self) -> String {
-        run(&self.mine, &["rev-parse", "HEAD"])
-    }
-}
+use super::super::tests::twoclones::{Two, commit, read, run, write};
 
 const CHARTER: &str = "# alpha\n\n## Vision\n\nShip it\n\n## Context\n\nOne.\n\nTwo.\n\nThree.\n\n## Sessions\n\nNo session records yet.\n";
 

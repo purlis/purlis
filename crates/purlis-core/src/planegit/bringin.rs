@@ -121,9 +121,26 @@ pub(super) fn bring_in(root: &Path, target: &str, sign: bool, when: When) -> Bro
         if !plan.person.is_empty() {
             return BroughtIn::Conflict(plan.person);
         }
-        match commit(root, &plan, &theirs, target, sign, base.is_some()) {
-            Ok(commit) => commit,
+        let tree = match tree_of(root, &plan) {
+            Ok(tree) => tree,
             Err(why) => return BroughtIn::Failed(why),
+        };
+        let same = git::run(
+            root,
+            &["rev-parse", &format!("{theirs}^{{tree}}")],
+            git::READ,
+        )
+        .ok()
+        .filter(git::Run::ok)
+        .is_some_and(|run| run.line().trim() == tree);
+        if base.is_some() && same {
+            // Everything carried is in the target already: nothing to commit.
+            theirs.clone()
+        } else {
+            match commit(root, &tree, &theirs, target, sign, base) {
+                Ok(commit) => commit,
+                Err(why) => return BroughtIn::Failed(why),
+            }
         }
     };
     let stops = sandbox_would_stop(root, &onto);
@@ -148,6 +165,8 @@ pub(super) fn bring_in(root: &Path, target: &str, sign: bool, when: When) -> Bro
 
 /// A merge of HEAD and a target, worked out and nothing changed yet.
 pub(super) struct Plan {
+    /// The side merged into: HEAD, or the commit [`plan_between`] was given.
+    ours: String,
     /// The tree git's merge wrote, conflict markers included in any file it could not settle.
     tree: String,
     /// Whether git's merge left any file in conflict.
@@ -232,6 +251,16 @@ impl Plan {
 /// Work out the merge of HEAD and `theirs`, from `base` where it is given and from where the two
 /// histories meet otherwise: nothing in the plane changes (objects aside).
 pub(super) fn plan(root: &Path, theirs: &str, base: Option<&str>) -> Result<Plan, String> {
+    plan_between(root, "HEAD", theirs, base)
+}
+
+/// [`plan`], of `ours` in place of HEAD: a merge of two commits, neither of them the root's.
+pub(super) fn plan_between(
+    root: &Path,
+    ours: &str,
+    theirs: &str,
+    base: Option<&str>,
+) -> Result<Plan, String> {
     let given = base.map(|base| format!("--merge-base={base}"));
     let mut args = vec![
         "merge-tree",
@@ -241,7 +270,7 @@ pub(super) fn plan(root: &Path, theirs: &str, base: Option<&str>) -> Result<Plan
         "--no-messages",
     ];
     args.extend(given.as_deref());
-    args.extend(["HEAD", theirs]);
+    args.extend([ours, theirs]);
     let merged = git::run(root, &args, WRITE).map_err(|unavailable| unavailable.to_string())?;
     // 0 is clean and 1 is conflicts: anything else is git refusing, with no tree.
     if !matches!(merged.code, Some(0 | 1)) {
@@ -257,13 +286,13 @@ pub(super) fn plan(root: &Path, theirs: &str, base: Option<&str>) -> Result<Plan
 
     let base = match base {
         Some(base) => base.to_owned(),
-        None => git::run(root, &["merge-base", "HEAD", theirs], git::READ)
+        None => git::run(root, &["merge-base", ours, theirs], git::READ)
             .ok()
             .filter(git::Run::ok)
             .map(|run| run.line().trim().to_owned())
             .ok_or("the two histories have no commit in common")?,
     };
-    let ours_touched = sources_in(&changed(root, &base, "HEAD")?);
+    let ours_touched = sources_in(&changed(root, &base, ours)?);
     let theirs_touched = sources_in(&changed(root, &base, theirs)?);
     let mut rebuild: BTreeSet<Generated> = ours_touched
         .intersection(&theirs_touched)
@@ -271,6 +300,7 @@ pub(super) fn plan(root: &Path, theirs: &str, base: Option<&str>) -> Result<Plan
         .collect();
 
     let mut plan = Plan {
+        ours: ours.to_owned(),
         tree,
         conflicted: !conflicted.is_empty(),
         settled: BTreeMap::new(),
@@ -280,7 +310,7 @@ pub(super) fn plan(root: &Path, theirs: &str, base: Option<&str>) -> Result<Plan
     for path in &conflicted {
         match generated(path) {
             Some(Generated::Charter(ws)) => {
-                match merged_apart(root, path, &base, theirs, |text| {
+                match merged_apart(root, ours, path, &base, theirs, |text| {
                     crate::mdsection::replace(text, "Sessions", SET_ASIDE)
                 })? {
                     Apart::Clean(text) => {
@@ -295,7 +325,7 @@ pub(super) fn plan(root: &Path, theirs: &str, base: Option<&str>) -> Result<Plan
                 rebuild.insert(Generated::Sessions(Some(ws)));
             }
             Some(Generated::Rules) => {
-                match merged_apart(root, path, &base, theirs, |text| {
+                match merged_apart(root, ours, path, &base, theirs, |text| {
                     crate::scaffold::rules_set_aside(text, RULES_SET_ASIDE)
                 })? {
                     Apart::Clean(text) => {
@@ -379,13 +409,14 @@ enum Apart {
 /// in it cannot conflict.
 fn merged_apart(
     root: &Path,
+    ours: &str,
     path: &str,
     base: &str,
     theirs: &str,
     apart: impl Fn(&str) -> String,
 ) -> Result<Apart, String> {
     let (Some(ours), Some(old), Some(new)) = (
-        blob(root, "HEAD", path),
+        blob(root, ours, path),
         blob(root, base, path),
         blob(root, theirs, path),
     ) else {
@@ -497,7 +528,7 @@ fn rebuilt(root: &Path, plan: &mut Plan, what: &Generated, theirs: &str) -> Resu
         Generated::Todos(ws) => {
             let dir = format!("workspaces/{ws}/todos");
             let index = format!("{dir}/{}", crate::memstore::INDEX);
-            let ours = blob(root, "HEAD", &index).unwrap_or_default();
+            let ours = blob(root, &plan.ours, &index).unwrap_or_default();
             let new = blob(root, theirs, &index).unwrap_or_default();
             let todos: Vec<(String, String)> = files_in(root, &plan.tree, &dir)
                 .into_iter()
@@ -516,7 +547,7 @@ fn rebuilt(root: &Path, plan: &mut Plan, what: &Generated, theirs: &str) -> Resu
 
 /// The tree `plan` comes to: git's, with what was settled written over it. Built in an index of
 /// its own, so what the plane has staged is never touched.
-fn tree_of(root: &Path, plan: &Plan) -> Result<String, String> {
+pub(super) fn tree_of(root: &Path, plan: &Plan) -> Result<String, String> {
     if plan.settled.is_empty() {
         return Ok(plan.tree.clone());
     }
@@ -547,27 +578,105 @@ fn tree_of(root: &Path, plan: &Plan) -> Result<String, String> {
     Ok(in_index(&["write-tree"])?.line().trim().to_owned())
 }
 
-/// The commit `plan` comes to: a merge, with HEAD and `theirs` as its parents, or, `carried`,
-/// what HEAD added since the merge base on top of `theirs` alone ([`When::MergedAt`]).
+/// The commit of `tree`, which a plan came to: a merge, with HEAD and `theirs` as its parents, or, carried from
+/// `carried` ([`When::MergedAt`]), what HEAD added since that commit on top of `theirs` alone.
+/// One commit carried keeps its own message, so the next request reads as it did; several are
+/// said as one carry.
 fn commit(
     root: &Path,
-    plan: &Plan,
+    tree: &str,
     theirs: &str,
     target: &str,
     sign: bool,
-    carried: bool,
+    carried: Option<&str>,
 ) -> Result<String, String> {
-    let tree = tree_of(root, plan)?;
-    let subject = if carried {
-        format!("Carry this machine's newer saves onto {target}")
-    } else {
-        format!("Bring {target} {SUBJECT}")
+    let message = match carried {
+        None => format!("Bring {target} {SUBJECT}"),
+        Some(base) => carried_message(root, base, theirs, target),
     };
-    let mut args = vec!["commit-tree", &tree];
-    if !carried {
-        args.extend(["-p", "HEAD"]);
+    let parents: Vec<&str> = if carried.is_some() {
+        vec![theirs]
+    } else {
+        vec!["HEAD", theirs]
+    };
+    commit_tree(root, tree, &parents, &message, sign)
+}
+
+/// What a carry says: the one commit of `base..HEAD` whose work is not already in `theirs` in
+/// its own words, so the next request reads as it did, or one line for several. A commit the
+/// target already holds every file of as it wrote them (a request that merged it by squash) is
+/// not said again, as a rebase would have dropped it.
+fn carried_message(root: &Path, base: &str, theirs: &str, target: &str) -> String {
+    let commits: Vec<String> = git::run(
+        root,
+        &["rev-list", "--reverse", &format!("{base}..HEAD")],
+        git::READ,
+    )
+    .ok()
+    .filter(git::Run::ok)
+    .map(|run| run.out.lines().map(str::to_owned).collect())
+    .unwrap_or_default();
+    let new: Vec<&String> = commits
+        .iter()
+        .filter(|commit| !already_in(root, commit, theirs))
+        .collect();
+    match new.as_slice() {
+        [one] => git::run(root, &["log", "-1", "--format=%B", one], git::READ)
+            .ok()
+            .filter(git::Run::ok)
+            .map(|run| run.out.trim_end().to_owned())
+            .filter(|message| !message.is_empty())
+            .unwrap_or_else(|| format!("Carry this machine's newer save onto {target}")),
+        _ => format!("Carry this machine's newer saves onto {target}"),
     }
-    args.extend(["-p", theirs, "-m", &subject]);
+}
+
+/// Whether `theirs` holds every file `commit` changed as `commit` left it.
+fn already_in(root: &Path, commit: &str, theirs: &str) -> bool {
+    let Some(touched) = git::run(
+        root,
+        &[
+            "diff-tree",
+            "-r",
+            "--root",
+            "--no-commit-id",
+            "--no-renames",
+            "--name-only",
+            "-z",
+            commit,
+        ],
+        git::READ,
+    )
+    .ok()
+    .filter(git::Run::ok) else {
+        return false;
+    };
+    let mut args = vec![
+        "--literal-pathspecs",
+        "diff",
+        "--quiet",
+        commit,
+        theirs,
+        "--",
+    ];
+    args.extend(touched.out.split('\0').filter(|path| !path.is_empty()));
+    git::run(root, &args, git::READ).is_ok_and(|run| run.code == Some(0))
+}
+
+/// `git commit-tree`: a commit of `tree` with `parents` and `message`, made off to the side, no
+/// ref moved and nothing in the work tree touched.
+pub(super) fn commit_tree(
+    root: &Path,
+    tree: &str,
+    parents: &[&str],
+    message: &str,
+    sign: bool,
+) -> Result<String, String> {
+    let mut args = vec!["commit-tree", tree];
+    for parent in parents {
+        args.extend(["-p", parent]);
+    }
+    args.extend(["-m", message]);
     if sign {
         args.push("-S");
     }

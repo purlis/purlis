@@ -1439,3 +1439,415 @@ fn a_shell_a_chat_started_in_a_session_of_its_own_ends_when_the_next_host_settle
     );
     planes.close(&id).expect("it closes");
 }
+
+// ---------------------------------------------------------------------------------------------
+// Every reopen path gives the wake line (#5752, spec #5743), and only a reopen does.
+//
+// A quit is the tracer's (above). An update ends chats as a quit does (until #665); a window
+// that crashed and stayed away past its grace leaves the record as it was last written, and a
+// host that ended its chats; a session host that crashed leaves each chat lost until Resume
+// starts it again, idle (hibernated) or mid-turn (failed). Reopen all puts back many at its own
+// pace, a chat the launch could not start is told when the person tries it again, and a
+// reattach that has to start the chat after all still tells it. A chat the host kept running
+// (`left_running`) lost nothing, and a chat Start fresh does not put back is told nothing.
+// ---------------------------------------------------------------------------------------------
+
+/// A steward chat in `alpha` idle on one background shell of its own, on `host`, in planes
+/// kept in `config` that were launched with nothing to put back, so the project's record is the
+/// app's to write from then on, as after any launch: the planes, the project, the held plane
+/// and the chat.
+fn a_steward_on_its_own_shell(
+    plane: &Plane,
+    host: &Pretend,
+    config: &Path,
+) -> (Planes, PlaneId, Arc<Held>, u32) {
+    let planes = planes_kept_in(host, config);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    held.reopen(A_SIZE, Ok(Record::default()), Choice::ReopenAll);
+    let alpha = plane.root.join("workspaces").join("alpha");
+    let steward = a_chat_as(&held, &plane.root, Some("steward"), &alpha);
+    its_turn_ends_on_its_own(&held, steward, one_shell());
+    (planes, id, held, steward)
+}
+
+/// What a `Stop` says of one background shell still running.
+fn one_shell() -> purlis_core::ownwork::Said {
+    purlis_core::ownwork::Said {
+        shells: 1,
+        lapses_in: Some(3600),
+        ..purlis_core::ownwork::Said::default()
+    }
+}
+
+/// Asserts chat `chat` on `host` was told within [`TOLD_WITHIN`] that the restart ended its
+/// background shell, saying `how` it came back.
+fn is_told_its_shell_ended(host: &Pretend, chat: u32, how: &str) {
+    let (told, said) = told_of_its_lost_work(host, chat, "shell");
+    assert!(
+        told,
+        "{how}: chat {chat} was never told its background shell ended; it was given only \
+         {said:#?}"
+    );
+}
+
+/// Asserts chat `chat` on `host` was given no wake line. Judged by the line the core makes for
+/// a chat with one background shell, and by the words it opens and ends with, so it holds
+/// whatever the line comes to say (#5750 and #5751 own its content).
+fn is_given_no_wake_line(host: &Pretend, chat: u32, how: &str) {
+    let one_shell = purlis_core::ownwork::OwnWork {
+        shells: 1,
+        ..purlis_core::ownwork::OwnWork::default()
+    };
+    let line = purlis_core::wakeline::of(
+        &purlis_core::wakeline::Ended {
+            own_work: Some(&one_shell),
+            ..purlis_core::wakeline::Ended::default()
+        },
+        false,
+    )
+    .expect("the core makes a wake line for one shell");
+    let opens: String = line.chars().take(40).collect();
+    let ends: String = line
+        .chars()
+        .rev()
+        .take(40)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
+    let said = everything_said_to(host, chat);
+    assert!(
+        !said
+            .iter()
+            .any(|one| one.contains(&opens) || one.contains(&ends)),
+        "{how}: chat {chat} was given a wake line: {said:#?}"
+    );
+}
+
+/// An update quits every project as a quit does (`Planes::let_go_of_all_to_update`), and the
+/// launch after it puts the chat back told what the update ended.
+#[test]
+fn an_update_tells_a_chat_waiting_on_its_own_shell_what_the_update_ended() {
+    let plane = a_plane_with_personas();
+    let config = tempfile::tempdir().expect("a config home");
+    let host = Pretend::default();
+    let (planes, _id, held, steward) = a_steward_on_its_own_shell(&plane, &host, config.path());
+
+    planes.let_go_of_all_to_update();
+    let at_update = purlis_core::reopen::read_or_refusal(&plane.root).expect("recorded");
+    assert!(
+        at_update.relaunch_after_update,
+        "precondition: recorded as a restart to update"
+    );
+
+    let relaunched = Pretend::default();
+    let next = planes_kept_in(&relaunched, config.path());
+    let (_again, _held, opened) = reopens(
+        &plane,
+        (host, planes, held),
+        &next,
+        Ok(at_update),
+        Choice::ReopenAll,
+    );
+
+    assert!(opened.iter().any(|open| open.session == steward));
+    is_told_its_shell_ended(&relaunched, steward, "after an update");
+}
+
+/// The window crashed and stayed away past its grace, so the session host ended its chats: no
+/// quit wrote the record, and the launch reads what was last written as the turn ended. The
+/// grace itself is the host's (#2006): here it has run out, so the host that serves the launch
+/// keeps nothing, and the chat is started on its conversation from that record.
+#[test]
+fn a_window_crash_past_its_grace_tells_the_chat_from_the_record_last_written() {
+    let plane = a_plane_with_personas();
+    let config = tempfile::tempdir().expect("a config home");
+    let host = Pretend::default();
+    let (planes, _id, held, steward) = a_steward_on_its_own_shell(&plane, &host, config.path());
+    let until = std::time::Instant::now() + TOLD_WITHIN;
+    let last_written = loop {
+        let read = purlis_core::reopen::read_or_refusal(&plane.root).ok();
+        if let Some(record) = read.filter(|record| {
+            record
+                .chats
+                .iter()
+                .any(|chat| chat.number == Some(steward) && chat.own_work.is_some())
+        }) {
+            break record;
+        }
+        assert!(
+            std::time::Instant::now() < until,
+            "the chat's own work was never written down as its turn ended"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    };
+
+    // The window is gone without a quit, and its grace with it: the host kept nothing.
+    let (relaunched, _planes, _again, _held, opened) =
+        launches_again(&plane, (host, planes, held), &last_written);
+
+    assert!(opened.iter().any(|open| open.session == steward));
+    is_told_its_shell_ended(&relaunched, steward, "after a window crash past its grace");
+}
+
+/// The window crashed and came back within its grace: the session host still runs the chat, so
+/// its shell still runs, and it is reattached and told nothing.
+#[test]
+fn a_window_crash_within_its_grace_types_no_wake_line_into_the_chat_the_host_kept() {
+    let plane = a_plane_with_personas();
+    let host = Pretend::default();
+    let (planes, id, steward) = a_steward_chat(&host, &plane);
+    let held = planes.held(&id).expect("held");
+    its_turn_ends_on_its_own(&held, steward, one_shell());
+    let at_crash = held.chats().record();
+    let relaunched = Pretend::default();
+    relaunched.leaves_running(steward, None);
+    let planes_again = planes_on(&relaunched);
+
+    let (_again, _held, opened) = reopens(
+        &plane,
+        (host, planes, held),
+        &planes_again,
+        Ok(at_crash),
+        Choice::ReopenAll,
+    );
+
+    assert!(opened.iter().any(|open| open.session == steward));
+    assert_eq!(
+        relaunched.reattached(),
+        [steward],
+        "precondition: reattached"
+    );
+    assert!(relaunched.asked().is_empty(), "nothing was started");
+    is_given_no_wake_line(&relaunched, steward, "reattached within the grace");
+}
+
+/// The launch judged the chat kept by the session host, but by the time its turn to start
+/// came the host no longer had it, so it was started on its conversation after all: its shell
+/// ended with the program the host no longer has, and it is told so (left by #5777).
+#[test]
+fn a_reattach_that_falls_back_to_a_start_still_tells_the_chat_what_ended() {
+    let plane = a_plane_with_personas();
+    let host = Pretend::default();
+    let (planes, id, steward) = a_steward_chat(&host, &plane);
+    let held = planes.held(&id).expect("held");
+    its_turn_ends_on_its_own(&held, steward, one_shell());
+    let at_crash = held.chats().record();
+    let relaunched = Pretend::default();
+    relaunched.leaves_running(steward, None);
+    let planes_again = planes_on(&relaunched);
+    bounded("the app that went, closing its project", move || {
+        drop((host, planes, held));
+    });
+    let again = planes_again.open(&plane.root);
+    let held = planes_again.held(&again).expect("held");
+
+    let begun = held.begin_reopen(Ok(at_crash), Choice::ReopenAll);
+    relaunched.forgets_it_left(steward);
+    let _ = held.finish_reopen(begun, A_SIZE);
+
+    assert!(
+        relaunched.reattached().is_empty(),
+        "precondition: not reattached"
+    );
+    is_told_its_shell_ended(&relaunched, steward, "started where a reattach was meant");
+}
+
+/// The session host crashed while the chat sat idle on its own shell: it is hibernated, and
+/// Resume, which wakes it, tells it the shell ended with the host.
+#[test]
+fn a_hibernated_chat_is_told_what_its_host_s_crash_ended_as_resume_wakes_it() {
+    let plane = a_plane_with_personas();
+    let host = Pretend::default();
+    let (planes, id, steward) = a_steward_chat(&host, &plane);
+    let held = planes.held(&id).expect("held");
+    its_turn_ends_on_its_own(&held, steward, one_shell());
+
+    host.program_ends_with_its_host(steward);
+    assert_eq!(
+        held.lost_with_the_host()
+            .of(steward)
+            .map(|lost| lost.left_in),
+        Some(crate::hostlost::LeftIn::Hibernated),
+        "precondition: hibernated"
+    );
+    // The Notice names what ended, and does not say nothing was lost.
+    assert_eq!(
+        crate::hostlost::ended_with_it(held.chats(), steward).as_deref(),
+        Some("1 background shell")
+    );
+    held.chats().ask_restart(steward).expect("Resume asks");
+    let again = held
+        .restart_chat(steward, A_SIZE)
+        .expect("it starts again")
+        .expect("now");
+
+    is_told_its_shell_ended(&host, again, "resumed after its host crashed");
+    let _ = planes;
+}
+
+/// The session host crashed in the middle of a turn of a chat whose shell, left by its last
+/// turn, still ran: its turn failed, and Resume tells it the shell ended too.
+#[test]
+fn a_chat_its_host_s_crash_failed_mid_turn_is_told_what_ended_as_it_is_resumed() {
+    let plane = a_plane_with_personas();
+    let host = Pretend::default();
+    let (planes, id, steward) = a_steward_chat(&host, &plane);
+    let held = planes.held(&id).expect("held");
+    its_turn_ends_on_its_own(&held, steward, one_shell());
+    the_board_hears(&held, steward, Event::UserPromptSubmit);
+
+    host.program_ends_with_its_host(steward);
+    assert_eq!(
+        held.lost_with_the_host()
+            .of(steward)
+            .map(|lost| lost.left_in),
+        Some(crate::hostlost::LeftIn::Failed),
+        "precondition: failed mid-turn"
+    );
+    held.chats().ask_restart(steward).expect("Resume asks");
+    let again = held
+        .restart_chat(steward, A_SIZE)
+        .expect("it starts again")
+        .expect("now");
+
+    is_told_its_shell_ended(&host, again, "resumed after its host crashed mid-turn");
+    let _ = planes;
+}
+
+/// The session host crashed under a chat with nothing of its own running: Resume starts it on
+/// its conversation and tells it nothing.
+#[test]
+fn a_chat_with_no_own_work_is_resumed_after_its_host_s_crash_with_no_wake_line() {
+    let plane = a_plane_with_personas();
+    let host = Pretend::default();
+    let (planes, id, steward) = a_steward_chat(&host, &plane);
+    let held = planes.held(&id).expect("held");
+    the_board_hears(&held, steward, Event::UserPromptSubmit);
+    the_board_hears(&held, steward, Event::Stop);
+
+    host.program_ends_with_its_host(steward);
+    held.chats().ask_restart(steward).expect("Resume asks");
+    let again = held
+        .restart_chat(steward, A_SIZE)
+        .expect("it starts again")
+        .expect("now");
+
+    is_given_no_wake_line(&host, again, "resumed with nothing of its own");
+    let _ = planes;
+}
+
+/// **Reopen all with many chats** (story 28): each is told what ended, and they start at
+/// Reopen all's pace, never more at once than it lets through, so the wake lines never start
+/// every turn together.
+#[test]
+fn reopen_all_tells_many_chats_what_ended_at_its_own_pace() {
+    const CHATS: usize = 8;
+    let plane = a_plane_with_personas();
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let alpha = plane.root.join("workspaces").join("alpha");
+    let chats: Vec<u32> = (0..CHATS)
+        .map(|_| {
+            let chat = a_chat_as(&held, &plane.root, Some("steward"), &alpha);
+            its_turn_ends_on_its_own(&held, chat, one_shell());
+            chat
+        })
+        .collect();
+    let at_quit = quits(&held);
+    let relaunched = Pretend::default();
+    // Each start takes a moment, as a harness and its sandbox coming up do, so starts overlap.
+    relaunched.takes(std::time::Duration::from_millis(60));
+    let planes_again = planes_on(&relaunched);
+
+    let (_again, _held, opened) = reopens(
+        &plane,
+        (host, planes, held),
+        &planes_again,
+        Ok(at_quit),
+        Choice::ReopenAll,
+    );
+
+    assert_eq!(opened.len(), CHATS, "precondition: every chat came back");
+    for chat in chats {
+        is_told_its_shell_ended(&relaunched, chat, "put back by Reopen all");
+    }
+    let most = relaunched.most_at_once() as usize;
+    assert!(
+        most <= crate::restoring::at_once(),
+        "{most} chats started at once, past Reopen all's {}",
+        crate::restoring::at_once()
+    );
+    // And at its pace, not one by one: the gate lets a project start all but one at once.
+    assert!(
+        most >= 2,
+        "the chats started one at a time ({most} at once at most)"
+    );
+}
+
+/// **Start fresh** puts nothing back: no chat is started, so no wake line is typed at the
+/// launch into a chat that was not reopened (story 29).
+#[test]
+fn start_fresh_types_no_wake_line_at_the_launch() {
+    let plane = a_plane_with_personas();
+    let host = Pretend::default();
+    let (planes, id, steward) = a_steward_chat(&host, &plane);
+    let held = planes.held(&id).expect("held");
+    its_turn_ends_on_its_own(&held, steward, one_shell());
+    let at_quit = quits(&held);
+    let relaunched = Pretend::default();
+    let planes_again = planes_on(&relaunched);
+
+    let (_again, _held, opened) = reopens(
+        &plane,
+        (host, planes, held),
+        &planes_again,
+        Ok(at_quit),
+        Choice::StartFresh,
+    );
+
+    assert!(opened.is_empty());
+    assert!(relaunched.asked().is_empty(), "nothing was started");
+    is_given_no_wake_line(&relaunched, steward, "not reopened");
+}
+
+/// A launch whose every agent was stopped starts nothing; the chat waits among the ones that
+/// did not start, and is told what ended when the person reopens it with Try to start again.
+#[test]
+fn a_chat_the_launch_could_not_start_is_told_what_ended_when_the_person_reopens_it() {
+    let plane = a_plane_with_personas();
+    let config = tempfile::tempdir().expect("a config home");
+    let host = Pretend::default();
+    let (planes, _id, held, steward) = a_steward_on_its_own_shell(&plane, &host, config.path());
+    let at_quit = quits(&held);
+    let steward_id = held
+        .chats()
+        .chat_at(steward)
+        .and_then(|at| at.id)
+        .expect("an id");
+    planes
+        .stop_every_agent(purlis_core::halt::Actor::Window)
+        .expect("kept");
+    let relaunched = Pretend::default();
+    let next = planes_kept_in(&relaunched, config.path());
+    let (_again, held, opened) = reopens(
+        &plane,
+        (host, planes, held),
+        &next,
+        Ok(at_quit),
+        Choice::ReopenAll,
+    );
+    assert!(opened.is_empty(), "precondition: nothing started");
+    is_given_no_wake_line(&relaunched, steward, "not started at the launch");
+
+    next.rearm().expect("re-armed");
+    let again = crate::restored::retrying(&held, &steward_id, || {
+        held.chats().retry(&steward_id, A_SIZE)
+    })
+    .expect("it starts");
+
+    is_told_its_shell_ended(&relaunched, again, "reopened by the person");
+}

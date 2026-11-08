@@ -27,6 +27,7 @@ const FAILED: LostChat = {
   left_in: "failed",
   resumable: true,
   with_the_runner: false,
+  ended: null,
 };
 const HIBERNATED: LostChat = { ...FAILED, left_in: "hibernated" };
 const NO_CONVERSATION: LostChat = { ...FAILED, resumable: false };
@@ -83,6 +84,24 @@ describe("the Notice of a chat lost with its session host", () => {
     render(<HostLostNotice plane={PLANE} session={7} onRestart={() => {}} />);
     expect(await notice()).toHaveTextContent(
       "purlis's session host stopped unexpectedly while this chat was waiting for you, so nothing was lost.",
+    );
+  });
+
+  it("names what a waiting chat had running of its own as ended, never that nothing was lost", async () => {
+    core({ ...HIBERNATED, ended: "1 background shell, 1 monitor" });
+    render(<HostLostNotice plane={PLANE} session={7} onRestart={() => {}} />);
+    const said = await notice();
+    expect(said).toHaveTextContent(
+      "purlis's session host stopped unexpectedly while this chat was waiting on work of its own. What it had running of its own ended with the host: 1 background shell, 1 monitor. Resume starts it again on its conversation and tells it what ended.",
+    );
+    expect(said).not.toHaveTextContent("nothing was lost");
+  });
+
+  it("names what a chat lost mid-turn had running of its own as ended too", async () => {
+    core({ ...FAILED, ended: "1 background shell" });
+    render(<HostLostNotice plane={PLANE} session={7} onRestart={() => {}} />);
+    expect(await notice()).toHaveTextContent(
+      "purlis's session host stopped unexpectedly in the middle of this chat's turn, so that turn was lost. What it had running of its own ended with the host: 1 background shell. Resume starts it again on its conversation and tells it what ended.",
     );
   });
 

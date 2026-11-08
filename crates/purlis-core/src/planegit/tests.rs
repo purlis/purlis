@@ -15,6 +15,9 @@ use std::path::{Path, PathBuf};
 use super::*;
 use crate::repocmd::Say;
 
+mod soak;
+pub(in crate::planegit) mod twoclones;
+
 struct Fixture {
     _dir: tempfile::TempDir,
     root: PathBuf,

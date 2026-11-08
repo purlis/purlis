@@ -347,3 +347,42 @@ fn many_pieces_with_long_output_keep_the_line_a_first_message_naming_each_5751()
         "each named, the later ones without their output"
     );
 }
+
+#[test]
+fn a_chat_resumed_on_its_conversation_is_told_the_work_its_record_holds() {
+    let chat = crate::reopen::Chat {
+        resume: Some(crate::harness::SessionId::new("conv-steward").expect("an id")),
+        own_work: Some(one_shell()),
+        ..crate::reopen::Chat::default()
+    };
+
+    let line = super::of_chat(&chat, false).expect("a wake line");
+
+    assert!(line.contains(": 1 background shell."), "{line}");
+}
+
+#[test]
+fn a_chat_started_with_no_conversation_is_told_nothing_of_its_work() {
+    let chat = crate::reopen::Chat {
+        resume: None,
+        own_work: Some(one_shell()),
+        ..crate::reopen::Chat::default()
+    };
+
+    assert_eq!(super::of_chat(&chat, false), None);
+}
+
+#[test]
+fn what_ended_is_named_with_how_many_of_each_kind() {
+    let work = OwnWork {
+        shells: 2,
+        monitors: 1,
+        ..OwnWork::default()
+    };
+
+    assert_eq!(
+        super::counted(&work).as_deref(),
+        Some("2 background shells, 1 monitor")
+    );
+    assert_eq!(super::counted(&OwnWork::default()), None);
+}

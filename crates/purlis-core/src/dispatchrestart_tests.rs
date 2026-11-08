@@ -1365,14 +1365,21 @@ fn a_chat_brought_back_with_a_shell_it_had_left_running_is_told_the_restart_ende
     assert!(told.contains("1 background shell"), "{told}");
 }
 
+/// A chat the host kept is reattached, which types nothing (the app's
+/// `a_window_crash_within_its_grace_types_no_wake_line_into_the_chat_the_host_kept`). Where
+/// the host no longer has it by its turn to start, it is started after all, its work gone, and
+/// what it is started with says so (#5752).
 #[test]
-fn a_chat_the_host_kept_running_is_told_nothing_of_its_own_work() {
+fn a_chat_the_host_kept_running_is_told_what_ended_should_it_be_started_after_all() {
     let (_d, root) = project();
     let record = recorded(vec![with_a_shell(the_steward())]);
 
     let launch = at_launch_beside(&root, &record, &dispatchrecord::list(&root), &|_| true);
 
-    assert_eq!(launch.told(&with_a_shell(the_steward())), None);
+    let told = launch
+        .told(&with_a_shell(the_steward()))
+        .expect("a wake line for a start");
+    assert!(told.contains("1 background shell"), "{told}");
 }
 
 #[test]

@@ -87,39 +87,26 @@ pub struct AtLaunch {
     /// The tasks listed under an asking chat the record brings back, by chat id: the ones
     /// that are reported for where their start is refused.
     listed: Vec<String>,
-    /// The chats with own work the session host kept running across the restart (#3900), by
-    /// chat id: their work never stopped, so they are told nothing of it.
-    kept: Vec<String>,
 }
 
 impl AtLaunch {
-    /// What `chat` is told as it is started at this launch: its **wake line**
+    /// What `chat` is told as it is **started** at this launch: its **wake line**
     /// ([`crate::wakeline`], #5747), or nothing.
     ///
     /// A task that still owes its report and is brought back on its conversation is told to
     /// carry on ([`CARRY_ON`]). A chat brought back on its conversation that had work of its
     /// own left running ([`Chat::own_work`], [`Chat::own_pieces`]), or was cut off mid-turn
-    /// ([`Chat::mid_turn`]), is told the restart ended it, unless the session
-    /// host kept its program running (#3900), when nothing of it ended. A task that is both
+    /// ([`Chat::mid_turn`]), is told the restart ended it. A task that is both
     /// gets the two in one line. Every other chat is told nothing.
+    ///
+    /// **Only a start types it** (#5752). A chat the session host kept running (#3900) is
+    /// reattached, which starts nothing and types nothing, so nothing of its work ended and it
+    /// is told nothing. Which of the two a chat gets is known only as its turn to start comes,
+    /// so this is not judged here: one the host had at the launch's first look and no longer has
+    /// by then is started after all, on its conversation, its work gone, and told so.
     pub fn told(&self, chat: &Chat) -> Option<String> {
         let id = chat.identity.id.as_ref()?;
-        let conversation = chat.resume.as_ref().map(ToString::to_string);
-        let last = |piece: &crate::ownwork::pieces::Piece| {
-            crate::ownwork::last::of(piece, conversation.as_deref().unwrap_or_default())
-        };
-        let ended = if conversation.is_some() && !self.kept.contains(id) {
-            crate::wakeline::Ended {
-                own_work: chat.own_work.as_ref(),
-                pieces: &chat.own_pieces,
-                mid_turn: chat.mid_turn,
-                now: chrono::Utc::now().timestamp(),
-                last: &last,
-            }
-        } else {
-            crate::wakeline::Ended::default()
-        };
-        crate::wakeline::of(&ended, self.carry_on.contains(id))
+        crate::wakeline::of_chat(chat, self.carry_on.contains(id))
     }
 
     /// Whether the chat with the id `id` is a task that still owes its report to a chat the
@@ -257,15 +244,8 @@ pub fn at_launch_beside(
     let mut listed = Vec::new();
     let mut not_resumed = Vec::new();
     let mut back = Vec::new();
-    let mut kept = Vec::new();
     let mut seen = std::collections::HashSet::new();
     for chat in &record.chats {
-        if (chat.own_work.is_some() || !chat.own_pieces.is_empty() || chat.mid_turn)
-            && let Some(id) = &chat.identity.id
-            && left_running(chat)
-        {
-            kept.push(id.clone());
-        }
         let first = chat
             .identity
             .id
@@ -310,7 +290,6 @@ pub fn at_launch_beside(
         not_resumed,
         carry_on,
         listed,
-        kept,
     }
 }
 
