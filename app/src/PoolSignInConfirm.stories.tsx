@@ -118,6 +118,9 @@ export const SigningCheckOnGitLab: StoryObj<typeof PoolSignInConfirm> = {
     const page = within(canvasElement.ownerDocument.body);
     const cancel = await page.findByRole("button", { name: "Cancel" });
     await untilFocused(() => cancel, "It starts on Cancel");
-    await expect(page.getByText(/on GitLab on gitlab.example.org\?/)).toBeVisible();
+    // Its title names the GitLab it asks, never GitHub.
+    await page.findByRole("alertdialog", {
+      name: "Check 0123abc in team/billing on GitLab on gitlab.example.org?",
+    });
   },
 };
