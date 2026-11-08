@@ -37,11 +37,11 @@ Only what the request's description holds, plus the tree each grade measured, ne
 - **It says which version it measured**: *"graded on this version"* where its `tree` is the tree of the folder at the reviewed commit, *"graded on an earlier version"* otherwise.
 - **A malformed file is left out, and the review says why** in the same row: not JSON, another `format`, another skill's name, a row missing a field or holding one purlis would not write (a tree that is not a hex id, a rate outside 0 to 100, a name that is not plain), more than ten rows, or more than 64 KiB. A file reached through a link is malformed too. Nothing from a malformed file is shown.
 - **A source with no file reads as it does today**: no Grade row.
-- An update's review shows the Grade row at both commits, among the summary's changes.
+- An update's review shows the grade the newer commit carries, under what changes, as the install review shows it.
 
 ## An extension's source
 
-The SkillSource capability hands the grade beside the files: its answer to a skill's files may hold `grade`, the same object the file holds, read with the same rules. That changes what an answer holds, so it is a new protocol ([ADR 0101's amendment of the same day](../0101/2026-11-08-a-skill-sources-files-answer-may-hand-its-grade.md)). An extension of an earlier protocol is asked as before, and its skills have no Grade row.
+The SkillSource capability hands the grade beside the files: its answer to a skill's files may hold `grade`, the same object the file holds, read with the same rules. `skill-source` is still experimental, so this needs no new protocol ([ADR 0101's amendment of the same day](../0101/2026-11-08-a-skill-sources-files-answer-may-hand-its-grade.md)). An answer without it reads as before, and its skills have no Grade row.
 
 ## What was rejected
 

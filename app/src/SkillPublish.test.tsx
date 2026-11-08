@@ -82,6 +82,24 @@ describe("the publish review", () => {
     expect(sent?.args).toMatchObject({ accepted: REVIEW.accepted, name: "deploy" });
   });
 
+  it("says the grades go beside the skill's folder too, where an install review reads them (#4346)", async () => {
+    core(REVIEW);
+    page();
+
+    const file = await screen.findByTestId("publish-grade-file");
+    expect(file).toHaveTextContent(
+      "They go in deploy.grades.json too, beside the skill's folder, where an install review reads them as your grades.",
+    );
+  });
+
+  it("names no grade file for a skill with no grade (#4346)", async () => {
+    core({ ...REVIEW, grades: [], grade_files: [] });
+    page();
+
+    await screen.findByText("Not graded.");
+    expect(screen.queryByTestId("publish-grade-file")).toBeNull();
+  });
+
   it.each([
     ["a secret", STOPPED],
     ["a skill kept on this machine", LOCAL],

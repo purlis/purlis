@@ -2990,7 +2990,8 @@ fn a_grade_beside_the_folder_is_shown_as_the_sources_on_this_version() {
     else {
         panic!("{:?}", deploy.grade);
     };
-    assert_eq!(whose, remote.source().to_string());
+    // The short word a person knows the source by: here, its folder's name.
+    assert_eq!(whose, "source");
     assert!(this_version);
     assert_eq!(more, 0);
     assert_eq!(
@@ -3054,7 +3055,7 @@ fn a_malformed_grade_file_is_left_out_with_the_reason_and_shows_nothing_of_it() 
         let Some(SourceGrade::LeftOut { whose, why }) = &deploy.grade else {
             panic!("{said}: {:?}", deploy.grade);
         };
-        assert_eq!(*whose, remote.source().to_string());
+        assert_eq!(whose, "source");
         assert!(why.contains(said), "{said}: {why}");
     }
 }

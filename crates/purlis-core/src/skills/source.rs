@@ -83,6 +83,10 @@ pub trait SkillSource {
     fn grade(&self, _skill: &Found) -> Option<Result<Vec<u8>, String>> {
         None
     }
+    /// **Whose a grade it carries is**: the short word a person knows it by ([`Origin::label`]).
+    fn whose(&self) -> String {
+        self.shown()
+    }
 }
 
 /// **A commit's full name**, checked: 40 or 64 hex digits, lowercased.

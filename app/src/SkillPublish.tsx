@@ -395,6 +395,12 @@ function Reviewed({ review, onAgain }: { review: PublishReviewView; onAgain: () 
             </TableBody>
           </Table>
         )}
+        {review.grade_files.map((path) => (
+          <p key={path} className="honest" data-testid="publish-grade-file">
+            They go in <code>{path}</code> too, beside the skill&apos;s folder, where an install
+            review reads them as your grades.
+          </p>
+        ))}
         <p className="honest">No chat text, paths, costs or device names go with them.</p>
       </section>
       <Disclosure size="sm" label="The request's description, whole">

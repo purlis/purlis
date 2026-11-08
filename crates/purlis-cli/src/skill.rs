@@ -3173,6 +3173,52 @@ fn summary_text(summary: &purlis_core::skills::review::Summary, pad: &str) -> St
     out
 }
 
+/// **The grade a source carries for a skill**, as the terminal prints it (ADR 0100, amended
+/// 2026-11-08): whose it is and that purlis has not checked it before any figure. Nothing where
+/// the source carries none.
+fn grade_text(grade: Option<&source::SourceGrade>) -> String {
+    let rate = |percent: Option<u8>| percent.map_or("not run".to_owned(), |p| format!("{p}%"));
+    match grade {
+        None => String::new(),
+        Some(source::SourceGrade::LeftOut { whose, why }) => format!(
+            "  Grade: {}'s grade file is left out: {}\n",
+            esc(whose),
+            esc(why)
+        ),
+        Some(source::SourceGrade::Shown {
+            whose,
+            newest,
+            this_version,
+            more,
+        }) => {
+            let version = if *this_version {
+                "graded on this version"
+            } else {
+                "graded on an earlier version"
+            };
+            let mut out = format!(
+                "  Grade: {}'s grade, as published, not checked by purlis\n    \
+                 {} with it, {} without it, {version}\n    {}, {} grader, {}, {}: {}\n",
+                esc(whose),
+                rate(newest.with),
+                rate(newest.without),
+                esc(&newest.harness),
+                esc(&newest.grader),
+                counted(usize::from(newest.runs), "run", "runs"),
+                esc(&newest.date),
+                esc(&newest.ended),
+            );
+            if *more > 0 {
+                out.push_str(&format!(
+                    "    The file holds {} more.\n",
+                    counted(*more, "earlier grade", "earlier grades")
+                ));
+            }
+            out
+        }
+    }
+}
+
 /// The review of installing `skills` from `from` at `at` (a commit or a revision), as the
 /// terminal prints it, for any kind of source (#5760).
 fn skills_review_text(
@@ -3200,6 +3246,7 @@ fn skills_review_text(
             esc(&skill.description)
         ));
         out.push_str(&summary_text(&skill.summary, "  "));
+        out.push_str(&grade_text(skill.grade.as_ref()));
         out.push_str(&already_text(skill, widenings, "install"));
         for line in &skill.notes {
             out.push_str(&format!("  {}\n", esc(line)));

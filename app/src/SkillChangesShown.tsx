@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import type { ReviewSummary, UpdateFile } from "./bindings";
+import type { ReviewGrade, ReviewSummary, UpdateFile } from "./bindings";
 import { Badge } from "./ui/badge/Badge";
 import { Disclosure } from "./ui/disclosure/Disclosure";
 
@@ -59,6 +59,48 @@ export function Summary({ summary, testid }: { summary: ReviewSummary; testid?: 
         </li>
       ))}
     </ul>
+  );
+}
+
+/** A pass rate as the grade file holds it: a percent, or an arm not run. */
+function rate(percent: number | null): string {
+  return percent === null ? "not run" : `${percent}%`;
+}
+
+/**
+ * **The grade a source carries for a skill** (ADR 0100 and 0105, amended 2026-11-08): the
+ * publisher's, never purlis's. Whose it is and that purlis has not checked it come first, on a
+ * line of their own before any figure, then whether it measured the version under review. A file
+ * left out says why, and nothing from it is shown.
+ */
+export function SourceGrade({ grade, testid }: { grade: ReviewGrade; testid?: string }) {
+  const newest = grade.newest;
+  return (
+    <div data-testid={testid}>
+      <h4 className="ui-text-small ui-text-strong">Grade</h4>
+      {newest === null ? (
+        <p className="honest">
+          {grade.whose}&apos;s grade file is left out: {grade.left_out}. Nothing from it is shown.
+        </p>
+      ) : (
+        <>
+          <p className="honest">{grade.whose}&apos;s grade, as published — not checked by purlis</p>
+          <p>
+            {rate(newest.with)} with it, {rate(newest.without)} without it{" "}
+            <Badge variant={grade.this_version ? "ok" : "neutral"}>
+              {grade.this_version ? "Graded on this version" : "Graded on an earlier version"}
+            </Badge>
+          </p>
+          <p className="honest">
+            {newest.harness} · {newest.grader} grader · {newest.runs}{" "}
+            {newest.runs === 1 ? "run" : "runs"} · {newest.date}. {newest.ended}.
+            {!grade.this_version && " The skill has changed since."}
+            {grade.more > 0 &&
+              ` The file holds ${grade.more} earlier ${grade.more === 1 ? "grade" : "grades"}.`}
+          </p>
+        </>
+      )}
+    </div>
   );
 }
 

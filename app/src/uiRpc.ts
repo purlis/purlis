@@ -10618,6 +10618,8 @@ export type PublishReviewView = {
 	/**  References to a skill that is not there, by name. */
 	broken: string[],
 	grades: PublishGrade[],
+	/**  Each grade file the commit carries beside a skill's folder, by its path in the source. */
+	grade_files: string[],
 	/**  The request's description, whole. */
 	body: string,
 	/**
@@ -11232,6 +11234,35 @@ export type ReviewFile = {
 	risky: boolean,
 };
 
+/**  The grade a source carries for a skill: the publisher's, never purlis's (ADR 0100, amended 2026-11-08). */
+export type ReviewGrade = {
+	/**  Whose grade it is: the source, as a sentence names it. */
+	whose: string,
+	/**  Its newest grade; `None` where the file is left out. */
+	newest: ReviewGradeRow | null,
+	/**  Whether the newest grade measured the version under review. */
+	this_version: boolean,
+	/**  How many older grades the file holds. */
+	more: number,
+	/**  Why the file is left out, where it is: nothing from it is shown. */
+	left_out: string | null,
+};
+
+/**  One grade a source carries, as the review shows it. */
+export type ReviewGradeRow = {
+	/**  When, `YYYY-MM-DD`. */
+	date: string,
+	harness: string,
+	grader: string,
+	/**  The pass rate with the skill, in percent; `None` for an arm not run. */
+	with: number | null,
+	/**  The pass rate without it, in percent; `None` for an arm not run. */
+	without: number | null,
+	runs: number,
+	/**  How it ended, in words. */
+	ended: string,
+};
+
 /**  A network host the summary lists. */
 export type ReviewHost = {
 	host: string,
@@ -11287,6 +11318,8 @@ export type ReviewSkill = {
 	files: ReviewFile[],
 	left_out: ReviewLeftOut[],
 	lint: string[],
+	/**  The grade the source carries beside its folder, where it carries one. */
+	grade: ReviewGrade | null,
 };
 
 /**  What a skill does beyond its instructions, with the core's own marks. */

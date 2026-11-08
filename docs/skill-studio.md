@@ -180,6 +180,11 @@ and the changelog call it) shows:
   any `!` command lines, which some programs run before the chat even reads the skill, and
   anything it would write outside the workspace. Risky items are marked **Look closely**. A skill
   that is only instructions says so.
+- **Grade**: where the source carries one, the grade its publisher published with the skill,
+  in a file beside its folder. The review says whose it is and that purlis hasn't checked it,
+  before any figure, then whether it was measured on the version you are installing or an
+  earlier one. A grade file purlis can't read is left out, and the review says why. It is never
+  added to your own grades: grade the skill here to measure it yourself.
 - **Its files**, each one a click away. Hidden characters are marked, and a file that isn't text
   is said rather than shown.
 - **Comes along**: skills this skill refers to, which are installed with it, each with its own
@@ -399,8 +404,9 @@ From a skill's **⋯** menu:
 
 - **Publish to a source…** proposes the skill to a source on GitHub or GitLab, as a draft pull
   or merge request from a new branch. You mark it ready. The review shows every file that goes,
-  the skills it brings along, and its grades as a summary in the request's description. No chat
-  text, paths, costs or device names go with them.
+  the skills it brings along, and its grades as a summary in the request's description. The
+  grades also go in a file beside the skill's folder, `<skill>.grades.json`, which an install
+  review reads as your grades. No chat text, paths, costs or device names go with them.
 - **Export…** saves the skill as **A zip** or **A folder**, to send to someone or drop into
   another project.
 

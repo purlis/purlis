@@ -677,3 +677,51 @@ fn an_install_names_its_source_or_an_extension() {
     assert!(text(&out).contains("cannot be used with"), "{}", text(&out));
     assert!(!project.root().join("skills").exists());
 }
+
+#[test]
+fn install_prints_a_grade_the_source_carries_as_its_publishers_not_purliss() {
+    let project = Project::new();
+    let tree = "a".repeat(40);
+    let grades = format!(
+        r#"{{"format":1,"skill":"deploy","grades":[{{"date":"2026-11-02","tree":"{tree}","harness":"claude-code","grader":"built-in","with":92,"without":40,"runs":3,"ended":"whole"}}]}}"#
+    );
+    project.publish(&[
+        (
+            "skills/deploy/SKILL.md",
+            "---\nname: deploy\ndescription: Ships it.\n---\n\nShip it.\n",
+        ),
+        ("skills/deploy.grades.json", &grades),
+        (
+            "skills/notify/SKILL.md",
+            "---\nname: notify\ndescription: Tells the team.\n---\n\nTell them.\n",
+        ),
+        ("skills/notify.grades.json", "{not json"),
+    ]);
+    let url = project.url();
+
+    let both = ["deploy", "notify"];
+    for name in both {
+        let declined = project.run(
+            &["skill", "install", &url, name, "--folder", "skills"],
+            "n\n",
+        );
+        let said = text(&declined);
+        if name == "deploy" {
+            assert!(
+                said.contains(
+                    "  Grade: source's grade, as published, not checked by purlis\n    \
+                     92% with it, 40% without it, graded on an earlier version\n    \
+                     claude-code, built-in grader, 3 runs, 2026-11-02: Finished\n"
+                ),
+                "{said}"
+            );
+        } else {
+            assert!(
+                said.contains(
+                    "  Grade: source's grade file is left out: it is not a grade file purlis reads\n"
+                ),
+                "{said}"
+            );
+        }
+    }
+}

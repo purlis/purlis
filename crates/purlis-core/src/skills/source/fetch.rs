@@ -562,6 +562,10 @@ impl super::SkillSource for Fetched {
         Ok(())
     }
 
+    fn whose(&self) -> String {
+        super::Origin::Git(self.source.remote.clone()).label()
+    }
+
     fn grade(&self, skill: &Found) -> Option<Result<Vec<u8>, String>> {
         let path = super::carried::beside(&skill.folder)?;
         if let Some(left) = self.left.iter().find(|one| one.path == path) {

@@ -525,7 +525,7 @@ fn graded(
     skill: &Found,
     files: &[SourceFile],
 ) -> Option<super::SourceGrade> {
-    let whose = source.shown();
+    let whose = source.whose();
     Some(match source.grade(skill)? {
         Ok(bytes) => {
             let tree = super::carried::tree_id(files.iter().map(|file| {

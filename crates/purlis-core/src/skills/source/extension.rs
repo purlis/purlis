@@ -98,6 +98,8 @@ pub struct Held {
     revision: Revision,
     found: Vec<Found>,
     files: BTreeMap<String, Vec<SourceFile>>,
+    /// The grade each skill's files answer handed beside them, by the skill's name.
+    grades: BTreeMap<String, Vec<u8>>,
 }
 
 impl Held {
@@ -153,6 +155,14 @@ impl SkillSource for Held {
                 )
             })
     }
+
+    fn grade(&self, skill: &Found) -> Option<Result<Vec<u8>, String>> {
+        self.grades.get(&skill.name).cloned().map(Ok)
+    }
+
+    fn whose(&self) -> String {
+        self.origin().label()
+    }
 }
 
 /// **An extension's source, asked at one revision**: what it offers, and each skill's files the
@@ -164,6 +174,7 @@ struct Asked<'a> {
     revision: Revision,
     found: Vec<Found>,
     read: RefCell<BTreeMap<String, Vec<SourceFile>>>,
+    grades: RefCell<BTreeMap<String, Vec<u8>>>,
 }
 
 impl Asked<'_> {
@@ -188,6 +199,7 @@ impl Asked<'_> {
                 })
                 .collect(),
             read: RefCell::new(BTreeMap::new()),
+            grades: RefCell::new(BTreeMap::new()),
         })
     }
 
@@ -198,6 +210,7 @@ impl Asked<'_> {
             revision: self.revision,
             found: self.found,
             files: self.read.into_inner(),
+            grades: self.grades.into_inner(),
         }
     }
 }
@@ -223,6 +236,9 @@ impl SkillSource for Asked<'_> {
             },
         )?;
         let files = wire::files_of(self.id, self.revision.as_str(), &doc)?;
+        if let Some(grade) = wire::grade_of(&doc) {
+            self.grades.borrow_mut().insert(skill.name.clone(), grade);
+        }
         let total: usize = files.iter().map(|file| file.text.len()).sum();
         if total as u64 > super::MOST_SKILL_BYTES {
             return Err(format!(
@@ -243,6 +259,14 @@ impl SkillSource for Asked<'_> {
             .borrow_mut()
             .insert(skill.name.clone(), files.clone());
         Ok((files, Vec::new()))
+    }
+
+    fn grade(&self, skill: &Found) -> Option<Result<Vec<u8>, String>> {
+        self.grades.borrow().get(&skill.name).cloned().map(Ok)
+    }
+
+    fn whose(&self) -> String {
+        Origin::Extension(self.id.to_owned()).label()
     }
 }
 
@@ -585,6 +609,13 @@ impl Held {
                     )
                 })
                 .collect(),
+            grades: BTreeMap::new(),
         }
+    }
+
+    /// It, its files answer for `name` having handed `grade` beside them.
+    pub fn with_grade(mut self, name: &str, grade: Vec<u8>) -> Held {
+        self.grades.insert(name.to_owned(), grade);
+        self
     }
 }

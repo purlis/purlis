@@ -1825,3 +1825,22 @@ fn limits_as_recorded(contract: &serde_json::Value) {
     assert_eq!(MOST_PANELS, of("panels"));
     assert_eq!(MOST_HOSTS, of("hosts"));
 }
+
+#[test]
+fn a_skills_files_answer_may_hand_its_grade_beside_them() {
+    let grade = serde_json::json!({ "format": 1, "skill": "deploy", "grades": [] });
+    let with = doc(serde_json::json!({
+        "revision": "r1",
+        "files": [{ "path": "SKILL.md", "text": "---\n" }],
+        "grade": grade,
+    }));
+    assert_eq!(files_of("x", "r1", &with).expect("read").len(), 1);
+    let handed: serde_json::Value =
+        serde_json::from_slice(&grade_of(&with).expect("handed")).unwrap();
+    assert_eq!(handed, grade);
+    let without = doc(serde_json::json!({
+        "revision": "r1",
+        "files": [{ "path": "SKILL.md", "text": "---\n" }],
+    }));
+    assert_eq!(grade_of(&without), None);
+}
