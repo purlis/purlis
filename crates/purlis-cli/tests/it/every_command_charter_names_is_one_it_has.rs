@@ -17,10 +17,10 @@
 //! **What is allowed to name a missing command:** a literal that says, in the same sentence
 //! set, that it is "not in this version yet" — the plain spelling for a planned command.
 //!
-//! **The skills charter's plugin ships are messages too** (#370): an agent reads
-//! `app/src-tauri/plugin/skills/**/SKILL.md` and runs what it says. Every `charter …` in one —
-//! in backticks, after those verbs, or opening a line of a fenced code block — is checked the
-//! same way.
+//! **The skills purlis's plugin ships are messages too** (#370), and
+//! [`every_shipped_skill_passes_the_built_in_checks`](super::every_shipped_skill_passes_the_built_in_checks)
+//! holds them to every command, subcommand and flag they name (#5721). Only which families
+//! they name is read here.
 //!
 //! **Both names** (RN-3, #1255). The command line ships as `purlis` and answers to `charter` for
 //! the rename's window, so a message may name either: `purlis <word>` is read exactly as
@@ -232,7 +232,7 @@ const PROSE: [&str; 16] = [
 ];
 
 /// `<binary> <words> --help`, answered by this build.
-fn help_of(binary: &str, words: &[&str]) -> Option<String> {
+pub(crate) fn help_of(binary: &str, words: &[&str]) -> Option<String> {
     let out = support::command(binary)
         .args(words)
         .arg("--help")
@@ -304,33 +304,6 @@ fn every_charter_command_a_message_names_is_a_command_this_binary_has() {
     assert!(
         seen > 20,
         "only {seen} suggestions found, so the scan is not reading the messages"
-    );
-    let skills = shipped_skills(&root);
-    assert!(skills.len() >= 3, "the walk found the skills: {skills:?}");
-    let mut in_skills = 0;
-    for file in &skills {
-        let page = std::fs::read_to_string(file).expect("a skill reads");
-        for text in skill_texts(&page) {
-            for (first, second) in suggestions(&text) {
-                in_skills += 1;
-                let known = *answered
-                    .entry((first.clone(), second.clone()))
-                    .or_insert_with(|| exists(&first, second.as_deref()));
-                if !known {
-                    let shown = second.map_or(first.clone(), |s| format!("{first} {s}"));
-                    let rel = file
-                        .strip_prefix(&root)
-                        .unwrap_or(file)
-                        .display()
-                        .to_string();
-                    missing.push(format!("{rel}: `charter {shown}`"));
-                }
-            }
-        }
-    }
-    assert!(
-        in_skills > 10,
-        "only {in_skills} suggestions found in the skills, so the scan is not reading them"
     );
     assert!(
         missing.is_empty(),
