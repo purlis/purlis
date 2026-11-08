@@ -6,7 +6,7 @@ skill's own text, `decisions.md` of spec #5714, and phrasings a person plausibly
 transcript yet; a filed miss Report replaces a plausible phrasing through a reviewed change.
 
 Trigger bar: strict
-Neighbours: purlis-browser, purlis-persona, purlis-working-in-a-clone, purlis-handoff, purlis-compact
+Neighbours: purlis-browser, purlis-persona, purlis-repo-work, purlis-handoff, purlis-tidy-memory
 
 ## Should start purlis-secrets
 
@@ -43,10 +43,10 @@ Neighbours: purlis-browser, purlis-persona, purlis-working-in-a-clone, purlis-ha
 28. Near miss (purlis-persona): dispatching work to another persona.
 29. Near miss (purlis-persona): "create a persona", from its description.
 30. Near miss (purlis-persona): this chat needs the answer (decisions.md Q30, handoff and persona boundary).
-31. Near miss (purlis-working-in-a-clone): build, test, change, commit in a repo; decisions.md Q28(b).
-32. Near miss (purlis-working-in-a-clone): real work inside a repo a workspace owns.
+31. Near miss (purlis-repo-work): build, test, change, commit in a repo; decisions.md Q28(b).
+32. Near miss (purlis-repo-work): real work inside a repo a workspace owns.
 33. Near miss (purlis-handoff): moving the work to a new chat the person will read; mentions a database.
-34. Near miss (purlis-compact): memory tidying that mentions a vault (decisions.md Q30, tidy-memory boundary).
+34. Near miss (purlis-tidy-memory): memory tidying that mentions a vault (decisions.md Q30, tidy-memory boundary).
 35. Plausible phrasing: plain coding work (the scoring module's recorded not-started case).
 36. Plausible phrasing: a question about tokens that needs no credential.
 37. Plausible phrasing: password code that needs no stored secret.

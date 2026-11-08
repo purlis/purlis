@@ -470,7 +470,7 @@ Nothing has to be installed into Claude Code or Codex. The bundle carries its ow
 plugin, `charter` (`Contents/Resources/plugin` on macOS, `/usr/lib/charter/plugin` on
 Linux), and each Claude Code chat the app starts loads it for that session alone with
 `--plugin-dir`: purlis's hooks, its Bash guard, and its skills, such as `purlis-handoff`,
-`purlis-working-in-a-clone`, `purlis-secrets` and `purlis-browser`. The same chat turns the Python charter's
+`purlis-repo-work`, `purlis-secrets` and `purlis-browser`. The same chat turns the Python charter's
 `charter@charter` plugin off for itself, so a plane whose settings enable that plugin for your terminal sessions does not give
 an app chat two sets of hooks. A Codex chat is armed the same way with `-c` flags. A `claude`
 or `codex` you run in a terminal is untouched, and an update to the app updates all of it.

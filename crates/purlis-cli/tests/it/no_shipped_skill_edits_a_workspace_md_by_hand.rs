@@ -60,7 +60,7 @@ fn no_shipped_skill_tells_a_chat_to_edit_its_workspace_md_by_hand() {
 
 #[test]
 fn smart_close_and_compact_fold_into_the_charter_through_its_tools() {
-    for name in ["purlis-smart-close", "purlis-compact"] {
+    for name in ["purlis-smart-close", "purlis-tidy-memory"] {
         let text = skill(name);
         for tool in ["workspace_section", "workspace_vision"] {
             assert!(

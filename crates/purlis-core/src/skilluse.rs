@@ -148,7 +148,9 @@ pub fn own_name(skill: &str, level: Option<Level>) -> std::borrow::Cow<'_, str> 
             if level.origin == crate::skills::Origin::BuiltIn
                 && !name.starts_with(purlis_skills::RESERVED_PREFIX) =>
         {
-            format!("{}{name}", purlis_skills::RESERVED_PREFIX).into()
+            let own = format!("{}{name}", purlis_skills::RESERVED_PREFIX);
+            // A built-in skill's run by a short name it had before a rename (#5724).
+            purlis_skills::name_now(&own).to_owned().into()
         }
         _ => name,
     }
@@ -693,6 +695,8 @@ pub fn misses(root: &Path) -> Vec<Miss> {
         .flat_map(|(device, rows)| {
             rows.into_iter().filter_map(move |row| {
                 let skill = row.missed.filter(|skill| !skill.is_empty())?;
+                // A miss logged under a name the skill had before a rename is of it now (#5724).
+                let skill = purlis_skills::name_now(&skill).to_owned();
                 let some = |value: Option<String>| value.filter(|value| !value.is_empty());
                 Some(Miss {
                     skill,

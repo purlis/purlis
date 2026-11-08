@@ -799,3 +799,30 @@ fn with_the_skill_studio_off_a_skills_line_is_said_to_be_unread_and_not_checked(
     );
     assert_eq!(messages(&linter(&naming("")).definition("s")), vec![]);
 }
+
+#[test]
+fn a_skills_entry_by_a_built_in_skills_old_name_still_resolves_and_is_a_warning_5724() {
+    let bundle = tempfile::tempdir().unwrap();
+    skill_folder(&bundle.path().join("skills"), "purlis-tidy-memory");
+    skill_folder(&bundle.path().join("skills"), "purlis-upgrade");
+    let p = naming("purlis:compact, purlis-update, purlis:purlis-upgrade");
+    let l = Linter::new(p.root(), p.root())
+        .with_home(None)
+        .with_built_in(Some(bundle.path().join("skills")))
+        .with_studio(true);
+    assert_eq!(
+        messages(&l.definition("s")),
+        vec![
+            (
+                Level::Warn,
+                "`skills:` entry 'purlis:compact' is the old name of `purlis:purlis-tidy-memory`, \
+                 which its chats get; write that"
+            ),
+            (
+                Level::Warn,
+                "`skills:` entry 'purlis-update' is the old name of `purlis:purlis-upgrade`, \
+                 which its chats get; write that"
+            ),
+        ]
+    );
+}

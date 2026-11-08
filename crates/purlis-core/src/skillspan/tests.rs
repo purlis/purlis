@@ -298,7 +298,7 @@ fn a_debug_dump_of_a_salt_or_of_a_prompts_marks_shows_neither() {
 
 #[test]
 fn a_prompts_lead_alone_is_marked_and_a_short_first_line_is_its_own_lead() {
-    let long = "Use the purlis-compact skill to compact and improve the persona ops.";
+    let long = "Use the purlis-tidy-memory skill to compact and improve the persona ops.";
     let marks = PromptMarks::lead_of(long, &salt());
     assert!(marks.holds(Prompted::of(StartedBy::Curation, long, &salt()).lead));
     assert!(!marks.holds(PromptMarks::digest("improve the persona ops.", &salt())));
@@ -338,7 +338,7 @@ fn started(skill: &str, started_by: StartedBy) -> ToolCall {
     call
 }
 
-const CURATION: &str = "Use the purlis-compact skill to compact and improve the persona ops.";
+const CURATION: &str = "Use the purlis-tidy-memory skill to compact and improve the persona ops.";
 
 #[test]
 fn a_skill_the_turn_of_a_curation_prompt_starts_is_started_by_the_curation_action() {
@@ -348,7 +348,7 @@ fn a_skill_the_turn_of_a_curation_prompt_starts_is_started_by_the_curation_actio
     let opened = tracker
         .call(
             "4",
-            &started("purlis:purlis-compact", StartedBy::SkillTool),
+            &started("purlis:purlis-tidy-memory", StartedBy::SkillTool),
             1,
             || None,
         )
@@ -366,7 +366,7 @@ fn a_skill_the_turn_of_a_curation_prompt_starts_is_started_by_the_curation_actio
     let next = tracker
         .call(
             "4",
-            &started("purlis:purlis-compact", StartedBy::SkillTool),
+            &started("purlis:purlis-tidy-memory", StartedBy::SkillTool),
             5,
             || None,
         )
@@ -382,7 +382,7 @@ fn a_curation_prompt_the_person_replaced_before_sending_starts_nothing_of_its_ow
     let opened = tracker
         .call(
             "4",
-            &started("purlis:purlis-compact", StartedBy::McpLoad),
+            &started("purlis:purlis-tidy-memory", StartedBy::McpLoad),
             1,
             || None,
         )
@@ -399,7 +399,7 @@ fn a_curation_prompt_is_held_until_it_is_sent_and_goes_with_the_session() {
     let opened = tracker
         .call(
             "4",
-            &started("purlis:purlis-compact", StartedBy::SkillTool),
+            &started("purlis:purlis-tidy-memory", StartedBy::SkillTool),
             1,
             || None,
         )
@@ -423,7 +423,7 @@ fn only_a_curation_action_or_a_trigger_is_held_for_a_prompt() {
     let opened = tracker
         .call(
             "4",
-            &started("purlis:purlis-compact", StartedBy::SkillTool),
+            &started("purlis:purlis-tidy-memory", StartedBy::SkillTool),
             1,
             || None,
         )
@@ -469,9 +469,9 @@ fn a_direct_start_opens_its_run_as_what_typed_it_however_long_the_person_read() 
         started_by: StartedBy::Curation,
         waits: true,
         ..typed(
-            "purlis:purlis-compact",
+            "purlis:purlis-tidy-memory",
             "01ARZ3NDEKTSV4RRFFQ69G5FAV",
-            "/purlis:purlis-compact compact and improve",
+            "/purlis:purlis-tidy-memory compact and improve",
             Confirmed::ByName,
         )
     };
@@ -479,14 +479,14 @@ fn a_direct_start_opens_its_run_as_what_typed_it_however_long_the_person_read() 
     let at = HELD_FOR_MS * 3;
     tracker.report(
         "4",
-        &prompt("/purlis:purlis-compact compact and improve"),
+        &prompt("/purlis:purlis-tidy-memory compact and improve"),
         at,
         || None,
     );
     let run = tracker
-        .call("4", &named("purlis:purlis-compact"), at, || None)
+        .call("4", &named("purlis:purlis-tidy-memory"), at, || None)
         .expect("the run opens");
-    assert_eq!(run.skill, "purlis:purlis-compact");
+    assert_eq!(run.skill, "purlis:purlis-tidy-memory");
     assert_eq!(run.started_by, StartedBy::Curation);
 }
 

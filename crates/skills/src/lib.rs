@@ -78,7 +78,9 @@ pub use read::{
     scan_dir,
 };
 use reference::Seen;
-pub use reference::{BUILT_IN_PREFIXES, OLD_BUILT_IN_PREFIX, OnMachine, Reference};
+pub use reference::{
+    BUILT_IN_PREFIXES, OLD_BUILT_IN_PREFIX, OnMachine, RENAMED, Reference, name_now, old_names_in,
+};
 pub use router::{
     Candidate, Candidates, Hidden, HiddenWhy, INDEX, Index, Line, Router, Routing, StillOver,
 };

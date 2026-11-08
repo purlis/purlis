@@ -1,5 +1,5 @@
 ---
-name: purlis-working-in-a-clone
+name: purlis-repo-work
 description: Work in a repo a purlis workspace owns — build, test, change and commit it from a purlis chat. Use when asked to work on a named repo, to run several branches of one repo at once (branch folders, `purlis worktree`), or to keep purlis's chat apart from the repo's own configuration.
 ---
 

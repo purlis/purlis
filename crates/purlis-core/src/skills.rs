@@ -201,19 +201,19 @@ pub fn built_in_names(dir: Option<&Path>) -> Vec<String> {
 /// folder named as its skill (held to that folder by a test). Compiled in, for the doctor's check
 /// of a project keeping its own copy of one.
 pub const SHIPPED: [&str; 13] = [
-    "purlis-add-curation-action",
     "purlis-browser",
     "purlis-building-ui",
-    "purlis-compact",
+    "purlis-curation-action",
     "purlis-handoff",
     "purlis-persona",
+    "purlis-repo-work",
     "purlis-safe-remove",
     "purlis-secrets",
     verbs::drafts::STUDIO_SKILL,
     "purlis-smart-close",
     "purlis-theme",
-    "purlis-update",
-    "purlis-working-in-a-clone",
+    "purlis-tidy-memory",
+    "purlis-upgrade",
 ];
 
 /// **What a skill that would take a name of purlis's own is refused with** (spec #3679 S12, ADR

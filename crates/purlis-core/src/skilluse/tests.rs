@@ -457,3 +457,42 @@ fn runs_since_counts_each_skills_runs_by_its_own_name_from_a_moment_on_and_none_
 }
 
 mod corrections;
+
+#[test]
+fn a_run_and_a_miss_logged_under_a_built_in_skills_old_name_are_of_its_new_one_5724() {
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path().join("personas").join(DIR_NAME);
+    std::fs::create_dir_all(&log).unwrap();
+    std::fs::write(
+        log.join("2026-10.laptop.jsonl"),
+        "{\"skill\": \"purlis:purlis-compact\", \"ts\": \"2026-10-20T09:00:00+00:00\"}\n\
+         {\"skill\": \"compact\", \"level\": \"built-in\", \"ts\": \"2026-10-21T09:00:00+00:00\"}\n\
+         {\"skill\": \"purlis:update\", \"ts\": \"2026-10-22T09:00:00+00:00\"}\n\
+         {\"missed\": \"purlis-working-in-a-clone\", \"signal\": \"correction\", \"ts\": \"2026-10-23T09:00:00+00:00\"}\n",
+    )
+    .unwrap();
+
+    let runs = runs(dir.path());
+    let named: Vec<String> = runs
+        .iter()
+        .map(|run| run.skill_name().into_owned())
+        .collect();
+    assert_eq!(
+        named,
+        ["purlis-upgrade", "purlis-tidy-memory", "purlis-tidy-memory"]
+    );
+    assert!(runs.iter().all(|run| !run.is_of("purlis-compact")));
+    assert_eq!(
+        runs_since(dir.path(), 0).into_iter().collect::<Vec<_>>(),
+        vec![
+            ("purlis-tidy-memory".to_owned(), 2),
+            ("purlis-upgrade".to_owned(), 1)
+        ]
+    );
+    let [miss] = &misses(dir.path())[..] else {
+        panic!("one miss");
+    };
+    assert_eq!(miss.skill, "purlis-repo-work");
+    assert!(miss.is_of("purlis-repo-work"));
+    assert!(miss.is_of("purlis:purlis-repo-work"));
+}

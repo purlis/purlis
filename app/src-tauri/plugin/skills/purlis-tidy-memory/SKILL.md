@@ -1,5 +1,5 @@
 ---
-name: purlis-compact
+name: purlis-tidy-memory
 description: Compact and improve a purlis workspace's or persona's memory — find duplicates and stale entries with purlis's optimize and dedupe reports, prune only with the person's yes, and fold durable lessons into workspace.md or persona.md. Use when asked to compact, tidy, prune, dedupe or improve a workspace's or persona's memory.
 ---
 
