@@ -61,9 +61,6 @@ const EMAILS: SigningEmails = {
   settings: "https://github.com/settings/emails",
 };
 
-/** A Check that never answers: the story stays on the step before it. */
-const NEVER = new Promise<SigningCheck>(() => undefined) as unknown as SigningCheck;
-
 /** The core, faked: `state` as setup opens, and how each step answers. */
 function theCore({
   state,
@@ -309,7 +306,11 @@ export const Verified: Story = {
 export const GitLabAdding: Story = {
   args: { forge: ON_GITLAB },
   beforeEach: () => {
-    theCore({ state: { ...ON, accounts: [GITLAB] }, added: "added", checked: NEVER });
+    // Adding never answers: the story stays on the step that adds it.
+    theCore({
+      state: { ...ON, accounts: [GITLAB] },
+      added: new Promise(() => undefined) as unknown as "added",
+    });
     return () => clearMocks();
   },
   play: async () => {
