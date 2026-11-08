@@ -74,6 +74,7 @@ fn fetched(runner: &support::Fixture, desk: &support::Fixture) -> Vec<codelink::
 
 #[test]
 fn a_turn_the_runner_recorded_comes_back_with_its_code_and_the_turn_diff_reads_it_as_it_ended() {
+    purlis_core::unsteered!();
     let (runner, desk) = a_turn_on_the_runner();
 
     let came = fetched(&runner, &desk);
@@ -124,6 +125,7 @@ fn a_turn_the_runner_recorded_comes_back_with_its_code_and_the_turn_diff_reads_i
 
 #[test]
 fn a_turn_the_runner_undid_is_marked_undone_here_and_no_turn_is_left_to_undo() {
+    purlis_core::unsteered!();
     let (runner, desk) = a_turn_on_the_runner();
     fetched(&runner, &desk);
     let here = Branch::repo(&desk.ws, &desk.repo);
@@ -144,6 +146,7 @@ fn a_turn_the_runner_undid_is_marked_undone_here_and_no_turn_is_left_to_undo() {
 
 #[test]
 fn a_removed_chats_turns_go_from_the_runners_folder_and_from_the_copy_here() {
+    purlis_core::unsteered!();
     let (runner, desk) = a_turn_on_the_runner();
     fetched(&runner, &desk);
     assert!(!refs(&desk.clone, "refs/purlis/runners/").is_empty());
@@ -159,6 +162,7 @@ fn a_removed_chats_turns_go_from_the_runners_folder_and_from_the_copy_here() {
 
 #[test]
 fn a_fetch_that_asks_for_no_turns_brings_none_as_before() {
+    purlis_core::unsteered!();
     let (runner, desk) = a_turn_on_the_runner();
     let scratch = tempfile::tempdir().unwrap();
 
@@ -174,6 +178,7 @@ fn a_fetch_that_asks_for_no_turns_brings_none_as_before() {
 
 #[test]
 fn a_turn_ref_a_runner_names_that_purlis_never_writes_is_refused_and_nothing_is_fetched() {
+    purlis_core::unsteered!();
     let (runner, desk) = a_turn_on_the_runner();
     let scratch = tempfile::tempdir().unwrap();
 
@@ -289,6 +294,7 @@ mod on_the_runner {
     #[test]
     fn the_runners_host_records_its_chats_turn_from_its_prompt_and_stop_and_the_desktop_fetches_it()
     {
+        purlis_core::unsteered!();
         let mut runner = Runner::new();
         runner.hears(Event::UserPromptSubmit);
         std::fs::write(runner.f.clone.join("README.md"), "one\nthree\n").unwrap();
@@ -319,6 +325,7 @@ mod on_the_runner {
 
     #[test]
     fn an_undo_through_the_link_waits_while_the_chat_is_running_and_writes_nothing() {
+        purlis_core::unsteered!();
         let mut runner = Runner::new();
         runner.hears(Event::UserPromptSubmit);
         std::fs::write(runner.f.clone.join("README.md"), "one\nthree\n").unwrap();
@@ -343,6 +350,7 @@ mod on_the_runner {
 
     #[test]
     fn an_undo_through_the_link_of_a_turn_whose_file_changed_since_it_ended_is_refused_naming_it() {
+        purlis_core::unsteered!();
         let mut runner = Runner::new();
         runner.hears(Event::UserPromptSubmit);
         std::fs::write(runner.f.clone.join("README.md"), "one\nthree\n").unwrap();
@@ -358,6 +366,7 @@ mod on_the_runner {
 
     #[test]
     fn an_undo_through_the_link_puts_the_turns_files_back_on_the_runner_and_marks_it_undone() {
+        purlis_core::unsteered!();
         let mut runner = Runner::new();
         runner.hears(Event::UserPromptSubmit);
         std::fs::write(runner.f.clone.join("README.md"), "one\nthree\n").unwrap();
@@ -383,6 +392,7 @@ mod on_the_runner {
 
     #[test]
     fn a_chat_its_host_forgets_takes_its_turns_with_it() {
+        purlis_core::unsteered!();
         let mut runner = Runner::new();
         runner.hears(Event::UserPromptSubmit);
         runner.hears(Event::Stop);

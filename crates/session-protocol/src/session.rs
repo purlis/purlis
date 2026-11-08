@@ -1339,7 +1339,9 @@ pub struct CodeRef {
 pub struct UndoWaitsOn {
     /// Its number on the host.
     pub number: u32,
-    /// What it is doing, as a sentence goes on after its name: "is running".
+    /// What it is doing, as a sentence goes on after its name: "is running". UI text, so on the
+    /// wire it is `doing`, not `state`: a `state` is a snake_case word a program reads (V76).
+    #[serde(rename = "doing")]
     pub state: String,
 }
 
