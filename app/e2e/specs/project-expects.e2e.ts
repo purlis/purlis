@@ -130,13 +130,24 @@ async function theNoticeSaying(text: string | readonly string[], why: string): P
   return said;
 }
 
-/** Waits for the Notice to go. */
+/** Waits for the Notice to go; one that stays says what it says, and what the window said of
+ *  the press (a press too soon after a way out moved allows nothing, and says so). */
 async function noNotice(why: string): Promise<void> {
-  await browser.waitUntil(async () => (await bandNotice(CAUSE)).state === "absent", {
-    timeout: 30_000,
-    interval: 250,
-    timeoutMsg: why,
-  });
+  await browser
+    .waitUntil(async () => (await bandNotice(CAUSE)).state === "absent", {
+      timeout: 30_000,
+      interval: 250,
+    })
+    .catch(async () => {
+      const seen = await browser.execute((cause: string) => {
+        const line = document.querySelector<HTMLElement>(`[data-cause="${cause}"]`);
+        const statuses = [...document.querySelectorAll<HTMLElement>('[role="status"]')]
+          .map((one) => one.innerText.trim())
+          .filter((one) => one !== "");
+        return `the Notice says: ${line?.innerText.replace(/\s+/g, " ") ?? "(none)"}; the window's statuses: ${statuses.join(" | ")}; focus on: ${document.activeElement?.textContent?.trim() ?? "nothing"}`;
+      }, CAUSE);
+      throw new Error(`${why}; ${seen}`);
+    });
 }
 
 /** Presses one of the Notice's own buttons. An answer that grants waits for the Notice to

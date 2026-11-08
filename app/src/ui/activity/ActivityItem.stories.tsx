@@ -11,6 +11,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { expect, waitFor } from "storybook/test";
 import {
+  Bell,
   Brain,
   FolderGit2,
   FolderTree,
@@ -55,7 +56,9 @@ const LEFT_BOTTOM: One[] = [
   { name: "Changes", mark: GitBranch },
 ];
 const RIGHT_TOP: One[] = [
-  { name: "Needs you", mark: Hand, count: 2, hot: true },
+  // The right bar as ADR 0119 has it: Asks counts in the needs-you colours, Updates plainly.
+  { name: "Asks", mark: Hand, count: 2, hot: true },
+  { name: "Updates", mark: Bell, count: 3 },
   { name: "Personas", mark: UsersRound },
   { name: "Vaults", mark: KeyRound },
 ];

@@ -100,30 +100,28 @@ export async function openFromTheStrip(plane: string): Promise<void> {
   });
 }
 
-/** Whether the status line's doctor has answered for the project in front: its label once a
- *  report has landed, not the one it wears before (`onTheLine`, `Doctor.tsx`). */
-async function theDoctorHasAnswered(): Promise<boolean> {
-  const label = await browser.execute(
-    () => document.querySelector('[data-testid="status-doctor"]')?.getAttribute("aria-label") ?? "",
-  );
-  return label !== "" && label !== "Doctor" && !label.startsWith("Doctor —");
-}
-
 /**
- * **Opens `plane` and waits for its doctor's first report** (#5648, ADR 0119): what a project
- * holds the first time it opens on a machine counts as seen, so a spec that needs a doctor's
- * finding to be new opens its project this way, with nothing to find, and then makes the
- * finding and {@link asksTheDoctorAgain}. The first-open record is asked for here as well, so it
- * is kept whichever ask lands first.
+ * **Opens `plane` and waits until its first-open baseline has taken the doctor's first report**
+ * (#5648, ADR 0119): what a project holds the first time it opens on a machine counts as seen,
+ * so a spec that needs a doctor's finding to be new opens its project this way, with nothing to
+ * find, and then makes the finding and {@link asksTheDoctorAgain}. The core's record says when
+ * the window has set that report's findings aside (`findings` is no longer null), which the
+ * status line cannot: its label may still be the last project's.
  */
 export async function openedWithTheDoctorHeard(plane: string): Promise<void> {
   await openFromTheStrip(plane);
-  await ask("inbox_first_open", { plane });
-  await browser.waitUntil(theDoctorHasAnswered, {
-    timeout: 60_000,
-    interval: 250,
-    timeoutMsg: `the doctor never answered for ${plane}`,
-  });
+  let findings: unknown = null;
+  await browser
+    .waitUntil(
+      async () => {
+        ({ findings } = await ask<{ findings: string[] | null }>("inbox_first_open", { plane }));
+        return findings !== null;
+      },
+      { timeout: 60_000, interval: 500 },
+    )
+    .catch(() => {
+      throw new Error(`the window never set aside the doctor's first report for ${plane}`);
+    });
 }
 
 /** **Runs the doctor again for the project in front**, as the person does: its status item opens
