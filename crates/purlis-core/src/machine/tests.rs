@@ -2270,12 +2270,16 @@ fn unix_has_an_expression_for_the_mode_so_nothing_here_refuses() {
 #[test]
 fn a_dropped_entry_says_which_bound_it_is_past() {
     assert_eq!(
-        Room::why(true),
+        Room::why(Held::Pinned),
         format!("is past the {MOST_PINNED} projects purlis pins")
     );
     assert_eq!(
-        Room::why(false),
+        Room::why(Held::Plain),
         format!("is past the {MOST_RECENTS} planes purlis remembers")
+    );
+    assert_eq!(
+        Room::why(Held::Pooled),
+        format!("is past the {MOST_POOLED} projects purlis keeps that run chats on a pool")
     );
 }
 
