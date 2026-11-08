@@ -989,7 +989,7 @@ test("past 10 annotations, the last says how many more failed and points at the 
   assert.ok(lines.slice(0, 9).every((line, at) => line.includes(`title=Picture ${at} in chromium`)));
   assert.equal(
     lines[9],
-    "::error title=4 more not shown::4 more failures are not shown here, as GitHub shows 10 annotations a step: the job's summary lists every one",
+    "::error title=4 more not shown::4 more annotations are not shown here, as GitHub shows 10 annotations a step: the job's summary lists every one",
   );
   assert.match(summary, /Picture 12 in chromium/);
 });

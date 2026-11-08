@@ -387,7 +387,7 @@ function capped(lines) {
     ...lines.slice(0, SHOWN - 1),
     error(
       `${more} more not shown`,
-      `${more} more failures are not shown here, as GitHub shows ${SHOWN} annotations a step: the job's summary lists every one`,
+      `${more} more annotations are not shown here, as GitHub shows ${SHOWN} annotations a step: the job's summary lists every one`,
     ),
   ];
 }

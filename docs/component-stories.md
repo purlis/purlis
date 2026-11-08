@@ -187,7 +187,7 @@ text draws the same each time.
 `fc-match monospace` before its first story, so a picture never takes the family an earlier story
 left the browser drawing it in. `app/.storybook/monospace.ts` says why (#5402).
 
-**What a failure says.** In CI, each story that fails is one annotation on the `stories` check,
+**What a failure says.** In CI, each story that fails on more than its picture is one annotation on the `stories` check,
 titled `<story> in <browser>, <cell>`: its file, the gate it failed (`renders`, `keyboard`,
 `accessibility` or `screenshot`), the first line of why, and the axe rules it broke. It says the
 same in WebKit as in Chromium: `tools/story-failures.mjs` is the Vitest reporter that keeps each
@@ -196,7 +196,10 @@ on the story file's line the story failed at, the first frame of its error in a 
 shows on the pull request's diff; a failure with no such frame, axe's or the screenshot gate's,
 is on the check alone. An error in a story
 file or a suite outside any one story is an annotation of its own, and a run that fails without
-naming anything says so.
+naming anything says so. A story that fails on its picture alone is one annotation a browser,
+titled `<story> in <browser>`, that lists the cells it failed in. GitHub shows 10 error
+annotations a step, so past 10 the tenth says how many more are not shown; the job's summary,
+which GitHub never caps, lists every failure, each cell on its own line (#3260).
 
 ## Baselines
 
