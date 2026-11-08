@@ -262,9 +262,9 @@ fn filtered_saying<'a>(
                 Ok(text) if is_markdown(path) => {
                     match frontmatter_without(text, path.contains('/'), said) {
                         Cow::Borrowed(text) => as_it_was(bytes, no_url_credentials(text, said)),
-                        Cow::Owned(text) => Cow::Owned(
-                            no_url_credentials(&text, said).into_owned().into_bytes(),
-                        ),
+                        Cow::Owned(text) => {
+                            Cow::Owned(no_url_credentials(&text, said).into_owned().into_bytes())
+                        }
                     }
                 }
                 Ok(text) => as_it_was(bytes, no_url_credentials(text, said)),

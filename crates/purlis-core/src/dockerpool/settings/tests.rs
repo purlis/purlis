@@ -183,7 +183,10 @@ fn an_engine_is_on_this_machine_only_where_it_is_a_trusted_local_socket() {
     ] {
         let refused = engine_on_this_machine(Some(remote), &places).unwrap_err();
         let scheme = remote.split_once("://").unwrap().0;
-        assert!(refused.contains(&format!("a {scheme}:// address")), "{refused}");
+        assert!(
+            refused.contains(&format!("a {scheme}:// address")),
+            "{refused}"
+        );
         assert!(
             refused.contains("cannot tell is on this machine"),
             "{refused}"
@@ -213,14 +216,17 @@ fn a_refused_docker_host_is_named_by_its_scheme_alone() {
         runtime: None,
         system: &system,
     };
-    let refused =
-        engine_on_this_machine(Some("tcp://me:hunter2@build-box.example:2376"), &places)
-            .unwrap_err();
+    let refused = engine_on_this_machine(Some("tcp://me:hunter2@build-box.example:2376"), &places)
+        .unwrap_err();
     assert!(refused.contains("a tcp:// address"), "{refused}");
     for part in ["me:", "hunter2", "build-box", "2376"] {
         assert!(!refused.contains(part), "{part} is in: {refused}");
     }
-    for unread in ["hunter2@build-box.example", "x y://hunter2", "h\u{1b}[2J://hunter2"] {
+    for unread in [
+        "hunter2@build-box.example",
+        "x y://hunter2",
+        "h\u{1b}[2J://hunter2",
+    ] {
         let refused = engine_on_this_machine(Some(unread), &places).unwrap_err();
         assert!(!refused.contains("hunter2"), "{refused}");
         assert!(refused.contains("not a unix:// address"), "{refused}");

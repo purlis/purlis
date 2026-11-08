@@ -935,14 +935,23 @@ fn a_permission_rule_that_shows_a_credential_is_removed() {
 fn a_sent_file_holding_a_token_is_refused_in_words() {
     let token = format!("ghp_{}", "a".repeat(36));
     for (path, written) in [
-        ("skills/x/run.sh", format!("export GH_TOKEN={token}\n").into_bytes()),
+        (
+            "skills/x/run.sh",
+            format!("export GH_TOKEN={token}\n").into_bytes(),
+        ),
         ("skills/x/a.yaml", format!("key: {token}\n").into_bytes()),
         ("CLAUDE.md", format!("use {token}\n").into_bytes()),
-        ("skills/x/a.bin", [b"\xff\xfe".as_slice(), token.as_bytes()].concat()),
+        (
+            "skills/x/a.bin",
+            [b"\xff\xfe".as_slice(), token.as_bytes()].concat(),
+        ),
     ] {
         let refused = filtered("claude", path, &written).unwrap_err();
         assert!(refused.contains("shaped like a token"), "{path}: {refused}");
-        assert!(refused.contains(path.rsplit('/').next().unwrap()), "{refused}");
+        assert!(
+            refused.contains(path.rsplit('/').next().unwrap()),
+            "{refused}"
+        );
         assert!(!refused.contains(&token), "{refused}");
     }
 }
