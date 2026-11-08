@@ -1226,6 +1226,7 @@ fn a_codex_chat_past_its_limit_is_briefed_on_every_built_in_skill_first_5736() {
             plane: root,
             workspace: Some("smart-ide"),
             repo: &[],
+            own: &[],
             routed: None,
         },
         None,

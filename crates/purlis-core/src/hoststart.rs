@@ -222,7 +222,7 @@ pub struct ChatSkills {
     /// person's and those of the plugins it has, each weighed against the plane's copy of its
     /// name, so an identical one takes one slot (#5737). Nothing where the plane's skills do not
     /// reach it, or nothing here could read them.
-    pub own: Vec<crate::skills::OutsideSkill>,
+    pub own_copies: Vec<crate::skills::OutsideSkill>,
     /// What its router extension made of its set at its start (SK-15b, [`Self::routed_by`]):
     /// `None` for a chat routed by the built-in router, which is asked nothing.
     pub routed: Option<std::sync::Arc<crate::skills::router::Routed>>,
@@ -295,7 +295,7 @@ impl ChatSkills {
         });
         // What it has of its harness's own, read once, to weigh the plane's copies against
         // (#5737). A Try it's chat gets the draft alone, so it weighs nothing.
-        self.own = match (harness, &self.plugins) {
+        self.own_copies = match (harness, &self.plugins) {
             (Some(harness), Some(plugins)) if self.on && !self.tried => {
                 let adapter = harness.adapter().plugins();
                 crate::harness_plugin::harness_skills_but(
@@ -350,7 +350,7 @@ impl ChatSkills {
             workspace,
             persona,
             repo,
-            own: Vec::new(),
+            own_copies: Vec::new(),
             routed: None,
             arm_router,
             plugins: None,
@@ -395,7 +395,7 @@ impl ChatSkills {
                 plane: &self.root,
                 workspace: self.workspace.as_deref(),
                 repo: &self.repo,
-                own: &self.own,
+                own: &self.own_copies,
                 routed: None,
             },
             self.persona.as_deref(),
@@ -453,7 +453,7 @@ pub fn skills_not_here(
         built_in.as_deref(),
         harness,
         &crate::harness_plugin::Env::of(env),
-        (&skills.repo, &skills.own),
+        (&skills.repo, &skills.own_copies),
     )
 }
 
@@ -476,6 +476,7 @@ pub fn listing_crowded(
         plane: &skills.root,
         workspace: skills.workspace.as_deref(),
         repo: &skills.repo,
+        own: &skills.own_copies,
         routed: skills.routed.as_deref(),
     });
     let built_in = kit.plugin.as_deref().and_then(crate::skills::in_bundle);
@@ -1535,7 +1536,7 @@ pub fn armed(arming: &Arming<'_>) -> Result<Armed, String> {
         plane: skills_root,
         workspace,
         repo: &skills.repo,
-        own: &skills.own,
+        own: &skills.own_copies,
         routed: skills.routed.as_deref(),
     });
     let linked = laid_out_on(at, skills.persona.as_deref(), kit, harness);

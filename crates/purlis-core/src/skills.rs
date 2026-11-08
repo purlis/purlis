@@ -136,7 +136,7 @@ pub struct PlaneSkills<'a> {
     /// 51). Empty for a chat in no clone.
     pub repo: &'a [OutsideSkill],
     /// The harness's own skills the chat has (the person's and its plugins'), as its start read
-    /// them ([`crate::hoststart::ChatSkills::own`]): a plane skill identical to one of them is left
+    /// them ([`crate::hoststart::ChatSkills::own_copies`]): a plane skill identical to one of them is left
     /// out, so the name takes one slot, and one that differs is a clash (#5737,
     /// [`purlis_skills::SkillSet::with_copies_of`]). Empty where they were not read.
     pub own: &'a [OutsideSkill],
@@ -1057,7 +1057,7 @@ impl Running<'_> {
             plane: start.map_or(self.plane, |start| start.root.as_path()),
             workspace: self.workspace.filter(|_| !tried),
             repo: start.map_or(&[], |start| start.repo.as_slice()),
-            own: start.map_or(&[], |start| start.own.as_slice()),
+            own: start.map_or(&[], |start| start.own_copies.as_slice()),
             routed: start.and_then(|start| start.routed.as_deref()),
         })
     }
