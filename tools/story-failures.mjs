@@ -13,8 +13,10 @@
 //   It also names each story that takes no picture (`screenshot: false`), whose baselines
 //   `tools/story-baselines.mjs` then calls obsolete;
 // - run as a script, it reads those reports and prints one annotation per story that failed,
-//   those that stop the baselines being drawn first, and writes the same to the step's summary,
-//   which GitHub never caps (`named`, #4050):
+//   those that stop the baselines being drawn first, a story whose picture alone failed once a
+//   browser with its cells, and no more than the 10 GitHub shows a step, the last saying how
+//   many more (#3260); and writes every one to the step's summary, which GitHub never caps
+//   (`named`, #4050):
 //
 //   node tools/story-failures.mjs <browser> <report> [<browser> <report> ...]
 //
@@ -316,13 +318,12 @@ export function failedIn(report, browser, root) {
     const gates = [...new Set(errors.map(gateOf).filter((gate) => gate !== "screenshot"))];
     const why = `${gateOf(first)}: ${whyOf(first)}${broke}`;
     const measured = failure.measured ? measuredOf(failure.measured) : undefined;
+    const at = root === undefined ? undefined : placeOf(first, root, file);
     return {
       blocks,
-      line: error(
-        title,
-        `${file}: ${why}`,
-        root === undefined ? undefined : placeOf(first, root, file),
-      ),
+      line: error(title, `${file}: ${why}`, at),
+      // A picture alone is said once for its story and browser, with its cells (`named`).
+      picture: { story, file, why: whyOf(first), at },
       named: `${title} (${file})${blocks ? `: ${gates.join(", ") || "renders"}` : ""}`,
       why,
       // The summary's line: its gate leads its why already.
@@ -374,6 +375,23 @@ const stories = (count, one, many) =>
 /** Text kept from breaking a Markdown list item or its code span. */
 const plain = (text) => String(text).replace(/[\r\n]+/g, " ").replace(/`/g, "'");
 
+/** How many error annotations GitHub shows of one step. */
+export const SHOWN = 10;
+
+/** `lines` as one step can show them (#3260): past {@link SHOWN}, the last one shown says how
+ *  many more failed and that the job's summary, which GitHub never caps, lists every one. */
+function capped(lines) {
+  if (lines.length <= SHOWN) return lines;
+  const more = lines.length - (SHOWN - 1);
+  return [
+    ...lines.slice(0, SHOWN - 1),
+    error(
+      `${more} more not shown`,
+      `${more} more failures are not shown here, as GitHub shows ${SHOWN} annotations a step: the job's summary lists every one`,
+    ),
+  ];
+}
+
 /**
  * **What failed across every report of a run, blocking first** (#4050): each `{ browser, report }`
  * (a report the run never wrote is `undefined`), and what is `missing` of the shards' reports
@@ -398,7 +416,21 @@ export function named(runs, root, missing = []) {
   ];
   const blocking = all.filter(({ blocks }) => blocks);
   const alone = all.filter(({ blocks }) => !blocks);
-  const lines = [...blocking, ...alone].map(({ line }) => line);
+  // Each story whose picture alone failed, once a browser, with the cells it failed in (#3260).
+  const pictured = new Map();
+  for (const one of alone) {
+    const key = `${one.browser}\n${one.picture.file}\n${one.picture.story}`;
+    if (!pictured.has(key)) pictured.set(key, { ...one.picture, browser: one.browser, cells: [] });
+    if (one.cell) pictured.get(key).cells.push(one.cell);
+  }
+  const pictureLines = [...pictured.values()].map(({ story, file, why, at, browser, cells }) =>
+    error(
+      `${story} in ${browser}`,
+      `${file}: screenshot${cells.length > 0 ? ` in ${[...new Set(cells)].sort().join(", ")}` : ""}: ${why}`,
+      at,
+    ),
+  );
+  const lines = capped([...blocking.map(({ line }) => line), ...pictureLines]);
   // Each blocking story once, with where it failed: browser, then its cells.
   const grouped = new Map();
   for (const { once, named: name, browser, cell } of blocking) {
