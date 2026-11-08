@@ -370,3 +370,61 @@ fn mysql_with_a_shell_escape_a_pager_or_a_file_of_settings_is_offered_no_run_gra
         ],
     );
 }
+
+// The second review of #5876.
+
+#[test]
+fn ssh_reads_an_option_name_in_quotes_so_a_quoted_one_is_refused_too() {
+    refused(
+        "ssh",
+        "-o ProxyCommand",
+        &[
+            &["-o", "\"ProxyCommand\"=x", "host"],
+            &["-o", "'proxycommand' x", "host"],
+            &["-o", "Proxy\\Command=x", "host"],
+        ],
+    );
+    refused(
+        "scp",
+        "-o ProxyCommand",
+        &[&["-o\"ProxyCommand\"=x", "a", "host:b"]],
+    );
+}
+
+#[test]
+fn scp_dash_capital_o_takes_no_value_so_what_follows_it_is_read() {
+    refused(
+        "scp",
+        "-S",
+        &[&["-O", "-S", "x", "a", "host:b"], &["-OSx", "a", "host:b"]],
+    );
+    refused("sftp", "-S", &[&["-O", "-S", "x", "host"]]);
+}
+
+#[test]
+fn mysql_with_a_file_of_commands_in_dash_e_is_offered_no_run_grant() {
+    refused(
+        "mysql",
+        "-e with a shell command",
+        &[&["-e", "source /tmp/x.sql"], &["-e", "select 1; SOURCE x"]],
+    );
+}
+
+#[test]
+fn wget2_with_a_plugin_it_loads_is_offered_no_run_grant() {
+    refused(
+        "wget2",
+        "--plugin",
+        &[&["--plugin=x", "https://example.com"]],
+    );
+    refused(
+        "wget",
+        "--local-plugin",
+        &[&["--local-plugin=/tmp/x.so", "https://example.com"]],
+    );
+    refused(
+        "wget2",
+        "--plugin-dirs",
+        &[&["--plugin-dirs=/tmp", "https://example.com"]],
+    );
+}

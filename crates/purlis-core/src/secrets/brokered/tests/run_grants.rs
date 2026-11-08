@@ -2635,3 +2635,18 @@ fn mosh_runs_the_ssh_command_it_names_so_it_is_offered_no_run_grant() {
 fn lftp_runs_commands_from_its_own_prompt_and_scripts_so_it_is_offered_no_run_grant() {
     refused_as_running_others("lftp");
 }
+
+/// The second review of #5876: under policy's lock a key the vault lacks is still asked for, but
+/// not for a command whose flag names a command, which no Allow could follow.
+#[test]
+fn locked_a_command_whose_flag_names_a_command_asks_for_no_key() {
+    let _policy = Policy::says(r#"{"sandbox": {"run-grants": false}}"#);
+    let project = project();
+    let asks = Asks::new(project.path());
+    let mut want = printenv(project.path(), &["-oProxyCommand=x", "host"]);
+    want.command[0] = "ssh".to_owned();
+    want.env = vec!["X=NOT_THERE_YET".into()];
+    let frames = run_with(&the_chat(project.path()), want, &asks, Duration::ZERO);
+    assert!(asks.open_runs().is_empty(), "{frames:?}");
+    assert_ne!(refusal(&frames).1, WAITING_ON_THE_PERSON, "{frames:?}");
+}

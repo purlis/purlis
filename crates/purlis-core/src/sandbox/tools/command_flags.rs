@@ -61,14 +61,18 @@ fn ssh_option(flag: &str, value: &str) -> Option<String> {
     if flag != "o" {
         return None;
     }
-    let key = value
+    // ssh splits the line with quotes and backslashes as a shell would, so a quoted name is
+    // the same name (#5876's second review): judged with them taken out, and by its start, so
+    // no spelling of what follows the name matters.
+    let bare: String = value
+        .chars()
+        .filter(|c| !matches!(c, '"' | '\'' | '\\'))
+        .collect::<String>()
         .trim_start()
-        .split(|c: char| c == '=' || c.is_whitespace())
-        .next()
-        .unwrap_or_default();
+        .to_ascii_lowercase();
     SSH_RUNS
         .iter()
-        .find(|one| one.eq_ignore_ascii_case(key))
+        .find(|one| bare.starts_with(&one.to_ascii_lowercase()))
         .map(|one| format!("-o {one}"))
 }
 
@@ -85,8 +89,8 @@ fn psql_command(flag: &str, value: &str) -> Option<String> {
         .then(|| format!("{said} with a backslash command"))
 }
 
-/// mysql's `-e` or `--execute` holding a shell command: `\!` or `system`, and any other
-/// backslash command (`\P` sets a pager it runs).
+/// mysql's `-e` or `--execute` holding a shell command: `\!` or `system`, `source` (a file of
+/// commands, which may hold one), and any other backslash command (`\P` sets a pager it runs).
 fn mysql_execute(flag: &str, value: &str) -> Option<String> {
     let said = match flag {
         "e" => "-e",
@@ -96,7 +100,7 @@ fn mysql_execute(flag: &str, value: &str) -> Option<String> {
     let lower = value.to_ascii_lowercase();
     let system = lower
         .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
-        .any(|word| word == "system");
+        .any(|word| word == "system" || word == "source");
     (system || value.contains('\\')).then(|| format!("{said} with a shell command"))
 }
 
@@ -108,6 +112,7 @@ const PROGRAMS: &[Flags] = &[
     Flags {
         attached: "",
         names: &["ssh", "slogin"],
+        // OpenSSH's getopt string: "1246ab:c:e:fgi:kl:m:no:p:qstvxAB:CD:E:F:GI:J:KL:MNO:P:Q:R:S:TVw:W:XYy"
         valued: "BbcDEeFIiJLlmOoPpQRSWw",
         // A config file can name a command; a PKCS#11 library is code ssh loads.
         refused: "FI",
@@ -120,7 +125,8 @@ const PROGRAMS: &[Flags] = &[
     Flags {
         attached: "",
         names: &["scp"],
-        valued: "cDFiJlOoPSX",
+        // scp's: "12346ABCTdfOpqRrstvD:F:J:P:S:c:i:l:o:X:" (`-O` is the legacy protocol, no value)
+        valued: "cDFiJloPSX",
         // `-S` is the program it runs for ssh, `-D` the sftp server it runs, `-F` a config file.
         refused: "DFS",
         in_a_cluster: &[],
@@ -132,7 +138,8 @@ const PROGRAMS: &[Flags] = &[
     Flags {
         attached: "",
         names: &["sftp"],
-        valued: "BbcDFiJlOoPRSsX",
+        // sftp's: "1246AafhNpqrvCc:D:i:l:o:s:S:b:B:F:J:P:R:X:"
+        valued: "BbcDFiJloPRSsX",
         // `-b` a batch file, whose `!` runs a shell, and as `scp`.
         refused: "bDFS",
         in_a_cluster: &[],
@@ -171,7 +178,15 @@ const PROGRAMS: &[Flags] = &[
         // `-e` runs a line of wgetrc, `use_askpass` among them.
         refused: "e",
         in_a_cluster: &[],
-        long: &["use-askpass", "execute", "config"],
+        // wget2 (Fedora's `wget`) also loads plugins: a library by path, or from folders.
+        long: &[
+            "use-askpass",
+            "execute",
+            "config",
+            "plugin",
+            "local-plugin",
+            "plugin-dirs",
+        ],
         value: none,
         long_valued: &[],
         mysql_spelling: false,
