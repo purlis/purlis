@@ -43,7 +43,9 @@
 //!
 //! `charter.toml` is a person's too, but merged key by key on the parsed TOML
 //! ([`crate::tomlmerge`]): its lists of hosts and grants, which every machine adds to, merge as
-//! sets (#5824 F5), so two machines that each allowed a host do not conflict.
+//! sets (#5824 F5), so two machines that each allowed a host do not conflict, and a key only one
+//! side changed takes that side (F6). A key both changed, each its own way, is the person's, and
+//! the save names it beside the file.
 //!
 //! # Under a chat's sandbox
 //!
@@ -389,9 +391,12 @@ pub(super) fn plan_between(
                             Ok(crate::tomlmerge::Merged::Clean(text)) => {
                                 plan.settled.insert(path.clone(), text);
                             }
-                            Ok(crate::tomlmerge::Merged::Conflict(_)) | Err(_) => {
-                                plan.person.push(path.clone());
+                            // Named by its keys: Resolve shows git's own conflict, and never a
+                            // marker purlis wrote into the TOML.
+                            Ok(crate::tomlmerge::Merged::Conflict(keys)) => {
+                                plan.person.push(format!("{path} ({})", keys.join(", ")));
                             }
+                            Err(_) => plan.person.push(path.clone()),
                         }
                     }
                     _ => plan.person.push(path.clone()),

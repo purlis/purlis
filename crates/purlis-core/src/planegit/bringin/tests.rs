@@ -601,3 +601,71 @@ fn hosts_both_machines_allowed_merge_as_a_set_and_a_removal_holds() {
          for everyone\nhosts = [\n    \"a.example\",\n    \"b.example\",\n    \"x.example\",\n]\n"
     );
 }
+
+/// **The rest of `charter.toml` merges key by key** (#5824 F6): a key only one machine changed
+/// takes that machine's value, whatever else conflicted on the lines around it.
+#[test]
+fn a_key_only_one_machine_changed_in_charter_toml_takes_that_side() {
+    let base = "[plane]\nname = \"fixture\"\n\n[sandbox]\nmode = \"on\"\nhosts = [\"x.example\"]\n";
+    let two = Two::new(&[("charter.toml", base)]);
+    write(
+        &two.mine,
+        "charter.toml",
+        "[plane]\nname = \"fixture\"\nautosave = true # mine\n\n[sandbox]\nmode = \"on\"\nhosts = \
+         [\"x.example\", \"a.example\"]\n",
+    );
+    commit(&two.mine, "mine");
+    write(
+        &two.theirs,
+        "charter.toml",
+        "[plane]\nname = \"fixture\"\n\n[sandbox]\nmode = \"off\" # theirs\nhosts = [\"x.example\", \
+         \"b.example\"]\n\n[theme]\nname = \"dusk\"\n",
+    );
+    two.land_theirs("theirs");
+    let _the_window = crate::sandbox::held::stand_in(&[]);
+
+    assert_eq!(
+        bring_in(&two.mine, "release", false, When::Needed),
+        BroughtIn::Moved(1)
+    );
+
+    assert_eq!(
+        read(&two.mine, "charter.toml"),
+        "[plane]\nname = \"fixture\"\nautosave = true # mine\n\n[sandbox]\nmode = \"off\" # theirs\n\
+         hosts = [\n    \"a.example\",\n    \"b.example\",\n    \"x.example\",\n]\n\n[theme]\nname \
+         = \"dusk\"\n"
+    );
+}
+
+/// A key both machines changed, each its own way, is a person's conflict: the save names the file
+/// and the key, nothing moves, and no marker is written into the TOML.
+#[test]
+fn a_key_both_machines_changed_in_charter_toml_is_a_persons_conflict_named_by_its_key() {
+    let base = "[sandbox]\nmode = \"on\"\nhosts = [\"x.example\"]\n";
+    let two = Two::new(&[("charter.toml", base)]);
+    write(
+        &two.mine,
+        "charter.toml",
+        "[sandbox]\nmode = \"off\"\nhosts = [\"x.example\", \"a.example\"]\n",
+    );
+    commit(&two.mine, "mine");
+    write(
+        &two.theirs,
+        "charter.toml",
+        "[sandbox]\nmode = \"ask\"\nhosts = [\"x.example\", \"b.example\"]\n",
+    );
+    two.land_theirs("theirs");
+    let before = two.head();
+    let _the_window = crate::sandbox::held::stand_in(&[]);
+
+    assert_eq!(
+        bring_in(&two.mine, "release", false, When::Needed),
+        BroughtIn::Conflict(vec!["charter.toml (sandbox.mode)".to_owned()])
+    );
+
+    assert_eq!(two.head(), before);
+    assert_eq!(run(&two.mine, &["status", "--porcelain"]), "");
+    assert!(!read(&two.mine, "charter.toml").contains("<<<<<<<"));
+    let planned = plan(&two.mine, "refs/remotes/origin/release", None).unwrap();
+    assert!(!planned.marked.contains_key("charter.toml"));
+}

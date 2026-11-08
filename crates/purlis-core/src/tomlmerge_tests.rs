@@ -68,3 +68,45 @@ fn a_set_emptied_by_the_merge_takes_its_key_with_it() {
 fn a_side_that_is_not_toml_is_refused() {
     assert!(merged("", "[sandbox\n", "").is_err());
 }
+
+#[test]
+fn a_key_the_remote_removed_goes_and_one_this_machine_added_stays() {
+    let base = "# ours\n[plane]\nname = \"p\"\nautosave = true\n";
+    let ours = "# ours\n[plane]\nname = \"p\"\nautosave = true\nmode = \"pr\"\n";
+    let theirs = "[plane]\nname = \"p\"\n";
+    assert_eq!(
+        merged(base, ours, theirs).unwrap(),
+        Merged::Clean("# ours\n[plane]\nname = \"p\"\nmode = \"pr\"\n".to_owned())
+    );
+}
+
+#[test]
+fn a_table_the_remote_added_comes_after_this_machines() {
+    let base = "[plane]\nname = \"p\"\n";
+    let ours = "[plane]\nname = \"p\"\n\n[theme]\nname = \"dawn\"\n";
+    let theirs = "[extensions.stats]\nenabled = true\n\n[plane]\nname = \"p\"\n";
+    let Merged::Clean(text) = merged(base, ours, theirs).unwrap() else {
+        panic!("a conflict")
+    };
+    assert_eq!(
+        text.parse::<toml::Table>().unwrap(),
+        "[plane]\nname = \"p\"\n[theme]\nname = \"dawn\"\n[extensions.stats]\nenabled = true\n"
+            .parse::<toml::Table>()
+            .unwrap()
+    );
+    assert!(
+        text.starts_with("[plane]\nname = \"p\"\n\n[theme]\nname = \"dawn\"\n"),
+        "{text}"
+    );
+}
+
+#[test]
+fn spacing_alone_is_no_change_and_each_conflicting_key_is_named() {
+    let base = "[sandbox]\nmode = \"on\"\n[plane]\nmode = \"pr\"\n[\"odd key\"]\nx = 1\n";
+    let ours = "[sandbox]\nmode   =   \"off\"\n[plane]\nmode = \"push\"\n[\"odd key\"]\nx = 2\n";
+    let theirs = "[sandbox]\nmode = \"ask\"\n[plane]\nmode=\"push\"\n[\"odd key\"]\nx = 3\n";
+    assert_eq!(
+        merged(base, ours, theirs).unwrap(),
+        Merged::Conflict(vec!["\"odd key\".x".to_owned(), "sandbox.mode".to_owned()])
+    );
+}

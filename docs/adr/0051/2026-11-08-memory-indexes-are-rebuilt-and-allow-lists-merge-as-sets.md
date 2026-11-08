@@ -29,3 +29,15 @@ so a revoke on one machine holds against the other
 (`hosts_both_machines_allowed_merge_as_a_set_and_a_removal_holds`). *Rejected:* a file of allows
 per machine, because a removal has to hold on every machine. A plane's existing one-line lists are
 rewritten the first time a writer or a merge touches them.
+
+**The rest of `charter.toml` merges key by key (#5824 F6).** In the same merge, a key only one
+side changed (added, removed or given a new value) takes that side, as that side wrote it; a
+table both sides changed is merged key by key inside it; values are compared as TOML reads them,
+so spacing alone is no change. A key both sides changed, each its own way, is the person's: the
+save stops with nothing changed, and names the file and the key, as `charter.toml (sandbox.mode)`
+(`a_key_both_machines_changed_in_charter_toml_is_a_persons_conflict_named_by_its_key`). purlis
+never writes a conflict marker into the TOML. How Resolve shows that key to the person is lane C's
+(F7); until then it is git's own stopped merge, as for any file a person wrote.
+
+A chat's sandbox holds `charter.toml`, so a merge that changes it is brought in by the window,
+not by a chat's save, as any move that would write a held file is.

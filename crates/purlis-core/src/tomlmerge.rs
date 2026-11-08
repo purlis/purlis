@@ -80,8 +80,12 @@ pub enum Merged {
     Conflict(Vec<String>),
 }
 
-/// **Merge `ours` and `theirs`, two changes of `base`**, key by key. A set's lists merge as sets
-/// ([`SETS`]); any other key both sides changed is a conflict. `Err` where a side is not TOML.
+/// **Merge `ours` and `theirs`, two changes of `base`**, key by key (#5824 F6). A set's lists
+/// merge as sets ([`SETS`]). Any other key only one side changed (added, removed or given a new
+/// value) takes that side, written as that side wrote it; a table both changed is merged key by
+/// key within it; and a key both changed, each its own way, is a conflict, named. Values are
+/// compared as TOML reads them, so a change of spacing alone is no change. `Err` where a side is
+/// not TOML.
 pub fn merged(base: &str, ours: &str, theirs: &str) -> Result<Merged, String> {
     let parsed = |side: &str, text: &str| {
         text.parse::<toml::Table>()
@@ -106,14 +110,14 @@ pub fn merged(base: &str, ours: &str, theirs: &str) -> Result<Merged, String> {
     if !conflicts.is_empty() {
         return Ok(Merged::Conflict(conflicts));
     }
-    let mut doc: toml_edit::DocumentMut = ours.parse().map_err(|e: toml_edit::TomlError| {
-        format!(
-            "this machine's is not TOML: {}",
-            crate::shown::short(e.message())
-        )
-    })?;
+    let document = |side: &str, text: &str| {
+        text.parse::<toml_edit::DocumentMut>()
+            .map_err(|e| format!("{side} is not TOML: {}", crate::shown::short(e.message())))
+    };
+    let mut doc = document("this machine's", ours)?;
+    let from = document("the remote's", theirs)?;
     for edit in edits {
-        apply(&mut doc, edit)?;
+        apply(&mut doc, &from, edit)?;
     }
     Ok(Merged::Clean(doc.to_string()))
 }
@@ -122,6 +126,8 @@ pub fn merged(base: &str, ours: &str, theirs: &str) -> Result<Merged, String> {
 enum Edit {
     /// The set at this path is now these items.
     Set(Vec<String>, Vec<String>),
+    /// The key at this path is the remote's, as it wrote it, or gone where it has none.
+    Theirs(Vec<String>),
 }
 
 /// The strings of a list, `None` where `value` is not a list of strings. An absent key is an
@@ -168,7 +174,11 @@ fn walk(
         }
         return;
     }
-    if o == t {
+    if o == t || t == b {
+        return;
+    }
+    if o == b {
+        edits.push(Edit::Theirs(path.clone()));
         return;
     }
     if let (Some(toml::Value::Table(o)), Some(toml::Value::Table(t))) = (o, t) {
@@ -210,9 +220,53 @@ fn dotted(path: &[String]) -> String {
         .join(".")
 }
 
-/// Make `edit` in `doc`.
-fn apply(doc: &mut toml_edit::DocumentMut, edit: Edit) -> Result<(), String> {
+/// `table` and the tables below it, with the place each had in the remote's file forgotten.
+fn unplace(table: &mut toml_edit::Table) {
+    table.set_position(None);
+    for (_, item) in table.iter_mut() {
+        if let toml_edit::Item::Table(below) = item {
+            unplace(below);
+        }
+    }
+}
+
+/// Make `edit` in `doc`, taking what the remote wrote from `from`.
+fn apply(
+    doc: &mut toml_edit::DocumentMut,
+    from: &toml_edit::DocumentMut,
+    edit: Edit,
+) -> Result<(), String> {
     match edit {
+        Edit::Theirs(path) => {
+            let (key, parents) = path.split_last().ok_or("a key with no name")?;
+            let mut theirs: Option<&dyn toml_edit::TableLike> = Some(from.as_table());
+            for parent in parents {
+                theirs = theirs
+                    .and_then(|table| table.get(parent))
+                    .and_then(toml_edit::Item::as_table_like);
+            }
+            let item = theirs.and_then(|table| table.get(key)).cloned();
+            // The tables above it are in both: [`walk`] only goes into a table both sides have.
+            let mut table: &mut dyn toml_edit::TableLike = doc.as_table_mut();
+            for parent in parents {
+                table = table
+                    .get_mut(parent)
+                    .and_then(toml_edit::Item::as_table_like_mut)
+                    .ok_or_else(|| format!("{} is not a table here", dotted(parents)))?;
+            }
+            match item {
+                Some(mut item) => {
+                    // A table the remote added goes after this machine's, not where it stood there.
+                    if let toml_edit::Item::Table(added) = &mut item {
+                        unplace(added);
+                    }
+                    table.insert(key, item);
+                }
+                None => {
+                    table.remove(key);
+                }
+            }
+        }
         Edit::Set(path, items) => {
             let (key, parents) = path.split_last().ok_or("a set with no key")?;
             let mut table: &mut dyn toml_edit::TableLike = doc.as_table_mut();
