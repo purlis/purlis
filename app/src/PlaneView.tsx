@@ -10826,7 +10826,7 @@ export const PlaneView = memo(function PlaneView({
         was.waitingIn === waitingIn &&
         was.quitting === quitting &&
         sameList(was.doing, doing) &&
-        was.owning.length === owning.length &&
+        // The same length as `doing`'s, each built off `quitting`, which is the same.
         was.owning.every((work, at) => sameOwnWork(work, owning[at])) &&
         sameQueue
       )
@@ -10859,12 +10859,11 @@ export const PlaneView = memo(function PlaneView({
         ...mine,
         workspaces,
         ...fromQueue,
-        ending: quitting.map(({ chat }, at) => {
-          const ownWork = owning[at];
-          return ownWork === undefined
-            ? { ...chat, state: doing[at] }
-            : { ...chat, state: doing[at], ownWork };
-        }),
+        ending: quitting.map(({ chat }, at) => ({
+          ...chat,
+          state: doing[at],
+          ...(owning[at] && { ownWork: owning[at] }),
+        })),
       });
     };
     report();

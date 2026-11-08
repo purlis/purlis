@@ -9,6 +9,7 @@ import {
   configure,
   render as renderBare,
   screen,
+  waitFor,
   within,
 } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
@@ -527,7 +528,7 @@ describe("being asked to quit", () => {
       [{ ...doing(7, "waiting"), own_work: { helpers: 0, workflows: 0, monitors: 1, shells: 2 } }],
     );
     render(<App />);
-    await vi.waitFor(() => expect(tabs()).toHaveLength(1));
+    await waitFor(() => expect(tabs()).toHaveLength(1));
 
     await askToQuit();
 

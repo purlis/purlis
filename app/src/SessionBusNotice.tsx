@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { listen } from "./here";
 
 import { commands, SESSION_BUS_ANSWERS, type BusNotice } from "./bindings";
-import { MidTurn, mightBeMidTurn, type Ending } from "./QuitWarning";
+import { MidTurn, wouldInterrupt, type Ending } from "./QuitWarning";
 import { Notice } from "./Notice";
 
 /**
@@ -54,7 +54,7 @@ export function SessionBusNotice({ chats = [] }: { chats?: readonly Ending[] }) 
   }, []);
 
   // Live, so a chat that finishes its turn while the ask is up leaves it.
-  const midTurn = chats.filter(mightBeMidTurn);
+  const midTurn = chats.filter(wouldInterrupt);
   const restart = () => void commands.restartOnTheSessionBus().catch(() => undefined);
   const toRestart = () => (midTurn.length === 0 ? restart() : setAsking(true));
 

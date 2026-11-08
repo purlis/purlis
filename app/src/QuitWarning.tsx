@@ -4,6 +4,7 @@
 import { type OwnWork } from "./bindings";
 import { type State } from "./chatState";
 import { counted, shownState } from "./shownState";
+import { listed } from "./taskAsks";
 import { ChatMark } from "./ui/chat-mark/ChatMark";
 import { AlertDialog } from "./ui/dialog/Dialog";
 import { Tooltip } from "./ui/tooltip/Tooltip";
@@ -139,7 +140,7 @@ function EndingState({ state, ownWork }: { state: State; ownWork: OwnWork | unde
  * Whether ending `chat` could interrupt something: it says it is mid-turn, it says nothing at
  * all, or its turn ended on work of its own still in flight (#5748).
  */
-export function mightBeMidTurn(chat: Ending): boolean {
+export function wouldInterrupt(chat: Ending): boolean {
   return chat.state === "running" || chat.state === "unknown" || waitsOnItsOwnWork(chat);
 }
 
@@ -163,7 +164,7 @@ export function ownWorkEnded(works: readonly OwnWork[]): string {
     counted(sum("shells"), "background shell"),
     counted(works.filter((work) => work.wakes_at != null).length, "wake-up"),
   ].filter((part): part is string => part !== undefined);
-  return parts.length < 2 ? parts.join("") : `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}`;
+  return listed(parts);
 }
 
 /** The sentence for the chats about to end whose turn ended on work of their own (#5748). */
@@ -268,8 +269,8 @@ export function MidTurn({
       <div id="restart-mid-turn-said">
         <MidTurnSaid chats={chats} />
         <p className="honest">
-          Every chat is offered back when purlis starts again. Wait to let a turn finish, or restart
-          now.
+          Every chat is offered back when purlis starts again. Wait to let a turn or a chat&apos;s
+          own work finish, or restart now.
         </p>
       </div>
     </AlertDialog>
