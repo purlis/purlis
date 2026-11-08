@@ -45,9 +45,12 @@ export async function pickAndStart(within = 20_000): Promise<void> {
         `window on that project (#5580).`,
     );
   const start = await $(`button=${pressing}`);
-  await start.waitForClickable({ timeout: 20_000 });
+  // `within` covers the press and the picker going too: two hundred chats in, each step of an
+  // open takes about twenty seconds on macOS (#5615), and a twenty-second wait here failed
+  // main's stress run at chat 182 (#5586).
+  await start.waitForClickable({ timeout: within });
   await start.click();
-  await theDialogHasGone("dialog", PICKER, "the picker never went");
+  await theDialogHasGone("dialog", PICKER, "the picker never went", within);
 }
 
 /** The picker's title (`StartChat`). */
@@ -142,11 +145,16 @@ export function aDialogOffers(
  * which each of these dialogs keeps while it works: the button that was pressed changes its words
  * ("Starting…") while the dialog is still up, so it cannot say the dialog went.
  */
-async function theDialogHasGone(role: string, text: string, timeoutMsg: string): Promise<void> {
+async function theDialogHasGone(
+  role: string,
+  text: string,
+  timeoutMsg: string,
+  within = 20_000,
+): Promise<void> {
   try {
     await browser.waitUntil(
       async () => !(await browser.execute(aDialogOffers, role, text, "Cancel", false)),
-      { timeout: 20_000 },
+      { timeout: within },
     );
   } catch {
     // Said with what the dialog reads, so a red run says why it stayed.
