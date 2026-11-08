@@ -1497,10 +1497,19 @@ fn an_unallowed_tool_s_refusal_runs_a_program_of_its_name_that_came_since() {
         )
         .expect("the shim runs")
     };
+    // No system folder on `PATH`, which may hold a `gh` of its own (a CI runner's does): only
+    // the `grep` the shim reads another shim with.
+    let tools = outside_temp("since-tools");
+    let grep = ["/usr/bin/grep", "/bin/grep"]
+        .into_iter()
+        .find(|at| Path::new(at).exists())
+        .expect("a grep");
+    std::os::unix::fs::symlink(grep, tools.join("grep")).expect("linked");
     let path = format!(
-        "{}:{}:/usr/bin:/bin",
+        "{}:{}:{}",
         written.bin.display(),
-        later.display()
+        later.display(),
+        tools.display()
     );
 
     let before = run(path.clone());
@@ -1511,7 +1520,7 @@ fn an_unallowed_tool_s_refusal_runs_a_program_of_its_name_that_came_since() {
     let after = run(path);
     assert_eq!(after.status.code(), Some(0), "{after:?}");
     assert_eq!(String::from_utf8_lossy(&after.stdout), "gh --version\n");
-    for dir in [root, system, later] {
+    for dir in [root, system, later, tools] {
         let _ = std::fs::remove_dir_all(dir);
     }
 }
