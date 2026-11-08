@@ -50,7 +50,7 @@ static WRITING: std::sync::Mutex<()> = std::sync::Mutex::new(());
 /// this, never by comparing one device's `seq` with another's.
 type Turns = BTreeMap<String, u64>;
 
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize)]
 struct OnDisk {
     version: u32,
     cursors: Cursors,
@@ -72,11 +72,11 @@ fn an_id(id: &str) -> bool {
 
 /// Every cursor kept under `config_root`: none for no file, or one this build does not read.
 fn read(config_root: &Path) -> Cursors {
-    read_all(config_root).cursors
+    read_with_turns(config_root).0
 }
 
 /// Every cursor kept under `config_root`, with when each device's was last kept.
-fn read_all(config_root: &Path) -> OnDisk {
+fn read_with_turns(config_root: &Path) -> (Cursors, Turns) {
     crate::machine::read_beside(config_root, FILE, MOST_BYTES, "the runner log cursors")
         .ok()
         .flatten()
@@ -100,11 +100,7 @@ fn read_all(config_root: &Path) -> OnDisk {
                 .into_iter()
                 .filter(|(device, _)| cursors.contains_key(device))
                 .collect();
-            OnDisk {
-                version: VERSION,
-                cursors,
-                kept_last,
-            }
+            (cursors, kept_last)
         })
         .unwrap_or_default()
 }
@@ -133,11 +129,7 @@ pub fn keep(config_root: &Path, device: &str, project: &str, seq: u64) -> io::Re
     let _one = WRITING
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let OnDisk {
-        mut cursors,
-        mut kept_last,
-        ..
-    } = read_all(config_root);
+    let (mut cursors, mut kept_last) = read_with_turns(config_root);
     cursors
         .entry(device.to_owned())
         .or_default()
@@ -148,8 +140,7 @@ pub fn keep(config_root: &Path, device: &str, project: &str, seq: u64) -> io::Re
         .map_or(1, |last| last.saturating_add(1));
     kept_last.insert(device.to_owned(), turn);
     while cursors.values().map(BTreeMap::len).sum::<usize>() > MOST_CURSORS {
-        // The device kept least lately first, and its lowest `seq` first: seqs are compared
-        // only within one device's log.
+        // A `seq` is compared only within one device's log.
         let first_to_go = cursors
             .iter()
             .flat_map(|(kept, projects)| {

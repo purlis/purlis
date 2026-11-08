@@ -1512,18 +1512,22 @@ impl Shared {
         let missed = lines.let_go_up_to > from;
         let up_to = lines.heard.back().map_or(from, |(seq, _)| from.max(*seq));
         lines.told_up_to.insert(project.to_owned(), up_to);
-        drop(lines);
-        if missed {
-            lock(&shared.runner_log).let_go();
-        }
-        // A project with no cursor kept starts one where the link came up.
-        if logged.is_empty() && kept.is_none() {
+        // A project with no cursor kept starts one where the link came up; one with a cursor
+        // keeps it again, so its runner counts as kept now and its cursors go after those of a
+        // runner nothing holds (#5657).
+        if logged.is_empty() {
             logged.push(SkillLogged {
                 tell: None,
                 keep: keep(from),
             });
         }
+        // Handed to the logger before a line read after this can be: its keep never comes after
+        // a later one's.
         shared.log(logged);
+        drop(lines);
+        if missed {
+            lock(&shared.runner_log).let_go();
+        }
     }
 
     /// **A skill line of the runner's log came, read at `seq`** (#4219): held for a project held
@@ -2687,8 +2691,9 @@ impl HostLink {
     ///
     /// **Only at a hold** (#5657): a project none of whose chats is started or put back is not
     /// held, so its runner's lines wait, in the runner's log, for its next hold, which reads on
-    /// from its cursor. Reading them sooner would mean a link, and a hold that wakes an idle
-    /// runner (#4403), for each project at every window start.
+    /// from its cursor. They go, unsaid, only where no hold comes before the runner is made
+    /// again (its log goes with its home) or ever. Reading them sooner would mean a link, and a
+    /// hold that wakes an idle runner (#4403), for each project at every window start.
     pub(crate) fn hear_skill_runs(&self, project: &str, tell: crate::host::SkillRunsHeard) {
         self.shared.hand_off(project, tell);
     }

@@ -95,27 +95,21 @@ fn past_the_most_cursors_a_device_kept_least_lately_goes_before_a_live_runners_l
 
 #[test]
 fn a_file_an_earlier_build_wrote_reads_and_its_runners_go_before_one_kept_since() {
+    const EARLIER: &str = "01JB0EARLIER000000000000000";
     let home = tempfile::tempdir().unwrap();
     keep(home.path(), RUNNER, PROJECT, 1).unwrap();
     let file = crate::machine::dir(home.path()).join(FILE);
     let earlier: BTreeMap<String, u64> = (0..MOST_CURSORS)
         .map(|n| (format!("P{n:04}"), 9_000 + n as u64))
         .collect();
-    let earlier =
-        serde_json::json!({ "version": 1, "cursors": { "01JB0EARLIER000000000000000": earlier } });
+    let earlier = serde_json::json!({ "version": 1, "cursors": { EARLIER: earlier } });
     std::fs::write(&file, earlier.to_string()).unwrap();
-    assert_eq!(
-        logged_up_to(home.path(), "01JB0EARLIER000000000000000", "P0000"),
-        Some(9_000)
-    );
+    assert_eq!(logged_up_to(home.path(), EARLIER, "P0000"), Some(9_000));
 
     keep(home.path(), RUNNER, PROJECT, 2).unwrap();
     keep(home.path(), RUNNER, OTHER, 1).unwrap();
 
     assert_eq!(logged_up_to(home.path(), RUNNER, PROJECT), Some(2));
     assert_eq!(logged_up_to(home.path(), RUNNER, OTHER), Some(1));
-    assert_eq!(
-        logged_up_to(home.path(), "01JB0EARLIER000000000000000", "P0001"),
-        None
-    );
+    assert_eq!(logged_up_to(home.path(), EARLIER, "P0001"), None);
 }
