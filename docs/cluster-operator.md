@@ -942,9 +942,16 @@ kubectl get sandboxclaims.extensions.agents.x-k8s.io --all-namespaces -o json | 
   | "\(.metadata.namespace)/\(.metadata.name)"'
 ```
 
-It does not hold which image a template names or which storage class a claim's volume is in: the
-Pool says those. An admin editing a policy in place, with its binding left alone, does not move its
-time in force.
+**What it writes of upstream's is held to what its Pool says.**
+`purlis-operator-writes-what-its-pool-says`, kept on uninstall and failing closed, takes each
+Pool as its parameter: the operator's template named for a Pool (`purlis-pool-<pool>`) runs that
+Pool's `image` in every container, the `link-key` step's among them, so a template written after
+the Pool's image changes carries the new one. A kept claim on a Pool's warm pool is made with its
+volume in the Pool's `keptVolume.storageClassName`, or in none named when the Pool names none, and
+keeps the class it was made in on every later write, whatever the Pool says since. The cluster
+reads the Pools itself, so no one needs a right on them for it. A Sandbox's image on renewal is
+held by `purlis-operator-changes-only-a-sandboxs-mode`, not by this policy. An
+admin editing a policy in place, with its binding left alone, does not move its time in force.
 
 Upstream's controller holds its own ClusterRoles, in the vendored manifest: it makes and
 removes the runners' pods, services, volume claims and network policies. It holds no Secret

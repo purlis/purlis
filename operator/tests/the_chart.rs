@@ -201,6 +201,11 @@ const POLICY_HEADER: &str = "# Copyright 2026 Purlis
 # The seventh policy, purlis-operator-writes-only-a-runners-shape (#3754): the operator writes
 # upstream's templates, claims and warm pools in a runner namespace alone, a template's pod only in
 # purlis's runner shape.
+#
+# The eighth policy, purlis-operator-writes-what-its-pool-says: the operator's template for a
+# Pool runs that Pool's image in every container, and a kept claim's volume is made in the
+# storage class its Pool names and keeps the class it was made in. Each Pool is its parameter,
+# so a template or claim named for no Pool is compared with none.
 ";
 
 /// The plain manifests the chart's default render makes: `operator.yaml` and `policy.yaml`.

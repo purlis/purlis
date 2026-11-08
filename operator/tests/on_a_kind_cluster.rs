@@ -4570,3 +4570,135 @@ async fn a_runner_namespace_enforces_restricted_pod_security_and_its_runner_is_a
         .await;
     scratch.end().await;
 }
+
+#[tokio::test]
+#[ignore = "needs a kind cluster: operator/e2e/kind.sh"]
+async fn the_operators_token_writes_a_template_and_a_kept_volume_only_as_its_pool_says() {
+    use purlis_cluster_operator::upstream::{SandboxClaim, SandboxTemplate};
+    let client = Client::try_default().await.expect("the cluster");
+    let scratch = Scratch::new(&client, "e2e-says").await;
+    let pools = small_pool(&client, "e2e-says").await;
+    let claims = claims_in(&client, &scratch.name);
+    claims
+        .create(&PostParams::default(), &claim("says-1", "e2e-says"))
+        .await
+        .expect("the claim");
+    // The operator's own template and claim were admitted: its runner runs.
+    vouched_pod(&claims, "says-1").await;
+
+    let as_operator = acting_as(SERVICE_ACCOUNT).await;
+    let name = purlis_cluster_operator::upstream::name_for("e2e-says");
+    let admins_templates = Api::<SandboxTemplate>::namespaced(client.clone(), &runners());
+    let templates = Api::<SandboxTemplate>::namespaced(as_operator.clone(), &runners());
+    let dry = PostParams {
+        dry_run: true,
+        ..PostParams::default()
+    };
+    let image_now = pools.get("e2e-says").await.expect("the pool").spec.image;
+    let (repository, _) = image_now.split_once('@').expect("an image by digest");
+    let another = format!("{repository}@sha256:{}", "3".repeat(64));
+    let with_images = |held: &SandboxTemplate, runner: &str, step: &str| -> SandboxTemplate {
+        let mut value = serde_json::to_value(held).expect("JSON");
+        value["spec"]["podTemplate"]["spec"]["containers"][0]["image"] = runner.into();
+        value["spec"]["podTemplate"]["spec"]["initContainers"][0]["image"] = step.into();
+        serde_json::from_value(value).expect("a template")
+    };
+    // Another image than its Pool's, in the runner or in the step that makes the link key.
+    let held = admins_templates
+        .get(&name)
+        .await
+        .expect("the operator's template");
+    for (what, runner, step) in [
+        ("the runner", another.as_str(), image_now.as_str()),
+        ("the link key's step", image_now.as_str(), another.as_str()),
+    ] {
+        let written = templates
+            .replace(&name, &dry, &with_images(&held, runner, step))
+            .await;
+        assert!(
+            refused_saying(&written, "runs its Pool's image"),
+            "{what}: {written:?}"
+        );
+    }
+
+    // A kept volume in a class its Pool does not name is refused; none named, as the Pool
+    // names none, is not refused for its class.
+    let mut kept = Api::<SandboxClaim>::namespaced(client.clone(), &runners())
+        .get("says-1")
+        .await
+        .expect("the operator's upstream claim");
+    kept.metadata = ObjectMeta {
+        name: Some("e2e-says-kept".to_owned()),
+        namespace: Some(runners()),
+        ..ObjectMeta::default()
+    };
+    kept.status = None;
+    let in_class = |class: Option<&str>| -> SandboxClaim {
+        let mut value = serde_json::to_value(&kept).expect("JSON");
+        let mut volume = serde_json::json!({
+            "metadata": { "name": "purlis-kept" },
+            "spec": {
+                "accessModes": ["ReadWriteOnce"],
+                "resources": { "requests": { "storage": "1Gi" } },
+            },
+        });
+        if let Some(class) = class {
+            volume["spec"]["storageClassName"] = class.into();
+        }
+        value["spec"]["volumeClaimTemplates"] = serde_json::json!([volume]);
+        serde_json::from_value(value).expect("a claim")
+    };
+    let upstream_claims = Api::<SandboxClaim>::namespaced(as_operator.clone(), &runners());
+    let made = upstream_claims
+        .create(&dry, &in_class(Some("another-class")))
+        .await;
+    assert!(
+        refused_saying(&made, "storage class its Pool names"),
+        "{made:?}"
+    );
+    let made = upstream_claims.create(&dry, &in_class(None)).await;
+    assert!(
+        !refused_saying(&made, "storage class its Pool names"),
+        "{made:?}"
+    );
+
+    // Once the Pool's image changes, the operator's template with the new one is admitted, and
+    // one with the image it had is refused.
+    pools
+        .patch(
+            "e2e-says",
+            &PatchParams::default(),
+            &Patch::Merge(serde_json::json!({ "spec": { "image": another } })),
+        )
+        .await
+        .expect("the pool's image changes");
+    let renewed = eventually(
+        "the operator writes the template with the Pool's new image",
+        Duration::from_secs(120),
+        || async {
+            let held = admins_templates.get(&name).await.ok()?;
+            let pod = held.spec.pod_template.spec.as_ref()?;
+            let images: Vec<Option<String>> = pod
+                .containers
+                .iter()
+                .chain(pod.init_containers.iter().flatten())
+                .map(|c| c.image.clone())
+                .collect();
+            images
+                .iter()
+                .all(|image| image.as_deref() == Some(another.as_str()))
+                .then_some(held)
+        },
+    )
+    .await;
+    let written = templates
+        .replace(&name, &dry, &with_images(&renewed, &image_now, &image_now))
+        .await;
+    assert!(
+        refused_saying(&written, "runs its Pool's image"),
+        "{written:?}"
+    );
+    let _ = claims.delete("says-1", &DeleteParams::foreground()).await;
+    let _ = pools.delete("e2e-says", &DeleteParams::default()).await;
+    scratch.end().await;
+}
