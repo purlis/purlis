@@ -1114,10 +1114,21 @@ fn a_chat_whose_own_wake_up_came_due_while_purlis_was_down_is_told_after_the_res
 /// A steward chat whose turn ended on one background shell of its own, a wait that lapses in
 /// `lapses_in` seconds.
 fn a_steward_waiting_on_its_shell(lapses_in: u32) -> (Plane, Pretend, Planes, Arc<Held>, u32) {
+    a_steward_waiting_on_its_shell_in(lapses_in, |_, host| planes_on(host))
+}
+
+/// [`a_steward_waiting_on_its_shell`], in a project `planes` opens.
+fn a_steward_waiting_on_its_shell_in(
+    lapses_in: u32,
+    planes: impl FnOnce(&Plane, &Pretend) -> Planes,
+) -> (Plane, Pretend, Planes, Arc<Held>, u32) {
     let plane = a_plane_with_personas();
     let host = Pretend::default();
-    let (planes, id, steward) = a_steward_chat(&host, &plane);
+    let planes = planes(&plane, &host);
+    let id = planes.open(&plane.root);
     let held = planes.held(&id).expect("held");
+    let alpha = held.root().join("workspaces").join("alpha");
+    let steward = a_chat_as(&held, &plane.root, Some("steward"), &alpha);
     the_board_hears(&held, steward, Event::UserPromptSubmit);
     its_turn_ends_on_its_own(
         &held,
@@ -1177,7 +1188,17 @@ fn restart_now_on_a_chat_waiting_on_its_own_shell_goes_ahead_and_tells_it_the_sh
 
 #[test]
 fn a_restart_without_the_sandbox_on_a_chat_waiting_on_its_own_shell_tells_it_the_shell_ended() {
-    let (_plane, host, _planes, held, steward) = a_steward_waiting_on_its_shell(3600);
+    // A start without the sandbox is made only once its opt-out is recorded (ADR 0067 §7).
+    let (_plane, host, _planes, held, steward) =
+        a_steward_waiting_on_its_shell_in(3600, |plane, host| {
+            use purlis_core::eventlog::{ArgsKey, Log, Recorder};
+            let at = plane.root.join("events");
+            let events = crate::hooks::Events::here(Recorder::new(
+                Log::open(&at, "DEVICE").expect("a log"),
+                ArgsKey::open(&at).expect("a key"),
+            ));
+            planes_on(host).recording_events(Some(events))
+        });
 
     let again = held
         .restart_chat_without_sandbox(steward, A_SIZE)
