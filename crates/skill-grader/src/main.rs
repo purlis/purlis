@@ -152,7 +152,7 @@ fn main() -> ExitCode {
             parallel,
             scorecard,
         } => {
-            let pin = match pinned(&pins, harness.word()) {
+            let pin = match pinned(&pins, skill_grader::word(harness)) {
                 Ok(pin) => pin,
                 Err(why) => return fail(&why),
             };
@@ -239,7 +239,7 @@ fn main() -> ExitCode {
             parallel,
             write,
         } => {
-            let pin = match pinned(&pins, harness.word()) {
+            let pin = match pinned(&pins, skill_grader::word(harness)) {
                 Ok(pin) => pin,
                 Err(why) => return fail(&why),
             };
@@ -249,7 +249,7 @@ fn main() -> ExitCode {
                 (None, _) => {
                     return fail(&format!(
                         "{} does not propose: name a Claude Code with `--proposer`",
-                        harness.name()
+                        harness.shown()
                     ));
                 }
             };
@@ -317,7 +317,7 @@ fn nightly(
 ) -> Result<(), String> {
     use skill_grader::nightly::{self, Act};
 
-    let mut cards: Vec<purlis_skills::grade::ci::Scorecard> = Vec::new();
+    let mut cards: Vec<purlis_skills::grade::ci::Report> = Vec::new();
     if scorecards.is_dir() {
         let mut files: Vec<PathBuf> = std::fs::read_dir(scorecards)
             .map_err(|why| format!("{} could not be read: {why}", scorecards.display()))?
@@ -398,7 +398,7 @@ fn nightly(
 fn harness(word: &str) -> Result<Harness, String> {
     [Harness::ClaudeCode, Harness::Codex, Harness::Opencode]
         .into_iter()
-        .find(|harness| harness.word() == word)
+        .find(|harness| skill_grader::word(*harness) == word)
         .ok_or_else(|| format!("`{word}` is none of claude-code, codex, opencode"))
 }
 

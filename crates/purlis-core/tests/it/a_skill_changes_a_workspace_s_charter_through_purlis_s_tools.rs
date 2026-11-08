@@ -15,7 +15,7 @@
 use std::path::{Path, PathBuf};
 
 /// The skills that fold what lasts into a workspace's charter, by their folder.
-const FOLDING: [&str; 2] = ["purlis-smart-close", "purlis-compact"];
+const FOLDING: [&str; 2] = ["purlis-smart-close", "purlis-tidy-memory"];
 
 /// The tools that write a workspace's charter for a chat.
 const TOOLS: [&str; 2] = ["`workspace_section`", "`workspace_vision`"];

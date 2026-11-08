@@ -43,7 +43,7 @@ fn optimiser(reply: &str) -> Optimiser {
     });
     std::fs::write(&answer, format!("{line}\n")).unwrap();
     let asked = dir.join("asked");
-    let pick = |name: &str| recorded(Harness::ClaudeCode, name).display().to_string();
+    let pick = |started: bool| recorded(Harness::ClaudeCode, started).display().to_string();
     let script = format!(
         r#"#!/bin/sh
 printf '%s\n' "$@" >> '{argv}'
@@ -71,8 +71,8 @@ sed "s#{recorded_plugin}#$plugin#g" "$out"
         argv = fixture.argv.display(),
         asked = asked.display(),
         answer = answer.display(),
-        started = pick("started.jsonl"),
-        not = pick("not-started.jsonl"),
+        started = pick(true),
+        not = pick(false),
         recorded_plugin = RECORDED_PLUGIN,
     );
     fixture.program = stand_in::program(dir, "claude-optimiser", &script);
@@ -131,8 +131,8 @@ fn a_skill_with_failing_tests_gets_a_proposal_from_them_and_both_scores_and_no_f
         &format!("> {PROPOSAL}"),
         "| crowded | 50% (1 of 2) | 100% (2 of 2) | 0% (0 of 2) | 0% (0 of 2) |",
         "| bare | 50% (1 of 2) | 100% (2 of 2) | 0% (0 of 2) | 0% (0 of 2) |",
-        "is below its strict trigger bar",
-        "meets its strict trigger bar",
+        "below its strict bar",
+        "meets its strict bar",
         "Nothing was written",
     ] {
         assert!(said.contains(line), "no {line:?} in:\n{said}");

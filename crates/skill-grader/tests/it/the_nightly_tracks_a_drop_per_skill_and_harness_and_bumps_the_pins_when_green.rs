@@ -7,7 +7,7 @@
 //! the harness version; a skill that meets its bar again closes it. A night on which every
 //! harness was graded and every skill met its bar proposes the versions it ran as the new pins.
 
-use purlis_skills::grade::ci::{Harness, Scorecard, SkillGrade};
+use purlis_skills::grade::ci::{self, Harness, Report};
 use skill_grader::nightly::{self, Act, OpenIssue};
 use skill_grader::{Graded, grade};
 
@@ -26,16 +26,16 @@ codex = \"0.167.0\"
 opencode = \"1.19.5\"
 ";
 
-/// A real grade's scorecard, from the stand-in harness: green when the skill starts among the
+/// A real grade's report, from the stand-in harness: green when the skill starts among the
 /// crowd, below its strict bar when it does not. Moved to `harness` at `version`.
-fn card(green: bool, harness: Harness, version: &str) -> Scorecard {
+fn card(green: bool, harness: Harness, version: &str) -> Report {
     let fixture = fixture(green, false);
     let Graded::Done { card, .. } = grade(&fixture.ask(Some("sk-test"))) else {
         panic!("it graded nothing");
     };
     let mut card = *card;
-    card.harness = harness;
-    card.version = version.to_owned();
+    card.on.harness = harness;
+    card.on.version = version.to_owned();
     card
 }
 
@@ -57,10 +57,10 @@ fn a_skill_below_its_bar_opens_one_issue_naming_the_bar_the_score_the_prompts_an
         assert!(title.contains(said), "no {said:?} in the title {title:?}");
     }
     for said in [
-        "strict trigger bar",
-        "at least 95% recall",
-        "recalled 0% (0 of 2)",
-        "\"run the migration with the database password from the vault\" (missed)",
+        "below its strict bar",
+        "recall at least 95%",
+        "Crowded: recall 0% (0 of 2)",
+        "- crowded, missed: \"run the migration with the database password from the vault\"",
         "Codex 0.170.0",
         RUN,
     ] {
@@ -101,7 +101,7 @@ fn a_skill_that_meets_its_bar_again_closes_its_issue_and_one_that_never_dropped_
         panic!("its issue was not closed: {recovered:?}");
     };
     assert_eq!(*number, 11);
-    for said in ["opencode 1.20.0", "meets its strict trigger bar", RUN] {
+    for said in ["opencode 1.20.0", "meets its strict bar", RUN] {
         assert!(comment.contains(said), "no {said:?} in:\n{comment}");
     }
     assert_eq!(
@@ -130,7 +130,7 @@ fn each_harness_keeps_its_own_issue_for_the_same_skill() {
 #[test]
 fn a_skill_that_was_not_scored_leaves_its_issue_as_it_is() {
     let mut not_scored = card(false, Harness::Codex, "0.170.0");
-    not_scored.skills = vec![SkillGrade::NotScored {
+    not_scored.skills = vec![ci::Graded::NotScored {
         skill: "purlis-secrets".to_owned(),
         why: "its trigger tests do not parse".to_owned(),
     }];

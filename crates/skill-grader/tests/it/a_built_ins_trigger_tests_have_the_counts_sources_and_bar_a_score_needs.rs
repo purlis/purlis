@@ -3,12 +3,13 @@
 
 //! A built-in's trigger tests are enough to mean something (spec #5714, decision Q12): at least
 //! 20 queries that should start it and 20 that should not, at least a third of those near misses
-//! that belong to a neighbour its sources file names, each with a note saying where it came
-//! from, and a trigger bar. A near miss's note opens `Near miss (<neighbour>)`.
+//! that belong to a neighbour, and a sources file that reads ([`sources_of`]): its tier, and a
+//! source note for each prompt. A near miss is a prompt that should not start it whose source
+//! names the neighbour it `belongs_to`.
 
 use std::path::Path;
 
-use purlis_skills::grade::ci::{Bar, sources_of};
+use purlis_skills::grade::ci::{Tier, sources_of};
 
 const LEAST_EACH_WAY: usize = 20;
 
@@ -29,7 +30,7 @@ fn every_built_in_with_trigger_tests_has_enough_of_them_with_sources_and_near_mi
             .sources
             .unwrap_or_else(|| panic!("{skill} has trigger tests and no sources file"));
         let sources =
-            sources_of(&text, graded.tests.len()).unwrap_or_else(|why| panic!("{skill}: {why}"));
+            sources_of(&text, &skill, &graded.tests).unwrap_or_else(|why| panic!("{skill}: {why}"));
         let positives = graded.tests.iter().filter(|t| t.should_trigger).count();
         let negatives = graded.tests.len() - positives;
         assert!(
@@ -40,24 +41,17 @@ fn every_built_in_with_trigger_tests_has_enough_of_them_with_sources_and_near_mi
             negatives >= LEAST_EACH_WAY,
             "{skill} has {negatives} negative tests"
         );
-        let mut near = 0;
-        for (test, note) in graded.tests.iter().zip(&sources.notes) {
-            let Some(rest) = note.strip_prefix("Near miss (") else {
-                continue;
-            };
-            assert!(
-                !test.should_trigger,
-                "{skill}: a near miss should not trigger: {:?}",
-                test.query
-            );
-            let neighbour = rest.split_once(')').map(|(name, _)| name).unwrap_or("");
-            assert!(
-                sources.neighbours.iter().any(|n| n == neighbour),
-                "{skill}: {neighbour:?} is not among its neighbours {:?}",
-                sources.neighbours
-            );
-            near += 1;
-        }
+        // `sources_of` holds each `belongs_to` to a neighbour and to a prompt that should not
+        // start the skill.
+        let near = graded
+            .tests
+            .iter()
+            .filter(|test| {
+                sources
+                    .of(&test.query)
+                    .is_some_and(|source| source.belongs_to.is_some())
+            })
+            .count();
         assert!(
             near * 3 >= negatives,
             "{skill}: {near} of {negatives} negatives are near misses"
@@ -66,17 +60,17 @@ fn every_built_in_with_trigger_tests_has_enough_of_them_with_sources_and_near_mi
         queries.sort_unstable();
         queries.dedup();
         assert_eq!(queries.len(), graded.tests.len(), "{skill} repeats a query");
-        checked.push((skill, sources.bar));
+        checked.push((skill, sources.tier));
     }
     for skill in STRICT {
         assert!(
-            checked.contains(&((*skill).to_owned(), Bar::Strict)),
+            checked.contains(&((*skill).to_owned(), Tier::Strict)),
             "{skill} carries no trigger tests at the strict bar: {checked:?}"
         );
     }
     for skill in STANDARD {
         assert!(
-            checked.contains(&((*skill).to_owned(), Bar::Standard)),
+            checked.contains(&((*skill).to_owned(), Tier::Standard)),
             "{skill} carries no trigger tests at the standard bar: {checked:?}"
         );
     }

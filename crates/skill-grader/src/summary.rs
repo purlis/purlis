@@ -6,57 +6,60 @@
 
 use std::fmt::Write as _;
 
-use purlis_skills::grade::ci::{ListingScore, Rate, Scorecard, SkillGrade};
+use purlis_skills::grade::ci::{Graded, Ratio, Report, Score};
 
 /// Whether every skill was scored and met its trigger bar.
-pub fn passed(card: &Scorecard) -> bool {
+pub fn passed(card: &Report) -> bool {
     card.skills.iter().all(|skill| match skill {
-        SkillGrade::Scored(score) => score.verdict.passed,
-        SkillGrade::NotScored { .. } => false,
+        Graded::Scored(scored) => scored.meets_its_bar,
+        Graded::NotScored { .. } => false,
     })
 }
 
-/// A rate as the summary says it: `50% (1 of 2)`.
-pub fn rate(rate: Rate) -> String {
-    format!(
-        "{}% ({} of {})",
-        rate.percent().unwrap_or(0),
-        rate.count,
-        rate.of
-    )
+/// A share as the summary says it, as a verdict does: `50% (1 of 2)`, or `none (0 of 0)` where
+/// nothing counted.
+pub fn rate(ratio: Ratio) -> String {
+    match ratio.share() {
+        Some(share) => format!("{:.0}% ({} of {})", share * 100.0, ratio.hits, ratio.of),
+        None => "none (0 of 0)".to_owned(),
+    }
 }
 
-fn row(out: &mut String, word: &str, score: &ListingScore) {
-    let _ = writeln!(
-        out,
-        "| {word} | {} | {} |",
-        rate(score.recall),
-        rate(score.false_triggers)
-    );
+fn row(out: &mut String, word: &str, score: Option<Score>) {
+    let _ = match score {
+        Some(score) => writeln!(
+            out,
+            "| {word} | {} | {} |",
+            rate(score.recall),
+            rate(score.false_triggers)
+        ),
+        None => writeln!(out, "| {word} | not run | not run |"),
+    };
 }
 
 /// **`card` in Markdown**, saying the pin where the runs ran another version.
-pub fn markdown(card: &Scorecard, pinned: &str) -> String {
+pub fn markdown(card: &Report, pinned: &str) -> String {
+    let on = &card.on;
     let mut out = format!(
         "### Skill trigger grades on {} {} ({})\n\n",
-        card.harness.name(),
-        card.version,
-        card.model
+        on.harness.shown(),
+        on.version,
+        on.model
     );
-    if card.version != pinned {
+    if on.version != pinned {
         let _ = writeln!(
             out,
             "The runs said they ran {}; the pin file names {pinned}.\n",
-            card.version
+            on.version
         );
     }
     for skill in &card.skills {
         match skill {
-            SkillGrade::NotScored { skill, why } => {
-                let _ = writeln!(out, "#### {skill}: not scored\n\n{why}\n");
+            Graded::NotScored { skill: name, .. } => {
+                let _ = writeln!(out, "#### {name}: not scored\n\n{}", skill.verdict(on));
             }
-            SkillGrade::Scored(score) => {
-                let mark = if score.verdict.passed {
+            Graded::Scored(scored) => {
+                let mark = if scored.meets_its_bar {
                     "meets"
                 } else {
                     "below"
@@ -64,14 +67,14 @@ pub fn markdown(card: &Scorecard, pinned: &str) -> String {
                 let _ = writeln!(
                     out,
                     "#### {}: {mark} its {} bar\n\n| listing | recall | false triggers |\n|---|---|---|",
-                    score.skill,
-                    score.bar.word()
+                    scored.skill,
+                    scored.tier.word()
                 );
-                row(&mut out, "crowded", &score.crowded);
-                if let Some(bare) = &score.bare {
-                    row(&mut out, "bare", bare);
+                row(&mut out, "crowded", scored.crowded);
+                if scored.bare.is_some() {
+                    row(&mut out, "bare", scored.bare);
                 }
-                let _ = writeln!(out, "\n{}\n", score.verdict.said);
+                let _ = writeln!(out, "\n{}", skill.verdict(on));
             }
         }
     }

@@ -23,11 +23,11 @@ fn a_skill_that_starts_where_it_should_meets_its_bar_and_the_summary_says_so() {
         "strict",
         "Claude Code",
         // What the runs said they ran as, not the pin.
-        "2.3.4",
-        "claude-sonnet-5-5",
+        "2.1.319",
+        "claude-sonnet-4-5-20250929",
         "| crowded | 100% (2 of 2) | 0% (0 of 2) |",
         "| bare | 100% (2 of 2) | 0% (0 of 2) |",
-        "meets its strict trigger bar",
+        "meets its strict bar, recall at least 95% and false triggers at most 5%",
     ] {
         assert!(summary.contains(said), "no {said:?} in:\n{summary}");
     }
@@ -51,8 +51,9 @@ fn a_skill_the_crowd_hides_is_below_its_bar_and_the_bare_score_shows_it_is_crowd
     for said in [
         "| crowded | 0% (0 of 2) | 0% (0 of 2) |",
         "| bare | 100% (2 of 2) | 0% (0 of 2) |",
-        "is below its strict trigger bar",
-        "\"run the migration with the database password from the vault\" (missed)",
+        "below its strict bar",
+        "- crowded, missed: \"run the migration with the database password from the vault\" \
+         (started it in 0 of 3 runs)",
     ] {
         assert!(summary.contains(said), "no {said:?} in:\n{summary}");
     }

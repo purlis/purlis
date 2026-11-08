@@ -5,7 +5,7 @@
 //! harness that replays the scoring module's recorded output for that harness.
 //!
 //! Each stand-in answers only when it is started as a chat in the window would start it, and
-//! otherwise exits without a result, which scores as a run cut short:
+//! otherwise exits without a result, which reads as no run, never a "did not start":
 //!
 //! - `claude`: the provider's key in `ANTHROPIC_API_KEY`; among the crowd when the crowd's
 //!   plugin folder is among its words.
@@ -37,24 +37,33 @@ const TRIGGERS: &str = r#"[
   {"query": "log in to the staging dashboard in a browser", "should_trigger": false}
 ]"#;
 
-const SOURCES: &str = "# purlis-secrets: where each trigger test came from
+const SOURCES: &str = r#"{
+  "tier": "strict",
+  "neighbours": ["purlis-browser"],
+  "prompts": [
+    {"query": "run the migration with the database password from the vault", "source": "mined, paraphrased"},
+    {"query": "store this API token so the deploy can use it", "source": "the skill's own description"},
+    {"query": "rename the email column in the users table", "source": "written: a plain coding request"},
+    {"query": "log in to the staging dashboard in a browser", "source": "written: a near miss",
+     "belongs_to": "purlis-browser"}
+  ]
+}"#;
 
-Trigger bar: strict
-Neighbours: purlis-browser
+/// Where the recordings' runner checkout had purlis's plugin, as Codex's reads name it.
+pub const RECORDED_PLUGIN: &str = "/home/runner/work/purlis/plugin";
 
-1. A mined transcript, paraphrased.
-2. The skill's own description.
-3. A plain coding request.
-4. purlis-browser's own request: a near miss.
-";
-
-/// Where the recordings' runner checkout had purlis's plugin.
-pub const RECORDED_PLUGIN: &str = "/home/runner/work/purlis/purlis/app/src-tauri/plugin";
-
-pub fn recorded(harness: Harness, name: &str) -> PathBuf {
+/// One of the scoring module's recordings: what `harness` printed when it started
+/// purlis-secrets alone (`started`), or when it started nothing.
+pub fn recorded(harness: Harness, started: bool) -> PathBuf {
+    let name = match (harness, started) {
+        (Harness::ClaudeCode, true) => "a-start.jsonl",
+        (Harness::Codex, true) => "a-read.jsonl",
+        (Harness::Opencode, true) => "secrets-alone.jsonl",
+        (_, false) => "no-start.jsonl",
+    };
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../skills/src/grade/ci/recorded")
-        .join(harness.word())
+        .join(skill_grader::word(harness))
         .join(name)
 }
 
@@ -76,7 +85,7 @@ pub fn fixture_on(harness: Harness, among_crowd: bool, bare: bool) -> Fixture {
     )
     .unwrap();
     std::fs::write(skill.join("evals/triggers.json"), TRIGGERS).unwrap();
-    std::fs::write(skill.join("evals/triggers.sources.md"), SOURCES).unwrap();
+    std::fs::write(skill.join(purlis_skills::grade::ci::SOURCES_PATH), SOURCES).unwrap();
     let browser = plugin.join("skills/purlis-browser");
     std::fs::create_dir_all(&browser).unwrap();
     std::fs::write(
@@ -99,18 +108,7 @@ pub fn fixture_on(harness: Harness, among_crowd: bool, bare: bool) -> Fixture {
     let cwd = dir.path().join("plane");
     std::fs::create_dir_all(&cwd).unwrap();
     let argv = dir.path().join("argv");
-    let pick = |starts: bool| {
-        recorded(
-            harness,
-            if starts {
-                "started.jsonl"
-            } else {
-                "not-started.jsonl"
-            },
-        )
-        .display()
-        .to_string()
-    };
+    let pick = |starts: bool| recorded(harness, starts).display().to_string();
     let (name, armed, crowded) = match harness {
         Harness::ClaudeCode => (
             "claude",

@@ -788,8 +788,7 @@ fn check(
 }
 
 /// Why a chat whose set is `set` lost the skill `name` moved into `folder`, or `None` where it
-/// has it, or a workspace turned it off, or a narrower or identical copy of the name stands in
-/// for it.
+/// has it, or a workspace turned it off, or a narrower copy of the name stands in for it.
 fn lost(set: &SkillSet, folder: &Path, name: &str) -> Option<String> {
     let here = |path: &Path| path.parent() == Some(folder);
     if set
@@ -806,7 +805,7 @@ fn lost(set: &SkillSet, folder: &Path, name: &str) -> Option<String> {
     match left.map(|left| &left.reason) {
         Some(Reason::TurnedOff) => None,
         Some(Reason::NameTaken { by, .. }) if *by != Origin::BuiltIn => None,
-        Some(Reason::HiddenByRepo { .. } | Reason::SameAs { .. }) => None,
+        Some(Reason::HiddenByRepo { .. }) => None,
         Some(reason) => Some(reason.to_string()),
         None => Some("it is not in the chat's skills".to_owned()),
     }

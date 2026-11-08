@@ -146,8 +146,8 @@ on a fresh project. The window's idle minute waits for the host to log that the 
 
 To grade built-in skills' triggering as `.github/workflows/skill-grades.yml` does on a pull
 request (it calls a model, so it costs money and needs a key of your own; the tests never do).
-A built-in's trigger tests are its `evals/triggers.json`, and its trigger bar, neighbours and a
-source per test are `evals/triggers.sources.md` beside them:
+A built-in's trigger tests are its `evals/triggers.json`, and its tier, neighbours and a
+source per test are `evals/sources.json` beside them (`docs/ci-grader.md`):
 
 ```bash
 cargo build -p purlis-cli -p skill-grader
@@ -193,8 +193,8 @@ built-in's description is written as a trigger (spec #5714, Q15 and Q30):
 3. **The phrases people use.** A `Use when asked to …` sentence with the verbs people type
    ("hand off", "wrap up", "retire", "dispatch"), drawn from the trigger tests that should start it.
 4. **A "Not for" clause per neighbour**, short: `Not for <their situation> (purlis-<name>).`
-   The neighbours are the skills its sources file declares (`Neighbours:` in
-   `evals/triggers.sources.md`), the same list its near-miss tests come from, so the boundary
+   The neighbours are the skills its sources file declares (`neighbours` in
+   `evals/sources.json`), the same list its near-miss tests come from, so the boundary
    is written once and measured.
 5. **About 290 characters**, because every built-in's description together is at most 5,000
    (Q37): Codex lists skills in 8,000 characters and drops what does not fit, so the built-ins
@@ -202,14 +202,15 @@ built-in's description is written as a trigger (spec #5714, Q15 and Q30):
    description is never over 1,024, where Codex cuts it, and is plain YAML: no `: ` or ` #` in
    it. A longer description takes its characters from another built-in's.
 
-The shipped-skill check (`crates/purlis-cli/src/main/tests/shipped_skills.rs`) fails a
+The shipped-skill check
+(`crates/purlis-cli/tests/it/every_shipped_skill_passes_the_built_in_checks.rs`) fails a
 description without the word purlis, over 1,024 characters, or whose "Not for" clauses leave out
 a declared neighbour, the built-ins' descriptions together over 5,000 characters (naming the
-biggest), and a built-in without trigger tests (`evals/triggers.json`), a sources file
-or a trigger bar, so no built-in ships unmeasured. A neighbour purlis does not ship, such as the
+biggest), and a built-in without trigger tests (`evals/triggers.json`), an
+`evals/sources.json` that reads, or a tier, so no built-in ships unmeasured. A neighbour purlis does not ship, such as the
 plane's building-purlis-ui skill, is named in the description's prose and its requests are plain
 negatives. The trigger grade measures the rest. A built-in's trigger bar, strict
-(≥95% recall, ≤5% false triggers) or standard (≥85%, ≤5%), is the `Trigger bar:` line of the same
+(≥95% recall, ≤5% false triggers) or standard (≥85%, ≤5%), is the `tier` of the same
 sources file; moving a skill between bars is a reviewed change.
 
 The window's half (the sidebar answer, the watcher's setup, a minute of idle CPU, and the chat

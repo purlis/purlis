@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! **The nightly's decisions** (#5729 of spec #5714, decisions Q22 and Q23): from each
-//! harness's scorecard, which `skill-triggers` issue to open, rewrite or close, and whether to
+//! harness's report (its scorecard), which `skill-triggers` issue to open, rewrite or close, and whether to
 //! propose the versions the night ran as the new pins. `.github/workflows/skill-grades.yml`
 //! fetches the open issues and carries the decisions out; nothing here calls GitHub.
 
-use purlis_skills::grade::ci::{Harness, Scorecard, SkillGrade};
+use purlis_skills::grade::ci::{Graded, Harness, Report};
 
 /// **An open issue labelled `skill-triggers`**, as `gh api` prints it.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
@@ -46,35 +46,36 @@ pub struct Bump {
 /// **The title of a skill's issue on a harness**: the same every night, so a night finds the
 /// issue an earlier one opened.
 pub fn title(skill: &str, harness: Harness) -> String {
-    format!("{skill} is below its trigger bar on {}", harness.name())
+    format!("{skill} is below its trigger bar on {}", harness.shown())
 }
 
 /// **What each scored skill's issue needs**, harness by harness in the order of `cards`. A skill
 /// that was not scored says nothing about its bar, so its issue is left as it is.
-pub fn issues(cards: &[Scorecard], open: &[OpenIssue], run_url: &str) -> Vec<Act> {
+pub fn issues(cards: &[Report], open: &[OpenIssue], run_url: &str) -> Vec<Act> {
     let mut acts = Vec::new();
     for card in cards {
         for skill in &card.skills {
-            let SkillGrade::Scored(score) = skill else {
+            let Graded::Scored(score) = skill else {
                 continue;
             };
-            let title = title(&score.skill, card.harness);
+            let title = title(&score.skill, card.on.harness);
             let existing = open.iter().find(|issue| issue.title == title);
-            match (score.verdict.passed, existing) {
+            let said = skill.verdict(&card.on);
+            match (score.meets_its_bar, existing) {
                 (false, None) => acts.push(Act::Create {
-                    body: body(&score.verdict.said, card, run_url),
+                    body: body(&said, card, run_url),
                     title,
                 }),
                 (false, Some(issue)) => acts.push(Act::Edit {
                     number: issue.number,
-                    body: body(&score.verdict.said, card, run_url),
+                    body: body(&said, card, run_url),
                     title,
                 }),
                 (true, Some(issue)) => acts.push(Act::Close {
                     number: issue.number,
                     comment: format!(
                         "{}\n\n{}\n\nClosed by the nightly skill trigger grades: {run_url}",
-                        score.verdict.said,
+                        said.trim_end(),
                         ran_on(card)
                     ),
                     title,
@@ -88,37 +89,38 @@ pub fn issues(cards: &[Scorecard], open: &[OpenIssue], run_url: &str) -> Vec<Act
 
 /// The harness version and model the night ran: its own line, as a verdict names the version
 /// it was scored at.
-fn ran_on(card: &Scorecard) -> String {
+fn ran_on(card: &Report) -> String {
     format!(
         "Graded on {} {} ({}).",
-        card.harness.name(),
-        card.version,
-        card.model
+        card.on.harness.shown(),
+        card.on.version,
+        card.on.model
     )
 }
 
-fn body(said: &str, card: &Scorecard, run_url: &str) -> String {
-    let harness = card.harness;
+fn body(said: &str, card: &Report, run_url: &str) -> String {
+    let harness = card.on.harness;
+    let said = said.trim_end();
     format!(
         "{said}\n\n{}\n\nLast graded: {run_url}\n\nThe nightly skill trigger grades \
          (`.github/workflows/skill-grades.yml`) rewrite this issue each night the skill stays \
          below its bar on {} and close it the night it meets it again. The run's \
          `skill-grades-runs-{}` artifact holds each run's output.\n",
         ran_on(card),
-        harness.name(),
-        harness.word()
+        harness.shown(),
+        crate::word(harness)
     )
 }
 
 /// Whether every skill on `card` was scored and met its bar, and there was at least one.
-fn green(card: &Scorecard) -> bool {
+fn green(card: &Report) -> bool {
     !card.skills.is_empty() && crate::summary::passed(card)
 }
 
 /// **The pins a night proposes**: only when every harness the pin file names was graded and
 /// every skill met its bar on each, and some harness ran a version other than its pin. Only the
 /// versions move; every other line of `pins` stays as it is.
-pub fn bump(pins: &str, cards: &[Scorecard]) -> Result<Option<Bump>, String> {
+pub fn bump(pins: &str, cards: &[Report]) -> Result<Option<Bump>, String> {
     let table: toml::Table =
         toml::from_str(pins).map_err(|why| format!("the pin file is not TOML: {why}"))?;
     let pinned = table
@@ -131,18 +133,21 @@ pub fn bump(pins: &str, cards: &[Scorecard]) -> Result<Option<Bump>, String> {
         let version = version
             .as_str()
             .ok_or_else(|| format!("the pin of {word} is not a string"))?;
-        let Some(card) = cards.iter().find(|card| card.harness.word() == word) else {
+        let Some(card) = cards
+            .iter()
+            .find(|card| crate::word(card.on.harness) == word)
+        else {
             return Ok(None);
         };
         if !green(card) {
             return Ok(None);
         }
-        if card.version != version {
-            moved.push((card.harness.word(), &card.version));
+        if card.on.version != version {
+            moved.push((crate::word(card.on.harness), &card.on.version));
             said.push_str(&format!(
                 "- {}: {version} → {}\n",
-                card.harness.name(),
-                card.version
+                card.on.harness.shown(),
+                card.on.version
             ));
         }
     }

@@ -20,13 +20,32 @@
 //! * **[`tools`]**: every purlis tool a code span names (`` `workspace_section` ``,
 //!   `` `mcp__purlis__dispatch_note` ``) is one a chat is offered: the tools `purlis mcp`
 //!   lists, read from the same statics it serves.
+//! * **[`settled`]** (#5722): it says no losing side of a settled pair ([`settled_words::LOSING`]).
+//! * **[`glossary`]** (#5723): its prose says none of the words the glossary avoids
+//!   ([`settled_words::AVOID`]).
+//! * **[`skills`]**: a skill its prose names is one purlis ships.
+//! * **[`neighbours`]** (#5730): its description's "Not for" clauses name every neighbour its
+//!   `evals/sources.json` declares, each a skill purlis ships.
+//! * **[`sandbox`]** (#5735): a sentence naming a way to lower the sandbox or edit a harness's
+//!   settings ([`NEVER_OFFERED`]) says never to.
+//! * **[`measured`]** (#5731): it carries trigger tests (`evals/triggers.json`) and an
+//!   `evals/sources.json` that reads, with its tier, unless it is [`LEAVING`] the bundle.
 //!
-//! More rules join [`RULES`] as the spec's tickets land (the avoid-list, trigger tests and their
-//! tier). What a skill names on purpose against a rule is on [`ON_PURPOSE`], with why; the list
-//! refuses an entry nothing matches, so it only shrinks.
+//! And the set is held to [`SET_RULES`]: **[`descriptions`]**, every description together at
+//! most [`MOST_DESCRIPTIONS`] characters (spec #5714's Q37). What a skill names on purpose
+//! against a rule is on [`ON_PURPOSE`], with why; the list refuses an entry nothing matches, so
+//! it only shrinks. The briefing and the tools' own texts are held to the same settled words by
+//! the binary's `main/tests/briefing_words.rs`, which reads [`settled_words`] too.
 
 use super::every_command_charter_names_is_one_it_has::{PROSE, help_of, repo, shipped_skills};
 use crate::support;
+
+#[path = "settled_words.rs"]
+mod settled_words;
+
+use purlis_skills::grade::TriggerTest;
+use purlis_skills::grade::ci::{SOURCES_PATH, sources_of};
+use settled_words::{avoided, losing_sides, paragraphs, prose_paragraphs};
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
@@ -35,21 +54,58 @@ use std::sync::LazyLock;
 /// Codex's limit on a skill's description, in characters.
 const DESCRIPTION_LIMIT: usize = 1024;
 
+/// **The built-ins' descriptions together** (spec #5714's Q37): at most this many characters,
+/// so Codex's 8,000-character listing keeps every built-in and about 3,000 for the plane's own
+/// skills, and opencode's default budget (8,000) keeps them too.
+const MOST_DESCRIPTIONS: usize = 5_000;
+
+/// **Built-ins leaving the bundle**, each with where it goes: the one place a shipped skill is
+/// not held to carry trigger tests (#5731). An entry goes when its folder does, and the check
+/// fails until it has.
+const LEAVING: &[(&str, &str)] = &[(
+    "purlis-building-ui",
+    "leaves for the plane as its building-purlis-ui skill (#5725)",
+)];
+
 /// One skill as the checks read it.
 struct Skill {
     /// Its folder's name, which is its name.
     name: String,
     text: String,
+    /// Its trigger tests, from `evals/triggers.json`: none where it has no such file.
+    triggers: Vec<TriggerTest>,
+    /// Its `evals/sources.json`'s text, where it has one.
+    sources: Option<String>,
+}
+
+impl Skill {
+    /// A skill with no trigger tests and no sources file.
+    fn of(name: &str, text: &str) -> Self {
+        Self {
+            name: name.to_owned(),
+            text: text.to_owned(),
+            triggers: Vec::new(),
+            sources: None,
+        }
+    }
+
+    /// The same skill, carrying `triggers` and the sources file `sources`.
+    fn with(mut self, triggers: Vec<TriggerTest>, sources: Option<String>) -> Self {
+        self.triggers = triggers;
+        self.sources = sources;
+        self
+    }
 }
 
 /// What a rule found: the line of the skill (1 for its frontmatter), and what is wrong.
 type Finding = (usize, String);
 
-/// What the checks ask of this build: the binary's `--help` at each command path, and the
-/// tools a chat is offered.
+/// What the checks ask of this build: the binary's `--help` at each command path, the tools a
+/// chat is offered, and the skills purlis ships.
 struct Build {
     answers: RefCell<BTreeMap<Vec<String>, Option<String>>>,
     tools: BTreeSet<&'static str>,
+    skills: BTreeSet<String>,
 }
 
 impl Build {
@@ -64,6 +120,7 @@ impl Build {
         Self {
             answers: RefCell::default(),
             tools,
+            skills: shipped().into_iter().map(|skill| skill.name).collect(),
         }
     }
 
@@ -96,15 +153,27 @@ const RULES: &[(&str, Rule)] = &[
     ("description", description),
     ("commands", commands),
     ("tools", tools),
+    ("settled", settled),
+    ("glossary", glossary),
+    ("skills", skills),
+    ("neighbours", neighbours),
+    ("sandbox", sandbox),
+    ("measured", measured),
 ];
+
+/// A rule over the whole set: what is wrong, each naming the skills.
+type SetRule = fn(&[Skill]) -> Vec<String>;
+
+/// Every rule the shipped skills are held to together, by the name a finding is reported under.
+const SET_RULES: &[(&str, SetRule)] = &[("descriptions", descriptions)];
 
 /// What a skill names against a rule on purpose: the skill, the rule, a part of the finding's
 /// text, and why. **Shrink only**: an entry nothing matches fails the check.
 #[rustfmt::skip]
 const ON_PURPOSE: &[(&str, &str, &str, &str)] = &[
-    // The update skill says the range view's flags are retired and refused by name, which is
+    // The upgrade skill says the range view's flags are retired and refused by name, which is
     // what a chat that remembers them needs to read. clap hides them from `--help` (#352).
-    ("purlis-update", "commands", "`purlis news` has no --since", "retired flags, named to say so (#352)"),
+    ("purlis-upgrade", "commands", "`purlis news` has no --since", "retired flags, named to say so (#352)"),
 ];
 
 /// A snake_case word in a code span that opens with a tool family's word and is not a tool.
@@ -489,6 +558,291 @@ fn tools(skill: &Skill, build: &Build) -> Vec<Finding> {
         .collect()
 }
 
+/// The blocks of `text` between its blank lines, fenced code and all, each with the line it
+/// starts on: what a phrase may run across, its line breaks included.
+fn blocks(text: &str) -> Vec<(usize, String)> {
+    let mut out: Vec<(usize, String)> = Vec::new();
+    let mut open = false;
+    for (at, line) in text.lines().enumerate() {
+        if line.trim().is_empty() {
+            open = false;
+            continue;
+        }
+        match out.last_mut() {
+            Some((_, block)) if open => {
+                block.push('\n');
+                block.push_str(line);
+            }
+            _ => out.push((at + 1, line.to_owned())),
+        }
+        open = true;
+    }
+    out
+}
+
+fn settled(skill: &Skill, _: &Build) -> Vec<Finding> {
+    blocks(&skill.text)
+        .into_iter()
+        .flat_map(|(line, block)| {
+            losing_sides(&block).into_iter().map(move |ruling| {
+                (
+                    line,
+                    format!("says the losing side of a settled pair, against {ruling}"),
+                )
+            })
+        })
+        .collect()
+}
+
+fn glossary(skill: &Skill, _: &Build) -> Vec<Finding> {
+    prose_paragraphs(&skill.text)
+        .into_iter()
+        .flat_map(|(line, prose)| {
+            avoided(&prose).into_iter().map(move |(word, instead)| {
+                (
+                    line,
+                    format!("says “{word}” where the glossary says {instead}"),
+                )
+            })
+        })
+        .collect()
+}
+
+/// The skills `text` names in its prose, each with its paragraph's line: a code span the word
+/// skill follows ("the `purlis-persona` skill"), and a `purlis-…` word it follows outside code
+/// ("the purlis-persona skill").
+fn skills_named(text: &str) -> Vec<(usize, String)> {
+    let is_skill = |after: &str| {
+        after
+            .split(|c: char| !c.is_alphanumeric())
+            .find(|word| !word.is_empty())
+            == Some("skill")
+    };
+    let mut out = Vec::new();
+    for (line, paragraph) in paragraphs(text) {
+        let parts: Vec<&str> = paragraph.split('`').collect();
+        for at in (1..parts.len().saturating_sub(1)).step_by(2) {
+            if parts[at + 1].starts_with(char::is_whitespace) && is_skill(parts[at + 1]) {
+                out.push((line, parts[at].trim().to_owned()));
+            }
+        }
+        for prose in parts.iter().step_by(2) {
+            for (at, _) in prose.match_indices("purlis-") {
+                let starts = prose[..at]
+                    .chars()
+                    .next_back()
+                    .is_none_or(|c| !(c.is_alphanumeric() || "-_/".contains(c)));
+                let name: String = prose[at..]
+                    .chars()
+                    .take_while(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == '-')
+                    .collect();
+                let name = name.trim_end_matches('-');
+                if starts && is_skill(&prose[at + name.len()..]) {
+                    out.push((line, name.to_owned()));
+                }
+            }
+        }
+    }
+    out
+}
+
+fn skills(skill: &Skill, build: &Build) -> Vec<Finding> {
+    skills_named(&skill.text)
+        .into_iter()
+        .filter(|(_, name)| !build.skills.contains(name))
+        .map(|(line, name)| {
+            (
+                line,
+                format!("names the skill `{name}`, which purlis does not ship"),
+            )
+        })
+        .collect()
+}
+
+/// **The house style's "Not for" clause** (#5730, spec #5714's Q15 and Q30): a skill whose
+/// `evals/sources.json` declares neighbours says, after "Not for" in its description, the name
+/// of each, so a harness choosing between two skills reads where one ends. Each neighbour is a
+/// skill purlis ships, since its near-miss tests are that skill's requests.
+fn neighbours(skill: &Skill, build: &Build) -> Vec<Finding> {
+    let Some(text) = &skill.sources else {
+        return Vec::new();
+    };
+    // A sources file that does not read is named by `measured`.
+    let Ok(sources) = sources_of(text, &skill.name, &skill.triggers) else {
+        return Vec::new();
+    };
+    let (line, description) = description_of(&skill.text).unwrap_or((1, String::new()));
+    let neighbours = sources.neighbours;
+    let mut out: Vec<Finding> = neighbours
+        .iter()
+        .filter(|name| !build.skills.contains(*name))
+        .map(|name| {
+            (
+                1,
+                format!(
+                    "{SOURCES_PATH} declares the neighbour `{name}`, which purlis does not ship"
+                ),
+            )
+        })
+        .collect();
+    if neighbours.is_empty() {
+        return out;
+    }
+    let description = description.to_lowercase();
+    let Some(at) = description.find("not for") else {
+        out.push((
+            line,
+            format!(
+                "its description has no “Not for” clause, and its {SOURCES_PATH} names the \
+                 neighbours {}",
+                neighbours.join(", ")
+            ),
+        ));
+        return out;
+    };
+    let after = &description[at..];
+    for name in &neighbours {
+        if !names_word(after, name) {
+            out.push((
+                line,
+                format!("its description's “Not for” clauses never name its neighbour `{name}`"),
+            ));
+        }
+    }
+    out
+}
+
+/// Whether `text` says `name` as a whole name, not as part of a longer one.
+fn names_word(text: &str, name: &str) -> bool {
+    let part = |c: Option<char>| c.is_some_and(|c| c.is_alphanumeric() || c == '-' || c == '_');
+    text.match_indices(name).any(|(at, _)| {
+        !part(text[..at].chars().next_back()) && !part(text[at + name.len()..].chars().next())
+    })
+}
+
+/// **Remedies a chat never offers** (#5735, spec #5714's Q19, the briefing's `SANDBOXED_NOTE`):
+/// each lowers purlis's sandbox or edits a harness's own settings file, which purlis's own
+/// settings outrank, so a chat that suggests one sends the person to a refusal or to a rule
+/// nothing reads. Matched in any case.
+const NEVER_OFFERED: &[&str] = &[
+    "/sandbox",
+    "excludedcommands",
+    "dangerouslydisablesandbox",
+    "start without the sandbox",
+    "lower the sandbox",
+    ".claude/settings.json",
+    ".claude/settings.local.json",
+    "opencode.json",
+    "config.toml",
+    "settings file",
+];
+
+/// The words that make a sentence about a remedy say not to take it.
+const REFUSING: &[&str] = &["never", "not", "no", "cannot", "don't", "nothing"];
+
+/// The sentences of `text` outside its fenced blocks, code spans kept, each on one line with its
+/// paragraph's line: a sentence ends at a `.`, `!` or `?` that a space or the paragraph's end
+/// follows, so a path's dot does not end one.
+fn sentences(text: &str) -> Vec<(usize, String)> {
+    paragraphs(text)
+        .into_iter()
+        .flat_map(|(line, paragraph)| {
+            let one = paragraph.split_whitespace().collect::<Vec<_>>().join(" ");
+            let mut out = Vec::new();
+            let mut sentence = String::new();
+            let mut chars = one.chars().peekable();
+            while let Some(c) = chars.next() {
+                sentence.push(c);
+                if matches!(c, '.' | '!' | '?') && chars.peek().is_none_or(|n| *n == ' ') {
+                    out.push((line, std::mem::take(&mut sentence).trim().to_owned()));
+                }
+            }
+            out.push((line, sentence.trim().to_owned()));
+            out.retain(|(_, sentence)| !sentence.is_empty());
+            out
+        })
+        .collect()
+}
+
+/// **Never lowers the sandbox or edits a harness's settings** (#5735): a sentence that names one
+/// of [`NEVER_OFFERED`] says not to take it, in one of the [`REFUSING`] words. A sentence is
+/// read to its end ([`sentences`]), so a refusal in the next one does not cover it.
+fn sandbox(skill: &Skill, _: &Build) -> Vec<Finding> {
+    sentences(&skill.text)
+        .into_iter()
+        .filter_map(|(line, sentence)| {
+            let lower = sentence.to_lowercase();
+            let named = NEVER_OFFERED.iter().find(|r| lower.contains(*r))?;
+            let refuses = lower
+                .split(|c: char| !(c.is_alphanumeric() || c == '\''))
+                .any(|word| REFUSING.contains(&word));
+            (!refuses).then(|| {
+                (
+                    line,
+                    format!("offers “{named}” without saying never: “{sentence}”"),
+                )
+            })
+        })
+        .collect()
+}
+
+/// **Every built-in is measured** (#5731, spec #5714's Q2 and Q3): it carries trigger tests in
+/// `evals/triggers.json`, and beside them an `evals/sources.json` a reviewer reads and the CI
+/// grader scores by, naming its tier, its neighbours and where each test came from. So no
+/// built-in ships without a trigger grade to hold it to its bar.
+fn measured(skill: &Skill, _: &Build) -> Vec<Finding> {
+    if LEAVING.iter().any(|(name, _)| *name == skill.name) {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    if skill.triggers.is_empty() {
+        out.push((
+            1,
+            "carries no trigger tests (`evals/triggers.json`), so no grade says whether it \
+             starts when it should"
+                .to_owned(),
+        ));
+    }
+    match &skill.sources {
+        None => out.push((
+            1,
+            format!(
+                "has no {SOURCES_PATH} naming its tier, its neighbours and where each test \
+                 came from"
+            ),
+        )),
+        Some(text) if !skill.triggers.is_empty() => {
+            if let Err(why) = sources_of(text, &skill.name, &skill.triggers) {
+                out.push((
+                    1,
+                    format!("its trigger tests' sources cannot be read: {why}"),
+                ));
+            }
+        }
+        Some(_) => {}
+    }
+    out
+}
+
+fn descriptions(skills: &[Skill]) -> Vec<String> {
+    let length = |skill: &Skill| {
+        description_of(&skill.text).map_or(0, |(_, description)| description.trim().chars().count())
+    };
+    let total: usize = skills.iter().map(length).sum();
+    if total <= MOST_DESCRIPTIONS {
+        return Vec::new();
+    }
+    let biggest = skills
+        .iter()
+        .max_by_key(|skill| length(skill))
+        .map(|skill| format!("{}'s ({})", skill.name, length(skill)))
+        .unwrap_or_default();
+    vec![format!(
+        "the built-ins' descriptions together are {total} characters, over \
+         {MOST_DESCRIPTIONS}: the biggest is {biggest}"
+    )]
+}
+
 // ---------------------------------------------------------------------------------------------
 // The check
 
@@ -512,19 +866,35 @@ fn check(skills: &[Skill], build: &Build) -> (Vec<String>, BTreeSet<usize>) {
             }
         }
     }
+    for (rule, run) in SET_RULES {
+        found.extend(
+            run(skills)
+                .into_iter()
+                .map(|what| format!("{rule}: {what}")),
+        );
+    }
     (found, matched)
 }
 
+/// Every skill the app's plugin ships, with its trigger tests and its sources file.
 fn shipped() -> Vec<Skill> {
     shipped_skills(&repo())
         .into_iter()
-        .map(|path| Skill {
-            name: path
-                .parent()
-                .and_then(|folder| folder.file_name())
+        .map(|path| {
+            let folder = path.parent().expect("a skill's folder");
+            let name = folder
+                .file_name()
                 .map(|name| name.to_string_lossy().into_owned())
-                .unwrap_or_default(),
-            text: std::fs::read_to_string(&path).expect("a skill reads"),
+                .unwrap_or_default();
+            let text = std::fs::read_to_string(&path).expect("a skill reads");
+            let triggers = std::fs::read_to_string(folder.join("evals/triggers.json"))
+                .map(|json| {
+                    serde_json::from_str(&json)
+                        .unwrap_or_else(|why| panic!("{name}'s evals/triggers.json reads: {why}"))
+                })
+                .unwrap_or_default();
+            let sources = std::fs::read_to_string(folder.join(SOURCES_PATH)).ok();
+            Skill::of(&name, &text).with(triggers, sources)
         })
         .collect()
 }
@@ -556,6 +926,12 @@ fn every_shipped_skill_passes_the_built_in_checks() {
         stale.is_empty(),
         "nothing matches these ON_PURPOSE entries any more — take them off: {stale:?}"
     );
+    for (name, goes) in LEAVING {
+        assert!(
+            build.skills.contains(*name),
+            "`{name}` ({goes}) is shipped no more — take it off LEAVING"
+        );
+    }
 }
 
 /// A skill made to fail every rule, so each is seen to find what it is for.
@@ -571,10 +947,7 @@ const BAD: &str = "---\nname: purlis-bad\ndescription: Do real work in a repo wi
 #[test]
 fn a_skill_made_to_fail_is_found_by_every_rule() {
     let build = Build::new();
-    let bad = Skill {
-        name: "purlis-bad".to_owned(),
-        text: BAD.to_owned(),
-    };
+    let bad = measured_skill("purlis-bad", BAD);
     let (found, _) = check(&[bad], &build);
     assert_eq!(
         found,
@@ -594,12 +967,12 @@ fn a_skill_made_to_fail_is_found_by_every_rule() {
 #[test]
 fn a_description_over_codexs_limit_is_found_and_one_at_it_is_not() {
     let build = Build::new();
-    let page = |length: usize| Skill {
-        name: "purlis-long".to_owned(),
-        text: format!(
+    let page = |length: usize| {
+        let text = format!(
             "---\nname: purlis-long\ndescription: purlis {}\n---\n",
             "x".repeat(length - "purlis ".len())
-        ),
+        );
+        Skill::of("purlis-long", &text)
     };
     assert!(description(&page(DESCRIPTION_LIMIT), &build).is_empty());
     assert_eq!(
@@ -620,5 +993,485 @@ fn a_code_span_wraps_inside_its_paragraph_and_a_fenced_line_joins_its_continuati
             (1, "purlis worktree commit -m x".to_owned()),
             (5, "purlis a    b".to_owned()),
         ]
+    );
+}
+
+// ---------------------------------------------------------------------------------------------
+// The later rules, each seen to find what it is for
+
+/// A trigger test the skill should start on.
+fn should_start(query: &str) -> TriggerTest {
+    TriggerTest {
+        query: query.to_owned(),
+        should_trigger: true,
+    }
+}
+
+/// An `evals/sources.json` with `tier` (none where `None`), `neighbours`, and a source for each
+/// of `queries`.
+fn sources_json(tier: Option<&str>, neighbours: &[&str], queries: &[&str]) -> String {
+    let prompts: Vec<_> = queries
+        .iter()
+        .map(|query| serde_json::json!({ "query": query, "source": "Skill text." }))
+        .collect();
+    let mut file = serde_json::json!({ "neighbours": neighbours, "prompts": prompts });
+    if let Some(tier) = tier {
+        file["tier"] = tier.into();
+    }
+    file.to_string()
+}
+
+/// A skill measured as a built-in is: one trigger test, and a sources file that reads.
+fn measured_skill(name: &str, text: &str) -> Skill {
+    Skill::of(name, text).with(
+        vec![should_start("a")],
+        Some(sources_json(Some("standard"), &[], &["a"])),
+    )
+}
+
+const GOOD: &str = "---\nname: purlis-example\ndescription: Do a thing in purlis. Use when asked to.\n---\n\n# Example\n\n";
+
+/// What the check finds in a measured example skill whose page is `text`.
+fn problems(text: &str) -> Vec<String> {
+    check(&[measured_skill("purlis-example", text)], &Build::new()).0
+}
+
+#[test]
+fn a_measured_skill_that_breaks_no_rule_has_no_problem() {
+    assert_eq!(problems(&format!("{GOOD}Do it.\n")), Vec::<String>::new());
+}
+
+/// A measured example skill whose description is `length` characters long, filled with `fill`.
+fn described(name: &str, length: usize, fill: char) -> Skill {
+    let lead = "In purlis ";
+    let description = format!("{lead}{}", fill.to_string().repeat(length - lead.len()));
+    measured_skill(
+        name,
+        &format!("---\nname: {name}\ndescription: {description}\n---\n"),
+    )
+}
+
+#[test]
+fn descriptions_over_the_total_are_named_with_the_biggest() {
+    let skills = |b: usize| {
+        ["purlis-a", "purlis-b", "purlis-c", "purlis-d", "purlis-e"].map(|name| {
+            // Counted in characters, as a harness's listing counts them: an em dash is one.
+            let (length, fill) = if name == "purlis-b" {
+                (b, '—')
+            } else {
+                (1_000, 'a')
+            };
+            described(name, length, fill)
+        })
+    };
+    assert_eq!(check(&skills(1_000), &Build::new()).0, Vec::<String>::new());
+    assert_eq!(
+        check(&skills(1_001), &Build::new()).0,
+        [
+            "descriptions: the built-ins' descriptions together are 5001 characters, over 5000: \
+             the biggest is purlis-b's (1001)"
+        ]
+    );
+}
+
+#[test]
+fn a_skill_that_says_the_losing_side_of_a_settled_pair_is_named_with_the_ruling() {
+    for (page, ruling) in [
+        ("Run the login: run it by its\nname with `-s=<s>`.", "(a)"),
+        ("Ask them to Supply the value by stdin.", "(h)"),
+        ("Ask once, with **AskUserQuestion**.", "(i)"),
+        ("Write the persona. Commit it. Personas are shared.", "(f)"),
+    ] {
+        let found = problems(&format!("{GOOD}{page}\n"));
+        assert_eq!(found.len(), 1, "{page}: {found:?}");
+        assert!(
+            found[0].starts_with("purlis-example:7: settled: says the losing side")
+                && found[0].contains(ruling),
+            "{found:?}"
+        );
+    }
+    // The winning side of each passes.
+    for page in [
+        "Call `browser_login`; running the login's name as a command does nothing.",
+        "Ask with `ask_operator`.",
+        "Commit with `purlis worktree commit`, and commit it there alone.",
+    ] {
+        assert_eq!(
+            problems(&format!("{GOOD}{page}\n")),
+            Vec::<String>::new(),
+            "{page}"
+        );
+    }
+}
+
+#[test]
+fn a_skill_that_says_a_word_the_glossary_avoids_is_named_with_the_word_it_says_instead() {
+    for (page, word) in [
+        ("A control\nplane orchestrates repos.", "“control plane”"),
+        ("Start a sub-agent for it.", "“sub-agent”"),
+        ("Two subagents read it.", "“subagents”"),
+        ("Tell The User what it says.", "“the user”"),
+        ("Prune only with the operator's yes.", "“operator”"),
+    ] {
+        let found = problems(&format!("{GOOD}{page}\n"));
+        assert_eq!(found.len(), 1, "{page}: {found:?}");
+        assert!(
+            found[0].starts_with("purlis-example:7: glossary: ") && found[0].contains(word),
+            "{found:?}"
+        );
+    }
+    let page = "---\nname: purlis-example\ndescription: Ask the operator in purlis.\n---\n";
+    assert_eq!(
+        problems(page),
+        ["purlis-example:1: glossary: says “operator” where the glossary says the person"]
+    );
+    // A tool's name, a command and a path are code, and keep their words; so does a word that
+    // only contains one.
+    for page in [
+        "Ask the person with `ask_operator`.",
+        "```bash\nls ~/control plane/the user\n```",
+        "A helper reads; the user-level settings stay; a cooperator is no operator-like word.",
+    ] {
+        assert_eq!(
+            problems(&format!("{GOOD}{page}\n")),
+            Vec::<String>::new(),
+            "{page}"
+        );
+    }
+}
+
+#[test]
+fn a_skill_named_in_prose_that_purlis_does_not_ship_is_named() {
+    for (page, name) in [
+        ("Use the `secrets` skill for it.", "secrets"),
+        ("That is the purlis-secret skill's.", "purlis-secret"),
+        ("(the `purlis-persnoa` skill)", "purlis-persnoa"),
+    ] {
+        assert_eq!(
+            problems(&format!("{GOOD}{page}\n")),
+            [format!(
+                "purlis-example:7: skills: names the skill `{name}`, which purlis does not ship"
+            )],
+            "{page}"
+        );
+    }
+    for page in [
+        "Use the `purlis-secrets` skill, or the purlis-persona skill.",
+        "A `secrets` file is no skill; `purlis-secrets` is one.",
+        "Run `purlis skill list`; a project skill is the project's.",
+    ] {
+        assert_eq!(
+            problems(&format!("{GOOD}{page}\n")),
+            Vec::<String>::new(),
+            "{page}"
+        );
+    }
+}
+
+/// What the check finds in an example skill described as `description`, whose sources file
+/// declares two neighbours.
+fn sourced(description: &str) -> Vec<String> {
+    let page = format!("---\nname: purlis-example\ndescription: {description}\n---\n");
+    let skill = Skill::of("purlis-example", &page).with(
+        vec![should_start("a"), should_start("b")],
+        Some(sources_json(
+            Some("strict"),
+            &["purlis-browser", "purlis-persona"],
+            &["a", "b"],
+        )),
+    );
+    check(&[skill], &Build::new()).0
+}
+
+#[test]
+fn a_description_whose_not_for_clauses_name_every_neighbour_has_no_problem() {
+    assert_eq!(
+        sourced(
+            "Use a credential in purlis. Not for a website login — that is purlis-browser; not \
+             for another persona's work — that is `purlis-persona`."
+        ),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn a_description_with_neighbours_and_no_not_for_clause_is_named_with_them() {
+    assert_eq!(
+        sourced("Use a credential in purlis, unlike purlis-browser and purlis-persona."),
+        [
+            "purlis-example:3: neighbours: its description has no “Not for” clause, and its \
+             evals/sources.json names the neighbours purlis-browser, purlis-persona"
+        ]
+    );
+}
+
+#[test]
+fn a_neighbour_the_not_for_clauses_leave_out_is_named() {
+    // Named before "Not for" and as part of a longer name is not named in a clause.
+    assert_eq!(
+        sourced(
+            "Use purlis-persona's vault in purlis. Not for a website login — that is \
+             purlis-browser; not for purlis-personas-old."
+        ),
+        [
+            "purlis-example:3: neighbours: its description's “Not for” clauses never name its \
+             neighbour `purlis-persona`"
+        ]
+    );
+}
+
+#[test]
+fn a_neighbour_purlis_does_not_ship_and_unreadable_sources_are_named() {
+    let page =
+        "---\nname: purlis-example\ndescription: Do it in purlis. Not for purlis-nope.\n---\n";
+    let skill = Skill::of("purlis-example", page).with(
+        vec![should_start("a")],
+        Some(sources_json(Some("strict"), &["purlis-nope"], &["a"])),
+    );
+    assert_eq!(
+        check(&[skill], &Build::new()).0,
+        [
+            "purlis-example:1: neighbours: evals/sources.json declares the neighbour \
+             `purlis-nope`, which purlis does not ship"
+        ]
+    );
+    let skill =
+        Skill::of("purlis-example", page).with(Vec::new(), Some(sources_json(None, &[], &[])));
+    assert_eq!(
+        check(&[skill], &Build::new()).0,
+        [
+            "purlis-example:1: measured: carries no trigger tests (`evals/triggers.json`), so \
+             no grade says whether it starts when it should"
+        ]
+    );
+}
+
+#[test]
+fn a_sentence_that_offers_to_lower_the_sandbox_or_edit_a_harness_s_settings_is_named() {
+    for (page, named) in [
+        ("Run `/sandbox exclude cargo` and retry.", "/sandbox"),
+        ("Add the host to `excludedCommands`.", "excludedcommands"),
+        (
+            "Ask them to choose Start without the sandbox. Never guess.",
+            "start without the sandbox",
+        ),
+        (
+            "Edit `.claude/settings.json` and add `Bash(terraform *)` to its allow list.",
+            ".claude/settings.json",
+        ),
+        (
+            "Put the rule in the harness's settings file by hand.",
+            "settings file",
+        ),
+    ] {
+        let found = problems(&format!("{GOOD}{page}\n"));
+        assert_eq!(found.len(), 1, "{page}: {found:?}");
+        assert!(
+            found[0].starts_with("purlis-example:7: sandbox: offers") && found[0].contains(named),
+            "{found:?}"
+        );
+    }
+}
+
+#[test]
+fn a_sentence_that_says_never_to_lower_the_sandbox_or_edit_a_harness_s_settings_is_not_named() {
+    for page in [
+        "Never suggest `/sandbox` or `excludedCommands`: purlis's own settings outrank them.",
+        "The person alone may choose Start without the sandbox; never offer it.\n\nYou do not \
+         edit `.claude/settings.json` by hand.",
+        "```bash\ncat .claude/settings.json\n```",
+        "Settings › Project › Sandbox shows the level.",
+    ] {
+        assert_eq!(
+            problems(&format!("{GOOD}{page}\n")),
+            Vec::<String>::new(),
+            "{page}"
+        );
+    }
+}
+
+#[test]
+fn a_built_in_without_trigger_tests_sources_or_a_tier_is_named() {
+    let page = format!("{GOOD}Do it.\n");
+    let found = |skill: Skill| check(&[skill], &Build::new()).0;
+    let no_tests = "purlis-example:1: measured: carries no trigger tests (`evals/triggers.json`), \
+                    so no grade says whether it starts when it should";
+    let no_sources = "purlis-example:1: measured: has no evals/sources.json naming its tier, its \
+                      neighbours and where each test came from";
+    assert_eq!(
+        found(Skill::of("purlis-example", &page)),
+        [no_tests, no_sources]
+    );
+    assert_eq!(
+        found(Skill::of("purlis-example", &page).with(vec![should_start("a")], None)),
+        [no_sources]
+    );
+    assert_eq!(
+        found(Skill::of("purlis-example", &page).with(
+            vec![should_start("a")],
+            Some(sources_json(None, &[], &["a"]))
+        )),
+        [
+            "purlis-example:1: measured: its trigger tests' sources cannot be read: \
+             evals/sources.json names no tier: say \"strict\" or \"standard\""
+        ]
+    );
+    assert_eq!(
+        found(Skill::of("purlis-example", &page).with(
+            vec![should_start("a"), should_start("b")],
+            Some(sources_json(Some("standard"), &[], &["a"]))
+        )),
+        [
+            "purlis-example:1: measured: its trigger tests' sources cannot be read: \
+             evals/sources.json has no source for the prompt \"b\""
+        ]
+    );
+    assert_eq!(
+        found(measured_skill("purlis-example", &page)),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn a_built_in_leaving_the_bundle_is_not_held_to_carry_trigger_tests() {
+    let page = format!("{GOOD}Do it.\n");
+    assert_eq!(
+        check(&[Skill::of("purlis-building-ui", &page)], &Build::new()).0,
+        Vec::<String>::new()
+    );
+}
+
+// ---------------------------------------------------------------------------------------------
+// Where a fact goes, said once
+
+/// **The skill that holds the rule for where a fact goes** (#5733, spec #5714's Q29): workspace
+/// memory, the workspace's charter, persona memory or shared memory. Written there once; every
+/// other text a chat is told points to it rather than saying it again, so the rule cannot drift
+/// into four versions.
+const REMEMBER: &str = "purlis-remember";
+
+/// The texts that used to restate the rule, each of which now points to [`REMEMBER`].
+const POINT_TO_REMEMBER: [&str; 4] = [
+    "purlis-persona",
+    "purlis-safe-remove",
+    "purlis-smart-close",
+    "purlis-tidy-memory",
+];
+
+/// Each base a fact can be written to that `text` names a way to write to: the tool or command
+/// that records a fact there. A text naming two or more is choosing between them, which is the
+/// rule; one naming one is only using it.
+fn bases_written(text: &str) -> BTreeSet<&'static str> {
+    let commands: Vec<String> = code_of(text)
+        .into_iter()
+        .flat_map(|(_, code)| code.lines().map(str::to_owned).collect::<Vec<_>>())
+        .collect();
+    // A command shown recording a fact: its words and a quoted argument. One named in passing,
+    // as the secrets skill names the commands that persist prose, records nothing.
+    let said = |words: &'static str| {
+        commands
+            .iter()
+            .filter(move |line| line.contains(words) && line.contains('"'))
+    };
+    let prose = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    // Each sentence that names the `persona_remember` tool, and whether it gives it `shared`.
+    let persona_tool: Vec<bool> = prose
+        .match_indices("`persona_remember`")
+        .map(|(at, _)| {
+            prose[at..]
+                .split(". ")
+                .next()
+                .unwrap_or("")
+                .contains("`shared`")
+        })
+        .collect();
+    let mut bases = BTreeSet::new();
+    if prose.contains("`memory_add`") || said("purlis workspace remember").next().is_some() {
+        bases.insert("workspace memory");
+    }
+    if prose.contains("`workspace_section`") || prose.contains("`workspace_vision`") {
+        bases.insert("the workspace's charter");
+    }
+    if persona_tool.iter().any(|shared| !shared)
+        || said("purlis persona remember").any(|line| !line.contains("--shared"))
+    {
+        bases.insert("persona memory");
+    }
+    if persona_tool.iter().any(|shared| *shared)
+        || said("purlis persona remember").any(|line| line.contains("--shared"))
+    {
+        bases.insert("shared memory");
+    }
+    bases
+}
+
+#[test]
+fn the_rule_for_where_a_fact_goes_is_written_once_and_the_rest_point_to_it() {
+    let skills = shipped();
+    let remember = skills
+        .iter()
+        .find(|skill| skill.name == REMEMBER)
+        .unwrap_or_else(|| panic!("purlis ships no `{REMEMBER}`"));
+    assert_eq!(
+        bases_written(&remember.text).len(),
+        4,
+        "{REMEMBER} names a way to write to only {:?}",
+        bases_written(&remember.text)
+    );
+    let mut wrong = Vec::new();
+    for skill in skills.iter().filter(|skill| skill.name != REMEMBER) {
+        let bases = bases_written(&skill.text);
+        if bases.len() > 1 {
+            wrong.push(format!(
+                "{} says where a fact goes ({}) — point to {REMEMBER} instead",
+                skill.name,
+                bases.into_iter().collect::<Vec<_>>().join(", ")
+            ));
+        }
+    }
+    for name in POINT_TO_REMEMBER {
+        let skill = skills
+            .iter()
+            .find(|skill| skill.name == name)
+            .unwrap_or_else(|| panic!("purlis ships no `{name}`"));
+        if !skills_named(&skill.text).iter().any(|(_, n)| n == REMEMBER) {
+            wrong.push(format!("{name} does not point to {REMEMBER}"));
+        }
+    }
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
+
+#[test]
+fn a_text_naming_ways_to_write_to_two_bases_is_choosing_between_them() {
+    let one = |text: &str| bases_written(text).into_iter().collect::<Vec<_>>();
+    assert_eq!(
+        one("record it with the `memory_add` tool"),
+        ["workspace memory"]
+    );
+    assert_eq!(
+        one("add it with `workspace_section`, or a goal with `workspace_vision`"),
+        ["the workspace's charter"]
+    );
+    assert_eq!(
+        one("the `persona_remember` tool with `shared`, to every persona"),
+        ["shared memory"]
+    );
+    assert_eq!(
+        one("```bash\npurlis persona remember <persona> --shared \"<fact>\"\n```"),
+        ["shared memory"]
+    );
+    assert_eq!(
+        one("record with the `persona_remember` tool. The workspace's own takes `memory_add`."),
+        ["persona memory", "workspace memory"]
+    );
+    assert_eq!(
+        one("escape a backtick in `purlis persona remember <persona>` and `note`"),
+        Vec::<&str>::new(),
+        "a command named in passing records no fact"
+    );
+    assert_eq!(
+        one("purlis persona edit-memory <name> <slug> --shared"),
+        Vec::<&str>::new(),
+        "curating a memory writes no fact"
     );
 }

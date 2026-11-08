@@ -16,7 +16,7 @@ The 17 built-ins' descriptions came to 10,823 characters, past opencode's and Co
 | Codex | 30 skills, 8,000 characters | Was 6,000; now exactly the listing Codex holds where it does not know its window, so the default never warns |
 | opencode | 30 skills, 8,000 characters | Was 6,000 |
 
-The shipped-skill check (`crates/purlis-cli/src/main/tests/shipped_skills.rs`) fails when the built-ins' descriptions together pass 5,000 characters, and names the biggest. `docs/development.md`'s house style says about 290 characters each.
+The shipped-skill check (`crates/purlis-cli/tests/it/every_shipped_skill_passes_the_built_in_checks.rs`) fails when the built-ins' descriptions together pass 5,000 characters, and names the biggest. `docs/development.md`'s house style says about 290 characters each.
 
 ## What it leaves
 

@@ -52,12 +52,22 @@ pub enum Graded {
     /// Nothing ran, and the line says why.
     Skipped(String),
     /// Every run ran: `passed` when every skill met its bar, the summary in Markdown, and the
-    /// scorecard the nightly ([`nightly`]) reads.
+    /// report the nightly ([`nightly`]) reads.
     Done {
         passed: bool,
         summary: String,
-        card: Box<ci::Scorecard>,
+        card: Box<ci::Report>,
     },
+}
+
+/// **A harness by its word**, as the pin file, the CLI and an artifact's name spell it:
+/// `claude-code`, `codex` or `opencode`, its serde name in a report.
+pub fn word(harness: ci::Harness) -> &'static str {
+    match harness {
+        ci::Harness::ClaudeCode => "claude-code",
+        ci::Harness::Codex => "codex",
+        ci::Harness::Opencode => "opencode",
+    }
 }
 
 /// **The `skill-grades` environment's secret a harness runs on** (spec #5714, decision Q10):
@@ -75,7 +85,7 @@ pub fn no_key(harness: ci::Harness) -> String {
         "Skill trigger grades on {} skipped: no `{}` from the `skill-grades` environment (it is \
          not set up, or this is a fork's pull request, which is never handed it), so nothing was \
          graded.",
-        harness.name(),
+        harness.shown(),
         key_name(harness)
     )
 }
@@ -87,27 +97,21 @@ pub fn grade(ask: &Ask<'_>) -> Graded {
         return Graded::Skipped(no_key(ask.harness));
     };
     let skills_dir = ask.plugin.join("skills");
-    let graded: Vec<ci::Graded> = ask
+    let graded: Vec<launch::Skill> = ask
         .skills
         .iter()
         .map(|skill| launch::graded(&skills_dir, skill))
         .collect();
-    let runs = launch::run_all(ask, key, &graded);
-    let built_ins = launch::built_ins(&skills_dir);
-    let (version, model) = launch::ran_as(ask, &runs);
     let briefed = launch::briefed(ask);
-    let card = ci::score(&ci::Grade {
+    let ran = launch::run_all(ask, key, &graded, &briefed);
+    let (version, model) = launch::ran_as(ask, &ran);
+    let on = ci::On {
         harness: ask.harness,
-        version: version.as_deref().unwrap_or(ask.pinned),
-        model: model.as_deref().unwrap_or(launch::MODEL_NOT_SAID),
-        briefed: ci::Briefed {
-            cwd: ask.cwd,
-            skills: &briefed,
-        },
-        built_ins: &built_ins,
-        skills: &graded,
-        runs: &runs,
-    });
+        version: version.unwrap_or_else(|| ask.pinned.to_owned()),
+        model: model.unwrap_or_else(|| launch::MODEL_NOT_SAID.to_owned()),
+    };
+    let runs: Vec<ci::Run> = ran.into_iter().map(|ran| ran.run).collect();
+    let card = launch::score(on, &graded, &runs);
     Graded::Done {
         passed: summary::passed(&card),
         summary: summary::markdown(&card, ask.pinned),

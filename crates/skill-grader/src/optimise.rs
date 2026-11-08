@@ -14,7 +14,7 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use purlis_skills::grade::ci::{self, ListingScore, PromptScore, SkillGrade, SkillScore};
+use purlis_skills::grade::ci::{self, Failing, Score, Setting, Why};
 
 use crate::{Ask, Graded, grade, summary};
 
@@ -86,28 +86,24 @@ fn run(asked: &Optimise<'_>, keys: &[&str]) -> Result<Optimised, String> {
         .ok_or_else(|| format!("{} has no description to improve", skill_md.display()))?;
 
     let now = graded(ask, ask.plugin, ask.records.join("current"), skill)?;
-    if now.score.verdict.failing.is_empty() {
+    if crowded_failing(&now.score).next().is_none() {
         return Ok(Optimised::Nothing(format!(
             "{skill} on {}: every trigger test passes among the crowd, so there is nothing to \
              propose.\n\n{}",
-            now.ran, now.score.verdict.said
+            now.ran, now.verdict
         )));
     }
 
-    let sources = std::fs::read_to_string(
-        ask.plugin
-            .join("skills")
-            .join(skill)
-            .join(ci::sources_path()),
-    )
-    .ok()
-    .and_then(|text| ci::sources_of(&text, now.tests).ok());
-    let neighbours = sources.map(|s| s.neighbours).unwrap_or_default();
+    let built_in = crate::launch::graded(&ask.plugin.join("skills"), skill);
+    let sources = built_in
+        .sources
+        .as_deref()
+        .and_then(|text| ci::sources_of(text, skill, &built_in.tests).ok());
     let reply = propose(
         asked.proposer,
         proposer_key,
         &ask.records,
-        &brief(skill, &current, &now.score, &neighbours),
+        &brief(skill, &current, &now.score, sources.as_ref()),
     )?;
     // What a written description must be: one line, and nothing a key was.
     let proposal = one_line(&scrubbed(&reply, keys));
@@ -156,11 +152,11 @@ fn no_key(name: &str) -> String {
     )
 }
 
-/// One graded description: its score, what it ran as, and how many trigger tests it has.
+/// One graded description: its score, its verdict in words, and what it ran as.
 struct Scored {
-    score: SkillScore,
+    score: ci::Scored,
+    verdict: String,
     ran: String,
-    tests: usize,
 }
 
 /// `skill` graded with the plugin at `plugin`, its runs kept under `records`.
@@ -178,16 +174,18 @@ fn graded(ask: &Ask<'_>, plugin: &Path, records: PathBuf, skill: &str) -> Result
         records,
         parallel: ask.parallel,
     };
-    let tests = crate::launch::graded(&plugin.join("skills"), skill)
-        .tests
-        .len();
     match grade(&one) {
         Graded::Skipped(why) => Err(why),
         Graded::Done { card, .. } => {
-            let ran = format!("{} {} ({})", card.harness.name(), card.version, card.model);
-            match card.skills.into_iter().next() {
-                Some(SkillGrade::Scored(score)) => Ok(Scored { score, ran, tests }),
-                Some(SkillGrade::NotScored { why, .. }) => Err(why),
+            let on = &card.on;
+            let ran = format!("{} {} ({})", on.harness.shown(), on.version, on.model);
+            match card.skills.first() {
+                Some(graded @ ci::Graded::Scored(score)) => Ok(Scored {
+                    score: score.clone(),
+                    verdict: graded.verdict(on),
+                    ran,
+                }),
+                Some(graded @ ci::Graded::NotScored { .. }) => Err(graded.verdict(on)),
                 None => Err(format!("{skill} was not graded")),
             }
         }
@@ -196,23 +194,26 @@ fn graded(ask: &Ask<'_>, plugin: &Path, records: PathBuf, skill: &str) -> Result
 
 /// **What the proposer is asked**: the skill, its description, the tests that failed and how,
 /// its neighbours, and the house style.
-fn brief(skill: &str, current: &str, score: &SkillScore, neighbours: &[String]) -> String {
+fn brief(skill: &str, current: &str, score: &ci::Scored, sources: Option<&ci::Sources>) -> String {
     let mut out = format!(
         "You rewrite the description of {skill}, a skill built into purlis. A coding agent \
          reads the description in its skill listing, among about forty other skills, and \
          decides from it alone whether to start the skill.\n\nIts description now:\n\n\
          {current}\n\nIn the trigger tests it failed:\n\n"
     );
-    for prompt in failing(&score.crowded) {
-        let how = if prompt.should_trigger {
-            "should have started it and did not".to_owned()
-        } else if prompt.owner != skill {
-            format!("started it, and belongs to {}", prompt.owner)
-        } else {
-            "started it, and should not have".to_owned()
+    for prompt in crowded_failing(score) {
+        let belongs_to = sources
+            .and_then(|sources| sources.of(&prompt.query))
+            .and_then(|source| source.belongs_to.as_deref());
+        let how = match (prompt.why, belongs_to) {
+            (Why::Missed, _) => "should have started it and did not".to_owned(),
+            (Why::FalseTrigger, Some(owner)) => format!("started it, and belongs to {owner}"),
+            (Why::FalseTrigger, None) => "started it, and should not have".to_owned(),
+            (Why::NotRun, _) => "no run of it said what it started".to_owned(),
         };
         let _ = writeln!(out, "- \"{}\": {how}", prompt.query);
     }
+    let neighbours = sources.map_or(&[][..], |sources| &sources.neighbours[..]);
     if !neighbours.is_empty() {
         let _ = write!(
             out,
@@ -231,8 +232,12 @@ fn brief(skill: &str, current: &str, score: &SkillScore, neighbours: &[String]) 
     out
 }
 
-fn failing(listing: &ListingScore) -> impl Iterator<Item = &PromptScore> {
-    listing.prompts.iter().filter(|prompt| !prompt.pass)
+/// The prompts against `score` among the crowd: what its bar holds it to.
+fn crowded_failing(score: &ci::Scored) -> impl Iterator<Item = &Failing> {
+    score
+        .failing
+        .iter()
+        .filter(|failing| failing.setting == Setting::Crowded)
 }
 
 /// **The proposer's answer**: Claude Code started headless with no tool, no plugin and no MCP
@@ -349,7 +354,7 @@ fn said(
         "| listing | recall now | recall proposed | false triggers now | false triggers \
          proposed |\n|---|---|---|---|---|\n",
     );
-    let row = |out: &mut String, word: &str, a: &ListingScore, b: &ListingScore| {
+    let row = |out: &mut String, word: &str, a: &Score, b: &Score| {
         let _ = writeln!(
             out,
             "| {word} | {} | {} | {} | {} |",
@@ -359,19 +364,16 @@ fn said(
             summary::rate(b.false_triggers),
         );
     };
-    row(
-        &mut out,
-        "crowded",
-        &now.score.crowded,
-        &proposed.score.crowded,
-    );
+    if let (Some(a), Some(b)) = (&now.score.crowded, &proposed.score.crowded) {
+        row(&mut out, "crowded", a, b);
+    }
     if let (Some(a), Some(b)) = (&now.score.bare, &proposed.score.bare) {
         row(&mut out, "bare", a, b);
     }
     let _ = write!(
         out,
-        "\nNow: {}\n\nProposed: {}\n\n",
-        now.score.verdict.said, proposed.score.verdict.said
+        "\nNow:\n\n{}\nProposed:\n\n{}\n",
+        now.verdict, proposed.verdict
     );
     match written {
         Some(file) => {

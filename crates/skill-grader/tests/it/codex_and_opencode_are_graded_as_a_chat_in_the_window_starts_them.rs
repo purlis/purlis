@@ -81,7 +81,7 @@ fn codex_scores_its_reads_of_a_briefed_skill_md_and_says_it_ran_on_codex() {
         "Skill trigger grades on Codex 0.167.0",
         "| crowded | 0% (0 of 2) | 0% (0 of 2) |",
         "| bare | 100% (2 of 2) | 0% (0 of 2) |",
-        "is below its strict trigger bar",
+        "below its strict bar",
     ] {
         assert!(summary.contains(said), "no {said:?} in:\n{summary}");
     }
@@ -145,10 +145,10 @@ fn each_harness_says_its_own_key_when_it_has_none() {
     ] {
         let fixture = fixture_on(harness, true, true);
         let Graded::Skipped(line) = grade(&fixture.ask(None)) else {
-            panic!("{} graded without a key", harness.name());
+            panic!("{} graded without a key", harness.shown());
         };
         assert!(line.contains(key), "{line}");
-        assert!(line.contains(harness.name()), "{line}");
+        assert!(line.contains(harness.shown()), "{line}");
         assert!(!fixture.argv.exists(), "a harness was started");
     }
 }
