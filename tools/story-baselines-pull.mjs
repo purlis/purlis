@@ -54,8 +54,7 @@ export const DRAWN = "drawn.json";
 
 /**
  * The artifact of the pictures a run drew again alone, which it keeps beside the whole set only
- * when taking them deletes nothing the whole set would (#5791): a few pictures, where the whole
- * set is about 330 MB.
+ * when taking them deletes nothing the whole set would (#5791).
  */
 export const REDRAWN = "story-redrawn";
 
@@ -287,20 +286,24 @@ export function pull({ pr, repo = REPO, root, tmp = tmpdir(), exec = spawnSync }
   );
   const chosen = runToTake(runs, head, from);
   if (!chosen.run) throw new Refused(chosen.why);
-  const artifacts = JSON.parse(
-    run("gh", [
-      "api",
-      `repos/${repo}/actions/runs/${chosen.run.id}/artifacts?per_page=100`,
-      "--jq",
-      ".artifacts",
-    ]),
-  );
-  const named = (name) => artifacts.find((artifact) => artifact.name === name);
-  // The pictures drawn again, when the run kept them and they have not expired; else the whole
-  // set, which also deletes the baselines whose stories are gone.
-  const redrawn = named(REDRAWN);
-  const partial = redrawn !== undefined && !redrawn.expired;
-  const kept = partial ? redrawn : named(ARTIFACT);
+  // Each by its name, so no page of a run's many artifacts hides it; a re-run of failed jobs
+  // can leave an expired copy beside a fresh one, and only a fresh one is taken.
+  const copiesOf = (name) =>
+    JSON.parse(
+      run("gh", [
+        "api",
+        `repos/${repo}/actions/runs/${chosen.run.id}/artifacts?name=${name}`,
+        "--jq",
+        ".artifacts",
+      ]),
+    );
+  const freshOf = (copies) => copies.find((copy) => !copy.expired);
+  // The pictures drawn again when the run kept them, else the whole set, which also deletes the
+  // baselines whose stories are gone.
+  const redrawn = freshOf(copiesOf(REDRAWN));
+  const partial = redrawn !== undefined;
+  const whole = partial ? [] : copiesOf(ARTIFACT);
+  const kept = redrawn ?? freshOf(whole) ?? whole[0];
   if (kept === undefined)
     throw new Refused(
       `the stories run ${chosen.run.html_url} kept no baselines: a story failed on more than its picture there, and its annotations say which`,
@@ -311,7 +314,7 @@ export function pull({ pr, repo = REPO, root, tmp = tmpdir(), exec = spawnSync }
     );
   const work = mkdtempSync(join(tmp, "story-baselines-"));
   try {
-    const zip = join(work, `${ARTIFACT}.zip`);
+    const zip = join(work, "artifact.zip");
     const said = download({ exec, run, artifact: kept, to: zip });
     const into = join(work, "artifact");
     said.push(...unpack({ exec, run, zip, into }));

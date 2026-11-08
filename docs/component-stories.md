@@ -246,9 +246,9 @@ add or change one:
    limit, which bound what one commit pushes, so the whole set can grow past them:
    - **Your own push** (the way that runs no extra checks): in a checkout of the pull request's
      head, run `node tools/story-baselines-pull.mjs <pull request>`. It takes the newest
-     `stories` run's `story-redrawn` into `app/` when the run kept one, writing those pictures
-     and deleting nothing, and its `story-baselines` otherwise, which also deletes the obsolete
-     baselines. Review the pictures, then commit and push
+     `stories` run's `story-redrawn` into `app/` when the run kept one that has not expired,
+     writing those pictures and deleting nothing, and its `story-baselines` otherwise, which
+     also deletes the obsolete baselines. Review the pictures, then commit and push
      them with your next change. Your push starts every check as any push does. The tool runs
      the checked-out head's own code, so take another person's pull request's baselines only in
      a checkout you would run anyway. It reads `purlis/purlis` unless `--repo` names another,

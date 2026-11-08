@@ -189,6 +189,8 @@ const githubOf = ({
     archive_download_url: "https://api.github.com/repos/purlis/purlis/actions/artifacts/42/zip",
   }),
   resumes = true,
+  // The pictures drawn again, a zip's bytes, when the run kept them; `redrawnListed` lists the
+  // copies a run holds under their name (one object, or several after a re-run).
   redrawn,
   redrawnListed = (zip) => ({
     id: 43,
@@ -219,18 +221,29 @@ const githubOf = ({
     if (args[0] === "auth") return said(`${TOKEN}\n`);
     if (args[0] === "pr") return said(`${HEAD} ${FROM}\n`);
     if (args[0] === "api" && args.includes("-X")) return said(JSON.stringify([runOf({})]));
-    if (args[0] === "api" && /\/runs\/\d+\/artifacts/.test(args[1]))
+    if (args[0] === "api" && /\/runs\/\d+\/artifacts\?name=/.test(args[1])) {
+      const copies = (name, copy) => [copy].flat().filter(Boolean).map((one) => ({ name, ...one }));
       return said(
         JSON.stringify(
-          [
-            listed(artifact) && { name: "story-baselines", ...listed(artifact) },
-            redrawn && redrawnListed(redrawn) && { name: "story-redrawn", ...redrawnListed(redrawn) },
-          ].filter(Boolean),
+          args[1].endsWith(`=${REDRAWN}`)
+            ? redrawn === undefined
+              ? []
+              : copies(REDRAWN, redrawnListed(redrawn))
+            : copies(ARTIFACT, listed(artifact)),
         ),
       );
+    }
     if (args[0] === "api") return said(`${behind}\n`);
     return { status: 1, stdout: "", stderr: `not stubbed: ${command} ${args.join(" ")}` };
   };
+};
+
+/** A checkout that already holds OTHER, a baseline the run's artifacts do not. */
+const checkoutWithOther = () => {
+  const root = checkout();
+  mkdirSync(dirname(join(root, "app", OTHER)), { recursive: true });
+  writeFileSync(join(root, "app", OTHER), DRAWN_PNG);
+  return root;
 };
 
 const checkout = () => {
@@ -263,10 +276,8 @@ test("a pull refused after the download leaves nothing in the temp folder, and w
 
 test("a run that kept its pictures drawn again is pulled from those alone, and no baseline is deleted (#5791)", (t) => {
   const tmp = mkdtempSync(join(tmpdir(), "pull-tmp-"));
-  const root = checkout();
+  const root = checkoutWithOther();
   t.after(() => [tmp, root].forEach((dir) => rmSync(dir, { recursive: true, force: true })));
-  mkdirSync(dirname(join(root, "app", OTHER)), { recursive: true });
-  writeFileSync(join(root, "app", OTHER), DRAWN_PNG);
   const calls = [];
   const said = pull({
     pr: "7",
@@ -285,28 +296,37 @@ test("a run that kept its pictures drawn again is pulled from those alone, and n
   assert.match(said.at(-1), /^1 baselines written and 0 deleted .* the pictures the run drew again/);
 });
 
-test("with no pictures drawn again kept, or theirs expired, the whole set is pulled and deletes the baselines it does not hold", (t) => {
-  for (const redrawn of [undefined, "expired"]) {
-    const root = checkout();
+test("with no pictures drawn again kept, the whole set is pulled and deletes the baselines it does not hold", (t) => {
+  const root = checkoutWithOther();
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const said = pull({ pr: "7", repo: FROM, root, exec: githubOf() });
+  assert.deepEqual(readFileSync(join(root, "app", PICTURE)), DRAWN_PNG);
+  assert.equal(existsSync(join(root, "app", OTHER)), false);
+  assert.match(said.join("\n"), new RegExp(`deleted: ${OTHER}`));
+  assert.match(said.at(-1), /1 deleted .* every baseline the run drew/);
+});
+
+test("an expired copy is never the one taken: a re-run's fresh copy is, and with none fresh the whole set is", (t) => {
+  const expired = (zip) => ({
+    id: 41,
+    size_in_bytes: zip.length,
+    expired: true,
+    archive_download_url: "https://api.github.com/repos/purlis/purlis/actions/artifacts/41/zip",
+  });
+  const fresh = (zip) => ({ id: 43, size_in_bytes: zip.length, expired: false, archive_download_url: REDRAWN_URL });
+  for (const [redrawnListed, from, kept] of [
+    [(zip) => [expired(zip), fresh(zip)], REDRAWN_URL, true],
+    [(zip) => [expired(zip)], "https://api.github.com/repos/purlis/purlis/actions/artifacts/42/zip", false],
+  ]) {
+    const root = checkoutWithOther();
     t.after(() => rmSync(root, { recursive: true, force: true }));
-    mkdirSync(dirname(join(root, "app", OTHER)), { recursive: true });
-    writeFileSync(join(root, "app", OTHER), DRAWN_PNG);
     const calls = [];
-    const said = pull({
-      pr: "7",
-      repo: FROM,
-      root,
-      exec: githubOf({
-        calls,
-        redrawn: redrawn && ARTIFACT_OF(),
-        redrawnListed: (zip) => ({ id: 43, size_in_bytes: zip.length, expired: true, archive_download_url: REDRAWN_URL }),
-      }),
-    });
-    assert.equal(calls.some((call) => call.command === "curl" && call.args.at(-1) === REDRAWN_URL), false, redrawn);
-    assert.deepEqual(readFileSync(join(root, "app", PICTURE)), DRAWN_PNG);
-    assert.equal(existsSync(join(root, "app", OTHER)), false, redrawn);
-    assert.match(said.join("\n"), new RegExp(`deleted: ${OTHER}`));
-    assert.match(said.at(-1), /1 deleted .* every baseline the run drew/);
+    pull({ pr: "7", repo: FROM, root, exec: githubOf({ calls, redrawn: ARTIFACT_OF(), redrawnListed }) });
+    assert.deepEqual(
+      calls.filter((call) => call.command === "curl").map((call) => call.args.at(-1)),
+      [from],
+    );
+    assert.equal(existsSync(join(root, "app", OTHER)), kept, from);
   }
 });
 
