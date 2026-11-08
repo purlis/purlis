@@ -74,6 +74,12 @@ fn every_built_in_with_trigger_tests_has_enough_of_them_with_sources_and_near_mi
             "{skill} carries no trigger tests at the strict bar: {checked:?}"
         );
     }
+    for skill in STANDARD {
+        assert!(
+            checked.contains(&((*skill).to_owned(), Bar::Standard)),
+            "{skill} carries no trigger tests at the standard bar: {checked:?}"
+        );
+    }
 }
 
 /// The built-ins spec #5714 holds to the strict bar (decision Q3) that carry tests so far: where a
@@ -84,4 +90,15 @@ const STRICT: &[&str] = &[
     "purlis-smart-close",
     "purlis-safe-remove",
     "purlis-persona",
+];
+
+/// The built-ins spec #5714 holds to the standard bar (decision Q3, #5731): the rest.
+const STANDARD: &[&str] = &[
+    "purlis-browser",
+    "purlis-theme",
+    "purlis-upgrade",
+    "purlis-tidy-memory",
+    "purlis-repo-work",
+    "purlis-curation-action",
+    "purlis-skill-studio",
 ];

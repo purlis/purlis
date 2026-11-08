@@ -1,6 +1,6 @@
 ---
 name: purlis-tidy-memory
-description: Compact and improve a purlis workspace's or persona's memory — find duplicates and stale entries with purlis's optimize and dedupe reports, prune only with the person's yes, and fold durable lessons into workspace.md or persona.md. Use when asked to compact, tidy, prune, dedupe or improve a workspace's or persona's memory.
+description: When a purlis workspace's or persona's memory has grown duplicates and stale entries, find them with purlis's optimize and dedupe reports, prune only with the person's yes, and fold lasting lessons into workspace.md or persona.md. Use when asked to tidy, compact, dedupe, prune, clean up or improve a workspace's, a persona's or shared memory, or to archive, move, restore or forget a memory. Not for writing the session record of a chat that is ending — that is purlis-smart-close. Not for removing a workspace or a persona — that is purlis-safe-remove.
 ---
 
 # Compact & improve
