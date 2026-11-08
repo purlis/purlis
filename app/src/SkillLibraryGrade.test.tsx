@@ -20,7 +20,7 @@ import type {
   SkillGradesStep,
   StudioSkill,
 } from "./bindings";
-import { estimateSaid, stoppedShortOf } from "./SkillLibraryGrade";
+import { estimateSaid, resumeEstimateSaid, stoppedShortOf } from "./SkillLibraryGrade";
 import { forgetStudio, PLANE, renderStudio } from "./SkillStudioTab.testkit";
 import { AT_THE_ROOT } from "./skillStudio";
 import { skill } from "./skillsListing.testkit";
@@ -312,5 +312,11 @@ describe("Resume in the Library's Select mode (#5718)", () => {
     };
     expect(stoppedShortOf(step)).toEqual(["g2", "g3"]);
     expect(stoppedShortOf(undefined)).toEqual([]);
+  });
+
+  it("says a resume's estimate is of what each left, at what its chats spent", () => {
+    expect(resumeEstimateSaid({ known: 1, known_usd: 0.45, unknown: [] })).toBe(
+      "About $0.45 in all, for what each has left, at what its chats spent so far.",
+    );
   });
 });

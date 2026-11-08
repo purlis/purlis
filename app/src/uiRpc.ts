@@ -1245,11 +1245,7 @@ export const commands = {
 	/**  A grade of the skill running now, which Resume waits for. */
 	running: string | null,
 } | null, string>(__TAURI_INVOKE("skill_grade_resume_plan", { plane, grade })),
-	/**
-	 *  **Resumes the stopped grade `grade`** (#5718), on the plan whose consent `consent` is: only its
-	 *  unfinished cases run, held to a new cap of their own. The answer is the new grade's id.
-	 */
-	skillGradeResume: (plane: PlaneId, grade: string, consent: string) => typedError<string, string>(__TAURI_INVOKE("skill_grade_resume", { plane, grade, consent })),
+	skillGradeResume: __WINDOW_ONLY_RESULT,
 	/**  **What the page of the draft `draft` says of its grade.** */
 	skillDraftGrade: (plane: PlaneId, draft: string) => typedError<SkillDraftGrade, string>(__TAURI_INVOKE("skill_draft_grade", { plane, draft })),
 	/**  **What grading the draft `draft` would run**, before anything runs. */

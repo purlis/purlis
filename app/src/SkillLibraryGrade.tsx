@@ -49,6 +49,20 @@ const usdSaid = (usd: number | null): string => dollarsSaid(usd ?? 0);
 /** A skill of a batch, by its level and name: two copies of one name are two skills (#3978). */
 const batchKey = (one: { level: SkillSetMember["level"]; name: string }) => memberKey(one);
 
+/** **What resuming several stopped grades should spend** (#5718): what is left of each, at what
+ *  its stopped grade's chats spent each. */
+export function resumeEstimateSaid(
+  plan: Pick<SkillGradesPlan, "known_usd" | "known" | "unknown">,
+): string {
+  if (plan.known === 0)
+    return "purlis has nothing to go on: none of these stopped grades said what its chats spent.";
+  const about = `About ${usdSaid(plan.known_usd)}`;
+  if (plan.unknown.length === 0)
+    return `${about} in all, for what each has left, at what its chats spent so far.`;
+  const others = plan.unknown.length === 1 ? "the other one" : `the other ${plan.unknown.length}`;
+  return `${about} for what ${plan.known === 1 ? "one has" : `${plan.known} have`} left. purlis has nothing to go on for ${others}.`;
+}
+
 /** **The estimate in a sentence**: what is known, added, and how many have nothing to go on. */
 export function estimateSaid(
   plan: Pick<SkillGradesPlan, "known_usd" | "known" | "unknown">,
@@ -265,8 +279,9 @@ export function GradeSetReview({
           <section aria-labelledby="grades-cost" className="skill-review">
             <PanelSectionTitle id="grades-cost">What it should spend</PanelSectionTitle>
             <p data-testid="grades-estimate">
-              {estimateSaid(plan)} Each grade is held to its own limit too, so together they can
-              spend at most {usdSaid(plan.most_usd)}.
+              {resume === undefined ? estimateSaid(plan) : resumeEstimateSaid(plan)} Each grade is
+              held to its own limit too, so together they can spend at most {usdSaid(plan.most_usd)}
+              .
             </p>
             {unknown.length > 0 && (
               <div data-testid="grades-unknown">
