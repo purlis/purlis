@@ -35,6 +35,7 @@ fn claude(then: &str) -> Login {
         ],
         env: Vec::new(),
         cleared: Vec::new(),
+        pin: None,
     }
 }
 
@@ -104,6 +105,7 @@ fn a_device_code_is_said_before_its_page_opens() {
         ],
         env: Vec::new(),
         cleared: Vec::new(),
+        pin: None,
     };
 
     let (ended, said) = followed_with(
@@ -156,6 +158,7 @@ fn a_page_it_does_not_know_says_what_to_do() {
         ],
         env: Vec::new(),
         cleared: Vec::new(),
+        pin: None,
     };
 
     let (ended, said) = followed(&login, &[]);

@@ -3339,6 +3339,7 @@ fn a_standing_is_not_held_to_its_input() {
         ],
         env: Vec::new(),
         cleared: Vec::new(),
+        pin: None,
     };
     assert_eq!(
         standing_by_login(&login, "work"),
@@ -3358,6 +3359,7 @@ fn a_standing_that_prints_too_much_says_the_limit_is_fixed() {
         ],
         env: Vec::new(),
         cleared: Vec::new(),
+        pin: None,
     };
     let said = standing_by_login(&login, "work").unwrap_err();
     assert!(said.contains("printed more"), "{said}");
@@ -3782,6 +3784,7 @@ fn a_login_of(script: &str) -> crate::profilestore::sign_in::Login {
         args: vec!["-c".into(), script.into(), "login".into()],
         env: Vec::new(),
         cleared: Vec::new(),
+        pin: None,
     }
 }
 

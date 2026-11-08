@@ -909,6 +909,8 @@ pub struct Driving {
     /// Held, so one asks for the next step at a time.
     events: Mutex<Receiver<Event>>,
     input: Input,
+    /// Whether its pin held, where it has one: nothing is passed to it before.
+    heard: Arc<Heard>,
     driven: Arc<Mutex<Driven>>,
     cancelled: Arc<AtomicBool>,
     /// Why it had to stop, where the person did not cancel it ([`Self::stop`]).
@@ -981,6 +983,43 @@ impl Forwarding {
 /// What is passed to a login, shared with what reads it, which answers its one question.
 type Input = Arc<Mutex<Option<ChildStdin>>>;
 
+/// **A login's [`super::Pin`], checked once, on the first thing it prints**: what it
+/// printed is said, and anything passed to it, only once its pin held.
+struct Heard {
+    pin: Option<super::Pin>,
+    /// How its one check went: none before it.
+    held: Mutex<Option<bool>>,
+}
+
+impl Heard {
+    /// Whether what was just read may be read for its steps: the pin is checked on the first read,
+    /// while every other read waits for it, and `stop` is told why where it does not hold.
+    fn may_say(&self, stop: impl FnOnce(String)) -> bool {
+        let Some(pin) = &self.pin else {
+            return true;
+        };
+        let mut held = self.held.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(held) = *held {
+            return held;
+        }
+        let holds = match pin.holds() {
+            Ok(()) => true,
+            Err(why) => {
+                stop(why);
+                false
+            }
+        };
+        *held = Some(holds);
+        holds
+    }
+
+    /// Whether anything may be passed to the login now.
+    fn takes_input(&self) -> bool {
+        self.pin.is_none()
+            || *self.held.lock().unwrap_or_else(PoisonError::into_inner) == Some(true)
+    }
+}
+
 /// **Runs `login` and drives it** as a login of harness `kind`, to `plan` where it serves several,
 /// asking `check` for its status once it ends well, with `carry` to take the browser's answer to a
 /// login that waits for it. Refused for a login purlis does not follow, one that waits for the
@@ -1048,6 +1087,12 @@ fn run(
     let mut child = crate::forklock::spawn(&mut command)
         .map_err(|e| format!("{} could not be run: {e}", login.program))?;
     let input: Input = Arc::new(Mutex::new(child.stdin.take()));
+    let heard = Arc::new(Heard {
+        pin: login.pin.clone(),
+        held: Mutex::new(None),
+    });
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let stopped = Arc::new(Mutex::new(None));
     let (tell, events) = std::sync::mpsc::sync_channel(MOST_WAITING);
     let tell = Telling {
         tell,
@@ -1079,11 +1124,14 @@ fn run(
             Arc::clone(&input),
             forwarding.clone(),
             tell.clone(),
+            Stopping {
+                heard: Arc::clone(&heard),
+                cancelled: Arc::clone(&cancelled),
+                stopped: Arc::clone(&stopped),
+            },
         ))
     })
     .collect();
-    let cancelled = Arc::new(AtomicBool::new(false));
-    let stopped = Arc::new(Mutex::new(None));
     let asked = Arc::new(Mutex::new(Instant::now()));
     {
         let (driven, cancelled, stopped, asked) = (
@@ -1113,6 +1161,7 @@ fn run(
     Ok(Driving {
         events: Mutex::new(events),
         input,
+        heard,
         driven,
         cancelled,
         stopped,
@@ -1135,9 +1184,17 @@ pub(super) fn whole_text(carried: &mut Vec<u8>, read: &[u8]) -> String {
     text
 }
 
+/// What a read stops the login by, where its pin does not hold.
+struct Stopping {
+    heard: Arc<Heard>,
+    cancelled: Arc<AtomicBool>,
+    stopped: Arc<Mutex<Option<String>>>,
+}
+
 /// Reads what the login prints on `from`, its output `stream`, feeding it to `driven` and
 /// telling its steps. A character cut between two reads is read whole. The page of a login that
-/// waits for the browser is told only once this device listens for its answer.
+/// waits for the browser is told only once this device listens for its answer. Nothing is read
+/// for its steps before the login's pin held; where it does not, the login is stopped with why.
 fn reading(
     stream: Stream,
     mut from: Box<dyn Read + Send>,
@@ -1145,12 +1202,23 @@ fn reading(
     input: Input,
     forwarding: Option<Arc<Forwarding>>,
     tell: Telling,
+    stopping: Stopping,
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         let mut buffer = [0u8; 4096];
         let mut carried: Vec<u8> = Vec::new();
         while let Ok(read) = from.read(&mut buffer) {
             if read == 0 {
+                return;
+            }
+            let held = stopping.heard.may_say(|why| {
+                *stopping
+                    .stopped
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner) = Some(why);
+                stopping.cancelled.store(true, Ordering::SeqCst);
+            });
+            if !held {
                 return;
             }
             let text = whole_text(&mut carried, &buffer[..read]);
@@ -1406,6 +1474,9 @@ impl Driving {
     fn takes_input(&self) -> Result<(), String> {
         if self.cancelled.load(Ordering::SeqCst) {
             return Err("the sign-in takes no more input".to_owned());
+        }
+        if !self.heard.takes_input() {
+            return Err("the sign-in has not been checked yet, so it takes nothing".to_owned());
         }
         Ok(())
     }

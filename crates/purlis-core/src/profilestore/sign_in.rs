@@ -547,6 +547,42 @@ pub fn let_go_older(root: &Path, name: &str, seen: Instant) {
         .retain(|w| !(w.root == root && w.profile.name == name && w.raised < seen));
 }
 
+/// **What a login is held to once it has been heard**: a check made once, on the first
+/// thing the login prints, before any of it is said or anything is passed to it. A cluster
+/// runner's sign-in reaches its pod by name, through `kubectl exec`; its pin reads the uid of the
+/// pod of that name again, after the exec has reached it, and holds it to the uid read right
+/// before ([`crate::pools::cluster_sign_in`]). Pods of one name never share a uid, so the same
+/// uid on both sides of the exec's connection proves it reached the pod judged. A refusal ends
+/// the login, with nothing it printed said and nothing passed to it.
+#[derive(Clone)]
+pub struct Pin(std::sync::Arc<dyn Fn() -> Result<(), String> + Send + Sync>);
+
+impl Pin {
+    pub fn new(check: impl Fn() -> Result<(), String> + Send + Sync + 'static) -> Pin {
+        Pin(std::sync::Arc::new(check))
+    }
+
+    /// Whether the login still reaches what it was pinned to: `Err` with why, in words.
+    pub fn holds(&self) -> Result<(), String> {
+        (self.0)()
+    }
+}
+
+impl std::fmt::Debug for Pin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Pin")
+    }
+}
+
+/// Two pins are one where they are the same check.
+impl PartialEq for Pin {
+    fn eq(&self, other: &Pin) -> bool {
+        std::sync::Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for Pin {}
+
 /// A harness's own sign-in, ready to run in a terminal the person drives.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Login {
@@ -558,7 +594,16 @@ pub struct Login {
     pub env: Vec<(String, String)>,
     /// Variables of the terminal's own environment taken away before it runs (`env -u`).
     pub cleared: Vec<String>,
+    /// What it is held to once heard, where it reaches its runner by a name alone ([`Pin`]):
+    /// only what reads its output can hold it, so it is never typed into a shell.
+    pub pin: Option<Pin>,
 }
+
+/// Why a login held to a [`Pin`] is never typed as a line: a shell shows what it prints before
+/// anything could check it.
+pub const PINNED_IS_NOT_TYPED: &str = "this sign-in is checked as it starts, which a line typed \
+     into a shell cannot be, so purlis types no line for it. Run purlis profile sign-in with \
+     --pool in your own terminal instead.";
 
 /// The `env` a typed line runs through, by its path, so no `env` earlier on the shell's `PATH`
 /// is the one that runs.
@@ -584,6 +629,9 @@ impl Login {
                 self.program,
                 self.args.join(" ")
             ));
+        }
+        if self.pin.is_some() {
+            return Err(PINNED_IS_NOT_TYPED.to_owned());
         }
         let mut words = vec![ENV.to_owned()];
         for name in &self.cleared {
@@ -673,6 +721,7 @@ fn login_for(
         args,
         env: profile.env.clone(),
         cleared: Vec::new(),
+        pin: None,
     })
 }
 

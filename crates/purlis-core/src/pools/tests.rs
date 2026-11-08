@@ -2374,6 +2374,39 @@ mod cluster {
         );
     }
 
+    /// **A cluster runner's sign-in is pinned to the uid its pod had right before the exec**
+    ///: the pod of that name read again once the exec reached it holds only where it is
+    /// the same pod, not one made again under the name.
+    #[test]
+    fn a_cluster_sign_in_is_pinned_to_the_pod_it_had_right_before_the_exec() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        added(config.path(), &cluster);
+        let login = cluster_sign_in(
+            config.path(),
+            &cluster.kubectl(),
+            "team",
+            &judged(config.path()),
+            "work",
+            None,
+            crate::dockerpool::Typed::Driven,
+        )
+        .unwrap();
+        let pin = login.pin.clone().expect("a cluster sign-in is pinned");
+        assert!(
+            cluster.calls().contains("get pods"),
+            "its uid read before: {}",
+            cluster.calls()
+        );
+        assert_eq!(pin.holds(), Ok(()));
+        assert!(login.line().is_err(), "never typed into a shell");
+
+        cluster.write("pod.json", r#"{"metadata": {"uid": "pod-uid-2"}}"#);
+        assert!(pin.holds().is_err_and(|why| why.contains("made again")));
+
+        cluster.write("pod.json", "{}");
+        assert!(pin.holds().is_err());
+    }
+
     /// **A cluster runner's standing is its own `--check` in the vouched pod** (#4164); a runner
     /// not vouched for now is not asked.
     #[test]

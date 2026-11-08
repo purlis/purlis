@@ -2207,7 +2207,8 @@ pub fn standing_as_installed_by_login(
     }
 }
 
-/// Runs `login`'s `--check`, with `more`: how it exited, and what it said.
+/// Runs `login`'s `--check`, with `more`: how it exited, and what it said; refused where its
+/// pin does not hold once it answered.
 fn check_by_login(
     login: &crate::profilestore::sign_in::Login,
     more: &[&str],
@@ -2240,6 +2241,11 @@ fn check_by_login(
         }
         crate::boundedrun::Unanswered::NotFinished(_) => "it did not answer in time".to_owned(),
     })?;
+    // A cluster runner's, reached by its pod's name, counts only from the pod judged:
+    // read once it answered, so after the exec reached it.
+    if let Some(pin) = &login.pin {
+        pin.holds()?;
+    }
     Ok((
         ran.status.code(),
         String::from_utf8_lossy(&ran.said).into_owned(),
@@ -2965,6 +2971,7 @@ impl Docker {
                 .iter()
                 .map(|name| (*name).to_owned())
                 .collect(),
+            pin: None,
         })
     }
 
