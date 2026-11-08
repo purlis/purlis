@@ -40,9 +40,9 @@ step. This page is the reference behind it.
   serving both images to anyone who has not signed in, before any tag or signature. If either
   check cannot get a clear answer, the run stops.
 - **When:** `.github/workflows/operator-image.yml` builds it for every change to the operator
-  on `main`, once the operator's own checks and kind tests (`operator.yml`) passed on that
-  commit. A pull request that changes the operator builds and checks it the same way, and
-  pushes nothing.
+  on `main`, called by the operator's own run on that push (`operator.yml`) once its checks and
+  kind tests passed on that commit. A pull request that changes the operator builds and checks
+  it the same way, and pushes nothing.
 - **What:** `linux/amd64` and `linux/arm64` under one index, each built on a GitHub runner of
   that architecture with the pinned toolchain, `cargo auditable` and the operator's `release`
   profile, no cache, into [`operator/Dockerfile`](../operator/Dockerfile). Each architecture's
@@ -93,6 +93,9 @@ step. This page is the reference behind it.
     --predicate-type https://cyclonedx.org/bom \
     --format json | jq '.[0].verificationResult.statement.predicate'
   ```
+
+  Add `--source-digest <commit>` to check that it was built from a given commit: the provenance
+  names the commit the image was built from.
 
 ## Before you install: doctor
 

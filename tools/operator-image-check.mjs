@@ -16,7 +16,7 @@
 //      network) and with no cluster to reach, it stops and says so (`startProblems`).
 //
 // What the operator does in a cluster is `operator.yml`'s kind tests, on the same commit, which
-// `operator-image.yml` waits for before it builds this image.
+// pass before that run calls `operator-image.yml` to build this image.
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";

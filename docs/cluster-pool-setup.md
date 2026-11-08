@@ -36,7 +36,7 @@ _Not yet run in CI: CI starts from a checkout already._
 ```bash
 git clone https://github.com/purlis/purlis.git
 cd purlis
-commit=$(gh run list --repo purlis/purlis --workflow operator-image.yml --branch main --status success --limit 1 --json displayTitle --jq '.[0].displayTitle | split(" ") | last')
+commit=$(gh run list --repo purlis/purlis --workflow operator.yml --branch main --event push --status success --limit 1 --json headSha --jq '.[0].headSha')
 git checkout "$commit"
 ```
 

@@ -1,16 +1,18 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-// `release.yml`'s dev builds queue, and a run that publishes nothing never takes a build's
-// place in the queue. Run with `node --test tools/`.
+// `release.yml`'s dev builds: started by the push to `main` itself, so the run's own commit is
+// the one it builds and the one its provenance names; built only once that commit's `ci` ended
+// green; queued, never cancelled, and never published over a newer build. Run with
+// `node --test tools/`.
 //
-// On 2026-10-13 two dev builds were lost in one afternoon (runs 651 and 655): each was waiting
-// behind the build in progress when a run that a red or cancelled `ci` had started took the
-// group's one pending place, cancelled it, and then skipped. And run 654 published a commit
-// nine commits older than the one the channel served. These hold the trigger, the group and
-// the gate to the shape that stops both, by working out what the file's own expressions
-// answer for each kind of event, so a later edit that words them differently still passes and
-// one that changes what they answer does not.
+// Until November 2026 a dev build was started by `ci`'s end (`workflow_run`). Such a run's
+// `github.sha` is main's head when it starts, not the commit it builds, and the provenance took
+// the former. And on 2026-10-13 run 654 published a commit nine commits older than the one the
+// channel served. These hold the trigger, the group and the gates to the shape that stops both,
+// by working out what the file's own expressions answer for each way in where they can, so a
+// later edit that words them differently still passes and one that changes what they answer
+// does not.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
@@ -54,12 +56,12 @@ function value(body, indent, key) {
 /**
  * What a workflow expression answers for `github`.
  *
- * Only what these two expressions use: `==`, `!=`, `&&`, `||`, brackets, single-quoted
- * strings, `format` and paths into `github`. `&&` and `||` answer one of their operands, as
+ * Only what these expressions use: `==`, `!=`, `&&`, `||`, brackets, single-quoted
+ * strings, `format` and paths into `github` and `needs`. `&&` and `||` answer one of their operands, as
  * JavaScript's do, and a path that leads nowhere is null. Anything else in the expression
  * fails the test: it has to be taught here before the file may use it.
  */
-function evaluate(expression, github) {
+function evaluate(expression, github, needs = {}) {
   const parts = expression.split(/('(?:[^']|'')*')/);
   const script = parts
     .map((part, i) => {
@@ -68,58 +70,28 @@ function evaluate(expression, github) {
       return part
         .replace(/==/g, "===")
         .replace(/!=(?!=)/g, "!==")
-        .replace(/\bgithub((?:\.\w+)+)/g, (_, path) => `(github${path.replaceAll(".", "?.")} ?? null)`);
+        .replace(/\b(github|needs)((?:\.\w+)+)/g, (_, root, path) => `(${root}${path.replaceAll(".", "?.")} ?? null)`);
     })
     .join("");
   const format = (template, ...args) => template.replace(/\{(\d+)\}/g, (_, n) => String(args[n]));
-  return new Function("github", "format", `"use strict"; return (${script});`)(github, format);
+  return new Function("github", "needs", "format", `"use strict"; return (${script});`)(github, needs, format);
 }
 
-/** A `github` context for a `release` run that a `ci` run started. */
-function afterCi({ conclusion, event = "push", from = REPO, branch = "main", runId }) {
-  return {
-    event_name: "workflow_run",
-    repository: REPO,
-    ref: "refs/heads/main",
-    run_id: runId,
-    event: {
-      workflow_run: {
-        conclusion,
-        event,
-        head_branch: branch,
-        head_sha: "8781c167".padEnd(40, "0"),
-        head_repository: { full_name: from },
-      },
-    },
-  };
+/** A `github` context for a `release` run started by `event_name` on `ref`. */
+function at(event_name, ref, runId = 3) {
+  return { event_name, repository: REPO, ref, run_id: runId, sha: "8781c167".padEnd(40, "0"), event: {} };
 }
 
-/** Every kind of `ci` run on a branch called `main` whose end starts a `release` run. */
-const CI_ENDS = [
-  { name: "a green ci of a push to main", ci: { conclusion: "success" }, publishes: true },
-  { name: "a red ci of a push to main", ci: { conclusion: "failure" }, publishes: false },
-  { name: "a cancelled ci of a push to main", ci: { conclusion: "cancelled" }, publishes: false },
-  { name: "a ci that timed out", ci: { conclusion: "timed_out" }, publishes: false },
-  {
-    name: "the nightly ci, green",
-    ci: { conclusion: "success", event: "schedule" },
-    publishes: false,
-  },
-  {
-    name: "a green ci of a pull request from a fork's branch called main",
-    ci: { conclusion: "success", event: "pull_request", from: "stranger/purlis" },
-    publishes: false,
-  },
-  {
-    name: "a green ci of a push to another branch",
-    ci: { conclusion: "success", branch: "release-prep" },
-    publishes: false,
-  },
-  {
-    name: "a green ci of a push in another repository",
-    ci: { conclusion: "success", from: "stranger/purlis" },
-    publishes: false,
-  },
+/** A push to this repository's `main`: the one way in that builds a dev build. */
+const MAIN = () => at("push", "refs/heads/main");
+
+/** Every way a `release` run starts, and whether it is a dev build, which waits for `ci`. */
+const WAYS_IN = [
+  { name: "a push to main", github: MAIN(), dev: true },
+  { name: "a pushed tag", github: at("push", "refs/tags/v1.2.3"), dev: false },
+  { name: "the nightly profile guard", github: at("schedule", "refs/heads/main"), dev: false },
+  { name: "a build started by hand on main", github: at("workflow_dispatch", "refs/heads/main"), dev: false },
+  { name: "a build started by hand on a branch", github: at("workflow_dispatch", "refs/heads/try"), dev: false },
 ];
 
 const concurrency = block("concurrency");
@@ -130,25 +102,24 @@ const group = () => {
   return (github) => `${found[1]}${evaluate(found[2], github)}`;
 };
 
-/** `plan`'s `if:`, a folded scalar, as one expression. */
-function planCondition() {
-  const body = job("plan");
-  const start = body.indexOf("    if: >-");
-  assert.notEqual(start, -1, "`plan` has no folded `if:`");
-  const folded = [];
-  for (const line of body.slice(start + 1)) {
-    if (!line.startsWith("      ")) break;
-    folded.push(line.trim());
-  }
-  return folded.join(" ");
+/** The expression of a `${{ }}` written after `key:` at `indent` spaces of `body`. */
+function expression(body, indent, key) {
+  const written = value(body, indent, key);
+  const found = /^\$\{\{ (.*) \}\}$/.exec(written);
+  assert.ok(found, `${key} is one expression: ${written}`);
+  return found[1];
 }
 
-test("a release run is started by the end of ci on main, and by nothing else that ends", () => {
+// Under `workflow_run`, `github.sha` is main's head when the run starts, and that is the
+// commit the OIDC token, and so the provenance, names, though the run built the commit its `ci`
+// ran on. A run started by the push itself has the two the same.
+test("a release run is started by a push to main or a tag, the nightly guard and by hand, never by another run's end", () => {
   const on = block("on");
   const keys = on.filter((line) => /^ {2}\S/.test(line)).map((line) => line.trim());
-  assert.deepEqual(keys, ["workflow_dispatch:", "push:", "schedule:", "workflow_run:"]);
-  const run = on.slice(on.indexOf("  workflow_run:") + 1);
-  assert.deepEqual(run, ["    workflows: [ci]", "    types: [completed]", "    branches: [main]"]);
+  assert.deepEqual(keys, ["workflow_dispatch:", "push:", "schedule:"]);
+  const push = on.slice(on.indexOf("  push:") + 1, on.indexOf("  schedule:"));
+  assert.deepEqual(push, ['    tags: ["v*"]', "    branches: [main]"]);
+  assert.ok(!text.includes("workflow_run"), "release.yml still names workflow_run");
 });
 
 test("a build in progress is never cancelled", () => {
@@ -164,46 +135,74 @@ test("a build in progress is never cancelled", () => {
   );
 });
 
-test("plan runs for a green ci of a push to this repository's main, and for no other ci", () => {
-  const condition = planCondition();
-  for (const { name, ci, publishes } of CI_ENDS) {
-    assert.equal(evaluate(condition, afterCi({ ...ci, runId: 1 })), publishes, name);
-  }
-  // The other three ways in are not `workflow_run`s, and `plan` runs for each.
-  for (const event_name of ["push", "schedule", "workflow_dispatch"]) {
-    assert.equal(evaluate(condition, { event_name, repository: REPO, event: {} }), true);
+test("every push to main waits in the dev builds' group, and every other way in has a group of its own", () => {
+  const groupOf = group();
+  assert.equal(groupOf(MAIN()), "release-main");
+  assert.equal(groupOf(at("push", "refs/heads/main", 9)), "release-main");
+  assert.equal(groupOf(at("schedule", "refs/heads/main")), "release-profile-guard");
+  assert.equal(groupOf(at("push", "refs/tags/v1.2.3")), "release-refs/tags/v1.2.3");
+  assert.equal(groupOf(at("workflow_dispatch", "refs/heads/main")), "release-refs/heads/main");
+  assert.equal(groupOf(at("workflow_dispatch", "refs/heads/try")), "release-refs/heads/try");
+});
+
+test("the gate is the first job, holds nothing but the right to read runs, and passes every way in but a push to main at once", () => {
+  const names = block("jobs").filter((line) => /^ {2}\S/.test(line)).map((line) => line.trim());
+  assert.equal(names[0], "gate:");
+  const gate = job("gate");
+  assert.ok(!gate.some((line) => line.startsWith("    needs:")), "the gate waits on a job");
+  assert.ok(!gate.some((line) => line.startsWith("    environment:")), "the gate takes an environment");
+  assert.ok(!gate.some((line) => line.trim().startsWith("- uses: actions/checkout")), "the gate checks out code");
+  const permissions = gate.slice(gate.indexOf("    permissions:") + 1);
+  assert.equal(permissions[0], "      actions: read");
+  assert.ok(!/^ {6}\S/.test(permissions[1] ?? ""), `the gate holds more: ${permissions[1]}`);
+  for (const { name, github, dev } of WAYS_IN) {
+    assert.equal(evaluate(expression(gate, 10, "DEV"), github), dev, name);
   }
 });
 
-test("each of plan's four tests of the ci run is needed: without any one, plan refuses", () => {
-  // The provenance of a dev build, each condition by itself: the conclusion, the event, the
-  // branch and the repository. A run that fails exactly one of them is refused.
-  const condition = planCondition();
-  const green = { conclusion: "success", event: "push", branch: "main", from: REPO };
-  assert.equal(evaluate(condition, afterCi({ ...green, runId: 1 })), true);
-  for (const [field, other] of [
-    ["conclusion", "failure"],
-    ["event", "pull_request"],
-    ["branch", "main-2"],
-    ["from", "stranger/purlis"],
-  ]) {
-    assert.equal(evaluate(condition, afterCi({ ...green, [field]: other, runId: 1 })), false, field);
+test("the gate answers green only when this commit's own ci, on its push to main, ended success", () => {
+  const gate = job("gate").map((line) => line.trim());
+  const order = [
+    'if [ "$DEV" != true ]; then',
+    'echo "green=true" >> "$GITHUB_OUTPUT"',
+    "exit 0",
+    'id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" --event push --branch main --limit 1 --json databaseId --jq \'.[0].databaseId // empty\')',
+    'gh run watch "$id" --repo "$GITHUB_REPOSITORY" --interval 30 --exit-status > /dev/null || true',
+    'status=$(gh run view "$id" --repo "$GITHUB_REPOSITORY" --json status --jq .status)',
+    'conclusion=$(gh run view "$id" --repo "$GITHUB_REPOSITORY" --json conclusion --jq .conclusion)',
+    '[ "$status" = completed ] || { echo "::error::ci run $id of $GITHUB_SHA is $status after the wait, so nothing is built"; exit 1; }',
+    'if [ "$conclusion" = success ]; then',
+    'echo "green=true" >> "$GITHUB_OUTPUT"',
+    "else",
+    'echo "green=false" >> "$GITHUB_OUTPUT"',
+  ];
+  let from = 0;
+  for (const line of order) {
+    const found = gate.indexOf(line, from);
+    assert.notEqual(found, -1, `the gate lacks, or has out of order: ${line}`);
+    from = found + 1;
   }
-  for (const want of [
-    "github.event.workflow_run.conclusion == 'success'",
-    "github.event.workflow_run.event == 'push'",
-    "github.event.workflow_run.head_branch == 'main'",
-    "github.event.workflow_run.head_repository.full_name == github.repository",
-  ]) {
-    assert.ok(condition.includes(want), `plan's if: lacks ${want}`);
+  assert.ok(gate.includes("GH_TOKEN: ${{ github.token }}"));
+  // A run that never appears is an error, never a pass.
+  assert.ok(gate.some((line) => line.startsWith('[ -n "$id" ] || { echo "::error::')));
+});
+
+test("plan runs only when the gate answered green, and a skipped plan builds and publishes nothing", () => {
+  const plan = job("plan");
+  assert.equal(value(plan, 4, "needs"), "gate");
+  const condition = value(plan, 4, "if");
+  for (const [green, runs] of [["true", true], ["false", false], ["", false]]) {
+    assert.equal(evaluate(condition, {}, { gate: { outputs: { green } } }), runs, `green=${green}`);
   }
+  assert.equal(value(job("build"), 4, "needs"), "plan");
+  assert.equal(value(job("runner-image"), 4, "needs"), "plan");
 });
 
 test("a dev build's commit is checked against main's history before anything from the checkout runs", () => {
   const plan = job("plan").map((line) => line.trim());
   const script = plan.indexOf("set -euo pipefail");
   assert.deepEqual(plan.slice(script + 1, script + 8), [
-    'if [ "$EVENT" = workflow_run ]; then',
+    'if [ "$DEV" = true ]; then',
     'on_main=$(gh api "repos/$GITHUB_REPOSITORY/compare/$SHA...main" --jq .status)',
     'case "$on_main" in',
     'ahead | identical) echo "$SHA is in main\'s history" ;;',
@@ -211,55 +210,21 @@ test("a dev build's commit is checked against main's history before anything fro
     "esac",
     "fi",
   ]);
-  // Nothing of the repository's own runs before it in `plan`: the two checkouts, then this.
+  // Nothing of the repository's own runs before it in `plan`: the checkout, then this.
   const before = plan.slice(0, script).filter((line) => /^- (uses|name|run):|^run:|^uses:/.test(line));
   assert.deepEqual(before.map((line) => line.split("@")[0]), [
-    "- uses: actions/checkout",
     "- uses: actions/checkout",
     "- name: Channel, version, and whether anything is published",
     "run: |",
   ]);
 });
 
-test("only a run that plan lets publish waits in the dev builds' group", () => {
-  const groupOf = group();
-  const condition = planCondition();
-  const dev = groupOf(afterCi({ conclusion: "success", runId: 1 }));
-  assert.equal(dev, "release-main");
-  for (const { name, ci } of CI_ENDS) {
-    const github = afterCi({ ...ci, runId: 7 });
-    assert.equal(groupOf(github) === dev, evaluate(condition, github), name);
-  }
-});
-
-test("a run that publishes nothing has a group no other run shares", () => {
-  const groupOf = group();
-  const others = new Set([
-    groupOf(afterCi({ conclusion: "success", runId: 1 })),
-    groupOf({ event_name: "schedule", repository: REPO, ref: "refs/heads/main", event: {} }),
-    groupOf({ event_name: "push", repository: REPO, ref: "refs/tags/v1.2.3", event: {} }),
-    groupOf({ event_name: "workflow_dispatch", repository: REPO, ref: "refs/heads/main", event: {} }),
-  ]);
-  for (const { name, ci, publishes } of CI_ENDS) {
-    if (publishes) continue;
-    const [first, second] = [7, 8].map((runId) => groupOf(afterCi({ ...ci, runId })));
-    assert.notEqual(first, second, `${name}: two such runs share a group`);
-    assert.ok(!others.has(first), `${name}: shares ${first} with a run that builds`);
-    assert.match(first, /^release-nothing-7$/, name);
-  }
-});
-
-test("the profile guard, a tag and a build started by hand keep their own groups", () => {
-  const groupOf = group();
-  const at = (event_name, ref) => groupOf({ event_name, repository: REPO, ref, run_id: 3, event: {} });
-  assert.equal(at("schedule", "refs/heads/main"), "release-profile-guard");
-  assert.equal(at("push", "refs/tags/v1.2.3"), "release-refs/tags/v1.2.3");
-  assert.equal(at("workflow_dispatch", "refs/heads/try"), "release-refs/heads/try");
-});
-
-test("a dev build is the commit its green ci ran on, and no other", () => {
+test("a dev build is the commit its green ci ran on, the run's own commit, and no other", () => {
   const plan = job("plan");
-  const sha = "${{ github.event.workflow_run.head_sha || github.sha }}";
+  const sha = "${{ github.sha }}";
+  // The gate waited on the ci run of `$GITHUB_SHA`: the same commit.
+  assert.ok(job("gate").some((line) => line.includes('--commit "$GITHUB_SHA"')));
+  assert.equal(expression(plan, 10, "DEV"), "github.event_name == 'push' && github.ref == 'refs/heads/main'");
   // The first checkout of `plan`, and the `SHA` every later job checks out as `plan`'s `sha`.
   assert.equal(plan.find((line) => line.trim().startsWith("ref:"))?.trim(), `ref: ${sha}`);
   assert.ok(plan.includes(`          SHA: ${sha}`), "plan's SHA is not the ci run's commit");
@@ -280,7 +245,7 @@ test("plan asks whether the dev channel already serves this commit or a later on
     'order=$(node tools/dev-build-order.mjs --version "$version" --sha "$SHA")',
   );
   assert.notEqual(ask, -1, "plan does not ask tools/dev-build-order.mjs");
-  assert.equal(plan[ask - 1], 'if [ "$EVENT" = workflow_run ] && [ "$skip" != "true" ]; then');
+  assert.equal(plan[ask - 1], 'if [ "$DEV" = true ] && [ "$skip" != "true" ]; then');
   assert.deepEqual(plan.slice(ask + 1, ask + 8), [
     'case "$order" in',
     'publish:*) echo "$order" ;;',
@@ -335,6 +300,7 @@ test("every job has a deadline, so a hung one cannot hold the dev builds' group 
     .filter((line) => /^ {2}\S/.test(line))
     .map((line) => line.trim().slice(0, -1));
   assert.deepEqual(names, [
+    "gate",
     "plan",
     "build",
     "runner-image",
@@ -363,15 +329,17 @@ test("every job has a deadline, so a hung one cannot hold the dev builds' group 
       continue;
     }
     const minutes = Number(value(body, 4, "timeout-minutes"));
-    // The build is the one long job: a cold macOS build takes 65 to 68 minutes (ADR 0092).
-    const most = name === "build" ? 120 : 90;
+    // The build is one long job: a cold macOS build takes 65 to 68 minutes (ADR 0092). The gate
+    // is the other: it waits for this commit's `ci`, which took up to 111 minutes on a push to
+    // main in the first week of November 2026.
+    const most = { build: 120, gate: 150 }[name] ?? 90;
     assert.ok(Number.isInteger(minutes) && minutes >= 10 && minutes <= most, `${name}: ${minutes}`);
     minutesOf.set(name, minutes);
   }
   // The longest a run can hold the group: the slowest chain of jobs, each waiting on those it
   // needs, every one at its deadline.
   const longest = chain(names, minutesOf, (name) => needsOf(job(name)));
-  assert.ok(longest <= 240, `a run may hold the group for ${longest} minutes`);
+  assert.ok(longest <= 400, `a run may hold the group for ${longest} minutes`);
 });
 
 /** The jobs `body` waits on. */
@@ -432,13 +400,13 @@ test("the tool reads the commit from the notes the manifest job writes, and the 
   assert.ok(plan.includes('tag=""; version="$base-dev.$GITHUB_RUN_NUMBER"'));
 });
 
-test("the runs list names the commit a run builds, not main's head when ci ended", () => {
+test("the runs list names the commit a dev build builds", () => {
   const name = /^\$\{\{ (.*) \}\}$/.exec(value(lines, 0, "run-name"));
   assert.ok(name, "run-name is one expression");
-  const github = afterCi({ conclusion: "success", runId: 1 });
-  assert.equal(evaluate(name[1], github), `ci success (push) of ${github.event.workflow_run.head_sha}`);
+  const github = { ...MAIN(), ref_name: "main" };
+  assert.equal(evaluate(name[1], github), `dev build of ${github.sha}`);
   assert.equal(
-    evaluate(name[1], { event_name: "push", ref_name: "v1.2.3", event: {} }),
+    evaluate(name[1], { event_name: "push", ref: "refs/tags/v1.2.3", ref_name: "v1.2.3", event: {} }),
     "stable v1.2.3",
   );
   assert.equal(evaluate(name[1], { event_name: "schedule", event: {} }), "profile guard");
