@@ -129,7 +129,7 @@ fn held_for_the_person(held: &Held, launch: &AtLaunch) -> (Record, Vec<crate::ch
             .as_deref()
             .filter(|id| launch.is_a_listed_task(id))
             .filter(|_| !held.chats().left_running(chat))
-            .and_then(|_| chat.from.as_ref())
+            .and(chat.from.as_ref())
             .and_then(|from| {
                 back.chats.iter().find(|asker| {
                     asker.number == Some(from.chat)
