@@ -414,9 +414,7 @@ fn answered_at(waiting: waiting::Taken, port: u16, owners: Owners) -> Result<Vec
     };
     match (owners.of)(port, group) {
         Some(own) => Ok(own),
-        None if owners.reads && OWNER_NOT_READ.is_empty() /* RED */ => {
-            Err(OWNER_NOT_READ.to_owned())
-        }
+        None if owners.reads => Err(OWNER_NOT_READ.to_owned()),
         None => Ok(addresses(waiting.at)),
     }
 }
