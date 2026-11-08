@@ -115,6 +115,44 @@ describe("the notice about a launch without the session bus", () => {
     await waitFor(() => expect(asked).toContain("restart_on_the_session_bus"));
   });
 
+  it("asks first when a chat waits on its own work, and names what will end (#5782)", async () => {
+    const { asked } = core(SILENT);
+    render(
+      <SessionBusNotice
+        chats={[
+          {
+            ...MID_TURN,
+            state: "waiting",
+            ownWork: { helpers: 0, workflows: 0, monitors: 0, shells: 1 },
+          },
+        ]}
+      />,
+    );
+    await screen.findByRole("status");
+    await busAnswers();
+
+    await userEvent.click(await screen.findByRole("button", { name: RESTART }));
+
+    const ask = await screen.findByRole("alertdialog");
+    expect(ask.textContent).toContain(
+      "refactor is waiting on its own work: 1 background shell will end.",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Wait" }));
+    expect(asked).not.toContain("restart_on_the_session_bus");
+  });
+
+  it("restarts at once over a chat that waits on the person with nothing of its own", async () => {
+    const { asked } = core(SILENT);
+    render(<SessionBusNotice chats={[{ ...MID_TURN, state: "waiting" }]} />);
+    await screen.findByRole("status");
+    await busAnswers();
+
+    await userEvent.click(await screen.findByRole("button", { name: RESTART }));
+
+    await waitFor(() => expect(asked).toContain("restart_on_the_session_bus"));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
+
   it("goes away when dismissed", async () => {
     core(SILENT);
     render(<SessionBusNotice />);

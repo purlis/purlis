@@ -35,7 +35,7 @@ export function ChatAsk({
   children?: ReactNode;
   /** The button that does it: its verb. */
   answer: string;
-  /** What the answer would interrupt (`oneChatMidTurn`), said as part of the description, so it
+  /** What the answer would interrupt (`oneChatInterrupted`), said as part of the description, so it
    *  is announced with it. */
   warns?: string;
   /** The core's refusal of the last answer. */

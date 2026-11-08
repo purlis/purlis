@@ -274,6 +274,32 @@ describe("the update button", () => {
     expect(restarted).toBe(1);
   });
 
+  it("asks about a chat in a background turn, which a restart interrupts too (#5782)", async () => {
+    let restarted = 0;
+    render(
+      <UpdateItem
+        updates={updates(
+          { kind: "installed", version: "0.2.0" },
+          { restart: () => (restarted += 1) },
+        )}
+        // A background turn reads `waiting`, as the wait on the person under it did (#4562).
+        chats={[{ ...chat("ide.1", "waiting"), backgroundTurn: true }, chat("ide.2", "waiting")]}
+      />,
+    );
+
+    await userEvent.click(button());
+    await userEvent.click(
+      within(await screen.findByRole("dialog")).getByRole("button", { name: "Restart to update" }),
+    );
+
+    const asking = await screen.findByRole("alertdialog");
+    expect(within(asking).getByRole("alert").textContent).toBe(
+      "ide.1 is mid-turn and will be interrupted.",
+    );
+    expect(within(asking).queryByText("ide.2")).toBeNull();
+    expect(restarted).toBe(0);
+  });
+
   it("asks about a chat that reports no state, which could be mid-turn", async () => {
     let restarted = 0;
     render(
