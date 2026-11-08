@@ -23,6 +23,8 @@
 use crate::dispatchrestart::CARRY_ON;
 use crate::ownwork::OwnWork;
 
+pub mod tasks;
+
 /// What the chat is told after the work it had left running is listed: that none of it runs
 /// now, and that starting it again is the chat's to decide.
 const NONE_OF_IT_RUNS: &str = "None of it is running now, and nothing will come back from \

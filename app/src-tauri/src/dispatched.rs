@@ -2337,7 +2337,18 @@ pub fn wait(held: &Weak<Held>, asked: &Asked, connection: u64) -> Answer {
                             name,
                             what: Waited::Running { state },
                         }),
-                        None => no(why),
+                        // A task that finished before this app started is answered from its
+                        // dispatch record (#5754, #1463).
+                        None => match report_on_disk(&held, asked.chat, of) {
+                            Some((name, report)) => task(Answered::Waited {
+                                of,
+                                name,
+                                what: Waited::Reported {
+                                    report: Box::new(report),
+                                },
+                            }),
+                            None => no(why),
+                        },
                     };
                 };
                 return task(Answered::Waited {
@@ -2367,6 +2378,18 @@ pub fn wait(held: &Weak<Held>, asked: &Asked, connection: u64) -> Answer {
             })
         });
         if let Some(what) = ended {
+            drop(ledger);
+            // A report the app no longer holds in memory, after a restart or once a turn read
+            // it, is the one its dispatch record keeps (#5754, #1463).
+            let what = match what {
+                Waited::AlreadyRead => report_on_disk(&held, asked.chat, of).map_or(
+                    Waited::AlreadyRead,
+                    |(_, report)| Waited::Reported {
+                        report: Box::new(report),
+                    },
+                ),
+                what => what,
+            };
             return task(Answered::Waited { of, name, what });
         }
         // The project is let go of while this sleeps: only the ledger is kept.
@@ -2377,6 +2400,19 @@ pub fn wait(held: &Weak<Held>, asked: &Asked, connection: u64) -> Answer {
             .wait_timeout(ledger, left.min(A_WAIT_LOOKS_EVERY))
             .unwrap_or_else(PoisonError::into_inner);
     }
+}
+
+/// **The report task `of` sent chat `asker`, read from the task's dispatch record** (#5754,
+/// #1463): what a wait answers where the app no longer holds the report's text. The asking
+/// chat is matched by its id, never its number alone.
+fn report_on_disk(
+    held: &Held,
+    asker: u32,
+    of: u32,
+) -> Option<(String, purlis_core::handback::Handback)> {
+    let asker = crate::dispatches::chat_ref(held, asker)?;
+    let records = purlis_core::dispatchrecord::list(held.root());
+    purlis_core::dispatchrestart::report_on_disk(&records, &asker, of)
 }
 
 /// The tasks under chat `asker`: the ones still open, in the order they were started, then

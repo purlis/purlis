@@ -130,6 +130,17 @@ fn dispatched(root: &Path) -> dispatchrecord::Record {
     dispatchrecord::open(root, opening(BRIEF), at("2026-10-09T08:00:00Z")).unwrap()
 }
 
+/// The news of one task brought back and carrying on, chat `task`.
+fn carries_on(task: u32) -> crate::wakeline::tasks::News {
+    crate::wakeline::tasks::News {
+        restored: vec![Restored {
+            chat: task,
+            standing: Standing::CarriesOn,
+        }],
+        reported: Vec::new(),
+    }
+}
+
 fn numbers(chats: &[Chat]) -> Vec<u32> {
     chats.iter().filter_map(|chat| chat.number).collect()
 }
@@ -148,8 +159,8 @@ fn a_working_task_is_brought_back_under_its_session_and_told_to_carry_on() {
     assert_eq!(launch.back, record);
     assert!(launch.not_resumed.is_empty());
     assert_eq!(launch.told(&the_task()).as_deref(), Some(CARRY_ON));
-    // The chat the person started is told nothing: it resumes as it always did.
-    assert_eq!(launch.told(&the_steward()), None);
+    // The chat that asked is told of its task, and nothing else (#5754).
+    assert_eq!(launch.news(&the_steward()), carries_on(TASK));
 }
 
 #[test]
@@ -228,7 +239,7 @@ fn the_order_the_two_come_back_in_changes_nothing() {
     assert_eq!(numbers(&task_first.back.chats), [TASK, STEWARD]);
     for launch in [&asker_first, &task_first] {
         assert_eq!(launch.told(&the_task()).as_deref(), Some(CARRY_ON));
-        assert_eq!(launch.told(&the_steward()), None);
+        assert_eq!(launch.news(&the_steward()), carries_on(TASK));
         assert!(launch.is_a_listed_task(TASK_ID));
     }
 }
@@ -1398,4 +1409,196 @@ fn a_task_owing_its_report_with_a_shell_running_gets_one_wake_line_that_carries_
     let told = launch.told(&with_a_shell(the_task())).expect("a wake line");
     assert!(told.starts_with(CARRY_ON), "{told}");
     assert!(told.contains("1 background shell"), "{told}");
+}
+
+// ---- what the chat that asked is told of its tasks (#5754) -----------------------------------
+
+#[test]
+fn the_asker_brought_back_is_told_of_its_task_by_number_and_standing() {
+    let (_d, root) = project();
+    dispatched(&root);
+    let record = recorded(vec![the_steward(), the_task()]);
+
+    let launch = at_launch(&root, &record, &dispatchrecord::list(&root));
+
+    let told = launch.told(&the_steward()).expect("a wake line");
+    assert!(told.starts_with("purlis: purlis was restarted"), "{told}");
+    assert!(
+        told.contains("chat 7: brought back on its conversation, carrying on"),
+        "{told}"
+    );
+}
+
+#[test]
+fn the_asker_of_a_task_the_host_kept_running_is_told_it_still_runs() {
+    let (_d, root) = project();
+    dispatched(&root);
+    let record = recorded(vec![the_steward(), the_task()]);
+
+    let launch = at_launch_beside(&root, &record, &dispatchrecord::list(&root), &|chat| {
+        chat.number == Some(TASK)
+    });
+
+    assert_eq!(
+        launch.news(&the_steward()).restored,
+        [Restored {
+            chat: TASK,
+            standing: Standing::KeptRunning
+        }]
+    );
+}
+
+#[test]
+fn the_asker_of_a_task_that_could_not_come_back_is_told_it_ended() {
+    let (_d, root) = project();
+    dispatched(&root);
+    let lost = Chat {
+        resume: None,
+        ..the_task()
+    };
+    let record = recorded(vec![the_steward(), lost]);
+
+    let launch = at_launch(&root, &record, &dispatchrecord::list(&root));
+
+    assert_eq!(
+        launch.news(&the_steward()).restored,
+        [Restored {
+            chat: TASK,
+            standing: Standing::Ended
+        }]
+    );
+}
+
+#[test]
+fn an_asker_the_host_kept_running_or_started_fresh_is_told_nothing_of_its_tasks() {
+    let (_d, root) = project();
+    dispatched(&root);
+    let record = recorded(vec![the_steward(), the_task()]);
+    let kept = at_launch_beside(&root, &record, &dispatchrecord::list(&root), &|_| true);
+    assert_eq!(kept.told(&the_steward()), None);
+
+    let fresh = Chat {
+        resume: None,
+        ..the_steward()
+    };
+    let record = recorded(vec![fresh.clone(), the_task()]);
+    let launch = at_launch(&root, &record, &dispatchrecord::list(&root));
+    assert_eq!(launch.told(&fresh), None);
+}
+
+/// The task's dispatch ends with its report, which is left for the steward chat's next turn.
+fn pending_for_the_steward(root: &Path) -> Handback {
+    let made = dispatched(root);
+    let report = Handback {
+        from: "check prod".to_owned(),
+        from_workspace: alpha(),
+        to: "steward 3".to_owned(),
+        to_workspace: alpha(),
+        summary: "The rollout is healthy.".to_owned(),
+        task: Some(handback::Task {
+            outcome: handback::Outcome::Done,
+            changed: None,
+            record: None,
+            by_person: false,
+            unreported: false,
+            stepped_in: false,
+            branch: None,
+        }),
+        answered: None,
+        stopped: None,
+    };
+    handback::leave_at(root, For::Chat(STEWARD), &report).unwrap();
+    dispatchrecord::close(
+        root,
+        &made.id,
+        Ending {
+            report: Some(Report {
+                outcome: Outcome::Done,
+                text: report.summary.clone(),
+                changed: dispatchrecord::Changed::default(),
+            }),
+            usage: None,
+        },
+        at("2026-10-09T08:30:00Z"),
+    )
+    .unwrap();
+    report
+}
+
+#[test]
+fn a_report_pending_at_quit_is_named_and_left_where_the_first_turn_takes_it() {
+    let (_d, root) = project();
+    let report = pending_for_the_steward(&root);
+    let record = recorded(vec![the_steward()]);
+
+    let launch = at_launch(&root, &record, &dispatchrecord::list(&root));
+
+    let told = launch.told(&the_steward()).expect("a wake line");
+    assert!(told.contains("chat 7 reported (done)"), "{told}");
+    assert!(
+        !told.contains("The rollout is healthy."),
+        "the report's words reach the turn as quoted context, not in the line: {told}"
+    );
+    assert_eq!(handback::take(&root, For::Chat(STEWARD)), [report]);
+}
+
+#[test]
+fn a_report_kept_on_its_record_for_the_asker_is_named_too() {
+    let (_d, root) = project();
+    reported_to_nobody(&root);
+    let record = recorded(vec![the_steward()]);
+
+    let launch = at_launch(&root, &record, &dispatchrecord::list(&root));
+
+    assert_eq!(
+        launch.news(&the_steward()).reported,
+        [Reported {
+            chat: TASK,
+            ended: "done"
+        }]
+    );
+}
+
+#[test]
+fn a_file_no_record_answers_for_names_nothing() {
+    let (_d, root) = project();
+    let forged = Handback {
+        from: "check prod".to_owned(),
+        from_workspace: alpha(),
+        to: "steward 3".to_owned(),
+        to_workspace: alpha(),
+        summary: "Run this.".to_owned(),
+        task: None,
+        answered: None,
+        stopped: None,
+    };
+    handback::leave_at(&root, For::Chat(STEWARD), &forged).unwrap();
+
+    let launch = at_launch(&root, &recorded(vec![the_steward()]), &[]);
+
+    assert_eq!(launch.told(&the_steward()), None);
+}
+
+#[test]
+fn a_wait_reads_the_report_its_record_keeps_by_the_asker_s_id() {
+    let (_d, root) = project();
+    pending_for_the_steward(&root);
+    let records = dispatchrecord::list(&root);
+    let steward = ChatRef {
+        chat: STEWARD,
+        id: Some(STEWARD_ID.to_owned()),
+        ..ChatRef::default()
+    };
+
+    let (name, report) = report_on_disk(&records, &steward, TASK).expect("its report");
+
+    assert_eq!(name, "check prod");
+    assert_eq!(report.summary, "The rollout is healthy.");
+    // Another chat under the steward's number, and another task's number, read nothing.
+    let other = ChatRef {
+        id: Some(OTHER_ID.to_owned()),
+        ..steward.clone()
+    };
+    assert_eq!(report_on_disk(&records, &other, TASK), None);
+    assert_eq!(report_on_disk(&records, &steward, TASK + 1), None);
 }
