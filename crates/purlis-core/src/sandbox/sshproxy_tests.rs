@@ -19,8 +19,8 @@ fn a_proxy_listing(port: u16) -> Proxy {
     Proxy::serving(Serving::of(Reach::open(vec![format!("127.0.0.1:{port}")]))).expect("a proxy")
 }
 
-/// A server here that echoes the first thing each connection sends, and its port.
-fn an_echo_server() -> (TcpListener, u16) {
+/// A listener on this machine, and its port.
+fn a_server_here() -> (TcpListener, u16) {
     let listener = TcpListener::bind("127.0.0.1:0").expect("a listener");
     let port = listener.local_addr().expect("an address").port();
     (listener, port)
@@ -28,7 +28,7 @@ fn an_echo_server() -> (TcpListener, u16) {
 
 #[test]
 fn what_ssh_writes_reaches_a_listed_host_through_the_socks_port_and_its_answer_comes_back() {
-    let (listener, port) = an_echo_server();
+    let (listener, port) = a_server_here();
     let server = std::thread::spawn(move || {
         let (mut stream, _) = listener.accept().expect("the proxy's connection");
         stream
@@ -58,7 +58,7 @@ fn what_ssh_writes_reaches_a_listed_host_through_the_socks_port_and_its_answer_c
 
 #[test]
 fn a_host_the_chat_may_not_reach_is_refused_with_why_and_never_connected_to() {
-    let (listener, port) = an_echo_server();
+    let (listener, port) = a_server_here();
     listener.set_nonblocking(true).expect("nonblocking");
     // Lists another port of this machine, so this one is not the chat's to reach.
     let proxy = a_proxy_listing(port.wrapping_add(1).max(1));
@@ -82,7 +82,7 @@ fn a_host_the_chat_may_not_reach_is_refused_with_why_and_never_connected_to() {
 #[test]
 fn a_socks_port_nobody_listens_on_is_said_as_the_route_not_answering() {
     // Bound, then let go: nothing listens there now.
-    let (listener, port) = an_echo_server();
+    let (listener, port) = a_server_here();
     drop(listener);
     let mut answer = Vec::new();
     let why =

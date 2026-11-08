@@ -65,19 +65,17 @@ fn ssh_through(route: &SshRoute, port: u16) -> std::process::Output {
 fn a_chats_ssh_reaches_a_listed_host_through_its_route_with_purliss_own_proxy() {
     let listener = TcpListener::bind("127.0.0.1:0").expect("a listener");
     let port = listener.local_addr().expect("an address").port();
-    let server = std::thread::spawn(move || {
-        let (mut stream, _) = listener.accept().expect("ssh's connection, carried");
-        stream
-            .set_read_timeout(Some(Duration::from_secs(20)))
-            .expect("a timeout");
-        stream
-            .write_all(b"SSH-2.0-purlis_route_test\r\n")
-            .expect("the server's line");
+    // Told through a channel, so an ssh that never reached it fails the test, not hangs it.
+    let (told, heard) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let Ok((mut stream, _)) = listener.accept() else {
+            return;
+        };
+        let _ = stream.set_read_timeout(Some(Duration::from_secs(20)));
+        let _ = stream.write_all(b"SSH-2.0-purlis_route_test\r\n");
         let mut line = String::new();
-        BufReader::new(stream)
-            .read_line(&mut line)
-            .expect("ssh's line");
-        line
+        let _ = BufReader::new(stream).read_line(&mut line);
+        let _ = told.send(line);
     });
     let proxy = a_proxy_listing(port);
     let tmp = tempfile::tempdir().expect("a temp dir");
@@ -93,7 +91,9 @@ fn a_chats_ssh_reaches_a_listed_host_through_its_route_with_purliss_own_proxy() 
         "the route runs no netcat:\n{config}"
     );
     let ran = ssh_through(&route, port);
-    let line = server.join().expect("the server");
+    let line = heard
+        .recv_timeout(Duration::from_secs(10))
+        .unwrap_or_default();
     assert!(
         line.starts_with("SSH-2.0-"),
         "ssh's identification reached the host through the route: {line:?}\nssh said: {}",

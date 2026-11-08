@@ -24,6 +24,9 @@ use std::net::{Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr, TcpStream};
 use std::path::Path;
 use std::time::Duration;
 
+use super::egress::{NO_AUTH, SOCKS_VERSION as VERSION, reply};
+use super::tunnel::sh_quoted;
+
 /// The hidden first word the binary answers as the route's proxy command.
 pub const COMMAND: &str = "_ssh-proxy";
 
@@ -69,7 +72,7 @@ fn say(line: &str) {
 /// **Carries `from` to `host`:`port` through the SOCKS port `socks` on the loopback interface,
 /// and what comes back to `to`**, until the far end closes. An error says, in a line for the
 /// chat, why nothing was carried.
-pub fn carry(
+pub(crate) fn carry(
     socks: u16,
     host: &str,
     port: u16,
@@ -116,14 +119,14 @@ fn connected(socks: u16, host: &str, port: u16) -> io::Result<TcpStream> {
     let mut stream = TcpStream::connect_timeout(&at, GREETING).map_err(|why| {
         io::Error::new(
             why.kind(),
-            format!("this chat's route, its SOCKS port {socks}, did not answer ({why})"),
+            format!("this chat's route, at port {socks}, did not answer ({why})"),
         )
     })?;
     stream.set_read_timeout(Some(GREETING))?;
     stream.set_write_timeout(Some(GREETING))?;
     let not_socks = || {
         io::Error::other(format!(
-            "this chat's route, its SOCKS port {socks}, did not answer as SOCKS5 does"
+            "this chat's route, at port {socks}, answered as no route of purlis does"
         ))
     };
     stream.write_all(&[VERSION, 1, NO_AUTH])?;
@@ -140,7 +143,7 @@ fn connected(socks: u16, host: &str, port: u16) -> io::Result<TcpStream> {
     if head[0] != VERSION {
         return Err(not_socks());
     }
-    if head[1] != SUCCEEDED {
+    if head[1] != reply::SUCCEEDED {
         return Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
             refused(head[1]),
@@ -148,9 +151,9 @@ fn connected(socks: u16, host: &str, port: u16) -> io::Result<TcpStream> {
     }
     // The bound address that follows is the proxy's to say and nothing of ours: read past it.
     let rest = match head[3] {
-        1 => 4,
-        4 => 16,
-        3 => {
+        IPV4 => 4,
+        IPV6 => 16,
+        NAME => {
             let mut len = [0u8; 1];
             stream.read_exact(&mut len).map_err(|_| not_socks())?;
             usize::from(len[0])
@@ -171,17 +174,17 @@ fn request(host: &str, port: u16) -> io::Result<Vec<u8>> {
         .and_then(|h| h.strip_suffix(']'))
         .unwrap_or(host);
     if let Ok(v4) = bare.parse::<Ipv4Addr>() {
-        asked.push(1);
+        asked.push(IPV4);
         asked.extend(v4.octets());
     } else if let Ok(v6) = bare.parse::<Ipv6Addr>() {
-        asked.push(4);
+        asked.push(IPV6);
         asked.extend(v6.octets());
     } else {
         let name = u8::try_from(host.len())
             .ok()
             .filter(|len| *len > 0)
             .ok_or_else(|| io::Error::other("its host name is empty or longer than 255 bytes"))?;
-        asked.push(3);
+        asked.push(NAME);
         asked.push(name);
         asked.extend(host.as_bytes());
     }
@@ -192,27 +195,26 @@ fn request(host: &str, port: u16) -> io::Result<Vec<u8>> {
 /// Why the proxy refused, by SOCKS's reply code.
 fn refused(code: u8) -> String {
     match code {
-        2 => "this chat may not reach it. Its sandbox lists the hosts and ports it may reach."
-            .to_owned(),
-        4 => "the host could not be reached.".to_owned(),
-        5 => "the host refused the connection.".to_owned(),
-        other => format!("this chat's route refused it (SOCKS reply {other})."),
+        reply::NOT_ALLOWED => {
+            "this chat may not reach it. Its sandbox lists the hosts and ports it may reach."
+                .to_owned()
+        }
+        reply::HOST_UNREACHABLE => "the host could not be reached.".to_owned(),
+        other => format!("this chat's route refused it (code {other})."),
     }
 }
 
-/// SOCKS's version byte.
-const VERSION: u8 = 5;
-/// The one method asked for: none.
-const NO_AUTH: u8 = 0;
 /// SOCKS's `CONNECT` command.
 const CONNECT: u8 = 1;
-/// SOCKS's reply that carried it.
-const SUCCEEDED: u8 = 0;
+/// SOCKS's address types: an IPv4 address, a name, an IPv6 address.
+const IPV4: u8 = 1;
+const NAME: u8 = 3;
+const IPV6: u8 = 4;
 
 /// **The `ProxyCommand` a route writes for its SOCKS port `socks`**: `program`, purlis's own
 /// binary, run as [`COMMAND`] where one was found. Where none was, a command that carries
 /// nothing and says why: ssh fails, as it would with no route, and the chat is told.
-pub fn proxy_command(program: Option<&Path>, socks: u16) -> String {
+pub(crate) fn proxy_command(program: Option<&Path>, socks: u16) -> String {
     match program {
         // `%` is a token ssh expands in a ProxyCommand, so one in the path is doubled.
         Some(program) => format!(
@@ -230,9 +232,4 @@ pub fn proxy_command(program: Option<&Path>, socks: u16) -> String {
 }
 
 /// What a chat's ssh says where no purlis binary was found for its route.
-const NONE_FOUND: &str = "purlis: ssh was not carried: no purlis command line was found beside the app to carry it through the route of this chat. Reinstall purlis, or set PURLIS_BINARY to its command line.";
-
-/// `text` in single quotes, as a POSIX shell reads one word.
-fn sh_quoted(text: &str) -> String {
-    format!("'{}'", text.replace('\'', "'\\''"))
-}
+const NONE_FOUND: &str = "purlis: ssh was not carried: no purlis command line was found beside the app to carry it through the route of this chat. Reinstall purlis, or set PURLIS_BINARY to the path of its purlis program.";

@@ -819,10 +819,10 @@ impl SshRoute {
 
     /// The route through SOCKS port `socks`, written in `within`/`purlis-ssh` (made if
     /// missing): its configuration and its `ssh`, each the chat's user's alone. Its
-    /// `ProxyCommand` is `proxy`, purlis's own binary, as the route's proxy
+    /// `ProxyCommand` runs `program`, purlis's own binary, as the route's proxy
     /// ([`super::sshproxy`], #3536); where none was found, one that carries nothing and tells
     /// the chat why. It never runs the system's `nc`, whose flags differ by system.
-    pub fn write(within: &Path, socks: u16, proxy: Option<&Path>) -> io::Result<Self> {
+    pub fn write(within: &Path, socks: u16, program: Option<&Path>) -> io::Result<Self> {
         let dir = within.join("purlis-ssh");
         let route = Self { dir };
         std::fs::create_dir_all(route.bin())?;
@@ -836,7 +836,7 @@ impl SshRoute {
                  ControlMaster no\n  \
                  ControlPath none\n  \
                  Include ~/.ssh/config\n",
-                super::sshproxy::proxy_command(proxy, socks)
+                super::sshproxy::proxy_command(program, socks)
             ),
         )?;
         let ssh = route.bin().join("ssh");
@@ -949,9 +949,10 @@ pub fn routes_folder(root: &Path) -> PathBuf {
     crate::names::state(root).join("app").join("ssh")
 }
 
-/// **A chat's ssh route through SOCKS port `socks`, its proxy `proxy` ([`SshRoute::write`]), in a
-/// folder of its own inside `within`** ([`routes_folder`]), made the person's alone if missing. The folder goes when the returned
-/// handle is dropped, as the chat ends. Refused where `within` is not, as the kernel names it,
+/// **A chat's ssh route through SOCKS port `socks`, its proxy run by `program`
+/// ([`SshRoute::write`]), in a folder of its own inside `within`** ([`routes_folder`]), made the
+/// person's alone if missing. The folder goes when the returned handle is dropped, as the chat
+/// ends. Refused where `within` is not, as the kernel names it,
 /// a folder of its own: a link there could put the route where a chat writes.
 ///
 /// The folder is named `chat-<pid>-<random>`, the pid this process's, so one an app killed
@@ -960,7 +961,7 @@ pub fn routes_folder(root: &Path) -> PathBuf {
 pub fn routed_in(
     within: &Path,
     socks: u16,
-    proxy: Option<&Path>,
+    program: Option<&Path>,
 ) -> io::Result<(tempfile::TempDir, SshRoute)> {
     std::fs::create_dir_all(within)?;
     let not_its_own =
@@ -982,7 +983,7 @@ pub fn routed_in(
     let dir = tempfile::Builder::new()
         .prefix(&format!("{ROUTE_PREFIX}{}-", std::process::id()))
         .tempdir_in(within)?;
-    let route = SshRoute::write(dir.path(), socks, proxy)?;
+    let route = SshRoute::write(dir.path(), socks, program)?;
     Ok((dir, route))
 }
 
@@ -1050,6 +1051,6 @@ pub fn sweep_routes(root: &Path) -> usize {
 }
 
 /// `text` in single quotes, as a POSIX shell reads one word.
-fn sh_quoted(text: &str) -> String {
+pub(super) fn sh_quoted(text: &str) -> String {
     format!("'{}'", text.replace('\'', "'\\''"))
 }
