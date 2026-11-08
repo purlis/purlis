@@ -15,7 +15,7 @@ import { expectFocusInSight } from "../../stories.testkit";
 import { Button, IconButton } from "../button/Button";
 import { ReadOnlyFieldset } from "../../ReadOnlyLine";
 import { TextField } from "../field/Field";
-import { Tooltip, TOOLTIP_DELAY } from "./Tooltip";
+import { Tooltip, TOOLTIP_DELAY, TOOLTIP_OFFSET } from "./Tooltip";
 
 /** What a story draws: one target with its hint, and a button after it to Tab on to. */
 function Hinted({ target }: { target: "words" | "icon" | "detail" | "unavailable" }) {
@@ -155,5 +155,92 @@ export const ReadOnlyReason: StoryObj = {
     await userEvent.tab();
     await userEvent.tab({ shift: true });
     await waitFor(() => expect(shown()).toHaveTextContent(READ_ONLY));
+  },
+};
+
+/** A hint long enough to fill the family's widest tooltip. */
+const LONG_TIP =
+  "Stops every agent in this project, waits for each to say it has stopped, and keeps its chats so they can be started again from where they were.";
+
+/**
+ * **A panel across the foot of the window** (#3364): words that run from one edge to the other,
+ * which have no room at either side, and under them a control pinned to the window's end, which
+ * has none at its own end.
+ */
+function AtTheEdge() {
+  return (
+    <div
+      style={{
+        position: "fixed",
+        insetInline: 0,
+        insetBlockEnd: 0,
+        display: "flex",
+        flexDirection: "column",
+        gap: "var(--space-2)",
+        padding: "var(--space-2)",
+        background: "var(--surface-raised)",
+      }}
+    >
+      <Tooltip tip={LONG_TIP}>
+        <span style={{ display: "block" }}>Every agent in this project</span>
+      </Tooltip>
+      <Button tooltip={LONG_TIP} style={{ alignSelf: "flex-end" }}>
+        Stop all
+      </Button>
+    </div>
+  );
+}
+
+/** The tooltip keeps its width (its words fill its widest) and stays in the window. */
+async function expectWhole(where: string) {
+  const tip = await waitFor(() => {
+    const up = shown();
+    if (up === null) throw new Error(`${where}: the tooltip is not up`);
+    return up;
+  });
+  const box = tip.getBoundingClientRect();
+  const widest = Number.parseFloat(getComputedStyle(tip).maxInlineSize);
+  await expect(
+    box.width,
+    `${where}: the tooltip keeps its width (${widest} px wide at most, the window ${window.innerWidth} px)`,
+  ).toBeGreaterThanOrEqual(widest - 1);
+  await expect(box.left, `${where}: inside the window`).toBeGreaterThanOrEqual(0);
+  await expect(box.right, `${where}: inside the window`).toBeLessThanOrEqual(window.innerWidth);
+}
+
+/**
+ * **A control's tooltip keeps its width at the window's edge** (#3364, R166): beside a target
+ * across the window it stands over it, and beside a control pinned to the window's end it flips to
+ * the control's start, never a column of words against the edge; Esc takes it down (WCAG 1.4.13).
+ * The picture is the control under
+ * the keyboard, its tooltip at its start.
+ */
+export const AtTheWindowsEdge: StoryObj = {
+  render: () => <AtTheEdge />,
+  play: async ({ canvas, userEvent }) => {
+    const words = canvas.getByText("Every agent in this project");
+    const stop = canvas.getByRole("button", { name: "Stop all" });
+    await userEvent.tab();
+    await expect(words).toHaveFocus();
+    expectFocusInSight();
+    await expectWhole("Words across the window");
+    await userEvent.tab();
+    await expect(stop).toHaveFocus();
+    expectFocusInSight();
+    await expectWhole("A control at the window's end");
+    // Esc takes it down and keeps the focus; Shift+Tab and Tab bring it back for the picture.
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(shown()).toBeNull());
+    await expect(stop).toHaveFocus();
+    await userEvent.tab({ shift: true });
+    await userEvent.tab();
+    await expect(stop).toHaveFocus();
+    await expectWhole("A control at the window's end, after Esc");
+    // Flipped to its start, the same 10 px from it (R166).
+    const gap = stop.getBoundingClientRect().left - (shown()?.getBoundingClientRect().right ?? 0);
+    await expect(
+      Math.abs(gap - TOOLTIP_OFFSET),
+      `A control at the window's end: its tooltip at its start, ${TOOLTIP_OFFSET} px from it (${gap} px)`,
+    ).toBeLessThanOrEqual(1);
   },
 };
