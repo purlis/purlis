@@ -126,8 +126,23 @@ jobs:
         id: built
         run: npx tauri build --no-bundle --features e2e --config src-tauri/tauri.e2e.conf.json
         working-directory: app
+      # [DEBUG-5672] temporary: write a fresh 4 GB to the volume first, to test first-touch cost.
+      - name: "[DEBUG-5672] touch fresh blocks"
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          df -h "$RUNNER_TEMP"
+          start=$(date +%s); dd if=/dev/urandom of="$RUNNER_TEMP/dbg-fill" bs=4m count=1024 2>&1 | tail -1
+          rm -f "$RUNNER_TEMP/dbg-fill"; sync; echo "filled in $(( $(date +%s) - start )) s"
       - name: The hook, recall and one git standing look
         run: node tools/scale-run.mjs --project "$PURLIS_SCALE_PLANE" --os "$OS_WORD" --out scale-rows.jsonl
+      # [DEBUG-5672] temporary: the same build again, at once, into fresh homes.
+      - name: "[DEBUG-5672] rebuild at once"
+        if: always()
+        shell: bash
+        run: |
+          du -sh "$PURLIS_SCALE_PLANE/.purlis" 2>/dev/null || true
+          for n in 1 2; do PURLIS_HOME="$RUNNER_TEMP/dbg-home-$n" target/release/scale-project index --project "$PURLIS_SCALE_PLANE"; du -sh "$RUNNER_TEMP/dbg-home-$n"; done
       # Each window run is its own app launch: WebdriverIO keeps one app for a run, and the two
       # chat-event runs differ in the app's environment. Each runs even if one before it broke.
       - name: The window on the project, its sidebar answer, watcher setup and idle CPU
