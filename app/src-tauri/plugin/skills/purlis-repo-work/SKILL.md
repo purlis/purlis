@@ -1,6 +1,6 @@
 ---
 name: purlis-repo-work
-description: When a purlis chat works in a repo its workspace owns — clone, build, test, change and commit it — do it in that repo, by the repo's own conventions, and in branch folders when several branches run at once. Use when asked to work on, fix, build, test or commit in a named repo, to make, update, push or remove a branch folder (`purlis worktree`), or to keep the repo's own settings apart from the chat's. Not for work that needs another persona's charter, memory or vault — that is purlis-persona. Not for a credential a command needs — that is purlis-secrets. Not for one change across several repos, kept and landed together — that is purlis-change. Not for purlis's own app UI in a purlis checkout — that is the plane's building-purlis-ui skill.
+description: When a purlis chat works in a repo its workspace owns, build, test and commit by its conventions, in branch folders (`purlis worktree`). Use when asked to fix, build or commit in a repo. Not for another persona (purlis-persona), a credential (purlis-secrets) or a cross-repo change (purlis-change).
 ---
 
 # Working in a repo

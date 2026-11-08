@@ -12,7 +12,10 @@
 //! * **the tools a chat is handed**: each tool it names is one of [`crate::mcp::every_tool`];
 //! * **a description a harness lists**: one the studio's own lint passes, so at most
 //!   [`MOST_DESCRIPTION`] characters (Codex cuts there), and saying the word purlis outside its
-//!   code, so a person asking about purlis in their own words finds it.
+//!   code, so a person asking about purlis in their own words finds it;
+//! * **a listing every harness keeps whole**: every description together at most
+//!   [`MOST_DESCRIPTIONS`] characters, so Codex's listing keeps every built-in and room for the
+//!   plane's own skills.
 //!
 //! Each rule is one function in [`RULES`], given one skill and what the build has, answering
 //! what is wrong in words that name the skill and the thing. A later rule is one more entry.
@@ -105,6 +108,20 @@ const RULES: &[(&str, Rule)] = &[
     ),
     ("carries trigger tests, sources and a tier", is_measured),
 ];
+
+/// What a rule over the whole set says is wrong, each as a line that names the skills.
+type SetRule = fn(&[Skill]) -> Vec<String>;
+
+/// Every rule the shipped skills are held to together. Add one here.
+const SET_RULES: &[(&str, SetRule)] = &[(
+    "describes every built-in in a listing every harness keeps whole",
+    descriptions_fit_together,
+)];
+
+/// **The built-ins' descriptions together** (spec #5714's Q37): at most this many characters,
+/// so Codex's 8,000-character listing keeps every built-in and about 3,000 for the plane's own
+/// skills, and opencode's default budget (8,000) keeps them too.
+const MOST_DESCRIPTIONS: usize = 5_000;
 
 /// **Built-ins leaving the bundle**, each with where it goes: the one place a shipped skill is
 /// not held to carry trigger tests (#5731). An entry goes when its folder does, and the check
@@ -782,7 +799,30 @@ fn names_word(text: &str, name: &str) -> bool {
     })
 }
 
-/// Each skill, by name, with every line a rule has against it.
+fn descriptions_fit_together(skills: &[Skill]) -> Vec<String> {
+    let length = |skill: &Skill| {
+        skill
+            .description
+            .as_deref()
+            .map_or(0, |description| description.trim().chars().count())
+    };
+    let total: usize = skills.iter().map(length).sum();
+    if total <= MOST_DESCRIPTIONS {
+        return Vec::new();
+    }
+    let biggest = skills
+        .iter()
+        .max_by_key(|skill| length(skill))
+        .map(|skill| format!("{}'s ({})", skill.name, length(skill)))
+        .unwrap_or_default();
+    vec![format!(
+        "the built-ins' descriptions together are {total} characters, over \
+         {MOST_DESCRIPTIONS}: the biggest is {biggest}"
+    )]
+}
+
+/// Each skill, by name, with every line a rule has against it, then every line a rule over the
+/// whole set has.
 fn check(skills: &[Skill], built: &Built) -> Vec<String> {
     let mut out = Vec::new();
     for skill in skills {
@@ -790,6 +830,11 @@ fn check(skills: &[Skill], built: &Built) -> Vec<String> {
             for wrong in of(skill, built) {
                 out.push(format!("{}: {wrong} ({rule})", skill.name));
             }
+        }
+    }
+    for (rule, of) in SET_RULES {
+        for wrong in of(skills) {
+            out.push(format!("{wrong} ({rule})"));
         }
     }
     out
@@ -1034,6 +1079,38 @@ fn a_description_over_the_limit_or_without_purlis_is_named() {
         [
             "purlis-example: has no description, and a harness lists a skill by it (has a \
           description a harness lists)"
+        ]
+    );
+}
+
+/// A measured example skill whose description is `length` characters long, filled with `fill`.
+fn described(name: &str, length: usize, fill: char) -> Skill {
+    let lead = "In purlis ";
+    let description = format!("{lead}{}", fill.to_string().repeat(length - lead.len()));
+    let page = format!("---\nname: {name}\ndescription: {description}\n---\n");
+    Skill::of(name, &page).with_sources(MEASURED, 1)
+}
+
+#[test]
+fn descriptions_over_the_total_are_named_with_the_biggest() {
+    let skills = |b: usize| {
+        ["purlis-a", "purlis-b", "purlis-c", "purlis-d", "purlis-e"].map(|name| {
+            // Counted in characters, as a harness's listing counts them: an em dash is one.
+            let (length, fill) = if name == "purlis-b" {
+                (b, '—')
+            } else {
+                (1_000, 'a')
+            };
+            described(name, length, fill)
+        })
+    };
+    assert_eq!(check(&skills(1_000), &Built::now()), Vec::<String>::new());
+    assert_eq!(
+        check(&skills(1_001), &Built::now()),
+        [
+            "the built-ins' descriptions together are 5001 characters, over 5000: the biggest \
+             is purlis-b's (1001) (describes every built-in in a listing every harness keeps \
+             whole)"
         ]
     );
 }

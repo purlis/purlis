@@ -1,6 +1,6 @@
 ---
 name: purlis-change
-description: When one piece of work in a purlis workspace spans several repos — an API bump and the repos that consume it — and the person wants it kept as one cross-repo change, each repo with its own branch and pull request, landed in the right order. Use when asked to make, start or track a cross-repo change, add a repo to it, push all its branches, open the linked pull requests, land them in order, say which repo merges first or what a change is waiting on, or roll a change back across repos (`purlis change`, the `change_status` tool). Not for working on one repo's branch, building, testing or committing in it — that is purlis-repo-work.
+description: When work in a purlis workspace spans several repos and should land as one cross-repo change, a branch and pull request per repo. Use when asked to start or track a cross-repo change, or land its pull requests in order (`purlis change`). Not for one repo's branch (purlis-repo-work).
 ---
 
 # One change across several repos

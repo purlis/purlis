@@ -1,6 +1,6 @@
 ---
 name: purlis-theme
-description: When a person wants the purlis window to look a certain way, make, change, check or share a purlis theme — from a brand colour, an image or screenshot, a Figma frame or another theme — through a theme draft the window draws live, checked until it is clean. Use when asked to make, change, fix, check, export, import or share a purlis theme, its colours, its dark, light or high-contrast appearance, or its terminal colours. Not for styling the code of a repo a workspace owns — that is purlis-repo-work. Not for logging in to a site to look at its pages — that is purlis-browser. Not for changing purlis's own app code in a purlis checkout — that is the plane's building-purlis-ui skill.
+description: When a person wants the purlis window to look a certain way, make, change, check or share a purlis theme from a brand colour, image, Figma frame or another theme. Use when asked about a theme or its colours. Not for a repo's styles (purlis-repo-work) or a site's pages (purlis-browser).
 ---
 
 # Making a theme

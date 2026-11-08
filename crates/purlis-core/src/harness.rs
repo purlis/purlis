@@ -25,8 +25,8 @@ pub(crate) mod testing;
 pub use adapter::{HarnessAdapter, SkillStart, SkillToStart};
 
 /// **The skill budget of a harness not yet measured for its own** (SK-12, #2775; ADR 0102 §1 as
-/// amended 2026-11-02): 30 skills and 6,000 characters of their descriptions, kept for Codex and
-/// opencode until Codex is measured again. Claude Code says its own
+/// amended 2026-11-02): 30 skills and 6,000 characters of their descriptions, kept for Codex
+/// until it is measured again; opencode takes 8,000 characters of it (amended 2026-11-08). Claude Code says its own
 /// ([`HarnessAdapter::skill_budget`]). Each adapter adds its own cap on one description and
 /// whether it lists a skill's path; whether a manual-only skill is free follows from what it
 /// reads ([`Harness::skill_budget`]).

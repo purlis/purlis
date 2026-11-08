@@ -1,6 +1,6 @@
 ---
 name: purlis-upgrade
-description: When a person asks whether purlis is up to date, how to move to a newer purlis, or what a purlis version brought, say how the app installs it and relay what `purlis news` says each version added. Use when asked to update or upgrade purlis, whether a newer purlis is out, which release channel this machine takes, what is new in a purlis version, or how to adopt a new purlis feature. Not for upgrading a repo's dependencies or toolchain — that is purlis-repo-work. Not for updating a workspace's or persona's memory — that is purlis-tidy-memory. Not for changing how purlis looks — that is purlis-theme.
+description: When a person asks whether purlis is up to date or what a version brought, say how the app installs it and relay `purlis news`. Use when asked to update or upgrade purlis, or what is new. Not for a repo's dependencies (purlis-repo-work), memory (purlis-tidy-memory) or its look (purlis-theme).
 ---
 
 # Updating purlis

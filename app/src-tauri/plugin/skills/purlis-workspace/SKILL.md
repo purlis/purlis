@@ -1,6 +1,6 @@
 ---
 name: purlis-workspace
-description: When the person wants a purlis workspace made, copied, rebuilt, renamed, chosen or shared — create, fork, restore, rename, use or default, snapshot, make it live, and `purlis save`, each with its rules. Use when asked to make, create or start a new workspace, fork or duplicate this workspace, rebuild a workspace from its manifest or on another machine, rename one, set the default workspace, record a workspace's repos and branches, share a workspace or publish its memory, or save and push the plane. Not for removing, deleting or retiring a workspace — that is purlis-safe-remove. Not for pruning or deduping a workspace's memory — that is purlis-tidy-memory. Not for moving work into a new chat, here or in another workspace — that is purlis-handoff. Not for forking a repo or cutting a branch or a branch folder — that is purlis-repo-work.
+description: When the person wants a purlis workspace made, forked, renamed, chosen or shared, or saved (`purlis save`). Use when asked to create, fork, rename or share a workspace. Not for removing one (purlis-safe-remove), its memory (purlis-tidy-memory), a new chat (purlis-handoff) or a branch (purlis-repo-work).
 ---
 
 # A workspace's life

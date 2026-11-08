@@ -27,8 +27,8 @@ impl Project {
         std::fs::create_dir_all(root.join("workspaces/alpha")).unwrap();
         std::fs::create_dir_all(at.join("home")).unwrap();
         // A budget past what the built-in skills spend with these: where the bundle is beside the
-        // binary (a build of the app puts it there), the built-ins alone are past opencode's and
-        // Codex's own budgets, and the router would hide these skills on them. That is the
+        // binary (a build of the app puts it there), the built-ins' descriptions and their paths
+        // are past Codex's own budget, and the router would hide these skills there. That is the
         // routing tests' to hold, not this one's.
         std::fs::write(root.join("charter.toml"), format!("[plane]\n\n{BUDGET}")).unwrap();
         for name in ["deploy", "review"] {

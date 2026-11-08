@@ -1,6 +1,6 @@
 ---
 name: purlis-remember
-description: When something learned in a purlis chat should outlive it, or the person wants an earlier decision found again — record a fact in the right memory (this workspace's memory, its workspace.md, this persona's memory or shared memory), add or close a workspace todo, promote a todo to an issue on a forge, or recall what was decided across every memory. Use when asked to remember this, note that, make a note for next time, keep in mind, add a todo, mark a todo done, file a todo as an issue, or what did we decide about something. Not for tidying, deduping, pruning or moving memory that is already there — that is purlis-tidy-memory. Not for the summary of a chat that is ending — that is purlis-smart-close. Not for keeping a password, token or key — that is purlis-secrets.
+description: When something learned in a purlis chat should outlive it, record it, add a todo, or recall a decision. Use when asked to remember this, note that, add a todo, or what did we decide. Not for tidying memory (purlis-tidy-memory), a closing summary (purlis-smart-close) or a password (purlis-secrets).
 ---
 
 # Remember

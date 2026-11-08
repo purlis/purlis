@@ -1,6 +1,6 @@
 ---
 name: purlis-skill-studio
-description: When purlis's Skill studio typed this chat's prompt — to draft a new skill, write a skill's trigger tests, its outcome evals or both checks, or improve a skill from its runs and grades — follow its steps and formats, and each file comes back to the person as a draft. Use when a prompt names this skill, or asks to draft or redo a purlis skill in a skills folder, write its triggers.json or evals.json, or improve it from its runs and grades. Not for a Curate menu entry — that is purlis-curation-action. Not for creating a persona or changing its skill list — that is purlis-persona.
+description: When purlis's Skill studio typed this chat's prompt — draft a skill, its trigger tests or evals, or improve it from its grades — follow its steps, each file a draft. Use when a prompt names this skill. Not for a Curate menu entry (purlis-curation-action) or a persona's skills (purlis-persona).
 ---
 
 # Writing for the Skill studio

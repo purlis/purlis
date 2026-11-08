@@ -1,6 +1,6 @@
 ---
 name: purlis-permissions
-description: When a purlis chat is stopped by a permission — the harness keeps asking before a command, purlis's sandbox blocked a host or a folder, or a purlis guard refused a command — say what stopped it and send the change to where purlis reads it — a purlis guard ask or allow rule, the sandbox Notice's Allow, or the person's own sandbox settings in the purlis window — never to the harness's own settings file or its sandbox commands, which purlis's settings outrank. Use when asked to stop asking about a command, always ask before one, allow a host or a folder, explain why something was blocked or refused, or list purlis's permission rules. Not for a credential or vault a command needs — that is purlis-secrets. Not for a website login — that is purlis-browser. Not for committing or pushing from a branch folder — that is purlis-repo-work.
+description: When a purlis chat is stopped by a permission — a harness asking, a sandbox block, a guard's refusal — say why and change it where purlis reads it. Use when asked to stop asking or allow a host. Not for a credential (purlis-secrets), a site login (purlis-browser) or committing (purlis-repo-work).
 ---
 
 # Permissions in purlis

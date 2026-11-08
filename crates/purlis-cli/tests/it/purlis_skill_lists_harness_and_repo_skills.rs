@@ -28,9 +28,9 @@ impl Project {
         std::fs::write(
             root.join("charter.toml"),
             // A budget past what the built-in skills spend with these: where the bundle is
-            // beside the binary (a build of the app puts it there), the built-ins alone are past
-            // opencode's and Codex's own budgets, and the router would hide the project's skill
-            // on them. That is the routing tests' to hold, not these.
+            // beside the binary (a build of the app puts it there), the built-ins' descriptions
+            // and their paths are past Codex's own budget, and the router would hide the
+            // project's skill there. That is the routing tests' to hold, not these.
             "[plane]\n\n[harness_skills.claude]\nquiet = false\n\n\
              [skills.budget]\nskills = 80\nchars = 40000\n",
         )

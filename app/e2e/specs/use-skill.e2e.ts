@@ -25,11 +25,6 @@ import { startAChat } from "../started.js";
  * same picker. That a typed skill's run starts with the prompt it is sent in is proved in
  * purlis-core (`skillspan/tests.rs`, `eventlog/tests.rs`).
  *
- * The skill is pinned in `alpha` for the spec (`settings.skills.pinned` in its `workspace.json`):
- * the built-in skills alone are past opencode's own budget, so the router would hide it there,
- * and Use skill… asks a chat to load a hidden skill rather than typing its command. A pin keeps it
- * listed and leaves the budget the Skills view says as it is.
- *
  * **It leaves the window and the project as it found them.**
  */
 
@@ -151,8 +146,6 @@ describe("Use skill…", function () {
 
   let folder = "";
   let grant = "";
-  let manifest = "";
-  let manifestWas = "";
   let wereRunning: Running = {};
   let size = { width: 0, height: 0 };
 
@@ -166,14 +159,6 @@ describe("Use skill…", function () {
       `---\nname: ${SKILL}\ndescription: Probes Use skill.\narguments: pr focus\n---\n\nReview $pr for $focus.\n`,
     );
     writeFileSync(grant, 'grant = "all"\n');
-    manifest = join(root, "workspaces", "alpha", "workspace.json");
-    manifestWas = readFileSync(manifest, "utf8");
-    const pinned = JSON.parse(manifestWas) as { settings?: { skills?: Record<string, unknown> } };
-    pinned.settings = {
-      ...pinned.settings,
-      skills: { ...pinned.settings?.skills, pinned: [SKILL] },
-    };
-    writeFileSync(manifest, `${JSON.stringify(pinned, null, 2)}\n`);
     local = join(root, "charter.local.toml");
     declared = readFileSync(local, "utf8");
     await focusWorkspace("alpha");
@@ -186,7 +171,6 @@ describe("Use skill…", function () {
     await browser.setWindowSize(size.width, size.height);
     await endTheChatsStartedSince(wereRunning);
     if (declared !== "") writeFileSync(local, declared);
-    if (manifestWas !== "") writeFileSync(manifest, manifestWas);
     rmSync(folder, { recursive: true, force: true });
     rmSync(grant, { force: true });
   });

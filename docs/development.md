@@ -192,15 +192,20 @@ built-in's description is written as a trigger (spec #5714, Q15 and Q30):
    another tool does not.
 3. **The phrases people use.** A `Use when asked to …` sentence with the verbs people type
    ("hand off", "wrap up", "retire", "dispatch"), drawn from the trigger tests that should start it.
-4. **A "Not for" clause per neighbour**: `Not for <their situation> — that is purlis-<name>.`
+4. **A "Not for" clause per neighbour**, short: `Not for <their situation> (purlis-<name>).`
    The neighbours are the skills its sources file declares (`Neighbours:` in
    `evals/triggers.sources.md`), the same list its near-miss tests come from, so the boundary
    is written once and measured.
-5. **At most 1,024 characters**, where Codex cuts, and plain YAML: no `: ` or ` #` in it.
+5. **About 290 characters**, because every built-in's description together is at most 5,000
+   (Q37): Codex lists skills in 8,000 characters and drops what does not fit, so the built-ins
+   leave about 3,000 for the plane's own skills, and opencode's default budget is 8,000 too. One
+   description is never over 1,024, where Codex cuts it, and is plain YAML: no `: ` or ` #` in
+   it. A longer description takes its characters from another built-in's.
 
 The shipped-skill check (`crates/purlis-cli/src/main/tests/shipped_skills.rs`) fails a
 description without the word purlis, over 1,024 characters, or whose "Not for" clauses leave out
-a declared neighbour, and a built-in without trigger tests (`evals/triggers.json`), a sources file
+a declared neighbour, the built-ins' descriptions together over 5,000 characters (naming the
+biggest), and a built-in without trigger tests (`evals/triggers.json`), a sources file
 or a trigger bar, so no built-in ships unmeasured. A neighbour purlis does not ship, such as the
 plane's building-purlis-ui skill, is named in the description's prose and its requests are plain
 negatives. The trigger grade measures the rest. A built-in's trigger bar, strict
