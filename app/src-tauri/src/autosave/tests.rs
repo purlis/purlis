@@ -418,6 +418,7 @@ fn a_quit_stops_every_saver_at_once_and_ends_a_host_that_did_not_answer() {
             Box::new(Stops { answers: true }),
             Box::new(Stops { answers: false }),
         ],
+        &[],
         deadline,
         &|| {
             ended.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -441,6 +442,7 @@ fn a_quit_whose_savers_all_stopped_leaves_the_host_alone() {
             Box::new(Stops { answers: true }),
             Box::new(Stops { answers: true }),
         ],
+        &[],
         Instant::now() + Duration::from_millis(400),
         &|| ended.store(true, std::sync::atomic::Ordering::SeqCst),
     );

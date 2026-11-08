@@ -613,8 +613,14 @@ pub const QUIT_STOPS_WITHIN: Duration = Duration::from_secs(3);
 /// Stops every one of `savers` at once, by `deadline`, and calls `end_the_host` when any did
 /// not say it had stopped by then (#2002): the session host saving a project is not answering,
 /// and is ended before the save at quit, which would otherwise run beside its save.
+///
+/// **Never while it writes a plane root** (#5824 F9): the host is ended holding the save lock
+/// of every plane in `roots`, each waited for within [`QUIT_BOUND`]. One still held then is a
+/// save's git step at its root, which a kill would leave part-way, so the host is left to finish
+/// it, and the save at quit skips that plane.
 pub fn stop_every_saver_by(
     savers: Vec<Box<dyn Saver>>,
+    roots: &[PathBuf],
     deadline: Instant,
     end_the_host: &dyn Fn(),
 ) {
@@ -631,9 +637,16 @@ pub fn stop_every_saver_by(
             .into_iter()
             .all(|stopped| stopped)
     });
-    if !stopped {
-        tracing::warn!("purlis: the session host did not stop saving in time, so it is ended");
-        end_the_host();
+    if !stopped
+        && !autosave::end_savers_once_no_root_write_runs(roots, QUIT_BOUND, &|| {
+            tracing::warn!("purlis: the session host did not stop saving in time, so it is ended");
+            end_the_host();
+        })
+    {
+        tracing::warn!(
+            "purlis: the session host did not stop saving in time, and a save is still writing a \
+             project's git, so the host is left to finish it"
+        );
     }
 }
 

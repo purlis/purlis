@@ -1237,7 +1237,9 @@ pub(super) fn settle(
     if newer == 0 {
         // `--keep` keeps uncommitted work, and refuses rather than overwrite a file with some:
         // then the plane waits, and the next look tries again.
-        match git::run(root, &["reset", "-q", "--keep", &theirs], WRITE) {
+        // Untimed: a reset checks out a tree, and a deadline that kills it leaves the root
+        // half-written (#5824 F9).
+        match git::run_untimed(root, &["reset", "-q", "--keep", &theirs]) {
             Ok(run) if run.ok() => {}
             Ok(run) => {
                 return Settled::Waiting(format!(
