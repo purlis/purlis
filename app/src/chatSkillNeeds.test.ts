@@ -56,7 +56,7 @@ describe("a chat's needs as a whole", () => {
 
   it("names who takes the room where its program still drops descriptions, fixed on Harness skills (#5736)", () => {
     const drops =
-      "Claude Code drops some skill descriptions in this chat: its skills need 108,858 characters, past the 100,000 it holds, so the model sees bare names for some. The most room goes to plugin figma (60,000), your own skills (30,000), purlis's skills (12,000). Turn some of these skills or plugins off for this workspace's chats.";
+      "Claude Code drops some skill descriptions in this chat: its skills need 108,858 characters, past the 100,000 purlis lets it list, so the model sees bare names for some. The most room goes to plugin figma (60,000), your own skills (30,000), purlis's skills (12,000). Turn some of these skills or plugins off for this workspace's chats.";
     const needs = chatNeedsOf(
       { ...NOTHING, budget: { ...BUDGET, warns: "chars", drops } },
       inWorkspace("ops"),

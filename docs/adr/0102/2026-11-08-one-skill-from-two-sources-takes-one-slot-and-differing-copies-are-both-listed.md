@@ -16,6 +16,8 @@ The same skill often reaches a chat twice: a plane skill copied from a plugin th
 ## What remains
 
 - Two identical copies that both come from the harness (two plugins, or a plugin and the person's own folder) still both load. purlis does not turn off a skill it does not hand, so it names no pair for them either.
-- A chat the plane's skills do not reach reads no harness skills at its start, so it collapses nothing.
+- A chat the plane's skills do not reach is handed no plane skills, so it has no copy to collapse.
+- The studio's previews and a Codex chat's briefing hook pass no harness skills, so they show both copies of an identical pair. A chat's start, its Use skill… and its Skills view leave the copy out.
+- Two folders are compared each time a chat's set is worked out. Same-named pairs are rare, and each comparison stops at the first difference in the file list.
 
 **Built by #5737.**

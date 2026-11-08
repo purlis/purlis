@@ -4821,6 +4821,9 @@ impl Chats {
             chat.routing.as_ref(),
         );
         let routing_was_kept = kept_routing.is_some();
+        // The environment its harness's own skills are read in, kept for the read below, as `env`
+        // moves into its program before that read is done with.
+        let env_at_start = env.clone();
         let skills = std::cell::LazyCell::new(|| {
             if armed_by_its_runner {
                 return purlis_core::hoststart::ChatSkills::default();
@@ -4831,6 +4834,15 @@ impl Chats {
                 harness,
                 chat.cwd.as_deref(),
                 runs_as.as_deref(),
+            )
+            // The skills its harness finds itself, before it is routed and armed (#5736, #5737):
+            // its folder's settings counted only where it is not sandboxed, since for a sandboxed
+            // one only its arming, below, decides whether they load.
+            .own_read(
+                harness,
+                chat.cwd.as_deref(),
+                sandbox.is_none(),
+                &env_at_start,
             );
             match kept_routing {
                 Some(kept) => read.routed_as(kept, harness),

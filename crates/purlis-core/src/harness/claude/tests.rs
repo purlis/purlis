@@ -1923,8 +1923,8 @@ fn past_claude_codes_ceiling_the_biggest_contributors_are_named() {
     assert_eq!(
         drops.said(),
         "Claude Code drops some skill descriptions in this chat: its skills need 108,858 \
-         characters, past the 100,000 it holds, so the model sees bare names for some. The most \
-         room goes to plugin figma (60,000), your own skills (30,000), purlis's skills (12,000). \
-         Turn some of these skills or plugins off for this workspace's chats."
+         characters, past the 100,000 purlis lets it list, so the model sees bare names for some. \
+         The most room goes to plugin figma (60,000), your own skills (30,000), purlis's skills \
+         (12,000). Turn some of these skills or plugins off for this workspace's chats."
     );
 }

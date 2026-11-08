@@ -1009,9 +1009,10 @@ const LEAST_LISTING_LIMIT: usize = 40_000;
 /// and 7 for the `skills:` or `purlis:` it is known by.
 const LISTING_LINE: usize = 23;
 
-/// **Claude Code's own ceiling** on a listing limit it sets itself: the most a limit it is sent
-/// may raise its own to (2.1.319's code). A person's own skills never lift a handed limit past
-/// it (#5736).
+/// **The most a person's own skills lift a handed limit to** (#5736): Claude Code's own ceiling
+/// on a listing limit it sets itself (2.1.319's code). Claude Code takes a larger limit when it
+/// is handed one, so this is purlis's bound on what the person's catalogue costs a chat, taken
+/// from the largest Claude Code ever chooses.
 const LISTING_CEILING: usize = 100_000;
 
 /// **An absolute limit, so nothing depends on the window** (#4610): `listed`, what a chat's list

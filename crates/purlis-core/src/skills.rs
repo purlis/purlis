@@ -1195,12 +1195,7 @@ pub fn for_use_skill(chat: &Running<'_>) -> ChatSkills {
         .filter(|one| !one.off && one.unread.is_none())
         .filter(|one| !offered.iter().any(|had| had.effective.skill.name == one.id))
         // purlis's own plugin's skills are its built-in ones, which the set already offers.
-        .filter(|one| match &one.owner {
-            Owner::Plugin(name) => {
-                !crate::harness_plugin::purlis_s_own_named(chat.harness.adapter().plugins(), name)
-            }
-            Owner::You | Owner::Repo(_) => true,
-        })
+        .filter(|one| the_persons(chat.harness, one))
         .map(|one| {
             let declared = declared(&one.skill);
             Offered {
@@ -1226,9 +1221,14 @@ pub fn for_use_skill(chat: &Running<'_>) -> ChatSkills {
     let own = own_catalogue(chat.harness, &found);
     // What its start measured, where it held them: what its limit was handed by.
     let at = chat.at();
+    let found_persons: Vec<OutsideSkill> = found
+        .iter()
+        .filter(|one| the_persons(chat.harness, one))
+        .cloned()
+        .collect();
     let held_own = chat
         .start
-        .map_or(found.as_slice(), |start| start.own.as_slice());
+        .map_or(found_persons.as_slice(), |start| start.own.as_slice());
     let budget = budget_at(at, chat.harness);
     let drops = chat.harness.listing_drops(
         budget.chars,
@@ -2269,6 +2269,18 @@ fn own_catalogue(harness: Harness, outside: &[OutsideSkill]) -> OwnCatalogue {
     }
 }
 
+/// **Whether `one`, a skill `harness` finds itself, is the person's and not purlis's**: purlis's
+/// own plugins hold its built-in skills and the plane's it hands, and a plugin it pins off is in
+/// no chat, so neither is the harness's own (#3324, #5736, #5737).
+pub(crate) fn the_persons(harness: Harness, one: &OutsideSkill) -> bool {
+    match &one.owner {
+        Owner::Plugin(name) => {
+            !crate::harness_plugin::purlis_s_own_named(harness.adapter().plugins(), name)
+        }
+        Owner::You | Owner::Repo(_) => true,
+    }
+}
+
 /// The skills of `outside` in `harness`'s own catalogue ([`own_catalogue`]), each with what it
 /// declares, manual-only read as the harness reads it.
 fn own_listed(harness: Harness, outside: &[OutsideSkill]) -> Vec<(&OutsideSkill, Declared)> {
@@ -2276,14 +2288,7 @@ fn own_listed(harness: Harness, outside: &[OutsideSkill]) -> Vec<(&OutsideSkill,
     outside
         .iter()
         .filter(|one| one.origin == Origin::Harness && !one.off && one.unread.is_none())
-        // purlis's own plugin's skills are its built-in ones, and a plugin it pins off is never
-        // in a chat: neither is the harness's own.
-        .filter(|one| match &one.owner {
-            Owner::Plugin(name) => {
-                !crate::harness_plugin::purlis_s_own_named(harness.adapter().plugins(), name)
-            }
-            Owner::You | Owner::Repo(_) => true,
-        })
+        .filter(|one| the_persons(harness, one))
         .map(|one| {
             let mut said = declared(&one.skill);
             said.manual = (reads_the_key && said.manual)
@@ -2355,7 +2360,7 @@ pub struct Drops {
     pub harness: &'static str,
     /// Characters the listing needs.
     pub needs: usize,
-    /// Characters the harness holds before it drops descriptions.
+    /// Characters purlis lets the harness list before it drops descriptions: the limit it hands.
     pub holds: usize,
     /// Who takes the room, largest first: at most [`Drops::NAMED`].
     pub biggest: Vec<Share>,
@@ -2388,8 +2393,8 @@ impl Drops {
             .collect();
         format!(
             "{} drops some skill descriptions in this chat: its skills need {} characters, past \
-             the {} it holds, so the model sees bare names for some. The most room goes to {}. \
-             Turn some of these skills or plugins off for this workspace's chats.",
+             the {} purlis lets it list, so the model sees bare names for some. The most room \
+             goes to {}. Turn some of these skills or plugins off for this workspace's chats.",
             self.harness,
             grouped(self.needs),
             grouped(self.holds),
