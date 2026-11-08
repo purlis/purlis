@@ -1827,6 +1827,22 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "rye",
     "tox",
     "nox",
+    // more secret injectors (#5619's third review)
+    "saml2aws",
+    "aws-okta",
+    "bws",
+    "dotenv",
+    "phase",
+    "awsume",
+    // programs that run what a chat wrote: a script, its tests, its hooks or its stack
+    "bunx",
+    "tsx",
+    "pytest",
+    "watchexec",
+    "entr",
+    "pre-commit",
+    "pulumi",
+    "cdk",
 ];
 
 /// **The programs a Run grant may be wider than one exact command for** (the person's ruling on

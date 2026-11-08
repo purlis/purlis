@@ -2184,3 +2184,75 @@ fn tox_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
 fn nox_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
     refused_as_running_others("nox");
 }
+
+// The third review of #5619: more secret injectors, and programs that run what a chat wrote.
+
+#[test]
+fn saml2aws_runs_what_it_is_given_or_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("saml2aws");
+}
+
+#[test]
+fn aws_okta_runs_what_it_is_given_or_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("aws-okta");
+}
+
+#[test]
+fn bws_runs_what_it_is_given_or_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("bws");
+}
+
+#[test]
+fn dotenv_runs_what_it_is_given_or_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("dotenv");
+}
+
+#[test]
+fn phase_runs_what_it_is_given_or_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("phase");
+}
+
+#[test]
+fn awsume_runs_what_it_is_given_or_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("awsume");
+}
+
+#[test]
+fn bunx_runs_what_it_is_given_or_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("bunx");
+}
+
+#[test]
+fn tsx_runs_what_it_is_given_or_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("tsx");
+}
+
+#[test]
+fn pytest_runs_what_it_is_given_or_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("pytest");
+}
+
+#[test]
+fn watchexec_runs_what_it_is_given_or_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("watchexec");
+}
+
+#[test]
+fn entr_runs_what_it_is_given_or_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("entr");
+}
+
+#[test]
+fn pre_commit_runs_what_it_is_given_or_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("pre-commit");
+}
+
+#[test]
+fn pulumi_runs_what_it_is_given_or_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("pulumi");
+}
+
+#[test]
+fn cdk_runs_what_it_is_given_or_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("cdk");
+}
