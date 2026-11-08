@@ -96,8 +96,9 @@ export const SigningCheck: StoryObj<typeof PoolSignInConfirm> = {
 };
 
 /**
- * `purlis signing check` on GitLab (#5793): the window names the GitLab it asks. Its pictures
- * are drawn after the dialog has settled; the first ones, from #5873, were not.
+ * `purlis signing check` on GitLab (#5793): the window names the GitLab it asks. Its picture is
+ * taken once Check it has armed, as its siblings' are: without that wait it raced the arming timer
+ * and drew the button disabled in some runs and armed in others.
  */
 export const SigningCheckOnGitLab: StoryObj<typeof PoolSignInConfirm> = {
   beforeEach: () => {
@@ -125,5 +126,7 @@ export const SigningCheckOnGitLab: StoryObj<typeof PoolSignInConfirm> = {
     await page.findByRole("alertdialog", {
       name: "Check 0123abc in team/billing on GitLab on gitlab.example.org?",
     });
+    const check = page.getByRole("button", { name: "Check it" });
+    await waitFor(() => expect(check).toBeEnabled(), { timeout: 4000 });
   },
 };
