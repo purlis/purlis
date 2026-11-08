@@ -15,7 +15,7 @@ import { expectFocusInSight } from "../../stories.testkit";
 import { Button, IconButton } from "../button/Button";
 import { ReadOnlyFieldset } from "../../ReadOnlyLine";
 import { TextField } from "../field/Field";
-import { Tooltip, TOOLTIP_DELAY } from "./Tooltip";
+import { Tooltip, TOOLTIP_DELAY, TOOLTIP_OFFSET } from "./Tooltip";
 
 /** What a story draws: one target with its hint, and a button after it to Tab on to. */
 function Hinted({ target }: { target: "words" | "icon" | "detail" | "unavailable" }) {
@@ -211,7 +211,8 @@ async function expectWhole(where: string) {
 /**
  * **A control's tooltip keeps its width at the window's edge** (#3364, R166): beside a target
  * across the window it stands over it, and beside a control pinned to the window's end it flips to
- * the control's start, never a column of words against the edge. The picture is the control under
+ * the control's start, never a column of words against the edge; Esc takes it down (WCAG 1.4.13).
+ * The picture is the control under
  * the keyboard, its tooltip at its start.
  */
 export const AtTheWindowsEdge: StoryObj = {
@@ -227,9 +228,19 @@ export const AtTheWindowsEdge: StoryObj = {
     await expect(stop).toHaveFocus();
     expectFocusInSight();
     await expectWhole("A control at the window's end");
+    // Esc takes it down and keeps the focus; Shift+Tab and Tab bring it back for the picture.
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(shown()).toBeNull());
+    await expect(stop).toHaveFocus();
+    await userEvent.tab({ shift: true });
+    await userEvent.tab();
+    await expect(stop).toHaveFocus();
+    await expectWhole("A control at the window's end, after Esc");
+    // Flipped to its start, the same 10 px from it (R166).
+    const gap = stop.getBoundingClientRect().left - (shown()?.getBoundingClientRect().right ?? 0);
     await expect(
-      shown()?.getBoundingClientRect().right,
-      "A control at the window's end: its tooltip at its start",
-    ).toBeLessThanOrEqual(stop.getBoundingClientRect().left);
+      Math.abs(gap - TOOLTIP_OFFSET),
+      `A control at the window's end: its tooltip at its start, ${TOOLTIP_OFFSET} px from it (${gap} px)`,
+    ).toBeLessThanOrEqual(1);
   },
 };

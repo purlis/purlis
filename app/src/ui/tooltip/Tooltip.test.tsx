@@ -798,7 +798,13 @@ describe("a control's tooltip at the window's edge (#3364)", () => {
         this.getAttribute("data-scope") === "tooltip" &&
         this.getAttribute("data-part") === "root"
       )
-        return DOMRect.fromRect({ x: 0, y: 0, width: 300, height: 40 });
+        // Its words take 15 px a letter, to 300 px at most, as its widest.
+        return DOMRect.fromRect({
+          x: 0,
+          y: 0,
+          width: Math.min(300, (this.textContent ?? "").length * 15),
+          height: 40,
+        });
       return real.call(this);
     });
   }
@@ -835,5 +841,28 @@ describe("a control's tooltip at the window's edge (#3364)", () => {
     const tip = await opened();
     expect(tip).toHaveAttribute("data-placement", "bottom");
     expect(tip.style.inlineSize).toBe("300px");
+  });
+
+  it("is measured again when its words change while it is open", async () => {
+    laidOut({ left: 100, right: 160 });
+    function Changing() {
+      const [tip, setTip] = useState("Short");
+      return (
+        <>
+          <Tooltip tip={tip}>
+            <span>purlis</span>
+          </Tooltip>
+          <button type="button" onClick={() => setTip("Words that are longer now")}>
+            Change
+          </button>
+        </>
+      );
+    }
+    render(<Changing />);
+    const tip = await opened();
+    expect(tip.style.inlineSize).toBe("75px");
+    act(() => screen.getByRole("button", { name: "Change" }).click());
+    await wait(0);
+    expect(shownTip()?.style.inlineSize).toBe("300px");
   });
 });

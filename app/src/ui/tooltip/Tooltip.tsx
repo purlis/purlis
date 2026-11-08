@@ -244,14 +244,24 @@ function useRoom(
     const target = anchor?.current;
     const tip = own.current;
     if (!measuring || target == null || tip === null) return;
-    const was = tip.style.inlineSize;
-    tip.style.inlineSize = "max-content";
-    const width = Math.ceil(tip.getBoundingClientRect().width);
-    tip.style.inlineSize = was;
-    const rtl = getComputedStyle(target).direction === "rtl";
-    const box = target.getBoundingClientRect();
-    const view = document.documentElement.clientWidth;
-    setRoom({ side: sideWithRoom(preferred, box, width, TOOLTIP_OFFSET, view, rtl), width });
+    const measure = () => {
+      const was = tip.style.inlineSize;
+      tip.style.inlineSize = "max-content";
+      const width = Math.ceil(tip.getBoundingClientRect().width);
+      tip.style.inlineSize = was;
+      const rtl = getComputedStyle(target).direction === "rtl";
+      const box = target.getBoundingClientRect();
+      const view = document.documentElement.clientWidth;
+      const side = sideWithRoom(preferred, box, width, TOOLTIP_OFFSET, view, rtl);
+      setRoom((now) => (now?.side === side && now.width === width ? now : { side, width }));
+    };
+    measure();
+    // **Words that change while it is open are measured again** (a busy button's hint): what it
+    // holds is watched, not its size, which it holds itself.
+    if (typeof MutationObserver !== "function") return;
+    const watching = new MutationObserver(measure);
+    watching.observe(tip, { childList: true, characterData: true, subtree: true });
+    return () => watching.disconnect();
   }, [anchor, preferred, measuring]);
   return [own, measuring ? room : null];
 }
