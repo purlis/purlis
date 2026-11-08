@@ -103,8 +103,9 @@ type Asks = HashMap<(u32, u32), (PoolToolWaits, mpsc::Sender<Answered>)>;
 /// The persona's tools as the project declares them, and as this machine allowed them.
 pub type ToolsOf<'a> = &'a dyn Fn(&Path, &str) -> (Vec<Tool>, Vec<Tool>);
 
-/// The value of each of a tool's keys, from its vault here, each wiped as it is dropped (#3420).
-pub type Reads<'a> = &'a dyn Fn(&Tool) -> Result<Vec<(String, Zeroizing<String>)>, String>;
+/// The value of each of a tool's keys, from its vault here, each wiped as it is dropped (#3420),
+/// read for the persona named first: a link into a vault it may not use is refused (#5795).
+pub type Reads<'a> = &'a dyn Fn(&str, &Tool) -> Result<Vec<(String, Zeroizing<String>)>, String>;
 
 #[derive(Default)]
 pub struct PoolTools {
@@ -236,6 +237,10 @@ pub struct Gate<'a> {
     pub tools: ToolsOf<'a>,
     /// Whether the persona may use the vault here (`brokered::authorise`).
     pub authorised: &'a dyn Fn(&str, &str) -> Result<(), String>,
+    /// Why the persona named first may read none of the tool's keys here: one is a link into a
+    /// vault it may not use (#5795, `brokered::read_out_of_reach`). Judged before anything is
+    /// asked of the person, and again as the values are read.
+    pub reach: &'a dyn Fn(&str, &Tool) -> Option<String>,
     /// The pool as it is now, with the runner the chat's link reached, where that runner is shown
     /// to be the person's own (`Bound::over_the_link`).
     pub owned: &'a dyn Fn(&Path, &str) -> Result<Bound, NotSent>,
@@ -449,6 +454,11 @@ pub fn decided(
     writer: &mut dyn Write,
 ) -> Result<Approved, Refused> {
     let unbound = unbound(gate)?;
+    // A key out of reach is refused before the person is asked anything: no Secret ask for a key
+    // it lacks, and no Allow for a run that is refused once allowed (#5795).
+    if let Some(why) = (gate.reach)(&unbound.persona, &unbound.tool) {
+        return Err(why.into());
+    }
     let checked = match bound(gate, &unbound.tool) {
         Ok(bound) => unbound.on(bound),
         Err(not) => {
@@ -629,7 +639,7 @@ pub fn answered(
         }
     };
     as_shown()?;
-    let values = (waiting.read)(&checked.tool)?;
+    let values = (waiting.read)(&checked.persona, &checked.tool)?;
     // And once they are read: a vault may wait on a sign-in for as long as it takes (#4071).
     as_shown()?;
     Ok(Approved {
@@ -701,26 +711,29 @@ pub fn run_on_its_runner(
     let clones_at_start = held.chats().clones_at_start(session);
     // And only those purlis cloned or the person saved from the window.
     let config_root = purlis_core::forge::apptoken::record_root();
-    let read = |tool: &Tool| match tool.mint {
-        Some(_) => minted(
-            &ctx,
-            tool,
-            &purlis_core::forge::apptoken::For {
-                root,
-                chat: session,
-                folder: folder.as_deref(),
-                // A runner's folder is not one of this machine's: the token is minted for the
-                // workspace's clones here, of one installation.
-                here: None,
-                writes: &grants,
-                started: clones_at_start.as_deref(),
-                on_a_runner: true,
-                config_root: config_root.as_deref(),
-                ends_seen: Some(ends_seen),
-            },
-            &purlis_core::forge::apptoken::token_from_vault,
-        ),
-        None => read(&ctx, tool),
+    let read = |persona: &str, tool: &Tool| match tool.mint {
+        // Its App's key is read to mint with, through a link too, judged as any read (#5795).
+        Some(_) => judged(&ctx, persona, tool, || {
+            minted(
+                &ctx,
+                tool,
+                &purlis_core::forge::apptoken::For {
+                    root,
+                    chat: session,
+                    folder: folder.as_deref(),
+                    // A runner's folder is not one of this machine's: the token is minted for the
+                    // workspace's clones here, of one installation.
+                    here: None,
+                    writes: &grants,
+                    started: clones_at_start.as_deref(),
+                    on_a_runner: true,
+                    config_root: config_root.as_deref(),
+                    ends_seen: Some(ends_seen),
+                },
+                &purlis_core::forge::apptoken::token_from_vault,
+            )
+        }),
+        None => read(&ctx, persona, tool),
     };
     let moved = || held.chats().asks_may_have_moved();
     // The runner this chat's link reached, as the desktop's host said it (#3417).
@@ -738,6 +751,7 @@ pub fn run_on_its_runner(
         pools_in: held.chats().pools_in(),
         tools: &tools::declared_and_allowed_here,
         authorised: &authorised,
+        reach: &|persona: &str, tool: &Tool| out_of_reach(&ctx, persona, tool),
         owned: &owned,
     };
     // A key the vault here holds no value under is asked of the person first (#5077), its names
@@ -843,7 +857,12 @@ fn watch_the_asker(mut reader: Box<dyn std::io::BufRead + Send>, gone: Arc<Atomi
 
 /// The value of each of `tool`'s keys, read from its vault here: each the one copy, wiped as
 /// it is dropped, a refusal part way through too (#3420).
-fn read(ctx: &Ctx, tool: &Tool) -> Result<Vec<(String, Zeroizing<String>)>, String> {
+fn read(ctx: &Ctx, persona: &str, tool: &Tool) -> Result<Vec<(String, Zeroizing<String>)>, String> {
+    judged(ctx, persona, tool, || values_of(ctx, tool))
+}
+
+/// [`read`]'s values, judged by nothing.
+fn values_of(ctx: &Ctx, tool: &Tool) -> Result<Vec<(String, Zeroizing<String>)>, String> {
     let vault =
         purlis_core::secrets::cmd::provider(ctx, &tool.vault).map_err(|e| e.message.to_string())?;
     let mut values: Vec<(String, Zeroizing<String>)> = Vec::new();
@@ -857,6 +876,24 @@ fn read(ctx: &Ctx, tool: &Tool) -> Result<Vec<(String, Zeroizing<String>)>, Stri
         values.push((value.key.clone(), read));
     }
     Ok(values)
+}
+
+/// Why none of `tool`'s keys is read for `persona`: one is a link into a vault it may not use.
+fn out_of_reach(ctx: &Ctx, persona: &str, tool: &Tool) -> Option<String> {
+    let keys: Vec<&str> = tool.values.iter().map(|value| value.key.as_str()).collect();
+    brokered::read_out_of_reach(ctx, persona, &tool.vault, &keys)
+}
+
+/// `read` of `tool`'s keys for `persona`, refused where one is a link into a vault it may not
+/// use: judged before and after it as the core judges every read of a link (#5795).
+fn judged(
+    ctx: &Ctx,
+    persona: &str,
+    tool: &Tool,
+    read: impl FnOnce() -> Result<Vec<(String, Zeroizing<String>)>, String>,
+) -> Result<Vec<(String, Zeroizing<String>)>, String> {
+    let keys: Vec<&str> = tool.values.iter().map(|value| value.key.as_str()).collect();
+    brokered::read_judged(ctx, persona, &tool.vault, &keys, read, |why| why)
 }
 
 /// **The token a GitHub App mints for a runner chat's tool `tool`, sent as the value of its key**
