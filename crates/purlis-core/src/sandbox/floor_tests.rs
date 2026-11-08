@@ -2005,6 +2005,13 @@ fn the_floor_lists_the_homes_shared_folders_each_before_what_is_in_it() {
             home.join(".local"),
             home.join(".local/share"),
             home.join(".config"),
+            // And those above each name a person may lift, which the floor pins.
+            home.join(".kube"),
+            home.join(".local/share/fish"),
+            home.join(".local/share/nvim"),
+            home.join(".local/share/nvim/site"),
+            home.join(".local/share/bash-completion"),
+            home.join(".local/share/dbus-1"),
         ]
     );
     assert_eq!(
@@ -2032,6 +2039,12 @@ fn an_xdg_folder_is_listed_only_where_it_is_in_the_home() {
             home.join(".config"),
             home.join("my"),
             home.join("my/data"),
+            home.join(".kube"),
+            home.join(".local/share/fish"),
+            home.join(".local/share/nvim"),
+            home.join(".local/share/nvim/site"),
+            home.join(".local/share/bash-completion"),
+            home.join(".local/share/dbus-1"),
         ]
     );
 }

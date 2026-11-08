@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The session host's own walks of a profile's folders, which run outside any wrap while a chat
 //! on the same profile may be moving folders under them: each must reach nothing a link points
 //! at, however the folders it walks are swapped in the middle of a walk.

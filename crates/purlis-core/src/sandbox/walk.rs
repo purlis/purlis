@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **The session host's walks of a profile's folders**, which run outside any wrap while another
 //! chat on the same profile may be moving folders under them. Every folder is opened relative to
 //! the one above it, by a descriptor, with `O_NOFOLLOW`, and every name is judged and removed
