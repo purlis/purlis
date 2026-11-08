@@ -564,6 +564,7 @@ fn a_programs_number_changes_what_a_start_on_that_program_is_routed_by() {
         plane: dir.path(),
         workspace: None,
         repo: &[],
+        own: &[],
         routed: None,
     };
     let hidden = |harness| {

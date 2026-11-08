@@ -1,0 +1,178 @@
+[
+  {
+    "query": "Remove the qa-legacy workspace, but don't lose what it learned.",
+    "should_trigger": true
+  },
+  {
+    "query": "Delete the volaticloud persona.",
+    "should_trigger": true
+  },
+  {
+    "query": "Retire the easydmarc persona; promote anything worth keeping.",
+    "should_trigger": true
+  },
+  {
+    "query": "We don't need the git-ci-cd workspace any more. Clean it up.",
+    "should_trigger": true
+  },
+  {
+    "query": "Archive the old reporting workspace and get rid of it.",
+    "should_trigger": true
+  },
+  {
+    "query": "Remove the default workspace; it's empty.",
+    "should_trigger": true
+  },
+  {
+    "query": "Delete this persona and move its useful memories to shared.",
+    "should_trigger": true
+  },
+  {
+    "query": "Get rid of the prototype-inbox workspace.",
+    "should_trigger": true
+  },
+  {
+    "query": "Before removing the themes workspace, audit its memory and todos.",
+    "should_trigger": true
+  },
+  {
+    "query": "Retire the designer persona; its work moved to the frontend persona.",
+    "should_trigger": true
+  },
+  {
+    "query": "Clean up the personas we no longer use.",
+    "should_trigger": true
+  },
+  {
+    "query": "Can I delete the skills workspace without losing its decisions?",
+    "should_trigger": true
+  },
+  {
+    "query": "Remove workspace spike-2; the spike is over.",
+    "should_trigger": true
+  },
+  {
+    "query": "Drop the grader persona; nobody uses it.",
+    "should_trigger": true
+  },
+  {
+    "query": "Delete the sandbox-test workspace and its todos.",
+    "should_trigger": true
+  },
+  {
+    "query": "Retire this workspace now that its vision is delivered.",
+    "should_trigger": true
+  },
+  {
+    "query": "Remove the reviewer persona from the project.",
+    "should_trigger": true
+  },
+  {
+    "query": "Wind down the billing workspace: keep what matters, then remove it.",
+    "should_trigger": true
+  },
+  {
+    "query": "Purge the old charter-migration workspace.",
+    "should_trigger": true
+  },
+  {
+    "query": "This persona was a mistake. Delete it.",
+    "should_trigger": true
+  },
+  {
+    "query": "Remove the workspace for the finished 0.4 release, saving its lessons first.",
+    "should_trigger": true
+  },
+  {
+    "query": "Uninstall the ops persona and its curation actions.",
+    "should_trigger": true
+  },
+  {
+    "query": "Prune the stale entries in the smart-ide workspace's memory.",
+    "should_trigger": false
+  },
+  {
+    "query": "Dedupe the steward persona's memory.",
+    "should_trigger": false
+  },
+  {
+    "query": "Remove the duplicate notes from this workspace's memory.",
+    "should_trigger": false
+  },
+  {
+    "query": "Clean up the 61 stale branch folders in smart-ide.",
+    "should_trigger": false
+  },
+  {
+    "query": "Remove this branch folder now that the PR is merged.",
+    "should_trigger": false
+  },
+  {
+    "query": "Delete the target folder in this branch folder to free disk space.",
+    "should_trigger": false
+  },
+  {
+    "query": "Delete the merged branches in the purlis repo.",
+    "should_trigger": false
+  },
+  {
+    "query": "Create a new persona for release management.",
+    "should_trigger": false
+  },
+  {
+    "query": "Which persona owns the theme work now?",
+    "should_trigger": false
+  },
+  {
+    "query": "Edit the steward persona's charter to add a scoping rule.",
+    "should_trigger": false
+  },
+  {
+    "query": "Remove the unused imports in this file.",
+    "should_trigger": false
+  },
+  {
+    "query": "Delete the accounts that never verified their email.",
+    "should_trigger": false
+  },
+  {
+    "query": "Retire the v1 API endpoints after the migration.",
+    "should_trigger": false
+  },
+  {
+    "query": "Uninstall the old version of node.",
+    "should_trigger": false
+  },
+  {
+    "query": "Remove the feature flag for the new checkout.",
+    "should_trigger": false
+  },
+  {
+    "query": "Delete the docker volumes and start over.",
+    "should_trigger": false
+  },
+  {
+    "query": "Clean up the console.log calls.",
+    "should_trigger": false
+  },
+  {
+    "query": "Drop the legacy_orders table.",
+    "should_trigger": false
+  },
+  {
+    "query": "Remove the workspace switcher from the mobile nav.",
+    "should_trigger": false
+  },
+  {
+    "query": "Delete the test channel in our Slack workspace.",
+    "should_trigger": false
+  },
+  {
+    "query": "Rename the email column.",
+    "should_trigger": false
+  },
+  {
+    "query": "Archive old GitHub issues labelled wontfix.",
+    "should_trigger": false
+  }
+]

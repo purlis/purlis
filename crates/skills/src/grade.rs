@@ -22,6 +22,7 @@
 //! runs that started the skill is at least [`TRIGGER_THRESHOLD`] for a query that should trigger
 //! it, and below it for one that should not.
 
+pub mod ci;
 mod fixtures;
 pub mod outcomes;
 pub mod routers;
