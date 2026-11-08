@@ -757,7 +757,7 @@ fn a_persona_naming_an_unmoved_skill_is_told_missing_only_where_its_program_read
             Some(&built_in()),
             harness,
             &env,
-            &[],
+            (&[], &[]),
         )
         .map(|not| not.missing)
         .unwrap_or_default()

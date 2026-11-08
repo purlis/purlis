@@ -1,0 +1,37 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "skill-grader"
+description = "The CI grader: which built-in skills a change grades, a harness run headless on their trigger tests, and the scores in the run's summary"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+# The scoring, the trigger tests and the sources file: the CI grader only launches and reports.
+purlis-skills.workspace = true
+# purlis's MCP server as Claude Code's `--mcp-config` takes it, and the plugin's binary
+# variable: the same words a chat in the window is armed with.
+purlis-core.workspace = true
+serde_json.workspace = true
+# The open issues the nightly is handed, as `gh api` prints them.
+serde.workspace = true
+clap.workspace = true
+# The pin file, `ci/skill-grades/pins.toml`.
+toml = "1.1"
+
+[dev-dependencies]
+# The stand-in `claude` a test runs instead of the real one: no test calls a model.
+stand-in.workspace = true
+tempfile.workspace = true
+
+[[test]]
+name = "it"
+path = "tests/it/main.rs"
+
+[lints]
+workspace = true

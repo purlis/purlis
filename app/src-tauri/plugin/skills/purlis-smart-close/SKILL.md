@@ -1,6 +1,6 @@
 ---
 name: purlis-smart-close
-description: Close this chat by writing its session record — a summary of this session into its workspace's sessions/ — and folding what lasts into workspace.md. Use when asked to smart close, to wrap up or close this chat with a record, or to write a session record.
+description: Close this purlis chat by writing its session record — a summary of this session into its workspace's sessions/ — and folding what lasts into workspace.md. Use when asked to smart close, to wrap up or close this chat with a record, or to write a session record.
 ---
 
 # Smart close
@@ -9,11 +9,11 @@ The chat is ending. Leave behind a **session record**: a summary the next chat r
 where this one stopped. A summary, never the transcript. The last command below is what ends this
 chat, so run it last, once.
 
-## 1. Review the session
+## 1. Review the chat
 
 Read back over this conversation. Collect, for the record:
 
-- **Goal** — what this session set out to do.
+- **Goal** — what this chat set out to do.
 - **Done** — what changed: files, commits, pull requests, decisions carried out.
 - **Decisions** — what was decided, and why.
 - **Open** — what is unfinished, blocked or still to ask.
@@ -24,28 +24,32 @@ each of the five in a few lines.
 
 ## 2. Fold what lasts into workspace.md
 
-In a workspace, open its `workspace.md`. Move what should outlive this session into the section
-it belongs to:
+In a workspace, purlis writes its `workspace.md` for this chat; a sandboxed chat is refused the
+file itself. Move what should outlive this chat into the section it belongs to, with
+purlis's tools:
 
-- a decision every later chat should act on → `## Context & decisions`;
-- a term this work coined → `## Glossary`;
-- a changed goal → `purlis workspace vision "<the goal>"`.
+- a decision every later chat should act on, and why → the `workspace_section` tool with section
+  `decisions` (`## Context & decisions`);
+- a term this work coined → `workspace_section` with section `glossary` (`## Glossary`);
+- a changed goal → the `workspace_vision` tool, which replaces `## Vision`.
 
-Leave `## Sessions` alone; that line is purlis's. At the plane root there is no `workspace.md`; a
+Each `workspace_section` call adds one entry and keeps what is there. A harness without purlis's
+tools sets the goal with `purlis workspace vision "<the goal>"`. Leave `## Sessions` alone; that
+line is purlis's. At the plane root there is no `workspace.md`; a
 lesson for every persona goes to the `persona_remember` tool with `shared`, or to
 `purlis persona remember <persona> --shared "<fact>"` with this chat's own persona. Done when
 each lasting decision, term or goal change is in its section, or there was none.
 
 ## 3. Write the record
 
-Title it in one line. Name the pieces this session worked in that you are not standing in, as
+Title it in one line. Name the branch folders this chat worked in that you are not standing in, as
 `<repo>/<piece>`; purlis reads their branches from git. The body is exactly these five sections,
 in this order, each with at least one line:
 
 ```markdown
 ## Goal
 
-<what this session set out to do>
+<what this chat set out to do>
 
 ## Done
 
@@ -65,7 +69,7 @@ in this order, each with at least one line:
 ```
 
 Call purlis's `session_record` tool with `title`, `body` and, where there are any, `pieces`.
-purlis writes the record for this chat, so it works from a sandboxed chat and from a clone. A
+purlis writes the record for this chat, so it works from a sandboxed chat and from a repo. A
 harness without purlis's tools runs the command instead, with the same title and body:
 
 ```bash
@@ -75,6 +79,6 @@ RECORD
 ```
 
 A refusal says what to fix: fix it and write the record again. Done when the answer names the
-record's path. Then stop: when the operator started this close, the app ends this chat once this
+record's path. Then stop: when the person started this close, the app ends this chat once this
 turn ends, and its pane keeps the last screen. When the answer says the chat will not end by itself,
-tell the operator the record is written and the chat is theirs to end.
+tell the person the record is written and the chat is theirs to end.

@@ -41,7 +41,7 @@ Your call waits for their answer; on Allow it goes on to log in. Fill in only wh
 guess a key name, and if they keep it blocked, tell them what needs the login and don't suggest it
 again.
 
-A project may also declare a login once, in its committed settings, and the user allows it on
+A project may also declare a login once, in its committed settings, and the person allows it on
 their machine with the persona's hosts:
 
 ```toml
@@ -60,7 +60,7 @@ the browser keeps reaching that host too, so the site's own redirects and token 
 but you may read or act on that host's pages only while it signs in: until the browser is back
 on the login's page, for two minutes at most, and only on the page the login ran on and the
 windows it opens. Another tab stays kept off that host. A step that host asks for after the password is
-yours or the user's to take in that time. Outside it, a call on that host's page is refused, and
+yours or the person's to take in that time. Outside it, a call on that host's page is refused, and
 where the page asks to sign in again, call `browser_login` again. The login goes into the browser
 you name, or the one you're using. A browser that holds it, on a page of its site that asks for no sign-in, answers "already logged
 in" and nothing is filled. Where the page asks, or you're elsewhere, purlis looks on a page of its
@@ -70,8 +70,8 @@ reuse opens in a browser of its own, and so does one whose form doesn't appear o
 the answer says why and which browser it left, and you close that one with `browser_close`
 if nothing in it is needed. A browser you opened with `browser_new` and never used is closed for you,
 and the answer says so. A project's browsers have a limit: the refusal lists yours, with what each
-holds, so you can close the right one. If the login is refused, tell the user the sentence: it names what to declare or
-allow. A page with a captcha or a second factor does not log in this way; ask the user, or hand
+holds, so you can close the right one. If the login is refused, tell the person the sentence: it names what to declare or
+allow. A page with a captcha or a second factor does not log in this way; ask the person, or hand
 them the browser with `ask_operator` pointed at it.
 
 Running the login's name as a command does nothing: it says to use `browser_login`.
@@ -108,7 +108,7 @@ the seed as it fills, and only the code goes into the page; the seed never does.
 without `code` is refused. So is any value that looks like one, unless the person marked its key
 as no 2FA seed in the vault's tab, and a chat can't make that mark. Pass on what the refusal says.
 
-**In the user's own terminal**, `purlis secret exec --dotenv` resolves vault keys into one 0600
+**In the person's own terminal**, `purlis secret exec --dotenv` resolves vault keys into one 0600
 temp file and points `PLAYWRIGHT_MCP_SECRETS_FILE` at it. You then refer to a secret **by
 name**. Playwright substitutes the value and scrubs it from the output it captures.
 
@@ -176,6 +176,6 @@ command substitution into the transcript, with nothing to redact it.
 - **Never read a filled secret back.** Do not evaluate `el.value`, take a screenshot of a
   filled password field, or dump the dotenv file.
 - Never type a credential in directly, even "just once to test". Use `browser_login` in a
-  chat, or the bridge in the user's terminal.
+  chat, or the bridge in the person's terminal.
 - Never commit a session directory, a storage-state file or a trace. Each one holds live
   cookies or authenticated traffic, which is the credential in another form.

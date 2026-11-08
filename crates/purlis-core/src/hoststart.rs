@@ -177,6 +177,7 @@ pub fn plane_skills_laid_out(
         plane: root,
         workspace,
         repo: &[],
+        own: &[],
         routed: None,
     });
     laid_out_on(at, persona, kit, harness)
@@ -217,6 +218,11 @@ pub struct ChatSkills {
     /// The repo skills of the clone the chat works in (SK-6), as its harness reads them:
     /// nothing where the plane's skills do not reach it, or it works in no clone.
     pub repo: Vec<crate::skills::OutsideSkill>,
+    /// **Its harness's own skills it has, read with its plugins** ([`Self::plugins_read`]): the
+    /// person's and those of the plugins it has, each weighed against the plane's copy of its
+    /// name, so an identical one takes one slot (#5737). Nothing where the plane's skills do not
+    /// reach it, or nothing here could read them.
+    pub own_copies: Vec<crate::skills::OutsideSkill>,
     /// What its router extension made of its set at its start (SK-15b, [`Self::routed_by`]):
     /// `None` for a chat routed by the built-in router, which is asked nothing.
     pub routed: Option<std::sync::Arc<crate::skills::router::Routed>>,
@@ -230,9 +236,42 @@ pub struct ChatSkills {
     /// The variables of its environment that say where its harness keeps its config, where it
     /// was started with any: a profile may point it at another account's folder.
     pub plugins_env: Vec<(String, String)>,
+    /// **What its harness lists of its own catalogue, measured at its start** (#5736,
+    /// [`Self::own_measured`]): what Claude Code's listing limit counts, and what its tab's
+    /// Notice names when even that limit is past Claude Code's own. `None` where nothing was
+    /// measured: another harness, a Try it's chat, or a runner's.
+    pub own: Option<crate::skills::OwnListing>,
 }
 
 impl ChatSkills {
+    /// **These skills, with what the chat's harness lists of its own catalogue** ([`Self::own`]),
+    /// for a chat on `harness` started in `cwd` with the environment `env`. Measured on Claude
+    /// Code alone, the one harness handed a listing limit that counts it, and never for a Try
+    /// it's scratch chat, which has every one of its own off. Its project's plugins are counted
+    /// as on whether or not its start reads them: a limit is a ceiling, so counting one too many
+    /// costs a chat nothing, and one too few would drop a description.
+    #[must_use]
+    pub fn own_measured(
+        mut self,
+        harness: Option<Harness>,
+        cwd: Option<&Path>,
+        env: &[(String, String)],
+    ) -> Self {
+        self.own = (harness == Some(Harness::ClaudeCode) && !self.tried).then(|| {
+            crate::skills::own_at_start(
+                Harness::ClaudeCode,
+                &self.root,
+                self.workspace.as_deref(),
+                &crate::harness_plugin::Env::of(env),
+                &crate::harness_plugin::ChatFolder {
+                    cwd: cwd.map(Path::to_path_buf),
+                    reads_project: true,
+                },
+            )
+        });
+        self
+    }
+
     /// **These skills, with what the chat has of its harness's plugins** ([`Self::plugins`]),
     /// in the environment `env` it starts with: `reads_project` is false where its start limits
     /// it to the person's settings (`--setting-sources user`).
@@ -254,6 +293,20 @@ impl ChatSkills {
                 },
             )
         });
+        // What it has of its harness's own, read once, to weigh the plane's copies against
+        // (#5737). A Try it's chat gets the draft alone, so it weighs nothing.
+        self.own_copies = match (harness, &self.plugins) {
+            (Some(harness), Some(plugins)) if self.on && !self.tried => {
+                let adapter = harness.adapter().plugins();
+                crate::harness_plugin::harness_skills_but(
+                    adapter,
+                    &crate::harness_plugin::Env::of(env),
+                    &crate::harness_plugin::Choices::read_in(&self.root, self.workspace.as_deref()),
+                    &plugins.off,
+                )
+            }
+            _ => Vec::new(),
+        };
         self
     }
 
@@ -297,10 +350,12 @@ impl ChatSkills {
             workspace,
             persona,
             repo,
+            own_copies: Vec::new(),
             routed: None,
             arm_router,
             plugins: None,
             plugins_env: Vec::new(),
+            own: None,
         }
     }
 
@@ -340,6 +395,7 @@ impl ChatSkills {
                 plane: &self.root,
                 workspace: self.workspace.as_deref(),
                 repo: &self.repo,
+                own: &self.own_copies,
                 routed: None,
             },
             self.persona.as_deref(),
@@ -397,8 +453,41 @@ pub fn skills_not_here(
         built_in.as_deref(),
         harness,
         &crate::harness_plugin::Env::of(env),
-        &skills.repo,
+        (&skills.repo, &skills.own_copies),
     )
+}
+
+/// **Whether a chat's listing would still lose descriptions** (#5736): a Claude Code chat whose
+/// skills are `skills`, armed from `kit`, whose list and its harness's own catalogue
+/// ([`ChatSkills::own`]) need more than Claude Code holds
+/// ([`crate::harness::claude::crowded`]). What its tab's Notice says beside the skills it
+/// started without. `None` otherwise, and on any other harness.
+pub fn listing_crowded(
+    skills: &ChatSkills,
+    kit: &Kit,
+    harness: Option<Harness>,
+) -> Option<crate::harness::claude::Crowded> {
+    let own = skills
+        .own
+        .as_ref()
+        .filter(|_| harness == Some(Harness::ClaudeCode))?;
+    // Its set as its arming worked it out ([`armed`]).
+    let at = skills.on.then_some(crate::skills::PlaneSkills {
+        plane: &skills.root,
+        workspace: skills.workspace.as_deref(),
+        repo: &skills.repo,
+        own: &skills.own_copies,
+        routed: skills.routed.as_deref(),
+    });
+    let built_in = kit.plugin.as_deref().and_then(crate::skills::in_bundle);
+    let set = crate::skills::routed(
+        built_in.as_deref(),
+        at,
+        skills.persona.as_deref(),
+        Harness::ClaudeCode,
+    );
+    let budget = crate::skills::budget_at(at, Harness::ClaudeCode);
+    crate::harness::claude::crowded(&set, budget, own)
 }
 
 /// The host's [`Beside`], as two calls: what starts a confinement and what writes the log.
@@ -825,6 +914,7 @@ pub fn compose_ready(
             persona.as_deref(),
         )
         .plugins_read(ready.harness, Some(&cwd), sandbox.is_none(), &ready.env)
+        .own_measured(ready.harness, Some(&cwd), &ready.env)
         .routed_by(built_in.as_deref(), ready.harness, beside.router().as_ref())
     });
     let armed = armed(&Arming {
@@ -1446,9 +1536,12 @@ pub fn armed(arming: &Arming<'_>) -> Result<Armed, String> {
         plane: skills_root,
         workspace,
         repo: &skills.repo,
+        own: &skills.own_copies,
         routed: skills.routed.as_deref(),
     });
     let linked = laid_out_on(at, skills.persona.as_deref(), kit, harness);
+    // What its harness lists of its own (#5736), which Claude Code's limit counts.
+    let own_listing = skills.own.as_ref().map(|own| own.catalogue.chars);
     let skills = at;
     let armed = crate::harness::Kit {
         binary,
@@ -1465,6 +1558,7 @@ pub fn armed(arming: &Arming<'_>) -> Result<Armed, String> {
         runs_a_shell: graded
             && cwd.is_some_and(|cwd| crate::skills::verbs::drafts::shell_piece(root, cwd)),
         laid_out: linked.as_deref(),
+        own_listing: own_listing.unwrap_or(0),
     };
     // Which folder the chat is handed, for its terminal to note while it runs (SK-24).
     let held = linked.as_ref().map(|folder| {
