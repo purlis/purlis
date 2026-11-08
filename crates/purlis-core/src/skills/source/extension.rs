@@ -263,7 +263,9 @@ pub fn browse(studio: Studio<'_>, plane: &Path, id: &str) -> Result<Browse, Stri
 }
 
 /// [`browse`], of what `source` answers as the extension `id` at `revision`: each skill's files
-/// read for its marks until [`MOST_MARKED`] skills or [`super::fetch::MOST_READ_BYTES`] are read.
+/// read for its marks, the first [`MOST_MARKED`] skills, until one answer would take what was read
+/// past [`super::fetch::MOST_READ_BYTES`], as a git source's browse stops where one read would
+/// take its fetch past what it may read. That skill and the rest are left to their reviews.
 fn browse_of(
     source: &dyn SkillSource,
     id: &str,
@@ -274,15 +276,20 @@ fn browse_of(
     let (locked, _) = lock::every(plane);
     let origin = Origin::Extension(id.to_owned());
     let mut read: u64 = 0;
+    let mut reading = true;
     let skills = found
         .into_iter()
         .enumerate()
         .map(|(at, skill)| {
-            let marks = if at < MOST_MARKED && read <= super::fetch::MOST_READ_BYTES {
+            let marks = if reading && at < MOST_MARKED {
                 // One skill's answer refused marks that one alone: the others are still read.
-                source.files(&skill).ok().map(|(files, _)| {
+                source.files(&skill).ok().and_then(|(files, _)| {
                     read += files.iter().map(|f| f.bytes.len() as u64).sum::<u64>();
-                    review::summary_of(&files).marks()
+                    if read > super::fetch::MOST_READ_BYTES {
+                        reading = false;
+                        return None;
+                    }
+                    Some(review::summary_of(&files).marks())
                 })
             } else {
                 None
@@ -345,7 +352,38 @@ pub fn review_set(
     names: &[String],
     level: &Level,
 ) -> Result<(SetReview, Held), String> {
+    set_review_of(Asked::of(studio, id)?, id, plane, names, level)
+}
+
+/// **The review of installing every skill the extension `id`'s source offers but `skipping`**
+/// at `level` (`purlis skill install --extension <id> --all`, #5760): [`review_set`] of what one
+/// listing names, so the names and the review are of one revision and the extension is asked for
+/// no file it was not reviewed for.
+pub fn review_every(
+    studio: Studio<'_>,
+    plane: &Path,
+    id: &str,
+    skipping: &[String],
+    level: &Level,
+) -> Result<(SetReview, Held), String> {
     let asked = Asked::of(studio, id)?;
+    let names: Vec<String> = asked
+        .found
+        .iter()
+        .map(|one| one.name.clone())
+        .filter(|name| !skipping.contains(name))
+        .collect();
+    set_review_of(asked, id, plane, &names, level)
+}
+
+/// [`review_set`], of `asked`.
+fn set_review_of(
+    asked: Asked<'_>,
+    id: &str,
+    plane: &Path,
+    names: &[String],
+    level: &Level,
+) -> Result<(SetReview, Held), String> {
     let origin = Origin::Extension(id.to_owned());
     let (locked, _) = lock::every(plane);
     let set = review::set_reviewed(

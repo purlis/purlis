@@ -271,7 +271,7 @@ pub enum SkillCommand {
         #[arg(
             long,
             value_name = "ID",
-            conflicts_with_all = ["url", "branch", "folder", "vault", "key", "yes"]
+            conflicts_with_all = ["url", "branch", "folder", "vault", "key"]
         )]
         extension: Option<String>,
         /// The skills to install, by name.
@@ -1486,6 +1486,14 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             };
             let settled = Settled { renames, skips };
             if let Some(id) = extension {
+                // Refused here, after a chat's refusal, so a chat is told what a git install's is.
+                if yes {
+                    voice::err(
+                        "An install from an extension's source is asked of you each time, so \
+                         --yes is not taken and nothing was installed.",
+                    );
+                    return Ok(2);
+                }
                 return install_from_an_extension(
                     &mut cx,
                     &id,
@@ -2473,6 +2481,15 @@ struct Settled {
 }
 
 impl Settled {
+    /// `names` but those skipped.
+    fn without_skipped(&self, names: &[String]) -> Vec<String> {
+        names
+            .iter()
+            .filter(|name| !self.skips.contains(name))
+            .cloned()
+            .collect()
+    }
+
     /// The new names, by each skill's name at the source, or what is wrong with one.
     fn new_names(&self) -> Result<source::Renames, String> {
         self.renames
@@ -2539,33 +2556,11 @@ fn install(
         }
         return Ok(0);
     }
-    let grant = if grant.is_empty() {
-        None
-    } else {
-        match Grant::from_words(grant) {
-            Ok(grant) => Some(grant),
-            Err(why) => {
-                voice::err(format!(
-                    "{why}: --grant takes root, all, or workspace names"
-                ));
-                return Ok(2);
-            }
-        }
+    let (grant, new_names) = match install_settled(grant, settled) {
+        Ok(settled) => settled,
+        Err(code) => return Ok(code),
     };
-    let new_names = match settled.new_names() {
-        Ok(new_names) => new_names,
-        Err(why) => {
-            voice::err(esc(&why).to_string());
-            return Ok(2);
-        }
-    };
-    let without_skipped = |names: &[String]| -> Vec<String> {
-        names
-            .iter()
-            .filter(|name| !settled.skips.contains(name))
-            .cloned()
-            .collect()
-    };
+    let without_skipped = |names: &[String]| settled.without_skipped(names);
     let review = match named {
         Named::These(names) => source::review(root, source, &without_skipped(names), level),
         Named::All => match source::review_all(root, source, level) {
@@ -2604,37 +2599,21 @@ fn install(
             return Ok(1);
         }
     };
-    if review.skills.is_empty() {
-        voice::info("Nothing is left to install.");
-        return Ok(0);
-    }
-    // A project skill it relies on reaches the workspaces the grant names too (#4172).
-    let widenings = source::widenings(
+    let shown = Shown {
+        from: &source.to_string(),
+        at: review.commit.short(),
+        pinned_to: review.commit.short(),
+    };
+    if let Some(code) = reviewed_and_asked(
         root,
         level,
         grant.as_ref(),
-        review
-            .skills
-            .iter()
-            .flat_map(|skill| skill.already.iter().map(String::as_str)),
-    );
-    print!("{}", review_text(&review, &widenings));
-    let stops = unsettled(&review.skills, &new_names);
-    if !stops.is_empty() {
-        for line in &stops {
-            voice::err(esc(line).to_string());
-        }
-        voice::info("Nothing was installed.");
-        return Ok(1);
-    }
-    let question = format!(
-        "Install {} at {level}, pinned to {}?",
-        counted(review.skills.len(), "skill", "skills"),
-        review.commit.short()
-    );
-    if !yes && !asked(&question) {
-        voice::info("Nothing was installed.");
-        return Ok(1);
+        &shown,
+        &review.skills,
+        &new_names,
+        yes,
+    ) {
+        return Ok(code);
     }
     // A folder on this machine, or an install kept here, is this machine's source alone.
     let which = if level.local || !source.remote.url.starts_with("https://") {
@@ -2691,30 +2670,14 @@ fn install_from_an_extension(
         voice::err(NO_ONE_TO_ASK);
         return Ok(1);
     }
-    let grant = if grant.is_empty() {
-        None
-    } else {
-        match Grant::from_words(grant) {
-            Ok(grant) => Some(grant),
-            Err(why) => {
-                voice::err(format!(
-                    "{why}: --grant takes root, all, or workspace names"
-                ));
-                return Ok(2);
-            }
-        }
-    };
-    let new_names = match settled.new_names() {
-        Ok(new_names) => new_names,
-        Err(why) => {
-            voice::err(esc(&why).to_string());
-            return Ok(2);
-        }
+    let (grant, new_names) = match install_settled(grant, settled) {
+        Ok(settled) => settled,
+        Err(code) => return Ok(code),
     };
     let executor = Executor::with_built_in(purlis_core::extension::BuiltIn::of_this_program());
     purlis_core::skills::studio::with_studio(&executor, root, |studio| {
         let Some(studio) = studio else {
-            voice::err("purlis cannot start its extensions here, so the source was not asked.");
+            voice::err(NO_EXTENSIONS_HERE);
             return Ok(1);
         };
         // Only an extension this machine approved, the project has on, and that declares
@@ -2732,13 +2695,6 @@ fn install_from_an_extension(
             ));
             return Ok(1);
         }
-        let without_skipped = |names: &[String]| -> Vec<String> {
-            names
-                .iter()
-                .filter(|name| !settled.skips.contains(name))
-                .cloned()
-                .collect()
-        };
         let read = match named {
             Named::These([]) => {
                 return match source::extension::browse(studio, root, id) {
@@ -2753,63 +2709,44 @@ fn install_from_an_extension(
                 };
             }
             Named::These(names) => {
-                source::extension::review(studio, root, id, &without_skipped(names), level)
+                source::extension::review(studio, root, id, &settled.without_skipped(names), level)
+                    .map(Some)
             }
-            Named::All => source::extension::browse(studio, root, id).and_then(|browse| {
-                let every: Vec<String> = browse
-                    .skills
-                    .iter()
-                    .map(|one| one.skill.name.clone())
-                    .collect();
-                source::extension::review_set(studio, root, id, &without_skipped(&every), level)
-                    .map(|(set, held)| (set.review, held))
-            }),
+            // One listing names them and is reviewed: one revision, and no file asked twice.
+            Named::All => source::extension::review_every(studio, root, id, &settled.skips, level)
+                .map(|(set, held)| (!set.review.skills.is_empty()).then_some((set.review, held))),
         };
         let (review, held) = match read {
-            Ok(read) => read,
+            Ok(Some(read)) => read,
+            Ok(None) => {
+                voice::info(format!(
+                    "Every skill the extension {} offers is installed already.",
+                    esc(id)
+                ));
+                return Ok(0);
+            }
             Err(why) => {
                 voice::err(esc(&why).to_string());
                 return Ok(1);
             }
         };
-        if review.skills.is_empty() {
-            voice::info("Nothing is left to install.");
-            return Ok(0);
-        }
-        let widenings = source::widenings(
+        let pinned_to = format!("revision {}", review.revision.as_str());
+        let shown = Shown {
+            from: &format!("the extension {id}"),
+            at: review.revision.as_str(),
+            pinned_to: &pinned_to,
+        };
+        // Never `yes`: the person answers it each time.
+        if let Some(code) = reviewed_and_asked(
             root,
             level,
             grant.as_ref(),
-            review
-                .skills
-                .iter()
-                .flat_map(|skill| skill.already.iter().map(String::as_str)),
-        );
-        print!(
-            "{}",
-            skills_review_text(
-                &format!("the extension {id}"),
-                review.revision.as_str(),
-                &review.skills,
-                &widenings,
-            )
-        );
-        let stops = unsettled(&review.skills, &new_names);
-        if !stops.is_empty() {
-            for line in &stops {
-                voice::err(esc(line).to_string());
-            }
-            voice::info("Nothing was installed.");
-            return Ok(1);
-        }
-        let question = format!(
-            "Install {} at {level}, pinned to revision {}?",
-            counted(review.skills.len(), "skill", "skills"),
-            esc(review.revision.as_str())
-        );
-        if !asked(&question) {
-            voice::info("Nothing was installed.");
-            return Ok(1);
+            &shown,
+            &review.skills,
+            &new_names,
+            false,
+        ) {
+            return Ok(code);
         }
         done(source::extension::install(
             cx,
@@ -2820,6 +2757,94 @@ fn install_from_an_extension(
             &new_names,
         ))
     })
+}
+
+/// What an install says where it cannot start an extension to ask.
+const NO_EXTENSIONS_HERE: &str = "purlis cannot start its extensions here, so the source was not \
+                                  asked. Check them with `purlis extension list`, then try again.";
+
+/// **What an install was handed besides its skills**: the grant and each new name, or the code it
+/// stops with once it has said why.
+fn install_settled(
+    grant: &[String],
+    settled: &Settled,
+) -> Result<(Option<Grant>, source::Renames), Code> {
+    let grant = if grant.is_empty() {
+        None
+    } else {
+        match Grant::from_words(grant) {
+            Ok(grant) => Some(grant),
+            Err(why) => {
+                voice::err(format!(
+                    "{why}: --grant takes root, all, or workspace names"
+                ));
+                return Err(2);
+            }
+        }
+    };
+    match settled.new_names() {
+        Ok(new_names) => Ok((grant, new_names)),
+        Err(why) => {
+            voice::err(esc(&why).to_string());
+            Err(2)
+        }
+    }
+}
+
+/// Where an install's review says its skills come from, what it was read at, and what the copy is
+/// pinned to, for any kind of source.
+struct Shown<'a> {
+    from: &'a str,
+    at: &'a str,
+    pinned_to: &'a str,
+}
+
+/// **The review of an install, printed, then asked** unless `yes`: each name still taken stops
+/// it. `Some` with the code it ends with where nothing is to be installed, said.
+fn reviewed_and_asked(
+    root: &Path,
+    level: &Level,
+    grant: Option<&Grant>,
+    shown: &Shown<'_>,
+    skills: &[source::SkillReview],
+    new_names: &source::Renames,
+    yes: bool,
+) -> Option<Code> {
+    if skills.is_empty() {
+        voice::info("Nothing is left to install.");
+        return Some(0);
+    }
+    // A project skill it relies on reaches the workspaces the grant names too (#4172).
+    let widenings = source::widenings(
+        root,
+        level,
+        grant,
+        skills
+            .iter()
+            .flat_map(|skill| skill.already.iter().map(String::as_str)),
+    );
+    print!(
+        "{}",
+        skills_review_text(shown.from, shown.at, skills, &widenings)
+    );
+    let stops = unsettled(skills, new_names);
+    if !stops.is_empty() {
+        for line in &stops {
+            voice::err(esc(line).to_string());
+        }
+        voice::info("Nothing was installed.");
+        return Some(1);
+    }
+    let question = format!(
+        "Install {} at {level}, pinned to {}?",
+        counted(skills.len(), "skill", "skills"),
+        esc(shown.pinned_to)
+    );
+    if !yes && !asked(&question) {
+        voice::info("Nothing was installed.");
+        return Some(1);
+    }
+    None
 }
 
 /// What an extension's source offers, as the terminal lists it: each skill, what its files do
@@ -3138,17 +3163,6 @@ fn summary_text(summary: &purlis_core::skills::review::Summary, pad: &str) -> St
     out
 }
 
-/// An install review as the terminal prints it: each skill's summary first, then its files.
-/// `widenings` says what the install's grant asks of the project skills they refer to (#4172).
-fn review_text(review: &source::Review, widenings: &[source::Widening]) -> String {
-    skills_review_text(
-        &review.source.to_string(),
-        review.commit.short(),
-        &review.skills,
-        widenings,
-    )
-}
-
 /// The review of installing `skills` from `from` at `at` (a commit or a revision), as the
 /// terminal prints it, for any kind of source (#5760).
 fn skills_review_text(
@@ -3254,7 +3268,7 @@ fn update_from_an_extension(
     let executor = Executor::with_built_in(purlis_core::extension::BuiltIn::of_this_program());
     purlis_core::skills::studio::with_studio(&executor, root, |studio| {
         let Some(studio) = studio else {
-            voice::err("purlis cannot start its extensions here, so the source was not asked.");
+            voice::err(NO_EXTENSIONS_HERE);
             return Ok(1);
         };
         let (update, held) = match source::extension::update_review(studio, root, level, name) {

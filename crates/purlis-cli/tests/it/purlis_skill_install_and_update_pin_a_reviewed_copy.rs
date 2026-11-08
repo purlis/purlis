@@ -589,18 +589,20 @@ fn an_update_with_a_grant_widens_what_it_relies_on_and_grants_what_it_brings() {
 #[test]
 fn a_chat_cannot_install_from_an_extensions_source_and_is_told_as_for_a_git_one() {
     let project = Project::new();
-    let out = project.run_with(
-        &["skill", "install", "--extension", "acme-registry", "deploy"],
-        "y\n",
-        &[("PURLIS_SESSION_ID", "chat-1")],
-    );
-    assert_eq!(out.status.code(), Some(1), "{}", text(&out));
-    assert!(
-        text(&out).contains("A chat does not change skills itself"),
-        "{}",
-        text(&out)
-    );
-    assert!(!project.root().join("skills").exists());
+    for yes in [false, true] {
+        let mut args = vec!["skill", "install", "--extension", "acme-registry", "deploy"];
+        if yes {
+            args.push("--yes");
+        }
+        let out = project.run_with(&args, "y\n", &[("PURLIS_SESSION_ID", "chat-1")]);
+        assert_eq!(out.status.code(), Some(1), "{}", text(&out));
+        assert!(
+            text(&out).contains("A chat does not change skills itself"),
+            "{}",
+            text(&out)
+        );
+        assert!(!project.root().join("skills").exists());
+    }
 }
 
 #[test]
@@ -618,7 +620,7 @@ fn an_install_from_an_extensions_source_has_no_yes() {
         "",
     );
     assert_eq!(out.status.code(), Some(2), "{}", text(&out));
-    assert!(text(&out).contains("--yes"), "{}", text(&out));
+    assert!(text(&out).contains("--yes is not taken"), "{}", text(&out));
     assert!(!project.root().join("skills").exists());
 }
 
