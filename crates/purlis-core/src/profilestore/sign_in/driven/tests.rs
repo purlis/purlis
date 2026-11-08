@@ -830,15 +830,31 @@ fn a_login_whose_pin_does_not_hold_says_nothing_it_printed_and_takes_nothing() {
     assert!(driving.paste("abc#recorded").is_err());
 }
 
-/// **A pinned login takes nothing before its pin held**, as nothing it printed was read yet.
+/// **A pinned login takes nothing before its pin held**, as nothing it printed was read yet;
+/// and one no one drives any more has ended once it is let go.
 #[cfg(unix)]
 #[test]
 fn a_pinned_login_takes_nothing_before_it_was_heard() {
-    let mut login = stand_in("exec sleep 600");
+    let folder = tempfile::tempdir().expect("a folder");
+    let said = folder.path().join("said");
+    // The login is ended on a thread of its own, which a test that returned at once outran:
+    // its `sleep` outlived it (main, run 42475446185). It dies with this test however it ends.
+    let _ends = stand_in::Ends::named_in(&said);
+    let mut login = stand_in("echo $$ > \"$SAID\"; exec sleep 600");
+    login
+        .env
+        .push(("SAID".to_owned(), said.display().to_string()));
     login.pin = Some(super::super::Pin::new(|| Ok(())));
     let driving = in_a_terminal(&login, LONGEST, || Standing::SignedIn).expect("runs");
+    let pid = stand_in::pid_named_in(&said, Duration::from_secs(10)).expect("it said its pid");
 
     assert!(driving.typed("yes\r\n").is_err());
+
+    drop(driving);
+    assert!(
+        stand_in::is_gone(pid, Duration::from_secs(10)),
+        "the login ended once no one drove it"
+    );
 }
 
 /// **opencode's Copilot login driven end to end**: the stand-in reads the answer to its question
