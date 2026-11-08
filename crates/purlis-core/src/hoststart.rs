@@ -562,11 +562,9 @@ pub fn spec(
         Some(launch) => {
             // A launch by its words is in no sandbox of this host's making: a shell alone, then.
             if starting.start.kind != ProgramKind::Shell {
-                launch_by_words_refused(
-                    starting.start.kind,
-                    crate::sandbox::Machine::this().is_a_runner(),
-                )?;
+                // The nearer reason first: a pool that mints says so.
                 refused_where_a_token_is_near(starting.start.kind)?;
+                launch_by_words_refused(launch, crate::sandbox::Machine::this().is_a_runner())?;
             }
             crate::chatspec::from_launch_here(launch, starting.number, size)
         }
@@ -675,10 +673,11 @@ pub const NO_HARNESS_BY_ITS_WORDS: &str = "this chat would start without the san
 
 /// **Refuses a harness's launch by its words on a runner** (`on_a_runner`; ruled 2026-11-08): the
 /// runner composes every chat it starts, sandboxed or not at all ([`crate::start::profile_refusal`]),
-/// and a window's own launch is in no sandbox of this host's making. A shell is the window's to
-/// start, and a person's own machine is unchanged.
-pub fn launch_by_words_refused(kind: ProgramKind, on_a_runner: bool) -> Result<(), String> {
-    if on_a_runner && kind == ProgramKind::Harness {
+/// and a window's own launch that names a harness and no confinement is in no sandbox of this
+/// host's making. A program that names no harness (a shell, a script the window runs) is the
+/// window's to start, as is one in a confinement, and a person's own machine is unchanged.
+pub fn launch_by_words_refused(launch: &Launch, on_a_runner: bool) -> Result<(), String> {
+    if on_a_runner && launch.harness.is_some() && launch.confinement.is_none() {
         return Err(NO_HARNESS_BY_ITS_WORDS.to_owned());
     }
     Ok(())

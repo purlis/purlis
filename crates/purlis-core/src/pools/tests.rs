@@ -3342,8 +3342,9 @@ fn a_runner_made_before_the_mark_is_made_again_with_nothing_carried() {
         let again = make_again_here(config.path(), &fake, &ours).unwrap();
 
         assert!(!again.sign_ins_kept, "older image: {older}");
+        // The carry writes the new home; the read of the old one for conversations does not.
         assert!(
-            !fake.file("log").contains("target=/from"),
+            !fake.file("log").contains("target=/to"),
             "{}",
             fake.file("log")
         );

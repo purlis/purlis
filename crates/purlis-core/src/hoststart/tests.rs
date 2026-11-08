@@ -360,11 +360,35 @@ fn a_runner_told_of_a_mint_port_starts_nothing_outside_the_sandbox_but_a_shell()
 /// this host's making holds; a shell, and anything on a person's own machine, starts as before.
 #[test]
 fn a_runner_starts_no_harness_from_a_launch_by_its_words() {
-    let refused = launch_by_words_refused(ProgramKind::Harness, true).expect_err("refused");
+    let program = |harness: Option<&str>, confinement: Option<&str>| Launch {
+        program: "/usr/local/bin/codex".to_owned(),
+        args: Vec::new(),
+        cwd: None,
+        set: Vec::new(),
+        strip: Vec::new(),
+        pass: Vec::new(),
+        declared: Vec::new(),
+        harness: harness.map(str::to_owned),
+        git_hooks: None,
+        reporting: None,
+        confinement: confinement.map(str::to_owned),
+        prompt_key: None,
+    };
+    let refused =
+        launch_by_words_refused(&program(Some("codex"), None), true).expect_err("refused");
     assert!(refused.contains("on a runner"), "{refused}");
     assert!(refused.contains("nothing was started"), "{refused}");
-    assert_eq!(launch_by_words_refused(ProgramKind::Shell, true), Ok(()));
-    assert_eq!(launch_by_words_refused(ProgramKind::Harness, false), Ok(()));
+    // A program that names no harness, one in a confinement, and anything on a person's own
+    // machine start as before.
+    assert_eq!(launch_by_words_refused(&program(None, None), true), Ok(()));
+    assert_eq!(
+        launch_by_words_refused(&program(Some("codex"), Some("c1")), true),
+        Ok(())
+    );
+    assert_eq!(
+        launch_by_words_refused(&program(Some("codex"), None), false),
+        Ok(())
+    );
 }
 
 #[test]
