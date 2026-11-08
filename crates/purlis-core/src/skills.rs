@@ -220,6 +220,7 @@ pub const SHIPPED: [&str; 14] = [
     "purlis-theme",
     "purlis-tidy-memory",
     "purlis-upgrade",
+    "purlis-workspace",
 ];
 
 /// **What a skill that would take a name of purlis's own is refused with** (spec #3679 S12, ADR

@@ -83,13 +83,26 @@ fn every_built_in_with_trigger_tests_has_enough_of_them_with_sources_and_near_mi
 }
 
 /// The built-ins spec #5714 holds to the strict bar (decision Q3) that carry tests so far: where a
-/// miss leaks a secret, loses work or loses context. purlis-report joins with #5699.
+/// miss leaks a secret, loses work or loses context, and purlis-workspace (Q16), where one
+/// publishes memory. purlis-report joins with #5699.
 const STRICT: &[&str] = &[
     "purlis-secrets",
     "purlis-handoff",
     "purlis-smart-close",
     "purlis-safe-remove",
     "purlis-persona",
+    "purlis-workspace",
+];
+
+/// The built-ins spec #5714 holds to the standard bar (decision Q3, #5731): the rest.
+const STANDARD: &[&str] = &[
+    "purlis-browser",
+    "purlis-theme",
+    "purlis-upgrade",
+    "purlis-tidy-memory",
+    "purlis-repo-work",
+    "purlis-curation-action",
+    "purlis-skill-studio",
 ];
 
 /// The built-ins spec #5714 holds to the standard bar (decision Q3) that carry tests so far.

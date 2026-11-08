@@ -1,0 +1,178 @@
+[
+  {
+    "query": "Tidy this workspace's memory.",
+    "should_trigger": true
+  },
+  {
+    "query": "Dedupe the steward persona's memory.",
+    "should_trigger": true
+  },
+  {
+    "query": "Our workspace memory is full of duplicates; clean it up.",
+    "should_trigger": true
+  },
+  {
+    "query": "Prune stale memories from the smart-ide workspace.",
+    "should_trigger": true
+  },
+  {
+    "query": "Compact the persona's memory and fold the lasting lessons into persona.md.",
+    "should_trigger": true
+  },
+  {
+    "query": "Run purlis's optimize report on this workspace and propose what to archive.",
+    "should_trigger": true
+  },
+  {
+    "query": "Merge the near-duplicate memories about the sandbox.",
+    "should_trigger": true
+  },
+  {
+    "query": "Which of this workspace's memories are out of date?",
+    "should_trigger": true
+  },
+  {
+    "query": "Move the memories every persona should know into shared memory.",
+    "should_trigger": true
+  },
+  {
+    "query": "Some workspace lessons have become rules; promote them into workspace.md.",
+    "should_trigger": true
+  },
+  {
+    "query": "Archive the memories that are no longer true, once I say yes.",
+    "should_trigger": true
+  },
+  {
+    "query": "Improve the reviewer persona's memory.",
+    "should_trigger": true
+  },
+  {
+    "query": "There are hundreds of memory files here; make the memory smaller and truer.",
+    "should_trigger": true
+  },
+  {
+    "query": "Find exact duplicate memories and fix the index drift.",
+    "should_trigger": true
+  },
+  {
+    "query": "Clean up shared memory; there's a lot of overlap.",
+    "should_trigger": true
+  },
+  {
+    "query": "Forget the memory that holds an old password for good.",
+    "should_trigger": true
+  },
+  {
+    "query": "Restore the memory I archived by mistake.",
+    "should_trigger": true
+  },
+  {
+    "query": "Go through the persona's memory and say what you'd merge.",
+    "should_trigger": true
+  },
+  {
+    "query": "Do a memory hygiene pass on this workspace, please.",
+    "should_trigger": true
+  },
+  {
+    "query": "The memory index lists entries that don't exist; repair it.",
+    "should_trigger": true
+  },
+  {
+    "query": "Fold the repeated lessons about CI into the charter and archive them.",
+    "should_trigger": true
+  },
+  {
+    "query": "Curate this workspace's memories: keep what's true, drop the rest.",
+    "should_trigger": true
+  },
+  {
+    "query": "We're done for today; write the session record and fold what lasts into workspace.md.",
+    "should_trigger": false
+  },
+  {
+    "query": "Smart close this chat.",
+    "should_trigger": false
+  },
+  {
+    "query": "Wrap up this chat with a record so the next one can resume.",
+    "should_trigger": false
+  },
+  {
+    "query": "Close out: summarise this session for whoever picks it up.",
+    "should_trigger": false
+  },
+  {
+    "query": "Before you end, write a session record.",
+    "should_trigger": false
+  },
+  {
+    "query": "Remove the old-experiments workspace, keeping what it learned.",
+    "should_trigger": false
+  },
+  {
+    "query": "Retire the tester persona.",
+    "should_trigger": false
+  },
+  {
+    "query": "Delete the scratch workspace, but promote its useful memories first.",
+    "should_trigger": false
+  },
+  {
+    "query": "Clean up the workspaces we no longer use by removing them.",
+    "should_trigger": false
+  },
+  {
+    "query": "Compact the conversation.",
+    "should_trigger": false
+  },
+  {
+    "query": "Free up memory on my Mac.",
+    "should_trigger": false
+  },
+  {
+    "query": "Why is the app using 2 GB of RAM?",
+    "should_trigger": false
+  },
+  {
+    "query": "Find the memory leak in the worker pool.",
+    "should_trigger": false
+  },
+  {
+    "query": "Dedupe the rows in this CSV.",
+    "should_trigger": false
+  },
+  {
+    "query": "Clean up unused imports in the cart module.",
+    "should_trigger": false
+  },
+  {
+    "query": "Prune old Docker images.",
+    "should_trigger": false
+  },
+  {
+    "query": "Archive the closed GitHub issues from last year.",
+    "should_trigger": false
+  },
+  {
+    "query": "Tidy the README's headings.",
+    "should_trigger": false
+  },
+  {
+    "query": "Summarise this file.",
+    "should_trigger": false
+  },
+  {
+    "query": "Remember that we deploy on Fridays.",
+    "should_trigger": false
+  },
+  {
+    "query": "Merge these two branches.",
+    "should_trigger": false
+  },
+  {
+    "query": "Delete the node_modules folder.",
+    "should_trigger": false
+  }
+]
