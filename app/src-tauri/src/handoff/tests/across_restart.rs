@@ -1154,17 +1154,20 @@ fn told_its_shell_ended(host: &Pretend, was: u32, again: u32) {
     );
 }
 
-/// Waits for chat `chat`'s wait on its own work to lapse, and for the board to put it to the
-/// person.
+/// The wait on chat `chat`'s own work passes its limit with no wake, as the app's clock ends it
+/// (`hooks::lapse`), and the board puts the chat to the person.
 fn its_wait_lapses(held: &Held, chat: u32) {
-    let until = std::time::Instant::now() + std::time::Duration::from_secs(10);
-    while held.hooks().board().own_work(chat).is_some() {
-        assert!(
-            std::time::Instant::now() < until,
-            "precondition: the wait on its own work lapsed"
-        );
-        std::thread::sleep(std::time::Duration::from_millis(50));
-    }
+    let until = held
+        .hooks()
+        .board()
+        .own_work(chat)
+        .and_then(|work| work.until)
+        .expect("precondition: a wait with a limit");
+    let waits = crate::dispatched::waits_as(held, chat, true);
+    assert!(
+        held.hooks().board().own_work_lapsed(chat, until, waits),
+        "precondition: the wait on its own work lapsed"
+    );
     assert!(
         held.hooks().board().needs_you().contains(&chat),
         "the lapse puts the chat to the person (✋)"
@@ -1243,7 +1246,7 @@ fn the_cores_restart_waits_while_the_chat_waits_on_its_own_work() {
 
 #[test]
 fn after_the_lapse_the_chat_needs_you_and_a_restart_goes_ahead_and_names_the_ended_shell() {
-    let (_plane, host, _planes, held, steward) = a_steward_waiting_on_its_shell(1);
+    let (_plane, host, _planes, held, steward) = a_steward_waiting_on_its_shell(3600);
     its_wait_lapses(&held, steward);
     held.chats()
         .ask_restart(steward)
@@ -1261,7 +1264,7 @@ fn after_the_lapse_the_chat_needs_you_and_a_restart_goes_ahead_and_names_the_end
 
 #[test]
 fn after_the_lapse_a_move_goes_ahead_and_the_moved_chat_is_told_its_shell_ended() {
-    let (_plane, host, _planes, held, steward) = a_steward_waiting_on_its_shell(1);
+    let (_plane, host, _planes, held, steward) = a_steward_waiting_on_its_shell(3600);
     its_wait_lapses(&held, steward);
     assert!(
         !held.board().glance(steward).in_its_turn(),
