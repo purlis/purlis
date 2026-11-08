@@ -1970,3 +1970,75 @@ fn bsdtar_runs_a_compressor_it_is_told_so_it_is_offered_no_run_grant() {
 fn gtar_runs_a_to_command_or_compressor_so_it_is_offered_no_run_grant() {
     refused_as_running_others("gtar");
 }
+
+// #5617's review of #5619: the same family, refused with it.
+
+#[test]
+fn op_runs_what_op_run_names_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("op");
+}
+
+#[test]
+fn aws_vault_runs_what_aws_vault_exec_names_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("aws-vault");
+}
+
+#[test]
+fn rbenv_runs_its_shims_and_exec_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("rbenv");
+}
+
+#[test]
+fn asdf_runs_its_shims_and_exec_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("asdf");
+}
+
+#[test]
+fn mise_runs_its_tasks_and_exec_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("mise");
+}
+
+#[test]
+fn direnv_runs_what_direnv_exec_and_an_envrc_say_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("direnv");
+}
+
+#[test]
+fn pipenv_runs_what_pipenv_run_names_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("pipenv");
+}
+
+#[test]
+fn conda_runs_what_conda_run_names_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("conda");
+}
+
+#[test]
+fn volta_runs_what_volta_run_names_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("volta");
+}
+
+#[test]
+fn msgfilter_runs_the_filter_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("msgfilter");
+}
+
+#[test]
+fn xctrace_runs_what_it_launches_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("xctrace");
+}
+
+#[test]
+fn valgrind_runs_the_program_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("valgrind");
+}
+
+#[test]
+fn hyperfine_runs_the_commands_it_times_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("hyperfine");
+}
+
+#[test]
+fn helmfile_runs_its_hooks_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("helmfile");
+}

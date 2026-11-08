@@ -1778,6 +1778,24 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "netcat",
     "tar",
     "bsdtar",
+    // the same family (#5619's review): `op run --` and `aws-vault exec --` run the command after
+    // them; version managers run their shims and an `exec` or `run`; `msgfilter` runs its filter;
+    // `xctrace`, `valgrind` and `hyperfine` run what they launch, trace or time; `helmfile` runs
+    // its hooks.
+    "op",
+    "aws-vault",
+    "rbenv",
+    "asdf",
+    "mise",
+    "direnv",
+    "pipenv",
+    "conda",
+    "volta",
+    "msgfilter",
+    "xctrace",
+    "valgrind",
+    "hyperfine",
+    "helmfile",
 ];
 
 /// **The programs a Run grant may be wider than one exact command for** (the person's ruling on
