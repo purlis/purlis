@@ -815,6 +815,22 @@ pub enum Typed {
     DeviceInOwnTerminal(crate::engine::Size),
 }
 
+/// **How a sign-in the desktop asks for over its link to the runner is run there** (session
+/// protocol 1.79): with pipes, driven by the desktop or in a terminal the runner makes.
+impl From<purlis_session_protocol::session::SignInBy> for Typed {
+    fn from(by: purlis_session_protocol::session::SignInBy) -> Typed {
+        use purlis_session_protocol::session::SignInBy;
+        let size = |columns, rows| crate::engine::Size { columns, rows };
+        match by {
+            SignInBy::Driven => Typed::Driven,
+            SignInBy::InOwnTerminal { cols, rows } => Typed::InOwnTerminal(size(cols, rows)),
+            SignInBy::DeviceInOwnTerminal { cols, rows } => {
+                Typed::DeviceInOwnTerminal(size(cols, rows))
+            }
+        }
+    }
+}
+
 impl Typed {
     /// The flag `docker exec` and `kubectl exec` run it with: `-it` in a terminal the person
     /// drives, `-i` with pipes purlis drives.

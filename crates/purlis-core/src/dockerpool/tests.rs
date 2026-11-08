@@ -3818,3 +3818,29 @@ fn an_older_runner_that_doesnt_know_the_flag_answers_it_cant_tell_and_fetches_no
         "asked once, never the fetching way: {said}"
     );
 }
+
+/// **A sign-in asked for over the link runs on the runner as its desktop asked** (session
+/// protocol 1.79): driven with pipes, or in a terminal of the size the desktop gave.
+#[test]
+fn a_sign_in_asked_over_the_link_is_run_as_its_desktop_asked() {
+    use purlis_session_protocol::session::SignInBy;
+    let size = crate::engine::Size {
+        columns: 100,
+        rows: 30,
+    };
+    assert_eq!(Typed::from(SignInBy::Driven), Typed::Driven);
+    assert_eq!(
+        Typed::from(SignInBy::InOwnTerminal {
+            cols: 100,
+            rows: 30
+        }),
+        Typed::InOwnTerminal(size)
+    );
+    assert_eq!(
+        Typed::from(SignInBy::DeviceInOwnTerminal {
+            cols: 100,
+            rows: 30
+        }),
+        Typed::DeviceInOwnTerminal(size)
+    );
+}

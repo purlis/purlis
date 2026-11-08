@@ -1068,8 +1068,6 @@ fn serve(suspends_after: Option<std::time::Duration>) -> ExitCode {
         // into its pod ran before, by this binary.
         signing_in: std::sync::Arc::new(|desktop, start| {
             use purlis_core::dockerpool::{Typed, sign_in_words};
-            use purlis_core::engine::Size;
-            use purlis_host::protocol::session::SignInBy;
             let homes = purlis_core::profilestore::Homes::here().ok_or_else(|| {
                 "this runner has no data home its profiles are in, or it is inside a project"
                     .to_owned()
@@ -1082,17 +1080,7 @@ fn serve(suspends_after: Option<std::time::Duration>) -> ExitCode {
                     shown::short(&start.profile)
                 ));
             }
-            let typed = match start.by {
-                SignInBy::Driven => Typed::Driven,
-                SignInBy::InOwnTerminal { cols, rows } => Typed::InOwnTerminal(Size {
-                    columns: cols,
-                    rows,
-                }),
-                SignInBy::DeviceInOwnTerminal { cols, rows } => Typed::DeviceInOwnTerminal(Size {
-                    columns: cols,
-                    rows,
-                }),
-            };
+            let typed = Typed::from(start.by);
             let this = std::env::current_exe()
                 .map_err(|why| format!("this runner's purlis could not be found: {why}"))?;
             let words = sign_in_words(typed, &start.profile, start.provider.as_deref());
