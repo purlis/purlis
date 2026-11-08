@@ -823,6 +823,100 @@ mod live {
             );
         }
     }
+    /// **A chat on a profile purlis made writes its own data and reads its own settings**
+    /// (ruled 2026-11-08): the profile's folders are under this machine's profiles, which every
+    /// chat is denied, so the wrap carves the chat's own profile out, as Codex's does, and keeps
+    /// it from opencode's default folder and from every other profile.
+    #[test]
+    fn a_chat_on_a_profile_made_here_writes_its_own_data_and_no_other_folder_of_opencode() {
+        let plane = plane_saying(ON);
+        let cwd = plane.path().join("work");
+        std::fs::create_dir(&cwd).expect("a workspace");
+        let home = tempfile::tempdir().expect("a home");
+        let data_home = home.path().join("purlis-data");
+        let profiles = data_home.join(crate::profilestore::DIR);
+        let (config, data) = (
+            profiles.join("work").join(crate::profilestore::CONFIG),
+            profiles.join("work").join(crate::profilestore::DATA),
+        );
+        std::fs::create_dir_all(config.join("opencode")).expect("its config");
+        std::fs::write(config.join("opencode/opencode.json"), "{}").expect("its settings");
+        std::fs::create_dir_all(data.join("opencode")).expect("its data");
+        std::fs::write(data.join("opencode/auth.json"), "{}").expect("its sign-in");
+        let other = profiles.join("other/data/opencode");
+        std::fs::create_dir_all(&other).expect("another profile");
+        std::fs::write(other.join("auth.json"), "{}").expect("another sign-in");
+        let default = home.path().join(".local/share/opencode");
+        std::fs::create_dir_all(default.join("storage")).expect("the default folder");
+        std::fs::write(default.join("auth.json"), "{}").expect("the default sign-in");
+        let data_home_named = data_home.display().to_string();
+        let machine = Machine {
+            env: crate::secrets::Env::of(&[(crate::datahome::HOME_VAR, data_home_named.as_str())]),
+            home: Some(home.path().to_path_buf()),
+            os: Os::MacOs,
+        };
+        let mut applied = for_start(Harness::Opencode, plane.path(), &machine, &|_| true)
+            .expect("starts")
+            .expect("sandboxed");
+        applied.on_profile(&signin::ProfileFolders {
+            config: Some(config.clone()),
+            data: Some(data.clone()),
+            ..signin::ProfileFolders::default()
+        });
+        let confinement = applied.confine().expect("confined").expect("a wrap");
+        let line = line_in(&applied, &cwd, None, &confinement).expect("starts");
+        let tried = |script: String| run(&line, &script).status.success();
+
+        for (what, script) in [
+            (
+                "its turn",
+                format!("echo x > '{}/opencode/storage/turn'", data.display()),
+            ),
+            (
+                "its database",
+                format!("echo x > '{}/opencode/opencode.db'", data.display()),
+            ),
+            (
+                "its sign-in",
+                format!("cat '{}/opencode/auth.json'", data.display()),
+            ),
+            (
+                "its settings",
+                format!("cat '{}/opencode/opencode.json'", config.display()),
+            ),
+        ] {
+            assert!(tried(script), "{what} under the wrap");
+        }
+        for (what, script) in [
+            (
+                "the default folder written",
+                format!("echo x > '{}/storage/planted'", default.display()),
+            ),
+            (
+                "the default sign-in read",
+                format!("cat '{}/auth.json'", default.display()),
+            ),
+            (
+                "another profile read",
+                format!("cat '{}/auth.json'", other.display()),
+            ),
+            (
+                "the profiles listed",
+                format!("ls '{}'", profiles.display()),
+            ),
+            (
+                "its sign-in written",
+                format!("echo x > '{}/opencode/auth.json'", data.display()),
+            ),
+            (
+                "its settings written",
+                format!("echo x > '{}/opencode/opencode.json'", config.display()),
+            ),
+        ] {
+            assert!(!tried(script), "{what} under the wrap");
+        }
+    }
+
     /// A home reached through a link (a dotfiles `~/.config`, a config root under `/var` or
     /// `/tmp`): every denial is still held, because Seatbelt matches the path as the kernel
     /// names it, and the profile writes each denial so. The human scopes' credentials stand for
