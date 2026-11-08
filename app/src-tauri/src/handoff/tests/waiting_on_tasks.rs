@@ -653,6 +653,8 @@ fn a_question_that_opens_while_the_session_is_held_for_that_task_releases_the_se
     let asked = asks(&held, &id, task, question("Which queue?"));
 
     assert!(matches!(asked, Answer::Task(_)), "{asked:?}");
+    // The asker it wakes is woken once the ask is answered (#5772).
+    crate::dispatched::woke_later::settled();
     assert_eq!(
         queue(&held),
         vec![steward],

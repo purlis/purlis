@@ -890,7 +890,20 @@ fn a_task_s_state_is_its_record_then_the_board() {
         ask_open: true,
         ..RUNNING
     };
-    assert_eq!(ledger.state(TASK, &from, ask_open), State::NeedsThePerson);
+    assert_eq!(ledger.state(TASK, &from, ask_open), State::NeedsApproval);
+    // #5771: and is said to be one, with what it means for a message sent to it. A lane sat
+    // five hours on one while its asking chat read "waiting on the person" as stale.
+    assert_eq!(
+        State::NeedsApproval.say(),
+        "waiting on the person to allow a tool call in its pane; it reads messages sent to it \
+         once that is answered"
+    );
+    // An approval asked over a question the harness said it showed is still the approval.
+    let both = Seen {
+        ask_open: true,
+        ..ASKING
+    };
+    assert_eq!(ledger.state(TASK, &from, both), State::NeedsApproval);
     let answered = Seen {
         asking: true,
         ..RUNNING

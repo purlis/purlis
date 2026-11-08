@@ -375,9 +375,11 @@ fn a_notice_way_far_from_its_card_is_not_said() {
 /// A card row in grey `card`, turned by the recipe, on a panel in grey `panel`.
 fn card_on(panel: u8, card: u8) -> ResolvedTheme {
     let grey = |one: u8| format!("#{one:02x}{one:02x}{one:02x}");
+    // The panel's grey is its own ground's, not a fill its parts set: a fill a theme sets holds
+    // every family drawn on the panel to it (#3268), and this is about the card row alone.
     with_parts(
-        &json!({ "surface.raised": grey(card), "surface.sunken": grey(panel) }),
-        &json!({ "list.root.card.fill": "surface.raised", "panel.root.fill": "surface.sunken" }),
+        &json!({ "surface.raised": grey(card), "surface.base": grey(panel) }),
+        &json!({ "list.root.card.fill": "surface.raised" }),
         &["surface.raised"],
     )
 }

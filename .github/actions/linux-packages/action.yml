@@ -11,8 +11,7 @@
 # archives directory (`--refresh`), so it downloads only what changed, and saves this image's
 # versions under this image's key: no cached file outlives one image. On 2026-10-27 two images ran side by side and `main` had saved for
 # only one, so every run on the other asked the mirror, and a slow mirror dropped pull requests
-# from the merge queue. `previous` is the same cache under its name before the image moved to the
-# end of the key; it can go once `main` has saved a v2 cache on each image in use.
+# from the merge queue.
 #
 # `tools/linux-packages.sh` does the work and says what it does; this action keys, restores and
 # saves the cache around it. The calling step gives it `timeout-minutes: 11`, a backstop above
@@ -53,7 +52,6 @@ runs:
         path: ~/.cache/linux-packages
         key: ${{ steps.key.outputs.key }}
         restore-keys: |
-          ${{ steps.key.outputs.previous }}
           ${{ steps.key.outputs.prefix }}
     - id: install
       shell: bash

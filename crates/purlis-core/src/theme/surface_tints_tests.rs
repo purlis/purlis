@@ -86,12 +86,12 @@ fn on_a_surface(surface: &str, wash: &str) -> ResolvedTheme {
     standing_on(surface, json!({ "chart.4": wash }), &json!({})).expect("the theme loads")
 }
 
-/// The washes found by a search that read as written, each with a degree they fall at.
-const ONLY_IN_A_TINT: &[(&str, &str, i32)] = &[
-    ("popover", "#ff000022", 150),
-    ("panel", "#00ff008f", 0),
-    ("dialog", "#ff000031", 180),
-];
+/// The washes found by a search that read as written, each with a degree they fall at. A panel has
+/// none since every family drawn on it is read on its fill (#3268): on a see-through panel, the
+/// grip of the separator between its halves falls as written before a button's words fall in a
+/// tint.
+const ONLY_IN_A_TINT: &[(&str, &str, i32)] =
+    &[("popover", "#ff000022", 150), ("dialog", "#ff000031", 180)];
 
 const BUTTON_WORDS: &str = "what a button draws on it: the root's words";
 
@@ -103,6 +103,12 @@ fn words_fell(fell: &[Fell]) -> bool {
 fn fell_on(fell: &[Fell], family: &str) -> bool {
     let on_it = format!("what a {family} draws on it");
     fell.iter().any(|one| one.floor.starts_with(&on_it))
+}
+
+/// The fill `surface` draws by default, in its first look.
+fn default_of(surface: &str) -> &'static str {
+    let surface = family(surface).unwrap();
+    (surface.defaults)(surface.looks()[0], &[]).fill
 }
 
 fn grey(byte: u8) -> String {
@@ -121,6 +127,7 @@ fn breaks_on(theme: &ResolvedTheme, name: &str, surface: &str) -> bool {
         &rules,
         family(name).unwrap(),
         family(surface).unwrap(),
+        default_of(surface),
         "chart.4",
     )
     .is_some()
@@ -140,6 +147,7 @@ fn falls_in_the_tints(theme: &ResolvedTheme, name: &str, surface: &str) -> Optio
         &rules,
         family(name).unwrap(),
         family(surface).unwrap(),
+        default_of(surface),
         "chart.4",
     )
     .map(|(floor, _)| floor)
@@ -270,10 +278,9 @@ fn a_shipped_theme_builds_no_tints_for_what_stands_on_its_surfaces() {
                 "{base} {}",
                 appearance.id
             );
-            for (surface, _, default, set) in surfaces_set(&rules) {
-                // Nothing is drawn on a fill that is a ground of its own, so `broken_on` and the
-                // sets of states it reads cost a shipped theme nothing.
-                assert_eq!(drawn_on(surface, default, set).count(), 0, "{base}");
+            for (surface, _, _, set) in surfaces_set(&rules) {
+                // What is drawn on a shipped surface's fill is read as written alone: neither the
+                // fill nor a look on it lets a tint through (#3268 measures more families there).
                 assert!(
                     !shows_a_tint(appearance, set),
                     "{base} {} {}",
@@ -496,7 +503,11 @@ fn a_card_or_a_notice_takes_no_fill_a_button_is_not_read_on() {
         assert!(!set.is_empty(), "{surface}");
         for (one, _, default, fill) in set {
             assert!(shows_a_tint(&theme, fill), "{surface}");
-            assert_eq!(drawn_on(one, default, fill).count(), 0, "{surface}");
+            // Other families on it are read on it (#3268); a button, never.
+            assert!(
+                !drawn_on(one, default, fill).any(|on| on.name == "button"),
+                "{surface}"
+            );
         }
     }
     // The control: the same two lists do put a button and a menu on a popover's fill.
@@ -529,7 +540,7 @@ fn readings(
         .enumerate()
         .filter(|(_, part)| drawn_apart(family, part.name).is_none())
         .map(|(at, part)| {
-            let under = under_part(one, on, family, at, variant, look);
+            let under = under_part(one, on, None, family, at, variant, look);
             (
                 one.least.floor(floor_of(family, part)),
                 lowest(one, &under, look.grounds[at], look.words[at]),
@@ -632,4 +643,21 @@ fn the_coarse_reading_comes_within_its_margin_on_every_part_edge_and_state() {
         "{parts} {states} {edges}"
     );
     assert!(fell > 0, "the sweep reached no floor");
+}
+
+#[test]
+fn a_family_s_default_that_breaks_on_the_surface_s_default_too_keeps_the_fill() {
+    // A tooltip floats over a popover's fill (#3268), and Classic's light tooltip draws its edge
+    // under 3:1 on its own fill, on any popover: drawing the popover's default would mend nothing,
+    // so the popover keeps its fill.
+    let theme = on_a_surface("popover", "#ffffff");
+    let tooltip = family("tooltip").unwrap();
+    let look = drawn(&[], tooltip, "", &[]);
+    let own = surface_ground(&theme, family("popover").unwrap(), "surface.overlay");
+    assert!(
+        unreadable(&theme, &own, &[], tooltip, "", &[], &look).is_some(),
+        "the default breaks on the popover's own fill"
+    );
+    assert!(!breaks_on(&theme, "tooltip", "popover"));
+    assert!(fallen(&theme).is_empty(), "{:?}", fallen(&theme));
 }

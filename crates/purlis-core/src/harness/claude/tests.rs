@@ -800,6 +800,7 @@ fn a_chat_runs_its_own_scope_s_purlis_tools_and_asks_the_person_without_its_harn
     for tool in [
         "todo_add",
         "todo_done",
+        "todo_reopen",
         "memory_add",
         "persona_remember",
         "workspace_section",

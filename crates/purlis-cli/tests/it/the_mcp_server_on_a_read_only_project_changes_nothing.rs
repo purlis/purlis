@@ -40,9 +40,10 @@ const READS: [&str; 5] = [
 /// The tools that write, each refused on a read-only project. The rest (`persona_where`,
 /// `dispatch_list`, `ask_operator`) ask the app or the person, whom no test has, and are held
 /// only to changing nothing.
-const WRITES: [&str; 9] = [
+const WRITES: [&str; 10] = [
     "todo_add",
     "todo_done",
+    "todo_reopen",
     "memory_add",
     "persona_remember",
     "session_record",
@@ -272,7 +273,7 @@ fn arguments(tool: &str, todo: &str) -> Value {
         "todo_list" | "session_record_list" | "persona_where" | "dispatch_list" => json!({}),
         "dispatch_read" => json!({ "chat": 9 }),
         "todo_add" => json!({ "text": "Polish the widget" }),
-        "todo_done" => json!({ "slug": todo }),
+        "todo_done" | "todo_reopen" => json!({ "slug": todo }),
         "memory_search" => json!({ "query": "widget" }),
         "memory_add" => json!({ "text": "The widget is blue" }),
         "persona_remember" => json!({ "text": "Widgets ship on Fridays", "shared": true }),

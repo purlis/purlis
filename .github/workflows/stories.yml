@@ -138,9 +138,10 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
-          cache: npm
-          cache-dependency-path: app/package-lock.json
-      - run: npm ci
+          package-manager-cache: false
+      - uses: ./.github/actions/npm-ci
+        with:
+          directory: app
       - name: The image is the Playwright the lockfile names, by its tag and its digest
         run: node ../tools/story-image.mjs
       # One browser and one part of its story files; every cell of the matrix is a project of its
@@ -249,6 +250,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
+          package-manager-cache: false
           node-version-file: .nvmrc
       # Each artifact's files are named by its shard, so they merge into one directory. A shard
       # that never ran its stories kept none: the next step names it.

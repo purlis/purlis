@@ -100,6 +100,9 @@ pub fn add(
     say: &mut dyn FnMut(Say),
 ) -> u8 {
     say(Say::Info(format!("workspace: {ws}").into()));
+    // A cut is vetted only for a sandboxed chat (qw387), whose sandbox does not reach the new
+    // folder: it is told so, and not told to enter it (#5770).
+    let sandboxed = vet.is_some();
     crate::pieceupdate::mended(plane, ws, repo, say);
     let branch_name = branch.unwrap_or(piece);
     if let Some(held) = holder(plane, ws, repo, piece, branch_name) {
@@ -161,19 +164,40 @@ pub fn add(
     };
     say(Say::Info(format!("  base:   {shown_base}").into()));
     say(Say::Info(format!("  branch: {}", added.branch).into()));
-    say(Say::Info(
-        format!(
-            "  enter:  cd {} && claude    (or hand this path to EnterWorktree)",
-            shown(plane, &added.path)
-        )
-        .into(),
-    ));
+    for line in entered(&shown(plane, &added.path), sandboxed) {
+        say(Say::Info(line.into()));
+    }
     say(Say::Info(
         "  When the work is finished: purlis worktree done — or purlis worktree abandon \
          \"<why>\" if it cannot be."
             .into(),
     ));
     0
+}
+
+/// **How a new branch folder at `path` is entered**, as `purlis worktree add` says it.
+///
+/// A chat outside a sandbox, or a person at a terminal, starts a chat there or hands the path
+/// to the harness's own worktree tool. **A sandboxed chat cannot** (#5770): its sandbox reaches
+/// only the folder it was started in, so it cannot write the new one, the app commits only in
+/// the folder it recorded the chat standing in, and a harness's worktree tool asks the person
+/// for approval in a pane nobody may be watching. It is told what works instead.
+pub(crate) fn entered(path: &str, sandboxed: bool) -> Vec<String> {
+    if !sandboxed {
+        return vec![format!(
+            "  enter:  cd {path} && claude    (or hand this path to EnterWorktree)"
+        )];
+    }
+    vec![
+        format!(
+            "  enter:  not from this chat: its sandbox reaches only the folder it started in, so \
+             it cannot write {path} or commit there."
+        ),
+        "          Work there from a chat started in it: the person opens one on the folder's \
+         row in the window. A dispatched task reports back instead, and the chat that asked \
+         for it dispatches a task with `--in worktree`, which cuts a folder of its own."
+            .to_owned(),
+    ]
 }
 
 /// **The base a piece of `repo` is cut from where none is named**: the branch the remote names

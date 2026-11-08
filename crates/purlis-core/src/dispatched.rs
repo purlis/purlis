@@ -545,6 +545,10 @@ pub enum State {
     WaitingOnItsOwnWork,
     /// It is waiting on the person, in its own tab.
     NeedsThePerson,
+    /// **It is held on an approval prompt in its pane** (#5771): a tool call of its waits for
+    /// the person's allow in the window's needs-you list. Said apart from a question, so its
+    /// asking chat does not read the wait as stale, nor wait on a message it cannot read yet.
+    NeedsApproval,
     /// It asked its asking chat a question, and is paused until that chat answers.
     AsksYou,
     Cancelling,
@@ -619,6 +623,11 @@ impl State {
             Self::NeedsThePerson => crate::dispatchdecision::Standing::WaitingOnOperator
                 .word()
                 .to_owned(),
+            Self::NeedsApproval => format!(
+                "{} to allow a tool call in its pane; it reads messages sent to it once that is \
+                 answered",
+                crate::dispatchdecision::Standing::WaitingOnOperator.word()
+            ),
             Self::AsksYou => "asking this chat a question".to_owned(),
             Self::Cancelling => "cancelling".to_owned(),
             Self::Reported(Some(outcome)) => format!("reported: {}", outcome.word()),
@@ -2225,8 +2234,11 @@ impl Ledger {
             State::Cancelling
         } else if self.talk.asks(task).is_some() {
             State::AsksYou
+        } else if seen.ask_open && !seen.ended {
+            // A tool call's approval, open in the window (#1525, #5771).
+            State::NeedsApproval
         } else if seen.prompt_showing() {
-            // A window ask open counts, and a prompt answered there does not (#1525).
+            // A prompt the harness said it showed, and the window holds no ask for.
             State::NeedsThePerson
         } else if seen.waiting && seen.own_work {
             State::WaitingOnItsOwnWork

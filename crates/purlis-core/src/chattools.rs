@@ -245,9 +245,12 @@ pub const PRE_ALLOWED: [&str; 14] = [
 /// Apart from [`PRE_ALLOWED`] on purpose: a grade's chat is served the reads alone (SK-16), and
 /// is handed none of these. Named one by one, so a tool added later is asked about until it is
 /// ruled in here; an operator's or a project's `ask` or `deny` for any of them still wins.
-pub const OWN_SCOPE_TOOLS: [&str; 10] = [
+pub const OWN_SCOPE_TOOLS: [&str; 11] = [
     "todo_add",
     "todo_done",
+    // A done todo of the chat's own workspace, open again (#3416): its todos, under #3829.
+    // The command `ws todo reopen` still asks, for the quoting reason that amendment gives.
+    "todo_reopen",
     "memory_add",
     PERSONA_REMEMBER,
     WORKSPACE_SECTION,
@@ -616,13 +619,25 @@ fn wait_seconds() -> Value {
 }
 
 /// Every tool, in the order a harness lists them.
-pub static TOOLS: [Tool; 29] = [
+pub static TOOLS: [Tool; 30] = [
     Tool {
         name: "todo_list",
         description: "List the open todos of the workspace this chat works in, oldest first, \
-                      each with the slug todo_done closes it by. A done todo is not listed: \
-                      `purlis ws todo --done` lists those.",
-        schema: no_arguments,
+                      each with the slug todo_done closes it by. With done, the done todos \
+                      instead, each with the slug todo_reopen opens it again by, as \
+                      `purlis ws todo --done` lists them.",
+        schema: || {
+            json!({
+                "type": "object",
+                "properties": {
+                    "done": {
+                        "type": "boolean",
+                        "description": "List the done todos instead of the open ones.",
+                    },
+                },
+                "additionalProperties": false,
+            })
+        },
         read_only: true,
     },
     Tool {
@@ -636,8 +651,21 @@ pub static TOOLS: [Tool; 29] = [
         name: "todo_done",
         description: "Mark one of this workspace's todos done by its slug (todo_list shows \
                       it). Its closing is written to the workspace's memory, and the todo stays \
-                      as done, so it can be reopened (`purlis ws todo reopen <slug>`).",
+                      as done, so todo_reopen can open it again.",
         schema: || one_string("slug", "The todo's slug, as todo_list shows it."),
+        read_only: false,
+    },
+    Tool {
+        name: "todo_reopen",
+        description: "Open one of this workspace's done todos again by its slug (todo_list \
+                      with done shows it), as `purlis ws todo reopen <slug>` does. Nothing is \
+                      written to memory: the trace its closing left stays.",
+        schema: || {
+            one_string(
+                "slug",
+                "The done todo's slug, as todo_list with done shows it.",
+            )
+        },
         read_only: false,
     },
     Tool {
@@ -1375,10 +1403,14 @@ fn run(
     match tool {
         "todo_list" => {
             let ws = workspace_name(place)?;
-            let Some(todos) = held::Store::open(root, place, "todos", false)? else {
-                return Ok(format!("No open todos in '{ws}'."));
-            };
-            todo_list(&todos, ws, now)
+            let done = dispatch_flag(args, "done", tool)?;
+            let todos = held::Store::open(root, place, "todos", false)?;
+            match (todos, done) {
+                (None, false) => Ok(format!("No open todos in '{ws}'.")),
+                (Some(todos), false) => todo_list(&todos, ws, now),
+                (None, true) => Ok(format!("No done todos in '{ws}'.")),
+                (Some(todos), true) => done_todo_list(&todos, ws),
+            }
         }
         "todo_add" => {
             let ws = workspace_name(place)?;
@@ -1409,7 +1441,7 @@ fn run(
             let Some(todos) = held::Store::open(root, place, "todos", false)? else {
                 return Err(format!("no such todo: {slug}"));
             };
-            let file = resolve(&todos, slug)?;
+            let file = resolve(&todos, slug, "todo", || format!("no such todo: {slug}"))?;
             let text = todos
                 .read(&file)?
                 .ok_or_else(|| format!("no such todo: {slug}"))?;
@@ -1422,8 +1454,33 @@ fn run(
             file_as_done(&todos, &file)?;
             Ok(format!(
                 "Closed todo {} in '{ws}'; its memory has the trace. It stays as done: \
-                 purlis ws todo reopen {} opens it again.",
-                stem(&file),
+                 todo_reopen opens it again.",
+                stem(&file)
+            ))
+        }
+        "todo_reopen" => {
+            let ws = workspace_name(place)?;
+            let slug = string(args, "slug")?;
+            if !crate::contain::segment_ok(slug.strip_suffix(".md").unwrap_or(slug)) {
+                return Err(format!(
+                    "{} is not a done todo's slug: todo_list with done shows them",
+                    crate::shown::short(slug)
+                ));
+            }
+            let no_done = || format!("no done todo: {slug}; todo_list with done shows them");
+            let Some(todos) = held::Store::open(root, place, "todos", false)? else {
+                return Err(no_done());
+            };
+            let Some(archive) = todos.sub(crate::memstore::ARCHIVE, false)? else {
+                return Err(no_done());
+            };
+            let file = resolve(&archive, slug, "done todo", no_done)?;
+            let text = archive.read(&file)?.ok_or_else(no_done)?;
+            let title = crate::workspaces::parse_entry(&stem(&file), &text).title;
+            let header = crate::workspaces::TODOS_HEADER.replace("{name}", ws);
+            reopen(&todos, &archive, &file, &header, &title)?;
+            Ok(format!(
+                "Reopened todo {} in '{ws}'. Nothing was written to its memory.",
                 stem(&file)
             ))
         }
@@ -1835,6 +1892,16 @@ fn memories(store: &held::Store) -> Result<Vec<crate::memstore::Found>, String> 
     Ok(out)
 }
 
+/// An index's header, ending in a newline, as `ensure_index` writes it.
+#[cfg(unix)]
+fn ended(header: &str) -> String {
+    if header.ends_with('\n') {
+        header.to_owned()
+    } else {
+        format!("{header}\n")
+    }
+}
+
 /// Write one entry and its index line, as `memstore::write` does for a workspace's memory and
 /// todos: a timestamp-prefixed file named for its title, numbered when the name is taken, and
 /// the index made with `header` when it is not there. The file name it took.
@@ -1850,11 +1917,7 @@ fn write_entry(
         return Err("empty memory".to_owned());
     }
     let title = crate::memstore::title_of(text);
-    let header = if header.ends_with('\n') {
-        header.to_owned()
-    } else {
-        format!("{header}\n")
-    };
+    let header = ended(header);
     // The index first, as `ensure_index` makes it with the store's own header.
     store.append(crate::memstore::INDEX, &header, b"")?;
     // Then the one write of a workspace's memory and todos, which `charter` commands use too:
@@ -1873,8 +1936,15 @@ fn write_entry(
 }
 
 /// The entry `ident` names: its exact name, or the one entry whose name ends `-<ident>.md`.
+/// `what` names an entry in a refusal (`todo`, `done todo`), and `missing` is the refusal when
+/// none is called that.
 #[cfg(unix)]
-fn resolve(store: &held::Store, ident: &str) -> Result<String, String> {
+fn resolve(
+    store: &held::Store,
+    ident: &str,
+    what: &str,
+    missing: impl FnOnce() -> String,
+) -> Result<String, String> {
     let names = entry_names(store)?;
     let exact = crate::memstore::md_name(ident);
     if names.contains(&exact) {
@@ -1883,10 +1953,10 @@ fn resolve(store: &held::Store, ident: &str) -> Result<String, String> {
     let suffix = format!("-{exact}");
     let tails: Vec<&String> = names.iter().filter(|n| n.ends_with(&suffix)).collect();
     match tails.as_slice() {
-        [] => Err(format!("no such todo: {ident}")),
+        [] => Err(missing()),
         [one] => Ok((*one).clone()),
         many => Err(format!(
-            "'{ident}' is the end of more than one todo's name — {}; name one in full",
+            "'{ident}' is the end of more than one {what}'s name — {}; name one in full",
             many.iter().map(|n| stem(n)).collect::<Vec<_>>().join(", ")
         )),
     }
@@ -1919,6 +1989,34 @@ fn file_as_done(store: &held::Store, file: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Move the done todo `file` out of the store's `archive/` under the name it had, and append
+/// its index line, made with `header` when the index is not there: what
+/// `Workspace::reopen_todo` does, through the held store. Never onto a file: an open todo that
+/// already has the name is refused, and the done one stays done.
+#[cfg(unix)]
+fn reopen(
+    store: &held::Store,
+    archive: &held::Store,
+    file: &str,
+    header: &str,
+    title: &str,
+) -> Result<(), String> {
+    let header = ended(header);
+    store.append(crate::memstore::INDEX, &header, b"")?;
+    let _held = store.lock()?;
+    if store.entry(file)?.is_some() || !archive.rename_into_new(file, store, file)? {
+        return Err(format!(
+            "an open todo is already called {}, so the done one stays done",
+            stem(file)
+        ));
+    }
+    if !crate::memstore::listed_held(store).contains(file) {
+        let line = format!("{}\n", crate::memstore::index_line(title, file));
+        store.append(crate::memstore::INDEX, &header, line.as_bytes())?;
+    }
+    Ok(())
+}
+
 #[cfg(unix)]
 fn todo_list(store: &held::Store, ws: &str, now: chrono::NaiveDateTime) -> Result<String, String> {
     let mut open = Vec::new();
@@ -1947,6 +2045,29 @@ fn todo_list(store: &held::Store, ws: &str, now: chrono::NaiveDateTime) -> Resul
         })
         .collect::<Vec<_>>()
         .join("\n"))
+}
+
+/// The done todos, by name (when each was opened), each with its slug and title, as
+/// `purlis ws todo --done` lists them. Reads `todos/archive/` and makes nothing.
+#[cfg(unix)]
+fn done_todo_list(store: &held::Store, ws: &str) -> Result<String, String> {
+    let mut done = Vec::new();
+    if let Some(archive) = store.sub(crate::memstore::ARCHIVE, false)? {
+        for name in entry_names(&archive)? {
+            if let Some(text) = archive.read(&name)? {
+                let todo = crate::workspaces::parse_entry(&stem(&name), &text);
+                done.push(format!(
+                    "{}  {}",
+                    todo.slug,
+                    crate::personas::one_line(&todo.title)
+                ));
+            }
+        }
+    }
+    if done.is_empty() {
+        return Ok(format!("No done todos in '{ws}'."));
+    }
+    Ok(done.join("\n"))
 }
 
 #[cfg_attr(not(unix), allow(dead_code))]

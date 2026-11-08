@@ -83,3 +83,22 @@ fn a_declared_piece_s_line_shows_its_repo_piece_and_reason_escaped() {
         "repo · piece — abandoned: blocked ⟦U+001B⟧[31mred⟦U+2066⟧⟦U+FEFF⟧"
     );
 }
+
+/// **A sandboxed chat is never told to enter a folder it cannot write** (#5770): a lane that
+/// cut a folder was told "hand this path to EnterWorktree", did, and sat five hours on the
+/// harness's approval prompt in a pane nobody watched. Outside a sandbox the advice stands.
+#[test]
+fn a_sandboxed_chat_is_told_the_new_folder_is_out_of_its_reach_not_to_enter_it() {
+    let path = "workspaces/w/.worktrees/r/p";
+    assert_eq!(
+        entered(path, false),
+        vec![format!(
+            "  enter:  cd {path} && claude    (or hand this path to EnterWorktree)"
+        )]
+    );
+    let said = entered(path, true).join("\n");
+    assert!(!said.contains("EnterWorktree"), "{said}");
+    assert!(!said.contains("&& claude"), "{said}");
+    assert!(said.contains(&format!("cannot write {path}")), "{said}");
+    assert!(said.contains("--in worktree"), "{said}");
+}

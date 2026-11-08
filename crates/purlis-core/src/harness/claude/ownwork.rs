@@ -16,6 +16,7 @@
 
 use chrono::{Datelike, Duration, NaiveDateTime, Timelike};
 
+use crate::ownwork::pieces::{Kind, Piece};
 use crate::ownwork::{InFlight, OWN_WORK_LIMIT, Said, WakeUp};
 
 /// The kinds of background work, by Claude Code's label for them.
@@ -82,6 +83,252 @@ pub fn read(payload: Option<&serde_json::Value>, now: NaiveDateTime) -> Said {
         })
         .collect();
     crate::ownwork::said(in_flight, &wake_ups)
+}
+
+/// **The piece of own work a finished tool call started** (#5750), from Claude Code's
+/// `PostToolUse` `payload`, or none: a command it moved to the background (`backgroundTaskId`),
+/// a `Monitor`, an `Agent` launched in the background, a `Workflow`, a `CronCreate` and a
+/// `ScheduleWakeup`. `output_of` finds the file Claude Code keeps a task's output in, by the
+/// task's id ([`output_file`]).
+///
+/// Read from the tool's input and result schemas of 2.1.319. A result this cannot read starts
+/// nothing: the turn's `Stop` still says what is in flight ([`pieces`]).
+pub fn started(
+    payload: &serde_json::Value,
+    output_of: &dyn Fn(&str) -> Option<String>,
+) -> Option<Piece> {
+    let input = &payload["tool_input"];
+    let response = &payload["tool_response"];
+    let text = |value: &serde_json::Value| value.as_str().unwrap_or_default().to_owned();
+    let either = |first: &serde_json::Value, second: &serde_json::Value| {
+        first
+            .as_str()
+            .filter(|said| !said.trim().is_empty())
+            .or_else(|| second.as_str())
+            .unwrap_or_default()
+            .to_owned()
+    };
+    let task = |kind: Kind, id: &serde_json::Value, what: String| {
+        let id = id.as_str()?;
+        Some(Piece {
+            output: output_of(id),
+            ..Piece::new(kind, id, &what)?
+        })
+    };
+    let launched = response["status"].as_str() == Some("async_launched");
+    match payload["tool_name"].as_str()? {
+        "Bash" => task(
+            Kind::Shell,
+            &response["backgroundTaskId"],
+            either(&input["command"], &input["description"]),
+        ),
+        "Monitor" => task(
+            Kind::Monitor,
+            &response["taskId"],
+            either(&input["description"], &input["command"]),
+        ),
+        "Agent" | "Task" if launched => {
+            let id = response["agentId"].as_str()?;
+            let named = response["outputFile"]
+                .as_str()
+                .filter(|path| !path.is_empty())
+                .map(str::to_owned);
+            Some(Piece {
+                output: named.or_else(|| output_of(id)),
+                ..Piece::new(
+                    Kind::Subagent,
+                    id,
+                    &either(&response["description"], &input["description"]),
+                )?
+            })
+        }
+        "Workflow" if launched => task(
+            Kind::Workflow,
+            &response["taskId"],
+            either(&response["workflowName"], &input["name"]),
+        ),
+        "CronCreate" => {
+            let recurring = response["recurring"]
+                .as_bool()
+                .or_else(|| input["recurring"].as_bool())
+                .unwrap_or(true);
+            let kind = if recurring { Kind::Cron } else { Kind::WakeUp };
+            Piece {
+                schedule: Some(text(&input["cron"])),
+                prompt: Some(text(&input["prompt"])),
+                due_at: (!recurring)
+                    .then(|| response["nextFireAt"].as_i64().map(|ms| ms / 1000))
+                    .flatten(),
+                ..Piece::new(kind, response["id"].as_str()?, "")?
+            }
+            .sound()
+        }
+        "ScheduleWakeup" => {
+            if response["stopped"].as_bool() == Some(true) {
+                return None;
+            }
+            let due = response["scheduledFor"].as_i64()? / 1000;
+            Piece {
+                prompt: Some(text(&input["prompt"])),
+                due_at: Some(due),
+                ..Piece::new(
+                    Kind::WakeUp,
+                    payload["tool_use_id"].as_str()?,
+                    &text(&input["reason"]),
+                )?
+            }
+            .sound()
+        }
+        _ => None,
+    }
+}
+
+/// **Each piece of own work Claude Code's `Stop` `payload` says is in flight** (#5750), the
+/// authority on what still runs ([`crate::ownwork::pieces::at_stop`]): its in-flight
+/// `background_tasks` of the kinds [`read`] counts, and every one of its `session_crons`. A
+/// cron that runs again is a [`Kind::Cron`], whenever it next runs, since it is lost all the
+/// same; one that runs once is a [`Kind::WakeUp`], due as [`read`] reads it. None for a payload
+/// that names neither list (an older Claude Code), which says nothing either way.
+///
+/// `now` is the chat's own wall clock and `epoch` the same moment in seconds since 1970.
+pub fn pieces(
+    payload: Option<&serde_json::Value>,
+    now: NaiveDateTime,
+    epoch: i64,
+    output_of: &dyn Fn(&str) -> Option<String>,
+) -> Option<Vec<Piece>> {
+    let payload = payload?;
+    if payload.get("background_tasks").is_none() && payload.get("session_crons").is_none() {
+        return None;
+    }
+    let text = |entry: &serde_json::Value, key: &str| {
+        entry
+            .get(key)
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .to_owned()
+    };
+    let mut said: Vec<Piece> = Vec::new();
+    for task in list(payload, "background_tasks") {
+        if !IN_FLIGHT.contains(&text(task, "status").as_str()) {
+            continue;
+        }
+        let kind = match text(task, "type").as_str() {
+            HELPER => Kind::Subagent,
+            WORKFLOW => Kind::Workflow,
+            MONITOR => Kind::Monitor,
+            SHELL => Kind::Shell,
+            _ => continue,
+        };
+        let what = [
+            text(task, "command"),
+            text(task, "name"),
+            text(task, "description"),
+        ]
+        .into_iter()
+        .find(|said| !said.trim().is_empty())
+        .unwrap_or_default();
+        let id = text(task, "id");
+        if let Some(piece) = Piece::new(kind, &id, &what) {
+            said.push(Piece {
+                output: output_of(&id),
+                ..piece
+            });
+        }
+    }
+    for cron in list(payload, "session_crons") {
+        let schedule = text(cron, "schedule");
+        let recurring = cron["recurring"].as_bool().unwrap_or(true);
+        let due_at = (!recurring)
+            .then(|| Cron::parse(&schedule))
+            .flatten()
+            .and_then(|parsed| {
+                // Due now only where it matched in the last few minutes: a wake-up's schedule
+                // (`ScheduleWakeup`'s `M H * * *`) matches every day, so a day's look back
+                // would call one still hours ahead overdue.
+                if parsed.fired_within(now, crate::ownwork::A_WAKE_UP_IS_LATE_AFTER) {
+                    Some(epoch)
+                } else {
+                    let next = parsed.next_after(now, ONE_SHOT_LOOKS_AHEAD)?;
+                    Some(epoch.saturating_add((next - now).num_seconds()))
+                }
+            });
+        let kind = if recurring { Kind::Cron } else { Kind::WakeUp };
+        if let Some(piece) = Piece::new(kind, &text(cron, "id"), "") {
+            said.extend(
+                Piece {
+                    schedule: Some(schedule),
+                    prompt: Some(text(cron, "prompt")),
+                    due_at,
+                    ..piece
+                }
+                .sound(),
+            );
+        }
+    }
+    let mut kept = Vec::new();
+    for piece in said {
+        crate::ownwork::pieces::started(&mut kept, piece);
+    }
+    Some(kept)
+}
+
+/// **The file Claude Code keeps the output of task `id` in**, for the conversation `session`:
+/// `<root>/claude-<uid>/<project>/<session>/tasks/<id>.output`, where the root is the chat's own
+/// temporary folder (`CLAUDE_CODE_TMPDIR`, read through `env`) or else `/tmp`, as Claude Code
+/// roots it (#5675). Looked for, not worked out: how Claude Code names the project's folder is
+/// its own. None where no such file is there, or `session` or `id` is no id.
+pub fn output_file(
+    session: &str,
+    id: &str,
+    env: &dyn Fn(&str) -> Option<String>,
+) -> Option<String> {
+    output_in(&tasks_folder(session, env)?, id)
+}
+
+/// The file Claude Code keeps the output of task `id` in, in the conversation's `tasks` folder,
+/// where it is there.
+pub fn output_in(tasks: &std::path::Path, id: &str) -> Option<String> {
+    if !crate::ownwork::pieces::an_id(id) {
+        return None;
+    }
+    let file = tasks.join(format!("{id}.output"));
+    file.exists()
+        .then(|| file.to_str().map(str::to_owned))
+        .flatten()
+}
+
+/// **The folder Claude Code keeps conversation `session`'s task output in** ([`output_file`]),
+/// looked for once, so a `Stop` naming many pieces lists the temporary folder once.
+pub fn tasks_folder(
+    session: &str,
+    env: &dyn Fn(&str) -> Option<String>,
+) -> Option<std::path::PathBuf> {
+    if session.is_empty()
+        || !session
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-')
+    {
+        return None;
+    }
+    let uid = rustix::process::getuid().as_raw();
+    let roots = env(crate::sandbox::claude_wrap::TMP_ENV)
+        .filter(|root| !root.is_empty())
+        .into_iter()
+        .chain(std::iter::once("/tmp".to_owned()));
+    for root in roots {
+        let base = std::path::Path::new(&root).join(format!("claude-{uid}"));
+        let Ok(projects) = std::fs::read_dir(&base) else {
+            continue;
+        };
+        for project in projects.flatten() {
+            let tasks = project.path().join(session).join("tasks");
+            if tasks.is_dir() {
+                return Some(tasks);
+            }
+        }
+    }
+    None
 }
 
 /// The entries of the array `key` of `payload`, or none.
@@ -164,11 +411,15 @@ impl Cron {
 
     /// Whether it fired in the minute `now` is in, or in the [`OVERDUE_LOOKS_BACK`] before it.
     fn fired_lately(&self, now: NaiveDateTime) -> bool {
+        self.fired_within(now, OVERDUE_LOOKS_BACK)
+    }
+
+    /// Whether it fired in the minute `now` is in, or in the `back` before it.
+    fn fired_within(&self, now: NaiveDateTime, back: Duration) -> bool {
         let Some(minute) = now.with_second(0).and_then(|at| at.with_nanosecond(0)) else {
             return false;
         };
-        (0..=OVERDUE_LOOKS_BACK.num_minutes())
-            .any(|back| self.matches(minute - Duration::minutes(back)))
+        (0..=back.num_minutes()).any(|ago| self.matches(minute - Duration::minutes(ago)))
     }
 }
 

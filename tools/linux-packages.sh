@@ -15,7 +15,6 @@
 # restores the newest cache of the same list from an older image (#3547): runner images roll out
 # every week or so, over days, and until `main` had saved a cache on the new one every run asked
 # the mirror. Those files mostly still fit; the ones that do not are found by the install below.
-# And `previous=...`, the same cache under its name before the image moved to the end (v1).
 #
 # `install` installs PACKAGE... and says in the job summary how long it took and from where.
 #   - With `--cache DIR` holding .deb files (`.github/actions/linux-packages` restores them
@@ -123,7 +122,6 @@ if [ "$mode" = key ]; then
   {
     echo "key=$prefix$image"
     echo "prefix=$prefix"
-    echo "previous=linux-packages-v1-$os-$image-$(uname -m)-$hash"
   } >> "$OUTPUT"
   exit 0
 fi

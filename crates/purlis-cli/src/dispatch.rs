@@ -898,7 +898,7 @@ fn sent_on(
                 Ok(Answered::Queued {
                     delivered: false, ..
                 })
-                | Err(Failed::NoAnswer) => Ok(Fate::Queued),
+                | Err(Failed::NoAnswer(_)) => Ok(Fate::Queued),
                 Ok(Answered::Queued {
                     delivered: true, ..
                 }) => Ok(Fate::DeliveredEarlier),
@@ -919,7 +919,7 @@ fn sent_on(
         Some((asking, chat)) => match ask_app(asking, *chat, what, WITHIN) {
             Ok(answered) => Ok(Fate::Answered(answered)),
             Err(Failed::Refused(why)) => Err(why),
-            Err(Failed::NoAnswer) => Err(not_queued(via, &unqueued)),
+            Err(Failed::NoAnswer(_)) => Err(not_queued(via, &unqueued)),
         },
         None => Err(not_queued(via, &unqueued)),
     }
@@ -1520,8 +1520,21 @@ fn task_refused(why: &str) -> String {
 enum Failed {
     /// The app refused it, in this sentence.
     Refused(String),
-    /// The app did not answer.
-    NoAnswer,
+    /// The app did not answer, and how it was silent.
+    NoAnswer(Silence),
+}
+
+/// **How an ask got no answer it could use** (#5772): each is said apart, so a chat can tell
+/// an app that is running but busy from one that hung up or answered nonsense. An app that is
+/// not there at all is [`the_app`]'s to say: nothing connected then.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Silence {
+    /// Nothing came back within this long: the app took the line and is busy.
+    OutOfTime(std::time::Duration),
+    /// The app closed the connection without answering.
+    Closed,
+    /// What came back was not an answer this command reads.
+    Unreadable,
 }
 
 /// One ask after a task, answered: the app's answer, its refusal, or no answer.
@@ -1531,10 +1544,54 @@ fn ask_app(
     what: What,
     within: std::time::Duration,
 ) -> Result<Answered, Failed> {
-    match asking.ask(&Ask::Task(Box::new(Asked { chat, what })), within) {
+    failed_of(
+        asking.ask(&Ask::Task(Box::new(Asked { chat, what })), within),
+        within,
+    )
+}
+
+/// What one ask's outcome is to this command: the app's answer, its refusal, or which kind of
+/// silence it met ([`Silence`]). `within` is how long the ask waited.
+fn failed_of(
+    asked: std::io::Result<Answer>,
+    within: std::time::Duration,
+) -> Result<Answered, Failed> {
+    use std::io::ErrorKind;
+    match asked {
         Ok(Answer::Task(answered)) => Ok(*answered),
         Ok(Answer::No { why }) => Err(Failed::Refused(task_refused(&why))),
-        Ok(_) | Err(_) => Err(Failed::NoAnswer),
+        Ok(_) => Err(Failed::NoAnswer(Silence::Unreadable)),
+        Err(err) => Err(Failed::NoAnswer(match err.kind() {
+            // A read past its deadline is `WouldBlock` on unix and `TimedOut` elsewhere.
+            ErrorKind::WouldBlock | ErrorKind::TimedOut => Silence::OutOfTime(within),
+            ErrorKind::UnexpectedEof
+            | ErrorKind::ConnectionReset
+            | ErrorKind::ConnectionAborted
+            | ErrorKind::BrokenPipe => Silence::Closed,
+            _ => Silence::Unreadable,
+        })),
+    }
+}
+
+/// The sentence a silence of the app's is said in, ending with where to look.
+fn no_answer_said(silence: &Silence) -> String {
+    const LOOK: &str = "`purlis dispatch list` shows where this chat's tasks stand.";
+    match silence {
+        Silence::OutOfTime(within) => {
+            let secs = within.as_secs();
+            let unit = if secs == 1 { "second" } else { "seconds" };
+            format!(
+                "{SAYS} the purlis app did not answer within {secs} {unit}. It is running but \
+                 busy, so try again in a moment. {LOOK}"
+            )
+        }
+        Silence::Closed => {
+            format!("{SAYS} the purlis app closed the connection without answering. {LOOK}")
+        }
+        Silence::Unreadable => format!(
+            "{SAYS} the purlis app answered, but purlis could not read the answer: this \
+             command and the app may be different versions (`purlis version`). {LOOK}"
+        ),
     }
 }
 
@@ -1546,10 +1603,7 @@ fn answered(
 ) -> Result<Answered, String> {
     ask_app(asking, chat, what, within).map_err(|failed| match failed {
         Failed::Refused(why) => why,
-        Failed::NoAnswer => format!(
-            "{SAYS} the purlis app did not answer. `purlis dispatch list` shows where this \
-             chat's tasks stand."
-        ),
+        Failed::NoAnswer(silence) => no_answer_said(&silence),
     })
 }
 

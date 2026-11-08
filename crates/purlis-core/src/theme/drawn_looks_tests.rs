@@ -9,7 +9,7 @@
 use serde_json::{Value, json};
 
 use super::super::{ResolvedTheme, load};
-use super::{STANDS_ON, State, alike_as, broken_on, fallen, family, rules};
+use super::{State, alike_as, broken_on, fallen, family, rules};
 
 /// A dark theme over Purlis Classic that sets `tokens` and `parts`, untinted, as read.
 fn shaped(tokens: Value, parts: Value) -> ResolvedTheme {
@@ -68,6 +68,14 @@ fn allow_lost_on_its_panel(state: &str) -> ResolvedTheme {
     )
 }
 
+/// Whether what a button draws on `theme`'s panel brought the panel back. Other families drawn on
+/// it are measured there too (#3268): a separator's grip is lost on the accent's surface.
+fn a_button_brought_it_back(theme: &ResolvedTheme) -> bool {
+    fallen(theme)
+        .iter()
+        .any(|one| one.floor.starts_with("what a button draws on it"))
+}
+
 /// What the buttons on `theme`'s panel break there, read from its rules as written.
 fn broken_on_the_panel(theme: &ResolvedTheme) -> Option<(String, Option<f64>)> {
     let button = family("button").expect("the button family");
@@ -80,6 +88,7 @@ fn broken_on_the_panel(theme: &ResolvedTheme) -> Option<(String, Option<f64>)> {
         &written,
         button,
         panel,
+        "surface.base",
         "accent.surface",
     )
 }
@@ -89,7 +98,11 @@ fn a_surface_keeps_a_fill_only_an_undrawn_look_breaks_on() {
     // Allow is never a toggle, so nobody sees its pressed edge: the panel keeps its fill.
     let undrawn = allow_lost_on_its_panel("selected");
     assert_eq!(broken_on_the_panel(&undrawn), None);
-    assert_eq!(fell(&undrawn), Vec::<String>::new());
+    assert!(
+        !a_button_brought_it_back(&undrawn),
+        "{:?}",
+        fallen(&undrawn)
+    );
     // Under the pointer it is seen, and the same edge is held.
     let drawn = allow_lost_on_its_panel("hover");
     assert!(broken_on_the_panel(&drawn).is_some());
@@ -113,7 +126,11 @@ fn a_surface_keeps_a_fill_only_an_undrawn_look_s_words_are_lost_on() {
     // No toggle is a warning, so nobody reads those words pressed: the panel keeps its fill.
     let undrawn = warning_lost_on_its_panel("selected");
     assert_eq!(broken_on_the_panel(&undrawn), None);
-    assert_eq!(fell(&undrawn), Vec::<String>::new());
+    assert!(
+        !a_button_brought_it_back(&undrawn),
+        "{:?}",
+        fallen(&undrawn)
+    );
     // Under the pointer they are read, by the reading floors: this button holds no consent.
     let drawn = warning_lost_on_its_panel("hover");
     let (floor, _) = broken_on_the_panel(&drawn).expect("words lost on the panel");
@@ -155,16 +172,4 @@ fn two_sets_of_states_are_alike_only_if_the_same_looks_are_drawn_in_them() {
         alike_as(&[], menu, &[State::Hover, State::Open]),
         alike_as(&[], menu, &[State::Hover, State::Selected]),
     );
-}
-
-#[test]
-fn a_part_on_fewer_grounds_than_its_family_stands_on_no_surface_a_theme_fills() {
-    // Such a part is read on its own list, which takes the place of a surface's fill: a family on
-    // a filled surface would not be read on that fill.
-    for (surface, families) in STANDS_ON {
-        for one in families.iter().map(|name| family(name).expect("a family")) {
-            let many: Vec<_> = one.under.iter().filter(|(_, on)| on.len() > 1).collect();
-            assert!(many.is_empty(), "{} on a {surface}: {many:?}", one.name);
-        }
-    }
 }
