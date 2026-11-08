@@ -326,6 +326,67 @@ pub fn propose(root: &Path, file: &Path, draft: &Path) -> Result<u8, String> {
     }
 }
 
+/// What the app made of a chat's new text of a skill's file ([`draft_skill_file`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Kept {
+    /// A draft in the Skill studio's Drafts.
+    Drafted,
+    /// Something else, which it said, with this code.
+    Said(u8),
+}
+
+/// **A chat's new text of a skill's file, handed to the app as a draft skill** (#5815, SK-9): `rel`,
+/// a plane skill's file, relative to the project at `root`, and `content`, its whole new text. The
+/// app keeps it in the Skill studio's Drafts, as it keeps a chat's write to the file, for the
+/// person to accept or decline. Nothing is written here, and a chat the app does not answer is
+/// refused, never written for.
+///
+/// It is a draft only where the app says it drafted it ([`DRAFTED_SAID`]); any other answer is
+/// said as the app said it, and its code is [`Kept::Said`]'s.
+///
+/// [`DRAFTED_SAID`]: purlis_core::skills::verbs::drafts::DRAFTED_SAID
+pub fn draft_skill_file(root: &Path, rel: &Path, content: String) -> Result<Kept, String> {
+    use purlis_core::proposed;
+    let nothing = "no draft was made, and nothing was written";
+    let proposal = proposed::read_and_apply(root, rel, proposed::Change::Whole { content })
+        .map_err(|why| format!("{why}: {nothing}"))?;
+    let answered = asked(
+        |chat| {
+            Ask::Propose(Box::new(hookwire::ProposeAsk {
+                chat,
+                path: proposal.path.display().to_string(),
+                base: proposal.base,
+                change: proposal.change,
+            }))
+        },
+        A_WRITE_TAKES_AT_MOST,
+    );
+    match answered {
+        Ok(Ok(Answer::Said { lines, code })) => {
+            use purlis_core::skills::verbs::drafts::DRAFTED_SAID;
+            let drafted = lines.iter().any(
+                |line| matches!(line, purlis_core::repocmd::Say::Done(said) if *said == DRAFTED_SAID),
+            );
+            if code == 0 && drafted {
+                return Ok(Kept::Drafted);
+            }
+            for line in lines {
+                crate::speak(line);
+            }
+            Ok(Kept::Said(code))
+        }
+        Ok(Ok(Answer::No { why })) => Err(format!("{why}: {nothing}")),
+        Ok(Ok(_)) => Err(format!(
+            "this app can't keep a chat's draft skill, so {nothing}"
+        )),
+        Ok(Err(e)) => Err(format!("the app did not answer ({e}), so {nothing}")),
+        Err(_) => Err(format!(
+            "this chat could not reach the app, so {nothing}: ask the person to make the change \
+             in the Skill studio"
+        )),
+    }
+}
+
 /// **`purlis pool limit` in a chat** (#4284, the person's ruling of 2026-11-01 on PC-1): hands the
 /// app the value as a proposal, for the person to apply in the window. Nothing is written here,
 /// and nothing that goes wrong writes anything.
