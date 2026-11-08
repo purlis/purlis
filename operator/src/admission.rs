@@ -96,7 +96,8 @@ fn settled(
 /// **When the policy `name` is in force from**, given it and its binding as the cluster holds them
 /// (#3854): [`SETTLE`] after the later of their creation times, so a policy made again under a
 /// binding that stayed counts as made again. `None` while either is missing, or the binding does
-/// not deny, or narrows what the policy matches, or it has changed since it was made (its `generation` is not 1): a cluster keeps no
+/// not deny, or narrows what the policy matches, or the policy lets through what it cannot check
+/// (`failurePolicy: Ignore`), or the binding has changed since it was made (its `generation` is not 1): a cluster keeps no
 /// time for that change, so nothing is under it until the binding is made again. An object made
 /// no later than this was not admitted under the policy.
 pub fn in_force_since(
@@ -108,7 +109,15 @@ pub fn in_force_since(
         .filter(|binding| in_force(binding, name))
         .filter(|binding| binding.metadata.generation == Some(1))?;
     let bound = settled(binding.metadata.creation_timestamp.as_ref()?);
-    let held = settled(policy?.metadata.creation_timestamp.as_ref()?);
+    // A policy that lets a request through when it cannot be checked holds nothing for certain.
+    let policy = policy.filter(|policy| {
+        policy
+            .spec
+            .as_ref()
+            .and_then(|spec| spec.failure_policy.as_deref())
+            != Some("Ignore")
+    })?;
+    let held = settled(policy.metadata.creation_timestamp.as_ref()?);
     Some(bound.max(held))
 }
 

@@ -9,6 +9,7 @@
 use k8s_openapi::api::admissionregistration::v1::{
     MatchResources, NamedRuleWithOperations, ValidatingAdmissionPolicy,
     ValidatingAdmissionPolicyBinding, ValidatingAdmissionPolicyBindingSpec,
+    ValidatingAdmissionPolicySpec,
 };
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::{LabelSelector, Time};
 use k8s_openapi::jiff::Timestamp;
@@ -298,6 +299,25 @@ fn a_binding_that_names_what_it_matches_as_everything_is_in_force() {
             since(&binding),
             Some(at("2026-10-17T10:00:00Z").0.checked_add(SETTLE).unwrap()),
             "{resources:?}"
+        );
+    }
+}
+
+#[test]
+fn a_policy_that_lets_through_what_it_cannot_check_is_not_in_force() {
+    let binding = in_force("2026-10-17T10:00:00Z");
+    let with = |failure: Option<&str>| ValidatingAdmissionPolicy {
+        spec: Some(ValidatingAdmissionPolicySpec {
+            failure_policy: failure.map(str::to_owned),
+            ..ValidatingAdmissionPolicySpec::default()
+        }),
+        ..policy_made("2026-10-17T09:00:00Z")
+    };
+    assert_eq!(in_force_since(Some(&with(Some("Ignore"))), Some(&binding), POLICY), None);
+    for failure in [Some("Fail"), None] {
+        assert!(
+            in_force_since(Some(&with(failure)), Some(&binding), POLICY).is_some(),
+            "{failure:?}"
         );
     }
 }

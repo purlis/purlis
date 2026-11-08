@@ -955,8 +955,8 @@ and memory included. Give cluster-admin and node access accordingly.
 
 ## Minting GitHub App tokens in the cluster
 
-**Not finished yet.** The operator mints for a vouched runner that asks it (below), but no chat
-asks until #4207: a chat on a pool still has no token minted here.
+A chat on a runner of an opted-in Pool has its GitHub tokens minted here: the operator mints for
+the vouched runner that asks it (below).
 
 A cluster admin opts a Pool in with these steps:
 
