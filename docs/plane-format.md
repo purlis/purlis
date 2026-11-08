@@ -9139,7 +9139,7 @@ of 2026-11-01). A purlis from before it refuses a file holding it, as it refuses
   file that does not read, is of another id or of an end that cannot be resumed being none.
   Removed when a new grade of the same copy (or of the same draft) starts, a resume among them
   (`grades::resumable::forget_of`).
-- **Status:** **internal**, **experimental** behind the `skill-studio` flag.
+- **Status:** **internal**, **experimental**.
 - **Tier:** Machine, device-bound, transient — the chats ran here; losing it loses only Resume,
   and Grade again runs the grade whole.
 - **Git:** outside every project, in the data home.
