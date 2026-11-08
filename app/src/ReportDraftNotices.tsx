@@ -30,7 +30,7 @@ export type SentDraft = {
   title: string;
   session: number | null;
   chat: string;
-  /** `github` or `intake`. */
+  /** `github` or `intake`; `waiting` when the intake gave no answer and it waits to send. */
   to: string;
   /** When it left, in ms. */
   at: number;

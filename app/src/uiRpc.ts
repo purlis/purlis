@@ -5467,7 +5467,10 @@ export type Doing = {
 
 /**  What became of a draft the person filed. */
 export type DraftFiled = 
-/**  It left: `github` or `intake`, and where it was kept. */
+/**
+ *  It left: `github` or `intake`, and where it was kept; or `waiting`, with no address: the
+ *  Report intake gave no answer, and it waits on this machine to send.
+ */
 { kind: "sent"; to: string; address: string; title: string } | 
 /**  Issues that may already cover it: nothing was filed. */
 { kind: "duplicates"; issues: PossibleDuplicate[] };

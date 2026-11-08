@@ -155,7 +155,8 @@ pub enum FileHow {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 #[serde(rename_all = "kebab-case", tag = "kind")]
 pub enum DraftFiled {
-    /// It left: `github` or `intake`, and where it was kept.
+    /// It left: `github` or `intake`, and where it was kept; or `waiting`, with no address: the
+    /// Report intake gave no answer, and it waits on this machine to send.
     Sent {
         to: String,
         address: String,
@@ -262,6 +263,14 @@ pub async fn file_report_draft(
                 title,
             })
         }
+        Filing::Queued => {
+            changed();
+            Ok(DraftFiled::Sent {
+                to: "waiting".to_owned(),
+                address: String::new(),
+                title,
+            })
+        }
         Filing::Duplicates(hits) => Ok(DraftFiled::Duplicates {
             issues: hits
                 .into_iter()
@@ -314,6 +323,10 @@ fn said_of(refused: &Refusal) -> String {
         Refusal::NotSent(why) => format!("It was not sent: {why}. Try File again later."),
         Refusal::NotKept(why) | Refusal::Unusable(why) => why.clone(),
         Refusal::NoConsent(_) => NOT_ALLOWED.to_owned(),
+        // A draft the person files is never capped (#5693): only an unread send is.
+        Refusal::CapReached => "Five reports were already sent unread today, so this one was \
+                                not sent. Read it, then File."
+            .to_owned(),
     }
 }
 

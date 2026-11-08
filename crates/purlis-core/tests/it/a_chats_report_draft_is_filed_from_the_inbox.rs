@@ -26,6 +26,7 @@ use purlis_core::report::{
 };
 use serde_json::json;
 
+use crate::a_crash_report_goes_once_per_version_and_waits_while_offline::Line;
 use crate::a_report_is_filed_only_with_the_purlis_sign_in::{Machine, issue};
 
 const DSN: &str = concat!("https://f00dfeed1234", "@", "o1.ingest.de.sentry.io/4508");
@@ -174,6 +175,44 @@ fn without_a_github_sign_in_a_filed_draft_goes_to_the_intake_and_is_listed() {
 }
 
 #[test]
+fn a_draft_filed_while_the_intake_cannot_be_reached_waits_and_goes_when_it_answers() {
+    let root = tempfile::tempdir().unwrap();
+    let line = Line::down(1);
+    // No yes to Crash reports: the person's File is the yes this draft needs.
+    let reports = Reports::new(Known::default())
+        .with_consent(consent(Some(true)))
+        .sending_to(
+            Arc::new(Sentry::new(Dsn::parse(DSN).expect("a DSN"), line.clone())),
+            root.path(),
+        );
+    let one = held(&reports);
+
+    let filed = reports.file_held(&one.id, &Caller::window(), &one.digest(), How::Check);
+    assert_eq!(filed, Filing::Queued);
+    assert!(reports.held().is_empty(), "a queued draft leaves the Inbox");
+    let waiting = SentList::read(root.path());
+    assert_eq!(waiting.len(), 1);
+    assert!(waiting[0].waiting, "{waiting:?}");
+    assert_eq!(
+        waiting[0].fingerprint, None,
+        "a filed draft is never counted away"
+    );
+    assert!(line.received().is_empty());
+
+    line.set(true);
+    assert_eq!(reports.send_waiting(), 1);
+    let received = line.received();
+    assert_eq!(received.len(), 1);
+    assert!(received[0].contains(TITLE), "{}", received[0]);
+    let sent = SentList::read(root.path());
+    assert!(!sent[0].waiting, "{sent:?}");
+    assert_eq!(
+        sent[0].bytes, received[0],
+        "the list keeps exactly what left"
+    );
+}
+
+#[test]
 fn a_digest_other_than_the_drafts_files_nothing() {
     let root = tempfile::tempdir().unwrap();
     let intake = recorded_intake();
@@ -271,7 +310,11 @@ fn a_possible_duplicate_is_shown_first_and_the_draft_is_added_to_it_instead_of_f
         panic!("no duplicates shown: {checked:?}");
     };
     assert_eq!(hits.iter().map(|hit| hit.number).collect::<Vec<_>>(), [41]);
-    assert_eq!(reports.held(), std::slice::from_ref(&one), "nothing filed yet");
+    assert_eq!(
+        reports.held(),
+        std::slice::from_ref(&one),
+        "nothing filed yet"
+    );
 
     let added = reports.file_held(&one.id, &Caller::window(), &one.digest(), How::AddTo(41));
     assert_eq!(

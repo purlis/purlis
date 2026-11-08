@@ -16,8 +16,8 @@
 use std::io;
 use std::path::Path;
 
-use serde::{Deserialize, Serialize};
 use super::Kind;
+use serde::{Deserialize, Serialize};
 
 /// The file, inside [`crate::machine::DIR`].
 pub const FILE: &str = "report-drafts.json";

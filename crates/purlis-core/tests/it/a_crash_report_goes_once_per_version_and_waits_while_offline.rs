@@ -20,13 +20,13 @@ use purlis_core::report::{Consent, Evidence, Known, Outcome, Panic, Refusal, Rep
 const DSN: &str = concat!("https://f00dfeed1234", "@", "o1.ingest.de.sentry.io/4508");
 
 /// Sentry's envelope endpoint, answering 200 to each of `sends` envelopes, while it is up.
-struct Line {
+pub(crate) struct Line {
     up: AtomicBool,
     intake: Recorded,
 }
 
 impl Line {
-    fn up(sends: usize) -> Arc<Line> {
+    pub(crate) fn up(sends: usize) -> Arc<Line> {
         let exchange = r#"{"path": "/api/4508/envelope/", "status": 200}"#;
         let text = format!(
             r#"{{"source": "tests/intake_contract/sentry/envelope.json, {sends} times", "exchanges": [{}]}}"#,
@@ -38,18 +38,18 @@ impl Line {
         })
     }
 
-    fn down(sends: usize) -> Arc<Line> {
+    pub(crate) fn down(sends: usize) -> Arc<Line> {
         let line = Line::up(sends);
         line.set(false);
         line
     }
 
-    fn set(&self, up: bool) {
+    pub(crate) fn set(&self, up: bool) {
         self.up.store(up, Ordering::SeqCst);
     }
 
     /// Every envelope the intake took, oldest first, as text.
-    fn received(&self) -> Vec<String> {
+    pub(crate) fn received(&self) -> Vec<String> {
         self.intake
             .received()
             .into_iter()

@@ -267,6 +267,14 @@ describe("each source, said as updates", () => {
     expect(KIND_SAID["report-sent"]).toBe("Report sent");
     expect(LIVE.has("report-sent")).toBe(false);
   });
+
+  it("says a filed report the intake did not answer for waits to send (#5694, #5693)", () => {
+    const said = reportSentUpdates([
+      { id: "d3", title: "Update refuses", session: 4, chat: "steward 4", to: "waiting", at: NOW },
+    ]);
+    expect(said.map((one) => one.says)).toEqual(["Waiting to send a report: Update refuses"]);
+    expect(fromOf("report-sent")).toBe("mine");
+  });
 });
 
 describe("the list", () => {
