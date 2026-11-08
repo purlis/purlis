@@ -434,3 +434,18 @@ fn a_chat_commit_is_made_as_the_email_chosen_for_it() {
     let kept = crate::worktree::git::Isolated::identity(Some("Sam"), Some("sam@laptop.local"));
     assert_eq!(kept.clone().as_email("a\nuser.name=x"), kept);
 }
+
+#[test]
+fn a_commit_gitlab_verified_without_naming_this_devices_key_gets_no_tick() {
+    let signer = Signer::generate().unwrap();
+    let recorded = Recorded::parse(
+        r#"{"source": "GitLab's answer for a commit it signed itself, naming no key", "exchanges": [
+        {"call": {"endpoint": {"rest": {"method": null, "path": "projects/platform%2Fbilling/repository/commits/0123abc/signature"}}, "fields": []},
+         "reply": {"code": 0, "out": "{\"signature_type\": \"SSH\", \"verification_status\": \"verified_system\"}", "err": "", "status": 200}}]}"#,
+    )
+    .unwrap();
+    let checked =
+        check_a_pushed_commit(&recorded, &gitlab(), &signer, "platform/billing", "0123abc")
+            .unwrap();
+    assert!(!checked.verified);
+}

@@ -421,7 +421,7 @@ export async function answerTaken(
           return typeof done === "string" ? { status: "error", error: done } : { status: "ok" };
         }
         if (option === "dismiss") {
-          const gone = await commands.signingForgetSent(plane);
+          const gone = await commands.signingForget(plane, null);
           window.dispatchEvent(new Event(SIGNING_WAITING_CHANGED));
           return gone;
         }

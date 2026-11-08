@@ -8,6 +8,7 @@ import { ACCOUNTS_CHANGED } from "./ForgeSignInEnded";
 import { Notice } from "./Notice";
 import { SigningSetupDialog } from "./SigningSetupDialog";
 import {
+  laneOf,
   SIGNING_SETUP_ASKED,
   SIGNING_WAITING_CHANGED,
   signAndRetry,
@@ -110,7 +111,10 @@ export function SigningRefusal({
   on: boolean | undefined;
   where: "lane" | "chat";
 }) {
-  const [retry, setRetry] = useState<Retry>({ at: "idle" });
+  // A Sign and retry that failed elsewhere (the one notice's) is said here too.
+  const [retry, setRetry] = useState<Retry>(() =>
+    lane.why ? { at: "failed", why: lane.why } : { at: "idle" },
+  );
   const [setUp, setSetUp] = useState(false);
   const go = useCallback(() => {
     setRetry({ at: "running" });
@@ -122,11 +126,17 @@ export function SigningRefusal({
     });
   }, [plane, lane]);
   const cause = `signing-refused:${lane.ws}/${lane.repo}/${lane.piece}:${where}`;
+  /** Dismissed: it waits on nothing more, sent or not. Nothing is pushed or signed. */
+  const dismiss = () =>
+    void commands
+      .signingForget(plane, laneOf(lane))
+      .then(() => window.dispatchEvent(new Event(SIGNING_WAITING_CHANGED)));
   const dialog = setUp && (
     <SigningSetupDialog
       forge={{ kind: lane.kind, host: lane.host }}
-      repo={lane.path}
-      commit={lane.commit}
+      repo={lane.path === "" ? null : lane.path}
+      // The refused commit never reached the forge: Check asks of none of it.
+      commit={null}
       finish={{ label: "Sign and retry", onFinish: go }}
       onClose={() => {
         setSetUp(false);
@@ -136,17 +146,7 @@ export function SigningRefusal({
   );
   if (retry.at === "sent" || (lane.sent && retry.at === "idle"))
     return (
-      <Notice
-        cause={cause}
-        at="pane"
-        tone="news"
-        label="Signed and sent ✓"
-        onDismiss={() =>
-          void commands
-            .signingForgetSent(plane)
-            .then(() => window.dispatchEvent(new Event(SIGNING_WAITING_CHANGED)))
-        }
-      >
+      <Notice cause={cause} at="pane" tone="news" label="Signed and sent ✓" onDismiss={dismiss}>
         {sentSaid(retry.at === "sent" ? retry.signed : undefined, lane.branch)}
       </Notice>
     );
@@ -159,6 +159,7 @@ export function SigningRefusal({
         tone={retry.at === "failed" ? "trouble" : "attention"}
         label={`${lane.forge} only accepts signed commits here`}
         running={retry.at === "running"}
+        onDismiss={dismiss}
         fixes={
           on
             ? [
@@ -230,8 +231,8 @@ export function SigningSetupAsked({ plane }: { plane: PlaneId }) {
   return (
     <SigningSetupDialog
       forge={{ kind: first.kind, host: first.host }}
-      repo={first.path}
-      commit={first.commit}
+      repo={first.path === "" ? null : first.path}
+      commit={null}
       finish={{
         label: lanes.length === 1 ? "Sign and retry" : `Sign and retry all ${lanes.length}`,
         onFinish: () => void signAndRetryAll(plane),

@@ -12,6 +12,10 @@ import {
 } from "../bindings";
 import { ACCOUNTS_CHANGED } from "../ForgeSignInEnded";
 import { cantVerify, SigningSetupDialog } from "../SigningSetupDialog";
+import { SIGNING_WAITING_CHANGED } from "../signingAsked";
+
+/** The lanes and the chats waiting on signing read it again: it was set up, replaced or removed. */
+const tellTheLanes = () => window.dispatchEvent(new Event(SIGNING_WAITING_CHANGED));
 import type { LiveSetting } from "./groups";
 import { SettingActions } from "./components";
 import { Badge } from "../ui/badge/Badge";
@@ -86,6 +90,7 @@ export const signedCommits: LiveSetting = {
               onClose={() => {
                 setOpen(false);
                 reread();
+                tellTheLanes();
               }}
             />
           )}
@@ -202,6 +207,7 @@ function On({
       setDid(done.status === "ok" ? { what, done: done.data } : { why: done.error });
       setAsked((was) => was + 1);
       onChanged();
+      tellTheLanes();
     });
   };
   return (

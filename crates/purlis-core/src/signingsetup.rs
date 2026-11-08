@@ -440,13 +440,15 @@ pub fn check_a_pushed_commit(
     commit: &str,
 ) -> Result<Checked, String> {
     let checked = signingkeys::check_over(transport, forge, repo, commit)?;
+    // Only GitLab's verdict on this device's own key says anything of it: a commit GitLab signed
+    // itself, or one signed with another key, names none or another.
     match &checked.key {
-        Some(key) if !signingkeys::same_key(key, &signer.public_line()) => Ok(Checked {
+        Some(key) if signingkeys::same_key(key, &signer.public_line()) => Ok(checked),
+        _ => Ok(Checked {
             verified: false,
             reason: "other_key".to_owned(),
             key: checked.key.clone(),
         }),
-        _ => Ok(checked),
     }
 }
 
@@ -611,6 +613,16 @@ pub fn email_settings(forge: &Forge) -> String {
     match forge.kind {
         Kind::GitHub => "https://github.com/settings/emails".to_owned(),
         Kind::GitLab => format!("https://{}/-/user_settings/profile", forge.host),
+    }
+}
+
+/// **What signing kept on this device beside its key, forgotten** (Remove signing, #5632): the
+/// email chosen for chat commits and the signed pushes kept for GitLab's Check.
+pub fn forget_records(config_root: &Path) -> Result<(), String> {
+    set_commit_email(config_root, None)?;
+    match std::fs::remove_file(pushes_file(config_root)) {
+        Err(why) if why.kind() != std::io::ErrorKind::NotFound => Err(why.to_string()),
+        _ => Ok(()),
     }
 }
 

@@ -5,11 +5,12 @@
 //! and another device's key removed, each over the forge accounts' own transports, so a
 //! recording answers them in a test.
 //!
-//! - **Remove signing** takes the key out of this device's keychain first, so signing is off at
-//!   once whatever a forge answers, then out of every account that has it. An account that
-//!   refused says so, and its keys page is the way to finish there.
-//! - **Replace key** makes a new key in place of the old one, adds it to every account that had
-//!   the old one, then removes the old one there. The card checks again after.
+//! - **Remove signing** takes the key out of every account that has it while this device can
+//!   still tell it by its public half, then out of the keychain, so signing is off whatever a
+//!   forge answers. An account that refused says so, and its keys page finishes it there.
+//! - **Replace key** makes a new key and adds it to every account that had the old one first;
+//!   only where one took it does the keychain hold it in place of the old one, which is then
+//!   removed there. Where none took it, the old key stays, said so. The card checks again.
 //! - **Another device's key**, purlis's by its title, is removed from an account by its id, for
 //!   a lost or wiped machine.
 
@@ -48,11 +49,12 @@ pub fn remove_everywhere(
 ) -> Result<Vec<Outcome>, String> {
     let signer = commitsign::kept(config_root, store)?
         .ok_or_else(|| "this Mac has no signing key to remove".to_owned())?;
-    commitsign::forget(config_root, store)?;
-    Ok(accounts
+    let done = accounts
         .iter()
         .map(|on| removed_from(on, &signer))
-        .collect())
+        .collect();
+    commitsign::forget(config_root, store)?;
+    Ok(done)
 }
 
 /// `signer`'s key out of the account `on`.
@@ -101,22 +103,37 @@ pub fn replace_with(
                 .map(|listed| listed.this_device(&old).map(|key| key.id))
         })
         .collect();
+    // The new key added first, where the old one is: the keychain changes only once one took it.
+    let added: Vec<Result<Option<u64>, String>> = accounts
+        .iter()
+        .zip(&had)
+        .map(|(on, had)| match had {
+            Err(why) => Err(why.said(on.forge.kind)),
+            Ok(None) => Ok(None),
+            Ok(Some(id)) => signingkeys::add_over(on.transport, &on.forge, &new, title)
+                .map(|_| Some(*id))
+                .map_err(|why| why.said(on.forge.kind)),
+        })
+        .collect();
+    let any_had = had.iter().any(|one| matches!(one, Ok(Some(_))));
+    let any_took = added.iter().any(|one| matches!(one, Ok(Some(_))));
+    if any_had && !any_took {
+        return Err(
+            "no account took the new key, so this Mac keeps its old one and nothing changed"
+                .to_owned(),
+        );
+    }
     let new = commitsign::replace_with(config_root, store, &new)?;
     let outcomes = accounts
         .iter()
-        .zip(had)
-        .map(|(on, had)| match had {
-            Err(why) => Outcome::Refused(why.said(on.forge.kind)),
+        .zip(added)
+        .map(|(on, added)| match added {
+            Err(why) => Outcome::Refused(why),
             Ok(None) => Outcome::NotThere,
-            Ok(Some(id)) => {
-                if let Err(why) = signingkeys::add_over(on.transport, &on.forge, &new, title) {
-                    return Outcome::Refused(why.said(on.forge.kind));
-                }
-                match signingkeys::remove_over(on.transport, &on.forge, id) {
-                    Ok(()) => Outcome::Done,
-                    Err(why) => Outcome::Refused(why.said(on.forge.kind)),
-                }
-            }
+            Ok(Some(old)) => match signingkeys::remove_over(on.transport, &on.forge, old) {
+                Ok(()) => Outcome::Done,
+                Err(why) => Outcome::Refused(why.said(on.forge.kind)),
+            },
         })
         .collect();
     Ok((new, outcomes))

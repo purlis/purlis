@@ -446,6 +446,18 @@ pub(crate) fn remote_of(clone: &Path, branch: &str) -> Option<String> {
 
 /// [`remote_of`], or why there is none: a clone with no such remote, or a config git would not
 /// read (#4436), which is not the same trouble and has a different repair.
+/// **The remote `branch` of `repo`'s clone in workspace `ws` goes to**, or why there is none:
+/// what a push of it is sent to (Sign and retry fetches it first, #5630).
+pub fn remote_for(root: &Path, ws: &str, repo: &str, branch: &str) -> Result<String, String> {
+    let clone = worktree::clone_dir(root, ws, repo).map_err(|why| why.to_string())?;
+    remote_or_why(
+        &clone,
+        repo,
+        branch,
+        format!("{repo} has no remote to push {branch} to"),
+    )
+}
+
 fn remote_or_why(clone: &Path, repo: &str, branch: &str, none: String) -> Result<String, String> {
     if let Some(remote) = remote_of(clone, branch) {
         return Ok(remote);
@@ -1899,7 +1911,13 @@ fn pushed(
             let (kind, host, path) = match crate::forge::pr::Repo::of_clone(piece.root, &here.clone)
             {
                 Ok(repo) => (repo.forge.kind, repo.forge.host, repo.path),
-                Err(_) => (crate::forge::Kind::GitHub, String::new(), remote.clone()),
+                // A forge the plane does not know: GitHub's words, on github.com, with no
+                // repository named to check in.
+                Err(_) => (
+                    crate::forge::Kind::GitHub,
+                    "github.com".to_owned(),
+                    String::new(),
+                ),
             };
             *unsigned = Some(UnsignedRefused {
                 kind,

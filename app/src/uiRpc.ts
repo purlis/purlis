@@ -827,7 +827,7 @@ export const commands = {
 	signingCheck: __WINDOW_ONLY_RESULT,
 	signingWaiting: __WINDOW_ONLY_RESULT,
 	signingSignAndRetry: __WINDOW_ONLY_RESULT,
-	signingForgetSent: __WINDOW_ONLY_RESULT,
+	signingForget: __WINDOW_ONLY_RESULT,
 	signingEmails: __WINDOW_ONLY_RESULT,
 	signingUseEmail: __WINDOW_ONLY_RESULT,
 	signingAccountsKeys: __WINDOW_ONLY_RESULT,
@@ -2965,8 +2965,8 @@ export type AnswerPath =
 { via: "old-harness-plugins" } | 
 /**
  *  Set up signing opens the setup dialog in the window, whose last step is Sign and retry
- *  all; Sign and retry all sends `signing_sign_and_retry` for every waiting lane; Dismiss,
- *  once all are sent, `signing_forget_sent` (#5633).
+ *  all; Sign and retry all sends `signing_sign_and_retry` for every waiting lane; Dismiss
+ *  sends `signing_forget` for them all (#5633).
  */
 { via: "signing" } | 
 /**
@@ -13112,6 +13112,8 @@ export type SigningWaiting = {
 	chat?: number | null,
 	/**  Signed and sent since: shown as done until the window has shown it. */
 	sent: boolean,
+	/**  Why the last Sign and retry did not send it, where it did not. */
+	why?: string | null,
 };
 
 /**

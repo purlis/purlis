@@ -102,9 +102,16 @@ fn a_push_refused_for_unsigned_commits_is_told_apart_and_sign_and_retry_sends_it
 
     let signer = Signer::generate().unwrap();
     let mut lines = Vec::new();
-    let retried =
-        brokered(|| retry::sign_and_retry(&w.plane, &waiting[0], &signer, &mut |l| lines.push(l)))
-            .unwrap_or_else(|why| panic!("{why}\n{}", said(&lines)));
+    let retried = brokered(|| {
+        retry::sign_and_retry(
+            &w.plane,
+            &waiting[0],
+            &signer,
+            Some("chosen@e.invalid"),
+            &mut |l| lines.push(l),
+        )
+    })
+    .unwrap_or_else(|why| panic!("{why}\n{}", said(&lines)));
     assert_eq!(
         retried.signed, 2,
         "only the two commits the forge has none of"
@@ -117,6 +124,11 @@ fn a_push_refused_for_unsigned_commits_is_told_apart_and_sign_and_retry_sends_it
         assert!(commitsign::is_signed(&piece, &id), "{id} is signed");
     }
     assert_eq!(out(&piece, &["rev-parse", "HEAD~2"]), pushed_before);
+    // Made again as the email the person chose (#5631), author and committer alike.
+    assert_eq!(
+        out(&piece, &["log", "-2", "--format=%ae %ce"]),
+        "chosen@e.invalid chosen@e.invalid\nchosen@e.invalid chosen@e.invalid"
+    );
     assert!(!commitsign::is_signed(&piece, &pushed_before));
     // The work no longer waits: it shows as signed and sent.
     assert!(retry::waiting(&w.plane).iter().all(|one| one.sent));

@@ -28,16 +28,31 @@ use crate::worktree::{self, git};
 /// GitHub's own words for a refusal of unsigned commits, the same for a protected branch's push
 /// (`GH006`), a ruleset's (`GH013`), a merge and a merge queue entry: docs.github.com, "About
 /// protected branches" and "Available rules for rulesets" (*Require signed commits*).
-const GITHUB_SAYS: &str = "must have verified signatures";
+const GITHUB_SAYS_WHOLE: &str = "Commits must have verified signatures";
 
 /// **Whether `said`, a forge's refusal or git's words for a refused push, refuses unsigned
 /// commits.** GitHub's documented words only; GitLab's are matched once read from a real server
 /// (#5634), so a GitLab refusal answers `false` and keeps its plain wording.
 pub fn refused_unsigned(kind: Kind, said: &str) -> bool {
-    match kind {
-        Kind::GitHub => said.to_ascii_lowercase().contains(GITHUB_SAYS),
-        Kind::GitLab => false,
+    if kind == Kind::GitLab {
+        return false;
     }
+    // GitHub's own line, as git prints it (`remote: error: …`, `remote: - …`) or as its API says
+    // it, alone: never words that only sit inside another line, such as a file's path.
+    let said_alone = |line: &str| {
+        let line = line.trim();
+        let line = line.strip_prefix("remote:").unwrap_or(line).trim_start();
+        let line = line.strip_prefix("error:").unwrap_or(line).trim_start();
+        let line = line.strip_prefix("- ").unwrap_or(line).trim();
+        let line = line.trim_end_matches('.');
+        line.eq_ignore_ascii_case(GITHUB_SAYS_WHOLE)
+    };
+    let lines: Vec<&str> = said
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .collect();
+    let from_a_rule = said.contains("GH006") || said.contains("GH013");
+    lines.iter().any(|line| said_alone(line)) && (from_a_rule || lines.len() == 1)
 }
 
 /// What a chat is told where the forge refused its push for unsigned commits, after which the
@@ -157,31 +172,92 @@ pub struct Retried {
     pub head: String,
 }
 
-/// **Sign and retry** one waiting branch folder (ADR 0116 §4): the commits on its branch that
-/// its remote has none of are written again signed with `signer` (ADR 0115 §3), the branch moved
-/// to them from where it was alone, and the branch pushed again as a chat's push is. Refused,
-/// with the reason, where the folder has gone, its branch is not the one refused, or the push is
-/// refused again; it then stays waiting.
+/// The most commits one Sign and retry signs again: a lane's own work is a handful, and more
+/// means the remote's history was not where purlis looked for it.
+const MOST_SIGNED: usize = 200;
+
+/// **The waiting lane `ws`/`repo`/`piece` dropped**: the person dismissed it, or its folder went.
+pub fn forget(root: &Path, ws: &str, repo: &str, piece: &str) {
+    note_pushed(root, ws, repo, piece, false);
+}
+
+/// **Every waiting lane dropped**, sent or not: the person dismissed the one notice.
+pub fn forget_all(root: &Path) -> Result<(), String> {
+    if waiting(root).is_empty() {
+        return Ok(());
+    }
+    write(root, &[])
+}
+
+/// **The work waiting on signing whose branch folder is still there**: a lane whose folder was
+/// removed waits on nothing, and is dropped as it is read.
+pub fn waiting_here(root: &Path) -> Vec<Waiting> {
+    let all = waiting(root);
+    let (here, gone): (Vec<Waiting>, Vec<Waiting>) = all.into_iter().partition(|one| {
+        worktree::path_for(root, &one.ws, &one.repo, &one.piece)
+            .is_ok_and(|folder| folder.symlink_metadata().is_ok())
+    });
+    for one in &gone {
+        forget(root, &one.ws, &one.repo, &one.piece);
+    }
+    here
+}
+
+/// **Sign and retry** one waiting branch folder (ADR 0116 §4), in the folder the broker checks
+/// as it checks a chat's push ([`crate::gitbroker::in_a_checked_folder`]): the remote fetched
+/// first; the commits on its branch the remote has none of written again signed with `signer`,
+/// as `email` where the person chose one (#5631), and only those (ADR 0115 §3); the branch moved
+/// to them from where it was alone; and the branch pushed again as a chat's push is. Refused,
+/// leaving everything as it was, where the folder has gone (it waits no more), its branch is not
+/// the one refused, the commits reach the start of the history, are more than [`MOST_SIGNED`],
+/// or hold a commit signed already. Refused again by the forge, it stays waiting, with why.
 pub fn sign_and_retry(
     root: &Path,
     one: &Waiting,
     signer: &Signer,
+    email: Option<&str>,
+    say: &mut dyn FnMut(Say),
+) -> Result<Retried, String> {
+    let label = format!("{} · {}", one.repo, one.piece);
+    let here = worktree::path_for(root, &one.ws, &one.repo, &one.piece)
+        .is_ok_and(|folder| folder.symlink_metadata().is_ok());
+    if !here {
+        forget(root, &one.ws, &one.repo, &one.piece);
+        return Err(format!("{label} has gone, so it waits on nothing now"));
+    }
+    let isolation = git::isolation().unwrap_or_default();
+    let ran = crate::gitbroker::in_a_checked_folder(
+        root,
+        &one.ws,
+        &one.repo,
+        &one.piece,
+        &isolation,
+        || signed_and_sent(root, one, signer, email, &label, say),
+    );
+    match ran {
+        Ok(done) => done,
+        Err(crate::gitbroker::NotRun::Repo(why)) => Err(why),
+        Err(crate::gitbroker::NotRun::Folder(why)) => Err(why.to_string()),
+    }
+}
+
+/// [`sign_and_retry`]'s work, in the checked folder.
+fn signed_and_sent(
+    root: &Path,
+    one: &Waiting,
+    signer: &Signer,
+    email: Option<&str>,
+    label: &str,
     say: &mut dyn FnMut(Say),
 ) -> Result<Retried, String> {
     let folder =
         worktree::path_for(root, &one.ws, &one.repo, &one.piece).map_err(|why| why.to_string())?;
     let folder = worktree::confine::within_workspace(root, &one.ws, &folder)
         .map_err(|why| why.to_string())?;
-    let label = format!("{} · {}", one.repo, one.piece);
-    if folder.symlink_metadata().is_err() {
-        return Err(format!(
-            "{label} has gone, so there is nothing to sign and send"
-        ));
-    }
     let read = |args: &[&str]| -> Result<String, String> {
         let ran = git::run(&folder, args, git::READ).map_err(|why| why.to_string())?;
         if ran.ok() {
-            Ok(ran.line().trim().to_owned())
+            Ok(ran.out.trim().to_owned())
         } else {
             Err(format!(
                 "git could not read {label}: {}",
@@ -196,17 +272,44 @@ pub fn sign_and_retry(
             one.branch
         ));
     }
+    // What the remote has, asked now: nothing it has is written again.
+    let remote = pieceupdate::remote_for(root, &one.ws, &one.repo, &branch)?;
+    let clone = worktree::clone_dir(root, &one.ws, &one.repo).map_err(|why| why.to_string())?;
+    crate::repocmd::sync::fetch_remote(root, &clone, &remote, None)
+        .map_err(|why| format!("{why}. Nothing was signed"))?;
     let head = read(&["rev-parse", "--verify", "HEAD^{commit}"])?;
-    // Only what the remote has none of: nothing already pushed is written again.
-    let unpushed: usize = read(&["rev-list", "--count", &head, "--not", "--remotes"])?
-        .parse()
-        .unwrap_or(0);
-    let signed = commitsign::sign_branch(
+    let mine: Vec<String> = read(&["rev-list", &head, "--not", "--remotes"])?
+        .lines()
+        .map(str::to_owned)
+        .filter(|id| !id.is_empty())
+        .collect();
+    if mine.len() > MOST_SIGNED {
+        return Err(format!(
+            "{label} has {} commits its remote has none of, more than a lane's own, so purlis \
+             signed none of them",
+            mine.len()
+        ));
+    }
+    let roots = read(&["rev-list", "--max-parents=0", &head, "--not", "--remotes"])?;
+    if !roots.is_empty() {
+        return Err(format!(
+            "{label}'s commits reach the start of its history, which its remote has none of, so \
+             purlis signed none of them"
+        ));
+    }
+    if let Some(signed) = mine.iter().find(|id| commitsign::is_signed(&folder, id)) {
+        return Err(format!(
+            "{label} holds commit {} that is signed already, so purlis left it as it is",
+            &signed[..signed.len().min(12)]
+        ));
+    }
+    let signed = commitsign::sign_branch_as(
         &folder,
         &worktree::name::as_ref(&branch),
         &head,
         &["--remotes"],
         signer,
+        email,
     )?;
     let piece = Piece {
         root,
@@ -241,7 +344,7 @@ pub fn sign_and_retry(
     }
     note_pushed(root, &one.ws, &one.repo, &one.piece, true);
     Ok(Retried {
-        signed: unpushed,
+        signed: mine.len(),
         head: signed,
     })
 }

@@ -447,6 +447,9 @@ pub struct SigningWaiting {
     pub chat: Option<u32>,
     /// Signed and sent since: shown as done until the window has shown it.
     pub sent: bool,
+    /// Why the last Sign and retry did not send it, where it did not.
+    #[specta(optional)]
+    pub why: Option<String>,
 }
 
 /// One branch folder, by its workspace, repo and piece.
@@ -487,7 +490,7 @@ pub async fn signing_waiting(
 ) -> Result<Vec<SigningWaiting>, String> {
     let root = root_of(&planes, &plane)?;
     blocking(move || {
-        Ok(signingsetup::retry::waiting(&root)
+        Ok(signingsetup::retry::waiting_here(&root)
             .into_iter()
             .map(|one| SigningWaiting {
                 forge: one.kind.display().to_string(),
@@ -501,6 +504,7 @@ pub async fn signing_waiting(
                 commit: one.commit,
                 chat: one.chat,
                 sent: one.sent,
+                why: one.why,
             })
             .collect())
     })
@@ -564,7 +568,13 @@ fn retried(
     let isolation = purlis_core::worktree::git::Isolated::operators();
     let done = purlis_core::worktree::git::isolated(&isolation, || {
         crate::forgeaccounts::window_git(|| {
-            signingsetup::retry::sign_and_retry(root, one, key, &mut |_| {})
+            signingsetup::retry::sign_and_retry(
+                root,
+                one,
+                key,
+                signingsetup::commit_email(config).as_deref(),
+                &mut |_| {},
+            )
         })
     })?;
     let piece = purlis_core::pieceupdate::Piece {
@@ -577,16 +587,25 @@ fn retried(
     Ok(u32::try_from(done.signed).unwrap_or(u32::MAX))
 }
 
-/// **What was signed and sent, cleared** once the window has shown it.
+/// **A waiting lane dismissed**, `lane`, sent or not; with none, every one: the one notice's
+/// Dismiss. Nothing is pushed or signed.
 #[tauri::command]
 #[specta::specta]
-pub async fn signing_forget_sent(
+pub async fn signing_forget(
     planes: tauri::State<'_, crate::planes::Planes>,
     plane: crate::planes::PlaneId,
+    lane: Option<SigningLane>,
 ) -> Result<(), String> {
     let root = root_of(&planes, &plane)?;
     let teller = planes.held(&plane)?.hooks().asks_teller();
-    let done = blocking(move || signingsetup::retry::forget_sent(&root)).await;
+    let done = blocking(move || match lane {
+        Some(lane) => {
+            signingsetup::retry::forget(&root, &lane.ws, &lane.repo, &lane.piece);
+            Ok(())
+        }
+        None => signingsetup::retry::forget_all(&root),
+    })
+    .await;
     teller();
     done
 }
@@ -892,8 +911,9 @@ async fn signing_remove_everywhere_here() -> Result<Vec<SigningDone>, String> {
     blocking(|| {
         on_every_account(|root, on| {
             let keyring = commitsign::this_builds_keyring(root);
-            signingsetup::manage::remove_everywhere(root, keyring.as_ref(), on)
-                .map(|done| ((), done))
+            let done = signingsetup::manage::remove_everywhere(root, keyring.as_ref(), on)?;
+            signingsetup::forget_records(root)?;
+            Ok(((), done))
         })
         .map(|((), done)| done)
     })
@@ -930,8 +950,13 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         assert!(crate::asking::signing_waiting(root.path(), false).is_none());
         for piece in ["tab-names", "empty-tab", "pane-foot"] {
+            let folder =
+                purlis_core::worktree::path_for(root.path(), "smart-ide", "purlis", piece).unwrap();
+            std::fs::create_dir_all(folder).unwrap();
             retry::note_refused(root.path(), refused(piece)).unwrap();
         }
+        // A lane whose folder has gone waits on nothing.
+        retry::note_refused(root.path(), refused("gone")).unwrap();
         let ask = crate::asking::signing_waiting(root.path(), false).unwrap();
         assert!(
             ask.says
@@ -949,9 +974,9 @@ mod tests {
         let labels = |ask: &crate::asking::Shown| -> Vec<String> {
             ask.options.iter().map(|one| one.label.clone()).collect()
         };
-        assert_eq!(labels(&ask), ["Set up signing"]);
+        assert_eq!(labels(&ask), ["Set up signing", "Dismiss"]);
         let on = crate::asking::signing_waiting(root.path(), true).unwrap();
-        assert_eq!(labels(&on), ["Sign and retry all 3"]);
+        assert_eq!(labels(&on), ["Sign and retry all 3", "Dismiss"]);
 
         retry::note_refused(
             root.path(),
@@ -975,7 +1000,7 @@ mod tests {
             "{}",
             one_left.says
         );
-        assert_eq!(labels(&one_left), ["Sign and retry"]);
+        assert_eq!(labels(&one_left), ["Sign and retry", "Dismiss"]);
 
         retry::note_pushed(root.path(), "smart-ide", "purlis", "pane-foot", true);
         let all_sent = crate::asking::signing_waiting(root.path(), true).unwrap();

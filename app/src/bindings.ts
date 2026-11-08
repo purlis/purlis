@@ -1851,8 +1851,15 @@ export const commands = {
 	 *  press in the window alone (`WINDOW_ONLY`). One that fails again stays waiting, with why.
 	 */
 	signingSignAndRetry: (plane: PlaneId, lanes: SigningLane[]) => typedError<SigningRetried[], string>(__TAURI_INVOKE("signing_sign_and_retry", { plane, lanes })),
-	/**  **What was signed and sent, cleared** once the window has shown it. */
-	signingForgetSent: (plane: PlaneId) => typedError<null, string>(__TAURI_INVOKE("signing_forget_sent", { plane })),
+	/**
+	 *  **A waiting lane dismissed**, `lane`, sent or not; with none, every one: the one notice's
+	 *  Dismiss. Nothing is pushed or signed.
+	 */
+	signingForget: (plane: PlaneId, lane: {
+	ws: string,
+	repo: string,
+	piece: string,
+} | null) => typedError<null, string>(__TAURI_INVOKE("signing_forget", { plane, lane })),
 	/**
 	 *  **The verified email addresses of the account on `forge`** (#5631): what Check offers to sign
 	 *  chat commits as, where the email they use now is not one the forge verifies.
@@ -5792,8 +5799,8 @@ export type AnswerPath =
 { via: "old-harness-plugins" } | 
 /**
  *  Set up signing opens the setup dialog in the window, whose last step is Sign and retry
- *  all; Sign and retry all sends `signing_sign_and_retry` for every waiting lane; Dismiss,
- *  once all are sent, `signing_forget_sent` (#5633).
+ *  all; Sign and retry all sends `signing_sign_and_retry` for every waiting lane; Dismiss
+ *  sends `signing_forget` for them all (#5633).
  */
 { via: "signing" } | 
 /**
@@ -15939,6 +15946,8 @@ export type SigningWaiting = {
 	chat?: number | null,
 	/**  Signed and sent since: shown as done until the window has shown it. */
 	sent: boolean,
+	/**  Why the last Sign and retry did not send it, where it did not. */
+	why?: string | null,
 };
 
 /**

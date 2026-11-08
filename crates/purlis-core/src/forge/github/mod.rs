@@ -890,6 +890,15 @@ impl Requests for GitHub {
                 Ok(()) => Ready::Queued(format!(
                     "#{number} is in its base branch's merge queue, which merges it in its turn"
                 )),
+                // GitHub's words for a branch that takes only signed commits (#5630): named.
+                Err(why)
+                    if crate::signingsetup::retry::refused_unsigned(Kind::GitHub, why.said()) =>
+                {
+                    Ready::Refused(format!(
+                        "GitHub only accepts signed commits here: #{number}'s commits aren't all \
+                         signed, so its merge queue won't take it"
+                    ))
+                }
                 Err(why) => Ready::Refused(format!(
                     "#{number} lands through a merge queue, and GitHub would not take it: {}",
                     why.said()

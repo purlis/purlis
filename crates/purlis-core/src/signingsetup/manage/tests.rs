@@ -104,3 +104,41 @@ fn another_devices_key_is_removed_from_this_device_and_nothing_else_is() {
         );
     }
 }
+
+#[test]
+fn replace_key_where_no_account_takes_the_new_one_keeps_the_old_one() {
+    let (config, _keys, store, old) = a_device_with_a_key();
+    let new = Signer::generate().unwrap();
+    let text = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/forge_contract/signing_keys/github/replaced.json"),
+    )
+    .unwrap();
+    // The forge lists the old key, and refuses the new one.
+    let refusing = text
+        .replace(
+            r#""out": "{\"id\": 4343, \"key\": \"@NEW@\", \"title\": \"purlis · studio\"}", "err": "", "status": 201"#,
+            r#""out": "", "err": "Not Found (HTTP 404)", "status": 404"#,
+        )
+        .replace(r#""reply": {"code": 0, "out": "", "err": "Not Found"#, r#""reply": {"code": 1, "out": "", "err": "Not Found"#);
+    let quoted = |line: String| {
+        serde_json::to_string(&line)
+            .unwrap()
+            .trim_matches('"')
+            .to_owned()
+    };
+    let refusing = refusing
+        .replace("@OLD@", &quoted(old.public_line()))
+        .replace("@NEW@", &quoted(new.public_line()));
+    let github = Recorded::parse(&refusing).unwrap();
+    let why = replace_with(
+        config.path(),
+        &store,
+        &[on(Kind::GitHub, &github)],
+        "purlis · studio",
+        new,
+    )
+    .unwrap_err();
+    assert!(why.contains("keeps its old one"), "{why}");
+    assert_eq!(commitsign::kept(config.path(), &store).unwrap(), Some(old));
+}

@@ -521,8 +521,8 @@ pub enum AnswerPath {
     /// file and opens the first; `dismiss_old_harness_plugins` for Dismiss (#3467).
     OldHarnessPlugins,
     /// Set up signing opens the setup dialog in the window, whose last step is Sign and retry
-    /// all; Sign and retry all sends `signing_sign_and_retry` for every waiting lane; Dismiss,
-    /// once all are sent, `signing_forget_sent` (#5633).
+    /// all; Sign and retry all sends `signing_sign_and_retry` for every waiting lane; Dismiss
+    /// sends `signing_forget` for them all (#5633).
     Signing,
     /// `allow_chat_browser`, with the open web for `open-web`, and `keep_chat_browser_off` for
     /// Keep off, with the person's reason (#2013).
@@ -3071,11 +3071,11 @@ pub const SIGN_AND_RETRY_ALL: &str = "retry-all";
 
 /// **The lanes waiting on signing, as one Ask** (#5633): every branch folder a forge refused
 /// for unsigned commits, listed by name, about no chat. Before signing is set up it offers Set
-/// up signing; once on, Sign and retry all N. Once every one was signed and sent it says so, and
-/// Dismiss puts it away. A lane that failed again stays listed, with its reason. Nothing where
-/// nothing waits.
+/// up signing; once on, Sign and retry all N; and Dismiss, which drops them all. Once every one
+/// was signed and sent it says so, with Dismiss. A lane that failed again stays listed, with its
+/// reason, and a lane whose folder has gone is dropped. Nothing where nothing waits.
 pub fn signing_waiting(root: &std::path::Path, on: bool) -> Option<Shown> {
-    let waiting = purlis_core::signingsetup::retry::waiting(root);
+    let waiting = purlis_core::signingsetup::retry::waiting_here(root);
     if waiting.is_empty() {
         return None;
     }
@@ -3131,7 +3131,10 @@ pub fn signing_waiting(root: &std::path::Path, on: bool) -> Option<Shown> {
         } else {
             refuses(SET_UP_SIGNING, "Set up signing")
         };
-        (format!("{head}\n{}", lines.join("\n")), vec![option])
+        (
+            format!("{head}\n{}", lines.join("\n")),
+            vec![option, refuses(DISMISS, "Dismiss")],
+        )
     };
     Some(Shown {
         session: 0,

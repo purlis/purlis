@@ -156,3 +156,28 @@ describe("SigningRefusal", () => {
     expect(screen.queryByLabelText("GitHub only accepts signed commits here")).toBeNull();
   });
 });
+
+describe("SigningRefusal, dismissed and failed elsewhere", () => {
+  it("says why a Sign and retry from the notice failed, and Dismiss drops the lane", async () => {
+    render(
+      <SigningRefusal
+        plane={PLANE}
+        lane={{ ...LANE, why: "tab-names is on another branch now" }}
+        on
+        where="lane"
+      />,
+    );
+    expect(document.body.textContent).toContain(
+      "It wasn't sent: tab-names is on another branch now",
+    );
+    await userEvent.click(screen.getByRole("button", { name: /Dismiss/ }));
+    await waitFor(() =>
+      expect(commandsSent("signing_forget")).toEqual([
+        {
+          cmd: "signing_forget",
+          args: { plane: PLANE, lane: { ws: LANE.ws, repo: LANE.repo, piece: LANE.piece } },
+        },
+      ]),
+    );
+  });
+});

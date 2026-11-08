@@ -289,7 +289,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     // this device's key and pushed again, behind the person's press in the window alone.
     "signing_waiting",
     "signing_sign_and_retry",
-    "signing_forget_sent",
+    "signing_forget",
     // The email chat commits use, from the account's verified addresses (#5631).
     "signing_emails",
     "signing_use_email",

@@ -158,8 +158,8 @@ describe("the one notice for lanes waiting on signing", () => {
       ask([{ id: "dismiss", label: "Dismiss" }], "3 lanes signed and sent ✓"),
       "dismiss",
     );
-    expect(commandsSent("signing_forget_sent")).toEqual([
-      { cmd: "signing_forget_sent", args: { plane: PLANE } },
+    expect(commandsSent("signing_forget")).toEqual([
+      { cmd: "signing_forget", args: { plane: PLANE, lane: null } },
     ]);
   });
 });

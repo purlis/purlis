@@ -96,3 +96,12 @@ fn waiting_work_is_kept_once_per_branch_folder_and_goes_when_pushed() {
     note_pushed(root.path(), "alpha", "widget", "p2", false);
     assert!(waiting(root.path()).is_empty());
 }
+
+#[test]
+fn githubs_words_inside_another_line_such_as_a_files_path_are_not_its_refusal() {
+    let push_protection = "remote: error: GH013: Repository rule violations found for refs/heads/p1.\n\
+remote: - GITHUB PUSH PROTECTION\n\
+remote:     - Push cannot contain secrets\n\
+remote:       path: docs/commits must have verified signatures.txt:3";
+    assert!(!refused_unsigned(Kind::GitHub, push_protection));
+}
