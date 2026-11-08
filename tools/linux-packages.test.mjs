@@ -142,12 +142,8 @@ test("another runner image restores an older image's cache of the same list, and
   // The key is the prefix and the image, so a cache this list saved on any image shares it.
   assert.equal(key, `${prefix}20261005.1`);
   assert.ok(!keyOf(run("key", "bubblewrap")).startsWith(prefix));
-  // And the same cache under the name it was saved by before the image moved to the end.
-  const hash = prefix.match(/([0-9a-f]{16})-$/)[1];
-  assert.match(
-    outputOf(r, "previous"),
-    new RegExp(`^linux-packages-v1-ubuntu24-20261005\\.1-[\\w-]+-${hash}$`),
-  );
+  // And no v1 name: nothing saves under it, so it could only restore a cache long evicted (#3551).
+  assert.equal(outputOf(r, "previous"), undefined);
 });
 
 test("--tauri names the same list as writing Tauri's packages out", () => {
@@ -385,14 +381,14 @@ test("off Ubuntu a failed install blames the one mirror there is", () => {
 });
 
 // The action around the script: a pull request cannot run it, so its wiring is read here.
-test("the action restores this image's key, then the old name, then another image's; main refreshes, and saves only what the mirror gave", () => {
+test("the action restores this image's key, then another image's; main refreshes, and saves only what the mirror gave", () => {
   const action = readFileSync(
     join(dirname(script), "..", ".github", "actions", "linux-packages", "action.yml"),
     "utf8",
   );
   assert.match(
     action,
-    /key: \$\{\{ steps\.key\.outputs\.key \}\}\n\s+restore-keys: \|\n\s+\$\{\{ steps\.key\.outputs\.previous \}\}\n\s+\$\{\{ steps\.key\.outputs\.prefix \}\}\n/,
+    /key: \$\{\{ steps\.key\.outputs\.key \}\}\n\s+restore-keys: \|\n\s+\$\{\{ steps\.key\.outputs\.prefix \}\}\n(?!\s+\$)/,
   );
   assert.match(
     action,

@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { $$, browser, expect } from "@wdio/globals";
+import { SYSTEM_COLOURS, type ForcedValues } from "../../src/theme/forcedProbe.testkit.ts";
+import { forcedProbes, type NamedProbe } from "../forcedProbes.js";
 
 /**
  * **Forced colours, against the real app** (#2328, #2583, `src/theme/forced-colors.css`).
@@ -20,6 +22,9 @@ import { $$, browser, expect } from "@wdio/globals";
  * the WebView already matches `(forced-colors: active)`, nothing is placed and what it draws is
  * read as it is. Then controls carrying the window's own classes are drawn, and each one's
  * computed style must be the system colour the engine resolves, with the shape the sheet gives it.
+ * What is drawn, and what each must read, is each probe's: the window's in
+ * `src/theme/forced-colors.probe.ts`, and a family's in `src/ui/<family>/forced-colors.probe.ts`
+ * (#3481, `e2e/forcedProbes.ts`).
  */
 
 type Found = {
@@ -29,7 +34,8 @@ type Found = {
   rules: { selector: string; style: Record<string, string> }[];
 };
 
-/** Each control's computed style, by its `data-p`, before and after forced colours are active. */
+/** Each control's computed style, by its probe's name and its `data-p` (`badge/needs`), before and
+ *  after forced colours are active. */
 type Drawn = {
   already: boolean;
   placed: number;
@@ -110,194 +116,166 @@ describe("forced colours", () => {
     expect(lower(mark?.style["background-color"])).toBe("canvastext");
   });
 
-  it("draw focus, selection, what needs you, danger, state marks, switches and dialogs in the system's colours when active", async () => {
+  // Each probe in its own folder, the window's and each family's (#3481): a family adds its file
+  // and touches no line here.
+  let probes: NamedProbe[] = [];
+  before(async () => {
+    probes = await forcedProbes();
+  });
+
+  it("draw what each probe draws in the system's colours when active", async () => {
     await untilTheStripIsRead();
-    const drawn: Drawn = await browser.execute(() => {
-      // No named helpers inside `execute`: the spec's bundler wraps a function declaration in a
-      // `__name` the page does not have. Arrows assigned to a name are what the test above uses.
-      const already = matchMedia("(forced-colors: active)").matches;
-      const placed: { list: CSSStyleSheet | CSSGroupingRule; at: number; count: number }[] = [];
-      const place = (list: CSSStyleSheet | CSSGroupingRule) => {
-        // From the end, so a rule placed after one query moves no query not yet visited.
-        for (let at = list.cssRules.length - 1; at >= 0; at--) {
-          const rule = list.cssRules[at];
-          if (
-            rule instanceof CSSMediaRule &&
-            /forced-colors:\s*active/.test(rule.media.mediaText)
-          ) {
-            const inner = [...rule.cssRules].map((one) => one.cssText);
-            inner.forEach((text, n) => list.insertRule(text, at + 1 + n));
-            placed.push({ list, at: at + 1, count: inner.length });
-          } else if ("cssRules" in rule && !(rule instanceof CSSStyleRule)) {
-            place(rule as CSSGroupingRule);
-          }
-        }
-      };
-
-      const box = document.createElement("div");
-      box.setAttribute("data-forced-probe", "");
-      box.style.setProperty("position", "fixed");
-      box.style.setProperty("left", "-10000px");
-      box.style.setProperty("top", "0");
-      // Each control with the window's own classes and attributes, as its component draws it.
-      box.innerHTML = [
-        '<input data-p="focus" type="text" aria-label="probe">',
-        '<div role="tablist"><button data-p="tab" type="button" role="tab" aria-selected="true">tab</button></div>',
-        '<div><div data-p="option" role="option" aria-selected="true">option</div></div>',
-        '<span data-p="needs" data-scope="count" data-part="root" data-variant="hot">2</span>',
-        '<button data-p="needs-number-pill" type="button" data-scope="status-item" data-part="root" data-variant="waiting"><span data-p="needs-number" data-scope="status-item" data-part="count">2</span></button>',
-        '<span data-p="needs-activity" data-scope="activity" data-part="count" data-tone="needs-you">2</span>',
-        '<button data-p="danger" type="button" data-scope="button" data-part="root" data-variant="danger" data-size="md">end</button>',
-        '<p data-p="trouble" class="trouble">trouble</p>',
-        '<span data-p="mark" data-scope="chat-mark" data-part="badge"></span>',
-        '<label data-scope="switch" data-part="root" data-selected="true"><span data-p="switch-on" data-scope="switch" data-part="track"><span data-p="thumb-on" data-scope="switch" data-part="thumb"></span></span></label>',
-        '<label data-scope="switch" data-part="root"><span data-p="switch-off" data-scope="switch" data-part="track"><span data-p="thumb-off" data-scope="switch" data-part="thumb"></span></span></label>',
-        '<div data-p="dialog" role="dialog" aria-label="probe">dialog</div>',
-        '<div data-p="alertdialog" role="alertdialog" aria-label="probe">alert</div>',
-      ].join("");
-      // Each hand-drawn part takes the classes the built stylesheet keys it on (#4351).
-      for (const one of [box, ...box.querySelectorAll("[data-scope], [data-part]")]) {
-        const { scope, part } = (one as HTMLElement).dataset;
-        if (scope) one.classList.add(`ds-${scope}`);
-        if (part) one.classList.add(`dp-${part}`);
-      }
-      document.body.appendChild(box);
-
-      // What the engine resolves each system colour to, through an inline style no rule beats.
-      const system: Record<string, string> = {};
-      for (const name of [
-        "Canvas",
-        "CanvasText",
-        "Highlight",
-        "HighlightText",
-        "SelectedItem",
-        "SelectedItemText",
-        "Mark",
-        "MarkText",
-      ]) {
-        const probe = document.createElement("span");
-        probe.style.setProperty("color", name);
-        box.appendChild(probe);
-        system[name] = CSS.supports("color", name) ? getComputedStyle(probe).color : "";
-        probe.remove();
-      }
-
-      const read = () => {
-        const out: Record<string, Record<string, string>> = {};
-        for (const el of [...box.querySelectorAll<HTMLElement>("[data-p]")]) {
-          const style = getComputedStyle(el);
-          out[el.dataset.p ?? ""] = {
-            color: style.color,
-            background: style.backgroundColor,
-            border: style.borderTopColor,
-            outlineStyle: style.outlineStyle,
-            outlineWidth: style.outlineWidth,
-            outlineColor: style.outlineColor,
-            outlineOffset: style.outlineOffset,
-            decoration: style.textDecorationLine,
-            shadow: style.boxShadow,
-            focusVisible: String(el.matches(":focus-visible")),
-          };
-        }
-        return out;
-      };
-
-      const before = read();
-      const was = document.activeElement as HTMLElement | null;
-      try {
-        if (!already) {
-          for (const sheet of [...document.styleSheets]) {
-            try {
-              place(sheet);
-            } catch {
-              // A sheet of another origin cannot be read, and none of the window's own is one.
+    expect(probes.length).toBeGreaterThan(1);
+    const drawn: Drawn = await browser.execute(
+      (given: { name: string; markup: string; focus?: string }[], colours: readonly string[]) => {
+        // No named helpers inside `execute`: the spec's bundler wraps a function declaration in a
+        // `__name` the page does not have. Arrows assigned to a name are what the test above uses.
+        const already = matchMedia("(forced-colors: active)").matches;
+        const placed: { list: CSSStyleSheet | CSSGroupingRule; at: number; count: number }[] = [];
+        const place = (list: CSSStyleSheet | CSSGroupingRule) => {
+          // From the end, so a rule placed after one query moves no query not yet visited.
+          for (let at = list.cssRules.length - 1; at >= 0; at--) {
+            const rule = list.cssRules[at];
+            if (
+              rule instanceof CSSMediaRule &&
+              /forced-colors:\s*active/.test(rule.media.mediaText)
+            ) {
+              const inner = [...rule.cssRules].map((one) => one.cssText);
+              inner.forEach((text, n) => list.insertRule(text, at + 1 + n));
+              placed.push({ list, at: at + 1, count: inner.length });
+            } else if ("cssRules" in rule && !(rule instanceof CSSStyleRule)) {
+              place(rule as CSSGroupingRule);
             }
           }
-        }
-        box.querySelector<HTMLElement>('[data-p="focus"]')?.focus();
-        return {
-          already,
-          placed: placed.reduce((sum, one) => sum + one.count, 0),
-          system,
-          before,
-          after: read(),
         };
-      } finally {
-        // The window as it was, for the specs after this one: last placed first, so each
-        // place's index is the one it was placed at.
-        for (const one of placed.reverse())
-          for (let n = 0; n < one.count; n++) one.list.deleteRule(one.at);
-        box.remove();
-        was?.focus();
-      }
-    });
+
+        const box = document.createElement("div");
+        box.setAttribute("data-forced-probe", "");
+        box.style.setProperty("position", "fixed");
+        box.style.setProperty("left", "-10000px");
+        box.style.setProperty("top", "0");
+        // Each probe's controls, with the window's own classes and attributes, as its component
+        // draws them, in a holder of its own so two probes' `data-p` never meet.
+        for (const one of given) {
+          const holder = document.createElement("div");
+          holder.setAttribute("data-forced-family", one.name);
+          holder.innerHTML = one.markup;
+          box.appendChild(holder);
+        }
+        // Each hand-drawn part takes the classes the built stylesheet keys it on (#4351).
+        for (const one of [box, ...box.querySelectorAll("[data-scope], [data-part]")]) {
+          const { scope, part } = (one as HTMLElement).dataset;
+          if (scope) one.classList.add(`ds-${scope}`);
+          if (part) one.classList.add(`dp-${part}`);
+        }
+        document.body.appendChild(box);
+
+        // What the engine resolves each system colour to, through an inline style no rule beats.
+        const system: Record<string, string> = {};
+        for (const name of colours) {
+          const probe = document.createElement("span");
+          probe.style.setProperty("color", name);
+          box.appendChild(probe);
+          system[name] = CSS.supports("color", name) ? getComputedStyle(probe).color : "";
+          probe.remove();
+        }
+
+        // Each control's computed style, by its probe's name and its `data-p`.
+        const read = () => {
+          const out: Record<string, Record<string, string>> = {};
+          for (const el of [
+            ...box.querySelectorAll<HTMLElement>("[data-forced-family] [data-p]"),
+          ]) {
+            const family = el.closest<HTMLElement>("[data-forced-family]")?.dataset.forcedFamily;
+            const style = getComputedStyle(el);
+            out[`${family}/${el.dataset.p ?? ""}`] = {
+              color: style.color,
+              background: style.backgroundColor,
+              border: style.borderTopColor,
+              outlineStyle: style.outlineStyle,
+              outlineWidth: style.outlineWidth,
+              outlineColor: style.outlineColor,
+              outlineOffset: style.outlineOffset,
+              decoration: style.textDecorationLine,
+              shadow: style.boxShadow,
+              focusVisible: String(el.matches(":focus-visible")),
+            };
+          }
+          return out;
+        };
+
+        const before = read();
+        const was = document.activeElement as HTMLElement | null;
+        try {
+          if (!already) {
+            for (const sheet of [...document.styleSheets]) {
+              try {
+                place(sheet);
+              } catch {
+                // A sheet of another origin cannot be read, and none of the window's own is one.
+              }
+            }
+          }
+          for (const one of given)
+            if (one.focus)
+              box
+                .querySelector<HTMLElement>(
+                  `[data-forced-family="${one.name}"] [data-p="${one.focus}"]`,
+                )
+                ?.focus();
+          return {
+            already,
+            placed: placed.reduce((sum, one) => sum + one.count, 0),
+            system,
+            before,
+            after: read(),
+          };
+        } finally {
+          // The window as it was, for the specs after this one: last placed first, so each
+          // place's index is the one it was placed at.
+          for (const one of placed.reverse())
+            for (let n = 0; n < one.count; n++) one.list.deleteRule(one.at);
+          box.remove();
+          was?.focus();
+        }
+      },
+      probes.map(({ name, probe }) => ({ name, markup: probe.markup, focus: probe.focus })),
+      SYSTEM_COLOURS,
+    );
 
     expect(drawn.already || drawn.placed > 0).toBe(true);
     const unknown = Object.entries(drawn.system)
       .filter(([, value]) => value === "")
       .map(([name]) => name);
     expect(unknown).toEqual([]);
-    const sys = drawn.system;
-    const at = (name: string, ...keys: string[]) =>
-      Object.fromEntries(keys.map((key) => [key, drawn.after[name]?.[key]]));
-    // Without forced colours none of the shapes below is drawn, so it is the query that drew them.
-    if (!drawn.already) {
-      expect(drawn.before.dialog?.outlineStyle).not.toBe("solid");
-      expect(drawn.before.danger?.outlineStyle).not.toBe("dashed");
-      expect(drawn.before.focus?.outlineColor).not.toBe(sys.Highlight);
-    }
+    // A value as the probe wrote it, with a system colour as the engine resolves it.
+    const resolved = (values: ForcedValues): Record<string, string> =>
+      Object.fromEntries(
+        Object.entries(values).map(([key, value]) => [
+          key,
+          typeof value === "string" ? value : (drawn.system[value.system] ?? ""),
+        ]),
+      );
+    const at = (
+      from: Record<string, Record<string, string>>,
+      control: string,
+      keys: readonly string[],
+    ) => Object.fromEntries(keys.map((key) => [key, from[control]?.[key]]));
 
-    // Focus: a solid ring in Highlight wherever Tab lands.
-    expect(at("focus", "focusVisible", "outlineStyle", "outlineWidth", "outlineColor")).toEqual({
-      focusVisible: "true",
-      outlineStyle: "solid",
-      outlineWidth: "2px",
-      outlineColor: sys.Highlight,
-    });
-    // What is selected or current: the system's pair, and a tab is underlined.
-    expect(at("tab", "color", "background", "decoration")).toEqual({
-      color: sys.SelectedItemText,
-      background: sys.SelectedItem,
-      decoration: "underline",
-    });
-    expect(at("option", "color", "background")).toEqual({
-      color: sys.SelectedItemText,
-      background: sys.SelectedItem,
-    });
-    // What needs you: Mark and MarkText.
-    for (const needs of ["needs", "needs-number", "needs-activity"])
-      expect({ [needs]: at(needs, "color", "background") }).toEqual({
-        [needs]: { color: sys.MarkText, background: sys.Mark },
-      });
-    // What ends or destroys, and a ground that says something is wrong: a dashed outline.
-    for (const danger of ["danger", "trouble"])
-      expect({
-        [danger]: at(danger, "outlineStyle", "outlineWidth", "outlineColor", "outlineOffset"),
-      }).toEqual({
-        [danger]: {
-          outlineStyle: "dashed",
-          outlineWidth: "2px",
-          outlineColor: sys.CanvasText,
-          outlineOffset: "-2px",
-        },
-      });
-    // A chat's mark keeps the system's ground; its glyph tells its state.
-    expect(drawn.after.mark?.background).toBe(sys.Canvas);
-    // A switch: on is filled in Highlight with its thumb in HighlightText; off has a CanvasText
-    // thumb.
-    expect(at("switch-on", "background")).toEqual({ background: sys.Highlight });
-    expect(drawn.after["thumb-on"]?.background).toBe(sys.HighlightText);
-    expect(drawn.after["thumb-off"]?.background).toBe(sys.CanvasText);
-    // Its track is outlined in the text's colour, on or off, so the pill keeps its shape.
-    expect(at("switch-off", "outlineStyle", "outlineWidth", "outlineColor")).toEqual({
-      outlineStyle: "solid",
-      outlineWidth: "1px",
-      outlineColor: sys.CanvasText,
-    });
-    // What is opened over the window: outlined, in place of its shadow.
-    for (const dialog of ["dialog", "alertdialog"])
-      expect({ [dialog]: at(dialog, "outlineStyle", "outlineWidth", "outlineColor") }).toEqual({
-        [dialog]: { outlineStyle: "solid", outlineWidth: "1px", outlineColor: sys.CanvasText },
-      });
+    for (const { name, probe } of probes) {
+      // Without forced colours none of these is drawn, so it is the query that draws them.
+      if (!drawn.already)
+        for (const [p, values] of Object.entries(probe.unforced ?? {}))
+          for (const [key, value] of Object.entries(resolved(values)))
+            expect({
+              [`${name}/${p}`]: { [key]: drawn.before[`${name}/${p}`]?.[key] },
+            }).not.toEqual({ [`${name}/${p}`]: { [key]: value } });
+      for (const [p, values] of Object.entries(probe.forced)) {
+        const want = resolved(values);
+        expect({ [`${name}/${p}`]: at(drawn.after, `${name}/${p}`, Object.keys(want)) }).toEqual({
+          [`${name}/${p}`]: want,
+        });
+      }
+    }
   });
 });
