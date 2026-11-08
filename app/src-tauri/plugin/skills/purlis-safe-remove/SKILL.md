@@ -42,10 +42,10 @@ decision and its reason, a gotcha, a verified fact about a system. Write each wh
 `purlis-remember` skill says a fact goes, or into the plane's docs when it describes the plane
 itself. A todo that still matters moves to the
 workspace that will do it (`purlis ws todo -w <other> "<text>"`). A repo's unpushed work is
-the person's call: name it and ask.
+the person's call: name it and ask them with `ask_operator`.
 
-Show the person what you promoted, what you are leaving behind and why. Done when they have
-said go.
+Show the person what you promoted, what you are leaving behind and why, and ask them about
+each thing you sorted into **ask**, with `ask_operator`. Done when they have said go.
 
 ## 3. Remove
 

@@ -33,8 +33,8 @@ Use the review skill on the workspace {subject.name}.
 
 ## 1. Ask what it is for
 
-Ask the person what the chat should do, which subjects it belongs on, and where it should
-run. Draft the prompt as the person would want to read it before pressing Enter: **one short,
+Ask the person, with `ask_operator`, what the chat should do, which subjects it belongs on, and
+where it should run. Draft the prompt as the person would want to read it before pressing Enter: **one short,
 plain line** that says what to do and on which subject. When the work has steps, put them in a
 skill and name the skill in words in that line — never as a `/slash` command, which only one
 harness reads.

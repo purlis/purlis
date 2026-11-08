@@ -29,7 +29,7 @@ These only read. Done when you can say, for each finding, what you propose.
 ## 2. Compact, with the person's yes
 
 - **Exact duplicates and index drift** are safe and reversible: `--apply` moves a duplicate to
-  `archive/` and repairs the index. Apply once the person agrees.
+  `archive/` and repairs the index. Apply once the person agrees: ask them with `ask_operator`.
 - **Near duplicates** merge by hand: edit one of them to say both, then archive the rest.
 - **Stale** memories are still true or they are not. A memory that is half true is edited in
   place; one that is no longer so is archived, and only when the person agrees.

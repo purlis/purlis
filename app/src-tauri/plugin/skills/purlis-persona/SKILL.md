@@ -152,7 +152,8 @@ shows who exists.
   so) is never asked: send `dispatch_note` as you finish each piece, and report once, `done` or
   `failed`, when all of the work is done.
 
-- **Partial or ambiguous match:** name the persona you would use and ask before dispatching.
+- **Partial or ambiguous match:** name the persona you would use and ask with `ask_operator` before
+  dispatching.
 - **No persona fits:** say so. Offer to create one only when the domain is large enough to
   own. A charter alone, with no credential or tool behind it, loses to a general-purpose
   helper.

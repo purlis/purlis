@@ -49,7 +49,7 @@ purlis news --for <version>  # one version: the same notes as its release page a
 Relay the section for the version they are on, or the versions since the one they last knew,
 in your own summary. An entry under **Fixed** that reads as a security fix is worth saying
 first. When a note describes something the plane has to take up by hand, offer to walk them
-through it, one at a time, and ask before each change.
+through it, one at a time, and ask with `ask_operator` before each change.
 
 `purlis news --since`, `--until` and `--pending` are retired: the app writes no update
 baseline and ships no adoption probes. They are refused by name.

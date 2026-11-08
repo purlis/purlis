@@ -29,7 +29,7 @@ waiting in the Skill studio.
 ## Draft a new skill
 
 The prompt names the folder new skills go in and, usually, what the skill should do. If it says
-nothing about that, ask the person before writing anything.
+nothing about that, ask the person with `ask_operator` before writing anything.
 
 1. Choose a name: lower-case letters, digits and hyphens, at most 64 characters, with no hyphen
    at either end and never two in a row, and not starting with `purlis-` (purlis keeps those
