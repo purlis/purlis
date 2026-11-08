@@ -1159,7 +1159,13 @@ fn shells_started(plane: &Plane) -> Vec<u32> {
     entries
         .flatten()
         .filter(|entry| entry.file_name().to_string_lossy().starts_with("shell."))
-        .filter_map(|entry| std::fs::read_to_string(entry.path()).ok()?.trim().parse().ok())
+        .filter_map(|entry| {
+            std::fs::read_to_string(entry.path())
+                .ok()?
+                .trim()
+                .parse()
+                .ok()
+        })
         .collect()
 }
 
@@ -1170,7 +1176,11 @@ fn waits_for_shells(plane: &Plane, count: usize) -> Vec<u32> {
     loop {
         let shells = shells_started(plane);
         if shells.len() >= count || std::time::Instant::now() >= until {
-            assert_eq!(shells.len(), count, "precondition: the harness started its shell");
+            assert_eq!(
+                shells.len(),
+                count,
+                "precondition: the harness started its shell"
+            );
             return shells;
         }
         std::thread::sleep(std::time::Duration::from_millis(50));
@@ -1185,11 +1195,8 @@ fn runs(pid: u32) -> bool {
         let state = stat.rsplit_once(')').map(|(_, rest)| rest.trim_start());
         return !state.is_some_and(|state| state.starts_with(['Z', 'X']));
     }
-    std::process::Command::new("kill")
-        .args(["-0", &pid.to_string()])
-        .stderr(std::process::Stdio::null())
-        .status()
-        .is_ok_and(|status| status.success())
+    // Reparented to the system's first process once its harness goes, and reaped there.
+    purlis_same_user::Parents::started(pid).is_some()
 }
 
 /// Whether `pid` has gone within [`GONE_WITHIN`].
@@ -1215,9 +1222,7 @@ impl Drop for LeavesNoShell<'_> {
     fn drop(&mut self) {
         for pid in shells_started(self.0) {
             if runs(pid) {
-                let _ = std::process::Command::new("kill")
-                    .args(["-KILL", &pid.to_string()])
-                    .status();
+                drop(stand_in::Ends::group(pid));
             }
         }
     }
