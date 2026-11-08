@@ -11,6 +11,7 @@ import {
 } from "../ReportConsent";
 import { answerReports, useReportConsent } from "../reportAnswers";
 import { REPORTS_ALSO } from "./catalogue";
+import { SentReports } from "./SentReports";
 import type { LiveSetting, SettingsGroup } from "./groups";
 
 /**
@@ -28,7 +29,7 @@ export function reportsGroup(): SettingsGroup {
     label: "Reports",
     help: "Crash reports, and report drafts agents write, which help fix purlis. Nothing is sent before you choose.",
     also: REPORTS_ALSO,
-    settings: [crashReports, agentDrafts, whatIsSent],
+    settings: [crashReports, agentDrafts, whatIsSent, sentList],
   };
 }
 
@@ -79,4 +80,12 @@ const whatIsSent: LiveSetting = {
   help: NEVER_SENT,
   writes: "nothing",
   useControl: () => ({ control: (ids) => <WhatReportsSend ids={ids} /> }),
+};
+
+const sentList: LiveSetting = {
+  id: "you.reports.sent",
+  label: "Sent from this machine",
+  help: "Every report sent in the last 90 days. Open one to see exactly what left.",
+  writes: "nothing",
+  useControl: () => ({ control: (ids) => <SentReports ids={ids} /> }),
 };

@@ -483,6 +483,11 @@ export const commands = {
 	/**  Keeps the person's answers about reports, replacing what was kept. The window's alone. */
 	keepReportConsent: (consent: ReportConsent) => typedError<null, string>(__TAURI_INVOKE("keep_report_consent", { consent })),
 	/**
+	 *  Every report this machine sent in the last 90 days, newest first, each with its exact bytes:
+	 *  the sent list Settings › You › Reports shows. Empty on a machine with no config home.
+	 */
+	reportsSent: () => typedError<SentReport[], string>(__TAURI_INVOKE("reports_sent")),
+	/**
 	 *  The project's sandbox, for the offer notice and Settings.
 	 * 
 	 *  Off the window's thread (#1949): it reads the project's manifests and the administrator's
@@ -15026,6 +15031,22 @@ export type SeenBlock = {
 	what: GrantWhat,
 	/**  The host or folder shown for this task. */
 	target: string,
+};
+
+/**
+ *  One report this machine sent (#5689): its title, where it went, when, and exactly the bytes
+ *  that left.
+ */
+export type SentReport = {
+	/**  When it left, UTC, RFC 3339 to the second. */
+	at: string,
+	title: string,
+	/**  Where it went, in the window's words: "purlis's report service". */
+	to: string,
+	/**  Where the destination kept it. */
+	address: string,
+	/**  Exactly what was sent. */
+	bytes: string,
 };
 
 /**  One session record, as the palette and the Sessions panel name it. */

@@ -62,6 +62,55 @@ pub async fn keep_report_consent(consent: ReportConsent) -> Result<(), String> {
         .map_err(|err| format!("purlis could not keep your answers about reports: {err}"))
 }
 
+/// One report this machine sent (#5689): its title, where it went, when, and exactly the bytes
+/// that left.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct SentReport {
+    /// When it left, UTC, RFC 3339 to the second.
+    pub at: String,
+    pub title: String,
+    /// Where it went, in the window's words: "purlis's report service".
+    pub to: String,
+    /// Where the destination kept it.
+    pub address: String,
+    /// Exactly what was sent.
+    pub bytes: String,
+}
+
+impl From<purlis_core::report::Sent> for SentReport {
+    fn from(sent: purlis_core::report::Sent) -> Self {
+        Self {
+            at: sent.at,
+            title: sent.title,
+            to: match sent.to {
+                purlis_core::report::SentTo::Intake => "purlis's report service".to_owned(),
+            },
+            address: sent.address,
+            bytes: sent.bytes,
+        }
+    }
+}
+
+/// Every report this machine sent in the last 90 days, newest first, each with its exact bytes:
+/// the sent list Settings › You › Reports shows. Empty on a machine with no config home.
+#[tauri::command]
+#[specta::specta]
+pub async fn reports_sent() -> Result<Vec<SentReport>, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let Some(root) = purlis_core::machine::config_root() else {
+            return Vec::new();
+        };
+        let mut sent: Vec<SentReport> = purlis_core::report::SentList::read(&root)
+            .into_iter()
+            .map(SentReport::from)
+            .collect();
+        sent.reverse();
+        sent
+    })
+    .await
+    .map_err(|err| format!("Reading the reports this machine sent did not finish: {err}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

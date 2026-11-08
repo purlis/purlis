@@ -79,6 +79,7 @@ macro_rules! app_commands {
                 onboarding::keep_onboarding_progress,
                 reportconsent::report_consent,
                 reportconsent::keep_report_consent,
+                reportconsent::reports_sent,
                 sandboxing::sandbox_state,
                 sandboxing::answer_sandbox_offer,
                 sandboxing::acknowledge_project_hosts,

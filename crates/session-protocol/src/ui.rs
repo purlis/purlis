@@ -625,6 +625,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     // lets agents draft them is the person's to say, never a chat's or a link's.
     "report_consent",
     "keep_report_consent",
+    // The reports this machine sent, with their bytes (#5689): the person's own record.
+    "reports_sent",
     // Create a project on GitHub or GitLab (#1819): whom the person's account can make a repo
     // for, the folder a name goes into, and the person's Cancel of the creation (the creation
     // itself takes a channel). It makes a repo on their forge account and a folder on this

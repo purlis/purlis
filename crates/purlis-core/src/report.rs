@@ -54,6 +54,7 @@
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use regex::Regex;
 use sha2::{Digest, Sha256};
@@ -62,7 +63,11 @@ use crate::forge::backend::{Caller, NewWorkItem, WorkItems};
 use crate::forge::{self, Forge, ForgeError, Kind as ForgeKind};
 
 mod consent;
+mod crash;
 pub use consent::{Consent, Stream};
+pub mod intake;
+mod sent;
+pub use sent::{Sent, SentList, SentTo};
 
 /// The repository reports are filed on (RN-9: the product's repository since 2026-10-05).
 pub const UPSTREAM: &str = "purlis/purlis";
@@ -370,6 +375,19 @@ fn names_in(plane: &Path) -> Vec<(String, &'static str)> {
             && !OWN_WORDS.contains(&name.as_str())
             && !PLACEHOLDER_WORDS.contains(&name.as_str())
     });
+    out
+}
+
+/// The names a plane's folder and its contents carry: the plane's own folder name, as the
+/// project's, and [`names_in`].
+fn names_of_a_plane(plane: &Path) -> Vec<(String, &'static str)> {
+    let mut out = names_in(plane);
+    if let Some(name) = plane.file_name().map(|n| n.to_string_lossy().into_owned())
+        && name.chars().count() >= 3
+        && !OWN_WORDS.contains(&name.as_str())
+    {
+        out.push((name, "[project]"));
+    }
     out
 }
 
@@ -817,15 +835,33 @@ pub enum Refusal {
     /// The person has not said yes to the stream this report belongs to: nothing was drafted
     /// and nothing sent (#5688).
     NoConsent(Stream),
+    /// A Crash report this build has no Report intake to send to (it was built without its
+    /// address): nothing was sent.
+    NoIntake,
+    /// The Report intake did not take a Crash report, for the reason given: nothing was listed.
+    NotSent(String),
 }
 
 /// The one module every report passes through: evidence from a source in, an outcome out.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Reports {
     known: Known,
     /// The answers it is held to, or `None` for this machine's, read only when a report belongs
     /// to a stream: a person's own report never reaches for the machine's store.
     consent: Option<Consent>,
+    /// Where a Crash report goes, and the config root whose sent list records it (#5689). None
+    /// in a build with no Report intake.
+    intake: Option<(Arc<dyn intake::Intake>, PathBuf)>,
+}
+
+impl std::fmt::Debug for Reports {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Reports")
+            .field("known", &self.known)
+            .field("consent", &self.consent)
+            .field("intake", &self.intake.as_ref().map(|(_, root)| root))
+            .finish()
+    }
 }
 
 impl Default for Reports {
@@ -842,6 +878,7 @@ impl Reports {
         Reports {
             known,
             consent: Some(Consent::default()),
+            intake: None,
         }
     }
 
@@ -851,6 +888,51 @@ impl Reports {
         Reports {
             known: Known::here(plane),
             consent: None,
+            intake: None,
+        }
+        .sending_to_the_built_in_intake()
+    }
+
+    /// Reports for a crash in the app, which knows no one plane: what this process can identify,
+    /// and the names in every plane this machine opened, held to this machine's answers. The
+    /// planes are read only with a yes to Crash reports: without one nothing is sent, and a
+    /// panicking app has no time to spend on folders.
+    pub fn for_a_crash() -> Reports {
+        let consent = Consent::here();
+        let mut known = Known::here(None);
+        if consent.allows(Stream::CrashReports)
+            && let Some(root) = crate::machine::config_root()
+        {
+            for recent in crate::machine::read(&root).store.recents {
+                known.names.extend(names_of_a_plane(&recent.plane));
+            }
+        }
+        Reports {
+            known,
+            consent: Some(consent),
+            intake: None,
+        }
+        .sending_to_the_built_in_intake()
+    }
+
+    /// The same Reports, sending Crash reports to the Report intake built into this binary,
+    /// listed under this machine's config root, when it has both.
+    fn sending_to_the_built_in_intake(self) -> Reports {
+        match (intake::built_in(), crate::machine::config_root()) {
+            (Some(dsn), Some(root)) => self.sending_to(
+                Arc::new(intake::Sentry::new(dsn, intake::Https::default())),
+                &root,
+            ),
+            _ => self,
+        }
+    }
+
+    /// The same Reports, sending Crash reports to `intake` and listing each in the sent list
+    /// under `config_root`.
+    pub fn sending_to(self, intake: Arc<dyn intake::Intake>, config_root: &Path) -> Reports {
+        Reports {
+            intake: Some((intake, config_root.to_path_buf())),
+            ..self
         }
     }
 
@@ -877,6 +959,9 @@ impl Reports {
     pub fn take(&self, evidence: Evidence, source: &Caller) -> Outcome {
         if let Err(refused) = self.consented(&evidence, source) {
             return Outcome::Refused(refused);
+        }
+        if stream_of(&evidence, source) == Some(Stream::CrashReports) {
+            return self.send_crash(&evidence);
         }
         match self.draft(evidence) {
             Ok(draft) => {
@@ -919,6 +1004,38 @@ impl Reports {
                 let (link, whole) = draft.fallback_url();
                 Outcome::Refused(Refusal::NotFiled { why, link, whole })
             }
+        }
+    }
+
+    /// A Crash report of `evidence`, its fixed fields scrubbed, sent to the Report intake and
+    /// listed with its exact bytes. Nobody is there to be shown it: the yes to its stream is
+    /// the person's word that it may go.
+    fn send_crash(&self, evidence: &Evidence) -> Outcome {
+        let Evidence::Panic { record, .. } = evidence else {
+            return Outcome::Refused(Refusal::Unusable(
+                "only a panic is sent as a Crash report yet".to_string(),
+            ));
+        };
+        let Some((intake, root)) = &self.intake else {
+            return Outcome::Refused(Refusal::NoIntake);
+        };
+        let crash = crash::CrashReport::of_panic(record, &self.known, intake.dsn());
+        match intake.send(crash.bytes.as_bytes(), &crash.event_id) {
+            Ok(address) => {
+                // The report has left: a list that cannot be written does not unsend it.
+                let _ = SentList::add(
+                    root,
+                    Sent {
+                        at: chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+                        title: crash.title,
+                        to: SentTo::Intake,
+                        address: address.clone(),
+                        bytes: crash.bytes,
+                    },
+                );
+                Outcome::Sent { address }
+            }
+            Err(why) => Outcome::Refused(Refusal::NotSent(why)),
         }
     }
 

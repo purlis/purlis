@@ -10,7 +10,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, waitFor, within } from "storybook/test";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import type { ReportConsent } from "../bindings";
+import type { ReportConsent, SentReport } from "../bindings";
 import { forgetReportConsent, UNANSWERED } from "../reportAnswers";
 import { expectFocusInSight, untilFocused } from "../stories.testkit";
 import { SettingGroup, SettingRow } from "./components";
@@ -18,6 +18,20 @@ import type { LiveSetting } from "./groups";
 import { reportsGroup } from "./reports";
 
 let kept: ReportConsent = UNANSWERED;
+
+/** A Crash report as the core lists it: its envelope, byte for byte. */
+const SENT: SentReport = {
+  at: "2026-11-08T03:19:00Z",
+  title: "purlis panicked at crates/purlis-core/src/plane.rs:12:5",
+  to: "purlis's report service",
+  address: "purlis's report service, event 9f1c2a7be0d34b6c8e5f0a1b2c3d4e5f",
+  bytes:
+    '{"event_id":"9f1c2a7be0d34b6c8e5f0a1b2c3d4e5f","sent_at":"2026-11-08T03:19:00Z"}\n' +
+    '{"type":"event","length":312,"content_type":"application/json"}\n' +
+    '{"event_id":"9f1c2a7be0d34b6c8e5f0a1b2c3d4e5f","level":"fatal","platform":"native",' +
+    '"release":"purlis@0.42.0","environment":"stable","culprit":"crates/purlis-core/src/plane.rs:12:5",' +
+    '"exception":{"values":[{"type":"panic","value":"could not read [path] for [workspace]"}]}}\n',
+};
 
 /** One row, as the Settings tab draws a live setting. */
 function Row({ setting }: { setting: LiveSetting }) {
@@ -51,9 +65,11 @@ const meta = {
   // What this machine keeps: a story's `parameters.consent`, nothing answered by default.
   beforeEach: ({ parameters }) => {
     kept = (parameters.consent as ReportConsent | undefined) ?? UNANSWERED;
+    const sent = (parameters.sent as SentReport[] | undefined) ?? [];
     forgetReportConsent();
     mockIPC((cmd, args) => {
       if (cmd === "report_consent") return kept;
+      if (cmd === "reports_sent") return sent;
       if (cmd === "keep_report_consent") kept = (args as { consent: ReportConsent }).consent;
       return null;
     });
@@ -125,5 +141,34 @@ export const AllOff: Story = {
     expectFocusInSight();
     await userEvent.keyboard("{ArrowLeft}");
     await waitFor(() => expect(kept.agent_drafts).toBe(true));
+  },
+};
+
+/** **Sent**: the sent list holds a Crash report; Enter opens exactly its bytes, Esc closes. */
+export const Sent: Story = {
+  parameters: {
+    consent: { crash_reports: true, agent_drafts: false, asked: true },
+    sent: [SENT],
+  },
+  play: async ({ canvas, userEvent }) => {
+    const list = await canvas.findByRole("grid", { name: "Reports sent from this machine" });
+    const row = await within(list).findByRole("row", { name: new RegExp(SENT.title) });
+    row.focus();
+    await untilFocused(() => row, "the sent report takes the keyboard");
+    expectFocusInSight();
+    await userEvent.keyboard("{Enter}");
+    const dialog = await within(document.body).findByRole("dialog", { name: SENT.title });
+    await expect(within(dialog).getByText(/"level":"fatal"/)).toBeVisible();
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(within(document.body).queryByRole("dialog")).toBeNull());
+  },
+};
+
+/** **Nothing sent**: the list says so, in a line that is not an instruction. */
+export const NothingSent: Story = {
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByText("No report has been sent from this machine."),
+    ).toBeVisible();
   },
 };

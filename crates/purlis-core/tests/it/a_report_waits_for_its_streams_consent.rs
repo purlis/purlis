@@ -81,8 +81,10 @@ fn a_panic_nobody_asked_for_waits_for_a_yes_to_crash_reports() {
         );
         assert_eq!(refused_for(&said), Some(Stream::CrashReports), "{said:?}");
     }
+    // With the yes it is a Crash report, sent rather than drafted: here, with no intake to send
+    // to, it says so (`a_panic_becomes_a_crash_report_in_the_report_intake`, #5689).
     let said = outcome(answered(Some(true), None), a_panic(), &Caller::trigger());
-    assert!(matches!(said, Outcome::Drafted { .. }), "{said:?}");
+    assert_eq!(said, Outcome::Refused(Refusal::NoIntake));
 }
 
 #[test]
