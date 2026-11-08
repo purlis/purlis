@@ -102,6 +102,7 @@ fn host_armed(harness: Harness, here: &Here) -> (Vec<String>, Vec<(String, Strin
         }),
         graded: false,
         laid_out: linked.as_deref(),
+        own_listing: 0,
         judging: false,
         writes_its_piece: false,
         runs_a_shell: false,
@@ -277,6 +278,7 @@ fn a_harness_skill_the_persona_names_and_this_machine_lacks_is_said_on_the_tab()
             broken: Vec::new(),
             by_a_repo: Vec::new(),
             beside_a_built_in: Vec::new(),
+            differing: Vec::new(),
         })
     );
 

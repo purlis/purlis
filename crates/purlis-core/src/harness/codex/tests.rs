@@ -51,6 +51,7 @@ fn kit() -> Kit<'static> {
     Kit {
         skills: None,
         laid_out: None,
+        own_listing: 0,
         binary: std::path::Path::new("/bin/charter"),
         plugin: Some(std::path::Path::new("/app/plugin")),
         persona: None,

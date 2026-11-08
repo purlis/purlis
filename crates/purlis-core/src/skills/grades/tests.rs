@@ -1992,3 +1992,30 @@ fn a_skill_that_asks_for_a_shell_has_its_evals_planned_with_one_and_consented_to
         "an opt-in to grading after each edit sees it again"
     );
 }
+
+#[test]
+fn a_grade_recorded_under_a_built_in_skills_old_name_is_read_under_its_new_one_5724() {
+    let plane = plane();
+    let root = plane.path();
+    record(
+        root,
+        &Level::project(),
+        &graded(root, "kept", "2026-10-25T10:00:00+00:00", Spent::default()),
+        "laptop",
+    );
+    let file = path_for(root, chrono::Utc::now(), "laptop");
+    let text = std::fs::read_to_string(&file).unwrap();
+    let mut row: serde_json::Value = serde_json::from_str(text.trim()).unwrap();
+    row["skill"] = "purlis-compact".into();
+    row["level"] = serde_json::Value::Null;
+    std::fs::write(&file, format!("{row}\n")).unwrap();
+
+    let ids = |name: &str| -> Vec<String> {
+        grades_of(root, name, None)
+            .into_iter()
+            .map(|one| one.grade)
+            .collect()
+    };
+    assert_eq!(ids("purlis-tidy-memory"), vec!["kept".to_owned()]);
+    assert!(ids("purlis-repo-work").is_empty());
+}

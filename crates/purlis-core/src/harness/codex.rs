@@ -249,9 +249,12 @@ impl HarnessAdapter for Codex {
     /// know the window, cutting each description at 1,024 characters, and past that drops
     /// trailing skills without saying so (0.163.0, `ext/skills/src/render.rs`). A Codex chat is
     /// briefed on its skills, each line with its `SKILL.md`'s path, which counts; a manual-only
-    /// skill's description stays out of the briefing ([`Self::skill_frontmatter`]).
+    /// skill's description stays out of the briefing ([`Self::skill_frontmatter`]). The budget is
+    /// that 8,000 exactly: the built-ins take at most 5,000 of it (spec #5714's Q37), leaving
+    /// room for the plane's own skills, and the default never warns ([`Self::skill_limit_past`]).
     fn skill_budget(&self) -> crate::skills::Budget {
         crate::skills::Budget {
+            chars: LISTING_LIMIT,
             per_description: Some(1_024),
             lists_paths: true,
             ..super::SKILL_BUDGET

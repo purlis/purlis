@@ -1,0 +1,6 @@
+{"type":"thread.started","thread_id":"0199f2a4-6c1e-7d30-b8a2-3e5c9f41d07a"}
+{"type":"turn.started"}
+{"type":"item.started","item":{"id":"item_1","type":"mcp_tool_call","server":"purlis","tool":"skill_load","arguments":{"name":"purlis-secrets"},"result":null,"error":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_1","type":"mcp_tool_call","server":"purlis","tool":"skill_load","arguments":{"name":"purlis-secrets"},"result":{"content":[{"type":"text","text":"# purlis-secrets\n..."}],"structured_content":null},"error":null,"status":"completed"}}
+{"type":"item.completed","item":{"id":"item_2","type":"agent_message","text":"Loaded purlis-secrets."}}
+{"type":"turn.completed","usage":{"input_tokens":14210,"cached_input_tokens":11904,"output_tokens":388,"reasoning_output_tokens":64,"cache_write_input_tokens":0}}
