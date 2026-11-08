@@ -92,9 +92,15 @@ export const HELD_BY_PROJECT = {
   says: "Your project turns this off: drafts written in it always ask first. Kept in the project's settings, which your team sees.",
 };
 
+/** What holds Always send off where the core could not read the project's rule (#5696). */
+export const HELD_UNREAD = {
+  label: "Project",
+  says: "Your project's rule on this could not be read, so drafts written in it ask first. Open Settings again to read it again.",
+};
+
 /**
  * Always send, for the project `plane`: drawn only while Agent drafts is allowed, and held off,
- * read-only, while that project's rule turns it off for its members (#5696).
+ * read-only, while that project's rule turns it off for its members, or could not be read (#5696).
  */
 function alwaysSend(plane: string | undefined): LiveSetting {
   return {
@@ -107,10 +113,11 @@ function alwaysSend(plane: string | undefined): LiveSetting {
     },
     useControl: function useAlwaysSend() {
       const { consent } = useReportConsent();
-      const held = !useMembersMayAlwaysSend(plane);
+      const rule = useMembersMayAlwaysSend(plane);
+      const held = rule !== "allows";
       return {
         grouped: true,
-        ...(held ? { heldBy: HELD_BY_PROJECT } : {}),
+        ...(held ? { heldBy: rule === "forbids" ? HELD_BY_PROJECT : HELD_UNREAD } : {}),
         control: (ids) => (
           <AlwaysSendChoice
             ids={ids}

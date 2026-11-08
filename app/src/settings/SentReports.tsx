@@ -80,15 +80,20 @@ function useSentReports(): Read {
   const [read, setRead] = useState<Read>({ status: "ok", reports: [] });
   useEffect(() => {
     let live = true;
-    void commands.reportsSent().then((said) => {
-      if (!live) return;
-      setRead(
-        said.status === "ok"
-          ? // Only the core's own shape is a list: anything else reads as nothing sent.
-            { status: "ok", reports: Array.isArray(said.data) ? said.data : [] }
-          : { status: "error", error: said.error, reports: [] },
-      );
-    });
+    void commands.reportsSent().then(
+      (said) => {
+        if (!live) return;
+        setRead(
+          said.status === "ok"
+            ? // Only the core's own shape is a list: anything else reads as nothing sent.
+              { status: "ok", reports: Array.isArray(said.data) ? said.data : [] }
+            : { status: "error", error: said.error, reports: [] },
+        );
+      },
+      (err: unknown) => {
+        if (live) setRead({ status: "error", error: String(err), reports: [] });
+      },
+    );
     return () => {
       live = false;
     };

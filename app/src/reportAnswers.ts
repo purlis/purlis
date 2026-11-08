@@ -98,7 +98,10 @@ export function useReportConsent(): Held {
 export async function answerReports(change: Partial<Consent>): Promise<void> {
   const consent = { ...held.consent, ...change };
   become({ ...held, consent, trouble: undefined });
-  const kept = await commands.keepReportConsent(consent);
+  // Every control leaves this call (`void`), so a call that fails is said as trouble, not thrown.
+  const kept = await commands
+    .keepReportConsent(consent)
+    .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
   if (kept.status === "error") become({ ...held, trouble: kept.error });
 }
 

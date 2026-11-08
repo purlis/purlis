@@ -19,7 +19,7 @@ import { reportsGroup } from "./reports";
  */
 
 const PLANE = "p1";
-let mayAlwaysSend = true;
+let mayAlwaysSend: boolean | "rejects" = true;
 let askedFor: unknown;
 
 beforeEach(() => {
@@ -38,6 +38,7 @@ beforeEach(() => {
     if (cmd === "reports_sent") return [];
     if (cmd === "members_may_always_send") {
       askedFor = (args as { plane: string }).plane;
+      if (mayAlwaysSend === "rejects") throw new Error("profile 'work' is new");
       return mayAlwaysSend;
     }
     return null;
@@ -80,6 +81,22 @@ it("a project that turns it off holds Always send off, read-only, badged by the 
     .map((id) => document.getElementById(id)?.textContent ?? "")
     .join(" ");
   expect(described).toContain("Your project turns this off");
+});
+
+it("a project whose rule cannot be read holds Always send off, saying it was not read", async () => {
+  mayAlwaysSend = "rejects";
+  render(<Reports plane={PLANE} />);
+
+  await waitFor(() =>
+    expect(within(alwaysSend()).getByRole("radio", { name: "Ask me first" })).toBeChecked(),
+  );
+  for (const radio of within(alwaysSend()).getAllByRole("radio")) expect(radio).toBeDisabled();
+  const described = (alwaysSend().getAttribute("aria-describedby") ?? "")
+    .split(" ")
+    .map((id) => document.getElementById(id)?.textContent ?? "")
+    .join(" ");
+  expect(described).toContain("could not be read");
+  expect(described).not.toContain("Your project turns this off");
 });
 
 it("a project that lets its members leaves Always send as the person chose it", async () => {

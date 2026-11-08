@@ -72,3 +72,14 @@ it("a report made offline is listed as waiting to send, and opens the bytes that
   const dialog = await screen.findByRole("dialog", { name: SENT.title });
   expect(within(dialog).getByText(/will be sent to purlis's report service/)).toBeTruthy();
 });
+
+it("a list the core fails to read says it could not be read", async () => {
+  mockIPC((cmd) => {
+    if (cmd === "reports_sent") throw new Error("the sent list is not readable");
+    return null;
+  });
+  render(<SentReports ids={ids} />);
+
+  expect(await screen.findByText("The reports this machine sent could not be read.")).toBeTruthy();
+  expect(screen.getByText(/the sent list is not readable/)).toBeTruthy();
+});

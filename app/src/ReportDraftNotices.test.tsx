@@ -10,7 +10,9 @@ import type { DraftFiled, ReportDraft } from "./bindings";
 import { Inbox } from "./Inbox";
 import {
   ALWAYS_SEND_FORBIDDEN,
+  ALWAYS_SEND_RULE_UNREAD,
   ReportDraftNotices,
+  undoAlwaysSend,
   WRITTEN_BY_AN_AGENT,
 } from "./ReportDraftNotices";
 import { forgetReportConsent, UNANSWERED, type Consent } from "./reportAnswers";
@@ -38,12 +40,22 @@ const DRAFT: ReportDraft = {
 
 let sent: { cmd: string; args: Record<string, unknown> }[] = [];
 
-function core(filed: DraftFiled[], { membersMayAlwaysSend = true } = {}) {
+/**
+ * The project's rule as the core answers it: a yes or no, a refusal the core words
+ * (`"refuses"`), or a failure of the call itself (`"rejects"`).
+ */
+type Rule = boolean | "refuses" | "rejects";
+
+function core(filed: DraftFiled[], { membersMayAlwaysSend = true as Rule } = {}) {
   sent = [];
   mockIPC((cmd, args) => {
     sent.push({ cmd, args: args as Record<string, unknown> });
     if (cmd === "report_drafts") return [DRAFT];
-    if (cmd === "members_may_always_send") return membersMayAlwaysSend;
+    if (cmd === "members_may_always_send") {
+      if (membersMayAlwaysSend === "refuses") throw "profile 'work' is new";
+      if (membersMayAlwaysSend === "rejects") throw new Error("profile 'work' is new");
+      return membersMayAlwaysSend;
+    }
     if (cmd === "edit_report_draft") {
       const { title, body } = args as { title: string; body: string };
       return { ...DRAFT, title, body, edited: true, digest: "ffffffffffff" };
@@ -73,6 +85,12 @@ function drawn() {
 
 const card = () => screen.queryByText(`Report draft: ${DRAFT.title}`);
 
+/**
+ * Waits until the draft's card can be used: its Read reachable by role, so not only its text in
+ * the page but the Notices section around it shown.
+ */
+const cardDrawn = () => waitFor(() => screen.getByRole("button", { name: "Read" }));
+
 afterEach(() => {
   cleanup();
   clearMocks();
@@ -83,7 +101,7 @@ describe("a report draft in the Inbox (#5694)", () => {
   it("offers Always send off, saying why, where the project turns sending without asking off (#5696)", async () => {
     core([], { membersMayAlwaysSend: false });
     drawn();
-    await waitFor(() => expect(card()).not.toBeNull());
+    await cardDrawn();
     const always = screen.getByRole("button", { name: "Always send" });
     await waitFor(() => expect(always).toHaveAttribute("aria-disabled", "true"));
 
@@ -97,10 +115,36 @@ describe("a report draft in the Inbox (#5694)", () => {
     expect(of("always_send_report_draft")).toEqual([]);
   });
 
+  it.each(["refuses", "rejects"] as const)(
+    "holds Always send off, saying why, where the project's rule cannot be read (the core %s)",
+    async (rule) => {
+      const unhandled = vi.fn();
+      process.on("unhandledRejection", unhandled);
+      try {
+        core([], { membersMayAlwaysSend: rule });
+        drawn();
+        await cardDrawn();
+        await waitFor(() => expect(of("members_may_always_send")).toEqual([{ plane: "/plane" }]));
+        const always = screen.getByRole("button", { name: "Always send" });
+        await waitFor(() => expect(always).toHaveAttribute("aria-disabled", "true"));
+
+        for (let i = 0; i < 8 && document.activeElement !== always; i++) await userEvent.tab();
+        expect(await screen.findByRole("tooltip")).toHaveTextContent(ALWAYS_SEND_RULE_UNREAD);
+        await userEvent.click(always);
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+        expect(of("always_send_report_draft")).toEqual([]);
+        await new Promise((settled) => setTimeout(settled, 0));
+        expect(unhandled).not.toHaveBeenCalled();
+      } finally {
+        process.off("unhandledRejection", unhandled);
+      }
+    },
+  );
+
   it("offers Always send where the project lets its members send without asking", async () => {
     core([]);
     drawn();
-    await waitFor(() => expect(card()).not.toBeNull());
+    await cardDrawn();
     await waitFor(() => expect(of("members_may_always_send")).toEqual([{ plane: "/plane" }]));
     expect(screen.getByRole("button", { name: "Always send" })).not.toHaveAttribute(
       "aria-disabled",
@@ -110,7 +154,7 @@ describe("a report draft in the Inbox (#5694)", () => {
   it("says a draft the report service did not answer waits to send", async () => {
     core([{ kind: "queued", title: DRAFT.title }]);
     const { onSent } = drawn();
-    await waitFor(() => expect(card()).not.toBeNull());
+    await cardDrawn();
     await userEvent.click(screen.getByRole("button", { name: "File" }));
     await waitFor(() =>
       expect(onSent).toHaveBeenCalledWith(expect.objectContaining({ id: "d1", to: "waiting" })),
@@ -120,7 +164,7 @@ describe("a report draft in the Inbox (#5694)", () => {
   it("names the chat it came from and its line, and Go to chat goes there", async () => {
     core([]);
     const { onGo } = drawn();
-    await waitFor(() => expect(card()).not.toBeNull());
+    await cardDrawn();
     expect(screen.getByText("steward 4")).toBeTruthy();
     expect(screen.getByText(DRAFT.line)).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: "Go to chat steward 4" }));
@@ -130,7 +174,7 @@ describe("a report draft in the Inbox (#5694)", () => {
   it("reads whole, marked as an agent's, in fields the person can change", async () => {
     core([]);
     drawn();
-    await waitFor(() => expect(card()).not.toBeNull());
+    await cardDrawn();
     await userEvent.click(screen.getByRole("button", { name: "Read" }));
     await waitFor(() => expect(screen.getByText(WRITTEN_BY_AN_AGENT)).toBeTruthy());
     expect(screen.getByRole("textbox", { name: "Title" })).toHaveProperty("value", DRAFT.title);
@@ -140,7 +184,7 @@ describe("a report draft in the Inbox (#5694)", () => {
   it("is read by the keyboard in the order it is drawn: its ways, its ×, then the opened draft", async () => {
     core([]);
     drawn();
-    await waitFor(() => expect(card()).not.toBeNull());
+    await cardDrawn();
     const read = screen.getByRole("button", { name: "Read" });
     read.focus();
     await userEvent.keyboard("{Enter}");
@@ -167,7 +211,7 @@ describe("a report draft in the Inbox (#5694)", () => {
   it("files with the duplicate check and leaves the Inbox once sent", async () => {
     core([{ kind: "sent", to: "intake", address: "event 9f", title: DRAFT.title }]);
     const { onSent } = drawn();
-    await waitFor(() => expect(card()).not.toBeNull());
+    await cardDrawn();
     await userEvent.click(screen.getByRole("button", { name: "File" }));
     await waitFor(() => expect(onSent).toHaveBeenCalled());
     expect(of("file_report_draft")).toEqual([
@@ -186,7 +230,7 @@ describe("a report draft in the Inbox (#5694)", () => {
   it("keeps the person's changed words first and files them by their new digest", async () => {
     core([{ kind: "sent", to: "github", address: "issues/42", title: "Shorter" }]);
     const { onSent } = drawn();
-    await waitFor(() => expect(card()).not.toBeNull());
+    await cardDrawn();
     await userEvent.click(screen.getByRole("button", { name: "Read" }));
     const title = await waitFor(() => screen.getByRole("textbox", { name: "Title" }));
     await userEvent.clear(title);
@@ -208,7 +252,7 @@ describe("a report draft in the Inbox (#5694)", () => {
       { kind: "sent", to: "github", address: "issues/41#c", title: DRAFT.title },
     ]);
     const { onSent } = drawn();
-    await waitFor(() => expect(card()).not.toBeNull());
+    await cardDrawn();
     await userEvent.click(screen.getByRole("button", { name: "File" }));
     const add = await waitFor(() => screen.getByRole("button", { name: "Add to #41" }));
     expect(screen.getByRole("button", { name: "File as new" })).toBeTruthy();
@@ -225,7 +269,7 @@ describe("a report draft in the Inbox (#5694)", () => {
   it("is let go unsent on Dismiss", async () => {
     core([]);
     const { onSent } = drawn();
-    await waitFor(() => expect(card()).not.toBeNull());
+    await cardDrawn();
     await userEvent.click(screen.getByRole("button", { name: "Dismiss" }));
     await waitFor(() => expect(card()).toBeNull());
     expect(of("dismiss_report_draft")).toEqual([{ id: "d1" }]);
@@ -274,7 +318,7 @@ describe("Always send on a report draft (#5695)", () => {
   it("asks once, and Cancel keeps the draft and sends nothing", async () => {
     sending(allowed);
     drawn();
-    await waitFor(() => expect(card()).not.toBeNull());
+    await cardDrawn();
     await userEvent.click(screen.getByRole("button", { name: "Always send" }));
     const dialog = await screen.findByRole("dialog", { name: "Always send report drafts?" });
     expect(dialog.textContent).toMatch(/private report service/);
@@ -289,7 +333,7 @@ describe("Always send on a report draft (#5695)", () => {
   it("keeps the standing yes and holds the draft to send once the person agrees", async () => {
     const core = sending(allowed);
     drawn();
-    await waitFor(() => expect(card()).not.toBeNull());
+    await cardDrawn();
     await userEvent.click(screen.getByRole("button", { name: "Always send" }));
     await screen.findByRole("dialog", { name: "Always send report drafts?" });
     await userEvent.click(
@@ -302,7 +346,7 @@ describe("Always send on a report draft (#5695)", () => {
   it("asks nothing once the person said yes before", async () => {
     sending({ ...allowed, always_send: true });
     drawn();
-    await waitFor(() => expect(card()).not.toBeNull());
+    await cardDrawn();
     await userEvent.click(screen.getByRole("button", { name: "Always send" }));
     await waitFor(() => expect(of("always_send_report_draft")).toEqual([{ id: "d1" }]));
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -320,7 +364,7 @@ describe("Always send on a report draft (#5695)", () => {
         onUnsent={onUnsent}
       />,
     );
-    await waitFor(() => expect(card()).not.toBeNull());
+    await cardDrawn();
 
     await core.becomes([{ ...DRAFT, sends_at: "2026-11-08T10:00:10Z" }]);
     await waitFor(() => expect(card()).toBeNull());
@@ -350,6 +394,16 @@ describe("Always send on a report draft (#5695)", () => {
     await waitFor(() => expect(card()).toBeNull());
     await core.becomes([DRAFT]);
     expect(onUnsent).toHaveBeenCalledWith("d1");
-    await waitFor(() => expect(card()).not.toBeNull());
+    await cardDrawn();
+  });
+});
+
+describe("Undo on a draft held to send (#5695)", () => {
+  it("answers the failure as its refusal when the core fails to undo it", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "undo_report_draft") throw new Error("the drafts folder is gone");
+      return null;
+    });
+    await expect(undoAlwaysSend("d1")).resolves.toContain("the drafts folder is gone");
   });
 });

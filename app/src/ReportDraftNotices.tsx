@@ -16,7 +16,7 @@ import { listen } from "./here";
 import { Notice } from "./Notice";
 import { AlwaysSendDialog } from "./ReportConsent";
 import { answerReports, useReportConsent } from "./reportAnswers";
-import { useMembersMayAlwaysSend } from "./reportProjectRule";
+import { useMembersMayAlwaysSend, type ProjectRule } from "./reportProjectRule";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { TextArea, TextField } from "./ui/field/Field";
 import { List, ListRow } from "./ui/list/List";
@@ -31,6 +31,17 @@ export const DISMISS_SAYS = "Lets the draft go. Nothing is sent.";
 /** Why a card's Always send is off, where the project turns sending without asking off (#5696). */
 export const ALWAYS_SEND_FORBIDDEN =
   "Your project turns off sending without asking, so drafts written in it are read first. Read it, then File.";
+
+/** Why a card's Always send is off, where the core could not read the project's rule (#5696). */
+export const ALWAYS_SEND_RULE_UNREAD =
+  "Your project's rule on sending without asking could not be read, so drafts are read first. Read it, then File.";
+
+/** Why Always send is off under each rule of the project, or nothing where it is on. */
+const ALWAYS_SEND_OFF: Record<ProjectRule, string | undefined> = {
+  allows: undefined,
+  forbids: ALWAYS_SEND_FORBIDDEN,
+  unread: ALWAYS_SEND_RULE_UNREAD,
+};
 
 /** A draft the person filed in this window: what the Inbox's update says of it. */
 export type SentDraft = {
@@ -116,7 +127,7 @@ export function ReportDraftNotices({
   }, [read]);
 
   const gone = (id: string) => setDrafts((now) => now.filter((one) => one.id !== id));
-  const mayAlwaysSend = useMembersMayAlwaysSend(plane);
+  const rule = useMembersMayAlwaysSend(plane);
 
   return (
     <>
@@ -124,7 +135,7 @@ export function ReportDraftNotices({
         <DraftNotice
           key={draft.id}
           draft={draft}
-          mayAlwaysSend={mayAlwaysSend}
+          rule={rule}
           onGo={onGo}
           onGone={() => gone(draft.id)}
           onEdited={(edited) =>
@@ -153,7 +164,9 @@ const sentOf = (one: ReportDraft, to: SentDraft["to"], holding: boolean): SentDr
  * core's refusal (it already left) is the answer's error.
  */
 export async function undoAlwaysSend(id: string): Promise<string | undefined> {
-  const undone = await commands.undoReportDraft(id);
+  const undone = await commands
+    .undoReportDraft(id)
+    .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
   return undone.status === "error" ? undone.error : undefined;
 }
 
@@ -163,15 +176,15 @@ type Under =
 
 function DraftNotice({
   draft,
-  mayAlwaysSend,
+  rule,
   onGo,
   onGone,
   onEdited,
   onSent,
 }: {
   draft: ReportDraft;
-  /** The project lets its members send drafts unread (#5696): else Always send is off, and says why. */
-  mayAlwaysSend: boolean;
+  /** The project's rule on sending drafts unread (#5696): unless it allows it, Always send is off, and says why. */
+  rule: ProjectRule;
   onGo: (session: number) => void;
   onGone: () => void;
   onEdited: (edited: ReportDraft) => void;
@@ -271,7 +284,7 @@ function DraftNotice({
         { label: "File", busy, onPress: () => file({ how: "check" }) },
         {
           label: "Always send",
-          off: mayAlwaysSend ? undefined : ALWAYS_SEND_FORBIDDEN,
+          off: ALWAYS_SEND_OFF[rule],
           onPress: () => (consent.always_send === true ? alwaysSend() : setAsking(true)),
         },
         ...(session === null
