@@ -13,7 +13,9 @@ import { SHOW_IN_SKILLS, askChatSkills, skillsMissingPutAway } from "./chatSkill
  * harness, and a built-in skill purlis has none of, each named as the persona's skills write it;
  * a skill the chat would have loaded that could not be loaded, with why; and one the repo it
  * works in leaves out, with why (SK-53). And a skill of that repo with a name of purlis's own,
- * which the chat's program loads beside purlis's (SK-37). It offers
+ * which the chat's program loads beside purlis's (SK-37). And each skill it gets two differing
+ * copies of, a plane skill and the person's own or a repo's, named as a pair: purlis never picks
+ * a winner (#5737). It offers
  *
  * - **Show in Skills** (S8, #3694): the sidebar Skills view on this chat, where what it started
  *   without sits in Needs you with its fix;
@@ -88,6 +90,10 @@ export function missingSays(chat: string, said: SkillsMissing): string {
   if (said.beside_a_built_in.length > 0)
     lines.push(
       `${chat} works in a repo with its own copy of ${counted(said.beside_a_built_in.length, "built-in skill", "built-in skills")}, which it gets beside purlis's and may use instead: ${said.beside_a_built_in.join(", ")}.`,
+    );
+  if (said.differing.length > 0)
+    lines.push(
+      `${chat} gets two copies of ${counted(said.differing.length, "skill", "skills")} whose content differs, and purlis does not pick one for it: ${said.differing.join(", ")}.`,
     );
   return lines.join(" ");
 }

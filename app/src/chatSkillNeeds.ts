@@ -128,7 +128,8 @@ export function chatNeedsOf(said: ChatSkillsSaid, scope: StudioScope): ChatNeed[
     });
   const missing = said.missing;
   if (missing !== null) {
-    // A repo's own copy of a built-in skill is one the chat got, beside purlis's: not counted.
+    // A repo's own copy of a built-in skill is one the chat got, beside purlis's, and so is each
+    // of two differing copies of a skill (#5737): not counted.
     const count =
       missing.missing.length +
       missing.no_built_in.length +
@@ -137,9 +138,11 @@ export function chatNeedsOf(said: ChatSkillsSaid, scope: StudioScope): ChatNeed[
     needs.push({
       id: "missing",
       title:
-        count === 0
-          ? "A repo copies a built-in skill"
-          : `Started without ${counted(count, "skill", "skills")}`,
+        count > 0
+          ? `Started without ${counted(count, "skill", "skills")}`
+          : missing.beside_a_built_in.length > 0
+            ? "A repo copies a built-in skill"
+            : "Two copies of a skill differ",
       says: missingSays("This chat", missing),
       fix: {
         act: "studio",

@@ -1100,6 +1100,12 @@ export const commands = {
 	 *  program loads beside purlis's (SK-37).
 	 */
 	beside_a_built_in: string[],
+	/**
+	 *  Each pair of same-named copies whose content differs, both of which the chat's program
+	 *  loads, in the core's words (`purlis_core::skills::pair_said`, #5737): purlis never picks
+	 *  a winner, so the tab names the pair.
+	 */
+	differing: string[],
 } | null, string>(__TAURI_INVOKE("chat_skills_missing", { plane, session })),
 	putAwayChatSkillsMissing: __WINDOW_ONLY_RESULT,
 	/**
@@ -13716,6 +13722,12 @@ export type SkillsMissing = {
 	 *  program loads beside purlis's (SK-37).
 	 */
 	beside_a_built_in: string[],
+	/**
+	 *  Each pair of same-named copies whose content differs, both of which the chat's program
+	 *  loads, in the core's words (`purlis_core::skills::pair_said`, #5737): purlis never picks
+	 *  a winner, so the tab names the pair.
+	 */
+	differing: string[],
 };
 
 /**

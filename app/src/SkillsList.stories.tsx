@@ -367,6 +367,7 @@ const WHOLE: ChatSkillsSaid = {
     broken: [],
     by_a_repo: [],
     beside_a_built_in: [],
+    differing: [],
   },
   changed: {
     session: 5,

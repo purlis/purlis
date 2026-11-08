@@ -135,6 +135,11 @@ pub struct PlaneSkills<'a> {
     /// harness is handed, the narrower repo copy wins and the plane's is left out (SK-6, decision
     /// 51). Empty for a chat in no clone.
     pub repo: &'a [OutsideSkill],
+    /// The harness's own skills the chat has (the person's and its plugins'), as its start read
+    /// them ([`crate::hoststart::ChatSkills::own`]): a plane skill identical to one of them is left
+    /// out, so the name takes one slot, and one that differs is a clash (#5737,
+    /// [`purlis_skills::SkillSet::with_copies_of`]). Empty where they were not read.
+    pub own: &'a [OutsideSkill],
     /// What the chat's router extension answered at its start (SK-15b), which every routing of
     /// its set applies again: `None` for a chat routed by the built-in router.
     pub routed: Option<&'a router::Routed>,
@@ -904,6 +909,7 @@ pub fn briefed(
             plane: root,
             workspace,
             repo: &repo,
+            own: &[],
             routed: None,
         }),
         persona.as_deref(),
@@ -1047,6 +1053,7 @@ impl Running<'_> {
             plane: start.map_or(self.plane, |start| start.root.as_path()),
             workspace: self.workspace.filter(|_| !tried),
             repo: start.map_or(&[], |start| start.repo.as_slice()),
+            own: start.map_or(&[], |start| start.own.as_slice()),
             routed: start.and_then(|start| start.routed.as_deref()),
         })
     }
@@ -1456,7 +1463,10 @@ fn ask(
     as_a_start_routes(
         set,
         route,
-        plane.map(|at| at.repo).unwrap_or_default(),
+        (
+            plane.map(|at| at.repo).unwrap_or_default(),
+            plane.map(|at| at.own).unwrap_or_default(),
+        ),
         budget,
         || {
             plane
@@ -1473,17 +1483,22 @@ fn ask(
 /// built-in one. At a start `outside` is the repo skills of the clone it works in; the studio's
 /// preview of a harness ([`harnesses_in_the_studio`]) holds the harness's own skills too, which
 /// count against nothing ([`SkillSet::routed`], ADR 0102 as amended 2026-10-31), so they hide
-/// none of what a chat's start lists. The one routing [`ask`] and the studio go through: the
+/// none of what a chat's start lists. A start's own skills (`own`) are weighed against the plane's
+/// copies alone ([`SkillSet::with_copies_of`], #5737), never listed. The one routing [`ask`] and the studio go through: the
 /// studio routes as a chat at the workspace's root, in no clone, by the built-in router (#4215).
 fn as_a_start_routes(
     set: SkillSet,
     route: Route,
-    outside: &[OutsideSkill],
+    (outside, own): (&[OutsideSkill], &[OutsideSkill]),
     budget: Option<Budget>,
     pins: impl FnOnce() -> Vec<String>,
     routed: Option<&router::Routed>,
 ) -> SkillSet {
-    let set = set.with_outside(route, outside.iter().cloned());
+    // A plane skill identical to a copy the harness loads anyway takes no slot of its own, and
+    // one that differs is a pair the chat's tab names (#5737).
+    let set = set
+        .with_outside(route, outside.iter().cloned())
+        .with_copies_of(outside.iter().chain(own));
     let Some(budget) = budget else {
         return set;
     };
@@ -1523,6 +1538,26 @@ pub struct NotHere {
     /// #3027; [`purlis_skills::SkillSet::beside_a_built_in`]): the chat's harness loads it beside
     /// purlis's, and the chat may use either. By name, once each.
     pub beside_a_built_in: Vec<String>,
+    /// **Each pair of same-named copies whose content differs**, both of which the chat's
+    /// harness loads (#5737, spec #5714 decision Q6): a plane skill and the person's own copy, or
+    /// a repo's, as [`pair_said`] names it. purlis never picks a winner, so the tab names
+    /// the pair. An identical copy is no pair: purlis leaves its own out ([`Reason::SameAs`]).
+    pub differing: Vec<String>,
+}
+
+/// **The pair a [`Clash`] that loads both copies names on a chat's tab** (#5737): `tdd (the
+/// workspace copy and your own)`.
+pub fn pair_said(clash: &Clash) -> String {
+    let theirs = match &clash.owner {
+        Owner::You => "your own".to_owned(),
+        Owner::Plugin(plugin) => format!("the plugin {plugin}'s"),
+        Owner::Repo(repo) => format!("the repo {repo}'s"),
+    };
+    format!(
+        "{} (the {} copy and {theirs})",
+        clash.name,
+        purlis_skills::level_shown(clash.plane.origin, clash.plane.local)
+    )
 }
 
 /// A skill a chat would have loaded that could not be loaded, and why.
@@ -1577,14 +1612,30 @@ pub fn not_here(
         (Some(ws), Some(cwd)) => repo_skills_of_chat(harness, plane, ws, cwd),
         _ => Vec::new(),
     };
-    not_here_beside(plane, workspace, persona, built_in, harness, env, &repo)
+    let own = crate::harness_plugin::harness_skills_but(
+        harness.adapter().plugins(),
+        env,
+        &crate::harness_plugin::Choices::read_in(plane, workspace),
+        &[],
+    );
+    not_here_beside(
+        plane,
+        workspace,
+        persona,
+        built_in,
+        harness,
+        env,
+        (&repo, &own),
+    )
 }
 
 /// [`not_here`], beside the repo skills `repo` of the clone the chat works in, as its start read
 /// them. A broken plane skill is one only where the chat would have loaded it: a project skill
 /// whose grant does not reach the chat's workspace is no loss. A plane skill that repo leaves
-/// out is said too (SK-53), and a repo skill with a built-in skill's name (SK-37). `None` where it
-/// has every one, or purlis could not tell.
+/// out is said too (SK-53), a repo skill with a built-in skill's name (SK-37), and each
+/// same-named pair, a plane skill beside a copy of `own` (the harness's own skills the chat has)
+/// or of `repo`, whose content differs (#5737). `None` where it has every one, or purlis could
+/// not tell.
 pub fn not_here_beside(
     plane: &Path,
     workspace: Option<&str>,
@@ -1592,13 +1643,14 @@ pub fn not_here_beside(
     built_in: Option<&Path>,
     harness: crate::harness::Harness,
     env: &crate::harness_plugin::Env<'_>,
-    repo: &[OutsideSkill],
+    (repo, own): (&[OutsideSkill], &[OutsideSkill]),
 ) -> Option<NotHere> {
     let here = on_machine(harness, env);
     let at = PlaneSkills {
         plane,
         workspace,
         repo,
+        own,
         routed: None,
     };
     let set = ask(
@@ -1639,6 +1691,12 @@ pub fn not_here_beside(
             not.beside_a_built_in.push(clash.name.clone());
         }
     }
+    not.differing = set
+        .clashes
+        .iter()
+        .filter(|clash| clash.outcome == Outcome::BothLoad && clash.plane.origin.of_the_plane())
+        .map(pair_said)
+        .collect();
     for left in set.left_out {
         match left.reason {
             Reason::NotOnThisMachine => {
@@ -1949,6 +2007,7 @@ pub(crate) fn studio_set(
         plane,
         workspace,
         repo: &[],
+        own: &[],
         routed: None,
     };
     let here = persona.zip(env).map(|(_, env)| {
@@ -2075,6 +2134,7 @@ pub fn of_a_chat(
         plane,
         workspace,
         repo: &[],
+        own: &[],
         routed: None,
     };
     // The harness's own installed skills are the harness's to hand over, never these tools'.
@@ -2297,7 +2357,7 @@ fn harnesses_in_the_studio(
             let at_the_root = as_a_start_routes(
                 set.clone(),
                 route,
-                &own,
+                (&own, &[]),
                 Some(budget),
                 || pins.to_vec(),
                 None,
@@ -2323,7 +2383,7 @@ fn harnesses_in_the_studio(
                         set: as_a_start_routes(
                             set.clone(),
                             route,
-                            &here,
+                            (&here, &[]),
                             Some(budget),
                             || pins.to_vec(),
                             None,

@@ -1667,6 +1667,7 @@ fn a_chat_in_a_workspace_is_handed_the_limit_its_written_budget_needs() {
             plane,
             workspace,
             repo: &[],
+            own: &[],
             routed: None,
         }))
     };
@@ -1685,6 +1686,7 @@ fn claude_codes_own_number_is_the_limit_it_is_handed_and_codexs_is_not() {
             plane,
             workspace: None,
             repo: &[],
+            own: &[],
             routed: None,
         }))
     };
@@ -1739,6 +1741,7 @@ fn a_chat_whose_pins_are_past_its_budget_is_handed_a_limit_that_holds_them() {
         plane,
         workspace: Some("alpha"),
         repo: &[],
+        own: &[],
         routed: None,
     }));
     // 20 descriptions cut at 1,536, each name and line, Claude Code's own 6,848, and a tenth.
