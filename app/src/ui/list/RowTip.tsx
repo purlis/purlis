@@ -28,7 +28,6 @@ import {
   useEffect,
   useId,
   useLayoutEffect,
-  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -127,11 +126,6 @@ export function useRowTip(
     },
     [leaving],
   );
-  /** The tooltip's own: the pointer on it keeps it; off it, unless back on its row, it goes. */
-  const held = useMemo<Hold>(
-    () => ({ enter: stay, leave: (toRow) => (toRow ? stay() : leaving()) }),
-    [stay, leaving],
-  );
   const has = tip !== undefined && tip !== null && tip !== "";
   const listens = has || attend !== undefined;
   // Gone from the window, which an engine may not say on the row (#3095).
@@ -139,43 +133,41 @@ export function useRowTip(
     if (why === "pointer") gone();
   }, listens);
   if (!listens) return { hover: {}, drawn: () => null };
-  const keyboard = keyboardOn(pointerOnly);
   return {
     hover: { onPointerEnter, onPointerMove, onPointerLeave },
-    drawn: (on) => (
-      <>
-        {attend !== undefined && <KeyboardAttends on={keyboard(on)} attend={attend} />}
-        {/* The keyboard coming to the row brings back a tooltip Esc took down (#5038). */}
-        <KeyboardComes on={keyboard(on)} onCome={() => setDismissed(false)} />
-        {has && (pointed !== null || keyboard(on)) && !dismissed && (
-          <Shown pointer={pointed} held={held} onEscape={() => setDismissed(true)}>
-            {tip}
-          </Shown>
-        )}
-      </>
-    ),
+    drawn: (keyboardOn) => {
+      // The keyboard on the row shows its tooltip, unless it is shown to the pointer alone.
+      const byKeyboard = keyboardOn && !pointerOnly;
+      return (
+        <>
+          {attend !== undefined && <KeyboardAttends on={byKeyboard} attend={attend} />}
+          {/* The keyboard coming to the row brings back a tooltip Esc took down (#5038). */}
+          <KeyboardComes on={byKeyboard} onCome={() => setDismissed(false)} />
+          {has && (pointed !== null || byKeyboard) && !dismissed && (
+            <Shown
+              openedAt={pointed}
+              stay={stay}
+              leaving={leaving}
+              onEscape={() => setDismissed(true)}
+            >
+              {tip}
+            </Shown>
+          )}
+        </>
+      );
+    },
   };
 }
 
 /**
  * **Whether a pointer's event is the row's own element's**: the row's tooltip is drawn inside the
  * row, so React hands the row the pointer's events on the tooltip too, which the tooltip answers
- * itself (`Hold`).
+ * itself (`Shown`).
  */
 const onRow = (event: React.PointerEvent) =>
   event.currentTarget instanceof Node &&
   event.target instanceof Node &&
   event.currentTarget.contains(event.target);
-
-/** Whether the keyboard on the row shows its tooltip: never for a tip shown to the pointer alone. */
-const keyboardOn = (pointerOnly: boolean) => (on: boolean) => on && !pointerOnly;
-
-/** What the pointer on a row's tooltip tells the row: that it came, and that it left, to the
- *  row or elsewhere. */
-interface Hold {
-  enter: () => void;
-  leave: (toRow: boolean) => void;
-}
 
 /** Tells the row as the keyboard comes to it. */
 function KeyboardComes({ on, onCome }: { on: boolean; onCome: () => void }) {
@@ -293,14 +285,18 @@ interface Place {
  * afresh while it is up, and a screen reader is handed it once.
  */
 function Shown({
-  pointer,
-  held,
+  openedAt,
+  stay,
+  leaving,
   onEscape,
   children,
 }: {
-  /** The pointer's x in the window, where the pointer opened it. */
-  pointer: number | null;
-  held: Hold;
+  /** The pointer's x in the window, where the pointer opened it; read as it opens. */
+  openedAt: number | null;
+  /** The pointer is on the tooltip, or back on its row: it stays (WCAG 1.4.13, hoverable). */
+  stay: () => void;
+  /** The pointer has left the tooltip for anything but its row: it goes unless it comes back. */
+  leaving: () => void;
   onEscape: () => void;
   children: Tip;
 }) {
@@ -308,7 +304,7 @@ function Shown({
   const anchor = useRef<HTMLSpanElement>(null);
   // The anchor is set by the pointer or the words before the tooltip is drawn, which measures it.
   const [place, setPlace] = useState<Place | null>(null);
-  const opened = useRef(pointer);
+  const opened = useRef(openedAt);
   useLayoutEffect(() => {
     setPlace(placeOf(anchor.current, scope, opened.current));
   }, [scope]);
@@ -318,10 +314,7 @@ function Shown({
   const fallback = useId();
   const tooltip = useRef<HTMLDivElement>(null);
   const placed = place !== null;
-  const rowOf = useCallback(
-    () => anchor.current?.closest(`[data-scope="${scope}"][data-part="root"]`) ?? null,
-    [scope],
-  );
+  const rowOf = useCallback(() => rowAround(anchor.current, scope), [scope]);
   useEffect(() => {
     const row = rowOf();
     const shown = tooltip.current;
@@ -352,10 +345,11 @@ function Shown({
         <AnchoredTooltip
           anchor={anchor}
           tooltipRef={tooltip}
-          onPointerEnter={held.enter}
+          onPointerEnter={stay}
           onPointerLeave={(event) => {
             const to = event.relatedTarget;
-            held.leave(to instanceof Node && rowOf()?.contains(to) === true);
+            if (to instanceof Node && rowOf()?.contains(to) === true) stay();
+            else leaving();
           }}
         >
           {children}
@@ -365,6 +359,10 @@ function Shown({
   );
 }
 
+/** The row's element `inside` is drawn in: the family's root of the row's scope. */
+const rowAround = (inside: Element | null | undefined, scope: string): Element | null =>
+  inside?.closest(`[data-scope="${scope}"][data-part="root"]`) ?? null;
+
 /**
  * Where the anchor `span` (across its whole row, by its stylesheet) is set: on the pointer's x,
  * a line with no width, or on the row's words, as far as they are drawn. Where neither can be
@@ -372,8 +370,8 @@ function Shown({
  */
 function placeOf(span: HTMLSpanElement | null, scope: string, pointer: number | null): Place {
   // The row's element, which the anchor is set across (`list.css`).
-  const row = span?.closest(`[data-scope="${scope}"][data-part="root"]`);
-  if (row === null || row === undefined) return { at: null };
+  const row = rowAround(span, scope);
+  if (row === null) return { at: null };
   const box = row.getBoundingClientRect();
   if (pointer !== null) return { at: { left: pointer - box.left, width: 0 } };
   const words = wordsOf(row);

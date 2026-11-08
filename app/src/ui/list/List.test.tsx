@@ -357,6 +357,25 @@ describe("a row's own tooltip, menu and keys (ADR 0104, 2026-10-24)", () => {
     }
   });
 
+  it("is no part of its row to a press: a click or a right-click on it does nothing of the row's (#5038)", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      render(<Tipped />);
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      await user.hover(row());
+      await act(async () => {
+        vi.advanceTimersByTime(TOOLTIP_DELAY + 10);
+      });
+      const tip = screen.getByRole("tooltip");
+      await user.pointer({ keys: "[MouseRight]", target: tip });
+      await user.click(tip);
+      expect(screen.queryByRole("menu")).toBeNull();
+      expect(row()).not.toHaveFocus();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("comes back on the keyboard's next visit after Esc (#5038)", async () => {
     render(<Tipped />);
     await userEvent.tab();
