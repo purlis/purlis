@@ -1,0 +1,194 @@
+{
+  "tier": "standard",
+  "neighbours": [
+    "purlis-secrets",
+    "purlis-theme"
+  ],
+  "prompts": [
+    {
+      "query": "Log in to our staging admin panel with the qa vault and check the orders page loads.",
+      "source": "Skill text: \"log in with `browser_login`, and call it first\"; description, \"a web login\"."
+    },
+    {
+      "query": "Open the shop's test site in a browser and sign in with the login stored in purlis.",
+      "source": "Skill text: a login a project declares, `browser_login` with `login = \"shop-login\"`."
+    },
+    {
+      "query": "I need two browsers logged in as different users to test the chat between a buyer and a seller.",
+      "source": "Skill text: \"One browser per worker\"; description, \"several workers each need their own logged-in session\"."
+    },
+    {
+      "query": "Use the browser to sign in to the metrics dashboard with the credentials in my ops vault and screenshot it.",
+      "source": "Mined session record 20261105-045730-5121-browser-login-as-a-preset-of-secret-fill-pr.md: a login filled from a vault; plausible phrasing a person types."
+    },
+    {
+      "query": "Run an end-to-end check of the checkout flow on staging; it needs the test account from the vault.",
+      "source": "Skill text: description, \"an end-to-end check\"."
+    },
+    {
+      "query": "Paste the API key from the vault into the payment dashboard's settings field without showing it to me.",
+      "source": "Skill text: \"Any other secret goes in with `browser_fill_secret`\", \"an API key into a dashboard's settings\"."
+    },
+    {
+      "query": "Fill the 2FA code from the TOTP seed in the vault when the login page asks for it.",
+      "source": "Skill text: \"A 2FA code comes from its seed\"."
+    },
+    {
+      "query": "Verify the new signup page in a real browser while I watch, logged in as the admin fixture account.",
+      "source": "Skill text: \"a real browser the person can watch and take over\"; description, \"verifying a UI\"."
+    },
+    {
+      "query": "Get past the sign-in on the internal wiki with my saved login and read the release page.",
+      "source": "Skill text: description, \"reaching something behind auth\"."
+    },
+    {
+      "query": "Declare a browser login for the qa persona so it can reach the shop's login page.",
+      "source": "Skill text: a project declaring a login in `[sandbox.personas.qa]`."
+    },
+    {
+      "query": "My recorded browser login points at the old domain; replace its site with the new login page.",
+      "source": "Mined session record 20261103-192600-browser-login-form-host-and-replace-notice-4995-.md: a login on the wrong site is replaced."
+    },
+    {
+      "query": "Open three browsers, each logged in as a different tenant, and compare their dashboards.",
+      "source": "Skill text: `browser_new`, one browser per worker; plausible phrasing a person types."
+    },
+    {
+      "query": "Download the invoice PDF from the vendor portal after logging in with the finance vault, and save it here.",
+      "source": "Skill text: \"Files: downloads and uploads\", `browser_save_download`."
+    },
+    {
+      "query": "Upload this CSV to the admin import page on staging; you'll need to log in first with the vault login.",
+      "source": "Skill text: `browser_upload` into a page's file input."
+    },
+    {
+      "query": "From my own terminal, log in with Playwright using a secrets file from my vault.",
+      "source": "Skill text: \"In the person's own terminal\", `PLAYWRIGHT_MCP_SECRETS_FILE`."
+    },
+    {
+      "query": "Log into the CMS as an editor and as a viewer at the same time to check permissions.",
+      "source": "plausible phrasing a person types: two sessions on one site."
+    },
+    {
+      "query": "Sign in to the cloud console in the purlis browser using the deploy vault's password.",
+      "source": "Mined session record 20261104-043321-5074-browser-login-and-profile-credential-misses.md: a console login from a vault; plausible phrasing a person types."
+    },
+    {
+      "query": "Test the password reset flow on staging, signing in with the fixture user from the vault.",
+      "source": "Skill text: \"A different fixture account is a different pair of keys\"."
+    },
+    {
+      "query": "Log in to the bank sandbox and hand me the browser when it shows the captcha.",
+      "source": "Skill text: \"A page with a captcha or a second factor\", hand them the browser with `ask_operator`."
+    },
+    {
+      "query": "Put the deploy token from the vault into the CI provider's settings form.",
+      "source": "Skill text: `browser_fill_secret`, \"a token into a deploy form\"."
+    },
+    {
+      "query": "Check that a logged-in customer sees the new banner on the account page, using the test login purlis keeps.",
+      "source": "Mined session record 20261104-133221-5152-a-logged-in-browser-reaches-its-sign-in-hos.md: a logged-in browser reaching its pages."
+    },
+    {
+      "query": "Several workers need their own logged-in session on the same site; set that up.",
+      "source": "Skill text: description, \"several workers each need their own logged-in session\"; Mined session record 20261105-130417-5296-the-browser-limit-names-what-s-open-a-kept-.md."
+    },
+    {
+      "query": "Run the migration against the staging database using the password in the vault.",
+      "source": "Near miss (purlis-secrets): a credential a command uses (decisions.md of spec #5714 Q30).",
+      "belongs_to": "purlis-secrets"
+    },
+    {
+      "query": "Call the GitHub API with the token from my vault and list the open pull requests.",
+      "source": "Near miss (purlis-secrets): a credential an API call uses.",
+      "belongs_to": "purlis-secrets"
+    },
+    {
+      "query": "Store this new payment API key in the payments vault.",
+      "source": "Near miss (purlis-secrets): its description, \"when asked to store one\".",
+      "belongs_to": "purlis-secrets"
+    },
+    {
+      "query": "Use the kubeconfig from the ops vault to check the pods.",
+      "source": "Near miss (purlis-secrets): its description, \"kubeconfig\".",
+      "belongs_to": "purlis-secrets"
+    },
+    {
+      "query": "curl the internal metrics endpoint with the bearer token from the vault.",
+      "source": "Near miss (purlis-secrets): a token for a command, not a page.",
+      "belongs_to": "purlis-secrets"
+    },
+    {
+      "query": "SSH into the build box with the key stored in purlis.",
+      "source": "Near miss (purlis-secrets): its description, \"SSH key\".",
+      "belongs_to": "purlis-secrets"
+    },
+    {
+      "query": "Make purlis's window match our brand colours from this screenshot.",
+      "source": "Near miss (purlis-theme): its description, \"from an image or screenshot\".",
+      "belongs_to": "purlis-theme"
+    },
+    {
+      "query": "Check the dark purlis theme I made for contrast problems.",
+      "source": "Near miss (purlis-theme): \"Checking a theme\"; \"check\" and \"verify\" without a site.",
+      "belongs_to": "purlis-theme"
+    },
+    {
+      "query": "Create a purlis theme from this Figma frame.",
+      "source": "Near miss (purlis-theme): its description, \"a Figma frame\".",
+      "belongs_to": "purlis-theme"
+    },
+    {
+      "query": "Scrape the public changelog page and summarise what's new.",
+      "source": "Boundary (other browser skills, decisions.md of spec #5714 Q30): no login, one session; a plain negative."
+    },
+    {
+      "query": "Open the docs site and take a screenshot of its homepage.",
+      "source": "Boundary (other browser skills): no login, one session."
+    },
+    {
+      "query": "Write a Playwright test that clicks the signup button on our local dev server.",
+      "source": "Boundary (other browser skills): test code, no vault login."
+    },
+    {
+      "query": "Check whether example.com loads over HTTPS.",
+      "source": "Boundary (other browser skills): no login."
+    },
+    {
+      "query": "Fetch this public URL and give me the page title.",
+      "source": "Boundary (other browser skills): no login."
+    },
+    {
+      "query": "Fix the flaky unit test in the cart module.",
+      "source": "plausible phrasing a person types: unrelated."
+    },
+    {
+      "query": "Explain how cookies differ from local storage.",
+      "source": "plausible phrasing a person types: browser words, no browser."
+    },
+    {
+      "query": "Write a login form component in React.",
+      "source": "plausible phrasing a person types: \"login\" in code."
+    },
+    {
+      "query": "Why does our OAuth redirect return 400? Read the server code.",
+      "source": "plausible phrasing a person types: auth in code."
+    },
+    {
+      "query": "Refactor the auth middleware to use the new session store.",
+      "source": "plausible phrasing a person types: \"session\" in code."
+    },
+    {
+      "query": "Summarise the last ten commits.",
+      "source": "plausible phrasing a person types: unrelated."
+    },
+    {
+      "query": "Add a password strength meter to the signup page.",
+      "source": "plausible phrasing a person types: \"password\" in code."
+    },
+    {
+      "query": "Draft release notes for version 2.3.",
+      "source": "plausible phrasing a person types: unrelated."
+    }
+  ]
+}
