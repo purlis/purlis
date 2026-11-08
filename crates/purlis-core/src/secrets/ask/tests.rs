@@ -1957,6 +1957,33 @@ fn a_link_another_persona_of_its_vault_may_not_read_through_is_refused_and_says_
     assert_eq!(asks.open().len(), 1, "still open");
 }
 
+/// #5745's review: where the link's vault's own entry can't be read, which personas may use it
+/// is not known, so the press is refused, failing closed, never taken as "none".
+#[test]
+fn a_link_whose_vaults_personas_cant_be_read_is_refused() {
+    let project = project_with_an_entry();
+    let root = project.path();
+    std::fs::write(
+        root.join("vaults.json"),
+        serde_json::json!({ "vaults": {
+            "team": {"provider": "no-such-provider", "persona": "devops"},
+            "own": {"provider": "plain-file", "config": {"file": "own.json"}, "persona": "devops"},
+        }})
+        .to_string(),
+    )
+    .unwrap();
+    let asks = Asks::new(root);
+    held_for_nothing(&asks, need(7, "MISSING"));
+    let refused = asks
+        .answer(&ctx(root), asks.open()[0].id, stripe_in_own(), window())
+        .expect_err("who may use team is not known");
+    assert!(
+        refused.contains("could not read which personas may use vault team"),
+        "{refused}"
+    );
+    assert_eq!(asks.open().len(), 1, "still open");
+}
+
 fn stripe_in_own() -> Answer {
     Answer::Link(crate::secrets::links::Target {
         vault: "own".into(),

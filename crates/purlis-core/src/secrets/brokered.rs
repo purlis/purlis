@@ -1490,7 +1490,8 @@ pub fn read_through_by(ctx: &Ctx, vault: &str, to: &str) -> Option<String> {
         Err(why) => {
             return Some(format!(
                 "purlis could not read which personas may use vault {vault}, so nothing is \
-                 linked there: {why}"
+                 linked there ({why}). Check the vault with `purlis vault verify`, or type a \
+                 value."
             ));
         }
     };

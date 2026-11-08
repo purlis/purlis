@@ -16,4 +16,8 @@ vaults, which the person may see. The personas of a vault are the one the regist
 and each allowed to use it on this machine, as the broker opens it. A registry that can't be read
 refuses the press. Both pickers offer only what a press is held to.
 
-A link made before this ruling stays as it is, and a declared tool still reads through it.
+The rule is judged at the press, and only there. A link made before this ruling stays as it is,
+and so does one made before a persona later came to use its vault: by a tag, an Allow (a refused
+vault's, or Always allow's), or a policy lock lifted. That persona's declared tool still reads
+through it. Judging those too, as the grant is given or as a declared tool reads, is a ruling of
+its own, left to a follow-up of #5745.
