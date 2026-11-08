@@ -102,6 +102,56 @@ export function AgentDraftsChoice({
   );
 }
 
+export const ALWAYS_SEND_SAYS =
+  "Drafts go straight to purlis's private report service without you reading them, at most five a day. Each waits a few seconds with Undo first. Never to GitHub.";
+
+/** Always send: Send without asking or Ask first (#5695), nothing chosen until the person chooses. */
+export function AlwaysSendChoice({
+  ids,
+  value,
+  onChange,
+}: {
+  ids: RowIds;
+  value: boolean | null;
+  onChange: (always: boolean) => void;
+}) {
+  return (
+    <Choice
+      kind="radio"
+      ids={ids}
+      options={[
+        { value: "always", label: "Send without asking" },
+        { value: "ask", label: "Ask me first" },
+      ]}
+      value={chosen(value, "always", "ask")}
+      onValueChange={(to) => onChange(to === "always")}
+    />
+  );
+}
+
+/**
+ * **Always send, asked once** (#5695, spec #5683 story 38): pressed on a draft while the person
+ * has not said yes to it, this says where drafts will go and where to see and stop them. Return
+ * answers neither: the yes is pressed.
+ */
+export function AlwaysSendDialog({ onYes, onCancel }: { onYes: () => void; onCancel: () => void }) {
+  return (
+    <Dialog
+      title="Always send report drafts?"
+      description="From now on, drafts agents write go straight to purlis's private report service, unread. Each waits a few seconds with Undo first, and at most five go a day. They never go to GitHub."
+      onClose={onCancel}
+      initialFocus="dialog"
+      cancel={{ children: "Cancel", onPress: onCancel }}
+      main={{ children: "Always send", variant: "secondary", byReturn: false, onPress: onYes }}
+    >
+      <p>
+        Settings › You › Reports lists every report sent, byte for byte. Turn Always send off there
+        at any time.
+      </p>
+    </Dialog>
+  );
+}
+
 /** "See exactly what's sent…": opens a sample of each kind of report, as its bytes. */
 export function WhatReportsSend({ ids }: { ids: RowIds }) {
   const [open, setOpen] = useState(false);

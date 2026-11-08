@@ -273,10 +273,11 @@ pub(super) fn event_id_of(envelope: &str) -> String {
 }
 
 impl CrashReport {
-    /// A report draft the person filed from the Inbox, for the intake at `dsn` (#5694): its
-    /// title and body as they were shown, marked as an agent's, and whether the person changed
-    /// its words. Its body was scrubbed when it was drafted and read before it was filed.
-    pub fn of_draft(draft: &Draft, edited: bool, dsn: &str) -> CrashReport {
+    /// A report draft for the intake at `dsn`: its title and body, marked as an agent's, whether
+    /// the person changed its words, and whether they `reviewed` it: read and filed it from the
+    /// Inbox (#5694), or let Always send send it unread (#5695). Its body was scrubbed when it
+    /// was drafted.
+    pub fn of_draft(draft: &Draft, edited: bool, reviewed: bool, dsn: &str) -> CrashReport {
         let event_id = uuid::Uuid::new_v4().simple().to_string();
         let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
         let channel = channel();
@@ -292,6 +293,8 @@ impl CrashReport {
                 "kind": draft.kind.verb(),
                 "written_by": "agent",
                 "edited_by_the_person": edited,
+                // Sent unread by Always send (#5695), or read and filed by the person.
+                "reviewed_by_the_person": reviewed,
             },
             "contexts": {"os": {"name": std::env::consts::OS, "version": os_version()}},
             "message": {"formatted": format!("{}\n\n{}", draft.title, draft.body)},

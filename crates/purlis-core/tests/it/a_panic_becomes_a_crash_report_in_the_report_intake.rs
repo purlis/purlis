@@ -72,6 +72,7 @@ fn yes() -> Consent {
     Consent {
         crash_reports: Some(true),
         agent_drafts: None,
+        always_send: None,
         asked: true,
         crash_notice: None,
     }
@@ -153,6 +154,7 @@ fn without_a_yes_to_crash_reports_nothing_is_sent_and_nothing_listed() {
             .with_consent(Consent {
                 crash_reports: unanswered,
                 agent_drafts: Some(true),
+                always_send: None,
                 asked: true,
                 crash_notice: None,
             })

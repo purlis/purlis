@@ -737,9 +737,11 @@ function ShownGroup({
         </OffUnless>
       )
     ) : (
-      <OffUnless key={setting.id} on={liveStillWritten(level, setting.writes)}>
-        <LiveRow setting={setting} />
-      </OffUnless>
+      <ShownWhile key={setting.id} useShown={setting.useShown}>
+        <OffUnless on={liveStillWritten(level, setting.writes)}>
+          <LiveRow setting={setting} />
+        </OffUnless>
+      </ShownWhile>
     );
   return (
     <SettingGroup label={group.label} help={group.help} kept={home?.kept ?? group.kept}>
@@ -779,6 +781,22 @@ function ShownGroup({
       {group.after?.map(row)}
     </SettingGroup>
   );
+}
+
+/** A row drawn only while its `useShown` says so (#5695): always, without one. Keyed by its
+ *  setting, so the hook is always the same one in a given row. */
+export function ShownWhile({
+  useShown,
+  children,
+}: {
+  useShown?: () => boolean;
+  children: ReactNode;
+}) {
+  return useShown === undefined ? children : <ShownBy useShown={useShown}>{children}</ShownBy>;
+}
+
+function ShownBy({ useShown, children }: { useShown: () => boolean; children: ReactNode }) {
+  return useShown() ? children : null;
 }
 
 function LiveRow({ setting }: { setting: LiveSetting }) {

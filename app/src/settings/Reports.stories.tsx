@@ -3,7 +3,8 @@
 
 /**
  * **You › Reports** (#5688, spec #5683): the two answers as Settings holds them, unanswered,
- * all on and all off, with "See exactly what's sent…". Drawn, held to axe, walked by the keyboard
+ * all on and all off, with "See exactly what's sent…", and Always send drawn only while Agent
+ * drafts is allowed (#5695). Drawn, held to axe, walked by the keyboard
  * and pictured in every pictured theme cell (`docs/component-stories.md`). The core is faked at
  * its command boundary, keeping what it is told.
  */
@@ -14,6 +15,7 @@ import type { ReportConsent, SentReport } from "../bindings";
 import { forgetReportConsent, UNANSWERED } from "../reportAnswers";
 import { expectFocusInSight, untilFocused } from "../stories.testkit";
 import { SettingGroup, SettingRow } from "./components";
+import { ShownWhile } from "./SettingsTab";
 import type { LiveSetting } from "./groups";
 import { reportsGroup } from "./reports";
 
@@ -55,7 +57,9 @@ function Reports() {
   return (
     <SettingGroup label={group.label} help={group.help}>
       {group.settings.map((one) => (
-        <Row key={one.id} setting={one as LiveSetting} />
+        <ShownWhile key={one.id} useShown={(one as LiveSetting).useShown}>
+          <Row setting={one as LiveSetting} />
+        </ShownWhile>
       ))}
     </SettingGroup>
   );
@@ -109,13 +113,23 @@ export const Unanswered: Story = {
   },
 };
 
-/** **All on**: Send and Allow chosen; Tab walks on to See exactly what's sent…. */
+/** **All on**: Send, Allow and Always send chosen; Tab walks on to See exactly what's sent…. */
 export const AllOn: Story = {
-  parameters: { consent: { crash_reports: true, agent_drafts: true, asked: true } },
+  parameters: {
+    consent: {
+      ...UNANSWERED,
+      crash_reports: true,
+      agent_drafts: true,
+      always_send: true,
+      asked: true,
+    },
+  },
   play: async ({ canvas, userEvent }) => {
     const group = await canvas.findByRole("region", { name: "Reports" });
     await waitFor(() => expect(within(group).getByRole("radio", { name: "Send" })).toBeChecked());
     await expect(within(group).getByRole("radio", { name: "Allow" })).toBeChecked();
+    await expect(within(group).getByRole("radio", { name: "Send without asking" })).toBeChecked();
+    await userEvent.tab();
     await userEvent.tab();
     await userEvent.tab();
     await userEvent.tab();
@@ -127,9 +141,14 @@ export const AllOn: Story = {
   },
 };
 
-/** **All off**: Don't send and Don't allow chosen; Allow from the keyboard turns drafts on. */
+/**
+ * **All off**: Don't send and Don't allow chosen, and no Always send row; Allow from the keyboard
+ * turns drafts on, and the Always send row appears with nothing chosen (#5695).
+ */
 export const AllOff: Story = {
-  parameters: { consent: { crash_reports: false, agent_drafts: false, asked: true } },
+  parameters: {
+    consent: { ...UNANSWERED, crash_reports: false, agent_drafts: false, asked: true },
+  },
   play: async ({ canvas, userEvent }) => {
     const group = await canvas.findByRole("region", { name: "Reports" });
     await waitFor(() =>
@@ -140,15 +159,20 @@ export const AllOff: Story = {
     dont.focus();
     await untilFocused(() => dont, "Don't allow takes the keyboard");
     expectFocusInSight();
+    await expect(
+      within(group).queryByRole("radiogroup", { name: "Always send drafts" }),
+    ).toBeNull();
     await userEvent.keyboard("{ArrowLeft}");
     await waitFor(() => expect(kept.agent_drafts).toBe(true));
+    for (const radio of await waitFor(() => radios(group, "Always send drafts")))
+      await expect(radio).not.toBeChecked();
   },
 };
 
 /** **Sent**: the sent list holds a Crash report; Enter opens exactly its bytes, Esc closes. */
 export const Sent: Story = {
   parameters: {
-    consent: { crash_reports: true, agent_drafts: false, asked: true },
+    consent: { ...UNANSWERED, crash_reports: true, agent_drafts: false, asked: true },
     sent: [SENT],
   },
   play: async ({ canvas, userEvent }) => {
@@ -168,7 +192,7 @@ export const Sent: Story = {
 /** **Waiting to send**: a Crash report made offline waits under the one that left (#5693). */
 export const WaitingToSend: Story = {
   parameters: {
-    consent: { crash_reports: true, agent_drafts: false, asked: true },
+    consent: { ...UNANSWERED, crash_reports: true, agent_drafts: false, asked: true },
     sent: [
       SENT,
       {

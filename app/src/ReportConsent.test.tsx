@@ -93,6 +93,7 @@ describe("the first-run question about reports", () => {
       expect(keeps).toHaveBeenCalledWith({
         crash_reports: true,
         agent_drafts: false,
+        always_send: null,
         asked: true,
         crash_notice: null,
       }),
@@ -116,6 +117,7 @@ describe("the first-run question about reports", () => {
         expect(keeps).toHaveBeenCalledWith({
           crash_reports: null,
           agent_drafts: null,
+          always_send: null,
           asked: true,
           crash_notice: null,
         }),

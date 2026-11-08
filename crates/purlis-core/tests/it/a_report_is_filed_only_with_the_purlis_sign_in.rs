@@ -146,7 +146,7 @@ impl Machine {
     }
 
     /// Nothing was sent on either route.
-    fn nothing_sent(&self) {
+    pub(crate) fn nothing_sent(&self) {
         assert_eq!(self.cli.0.load(Ordering::SeqCst), 0, "gh was asked");
         assert_eq!(self.read.load(Ordering::SeqCst), 0, "the token was read");
     }
@@ -173,6 +173,7 @@ fn reports() -> Reports {
     Reports::new(Known::default()).with_consent(Consent {
         crash_reports: Some(true),
         agent_drafts: Some(true),
+        always_send: None,
         asked: true,
         crash_notice: None,
     })
