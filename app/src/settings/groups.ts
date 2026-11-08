@@ -4,7 +4,7 @@
 import type { ReactNode } from "react";
 import type { SettingsEdit, SettingsStep, SettingsWhich } from "../bindings";
 import type { Entry, Shown } from "./fileControls";
-import type { Option, Reset, RowIds } from "./components";
+import type { Badge, Option, Reset, RowIds } from "./components";
 
 /**
  * **Settings groups are data** (V89b, the spec on #558): each group is declared once, with a
@@ -28,6 +28,8 @@ export type SettingsGroup = {
   label: string;
   /** One line on what the group is for, said under its heading. */
   help: string;
+  /** Other words the filter finds the group by, never drawn (#5688), as the catalogue's. */
+  also?: readonly string[];
   settings: readonly Setting[];
   /** Sentences about what is in force in this group, the core's: drawn under its help. */
   notes?: readonly string[];
@@ -242,6 +244,13 @@ export type LiveSetting = Named & {
    * Absent, the row does not say, and it is off on a read-only project: it fails closed.
    */
   writes?: "nothing" | "this machine" | "local" | "per control";
+  /**
+   * **A row shown only while another row has a value** (#5695): a hook, called once per render
+   * like `useControl`, answering whether the row is drawn now. Always send means something only
+   * while Agent drafts is allowed, so it is drawn only then. Absent, the row is always drawn. A
+   * filter still finds the row by its words; it is drawn when the hook says so.
+   */
+  useShown?: () => boolean;
   useControl: () => {
     control: (ids: RowIds) => ReactNode;
     reset?: Reset;
@@ -251,6 +260,13 @@ export type LiveSetting = Named & {
     error?: readonly string[];
     /** Puts back what the last thing done here changed, while that is the one Undo on offer. */
     undo?: () => void;
+    /**
+     * **Held by another level** (#5696): the level whose value this row cannot change, in a word
+     * or two (`label`: Project), and why, in a sentence (`says`). Drawn as the row's badge, with
+     * the sentence in its tooltip and as the control's description; the control is drawn
+     * read-only. Absent, nothing holds the row.
+     */
+    heldBy?: Badge;
   };
 };
 

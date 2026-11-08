@@ -367,6 +367,19 @@ pub fn config_root_in(env: &dyn Fn(&str) -> Option<String>) -> Option<PathBuf> {
     Some(found)
 }
 
+/// [`config_root_in`] for a reader asked at every chat's start that only reads what is there: it
+/// never holds the fence, so a fenced test build reads a config home outside its fence as none,
+/// as [`crate::skills::studio_on_here`] does.
+pub fn config_root_read_in(env: &dyn Fn(&str) -> Option<String>) -> Option<PathBuf> {
+    rooted(
+        env(HOME_VAR).map(Into::into),
+        env("XDG_CONFIG_HOME").map(Into::into),
+        dirs::home_dir(),
+    )
+    .filter(|found| found.is_dir())
+    .filter(|found| !crate::fence::FENCED || crate::fence::inside(found, &crate::fence::fence()))
+}
+
 /// The plane as a machine store may have remembered it: as spelled, and as resolved.
 ///
 /// The app remembers a plane under its resolved path; a caller may hold it as typed. Both are

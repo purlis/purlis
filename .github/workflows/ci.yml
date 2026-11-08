@@ -1380,9 +1380,9 @@ jobs:
       - name: The studio probe's names
         uses: ./.github/actions/studio-probe-names
       - name: Build the tests
-        run: cargo nextest run --locked -p purlis-core -p purlis-terminal -p purlis-app -p purlis-browser-engine -p studio-probe --no-run
+        run: cargo nextest run --locked -p purlis-core -p purlis-terminal -p purlis-app -p purlis-browser-engine -p studio-probe -p purlis-crash-handler --no-run
       - name: Run the tests
-        run: tools/no-orphans.sh --reap -- cargo nextest run --locked -p purlis-core -p purlis-terminal -p purlis-app -p purlis-browser-engine -p studio-probe --profile ci --partition count:${{ matrix.part }}/3 -E 'not (package(purlis-app) & test(/^behaviour::/))'
+        run: tools/no-orphans.sh --reap -- cargo nextest run --locked -p purlis-core -p purlis-terminal -p purlis-app -p purlis-browser-engine -p studio-probe -p purlis-crash-handler --profile ci --partition count:${{ matrix.part }}/3 -E 'not (package(purlis-app) & test(/^behaviour::/))'
       # What makes a part slow, as notices on the run, as in `rust`.
       - name: Annotate the slowest tests
         if: ${{ !cancelled() }}
@@ -2103,6 +2103,13 @@ jobs:
       # keeps one app process for a whole run, so a spec that quits takes the run with it.
       - name: Reopening what was open, across a real relaunch
         run: npm run e2e:relaunch
+        if: runner.os == 'macOS' && matrix.extras
+        working-directory: app
+      # A native crash and a panic, each ending the app and sent as a Crash report, the native
+      # one on the next launch (#5691): the app's own process, ended and started again, as above.
+      # macOS alone, where the app watches itself with its crash handler.
+      - name: A native crash and a panic become Crash reports, across a real relaunch
+        run: npm run e2e:crash
         if: runner.os == 'macOS' && matrix.extras
         working-directory: app
       # `dbus-run-session` because a Linux desktop has a WORKING session bus and this runner

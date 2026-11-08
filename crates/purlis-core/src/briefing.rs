@@ -208,6 +208,10 @@ pub fn parts(ask: &Ask, piece_note: Option<String>) -> Vec<String> {
     if let Some(secrets) = secret_ask_note(ask.env) {
         parts.push(secrets);
     }
+    // purlis's own bugs a chat meets are drafted for the person (#5698, spec #5683).
+    if let Some(report) = report_note(ask.env) {
+        parts.push(report.to_owned());
+    }
     if let Some(unshared) = uncommitted_memory_nudge(ask.root, &summaries) {
         parts.push(unshared);
     }
@@ -389,6 +393,30 @@ pub fn secret_ask_note(env: &dyn Fn(&str) -> Option<String>) -> Option<String> {
                 crate::chattools::SECRET_ASK_SAID
             )
         })
+}
+
+/// **What a chat is told about purlis's own bugs** (#5698, spec #5683, Q4/Q21 and Q7/Q19 layer
+/// 3): the six cases a Report is for, and the `purlis-report` skill that drafts one. purlis
+/// catches some failures itself (layer 1); the rest only a chat can judge, and a chat reaches
+/// for the skill only when its context points at it, so the line names each case.
+pub const REPORT_NOTE: &str = "⬢ **When purlis itself misbehaves, draft a report.** Load the \
+     `purlis-report` skill when a purlis command or tool fails, panics or contradicts its help; \
+     purlis blocks its own work; the window shows something false; the person says purlis is \
+     broken or slow, or asks why it did that; you are working around purlis; or a purlis skill \
+     should have started and did not. It drafts with `purlis report`, which puts the draft in \
+     the person's Inbox for them to read and file. Bugs in the person's project, in the \
+     harness itself, and their own mistakes are not purlis's.";
+
+/// [`REPORT_NOTE`] for a chat the app started (only its window holds a draft for the person),
+/// and only while the person allows Agent drafts: without that yes a draft is refused, and the
+/// line would send the chat to a refusal. Read from this machine's config home as `env` names
+/// it, on every harness, as each runs this briefing at its start.
+pub fn report_note(env: &dyn Fn(&str) -> Option<String>) -> Option<&'static str> {
+    env(crate::hookwire::SOCKET_ENV).filter(|socket| !socket.is_empty())?;
+    let config = crate::machine::config_root_read_in(env)?;
+    crate::report::Consent::read(&config)
+        .allows(crate::report::Stream::AgentDrafts)
+        .then_some(REPORT_NOTE)
 }
 
 /// What stands in front of [`crate::handoff::ONE_ROUTE`] in a chat's briefing: when it applies.

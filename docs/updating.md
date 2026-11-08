@@ -111,6 +111,30 @@ for s in TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD \
 done
 ```
 
+**The Report intake's upload secrets** (#5692) live in the same environment, so only a publish
+reaches them. The `symbols` job sends each release's debug symbols to the intake (Sentry, EU),
+after the build and apart from it, so native crash reports can be read. It needs three, which
+the operator adds when the intake is set up (#5687):
+
+| Secret | What it holds |
+|---|---|
+| `SENTRY_SYMBOLS_TOKEN` | a Sentry organisation token that may upload debug files (not the steward's read token) |
+| `SENTRY_ORG` | the organisation's slug, `purlis` |
+| `SENTRY_PROJECT` | the project's slug, `purlis-app` |
+
+```sh
+for s in SENTRY_SYMBOLS_TOKEN SENTRY_ORG SENTRY_PROJECT; do
+  gh secret set "$s" --repo purlis/purlis --env release
+done
+```
+
+Until all three are set, the job skips with a note on the run and stays green. A failed upload
+leaves the release published and the run green with a warning. Rerun the `symbols` job to try
+again: the build keeps its symbols artifact for 90 days. Today the release profile strips every
+binary, so the job finds no debug files and says so. A dSYM is made beside each macOS binary
+from the change that switches the native crash handler on (#5691). Linux and Windows follow
+their own crash handlers.
+
 **No required reviewer, on purpose.** The environment covers both channels, so a reviewer would
 also hold the dev build after every merge to `main`, and it asks once per job: `plan`, each
 platform's `build`, then `publish`. The ref policy is the guard. Add one in the environment's

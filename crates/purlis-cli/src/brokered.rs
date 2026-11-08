@@ -320,7 +320,7 @@ pub fn propose(root: &Path, file: &Path, draft: &Path) -> Result<u8, String> {
             Ok(code)
         }
         Ok(Ok(Answer::No { why })) => Err(why),
-        Ok(Ok(_)) => Err("the app answered something purlis did not ask for".to_owned()),
+        Ok(Ok(_)) => crate::internal::failed("the app answered something purlis did not ask for"),
         Ok(Err(e)) => Err(format!("the app did not answer: {e}")),
         Err(_) => Err(not_a_chat()),
     }

@@ -719,6 +719,21 @@ export function reposGroup(section: Section): Group {
 /** The harness kinds a profile may name — `profiles::KINDS`, in the registry's order. */
 export const KINDS = ["claude", "opencode", "codex"] as const;
 
+/** The Project › General row of the team's rule over Always send (#5696). */
+export const MEMBERS_MAY_ALWAYS_SEND = "Members may let agents send reports without asking";
+
+/**
+ * **The team's rule over Always send** (#5696, spec #5683, Q12): `[reports].always_send`, on
+ * until this file turns it off, and no member's own setting turns it back on.
+ */
+export const PROJECT_RULE: Control = onOffAt(
+  key("reports", "always_send"),
+  MEMBERS_MAY_ALWAYS_SEND,
+  "Off, report drafts written in this project always ask first, whatever a member's own Always send says. Members can still read and file them.",
+  "not set",
+  true,
+);
+
 /** `charter.toml`, as `docs/plane-format.md` documents it. `[frame]` is the tmux frame's, which
  *  this charter does not have and nothing reads (the doctor says so): Edit as TOML has it. */
 export const SHARED: Group[] = [
@@ -753,6 +768,7 @@ export const SHARED: Group[] = [
       textAt(key("plane", "worktrees"), "Branch folders", {
         hint: "Under the project or one folder beside it, such as ../charter.worktrees.",
       }),
+      PROJECT_RULE,
     ],
   },
   {
