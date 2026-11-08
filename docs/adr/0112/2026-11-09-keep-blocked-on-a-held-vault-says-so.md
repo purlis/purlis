@@ -12,8 +12,8 @@ on it, but it does not say "kept blocked":
 - **The chat** hears that the person kept the vault blocked, that its persona may already use it
   (from the Allowed list, or by the vault's tag), that purlis does not stop its runs on it, and
   not to use it unless the person says to.
-- **The person**, beside the press on the refused vault's Notice, reads that the chat's runs on
-  the vault still go and where to stop them: Settings › Sandbox › Allowed, or the vault's tag,
+- **The person**, beside the press on the refused vault's Notice, reads that Keep blocked does not
+  stop the chat's runs on the vault, and where to stop them: Settings › Sandbox › Allowed, or the vault's tag,
   and the persona's tool line where one names the vault.
 
 Keep blocked still takes back nothing the persona holds. The Inbox shows no answer's sentence for

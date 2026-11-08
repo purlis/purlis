@@ -838,8 +838,8 @@ fn keep_blocked_on_a_vault_allowed_for_the_persona_says_its_runs_still_go_and_po
     assert_eq!(held.persona, "steward");
     assert_eq!(
         held.said,
-        "You kept vault devops blocked for this chat, but steward can already use it, so this \
-         chat's runs on it still go. Remove it in Settings › Sandbox › Allowed to stop them."
+        "You kept vault devops blocked for this chat, but steward can already use it, so Keep blocked does not stop this \
+         chat's runs on it. Remove it in Settings › Sandbox › Allowed to stop them."
     );
 }
 
@@ -850,8 +850,8 @@ fn keep_blocked_on_a_vault_tagged_for_the_persona_says_its_runs_still_go_and_nam
     assert_eq!(held.by, purlis_core::askoutcome::HeldBy::Tag);
     assert_eq!(
         held.said,
-        "You kept vault devops blocked for this chat, but devops can already use it, so this \
-         chat's runs on it still go. The project's vaults tag it for devops: change that tag \
+        "You kept vault devops blocked for this chat, but devops can already use it, so Keep blocked does not stop this \
+         chat's runs on it. The project's vaults tag it for devops: change that tag \
          to stop them."
     );
 }
@@ -886,8 +886,8 @@ fn keep_blocked_on_a_vault_both_tagged_and_allowed_points_at_the_tag_which_remov
     assert_eq!(held.by, purlis_core::askoutcome::HeldBy::Tag);
     assert_eq!(
         held.said,
-        "You kept vault devops blocked for this chat, but devops can already use it, so this \
-         chat's runs on it still go. The project's vaults tag it for devops: change that tag \
+        "You kept vault devops blocked for this chat, but devops can already use it, so Keep blocked does not stop this \
+         chat's runs on it. The project's vaults tag it for devops: change that tag \
          to stop them. It is in Settings › Sandbox › Allowed too."
     );
 }

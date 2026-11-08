@@ -894,8 +894,8 @@ pub(crate) fn kept_blocked_but_held(
         HeldBy::AllowedList
     };
     let mut said = format!(
-        "You kept vault {vault} blocked for this chat, but {persona} can already use it, so this \
-         chat's runs on it still go."
+        "You kept vault {vault} blocked for this chat, but {persona} can already use it, so Keep blocked does not stop this \
+         chat's runs on it."
     );
     said.push_str(&match by {
         HeldBy::AllowedList => {
