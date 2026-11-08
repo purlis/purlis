@@ -874,3 +874,20 @@ fn keep_blocked_on_a_held_vault_a_tool_line_names_says_that_line_too() {
         held.said
     );
 }
+
+#[test]
+fn keep_blocked_on_a_vault_both_tagged_and_allowed_points_at_the_tag_which_removing_the_row_leaves()
+{
+    let project = project();
+    let root = project.path();
+    purlis_core::sandbox::local::grant_vault(root, "devops", "devops")
+        .expect("a row of the Allowed list");
+    let held = kept_blocked_but_held(root, Some("devops"), "devops").expect("held");
+    assert_eq!(held.by, purlis_core::askoutcome::HeldBy::Tag);
+    assert_eq!(
+        held.said,
+        "You kept vault devops blocked for this chat, but devops can already use it, so this \
+         chat's runs on it still go. The project's vaults tag it for devops: change that tag \
+         to stop them. It is in Settings › Sandbox › Allowed too."
+    );
+}

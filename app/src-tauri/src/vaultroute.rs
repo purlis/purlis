@@ -724,13 +724,14 @@ pub async fn keep_vault_blocked(
     // Off the window's thread (#5424): a Run grant's ask open on the vault is answered Don't
     // allow, and that answer is audited on disk.
     crate::off_the_window("keeping the vault blocked", move || {
-        keep_blocked_pressed(&held, network.as_ref(), session, &vault);
+        // Read before the press, so a chat that closes meanwhile is still the chat it was.
         let persona = held
             .chats()
             .open_now()
             .into_iter()
             .find(|open| open.session == session)
             .and_then(|open| open.persona);
+        keep_blocked_pressed(&held, network.as_ref(), session, &vault);
         if let Some(kept) = kept_blocked_but_held(held.root(), persona.as_deref(), &vault) {
             held.chats().tell_outcome(
                 session,
@@ -741,6 +742,7 @@ pub async fn keep_vault_blocked(
                     answer: purlis_core::askoutcome::Answer::KeptBlockedButHeld {
                         persona: kept.persona,
                         by: kept.by,
+                        reason: purlis_core::askoutcome::reason(reason.as_deref()),
                     },
                 },
             );
@@ -874,13 +876,22 @@ pub(crate) fn kept_blocked_but_held(
     use purlis_core::askoutcome::HeldBy;
     let persona = persona.filter(|p| !p.is_empty())?;
     brokered::authorise(&Ctx::new(root, Env::from_process()), Some(persona), vault).ok()?;
-    let allowed = sandbox::local::granted_vaults(root)
-        .iter()
-        .any(|one| one.vault == vault && one.persona == persona);
-    let by = if allowed {
-        HeldBy::AllowedList
-    } else {
+    // The broker's own rule: the tag first, then a row of the Allowed list where policy leaves
+    // vault grants (#5876's review). Removing a row leaves a tag that still holds.
+    let ctx = Ctx::new(root, Env::from_process());
+    let tagged = purlis_core::secrets::registry::load_registry(&ctx)
+        .ok()
+        .and_then(|doc| purlis_core::secrets::registry::vault_in(&doc, vault).ok())
+        .and_then(|registered| registered.persona)
+        .is_some_and(|tagged_for| tagged_for == persona);
+    let allowed = !sandbox::policy::Locks::of(root).forbids_vault_grants()
+        && sandbox::local::granted_vaults(root)
+            .iter()
+            .any(|one| one.vault == vault && one.persona == persona);
+    let by = if tagged {
         HeldBy::Tag
+    } else {
+        HeldBy::AllowedList
     };
     let mut said = format!(
         "You kept vault {vault} blocked for this chat, but {persona} can already use it, so this \
@@ -894,6 +905,9 @@ pub(crate) fn kept_blocked_but_held(
             format!(" The project's vaults tag it for {persona}: change that tag to stop them.")
         }
     });
+    if tagged && allowed {
+        said.push_str(" It is in Settings › Sandbox › Allowed too.");
+    }
     if brokered::declares_a_tool_with(root, persona, vault) {
         said.push_str(&format!(
             " {persona}'s tools name it too: remove that tool line to stop its runs."
