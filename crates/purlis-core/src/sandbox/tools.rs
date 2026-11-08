@@ -1843,6 +1843,27 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "pre-commit",
     "pulumi",
     "cdk",
+    // programs that run what a file a chat wrote says (#5619's fourth review): `terraform`'s
+    // `local-exec` and `external`, a playbook, a Vagrantfile, a template, a test suite
+    "terraform",
+    "tofu",
+    "terragrunt",
+    "ansible",
+    "ansible-playbook",
+    "vagrant",
+    "packer",
+    "cdktf",
+    "sst",
+    "serverless",
+    "jest",
+    "vitest",
+    "mocha",
+    "rspec",
+    // Kept offered, Allow once on the exact command alone (#5799 holds the rest of this ruling):
+    // `kubectl`, `psql`, `ssh`, `scp`, `rsync` and the like are the usual reason a chat is handed
+    // a key at all. A kubeconfig's `exec:` plugin, `psql -f`'s `\!`, `ssh -o ProxyCommand` or
+    // `rsync -e` can run another program, but each is said in the command the person reads, or
+    // in a file the command names, which the notice's caution warns of.
 ];
 
 /// **The programs a Run grant may be wider than one exact command for** (the person's ruling on

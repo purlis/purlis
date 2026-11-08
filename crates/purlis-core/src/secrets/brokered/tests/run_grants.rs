@@ -2256,3 +2256,75 @@ fn pulumi_runs_what_it_is_given_or_what_a_chat_wrote_so_it_is_offered_no_run_gra
 fn cdk_runs_what_it_is_given_or_what_a_chat_wrote_so_it_is_offered_no_run_grant() {
     refused_as_running_others("cdk");
 }
+
+// The fourth review of #5619: programs that run what a file a chat wrote says.
+
+#[test]
+fn terraform_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("terraform");
+}
+
+#[test]
+fn tofu_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("tofu");
+}
+
+#[test]
+fn terragrunt_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("terragrunt");
+}
+
+#[test]
+fn ansible_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("ansible");
+}
+
+#[test]
+fn ansible_playbook_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("ansible-playbook");
+}
+
+#[test]
+fn vagrant_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("vagrant");
+}
+
+#[test]
+fn packer_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("packer");
+}
+
+#[test]
+fn cdktf_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("cdktf");
+}
+
+#[test]
+fn sst_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("sst");
+}
+
+#[test]
+fn serverless_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("serverless");
+}
+
+#[test]
+fn jest_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("jest");
+}
+
+#[test]
+fn vitest_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("vitest");
+}
+
+#[test]
+fn mocha_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("mocha");
+}
+
+#[test]
+fn rspec_runs_what_a_file_a_chat_wrote_says_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("rspec");
+}
