@@ -9,6 +9,7 @@ import {
   useId,
   useLayoutEffect,
   useMemo,
+  useReducer,
   useRef,
   useState,
   type ReactNode,
@@ -324,6 +325,15 @@ export function Notice(props: NoticeProps) {
   // **In a chat pane's band, a compact row** (#5215): the band says so, with how to close it here.
   const band = useContext(BandRows);
   const stands = band?.stands;
+  // **Its band reads it in the commit it comes or goes in** (#3437), not a task later from what
+  // its observer saw: so the band's room and its last warning go in one layout, and the
+  // terminal is fitted once.
+  const bandChanged = useContext(BandChanged);
+  useLayoutEffect(() => {
+    if (at !== "pane" || bandChanged === null) return undefined;
+    bandChanged();
+    return bandChanged;
+  }, [at, bandChanged]);
   useEffect(
     () => (at === "pane" && title === undefined ? stands?.(cause) : undefined),
     [at, title, stands, cause],
@@ -825,6 +835,12 @@ const BandRows = createContext<{
    *  cause is no longer closed, so the same ask asked again is seen. */
   stands: (cause: string) => () => void;
 } | null>(null);
+
+/** **How a pane's Notice tells its band it came or went** (#3437), in the commit that draws it or
+ *  takes it away. An update made in a commit is rendered before the frame is laid out, so the
+ *  band reads its stack then, where its observers would read it a task later, after a frame
+ *  that drew the band with nothing in it. None outside a band. */
+const BandChanged = createContext<(() => void) | null>(null);
 
 /** **What this band has closed, and how to close**, for what draws a part of it itself (a task's
  *  question, `QuizBand`); none outside a chat's band. */
@@ -1456,6 +1472,8 @@ export function NoticePaneRow({
     waitsOn: [],
   });
 
+  /** Reads the stack again: set while the band is drawn. */
+  const placeAt = useRef<() => void>(() => undefined);
   // Read off the stack: what it holds, and which notes the band folds.
   useLayoutEffect(() => {
     const stack = stackAt.current;
@@ -1473,6 +1491,7 @@ export function NoticePaneRow({
       setHeld((was) => (sameRead(was, now) ? was : now));
     };
     place();
+    placeAt.current = place;
     // A Notice that comes or goes, and one that comes to ask or changes its tone or its ways out
     // where it stands (an answered question says what was done in the same box).
     const watching = new MutationObserver(place);
@@ -1492,12 +1511,20 @@ export function NoticePaneRow({
     };
     stack.addEventListener("focusout", left);
     return () => {
+      placeAt.current = () => undefined;
       watching.disconnect();
       changing.disconnect();
       stack.removeEventListener("focusout", left);
       clearTimeout(later);
     };
   }, [folds]);
+
+  // **A Notice that came or went is read in the commit that drew it** (#3437): told in that
+  // commit (`BandChanged`), the band renders again before the frame is laid out, and reads its
+  // stack here, after the Notice's own box has come or gone. What the observers above read, a
+  // task later, is then what was already read.
+  const [changed, change] = useReducer((count: number) => count + 1, 0);
+  useLayoutEffect(() => placeAt.current(), [changed]);
 
   const { notes, trouble, asks } = held;
   useEffect(() => onHolds?.({ notes, trouble, asks }), [onHolds, notes, trouble, asks]);
@@ -1593,6 +1620,15 @@ export function NoticePaneRow({
   // Unfolding, the read of what it shows comes after: the head is what is drawn meanwhile, and the
   // fold can only take the keyboard if the band is drawn by then.
   const empty = held.drawn === 0 && !foldedLine && !headed;
+  // **A band drawn anew starts at its top** (#3437): put away in the same layout as its last
+  // warning, its stack was never laid out shrinking, and kept the scroll of what it held. The
+  // next warning would be drawn scrolled out of it.
+  const wasEmpty = useRef(empty);
+  useLayoutEffect(() => {
+    const stack = stackAt.current;
+    if (wasEmpty.current && !empty && stack !== null) stack.scrollTop = 0;
+    wasEmpty.current = empty;
+  }, [empty]);
   // The keyboard goes from the fold to the line that took its place, and back (WCAG 2.4.3).
   useLayoutEffect(() => {
     if (!goesOn.current) return;
@@ -1646,9 +1682,11 @@ export function NoticePaneRow({
         </NoticeRowHead>
       )}
       <NoticeStack ref={stackAt}>
-        <BandRows.Provider value={rows}>
-          <NoticeWayGuard value={allows}>{children}</NoticeWayGuard>
-        </BandRows.Provider>
+        <BandChanged.Provider value={change}>
+          <BandRows.Provider value={rows}>
+            <NoticeWayGuard value={allows}>{children}</NoticeWayGuard>
+          </BandRows.Provider>
+        </BandChanged.Provider>
       </NoticeStack>
       {said !== undefined && (
         <p className="inbox-refused" role="status">

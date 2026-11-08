@@ -196,6 +196,65 @@ describe("the band's keyboard", () => {
   });
 });
 
+describe("the band put away (#3437)", () => {
+  /** The band's root, its Notices, and whether it is put away, as each moment leaves them. */
+  const watched = (row: Element) => {
+    const moments: string[] = [];
+    const watching = new MutationObserver(() => {
+      const boxes = row.querySelectorAll('[data-scope="notice"][data-part="root"]').length;
+      moments.push(`${boxes} ${row.hasAttribute("data-empty") ? "away" : "drawn"}`);
+    });
+    watching.observe(row, { subtree: true, childList: true, attributes: true });
+    return { moments, stop: () => watching.disconnect() };
+  };
+
+  it("goes in the same task as its last warning, so no frame draws an empty band", async () => {
+    // A microtask runs before the next frame is laid out: what one sees is what a frame would.
+    const user = userEvent.setup();
+    render(<Warnings causes={["only"]} />);
+    await waitFor(() => expect(shown()).toEqual(["only"]));
+    const row = document.querySelector('[data-scope="notice-row"][data-part="root"]');
+    if (row === null) throw new Error("no band drawn");
+    const { moments, stop } = watched(row);
+
+    await user.click(screen.getByRole("button", { name: "Dismiss" }));
+
+    await waitFor(() => expect(row).toHaveAttribute("data-empty"));
+    stop();
+    expect(moments).not.toContain("0 drawn");
+  });
+
+  it("comes in the same task as its first warning", async () => {
+    const user = userEvent.setup();
+    function Arrives() {
+      const [shown, setShown] = useState(false);
+      return (
+        <>
+          <button onClick={() => setShown(true)}>Raise</button>
+          <Pane>
+            {shown && (
+              <Notice cause="fresh" at="pane" label="fresh" onDismiss={() => undefined}>
+                fresh says something.
+              </Notice>
+            )}
+          </Pane>
+        </>
+      );
+    }
+    render(<Arrives />);
+    const row = document.querySelector('[data-scope="notice-row"][data-part="root"]');
+    if (row === null) throw new Error("no band drawn");
+    await waitFor(() => expect(row).toHaveAttribute("data-empty"));
+    const { moments, stop } = watched(row);
+
+    await user.click(screen.getByRole("button", { name: "Raise" }));
+
+    await waitFor(() => expect(row).not.toHaveAttribute("data-empty"));
+    stop();
+    expect(moments).not.toContain("1 away");
+  });
+});
+
 describe("the band, the header and the terminal, in a pane", () => {
   it("draws the header, then the band under it, at the top of the pane, before the terminal", async () => {
     render(<Warnings causes={["first"]} />);
