@@ -259,6 +259,7 @@ import {
   seenAt,
   reasonUpdates,
   arrivedUpdates,
+  reportSentKey,
   reportSentUpdates,
   resumeUpdates,
   sandboxUpdates,
@@ -269,7 +270,7 @@ import {
   unreadMine,
 } from "./inboxUpdates";
 import { useInboxOpenTold } from "./askNotices";
-import { ReportDraftNotices, type SentDraft } from "./ReportDraftNotices";
+import { ReportDraftNotices, undoAlwaysSend, type SentDraft } from "./ReportDraftNotices";
 import { useAnsweredWhenGone } from "./inboxRules";
 import { usePermissionAsks } from "./permissionAsks";
 import { useDismissals } from "./dismissals";
@@ -11094,6 +11095,32 @@ export const PlaneView = memo(function PlaneView({
       const refused = away.get(update.key);
       if (update.kind === "refused-away" && refused !== undefined)
         return { update, ...awayRow(refused, (one, how) => onAway?.(plane, one, how), put) };
+      const holding =
+        update.kind === "report-sent"
+          ? sentDrafts.find((one) => reportSentKey(one.id) === update.key && one.holding)
+          : undefined;
+      if (holding !== undefined)
+        return {
+          update,
+          go,
+          read,
+          dismiss: put,
+          // Always send's hold (#5695): Undo sends nothing, and the draft comes back as a card.
+          answers: [
+            {
+              label: "Undo",
+              name: `Undo: don't send ${holding.title}`,
+              title: "Don't send it. The draft comes back for you to read.",
+              press: () =>
+                void undoAlwaysSend(holding.id).then((refused) => {
+                  if (refused === undefined) {
+                    setSentDrafts((was) => was.filter((one) => one.id !== holding.id));
+                    put();
+                  }
+                }),
+            },
+          ],
+        };
       if (update.kind === "smart-close" && update.session !== null) {
         const stoppedChat = update.session;
         return { update, go, dismiss: () => (stoppedFor(stoppedChat, undefined), put()) };
@@ -11153,6 +11180,7 @@ export const PlaneView = memo(function PlaneView({
   }, [
     keptUpdates,
     settleUpdates,
+    sentDrafts,
     finishedTasks,
     awayRefused,
     chatNames,
@@ -11581,7 +11609,14 @@ export const PlaneView = memo(function PlaneView({
       <ReportDraftNotices
         plane={plane}
         onGo={(session) => showChat(session)}
-        onSent={(sent) => setSentDrafts((was) => [...was, sent])}
+        onSent={(sent) =>
+          setSentDrafts((was) => [...was.filter((one) => one.id !== sent.id), sent])
+        }
+        onUnsent={(id) => {
+          // Undone, or past the day's cap (#5695): it is a draft again, and was never sent.
+          setSentDrafts((was) => was.filter((one) => one.id !== id));
+          settleUpdates([reportSentKey(id)], "dismissed");
+        }}
       />
       {alerts !== undefined && (
         <InboxAlerts

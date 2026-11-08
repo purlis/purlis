@@ -507,6 +507,13 @@ export const commands = {
 	/**  **Lets a draft go, unsent.** */
 	dismissReportDraft: (id: string) => typedError<null, string>(__TAURI_INVOKE("dismiss_report_draft", { id })),
 	/**
+	 *  **Always send, on a draft** (#5695): held to send to purlis's report service, unread, with
+	 *  Undo until the hold ends. The window asks for the standing yes first, the first time.
+	 */
+	alwaysSendReportDraft: (id: string) => typedError<ReportDraft, string>(__TAURI_INVOKE("always_send_report_draft", { id })),
+	/**  **Undo, within the hold** (#5695): the draft is not sent, and waits in the Inbox. */
+	undoReportDraft: (id: string) => typedError<ReportDraft, string>(__TAURI_INVOKE("undo_report_draft", { id })),
+	/**
 	 *  Hands an error the window did not catch to the core's Reports, as a panic is handed: whether
 	 *  it may go, what of it goes and where are the core's to say, so without a yes to Crash reports
 	 *  nothing leaves. Answered at once; the send is on a thread of its own, so the window never
@@ -14011,6 +14018,11 @@ export type RepoStates_Serialize = {
 export type ReportConsent = {
 	crash_reports: boolean | null,
 	agent_drafts: boolean | null,
+	/**
+	 *  Always send (#5695): drafts go to purlis's report service unread, held first with Undo.
+	 *  Meant only while Agent drafts is allowed.
+	 */
+	always_send: boolean | null,
 	asked: boolean,
 	/**
 	 *  Whether purlis asks again after a crash (#5700): `due` once a crash was caught after Not
@@ -14038,6 +14050,11 @@ export type ReportDraft = {
 	edited: boolean,
 	/**  What File must name for exactly these words to be filed. */
 	digest: string,
+	/**
+	 *  When Always send sends it (#5695), UTC, RFC 3339: shown as "Sent a report" with Undo
+	 *  until then, not as a card. `None` waits for the person.
+	 */
+	sends_at: string | null,
 };
 
 /**

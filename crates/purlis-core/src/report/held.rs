@@ -64,6 +64,11 @@ pub struct Held {
     /// The person changed its words in the Inbox: no longer only the agent's.
     #[serde(default)]
     pub edited: bool,
+    /// When its hold ends, UTC, RFC 3339 to the second: a draft Always send sends (#5695), shown
+    /// as "Sent a report" with Undo until then, and sent to the Report intake after. `None` is a
+    /// draft that waits in the Inbox for the person.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sends_at: Option<String>,
 }
 
 /// [`Kind`], as the file keeps it.

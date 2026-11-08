@@ -3,6 +3,8 @@
 
 import {
   AgentDraftsChoice,
+  ALWAYS_SEND_SAYS,
+  AlwaysSendChoice,
   CRASH_SAYS,
   CrashReportsChoice,
   DRAFTS_SAYS,
@@ -17,7 +19,8 @@ import type { LiveSetting, SettingsGroup } from "./groups";
 /**
  * **You › Reports** (#5688, spec #5683): whether purlis sends its crash reports, and whether
  * agents may write report drafts, as the person answered them at first run, changed here
- * whenever they want. Kept on this machine by the core (`<config>/reports.json`), which refuses
+ * whenever they want; and, while drafts are allowed, whether they go unread by Always send
+ * (#5695). Kept on this machine by the core (`<config>/reports.json`), which refuses
  * every draft and send of a stream without its yes. Found by the palette and the filter by what
  * else a person calls it ({@link REPORTS_ALSO}): telemetry, error reporting.
  */
@@ -32,7 +35,7 @@ export function reportsGroup(): SettingsGroup {
     label: "Reports",
     help: "Crash reports, and report drafts agents write, which help fix purlis. Nothing is sent before you choose.",
     also: REPORTS_ALSO,
-    settings: [crashReports, agentDrafts, whatIsSent, sentList],
+    settings: [crashReports, agentDrafts, alwaysSend, whatIsSent, sentList],
   };
 }
 
@@ -71,6 +74,32 @@ const agentDrafts: LiveSetting = {
           ids={ids}
           value={consent.agent_drafts}
           onChange={(allow) => void answerReports({ agent_drafts: allow })}
+        />
+      ),
+    };
+  },
+};
+
+/** The Always send row (#5695): drawn only while Agent drafts is allowed. */
+export const ALWAYS_SEND_SETTING = "you.reports.always";
+
+const alwaysSend: LiveSetting = {
+  id: ALWAYS_SEND_SETTING,
+  label: "Always send drafts",
+  help: ALWAYS_SEND_SAYS,
+  writes: "this machine",
+  useShown: function useDraftsAllowed() {
+    return useReportConsent().consent.agent_drafts === true;
+  },
+  useControl: function useAlwaysSend() {
+    const { consent } = useReportConsent();
+    return {
+      grouped: true,
+      control: (ids) => (
+        <AlwaysSendChoice
+          ids={ids}
+          value={consent.always_send}
+          onChange={(always) => void answerReports({ always_send: always })}
         />
       ),
     };

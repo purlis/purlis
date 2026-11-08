@@ -20,6 +20,7 @@ export type Consent = ReportConsent;
 export const UNANSWERED: Consent = {
   crash_reports: null,
   agent_drafts: null,
+  always_send: null,
   asked: false,
   crash_notice: null,
 };
@@ -50,10 +51,14 @@ const isAnswer = (said: unknown): boolean => said === null || typeof said === "b
 /** Whether `said` has the shape the core answers with. */
 function isConsent(said: unknown): said is Consent {
   if (said === null || typeof said !== "object") return false;
-  const { crash_reports, agent_drafts, asked, crash_notice } = said as Record<string, unknown>;
+  const { crash_reports, agent_drafts, always_send, asked, crash_notice } = said as Record<
+    string,
+    unknown
+  >;
   return (
     isAnswer(crash_reports) &&
     isAnswer(agent_drafts) &&
+    isAnswer(always_send) &&
     typeof asked === "boolean" &&
     (crash_notice === null || crash_notice === "due" || crash_notice === "settled")
   );

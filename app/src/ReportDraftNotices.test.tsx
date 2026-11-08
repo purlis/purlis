@@ -2,12 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { emit } from "@tauri-apps/api/event";
 import userEvent from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { DraftFiled, ReportDraft } from "./bindings";
 import { Inbox } from "./Inbox";
 import { ReportDraftNotices, WRITTEN_BY_AN_AGENT } from "./ReportDraftNotices";
+import { forgetReportConsent, UNANSWERED, type Consent } from "./reportAnswers";
 
 /**
  * **A chat's report draft in the Inbox** (#5694): the card lists what the core holds, and every
@@ -27,6 +29,7 @@ const DRAFT: ReportDraft = {
   session: 4,
   edited: false,
   digest: "0a1b2c3d4e5f",
+  sends_at: null,
 };
 
 let sent: { cmd: string; args: Record<string, unknown> }[] = [];
@@ -68,6 +71,7 @@ const card = () => screen.queryByText(`Report draft: ${DRAFT.title}`);
 afterEach(() => {
   cleanup();
   clearMocks();
+  forgetReportConsent();
 });
 
 describe("a report draft in the Inbox (#5694)", () => {
@@ -158,5 +162,124 @@ describe("a report draft in the Inbox (#5694)", () => {
     expect(of("dismiss_report_draft")).toEqual([{ id: "d1" }]);
     expect(of("file_report_draft")).toEqual([]);
     expect(onSent).not.toHaveBeenCalled();
+  });
+});
+
+describe("Always send on a report draft (#5695)", () => {
+  /** A core holding `drafts` (changed by the test), whose answers are `consent`. */
+  function sending(consent: Consent) {
+    let kept = consent;
+    let drafts: ReportDraft[] = [DRAFT];
+    sent = [];
+    forgetReportConsent();
+    mockIPC(
+      (cmd, args) => {
+        sent.push({ cmd, args: args as Record<string, unknown> });
+        if (cmd === "report_drafts") return drafts;
+        if (cmd === "report_consent") return kept;
+        if (cmd === "keep_report_consent") kept = (args as { consent: Consent }).consent;
+        if (cmd === "always_send_report_draft") {
+          drafts = [{ ...DRAFT, sends_at: "2026-11-08T10:00:10Z" }];
+          return drafts[0];
+        }
+        return null;
+      },
+      { shouldMockEvents: true },
+    );
+    return {
+      kept: () => kept,
+      /** The core's list is now `next`, and it tells the windows so. */
+      becomes: async (next: ReportDraft[]) => {
+        drafts = next;
+        await act(async () => {
+          await emit("report-drafts-changed", null);
+          await new Promise((done) => setTimeout(done, 50));
+        });
+      },
+    };
+  }
+
+  const allowed: Consent = { ...UNANSWERED, agent_drafts: true, asked: true };
+
+  it("asks once, and Cancel keeps the draft and sends nothing", async () => {
+    sending(allowed);
+    drawn();
+    await waitFor(() => expect(card()).not.toBeNull());
+    await userEvent.click(screen.getByRole("button", { name: "Always send" }));
+    const dialog = await screen.findByRole("dialog", { name: "Always send report drafts?" });
+    expect(dialog.textContent).toMatch(/private report service/);
+    expect(dialog.textContent).toMatch(/Settings › You › Reports/);
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(of("always_send_report_draft")).toEqual([]);
+    expect(of("keep_report_consent")).toEqual([]);
+    expect(card()).not.toBeNull();
+  });
+
+  it("keeps the standing yes and holds the draft to send once the person agrees", async () => {
+    const core = sending(allowed);
+    drawn();
+    await waitFor(() => expect(card()).not.toBeNull());
+    await userEvent.click(screen.getByRole("button", { name: "Always send" }));
+    await screen.findByRole("dialog", { name: "Always send report drafts?" });
+    await userEvent.click(
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Always send" }),
+    );
+    await waitFor(() => expect(of("always_send_report_draft")).toEqual([{ id: "d1" }]));
+    expect(core.kept().always_send).toBe(true);
+  });
+
+  it("asks nothing once the person said yes before", async () => {
+    sending({ ...allowed, always_send: true });
+    drawn();
+    await waitFor(() => expect(card()).not.toBeNull());
+    await userEvent.click(screen.getByRole("button", { name: "Always send" }));
+    await waitFor(() => expect(of("always_send_report_draft")).toEqual([{ id: "d1" }]));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("draws a draft held to send as no card, but as sent with its hold, then as sent", async () => {
+    const core = sending({ ...allowed, always_send: true });
+    const onSent = vi.fn();
+    const onUnsent = vi.fn();
+    render(
+      <ReportDraftNotices
+        plane="/plane"
+        onGo={() => undefined}
+        onSent={onSent}
+        onUnsent={onUnsent}
+      />,
+    );
+    await waitFor(() => expect(card()).not.toBeNull());
+
+    await core.becomes([{ ...DRAFT, sends_at: "2026-11-08T10:00:10Z" }]);
+    await waitFor(() => expect(card()).toBeNull());
+    expect(onSent).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id: "d1", to: "intake", holding: true }),
+    );
+
+    await core.becomes([]);
+    expect(onSent).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id: "d1", to: "intake", holding: false }),
+    );
+    expect(onUnsent).not.toHaveBeenCalled();
+  });
+
+  it("hands back a draft whose hold was undone or capped, which is a card again", async () => {
+    const core = sending({ ...allowed, always_send: true });
+    const onUnsent = vi.fn();
+    render(
+      <ReportDraftNotices
+        plane="/plane"
+        onGo={() => undefined}
+        onSent={vi.fn()}
+        onUnsent={onUnsent}
+      />,
+    );
+    await core.becomes([{ ...DRAFT, sends_at: "2026-11-08T10:00:10Z" }]);
+    await waitFor(() => expect(card()).toBeNull());
+    await core.becomes([DRAFT]);
+    expect(onUnsent).toHaveBeenCalledWith("d1");
+    await waitFor(() => expect(card()).not.toBeNull());
   });
 });

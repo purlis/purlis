@@ -136,14 +136,18 @@ export const listedFrom = (update: Pick<InboxUpdate, "kind" | "baselined">): Upd
 export const unreadMine = (updates: readonly InboxUpdate[] | undefined): number =>
   (updates ?? []).filter((one) => !one.read && listedFrom(one) === "mine").length;
 
+/** The key of the update that says draft `id` was sent. */
+export const reportSentKey = (id: string) => `report-sent:${id}`;
+
 /**
- * **A report a chat drafted, filed by the person** (#5694): one update per draft filed in this
+ * **A report a chat drafted, filed by the person** (#5694), or sent by Always send (#5695): Always
+ * send's says "Sent a report" from the start of its hold, when the row offers Undo, on.: one update per draft filed in this
  * window, saying where it went (or that it waits on this machine to send, #5693), on the chat it
  * came from.
  */
 export function reportSentUpdates(sent: readonly SentDraft[]): UpdateNoted[] {
   return sent.map((one) => ({
-    key: `report-sent:${one.id}`,
+    key: reportSentKey(one.id),
     kind: "report-sent",
     at: secondsOf(one.at),
     session: one.session,

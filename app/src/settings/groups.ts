@@ -244,6 +244,13 @@ export type LiveSetting = Named & {
    * Absent, the row does not say, and it is off on a read-only project: it fails closed.
    */
   writes?: "nothing" | "this machine" | "local" | "per control";
+  /**
+   * **A row shown only while another row has a value** (#5695): a hook, called once per render
+   * like `useControl`, answering whether the row is drawn now. Always send means something only
+   * while Agent drafts is allowed, so it is drawn only then. Absent, the row is always drawn. A
+   * filter still finds the row by its words; it is drawn when the hook says so.
+   */
+  useShown?: () => boolean;
   useControl: () => {
     control: (ids: RowIds) => ReactNode;
     reset?: Reset;
