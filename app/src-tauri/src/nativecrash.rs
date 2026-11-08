@@ -22,7 +22,13 @@
 //! handling PR#126). Once a `minidumper-child` release depends on `crash-handler` 0.8, its version
 //! in `crates/crash-handler/Cargo.toml` moves to it, the `#[ignore]` comes off that crate's
 //! `a_child_of_a_watched_process_that_crashes_dies_of_it_and_leaves_no_minidump`, and
-//! [`STARTED`] turns on. Everything else (the companion's role, the minidumps waiting on the next
+//! [`STARTED`] turns on. **In the same change, the release profile starts writing debug
+//! symbols** (ruling of 2026-11-08, #5692): `debug = "line-tables-only"` and
+//! `split-debuginfo = "packed"` on `[profile.release]` in the workspace's `Cargo.toml`, keeping
+//! `strip = true`, so a dSYM lands beside each binary for `release.yml`'s `symbols` job to send to
+//! the Report intake. Until then the job finds none. The change is a ruling under ADR 0092 (an
+//! amendment, and the profile test in `crates/release-manifest` moves with it), and its cost to
+//! the macOS build is measured on that change's own release run. Everything else (the companion's role, the minidumps waiting on the next
 //! launch, the panic's hand-off) is in place and runs; with nothing watching, nothing waits.
 
 use std::sync::OnceLock;
