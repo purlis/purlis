@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794109035997,
+  "lastUpdate": 1794111723391,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -43008,6 +43008,48 @@ window.BENCHMARK_DATA = {
             "value": 101.81647999999998,
             "unit": "ms",
             "extra": "median of 5 runs: 101.370, 101.618, 101.816, 101.984, 102.509 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "6642b50d273cf70a99c9ebba5fb644ccd7b48045",
+          "message": "Research: every way a restart leaves a chat idle on its own work (#5716)\n\nA case matrix, facts only, of how each kind of restart treats a chat's\nown background work, per harness, with the timing cases and the cases\nno ticket covers. Each cell is marked verified from code, verified from\na run, or inferred.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6VYEDQVZK6AAVFQPC8NNTG9\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-08T03:45:13Z",
+          "tree_id": "c1ce8c0bec11cf637d3c78a295ec38e2f216ceba",
+          "url": "https://github.com/purlis/purlis/commit/6642b50d273cf70a99c9ebba5fb644ccd7b48045"
+        },
+        "date": 1794111717661,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5583089999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.549, 0.556, 0.558, 0.570, 0.605 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.2655765,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.152, 16.222, 16.266, 16.315, 16.487 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.36526,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.004, 101.151, 102.365, 103.053, 103.297 ms"
           }
         ]
       }
