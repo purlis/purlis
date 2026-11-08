@@ -3304,13 +3304,14 @@ export const commands = {
 	 */
 	fixSaveRequest: (plane: PlaneId, workspace: string | null, repo: string | null, columns: number, rows: number) => typedError<Fixing, string>(__TAURI_INVOKE("fix_save_request", { plane, workspace, repo, columns, rows })),
 	/**
-	 *  **Resolve a save's conflict in a chat** (qw382): the project's rebase is stopped on a
-	 *  conflict the window started (`settle_save_conflict`), and a chat is started at the plane
-	 *  root on a message that names the files and the two sides, asking it to edit them and run
-	 *  no git. The window stages and continues; the chat's sandbox and A3c are as they are.
+	 *  **Resolve a save's conflict in a chat** (qw382, #5824 F7): the window has cut a resolve
+	 *  folder for the conflict (`settle_save_conflict`), and a chat is started at the plane root on a
+	 *  message that names the folder, the files and the two sides, asking it to edit them there and
+	 *  run no git. The window stages, commits and moves the project; the chat's sandbox and A3c are
+	 *  as they are.
 	 * 
-	 *  Refused when no rebase is stopped on a conflict, and when a file in conflict is one a
-	 *  chat's sandbox may not write: that one is the person's to settle, in a terminal.
+	 *  Refused when no resolve is open, and when a file in conflict is one a chat's sandbox may not
+	 *  write: that one is the person's to settle, in a terminal.
 	 * 
 	 *  The window's alone (`WINDOW_ONLY`): no link and no chat may press it.
 	 */
@@ -15089,11 +15090,6 @@ export type SaveEntry = {
 	detail: string,
 };
 
-/**
- *  What a fresh look at a save's request found, for the question **Merge as it stands…**
- *  asks: the commit it is at and where it stands now. The press hands `head` and
- *  `merge.shown` back, and the merge is made only of them.
- */
 /**  A settings key both machines changed, with both values as TOML writes them (#5852). */
 export type SaveKey = {
 	file: string,
@@ -15114,6 +15110,11 @@ export type SaveKeyChoice = {
 	theirs: boolean,
 };
 
+/**
+ *  What a fresh look at a save's request found, for the question **Merge as it stands…**
+ *  asks: the commit it is at and where it stands now. The press hands `head` and
+ *  `merge.shown` back, and the merge is made only of them.
+ */
 export type SaveLook = {
 	/**  The commit the request is at; `null` when no request is open any more. */
 	head: string | null,
@@ -15161,7 +15162,6 @@ export type SaveMerge = {
 	shown: string,
 };
 
-/**  How a press of Resolve, Continue or Abort on a save's conflict ended (qw382). */
 /**  A resolve open in its folder off to the side (#5824 F7). */
 export type SaveResolving = {
 	/**  Where the resolve folder is. */
@@ -15170,6 +15170,7 @@ export type SaveResolving = {
 	keys: SaveKey[],
 };
 
+/**  How a press of Resolve, Continue or Abort on a save's conflict ended (qw382). */
 export type SaveSettled = {
 	/**
 	 *  `saved`: the replay finished and what is committed was pushed, with no new commit
@@ -15188,15 +15189,15 @@ export type SaveSettled = {
 	lines: string[],
 };
 
-/**  The record a smart close ended on, as its view tab opens it (SI-8d). */
 /**  A project that could not be fetched while its request is open (#5824 F8). */
 export type SaveStale = {
 	/**  When the first failed fetch of the run was, in seconds since the epoch. */
-	since: number,
+	since: number | null,
 	/**  Why the latest one failed, as a sentence fragment. */
 	why: string,
 };
 
+/**  The record a smart close ended on, as its view tab opens it (SI-8d). */
 export type SavedRecord = {
 	/**  Plane-relative, as `session_record` reads it. */
 	path: string,

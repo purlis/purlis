@@ -28,7 +28,7 @@ const WAITING: PlaneSaving = {
   conflictKeys: {},
   notice: null,
   mode: "pr",
-  modeFrom: "charter.toml",
+  modeFrom: "purlis.toml",
   journal: [],
 };
 

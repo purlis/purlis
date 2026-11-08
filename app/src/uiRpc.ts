@@ -12244,11 +12244,6 @@ export type SaveEntry = {
 	detail: string,
 };
 
-/**
- *  What a fresh look at a save's request found, for the question **Merge as it stands…**
- *  asks: the commit it is at and where it stands now. The press hands `head` and
- *  `merge.shown` back, and the merge is made only of them.
- */
 /**  A settings key both machines changed, with both values as TOML writes them (#5852). */
 export type SaveKey = {
 	file: string,
@@ -12269,6 +12264,11 @@ export type SaveKeyChoice = {
 	theirs: boolean,
 };
 
+/**
+ *  What a fresh look at a save's request found, for the question **Merge as it stands…**
+ *  asks: the commit it is at and where it stands now. The press hands `head` and
+ *  `merge.shown` back, and the merge is made only of them.
+ */
 export type SaveLook = {
 	/**  The commit the request is at; `null` when no request is open any more. */
 	head: string | null,
@@ -12316,7 +12316,6 @@ export type SaveMerge = {
 	shown: string,
 };
 
-/**  How a press of Resolve, Continue or Abort on a save's conflict ended (qw382). */
 /**  A resolve open in its folder off to the side (#5824 F7). */
 export type SaveResolving = {
 	/**  Where the resolve folder is. */
@@ -12325,6 +12324,7 @@ export type SaveResolving = {
 	keys: SaveKey[],
 };
 
+/**  How a press of Resolve, Continue or Abort on a save's conflict ended (qw382). */
 export type SaveSettled = {
 	/**
 	 *  `saved`: the replay finished and what is committed was pushed, with no new commit
@@ -12343,15 +12343,15 @@ export type SaveSettled = {
 	lines: string[],
 };
 
-/**  The record a smart close ended on, as its view tab opens it (SI-8d). */
 /**  A project that could not be fetched while its request is open (#5824 F8). */
 export type SaveStale = {
 	/**  When the first failed fetch of the run was, in seconds since the epoch. */
-	since: number,
+	since: number | null,
 	/**  Why the latest one failed, as a sentence fragment. */
 	why: string,
 };
 
+/**  The record a smart close ended on, as its view tab opens it (SI-8d). */
 export type SavedRecord = {
 	/**  Plane-relative, as `session_record` reads it. */
 	path: string,

@@ -29,7 +29,7 @@ const RESOLVING: PlaneSaving = {
   conflictKeys: {},
   notice: null,
   mode: "pr",
-  modeFrom: "charter.toml",
+  modeFrom: "purlis.toml",
   journal: [],
   stoppedBy: "resolve",
   resolving: { folder: "/home/dev/plane/.purlis/resolve", keys: [] },
@@ -63,17 +63,17 @@ export const ResolvingAKey: Story = {
   args: {
     saving: {
       ...RESOLVING,
-      conflicts: ["charter.toml"],
-      conflictKeys: { "charter.toml": ["sandbox.mode"] },
+      conflicts: ["purlis.toml"],
+      conflictKeys: { "purlis.toml": ["sandbox.mode"] },
       resolving: {
         folder: "/home/dev/plane/.purlis/resolve",
-        keys: [{ file: "charter.toml", key: "sandbox.mode", ours: '"workspace"', theirs: '"off"' }],
+        keys: [{ file: "purlis.toml", key: "sandbox.mode", ours: '"workspace"', theirs: '"off"' }],
       },
     },
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    const group = canvas.getByRole("radiogroup", { name: "sandbox.mode in charter.toml" });
+    const group = canvas.getByRole("radiogroup", { name: "sandbox.mode in purlis.toml" });
     const ours = within(group).getByRole("radio", { name: 'This machine\'s: "workspace"' });
     // The group is one Tab stop among the Notice's ways out, wherever it is drawn.
     for (let stop = 0; stop < 6 && document.activeElement !== ours; stop += 1) {
