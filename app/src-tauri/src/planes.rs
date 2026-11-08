@@ -1049,10 +1049,18 @@ impl Held {
     /// than [`crate::inputlanes::A_TURN_WAITS_AT_MOST`], as most of it is asked on the window's
     /// thread: past it, nothing is typed and the answer is a refusal.
     pub fn type_in_turn(&self, session: u32, bytes: &[u8]) -> Result<(), String> {
-        self.lanes
-            .in_turn_within(session, crate::inputlanes::A_TURN_WAITS_AT_MOST, || {
-                self.chats.sessions().input(session, bytes)
-            })?
+        let started = std::time::Instant::now();
+        let mut host = None;
+        let typed =
+            self.lanes
+                .in_turn_within(session, crate::inputlanes::A_TURN_WAITS_AT_MOST, || {
+                    let sent = std::time::Instant::now();
+                    let typed = self.chats.sessions().input(session, bytes);
+                    host = Some(sent.elapsed());
+                    typed
+                });
+        typed_slowly(session, started.elapsed(), host);
+        typed?
     }
 
     /// Whether chat `session` can be sent anything now: not while its runner is reconnecting,
@@ -6182,6 +6190,32 @@ pub(crate) use purlis_core::hookchannel::{how_its_run_ended, its_children_end};
 #[path = "planes/tab_windows.rs"]
 mod tab_windows;
 pub use tab_windows::TabWindow;
+
+/// A line typed into a chat's pane past this is said in the log, with where the time went.
+const TYPING_IS_SLOW_PAST: std::time::Duration = std::time::Duration::from_millis(500);
+
+/// **A slow line typed into chat `session`'s pane, said with where the time went** (#5772):
+/// waiting for the chat's input lane, or for the session host to take the bytes. `host` is how
+/// long the host took, or `None` where the lane never came free and nothing was sent.
+fn typed_slowly(session: u32, took: std::time::Duration, host: Option<std::time::Duration>) {
+    if took < TYPING_IS_SLOW_PAST {
+        return;
+    }
+    let lane = took.saturating_sub(host.unwrap_or_default());
+    match host {
+        Some(host) => tracing::warn!(
+            "purlis: a line typed into chat {session} took {} ms: {} ms waiting for its input \
+             lane, {} ms for the session host to take it",
+            took.as_millis(),
+            lane.as_millis(),
+            host.as_millis()
+        ),
+        None => tracing::warn!(
+            "purlis: a line for chat {session} waited {} ms for its input lane and was not typed",
+            took.as_millis()
+        ),
+    }
+}
 
 #[cfg(test)]
 mod tests;
