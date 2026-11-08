@@ -618,6 +618,48 @@ pub struct SkillsMissing {
     /// The repo's own skills named like one of purlis's built-in skills, which the chat's
     /// program loads beside purlis's (SK-37).
     pub beside_a_built_in: Vec<String>,
+    /// **Where Claude Code would still drop skills' descriptions** (#5736): the limit the chat's
+    /// listing needs is past Claude Code's own, with who takes the most room.
+    pub crowded: Option<ListingCrowded>,
+}
+
+/// **A chat whose listing needs more than Claude Code holds** (#5736): the core's
+/// `harness::claude::Crowded`, for the window.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct ListingCrowded {
+    /// Characters its listing needs: purlis's skills, the person's own, and Claude Code's own.
+    pub needs: u32,
+    /// The most Claude Code holds, in characters.
+    pub most: u32,
+    /// What takes the most of the person's own room, biggest first.
+    pub biggest: Vec<ListingContributor>,
+}
+
+/// One of [`ListingCrowded::biggest`]: a plugin, whole, or one of the person's own skills.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct ListingContributor {
+    pub name: String,
+    pub plugin: bool,
+    pub chars: u32,
+}
+
+impl From<purlis_core::harness::claude::Crowded> for ListingCrowded {
+    fn from(crowded: purlis_core::harness::claude::Crowded) -> Self {
+        let chars = |n: usize| u32::try_from(n).unwrap_or(u32::MAX);
+        ListingCrowded {
+            needs: chars(crowded.needs),
+            most: chars(crowded.most),
+            biggest: crowded
+                .biggest
+                .into_iter()
+                .map(|one| ListingContributor {
+                    chars: chars(one.chars),
+                    name: one.name,
+                    plugin: one.plugin,
+                })
+                .collect(),
+        }
+    }
 }
 
 /// A skill a chat would have loaded that could not be loaded (SK-8): the core's `Broken`, for
@@ -4782,6 +4824,9 @@ impl Chats {
             chat.routing.as_ref(),
         );
         let routing_was_kept = kept_routing.is_some();
+        // Where its harness keeps its own config, as its environment says: what its own
+        // catalogue is measured from (#5736), held apart from `env`, which the start moves on.
+        let config_dirs = purlis_core::harness_plugin::config_dirs_in(&env);
         let skills = std::cell::LazyCell::new(|| {
             if armed_by_its_runner {
                 return purlis_core::hoststart::ChatSkills::default();
@@ -4792,7 +4837,9 @@ impl Chats {
                 harness,
                 chat.cwd.as_deref(),
                 runs_as.as_deref(),
-            );
+            )
+            // What its harness lists of its own, which Claude Code's limit counts (#5736).
+            .own_measured(harness, chat.cwd.as_deref(), &config_dirs);
             match kept_routing {
                 Some(kept) => read.routed_as(kept, harness),
                 None => read.routed_by(built_in_skills_here().as_deref(), harness, router.as_ref()),
@@ -4902,19 +4949,27 @@ impl Chats {
         // A skill its persona names that this machine does not have (SK-5, #2768), or one it
         // would have loaded that cannot be (SK-8, #2771): the chat starts without it, and its
         // tab's Notice says which, never a silent drop.
+        // And one whose listing would still lose descriptions past Claude Code's own limit
+        // (#5736): the same Notice names who takes the room.
         let skills_missing = if reattaching || on_the_runner {
             None
         } else {
-            purlis_core::hoststart::skills_not_here(&skills, &self.kit(harness), harness, &env).map(
-                |not| SkillsMissing {
+            let kit = self.kit(harness);
+            let crowded = purlis_core::hoststart::listing_crowded(&skills, &kit, harness)
+                .map(ListingCrowded::from);
+            let not = purlis_core::hoststart::skills_not_here(&skills, &kit, harness, &env);
+            (not.is_some() || crowded.is_some()).then(|| {
+                let not = not.unwrap_or_default();
+                SkillsMissing {
                     persona: runs_as.clone(),
                     missing: not.missing,
                     no_built_in: not.no_built_in,
                     broken: not.broken.into_iter().map(SkillBroken::from).collect(),
                     by_a_repo: not.by_a_repo.into_iter().map(SkillBroken::from).collect(),
                     beside_a_built_in: not.beside_a_built_in,
-                },
-            )
+                    crowded,
+                }
+            })
         };
         let hooks = match &settings_watched {
             Some(Err(why)) => {

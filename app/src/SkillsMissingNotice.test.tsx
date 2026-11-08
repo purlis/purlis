@@ -19,6 +19,7 @@ const MISSING = {
   broken: [],
   by_a_repo: [],
   beside_a_built_in: [],
+  crowded: null,
 };
 
 describe("a chat's missing skills", () => {
@@ -87,6 +88,7 @@ describe("a chat's missing skills", () => {
         ],
         by_a_repo: [],
         beside_a_built_in: [],
+        crowded: null,
       }),
     ).toBe(
       "This chat started without 1 skill that could not be loaded: half (project), not a skill: its SKILL.md names no `description`.",
@@ -117,6 +119,7 @@ describe("a chat's missing skills", () => {
           },
         ],
         beside_a_built_in: [],
+        crowded: null,
       }),
     ).toBe(
       "This chat started without 2 skills because of the repo it works in: " +
@@ -135,6 +138,7 @@ describe("a chat's missing skills", () => {
         broken: [],
         by_a_repo: [],
         beside_a_built_in: names,
+        crowded: null,
       });
     expect(said(["secrets"])).toBe(
       "This chat works in a repo with its own copy of 1 built-in skill, which it gets beside " +
@@ -143,6 +147,28 @@ describe("a chat's missing skills", () => {
     expect(said(["secrets", "browser"])).toBe(
       "This chat works in a repo with its own copy of 2 built-in skills, which it gets beside " +
         "purlis's and may use instead: secrets, browser.",
+    );
+  });
+  it("names who takes the most room where Claude Code would drop descriptions (#5736)", () => {
+    expect(
+      missingSays("This chat", {
+        ...MISSING,
+        missing: [],
+        no_built_in: [],
+        crowded: {
+          needs: 123456,
+          most: 100000,
+          biggest: [
+            { name: "superpowers", plugin: true, chars: 50000 },
+            { name: "notes", plugin: false, chars: 1 },
+          ],
+        },
+      }),
+    ).toBe(
+      "This chat's skills need 123,456 characters of Claude Code's skill list and it holds " +
+        "100,000, so Claude Code drops some descriptions. Taking the most room: superpowers " +
+        "(plugin, 50,000 characters), notes (skill, 1 character). Turn off a plugin or skill " +
+        "this project doesn't use to keep them.",
     );
   });
 });

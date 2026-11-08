@@ -1,6 +1,6 @@
 ---
 name: purlis-compact
-description: Compact and improve a purlis workspace's or persona's memory — find duplicates and stale entries with purlis's optimize and dedupe reports, prune only with the operator's yes, and fold durable lessons into workspace.md or persona.md. Use when asked to compact, tidy, prune, dedupe or improve a workspace's or persona's memory.
+description: Compact and improve a purlis workspace's or persona's memory — find duplicates and stale entries with purlis's optimize and dedupe reports, prune only with the person's yes, and fold durable lessons into workspace.md or persona.md. Use when asked to compact, tidy, prune, dedupe or improve a workspace's or persona's memory.
 ---
 
 # Compact & improve
@@ -26,13 +26,13 @@ purlis persona dedupe <name>            # near-duplicate pairs
 
 These only read. Done when you can say, for each finding, what you propose.
 
-## 2. Compact, with the operator's yes
+## 2. Compact, with the person's yes
 
 - **Exact duplicates and index drift** are safe and reversible: `--apply` moves a duplicate to
-  `archive/` and repairs the index. Apply once the operator agrees.
+  `archive/` and repairs the index. Apply once the person agrees.
 - **Near duplicates** merge by hand: edit one of them to say both, then archive the rest.
 - **Stale** memories are still true or they are not. A memory that is half true is edited in
-  place; one that is no longer so is archived, and only when the operator agrees.
+  place; one that is no longer so is archived, and only when the person agrees.
 
 ```bash
 purlis workspace edit -w <name> <slug> [--title "<title>"] ["<body>" | -]
@@ -51,13 +51,20 @@ delete for good; keep them for a memory that must not survive, such as one holdi
 A memory in the wrong scope, such as a workspace lesson every persona should know, is moved, not
 copied: the move keeps its title and date and prints the command that moves it back.
 
-Done when every finding is applied, merged, kept on purpose, or declined by the operator.
+Done when every finding is applied, merged, kept on purpose, or declined by the person.
 
 ## 3. Improve the charter
 
 A lesson that has held across several memories, or that every chat in this workspace or persona
-should act on from its first turn, belongs in the charter. Write it there in a sentence that
-says what to do and why, then archive the memories it replaces.
+should act on from its first turn, belongs in the charter. Say it in a sentence that says what
+to do and why, then archive the memories it replaces.
 
-Show the operator the charter's diff. Done when they have read it. Both files are committed, so
-the change travels with the plane's next save.
+- **A workspace's charter:** purlis writes `workspace.md` for this chat, so a sandboxed chat is
+  not refused. Add a rule with the `workspace_section` tool and section `decisions`
+  (`## Context & decisions`), a term with section `glossary` (`## Glossary`), and a changed goal
+  with the `workspace_vision` tool. Both write the workspace this chat works in; for another
+  workspace, give the person the entries to add.
+- **A persona's charter:** the rule goes into its `persona.md`.
+
+Show the person what changed in the charter. Done when they have read it. Both files are
+committed, so the change travels with the plane's next save.

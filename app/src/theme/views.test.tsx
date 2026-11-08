@@ -738,6 +738,7 @@ const ORDINARY: Answers = {
               asks: 0,
               tokens: 4000,
               ms: 900,
+              misses: 0,
             },
             grade: null,
             before: null,
@@ -757,6 +758,7 @@ const ORDINARY: Answers = {
               asks: 0,
               tokens: null,
               ms: 0,
+              misses: 0,
             },
             grade: null,
             before: null,
@@ -772,6 +774,7 @@ const ORDINARY: Answers = {
           asks: 0,
           tokens: null,
           ms: 300,
+          misses: 0,
         },
       },
     ],
@@ -907,6 +910,7 @@ const ORDINARY: Answers = {
         asks: 1,
         tokens: 5300,
         ms: 12400,
+        misses: 0,
       },
       {
         group: { kind: "not-recorded" },
@@ -918,6 +922,7 @@ const ORDINARY: Answers = {
         asks: 0,
         tokens: null,
         ms: 0,
+        misses: 0,
       },
     ],
     by_persona: [
@@ -931,6 +936,7 @@ const ORDINARY: Answers = {
         asks: 1,
         tokens: 5300,
         ms: 12400,
+        misses: 0,
       },
       {
         group: { kind: "none" },
@@ -942,6 +948,7 @@ const ORDINARY: Answers = {
         asks: 0,
         tokens: null,
         ms: 0,
+        misses: 0,
       },
     ],
     by_workspace: [
@@ -955,6 +962,7 @@ const ORDINARY: Answers = {
         asks: 1,
         tokens: 5300,
         ms: 12400,
+        misses: 0,
       },
     ],
   },

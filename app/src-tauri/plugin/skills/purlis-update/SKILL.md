@@ -13,10 +13,10 @@ this plane's content, and it refuses `--to` and `--bump` by name, with the reaso
 ## Moving to a newer version
 
 The app checks for a newer release on its own, at launch and every few hours, and **installs
-only when the operator clicks**. When one is available, the status line at the bottom of the
+only when the person clicks**. When one is available, the status line at the bottom of the
 window offers it; its dialog has **Install**, **Check now** and the release channel.
 
-Tell the operator that, and what it costs: **installing ends every running chat**, this one
+Tell the person that, and what it costs: **installing ends every running chat**, this one
 included, and the new version runs from the next start. Do not try to install it for them —
 there is no command for it, on purpose.
 
@@ -37,7 +37,7 @@ It prints this purlis's version, which is the app's, and the version the plane p
 not renamed yet). Exit 0 means the pin is met or there is none; 1 means drift. Relay what it
 says about the pin in its own words. Do not call purlis current or up to date on your own
 reading of it. Moving the pin moves every teammate, so it is a change to the project's
-manifest the operator makes, never one you make unasked.
+manifest the person makes, never one you make unasked.
 
 ## Say what the version brought
 
