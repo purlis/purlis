@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794120947264,
+  "lastUpdate": 1794125871848,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -17124,6 +17124,42 @@ window.BENCHMARK_DATA = {
             "value": 976.8,
             "unit": "MB",
             "extra": "median of 6 samples: 943.7, 959.6, 970.7, 983.1, 983, 1059.7 MB; window 668.5 MB, session host 309.1 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "bfdec666976fd5a0781f91d37cfd06b0eeab5023",
+          "message": "CI and tools: grounds timing (#4956), a resumable baselines pull (#5059), and stories annotations under GitHub's cap (#3260) (#5783)\n\n* story-baselines-pull: resume a broken download, and take a path the artifact holds twice (#5059)\n\ngh run download neither resumes a download that breaks off nor extracts an\nartifact that holds a path twice. The pull now lists the run's story-baselines\nartifact, fetches its zip with curl (gh's token on curl's input), resumes from\nwhere an attempt stopped up to four times, and says the size and where each\nattempt stopped. It unzips with unzip -o: a path held twice is taken once when\nthe copies are the same and refused by name when they differ. Output is read\nwith a 64 MB maxBuffer, since a run's listing (about 12,000 names) is over\nspawnSync's default 1 MB.\n\nCloses #5059\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6WSD1GPJ8XBRRJTQZPGRP9B\nPurlis-Persona: steward\n\n* Stories check: annotations fit GitHub's 10 a step (#3260)\n\nA story whose picture alone failed printed one annotation a cell, so a story\nfailing in every cell of Chromium filled the step's 10 and its WebKit failure,\nand every other story's, never showed. named() now prints a picture-only story\nonce a browser, listing the cells it failed in, the way the headline already\nnames a blocking one (#4050). Past 10 annotations, the step prints 9 and a last\none saying how many more failed and that the job's summary, which GitHub never\ncaps and which still lists every cell, has them all.\n\nCloses #3260\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6WSD1GPJ8XBRRJTQZPGRP9B\nPurlis-Persona: steward\n\n* story-baselines-pull: start over where the store will not resume, and say the right stop (#5059)\n\nFrom review: curl's 33 (the store will not resume) now starts the next attempt\nfrom nothing rather than failing four times alike; the byte count a stop says\nis read before a whole-but-failed file is removed; a duplicated path's copies\nare compared by length and CRC-32, and a listing that does not show them is\nrefused as that rather than as copies that differ. Tests for a run that kept\nno baselines, an expired artifact, and an artifact with no drawn.json.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6WSD1GPJ8XBRRJTQZPGRP9B\nPurlis-Persona: steward\n\n* Stories check: the cap counts annotations, and the doc says how failures are grouped (#3260)\n\nFrom review: the tenth annotation says how many more annotations are not shown\n(one can stand for a story's every cell), and docs/component-stories.md says\nthat a picture-only failure is one annotation a browser listing its cells, and\nthat past 10 the job's summary lists every one.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6WSD1GPJ8XBRRJTQZPGRP9B\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-08T06:19:54Z",
+          "tree_id": "d5a4f8ef3bd3bd4c1004440be0d5c1fa00a7ba73",
+          "url": "https://github.com/purlis/purlis/commit/bfdec666976fd5a0781f91d37cfd06b0eeab5023"
+        },
+        "date": 1794125867475,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 2263.2,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1978.2, 2263.2, 2528 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 1008.3,
+            "unit": "MB",
+            "extra": "median of 6 samples: 966.2, 988.3, 1000.1, 1016.6, 1017.1, 1090.6 MB; window 683.6 MB, session host 325 MB"
           }
         ]
       }
