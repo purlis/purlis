@@ -935,55 +935,52 @@ impl Asks {
             },
         };
         let at = (vault.clone(), key.clone());
-        // Stops waiting, unless it was answered in that very moment, which wins.
+        // What the last look found, so `settle` knows which way the wait ends.
+        let hung_up = std::cell::Cell::new(false);
+        let looked = || {
+            let now = gone();
+            hung_up.set(now);
+            now
+        };
+        // Stops waiting, unless it was answered in that very moment, which wins. Its caller gone,
+        // it leaves in the same hold of the lock, so no answer finds it as one to nudge.
         let settle = || {
             let mut inner = self.inner();
-            let still = inner
-                .open
-                .get_mut(&at)
-                .and_then(|asked| asked.waiters.iter_mut().find(|w| w.n == n))
-                .map(|waiter| waiter.tell = None)
-                .is_some();
-            drop(inner);
-            if still {
-                None
+            if hung_up.get() {
+                let waiting = left(&mut inner, &at, n);
+                if waiting.is_some() {
+                    self.save(&inner);
+                }
+                drop(inner);
+                if let Some(waiting) = waiting {
+                    self.trace(chat, "caller gone", &vault, &key, waiting);
+                    return None;
+                }
             } else {
-                answered.try_recv().ok()
+                let still = inner
+                    .open
+                    .get_mut(&at)
+                    .and_then(|asked| asked.waiters.iter_mut().find(|w| w.n == n))
+                    .map(|waiter| waiter.tell = None)
+                    .is_some();
+                drop(inner);
+                if still {
+                    return None;
+                }
             }
+            answered.try_recv().ok()
         };
-        // Reverted on purpose, to show the tests red: it never looks whether its caller hung up.
-        let _ = gone;
-        match crate::askwait::waited(&answered, within, &|| false, &settle) {
+        match crate::askwait::waited(&answered, within, &looked, &settle) {
             crate::askwait::Ended::Heard(settled) => settled_as(settled),
             // Its chat closed meanwhile, or the hold ran out: the ask stays open, and the chat
             // is nudged when it is answered.
             crate::askwait::Ended::Closed | crate::askwait::Ended::NotAnswered => Held::StillOpen {
                 line: still_open_said(&vault, &key),
             },
-            crate::askwait::Ended::AskerGone => {
-                self.left(chat, &at, n);
-                Held::CallerGone {
-                    line: caller_gone_said(&vault, &key),
-                }
-            }
+            crate::askwait::Ended::AskerGone => Held::CallerGone {
+                line: caller_gone_said(&vault, &key),
+            },
         }
-    }
-
-    /// **The waiter `n` of chat `chat` on the ask for `at` left with its caller**: it is no chat
-    /// to nudge, and an ask nobody needs any more goes, as one does when its chat closes.
-    fn left(&self, chat: Option<u32>, at: &(String, String), n: u64) {
-        let mut inner = self.inner();
-        let Some(asked) = inner.open.get_mut(at) else {
-            return;
-        };
-        asked.waiters.retain(|waiter| waiter.n != n);
-        let waiting = waiting_on(asked);
-        if !asked.needed() {
-            inner.open.remove(at);
-        }
-        self.save(&inner);
-        drop(inner);
-        self.trace(chat, "caller gone", &at.0, &at.1, waiting);
     }
 
     /// **A chat on a runner that cannot receive a value misses `need`'s key** (#5077): the
@@ -1512,6 +1509,23 @@ impl Asks {
         Self::forget_runs(&mut inner, chat);
         self.save(&inner);
     }
+}
+
+/// **The waiter `n` on the ask for `at` left with its caller**: it is no chat to nudge, and an
+/// ask nobody needs any more goes, as one does when its chat closes. How many still wait on it,
+/// where the waiter was still there.
+fn left(inner: &mut Inner, at: &(String, String), n: u64) -> Option<usize> {
+    let asked = inner.open.get_mut(at)?;
+    let before = asked.waiters.len();
+    asked.waiters.retain(|waiter| waiter.n != n);
+    if asked.waiters.len() == before {
+        return None;
+    }
+    let waiting = waiting_on(asked);
+    if !asked.needed() {
+        inner.open.remove(at);
+    }
+    Some(waiting)
 }
 
 /// What a brokered command is told where the person stored its key under another vault or
