@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794150229222,
+  "lastUpdate": 1794152249842,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -43596,6 +43596,48 @@ window.BENCHMARK_DATA = {
             "value": 100.124212,
             "unit": "ms",
             "extra": "median of 5 runs: 99.386, 99.965, 100.124, 100.418, 101.939 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "8204bb614e0ab8c791891a028ba1072e22c7404a",
+          "message": "Theme speed: an accent search reads only its own pairs (#3597), a heavy theme creation timed (#4337) (#5832)\n\n* Theme engine: a search for an accent's colour reads only the pairs and rules it is in (#3597)\n\nThe theme suite's heaviest tests are grids of accents over every shipped\nappearance, each point a vocabulary::follow_kin, and an import's tuning.\nA profile put 96% of an accent grid point in tint::nudged, which asks\nwhether each of up to 6,231 candidate colours keeps a mark's contrasts\nand its distance from the state colours: every candidate scanned all of\ncheck::PAIRS for the pairs naming the token, and found again each rule's\nother side and the parent's ratios, none of which the candidate changes.\n\n- check::pairs_naming indexes PAIRS by the tokens each names, once.\n- check::KeepsContrast finds a token's pairs and the parent's ratio of\n  each once, then measures only the colour asked of.\n- vocabulary::HeldApart (was holds_as_apart) finds each APART rule's\n  other side and bound once, and the candidate's OKLab once, not per rule.\n- import::toward's trial skips holding the consent floors when its\n  contrast findings alone already reach the best point so far: such a\n  point is never taken, so the walk takes what it took before.\n- The plist depth test proves a preset nests two with a one-colour\n  preset, not a full tuned import of Tide.\n\nEvery answer is the one it was: the theme suite (1,262 tests) passes\nunchanged, and a test holds the index to the scan it replaces. Under the\nsame load, the accent grids went 99 to 25 s, 70 to 17 s, 33 to 7 s and\n29 to 7 s; the theme suite's sum went 1,281 to 1,099 s.\n\nOpt-level 1 for purlis-core's tests was measured and not taken: the\ntheme suite ran 1.75x faster (989 to 566 s) for about 100 s more on a\ncold build of the crate, which CI pays on every pull request.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6X164X6VB848G6KSH9JHR7V\nPurlis-Persona: steward\n\n* Theme engine: review follow-ups for the cheaper accent search (#3597)\n\n- docs/design-system.md and the StatusItem story name HeldApart and\n  KeepsContrast, which replaced holds_as_apart and keeps_contrast.\n- follow_kin finds the edge's pairs only when a ring has an edge to come.\n- findings_for's doc says plainly what is skipped and why.\n- The plist depth test holds the accepted edge too: eight deep is not\n  refused for its depth (seen failing with the limit at seven).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6X164X6VB848G6KSH9JHR7V\nPurlis-Persona: steward\n\n* Theme: time a heavy theme's creation before and after the first frame's wait (#4337)\n\nwindowprefs' probe timed only today's creation, which waits at most\nFIRST_FRAME_WAITS for a theme's parts. A twin now waits for every\nmeasure, the path each creation took before #4385, so both sides of the\nwait can be timed in one build. Its doc gives the release command, with\n--exact so each runs cold in a process of its own.\n\nMeasured in release (opt-level 3, thin LTO; cold, one appearance, load\naverage about 55), with the same heavy theme (Classic, ten tinted\ntokens, see-through parts): the draw with its holds 37-64 ms, the parts\nmeasure 451-925 ms. Before #4385 the first frame waited about 0.5-1.0 s\nper appearance; now about 90-115 ms, the parts landing when the window\nasks. What is left is the holds that keep the partless frame readable,\na few frames nobody would notice, so nothing more is changed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6X164X6VB848G6KSH9JHR7V\nPurlis-Persona: steward\n\n* Theme: format the plist depth test (#3597)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6X164X6VB848G6KSH9JHR7V\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-08T14:09:31Z",
+          "tree_id": "61131f47f9b44b8b029c1de3a82deb1fa88e6715",
+          "url": "https://github.com/purlis/purlis/commit/8204bb614e0ab8c791891a028ba1072e22c7404a"
+        },
+        "date": 1794152245766,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.355711,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.349, 0.352, 0.356, 0.364, 0.369 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.446011,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.366, 16.392, 16.446, 16.461, 16.468 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.36507449999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.943, 100.983, 101.365, 101.401, 101.466 ms"
           }
         ]
       }
