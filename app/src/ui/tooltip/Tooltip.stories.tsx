@@ -157,3 +157,79 @@ export const ReadOnlyReason: StoryObj = {
     await waitFor(() => expect(shown()).toHaveTextContent(READ_ONLY));
   },
 };
+
+/** A hint long enough to fill the family's widest tooltip. */
+const LONG_TIP =
+  "Stops every agent in this project, waits for each to say it has stopped, and keeps its chats so they can be started again from where they were.";
+
+/**
+ * **A panel across the foot of the window** (#3364): words that run from one edge to the other,
+ * which have no room at either side, and under them a control pinned to the window's end, which
+ * has none at its own end.
+ */
+function AtTheEdge() {
+  return (
+    <div
+      style={{
+        position: "fixed",
+        insetInline: 0,
+        insetBlockEnd: 0,
+        display: "flex",
+        flexDirection: "column",
+        gap: "var(--space-2)",
+        padding: "var(--space-2)",
+        background: "var(--surface-raised)",
+      }}
+    >
+      <Tooltip tip={LONG_TIP}>
+        <span style={{ display: "block" }}>Every agent in this project</span>
+      </Tooltip>
+      <Button tooltip={LONG_TIP} style={{ alignSelf: "flex-end" }}>
+        Stop all
+      </Button>
+    </div>
+  );
+}
+
+/** The tooltip keeps its width (its words fill its widest) and stays in the window. */
+async function expectWhole(where: string) {
+  const tip = await waitFor(() => {
+    const up = shown();
+    if (up === null) throw new Error(`${where}: the tooltip is not up`);
+    return up;
+  });
+  const box = tip.getBoundingClientRect();
+  const widest = Number.parseFloat(getComputedStyle(tip).maxInlineSize);
+  await expect(
+    box.width,
+    `${where}: the tooltip keeps its width (${widest} px wide at most, the window ${window.innerWidth} px)`,
+  ).toBeGreaterThanOrEqual(widest - 1);
+  await expect(box.left, `${where}: inside the window`).toBeGreaterThanOrEqual(0);
+  await expect(box.right, `${where}: inside the window`).toBeLessThanOrEqual(window.innerWidth);
+}
+
+/**
+ * **A control's tooltip keeps its width at the window's edge** (#3364, R166): beside a target
+ * across the window it stands over it, and beside a control pinned to the window's end it flips to
+ * the control's start, never a column of words against the edge. The picture is the control under
+ * the keyboard, its tooltip at its start.
+ */
+export const AtTheWindowsEdge: StoryObj = {
+  render: () => <AtTheEdge />,
+  play: async ({ canvas, userEvent }) => {
+    const words = canvas.getByText("Every agent in this project");
+    const stop = canvas.getByRole("button", { name: "Stop all" });
+    await userEvent.tab();
+    await expect(words).toHaveFocus();
+    expectFocusInSight();
+    await expectWhole("Words across the window");
+    await userEvent.tab();
+    await expect(stop).toHaveFocus();
+    expectFocusInSight();
+    await expectWhole("A control at the window's end");
+    await expect(
+      shown()?.getBoundingClientRect().right,
+      "A control at the window's end: its tooltip at its start",
+    ).toBeLessThanOrEqual(stop.getBoundingClientRect().left);
+  },
+};

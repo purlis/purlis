@@ -1111,8 +1111,9 @@ item families (`purlis/tooltip-family`, an error). A frame's `title` is its name
   end, 10 px from it, flipped to its start where the window has no room (R166); open after the
   pointer rests 500 ms, at once on the keyboard's focus, and at once for the next target while
   one was just open. A row's tooltip stands by the pointer or the row's words, not the whole row,
-  and an anchored tooltip (a row's, a menu row's) keeps its width: it takes the side with room for
-  all of it, and stands under its anchor where neither side has (#3328, `ui/tooltip/side.ts`).
+  and every tooltip beside its target (a control's, a row's, a menu row's) keeps its width: it is
+  measured as it opens, takes the side with room for all of it, and stands under its target where
+  neither side has (#3328, #3364, `ui/tooltip/side.ts`).
 - **A strip's tooltips stand below it** (#3361): a strip is a row of targets, and a tooltip at a
   target's end would sit on the row, over the next. A target inside an element marked
   `TIPS_BELOW` (`data-tips="below"`; the tab strip's row) has its tooltip below it, or above
