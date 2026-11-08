@@ -1705,6 +1705,48 @@ fn login_on(
     }
 }
 
+/// **The runner's own sign-in of `name` on pool `pool`'s runner, by `typed`, started**: on a
+/// cluster pool, over this desktop's own link to the runner, which proves it by its key, where the
+/// runner speaks 1.79 ([`crate::runnerlinks::sign_in_on`]); otherwise as [`login_on`] runs it.
+fn started_on(
+    yours: &Yours,
+    config: &Path,
+    pool: &str,
+    name: &str,
+    provider: Option<&str>,
+    typed: Typed,
+) -> Result<driven::Started, String> {
+    use purlis_session_protocol::session::{SignInBy, SignInToStart};
+    if let Yours::Cluster(judged) = yours {
+        let by = match typed {
+            Typed::Driven => Some(SignInBy::Driven),
+            Typed::InOwnTerminal(size) => Some(SignInBy::InOwnTerminal {
+                cols: size.columns,
+                rows: size.rows,
+            }),
+            Typed::DeviceInOwnTerminal(size) => Some(SignInBy::DeviceInOwnTerminal {
+                cols: size.columns,
+                rows: size.rows,
+            }),
+            Typed::InATerminal | Typed::DeviceInATerminal => None,
+        };
+        if let Some(by) = by {
+            still_yours(config, pool, judged)?;
+            this_desktops_cluster_runner(config, pool, judged)?;
+            let to = to_a_runner(config, pool, Waking::No, yours)?;
+            let start = SignInToStart {
+                profile: name.to_owned(),
+                provider: provider.map(str::to_owned),
+                by,
+            };
+            if let Some(started) = crate::runnerlinks::sign_in_on(&to, start)? {
+                return Ok(started);
+            }
+        }
+    }
+    driven::start(&login_on(yours, config, pool, name, provider, typed)?)
+}
+
 /// **One step of a sign-in on a pool's runner** that purlis drives with no terminal (#4042), as
 /// the window's sign-in strip shows it ([`driven::Event`]).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
@@ -1864,7 +1906,11 @@ pub async fn pool_sign_in_start(
         // The pool's limit as it stands: only the wait changes, and every check above stands.
         let longest = purlis_core::runners::longest_login_of(&config, &pool);
         let wait = longest.as_secs() / 60;
-        let login = login_on(&yours, &config, &pool, &name, provider.as_deref(), typed)?;
+        // Only a login purlis follows is started to be driven.
+        if terminal.is_none() {
+            driven::follows(&record.harness, provider.as_deref(), true)?;
+        }
+        let started = started_on(&yours, &config, &pool, &name, provider.as_deref(), typed)?;
         let carry: callback::Carry = {
             let (config, pool, yours) = (config.clone(), pool.clone(), yours.clone());
             Arc::new(move |target: &str| {
@@ -1887,9 +1933,9 @@ pub async fn pool_sign_in_start(
             }
         };
         let driving = Arc::new(match terminal {
-            Some(_) => driven::in_a_terminal(&login, longest, check)?,
-            None => driven::drive_with(
-                &login,
+            Some(_) => driven::in_a_terminal_started(started, longest, check),
+            None => driven::drive_started(
+                started,
                 &record.harness,
                 provider.as_deref(),
                 Some(carry),

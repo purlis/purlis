@@ -46,7 +46,7 @@
 //! | a kept login: a browser's start from one, and a `log_in` that keeps one (1.27) | yes | | | | | |
 //! | `unpair`, the desktop taken out of a runner's peers (1.25) | | | | | | yes |
 //! | `keep_profile`, a desktop's profile kept on its runner (1.43), `forget_profile`, taken off it (1.52), `stage_profile_settings`, its settings in batches (1.56), `kept_profiles`, the ones it keeps (1.57), and `settings_held`, what it holds of one (1.61) | | | | | | yes |
-//! | `sign_in_redirect`, a sign-in's redirect handed to a login on the runner (1.59) | | | | | | yes |
+//! | `sign_in_redirect`, a sign-in's redirect handed to a login on the runner (1.59), and `start_sign_in`, `sign_in_next`, `sign_in_input`, `end_sign_in`, the runner's own sign-in run over the link (1.79) | | | | | | yes |
 //! | `name_window`, the window naming itself on a link to its own host (1.31) | yes | | | | | |
 //! | `relay_to`, the window's link relayed by its host to a runner it keeps (1.33) | yes | | | | | |
 //! | `take_code`, `give_code`, a repository's history moved over the link as a git bundle (1.34) | yes | | | | | relayed |
@@ -215,6 +215,10 @@
 //!   as `keep_profile` is, for the sign-in that desktop started there. It reaches one login's own
 //!   port and path on the runner's loopback, and nothing else there, and crosses no answer back.
 //!   No other scope is granted it, the window's included, and a relaying host refuses it.
+//!   `start_sign_in` (1.79) and the commands that read, type to and end that sign-in are granted
+//!   and refused exactly as it is: the runner runs its own `purlis profile sign-in` of a profile
+//!   it keeps for that desktop, held to that link, so a sign-in reaches the runner the link
+//!   proved by its key.
 //! - **`name_window` is the window's, on a link to its own host** (1.31, #2623). It names the
 //!   window by the name it keeps for that link across its restarts, so its host's relay names it
 //!   to a runner the same way after a restart, and the window takes back its runner chats. Only
@@ -342,7 +346,9 @@ pub enum Power {
     /// #4081): the batches of its settings, `kept_profiles` (1.57, #4060): the ones kept
     /// there, and `settings_held` (1.61, #4088): what it holds of one.
     KeepProfile,
-    /// `sign_in_redirect` (1.59, #4044): a sign-in's redirect handed to a login on the runner.
+    /// `sign_in_redirect` (1.59, #4044): a sign-in's redirect handed to a login on the runner;
+    /// and `start_sign_in`, `sign_in_next`, `sign_in_input` and `end_sign_in` (1.79): the
+    /// runner's own sign-in, run over the desktop's link to it.
     SignInRedirect,
     /// `name_window` (1.31, #2623): the window names itself on a link to its own host, by the
     /// name it keeps for that link. The window's alone.

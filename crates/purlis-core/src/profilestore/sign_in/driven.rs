@@ -38,7 +38,7 @@
 //! ([`Event::PortTaken`]), and the page is not opened.
 
 use std::io::{Read, Write};
-use std::process::{Child, ChildStdin, Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -981,7 +981,65 @@ impl Forwarding {
 }
 
 /// What is passed to a login, shared with what reads it, which answers its one question.
-type Input = Arc<Mutex<Option<ChildStdin>>>;
+type Input = Arc<Mutex<Option<Box<dyn Write + Send>>>>;
+
+/// **What a started login runs as**: a process here, or a login run elsewhere that something here
+/// stands for, such as one a runner runs over its link to this desktop.
+pub trait Process: Send {
+    /// How it ended, once it has: its exit status, where it exited with one.
+    fn try_wait(&mut self) -> std::io::Result<Option<Option<i32>>>;
+    /// Ends it, and waits for it to have ended.
+    fn end(&mut self);
+}
+
+impl Process for Child {
+    fn try_wait(&mut self) -> std::io::Result<Option<Option<i32>>> {
+        Child::try_wait(self).map(|status| status.map(|status| status.code()))
+    }
+
+    fn end(&mut self) {
+        let _ = self.kill();
+        let _ = self.wait();
+    }
+}
+
+/// **A login, started**: what is passed to it, what it prints on each output, what it runs as, and
+/// what it is held to once heard ([`super::Pin`]).
+pub struct Started {
+    pub input: Box<dyn Write + Send>,
+    pub out: Box<dyn Read + Send>,
+    pub err: Box<dyn Read + Send>,
+    pub process: Box<dyn Process>,
+    pub pin: Option<super::Pin>,
+}
+
+/// **Starts `login` here**, its input and both outputs pipes.
+pub fn start(login: &Login) -> Result<Started, String> {
+    let mut command = Command::new(&login.program);
+    command
+        .args(&login.args)
+        .envs(login.env.iter().map(|(n, v)| (n, v)))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    for name in &login.cleared {
+        command.env_remove(name);
+    }
+    let mut child = crate::forklock::spawn(&mut command)
+        .map_err(|e| format!("{} could not be run: {e}", login.program))?;
+    let pipes = (child.stdin.take(), child.stdout.take(), child.stderr.take());
+    let (Some(input), Some(out), Some(err)) = pipes else {
+        Process::end(&mut child);
+        return Err(format!("{}'s pipes could not be opened", login.program));
+    };
+    Ok(Started {
+        input: Box::new(input),
+        out: Box::new(out),
+        err: Box::new(err),
+        process: Box::new(child),
+        pin: login.pin.clone(),
+    })
+}
 
 /// **A login's [`super::Pin`], checked once, on the first thing it prints**: what it
 /// printed is said, and anything passed to it, only once its pin held.
@@ -1032,14 +1090,43 @@ pub fn drive_with(
     longest: Duration,
     check: impl FnOnce() -> Standing + Send + 'static,
 ) -> Result<Driving, String> {
-    let driven = Driven::of_plan(kind, plan, Instant::now())
-        .filter(|driven| driven.words.answered_on.is_none() || carry.is_some())
+    follows(kind, plan, carry.is_some())?;
+    drive_started(start(login)?, kind, plan, carry, longest, check)
+}
+
+/// Refused for a login of harness `kind` to `plan` that purlis does not follow, or one that
+/// waits for the browser where nothing here can `carry` its answer: what [`drive_with`] and
+/// [`drive_started`] refuse, asked before anything is started.
+pub fn follows(kind: &str, plan: Option<&str>, carry: bool) -> Result<(), String> {
+    Driven::of_plan(kind, plan, Instant::now())
+        .filter(|driven| driven.words.answered_on.is_none() || carry)
+        .map(drop)
         .ok_or_else(|| {
             format!(
                 "purlis follows {kind}'s sign-in only in a terminal: sign it in with Open in \
                  terminal"
             )
-        })?;
+        })
+}
+
+/// [`drive_with`], of a login `started` already: ended where it is refused.
+pub fn drive_started(
+    mut started: Started,
+    kind: &str,
+    plan: Option<&str>,
+    carry: Option<Carry>,
+    longest: Duration,
+    check: impl FnOnce() -> Standing + Send + 'static,
+) -> Result<Driving, String> {
+    let driven = match Driven::of_plan(kind, plan, Instant::now())
+        .filter(|driven| driven.words.answered_on.is_none() || carry.is_some())
+    {
+        Some(driven) => driven,
+        None => {
+            started.process.end();
+            return Err(follows(kind, plan, carry.is_some()).unwrap_err());
+        }
+    };
     let forwarding = carry.map(|carry| {
         Arc::new(Forwarding {
             carry,
@@ -1047,7 +1134,7 @@ pub fn drive_with(
             forward: Mutex::new(Forwarded::Not),
         })
     });
-    run(login, driven, forwarding, longest, check)
+    Ok(run(started, driven, forwarding, longest, check))
 }
 
 /// **Runs `login` in the runner's terminal it sets up itself, for the person to drive**
@@ -1058,8 +1145,17 @@ pub fn in_a_terminal(
     longest: Duration,
     check: impl FnOnce() -> Standing + Send + 'static,
 ) -> Result<Driving, String> {
+    Ok(in_a_terminal_started(start(login)?, longest, check))
+}
+
+/// [`in_a_terminal`], of a login `started` already.
+pub fn in_a_terminal_started(
+    started: Started,
+    longest: Duration,
+    check: impl FnOnce() -> Standing + Send + 'static,
+) -> Driving {
     run(
-        login,
+        started,
         Driven::in_a_terminal(Instant::now()),
         None,
         longest,
@@ -1068,27 +1164,22 @@ pub fn in_a_terminal(
 }
 
 fn run(
-    login: &Login,
+    started: Started,
     driven: Driven,
     forwarding: Option<Arc<Forwarding>>,
     longest: Duration,
     check: impl FnOnce() -> Standing + Send + 'static,
-) -> Result<Driving, String> {
-    let mut command = Command::new(&login.program);
-    command
-        .args(&login.args)
-        .envs(login.env.iter().map(|(n, v)| (n, v)))
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    for name in &login.cleared {
-        command.env_remove(name);
-    }
-    let mut child = crate::forklock::spawn(&mut command)
-        .map_err(|e| format!("{} could not be run: {e}", login.program))?;
-    let input: Input = Arc::new(Mutex::new(child.stdin.take()));
+) -> Driving {
+    let Started {
+        input,
+        out,
+        err,
+        process,
+        pin,
+    } = started;
+    let input: Input = Arc::new(Mutex::new(Some(input)));
     let heard = Arc::new(Heard {
-        pin: login.pin.clone(),
+        pin,
         held: Mutex::new(None),
     });
     let cancelled = Arc::new(AtomicBool::new(false));
@@ -1099,39 +1190,24 @@ fn run(
         unheard: Arc::new(AtomicBool::new(false)),
     };
     let driven = Arc::new(Mutex::new(driven));
-    let readers: Vec<_> = [
-        (
-            Stream::Out,
-            child
-                .stdout
-                .take()
-                .map(|out| Box::new(out) as Box<dyn Read + Send>),
-        ),
-        (
-            Stream::Err,
-            child
-                .stderr
-                .take()
-                .map(|err| Box::new(err) as Box<dyn Read + Send>),
-        ),
-    ]
-    .into_iter()
-    .filter_map(|(stream, from)| {
-        Some(reading(
-            stream,
-            from?,
-            Arc::clone(&driven),
-            Arc::clone(&input),
-            forwarding.clone(),
-            tell.clone(),
-            Stopping {
-                heard: Arc::clone(&heard),
-                cancelled: Arc::clone(&cancelled),
-                stopped: Arc::clone(&stopped),
-            },
-        ))
-    })
-    .collect();
+    let readers: Vec<_> = [(Stream::Out, out), (Stream::Err, err)]
+        .into_iter()
+        .map(|(stream, from)| {
+            reading(
+                stream,
+                from,
+                Arc::clone(&driven),
+                Arc::clone(&input),
+                forwarding.clone(),
+                tell.clone(),
+                Stopping {
+                    heard: Arc::clone(&heard),
+                    cancelled: Arc::clone(&cancelled),
+                    stopped: Arc::clone(&stopped),
+                },
+            )
+        })
+        .collect();
     let asked = Arc::new(Mutex::new(Instant::now()));
     {
         let (driven, cancelled, stopped, asked) = (
@@ -1148,7 +1224,7 @@ fn run(
                 longest,
             };
             watching(
-                child,
+                process,
                 readers,
                 &driven,
                 &outside,
@@ -1158,7 +1234,7 @@ fn run(
             );
         });
     }
-    Ok(Driving {
+    Driving {
         events: Mutex::new(events),
         input,
         heard,
@@ -1167,7 +1243,7 @@ fn run(
         stopped,
         asked,
         longest,
-    })
+    }
 }
 
 /// The text of `read`, after what `carried` held: what ends in the middle of a character stays in
@@ -1309,7 +1385,7 @@ impl Outside<'_> {
 /// tells how it ended, its status checked where it ended well. However it ended, its forward is
 /// closed before that is told, so a sign-in tried again finds the port free.
 fn watching(
-    mut child: Child,
+    mut child: Box<dyn Process>,
     readers: Vec<std::thread::JoinHandle<()>>,
     driven: &Mutex<Driven>,
     outside: &Outside<'_>,
@@ -1325,16 +1401,16 @@ fn watching(
     let started = Instant::now();
     let ended = loop {
         if outside.ends_it() {
-            end(&mut child);
+            child.end();
             close();
             tell.say_last(outside.ended());
             return;
         }
         match child.try_wait() {
-            Ok(Some(status)) => break status.code(),
+            Ok(Some(code)) => break code,
             Ok(None) => {}
             Err(_) => {
-                end(&mut child);
+                child.end();
                 break None;
             }
         }
@@ -1343,7 +1419,7 @@ fn watching(
             (driven.waited(Instant::now()), driven.is_over())
         };
         if let Some(event) = late {
-            end(&mut child);
+            child.end();
             close();
             tell.say_last(event);
             return;
@@ -1351,12 +1427,12 @@ fn watching(
         // It was said to be over while it ran (a page purlis does not open): nothing more is
         // asked of it.
         if over {
-            end(&mut child);
+            child.end();
             close();
             return;
         }
         if started.elapsed() > outside.longest {
-            end(&mut child);
+            child.end();
             close();
             tell.say_last(Event::Failed {
                 why: TOOK_TOO_LONG.to_owned(),
@@ -1387,11 +1463,6 @@ fn watching(
             .checked(standing);
         tell.say_last(event);
     }
-}
-
-fn end(child: &mut Child) {
-    let _ = child.kill();
-    let _ = child.wait();
 }
 
 impl Driving {

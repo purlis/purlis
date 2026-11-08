@@ -239,3 +239,11 @@
 {"reply":{"re":200,"ok":{"turn_undone":{"edit":{"busy":false,"chat_ids":["01J9ZQ5CHAT000000000000000"],"chats":[14],"files":[{"lines":[{"count":4,"start":12}],"path":"src/login.ts"}],"kind":"undone-turn","piece":"fix-login","repo":"web"}}}}}
 {"call":{"id":201,"command":"undo_turn","project":"01J9PRJCT00000000000000000","workspace":"app","repo":"web","chat":"01J9ZQ5CHAT000000000000000","number":3}}
 {"reply":{"re":201,"ok":{"undo_waits":{"chats":[{"number":14,"doing":"is running"}]}}}}
+{"call":{"id":202,"command":"start_sign_in","profile":"work","provider":"github-copilot","by":{"way":"in_own_terminal","cols":100,"rows":30}}}
+{"reply":{"re":202,"ok":{"sign_in_started":{"sign_in":1}}}}
+{"call":{"id":203,"command":"sign_in_next","sign_in":1}}
+{"reply":{"re":203,"ok":{"sign_in_printed":{"out":"dmlzaXQ6IGh0dHBzOi8vZXhhbXBsZS5jb20vCg==","err":"d2FpdGluZwo=","ended":{"code":0}}}}}
+{"call":{"id":204,"command":"sign_in_input","sign_in":1,"bytes":"Y29kZSNzdGF0ZQo="}}
+{"reply":{"re":204,"ok":"done"}}
+{"call":{"id":205,"command":"end_sign_in","sign_in":1}}
+{"reply":{"re":205,"ok":"done"}}

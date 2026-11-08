@@ -72,6 +72,8 @@ mod relay;
 mod routing;
 #[cfg(unix)]
 mod serving;
+#[cfg(unix)]
+mod signingin;
 #[cfg(all(unix, any(test, feature = "test-support")))]
 pub mod standin;
 #[cfg(unix)]
@@ -120,7 +122,7 @@ pub use routing::{DrainsTo, RelaysTo, Routed, RunsAgain};
 #[cfg(unix)]
 pub use serving::{
     Answering, DeletingOwnFolders, Delivering, Forgetting, Holding, HostError, Keeping, LOCK,
-    Listing, Pairing, Place, Unpairing, Window, serve, serve_answering,
+    Listing, Pairing, Place, SigningIn, Unpairing, Window, serve, serve_answering,
 };
 #[cfg(unix)]
 pub use unattended::{Idles, UNLINKED_FOR};

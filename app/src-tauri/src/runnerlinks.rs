@@ -912,6 +912,202 @@ pub fn sign_in_redirect(to: &ToARunner, target: &str) -> Result<(), String> {
     })
 }
 
+/// **The runner's own sign-in, run over a link of its own to it** (1.79): the link proves the
+/// runner by the key pinned for it, so the sign-in reaches that runner and no other, where a
+/// `kubectl exec` reaches the pod of a name. What it prints comes back on pipes, and what is typed
+/// to them goes to it, so it is driven as a login run here is
+/// ([`purlis_core::profilestore::sign_in::driven::Started`]); it ends with the link. `Ok(None)`
+/// from a runner before 1.79, which is signed in on as before; why not, in words, where the link
+/// or the runner refused it.
+pub fn sign_in_on(
+    to: &ToARunner,
+    start: purlis_session_protocol::session::SignInToStart,
+) -> Result<Option<purlis_core::profilestore::sign_in::driven::Started>, String> {
+    let to = to.clone();
+    let (said, heard) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let runtime = match tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+        {
+            Ok(runtime) => runtime,
+            Err(why) => {
+                let _ = said.send(Err(format!("the link could not be started: {why}")));
+                return;
+            }
+        };
+        runtime.block_on(signing_in_over(to, start, said));
+    });
+    heard
+        .recv_timeout(ANSWER_WITHIN * 2)
+        .map_err(|_| LATE.to_owned())?
+}
+
+/// What a sign-in over the link runs as, here: how it ended, once the link said so, and the word
+/// to end it.
+#[derive(Default)]
+struct OverTheLink {
+    ended: std::sync::Mutex<Option<Option<i32>>>,
+    ending: std::sync::atomic::AtomicBool,
+}
+
+/// How long ending a sign-in over the link waits for the runner to say it ended.
+const A_SIGN_IN_ENDS_WITHIN: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// A sign-in over the link, as the login it drives here sees it.
+struct LinkProcess(Arc<OverTheLink>);
+
+impl purlis_core::profilestore::sign_in::driven::Process for LinkProcess {
+    fn try_wait(&mut self) -> std::io::Result<Option<Option<i32>>> {
+        Ok(*self
+            .0
+            .ended
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner))
+    }
+
+    fn end(&mut self) {
+        self.0
+            .ending
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        let until = std::time::Instant::now() + A_SIGN_IN_ENDS_WITHIN;
+        while self.try_wait().ok().flatten().is_none() && std::time::Instant::now() < until {
+            std::thread::sleep(std::time::Duration::from_millis(25));
+        }
+    }
+}
+
+/// A sign-in's input, output and error output, each a pipe: its reading end, then its writing end.
+type Pipe = (std::io::PipeReader, std::io::PipeWriter);
+
+fn three_pipes() -> std::io::Result<(Pipe, Pipe, Pipe)> {
+    Ok((std::io::pipe()?, std::io::pipe()?, std::io::pipe()?))
+}
+
+/// [`sign_in_on`]'s link: `said` is told how the start went, then this carries the sign-in until
+/// it ends, is ended, or the link goes.
+async fn signing_in_over(
+    to: ToARunner,
+    start: purlis_session_protocol::session::SignInToStart,
+    said: std::sync::mpsc::Sender<
+        Result<Option<purlis_core::profilestore::sign_in::driven::Started>, String>,
+    >,
+) {
+    use purlis_session_protocol::session::{Client, KNOWS_SIGN_IN_OVER_THE_LINK};
+    use std::io::{Read, Write};
+    let refused = |why: purlis_session_protocol::session::CallError| match why.refusal() {
+        Some(refused) => said_by_the_runner(&refused.why),
+        None => why.to_string(),
+    };
+    let mut links = to.keep();
+    let client = match tokio::time::timeout(ANSWER_WITHIN, links.next()).await {
+        Ok(Some(hostlink::Linked::Up(link))) => Arc::new(Client::new(*link).0),
+        Ok(Some(hostlink::Linked::Down(down))) => {
+            let _ = said.send(Err(down.why));
+            return;
+        }
+        Ok(None) => {
+            let _ = said.send(Err("the link to the runner ended".to_owned()));
+            return;
+        }
+        Err(_) => {
+            let _ = said.send(Err(LATE.to_owned()));
+            return;
+        }
+    };
+    if client.version() < KNOWS_SIGN_IN_OVER_THE_LINK {
+        let _ = said.send(Ok(None));
+        return;
+    }
+    let sign_in = match tokio::time::timeout(ANSWER_WITHIN, client.start_sign_in(start)).await {
+        Ok(Ok(sign_in)) => sign_in,
+        Ok(Err(why)) => {
+            let _ = said.send(Err(refused(why)));
+            return;
+        }
+        Err(_) => {
+            let _ = said.send(Err(LATE.to_owned()));
+            return;
+        }
+    };
+    let ((input, typed), (out, mut out_here), (err, mut err_here)) = match three_pipes() {
+        Ok(pipes) => pipes,
+        Err(why) => {
+            let _ = client.end_sign_in(sign_in).await;
+            let _ = said.send(Err(format!("the sign-in's pipes could not be made: {why}")));
+            return;
+        }
+    };
+    let state = Arc::new(OverTheLink::default());
+    let started = purlis_core::profilestore::sign_in::driven::Started {
+        input: Box::new(typed),
+        out: Box::new(out),
+        err: Box::new(err),
+        process: Box::new(LinkProcess(Arc::clone(&state))),
+        pin: None,
+    };
+    if said.send(Ok(Some(started))).is_err() {
+        let _ = client.end_sign_in(sign_in).await;
+        return;
+    }
+    // What is typed is read off its pipe on a thread of its own, and goes on in order.
+    let (typing, mut typed_here) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+    std::thread::spawn(move || {
+        let mut input = input;
+        let mut buffer = [0u8; 4096];
+        loop {
+            match input.read(&mut buffer) {
+                Ok(0) | Err(_) => return,
+                Ok(read) => {
+                    if typing.send(buffer[..read].to_vec()).is_err() {
+                        return;
+                    }
+                }
+            }
+        }
+    });
+    let typer = {
+        let client = Arc::clone(&client);
+        tokio::spawn(async move {
+            while let Some(bytes) = typed_here.recv().await {
+                if client.sign_in_input(sign_in, bytes).await.is_err() {
+                    return;
+                }
+            }
+        })
+    };
+    let code = loop {
+        if state.ending.load(std::sync::atomic::Ordering::SeqCst) {
+            let _ = tokio::time::timeout(ANSWER_WITHIN, client.end_sign_in(sign_in)).await;
+            break None;
+        }
+        match tokio::time::timeout(ANSWER_WITHIN, client.sign_in_next(sign_in)).await {
+            Ok(Ok((out, err, ended))) => {
+                let shown = out_here
+                    .write_all(&out)
+                    .and_then(|()| err_here.write_all(&err));
+                if shown.is_err() {
+                    let _ = tokio::time::timeout(ANSWER_WITHIN, client.end_sign_in(sign_in)).await;
+                    break None;
+                }
+                if let Some(ended) = ended {
+                    break ended.code;
+                }
+            }
+            // The link went, or the runner did not answer: the sign-in ended with it.
+            Ok(Err(_)) | Err(_) => break None,
+        }
+    };
+    typer.abort();
+    // All it printed is on its pipes before it is said to have ended.
+    drop((out_here, err_here));
+    *state
+        .ended
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(code);
+    drop(links);
+}
+
 /// **`kept`, as a runner speaking `version` is sent it**: with its settings, read now, only from
 /// 1.50 (#3448). A runner before ignores them, so none is read for it, and nothing about them
 /// can refuse a chat that starts on it: it keeps the settings it has, as before. A runner of 1.56

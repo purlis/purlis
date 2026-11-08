@@ -1063,6 +1063,44 @@ fn serve(suspends_after: Option<std::time::Duration>) -> ExitCode {
         delivering: std::sync::Arc::new(|target| {
             purlis_core::profilestore::sign_in::callback::deliver(target)
         }),
+        // And its own sign-in of one of the desktop's profiles kept here, run over that desktop's
+        // link to it, which proves this runner by its key (1.79): the words a `kubectl exec`
+        // into its pod ran before, by this binary.
+        signing_in: std::sync::Arc::new(|desktop, start| {
+            use purlis_core::dockerpool::{Typed, sign_in_words};
+            use purlis_core::engine::Size;
+            use purlis_host::protocol::session::SignInBy;
+            let homes = purlis_core::profilestore::Homes::here().ok_or_else(|| {
+                "this runner has no data home its profiles are in, or it is inside a project"
+                    .to_owned()
+            })?;
+            let kept = purlis_core::profilestore::onrunner::kept_for(&homes, &desktop.device)?;
+            if !kept.iter().any(|name| *name == start.profile) {
+                return Err(format!(
+                    "this runner keeps no profile named '{}' for your desktop, so nothing was \
+                     signed in",
+                    shown::short(&start.profile)
+                ));
+            }
+            let typed = match start.by {
+                SignInBy::Driven => Typed::Driven,
+                SignInBy::InOwnTerminal { cols, rows } => Typed::InOwnTerminal(Size {
+                    columns: cols,
+                    rows,
+                }),
+                SignInBy::DeviceInOwnTerminal { cols, rows } => Typed::DeviceInOwnTerminal(Size {
+                    columns: cols,
+                    rows,
+                }),
+            };
+            let this = std::env::current_exe()
+                .map_err(|why| format!("this runner's purlis could not be found: {why}"))?;
+            let words = sign_in_words(typed, &start.profile, start.provider.as_deref());
+            let mut command = std::process::Command::new(this);
+            // The words' first is the runner's `purlis`, which this binary is.
+            command.args(words.iter().skip(1));
+            Ok(command)
+        }),
     };
     ExitCode::from(
         u8::try_from(purlis_host::serve_alone_answering(

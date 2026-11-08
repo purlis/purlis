@@ -504,9 +504,24 @@ use crate::view::{Limits, Views};
 /// [`Command::UndoTurn`] has the host put back the files of a turn of one of its chats under its
 /// own idle check. A host before 1.78 records no turn of a chat on it: it is asked for none and
 /// sent no undo, and the window says why such a chat has no turn.
+///
+/// 1.79 has the desktop sign its profile in on its runner over its own link to it
+/// ([`Command::StartSignIn`]): the runner runs its own `purlis profile sign-in` with pipes, held to
+/// the link it was asked on, read with [`Command::SignInNext`], typed to with
+/// [`Command::SignInInput`] and ended with [`Command::EndSignIn`] or the link's end. A link proves
+/// the runner by its key, so a sign-in asked over it reaches that runner and no other, where one
+/// run through the cluster's own `kubectl exec` reaches the pod of a name. A host before 1.79 is
+/// signed in on as before.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 78,
+    minor: 79,
+};
+
+/// The version that first signs a profile in over the desktop's link to its runner
+/// ([`Command::StartSignIn`]): none is asked of a host before.
+pub const KNOWS_SIGN_IN_OVER_THE_LINK: Version = Version {
+    major: 1,
+    minor: 79,
 };
 
 /// The version that first records its chats' turns, gives them with its code and undoes one
@@ -1076,6 +1091,29 @@ pub enum Command {
     /// it out; every other host refuses it [`NOT_ALLOWED`]
     /// ([`crate::grants::Power::SignInRedirect`]).
     SignInRedirect { target: RedirectTarget },
+    /// **Start the runner's own sign-in of the desktop's profile** (1.79): the runner runs its own
+    /// `purlis profile sign-in` of it, with pipes, as `kubectl exec -i` into its pod ran it before,
+    /// and holds it to this link. Answered [`Answer::SignInStarted`] with its number on this link;
+    /// what it prints is read with [`Command::SignInNext`], what is typed reaches it with
+    /// [`Command::SignInInput`], and [`Command::EndSignIn`] or the link's end ends it. Refused
+    /// [`NOT_STARTED`] for a profile the runner does not keep for the desktop on this link. Only a
+    /// runner's host, on the link between hosts from the desktop it is paired with, runs it; every
+    /// other host refuses it [`NOT_ALLOWED`] ([`crate::grants::Power::SignInRedirect`]).
+    StartSignIn(SignInToStart),
+    /// **What sign-in `sign_in` printed since it was last asked** (1.79), waiting a little for
+    /// something where it printed nothing yet: answered [`Answer::SignInPrinted`], which says it
+    /// ended once all it printed was read. Refused [`NOT_STARTED`] for none of this link's.
+    SignInNext { sign_in: u32 },
+    /// **Bytes typed to sign-in `sign_in`** (1.79), as they are: a pasted code and its line break,
+    /// or what the person types in its terminal. Answered [`Answer::Done`].
+    SignInInput {
+        sign_in: u32,
+        #[serde(with = "base64_bytes")]
+        bytes: Vec<u8>,
+    },
+    /// **End sign-in `sign_in`** (1.79): its input ends, and it is stopped where it goes on.
+    /// Answered [`Answer::Done`], also for one that ended already.
+    EndSignIn { sign_in: u32 },
     /// The person takes browser `program` over (1.14, #2014): an act in flight answers that it
     /// was interrupted, and every act is refused in words until [`Command::HandBack`]. The lease
     /// is the host's: it stays with the person whatever becomes of the link that took it, until
@@ -2302,8 +2340,50 @@ pub enum Answer {
     GradeAnswered(GradeAnswer),
     /// The runner a relayed link reached, as `<pool>/<runner>`: [`Command::RelayTo`] (1.48).
     RelayedTo { runner: String },
+    /// The sign-in a runner started, by its number on this link: [`Command::StartSignIn`] (1.79).
+    SignInStarted { sign_in: u32 },
+    /// What a sign-in printed since it was last asked, on each of its outputs, and how it ended
+    /// once all it printed was read: [`Command::SignInNext`] (1.79).
+    SignInPrinted {
+        #[serde(with = "base64_bytes", default, skip_serializing_if = "Vec::is_empty")]
+        out: Vec<u8>,
+        #[serde(with = "base64_bytes", default, skip_serializing_if = "Vec::is_empty")]
+        err: Vec<u8>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ended: Option<SignInEnded>,
+    },
     /// Done, with nothing to say.
     Done,
+}
+
+/// **A sign-in the desktop asks its runner to run** (1.79): [`Command::StartSignIn`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SignInToStart {
+    /// The desktop's profile, by the name the runner keeps it under for that desktop.
+    pub profile: String,
+    /// The plan it signs in to, where its harness serves several.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+    pub by: SignInBy,
+}
+
+/// **How a sign-in over the link is driven** (1.79), as the runner's own `purlis profile
+/// sign-in` is told: by the desktop, which reads what it prints for its steps
+/// (`--until-input-ends`), or by the person, in a terminal the runner makes of a size
+/// (`--in-own-terminal`), by the harness's own flow or its device-code flow.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "way", rename_all = "snake_case")]
+pub enum SignInBy {
+    Driven,
+    InOwnTerminal { cols: u16, rows: u16 },
+    DeviceInOwnTerminal { cols: u16, rows: u16 },
+}
+
+/// **How a sign-in over the link ended** (1.79): its exit status, where it exited with one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SignInEnded {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code: Option<i32>,
 }
 
 /// One program a held project still has, as [`Command::ProgramsOf`] answers it (1.13): what a
@@ -2817,6 +2897,10 @@ wire_words!(Command {
     SettingsHeld => "settings_held",
     KeptProfiles => "kept_profiles",
     SignInRedirect => "sign_in_redirect",
+    StartSignIn => "start_sign_in",
+    SignInNext => "sign_in_next",
+    SignInInput => "sign_in_input",
+    EndSignIn => "end_sign_in",
     RelayTo => "relay_to",
     TakeCode => "take_code",
     GiveCode => "give_code",
@@ -2885,7 +2969,11 @@ impl Command {
             | Command::StageProfileSettings(_)
             | Command::SettingsHeld { .. }
             | Command::KeptProfiles => Power::KeepProfile,
-            Command::SignInRedirect { .. } => Power::SignInRedirect,
+            Command::SignInRedirect { .. }
+            | Command::StartSignIn(_)
+            | Command::SignInNext { .. }
+            | Command::SignInInput { .. }
+            | Command::EndSignIn { .. } => Power::SignInRedirect,
             Command::RelayTo { .. } => Power::RelayTo,
             Command::TakeCode { .. }
             | Command::GiveCode { .. }
@@ -2976,6 +3064,8 @@ wire_words!(Answer {
     LogEnd => "log_end",
     GradeAnswered => "grade_answered",
     RelayedTo => "relayed_to",
+    SignInStarted => "sign_in_started",
+    SignInPrinted => "sign_in_printed",
     Done => "done",
 });
 
@@ -3391,6 +3481,9 @@ enum Lane {
     /// The acts asked of one browser (1.11): in order among themselves, and never ahead of or
     /// behind its views, so a long wait for text holds up no view of it.
     Browsing(String),
+    /// What is typed to one sign-in over the link, and its end (1.79): in the order typed. A
+    /// read of what it printed waits for nobody.
+    SignIn(u32),
 }
 
 impl Lane {
@@ -3419,6 +3512,9 @@ impl Lane {
             | Command::SettingsHeld { .. }
             | Command::KeptProfiles
             | Command::SignInRedirect { .. }
+            | Command::StartSignIn(_)
+            // Waits a little for what a sign-in prints, holding up nothing typed to it.
+            | Command::SignInNext { .. }
             | Command::RelayTo { .. }
             | Command::TakeCode { .. }
             | Command::GiveCode { .. }
@@ -3484,6 +3580,10 @@ impl Lane {
             | Command::SizeBrowser { program, .. }
             | Command::Inspect { program, .. }
             | Command::InspectorInput { program, .. } => Some(Lane::Program(program.clone())),
+            // What is typed to a sign-in reaches it in order, and its end after it.
+            Command::SignInInput { sign_in, .. } | Command::EndSignIn { sign_in } => {
+                Some(Lane::SignIn(*sign_in))
+            }
         }
     }
 }
@@ -4171,6 +4271,42 @@ impl Client {
             })
             .await?
         {
+            Answer::Done => Ok(()),
+            other => Err(unexpected(&other)),
+        }
+    }
+
+    /// **Have the runner start its own sign-in** `start` (1.79): its number on this link.
+    pub async fn start_sign_in(&self, start: SignInToStart) -> Result<u32, CallError> {
+        match self.call(Command::StartSignIn(start)).await? {
+            Answer::SignInStarted { sign_in } => Ok(sign_in),
+            other => Err(unexpected(&other)),
+        }
+    }
+
+    /// **What sign-in `sign_in` printed since it was last asked** (1.79): on its output, on its
+    /// error output, and how it ended once all it printed was read.
+    pub async fn sign_in_next(
+        &self,
+        sign_in: u32,
+    ) -> Result<(Vec<u8>, Vec<u8>, Option<SignInEnded>), CallError> {
+        match self.call(Command::SignInNext { sign_in }).await? {
+            Answer::SignInPrinted { out, err, ended } => Ok((out, err, ended)),
+            other => Err(unexpected(&other)),
+        }
+    }
+
+    /// **Types `bytes` to sign-in `sign_in`** (1.79).
+    pub async fn sign_in_input(&self, sign_in: u32, bytes: Vec<u8>) -> Result<(), CallError> {
+        match self.call(Command::SignInInput { sign_in, bytes }).await? {
+            Answer::Done => Ok(()),
+            other => Err(unexpected(&other)),
+        }
+    }
+
+    /// **Ends sign-in `sign_in`** (1.79).
+    pub async fn end_sign_in(&self, sign_in: u32) -> Result<(), CallError> {
+        match self.call(Command::EndSignIn { sign_in }).await? {
             Answer::Done => Ok(()),
             other => Err(unexpected(&other)),
         }
