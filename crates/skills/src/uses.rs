@@ -103,8 +103,22 @@ pub fn uses_in(
 /// apostrophe as often.
 const QUOTES: [(char, char); 3] = [('"', '"'), ('\u{201c}', '\u{201d}'), ('`', '`')];
 
-/// The word a line must hold, beside a quoted name, for the name to be read as a hint.
+/// The word a line must hold, beside a quoted name, for the name to be read as a hint: on its
+/// own, in any case, or as "skills".
 const SKILL_WORD: &str = "skill";
+
+/// Whether `text` holds [`SKILL_WORD`] as a word of its own, or its plural: not inside a longer
+/// word such as "skillful".
+fn says_skill(text: &str) -> bool {
+    let text = text.to_lowercase();
+    let letter = |c: char| c.is_alphanumeric();
+    text.match_indices(SKILL_WORD).any(|(at, _)| {
+        let rest = &text[at + SKILL_WORD.len()..];
+        let rest = rest.strip_prefix('s').unwrap_or(rest);
+        !text[..at].chars().next_back().is_some_and(letter)
+            && !rest.chars().next().is_some_and(letter)
+    })
+}
 
 /// **Every skill `text` names bare, as a hint, once each** (#4510), in the order it names them:
 /// a name that is the whole of a quote or a code span ([`QUOTES`]) closed on its line, where the
@@ -119,18 +133,17 @@ const SKILL_WORD: &str = "skill";
 pub fn hints_in(text: &str, own: &str, known: &dyn Fn(&str) -> bool) -> Vec<Use> {
     let mut out: Vec<Use> = Vec::new();
     for line in text.lines() {
-        for (start, end) in quoted(line) {
+        for (open, close) in quoted(line) {
             if out.len() >= MOST_REFERENCES {
                 return out;
             }
-            let (open, close) = (start, end);
             let inner_start = open + line[open..].chars().next().map_or(1, char::len_utf8);
             let inner_end = close - line[..close].chars().next_back().map_or(1, char::len_utf8);
             let name = &line[inner_start..inner_end];
             let rest = format!("{}{}", &line[..open], &line[close..]);
             if name == own
                 || crate::change::name_problem(name).is_some()
-                || !rest.to_lowercase().contains(SKILL_WORD)
+                || !says_skill(&rest)
                 || !known(name)
                 || out.iter().any(|one| one.name == name)
             {

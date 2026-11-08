@@ -178,8 +178,9 @@ impl Finding {
                 }
             ),
             Lint::Hint { said, name } => format!(
-                "it names {said} bare, which purlis reads only as a hint at the skill {name}: \
-                 write skills:{name} to make it a reference purlis checks and renames"
+                "it names {said} without skills:, so purlis only guesses it means the skill \
+                 {name}: write skills:{name} so purlis checks it and keeps it right when {name} \
+                 is renamed"
             ),
             Lint::ReservedName => {
                 "a name starting with purlis- is purlis's own, so a chat may get \

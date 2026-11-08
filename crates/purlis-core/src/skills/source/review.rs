@@ -57,14 +57,14 @@ pub struct SkillReview {
     /// The skill whose install brings it along, as one it refers to.
     pub brought_by: Option<String>,
     /// Whether [`Self::brought_by`] only names it bare, as a hint (#4510), not as `skills:<name>`.
-    pub hinted: bool,
+    pub brought_by_hint: bool,
     /// The skills it refers to that the level it lands in holds already (#4032): they are not
     /// brought along, and the install leaves them as they are.
     pub already: Vec<String>,
     /// Every skill it refers to, each once, wherever it is met.
     pub refers: Vec<String>,
     /// Every skill it names only bare, as a hint (#4510), each once: one the source holds or the
-    /// level has ([`hinted`]), so never one that is not there. Such a skill comes along, or is
+    /// level has ([`hints_of`]), so never one that is not there. Such a skill comes along, or is
     /// left as it is, as one it refers to does.
     pub hints: Vec<String>,
     /// Where its name is taken at the level it lands in.
@@ -302,9 +302,13 @@ pub(super) fn referenced(files: &[SourceFile]) -> Vec<String> {
 
 /// **Every skill `own`'s files name only bare, as hints** (#4510,
 /// [`purlis_skills::uses::hints_in`]): each a skill `known` says is there, once each, and not one
-/// they refer to.
-pub(super) fn hinted(files: &[SourceFile], own: &str, known: &dyn Fn(&str) -> bool) -> Vec<String> {
-    let refers = referenced(files);
+/// of `refers`, those they refer to.
+fn hints_of(
+    files: &[SourceFile],
+    own: &str,
+    refers: &[String],
+    known: &dyn Fn(&str) -> bool,
+) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for text in files.iter().filter_map(text_of) {
         for hint in purlis_skills::uses::hints_in(text, own, known) {
@@ -317,14 +321,14 @@ pub(super) fn hinted(files: &[SourceFile], own: &str, known: &dyn Fn(&str) -> bo
 }
 
 /// The review of the skill `found`, whose files are `files` and whose left-out entries are
-/// `left`, brought along by `brought_by` (only by a hint where `hinted`), in a source that holds
+/// `left`, brought along by `brought_by` (only by a hint where `by_hint`), in a source that holds
 /// the skills `held`, landing in a level that holds those `have` says.
 pub(super) fn review_of(
     found: &Found,
     files: &[SourceFile],
     left: Vec<LeftOut>,
     brought_by: Option<String>,
-    hinted: bool,
+    by_hint: bool,
     held: &[String],
     have: &dyn Fn(&str) -> bool,
 ) -> SkillReview {
@@ -367,7 +371,7 @@ pub(super) fn review_of(
             ));
         }
     }
-    let hints = self::hinted(files, &found.name, &|name| {
+    let hints = hints_of(files, &found.name, &refers, &|name| {
         held.iter().any(|one| one == name) || have(name)
     });
     already.extend(hints.iter().filter(|name| have(name)).cloned());
@@ -376,7 +380,7 @@ pub(super) fn review_of(
         description: found.description.clone(),
         folder: found.folder.clone(),
         brought_by,
-        hinted,
+        brought_by_hint: by_hint,
         already,
         refers,
         hints,
@@ -535,25 +539,22 @@ pub(super) fn reviewed_from(
             }));
         }
         let (files, left) = source.files(one)?;
-        let comes = |other: &String| *other != name && held.contains(other) && !have(other);
-        let mut next: Vec<(String, Option<String>, bool)> = referenced(&files)
-            .into_iter()
-            .filter(comes)
-            .map(|other| (other, Some(name.clone()), false))
-            .collect();
-        next.extend(
-            hinted(&files, &name, &|other| {
-                held.iter().any(|one| one == other) || have(other)
-            })
-            .into_iter()
-            .filter(comes)
-            .map(|other| (other, Some(name.clone()), true)),
-        );
-        next.append(&mut queue);
-        queue = next;
         // One that is named is reviewed itself, so it is never said to be left as it is.
         let left_as_is = |other: &str| have(other) && !names.iter().any(|named| named == other);
         let mut review = review_of(one, &files, left, by, by_hint, &held, &left_as_is);
+        // What it refers to, then what it only hints at, each the source holds and the level
+        // does not have, comes along right after it.
+        let comes = |other: &&String| held.contains(*other) && !have(other);
+        let mut next: Vec<(String, Option<String>, bool)> = review
+            .refers
+            .iter()
+            .map(|other| (other, false))
+            .chain(review.hints.iter().map(|other| (other, true)))
+            .filter(|(other, _)| comes(other))
+            .map(|(other, hint)| (other.clone(), Some(name.clone()), hint))
+            .collect();
+        next.append(&mut queue);
+        queue = next;
         review.grade = graded(source, one, &files);
         skills.push(Reviewed { review, files });
     }

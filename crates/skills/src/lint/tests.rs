@@ -159,8 +159,9 @@ fn a_bare_quoted_skill_name_beside_the_word_skill_warns_as_a_hint() {
     assert_eq!(
         says(&found(&text, &[], true)),
         [
-            "it names \"review\" bare, which purlis reads only as a hint at the skill review: \
-             write skills:review to make it a reference purlis checks and renames",
+            "it names \"review\" without skills:, so purlis only guesses it means the skill \
+             review: write skills:review so purlis checks it and keeps it right when review is \
+             renamed",
         ]
     );
     let both = skill("", "Use skills:review, the skill \"review\".");

@@ -3385,7 +3385,7 @@ fn skills_review_text(
         let brought = skill
             .brought_by
             .as_deref()
-            .map(|by| comes_along(by, skill.hinted))
+            .map(|by| comes_along(by, skill.brought_by_hint))
             .unwrap_or_default();
         out.push_str(&format!(
             "\n{}{}: {}\n",

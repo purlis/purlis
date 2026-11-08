@@ -345,9 +345,9 @@ fn the_review_brings_a_skill_named_bare_along_as_a_hint() {
         "{:?}",
         plan.lint
     );
-    assert!(!plan.hinted);
+    assert!(!plan.brought_by_hint);
     assert_eq!(grilling.brought_by.as_deref(), Some("plan"));
-    assert!(grilling.hinted);
+    assert!(grilling.brought_by_hint);
 }
 
 #[test]

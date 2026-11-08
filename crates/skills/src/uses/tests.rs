@@ -132,6 +132,8 @@ fn a_bare_name_is_no_hint_without_the_word_skill_a_quote_or_a_skill_of_that_name
     for text in [
         // No "skill" on its line.
         "Then run \"grilling\" on the plan.",
+        // "skill" only inside a longer word.
+        "A skillful \"grilling\" of the skillset.",
         // Not the whole of the quote.
         "The skill \"grilling the plan\" is next.",
         // Not quoted at all.
