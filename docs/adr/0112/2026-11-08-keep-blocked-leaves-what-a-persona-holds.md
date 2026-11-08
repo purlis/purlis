@@ -19,7 +19,8 @@ it. From the mark on, nothing that opens the vault for that chat is given:
 finished before Keep blocked was pressed wrote a tool line and gave the persona the vault, for
 every chat and every teammate. Keep blocked does not take those back, as it never took back what a
 persona holds. Once the persona may use the vault, the chat's later runs are no longer runs on a
-vault its persona may not use, so Keep blocked no longer holds them. Removing the tool, or the
+vault its persona may not use, so Keep blocked no longer holds them. That holds for an Allow pressed in
+another chat too, even after Keep blocked: it gives the persona the vault for all its chats. Removing the tool, or the
 vault in the Allowed list, takes them back.
 
 **The cost, accepted.**
