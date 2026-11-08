@@ -453,8 +453,13 @@ fn opencodes_data_folder_and_every_folder_above_it_stay_where_they_are() {
             "/Users/op/.local",
             "/Users/op",
         ] {
-            // Under the firmlink's other name too, which the kernel may give it (#1356).
-            for name in [folder.to_owned(), format!("/System/Volumes/Data{folder}")] {
+            // Under the firmlink's other name too, which the kernel may give it on macOS (#1356).
+            let names = if cfg!(target_os = "macos") {
+                vec![folder.to_owned(), format!("/System/Volumes/Data{folder}")]
+            } else {
+                vec![folder.to_owned()]
+            };
+            for name in names {
                 let rule = format!("(deny file-write* (literal \"{name}\"))");
                 assert!(
                     profile.contains(&rule),
@@ -462,7 +467,10 @@ fn opencodes_data_folder_and_every_folder_above_it_stay_where_they_are() {
                 );
             }
         }
-        for file in ["auth.json", "mcp-auth.json"] {
+        for file in ["auth.json", "mcp-auth.json"]
+            .into_iter()
+            .filter(|_| cfg!(target_os = "macos"))
+        {
             let rule = format!(
                 "(deny file-write* file-link (literal \"/System/Volumes/Data/Users/op/.local/share/opencode/{file}\"))"
             );
