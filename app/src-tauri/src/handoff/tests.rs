@@ -13156,6 +13156,63 @@ fn a_runs_field_linked_to_a_browser_logins_key_is_refused_with_nothing_linked_or
     );
 }
 
+/// **#5745** (the person's ruling, 2026-11-08: refuse such links): a run's field links into
+/// the run's vault, which every persona of that vault reads. So where `billing` may use `team`
+/// too and not `keep`, the picker offers none of `keep`'s entries, though `ops` may use them, and
+/// a press picking one is refused, saying why, with nothing linked or given.
+#[test]
+fn a_runs_field_is_not_linked_to_an_entry_another_persona_of_its_vault_may_not_use() {
+    let plane = Plane::new().a_persona("ops", "");
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    team_and_a_kept_entry(&plane);
+    purlis_core::sandbox::local::grant_vault(&plane.root, "team", "billing")
+        .expect("billing may use team here");
+
+    let ran = held_while(&held, curl_lacking_token(&plane), |open| {
+        let listed = crate::secretasks::run_entries_for(&held, open.id).expect("listed");
+        assert!(
+            listed.iter().all(|one| one.vault != "keep"),
+            "keep is not offered: {listed:?}"
+        );
+        let pressed = crate::secretasks::run_grant_given(
+            &held,
+            None,
+            open.id,
+            crate::secretasks::RunGrantPress::Once,
+            picked("TOKEN", "SHARED"),
+        );
+        assert!(
+            pressed.as_ref().is_err_and(|why| {
+                why.contains("billing may use vault team") && why.contains("can't use vault keep")
+            }),
+            "{pressed:?}"
+        );
+        let ctx =
+            purlis_core::secrets::Ctx::new(&plane.root, purlis_core::secrets::Env::from_process());
+        assert_eq!(
+            purlis_core::secrets::links::of(&ctx, "team", "TOKEN").expect("read"),
+            None,
+            "nothing linked"
+        );
+        assert!(held.secret_asks().given_runs().is_empty(), "nothing given");
+        crate::secretasks::run_grant_filled(
+            &held,
+            None,
+            open.id,
+            crate::secretasks::RunGrantPress::Refuse,
+            Vec::new(),
+        )
+        .expect("kept off");
+    });
+    assert!(
+        matches!(ran, purlis_core::secrets::ask::run::RunHeld::Refused { .. }),
+        "{ran:?}"
+    );
+}
+
 /// **D-5246-1** (the person's ruling, amending D-5080-11): a plain Secret ask's picker lists what
 /// a run's does, only vaults its persona may use and no entry a browser login fills, since the link
 /// it makes is read by every later run of that key, whose notice names only the persona's vault.

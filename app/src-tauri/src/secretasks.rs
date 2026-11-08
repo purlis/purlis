@@ -357,9 +357,12 @@ pub fn run_grant_given(
         let may_use = |vault: &str| {
             purlis_core::secrets::brokered::authorise(&ctx, Some(&open.persona), vault).is_ok()
         };
+        let read_through = |vault: &str| {
+            purlis_core::secrets::brokered::read_through_by(&ctx, &open.bound.vault, vault)
+        };
         if let Some(why) = links
             .iter()
-            .find_map(|link| picked_refused(&handed, &may_use, &open, link))
+            .find_map(|link| picked_refused(&handed, &may_use, &read_through, &open, link))
         {
             return Err(why);
         }
@@ -547,11 +550,13 @@ pub fn run_grant_given(
 
 /// **Why `link`'s entry may not fill a field of `open`'s notice**, where it may not (#5080): one
 /// a browser login, a secret-fill line or a `mint` line of any persona holds (`handed`, read
-/// once for every key judged), or one in a vault the persona may not use (`may_use`), other than
-/// the run's own.
+/// once for every key judged), one in a vault the persona may not use (`may_use`), other than
+/// the run's own, and one another persona of the run's vault may not use (`read_through`, #5745),
+/// which would read it through the link.
 fn picked_refused(
     handed: &purlis_core::secrets::brokered::NoProgram,
     may_use: &dyn Fn(&str) -> bool,
+    read_through: &dyn Fn(&str) -> Option<String>,
     open: &purlis_core::secrets::ask::run::OpenRun,
     link: &RunLink,
 ) -> Option<String> {
@@ -574,13 +579,14 @@ fn picked_refused(
     }
     // The broker's own rule, which fails closed: no persona, an unreadable registry or a vault
     // it can't read are none the persona may use.
-    (link.vault != open.bound.vault && !may_use(&link.vault)).then(|| {
-        format!(
+    if link.vault != open.bound.vault && !may_use(&link.vault) {
+        return Some(format!(
             "{} can't use vault {}, so its entries can't fill this notice. Pick another \
              entry, or type a value.",
             open.persona, link.vault
-        )
-    })
+        ));
+    }
+    read_through(&link.vault)
 }
 
 /// **Writes the line Always allow showed to the persona's tools** (#5245).
@@ -685,18 +691,29 @@ pub fn run_entries_for(held: &crate::planes::Held, id: u32) -> Result<Vec<Entrie
         .unwrap_or_default();
     let may_use = |vault: &str| usable.iter().any(|one| one == vault);
     let handed = purlis_core::secrets::brokered::NoProgram::read(&ctx);
+    // Judged once a vault, as listed: whether another persona of the run's vault would read its
+    // entries through a link (#5745). A press reads it again.
+    let read_through = |vault: &str| {
+        purlis_core::secrets::brokered::read_through_by(&ctx, &open.bound.vault, vault)
+    };
+    let listed = |_: &str| -> Option<String> { None };
     Ok(links::pickable(&ctx, None)
         .map_err(|e| e.message.to_string())?
         .into_iter()
-        // Only a vault the persona may use, and the run's own: what a pick is held to.
-        .filter(|one| one.vault == open.bound.vault || may_use(&one.vault))
+        // Only a vault the persona may use, and the run's own, and one every persona of the run's
+        // vault may use: what a pick is held to.
+        .filter(|one| {
+            (one.vault == open.bound.vault || may_use(&one.vault))
+                && read_through(&one.vault).is_none()
+        })
         .map(|one| match one.keys {
             Ok(keys) => EntriesOf {
                 keys: keys
                     .into_iter()
                     .filter(|key| !fields(&one.vault, key))
                     .filter(|key| {
-                        picked_refused(&handed, &may_use, &open, &link(&one.vault, key)).is_none()
+                        picked_refused(&handed, &may_use, &listed, &open, &link(&one.vault, key))
+                            .is_none()
                     })
                     .collect(),
                 vault: one.vault,
@@ -742,7 +759,12 @@ pub fn entries_for(held: &crate::planes::Held, id: u32) -> Result<Vec<EntriesOf>
     Ok(links::pickable(&ctx, Some(&asked))
         .map_err(|e| e.message.to_string())?
         .into_iter()
-        .filter(|one| usable.contains(&one.vault))
+        // And one every persona of the asked vault may use (#5745), as the press is held to.
+        .filter(|one| {
+            usable.contains(&one.vault)
+                && purlis_core::secrets::brokered::read_through_by(&ctx, &asked.vault, &one.vault)
+                    .is_none()
+        })
         .map(|one| match one.keys {
             Ok(keys) => EntriesOf {
                 keys: keys

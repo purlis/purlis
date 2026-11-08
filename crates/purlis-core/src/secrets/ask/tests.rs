@@ -1930,6 +1930,33 @@ fn a_picked_entry_the_persona_may_not_use_or_a_browser_fills_is_refused_and_noth
     assert_eq!(asks.open().len(), 1, "still open");
 }
 
+/// **#5745** (the person's ruling, 2026-11-08: refuse such links): a link is read by every
+/// persona that may use the vault it is in, through a declared tool too. So a press is refused
+/// where some persona of the link's vault may not use the entry's, though the asking one may, and
+/// the refusal says which persona and why.
+#[test]
+fn a_link_another_persona_of_its_vault_may_not_read_through_is_refused_and_says_why() {
+    let project = project_with_an_entry();
+    let root = project.path();
+    // `qa` may use `team` on this machine, and not `own`; `devops` may use both.
+    crate::sandbox::local::grant_vault(root, "team", "qa").unwrap();
+    let asks = Asks::new(root);
+    held_for_nothing(&asks, need(7, "MISSING"));
+    let refused = asks
+        .answer(&ctx(root), asks.open()[0].id, stripe_in_own(), window())
+        .expect_err("qa would read own's entry through the link");
+    assert!(
+        refused.contains("qa may use vault team") && refused.contains("can't use vault own"),
+        "{refused}"
+    );
+    assert_eq!(
+        crate::secrets::links::of(&ctx(root), "team", "MISSING").unwrap(),
+        None,
+        "nothing linked"
+    );
+    assert_eq!(asks.open().len(), 1, "still open");
+}
+
 fn stripe_in_own() -> Answer {
     Answer::Link(crate::secrets::links::Target {
         vault: "own".into(),
