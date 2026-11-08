@@ -33,11 +33,12 @@
 //! **A chat with no sandbox has no sandbox to leave a line to.** Its guard holds a branch
 //! folder's writes to the folder's one live writer ([`branch_write`]), and reads the same line
 //! the same way, but where it cannot place a git that may write a branch (after a move it
-//! cannot follow, past [`MOST_PLACES`], as an alias it cannot read, behind any wrapper but
-//! `env` setting variables or moving to a folder, in a script handed to a shell, or on a line
-//! it cannot read at all) it says so ([`BranchWrites::unplaced`]), and the guard refuses that
-//! git with the shape that places it. For it a bare relative `cd` is a move it cannot follow:
-//! its shell may have a `CDPATH` its own start files set.
+//! cannot follow, past [`MOST_PLACES`], as an alias it cannot read, behind a wrapper that may
+//! change where git runs or what it reads, in a script handed to a shell, or with words it
+//! cannot see) it says so ([`BranchWrites::unplaced`]), and the guard refuses that git with
+//! the shape that places it. git's own commands that write no branch are let through wherever
+//! they run. For it a bare relative `cd` is a move it cannot follow where its shell may have a
+//! `CDPATH` ([`shell_may_have_cdpath`]).
 
 use std::path::{Component, Path, PathBuf};
 
@@ -138,7 +139,8 @@ pub fn unplaced_said(sub: &str) -> String {
 /// The refusal for `cmd`, run in `cwd` by a chat the app gave a sandbox, in the project at
 /// `root`: `(subcommand, sentence)`, or `None`.
 pub fn refusal(cmd: &str, cwd: &str, root: &str) -> Option<(String, String)> {
-    let first = found(cmd, cwd, root, Unplaced::Stop, |sub, post| {
+    let cdpath = || std::env::var_os("CDPATH").is_some_and(|it| !it.is_empty());
+    let first = found(cmd, cwd, root, Unplaced::Stop, &cdpath, |sub, post| {
         writes_the_index(sub, post).then_some(())
     })
     .0
@@ -173,8 +175,97 @@ pub struct InAFolder<T> {
 /// from the configuration of each folder it may run in; one that runs a shell command, or that
 /// the line itself or git's environment defines, cannot be.
 pub fn branch_write(cmd: &str, cwd: &str, root: &str) -> BranchWrites {
-    let (found, unplaced) = found(cmd, cwd, root, Unplaced::Name, writes_the_branch);
+    branch_write_where(cmd, cwd, root, &|| {
+        shell_may_have_cdpath(&|name| std::env::var_os(name), Path::new("/etc"))
+    })
+}
+
+/// [`branch_write`], with `cdpath` saying whether the chat's shell may have a `CDPATH`: asked
+/// only of a bare relative `cd`, and once a line.
+fn branch_write_where(cmd: &str, cwd: &str, root: &str, cdpath: &dyn Fn() -> bool) -> BranchWrites {
+    let (found, unplaced) = found(cmd, cwd, root, Unplaced::Name, cdpath, writes_the_branch);
     BranchWrites { found, unplaced }
+}
+
+/// The start files a chat's shell may read before it runs a line, each in a folder of
+/// [`StartFolder`]: zsh's, which it reads from `ZDOTDIR` where that is set, and the
+/// Bourne shells' and bash's. An interactive shell's files are among them: a login shell's
+/// profile often reads them.
+const START_FILES: [(StartFolder, &str); 21] = [
+    (StartFolder::Home, ".zshenv"),
+    (StartFolder::Zdot, ".zshenv"),
+    (StartFolder::Zdot, ".zprofile"),
+    (StartFolder::Zdot, ".zshrc"),
+    (StartFolder::Zdot, ".zlogin"),
+    (StartFolder::Etc, "zshenv"),
+    (StartFolder::Etc, "zprofile"),
+    (StartFolder::Etc, "zshrc"),
+    (StartFolder::Etc, "zlogin"),
+    (StartFolder::Etc, "zsh/zshenv"),
+    (StartFolder::Etc, "zsh/zprofile"),
+    (StartFolder::Etc, "zsh/zshrc"),
+    (StartFolder::Etc, "zsh/zlogin"),
+    (StartFolder::Home, ".bash_profile"),
+    (StartFolder::Home, ".bash_login"),
+    (StartFolder::Home, ".profile"),
+    (StartFolder::Home, ".bashrc"),
+    (StartFolder::Etc, "profile"),
+    (StartFolder::Etc, "bashrc"),
+    (StartFolder::Etc, "bash.bashrc"),
+    (StartFolder::Etc, "environment"),
+];
+
+/// Where one of [`START_FILES`] is.
+#[derive(Debug, Clone, Copy)]
+enum StartFolder {
+    /// The home.
+    Home,
+    /// `ZDOTDIR`, or the home where it is not set.
+    Zdot,
+    /// The system's folder of settings.
+    Etc,
+}
+
+/// The variables that name a file a shell reads before the line it runs: bash's, for a shell
+/// that runs a script, and a POSIX shell's, for an interactive one.
+const START_FILE_VARS: [&str; 2] = ["BASH_ENV", "ENV"];
+
+/// The most of one start file read for a `CDPATH`.
+const START_FILE_READ: u64 = 1 << 20;
+
+/// **Whether a chat's shell may have a `CDPATH`**, along which a relative `cd` is looked for
+/// first: one in its environment (`var`), or a start file one of its shells reads
+/// ([`START_FILES`] in the home, `ZDOTDIR` and `etc`, and the files [`START_FILE_VARS`] name)
+/// that names it anywhere, in any case. A start file that is there but cannot be read may set
+/// one too. Each file read is a small one, and only for a line with a bare relative `cd`.
+fn shell_may_have_cdpath(var: &dyn Fn(&str) -> Option<std::ffi::OsString>, etc: &Path) -> bool {
+    if var("CDPATH").is_some_and(|it| !it.is_empty()) {
+        return true;
+    }
+    let set = |name: &str| var(name).filter(|it| !it.is_empty()).map(PathBuf::from);
+    let home = set("HOME");
+    let zdot = set("ZDOTDIR").or_else(|| home.clone());
+    let files = START_FILES
+        .iter()
+        .filter_map(|(folder, name)| {
+            let folder = match folder {
+                StartFolder::Home => home.as_deref()?,
+                StartFolder::Zdot => zdot.as_deref()?,
+                StartFolder::Etc => etc,
+            };
+            Some(folder.join(name))
+        })
+        .chain(START_FILE_VARS.iter().filter_map(|name| set(name)));
+    files.into_iter().any(|file| {
+        // A start file is often a link into a folder of dotfiles: it is read where it leads.
+        let Ok(real) = std::fs::canonicalize(&file) else {
+            return false;
+        };
+        crate::sandbox::arrived::read_regular(&real, START_FILE_READ).is_none_or(|text| {
+            text.windows(b"cdpath".len())
+                .any(|word| word.eq_ignore_ascii_case(b"cdpath"))
+        })
+    })
 }
 
 /// Whether the project at `root` has a branch folder purlis made, in any workspace: where it
@@ -223,6 +314,7 @@ fn found<T: Clone>(
     cwd: &str,
     root: &str,
     unplaced: Unplaced,
+    cdpath: &dyn Fn() -> bool,
     wanted: impl Fn(&str, &[String]) -> Option<T>,
 ) -> (Vec<InAFolder<T>>, Option<String>) {
     let mut seen = Vec::new();
@@ -231,9 +323,9 @@ fn found<T: Clone>(
         return (seen, lost);
     }
     let Some(segments) = shellseg::joined_argv(cmd) else {
-        // A line that does not tokenize cannot be followed, and any git in it may write.
+        // A line that does not tokenize cannot be followed, and a git in it may write.
         if unplaced == Unplaced::Name {
-            lost = Some(first_git_sub(&shellseg::segment_argv(cmd)));
+            lost = unreadable_may_write(cmd, &wanted);
         }
         return (seen, lost);
     };
@@ -250,11 +342,10 @@ fn found<T: Clone>(
     // enough, however many such shells the line has.
     let mut line_read = false;
     let exported = shellwrap::exported_env(&argvs);
-    // A relative `cd` is looked for along `CDPATH` first, where the shell has one: this
-    // process's, or one the line sets. A shell with no sandbox behind it may have one its own
-    // start files set, which neither shows, so for it a bare relative `cd` is never followed.
-    let cdpath_here =
-        unplaced == Unplaced::Name || std::env::var_os("CDPATH").is_some_and(|it| !it.is_empty());
+    // A relative `cd` is looked for along `CDPATH` first, where the shell has one: one the
+    // line sets, or one `cdpath` says the shell may have. Asked once, and only of a bare `cd`.
+    let cdpath_here = std::cell::OnceCell::new();
+    let cdpath_here = || *cdpath_here.get_or_init(cdpath);
     let sets_cdpath = |env: &[String]| {
         env.iter().any(|pair| {
             pair.strip_prefix("CDPATH=")
@@ -298,7 +389,7 @@ fn found<T: Clone>(
                 out_of_sight!();
             }
         }
-        let call = shellwrap::split_env_chdir(&segment.argv);
+        let call = shellwrap::split_env_chdir(&as_run(&segment.argv));
         let program = base_lower(&call.prog);
         match program.as_str() {
             // A move to a literal folder, on a line run in one shell, is followed; anything
@@ -312,8 +403,10 @@ fn found<T: Clone>(
                         && !projectgit::unplaceable(to)
                         && to != "-"
                         && !to.starts_with(['-', '+'])
-                        && !((cdpath_here || sets_cdpath(before) || sets_cdpath(&call.env))
-                            && !beside_or_absolute(to)) =>
+                        && (beside_or_absolute(to)
+                            || !(sets_cdpath(before)
+                                || sets_cdpath(&call.env)
+                                || cdpath_here())) =>
                 {
                     let mut moved = Vec::new();
                     for from in &here {
@@ -357,13 +450,10 @@ fn found<T: Clone>(
         let (pre, rest) = shellwrap::git_globals(&call.argv);
         // A wrapper that adds words of its own (`xargs git`) runs git with words the line does
         // not show.
-        let words_added = call
-            .layers
-            .iter()
-            .any(|at| ADDS_WORDS.contains(&base_lower(&call.taken[*at]).as_str()));
+        let words_added = adds_words(&call);
         if unplaced == Unplaced::Name && words_added {
             if lost.is_none() {
-                lost = Some(first_git_sub(std::slice::from_ref(&call.argv)));
+                lost = may_write_unseen(&call.argv, &wanted, true);
             }
             continue;
         }
@@ -378,9 +468,9 @@ fn found<T: Clone>(
         // An alias the line defines or includes itself, in any case, or one read from
         // configuration the line moves, is read from no configuration this can see.
         let defined_here = config_given(&pre) || env.iter().any(|pair| config_moved(pair));
-        // Any wrapper but `env` setting variables and moving to a folder: what it does to git
-        // is not read here.
-        let wrapped = unplaced == Unplaced::Name && !only_env_moves_or_sets(&call);
+        // A wrapper that may change where git runs or what it reads: what it does to git is not
+        // read here.
+        let wrapped = unplaced == Unplaced::Name && !read_through(&call);
         let placeable = !here.is_empty()
             && !wrapped
             && (call.chdir.is_empty() || !projectgit::unplaceable(&call.chdir));
@@ -466,11 +556,6 @@ const SOME_SUBCOMMAND: &str = "<subcommand>";
 /// The wrappers that add words of their own to the command they run.
 const ADDS_WORDS: &[&str] = &["xargs", "parallel"];
 
-/// The shells a line may hand a script to, as a string or on standard input.
-const SHELLS: &[&str] = &[
-    "sh", "bash", "zsh", "dash", "ksh", "mksh", "ash", "yash", "fish",
-];
-
 /// How deeply [`in_a_nested_shell`] reads a shell's script inside another's.
 const MOST_NESTED: usize = 4;
 
@@ -479,17 +564,82 @@ const MOST_NESTED: usize = 4;
 fn first_git_sub(argvs: &[Vec<String>]) -> String {
     argvs
         .iter()
-        .map(|argv| shellwrap::split_env_chdir(argv).argv)
+        .map(|argv| shellwrap::split_env_chdir(&as_run(argv)).argv)
         .filter(|argv| argv.first().is_some_and(|prog| base_lower(prog) == "git"))
         .find_map(|argv| shellwrap::git_globals(&argv).1.into_iter().next())
         .unwrap_or_else(|| SOME_SUBCOMMAND.to_owned())
 }
 
+/// The words of a command as it runs them: each redirection the shell takes out, wherever it
+/// stands (its operator, the word it takes, and a descriptor's number in front of it). A
+/// here-string is kept: it is a script a shell may be fed.
+fn as_run(argv: &[String]) -> Vec<String> {
+    let mut words: Vec<String> = Vec::with_capacity(argv.len());
+    let mut it = argv.iter();
+    while let Some(word) = it.next() {
+        if word != "<<<" && shellwrap::is_redirect_token(word) {
+            if words
+                .last()
+                .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+            {
+                words.pop();
+            }
+            it.next();
+        } else {
+            words.push(word.clone());
+        }
+    }
+    words
+}
+
+/// The subcommand of `git …` (`argv`) that may write a branch where not all of its words are in
+/// sight: one `wanted` names, one that is not git's own and so may be an alias, or, where
+/// `missing_may` says so, none at all ([`SOME_SUBCOMMAND`]). `None` for git's own commands that
+/// `wanted` does not name.
+fn may_write_unseen<T>(
+    argv: &[String],
+    wanted: &impl Fn(&str, &[String]) -> Option<T>,
+    missing_may: bool,
+) -> Option<String> {
+    let (_, rest) = shellwrap::git_globals(argv);
+    match rest.split_first() {
+        None => missing_may.then(|| SOME_SUBCOMMAND.to_owned()),
+        Some((sub, post)) => {
+            (wanted(sub, post).is_some() || !GITS_OWN.contains(&sub.as_str())).then(|| sub.clone())
+        }
+    }
+}
+
+/// What may write a branch on the line `cmd`, which does not tokenize, read as words: the first
+/// git on it [`may_write_unseen`] names, or the first git's subcommand where a word that
+/// mentions git is not git itself (a shell's script, say). `None` where every git on it is
+/// git's own and writes no branch.
+fn unreadable_may_write<T>(
+    cmd: &str,
+    wanted: &impl Fn(&str, &[String]) -> Option<T>,
+) -> Option<String> {
+    shellseg::segment_argv(cmd).iter().find_map(|words| {
+        if !shellwrap::prefilter_text(&words.join(" ")).contains("git") {
+            return None;
+        }
+        let call = shellwrap::split_env_chdir(&as_run(words));
+        if base_lower(&call.prog) != "git"
+            || call.argv[1..]
+                .iter()
+                .any(|word| shellwrap::prefilter_text(word).contains("git"))
+        {
+            return Some(first_git_sub(std::slice::from_ref(words)));
+        }
+        may_write_unseen(&call.argv, wanted, true)
+    })
+}
+
 /// The subcommand of a git that may write a branch, or may be an alias, in what the command
-/// `argv` (its wrappers taken off) hands a shell to run: `eval`'s words, a shell's `-c` script,
-/// or, for a shell that reads its standard input, any word of the line (`argvs`) that holds
-/// one, read once a line (`line_read`). `None` where there is none, or `argv` is no such
-/// command.
+/// `argv` (its wrappers taken off) hands a shell to run: `eval`'s words, a shell's `-c` script
+/// (any shell's, fish's `--command` too), the string a runner hands one (`watch`, `flock -c`,
+/// `script -c`, `parallel`), a here-string, or, for a shell that reads its standard input, any
+/// word of the line (`argvs`) that holds one, read once a line (`line_read`). `None` where there
+/// is none, or `argv` is no such command.
 fn in_a_nested_shell<T>(
     argv: &[String],
     argvs: &[Vec<String>],
@@ -497,29 +647,22 @@ fn in_a_nested_shell<T>(
     wanted: &impl Fn(&str, &[String]) -> Option<T>,
     depth: usize,
 ) -> Option<String> {
-    let program = base_lower(argv.first()?);
-    let args = &argv[1..];
-    let scripts: Vec<String> = if program == "eval" {
-        vec![args.join(" ")]
-    } else if SHELLS.contains(&program.as_str()) {
-        let operand = args.iter().any(|word| !word.starts_with(['-', '+']));
-        let given = args
-            .iter()
-            .any(|word| word.starts_with('-') && !word.starts_with("--") && word.contains('c'));
-        if given {
-            args.to_vec()
-        } else if operand {
-            // A script file: as any program, not read.
-            return None;
-        } else if std::mem::replace(line_read, true) {
-            return None;
-        } else {
+    let program = argv.first()?;
+    let mut scripts = shellwrap::shell_scripts_of(program, argv);
+    if scripts.is_empty() {
+        if let Some(script) = shellwrap::here_string_script_of(program, argv) {
+            scripts.push(script);
+        } else if shellwrap::takes_its_script_from_stdin(program, argv) {
+            if std::mem::replace(line_read, true) {
+                return None;
+            }
             // Its standard input: what the line feeds it is in the line's own words.
-            argvs.iter().flatten().cloned().collect()
+            scripts = argvs.iter().flatten().cloned().collect();
+        } else {
+            // A script file, or no shell: as any program, not read.
+            return None;
         }
-    } else {
-        return None;
-    };
+    }
     let scripts: Vec<String> = scripts
         .into_iter()
         .filter(|word| shellwrap::prefilter_text(word).contains("git"))
@@ -534,22 +677,41 @@ fn in_a_nested_shell<T>(
         let inner = shellseg::segment_argv(script);
         let mut inner_read = false;
         inner.iter().find_map(|words| {
-            let call = shellwrap::split_env_chdir(words);
+            let call = shellwrap::split_env_chdir(&as_run(words));
             let first = call.argv.first()?;
             if base_lower(first) != "git" {
                 return in_a_nested_shell(&call.argv, &inner, &mut inner_read, wanted, depth + 1);
             }
-            let (_, rest) = shellwrap::git_globals(&call.argv);
-            // `git` alone runs its help.
-            let (sub, post) = rest.split_first()?;
-            (wanted(sub, post).is_some() || !GITS_OWN.contains(&sub.as_str())).then(|| sub.clone())
+            // `git` alone runs its help, unless a wrapper adds the words it runs.
+            may_write_unseen(&call.argv, wanted, adds_words(&call))
         })
     })
 }
 
-/// Whether the git `call` runs is reached through no wrapper but `env`, and that only setting
-/// variables and moving to a folder ([`shellwrap::split_env_chdir`] reads both).
-fn only_env_moves_or_sets(call: &shellwrap::Invocation) -> bool {
+/// Whether a wrapper in front of the git `call` runs adds words of its own (`xargs git`).
+fn adds_words(call: &shellwrap::Invocation) -> bool {
+    call.layers
+        .iter()
+        .any(|at| ADDS_WORDS.contains(&base_lower(&call.taken[*at]).as_str()))
+}
+
+/// The wrappers that run git in the folder the line is in, with the environment and the
+/// configuration it would have run with: they time it, bound it, renice it, keep the machine
+/// awake for it or buffer its output, whatever their options say.
+const READ_THROUGH: [&str; 8] = [
+    "time",
+    "command",
+    "nohup",
+    "timeout",
+    "gtimeout",
+    "nice",
+    "caffeinate",
+    "stdbuf",
+];
+
+/// Whether the git `call` runs is reached through no wrapper but [`READ_THROUGH`]'s, and `env`
+/// only setting variables and moving to a folder ([`shellwrap::split_env_chdir`] reads both).
+fn read_through(call: &shellwrap::Invocation) -> bool {
     let mut starts = call.layers.clone();
     starts.push(call.taken.len());
     starts.windows(2).all(|two| {
@@ -557,7 +719,11 @@ fn only_env_moves_or_sets(call: &shellwrap::Invocation) -> bool {
         let Some((wrapper, words)) = layer.split_first() else {
             return true;
         };
-        if base_lower(wrapper) != "env" {
+        let wrapper = base_lower(wrapper);
+        if READ_THROUGH.contains(&wrapper.as_str()) {
+            return true;
+        }
+        if wrapper != "env" {
             return false;
         }
         let mut words = words.iter();
@@ -615,18 +781,25 @@ enum Alias {
     Unread,
 }
 
-/// The alias `sub` is in the branch folder `folder`, as git there reads it.
+/// The alias `sub` is in the branch folder `folder`, as the chat's git there reads it: with the
+/// configuration its environment names too (`GIT_CONFIG_GLOBAL`, `GIT_CONFIG_COUNT` and its
+/// pairs). A subcommand that is not an alias's name as git spells one (letters, digits and
+/// `-`) is an expansion or a pattern the shell has yet to turn into one: unread.
 fn alias_of(folder: &Path, sub: &str) -> Alias {
     use crate::worktree::git;
+    if sub.is_empty() || !sub.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-') {
+        return Alias::Unread;
+    }
     let key = format!("alias.{sub}");
-    let Ok(run) = git::run(folder, &["config", "--get", &key], git::READ) else {
+    let Ok(run) = git::run_as_session(folder, &["config", "--get", &key], git::READ) else {
         return Alias::Unread;
     };
     match run.code {
         // git's own answer for a key that is not set.
         Some(1) => Alias::None,
         Some(0) => {
-            let words = run.line().trim();
+            let said = String::from_utf8_lossy(&run.out);
+            let words = said.lines().next().unwrap_or_default().trim();
             if words.starts_with('!') {
                 return Alias::Unread;
             }

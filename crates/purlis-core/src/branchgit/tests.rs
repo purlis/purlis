@@ -395,26 +395,37 @@ fn a_move_it_cannot_place_is_left_to_the_sandbox() {
 impl Layout {
     /// Every write on the line, as `(subcommand, act, folder)`.
     fn writes(&self, cmd: &str, cwd: &Path) -> Vec<(String, crate::piececlaim::Act, PathBuf)> {
-        branch_write(
-            cmd,
-            &cwd.display().to_string(),
-            &self.root.display().to_string(),
-        )
-        .found
-        .into_iter()
-        .map(|one| (one.sub, one.what, one.folder))
-        .collect()
+        self.read(cmd, cwd, false)
     }
 
     /// The first git on the line that may write a branch in a folder the line cannot be
     /// followed to, as an unsandboxed chat's guard reads it.
     fn unplaced(&self, cmd: &str, cwd: &Path) -> Option<String> {
-        branch_write(
+        self.read_where(cmd, cwd, false).unplaced
+    }
+
+    /// The line as an unsandboxed chat's guard reads it, its shell having a `CDPATH` or not.
+    fn read_where(&self, cmd: &str, cwd: &Path, cdpath: bool) -> BranchWrites {
+        branch_write_where(
             cmd,
             &cwd.display().to_string(),
             &self.root.display().to_string(),
+            &|| cdpath,
         )
-        .unplaced
+    }
+
+    /// [`Layout::writes`], its shell having a `CDPATH` or not.
+    fn read(
+        &self,
+        cmd: &str,
+        cwd: &Path,
+        cdpath: bool,
+    ) -> Vec<(String, crate::piececlaim::Act, PathBuf)> {
+        self.read_where(cmd, cwd, cdpath)
+            .found
+            .into_iter()
+            .map(|one| (one.sub, one.what, one.folder))
+            .collect()
     }
 
     /// The line's one write, which must be in [`Layout::folder`], or `None` for none.
@@ -560,8 +571,9 @@ fn git_in_a_nested_shell_or_behind_a_wrapper_is_named_unplaced() {
         "eval 'git push'".to_owned(),
         "echo 'git commit -m x' | sh".to_owned(),
         "echo commit | xargs git".to_owned(),
-        "timeout 60 git push".to_owned(),
-        "nice git commit -m x".to_owned(),
+        "sudo git commit -m x".to_owned(),
+        "doas git push".to_owned(),
+        "env -i git commit -m x".to_owned(),
         "env -u HOME git commit -m x".to_owned(),
         format!("builtin cd {folder} && git commit -m x"),
         format!("command cd {folder} && git push"),
@@ -582,21 +594,226 @@ fn git_in_a_nested_shell_or_behind_a_wrapper_is_named_unplaced() {
     }
 }
 
-/// An unsandboxed chat's shell may have a `CDPATH` its own start files set, which no line
-/// shows: a bare relative `cd` may go elsewhere, and only one named from where the shell is
-/// (`./`, `../`) or a whole path is followed.
+/// A bare relative `cd` is looked for along `CDPATH` first. Where an unsandboxed chat's shell
+/// may have one, the `cd` may go elsewhere, and only one named from where the shell is (`./`,
+/// `../`) or a whole path is followed; where it has none, the bare `cd` is followed too.
 #[test]
-fn an_unsandboxed_chats_bare_relative_cd_is_named_unplaced() {
+fn an_unsandboxed_chats_bare_relative_cd_is_followed_unless_its_shell_may_have_a_cdpath() {
     use crate::piececlaim::Act;
     let l = Layout::new();
     let ide = l.root.join("workspaces/ide/.worktrees/purlis");
     let bare = "cd guard-port && git commit -m x";
-    assert_eq!(l.writes(bare, &ide), []);
-    assert_eq!(l.unplaced(bare, &ide).as_deref(), Some("commit"));
+    let placed = [("commit".to_owned(), Act::Commit, l.folder.clone())];
+    assert_eq!(l.read(bare, &ide, false), placed);
+    assert_eq!(l.read_where(bare, &ide, false).unplaced, None);
+    assert_eq!(l.read(bare, &ide, true), []);
     assert_eq!(
-        l.writes("cd ./guard-port && git commit -m x", &ide),
-        [("commit".to_owned(), Act::Commit, l.folder.clone())]
+        l.read_where(bare, &ide, true).unplaced.as_deref(),
+        Some("commit")
     );
+    assert_eq!(
+        l.read("cd ./guard-port && git commit -m x", &ide, true),
+        placed
+    );
+}
+
+/// What says whether a chat's shell may have a `CDPATH`: its environment, or a start file one
+/// of its shells reads, in the home, in `ZDOTDIR`, in the system's folder, or named by
+/// `BASH_ENV` or `ENV`. A start file that names it anywhere, in any case, is taken to set it.
+#[test]
+fn a_shell_may_have_a_cdpath_where_its_environment_or_a_start_file_it_reads_sets_one() {
+    use std::ffi::OsString;
+    let dir = tempfile::tempdir().unwrap();
+    let base = std::fs::canonicalize(dir.path()).unwrap();
+    let (home, etc, zdot) = (base.join("home"), base.join("etc"), base.join("zdot"));
+    for folder in [&home, &etc.join("zsh"), &zdot] {
+        std::fs::create_dir_all(folder).unwrap();
+    }
+    let may = |more: &[(&str, OsString)]| {
+        let mut vars: Vec<(String, OsString)> = vec![("HOME".to_owned(), home.clone().into())];
+        vars.extend(more.iter().map(|(k, v)| ((*k).to_owned(), v.clone())));
+        shell_may_have_cdpath(
+            &|name: &str| vars.iter().find(|(k, _)| k == name).map(|(_, v)| v.clone()),
+            &etc,
+        )
+    };
+    assert!(!may(&[]));
+    assert!(!may(&[("CDPATH", "".into())]));
+    assert!(may(&[("CDPATH", "/src".into())]));
+    std::fs::write(home.join(".zshrc"), "alias ll='ls -l'\n").unwrap();
+    assert!(!may(&[]));
+    for (file, says) in [
+        (home.join(".zshenv"), "cdpath=(~/src)\n"),
+        (home.join(".bashrc"), "export CDPATH=.:~/src\n"),
+        (home.join(".profile"), "CdPath=~/src\n"),
+        (etc.join("zsh/zshenv"), "cdpath+=(/srv)\n"),
+        (etc.join("bashrc"), "CDPATH=/srv\n"),
+    ] {
+        std::fs::write(&file, says).unwrap();
+        assert!(may(&[]), "{}", file.display());
+        std::fs::remove_file(&file).unwrap();
+    }
+    std::fs::write(zdot.join(".zprofile"), "cdpath=(~/src)\n").unwrap();
+    assert!(!may(&[]));
+    assert!(may(&[("ZDOTDIR", zdot.clone().into())]));
+    let named = base.join("bash_env");
+    std::fs::write(&named, "CDPATH=~/src\n").unwrap();
+    assert!(may(&[("BASH_ENV", named.clone().into())]));
+    assert!(may(&[("ENV", named.clone().into())]));
+    // A start file kept elsewhere and linked to, as a dotfiles manager keeps it, is read.
+    std::os::unix::fs::symlink(&named, home.join(".zshenv")).unwrap();
+    assert!(may(&[]));
+}
+
+/// A wrapper that moves no folder and changes no configuration git reads runs git where the
+/// line is and as it reads: the git behind it is placed. One that may (`sudo`, `doas`, `env`
+/// emptying or unsetting variables) is not read through.
+#[test]
+fn git_behind_a_wrapper_that_moves_no_folder_and_changes_no_config_is_placed() {
+    use crate::piececlaim::Act;
+    let l = Layout::new();
+    for (cmd, sub, act) in [
+        ("time git commit -m x", "commit", Act::Commit),
+        ("time -p git commit -m x", "commit", Act::Commit),
+        ("command git commit -m x", "commit", Act::Commit),
+        ("nohup git push", "push", Act::Push),
+        ("timeout 60 git push", "push", Act::Push),
+        ("timeout -s KILL 5m git push", "push", Act::Push),
+        ("gtimeout 60 git push", "push", Act::Push),
+        ("nice git commit -m x", "commit", Act::Commit),
+        ("nice -n 5 git commit -m x", "commit", Act::Commit),
+        ("caffeinate -i git push", "push", Act::Push),
+        ("stdbuf -oL git push", "push", Act::Push),
+        ("nohup nice timeout 60 git push", "push", Act::Push),
+        ("FOO=1 timeout 60 git push", "push", Act::Push),
+    ] {
+        assert_eq!(
+            l.write(cmd, &l.folder),
+            Some((sub.to_owned(), act)),
+            "{cmd}"
+        );
+        assert_eq!(l.unplaced(cmd, &l.folder), None, "{cmd}");
+    }
+    for cmd in [
+        "sudo git commit -m x",
+        "doas git push",
+        "env -i git commit -m x",
+        "env -u HOME git push",
+        "timeout 60 sudo git push",
+        "exec git push",
+    ] {
+        assert_eq!(l.writes(cmd, &l.folder), [], "{cmd}");
+        assert!(
+            l.unplaced(cmd, &l.folder).is_some(),
+            "{cmd} was let through"
+        );
+    }
+}
+
+/// The shell takes a redirection out of a command's words wherever it stands, so one among the
+/// words of `env` or another wrapper is read past, and the git behind it is placed.
+#[test]
+fn a_redirection_among_a_wrappers_words_is_read_past() {
+    use crate::piececlaim::Act;
+    let l = Layout::new();
+    for (cmd, sub, act) in [
+        (
+            "env FOO=1 2>/dev/null git commit -m x",
+            "commit",
+            Act::Commit,
+        ),
+        ("env 2>&1 git push", "push", Act::Push),
+        ("env FOO=1 >/tmp/out git push", "push", Act::Push),
+        ("nice 2>/dev/null git commit -m x", "commit", Act::Commit),
+        ("FOO=1 2>/dev/null git push", "push", Act::Push),
+    ] {
+        assert_eq!(
+            l.write(cmd, &l.folder),
+            Some((sub.to_owned(), act)),
+            "{cmd}"
+        );
+        assert_eq!(l.unplaced(cmd, &l.folder), None, "{cmd}");
+    }
+}
+
+/// git that `xargs` or `parallel` adds words to, or git on a line that cannot be read, is named
+/// only where it may write a branch: its subcommand is missing, writes, or is not one of git's
+/// own and so may be an alias. git's own read-only commands are let through.
+#[test]
+fn git_with_words_out_of_sight_is_named_only_where_it_may_write_a_branch() {
+    let l = Layout::new();
+    for cmd in [
+        "git ls-files | xargs git blame",
+        "echo HEAD | xargs git log -1",
+        "git ls-files | xargs -n1 git log -1 --format=%H --",
+        "ls | parallel git log -1",
+        "git log --format=\"%H",
+        "git status; git diff \"never closed",
+    ] {
+        assert_eq!(l.unplaced(cmd, &l.folder), None, "{cmd}");
+    }
+    for cmd in [
+        "echo commit | xargs git",
+        "echo x | xargs git commit -m",
+        "echo x | xargs git ci",
+        "echo -C | xargs git",
+        "ls | parallel git push",
+        "git commit -m \"never closed",
+        "git ci -m \"never closed",
+        "git status; bash -c \"git push",
+    ] {
+        assert!(
+            l.unplaced(cmd, &l.folder).is_some(),
+            "{cmd} was let through"
+        );
+    }
+}
+
+/// git in a string a shell or a runner is handed runs where and how that shell says: any shell
+/// that runs a string or reads its standard input, a runner that hands a shell its words
+/// (`watch`, `flock -c`, `script -c`, `parallel`), and a shell whose words end in a redirection
+/// or that is fed a here-string. One that may write a branch is named.
+#[test]
+fn git_in_a_string_any_shell_or_runner_is_handed_is_named_unplaced() {
+    let l = Layout::new();
+    for cmd in [
+        "watch 'git commit -m x'",
+        "flock /tmp/lock -c 'git push'",
+        "flock -c 'git push' /tmp/lock",
+        "script -qc 'git push' /dev/null",
+        "script -c 'git push'",
+        "parallel ::: 'git push'",
+        "echo 'git push' | parallel",
+        "rbash -c 'git push'",
+        "csh -c 'git push'",
+        "tcsh -c 'git push'",
+        "hush -c 'git push'",
+        "posh -c 'git push'",
+        "lksh -c 'git push'",
+        "oksh -c 'git push'",
+        "pdksh -c 'git push'",
+        "fish -c 'git push'",
+        "fish --command='git push'",
+        "fish --command 'git push'",
+        "echo 'git push' | bash 2>&1",
+        "echo 'git push' | sh > /tmp/out",
+        "bash <<< 'git push'",
+        "bash 2>/dev/null <<< 'git commit -m x'",
+        "sh -c 'bash <<< \"git push\"'",
+    ] {
+        assert_eq!(l.writes(cmd, &l.clone), [], "{cmd}");
+        assert!(l.unplaced(cmd, &l.clone).is_some(), "{cmd} was let through");
+    }
+    for cmd in [
+        "watch 'git status'",
+        "fish -c 'git log'",
+        "tcsh -c 'git diff'",
+        "echo 'git status' | bash 2>&1",
+        "bash <<< 'git log -1'",
+        "flock /tmp/lock -c 'git status'",
+    ] {
+        assert_eq!(l.unplaced(cmd, &l.clone), None, "{cmd}");
+    }
 }
 
 /// An alias is read as the line's git reads it: where the line moves where git finds its
@@ -654,4 +871,74 @@ fn a_line_of_many_shells_fed_on_standard_input_is_read_in_a_moment() {
         "{:?}",
         started.elapsed()
     );
+}
+
+/// A subcommand that is an expansion names no alias git can be asked for until the shell has
+/// expanded it: it is named, never read as no alias at all.
+#[test]
+fn a_subcommand_that_is_an_expansion_is_named_unplaced() {
+    let (_dir, root, folder) = a_real_branch_folder();
+    let (cwd, root) = (folder.display().to_string(), root.display().to_string());
+    for cmd in [
+        "git $SUB -m x",
+        "git ${SUB} -m x",
+        "git \"$SUB\" -m x",
+        "git \"$(echo commit)\" -m x",
+        "git `echo commit` -m x",
+        "git c* -m x",
+    ] {
+        let read = branch_write_where(cmd, &cwd, &root, &|| false);
+        assert!(read.found.is_empty(), "{cmd}: {:?}", read.found);
+        assert!(read.unplaced.is_some(), "{cmd} was let through");
+    }
+}
+
+/// Where the child below finds its branch folder and project, and what it is told.
+const ALIAS_FROM_THE_ENVIRONMENT: &str = "BRANCHGIT_TEST_ALIAS_FROM_THE_ENVIRONMENT";
+
+/// An alias the chat's own git reads from its environment (`GIT_CONFIG_GLOBAL`, or
+/// `GIT_CONFIG_COUNT` and its pairs) is read as that git reads it.
+#[test]
+fn an_alias_from_the_chats_own_git_config_environment_is_read() {
+    let (_dir, root, folder) = a_real_branch_folder();
+    let told = format!("{}\n{}", root.display(), folder.display());
+    let child = ["branchgit::tests::an_alias_the_guard_is_given_in_its_environment_is_read"];
+    crate::testrun::rerun(
+        &child,
+        &[
+            (ALIAS_FROM_THE_ENVIRONMENT, told.as_ref()),
+            ("GIT_CONFIG_COUNT", "1".as_ref()),
+            ("GIT_CONFIG_KEY_0", "alias.zz".as_ref()),
+            ("GIT_CONFIG_VALUE_0", "commit".as_ref()),
+        ],
+    );
+    let global = root.join("global.gitconfig");
+    std::fs::write(&global, "[alias]\n\tzz = commit\n").unwrap();
+    crate::testrun::rerun(
+        &child,
+        &[
+            (ALIAS_FROM_THE_ENVIRONMENT, told.as_ref()),
+            ("GIT_CONFIG_GLOBAL", global.as_os_str()),
+        ],
+    );
+}
+
+/// The child of [`an_alias_from_the_chats_own_git_config_environment_is_read`]: nothing unless
+/// it was started with [`ALIAS_FROM_THE_ENVIRONMENT`].
+#[test]
+fn an_alias_the_guard_is_given_in_its_environment_is_read() {
+    let Some(told) = std::env::var_os(ALIAS_FROM_THE_ENVIRONMENT) else {
+        return;
+    };
+    let told = told.to_string_lossy().into_owned();
+    let (root, folder) = told.split_once('\n').unwrap();
+    let read = branch_write_where("git zz -m x", folder, root, &|| false);
+    assert_eq!(
+        read.found
+            .iter()
+            .map(|one| (one.sub.as_str(), one.what))
+            .collect::<Vec<_>>(),
+        [("zz", crate::piececlaim::Act::Commit)]
+    );
+    assert_eq!(read.unplaced, None);
 }
