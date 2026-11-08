@@ -14,7 +14,7 @@ use regex::Regex;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
-use super::{Known, Panic, short_place};
+use super::{Draft, Known, Panic, short_place};
 
 /// A Crash report, ready to send.
 pub(super) struct CrashReport {
@@ -24,8 +24,9 @@ pub(super) struct CrashReport {
     /// The envelope, exactly as it is sent.
     pub bytes: String,
     /// Where it crashed in which purlis version (#5693, Q15): the same panic again in the same
-    /// version has the same one, and is counted instead of sent.
-    pub fingerprint: String,
+    /// version has the same one, and is counted instead of sent. A draft the person filed has
+    /// none.
+    pub fingerprint: Option<String>,
 }
 
 impl CrashReport {
@@ -78,7 +79,7 @@ impl CrashReport {
         let item =
             json!({"type": "event", "length": event.len(), "content_type": "application/json"});
         CrashReport {
-            fingerprint,
+            fingerprint: Some(fingerprint),
             title: format!("purlis panicked at {place}"),
             bytes: format!("{header}\n{item}\n{event}\n"),
             event_id,
@@ -120,6 +121,45 @@ pub(super) fn event_id_of(envelope: &str) -> String {
         .and_then(|header| serde_json::from_str::<serde_json::Value>(header).ok())
         .and_then(|header| header["event_id"].as_str().map(str::to_string))
         .unwrap_or_default()
+}
+
+impl CrashReport {
+    /// A report draft the person filed from the Inbox, for the intake at `dsn` (#5694): its
+    /// title and body as they were shown, marked as an agent's, and whether the person changed
+    /// its words. Its body was scrubbed when it was drafted and read before it was filed.
+    pub fn of_draft(draft: &Draft, edited: bool, dsn: &str) -> CrashReport {
+        let event_id = uuid::Uuid::new_v4().simple().to_string();
+        let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+        let channel = channel();
+        let event = json!({
+            "event_id": event_id,
+            "timestamp": now,
+            "platform": "other",
+            "level": "info",
+            "release": format!("purlis@{}", crate::adopt::release_version()),
+            "environment": channel,
+            "tags": {
+                "channel": channel,
+                "kind": draft.kind.verb(),
+                "written_by": "agent",
+                "edited_by_the_person": edited,
+            },
+            "contexts": {"os": {"name": std::env::consts::OS, "version": os_version()}},
+            "message": {"formatted": format!("{}\n\n{}", draft.title, draft.body)},
+            "culprit": draft.title,
+        })
+        .to_string();
+        let header = json!({"event_id": event_id, "sent_at": now, "dsn": dsn});
+        let item =
+            json!({"type": "event", "length": event.len(), "content_type": "application/json"});
+        CrashReport {
+            // A draft the person read and filed is never counted away: filing it is their act.
+            fingerprint: None,
+            title: draft.title.clone(),
+            bytes: format!("{header}\n{item}\n{event}\n"),
+            event_id,
+        }
+    }
 }
 
 /// The channel this build is for: `stable` for a release build, `dev` for a dev channel build,
