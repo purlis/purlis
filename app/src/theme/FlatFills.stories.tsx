@@ -20,7 +20,7 @@ const FLAT =
   /^surface\.|\.surface$|wash|^layer\.(?!divider$)|^(list\.selected|tab\.active|control\.(hover|aimed)|overlay\.scrim)$/;
 
 /** Every flat fill, in the order a theme file lists them. */
-export const FLAT_FILLS: readonly Token[] = TOKENS.filter((token) => FLAT.test(token));
+const FLAT_FILLS: readonly Token[] = TOKENS.filter((token) => FLAT.test(token));
 
 function Fills() {
   return (
