@@ -547,3 +547,72 @@ fn mysqls_own_tools_are_not_read_by_the_clients_flags() {
     offered("mysqladmin", &["-h db status"]);
     refused("mysql-8.0", "--pager", &[&["--pager=x"]]);
 }
+
+// The fifth review of #5876.
+
+#[test]
+fn a_host_in_brackets_starting_with_a_dash_is_refused_as_one_without() {
+    refused(
+        "ssh",
+        "-J",
+        &[
+            &["-J", "[-ox]", "host"],
+            &["-J", "u@[-ox]:22", "host"],
+            &["-J", "ssh://[-ox]", "host"],
+        ],
+    );
+    refused(
+        "rsync",
+        "an operand starting with -",
+        &[
+            &["src", "[-ox]:dst"],
+            &["src", "u@[-ox]:dst"],
+            &["--", "src", "[-ox]:dst"],
+        ],
+    );
+    offered("ssh", &["-J [::1]:2222 host", "-J u@[fe80::1] host"]);
+    offered("rsync", &["src [::1]:dst", "src u@[fe80::1]:dst"]);
+}
+
+#[test]
+fn every_tool_named_for_mysql_or_mariadb_but_the_client_is_read_by_the_tools_row() {
+    refused(
+        "mariadb-binlog",
+        "--defaults-file",
+        &[&["-D", "--defaults-file=/tmp/x", "log"]],
+    );
+    refused(
+        "mysqlbinlog",
+        "--plugin-dir",
+        &[&["--plugin-dir=/tmp/x", "log"]],
+    );
+    refused(
+        "mysql_upgrade",
+        "--defaults-file",
+        &[&["--defaults-file=/tmp/x"]],
+    );
+    refused("mysql_install_db", "--basedir", &[&["--basedir=/tmp/x"]]);
+    refused("mysql-8.0", "--pager", &[&["--pager=x"]]);
+    offered("mariadb-binlog", &["-D log"]);
+}
+
+#[test]
+fn ssh_with_a_jump_and_a_destination_a_shell_would_read_is_offered_no_run_grant() {
+    refused(
+        "ssh",
+        "a destination a shell would read",
+        &[
+            &["-J", "bastion", "h;x"],
+            &["-o", "ProxyJump=bastion", "u@h$(x)", "ls"],
+            &["-J", "bastion", "--", "h|x"],
+        ],
+    );
+    offered(
+        "ssh",
+        &[
+            "-J bastion deploy@host ls -la",
+            "host echo a;b",
+            "-J bastion -- host uptime",
+        ],
+    );
+}

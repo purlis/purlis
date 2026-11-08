@@ -5,9 +5,10 @@
 //! grant that would have it run a command, or read a file that can name one, which the person
 //! reading the exact command would not see run.
 //!
-//! `ssh`, `scp`, `sftp`, `rsync`, `kubectl`, `psql`, `mysql`, `zip` and `wget` are the usual reason a chat
-//! is handed a key, so each stays offered Allow once on the exact command (D-5619-7). Only the
-//! forms below are refused: `ssh -o ProxyCommand`, `-F` and `-I`, `scp -S`, `sftp -b`,
+//! `ssh`, `scp`, `sftp`, `rsync`, `kubectl`, `psql`, `mysql` and `mariadb`, `zip` and `wget`
+//! (`wget2` too) are the usual reason a chat is handed a key, so each stays offered Allow once on
+//! the exact command (D-5619-7), as do `ssh-keygen`, `ssh-add` and mysql's and mariadb's own
+//! tools, which have rows of their own. Only the forms below are refused: `ssh -o ProxyCommand`, `-F` and `-I`, `scp -S`, `sftp -b`,
 //! `rsync -e`, `zip -TT`, `wget --use-askpass` and `-e`, `kubectl --kubeconfig`, `psql -f`, `-o`
 //! and a backslash command, and the like. Read as their own parsers read them, and more widely
 //! where a spelling is in doubt: short flags in a cluster (`-avze`), a value in the same word or
@@ -43,6 +44,9 @@ struct Flags {
     /// Whether an operand's host is handed to ssh as a word of its own (rsync's `host:path`), so
     /// one starting with `-` would be an option of ssh's, even after a `--`.
     operands_reach_ssh: bool,
+    /// Whether a jump host has ssh paste its destination into a command its shell runs, so the
+    /// destination is read as a jump's value is.
+    jump_pastes_destination: bool,
 }
 
 /// The options of ssh's own configuration that run a command or load code (`ssh_config(5)`).
@@ -108,12 +112,18 @@ const PASTED: &[&str] = &["ProxyJump", "Hostname", "User"];
 
 /// Whether `value` holds anything but what a host, a user, a port and a list of jumps are
 /// spelled with, which a shell might read.
+/// Whether `part`, a user or a host, starts with `-` once IPv6 brackets are taken off, as ssh
+/// and rsync take them off before they use it (#5876's fifth review).
+fn dash_first(part: &str) -> bool {
+    part.trim_start_matches('[').starts_with('-')
+}
+
 fn shell_would_read(value: &str) -> bool {
     // A jump list's user or host starting with `-` would be an option of the ssh it runs.
     let dashed = value
         .split([',', '@'])
         .map(|part| part.strip_prefix("ssh://").unwrap_or(part))
-        .any(|part| part.starts_with('-'));
+        .any(dash_first);
     dashed
         || !value.chars().all(|c| {
             c.is_ascii_alphanumeric()
@@ -168,6 +178,7 @@ const PROGRAMS: &[Flags] = &[
         long_valued: &[],
         mysql_spelling: false,
         operands_reach_ssh: false,
+        jump_pastes_destination: false,
     },
     Flags {
         attached: "",
@@ -182,6 +193,7 @@ const PROGRAMS: &[Flags] = &[
         long_valued: &[],
         mysql_spelling: false,
         operands_reach_ssh: false,
+        jump_pastes_destination: false,
     },
     Flags {
         attached: "",
@@ -196,6 +208,7 @@ const PROGRAMS: &[Flags] = &[
         long_valued: &[],
         mysql_spelling: false,
         operands_reach_ssh: false,
+        jump_pastes_destination: true,
     },
     Flags {
         attached: "",
@@ -210,6 +223,7 @@ const PROGRAMS: &[Flags] = &[
         long_valued: &[],
         mysql_spelling: false,
         operands_reach_ssh: false,
+        jump_pastes_destination: false,
     },
     Flags {
         attached: "",
@@ -224,6 +238,7 @@ const PROGRAMS: &[Flags] = &[
         long_valued: &[],
         mysql_spelling: false,
         operands_reach_ssh: false,
+        jump_pastes_destination: false,
     },
     Flags {
         attached: "",
@@ -237,6 +252,7 @@ const PROGRAMS: &[Flags] = &[
         long_valued: &[],
         mysql_spelling: false,
         operands_reach_ssh: true,
+        jump_pastes_destination: false,
     },
     Flags {
         attached: "",
@@ -249,6 +265,7 @@ const PROGRAMS: &[Flags] = &[
         long_valued: &[],
         mysql_spelling: false,
         operands_reach_ssh: false,
+        jump_pastes_destination: false,
     },
     Flags {
         attached: "",
@@ -270,6 +287,7 @@ const PROGRAMS: &[Flags] = &[
         long_valued: &[],
         mysql_spelling: false,
         operands_reach_ssh: false,
+        jump_pastes_destination: false,
     },
     Flags {
         attached: "",
@@ -289,6 +307,7 @@ const PROGRAMS: &[Flags] = &[
         long_valued: &[],
         mysql_spelling: false,
         operands_reach_ssh: false,
+        jump_pastes_destination: false,
     },
     Flags {
         attached: "",
@@ -302,6 +321,7 @@ const PROGRAMS: &[Flags] = &[
         long_valued: &["command"],
         mysql_spelling: false,
         operands_reach_ssh: false,
+        jump_pastes_destination: false,
     },
     // mysql's and mariadb's own tools, before the client's row, which their names' first part
     // would reach. No letter is taken to have a value: each word after one is read.
@@ -322,11 +342,23 @@ const PROGRAMS: &[Flags] = &[
         valued: "",
         refused: "",
         in_a_cluster: &[],
-        long: &["defaults-file", "defaults-extra-file", "plugin-dir"],
+        // and for an install or a server start: where it runs the server from, and code it loads
+        long: &[
+            "defaults-file",
+            "defaults-extra-file",
+            "plugin-dir",
+            "plugin-load",
+            "plugin-load-add",
+            "basedir",
+            "ledir",
+            "malloc-lib",
+            "mysqld",
+        ],
         value: none,
         long_valued: &[],
         mysql_spelling: true,
         operands_reach_ssh: false,
+        jump_pastes_destination: false,
     },
     Flags {
         attached: "p",
@@ -345,6 +377,7 @@ const PROGRAMS: &[Flags] = &[
         long_valued: &["execute"],
         mysql_spelling: true,
         operands_reach_ssh: false,
+        jump_pastes_destination: false,
     },
 ];
 
@@ -353,10 +386,24 @@ const PROGRAMS: &[Flags] = &[
 /// `name` is the program's file name, whatever its case.
 pub fn names_a_command(name: &str, args: &[String]) -> Option<String> {
     // By every name its builds go by: `kubectl.docker`, `psql-16`, `wget2` (#5876's review).
+    // A row naming it exactly comes first, then any tool named for mysql or mariadb but the
+    // client goes to their tools' row (#5876's fifth review), then the other forms.
+    let lower = name.to_ascii_lowercase();
+    let base = super::without_version(lower.split('.').next().unwrap_or_default()).to_owned();
     let forms = super::name_forms(name);
     let program = PROGRAMS
         .iter()
-        .find(|one| forms.iter().any(|form| one.names.contains(&form.as_str())))?;
+        .find(|one| one.names.contains(&base.as_str()))
+        .or_else(|| {
+            (base.starts_with("mysql") || base.starts_with("mariadb"))
+                .then(|| PROGRAMS.iter().find(|one| one.names.contains(&"mysqldump")))
+                .flatten()
+        })
+        .or_else(|| {
+            PROGRAMS
+                .iter()
+                .find(|one| forms.iter().any(|form| one.names.contains(&form.as_str())))
+        })?;
     let form = refused_form(program, args)?;
     Some(format!(
         "{name} {form} can run a command it names, so purlis does not offer to allow {name} with \
@@ -368,20 +415,57 @@ pub fn names_a_command(name: &str, args: &[String]) -> Option<String> {
 /// starting with `-`: rsync passes the user as `-l user` and the host as a word of its own, each
 /// of which would then be an option of ssh's (#5876's fourth review).
 fn hands_ssh_a_dash(operand: &str) -> bool {
-    let Some((remote, _)) = operand.split_once(':') else {
+    // The first `:` outside brackets ends the remote part: `[::1]:path` is host `::1`.
+    let mut inside = false;
+    let Some(end) = operand.char_indices().find_map(|(at, c)| {
+        match c {
+            '[' => inside = true,
+            ']' => inside = false,
+            ':' if !inside => return Some(at),
+            _ => {}
+        }
+        None
+    }) else {
         return false;
     };
-    remote.split('@').any(|part| part.starts_with('-'))
+    operand[..end].split('@').any(dash_first)
+}
+
+/// Whether ssh's `-o` value names a ProxyJump, whatever its case and quotes.
+fn names_a_jump(value: &str) -> bool {
+    let key: String = value
+        .trim_start()
+        .split(|c: char| c == '=' || c.is_whitespace())
+        .next()
+        .unwrap_or_default()
+        .chars()
+        .filter(|c| !matches!(c, '"' | '\'' | '\\'))
+        .collect();
+    key.eq_ignore_ascii_case("ProxyJump")
 }
 
 /// The first form of `args` that `program` refuses.
 fn refused_form(program: &Flags, args: &[String]) -> Option<String> {
     let mut words = args.iter();
+    let mut jumped = false;
+    let mut destination: Option<&str> = None;
+    // ssh pastes a jump's destination into the command its shell runs (#5876's fifth review).
+    let destination_refused = |jumped: bool, destination: Option<&str>| {
+        (program.jump_pastes_destination && jumped && destination.is_some_and(shell_would_read))
+            .then(|| "a destination a shell would read".to_owned())
+    };
     while let Some(word) = words.next() {
         if word == "--" {
             // rsync hands an operand's host to ssh as a word of its own.
+            let mut rest = words.peekable();
+            if destination.is_none() {
+                destination = rest.peek().map(|one| one.as_str());
+            }
+            if let Some(said) = destination_refused(jumped, destination) {
+                return Some(said);
+            }
             let reaches = program.operands_reach_ssh
-                && words.any(|operand| operand.starts_with('-') || hands_ssh_a_dash(operand));
+                && rest.any(|operand| operand.starts_with('-') || hands_ssh_a_dash(operand));
             return reaches.then(|| "an operand starting with -".to_owned());
         }
         if let Some(long) = word.strip_prefix("--") {
@@ -422,6 +506,7 @@ fn refused_form(program: &Flags, args: &[String]) -> Option<String> {
             if program.operands_reach_ssh && hands_ssh_a_dash(word) {
                 return Some("an operand starting with -".to_owned());
             }
+            destination.get_or_insert(word.as_str());
             continue;
         };
         if let Some(one) = program
@@ -448,9 +533,10 @@ fn refused_form(program: &Flags, args: &[String]) -> Option<String> {
                 if let Some(said) = (program.value)(&flag.to_string(), &value) {
                     return Some(said);
                 }
+                jumped |= flag == 'J' || (flag == 'o' && names_a_jump(&value));
                 break;
             }
         }
     }
-    None
+    destination_refused(jumped, destination)
 }

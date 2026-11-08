@@ -2174,7 +2174,7 @@ pub(crate) fn name_forms(name: &str) -> Vec<String> {
 
 /// `name` without a version at its end: `gcc-13`, `clang-17.0`, `gcc13` and `ld64` are `gcc`,
 /// `clang`, `gcc` and `ld`.
-fn without_version(name: &str) -> &str {
+pub(crate) fn without_version(name: &str) -> &str {
     let bare = name.trim_end_matches(|c: char| c.is_ascii_digit() || c == '.');
     let bare = bare.strip_suffix(['-', '_']).unwrap_or(bare);
     if bare.is_empty() { name } else { bare }

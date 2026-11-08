@@ -1,6 +1,6 @@
 # Amended 2026-11-09: a Run grant refuses a flag that names a command
 
-Decided under the operator's standing order to take the recommended path (D-5799-1 to D-5799-12,
+Decided under the operator's standing order to take the recommended path (D-5799-1 to D-5799-13,
 #5799, from the adversarial reviews of #5798 and #5876), recorded here as a delegated decision.
 
 `ssh`, `scp`, `sftp`, `rsync`, `kubectl`, `psql`, `mysql`, `mariadb`, `zip` and `wget` stay
@@ -19,12 +19,12 @@ in the command the person reads.
   `User`) is refused when it holds anything but what hosts, users, ports and jump lists are
   spelled with, or a user or host starting with `-`. For `rsync`, an operand whose user or host
   starts with `-` is refused wherever it stands, since rsync hands each to ssh as a word of its
-  own. A destination host on ssh's own command line is left to ssh's own check of it (OpenSSH
-  9.6 and later refuse one a shell would read).
+  own. A host in IPv6 brackets is judged with them taken off. Where a jump is used, ssh's
+  destination is held to the same rule, since ssh pastes it into the jump's command.
 - **A program's own tools are read by rows of their own**, ahead of the row their name's first
   part would reach: `ssh-keygen` and `ssh-add` (their libraries), and mysql's and mariadb's
-  dump, admin, import, check and show tools (their files of settings and plugins), whose row
-  takes no letter to have a value.
+  tools, every name but the client's (their files of settings, plugins and server folders), whose
+  row takes no letter to have a value.
 - **By every name a build goes by** (`kubectl.docker`, `psql-16`, `wget2`), as names refused
   whole are.
 - **A program that is the language of what it runs, or reads a file a chat wrote, is refused
