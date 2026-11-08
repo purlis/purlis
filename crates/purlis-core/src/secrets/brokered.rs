@@ -3602,7 +3602,9 @@ pub(crate) fn serve_recorded(
                             super::ask::filled_elsewhere(&vault, &stored),
                         );
                     }
-                    super::ask::Held::Declined { line } | super::ask::Held::Refused { line } => {
+                    super::ask::Held::Declined { line }
+                    | super::ask::Held::Refused { line }
+                    | super::ask::Held::CallerGone { line } => {
                         return refuse(&mut *writer, 1, line);
                     }
                     super::ask::Held::StillOpen { line } => {

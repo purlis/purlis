@@ -579,7 +579,7 @@ pub fn asked(
             Heard::Gone => return Err(NOT_ANSWERED.to_owned()),
         }
     }
-    let value = read(held, session, asked, &origin, started)?;
+    let value = read(held, session, asked, &origin, started, gone)?;
     // Again once it is read: the pool or its runner may have changed meanwhile.
     if let Some((read, bound)) = &runner
         && read().as_ref() != Ok(bound)
@@ -798,12 +798,15 @@ fn heard(
 /// person on a Secret ask (#5054, ADR 0109), and read again once they added it.
 /// It waits on that ask for what is left of the time the person is waited for on a fill, and at
 /// least as long as a brokered run waits on one. The fill is judged again once the key is added.
+/// Where the call's asker is `gone` meanwhile, it stops waiting, and the ask goes from the
+/// person's window unless another chat waits on it too.
 fn read(
     held: &Held,
     session: u32,
     asked: &FillAsked,
     origin: &str,
     started: std::time::Instant,
+    gone: &dyn Fn() -> bool,
 ) -> Result<Secret, String> {
     not_taken_over(held.browsers(), asked)?;
     let (asker, _) = held
@@ -847,7 +850,7 @@ fn read(
     let moved = || held.chats().asks_may_have_moved();
     match held
         .secret_asks()
-        .hold(need, within, &mut |_: &str| moved())
+        .hold_while(need, within, gone, &mut |_: &str| moved())
     {
         // Only the very vault and key the person allowed for this site go in: a value added
         // under other names is that key's, and a fill of it is a fill of its own.
@@ -870,6 +873,11 @@ fn read(
                     asked.vault, asked.key
                 )
             })
+        }
+        purlis_core::secrets::ask::Held::CallerGone { .. } => {
+            tracing::info!("purlis: chat {session}'s secret fill call ended as its key was asked");
+            moved();
+            Err(crate::loginasks::ASKER_GONE.to_owned())
         }
         purlis_core::secrets::ask::Held::Declined { line }
         | purlis_core::secrets::ask::Held::StillOpen { line }

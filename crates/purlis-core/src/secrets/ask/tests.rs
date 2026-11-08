@@ -255,6 +255,58 @@ fn a_slow_answer_leaves_the_ask_open_and_nudges_the_chat_that_stopped_waiting() 
     assert_eq!(stored(project.path(), "MISSING").as_deref(), Some(VALUE));
 }
 
+/// [`Asks::hold_while`] for ten seconds, its caller gone from its first look.
+fn held_with_its_caller_gone(asks: &Asks, need: Need) -> (Held, Duration) {
+    let started = std::time::Instant::now();
+    let held = asks.hold_while(need, Duration::from_secs(10), &|| true, &mut |_| {});
+    (held, started.elapsed())
+}
+
+#[test]
+fn a_hold_whose_caller_hangs_up_stops_waiting_and_its_ask_goes_from_the_window() {
+    let project = project();
+    let asks = Asks::new(project.path());
+
+    let (held, took) = held_with_its_caller_gone(&asks, need(7, "MISSING"));
+
+    assert!(
+        matches!(&held, Held::CallerGone { line } if line.contains("stopped waiting")),
+        "{held:?}"
+    );
+    assert!(
+        took < Duration::from_secs(5),
+        "it looked, and stopped: {took:?}"
+    );
+    assert!(asks.open().is_empty(), "nobody else needs it");
+}
+
+#[test]
+fn a_hold_whose_caller_hangs_up_leaves_the_ask_to_the_chats_still_needing_it() {
+    let project = project();
+    let asks = Asks::new(project.path());
+    held_for_nothing(&asks, need(8, "MISSING"));
+
+    let (held, _) = held_with_its_caller_gone(&asks, need(7, "MISSING"));
+
+    assert!(matches!(held, Held::CallerGone { .. }), "{held:?}");
+    let open = asks.open();
+    assert_eq!(open.len(), 1);
+    assert_eq!(
+        open[0].chats,
+        vec![8],
+        "the chat that hung up is not nudged"
+    );
+    let answered = asks
+        .answer(
+            &ctx(project.path()),
+            open[0].id,
+            Answer::Fill(VALUE.to_owned().into()),
+            window(),
+        )
+        .unwrap();
+    assert_eq!(answered.nudge, vec![8]);
+}
+
 #[test]
 fn a_chat_that_tries_again_while_its_ask_is_open_is_not_nudged_once_its_retry_hears_the_fill() {
     let project = project();
