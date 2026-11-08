@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794145607808,
+  "lastUpdate": 1794148054393,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -43512,6 +43512,48 @@ window.BENCHMARK_DATA = {
             "value": 99.6528,
             "unit": "ms",
             "extra": "median of 5 runs: 98.813, 99.423, 99.653, 100.822, 101.772 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "e9dc1fa9cf774ab2804d9fa3eb006012058e2f12",
+          "message": "From a chat, purlis skill edit --from and skill new leave a draft in the Skill studio (#5815) (#5816)\n\n* Tests: a chat's skill edit or new leaves a draft in the Skill studio (#5815)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6X84A2KNRWDXQ92VKBPQXG4\nPurlis-Persona: steward\n\n* Tests for #5815: format\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6X84A2KNRWDXQ92VKBPQXG4\nPurlis-Persona: steward\n\n* From a chat, purlis skill edit --from and skill new leave a draft in the Skill studio (#5815)\n\nA chat's edit or new skill is checked as at the person's terminal\n(verbs::edit_checked, verbs::new_checked), then handed to the app as\nAsk::Propose, the road a chat's write to a skill's file already takes, and\nthe app keeps it in the studio's Drafts. Nothing is written to the skill;\nthe command names the draft and where it waits. Refused texts make no draft,\nand a chat that cannot reach the app makes none and writes nothing.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6X84A2KNRWDXQ92VKBPQXG4\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-08T11:38:01Z",
+          "tree_id": "a9bd40a5b6144b3a028e1025b06b5aa7174342bd",
+          "url": "https://github.com/purlis/purlis/commit/e9dc1fa9cf774ab2804d9fa3eb006012058e2f12"
+        },
+        "date": 1794148049703,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.559564,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.554, 0.558, 0.560, 0.576, 0.585 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.328832499999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.254, 16.267, 16.329, 16.332, 16.363 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.11221850000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.903, 100.623, 101.112, 101.812, 102.232 ms"
           }
         ]
       }
