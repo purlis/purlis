@@ -451,5 +451,4 @@ pub fn revoke(root: &Path, which: Which, host: &Host) -> Result<(), String> {
 }
 
 #[cfg(test)]
-#[path = "hosts_tests.rs"]
 mod tests;
