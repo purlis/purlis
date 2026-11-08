@@ -139,9 +139,7 @@ fn an_app(
             };
             match drafts::take(&root, ask.chat, &file, &ask.change) {
                 Ok(_) => Answer::Said {
-                    lines: vec![purlis_core::repocmd::Say::Done(
-                        drafts::DRAFTED_SAID.into(),
-                    )],
+                    lines: vec![purlis_core::repocmd::Say::Done(drafts::DRAFTED_SAID.into())],
                     code: 0,
                 },
                 Err(why) => Answer::No { why },
