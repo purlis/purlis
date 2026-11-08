@@ -1796,6 +1796,37 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "valgrind",
     "hyperfine",
     "helmfile",
+    // secret injectors, which run the command after them with what they fetched: the closest
+    // kin of `op run` and `aws-vault exec`
+    "doppler",
+    "infisical",
+    "sops",
+    "chamber",
+    "envconsul",
+    "summon",
+    "envchain",
+    "dotenvx",
+    "teller",
+    "berglas",
+    "aws-sso",
+    "granted",
+    "assume",
+    // environment managers and project runners, which run a command or what a file says
+    "mamba",
+    "micromamba",
+    "rtx",
+    "goenv",
+    "jenv",
+    "fnm",
+    "nix",
+    "nix-shell",
+    "devbox",
+    "pixi",
+    "hatch",
+    "pdm",
+    "rye",
+    "tox",
+    "nox",
 ];
 
 /// **The programs a Run grant may be wider than one exact command for** (the person's ruling on

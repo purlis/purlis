@@ -2042,3 +2042,145 @@ fn hyperfine_runs_the_commands_it_times_so_it_is_offered_no_run_grant() {
 fn helmfile_runs_its_hooks_so_it_is_offered_no_run_grant() {
     refused_as_running_others("helmfile");
 }
+
+// The second review of #5619: secret injectors, environment managers and project runners.
+
+#[test]
+fn doppler_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("doppler");
+}
+
+#[test]
+fn infisical_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("infisical");
+}
+
+#[test]
+fn sops_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("sops");
+}
+
+#[test]
+fn chamber_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("chamber");
+}
+
+#[test]
+fn envconsul_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("envconsul");
+}
+
+#[test]
+fn summon_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("summon");
+}
+
+#[test]
+fn envchain_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("envchain");
+}
+
+#[test]
+fn dotenvx_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("dotenvx");
+}
+
+#[test]
+fn teller_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("teller");
+}
+
+#[test]
+fn berglas_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("berglas");
+}
+
+#[test]
+fn aws_sso_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("aws-sso");
+}
+
+#[test]
+fn granted_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("granted");
+}
+
+#[test]
+fn assume_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("assume");
+}
+
+#[test]
+fn mamba_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("mamba");
+}
+
+#[test]
+fn micromamba_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("micromamba");
+}
+
+#[test]
+fn rtx_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("rtx");
+}
+
+#[test]
+fn goenv_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("goenv");
+}
+
+#[test]
+fn jenv_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("jenv");
+}
+
+#[test]
+fn fnm_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("fnm");
+}
+
+#[test]
+fn nix_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("nix");
+}
+
+#[test]
+fn nix_shell_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("nix-shell");
+}
+
+#[test]
+fn devbox_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("devbox");
+}
+
+#[test]
+fn pixi_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("pixi");
+}
+
+#[test]
+fn hatch_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("hatch");
+}
+
+#[test]
+fn pdm_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("pdm");
+}
+
+#[test]
+fn rye_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("rye");
+}
+
+#[test]
+fn tox_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("tox");
+}
+
+#[test]
+fn nox_runs_the_command_it_is_given_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("nox");
+}
