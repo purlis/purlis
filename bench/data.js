@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794157003605,
+  "lastUpdate": 1794159533169,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -43722,6 +43722,48 @@ window.BENCHMARK_DATA = {
             "value": 102.3691735,
             "unit": "ms",
             "extra": "median of 5 runs: 100.697, 101.091, 102.369, 102.703, 102.733 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e1f746707bf5737834c83e9f014e3971244cef92",
+          "message": "MCP: todo_list lists the done todos, and todo_reopen opens one again (#3416) (#5861)\n\n* MCP: todo_list lists the done todos with done, and todo_reopen opens one again (#3416)\n\nA chat's tools now reach done todos as the terminal and the window do:\ntodo_list takes an optional done: true (a read, so PRE_ALLOWED is\nunchanged), and todo_reopen moves a done todo back out of\ntodos/archive/ under its name, restores its index line and journals\nnothing, as purlis ws todo reopen does. todo_done's reply names\ntodo_reopen. todo_reopen joins OWN_SCOPE_TOOLS beside todo_done (ADR\n0064 amended 2026-11-08); ADR 0106 amended for the tools.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6XTNH0AGDCTAJ134RB17JRJ\nPurlis-Persona: steward\n\n* ADR 0106 links its amendments folder (#3416)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6XTNH0AGDCTAJ134RB17JRJ\nPurlis-Persona: steward\n\n* Harness test: a Claude Code chat's allow list has todo_reopen (#3416)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6XTNH0AGDCTAJ134RB17JRJ\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-08T16:55:19Z",
+          "tree_id": "beef865297bda3bdc6afc722e80b35a86c8e5a6e",
+          "url": "https://github.com/purlis/purlis/commit/e1f746707bf5737834c83e9f014e3971244cef92"
+        },
+        "date": 1794159528232,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.694103,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.661, 0.678, 0.694, 0.697, 0.702 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.604459499999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.508, 16.534, 16.604, 16.611, 16.724 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.41451850000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.697, 102.411, 102.415, 102.461, 102.512 ms"
           }
         ]
       }
