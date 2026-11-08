@@ -2111,6 +2111,12 @@ fn an_xdg_folder_that_climbs_out_of_the_home_is_not_listed() {
             home.join(".local"),
             home.join(".local/share"),
             home.join(".config"),
+            home.join(".kube"),
+            home.join(".local/share/fish"),
+            home.join(".local/share/nvim"),
+            home.join(".local/share/nvim/site"),
+            home.join(".local/share/bash-completion"),
+            home.join(".local/share/dbus-1"),
         ]
     );
 }

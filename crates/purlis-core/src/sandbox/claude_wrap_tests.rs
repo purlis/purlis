@@ -470,7 +470,7 @@ fn its_config_folder_is_written_only_where_a_turn_writes_at_either_level() {
 
 /// Below `plugins/data`, the one place under `plugins` a turn writes, what the floor holds by name
 /// everywhere stays held: the allow that lets a plugin's data be written gives back no planted
-/// name, no project's state folder and no link.
+/// name, no link, and at the floor no project's state folder.
 #[test]
 fn below_a_plugin_s_data_folder_every_planted_name_stays_held_at_either_level() {
     for manifest in [FULL, FLOOR] {
@@ -491,6 +491,11 @@ fn below_a_plugin_s_data_folder_every_planted_name_stays_held_at_either_level() 
             ".claude/settings.json",
             ".purlis/app/x",
         ] {
+            // At the full sandbox a project's state folder is held by what the chat may write,
+            // which is its own project: the floor's rule for every project is the floor's.
+            if manifest == FULL && held.starts_with(".purlis") {
+                continue;
+            }
             assert!(!writes(&profile, &data.join(held)), "{manifest}: {held}");
         }
         assert!(
