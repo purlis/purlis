@@ -3974,3 +3974,52 @@ fn a_projects_hand_off_says_the_lines_let_go_past_its_cursor_and_hears_on_withou
         told.lock().unwrap().len() == 1
     });
 }
+
+/// A hold is a runner's use as much as a skill line is: past the most cursors, an idle runner
+/// still held goes after a runner gone since, which nothing holds (#5657).
+#[test]
+fn a_projects_hold_keeps_its_runners_cursors_from_going_before_a_gone_runners() {
+    use purlis_core::runnercursors::{MOST_CURSORS, keep, logged_up_to};
+    const PROJECT: &str = "01J9PRJCT00000000000000000";
+    const GONE: &str = "01JB0GONE000000000000000000";
+    let config = tempfile::tempdir().expect("this machine's config home");
+    keep(config.path(), RUNNERS_DEVICE, PROJECT, 5).unwrap();
+    for n in 0..MOST_CURSORS - 1 {
+        keep(config.path(), GONE, &format!("P{n:04}"), 9_000 + n as u64).unwrap();
+    }
+    let shared = Shared::default();
+    *lock(&shared.cursors) = Some(config.path().to_path_buf());
+    lock(&shared.runner_log).starts_at(RUNNERS_DEVICE.into(), 40, Some(5));
+
+    shared.hand_off(PROJECT, Arc::new(|_, _| {}));
+    let logged = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    shared.log(vec![SkillLogged {
+        tell: Some((
+            {
+                let logged = Arc::clone(&logged);
+                Arc::new(move |_, _| logged.store(true, Ordering::SeqCst))
+            },
+            purlis_core::skilluse::relayed::Relayed {
+                chat: "01K6W0RKER000000000000000B".into(),
+                run: "01K6RUN0000000000000000000".into(),
+                at_ms: 1_793_440_800_000,
+                line: purlis_core::skilluse::relayed::Line::Started {
+                    skill: "review".into(),
+                    started_by: purlis_core::skills::runs::StartedBy::SkillTool,
+                    level: None,
+                    tree: None,
+                },
+            },
+        )),
+        keep: None,
+    }]);
+    until("the hold's keep is done", || logged.load(Ordering::SeqCst));
+    keep(config.path(), "01JB1MADEAGAIN0000000000000", PROJECT, 1).unwrap();
+
+    assert_eq!(
+        logged_up_to(config.path(), RUNNERS_DEVICE, PROJECT),
+        Some(5),
+        "the held runner's cursor stays"
+    );
+    assert_eq!(logged_up_to(config.path(), GONE, "P0000"), None);
+}
