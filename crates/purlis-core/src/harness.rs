@@ -321,6 +321,12 @@ pub struct Kit<'a> {
     /// its start held to its piece and to no host (`sandbox::policy::holding_to_its_folder`), with
     /// its temporary files in its piece. Only ever with [`Self::writes_its_piece`].
     pub runs_a_shell: bool,
+    /// **The skills its harness finds itself** (#5736, #5842): the person's own and their
+    /// plugins', as its start read them ([`crate::hoststart::ChatSkills::own_read`]). They share
+    /// the harness's listing with purlis's skills whether or not the plane's reach the chat, so
+    /// Claude Code's listing limit is handed with them in it either way. Empty where they were not
+    /// read.
+    pub own: &'a [crate::skills::OutsideSkill],
     /// The set's folder the host laid out before arming the chat
     /// ([`crate::skills::lay_out_for_chat`]): the plane's skills of its set. `None` where it laid
     /// out none: a harness that needs the folder is then handed none of what it holds.
