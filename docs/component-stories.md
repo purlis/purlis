@@ -232,18 +232,23 @@ add or change one:
    all that failed (or only an obsolete baseline is wrong), each shard that failed draws again,
    with `--update` in the pinned image, the story files and cells whose pictures failed in it, and the check keeps every live baseline, of every shard,
    as one `story-baselines`, with `drawn.json` naming the
-   head and the base it tested. The check stays red: a picture counts only once it is committed.
+   head and the base it tested. When no baseline is obsolete, so the pictures drawn again are
+   the whole change, it also keeps those alone as `story-redrawn`, a few pictures where the whole
+   set is about 330 MB (#5791). The check stays red: a picture counts only once it is committed.
    A story that fails any other gate draws nothing: fix it first. The check's first annotation
    names every such story, and each shard's summary lists them before every picture that failed
    alone, since GitHub shows only ten annotations of a step.
 2. Take the baselines, in either of two ways. Neither draws again, and both take only whole PNG
-   baselines, write only those whose bytes differ from the baseline already there, and delete
-   every other file in the `__screenshots__` directories (`tools/story-baselines.mjs take`).
+   baselines, write only those whose bytes differ from the baseline already there, and, taking
+   the whole set, delete every other file in the `__screenshots__` directories
+   (`tools/story-baselines.mjs take`).
    Each picture has a size limit; what one take writes and deletes has a count and a total size
    limit, which bound what one commit pushes, so the whole set can grow past them:
    - **Your own push** (the way that runs no extra checks): in a checkout of the pull request's
      head, run `node tools/story-baselines-pull.mjs <pull request>`. It takes the newest
-     `stories` run's `story-baselines` into `app/`. Review the pictures, then commit and push
+     `stories` run's `story-redrawn` into `app/` when the run kept one that has not expired,
+     writing those pictures and deleting nothing, and its `story-baselines` otherwise, which
+     also deletes the obsolete baselines. Review the pictures, then commit and push
      them with your next change. Your push starts every check as any push does. The tool runs
      the checked-out head's own code, so take another person's pull request's baselines only in
      a checkout you would run anyway. It reads `purlis/purlis` unless `--repo` names another,

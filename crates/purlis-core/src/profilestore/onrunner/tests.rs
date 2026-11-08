@@ -2095,6 +2095,53 @@ fn the_desktops_adopted_folder_takes_in_the_sign_in_carried_to_it() {
     assert!(!carried.exists());
 }
 
+/// **opencode's adopted folder takes in the sign-in carried to it too** (ruled 2026-11-08): kept
+/// as opencode's default folders in the runner's home, it takes the default data folder's
+/// `auth.json` the drained runner carried under the harness's name. And the runner leaves the mark
+/// that its own opencode default folder may be carried in turn.
+#[test]
+fn the_desktops_adopted_opencode_folder_takes_in_the_sign_in_carried_to_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let runner = homes(dir.path(), "runner");
+    let adopted = MachineProfile {
+        name: "opencode".to_owned(),
+        harness: "opencode".to_owned(),
+        folders: Folders {
+            config: dir.path().join("desktop-home/.config"),
+            data: Some(dir.path().join("desktop-home/.local/share")),
+        },
+        pinned: None,
+        ..the_desktops_adopted_folder(dir.path())
+    };
+    let carried = crate::profilestore::carried_in(&dir.path().join("runner/data"))
+        .join("Xb4tch01")
+        .join("opencode");
+    fs::create_dir_all(carried.join("data/opencode")).unwrap();
+    fs::write(carried.join("data/opencode/auth.json"), "the old runner's").unwrap();
+
+    let kept = keep(
+        &runner,
+        &runner_home(dir.path()),
+        &Kept::of(&adopted).expect("it goes"),
+        DESKTOP,
+        7,
+    )
+    .expect("kept");
+
+    let data = kept.folders.data.expect("its data folder");
+    assert_eq!(data, runner_home(dir.path()).join(".local/share"));
+    assert_eq!(
+        fs::read_to_string(data.join("opencode/auth.json")).unwrap(),
+        "the old runner's"
+    );
+    assert!(!carried.exists());
+    assert!(
+        runner
+            .folder_of(crate::profilestore::OPENCODE_DEFAULT_HELD)
+            .is_file()
+    );
+}
+
 /// [`held_for_the_desktop`], every page of it.
 fn held_on(runner: &Homes, name: &str) -> Vec<wire::HeldSetting> {
     let (held, more) = held_for_the_desktop(runner, DESKTOP, name, None).unwrap();
