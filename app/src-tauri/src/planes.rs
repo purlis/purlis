@@ -71,6 +71,34 @@ impl PlaneId {
     }
 }
 
+
+/// **When a restart of one chat may go ahead** ([`Held::restart_chat`], #5753).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum When {
+    /// At a pause between its turns: it waits while the chat waits on its own work.
+    AtAPause,
+    /// Now: the person's Restart now, which ends what the chat had left running and tells it.
+    Now,
+}
+
+/// What [`Held::restart_chat`] did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Restarted {
+    /// The chat runs again on its conversation, as this run.
+    Started(u32),
+    /// It is not restarted yet, for the reason given, and is still owed the restart.
+    NotYet(&'static str),
+}
+
+/// Why a restart waits while the chat shows a permission prompt (or is being stopped).
+pub const WAITS_ON_A_PERMISSION_PROMPT: &str =
+    "It is waiting on a permission prompt, so it restarts once that is answered.";
+
+/// Why a restart at a pause waits while the chat waits on its own work (#5753).
+pub const WAITS_ON_ITS_OWN_WORK: &str =
+    "It is waiting on work of its own running in the background, so it restarts once that \
+     work wakes it and its turn ends. Restart now ends that work.";
+
 #[cfg(test)]
 impl PlaneId {
     /// An id for a test that holds no registry — a worker, a teller — never for a command.
@@ -1592,20 +1620,29 @@ impl Held {
     /// started; a refused start leaves the old one running.
     ///
     /// Not while the chat waits on a permission prompt: its turn has not ended, and a restart
-    /// would answer the prompt for the person. `None` then, and the window asks again at the
-    /// chat's next move.
-    pub fn restart_chat(&self, session: u32, size: Size) -> Result<Option<u32>, String> {
+    /// would answer the prompt for the person. [`Restarted::NotYet`] then, and the window asks
+    /// again at the chat's next move.
+    ///
+    /// **Nor, `when` at a pause, while it waits on its own work** (#5753, spec #5743): its turn
+    /// ended on monitors or background shells of its own that a restart would cut off, so the
+    /// restart waits for that work to wake it, as the window's `atAPause` already does. Once
+    /// the wait has lapsed nothing waits. [`When::Now`], the person's Restart now, goes ahead,
+    /// and the chat brought back is told what the restart ended.
+    pub fn restart_chat(&self, session: u32, size: Size, when: When) -> Result<Restarted, String> {
         if self.asks().asks.iter().any(|ask| ask.session == session) {
-            return Ok(None);
+            return Ok(Restarted::NotYet(WAITS_ON_A_PERMISSION_PROMPT));
         }
         // Nor while the person is stopping it (#1448): the window asks this on its own when a
         // turn ends, which is when a stop sends its prompt, and the stop is the later word.
         if self.stopping.is_stopping(session) {
-            return Ok(None);
+            return Ok(Restarted::NotYet(WAITS_ON_A_PERMISSION_PROMPT));
+        }
+        if when == When::AtAPause && self.board().glance(session).own_work {
+            return Ok(Restarted::NotYet(WAITS_ON_ITS_OWN_WORK));
         }
         let started = self.chats.restart(session, size)?;
         self.in_its_place(session, started);
-        Ok(Some(started))
+        Ok(Restarted::Started(started))
     }
 
     /// **Starts chat `session` again without the sandbox** (#1342): the person's own choice on a

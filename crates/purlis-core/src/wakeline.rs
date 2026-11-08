@@ -51,6 +51,19 @@ pub fn of(own_work: Option<&OwnWork>, carry_on: bool) -> Option<String> {
     }
 }
 
+/// **The wake line for a chat restarted on its own while purlis runs on** (#5753): Restart
+/// now, a restart without the sandbox, its project's settings contained, or its move to or from
+/// a runner, each of which ends its program with what it had left running. Only where it had
+/// something of its own running; the rest of what the restart tells it is the restart's own.
+pub fn of_the_chat_restarted(own_work: Option<&OwnWork>) -> Option<String> {
+    own_work.and_then(ended).map(|ended| {
+        format!(
+            "purlis: this chat was restarted on its conversation, and the restart ended what it \
+             had left running in the background: {ended}. {NONE_OF_IT_RUNS}"
+        )
+    })
+}
+
 /// The work in flight `own_work` names, as a list: "1 background shell, 2 monitors". None
 /// where none is in flight.
 fn ended(own_work: &OwnWork) -> Option<String> {

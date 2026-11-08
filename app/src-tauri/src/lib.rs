@@ -2543,6 +2543,10 @@ struct ChatRestart {
 /// The window asks once the chat's turn has ended; a chat owed no restart is refused, and one
 /// waiting on a permission prompt is not restarted yet. The answer is the new one as the
 /// window draws it, in the old one's place.
+///
+/// **`now` is the person's Restart now** (#5753): it goes ahead while the chat waits on work
+/// of its own, which a restart at a pause waits for, and the chat brought back is told what
+/// the restart ended.
 #[tauri::command]
 #[specta::specta]
 async fn restart_chat(
@@ -2551,22 +2555,25 @@ async fn restart_chat(
     session: u32,
     columns: u16,
     rows: u16,
+    now: bool,
 ) -> Result<ChatRestart, String> {
     let held = planes.held(&plane)?;
+    let when = if now {
+        planes::When::Now
+    } else {
+        planes::When::AtAPause
+    };
     tauri::async_runtime::spawn_blocking(move || {
-        match held.restart_chat(session, Size { columns, rows })? {
-            Some(started) => Ok(ChatRestart {
+        match held.restart_chat(session, Size { columns, rows }, when)? {
+            planes::Restarted::Started(started) => Ok(ChatRestart {
                 chat: Some(drawn(&held, started)?),
                 notices: held.chats().start_notes(started),
                 not_yet: None,
             }),
-            None => Ok(ChatRestart {
+            planes::Restarted::NotYet(why) => Ok(ChatRestart {
                 chat: None,
                 notices: Vec::new(),
-                not_yet: Some(
-                    "It is waiting on a permission prompt, so it restarts once that is answered."
-                        .to_owned(),
-                ),
+                not_yet: Some(why.to_owned()),
             }),
         }
     })

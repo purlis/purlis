@@ -3002,8 +3002,8 @@ impl Chats {
         if let Err(why) = self.sessions.close(session) {
             tracing::warn!("purlis: chat {session}'s run did not end before its restart ({why})");
         }
-        let first = told.join("\n\n");
-        match self.start_recorded_told(&again, size, Why::Relaunch, Some(&first), None) {
+        let first = self.told_with_its_wake_line(session, &told);
+        match self.start_recorded_told(&again, size, Why::Relaunch, first.as_deref(), None) {
             Ok(started) => self.restarted(session, started, true),
             Err(why) => {
                 self.unclaim(session);
@@ -3647,7 +3647,7 @@ impl Chats {
                 };
                 return Err(format!("{}{reaches}", no_conversation(session)));
             }
-            let first = (!told.is_empty()).then(|| told.join("\n\n"));
+            let first = self.told_with_its_wake_line(session, &told);
             let started =
                 self.start_recorded_told(&again, size, Why::Relaunch, first.as_deref(), None)?;
             if again.unsandboxed && self.confines_of(started).is_some() {
@@ -3688,8 +3688,9 @@ impl Chats {
                 "started again without the sandbox from a sandbox block's Notice".to_owned(),
             ),
         };
+        let first = self.told_with_its_wake_line(session, &[]);
         let started = self.again_on_its_conversation(session).and_then(|again| {
-            self.start_recorded_told(&again, size, Why::Relaunch, None, Some(opt_out))
+            self.start_recorded_told(&again, size, Why::Relaunch, first.as_deref(), Some(opt_out))
         });
         match started {
             // What was allowed and not yet taken is dropped: it means nothing to a chat run
@@ -3714,7 +3715,8 @@ impl Chats {
             if again.resume.is_none() {
                 return Err(no_conversation(session));
             }
-            self.start_recorded_told(&again, size, Why::Relaunch, None, None)
+            let first = self.told_with_its_wake_line(session, &[]);
+            self.start_recorded_told(&again, size, Why::Relaunch, first.as_deref(), None)
         });
         if started.is_err() {
             self.unclaim(session);
@@ -3744,6 +3746,18 @@ impl Chats {
             .entry(session)
             .or_default()
             .push(note);
+    }
+
+    /// **What chat `session` is told as it starts again on its conversation while purlis runs
+    /// on** (#5753, spec #5743): `told`, what it was owed, then its wake line where its record
+    /// says it had work of its own running ([`purlis_core::wakeline::of_the_chat_restarted`]),
+    /// which the restart ends. Read from the record, not the board: the board's wait lapses
+    /// after an hour, and the work it waited on runs on. None where there is nothing to say.
+    fn told_with_its_wake_line(&self, session: u32, told: &[String]) -> Option<String> {
+        let own_work = lock(&self.own_work).get(&session).copied();
+        let wake = purlis_core::wakeline::of_the_chat_restarted(own_work.as_ref());
+        let first: Vec<&str> = told.iter().map(String::as_str).chain(wake.as_deref()).collect();
+        (!first.is_empty()).then(|| first.join("\n\n"))
     }
 
     /// Marks chat `session` as restarting, or refuses: one restart at a time, whichever asked.
