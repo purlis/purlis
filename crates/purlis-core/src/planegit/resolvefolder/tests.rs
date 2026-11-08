@@ -257,10 +257,11 @@ fn a_binary_conflict_is_settled_by_hand_in_the_folder() {
         "{refused:?}"
     );
 
-    run(&folder, &["checkout", "--theirs", "--", "blob.bin"]);
+    // This machine's side kept: there is a merge to commit.
+    run(&folder, &["checkout", "--ours", "--", "blob.bin"]);
     run(&folder, &["add", "--", "blob.bin"]);
     assert_eq!(carry_on(&two.mine, &[], &[], &mut said), Settled::Replayed);
-    assert_eq!(read(&two.mine, "blob.bin"), "theirs\0");
+    assert_eq!(read(&two.mine, "blob.bin"), "mine\0");
 }
 
 #[test]
@@ -410,6 +411,12 @@ fn a_charter_toml_key_conflict_is_settled_in_the_resolve_folder_with_no_marker()
             ours: Some("\"workspace\"".into()),
             theirs: Some("\"off\"".into()),
         }]
+    );
+
+    // The standing names the file still to settle, as the Saving view lists it.
+    assert_eq!(
+        crate::planegit::standing(&two.mine).conflicts,
+        vec!["charter.toml".to_owned()]
     );
 
     // No choice yet: refused, naming the key.

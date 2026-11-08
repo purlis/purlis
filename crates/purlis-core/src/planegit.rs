@@ -817,7 +817,16 @@ pub fn standing(root: &Path) -> Standing {
     // folder's still unsettled, and the keys named are those of the files still to settle.
     let conflicts = match (stopped, resolving) {
         (Some(stopped), _) if !stopped.unmerged.is_empty() => stopped.unmerged,
-        (_, Some(left)) => left.marked.into_iter().chain(left.by_hand).collect(),
+        (_, Some(left)) => {
+            let mut files: Vec<String> = left
+                .marked
+                .into_iter()
+                .chain(left.by_hand)
+                .chain(left.keyed)
+                .collect();
+            files.sort();
+            files
+        }
         _ => conflicts,
     };
     let mut conflict_keys = conflict_keys;
