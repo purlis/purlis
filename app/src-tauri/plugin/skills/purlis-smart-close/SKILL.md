@@ -1,6 +1,6 @@
 ---
 name: purlis-smart-close
-description: Close this purlis chat by writing its session record — a summary of this session into its workspace's sessions/ — and folding what lasts into workspace.md. Use when asked to smart close, to wrap up or close this chat with a record, or to write a session record.
+description: When this purlis chat is ending, write its session record — a summary of this chat into its workspace's sessions/ that the next chat resumes from — and fold what lasts into workspace.md. Use when asked to smart close, wrap up, call it a day, close out this chat with a record, or write a session record before reporting. Not for tidying, deduping or pruning a workspace's or persona's memory — that is purlis-tidy-memory. Not for moving work to a new chat — that is purlis-handoff.
 ---
 
 # Smart close

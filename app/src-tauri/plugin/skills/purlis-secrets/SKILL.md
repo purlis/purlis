@@ -1,6 +1,6 @@
 ---
 name: purlis-secrets
-description: Use a credential held in a purlis vault — a database password, API token, kubeconfig, SSH key or server login — without its value entering the conversation. Use when a task needs a secret, when asked to store one, or before running any command that requires a credential.
+description: When a task needs a credential held in a purlis vault — a database password, API token, kubeconfig, SSH key or server login — use it without its value entering the conversation. Use when a command or API call needs a secret, when asked to store, list or check one, or before running any command that requires a credential. Not for logging in to a website or a logged-in browser session — that is purlis-browser. Not for giving work to another persona — that is purlis-persona. Not for building, testing or committing in a repo — that is purlis-repo-work. Not for moving work to a new chat — that is purlis-handoff. Not for tidying memory — that is purlis-tidy-memory.
 ---
 
 # Using a purlis vault

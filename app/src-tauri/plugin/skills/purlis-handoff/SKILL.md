@@ -1,6 +1,6 @@
 ---
 name: purlis-handoff
-description: Move the person's work out of this chat into a new chat they will read themselves — in this workspace or another — started on a brief you write. Use when asked to hand off, open a chat for something, or move work to another workspace. Not for work this chat needs an answer from, its own persona's or another's — that is `purlis dispatch` (the purlis-persona skill).
+description: When the person wants work moved out of this purlis chat into a new chat they will read themselves — in this workspace or another — started on a brief you write. Use when asked to hand off or hand over, open or start a chat for something, park an idea in its own chat, or move work to another workspace. Not for work this chat needs an answer from, its own persona's or another's — that is `purlis dispatch`, in purlis-persona. Not for ending this chat with a session record — that is purlis-smart-close.
 ---
 
 # Handing work to a chat that is not this one

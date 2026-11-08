@@ -68,8 +68,20 @@ fn every_built_in_with_trigger_tests_has_enough_of_them_with_sources_and_near_mi
         assert_eq!(queries.len(), graded.tests.len(), "{skill} repeats a query");
         checked.push((skill, sources.bar));
     }
-    assert!(
-        checked.contains(&("purlis-secrets".to_owned(), Bar::Strict)),
-        "purlis-secrets carries no trigger tests at the strict bar: {checked:?}"
-    );
+    for skill in STRICT {
+        assert!(
+            checked.contains(&((*skill).to_owned(), Bar::Strict)),
+            "{skill} carries no trigger tests at the strict bar: {checked:?}"
+        );
+    }
 }
+
+/// The built-ins spec #5714 holds to the strict bar (decision Q3) that carry tests so far: where a
+/// miss leaks a secret, loses work or loses context. purlis-report joins with #5699.
+const STRICT: &[&str] = &[
+    "purlis-secrets",
+    "purlis-handoff",
+    "purlis-smart-close",
+    "purlis-safe-remove",
+    "purlis-persona",
+];

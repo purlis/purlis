@@ -197,6 +197,8 @@ fn armed(ask: &Ask<'_>, harness: Harness) -> (Vec<String>, Vec<(String, String)>
         writes_its_piece: false,
         runs_a_shell: false,
         laid_out: None,
+        // A CI runner has no catalogue of the person's own, so the budget is purlis's alone.
+        own_listing: 0,
     };
     match harness.state_hooks(
         kit,

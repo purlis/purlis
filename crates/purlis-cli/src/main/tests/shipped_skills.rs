@@ -25,11 +25,13 @@ use purlis_skills::change::{MOST_DESCRIPTION, description_problem};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-/// One built-in skill as it ships: its folder's name, its page, and its description.
+/// One built-in skill as it ships: its folder's name, its page, its description, and, where it
+/// carries trigger tests, its sources file's text and how many tests it has.
 struct Skill {
     name: String,
     page: String,
     description: Option<String>,
+    sources: Option<(String, usize)>,
 }
 
 impl Skill {
@@ -42,7 +44,14 @@ impl Skill {
             name: name.to_owned(),
             page: page.to_owned(),
             description,
+            sources: None,
         }
+    }
+
+    /// The same skill, carrying `tests` trigger tests whose sources file says `text`.
+    fn with_sources(mut self, text: &str, tests: usize) -> Self {
+        self.sources = Some((text.to_owned(), tests));
+        self
     }
 }
 
@@ -79,6 +88,7 @@ const RULES: &[(&str, Rule)] = &[
     ("says each settled pair one way", says_no_losing_side),
     ("uses the glossary's words", uses_the_glossary_s_words),
     ("names a skill purlis ships", skills_are_real),
+    ("says what it is not for", names_each_neighbour),
 ];
 
 /// **Words the glossary avoids** (#5723, spec #5714's Q31): `CONTEXT.md`'s `_Avoid_` words that
@@ -578,6 +588,53 @@ fn skills_are_real(skill: &Skill, built: &Built) -> Vec<String> {
         .collect()
 }
 
+/// **The house style's "Not for" clause** (#5730, spec #5714's Q15 and Q30): a skill whose
+/// sources file declares neighbours says, after "Not for" in its description, the name of each,
+/// so a harness choosing between two skills reads where one ends. Each neighbour is a skill
+/// purlis ships, since its near-miss tests are that skill's requests.
+fn names_each_neighbour(skill: &Skill, built: &Built) -> Vec<String> {
+    let Some((text, tests)) = &skill.sources else {
+        return Vec::new();
+    };
+    let neighbours = match purlis_skills::grade::ci::sources_of(text, *tests) {
+        Ok(sources) => sources.neighbours,
+        Err(why) => return vec![format!("its trigger tests' sources cannot be read: {why}")],
+    };
+    let mut out: Vec<String> = neighbours
+        .iter()
+        .filter(|name| !built.skills.contains(*name))
+        .map(|name| format!("declares the neighbour `{name}`, which purlis does not ship"))
+        .collect();
+    if neighbours.is_empty() {
+        return out;
+    }
+    let description = skill.description.as_deref().unwrap_or("").to_lowercase();
+    let Some(at) = description.find("not for") else {
+        out.push(format!(
+            "its description has no “Not for” clause, and its sources name the neighbours {}",
+            neighbours.join(", ")
+        ));
+        return out;
+    };
+    let after = &description[at..];
+    for name in &neighbours {
+        if !names_word(after, name) {
+            out.push(format!(
+                "its description's “Not for” clauses never name its neighbour `{name}`"
+            ));
+        }
+    }
+    out
+}
+
+/// Whether `text` says `name` as a whole name, not as part of a longer one.
+fn names_word(text: &str, name: &str) -> bool {
+    let part = |c: Option<char>| c.is_some_and(|c| c.is_alphanumeric() || c == '-' || c == '_');
+    text.match_indices(name).any(|(at, _)| {
+        !part(text[..at].chars().next_back()) && !part(text[at + name.len()..].chars().next())
+    })
+}
+
 /// Each skill, by name, with every line a rule has against it.
 fn check(skills: &[Skill], built: &Built) -> Vec<String> {
     let mut out = Vec::new();
@@ -609,7 +666,19 @@ fn shipped() -> Vec<Skill> {
         .map(|folder| {
             let name = folder.file_name().expect("a folder").to_string_lossy();
             let page = std::fs::read_to_string(folder.join("SKILL.md")).expect("a skill reads");
-            Skill::of(&name, &page)
+            let skill = Skill::of(&name, &page);
+            let evals = folder.join("evals");
+            match std::fs::read_to_string(evals.join("triggers.sources.md")) {
+                Ok(text) => {
+                    let tests: Vec<serde_json::Value> =
+                        std::fs::read_to_string(evals.join("triggers.json"))
+                            .ok()
+                            .and_then(|json| serde_json::from_str(&json).ok())
+                            .unwrap_or_default();
+                    skill.with_sources(&text, tests.len())
+                }
+                Err(_) => skill,
+            }
         })
         .collect()
 }
@@ -938,6 +1007,81 @@ fn a_skill_named_in_prose_that_purlis_does_not_ship_is_named() {
             "{page}"
         );
     }
+}
+
+const SOURCES: &str =
+    "Trigger bar: strict\nNeighbours: purlis-browser, purlis-persona\n\n1. a\n2. b\n";
+
+fn sourced(description: &str) -> Vec<String> {
+    let page = format!("---\nname: purlis-example\ndescription: {description}\n---\n");
+    check(
+        &[Skill::of("purlis-example", &page).with_sources(SOURCES, 2)],
+        &Built::now(),
+    )
+}
+
+#[test]
+fn a_description_whose_not_for_clauses_name_every_neighbour_has_no_problem() {
+    assert_eq!(
+        sourced(
+            "Use a credential in purlis. Not for a website login — that is purlis-browser; not \
+             for another persona's work — that is `purlis-persona`."
+        ),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn a_description_with_neighbours_and_no_not_for_clause_is_named_with_them() {
+    assert_eq!(
+        sourced("Use a credential in purlis, unlike purlis-browser and purlis-persona."),
+        [
+            "purlis-example: its description has no “Not for” clause, and its sources name the \
+             neighbours purlis-browser, purlis-persona (says what it is not for)"
+        ]
+    );
+}
+
+#[test]
+fn a_neighbour_the_not_for_clauses_leave_out_is_named() {
+    // Named before "Not for" and as part of a longer name is not named in a clause.
+    assert_eq!(
+        sourced(
+            "Use purlis-persona's vault in purlis. Not for a website login — that is \
+             purlis-browser; not for purlis-personas-old."
+        ),
+        [
+            "purlis-example: its description's “Not for” clauses never name its neighbour \
+             `purlis-persona` (says what it is not for)"
+        ]
+    );
+}
+
+#[test]
+fn a_neighbour_purlis_does_not_ship_and_unreadable_sources_are_named() {
+    let page =
+        "---\nname: purlis-example\ndescription: Do it in purlis. Not for purlis-nope.\n---\n";
+    assert_eq!(
+        check(
+            &[Skill::of("purlis-example", page)
+                .with_sources("Trigger bar: strict\nNeighbours: purlis-nope\n1. a\n", 1)],
+            &Built::now(),
+        ),
+        [
+            "purlis-example: declares the neighbour `purlis-nope`, which purlis does not ship \
+             (says what it is not for)"
+        ]
+    );
+    assert_eq!(
+        check(
+            &[Skill::of("purlis-example", page).with_sources("Neighbours: none\n", 0)],
+            &Built::now(),
+        ),
+        [
+            "purlis-example: its trigger tests' sources cannot be read: it names no trigger bar \
+             (a line `Trigger bar: strict` or `Trigger bar: standard`) (says what it is not for)"
+        ]
+    );
 }
 
 /// What a chat is told at its start in the cases whose words are purlis's own: the gate, the
