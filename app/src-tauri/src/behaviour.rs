@@ -3517,7 +3517,7 @@ fn a_turn_is_recorded_by_its_hooks_and_its_diff_is_what_it_edited() {
         git(&["for-each-ref", "--format=%(refname)", "refs/purlis/turns/"])
     };
 
-    let recorder = crate::turns::TurnRecorder::default();
+    let recorder = purlis_core::files::turns::Recorder::default();
     target.hooks.when_heard({
         let (recorder, root, folder) = (recorder.clone(), target.root.clone(), folder.clone());
         Arc::new(move |report| recorder.heard(&root, CHAT, &folder, report))

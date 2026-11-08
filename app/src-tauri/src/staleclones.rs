@@ -172,6 +172,29 @@ pub(crate) fn chats_placed_in(
     held: &crate::planes::Held,
     folder: &std::path::Path,
 ) -> Vec<(u32, String)> {
+    open_in(held, folder)
+        .into_iter()
+        .map(|open| (open.session, named(open)))
+        .collect()
+}
+
+/// **The name of every chat open in `folder` whose agent is not told of a Human edit made
+/// there** (#5477; ADR 0084 §8, as amended 2026-11-07): one on a harness purlis arms no prompt
+/// hook on ([`purlis_core::harness::Harness::prompt_hook`]), which is every harness a project or
+/// this machine declares, run at level 1. A shell runs no agent, and is not named.
+pub(crate) fn untold_in(held: &crate::planes::Held, folder: &std::path::Path) -> Vec<String> {
+    open_in(held, folder)
+        .into_iter()
+        .filter(|open| {
+            open.harness
+                .map_or(open.declared.is_some(), |harness| !harness.prompt_hook())
+        })
+        .map(named)
+        .collect()
+}
+
+/// Every chat open in `folder` or one inside it.
+fn open_in(held: &crate::planes::Held, folder: &std::path::Path) -> Vec<crate::chats::Open> {
     held.chats()
         .open_now()
         .into_iter()
@@ -181,8 +204,12 @@ pub(crate) fn chats_placed_in(
                     || std::fs::canonicalize(cwd).is_ok_and(|real| real.starts_with(folder))
             })
         })
-        .map(|open| (open.session, open.label.clone().unwrap_or(open.name)))
         .collect()
+}
+
+/// A chat's name as the window says it: the one the operator gave it, else its own.
+fn named(open: crate::chats::Open) -> String {
+    open.label.unwrap_or(open.name)
 }
 
 /// What the Inbox is given of what the core found.

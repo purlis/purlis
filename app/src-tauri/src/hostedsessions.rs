@@ -2184,6 +2184,58 @@ impl HostLink {
         .map(|(heads, read)| (heads, read > 0))
     }
 
+    /// **Whether the host records its chats' turns** (1.78, #5427): it gives them with its code
+    /// and undoes one. A host before records none, and the window says why such a chat has no
+    /// turn.
+    pub(crate) fn knows_turns(&self) -> bool {
+        self.version() >= session::KNOWS_TURNS
+    }
+
+    /// [`Self::fetch_code`], with the repository's turns among the refs answered (1.78, #5427):
+    /// only of a host that [`Self::knows_turns`].
+    pub(crate) fn fetch_code_with_turns(
+        &self,
+        project: &str,
+        repo: &str,
+        have: Vec<String>,
+        into: &Path,
+    ) -> Result<(Vec<session::CodeRef>, bool), String> {
+        if !self.knows_turns() {
+            return Err("the runner is too old to record its chats' turns".to_owned());
+        }
+        let (project, repo) = (project.to_owned(), repo.to_owned());
+        self.read_from_a_stream(into, move |client, transfer| {
+            Box::pin(async move {
+                client
+                    .give_code_with_turns(&project, &repo, transfer, have)
+                    .await
+            })
+        })
+        .map(|(heads, read)| (heads, read > 0))
+    }
+
+    /// **Has the host undo `turn` of a chat it runs** in `workspace`'s clone `repo` of `project`,
+    /// its branch folder `piece` where one is named (1.78, #5427): answered
+    /// [`Answer::TurnUndone`] or [`Answer::UndoWaits`], or refused in the host's words.
+    pub(crate) fn undo_turn(
+        &self,
+        project: &str,
+        place: &purlis_core::files::turns::Place,
+        turn: &purlis_core::files::TurnKey,
+    ) -> Result<Answer, String> {
+        if !self.knows_turns() {
+            return Err("the runner is too old to undo a turn of its chats".to_owned());
+        }
+        self.call(Command::UndoTurn {
+            project: project.to_owned(),
+            workspace: place.ws.clone(),
+            repo: place.repo.clone(),
+            piece: place.piece.clone(),
+            chat: turn.chat.clone(),
+            number: turn.number,
+        })
+    }
+
     /// [`Self::fetch_code`], with the work tree's uncommitted work as its branch's snapshot, as
     /// a chat moves off the host (1.44, #2048).
     pub(crate) fn fetch_work(
@@ -4713,6 +4765,22 @@ impl HostedSessions {
 }
 
 impl SessionHost for HostedSessions {
+    /// Every chat of a pool's runner's host is that runner's: it records their turns where the
+    /// link to it speaks 1.78 (#5427).
+    fn records_turns_of(&self, _id: u32) -> bool {
+        self.kept_on_the_runner && self.link().is_ok_and(|(link, _)| link.knows_turns())
+    }
+
+    fn undo_turn_on(
+        &self,
+        _pool: &str,
+        place: &purlis_core::files::turns::Place,
+        turn: &purlis_core::files::TurnKey,
+    ) -> Result<purlis_session_protocol::session::Answer, String> {
+        let (link, project) = self.link()?;
+        link.undo_turn(&project, place, turn)
+    }
+
     fn open(
         &self,
         wanted: Option<u32>,

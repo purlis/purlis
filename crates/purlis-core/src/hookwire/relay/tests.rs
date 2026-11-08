@@ -1133,7 +1133,7 @@ impl Kept {
             },
             heard_from: {
                 let kept = Arc::clone(self);
-                Box::new(move |chat| kept.heard_from.lock().unwrap().push(chat))
+                Box::new(move |chat, _| kept.heard_from.lock().unwrap().push(chat))
             },
             unheard: {
                 let kept = Arc::clone(self);

@@ -421,6 +421,7 @@ async fn a_send_is_held_to_what_its_client_gives_it_and_no_other_way_is() {
     let out = Way::Out {
         have: Vec::new(),
         with_work: false,
+        with_turns: true,
     };
     assert_eq!(out.held_to(8), (8, TRANSFER_WITHIN));
     assert_eq!(way(None).held_to(8), (8, TRANSFER_WITHIN));
