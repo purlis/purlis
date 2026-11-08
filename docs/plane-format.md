@@ -3050,6 +3050,12 @@ them (#5427, ADR 0078 §7, session protocol 1.78), which the file diff reads as 
       `de-steuer-id`, `br-cpf`, `nl-bsn`) is found only in its grouped form or behind its
       name (`BSN: `, `CPF `, `Aadhaar no. `). Unformatted and unnamed, it can't be told from
       any other number, so the scan doesn't look for it (#1793).
+    - **A second limit:** a card number, or a national ID in its grouped form, is not read
+      where it is part of something else (#5822): joined by `-` or `_` to a letter or digit,
+      as in a file's or branch's name (a session record named for the issues it closed); a decimal's
+      part, after a digit and `.` or before `.` and a digit (a cost in dollars); or written
+      straight after `#`, as an issue or PR number is. Behind its name (`Aadhaar: `) a
+      national ID is read as before.
   - An optional `[builtin]` table with `enabled = false`, which turns purlis's own entries off.
   - An entry that can't be read, or that breaks one of these rules, allows nothing, and the scan
     says so.
