@@ -357,6 +357,8 @@ const WHOLE: ChatSkillsSaid = {
     still_over: null,
     pinned_by: [],
     pins_together: null,
+    drops: null,
+    twins: null,
     warns: "both",
   },
   routing: null,

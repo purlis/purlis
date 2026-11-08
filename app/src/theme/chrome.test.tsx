@@ -831,6 +831,8 @@ const DIALOGS: Opened[] = [
               still_over: null,
               pinned_by: [],
               pins_together: null,
+              drops: null,
+              twins: null,
               warns: "both",
             },
             repos: [],

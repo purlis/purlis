@@ -68,6 +68,8 @@ const OVER = {
     still_over: null,
     pinned_by: [],
     pins_together: null,
+    drops: null,
+    twins: null,
     warns: "chars",
   },
   routing: null,

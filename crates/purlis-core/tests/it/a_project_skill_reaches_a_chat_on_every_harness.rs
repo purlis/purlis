@@ -102,6 +102,7 @@ fn host_armed_on(
         plane: &here.plane,
         workspace,
         repo: &[],
+        own: &[],
         routed: None,
     });
     armed(harness, kit(here, skills, linked.as_deref()), cwd)
@@ -247,6 +248,7 @@ fn an_opencode_chat_in_a_clone_with_its_own_secrets_skill_gets_both_by_distinct_
                 plane: &here.plane,
                 workspace: Some("smart-ide"),
                 repo: &repo,
+                own: &[],
                 routed: None,
             }),
             None,
@@ -333,6 +335,7 @@ fn an_adapter_lays_nothing_out_itself_and_with_no_folder_hands_opencode_the_bund
         plane: &here.plane,
         workspace: None,
         repo: &[],
+        own: &[],
         routed: None,
     });
 

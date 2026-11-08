@@ -19,6 +19,8 @@ const BUDGET: SkillBudget = {
   still_over: null,
   pinned_by: [],
   pins_together: null,
+  drops: null,
+  twins: null,
   warns: null,
 };
 
@@ -49,6 +51,47 @@ describe("a chat's needs as a whole", () => {
     expect(chatSetSaid({ ...NOTHING, budget: null, own })).toEqual([]);
     expect(chatSetSaid({ ...NOTHING, own: null })).toEqual([
       "3 skills of 30 · 1,234 of 6,000 characters",
+    ]);
+  });
+
+  it("names who takes the room where its program still drops descriptions, fixed on Harness skills (#5736)", () => {
+    const drops =
+      "Claude Code drops some skill descriptions in this chat: its skills need 108,858 characters, past the 100,000 purlis lets it list, so the model sees bare names for some. The most room goes to plugin figma (60,000), your own skills (30,000), purlis's skills (12,000). Turn some of these skills or plugins off for this workspace's chats.";
+    const needs = chatNeedsOf(
+      { ...NOTHING, budget: { ...BUDGET, warns: "chars", drops } },
+      inWorkspace("ops"),
+    );
+    expect(needs.map((one) => one.id)).toEqual(["budget", "drops"]);
+    expect(needs[1]).toEqual({
+      id: "drops",
+      title: "Some descriptions are dropped",
+      says: drops,
+      fix: {
+        act: "studio",
+        label: "Open Harness skills",
+        scope: inWorkspace("ops"),
+        page: "harness",
+      },
+    });
+    expect(chatNeedsOf(NOTHING, inWorkspace("ops"))).toEqual([]);
+  });
+
+  it("names the pairs of differing same-named skills it lists, fixed on Harness skills (#5737)", () => {
+    const twins =
+      "This chat lists two different skills under one name, and purlis does not choose between them: tdd (the project's and plugin matt). Remove or rename one copy of each so the chat knows which to use.";
+    const needs = chatNeedsOf({ ...NOTHING, budget: { ...BUDGET, twins } }, inWorkspace("ops"));
+    expect(needs).toEqual([
+      {
+        id: "twins",
+        title: "Two skills share a name",
+        says: twins,
+        fix: {
+          act: "studio",
+          label: "Open Harness skills",
+          scope: inWorkspace("ops"),
+          page: "harness",
+        },
+      },
     ]);
   });
 
