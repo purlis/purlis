@@ -26,8 +26,13 @@ import { studioPage, studioSkill } from "../studio.js";
  * switch (#3692). Switching it off leaves the repo's skill out of `alpha`'s chats, in `alpha`'s own
  * settings, and switching it on takes that back out again.
  *
- * **It leaves the window and the project as it found them**: `workspace.json` is put back as it
- * was read.
+ * The project's listing budget is raised for the spec (`[skills.budget]` in `charter.toml`): the
+ * built-in skills alone are past opencode's and Codex's own budgets, so the router would hide the
+ * project's copy there, and its page would lead with that banner rather than the clash. A pin
+ * would keep it listed too, but a pin names it in `workspace.json`, which the switch's steps read.
+ *
+ * **It leaves the window and the project as it found them**: `workspace.json` and `charter.toml`
+ * are put back as they were read.
  */
 
 const NAME = "e2e-clash-probe";
@@ -49,6 +54,8 @@ describe("a repo's own skills in the Skill studio", function () {
   const written: string[] = [];
   let manifest = "";
   let manifestWas: string | undefined;
+  let settings = "";
+  let settingsWere = "";
 
   before(async () => {
     const root = await projectRoot();
@@ -63,6 +70,9 @@ describe("a repo's own skills in the Skill studio", function () {
     written.push(clone);
     manifest = join(root, "workspaces", "alpha", "workspace.json");
     manifestWas = existsSync(manifest) ? readFileSync(manifest, "utf8") : undefined;
+    settings = join(root, "charter.toml");
+    settingsWere = readFileSync(settings, "utf8");
+    writeFileSync(settings, `${settingsWere}\n[skills.budget]\nskills = 80\nchars = 40000\n`);
     await focusWorkspace("alpha");
   });
 
@@ -74,6 +84,7 @@ describe("a repo's own skills in the Skill studio", function () {
     for (const path of written) rmSync(path, { recursive: true, force: true });
     if (manifestWas === undefined) rmSync(manifest, { force: true });
     else writeFileSync(manifest, manifestWas);
+    if (settingsWere !== "") writeFileSync(settings, settingsWere);
   });
 
   it("opens the studio from the workspace's Skills in Settings, where the repo's skill is listed", async () => {
