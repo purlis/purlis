@@ -1190,3 +1190,66 @@ fn a_written_budget_moves_the_line_the_router_hides_at_and_a_pin_still_keeps_a_s
     kept.sort();
     assert_eq!(kept, [INDEX, "skill-03"]);
 }
+
+#[test]
+fn a_codex_chat_past_its_limit_is_briefed_on_every_built_in_skill_first_5736() {
+    // Past Codex's limit: more plane skills than its budget holds, one of them pinned, and one
+    // named to sort before every built-in skill.
+    let (tmp, bundle) = a_plane_of(MOST + 5);
+    let root = tmp.path();
+    write(
+        &root.join("skills/aardvark"),
+        "---\nname: aardvark\ndescription: Sorts first.\n---\n",
+    );
+    std::fs::write(root.join("skills/aardvark.toml"), "grant = \"all\"\n").unwrap();
+    assert!(
+        pin(
+            root,
+            &PinnedBy::Workspace("smart-ide".to_owned()),
+            "aardvark",
+            true
+        )
+        .unwrap()
+    );
+    for name in ["purlis-secrets", "purlis-zz-last"] {
+        write(
+            &bundle.join(name),
+            &format!("---\nname: {name}\ndescription: Purlis's {name}.\n---\n"),
+        );
+    }
+    let folder = crate::skills::lay_out_for_chat(
+        crate::skills::PlaneSkills {
+            plane: root,
+            workspace: Some("smart-ide"),
+            repo: &[],
+            routed: None,
+        },
+        None,
+        Some(&bundle),
+        &root.join("sets"),
+        Harness::Codex,
+    )
+    .expect("a set's folder");
+    let env = |key: &str| match key {
+        crate::skills::LISTED_ENV => Some(bundle.to_string_lossy().into_owned()),
+        crate::skills::PLANE_LISTED_ENV => Some(folder.to_string_lossy().into_owned()),
+        _ => None,
+    };
+
+    let briefing = crate::skills::briefed(root, Some("smart-ide"), None, &env).expect("briefed");
+
+    let at = |name: &str| {
+        briefing
+            .find(&format!("`{name}`"))
+            .unwrap_or_else(|| panic!("{name} is listed: {briefing}"))
+    };
+    let last_built_in = ["purlis-handoff", "purlis-secrets", "purlis-zz-last"]
+        .map(at)
+        .into_iter()
+        .max()
+        .unwrap();
+    assert!(
+        last_built_in < at("aardvark") && last_built_in < at(INDEX),
+        "every built-in skill comes before the plane's: {briefing}"
+    );
+}

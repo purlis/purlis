@@ -50,6 +50,7 @@ fn a_chat_is_handed_every_built_in_skill_by_its_harness_route() {
     let kit = Kit {
         skills: None,
         laid_out: None,
+        own_listing: 0,
         binary: Path::new("/bin/purlis"),
         plugin: Some(&plugin),
         persona: None,

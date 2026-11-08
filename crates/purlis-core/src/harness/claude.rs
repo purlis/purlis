@@ -135,7 +135,7 @@ impl HarnessAdapter for ClaudeCode {
                         cwd,
                         crate::footerclaim::status_line(cwd).free(),
                         &handed,
-                        listing_limit(budget.chars.max(skills.spends(budget))),
+                        listing_limit(listed(&skills, budget), kit.own_listing),
                         sandbox,
                         &denied_tools(kit),
                         screened.as_ref(),
@@ -962,21 +962,73 @@ const OWN_LISTING: usize = 6_848;
 /// a handed one takes no room from a chat on any window.
 const LEAST_LISTING_LIMIT: usize = 40_000;
 
+/// **Claude Code's own ceiling** (#5736): the largest limit it sets itself, read from 2.1.319's
+/// code (`Math.min(y, 1e5)` on the limit it is told from its server). It takes any limit it is
+/// handed, so this is purlis's to keep: past it a listing costs a chat more of its context than
+/// Claude Code ever spends on one, and the chat's tab says who takes the room ([`crowded`]).
+pub const MOST_LISTING_LIMIT: usize = 100_000;
+
 /// What a listing line takes around a skill's name and description: about 16 measured on 2.1.316,
 /// and 7 for the `skills:` or `purlis:` it is known by.
 const LISTING_LINE: usize = 23;
 
-/// **An absolute limit, so nothing depends on the window** (#4610): `listed`, what a chat's list
-/// may spend, Claude Code's own entries, and a tenth over both for what purlis can't count.
-/// 2.1.316 counts its own entries against the limit it is given, so on 200k, where 1% is 6,000,
-/// every plane skill's description used to go. `listed` is past the budget where pins or what no
-/// router hides are, so those keep their descriptions too.
-///
-/// **Never below [`LEAST_LISTING_LIMIT`].** A limit is a ceiling, so a chat pays only for what it
-/// lists, and a person's own skills share it uncounted.
-fn listing_limit(listed: usize) -> usize {
-    let held = listed.saturating_add(OWN_LISTING);
-    held.saturating_add(held / 10).max(LEAST_LISTING_LIMIT)
+/// **What a chat's list spends**, `set` routed against `budget`: the budget, or more where pins or
+/// what no router hides are past it, so those keep their descriptions too.
+fn listed(set: &crate::skills::SkillSet, budget: crate::skills::Budget) -> usize {
+    budget.chars.max(set.spends(budget))
+}
+
+/// **What a listing needs** (#4610, #5736): `listed`, what a chat's list may spend, `own`, what
+/// Claude Code lists of the person's own skills and plugins beside it, Claude Code's own entries,
+/// and a tenth over all three for what purlis can't count. 2.1.316 counts its own entries against
+/// the limit it is given, so on 200k, where 1% is 6,000, every plane skill's description used to
+/// go; and it lists the person's own against it too, so a large catalogue of theirs dropped
+/// purlis's descriptions.
+fn listing_needs(listed: usize, own: usize) -> usize {
+    let held = listed.saturating_add(own).saturating_add(OWN_LISTING);
+    held.saturating_add(held / 10)
+}
+
+/// **An absolute limit, so nothing depends on the window** (#4610): what the listing needs
+/// ([`listing_needs`]), **never below [`LEAST_LISTING_LIMIT`]** and never past
+/// [`MOST_LISTING_LIMIT`]. A limit is a ceiling, so a chat pays only for what it lists.
+fn listing_limit(listed: usize, own: usize) -> usize {
+    listing_needs(listed, own).clamp(LEAST_LISTING_LIMIT, MOST_LISTING_LIMIT)
+}
+
+/// **A chat whose listing needs more than Claude Code holds** (#5736): Claude Code drops
+/// descriptions past its limit, so the chat's tab says so, and names who takes the most room.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Crowded {
+    /// Characters the listing needs ([`listing_needs`]).
+    pub needs: usize,
+    /// The most it is handed: [`MOST_LISTING_LIMIT`].
+    pub most: usize,
+    /// The biggest parts of the person's own catalogue, biggest first: what to turn off.
+    pub biggest: Vec<crate::skills::Contributor>,
+}
+
+/// How many of the biggest parts [`Crowded`] names.
+const BIGGEST_NAMED: usize = 3;
+
+/// **Whether a Claude Code chat whose `set`, routed against `budget`, lists beside `own` would
+/// still lose descriptions** (#5736), and who takes the room. `None` where the limit holds it.
+pub fn crowded(
+    set: &crate::skills::SkillSet,
+    budget: crate::skills::Budget,
+    own: &crate::skills::OwnListing,
+) -> Option<Crowded> {
+    let needs = listing_needs(listed(set, budget), own.catalogue.chars);
+    (needs > MOST_LISTING_LIMIT).then(|| Crowded {
+        needs,
+        most: MOST_LISTING_LIMIT,
+        biggest: own
+            .contributors
+            .iter()
+            .take(BIGGEST_NAMED)
+            .cloned()
+            .collect(),
+    })
 }
 
 /// The limit a test's [`settings`] is called with.
