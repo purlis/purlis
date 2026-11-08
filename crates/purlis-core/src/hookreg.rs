@@ -61,7 +61,7 @@ impl Handler {
 }
 
 /// Every hook the Rust `charter` answers, in the order a session meets them.
-pub const HANDLERS: [Handler; 18] = [
+pub const HANDLERS: [Handler; 19] = [
     Handler {
         name: "sessionstart",
         event: "SessionStart",
