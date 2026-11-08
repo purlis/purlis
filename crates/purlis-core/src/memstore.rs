@@ -770,14 +770,7 @@ pub(crate) fn index_dropping(text: &str, filename: &str) -> String {
 /// and a file with none gets one from its heading. A file no longer there has no line. The text
 /// above the first line is the first side's, or `header`.
 pub(crate) fn index_rebuilt(header: &str, sides: &[&str], files: &[(String, String)]) -> String {
-    let above: Option<String> = sides.first().filter(|side| !side.is_empty()).map(|side| {
-        side.split_inclusive('\n')
-            .take_while(|line| leading_link(line).is_none())
-            .collect()
-    });
-    let mut text = above
-        .filter(|above| !above.is_empty())
-        .unwrap_or_else(|| header.to_owned());
+    let mut text = text_above(sides.first().copied().unwrap_or_default(), header);
     let mut names: Vec<&(String, String)> = files.iter().collect();
     names.sort_by(|a, b| a.0.cmp(&b.0));
     for (name, body) in names {
@@ -795,6 +788,88 @@ pub(crate) fn index_rebuilt(header: &str, sides: &[&str], files: &[(String, Stri
                 text.push_str(&index_line(title, name));
             }
         }
+        text.push('\n');
+    }
+    text
+}
+
+/// The text of an index `side` above its first line, or `header` where it has none.
+fn text_above(side: &str, header: &str) -> String {
+    let above: String = side
+        .split_inclusive('\n')
+        .take_while(|line| leading_link(line).is_none())
+        .collect();
+    if above.is_empty() {
+        header.to_owned()
+    } else {
+        above
+    }
+}
+
+/// A memory store's index rebuilt from its files, as a merge of two sides leaves them (#5824 F4):
+/// one line for each of `files` (file name and text), and none for a file no longer there, so a
+/// memory either side forgot stays forgotten and one both sides added is listed once.
+///
+/// Each file keeps the line one side wrote for it: `ours`'s, unless `ours` left it as `base` had
+/// it and `theirs` changed it, so a retitle on either side holds. A file neither side has a line
+/// for gets one from its heading. `by_name` orders the lines by file name, which is the order
+/// they were written in a store whose files start with the time; otherwise they keep `ours`'s
+/// order, with `theirs`'s new lines after them in its order, and the rest by name. The text
+/// above the first line is `ours`'s, or `header`.
+pub(crate) fn index_merged(
+    header: &str,
+    [base, ours, theirs]: [&str; 3],
+    files: &[(String, String)],
+    by_name: bool,
+) -> String {
+    let above = text_above(ours, header);
+    let lines = |text: &str| -> Vec<(String, String)> {
+        text.lines()
+            .filter_map(|line| Some((leading_link(line)?.1.to_owned(), line.to_owned())))
+            .collect()
+    };
+    let (base, ours, theirs) = (lines(base), lines(ours), lines(theirs));
+    let find = |side: &[(String, String)], name: &str| {
+        side.iter()
+            .find(|(file, _)| file == name)
+            .map(|(_, line)| line.clone())
+    };
+    let line_for = |name: &str, body: &str| {
+        let (b, o, t) = (find(&base, name), find(&ours, name), find(&theirs, name));
+        match (o, t) {
+            (Some(o), Some(t)) if Some(&o) == b.as_ref() => t,
+            (Some(o), _) => o,
+            (None, Some(t)) => t,
+            (None, None) => {
+                let title = body
+                    .lines()
+                    .find_map(|line| line.strip_prefix("# "))
+                    .unwrap_or_else(|| name.trim_end_matches(".md"));
+                index_line(title, name)
+            }
+        }
+    };
+    let mut names: Vec<&(String, String)> = files.iter().collect();
+    names.sort_by(|a, b| a.0.cmp(&b.0));
+    if !by_name {
+        let at = |name: &str| {
+            ours.iter()
+                .position(|(file, _)| file == name)
+                .map(|at| (0, at))
+                .or_else(|| {
+                    theirs
+                        .iter()
+                        .position(|(file, _)| file == name)
+                        .map(|at| (1, at))
+                })
+                .unwrap_or((2, 0))
+        };
+        // Stable: the files neither side lists stay in the order of their names.
+        names.sort_by_key(|(name, _)| at(name));
+    }
+    let mut text = above;
+    for (name, body) in names {
+        text.push_str(&line_for(name, body));
         text.push('\n');
     }
     text

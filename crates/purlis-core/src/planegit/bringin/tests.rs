@@ -463,3 +463,94 @@ fn a_persons_conflict_is_marked_with_the_sides_names() {
     assert!(text.contains("<<<<<<< HEAD\n"), "{text}");
     assert!(text.contains(">>>>>>> origin/release\n"), "{text}");
 }
+
+/// Append a memory's file and its index line to a store, as `remember` does.
+fn remember(dir: &Path, store: &str, file: &str, title: &str) {
+    write(dir, &format!("{store}/{file}"), &format!("# {title}\n"));
+    let index = format!("{store}/MEMORY.md");
+    let text = read(dir, &index);
+    write(dir, &index, &format!("{text}- [{title}]({file})\n"));
+}
+
+/// **A memory index is rebuilt, not stitched** (#5824 F4): the forge ignores `merge=union`, so
+/// two machines that each remembered something conflict on the index. It is written from the
+/// memory files of the merged tree: a memory forgotten on one side stays gone, one both sides
+/// added appears once, and the lines keep the order this machine had, the other's after them.
+#[test]
+fn a_memory_index_both_sides_added_to_is_rebuilt_not_stitched() {
+    let store = "personas/devops/memory";
+    let index = format!("{store}/MEMORY.md");
+    let header = "# Memory Index — devops\n\nOne line per memory.\n";
+    let two = Two::new(&[
+        (
+            &index,
+            &format!("{header}- [Alpha](alpha.md)\n- [Gone](gone.md)\n"),
+        ),
+        (&format!("{store}/alpha.md"), "# Alpha\n"),
+        (&format!("{store}/gone.md"), "# Gone\n"),
+    ]);
+    remember(&two.mine, store, "zeta.md", "Zeta");
+    remember(&two.mine, store, "both.md", "Both");
+    commit(&two.mine, "mine");
+    std::fs::remove_file(two.theirs.join(store).join("gone.md")).unwrap();
+    write(
+        &two.theirs,
+        &index,
+        &format!("{header}- [Alpha](alpha.md)\n"),
+    );
+    remember(&two.theirs, store, "beta.md", "Beta");
+    remember(&two.theirs, store, "both.md", "Both");
+    two.land_theirs("theirs");
+
+    assert_eq!(
+        bring_in(&two.mine, "release", false, When::Needed),
+        BroughtIn::Moved(1)
+    );
+
+    assert_eq!(
+        read(&two.mine, &index),
+        format!(
+            "{header}- [Alpha](alpha.md)\n- [Zeta](zeta.md)\n- [Both](both.md)\n\
+             - [Beta](beta.md)\n"
+        )
+    );
+}
+
+/// A workspace's memory files start with the time they were written, so its index is rebuilt
+/// in the order of their names; a title one side changed is kept.
+#[test]
+fn a_workspace_memory_index_is_rebuilt_in_time_order_with_a_retitle_kept() {
+    let store = format!("{PLANE_WS}/memory");
+    let index = format!("{store}/MEMORY.md");
+    let (first, mine, theirs) = (
+        "20260101-000000-first.md",
+        "20260103-000000-mine.md",
+        "20260102-000000-theirs.md",
+    );
+    let two = Two::new(&[
+        (&index, &format!("# alpha — task memory\n\n- [First]({first})\n")),
+        (&format!("{store}/{first}"), "# First\n"),
+    ]);
+    remember(&two.mine, &store, mine, "Mine");
+    commit(&two.mine, "mine");
+    write(
+        &two.theirs,
+        &index,
+        &format!("# alpha — task memory\n\n- [First, retitled]({first})\n"),
+    );
+    remember(&two.theirs, &store, theirs, "Theirs");
+    two.land_theirs("theirs");
+
+    assert_eq!(
+        bring_in(&two.mine, "release", false, When::Moved),
+        BroughtIn::Moved(1)
+    );
+
+    assert_eq!(
+        read(&two.mine, &index),
+        format!(
+            "# alpha — task memory\n\n- [First, retitled]({first})\n- [Theirs]({theirs})\n\
+             - [Mine]({mine})\n"
+        )
+    );
+}

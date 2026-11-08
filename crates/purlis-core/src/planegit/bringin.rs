@@ -27,15 +27,17 @@
 //!
 //! # What purlis generates is rebuilt, not merged
 //!
-//! Three kinds of file hold nothing a person wrote, whole or in part:
+//! Four kinds of file hold nothing a person wrote, whole or in part:
 //!
 //! - each place's `sessions/index.md`, from its records;
 //! - a workspace's `todos/MEMORY.md`, from its todos;
+//! - each memory store's `MEMORY.md` (a persona's, `_shared`'s, a workspace's), from its
+//!   memories (#5824 F4), since the forge ignores the plane's `merge=union` rule for it;
 //! - the `## Sessions` line of a workspace's `workspace.md`, from its records.
 //!
-//! Where both sides changed a place's records or todos, these are written from the merged
-//! tree's own sources, conflicted or not, because git's line merge would stitch them out of
-//! order. The rest of `workspace.md` is a person's: it is merged with the pointer set aside, and
+//! Where both sides changed a place's records, todos or memories, these are written from the
+//! merged tree's own sources, conflicted or not, because git's line merge would stitch them out
+//! of order. The rest of `workspace.md` is a person's: it is merged with the pointer set aside, and
 //! a conflict left in it is theirs. The managed block of `.gitattributes` is set aside the same
 //! way, and the block this build writes is put back.
 //!
@@ -185,8 +187,26 @@ pub(super) struct Plan {
 enum Generated {
     Sessions(Option<String>),
     Todos(String),
+    /// A memory store's `MEMORY.md`, by the store's directory.
+    Memory(String),
     Charter(String),
     Rules,
+}
+
+/// The memory store `path` is in, as its directory, with the rest of the path: a persona's,
+/// `_shared`'s or a workspace's.
+fn memory_store(path: &str) -> Option<(String, &str)> {
+    let (top, rest) = path.split_once('/')?;
+    let (name, rest) = rest.split_once('/')?;
+    let rest = rest.strip_prefix("memory/")?;
+    let named = match top {
+        "personas" => {
+            name == crate::personas::SHARED || crate::contain::persona_name_ok(name)
+        }
+        "workspaces" => crate::contain::workspace_name_ok(name),
+        _ => false,
+    };
+    named.then(|| (format!("{top}/{name}/memory"), rest))
 }
 
 /// Which generated file `path` is, if it is one.
@@ -196,6 +216,9 @@ fn generated(path: &str) -> Option<Generated> {
     }
     if path == format!("{}/{}", sessionrecord::DIR, sessionrecord::INDEX) {
         return Some(Generated::Sessions(None));
+    }
+    if let Some((store, crate::memstore::INDEX)) = memory_store(path) {
+        return Some(Generated::Memory(store));
     }
     let rest = path.strip_prefix("workspaces/")?;
     let (ws, file) = rest.split_once('/')?;
@@ -214,12 +237,14 @@ fn generated(path: &str) -> Option<Generated> {
     }
 }
 
-/// The places `paths` say records or todos changed in, as what is generated from them.
+/// The places `paths` say records, todos or memories changed in, as what is generated from them.
 fn sources_in(paths: &BTreeSet<String>) -> BTreeSet<Generated> {
     let mut out = BTreeSet::new();
     let sessions = format!("{}/", sessionrecord::DIR);
     for path in paths {
-        if path.starts_with(&sessions) {
+        if let Some((store, _)) = memory_store(path) {
+            out.insert(Generated::Memory(store));
+        } else if path.starts_with(&sessions) {
             out.insert(Generated::Sessions(None));
         } else if let Some((ws, file)) = path
             .strip_prefix("workspaces/")
@@ -350,7 +375,7 @@ pub(super) fn plan_between(
     }
     // With a person's conflict too: Resolve settles the rest around it.
     for what in rebuild {
-        rebuilt(root, &mut plan, &what, theirs)?;
+        rebuilt(root, &mut plan, &what, &base, theirs)?;
     }
     Ok(plan)
 }
@@ -499,7 +524,13 @@ fn files_in(root: &Path, tree: &str, dir: &str) -> Vec<(String, String)> {
 }
 
 /// Write what `what` generates into `plan`, from the merged tree's own sources.
-fn rebuilt(root: &Path, plan: &mut Plan, what: &Generated, theirs: &str) -> Result<(), String> {
+fn rebuilt(
+    root: &Path,
+    plan: &mut Plan,
+    what: &Generated,
+    base: &str,
+    theirs: &str,
+) -> Result<(), String> {
     match what {
         Generated::Sessions(ws) => {
             let place = ws.clone().map_or(Place::PlaneRoot, Place::Workspace);
@@ -539,6 +570,23 @@ fn rebuilt(root: &Path, plan: &mut Plan, what: &Generated, theirs: &str) -> Resu
                 index,
                 crate::memstore::index_rebuilt(&header, &[&ours, &new], &todos),
             );
+        }
+        Generated::Memory(store) => {
+            let index = format!("{store}/{}", crate::memstore::INDEX);
+            let side = |rev: &str| blob(root, rev, &index).unwrap_or_default();
+            let memories: Vec<(String, String)> = files_in(root, &plan.tree, store)
+                .into_iter()
+                .filter(|(name, _)| name != crate::memstore::INDEX && name.ends_with(".md"))
+                .collect();
+            // A workspace's memories are named by the time they were written; a persona's are not.
+            let by_name = store.starts_with("workspaces/");
+            let text = crate::memstore::index_merged(
+                crate::memstore::INDEX_FALLBACK,
+                [&side(base), &side("HEAD"), &side(theirs)],
+                &memories,
+                by_name,
+            );
+            plan.settled.insert(index, text);
         }
         Generated::Charter(_) | Generated::Rules => {}
     }
