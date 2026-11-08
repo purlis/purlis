@@ -13873,6 +13873,145 @@ fn a_press_after_keep_blocked_was_pressed_gives_nothing() {
     });
 }
 
+/// An event log on a session host that takes audit `stalled` (its first is 1) and then stops
+/// answering until the sender is used, as one stalled in the middle of a write; the receiver hears
+/// when it has stalled. Every other line is taken at once.
+fn a_host_stalling_audit(
+    stalled: usize,
+) -> (
+    crate::hooks::Events,
+    std::sync::mpsc::Receiver<()>,
+    std::sync::mpsc::Sender<()>,
+) {
+    let (entered, on_it) = std::sync::mpsc::sync_channel(1);
+    let (release, released) = std::sync::mpsc::channel::<()>();
+    let released = std::sync::Mutex::new(released);
+    let seen = std::sync::atomic::AtomicUsize::new(0);
+    let events = crate::hooks::Events::in_the_host(move |entry| {
+        if matches!(entry, purlis_core::eventlog::Entry::Audited { .. })
+            && seen.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1 == stalled
+        {
+            let _ = entered.try_send(());
+            let _ = released
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .recv();
+        }
+        Ok(())
+    });
+    (events, on_it, release)
+}
+
+/// #5617: Always allow already past its check, its audit stalled on the session host as Keep
+/// blocked is pressed, writes no tool line and gives no vault once the audit returns.
+#[test]
+fn always_allow_whose_audit_stalls_as_keep_blocked_is_pressed_writes_nothing() {
+    use purlis_core::secrets::ask::run::Offer;
+    let plane = Plane::new().a_persona("ops", "");
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let (events, stalled, release) = a_host_stalling_audit(1);
+    held.hooks().record_into(events);
+    vault_team_no_persona_is_tagged_for(&plane);
+    let manifest = plane.root.join(purlis_core::plane::MANIFEST);
+    let before = std::fs::read_to_string(&manifest).ok();
+
+    std::thread::scope(|scope| {
+        let (open, waits) = raised(
+            scope,
+            &held,
+            curl_on_team_not_its(&plane, Offer::Program, &[]),
+        );
+        let (pressing, id) = (&held, open.id);
+        let always = scope.spawn(move || {
+            crate::secretasks::run_grant_filled(
+                pressing,
+                None,
+                id,
+                crate::secretasks::RunGrantPress::Always,
+                Vec::new(),
+            )
+        });
+        stalled
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("its audit stalls");
+        let keeping =
+            scope.spawn(|| crate::vaultroute::keep_blocked_pressed(&held, None, 3, "team"));
+        while !held.vault_refusals().kept_blocked(3, "team") {
+            std::thread::yield_now();
+        }
+        release.send(()).expect("the host is there");
+
+        let pressed = always.join().expect("it ends");
+        assert!(pressed.is_err(), "{pressed:?}");
+        keeping.join().expect("it ends");
+        assert_eq!(
+            std::fs::read_to_string(&manifest).ok(),
+            before,
+            "no tool line"
+        );
+        assert_eq!(purlis_core::sandbox::local::granted_vaults(&plane.root), []);
+        assert!(held.secret_asks().given_runs().is_empty());
+        waits.join().expect("it settles");
+    });
+}
+
+/// #5617: Always allow whose line was written before Keep blocked was pressed keeps it (ADR 0112,
+/// amended 2026-11-08), but the vault it would give the persona, its audit stalled as Keep blocked
+/// is pressed, is not given.
+#[test]
+fn always_allow_gives_no_vault_once_keep_blocked_is_pressed_during_its_audit() {
+    use purlis_core::secrets::ask::run::Offer;
+    let plane = Plane::new().a_persona("ops", "");
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    // The run grant's audit, then the vault's.
+    let (events, stalled, release) = a_host_stalling_audit(2);
+    held.hooks().record_into(events);
+    vault_team_no_persona_is_tagged_for(&plane);
+
+    std::thread::scope(|scope| {
+        let (open, waits) = raised(
+            scope,
+            &held,
+            curl_on_team_not_its(&plane, Offer::Program, &[]),
+        );
+        let (pressing, id) = (&held, open.id);
+        let always = scope.spawn(move || {
+            crate::secretasks::run_grant_filled(
+                pressing,
+                None,
+                id,
+                crate::secretasks::RunGrantPress::Always,
+                Vec::new(),
+            )
+        });
+        stalled
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("the vault's audit stalls");
+        let keeping =
+            scope.spawn(|| crate::vaultroute::keep_blocked_pressed(&held, None, 3, "team"));
+        while !held.vault_refusals().kept_blocked(3, "team") {
+            std::thread::yield_now();
+        }
+        release.send(()).expect("the host is there");
+
+        let _ = always.join().expect("it ends");
+        keeping.join().expect("it ends");
+        assert_eq!(
+            purlis_core::sandbox::local::granted_vaults(&plane.root),
+            [],
+            "the persona is not given the vault"
+        );
+        assert!(held.secret_asks().given_runs().is_empty());
+        waits.join().expect("it settles");
+    });
+}
+
 /// A key that came to be a browser login's while its ask was up is no program's: Always allow
 /// would declare the program a tool for it, and a declared tool's run is never asked again.
 #[cfg(unix)]
