@@ -55,7 +55,7 @@ import { SetChoosePage, SetReviewPage, applySet, memberKey, setTitle } from "./S
 import { SetUpdateReviewPage, applySetUpdate } from "./SkillSetUpdateReview";
 import { installGoesOver } from "./makeRoom";
 import { Badge } from "./ui/badge/Badge";
-import { Changes, LOOK_CLOSELY, Summary } from "./SkillChangesShown";
+import { Changes, LOOK_CLOSELY, SourceGrade, Summary } from "./SkillChangesShown";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { Card, CardTitle } from "./ui/card/Card";
 import { Checkbox } from "./ui/choice/Checkbox";
@@ -1527,6 +1527,7 @@ function SkillReviewed({
       {relies && <Relies skill={skill} widenings={widenings} by={by} />}
       <h4 className="ui-text-small ui-text-strong">What it adds</h4>
       <Summary summary={skill.summary} testid={`summary-${skill.name}`} />
+      {skill.grade && <SourceGrade grade={skill.grade} testid={`grade-${skill.name}`} />}
       {skill.lint.map((line) => (
         <p key={line} className="honest">
           {line}
@@ -2307,6 +2308,7 @@ function UpdateReviewPage({
                   <Summary summary={data.removed} testid="update-removed" />
                 </>
               )}
+              {data.skill.grade && <SourceGrade grade={data.skill.grade} testid="update-grade" />}
             </section>
             {reaches(data) && (
               <section aria-labelledby="update-reach" className="skill-review">

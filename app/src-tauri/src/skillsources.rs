@@ -411,6 +411,71 @@ pub struct ReviewLeftOut {
     pub said: String,
 }
 
+/// The grade a source carries for a skill: the publisher's, never purlis's (ADR 0100, amended 2026-11-08).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct ReviewGrade {
+    /// Whose grade it is: the source, as a sentence names it.
+    pub whose: String,
+    /// Its newest grade; `None` where the file is left out.
+    pub newest: Option<ReviewGradeRow>,
+    /// Whether the newest grade measured the version under review.
+    pub this_version: bool,
+    /// How many older grades the file holds.
+    pub more: u32,
+    /// Why the file is left out, where it is: nothing from it is shown.
+    pub left_out: Option<String>,
+}
+
+/// One grade a source carries, as the review shows it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct ReviewGradeRow {
+    /// When, `YYYY-MM-DD`.
+    pub date: String,
+    pub harness: String,
+    pub grader: String,
+    /// The pass rate with the skill, in percent; `None` for an arm not run.
+    pub with: Option<u8>,
+    /// The pass rate without it, in percent; `None` for an arm not run.
+    pub without: Option<u8>,
+    pub runs: u8,
+    /// How it ended, in words.
+    pub ended: String,
+}
+
+impl From<&source::SourceGrade> for ReviewGrade {
+    fn from(grade: &source::SourceGrade) -> Self {
+        match grade {
+            source::SourceGrade::Shown {
+                whose,
+                newest,
+                this_version,
+                more,
+            } => ReviewGrade {
+                whose: esc(whose),
+                newest: Some(ReviewGradeRow {
+                    date: esc(&newest.date),
+                    harness: esc(&newest.harness),
+                    grader: esc(&newest.grader),
+                    with: newest.with,
+                    without: newest.without,
+                    runs: newest.runs,
+                    ended: esc(&newest.ended),
+                }),
+                this_version: *this_version,
+                more: u32::try_from(*more).unwrap_or(u32::MAX),
+                left_out: None,
+            },
+            source::SourceGrade::LeftOut { whose, why } => ReviewGrade {
+                whose: esc(whose),
+                newest: None,
+                this_version: false,
+                more: 0,
+                left_out: Some(esc(why)),
+            },
+        }
+    }
+}
+
 /// A name that is taken where a skill would land (ADR 0100, amended 2026-11-01).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct ReviewClash {
@@ -457,6 +522,8 @@ pub struct ReviewSkill {
     pub files: Vec<ReviewFile>,
     pub left_out: Vec<ReviewLeftOut>,
     pub lint: Vec<String>,
+    /// The grade the source carries beside its folder, where it carries one.
+    pub grade: Option<ReviewGrade>,
 }
 
 impl From<&source::SkillReview> for ReviewSkill {
@@ -491,6 +558,7 @@ impl From<&source::SkillReview> for ReviewSkill {
                 })
                 .collect(),
             lint: skill.lint.iter().map(|l| esc(l)).collect(),
+            grade: skill.grade.as_ref().map(ReviewGrade::from),
         }
     }
 }

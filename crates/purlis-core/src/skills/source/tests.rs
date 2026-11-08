@@ -2935,3 +2935,157 @@ mod update_set;
 
 #[cfg(unix)]
 mod extension;
+
+/// The grade file of `skill` as a publish writes it: one row, measured on `tree`.
+fn grades_json(skill: &str, tree: &str) -> Vec<u8> {
+    format!(
+        r#"{{"format":1,"skill":"{skill}","grades":[{{"date":"2026-11-02","tree":"{tree}","harness":"claude-code","grader":"built-in","with":92,"without":40,"runs":3,"ended":"whole"}}]}}"#
+    )
+    .into_bytes()
+}
+
+/// A source holding `deploy` and `notify`, and `grades` beside `deploy`'s folder.
+fn graded_remote(grades: impl FnOnce(&str) -> Vec<u8>) -> Upstream {
+    let remote = Upstream::new();
+    let files: [(&str, &str, &[u8]); 3] = [
+        ("skills/deploy/SKILL.md", "100644", DEPLOY),
+        ("skills/deploy/scripts/ship.sh", "100755", SHIP),
+        ("skills/notify/SKILL.md", "100644", NOTIFY),
+    ];
+    let first = remote.tree(&files);
+    let commit = remote.commit(&first, None);
+    // The folder's tree as git itself names it.
+    let spec = format!("{commit}:skills/deploy");
+    let folder = String::from_utf8(remote.git(&["rev-parse", &spec], b"").out).unwrap();
+    let grades = grades(folder.trim());
+    let mut with: Vec<(&str, &str, &[u8])> = files.to_vec();
+    with.push(("skills/deploy.grades.json", "100644", &grades));
+    let tree = remote.tree(&with);
+    remote.commit(&tree, Some(&commit));
+    remote
+}
+
+fn deploy_review(remote: &Upstream) -> SkillReview {
+    let tmp = plane();
+    let review = review(
+        tmp.path(),
+        &remote.source(),
+        &["deploy".to_owned()],
+        &Level::project(),
+    )
+    .unwrap();
+    review.skills.into_iter().next().unwrap()
+}
+
+#[test]
+fn a_grade_beside_the_folder_is_shown_as_the_sources_on_this_version() {
+    let remote = graded_remote(|tree| grades_json("deploy", tree));
+    let deploy = deploy_review(&remote);
+    let Some(SourceGrade::Shown {
+        whose,
+        newest,
+        this_version,
+        more,
+    }) = deploy.grade
+    else {
+        panic!("{:?}", deploy.grade);
+    };
+    // The short word a person knows the source by: here, its folder's name.
+    assert_eq!(whose, "source");
+    assert!(this_version);
+    assert_eq!(more, 0);
+    assert_eq!(
+        (
+            newest.with,
+            newest.without,
+            newest.runs,
+            newest.harness.as_str()
+        ),
+        (Some(92), Some(40), 3, "claude-code")
+    );
+    assert_eq!(newest.date, "2026-11-02");
+    assert_eq!(newest.grader, "built-in");
+    assert_eq!(newest.ended, "Finished");
+}
+
+#[test]
+fn a_grade_of_another_tree_says_it_was_graded_on_an_earlier_version() {
+    let remote = graded_remote(|_| grades_json("deploy", &"a".repeat(40)));
+    let deploy = deploy_review(&remote);
+    assert!(
+        matches!(
+            deploy.grade,
+            Some(SourceGrade::Shown {
+                this_version: false,
+                ..
+            })
+        ),
+        "{:?}",
+        deploy.grade
+    );
+}
+
+#[test]
+fn a_malformed_grade_file_is_left_out_with_the_reason_and_shows_nothing_of_it() {
+    // What the review says, and what is changed in a good file to make it so.
+    let cases = [
+        ("not a grade file", "{\"format\":1", "{not json"),
+        ("outside 0 to 100", "\"with\":92", "\"with\":140"),
+        (
+            "another skill",
+            "\"skill\":\"deploy\"",
+            "\"skill\":\"notify\"",
+        ),
+        ("format 2", "\"format\":1", "\"format\":2"),
+        // A field purlis never writes, such as a chat's text.
+        (
+            "not a grade file",
+            "\"runs\":3",
+            "\"runs\":3,\"chat\":\"hello\"",
+        ),
+        ("not a plain name", "claude-code", "<b>claude</b>"),
+    ];
+    for (said, from, to) in cases {
+        let remote = graded_remote(|tree| {
+            let good = String::from_utf8(grades_json("deploy", tree)).unwrap();
+            assert!(good.contains(from), "{from}");
+            good.replace(from, to).into_bytes()
+        });
+        let deploy = deploy_review(&remote);
+        let Some(SourceGrade::LeftOut { whose, why }) = &deploy.grade else {
+            panic!("{said}: {:?}", deploy.grade);
+        };
+        assert_eq!(whose, "source");
+        assert!(why.contains(said), "{said}: {why}");
+    }
+}
+
+#[test]
+fn a_source_with_no_grade_file_reviews_as_before() {
+    let (remote, _) = good_remote();
+    let tmp = plane();
+    let review = review(
+        tmp.path(),
+        &remote.source(),
+        &["deploy".to_owned()],
+        &Level::project(),
+    )
+    .unwrap();
+    assert!(review.skills.iter().all(|skill| skill.grade.is_none()));
+}
+
+#[test]
+fn a_grade_file_that_is_a_link_is_left_out_and_never_followed() {
+    let remote = Upstream::new();
+    let tree = remote.tree(&[
+        ("skills/deploy/SKILL.md", "100644", DEPLOY),
+        ("skills/notify/SKILL.md", "100644", NOTIFY),
+        ("skills/deploy.grades.json", "120000", b"notify/SKILL.md"),
+    ]);
+    remote.commit(&tree, None);
+    let deploy = deploy_review(&remote);
+    let Some(SourceGrade::LeftOut { why, .. }) = &deploy.grade else {
+        panic!("{:?}", deploy.grade);
+    };
+    assert!(why.contains("link"), "{why}");
+}

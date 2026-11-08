@@ -640,6 +640,85 @@ describe("the install review", () => {
     expect(await screen.findByTestId("skill-source-page")).toBeInTheDocument();
   });
 
+  it.each([
+    [true, "Graded on this version"],
+    [false, "Graded on an earlier version"],
+  ] as const)(
+    "shows the source's grade as its publisher's, before any figure (#4346): %s, %s",
+    async (thisVersion, said) => {
+      const grade = (measured: boolean) => ({
+        whose: "acme",
+        newest: {
+          date: "2026-11-02",
+          harness: "claude-code",
+          grader: "built-in",
+          with: 92,
+          without: 40,
+          runs: 3,
+          ended: "Finished",
+        },
+        this_version: measured,
+        more: 1,
+        left_out: null,
+      });
+      const reviewWith = (one: unknown, two: unknown) => ({
+        ...REVIEW,
+        skills: [
+          { ...REVIEW.skills[0], grade: one },
+          { ...REVIEW.skills[1], grade: two },
+        ],
+      });
+      core({ answers: { skill_install_review: () => reviewWith(grade(thisVersion), null) } });
+      const user = userEvent.setup();
+      renderStudio(AT_THE_ROOT, "sources");
+      const page = await openSource(user);
+      await user.click(await within(page).findByRole("button", { name: "Review install: deploy" }));
+      const shown = await screen.findByTestId("grade-deploy");
+      const lines = Array.from(shown.querySelectorAll("p"));
+      // Whose it is, and that purlis has not checked it, come first, on a line of their own.
+      expect(lines[0]).toHaveTextContent("acme's grade, as published — not checked by purlis");
+      expect(lines[0]).not.toHaveTextContent("%");
+      expect(lines[1]).toHaveTextContent("92% with it, 40% without it");
+      expect(lines[1]).toHaveTextContent(said);
+      expect(lines[2]).toHaveTextContent("claude-code · built-in grader · 3 runs · 2026-11-02.");
+      expect(lines[2]).toHaveTextContent("The file holds 1 earlier grade.");
+      // A skill whose source carries no grade shows none.
+      expect(screen.queryByTestId("grade-notify")).toBeNull();
+    },
+  );
+
+  it("leaves a malformed grade out and says why, showing nothing from it (#4346)", async () => {
+    core({
+      answers: {
+        skill_install_review: () => ({
+          ...REVIEW,
+          skills: [
+            {
+              ...REVIEW.skills[0],
+              grade: {
+                whose: "acme",
+                newest: null,
+                this_version: false,
+                more: 0,
+                left_out: 'a grade\'s "with" rate is 140, outside 0 to 100',
+              },
+            },
+            REVIEW.skills[1],
+          ],
+        }),
+      },
+    });
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "sources");
+    const page = await openSource(user);
+    await user.click(await within(page).findByRole("button", { name: "Review install: deploy" }));
+    const shown = await screen.findByTestId("grade-deploy");
+    expect(shown).toHaveTextContent(
+      "acme's grade file is left out: a grade's \"with\" rate is 140, outside 0 to 100. Nothing from it is shown.",
+    );
+    expect(shown).not.toHaveTextContent("Graded on");
+  });
+
   it("reads the review again where it lands, and leaves a referred skill already there as it is (#4032)", async () => {
     const OPS = { at: "workspace", name: "ops", local: false };
     const asked = core({
