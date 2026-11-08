@@ -1085,7 +1085,7 @@ fn a_skill_that_says_the_losing_side_of_a_settled_pair_is_named_with_the_ruling(
         let found = problems(&format!("{GOOD}{page}\n"));
         assert_eq!(found.len(), 1, "{page}: {found:?}");
         assert!(
-            found[0].starts_with("purlis-example:7: settled: says the losing side")
+            found[0].starts_with("purlis-example:8: settled: says the losing side")
                 && found[0].contains(ruling),
             "{found:?}"
         );
@@ -1116,7 +1116,7 @@ fn a_skill_that_says_a_word_the_glossary_avoids_is_named_with_the_word_it_says_i
         let found = problems(&format!("{GOOD}{page}\n"));
         assert_eq!(found.len(), 1, "{page}: {found:?}");
         assert!(
-            found[0].starts_with("purlis-example:7: glossary: ") && found[0].contains(word),
+            found[0].starts_with("purlis-example:8: glossary: ") && found[0].contains(word),
             "{found:?}"
         );
     }
@@ -1150,7 +1150,7 @@ fn a_skill_named_in_prose_that_purlis_does_not_ship_is_named() {
         assert_eq!(
             problems(&format!("{GOOD}{page}\n")),
             [format!(
-                "purlis-example:7: skills: names the skill `{name}`, which purlis does not ship"
+                "purlis-example:8: skills: names the skill `{name}`, which purlis does not ship"
             )],
             "{page}"
         );
@@ -1267,7 +1267,7 @@ fn a_sentence_that_offers_to_lower_the_sandbox_or_edit_a_harness_s_settings_is_n
         let found = problems(&format!("{GOOD}{page}\n"));
         assert_eq!(found.len(), 1, "{page}: {found:?}");
         assert!(
-            found[0].starts_with("purlis-example:7: sandbox: offers") && found[0].contains(named),
+            found[0].starts_with("purlis-example:8: sandbox: offers") && found[0].contains(named),
             "{found:?}"
         );
     }
