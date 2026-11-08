@@ -558,7 +558,11 @@ fn a_fetch_that_fails_while_a_request_is_open_is_said_in_the_standing() {
     kept_open_on(&root, SAVE);
     assert!(!fetch_target(&root, gone, "", "main"));
     let stale = known_stale(&root).expect("the failure is kept");
-    assert!(stale.why.starts_with("main could not be fetched"), "{}", stale.why);
+    assert!(
+        stale.why.starts_with("main could not be fetched"),
+        "{}",
+        stale.why
+    );
     assert!(stale.since > 0);
     // A second failure keeps the first one's time.
     let first = stale.since;

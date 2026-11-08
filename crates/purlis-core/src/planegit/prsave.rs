@@ -313,7 +313,9 @@ impl Kept {
             stale: doc.get("stale").and_then(|stale| {
                 Some(super::Stale {
                     since: stale.get("since").and_then(serde_json::Value::as_u64)?,
-                    why: super::merging::bounded(&text(stale, "why").filter(|why| !why.is_empty())?),
+                    why: super::merging::bounded(
+                        &text(stale, "why").filter(|why| !why.is_empty())?,
+                    ),
                 })
             }),
         }
@@ -673,7 +675,10 @@ fn fetch_target(root: &Path, https: &str, helper: &str, target: &str) -> bool {
     );
     let failed = match &ran {
         Ok(run) if run.ok() => None,
-        Ok(run) => Some(format!("{target} could not be fetched: {}", one_line(&tail(run)))),
+        Ok(run) => Some(format!(
+            "{target} could not be fetched: {}",
+            one_line(&tail(run))
+        )),
         Err(unavailable) => Some(format!("{target} could not be fetched: {unavailable}")),
     };
     let ok = failed.is_none();
@@ -1220,7 +1225,8 @@ pub(super) fn settle(
             ],
         );
         if !fetched.as_ref().is_ok_and(git::Run::ok) {
-            let why = format!("{request} merged, but {target} could not be fetched to move onto it");
+            let why =
+                format!("{request} merged, but {target} could not be fetched to move onto it");
             self::fetched(
                 root,
                 Some(match &fetched {
