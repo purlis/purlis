@@ -288,7 +288,7 @@ pub(super) fn read_entries(spot: &Spot) -> (Vec<Found>, Unread) {
 }
 
 /// The files the held store's index lists ([`super::listed`]).
-fn listed_held(store: &Store) -> BTreeSet<String> {
+pub(crate) fn listed_held(store: &Store) -> BTreeSet<String> {
     match store.entry(INDEX) {
         Ok(Some(entry)) if entry.plain() && entry.size <= MAX_BYTES => {}
         _ => return BTreeSet::new(),

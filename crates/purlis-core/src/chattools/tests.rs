@@ -106,6 +106,7 @@ fn the_tools_are_the_ones_charter_names_and_each_says_what_it_does() {
             "todo_list",
             "todo_add",
             "todo_done",
+            "todo_reopen",
             "memory_search",
             "memory_add",
             "persona_remember",
@@ -1234,6 +1235,7 @@ fn the_tools_that_write_only_the_chat_s_own_scope_are_named_and_never_among_the_
         [
             "todo_add",
             "todo_done",
+            "todo_reopen",
             "memory_add",
             "persona_remember",
             "workspace_section",
@@ -1487,4 +1489,194 @@ fn a_dispatch_names_where_it_runs_as_the_command_does() {
         "a blank name is no pool"
     );
     assert!(dispatch_runs_on(&args(json!({"this_machine": "yes"}))).is_err());
+}
+
+/// Add `text` and mark it done through the tools; the done todo's slug.
+fn add_and_close(root: &std::path::Path, text: &str) -> String {
+    call_ok(root, &in_ws("alpha"), "todo_add", json!({"text": text}));
+    let ws = crate::workspaces::Plane::open(root)
+        .workspace("alpha")
+        .unwrap();
+    let slug = ws
+        .todos()
+        .unwrap()
+        .into_iter()
+        .find(|todo| todo.title == text)
+        .unwrap()
+        .slug;
+    call_ok(root, &in_ws("alpha"), "todo_done", json!({"slug": slug}));
+    slug
+}
+
+#[test]
+fn todo_list_with_done_lists_the_done_todos_and_not_the_open_ones() {
+    let p = project(&["alpha"]);
+    let slug = add_and_close(p.path(), "Write the tests");
+    call_ok(
+        p.path(),
+        &in_ws("alpha"),
+        "todo_add",
+        json!({"text": "Still open"}),
+    );
+
+    let done = call_ok(
+        p.path(),
+        &in_ws("alpha"),
+        "todo_list",
+        json!({"done": true}),
+    );
+    assert!(done.contains(&slug), "{done}");
+    assert!(done.contains("Write the tests"), "{done}");
+    assert!(!done.contains("Still open"), "{done}");
+
+    let open = call_ok(
+        p.path(),
+        &in_ws("alpha"),
+        "todo_list",
+        json!({"done": false}),
+    );
+    assert!(open.contains("Still open"), "{open}");
+    assert!(!open.contains("Write the tests"), "{open}");
+}
+
+#[test]
+fn todo_list_with_done_in_a_workspace_that_closed_none_says_so_and_makes_nothing() {
+    let p = project(&["alpha"]);
+    let said = call_ok(
+        p.path(),
+        &in_ws("alpha"),
+        "todo_list",
+        json!({"done": true}),
+    );
+    assert_eq!(said, "No done todos in 'alpha'.");
+    assert!(
+        !p.path()
+            .join("workspaces/alpha/todos")
+            .join(crate::memstore::ARCHIVE)
+            .exists()
+    );
+}
+
+#[test]
+fn todo_reopen_opens_a_done_todo_again_and_journals_nothing() {
+    let p = project(&["alpha"]);
+    let slug = add_and_close(p.path(), "Write the tests");
+    let ws = crate::workspaces::Plane::open(p.path())
+        .workspace("alpha")
+        .unwrap();
+    let journal = ws.memories().unwrap().len();
+
+    let said = call_ok(
+        p.path(),
+        &in_ws("alpha"),
+        "todo_reopen",
+        json!({"slug": slug}),
+    );
+
+    assert!(said.contains(&slug), "{said}");
+    let open = ws.todos().unwrap();
+    assert_eq!(open.len(), 1);
+    assert_eq!(open[0].slug, slug);
+    assert_eq!(open[0].title, "Write the tests");
+    assert!(ws.done_todos().unwrap().is_empty());
+    assert_eq!(ws.memories().unwrap().len(), journal);
+    let listed = call_ok(p.path(), &in_ws("alpha"), "todo_list", json!({}));
+    assert!(listed.contains("Write the tests"), "{listed}");
+    // Its index line is back, as `purlis ws todo reopen` puts it back.
+    let index = std::fs::read_to_string(
+        p.path()
+            .join("workspaces/alpha/todos")
+            .join(crate::memstore::INDEX),
+    )
+    .unwrap();
+    assert!(index.contains(&format!("{slug}.md")), "{index}");
+}
+
+#[test]
+fn todo_reopen_takes_the_end_of_a_done_todo_s_slug() {
+    let p = project(&["alpha"]);
+    add_and_close(p.path(), "Write the tests");
+
+    call_ok(
+        p.path(),
+        &in_ws("alpha"),
+        "todo_reopen",
+        json!({"slug": "write-the-tests"}),
+    );
+
+    let ws = crate::workspaces::Plane::open(p.path())
+        .workspace("alpha")
+        .unwrap();
+    assert_eq!(ws.todos().unwrap().len(), 1);
+}
+
+#[test]
+fn todo_reopen_of_an_open_todo_or_none_is_refused_by_name_and_changes_nothing() {
+    let p = project(&["alpha"]);
+    call_ok(
+        p.path(),
+        &in_ws("alpha"),
+        "todo_add",
+        json!({"text": "Still open"}),
+    );
+    let ws = crate::workspaces::Plane::open(p.path())
+        .workspace("alpha")
+        .unwrap();
+    let open = ws.todos().unwrap()[0].slug.clone();
+
+    for slug in [open.as_str(), "no-such-todo"] {
+        let refused = call(
+            p.path(),
+            &in_ws("alpha"),
+            "todo_reopen",
+            &args(json!({"slug": slug})),
+            at(9, 0),
+        )
+        .unwrap_err();
+        assert!(refused.contains("no done todo"), "{refused}");
+        assert!(refused.contains(slug), "{refused}");
+    }
+    assert_eq!(ws.todos().unwrap().len(), 1);
+}
+
+#[test]
+fn todo_reopen_never_replaces_an_open_todo_of_the_same_name() {
+    let p = project(&["alpha"]);
+    let slug = add_and_close(p.path(), "Write the tests");
+    let todos = p.path().join("workspaces/alpha/todos");
+    std::fs::write(todos.join(format!("{slug}.md")), "# Someone else's\n").unwrap();
+
+    let refused = call(
+        p.path(),
+        &in_ws("alpha"),
+        "todo_reopen",
+        &args(json!({"slug": slug})),
+        at(9, 0),
+    )
+    .unwrap_err();
+
+    assert!(refused.contains(&slug), "{refused}");
+    assert_eq!(
+        std::fs::read_to_string(todos.join(format!("{slug}.md"))).unwrap(),
+        "# Someone else's\n"
+    );
+    assert!(
+        todos
+            .join(crate::memstore::ARCHIVE)
+            .join(format!("{slug}.md"))
+            .exists()
+    );
+}
+
+#[test]
+fn todo_reopen_of_a_slug_that_walks_out_of_the_todos_is_refused() {
+    let p = project(&["alpha"]);
+    let refused = call(
+        p.path(),
+        &in_ws("alpha"),
+        "todo_reopen",
+        &args(json!({"slug": "../memory/x"})),
+        at(9, 0),
+    );
+    assert!(refused.is_err(), "{refused:?}");
 }
