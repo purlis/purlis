@@ -16,7 +16,7 @@ use std::process::{Command, Stdio};
 
 use purlis_skills::grade::ci::{self, Failing, Score, Setting, Why};
 
-use crate::{Ask, Graded, grade, summary};
+use crate::{Ask, Graded, grade, scrubbed, summary};
 
 /// The longest description Codex reads whole, and the house style's limit (spec #5714, story
 /// 28).
@@ -284,12 +284,6 @@ fn one_line(text: &str) -> String {
         .unwrap_or(&line)
         .trim()
         .to_owned()
-}
-
-/// `text` with each of `keys` replaced.
-fn scrubbed(text: &str, keys: &[&str]) -> String {
-    keys.iter()
-        .fold(text.to_owned(), |text, key| text.replace(key, "[a key]"))
 }
 
 fn description_of(text: &str) -> Option<String> {

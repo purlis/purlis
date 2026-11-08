@@ -11,12 +11,14 @@
 //!   chat's by construction; among the crowd, the crowd's skills where each finds a person's
 //!   own.
 
+use std::io::Read as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use purlis_core::harness::{Harness, Kit, StateHooks};
-use std::sync::Mutex;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 use purlis_skills::grade::{RUNS, TriggerTest, ci};
 
@@ -25,6 +27,10 @@ use crate::Ask;
 /// The most agentic turns a run may take: a run that loops is cut short, and what it started
 /// before then is what it started, as [`ci::started`] reads it.
 pub const MOST_TURNS: &str = "8";
+
+/// The longest a run may go on: Codex has no cap on its turns, so this is what stops one that
+/// loops, on every harness alike. A run of [`MOST_TURNS`] turns takes about a minute.
+pub const MOST_TIME: Duration = Duration::from_secs(5 * 60);
 
 /// Claude Code's limit on its skill listing, as a chat in the window is handed it: purlis's
 /// least (`LEAST_LISTING_LIMIT` in `purlis_core::harness::claude`, #4610), which the built-ins and
@@ -134,8 +140,9 @@ pub fn args(ask: &Ask<'_>, setting: ci::Setting, query: &str) -> Vec<String> {
     args.push(purlis_core::chattools::claude_code_config_as(
         ask.purlis, true,
     ));
-    // After `--mcp-config`, which takes every word up to the next flag.
-    args.extend(["--max-turns", MOST_TURNS].map(str::to_owned));
+    // After `--mcp-config`, which takes every word up to the next flag. No shell: a run is
+    // handed the provider's key in its environment, and a skill starts by its Skill tool.
+    args.extend(["--max-turns", MOST_TURNS, "--disallowedTools", "Bash"].map(str::to_owned));
     args.push(query.to_owned());
     args
 }
@@ -196,11 +203,13 @@ fn run_one(ask: &Ask<'_>, key: &str, job: &Job<'_>, briefed: &[purlis_skills::Sk
         command
             .current_dir(ask.cwd)
             .stdin(Stdio::null())
-            .stderr(Stdio::inherit())
-            .output()
+            .stderr(Stdio::inherit());
+        output_within(command, MOST_TIME)
     });
+    // The key out of whatever the run printed, before it is written to the records, which are
+    // uploaded, or read.
     let output = match output {
-        Ok(output) => String::from_utf8_lossy(&output.stdout).into_owned(),
+        Ok(output) => crate::scrubbed(&String::from_utf8_lossy(&output), &[key]),
         Err(why) => {
             eprintln!(
                 "skill-grader: {} did not start: {why}",
@@ -231,6 +240,59 @@ fn run_one(ask: &Ask<'_>, key: &str, job: &Job<'_>, briefed: &[purlis_skills::Sk
         },
         output,
     }
+}
+
+/// **What `command` printed to its standard output, within `limit`**: a run still going at
+/// its limit is killed, and what it printed by then is what it printed. A grandchild that kept
+/// the output open after the kill is not waited for.
+pub fn output_within(mut command: Command, limit: Duration) -> std::io::Result<Vec<u8>> {
+    let mut child = command.stdout(Stdio::piped()).spawn()?;
+    let printed = Arc::new(Mutex::new(Vec::new()));
+    let reader = child.stdout.take().map(|mut out| {
+        let printed = Arc::clone(&printed);
+        std::thread::spawn(move || {
+            let mut chunk = [0_u8; 8192];
+            while let Ok(read @ 1..) = out.read(&mut chunk) {
+                printed
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .extend_from_slice(&chunk[..read]);
+            }
+        })
+    });
+    let deadline = Instant::now() + limit;
+    let exited = loop {
+        if child.try_wait()?.is_some() {
+            break true;
+        }
+        if Instant::now() >= deadline {
+            break false;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    if !exited {
+        eprintln!(
+            "skill-grader: a run was still going after {}s, so it was stopped",
+            limit.as_secs()
+        );
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+    if let Some(reader) = reader {
+        // Its output closes when it exits, unless something it started holds it open.
+        let closed_by = Instant::now() + Duration::from_secs(2);
+        while !reader.is_finished() && Instant::now() < closed_by {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        if reader.is_finished() {
+            let _ = reader.join();
+        }
+    }
+    let printed = printed
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
+    Ok(printed)
 }
 
 /// Claude Code, started with [`args`]: the key in the environment alone, never on a command
@@ -278,12 +340,19 @@ fn armed(ask: &Ask<'_>, harness: Harness) -> (Vec<String>, Vec<(String, String)>
 /// That trust is what keeps them inert otherwise (`codex exec` says nothing), and without the
 /// `SessionStart` hook there is no briefing and no built-in is listed. Read from
 /// `codex-rs/utils/cli/src/shared_options.rs` at `rust-v0.167.0`.
-pub const CODEX_EXEC: [&str; 5] = [
+///
+/// Its shell runs in Codex's `read-only` sandbox, which writes nothing and reaches no network
+/// (Codex's own account of its sandbox modes, `docs/sandbox.md`): a briefed run starts a
+/// skill by reading its `SKILL.md` in that shell, so the shell stays, and nothing it reads
+/// can leave the runner.
+pub const CODEX_EXEC: [&str; 7] = [
     "exec",
     "--json",
     "--ephemeral",
     "--skip-git-repo-check",
     "--dangerously-bypass-hook-trust",
+    "--sandbox",
+    "read-only",
 ];
 
 /// **Codex, armed as a chat in the window**: purlis's `-c` session flags before `exec`, which
@@ -350,6 +419,11 @@ fn home_of(ask: &Ask<'_>, job: &Job<'_>, name: &str) -> PathBuf {
 /// `OPENCODE_CONFIG_CONTENT`, the shim that carries the hooks and adds the built-in skills to
 /// those it discovers. Where crowded, the crowd's skills are in the same config's `skills.paths`,
 /// where a person's own skill folders are named, and the shim appends purlis's after them.
+///
+/// A graded run is handed the provider's key in its environment, so the same config denies it
+/// every tool that runs a command or writes ([`purlis_core::opencode::EFFECTFUL`]): it starts a
+/// skill by its `skill` tool, which reads. Its `build` agent, which `opencode run` runs, stops
+/// after [`MOST_TURNS`] steps (the agent's `steps`, opencode's cap on its agentic iterations).
 fn opencode(
     ask: &Ask<'_>,
     key: &str,
@@ -357,16 +431,24 @@ fn opencode(
     query: &str,
 ) -> std::io::Result<Command> {
     let (args, mut env) = armed(ask, Harness::Opencode);
-    if setting == ci::Setting::Crowded {
-        let crowd = std::path::absolute(ask.crowd.join("skills"))?;
-        for (name, value) in &mut env {
-            if name != purlis_core::opencode::CONFIG_ENV {
-                continue;
-            }
-            let mut config: serde_json::Value = serde_json::from_str(value)?;
-            config["skills"]["paths"] = serde_json::json!([crowd.display().to_string()]);
-            *value = config.to_string();
+    let crowd = std::path::absolute(ask.crowd.join("skills"))?;
+    let steps: u64 = MOST_TURNS.parse().unwrap_or(8);
+    for (name, value) in &mut env {
+        if name != purlis_core::opencode::CONFIG_ENV {
+            continue;
         }
+        let mut config: serde_json::Value = serde_json::from_str(value)?;
+        if setting == ci::Setting::Crowded {
+            config["skills"]["paths"] = serde_json::json!([crowd.display().to_string()]);
+        }
+        if !config["permission"].is_object() {
+            config["permission"] = serde_json::json!({});
+        }
+        for tool in purlis_core::opencode::EFFECTFUL {
+            config["permission"][tool] = "deny".into();
+        }
+        config["agent"]["build"]["steps"] = steps.into();
+        *value = config.to_string();
     }
     let mut command = Command::new(ask.program);
     command

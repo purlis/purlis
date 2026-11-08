@@ -79,6 +79,15 @@ pub fn key_name(harness: ci::Harness) -> &'static str {
     }
 }
 
+/// **`text` with each of `keys` replaced** by `[a key]`: what a run printed, before it is
+/// written anywhere, and whatever the optimiser says. A blank key replaces nothing.
+pub fn scrubbed(text: &str, keys: &[&str]) -> String {
+    keys.iter()
+        .map(|key| key.trim())
+        .filter(|key| !key.is_empty())
+        .fold(text.to_owned(), |text, key| text.replace(key, "[a key]"))
+}
+
 /// The line a grade of `harness` without its key says.
 pub fn no_key(harness: ci::Harness) -> String {
     format!(
