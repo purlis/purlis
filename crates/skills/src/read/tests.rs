@@ -21,8 +21,8 @@ fn every_bundled_skill_is_read_with_its_name_description_and_file() {
     let names: Vec<&str> = skills.iter().map(|s| s.name.as_str()).collect();
     for name in [
         "purlis-safe-remove",
-        "purlis-compact",
-        "purlis-add-curation-action",
+        "purlis-tidy-memory",
+        "purlis-curation-action",
         "purlis-handoff",
         "purlis-secrets",
         "purlis-smart-close",
@@ -42,7 +42,7 @@ fn every_bundled_skill_is_read_with_its_name_description_and_file() {
         .unwrap();
     assert!(
         safe.description
-            .starts_with("Remove a purlis workspace or persona")
+            .starts_with("When the person wants a purlis workspace or persona gone")
     );
     assert_eq!(safe.path, bundled().join("purlis-safe-remove/SKILL.md"));
 }
@@ -88,7 +88,7 @@ fn the_listing_names_each_skill_when_to_use_it_and_where_to_read_it() {
         Skill {
             name: "compact".to_owned(),
             description: "Compact a memory. Use when asked to tidy.".to_owned(),
-            path: PathBuf::from("/app/plugin/skills/purlis-compact/SKILL.md"),
+            path: PathBuf::from("/app/plugin/skills/purlis-tidy-memory/SKILL.md"),
         },
         Skill {
             name: "safe-remove".to_owned(),
@@ -104,7 +104,7 @@ fn the_listing_names_each_skill_when_to_use_it_and_where_to_read_it() {
     assert!(text.contains("read its `SKILL.md`"), "{text}");
     assert!(text.contains(
         "- `compact` — Compact a memory. Use when asked to tidy. \
-         (`/app/plugin/skills/purlis-compact/SKILL.md`)"
+         (`/app/plugin/skills/purlis-tidy-memory/SKILL.md`)"
     ));
     assert!(text.ends_with(
         "- `safe-remove` — Remove a workspace safely. \

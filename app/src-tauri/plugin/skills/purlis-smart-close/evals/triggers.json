@@ -1,0 +1,178 @@
+[
+  {
+    "query": "Smart close this chat.",
+    "should_trigger": true
+  },
+  {
+    "query": "Wrap up: write the session record and close.",
+    "should_trigger": true
+  },
+  {
+    "query": "We're done here. Summarise the session for the next chat and end it.",
+    "should_trigger": true
+  },
+  {
+    "query": "Write a session record of what we did today.",
+    "should_trigger": true
+  },
+  {
+    "query": "Close this chat with a record so I can resume tomorrow.",
+    "should_trigger": true
+  },
+  {
+    "query": "Before you go, fold the decisions into workspace.md and write the record.",
+    "should_trigger": true
+  },
+  {
+    "query": "That's all for today. Leave notes for whoever picks this up next and close out.",
+    "should_trigger": true
+  },
+  {
+    "query": "Write your session record, then report done.",
+    "should_trigger": true
+  },
+  {
+    "query": "End this session properly, with a summary in the workspace's sessions.",
+    "should_trigger": true
+  },
+  {
+    "query": "Let's call it a day. Record what's open and how to resume.",
+    "should_trigger": true
+  },
+  {
+    "query": "Close out this chat; the PR is merged.",
+    "should_trigger": true
+  },
+  {
+    "query": "Save a summary of this session before we stop.",
+    "should_trigger": true
+  },
+  {
+    "query": "Smart-close please.",
+    "should_trigger": true
+  },
+  {
+    "query": "I'm closing this tab. Capture where we stopped first.",
+    "should_trigger": true
+  },
+  {
+    "query": "Finish up: goal, done, decisions, open, how to resume.",
+    "should_trigger": true
+  },
+  {
+    "query": "We're finished with this ticket. Wrap up the chat with a record.",
+    "should_trigger": true
+  },
+  {
+    "query": "Record this session for the workspace and end it.",
+    "should_trigger": true
+  },
+  {
+    "query": "Stop here and leave a session record for the next chat.",
+    "should_trigger": true
+  },
+  {
+    "query": "Done for now; write up the session and close.",
+    "should_trigger": true
+  },
+  {
+    "query": "Close this purlis chat and keep what we learned in workspace.md.",
+    "should_trigger": true
+  },
+  {
+    "query": "Before ending, write the record naming the branch folders we worked in.",
+    "should_trigger": true
+  },
+  {
+    "query": "OK, that's it. Close the chat with a summary.",
+    "should_trigger": true
+  },
+  {
+    "query": "Tidy this workspace's memory; there are duplicates.",
+    "should_trigger": false
+  },
+  {
+    "query": "Dedupe the steward persona's memory.",
+    "should_trigger": false
+  },
+  {
+    "query": "Prune stale entries from the smart-ide workspace's memory.",
+    "should_trigger": false
+  },
+  {
+    "query": "Fold the lessons in memory into workspace.md and drop what's stale.",
+    "should_trigger": false
+  },
+  {
+    "query": "Compact the memory of the smart-ide workspace.",
+    "should_trigger": false
+  },
+  {
+    "query": "Open a new chat to carry on the migration tomorrow, with a brief.",
+    "should_trigger": false
+  },
+  {
+    "query": "Move this work to a new chat in the skills workspace.",
+    "should_trigger": false
+  },
+  {
+    "query": "Hand off the follow-up to another workspace.",
+    "should_trigger": false
+  },
+  {
+    "query": "Start a fresh chat for the next ticket and brief it.",
+    "should_trigger": false
+  },
+  {
+    "query": "Compact the conversation.",
+    "should_trigger": false
+  },
+  {
+    "query": "Close the modal when the person presses Escape.",
+    "should_trigger": false
+  },
+  {
+    "query": "Summarise this PR's diff for its description.",
+    "should_trigger": false
+  },
+  {
+    "query": "Close issue 5019 as completed.",
+    "should_trigger": false
+  },
+  {
+    "query": "Write release notes for 0.5.1.",
+    "should_trigger": false
+  },
+  {
+    "query": "Shut down the dev server.",
+    "should_trigger": false
+  },
+  {
+    "query": "Add a session timeout to the login flow.",
+    "should_trigger": false
+  },
+  {
+    "query": "Store the session in a cookie.",
+    "should_trigger": false
+  },
+  {
+    "query": "Explain how this recursion terminates.",
+    "should_trigger": false
+  },
+  {
+    "query": "Record a screen capture of the bug.",
+    "should_trigger": false
+  },
+  {
+    "query": "Close the database connection after each request.",
+    "should_trigger": false
+  },
+  {
+    "query": "Wrap this function in a try/catch.",
+    "should_trigger": false
+  },
+  {
+    "query": "Log the session id when a request fails.",
+    "should_trigger": false
+  }
+]

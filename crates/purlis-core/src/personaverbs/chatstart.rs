@@ -253,7 +253,7 @@ pub fn told(root: &Path, state: &Path, persona: &str, harness: Option<Harness>) 
         out.push(format!(
             "This persona's MCP {} {} {} not started: {} handed a credential \
              from the persona's vault, and nobody has approved that on this machine. {} \
-             tools are not here. Tell the operator, who approves {} in a terminal with \
+             tools are not here. Tell the person, who approves {} in a terminal with \
              `{APPROVE} --persona {}`; a new chat then starts with {}.",
             plural(n, "server", "servers"),
             list(

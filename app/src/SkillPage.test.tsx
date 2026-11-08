@@ -56,6 +56,7 @@ function totals(runs: number) {
     asks: 0,
     tokens: null,
     ms: 100,
+    misses: 0,
   };
 }
 
@@ -297,6 +298,54 @@ describe("a skill's page", () => {
     await waitFor(() =>
       expect(screen.getByTestId("skill-totals-by_workspace")).toHaveTextContent("Project root"),
     );
+  });
+
+  it("adds up a built-in's misses beside its runs by what they ran on, a harness with misses alone too", async () => {
+    const secrets = skill("purlis-secrets", {
+      level: "built-in",
+      label: "built-in",
+      grant: null,
+      granted: null,
+      folder: "/app/plugin/skills/purlis-secrets",
+    });
+    core([secrets], {
+      skill_stats: () => ({
+        by_harness: [
+          { ...totals(4), group: { kind: "named", name: "Claude Code" }, misses: 1 },
+          { ...totals(0), group: { kind: "named", name: "Codex" }, misses: 2 },
+        ],
+        by_persona: [totals(4)],
+        by_workspace: [totals(4)],
+      }),
+    });
+    renderStudioAt(at(secrets, AT_THE_ROOT, { tab: "runs" }));
+
+    const harness = await screen.findByTestId("skill-totals-by_harness");
+    await waitFor(() => expect(within(harness).getAllByRole("row")).toHaveLength(3));
+    expect(within(harness).getByRole("columnheader", { name: "Misses" })).toBeInTheDocument();
+    const [, claude, codex] = within(harness).getAllByRole("row");
+    expect(claude).toHaveTextContent(/Claude Code.*4 runs.*1 miss(?!es)/);
+    expect(codex).toHaveTextContent(/Codex.*0 runs.*2 misses/);
+    expect(
+      within(screen.getByTestId("skill-totals-by_persona")).queryByRole("columnheader", {
+        name: "Misses",
+      }),
+    ).toBeNull();
+  });
+
+  it("shows no misses column for a skill of the project's own, which is never missed", async () => {
+    core([DEPLOY], {
+      skill_stats: () => ({
+        by_harness: [{ ...totals(2), group: { kind: "named", name: "Claude Code" } }],
+        by_persona: [totals(2)],
+        by_workspace: [totals(2)],
+      }),
+    });
+    renderStudioAt(at(DEPLOY, AT_THE_ROOT, { tab: "runs" }));
+
+    const harness = await screen.findByTestId("skill-totals-by_harness");
+    await waitFor(() => expect(harness).toHaveTextContent("2 runs"));
+    expect(within(harness).queryByRole("columnheader", { name: "Misses" })).toBeNull();
   });
 
   it("opens Grade as the plan page, and a grade's scorecard from Grades, in the studio's tab", async () => {

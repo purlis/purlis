@@ -1,0 +1,178 @@
+[
+  {
+    "query": "Draft a new skill in .purlis/skills. What the skill does: check a workspace's repos are cloned.",
+    "should_trigger": true
+  },
+  {
+    "query": "Draft a new skill in workspaces/web/skills. The skill should summarise yesterday's sessions.",
+    "should_trigger": true
+  },
+  {
+    "query": "Write trigger tests for the deploy-check skill in .purlis/skills/deploy-check.",
+    "should_trigger": true
+  },
+  {
+    "query": "Write outcome evals for the release-notes skill in .purlis/skills/release-notes.",
+    "should_trigger": true
+  },
+  {
+    "query": "Write checks for the triage skill in .purlis/skills/triage.",
+    "should_trigger": true
+  },
+  {
+    "query": "Improve the triage skill in .purlis/skills/triage from its runs and grades.",
+    "should_trigger": true
+  },
+  {
+    "query": "Use the purlis-skill-studio skill to write trigger tests for the backlog skill in skills/backlog.",
+    "should_trigger": true
+  },
+  {
+    "query": "Redo the Skill studio's draft of deploy-check; its description is too long.",
+    "should_trigger": true
+  },
+  {
+    "query": "The Skill studio asked: write checks for the lint-fix skill in workspaces/api/skills/lint-fix.",
+    "should_trigger": true
+  },
+  {
+    "query": "Write triggers.json for the onboarding skill in .purlis/skills/onboarding, with should-trigger and should-not cases.",
+    "should_trigger": true
+  },
+  {
+    "query": "Write an evals.json of outcome evals for the db-migrate skill in .purlis/skills/db-migrate.",
+    "should_trigger": true
+  },
+  {
+    "query": "Draft a new purlis project skill in .purlis/skills that files a weekly status report.",
+    "should_trigger": true
+  },
+  {
+    "query": "From the Skill studio: improve the commit-message skill from its recent runs and grades.",
+    "should_trigger": true
+  },
+  {
+    "query": "Write both the trigger tests and the outcome evals for the pr-review skill in .purlis/skills/pr-review.",
+    "should_trigger": true
+  },
+  {
+    "query": "Draft a new skill in personas/qa/skills. What the skill does: run the smoke suite.",
+    "should_trigger": true
+  },
+  {
+    "query": "The Skill studio draft of the release skill was discarded; redo it with a shorter body.",
+    "should_trigger": true
+  },
+  {
+    "query": "Write trigger tests for the theme-audit skill in workspaces/design/skills/theme-audit, with near misses.",
+    "should_trigger": true
+  },
+  {
+    "query": "Draft a new skill in .purlis/skills. The skill should",
+    "should_trigger": true
+  },
+  {
+    "query": "Improve the deploy skill in .purlis/skills/deploy from its runs; its grades show it misses on ship it.",
+    "should_trigger": true
+  },
+  {
+    "query": "Write outcome evals for the changelog skill in skills/changelog that check the fragment it writes.",
+    "should_trigger": true
+  },
+  {
+    "query": "Write checks for the oncall skill in workspaces/ops/skills/oncall.",
+    "should_trigger": true
+  },
+  {
+    "query": "Draft a new skill in workspaces/smart-ide/skills. What the skill does: open the right branch folder for an issue.",
+    "should_trigger": true
+  },
+  {
+    "query": "Add a curation action to the steward persona that runs the triage skill.",
+    "should_trigger": false
+  },
+  {
+    "query": "Change the label of the reviewer's Curate menu entry.",
+    "should_trigger": false
+  },
+  {
+    "query": "Give the plane a Curate entry that opens a chat to write a new skill.",
+    "should_trigger": false
+  },
+  {
+    "query": "Which variables can a curation action's prompt use?",
+    "should_trigger": false
+  },
+  {
+    "query": "Create a persona whose charter covers skill authoring.",
+    "should_trigger": false
+  },
+  {
+    "query": "Dispatch the skill review to the reviewer persona and bring back its verdict.",
+    "should_trigger": false
+  },
+  {
+    "query": "Add the tdd skill to the qa persona's skill list.",
+    "should_trigger": false
+  },
+  {
+    "query": "Which persona owns the release skill's work?",
+    "should_trigger": false
+  },
+  {
+    "query": "Write unit tests for the parser module.",
+    "should_trigger": false
+  },
+  {
+    "query": "Write an eval harness for our summariser in Python.",
+    "should_trigger": false
+  },
+  {
+    "query": "List the skills on my resume for a backend role.",
+    "should_trigger": false
+  },
+  {
+    "query": "What skills does a staff engineer need?",
+    "should_trigger": false
+  },
+  {
+    "query": "Write integration tests for the checkout API.",
+    "should_trigger": false
+  },
+  {
+    "query": "Draft a cover letter.",
+    "should_trigger": false
+  },
+  {
+    "query": "Grade these student essays against the rubric.",
+    "should_trigger": false
+  },
+  {
+    "query": "Write a Jest snapshot test for the header.",
+    "should_trigger": false
+  },
+  {
+    "query": "Improve the performance of the search endpoint from its traces.",
+    "should_trigger": false
+  },
+  {
+    "query": "Rewrite this function to be more readable.",
+    "should_trigger": false
+  },
+  {
+    "query": "Draft a design doc for the new cache.",
+    "should_trigger": false
+  },
+  {
+    "query": "Write a benchmark for the JSON encoder.",
+    "should_trigger": false
+  },
+  {
+    "query": "Create an evals dataset for a sentiment classifier.",
+    "should_trigger": false
+  },
+  {
+    "query": "Explain how the harness discovers skills in a folder.",
+    "should_trigger": false
+  }
+]
