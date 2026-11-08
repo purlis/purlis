@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794099804373,
+  "lastUpdate": 1794104793960,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -42882,6 +42882,48 @@ window.BENCHMARK_DATA = {
             "value": 101.8528855,
             "unit": "ms",
             "extra": "median of 5 runs: 101.622, 101.815, 101.853, 101.872, 103.436 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "45d9b8297d70e20c5ad0731efa105e5cc7ec4b2e",
+          "message": "Extension skill sources: install, pin and update by revision, and listed in Sources (#3089, #3092) (#5713)\n\n* Install and update a skill from an extension's source, pinned to its revision (#3089)\n\nAn extension's SkillSource now installs and updates through the git\nsource's own review, copy, pin, grant and commit (install_from,\nplan_from), behind the SkillSource trait.\n\n- skills.lock names an extension's source by id with its revision in the\n  commit's place; a file holding one is version 2, so an older purlis\n  refuses it whole. Git-only files stay version 1.\n- A review answers what it read (Held); the install or update copies\n  exactly those bytes, checked by digest and revision, and never asks the\n  extension again. A skill the review did not read asks for another one.\n- A source's answer naming paths that collide case-insensitively, or one\n  path as both file and folder, is refused before the review.\n- Updates ask an extension's source its newest revision through the\n  studio; purlis skill update lists and updates such skills.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6VWB0HDHNGA2DKEK1Q48ZW9\nPurlis-Persona: steward\n\n* Sources lists extension skill sources beside git ones, browsed, reviewed and installed on the same pages (#3092)\n\nEach extension that declares skill-source, approved here and on in the\nproject, is a row of Your sources and opens the same source page,\ninstall review, Install all… and update review, at the revision it names.\n\n- Tauri: skill_extension_sources / _source_browse / _install_review /\n  _install_set_review / _install / _update_review / _update. What a review\n  read is held in memory (the last 8 reviews) and the install or update\n  copies exactly that; the extension is not asked again.\n- Update offers and installed copies name their source as a git remote or\n  an extension (SourceOrigin), so one updates list holds both.\n- Window: studioSources.ts dispatches each page's commands by kind, so no\n  page asks which kind it holds. An extension's source has no Remove\n  source… (it goes with its extension) and its skills are updated one at\n  a time from their rows.\n- bindings.ts and uiRpc.ts are mirrored by hand for the new commands;\n  the app's freshness test holds them to the generator.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6VWB0HDHNGA2DKEK1Q48ZW9\nPurlis-Persona: steward\n\n* Extension skill sources: a held review is used once and only while the extension is still on (#3089, #3092)\n\nFrom the two-axis review:\n- The window lets go of a held review once its install or update is made,\n  so the same accept again needs a new review, and refuses to copy held\n  bytes once the extension is no longer approved or on here.\n- Several updates accepted at once leave an extension's skill out and say\n  why, rather than asking the git update for it.\n- skills.lock: an extension's entry in a version 1 file is refused; an\n  unknown key under a git source stays unread, as before.\n- Copy: what to do after a failed extension read; no 'Only this machine'\n  on an extension's row.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6VWB0HDHNGA2DKEK1Q48ZW9\nPurlis-Persona: steward\n\n* Extension skill sources: list the new commands as the window's alone, and fix two tests' offers (#3092)\n\n- session-protocol's ui.rs names the seven skill_extension_* commands as\n  the window's own, as every skill source command is, so the link's\n  client stubs them (uiRpc.ts as generated).\n- The refusal for an extension no longer on here names no id, so it\n  carries nothing to escape.\n- SkillPage's update offer fixture names its source as a git origin.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6VWB0HDHNGA2DKEK1Q48ZW9\nPurlis-Persona: steward\n\n* uiRpc.ts carries the new offer and source types, as generated (#3092)\n\nThe link's client repeats bindings.ts's types; SkillUpdateOffer,\nExtensionSkillSource and SourceOrigin were missing there.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6VWB0HDHNGA2DKEK1Q48ZW9\nPurlis-Persona: steward\n\n* Sources' story baselines, from this pull request's stories run (#3092)\n\nThe lead now names extensions, and two stories are new: an extension's\nsource in the list and its page. Drawn by the stories run of #5713 and\nreviewed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6VWB0HDHNGA2DKEK1Q48ZW9\nPurlis-Persona: steward\n\n* The new Sources stories' baselines, from this pull request's stories run (#3092)\n\nAn extension's source in the list, and its page, in every pictured cell.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6VWB0HDHNGA2DKEK1Q48ZW9\nPurlis-Persona: steward\n\n* Sources' dark compact baselines, drawn again over main's Notice (#3092)\n\nTaken from this pull request's stories run after it was brought up to\nmain, and reviewed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6VWB0HDHNGA2DKEK1Q48ZW9\nPurlis-Persona: steward\n\n* The new Sources stories' dark compact baselines (#3092)\n\nThe cell main added, for an extension's source in the list and its page,\nfrom this pull request's stories run.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6VWB0HDHNGA2DKEK1Q48ZW9\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-08T01:49:12Z",
+          "tree_id": "9baa5e5f401c6c5f294ccad3893fa29f8b05e76f",
+          "url": "https://github.com/purlis/purlis/commit/45d9b8297d70e20c5ad0731efa105e5cc7ec4b2e"
+        },
+        "date": 1794104788336,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6604565,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.654, 0.655, 0.660, 0.672, 0.685 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6114805,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.394, 16.536, 16.611, 16.628, 16.683 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.7623005,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.214, 101.392, 101.762, 102.145, 102.192 ms"
           }
         ]
       }
