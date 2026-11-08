@@ -308,6 +308,51 @@ fn a_removal_that_fails_says_what_is_left_and_keeps_the_runner_to_remove_again()
     assert!(removed.forgotten, "{removed:?}");
 }
 
+/// **An engine that changes between the check and the act is not acted on** (#4325): a removal
+/// by name reads which engine answers again just before it removes anything, and keeps the
+/// runner to remove again where another one answers by then.
+#[test]
+fn a_removal_acts_on_nothing_when_another_engine_answers_by_the_time_it_acts() {
+    let config = tempfile::tempdir().unwrap();
+    keep(
+        config.path(),
+        &made(),
+        &answered("01JB0RUNNER0000000000000000"),
+        &OURS,
+    )
+    .unwrap();
+    {
+        let locked = lock(config.path());
+        note_locked(
+            config.path(),
+            "first",
+            |kept| kept.engine = Some("engine-a".to_owned()),
+            &locked,
+        )
+        .unwrap();
+    }
+    let fake = FakeDocker::new(&inspected());
+    fake.set("engine", "engine-a\n");
+    // Docker is pointed at another engine after the check, while the desktop is unpaired.
+    let switched = |_: &Kept| {
+        fake.set("engine", "engine-b\n");
+        Ok(())
+    };
+
+    let removed = remove(config.path(), &fake.docker(), "first", Some(&switched)).unwrap();
+
+    let log = fake.file("log");
+    assert!(
+        !log.contains(" rm "),
+        "removed by name on another engine: {log}"
+    );
+    assert!(!removed.forgotten);
+    let left = removed.left().expect("what is left is said");
+    assert!(left.contains("engine-b"), "{left}");
+    assert!(left.contains("removed again"), "{left}");
+    assert_eq!(read(config.path()).unwrap().len(), 1);
+}
+
 #[test]
 fn removing_a_runner_that_is_not_kept_is_refused() {
     let config = tempfile::tempdir().unwrap();

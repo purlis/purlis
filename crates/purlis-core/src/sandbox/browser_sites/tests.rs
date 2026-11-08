@@ -177,7 +177,7 @@ fn allowing_one_for_everyone_writes_it_to_the_manifest_and_counts_as_seen_here()
 
     assert_eq!(
         manifest(project.path()),
-        "schema = 1\n# ours\n[sandbox]\nmode = \"on\"\nbrowser-sites = [\"news.example.org:443\"]\n"
+        "schema = 1\n# ours\n[sandbox]\nmode = \"on\"\nbrowser-sites = [\n    \"news.example.org:443\",\n]\n"
     );
     assert_eq!(
         written(&in_force(project.path(), &none())),

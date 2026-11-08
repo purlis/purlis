@@ -2115,6 +2115,33 @@ fn what_a_record_kept_is_taken_out_where_its_end_stands_in_the_future() {
     assert_eq!(read(&root, &near).unwrap().talk[0].text, "Still up.");
 }
 
+#[cfg(unix)]
+#[test]
+fn a_held_store_keeps_every_due_record_s_words_after_one_wait_and_not_one_per_record() {
+    let (_d, root) = project();
+    let ids: Vec<String> = (0..3)
+        .map(|_| talked_and_ended_at(&root, "9999-12-31T00:00:00+00:00"))
+        .collect();
+    // What a chat that can open the store's folder could do: hold a lock on it.
+    let held = std::fs::File::open(dir(&root)).expect("the store, open");
+    rustix::fs::flock(&held, rustix::fs::FlockOperation::LockExclusive).expect("held");
+
+    let started = std::time::Instant::now();
+    let changed = expire_talk(&root, at("2026-10-07T12:02:00Z"));
+    let waited = started.elapsed();
+
+    assert!(changed.is_empty(), "nothing is written unlocked");
+    assert!(
+        waited < crate::rewrite::MOST_WAIT * 2,
+        "{} due records waited {waited:?}, one wait each",
+        ids.len()
+    );
+    for id in &ids {
+        assert_eq!(read(&root, id).unwrap().talk[0].text, "Still up.");
+    }
+    drop(held);
+}
+
 // ----- clearing a row forgets what was said (#1520) ----------------------------------------
 
 /// A finished task of `steward 3`'s that kept one message.

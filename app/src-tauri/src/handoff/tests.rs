@@ -2466,9 +2466,11 @@ fn a_chat_idle_when_its_session_host_ends_is_hibernated_and_resume_starts_it_on_
     );
     held.chats().ask_restart(steward).expect("Resume asks");
     let again = held
-        .restart_chat(steward, STARTING)
-        .expect("it starts again")
-        .expect("now, its turn having ended");
+        .restart_chat(steward, STARTING, crate::planes::When::AtAPause)
+        .expect("it starts again");
+    let crate::planes::Restarted::Started(again) = again else {
+        panic!("now, its turn having ended, not {again:?}");
+    };
     assert_eq!(host.asked().last().map(|(number, _)| *number), Some(again));
     let resumed = host.openings().last().expect("its start").args.clone();
     assert!(
@@ -3614,7 +3616,12 @@ fn a_chat_being_stopped_is_not_started_again_under_a_new_number() {
     );
     // The one restart on its conversation (#1428) is the one the window asks for on its
     // own when a turn ends: it answers "not now", as it does for a chat showing a prompt.
-    assert_eq!(held.restart_chat(child, STARTING), Ok(None));
+    assert_eq!(
+        held.restart_chat(child, STARTING, crate::planes::When::Now),
+        Ok(crate::planes::Restarted::NotYet(
+            crate::planes::WAITS_WHILE_YOU_STOP_IT
+        ))
+    );
     assert_eq!(held.stopping().now(), vec![child], "still being stopped");
     assert_eq!(open_chats(&held), vec![asking, child]);
 }

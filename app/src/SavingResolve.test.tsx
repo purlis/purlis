@@ -30,6 +30,7 @@ function standing(over: Partial<PlaneSaving> = {}): PlaneSaving {
     pushFailed: null,
     live: [],
     conflicts: [],
+    conflictKeys: {},
     notice: null,
     mode: null,
     modeFrom: "default",
@@ -114,6 +115,39 @@ describe("SaveConflict", () => {
     ]);
     expect(await screen.findByText("Resolved.")).toBeTruthy();
     expect(onSaved).toHaveBeenCalledTimes(1);
+  });
+
+  it("names the keys both machines changed beside the file, and Continue stages the file alone", async () => {
+    // #5824 F6 review: a key in the path made Continue refuse it as no file git stopped in.
+    const sent = commandsSent({
+      settle_save_conflict: settled({ outcome: "saved", said: "Resolved." }),
+    });
+    render(
+      <SaveConflict
+        plane={PLANE}
+        saving={standing({
+          ...STOPPED,
+          stoppedBy: "merge",
+          conflicts: ["charter.toml"],
+          conflictKeys: { "charter.toml": ["sandbox.mode", "theme.name"] },
+        })}
+      />,
+    );
+
+    expect(
+      within(screen.getByRole("list", { name: "Where it conflicts" }))
+        .getAllByRole("listitem")
+        .map((li) => li.textContent),
+    ).toEqual(["charter.toml: sandbox.mode, theme.name"]);
+
+    await userEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+    expect(sent).toEqual([
+      {
+        cmd: "settle_save_conflict",
+        args: { plane: PLANE, step: "continue", files: ["charter.toml"] },
+      },
+    ]);
   });
 
   it("aborts on the press, and says what the window refused", async () => {

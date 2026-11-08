@@ -22,6 +22,7 @@ fn standing(stage: Stage, changed: &[&str], pushes: bool) -> Standing {
         behind: Some(0),
         push_failed: None,
         conflicts: Vec::new(),
+        conflict_keys: std::collections::BTreeMap::new(),
         notice: None,
         tracked: false,
         head: String::new(),

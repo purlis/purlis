@@ -137,9 +137,27 @@ pub(crate) fn live_chats(held: &Held) -> Vec<purlis_core::piececlaim::Live> {
     live
 }
 
+/// **A chat on a pool's runner does its git work on its runner**: the app makes no clone,
+/// branch folder or commit here for it, as it writes nothing here for it unasked
+/// (`crate::brokered`). By the link the line came over, else the router's record of the chat on
+/// a pool. The refusal for chat `chat`, where it runs on one.
+fn on_a_runner(held: &Held, chat: u32) -> Option<Answer> {
+    let pool = crate::runnerdispatches::heard_from_a_pool(held, chat)?;
+    Some(Answer::No {
+        why: format!(
+            "this chat runs on pool {pool}'s runner, and its git work is done there: purlis \
+             makes no clone, branch folder or commit on the person's machine for it. Run git on \
+             the runner; its branches come back here when its work is fetched"
+        ),
+    })
+}
+
 /// Commits what `ask` names in the branch folder its chat stands in (#1055), or says why not.
 /// The folder is this app's record of the chat; the ask names a message and paths.
 pub fn commit(held: &Held, ask: &CommitAsk) -> Answer {
+    if let Some(no) = on_a_runner(held, ask.chat) {
+        return no;
+    }
     let asker = match asker(held, ask.chat) {
         Ok(asker) => asker,
         Err(no) => return no,
@@ -179,6 +197,9 @@ pub fn commit(held: &Held, ask: &CommitAsk) -> Answer {
 
 /// Runs `ask` for its chat, or says why not.
 pub fn answer(held: &Held, ask: &GitAsk) -> Answer {
+    if let Some(no) = on_a_runner(held, ask.chat) {
+        return no;
+    }
     let asker = match asker(held, ask.chat) {
         Ok(asker) => asker,
         Err(no) => return no,

@@ -668,6 +668,7 @@ fn charters_hooks() -> Vec<String> {
             judging: false,
             writes_its_piece: false,
             runs_a_shell: false,
+            own: &[],
         },
         None,
         &crate::harness_plugin::Chosen::new(),

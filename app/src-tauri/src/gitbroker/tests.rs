@@ -156,3 +156,45 @@ fn a_save_for_a_chat_is_told_what_the_chat_cannot_read() {
         vec![unread]
     );
 }
+
+/// **A chat on a pool's runner does its git work on its runner**: a branch folder, a clone or a
+/// commit it asks for over its pool's link is refused in words naming the pool, and nothing is
+/// made here. The same ask over this machine's link is not refused for it.
+#[test]
+fn a_git_ask_or_commit_heard_from_a_pool_is_refused_saying_it_runs_on_the_runner() {
+    let (_dir, held, session) = a_held_chat();
+    let prune = GitAsk {
+        chat: session,
+        workspace: "alpha".to_owned(),
+        work: GitWork::WorktreePrune {
+            repo: None,
+            dry_run: true,
+            keep_branches: false,
+        },
+        alive: false,
+    };
+    let commit_ask = CommitAsk {
+        chat: session,
+        message: "a change".to_owned(),
+        stage: Stage::Tracked,
+        folder: None,
+    };
+    let on_the_runner = |answer: Answer| match answer {
+        Answer::No { why } => why.contains("pool builds's runner"),
+        _ => false,
+    };
+
+    assert!(on_the_runner(crate::hooks::heard_from(
+        Some("builds".to_owned()),
+        || answer(&held, &prune)
+    )));
+    assert!(on_the_runner(crate::hooks::heard_from(
+        Some("builds".to_owned()),
+        || commit(&held, &commit_ask)
+    )));
+    assert!(
+        !on_the_runner(answer(&held, &prune)),
+        "a chat of this machine"
+    );
+    assert!(!on_the_runner(commit(&held, &commit_ask)));
+}

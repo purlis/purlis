@@ -1243,6 +1243,10 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                             "repo_left_out": one.repo_left_out.iter()
                                 .map(|row| left_out_json(one, row, row_json(row)))
                                 .collect::<Vec<_>>(),
+                            // Each it has the same copy of, left out naming it (#5843): no
+                            // repo's copy clashes with these, so no clashes beside them.
+                            "same_left_out": one.same_left_out.iter().map(row_json)
+                                .collect::<Vec<_>>(),
                             // Its own catalogue, which purlis's budget never counts (#3324).
                             "own": one.own.map(|own| json!({
                                 "skills": own.skills,
@@ -1281,6 +1285,15 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                             table(&one.repo_left_out, &|_| Vec::new())
                         );
                     }
+                    // What it has the same copy of, listed once (#5843).
+                    if !one.same_left_out.is_empty() {
+                        print!(
+                            "\n{} has an identical copy of these itself, so its chats start \
+                             without them:\n{}",
+                            one.harness.title(),
+                            table(&one.same_left_out, &|_| Vec::new())
+                        );
+                    }
                 }
                 // Never a silent drop (SK-30): a declared harness's chats get no skills, and why.
                 for one in &list.not_supported {
@@ -1311,6 +1324,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                         .chain(
                             one.repo_left_out
                                 .iter()
+                                .chain(&one.same_left_out)
                                 .map(move |row| (CopyOf::LeftOut(one), row)),
                         )
                 }))
@@ -1968,7 +1982,12 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             if json {
                 println!(
                     "{}",
-                    json!({ "uses": node.uses, "used_by": node.used_by, "cut": node.cut })
+                    json!({
+                        "uses": node.uses,
+                        "used_by": node.used_by,
+                        "hinted_by": node.hinted_by,
+                        "cut": node.cut
+                    })
                 );
                 return Ok(0);
             }
@@ -2041,20 +2060,35 @@ fn uses_lines(name: &str, node: &purlis_core::skills::graph::UsesOf) -> Vec<Mark
         let line = Markup::new().own("uses ").text(&one.said);
         lines.push(if one.broken {
             line.own("  (no skill has this name)")
+        } else if one.hint {
+            line.own("  (a hint: named bare, not as skills:")
+                .text(&one.name)
+                .own(")")
         } else {
             line
         });
     }
     if node.used_by.is_empty() {
-        lines.push(
-            Markup::new()
-                .own("No skill of the project names ")
-                .text(name)
-                .own("."),
-        );
+        let line = Markup::new()
+            .own("No skill of the project names ")
+            .text(name);
+        lines.push(if node.hinted_by.is_empty() {
+            line.own(".")
+        } else {
+            line.own(" as skills:").text(name).own(".")
+        });
     }
     for other in &node.used_by {
         lines.push(Markup::new().own("used by ").text(other));
+    }
+    // A skill whose text names this one only bare (#4510).
+    for other in &node.hinted_by {
+        lines.push(
+            Markup::new()
+                .own("hinted at by ")
+                .text(other)
+                .own("  (named bare)"),
+        );
     }
     lines
 }
@@ -3337,6 +3371,16 @@ fn grade_text(grade: Option<&source::SourceGrade>) -> String {
     }
 }
 
+/// Why a skill of an install's review comes along: `by` refers to it, or, where `hinted`, only
+/// names it bare (#4510).
+fn comes_along(by: &str, hinted: bool) -> String {
+    if hinted {
+        format!(" (comes along: {by} names it bare, read as a hint)")
+    } else {
+        format!(" (comes along: {by} refers to it)")
+    }
+}
+
 /// The review of installing `skills` from `from` at `at` (a commit or a revision), as the
 /// terminal prints it, for any kind of source (#5760).
 fn skills_review_text(
@@ -3355,7 +3399,7 @@ fn skills_review_text(
         let brought = skill
             .brought_by
             .as_deref()
-            .map(|by| format!(" (comes along: {by} refers to it)"))
+            .map(|by| comes_along(by, skill.brought_by_hint))
             .unwrap_or_default();
         out.push_str(&format!(
             "\n{}{}: {}\n",

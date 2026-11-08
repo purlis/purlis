@@ -28,6 +28,10 @@ use crate::planes::{Held, PlaneId, Planes};
 /// The most dispatches one chat has held at once: one more is refused, in words.
 pub const AT_MOST_PER_CHAT: usize = 8;
 
+/// The most dispatches held at once from the chats of one pool, all of them together: one more
+/// is refused, in words, so a pool's runners together ask the person no more than one chat may.
+pub const AT_MOST_PER_POOL: usize = 8;
+
 /// What a refused dispatch's chat is told, after the task's name.
 pub fn refused_said(one: &HeldDispatch) -> String {
     let Some(pool) = &one.pool else {
@@ -143,6 +147,8 @@ impl Inner {
 pub enum NotHeld {
     /// The chat has [`AT_MOST_PER_CHAT`] held already.
     Full,
+    /// The chats of its pool have [`AT_MOST_PER_POOL`] held already, together.
+    PoolFull,
     /// The person refused this chat's dispatch to run at this place before (#4862).
     RefusedBefore(StartChoice),
 }
@@ -185,6 +191,16 @@ impl RunnerDispatches {
             >= AT_MOST_PER_CHAT
         {
             return Err(NotHeld::Full);
+        }
+        if let Some(pool) = pool
+            && inner
+                .held
+                .iter()
+                .filter(|one| one.pool.as_deref() == Some(pool))
+                .count()
+                >= AT_MOST_PER_POOL
+        {
+            return Err(NotHeld::PoolFull);
         }
         inner.next = inner.next.wrapping_add(1).max(1);
         let id = inner.next;
@@ -315,6 +331,13 @@ pub fn hold(held: &Held, pool: Option<&str>, wanted: Wanted) -> Answer {
             why: format!(
                 "this chat has {AT_MOST_PER_CHAT} dispatches waiting for the person already: wait \
                  for their answers before asking for another"
+            ),
+        },
+        Err(NotHeld::PoolFull) => Answer::No {
+            why: format!(
+                "the chats on pool {} have {AT_MOST_PER_POOL} dispatches waiting for the person \
+                 already, together: wait for their answers before asking for another",
+                pool.unwrap_or_default()
             ),
         },
     }

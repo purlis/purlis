@@ -135,7 +135,8 @@ fn a_host_hands_a_slot_on_to_the_window_beside_its_hook_socket() {
         chat: 3,
         serve: 5173,
     };
-    hand_on(&beside(&hook), &ask, &slot).expect("handed on");
+    // The window listening there is this process, which the host links.
+    hand_on(&beside(&hook), &ask, &slot, |pid| pid == std::process::id()).expect("handed on");
     drop(slot);
     let (got, mut taken) = kept.lock().unwrap().pop().expect("taken");
     assert_eq!(got, ask);
@@ -158,7 +159,8 @@ fn a_host_with_no_window_to_take_a_slot_is_told_so() {
                 chat: 3,
                 serve: 5173
             },
-            &slot
+            &slot,
+            |_| true
         )
         .is_err()
     );
@@ -186,9 +188,50 @@ fn a_process_that_is_not_the_session_host_cannot_hand_the_window_a_slot() {
             serve: 5173,
         },
         &slot,
+        |_| true,
     );
     std::thread::sleep(Duration::from_millis(300));
     assert!(kept.lock().unwrap().is_empty(), "nothing was parked");
+}
+
+/// Whatever listens beside the hook socket is handed a slot only where it is a window the host
+/// links: one bound there by another process while the window is down is sent nothing, and the
+/// slot stays the host's to refuse.
+#[test]
+fn a_slot_is_never_handed_to_a_listener_that_is_not_a_window_the_host_links() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let hook = dir.path().join("app").join("hooks.sock");
+    let kept: Kept = Arc::default();
+    let keeping = Arc::clone(&kept);
+    // This process stands in for what bound the window's socket, and takes whatever it is sent.
+    let _bound = Receiving::bind_admitting(
+        &hook,
+        Box::new(move |ask, slot| keeping.lock().unwrap().push((ask, slot))),
+        |_| true,
+    )
+    .expect("a socket in the window's place");
+    let (slot, _server) = UnixStream::pair().expect("a pair");
+    let asked = std::cell::Cell::new(None);
+    let handed = hand_on(
+        &beside(&hook),
+        &ServeAsk {
+            chat: 3,
+            serve: 5173,
+        },
+        &slot,
+        |pid| {
+            asked.set(Some(pid));
+            false
+        },
+    );
+    assert!(handed.is_err(), "the host is told it was not handed on");
+    assert_eq!(
+        asked.get(),
+        Some(std::process::id()),
+        "asked of the listener's own pid"
+    );
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(kept.lock().unwrap().is_empty(), "nothing was sent to it");
 }
 
 /// #3316 review: a window's slots socket let go removes its own file alone, never one bound in
@@ -203,4 +246,114 @@ fn a_slots_socket_let_go_never_removes_its_successor() {
     assert!(beside(&hook).exists(), "the second one's socket stays");
     drop(second);
     assert!(!beside(&hook).exists());
+}
+
+/// A slot is received and made close-on-exec with no program started in between: while a
+/// program is being started, one handed on waits, and is taken once the start is done.
+#[test]
+fn a_slot_handed_on_is_not_taken_while_a_program_is_being_started() {
+    let _alone = crate::forklock::tests::alone();
+    let dir = tempfile::tempdir().expect("a directory");
+    let hook = dir.path().join("app").join("hooks.sock");
+    let (taken, was_taken) = std::sync::mpsc::channel();
+    let _receiving = Receiving::bind_admitting(
+        &hook,
+        Box::new(move |ask, slot| {
+            let _ = taken.send((ask, slot));
+        }),
+        |_| true,
+    )
+    .expect("the window's socket");
+    let spawning = crate::forklock::tests::as_a_fork_does();
+    let (slot, _server) = UnixStream::pair().expect("a pair");
+    let handing = std::thread::spawn(move || {
+        hand_on(
+            &beside(&hook),
+            &ServeAsk {
+                chat: 3,
+                serve: 5173,
+            },
+            &slot,
+            |_| true,
+        )
+    });
+
+    assert!(
+        matches!(
+            was_taken.recv_timeout(Duration::from_millis(300)),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+        ),
+        "a slot was taken while a program was being started"
+    );
+    drop(spawning);
+    let (ask, _slot) = was_taken
+        .recv_timeout(Duration::from_secs(10))
+        .expect("taken once nothing was starting");
+    assert_eq!(ask.serve, 5173);
+    handing
+        .join()
+        .expect("the host's thread")
+        .expect("handed on");
+}
+
+/// An ask sent with more than its one descriptor is refused whole, and none of what came is
+/// kept open: each connection sent has its other end told it ended.
+#[test]
+fn an_ask_sent_with_more_than_one_descriptor_is_refused_and_every_one_closed() {
+    use rustix::net::{SendAncillaryBuffer, SendAncillaryMessage, SendFlags, sendmsg};
+    use std::os::fd::AsFd as _;
+    let dir = tempfile::tempdir().expect("a directory");
+    let hook = dir.path().join("app").join("hooks.sock");
+    let kept: Kept = Arc::default();
+    let keeping = Arc::clone(&kept);
+    let _receiving = Receiving::bind_admitting(
+        &hook,
+        Box::new(move |ask, slot| keeping.lock().unwrap().push((ask, slot))),
+        |_| true,
+    )
+    .expect("the window's socket");
+    for many in [2, 3] {
+        let (sent, others): (Vec<UnixStream>, Vec<UnixStream>) = (0..many)
+            .map(|_| UnixStream::pair().expect("a pair"))
+            .unzip();
+        let window = UnixStream::connect(beside(&hook)).expect("connected");
+        let mut line = serde_json::to_vec(&ServeAsk {
+            chat: 3,
+            serve: 5173,
+        })
+        .expect("a line");
+        line.push(b'\n');
+        {
+            let fds: Vec<_> = sent.iter().map(|one| one.as_fd()).collect();
+            let mut space = [std::mem::MaybeUninit::uninit(); rustix::cmsg_space!(ScmRights(3))];
+            let mut control = SendAncillaryBuffer::new(&mut space);
+            assert!(control.push(SendAncillaryMessage::ScmRights(&fds)));
+            sendmsg(
+                &window,
+                &[std::io::IoSlice::new(&line)],
+                &mut control,
+                SendFlags::empty(),
+            )
+            .expect("sent");
+        }
+        // Only the window's copies are left open now.
+        drop(sent);
+        // The window closes its end once it has dealt with the ask.
+        window
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .expect("a deadline");
+        let mut end = [0u8; 1];
+        assert_eq!((&window).read(&mut end).expect("its end"), 0);
+        for mut other in others {
+            other
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .expect("a deadline");
+            assert_eq!(
+                other.read(&mut end).expect("ended, not waited on"),
+                0,
+                "{many} sent: nothing kept one open"
+            );
+        }
+    }
+    assert!(kept.lock().unwrap().is_empty(), "nothing was parked");
 }

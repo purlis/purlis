@@ -71,6 +71,36 @@ impl PlaneId {
     }
 }
 
+/// **When a restart of one chat may go ahead** ([`Held::restart_chat`], #5753).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum When {
+    /// At a pause between its turns: it waits while the chat waits on its own work.
+    AtAPause,
+    /// Now: the person's Restart now, which ends what the chat had left running and tells it.
+    Now,
+}
+
+/// What [`Held::restart_chat`] did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Restarted {
+    /// The chat runs again on its conversation, as this run.
+    Started(u32),
+    /// It is not restarted yet, for the reason given, and is still owed the restart.
+    NotYet(&'static str),
+}
+
+/// Why a restart waits while the chat shows a permission prompt.
+pub const WAITS_ON_A_PERMISSION_PROMPT: &str =
+    "It is waiting on a permission prompt, so it restarts once that is answered.";
+
+/// Why a restart waits while the person is stopping the chat (#1448).
+pub const WAITS_WHILE_YOU_STOP_IT: &str =
+    "You are stopping this chat, so it is not restarted while that runs.";
+
+/// Why a restart at a pause waits while the chat waits on its own work (#5753).
+pub const WAITS_ON_ITS_OWN_WORK: &str = "It has work of its own running in the background. It restarts once that work is done and \
+     its turn ends.";
+
 #[cfg(test)]
 impl PlaneId {
     /// An id for a test that holds no registry — a worker, a teller — never for a command.
@@ -1635,20 +1665,29 @@ impl Held {
     /// started; a refused start leaves the old one running.
     ///
     /// Not while the chat waits on a permission prompt: its turn has not ended, and a restart
-    /// would answer the prompt for the person. `None` then, and the window asks again at the
-    /// chat's next move.
-    pub fn restart_chat(&self, session: u32, size: Size) -> Result<Option<u32>, String> {
+    /// would answer the prompt for the person. [`Restarted::NotYet`] then, and the window asks
+    /// again at the chat's next move.
+    ///
+    /// **Nor, `when` at a pause, while it waits on its own work** (#5753, spec #5743): its turn
+    /// ended on monitors or background shells of its own that a restart would cut off, so the
+    /// restart waits for that work to wake it, as the window's `atAPause` already does. Once
+    /// the wait has lapsed nothing waits. [`When::Now`], the person's Restart now, goes ahead,
+    /// and the chat brought back is told what the restart ended.
+    pub fn restart_chat(&self, session: u32, size: Size, when: When) -> Result<Restarted, String> {
         if self.asks().asks.iter().any(|ask| ask.session == session) {
-            return Ok(None);
+            return Ok(Restarted::NotYet(WAITS_ON_A_PERMISSION_PROMPT));
         }
         // Nor while the person is stopping it (#1448): the window asks this on its own when a
         // turn ends, which is when a stop sends its prompt, and the stop is the later word.
         if self.stopping.is_stopping(session) {
-            return Ok(None);
+            return Ok(Restarted::NotYet(WAITS_WHILE_YOU_STOP_IT));
+        }
+        if when == When::AtAPause && self.board().glance(session).own_work {
+            return Ok(Restarted::NotYet(WAITS_ON_ITS_OWN_WORK));
         }
         let started = self.chats.restart(session, size)?;
         self.in_its_place(session, started);
-        Ok(Some(started))
+        Ok(Restarted::Started(started))
     }
 
     /// **Starts chat `session` again without the sandbox** (#1342): the person's own choice on a
@@ -3679,9 +3718,10 @@ impl Planes {
                 }
             })
         });
-        // A sandbox block a chat's hook found (#1338): kept in this machine's network record
-        // with the chat it came from (#1662), then shown on the chat's tab. Of what the line
-        // named, only a refused host is kept.
+        // A sandbox block a chat's hook found (#1338): shown on the chat's tab, then kept in this
+        // machine's network record with the chat it came from (#1662). Of what the line named,
+        // only a refused host is kept. The window is told first, so a record that waits on its
+        // lock never holds a Notice back.
         held.hooks.when_blocked({
             let plane = id.clone();
             let blocks = Arc::clone(&self.blocks);
@@ -3715,24 +3755,29 @@ impl Planes {
                     // Held while the person answers (#1666): the chat's own board says so,
                     // never anything the block's sender said.
                     told.held = strong.chats().asking(told.session, told.target.as_deref());
-                    if let Some(network) = &network {
-                        crate::network::record_block(
-                            network,
-                            plane.root(),
-                            strong.chats(),
-                            &block,
-                            crate::sandboxing::now_secs(),
-                        );
-                    }
+                    // Heard now, kept once the window has been told.
+                    let at = crate::sandboxing::now_secs();
+                    let record = || {
+                        if let Some(network) = &network {
+                            crate::network::record_block(
+                                network,
+                                plane.root(),
+                                strong.chats(),
+                                &block,
+                                at,
+                            );
+                        }
+                    };
                     // A block that is the chat's own to retry (#3861): its hook told it the
                     // command to retry with, and the person has nothing to answer, so it is
-                    // kept in the record above and raises no Notice, and the chat waits on
-                    // nobody for it.
+                    // kept in the record and raises no Notice, and the chat waits on nobody
+                    // for it.
                     let chat_dir = strong
                         .chats()
                         .chat_at(block.line.chat)
                         .and_then(|chat| chat.cwd);
                     if hooks::its_own_to_retry(&block, chat_dir.as_deref()) {
+                        record();
                         return;
                     }
                     crate::taskblocks::heard(strong.chats(), &told);
@@ -3746,6 +3791,9 @@ impl Planes {
                         // A block heard while it waits on its own work is an ask (#3878).
                         strong.blocked_while_waiting(told.session);
                     }
+                    blocks(told);
+                    record();
+                    return;
                 }
                 blocks(told);
             })

@@ -73,6 +73,10 @@ pub trait Channel: Send + Sync + 'static {
     /// No window holds the project now: its last link ended (#2006). A line handed on that
     /// waits for that window's reply is let go of, and heard by the board this channel keeps.
     fn no_window(&self) {}
+    /// **Which processes are windows this host links now**: `is_one` answers for a pid each time
+    /// it is asked, and never once the host has gone. Told once, as the channel is opened. A
+    /// channel that hands a window nothing over a socket of the window's own ignores it.
+    fn windows_linked(&self, _is_one: Arc<dyn Fn(u32) -> bool + Send + Sync + 'static>) {}
     /// **Undo `turn`** (1.78, #5427): its files put back under this channel's idle check of the
     /// chats it hears, answered [`Answer::TurnUndone`] or [`Answer::UndoWaits`]. A channel that
     /// records no turns refuses it.

@@ -182,5 +182,4 @@ pub fn revoke(root: &Path, site: &Host) -> Result<bool, String> {
 }
 
 #[cfg(test)]
-#[path = "browser_sites_tests.rs"]
 mod tests;

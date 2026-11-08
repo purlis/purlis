@@ -1617,10 +1617,15 @@ export const commands = {
 	 *  first message, what was allowed where something was (#1342). The one restart: a sandbox
 	 *  grant, the persona grants a person allowed (#1362) and Restart chat (#1428) all come here.
 	 *  The window asks once the chat's turn has ended; a chat owed no restart is refused, and one
-	 *  waiting on a permission prompt is not restarted yet. The answer is the new one as the
-	 *  window draws it, in the old one's place.
+	 *  waiting on a permission prompt, being stopped, or (at a pause) waiting on work of its own is
+	 *  not restarted yet, with why. The answer is the new one as the window draws it, in the old
+	 *  one's place.
+	 * 
+	 *  **`now` is the person's Restart now** (#5753): it goes ahead while the chat waits on work
+	 *  of its own, which a restart at a pause waits for, and the chat brought back is told what
+	 *  the restart ended.
 	 */
-	restartChat: (plane: PlaneId, session: number, columns: number, rows: number) => typedError<ChatRestart, string>(__TAURI_INVOKE("restart_chat", { plane, session, columns, rows })),
+	restartChat: (plane: PlaneId, session: number, columns: number, rows: number, now: boolean) => typedError<ChatRestart, string>(__TAURI_INVOKE("restart_chat", { plane, session, columns, rows, now })),
 	/**
 	 *  **The chats this project has open that run under a sandbox other than the one the
 	 *  project's settings decide for them now** (#1428), or none. The window asks when the
@@ -12382,6 +12387,8 @@ export type PlaneSaving = {
 	live: string[],
 	/**  The files to settle, when conflicts are why the save is blocked. */
 	conflicts: string[],
+	/**  Of `conflicts`, the settings file with the keys both machines changed (#5824). */
+	conflictKeys: { [key in string]: string[] },
 	/**  What a save cannot do here that is not a block (a request mode with no forge to open it on). */
 	notice: string | null,
 	/**  `[plane] mode`, or `null` when the plane names none. */
@@ -17466,6 +17473,11 @@ export type StudioHarness = {
 	 *  with why (SK-53): the core's `HarnessInTheStudio::repo_left_out`.
 	 */
 	repo_left_out: StudioSkill[],
+	/**
+	 *  The project's skills its chats start without because it has the same copy itself, each
+	 *  naming the copy kept (#5843): the core's `HarnessInTheStudio::same_left_out`.
+	 */
+	same_left_out: StudioSkill[],
 	/**
 	 *  **What its own catalogue holds** (#3324), in the core's words (`OwnCatalogue::said`),
 	 *  which `purlis skill list` says too: the skills it finds itself in the person's own

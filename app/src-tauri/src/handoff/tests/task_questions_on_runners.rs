@@ -257,3 +257,173 @@ fn a_message_an_older_runner_host_handed_on_is_refused_saying_nothing_was_sent()
     );
     assert_eq!(held.tasks().ledger().talk.asks(task), None);
 }
+
+/// A `steward` chat on pool [`POOL`]'s runner and a task it dispatched on this machine, at work.
+fn a_runner_chat_s_task_here() -> (Plane, Pretend, Planes, PlaneId, Arc<Held>, u32, u32) {
+    let plane = a_plane_with_personas();
+    let host = Pretend::default();
+    let (planes, id, steward) = a_steward_chat(&host, &plane);
+    let held = planes.held(&id).expect("held");
+    let task = a_task_of(&held, &id, steward, "check prod");
+    host.runs_on_pool(steward, POOL);
+    works(&held, task);
+    (plane, host, planes, id, held, steward, task)
+}
+
+/// Who `chat` is said to be, on a pool's runner: its name, then the pool.
+fn on_the_pool(held: &Held, chat: u32) -> String {
+    let name = held.chats().shown_name(chat).expect("its name");
+    format!("{name} (on pool {POOL}'s runner)")
+}
+
+/// **A message from a chat on a pool's runner names the pool** to the task on this machine it
+/// reaches: a follow-up, one to every task, and an answer each say who sent it and where it
+/// runs, so the task knows the words came from a runner.
+#[test]
+fn a_runner_chat_s_follow_ups_and_answers_to_its_task_here_name_its_pool() {
+    let (_plane, _host, _planes, id, held, steward, task) = a_runner_chat_s_task_here();
+    let from = on_the_pool(&held, steward);
+
+    over_the_link(
+        &held,
+        &id,
+        steward,
+        What::Tell {
+            to: task,
+            text: "Also count the retries.".to_owned(),
+        },
+    );
+    over_the_link(
+        &held,
+        &id,
+        steward,
+        What::TellAll {
+            text: "Wrap up.".to_owned(),
+        },
+    );
+    let told: Vec<(Kind, String)> = purlis_core::dispatchtalk::take(held.root(), task)
+        .into_iter()
+        .map(|message| (message.kind, message.from))
+        .collect();
+    assert_eq!(
+        told,
+        [
+            (Kind::FollowUp, from.clone()),
+            (Kind::FollowUp, from.clone())
+        ]
+    );
+
+    // The task asks on this machine; the runner chat answers over its link.
+    asks(
+        &held,
+        &id,
+        task,
+        What::Question {
+            text: "Which one?".to_owned(),
+        },
+    );
+    over_the_link(
+        &held,
+        &id,
+        steward,
+        What::Answer {
+            to: task,
+            text: "The blue one".to_owned(),
+        },
+    );
+    let answered: Vec<(Kind, String)> = purlis_core::dispatchtalk::take(held.root(), task)
+        .into_iter()
+        .map(|message| (message.kind, message.from))
+        .collect();
+    assert_eq!(answered, [(Kind::Answer, from)]);
+}
+
+/// A `steward` chat on this machine and a task it dispatched that runs on pool [`POOL`]'s
+/// runner, at work.
+fn a_task_of_a_chat_here_on_a_runner() -> (Plane, Pretend, Planes, PlaneId, Arc<Held>, u32, u32) {
+    let plane = a_plane_with_personas();
+    let host = Pretend::default();
+    let (planes, id, steward) = a_steward_chat(&host, &plane);
+    let held = planes.held(&id).expect("held");
+    let task = a_task_of(&held, &id, steward, "check prod");
+    host.runs_on_pool(task, POOL);
+    works(&held, task);
+    (plane, host, planes, id, held, steward, task)
+}
+
+/// **What a task on a pool's runner sends up names the pool** to the chat on this machine that
+/// asked for it: its note, its question and its report each say who sent it and where it runs,
+/// so that chat knows the words came from a runner.
+#[test]
+fn a_task_on_a_runner_s_notes_questions_and_report_to_a_chat_here_name_its_pool() {
+    let (_plane, _host, _planes, id, held, steward, task) = a_task_of_a_chat_here_on_a_runner();
+    let from = on_the_pool(&held, task);
+
+    over_the_link(
+        &held,
+        &id,
+        task,
+        What::Note {
+            text: "halfway".to_owned(),
+            ack: None,
+        },
+    );
+    asks_over_the_link(&held, &id, task, "Which one?");
+    let sent_up: Vec<(Kind, String)> = purlis_core::dispatchtalk::take(held.root(), steward)
+        .into_iter()
+        .map(|message| (message.kind, message.from))
+        .collect();
+    assert_eq!(
+        sent_up,
+        [(Kind::Note, from.clone()), (Kind::Question, from.clone())]
+    );
+
+    // The chat here answers on this machine's own link.
+    asks(
+        &held,
+        &id,
+        steward,
+        What::Answer {
+            to: task,
+            text: "The blue one".to_owned(),
+        },
+    );
+    let said = crate::hooks::heard_from(Some(POOL.to_owned()), || reports(&held, &id, task));
+    assert!(
+        matches!(
+            said,
+            Answer::Reported { kept_for: None, .. } | Answer::Finished { .. }
+        ),
+        "{said:?}"
+    );
+    let reported: Vec<String> = told_on_its_next_turn(&held, steward)
+        .into_iter()
+        .map(|report| report.from)
+        .collect();
+    assert_eq!(reported, [from]);
+}
+
+/// **A chat with tasks still working on this machine is not moved to a runner** while they
+/// work: it would take their reports and questions there with it. It is told how many, and to
+/// end them or wait for their reports.
+#[test]
+fn a_chat_with_tasks_still_working_here_is_not_moved_to_a_runner_and_is_told_what_to_do() {
+    let plane = a_plane_with_personas();
+    let host = Pretend::default();
+    let (planes, id, steward) = a_steward_chat(&host, &plane);
+    let held = planes.held(&id).expect("held");
+    let first = a_task_of(&held, &id, steward, "check prod");
+    let second = a_task_of(&held, &id, steward, "check staging");
+    works(&held, first);
+    works(&held, second);
+
+    let why = held
+        .move_chat(steward, Some(POOL.to_owned()))
+        .expect_err("not moved");
+
+    assert_eq!(
+        why,
+        "This chat has 2 tasks still working on this machine, so it was not moved. End them, or \
+         wait for their reports, then move it."
+    );
+}
