@@ -619,6 +619,7 @@ fn a_claude_code_chat_may_run_charter_session_record_and_read_charter_without_as
             // And what writes only the chat's own scope, and its question to the person (#3829).
             "mcp__purlis__todo_add",
             "mcp__purlis__todo_done",
+            "mcp__purlis__todo_reopen",
             "mcp__purlis__memory_add",
             "mcp__purlis__persona_remember",
             "mcp__purlis__workspace_section",
