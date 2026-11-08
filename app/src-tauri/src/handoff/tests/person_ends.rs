@@ -1029,3 +1029,43 @@ fn the_asking_chat_is_woken_as_for_any_report_where_it_may_be_typed_into() {
     assert_eq!(host.typed(steward), Vec::<Vec<u8>>::new());
     assert_eq!(told(&held, For::Chat(steward)).len(), 1);
 }
+
+/// **An ask is answered before anything it wakes is typed** (#5772): a follow-up to a task at
+/// rest wakes it with a line, and the session host took longer to take that line than the
+/// command waits for its answer, so the sender read "the purlis app did not answer" and left
+/// its message queued. The answer goes back at once; the line is typed after it.
+#[test]
+fn a_follow_up_is_answered_before_its_line_is_typed_however_slow_the_host() {
+    let (_plane, host, _planes, id, held, steward, task) = a_steward_and_its_task();
+    rests(&held, task);
+    host.terminal_takes(std::time::Duration::from_secs(5));
+
+    let began = std::time::Instant::now();
+    let said = asks(
+        &held,
+        &id,
+        steward,
+        What::Tell {
+            to: task,
+            text: "Also count the retries.".to_owned(),
+        },
+    );
+    let took = began.elapsed();
+
+    assert!(
+        matches!(&said, purlis_core::hookwire::Answer::Task(answered)
+            if matches!(&**answered, Answered::Sent { .. })),
+        "{said:?}"
+    );
+    assert!(
+        took < crate::inputlanes::A_TURN_WAITS_AT_MOST,
+        "answered in {took:?}, within the command's budget, not after the host"
+    );
+    // And the task is still woken: the line reaches it once the host takes it.
+    crate::dispatched::woke_later::settled();
+    assert_eq!(
+        host.typed(task).len(),
+        1,
+        "one line, typed after the answer"
+    );
+}
