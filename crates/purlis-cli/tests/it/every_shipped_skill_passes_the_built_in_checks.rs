@@ -25,11 +25,12 @@
 //! tier). What a skill names on purpose against a rule is on [`ON_PURPOSE`], with why; the list
 //! refuses an entry nothing matches, so it only shrinks.
 
-use super::every_command_charter_names_is_one_it_has::{help_of, repo, shipped_skills};
+use super::every_command_charter_names_is_one_it_has::{PROSE, help_of, repo, shipped_skills};
 use crate::support;
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::LazyLock;
 
 /// Codex's limit on a skill's description, in characters.
 const DESCRIPTION_LIMIT: usize = 1024;
@@ -418,7 +419,51 @@ fn description(skill: &Skill, _: &Build) -> Vec<Finding> {
     out
 }
 
+/// Each command the prose of `text` tells a reader to run without a code span, with its line:
+/// `purlis <word> [<word>]` after `run`, `try`, `use`, `with` or a colon, the shapes
+/// [`every_command_charter_names_is_one_it_has`](super::every_command_charter_names_is_one_it_has)
+/// reads in a message. Two words at most, since prose goes on after the command; a word that
+/// makes purlis the subject of a sentence (`: purlis cuts …`) is none.
+fn prose_commands(text: &str) -> Vec<(usize, Vec<String>)> {
+    static SUGGESTION: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(
+            r"(?:\b[Rr]un|\b[Tt]ry|\b[Uu]se|\bwith|:)\s+purlis ([a-z][a-z-]*)(?: ([a-z][a-z-]*))?",
+        )
+        .expect("the pattern compiles")
+    });
+    let mut fenced = false;
+    let mut out = Vec::new();
+    for (at, line) in text.lines().enumerate() {
+        if line.trim_start().starts_with("```") || line.trim_start().starts_with("~~~") {
+            fenced = !fenced;
+            continue;
+        }
+        if fenced {
+            continue;
+        }
+        for found in SUGGESTION.captures_iter(&prose_of(line)) {
+            if PROSE.contains(&&found[1]) {
+                continue;
+            }
+            let words = [found.get(1), found.get(2)]
+                .into_iter()
+                .flatten()
+                .map(|word| word.as_str().to_owned())
+                .collect();
+            out.push((at + 1, words));
+        }
+    }
+    out
+}
+
 fn commands(skill: &Skill, build: &Build) -> Vec<Finding> {
+    let prose = prose_commands(&skill.text)
+        .into_iter()
+        .flat_map(|(line, words)| {
+            wrong_in(&words, build)
+                .into_iter()
+                .map(move |wrong| (line, wrong))
+        });
     code_of(&skill.text)
         .into_iter()
         .flat_map(|(line, code)| {
@@ -428,6 +473,7 @@ fn commands(skill: &Skill, build: &Build) -> Vec<Finding> {
                 .map(move |wrong| (line, wrong))
                 .collect::<Vec<_>>()
         })
+        .chain(prose)
         .collect()
 }
 
@@ -520,7 +566,7 @@ const BAD: &str = "---\nname: purlis-bad\ndescription: Do real work in a repo wi
                    purlis theme export purlis --to x.zip   # fine\n\
                    purlis secret exec v -- sh -c 'x'\n```\n\n\
                    Call the `dispatch_frob` tool, or `mcp__purlis__ask_nobody`, never the \
-                   `dispatch_note` one.\n";
+                   `dispatch_note` one.\n\nOr run purlis frob now, as `purlis worktree` says. purlis cuts it.\n";
 
 #[test]
 fn a_skill_made_to_fail_is_found_by_every_rule() {
@@ -538,6 +584,7 @@ fn a_skill_made_to_fail_is_found_by_every_rule() {
             "purlis-bad:8: commands: `purlis worktree frob` is not a command",
             "purlis-bad:9: commands: `purlis worktree commit` has no --amend",
             "purlis-bad:12: commands: `purlis dispatch report` has no --outcom",
+            "purlis-bad:20: commands: `purlis frob` is not a command",
             "purlis-bad:18: tools: `dispatch_frob` is not a purlis tool",
             "purlis-bad:18: tools: `ask_nobody` is not a purlis tool",
         ]
