@@ -4,7 +4,7 @@
 
 ## Where the grade is
 
-- **A file beside the skill's folder, never inside it**: `<parent>/<folder>.grades.json`, where `<parent>/<folder>` is the skill's folder in the source. A skill whose folder is the source's root has nowhere beside it, so it carries no grade.
+- **A file beside the skill's folder, never inside it**: `<parent>/<folder>.grades.json`, where `<parent>/<folder>` is the skill's folder in the source. A skill whose folder is the source's root has nowhere beside it, so it carries no grade. Nor does one where the place beside its folder is inside another skill's folder: publish writes no file there.
 - **It is read at the commit the review reads**, the commit an install pins, so the grade an install showed can be read again from its pin.
 
 ## What it holds
@@ -22,7 +22,7 @@ Only what the request's description holds, plus the tree each grade measured, ne
 }
 ```
 
-- `tree` is the git tree id of the skill's folder as the grade measured it. For a grade of the skill's current version, publish writes the tree of the folder as it publishes it, so the files that stay behind (credential-shaped names, ignored files) don't make that grade read as an earlier one. For an older grade, it writes the grade's own tree.
+- `tree` is the git tree id of the skill's folder as the grade measured it. For a grade of the skill's current version, publish writes the tree git gives the folder as it publishes it, in the source's own object format, so the files that stay behind (credential-shaped names, ignored files) don't make that grade read as an earlier one. For an older grade, it writes the grade's own tree. The review compares it with the tree git holds of the folder at the reviewed commit, files an install leaves out included; for an extension's source, with the tree of the files it handed.
 - No chat's text, path, cost, profile or device, as for the description.
 
 ## What publish writes

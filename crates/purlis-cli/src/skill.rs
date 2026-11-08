@@ -3197,7 +3197,7 @@ fn grade_text(grade: Option<&source::SourceGrade>) -> String {
                 "graded on an earlier version"
             };
             let mut out = format!(
-                "  Grade: {}'s grade, as published, not checked by purlis\n    \
+                "  Grade: {}'s grade, as published — not checked by purlis\n    \
                  {} with it, {} without it, {version}\n    {}, {} grader, {}, {}: {}\n",
                 esc(whose),
                 rate(newest.with),
@@ -3210,7 +3210,7 @@ fn grade_text(grade: Option<&source::SourceGrade>) -> String {
             );
             if *more > 0 {
                 out.push_str(&format!(
-                    "    The file holds {} more.\n",
+                    "    The file holds {}.\n",
                     counted(*more, "earlier grade", "earlier grades")
                 ));
             }
@@ -3383,6 +3383,7 @@ fn update_text(update: &source::UpdateReview) -> String {
         out.push_str("Removed:\n");
         out.push_str(&summary_text(&update.changes.removed, "  "));
     }
+    out.push_str(&grade_text(update.review.grade.as_ref()));
     let changes = |files: &[source::FileChange], out: &mut String| {
         for file in files {
             let change = match file.change {

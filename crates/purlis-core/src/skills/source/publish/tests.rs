@@ -784,3 +784,72 @@ fn a_skill_with_no_grade_publishes_no_grade_file() {
     let listed = crate::testgit::run(&set.bare, &["ls-tree", "-r", "--name-only", &branch]);
     assert!(!listed.out.contains(".grades.json"), "{}", listed.out);
 }
+
+#[test]
+fn a_file_an_install_leaves_on_the_server_still_reads_as_this_version_once_published() {
+    let set = set();
+    // Past the most a review reads of one file, so an install leaves it out.
+    let big = vec![b'x'; (purlis_skills::tree::MOST_FILE_BYTES + 1) as usize];
+    let dir = Level::project().dir(&set.plane).unwrap().join("deploy");
+    std::fs::write(dir.join("data.txt"), &big).unwrap();
+    let now = committed(&set.plane);
+    let level = Level::project();
+    grades::record(
+        &set.plane,
+        &level,
+        &graded(&now, "2026-10-30T10:00:00Z"),
+        "dev",
+    )
+    .unwrap();
+    let review = review_of(&set);
+    let Published::Opened { branch, .. } =
+        publish_of(&set, &review.accepted(), &StandIn::default()).unwrap()
+    else {
+        panic!()
+    };
+    let mut source = set.source.clone();
+    source.remote.branch = Some(branch);
+    let installing =
+        crate::skills::source::review(&set.plane, &source, &["deploy".to_owned()], &level).unwrap();
+    assert!(
+        matches!(
+            installing.skills[0].grade,
+            Some(SourceGrade::Shown {
+                this_version: true,
+                ..
+            })
+        ),
+        "{:?}",
+        installing.skills[0].grade
+    );
+}
+
+#[test]
+fn no_grade_file_goes_where_beside_the_folder_is_inside_a_skill_the_source_holds() {
+    let tmp = tempfile::tempdir().unwrap();
+    let plane = tmp.path().join("plane");
+    std::fs::create_dir_all(&plane).unwrap();
+    plane_with_skill(&plane);
+    // The source's root is itself a skill, so `deploy.grades.json` would be inside it.
+    let work = tmp.path().join("work");
+    std::fs::create_dir_all(&work).unwrap();
+    std::fs::write(
+        work.join("SKILL.md"),
+        "---\nname: root\ndescription: R\n---\n",
+    )
+    .unwrap();
+    let bare = upstream_of(tmp.path(), &work);
+    let now = committed(&plane);
+    let level = Level::project();
+    grades::record(&plane, &level, &graded(&now, "2026-10-30T10:00:00Z"), "dev").unwrap();
+    let review = review(
+        &plane,
+        None,
+        &level,
+        "deploy",
+        &source_at(&bare),
+        &StandIn::default(),
+    )
+    .unwrap();
+    assert!(review.carried.is_empty(), "{:?}", review.carried);
+}

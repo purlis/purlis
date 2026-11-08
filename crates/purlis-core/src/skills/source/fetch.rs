@@ -566,6 +566,18 @@ impl super::SkillSource for Fetched {
         super::Origin::Git(self.source.remote.clone()).label()
     }
 
+    /// The tree git holds of the folder at the commit: every file in it, those an install leaves
+    /// out too, as a publish wrote them, in the source's own object format.
+    fn folder_tree(&self, skill: &Found, files: &[SourceFile]) -> String {
+        let spec = format!("{}:{}", self.commit.as_str(), skill.folder);
+        self.scratch
+            .git(&["rev-parse", "--verify", "--quiet", &spec])
+            .ok()
+            .filter(git::Run::ok)
+            .map(|run| run.line().trim().to_owned())
+            .unwrap_or_else(|| super::carried::tree_of(files))
+    }
+
     fn grade(&self, skill: &Found) -> Option<Result<Vec<u8>, String>> {
         let path = super::carried::beside(&skill.folder)?;
         if let Some(left) = self.left.iter().find(|one| one.path == path) {

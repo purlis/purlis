@@ -258,11 +258,7 @@ fn view_of(review: &PublishReview, forge: &OnTheForge) -> PublishReviewView {
         broken: review.outgoing.broken.iter().map(|one| esc(one)).collect(),
         body: esc(&review.body),
         fork: fork_of(&review.route),
-        grade_files: review
-            .carried
-            .iter()
-            .map(|(path, _)| esc(path))
-            .collect(),
+        grade_files: review.carried.iter().map(|(path, _)| esc(path)).collect(),
         grades: review
             .grades
             .iter()

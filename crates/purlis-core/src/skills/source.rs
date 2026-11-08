@@ -83,6 +83,11 @@ pub trait SkillSource {
     fn grade(&self, _skill: &Found) -> Option<Result<Vec<u8>, String>> {
         None
     }
+    /// **The tree id of `skill`'s folder, whose files are `files`**, that a grade it carries is
+    /// compared with: worked out from the files, where the source holds no git tree of them.
+    fn folder_tree(&self, _skill: &Found, files: &[SourceFile]) -> String {
+        carried::tree_of(files)
+    }
     /// **Whose a grade it carries is**: the short word a person knows it by ([`Origin::label`]).
     fn whose(&self) -> String {
         self.shown()

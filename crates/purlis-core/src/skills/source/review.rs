@@ -528,13 +528,7 @@ fn graded(
     let whose = source.whose();
     Some(match source.grade(skill)? {
         Ok(bytes) => {
-            let tree = super::carried::tree_id(files.iter().map(|file| {
-                (
-                    file.parts.as_slice(),
-                    file.executable,
-                    file.bytes.as_slice(),
-                )
-            }));
+            let tree = source.folder_tree(skill, files);
             super::carried::shown(&bytes, &skill.name, &whose, &tree)
         }
         Err(why) => super::SourceGrade::LeftOut { whose, why },

@@ -10,9 +10,10 @@
 //! publish writes is left out whole, with the reason, and nothing from it is shown. It never
 //! reaches the eval record (ADR 0105, amended 2026-11-08).
 
+use gix::objs::tree::{Entry, EntryKind};
+use gix::objs::{Kind, WriteTo as _};
 use purlis_skills::grade::GradeEnd;
 use serde::{Deserialize, Serialize};
-use sha1::{Digest, Sha1};
 
 use crate::skills::grades;
 
@@ -216,10 +217,11 @@ fn row_problem(row: &Row) -> Result<(), String> {
         }
     }
     for (what, rate) in [("with", row.with), ("without", row.without)] {
-        if rate.is_some_and(|rate| rate > 100) {
+        if let Some(rate) = rate
+            && rate > 100
+        {
             return Err(format!(
-                "a grade's \"{what}\" rate is {}, outside 0 to 100",
-                rate.unwrap_or_default()
+                "a grade's \"{what}\" rate is {rate}, outside 0 to 100"
             ));
         }
     }
@@ -236,20 +238,31 @@ fn is_plain(name: &str) -> bool {
 }
 
 /// **The git tree id of a folder holding `files`** (each its path's parts, whether it is
-/// executable, and its bytes), worked out as git would write it: the id a grade's `tree` is
-/// compared with, the same whether a git source or an extension handed the files.
+/// executable, and its bytes), as git's SHA-1 writes it, worked out by gix: the id a grade's
+/// `tree` is compared with where no git tree was read, as for an extension's source.
 pub fn tree_id<'a>(files: impl IntoIterator<Item = (&'a [String], bool, &'a [u8])>) -> String {
     let mut root = Folder::default();
     for (parts, executable, bytes) in files {
         root.add(parts, executable, bytes);
     }
-    hex(&root.id())
+    root.id().to_string()
+}
+
+/// [`tree_id`] of a skill's files as a source handed them.
+pub fn tree_of(files: &[super::SourceFile]) -> String {
+    tree_id(files.iter().map(|file| {
+        (
+            file.parts.as_slice(),
+            file.executable,
+            file.bytes.as_slice(),
+        )
+    }))
 }
 
 /// A folder of [`tree_id`], built from its files' paths.
 #[derive(Default)]
 struct Folder {
-    files: Vec<(String, bool, [u8; 20])>,
+    files: Vec<(String, bool, gix::ObjectId)>,
     folders: Vec<(String, Folder)>,
 }
 
@@ -259,7 +272,7 @@ impl Folder {
             [] => {}
             [name] => self
                 .files
-                .push((name.clone(), executable, object("blob", bytes))),
+                .push((name.clone(), executable, object(Kind::Blob, bytes))),
             [first, rest @ ..] => {
                 let at = match self.folders.iter().position(|(name, _)| name == first) {
                     Some(at) => at,
@@ -273,36 +286,38 @@ impl Folder {
         }
     }
 
-    /// Its tree object's id: entries in git's order, where a folder sorts as its name and `/`.
-    fn id(&self) -> [u8; 20] {
-        let mut entries: Vec<(Vec<u8>, &str, &str, [u8; 20])> = Vec::new();
+    /// Its tree object's id.
+    fn id(&self) -> gix::ObjectId {
+        let mut entries: Vec<Entry> = Vec::new();
         for (name, executable, oid) in &self.files {
-            let mode = if *executable { "100755" } else { "100644" };
-            entries.push((name.as_bytes().to_vec(), name, mode, *oid));
+            let kind = if *executable {
+                EntryKind::BlobExecutable
+            } else {
+                EntryKind::Blob
+            };
+            entries.push(Entry {
+                mode: kind.into(),
+                filename: name.as_str().into(),
+                oid: *oid,
+            });
         }
         for (name, folder) in &self.folders {
-            let mut key = name.as_bytes().to_vec();
-            key.push(b'/');
-            entries.push((key, name, "40000", folder.id()));
+            entries.push(Entry {
+                mode: EntryKind::Tree.into(),
+                filename: name.as_str().into(),
+                oid: folder.id(),
+            });
         }
-        entries.sort_by(|a, b| a.0.cmp(&b.0));
+        entries.sort();
         let mut body = Vec::new();
-        for (_, name, mode, oid) in entries {
-            body.extend_from_slice(format!("{mode} {name}\0").as_bytes());
-            body.extend_from_slice(&oid);
-        }
-        object("tree", &body)
+        // Writing to a Vec cannot fail, and the entries are sorted as git sorts them.
+        let _ = gix::objs::Tree { entries }.write_to(&mut body);
+        object(Kind::Tree, &body)
     }
 }
 
-/// The id git gives an object of `kind` holding `body`.
-fn object(kind: &str, body: &[u8]) -> [u8; 20] {
-    let mut hash = Sha1::new();
-    hash.update(format!("{kind} {}\0", body.len()).as_bytes());
-    hash.update(body);
-    hash.finalize().into()
-}
-
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
+/// The id git's SHA-1 gives an object of `kind` holding `body`.
+fn object(kind: Kind, body: &[u8]) -> gix::ObjectId {
+    gix::objs::compute_hash(gix::hash::Kind::Sha1, kind, body)
+        .unwrap_or_else(|_| gix::ObjectId::null(gix::hash::Kind::Sha1))
 }
