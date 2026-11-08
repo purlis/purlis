@@ -2241,3 +2241,136 @@ fn the_folders_above_what_may_be_lifted_are_made_before_a_floor_chat() {
     #[cfg(unix)]
     assert!(!root.join("elsewhere").exists(), "the link was followed");
 }
+
+/// Where the person's environment moves gh's and glab's settings, extensions and sign-ins
+/// (`GH_CONFIG_DIR`, `GLAB_CONFIG_DIR`, `XDG_CONFIG_HOME`, `XDG_DATA_HOME`), no chat writes
+/// them, on any machine: their next run loads what is there, as it does from `~/.config/gh`.
+/// What is beside them stays the chat's, and a variable that names no absolute folder names
+/// nothing.
+#[test]
+fn a_forge_programs_folders_moved_by_a_variable_are_never_written_by_a_chat() {
+    use super::tests::writes;
+    let (_dir, root) = project();
+    let bin = tempfile::tempdir().expect("a bin");
+    let home_dir = tempfile::tempdir().expect("a home");
+    let elsewhere_dir = tempfile::tempdir().expect("a folder outside the home");
+    let home = real(home_dir.path());
+    let elsewhere = real(elsewhere_dir.path());
+    let config = elsewhere.join("cfg");
+    let data = elsewhere.join("data");
+    let gh = elsewhere.join("gh-own");
+    let glab = elsewhere.join("glab-own");
+    let said = |path: &Path| path.display().to_string();
+    let (path, config_said, data_said, gh_said, glab_said) = (
+        said(bin.path()),
+        said(&config),
+        said(&data),
+        said(&gh),
+        said(&glab),
+    );
+    let machine = Machine {
+        env: crate::secrets::Env::of(&[
+            ("PATH", path.as_str()),
+            ("XDG_CONFIG_HOME", config_said.as_str()),
+            ("XDG_DATA_HOME", data_said.as_str()),
+            ("GH_CONFIG_DIR", gh_said.as_str()),
+            ("GLAB_CONFIG_DIR", glab_said.as_str()),
+        ]),
+        home: Some(home.clone()),
+        os: Os::MacOs,
+    };
+    for harness in [Harness::Codex, Harness::Opencode] {
+        let profile = wrapped_floor(harness, &root, &machine, &[4040, 4041], None);
+        for not in [
+            config.join("gh/config.yml"),
+            config.join("glab-cli/config.yml"),
+            data.join("gh/extensions/gh-x/gh-x"),
+            gh.join("hosts.yml"),
+            glab.join("aliases.yml"),
+        ] {
+            assert!(
+                !writes(&profile, &not),
+                "{harness:?}: {} is writable",
+                not.display()
+            );
+        }
+        for still in [
+            config.join("other/x"),
+            data.join("other/x"),
+            elsewhere.join("x"),
+        ] {
+            assert!(
+                writes(&profile, &still),
+                "{harness:?}: {} is not writable",
+                still.display()
+            );
+        }
+    }
+    // On Linux, whose disks do not fold case, each is held as it is spelled.
+    let linux = Machine {
+        os: Os::Linux,
+        ..machine.clone()
+    };
+    let held: Vec<Denial> = Denied::of(&root, &linux)
+        .paths
+        .into_iter()
+        .filter(|denial| denial.path.starts_with(&elsewhere))
+        .collect();
+    for one in [
+        config.join("gh"),
+        config.join("glab-cli"),
+        data.join("gh"),
+        gh.clone(),
+        glab.clone(),
+    ] {
+        let denial = held
+            .iter()
+            .find(|denial| denial.path == one)
+            .unwrap_or_else(|| panic!("{} in {held:?}", one.display()));
+        assert_eq!(denial.class, Class::LaterCode, "{denial:?}");
+        assert_eq!(denial.access, Access::Write, "{denial:?}");
+        assert_eq!(denial.reach, Reach::AndBelow, "{denial:?}");
+        assert!(!denial.any_case, "{denial:?}");
+    }
+    let home_said = said(&home);
+    let root_said = said(&root);
+    let relative = Machine {
+        env: crate::secrets::Env::of(&[
+            ("GH_CONFIG_DIR", "gh-own"),
+            ("GLAB_CONFIG_DIR", ""),
+            ("XDG_DATA_HOME", "rel"),
+        ]),
+        home: Some(home.clone()),
+        os: Os::Linux,
+    };
+    assert!(
+        Denied::of(&root, &relative)
+            .paths
+            .iter()
+            .all(|denial| denial.path != Path::new("gh-own") && !denial.path.as_os_str().is_empty()),
+        "a variable that names no absolute folder names nothing"
+    );
+    // One that names the home, or the project, never takes the chat's own work from it.
+    let wide = Machine {
+        env: crate::secrets::Env::of(&[
+            ("GH_CONFIG_DIR", home_said.as_str()),
+            ("GLAB_CONFIG_DIR", root_said.as_str()),
+            ("XDG_CONFIG_HOME", "/"),
+        ]),
+        home: Some(home.clone()),
+        os: Os::Linux,
+    };
+    let wide_held: Vec<PathBuf> = Denied::of(&root, &wide)
+        .paths
+        .into_iter()
+        .filter(|denial| denial.class == Class::LaterCode)
+        .map(|denial| denial.path)
+        .collect();
+    for never in [home.clone(), root.clone()] {
+        assert!(
+            !wide_held.contains(&never),
+            "{} in {wide_held:?}",
+            never.display()
+        );
+    }
+}

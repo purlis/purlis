@@ -1386,6 +1386,28 @@ fn engine_stands(kept: &Kept, docker: &Docker) -> Result<(), Removed> {
     }
 }
 
+/// **Whether Docker still answers as the engine that made `kept`**, read again right before a
+/// removal acts by name and before its row is forgotten: the engine `docker` reaches can change
+/// between [`engine_stands`] and either, and a removal by name would then act on another
+/// engine's same-named container and volume. `Ok` where no engine was noted of it, whose removal
+/// goes by name and id as it always did; otherwise what Docker answers now, in words.
+fn engine_still(kept: &Kept, docker: &Docker) -> Result<(), String> {
+    let Some(made_on) = kept.engine.as_deref() else {
+        return Ok(());
+    };
+    match docker.engine_id() {
+        Ok(Some(now)) if now == made_on => Ok(()),
+        Ok(Some(now)) => Err(format!(
+            "Docker began answering as engine {now} during the removal, and engine {made_on} \
+             made it"
+        )),
+        Ok(None) => Err("Docker stopped saying which engine it is during the removal".to_owned()),
+        Err(why) => Err(format!(
+            "purlis could not read which engine Docker is during the removal ({why})"
+        )),
+    }
+}
+
 /// Takes this desktop out of a kept runner's peers over its link (`unpair`, session protocol
 /// 1.25), for [`remove`].
 pub type Unpair<'a> = dyn Fn(&Kept) -> Result<(), String> + 'a;
@@ -1430,8 +1452,21 @@ pub fn remove_locked(
             now(),
         ));
     }
+    let (id, home) = (kept.made.container.as_str(), kept.made.runner.volume());
+    // Read again as it acts: the engine may have changed since it was checked, and nothing is
+    // removed by name on another one.
+    if let Err(why) = engine_still(&kept, docker) {
+        return Ok(Removed {
+            peer,
+            container: Err(format!(
+                "runner {name}'s container {id} was not removed: {why}"
+            )),
+            volume: Err(format!("its home volume {home} was not removed either")),
+            forgotten: false,
+            earlier: None,
+        });
+    }
     let (container, volume) = docker.remove_each(&kept.made);
-    let forgotten = container.is_ok() && volume.is_ok();
     if container.is_ok() {
         record_hours(crate::runnerhours::stopped(
             config_root,
@@ -1440,13 +1475,28 @@ pub fn remove_locked(
             now(),
         ));
     }
+    let mut container = container.map_err(|why| why.to_string());
+    let volume = volume.map_err(|why| why.to_string());
+    // And again before its row goes: an engine that changed while it was removed may still hold
+    // what was this runner's.
+    if container.is_ok()
+        && volume.is_ok()
+        && let Err(why) = engine_still(&kept, docker)
+    {
+        container = Err(format!(
+            "runner {name}'s container {id} and home volume {home} may still be on the engine \
+             that made it: {why}. Where they are: docker container rm --force {id}; docker \
+             volume rm --force {home}"
+        ));
+    }
+    let forgotten = container.is_ok() && volume.is_ok();
     if forgotten {
         forget_locked(config_root, name, locked)?;
     }
     Ok(Removed {
         peer,
-        container: container.map_err(|why| why.to_string()),
-        volume: volume.map_err(|why| why.to_string()),
+        container,
+        volume,
         forgotten,
         earlier: None,
     })

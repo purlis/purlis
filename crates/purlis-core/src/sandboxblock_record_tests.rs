@@ -653,3 +653,36 @@ fn purliss_own_blocks_count_at_most_once_per_chat_a_day() {
     ));
     assert_eq!(counts(&entries, now)[0].ours, 3);
 }
+
+#[cfg(unix)]
+#[test]
+fn a_block_is_kept_at_once_while_something_else_holds_a_lock_on_the_record_s_folder() {
+    let (dir, root) = project();
+    let data = dir.path().join("data");
+    let record = Record::in_data(&data);
+    let folder = data.join(DIR);
+    std::fs::create_dir_all(&folder).expect("the record's folder");
+    // What a chat that can open the folder could do: hold a lock on it and never let go.
+    let held = std::fs::File::open(&folder).expect("the folder, open");
+    rustix::fs::flock(&held, rustix::fs::FlockOperation::LockExclusive).expect("held");
+    let entry = Entry::blocked(
+        &HOST_BLOCK,
+        Some("api.example.com:443"),
+        chat("01J", "fix the build"),
+        None,
+        1_000,
+    );
+
+    let started = std::time::Instant::now();
+    record
+        .write(&root, &entry)
+        .expect("kept, whoever holds the folder");
+
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(2),
+        "the write waited {:?} on a lock it should not take",
+        started.elapsed()
+    );
+    assert_eq!(record.read(&root, 1_000), vec![entry]);
+    drop(held);
+}

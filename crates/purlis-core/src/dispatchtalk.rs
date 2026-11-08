@@ -2498,6 +2498,25 @@ pub fn sender_of(name: &str) -> String {
     }
 }
 
+/// **Who a message or report is from, where its chat runs on pool `pool`'s runner**: `name`
+/// with the pool after it, `<name> (on pool <pool>'s runner)`, so the chat that reads it knows
+/// the words came from a runner. Held to a chat name's length ([`crate::reopen::MOST_LABEL`]),
+/// as [`sender`] and a report's reader hold it: a name too long to fit beside the pool is cut,
+/// and ends in `…`.
+pub fn from_a_pool(name: &str, pool: &str) -> String {
+    let most = crate::reopen::MOST_LABEL;
+    let after = format!(" (on pool {pool}'s runner)");
+    let room = most.saturating_sub(after.chars().count());
+    let name = name.trim();
+    let name = if name.chars().count() <= room {
+        name.to_owned()
+    } else {
+        let cut: String = name.chars().take(room.saturating_sub(1)).collect();
+        format!("{}…", cut.trim_end())
+    };
+    format!("{name}{after}").chars().take(most).collect()
+}
+
 fn sound(read: &str) -> Option<Message> {
     let message: Message = serde_json::from_str(read).ok()?;
     Some(Message {

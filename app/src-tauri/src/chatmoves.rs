@@ -802,6 +802,27 @@ pub(crate) struct MovedChat {
 }
 
 impl crate::planes::Held {
+    /// **A chat with tasks still working on this machine stays here** while they work: a move
+    /// to a runner `to` is refused, in a sentence naming `who`, how many there are and what to
+    /// do, since the chat would take its tasks' reports and questions with it to the runner.
+    /// A move back here, or one of a chat with none, is let through.
+    fn tasks_stay_here(&self, session: u32, to: &Place, who: &str) -> Result<(), String> {
+        if to.is_none() {
+            return Ok(());
+        }
+        match crate::dispatched::tasks_working_here(self, session) {
+            0 => Ok(()),
+            1 => Err(format!(
+                "{who} has a task still working on this machine, so it was not moved. End the \
+                 task, or wait for its report, then move it."
+            )),
+            many => Err(format!(
+                "{who} has {many} tasks still working on this machine, so it was not moved. End \
+                 them, or wait for their reports, then move it."
+            )),
+        }
+    }
+
     /// What `open` is for a move to `to`, or why it does not move, in a sentence.
     fn mover(
         &self,
@@ -873,6 +894,7 @@ impl crate::planes::Held {
                     .to_owned(),
             );
         }
+        self.tasks_stay_here(session, to, "This chat")?;
         let first = self.mover(asked, to)?;
         let workspace = first.1.workspace.clone();
         let mut group = vec![first];
@@ -884,14 +906,18 @@ impl crate::planes::Held {
             // A task on a runner of its own shares no clone with them, and stays (#4569).
             .filter(|other| !chats.on_its_own_runner(other.session))
         {
-            let one = self.mover(other, to).map_err(|why| {
-                let name = other.label.clone().unwrap_or_else(|| other.name.clone());
-                format!(
-                    "{name} also works in workspace {workspace} where this chat runs, and the \
-                     chats of a workspace share its clones, so they move together or not at \
-                     all, and none was moved. {name}: {why}"
-                )
-            })?;
+            // Its tasks still working here keep it here, and so the chats it moves with.
+            let one = self
+                .tasks_stay_here(other.session, to, "It")
+                .and_then(|()| self.mover(other, to))
+                .map_err(|why| {
+                    let name = other.label.clone().unwrap_or_else(|| other.name.clone());
+                    format!(
+                        "{name} also works in workspace {workspace} where this chat runs, and \
+                         the chats of a workspace share its clones, so they move together or not \
+                         at all, and none was moved. {name}: {why}"
+                    )
+                })?;
             group.push(one);
         }
         Ok(Movers { chats: group, from })
