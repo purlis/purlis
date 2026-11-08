@@ -1,8 +1,9 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { type OwnWork } from "./bindings";
 import { type State } from "./chatState";
-import { shownState } from "./shownState";
+import { counted, shownState } from "./shownState";
 import { ChatMark } from "./ui/chat-mark/ChatMark";
 import { AlertDialog } from "./ui/dialog/Dialog";
 import { Tooltip } from "./ui/tooltip/Tooltip";
@@ -28,6 +29,12 @@ export type Ending = {
   /** The workspace it is filed in, as the strip names it — for a question that says where. */
   workspace?: string;
   state: State;
+  /**
+   * **What it waits on of its own** (#3878), as the board says, while its turn has ended on
+   * helpers, monitors, background shells or a wake-up still in flight. Ending its program ends
+   * them too, so such a chat is asked about as one mid-turn is (#5748).
+   */
+  ownWork?: OwnWork;
 };
 
 /**
@@ -97,7 +104,7 @@ export function EndingList({ chats }: { chats: readonly Ending[] }) {
         <li key={chat.key}>
           <span className="what">{chat.harness ?? "shell"}</span>
           <span>{chat.name}</span>
-          <EndingState state={chat.state} />
+          <EndingState state={chat.state} ownWork={chat.ownWork} />
           {several && chat.project && <code className="where">{chat.project}</code>}
           {chat.cwd && <code className="where">{chat.cwd}</code>}
         </li>
@@ -107,13 +114,16 @@ export function EndingList({ chats }: { chats: readonly Ending[] }) {
 }
 
 /** What a chat about to end is doing: its board's word on the one mark (#5340). */
-function EndingState({ state }: { state: State }) {
-  // All this list knows is the board's word, and a turn that ended waits on the person.
+function EndingState({ state, ownWork }: { state: State; ownWork: OwnWork | undefined }) {
+  // All this list knows is the board's word and its own work: a turn that ended waits on the
+  // person, unless it waits on work of its own (#3878).
+  const waitsOnItsOwn = state === "waiting" && ownWork !== undefined;
   const shown = shownState({
     board: state,
-    needsYou: state === "waiting",
+    needsYou: state === "waiting" && !waitsOnItsOwn,
     task: null,
     harness: null,
+    ownWork: waitsOnItsOwn ? ownWork : undefined,
   });
   if (shown === undefined) return null;
   return (
@@ -125,9 +135,45 @@ function EndingState({ state }: { state: State }) {
   );
 }
 
-/** Whether `chat` could be interrupted mid-turn: it says it is, or it says nothing at all. */
+/**
+ * Whether ending `chat` could interrupt something: it says it is mid-turn, it says nothing at
+ * all, or its turn ended on work of its own still in flight (#5748).
+ */
 export function mightBeMidTurn(chat: Ending): boolean {
-  return chat.state === "running" || chat.state === "unknown";
+  return chat.state === "running" || chat.state === "unknown" || waitsOnItsOwnWork(chat);
+}
+
+/** Whether `chat`'s turn ended on work of its own still in flight (#3878). */
+function waitsOnItsOwnWork(chat: Ending): chat is Ending & { ownWork: OwnWork } {
+  return chat.state === "waiting" && chat.ownWork !== undefined;
+}
+
+/**
+ * **What ending these chats' own work ends**, added up (#5748): `1 monitor and 2 background
+ * shells`, in the board's words for each kind (`ownWorkSaid`). A wake-up is counted, not timed:
+ * across several chats a list of clock times says less than how many are lost.
+ */
+export function ownWorkEnded(works: readonly OwnWork[]): string {
+  const sum = (kind: "helpers" | "workflows" | "monitors" | "shells") =>
+    works.reduce((total, work) => total + work[kind], 0);
+  const parts = [
+    counted(sum("helpers"), "helper"),
+    counted(sum("workflows"), "workflow"),
+    counted(sum("monitors"), "monitor"),
+    counted(sum("shells"), "background shell"),
+    counted(works.filter((work) => work.wakes_at != null).length, "wake-up"),
+  ].filter((part): part is string => part !== undefined);
+  return parts.length < 2 ? parts.join("") : `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}`;
+}
+
+/** The sentence for the chats about to end whose turn ended on work of their own (#5748). */
+function ownWorkSentence(chats: readonly (Ending & { ownWork: OwnWork })[]): string {
+  const ended = ownWorkEnded(chats.map((chat) => chat.ownWork));
+  const who =
+    chats.length === 1
+      ? `${chats[0].name} is waiting on its own work`
+      : `${chats.length} chats are waiting on their own work`;
+  return ended === "" ? `${who}, which will end.` : `${who}: ${ended} will end.`;
 }
 
 /**
@@ -143,10 +189,14 @@ export function oneChatMidTurn(name: string, state: State): string | undefined {
   return undefined;
 }
 
-/** What the chats about to be ended are doing: which are mid-turn, and which cannot say. */
+/**
+ * What the chats about to be ended are doing: which are mid-turn, which cannot say, and what
+ * of their own work ends with those whose turn ended on it (#5748).
+ */
 export function MidTurnSaid({ chats }: { chats: readonly Ending[] }) {
   const running = chats.filter((chat) => chat.state === "running");
   const unknown = chats.filter((chat) => chat.state === "unknown");
+  const onTheirOwn = chats.filter(waitsOnItsOwnWork);
   return (
     <>
       {running.length > 0 && (
@@ -166,7 +216,14 @@ export function MidTurnSaid({ chats }: { chats: readonly Ending[] }) {
             : `${unknown.length} chats report no state, so purlis cannot tell whether they are mid-turn.`}
         </p>
       )}
-      {running.length === 0 && unknown.length === 0 && (
+      {onTheirOwn.length > 0 && (
+        // Said as the mid-turn line is: what it names ends with the chat, and nothing brings
+        // it back (#5748). It warns; the answer stays the person's.
+        <p className="honest mid-turn" role="alert">
+          {ownWorkSentence(onTheirOwn)}
+        </p>
+      )}
+      {running.length === 0 && unknown.length === 0 && onTheirOwn.length === 0 && (
         <p className="honest">No chat is mid-turn.</p>
       )}
     </>

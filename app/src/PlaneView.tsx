@@ -61,6 +61,7 @@ import {
   type FinishedTask,
   type LaidOut,
   type OpenChat,
+  type OwnWork,
   type StudioLink,
   type PlaneId,
   type LimitRefused,
@@ -604,8 +605,10 @@ import {
   backSaid,
   inItsTurn,
   isShell,
+  ownWorkOf,
   quietChats,
   sameList,
+  sameOwnWork,
   sameQuiet,
   stateOf,
   turnStateOf,
@@ -10799,6 +10802,7 @@ export const PlaneView = memo(function PlaneView({
         waitingIn: typeof waitingIn;
         quitting: Leaving[];
         doing: State[];
+        owning: (OwnWork | undefined)[];
         queued: typeof queued;
         queue: readonly number[];
         fromQueue: ReturnType<typeof queued>;
@@ -10809,6 +10813,9 @@ export const PlaneView = memo(function PlaneView({
     const report = () => {
       const states = chats.store.statesFor(chats.plane);
       const doing = quitting.map((chat) => stateOf(states, chat.session));
+      // What each waits on of its own (#3878): the quit warning and Restart to update say it
+      // ends (#5748).
+      const owning = quitting.map((chat) => ownWorkOf(states, chat.session));
       const queue = states.needsYou;
       const was = reported.current;
       const sameQueue = was?.queued === queued && sameList(was.queue, queue);
@@ -10819,6 +10826,8 @@ export const PlaneView = memo(function PlaneView({
         was.waitingIn === waitingIn &&
         was.quitting === quitting &&
         sameList(was.doing, doing) &&
+        was.owning.length === owning.length &&
+        was.owning.every((work, at) => sameOwnWork(work, owning[at])) &&
         sameQueue
       )
         return;
@@ -10831,6 +10840,7 @@ export const PlaneView = memo(function PlaneView({
         waitingIn,
         quitting,
         doing,
+        owning,
         queued,
         queue,
         fromQueue,
@@ -10849,7 +10859,12 @@ export const PlaneView = memo(function PlaneView({
         ...mine,
         workspaces,
         ...fromQueue,
-        ending: quitting.map(({ chat }, at) => ({ ...chat, state: doing[at] })),
+        ending: quitting.map(({ chat }, at) => {
+          const ownWork = owning[at];
+          return ownWork === undefined
+            ? { ...chat, state: doing[at] }
+            : { ...chat, state: doing[at], ownWork };
+        }),
       });
     };
     report();

@@ -520,6 +520,26 @@ describe("being asked to quit", () => {
     expect(dialog.queryByText(/cannot yet tell/i)).not.toBeInTheDocument();
   });
 
+  it("says what a chat waiting on its own work loses, from the board's own work (#5748)", async () => {
+    const { askToQuit } = core(
+      [chat({ session: 7, name: "ide.7" })],
+      [],
+      [{ ...doing(7, "waiting"), own_work: { helpers: 0, workflows: 0, monitors: 1, shells: 2 } }],
+    );
+    render(<App />);
+    await vi.waitFor(() => expect(tabs()).toHaveLength(1));
+
+    await askToQuit();
+
+    const dialog = within(screen.getByRole("alertdialog"));
+    expect(
+      dialog.getByText(
+        /ide\.7 is waiting on its own work: 1 monitor and 2 background shells will end\./,
+      ),
+    ).toBeInTheDocument();
+    expect(dialog.queryByText("No chat is mid-turn.")).toBeNull();
+  });
+
   it("says plainly when nothing is mid-turn", async () => {
     const { askToQuit } = core([chat({ session: 7 })], [], [doing(7, "waiting")]);
     render(<App />);
