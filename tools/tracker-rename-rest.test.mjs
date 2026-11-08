@@ -16,6 +16,19 @@ import { codeLabel, renameItem } from "./tracker-rename-rest.mjs";
 
 const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), "tracker-rename-rest.mjs");
 
+// A stand-in for the clock, loaded before the script: each sleep it takes from
+// node:timers/promises is recorded, in milliseconds, to FAKE_SLEEP_LOG and returns at once. So a
+// test reads the pauses the script makes and never times them (#5802).
+const FAKE_SLEEP = `import { appendFileSync } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+import timers from "node:timers/promises";
+timers.setTimeout = async (ms, value) => {
+  appendFileSync(process.env.FAKE_SLEEP_LOG, JSON.stringify(ms) + "\\n");
+  return value;
+};
+syncBuiltinESMExports();
+`;
+
 // A stand-in `gh` over a state file of repos, each with a description, labels, issues (pull
 // requests among them), comments and review comments. It answers the lists and single reads the
 // script makes, applies PATCHes to the state, and logs every call.
@@ -403,17 +416,25 @@ test("apply needs a saved dry run of this script, and --delay-ms paces the write
   writeFileSync(other, JSON.stringify({ tool: "tracker-rename", version: 1, items: [] }));
   assert.match(t.run(["--apply", "--from", other]).stderr, /not a tracker-rename-rest dry run/);
   const { out } = dryRun(t);
-  const started = Date.now();
+  const sleep = join(t.dir, "sleep.mjs");
+  writeFileSync(sleep, FAKE_SLEEP);
+  const pauses = join(t.dir, "pauses.jsonl");
   const r = spawnSync(
     process.execPath,
-    [SCRIPT, "--gh", join(t.dir, "gh"), "--delay-ms", "150", "--apply", "--from", out],
+    ["--import", sleep, SCRIPT, "--gh", join(t.dir, "gh"), "--delay-ms", "7000", "--apply", "--from", out],
     {
       encoding: "utf8",
-      env: { ...process.env, FAKE_GH_STATE: t.statePath, FAKE_GH_LOG: t.logPath },
+      env: {
+        ...process.env,
+        FAKE_GH_STATE: t.statePath,
+        FAKE_GH_LOG: t.logPath,
+        FAKE_SLEEP_LOG: pauses,
+      },
     },
   );
   assert.equal(r.status, 0, r.stderr);
-  assert.ok(Date.now() - started >= 10 * 150, "ten pauses between eleven writes");
+  const slept = existsSync(pauses) ? readFileSync(pauses, "utf8").trim().split("\n").map(Number) : [];
+  assert.deepEqual(slept, Array(10).fill(7000), "ten pauses between eleven writes");
 });
 
 test("every occurrence is accounted for, per kind", () => {
