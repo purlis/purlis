@@ -3172,3 +3172,55 @@ fn a_studio_time_that_does_not_read_is_absent_and_the_link_stands_5248() {
     assert_eq!(job.started, None);
     assert_eq!(job.finished.as_deref(), Some("2026-11-04T17:42:00Z"));
 }
+
+#[test]
+fn what_a_chat_had_left_running_of_its_own_survives_a_relaunch_5747() {
+    let plane = tempfile::tempdir().unwrap();
+    let waiting = Chat {
+        own_work: Some(crate::ownwork::OwnWork {
+            shells: 1,
+            monitors: 2,
+            until: Some(1_700_000_000),
+            ..crate::ownwork::OwnWork::default()
+        }),
+        ..claude("ide.7", None)
+    };
+    write(
+        plane.path(),
+        &Record {
+            chats: vec![waiting.clone(), claude("ide.8", Some(ID))],
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    let text = fs::read_to_string(path(plane.path())).unwrap();
+    assert_eq!(text.matches("\"own_work\"").count(), 1, "{text}");
+    assert_eq!(read(plane.path()).chats[0], waiting);
+    assert_eq!(read(plane.path()).chats[1].own_work, None);
+}
+
+#[test]
+fn own_work_that_does_not_read_whole_or_holds_nothing_reads_as_none_5747() {
+    for own_work in [
+        r#""shells""#,
+        r#"{"shells": -1}"#,
+        r#"{}"#,
+        r#"{"until": 5}"#,
+    ] {
+        let plane = tempfile::tempdir().unwrap();
+        let file = path(plane.path());
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(
+            &file,
+            format!(
+                r#"{{"version": 1, "at": 0, "chats": [{{"program": "claude", "name": "3", "own_work": {own_work}}}]}}"#
+            ),
+        )
+        .unwrap();
+
+        let back = read(plane.path()).chats;
+        assert_eq!(back.len(), 1, "{own_work}");
+        assert_eq!(back[0].own_work, None, "{own_work}");
+    }
+}

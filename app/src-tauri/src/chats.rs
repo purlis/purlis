@@ -726,7 +726,7 @@ struct Waiting {
     approval: Option<NeedsApproval>,
     /// What the launch would have told it as it started (#1513): a task still owing its
     /// report is told to carry on, and Retry now tells it the same.
-    told: Option<&'static str>,
+    told: Option<String>,
 }
 
 /// A chat a launch could not start, as [`Chats::waiting_to_start`] hands it over.
@@ -736,7 +736,7 @@ pub(crate) struct WaitingChat {
     pub why: String,
     pub approval: Option<NeedsApproval>,
     /// What it is told as it starts, kept while it is held aside (#1513).
-    pub told: Option<&'static str>,
+    pub told: Option<String>,
 }
 
 /// A chat a launch has registered and not started yet ([`Chats::begin_put_back`]).
@@ -748,7 +748,7 @@ struct Coming {
     number: u32,
     why: Why,
     /// What the launch tells it as it starts (#1513).
-    told: Option<&'static str>,
+    told: Option<String>,
     /// Whether its start is under way, so no second one takes it.
     starting: bool,
     /// The workspace its folder is in, read once as it is registered: where the window files
@@ -990,6 +990,14 @@ pub struct Chats {
     /// come before the chat is listed as open. Forgotten as each start is announced and as the
     /// chat closes, so a model never outlives the program it was reported for.
     models: Mutex<HashMap<u32, String>>,
+    /// **What each chat had left running of its own as its turn last ended** (#5747), by the
+    /// chat's number: what the record's `own_work` says while that program runs
+    /// ([`Self::heard_own_work`]). Kept apart from the board, whose wait lapses after an hour and
+    /// is cleared as a turn begins, because the record holds the work until a turn's end says it
+    /// is gone: a restart that ends the program then tells the chat brought back what it ended.
+    /// Forgotten as a new program starts and as the chat closes; a chat reattached from the
+    /// session host keeps what its record said ([`Self::begin_put_back`]).
+    own_work: Mutex<HashMap<u32, purlis_core::ownwork::OwnWork>>,
     /// **What a chat's harness named while its start was under way** (#5170), by the chat's
     /// number, with the run a `/clear` began: an entry from the moment the start is announced, so
     /// before its program runs, until the chat is listed as open and takes what it holds. The
@@ -1580,6 +1588,7 @@ impl Chats {
             restarting: Mutex::new(std::collections::HashSet::new()),
             told: Mutex::new(HashMap::new()),
             models: Mutex::new(HashMap::new()),
+            own_work: Mutex::new(HashMap::new()),
             going: crate::goingaway::Going::default(),
             fresh_starting: Arc::default(),
             fresh_ending: Arc::default(),
@@ -5290,8 +5299,10 @@ impl Chats {
                 }
                 return;
             }
-            // A new program knows no model until its harness says (#1021).
+            // A new program knows no model until its harness says (#1021), and has nothing of
+            // its own running yet (#5747).
             lock(&self.models).remove(&session);
+            lock(&self.own_work).remove(&session);
             if let Some(starting) = lock(&self.starting).as_ref() {
                 starting(session, harness, conversation.clone(), chat.graded);
             }
@@ -5699,6 +5710,7 @@ impl Chats {
         lock(&self.sizes).remove(&session);
         lock(&self.owed).remove(&session);
         lock(&self.models).remove(&session);
+        lock(&self.own_work).remove(&session);
         lock(&self.told).remove(&session);
         lock(&self.records).remove(&session);
         self.blocks.ended(session);
@@ -6639,6 +6651,24 @@ impl Chats {
         }
     }
 
+    /// **What chat `session` had left running of its own as its own harness's turn ended**
+    /// (#5747, spec #5743): `now`, as the board holds it once it took that turn's end, or none
+    /// where nothing is in flight. The turn's end is the authority on what still runs, so it
+    /// replaces what was held. Written down whenever it changes, and not only at a quit: a crash
+    /// writes nothing as it goes.
+    pub fn heard_own_work(&self, session: u32, now: Option<purlis_core::ownwork::OwnWork>) {
+        let now = now.filter(|work| !work.is_nothing());
+        let mut held = lock(&self.own_work);
+        let before = match now {
+            Some(work) => held.insert(session, work),
+            None => held.remove(&session),
+        };
+        drop(held);
+        if before != now {
+            self.write_it_down();
+        }
+    }
+
     /// **The model chat `session`'s harness said it runs on** (ADR 0087 §6, #1021), where it
     /// said one ([`Self::heard_model`]): what a grade records its chats ran on (SK-60, #3240).
     pub fn model_of(&self, session: u32) -> Option<String> {
@@ -7300,6 +7330,7 @@ impl Chats {
             .map(|&session| (session, self.sessions.process_id(session)))
             .collect();
         let models = lock(&self.models).clone();
+        let own_work = lock(&self.own_work).clone();
         let layout = lock(&self.layout).clone();
         // **A one-job program is never written** (#4761): read before `open`, as each lock here
         // is taken alone.
@@ -7416,6 +7447,9 @@ impl Chats {
                 // What its harness said this program runs on (#1021), and nothing a record put
                 // back carried from an earlier run.
                 model: models.get(&session).cloned(),
+                // What it had left running of its own as its turn last ended (#5747), and
+                // nothing a record put back carried from an earlier program: that was told.
+                own_work: own_work.get(&session).copied(),
                 ..chat.clone()
             }))
         }));
@@ -7463,7 +7497,7 @@ impl Chats {
         &self,
         record: &Record,
         size: Size,
-        told: &dyn Fn(&Chat) -> Option<&'static str>,
+        told: &dyn Fn(&Chat) -> Option<String>,
     ) -> Vec<Open> {
         self.begin_put_back(record, told);
         self.finish_put_back(size)
@@ -7474,11 +7508,7 @@ impl Chats {
     /// window can draw its tab ([`Self::restoring_now`]), and every record written holds it
     /// as it was recorded, so a quit before its start loses nothing.
     /// [`Self::finish_put_back`] starts them.
-    pub(crate) fn begin_put_back(
-        &self,
-        record: &Record,
-        told: &dyn Fn(&Chat) -> Option<&'static str>,
-    ) {
+    pub(crate) fn begin_put_back(&self, record: &Record, told: &dyn Fn(&Chat) -> Option<String>) {
         // Before a single chat starts, so that a number the record spent on a chat it no
         // longer holds — one the operator closed before quitting — is not dealt again to a
         // chat that would then read its workspace pointer and take its lock
@@ -7601,6 +7631,14 @@ impl Chats {
                 &|chat: &Chat| chat.cwd.as_deref().and_then(|cwd| plane.workspace_of(cwd)),
             ));
         }
+        // **What each had left running of its own is held under the number it starts as**
+        // (#5747): a chat the session host still runs keeps it, as its work runs on, and every
+        // other is told it as it starts and forgets it then.
+        lock(&self.own_work).extend(
+            coming
+                .iter()
+                .filter_map(|one| one.chat.own_work.map(|work| (one.number, work))),
+        );
         lock(&self.coming).extend(coming);
     }
 
@@ -7688,7 +7726,7 @@ impl Chats {
                 break;
             };
             let gate = std::time::Instant::now();
-            let first = self.told_put_back(&next.chat, next.told);
+            let first = self.told_put_back(&next.chat, next.told.as_deref());
             // Each phase of it timed, into the app's log (#4988).
             let started = crate::starttiming::timed(&next.chat.name, asked, gate, || {
                 self.start_recorded_told(&next.chat, size, next.why, first.as_deref(), None)
@@ -7721,7 +7759,7 @@ impl Chats {
                         approval,
                         chat: next.chat.clone(),
                         why,
-                        told: next.told,
+                        told: next.told.clone(),
                     });
                     let mut front = lock(&self.front);
                     if *front == Some(next.number) {
@@ -7976,7 +8014,7 @@ impl Chats {
                 chat: one.chat.clone(),
                 why: one.why.clone(),
                 approval: one.approval.clone(),
-                told: one.told,
+                told: one.told.clone(),
             })
             .collect()
     }
@@ -8024,10 +8062,10 @@ impl Chats {
         let (chat, told) = lock(&self.would_not_start)
             .iter()
             .find(|one| one.chat.identity.id.as_deref() == Some(id))
-            .map(|one| (one.chat.clone(), one.told))
+            .map(|one| (one.chat.clone(), one.told.clone()))
             .ok_or_else(|| format!("chat {id} is not waiting to start"))?;
         // Told what the launch would have told it: a task is told to carry on (#1513).
-        let told = self.told_put_back(&chat, told);
+        let told = self.told_put_back(&chat, told.as_deref());
         let started = self.start_recorded_told(&chat, size, Why::Relaunch, told.as_deref(), None);
         // Read again at every refusal, outside the lock: what the profile needs now, and not
         // what it needed at the launch (#1246).

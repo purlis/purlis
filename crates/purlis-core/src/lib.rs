@@ -300,6 +300,7 @@ pub mod tui;
 pub mod updates;
 pub mod usage;
 pub mod version;
+pub mod wakeline;
 #[cfg(unix)]
 pub mod windowline;
 #[cfg(unix)]

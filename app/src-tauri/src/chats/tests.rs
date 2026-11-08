@@ -7152,6 +7152,59 @@ fn the_model_a_chats_harness_reported_is_recorded_while_its_program_runs() {
 }
 
 #[test]
+fn what_a_chat_left_running_of_its_own_is_recorded_as_it_changes_and_kept_at_the_quit_5747() {
+    let dir = tempfile::tempdir().unwrap();
+    let (chats, wrote) = recorded();
+    let session = chats
+        .start(&chat(&a_claude(dir.path()), "ide.7", Some(ID)), SIZE)
+        .unwrap();
+    assert_eq!(chats.record().chats[0].own_work, None, "nothing said yet");
+    let a_shell = purlis_core::ownwork::OwnWork {
+        shells: 1,
+        until: Some(1_700_003_600),
+        ..purlis_core::ownwork::OwnWork::default()
+    };
+
+    // Written as the turn's end is heard, not only at a quit: a crash writes nothing.
+    chats.heard_own_work(session, Some(a_shell));
+    let last = lock(&wrote).last().cloned().expect("a record was written");
+    assert_eq!(last.chats[0].own_work, Some(a_shell));
+
+    // The same again writes nothing.
+    let before = lock(&wrote).len();
+    chats.heard_own_work(session, Some(a_shell));
+    assert_eq!(lock(&wrote).len(), before);
+
+    // The quit's own write keeps it, for the next launch to tell the chat.
+    let mut at_quit = None;
+    chats.write_last(|record| at_quit = Some(record.clone()));
+    assert_eq!(at_quit.expect("written").chats[0].own_work, Some(a_shell));
+    let _ = chats.close(session);
+}
+
+#[test]
+fn a_turn_s_end_that_says_nothing_runs_clears_what_the_record_held_5747() {
+    let dir = tempfile::tempdir().unwrap();
+    let (chats, wrote) = recorded();
+    let session = chats
+        .start(&chat(&a_claude(dir.path()), "ide.7", Some(ID)), SIZE)
+        .unwrap();
+    chats.heard_own_work(
+        session,
+        Some(purlis_core::ownwork::OwnWork {
+            monitors: 1,
+            ..purlis_core::ownwork::OwnWork::default()
+        }),
+    );
+
+    chats.heard_own_work(session, None);
+
+    let last = lock(&wrote).last().cloned().expect("a record was written");
+    assert_eq!(last.chats[0].own_work, None);
+    let _ = chats.close(session);
+}
+
+#[test]
 fn a_model_reported_for_an_earlier_program_never_names_the_next() {
     let dir = tempfile::tempdir().unwrap();
     let chats = Chats::new();
