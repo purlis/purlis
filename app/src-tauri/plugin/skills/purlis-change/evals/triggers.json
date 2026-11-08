@@ -1,0 +1,178 @@
+[
+  {
+    "query": "The API bump touches core, web and mobile. Make it one cross-repo change so the three PRs stay together.",
+    "should_trigger": true
+  },
+  {
+    "query": "Start a purlis change called auth-v2 for the token rework across the backend and the SDK.",
+    "should_trigger": true
+  },
+  {
+    "query": "Add the sdk repo to the auth-v2 change, and it has to land after backend.",
+    "should_trigger": true
+  },
+  {
+    "query": "Which repo should merge first for the billing change?",
+    "should_trigger": true
+  },
+  {
+    "query": "Push all the branches of the logging change and open the linked pull requests.",
+    "should_trigger": true
+  },
+  {
+    "query": "Land the backend part of the auth-v2 change now, its checks are green.",
+    "should_trigger": true
+  },
+  {
+    "query": "What is the schema-split change still waiting on?",
+    "should_trigger": true
+  },
+  {
+    "query": "The rename across api and cli went badly. Roll the whole thing back in both repos.",
+    "should_trigger": true
+  },
+  {
+    "query": "I'm changing the protocol in three repos at once — how do I keep that together in purlis?",
+    "should_trigger": true
+  },
+  {
+    "query": "Can you show me the cross-repo changes in this workspace?",
+    "should_trigger": true
+  },
+  {
+    "query": "Keep the shared-types update and the two services that use it as one change, landed in order.",
+    "should_trigger": true
+  },
+  {
+    "query": "Land the next member of the payments change.",
+    "should_trigger": true
+  },
+  {
+    "query": "Why won't purlis land the web member of the release-notes change?",
+    "should_trigger": true
+  },
+  {
+    "query": "Take the docs repo out of the theming change — it turned out not to need anything.",
+    "should_trigger": true
+  },
+  {
+    "query": "Coordinate this migration across the db, api and worker repos so the PRs link to each other.",
+    "should_trigger": true
+  },
+  {
+    "query": "The merge queue took the core PR of the auth-v2 change. What now before the SDK can land?",
+    "should_trigger": true
+  },
+  {
+    "query": "Revert the logging change everywhere it landed and get the revert PRs up.",
+    "should_trigger": true
+  },
+  {
+    "query": "Is the auth-v2 change partly landed? Which repos are in and which are left?",
+    "should_trigger": true
+  },
+  {
+    "query": "Squash-land the cli member of the rename change.",
+    "should_trigger": true
+  },
+  {
+    "query": "We're done with the billing change; forget it in purlis.",
+    "should_trigger": true
+  },
+  {
+    "query": "Set up a multi-repo change for the config format: the parser repo first, then the app and the plugin.",
+    "should_trigger": true
+  },
+  {
+    "query": "Read the record of the schema-split change: why it exists and each repo's branch.",
+    "should_trigger": true
+  },
+  {
+    "query": "Push my branch on the web repo and open a PR.",
+    "should_trigger": false
+  },
+  {
+    "query": "Work on the api repo: fix the failing test and commit it.",
+    "should_trigger": false
+  },
+  {
+    "query": "Run two branches of the cli repo side by side so I can compare.",
+    "should_trigger": false
+  },
+  {
+    "query": "Clone the sdk repo into this workspace and build it.",
+    "should_trigger": false
+  },
+  {
+    "query": "Commit what you changed in the backend branch folder.",
+    "should_trigger": false
+  },
+  {
+    "query": "Bring my feature branch on mobile up to date with main.",
+    "should_trigger": false
+  },
+  {
+    "query": "How do I run the mobile repo's tests from this workspace?",
+    "should_trigger": false
+  },
+  {
+    "query": "Merge the docs PR on the website repo.",
+    "should_trigger": false
+  },
+  {
+    "query": "Make a new branch in the worker repo for the retry fix.",
+    "should_trigger": false
+  },
+  {
+    "query": "Change the theme of the window to something darker.",
+    "should_trigger": false
+  },
+  {
+    "query": "What changed in this task? Show me its diff.",
+    "should_trigger": false
+  },
+  {
+    "query": "Revert my last commit in this repo.",
+    "should_trigger": false
+  },
+  {
+    "query": "Write a changelog fragment for this fix.",
+    "should_trigger": false
+  },
+  {
+    "query": "Summarize the changes in this pull request for the reviewer.",
+    "should_trigger": false
+  },
+  {
+    "query": "Rename the payments repo to billing on GitHub.",
+    "should_trigger": false
+  },
+  {
+    "query": "Hand the migration work off to a new chat in the infra workspace.",
+    "should_trigger": false
+  },
+  {
+    "query": "Change my default workspace to infra.",
+    "should_trigger": false
+  },
+  {
+    "query": "Upgrade purlis to the newest version.",
+    "should_trigger": false
+  },
+  {
+    "query": "Show me which repos this workspace has cloned.",
+    "should_trigger": false
+  },
+  {
+    "query": "Rebase this PR onto main and force-push it.",
+    "should_trigger": false
+  },
+  {
+    "query": "Change the API's error format in this file.",
+    "should_trigger": false
+  },
+  {
+    "query": "Save the project's files and push them.",
+    "should_trigger": false
+  }
+]

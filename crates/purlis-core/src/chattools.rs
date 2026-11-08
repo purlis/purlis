@@ -1256,7 +1256,7 @@ pub static TOOLS: [Tool; 29] = [
     },
     Tool {
         name: ASK_OPERATOR,
-        description: "Ask the operator a question and wait for the answer, through this \
+        description: "Ask the person a question and wait for the answer, through this \
                       harness's own prompt. From a dispatched task the question goes to the chat \
                       that asked first, and you are told who answered. Never ask for a password, token or other secret: \
                       a credential is used through `purlis secret`, never typed in. When a page \
@@ -1270,7 +1270,7 @@ pub static TOOLS: [Tool; 29] = [
                 "properties": {
                     "question": {
                         "type": "string",
-                        "description": "The question, as the operator will read it: for a \
+                        "description": "The question, as the person will read it: for a \
                                         browser, what the page needs of them.",
                     },
                     "browser": {
@@ -1745,7 +1745,7 @@ pub fn dispatch_report_args(
 pub fn question(args: &Map<String, Value>) -> Result<String, String> {
     let asked = string(args, "question")?.trim();
     if asked.is_empty() {
-        return Err("a question for the operator needs some words".to_owned());
+        return Err("a question for the person needs some words".to_owned());
     }
     Ok(asked.to_owned())
 }

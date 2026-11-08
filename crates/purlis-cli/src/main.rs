@@ -6151,6 +6151,10 @@ mod core_word_tests;
 #[path = "main/tests/serve.rs"]
 mod serve_tests;
 
+#[cfg(test)]
+#[path = "main/tests/shipped_skills.rs"]
+mod shipped_skill_tests;
+
 /// **What a turn's end tells the app it said**, from its `Stop` hook's `payload`: its last message,
 /// and for a judge of a grade its answer, which has to come back whole (SK-55).
 fn turn_output_of(payload: &str) -> Option<hookwire::Output> {

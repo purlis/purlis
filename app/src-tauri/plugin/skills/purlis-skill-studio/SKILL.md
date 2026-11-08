@@ -1,6 +1,6 @@
 ---
 name: purlis-skill-studio
-description: The steps and formats for the jobs purlis's Skill studio asks a chat for - a new skill, a skill's trigger tests, its outcome evals, both kinds of checks at once, or an edit drawn from its runs and grades - each of which comes back to the person as a draft. Use when a prompt typed by the Skill studio names this skill.
+description: When purlis's Skill studio typed this chat's prompt — to draft a new skill, write a skill's trigger tests, its outcome evals or both checks, or improve a skill from its runs and grades — follow its steps and formats, and each file comes back to the person as a draft. Use when a prompt names this skill, or asks to draft or redo a purlis skill in a skills folder, write its triggers.json or evals.json, or improve it from its runs and grades. Not for a Curate menu entry — that is purlis-curation-action. Not for creating a persona or changing its skill list — that is purlis-persona.
 ---
 
 # Writing for the Skill studio
@@ -29,7 +29,7 @@ waiting in the Skill studio.
 ## Draft a new skill
 
 The prompt names the folder new skills go in and, usually, what the skill should do. If it says
-nothing about that, ask the person before writing anything.
+nothing about that, ask the person with `ask_operator` before writing anything.
 
 1. Choose a name: lower-case letters, digits and hyphens, at most 64 characters, with no hyphen
    at either end and never two in a row, and not starting with `purlis-` (purlis keeps those

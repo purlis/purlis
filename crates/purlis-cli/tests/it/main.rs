@@ -82,6 +82,7 @@ mod memory_edit_and_archive;
 mod memory_move;
 mod migrate;
 mod news_and_adoption;
+mod no_shipped_skill_edits_a_workspace_md_by_hand;
 mod persona_lifecycle;
 mod persona_upkeep;
 mod pieces;

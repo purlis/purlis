@@ -1,0 +1,186 @@
+[
+  {
+    "query": "Hand this off to a new chat in the themes workspace; I'll pick it up there.",
+    "should_trigger": true
+  },
+  {
+    "query": "Open a chat in the reporting workspace for the crash-report idea and write it a brief.",
+    "should_trigger": true
+  },
+  {
+    "query": "Move the release-build memory A/B out of this chat into its own chat; I'll read it later.",
+    "should_trigger": true
+  },
+  {
+    "query": "This bug isn't what we're doing here. Start a separate chat for it and give it everything it needs.",
+    "should_trigger": true
+  },
+  {
+    "query": "Spin off a new chat to grill the follow-up spec; I'll talk to it myself.",
+    "should_trigger": true
+  },
+  {
+    "query": "Hand off the flaky e2e test to the git-ci-cd workspace.",
+    "should_trigger": true
+  },
+  {
+    "query": "Can you start a fresh chat in this workspace for the docs rewrite? Write it a brief.",
+    "should_trigger": true
+  },
+  {
+    "query": "Park this idea in a new chat for later; I don't want it in this conversation.",
+    "should_trigger": true
+  },
+  {
+    "query": "Send the CI cleanup to whichever workspace owns CI, as a new chat.",
+    "should_trigger": true
+  },
+  {
+    "query": "Make a new workspace for the billing integration and hand the work there.",
+    "should_trigger": true
+  },
+  {
+    "query": "Give the storybook baseline chore its own chat that I can check on tomorrow.",
+    "should_trigger": true
+  },
+  {
+    "query": "This belongs to the skills workspace, not here. Hand it over with a brief.",
+    "should_trigger": true
+  },
+  {
+    "query": "Open a new chat as the reviewer persona for this PR's review; I'll talk to it directly.",
+    "should_trigger": true
+  },
+  {
+    "query": "Write a handoff brief and start a chat for the dependency upgrade.",
+    "should_trigger": true
+  },
+  {
+    "query": "Split the security audit off into its own chat in the smart-ide workspace.",
+    "should_trigger": true
+  },
+  {
+    "query": "I want to carry on with the migration in a new chat with a clean context. Set it up with everything it needs.",
+    "should_trigger": true
+  },
+  {
+    "query": "Which workspace should the theme-export bug go to? Open a chat there for it.",
+    "should_trigger": true
+  },
+  {
+    "query": "File this as a chat in another workspace instead of fixing it now.",
+    "should_trigger": true
+  },
+  {
+    "query": "Move the onboarding copy work out of this chat; I'll follow it in the sidebar.",
+    "should_trigger": true
+  },
+  {
+    "query": "Start a separate purlis chat for the 0.5.1 release prep and brief it fully.",
+    "should_trigger": true
+  },
+  {
+    "query": "Hand this research question off; it's not this workspace's job.",
+    "should_trigger": true
+  },
+  {
+    "query": "Kick off a new chat to fix the runner retire-step bug while we keep going here.",
+    "should_trigger": true
+  },
+  {
+    "query": "Dispatch the test run as a task and wait for its report before we merge.",
+    "should_trigger": false
+  },
+  {
+    "query": "Ask the skills persona which option it prefers and bring its answer back here.",
+    "should_trigger": false
+  },
+  {
+    "query": "Have the reviewer persona review PR 4361 and tell me what it finds.",
+    "should_trigger": false
+  },
+  {
+    "query": "Run this ticket as a task in its own branch folder and report back when it's done.",
+    "should_trigger": false
+  },
+  {
+    "query": "Create a persona for release management with its own vault.",
+    "should_trigger": false
+  },
+  {
+    "query": "Which persona should own the CI dashboard work?",
+    "should_trigger": false
+  },
+  {
+    "query": "Smart close this chat.",
+    "should_trigger": false
+  },
+  {
+    "query": "Wrap up: write the session record and close.",
+    "should_trigger": false
+  },
+  {
+    "query": "We're done here. Summarise the session for the next chat and end it.",
+    "should_trigger": false
+  },
+  {
+    "query": "Write a session record of what we did today.",
+    "should_trigger": false
+  },
+  {
+    "query": "Open a new terminal tab and run the dev server.",
+    "should_trigger": false
+  },
+  {
+    "query": "Hand me the list of failing tests.",
+    "should_trigger": false
+  },
+  {
+    "query": "Write a brief for the design review meeting.",
+    "should_trigger": false
+  },
+  {
+    "query": "Close the PR without merging it.",
+    "should_trigger": false
+  },
+  {
+    "query": "Pass the user id to the API handler instead of the email.",
+    "should_trigger": false
+  },
+  {
+    "query": "Fix the failing test in app/src-tauri/src/handoff/tests.rs.",
+    "should_trigger": false
+  },
+  {
+    "query": "Add a new chat message type to the websocket protocol.",
+    "should_trigger": false
+  },
+  {
+    "query": "Summarise this thread in three bullets.",
+    "should_trigger": false
+  },
+  {
+    "query": "Rebase this branch onto main and push it.",
+    "should_trigger": false
+  },
+  {
+    "query": "Move this function into its own module.",
+    "should_trigger": false
+  },
+  {
+    "query": "Draft an email handing the project over to the new contractor.",
+    "should_trigger": false
+  },
+  {
+    "query": "Start the docker containers for local development.",
+    "should_trigger": false
+  },
+  {
+    "query": "What changed in the last five commits?",
+    "should_trigger": false
+  },
+  {
+    "query": "Open the settings file in my editor.",
+    "should_trigger": false
+  }
+]

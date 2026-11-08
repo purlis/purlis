@@ -51,6 +51,7 @@ export const NOT_SHIPPING = {
   "operator.yml": "checks the cluster operator and runs it on a throwaway kind cluster",
   "stress.yml": "the stress and scale measurements: its builds run tests and benchmarks only",
   "scale.yml": "the nightly scale run (#5497): its release builds measure a generated project and are never handed on",
+  "skill-grades.yml": "the CI grader of the built-in skills (spec #5714): it builds the grader to run trigger tests and proposes pins, never hands a build on",
 };
 
 /** The name a crate gives the feature only another crate's tests turn on; each is in `TEST_ONLY`. */
