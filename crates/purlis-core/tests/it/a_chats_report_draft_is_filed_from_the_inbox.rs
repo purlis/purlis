@@ -44,6 +44,7 @@ fn consent(agent_drafts: Option<bool>) -> Consent {
         crash_reports: None,
         agent_drafts,
         asked: true,
+        crash_notice: None,
     }
 }
 
