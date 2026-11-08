@@ -211,8 +211,9 @@ pub fn run_grant_filled(
 /// [`run_grant_filled`], with an entry picked for a field where the person used one (#5080), and
 /// the needs to remember. **A picked entry is held to every check a typed value is**, and more,
 /// whatever is pressed and before anything is stored: the entry it reads is judged as the key is,
-/// so no program and no tool is handed a browser's or a minter's key through a link, and it is
-/// one in a vault the persona may use, or the run's own.
+/// so no program and no tool is handed a browser's or a minter's key through a link; it is one in
+/// a vault the persona may use, or the run's own on the vault's own Allow (#5744); and one every
+/// persona of the run's vault may use (#5745). See `picked_refused`.
 pub fn run_grant_given(
     held: &crate::planes::Held,
     network: Option<&purlis_core::sandboxblock::record::Record>,

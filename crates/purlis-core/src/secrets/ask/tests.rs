@@ -1957,6 +1957,35 @@ fn a_link_another_persona_of_its_vault_may_not_read_through_is_refused_and_says_
     assert_eq!(asks.open().len(), 1, "still open");
 }
 
+/// **#5745**, the issue's own case: the persona the link's vault is tagged for, not the asking one
+/// (which may use it here), may not use the entry's vault. The press is refused, naming it.
+#[test]
+fn a_link_the_persona_its_vault_is_tagged_for_may_not_read_through_is_refused() {
+    let project = project_with_an_entry();
+    let root = project.path();
+    std::fs::write(
+        root.join("vaults.json"),
+        serde_json::json!({ "vaults": {
+            "team": {"provider": "plain-file", "config": {"file": "team.json"}, "persona": "qa"},
+            "own": {"provider": "plain-file", "config": {"file": "own.json"}, "persona": "devops"},
+        }})
+        .to_string(),
+    )
+    .unwrap();
+    // `devops` may use `team` on this machine, and `own` by its tag; `qa` may use only `team`.
+    crate::sandbox::local::grant_vault(root, "team", "devops").unwrap();
+    let asks = Asks::new(root);
+    held_for_nothing(&asks, need(7, "MISSING"));
+    let refused = asks
+        .answer(&ctx(root), asks.open()[0].id, stripe_in_own(), window())
+        .expect_err("qa would read own's entry through the link");
+    assert!(
+        refused.contains("qa may use vault team") && refused.contains("can't use vault own"),
+        "{refused}"
+    );
+    assert_eq!(asks.open().len(), 1, "still open");
+}
+
 /// #5745's review: where the link's vault's own entry can't be read, which personas may use it
 /// is not known, so the press is refused, failing closed, never taken as "none".
 #[test]

@@ -1455,10 +1455,10 @@ pub fn vaults_of(ctx: &Ctx, persona: &str) -> Result<Vec<String>, String> {
 
 /// **The personas that may use `vault`** (#5745), by name and sorted: the one the registry tags
 /// it for, and each you let use it on this machine, which is whom [`authorise`] opens it for. A
-/// grant policy's lock holds dormant is not counted, as `authorise` does not open it: lifting
-/// the lock is a later grant, judged as any is (or not, D-5745-6).
-/// None for a vault the registry does not hold. An error where the registry, or the vault's own
-/// entry in it, does not read, so "which is not known" is never said as "none".
+/// grant that policy's lock holds dormant is not counted, as `authorise` does not open it: lifting
+/// the lock is a later grant (D-5745-6). No personas (an empty list) for a vault the registry
+/// does not hold. An error where the registry, or the vault's own entry in it, does not read, so
+/// "which is not known" is never said as "none".
 pub fn personas_of(ctx: &Ctx, vault: &str) -> Result<Vec<String>, String> {
     let doc = registry::load_registry(ctx).map_err(|e| e.message.to_string())?;
     if !registry::vaults(&doc).contains_key(vault) {
