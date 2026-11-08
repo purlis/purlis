@@ -337,19 +337,13 @@ fn isolated_answer(
                 now,
                 || {
                     let ran = in_a_checked_folder(root, &ask.workspace, repo, piece, &held, || {
-                        // What git ignores there goes with the folder: refused, named (#3879).
-                        if let Some(why) =
-                            crate::piececmd::ignored_would_go(root, &ask.workspace, repo, piece)
-                        {
-                            say(Say::Fail(why.into()));
-                            return 1;
-                        }
-                        crate::piececmd::remove(
+                        // What git ignores there goes with the folder: refused, named (#3879),
+                        // with every other reason it is kept (#4500).
+                        crate::piececmd::remove_for_a_chat(
                             root,
                             &ask.workspace,
                             repo,
                             piece,
-                            false,
                             *delete_branch,
                             crate::finished::Forge::asking(&crate::finished::merged::of_the_plane(
                                 root,

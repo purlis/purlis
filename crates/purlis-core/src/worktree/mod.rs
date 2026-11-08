@@ -1197,65 +1197,7 @@ fn remove_present(
     };
 
     if !force {
-        // What would be lost is NAMED, not only counted: `--force` is the operator's call, and
-        // it is an informed one only if they can see which files and which commits it takes.
-        match changes(path) {
-            Some(changes) if changes.is_empty() => {}
-            Some(changes) => {
-                return Err(Refusal::Uncommitted {
-                    piece: piece.to_string(),
-                    changes,
-                });
-            }
-            None => {
-                return Err(Refusal::DirtUnknown {
-                    piece: piece.to_string(),
-                });
-            }
-        }
-        // A branch that stays keeps its own commits: only what no branch at all reaches is
-        // lost then.
-        let not_counted = if branch_stays {
-            None
-        } else {
-            branch.as_deref()
-        };
-        match unique_commits(path, not_counted)? {
-            None => {
-                // Its own refusal: "could not determine whether this holds uncommitted
-                // changes" is not what failed, and telling the operator the wrong thing about
-                // a guard that stopped a deletion is worse than saying nothing.
-                return Err(Refusal::UniqueUnknown {
-                    piece: piece.to_string(),
-                });
-            }
-            Some(0) => {}
-            Some(count) => {
-                return Err(Refusal::WouldLoseWork {
-                    piece: piece.to_string(),
-                    count,
-                    commits: commits_alone(path, branch.as_deref()),
-                });
-            }
-        }
-        // What git keeps for this folder alone goes with it, and no branch holds it (#1472):
-        // a ref only it has, its own settings. A commit only its HEAD's history still reaches
-        // was amended or rebased away, and does not count. Where git would not say, that is
-        // not "nothing".
-        match standing::own_state(path) {
-            None => {
-                return Err(Refusal::OwnUnknown {
-                    piece: piece.to_string(),
-                });
-            }
-            Some(own) if own.is_empty() => {}
-            Some(own) => {
-                return Err(Refusal::OwnState {
-                    piece: piece.to_string(),
-                    held: own.said(),
-                });
-            }
-        }
+        guard(path, piece, branch.as_deref(), branch_stays)?;
     }
 
     let mut argv = vec!["worktree", "remove"];
@@ -1285,6 +1227,95 @@ fn remove_present(
         was_stale: false,
         branch_deleted,
     })
+}
+
+/// **What keeps the folder of `piece`, at the checked `path` on `branch`, from a removal not
+/// forced**, in the order a removal reads it: uncommitted changes, commits no other ref
+/// reaches (less its own branch's where `branch_stays`), the git state only it keeps.
+fn guard(
+    path: &Path,
+    piece: &str,
+    branch: Option<&str>,
+    branch_stays: bool,
+) -> Result<(), Refusal> {
+    // What would be lost is NAMED, not only counted: `--force` is the operator's call, and
+    // it is an informed one only if they can see which files and which commits it takes.
+    match changes(path) {
+        Some(changes) if changes.is_empty() => {}
+        Some(changes) => {
+            return Err(Refusal::Uncommitted {
+                piece: piece.to_string(),
+                changes,
+            });
+        }
+        None => {
+            return Err(Refusal::DirtUnknown {
+                piece: piece.to_string(),
+            });
+        }
+    }
+    // A branch that stays keeps its own commits: only what no branch at all reaches is
+    // lost then.
+    let not_counted = if branch_stays { None } else { branch };
+    match unique_commits(path, not_counted)? {
+        None => {
+            // Its own refusal: "could not determine whether this holds uncommitted
+            // changes" is not what failed, and telling the operator the wrong thing about
+            // a guard that stopped a deletion is worse than saying nothing.
+            return Err(Refusal::UniqueUnknown {
+                piece: piece.to_string(),
+            });
+        }
+        Some(0) => {}
+        Some(count) => {
+            return Err(Refusal::WouldLoseWork {
+                piece: piece.to_string(),
+                count,
+                commits: commits_alone(path, branch),
+            });
+        }
+    }
+    // What git keeps for this folder alone goes with it, and no branch holds it (#1472):
+    // a ref only it has, its own settings. A commit only its HEAD's history still reaches
+    // was amended or rebased away, and does not count. Where git would not say, that is
+    // not "nothing".
+    match standing::own_state(path) {
+        None => {
+            return Err(Refusal::OwnUnknown {
+                piece: piece.to_string(),
+            });
+        }
+        Some(own) if own.is_empty() => {}
+        Some(own) => {
+            return Err(Refusal::OwnState {
+                piece: piece.to_string(),
+                held: own.said(),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// **The refusal a removal of `piece` not forced would meet, read without removing it**
+/// (#4500): `None` where its folder is gone or nothing keeps it. A chat's removal refused for
+/// what git ignores names this too, so the person meets every reason in one try.
+pub fn would_refuse(
+    plane: &Path,
+    ws: &str,
+    repo: &str,
+    piece: &str,
+    branch_stays: bool,
+) -> Option<Refusal> {
+    let path = path_for(plane, ws, repo, piece).ok()?;
+    let path = within_workspace(plane, ws, &path).ok()?;
+    if path.symlink_metadata().is_err() {
+        return None;
+    }
+    let branch = match head_of(&path) {
+        Ok(Base::Branch(b)) => Some(b),
+        _ => None,
+    };
+    guard(&path, piece, branch.as_deref(), branch_stays).err()
 }
 
 /// Commits reachable from HEAD and from no other ref — the work that would cease to exist.

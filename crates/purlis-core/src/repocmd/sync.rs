@@ -236,6 +236,44 @@ pub fn fetch_ref(
     }
 }
 
+/// **The commit branch `branch` of remote `remote` is at, as the remote answers now**
+/// (`git ls-remote --exit-code`), reached as [`reach`] reaches it: `None` where the remote has
+/// no such branch, `Err` where it could not be asked.
+pub fn remote_branch(
+    root: &Path,
+    clone: &Path,
+    remote: &str,
+    branch: &str,
+) -> Result<Option<String>, String> {
+    let full = format!("refs/heads/{branch}");
+    if branch.starts_with('-') || branch.chars().any(|c| c.is_control() || c == ':') {
+        return Err(format!(
+            "'{}' cannot name a branch to ask of '{remote}'",
+            crate::shown::short(branch)
+        ));
+    }
+    let (_, helper) = reach(root, clone, remote, None, false)?;
+    let asked = git::run_network(
+        clone,
+        helper.as_deref(),
+        &["ls-remote", "--exit-code", remote, &full],
+    )
+    .map_err(|e| e.to_string())?;
+    match asked.code {
+        // git's documented answer where no ref matches (`git ls-remote --exit-code`).
+        Some(2) => Ok(None),
+        Some(0) => Ok(asked.out.lines().find_map(|line| {
+            line.split_once('\t')
+                .filter(|(_, name)| *name == full)
+                .map(|(at, _)| at.to_owned())
+        })),
+        _ => Err(format!(
+            "git could not ask '{remote}' for {full} (access or network): {}",
+            asked.err.lines().next().unwrap_or("").trim()
+        )),
+    }
+}
+
 /// Whether a remote URL goes over SSH: `ssh://…`, or scp-style `host:path`.
 fn is_ssh(url: &str) -> bool {
     if url.starts_with("ssh://") || url.starts_with("git+ssh://") || url.starts_with("ssh+git://") {
