@@ -5,8 +5,9 @@
 //!
 //! **Scanned first** (ADR 0079 §6). Each span the shape scanner flags
 //! ([`crate::secretshape::leak_spans`], over the whole text and over each line, as a save asks
-//! it) is replaced by its kind in brackets, so neither the value nor a head of it is indexed. A
-//! title is scanned the same way before it is kept.
+//! it, both read at once by [`crate::secretshape::leak_spans_whole_and_by_line`]) is replaced by
+//! its kind in brackets, so neither the value nor a head of it is indexed. A title is scanned the
+//! same way before it is kept.
 //!
 //! **Then split as the file scan matches.** The scan finds a term at the start of a word, a word
 //! being a run of `\w` characters of the lowercased text ([`crate::memstore::rank`]). The index is
@@ -23,17 +24,7 @@ pub(crate) const VERSION: &str = "words-1";
 
 /// `text` with every span the shape scanner flags replaced by its kind, as `[kind]`.
 pub(crate) fn scanned(text: &str) -> String {
-    let mut spans: Vec<(std::ops::Range<usize>, &'static str)> =
-        crate::secretshape::leak_spans(text);
-    let mut at = 0;
-    for line in text.split_inclusive('\n') {
-        spans.extend(
-            crate::secretshape::leak_spans(line)
-                .into_iter()
-                .map(|(span, kind)| (span.start + at..span.end + at, kind)),
-        );
-        at += line.len();
-    }
+    let spans = crate::secretshape::leak_spans_whole_and_by_line(text);
     if spans.is_empty() {
         return text.to_string();
     }
