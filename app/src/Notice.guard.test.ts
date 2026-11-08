@@ -739,11 +739,12 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "just done; its Sign in with a token and Sign out are the way on",
   },
   "settings/signing.tsx": {
-    count: 1,
+    count: 4,
     why:
       ACTION +
-      ". The Signed commits card's read refusal (#5628), in the core's words; Set up signing " +
-      "is the way on",
+      ". The Signed commits card's read refusal (#5628), in the core's words; another device's " +
+      "key Remove refused, beside its row; and what Replace key or Remove signing came to, with " +
+      "a refusal's keys page (#5632). Set up signing, Remove and Open its keys page are the ways on",
   },
   "settings/profiles.tsx": {
     count: 2,

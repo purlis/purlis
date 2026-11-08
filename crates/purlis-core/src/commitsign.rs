@@ -186,6 +186,23 @@ pub fn make(config_root: &Path, store: &dyn keyring::Store) -> Result<Signer, St
     keep(store, &service, &Signer::generate()?)
 }
 
+/// **A new key made and kept in place of the one this device keeps** (Replace key, #5632): the
+/// old one is gone from the keychain once the new one reads back.
+pub fn replace(config_root: &Path, store: &dyn keyring::Store) -> Result<Signer, String> {
+    replace_with(config_root, store, &Signer::generate()?)
+}
+
+/// [`replace`] with `signer`, made already: a test's own key, known to its recordings.
+pub fn replace_with(
+    config_root: &Path,
+    store: &dyn keyring::Store,
+    signer: &Signer,
+) -> Result<Signer, String> {
+    let service = service(config_root)?;
+    let _held = crate::machine::Lock::named(config_root, LOCK);
+    keep(store, &service, signer)
+}
+
 /// **The person's own key kept** in place of any this device keeps: `openssh` as the file
 /// holds it, opened with `passphrase` where it has one. An Ed25519 key only.
 pub fn take(

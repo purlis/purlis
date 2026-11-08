@@ -293,6 +293,12 @@ pub const WINDOW_ONLY: &[&str] = &[
     // The email chat commits use, from the account's verified addresses (#5631).
     "signing_emails",
     "signing_use_email",
+    // The card's management (#5632): the accounts' keys read, another device's removed,
+    // Replace key and Remove signing, each behind the person's press in the window alone.
+    "signing_accounts_keys",
+    "signing_remove_other",
+    "signing_replace_key",
+    "signing_remove_everywhere",
     // Agent identity (#4485): GitHub's App flow, the tool lines and the key, each the person's.
     "agent_identities",
     "agent_identity_create",

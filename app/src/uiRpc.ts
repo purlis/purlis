@@ -830,6 +830,10 @@ export const commands = {
 	signingForgetSent: __WINDOW_ONLY_RESULT,
 	signingEmails: __WINDOW_ONLY_RESULT,
 	signingUseEmail: __WINDOW_ONLY_RESULT,
+	signingAccountsKeys: __WINDOW_ONLY_RESULT,
+	signingRemoveOther: __WINDOW_ONLY_RESULT,
+	signingReplaceKey: __WINDOW_ONLY_RESULT,
+	signingRemoveEverywhere: __WINDOW_ONLY_RESULT,
 	agentIdentities: __WINDOW_ONLY_RESULT,
 	agentIdentityCreate: __WINDOW_ONLY_RESULT,
 	agentIdentityCreateCancel: __WINDOW_ONLY,
@@ -12957,6 +12961,23 @@ export type SigningAccount = {
 	verifies: boolean,
 };
 
+/**  What an account holds of this person's purlis signing keys, as the card shows it once on. */
+export type SigningAccountKeys = {
+	kind: string,
+	host: string,
+	/**  Whether this device's key is on the account; `None` where the forge would not say. */
+	has_key?: boolean | null,
+	/**
+	 *  The account's purlis keys from the person's other devices, where the sign-in may read
+	 *  them.
+	 */
+	others: SigningOtherKey[],
+	/**  Whether the sign-in may remove a key there: else the keys page does. */
+	may_remove: boolean,
+	/**  The forge's page of the account's keys. */
+	keys_page: string,
+};
+
 /**  How adding the key went. */
 export type SigningAdded = 
 /**  The forge has it now, or had it already. */
@@ -12977,6 +12998,18 @@ export type SigningCheck = {
 	email: string,
 	/**  The repository the commit is in. */
 	repo: string,
+};
+
+/**  What became of one account, after Replace key or Remove signing. */
+export type SigningDone = {
+	kind: string,
+	host: string,
+	login: string,
+	/**  `done`, `not_there` (it never had the key), or `refused`. */
+	outcome: string,
+	/**  The forge's refusal, in a sentence, and its keys page to finish there. */
+	why?: string | null,
+	keys_page: string,
 };
 
 /**  One verified email address of the account, as the Check step offers it. */
@@ -13013,6 +13046,14 @@ export type SigningLane = {
 	ws: string,
 	repo: string,
 	piece: string,
+};
+
+/**  Another of the person's devices' purlis signing keys on an account. */
+export type SigningOtherKey = {
+	/**  The forge's id of it, as text: it removes it. */
+	id: string,
+	/**  `purlis · <device>`. */
+	title: string,
 };
 
 /**  How Sign and retry went for one branch folder. */

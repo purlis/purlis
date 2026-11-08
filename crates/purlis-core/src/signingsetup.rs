@@ -614,6 +614,7 @@ pub fn email_settings(forge: &Forge) -> String {
     }
 }
 
+pub mod manage;
 pub mod retry;
 
 #[cfg(test)]

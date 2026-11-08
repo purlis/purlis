@@ -53,6 +53,7 @@ import { EndingChat } from "../EndingChat";
 import { AskFirst } from "../ExtensionAction";
 import { Extensions } from "../Extensions";
 import { ForgeDeviceSignIn } from "../ForgeDeviceSignIn";
+import { RemoveSigningConfirm } from "../settings/signing";
 import { SigningSetupDialog } from "../SigningSetupDialog";
 import { ForgeGitLabSignIn } from "../ForgeGitLabSignIn";
 import { ForgeTokenSignIn } from "../ForgeTokenSignIn";
@@ -1069,6 +1070,20 @@ const DIALOGS: Opened[] = [
     open: async () => {
       render(<ForgeDeviceSignIn onSignedIn={nothing} onCancel={nothing} />);
       await screen.findByText("WDJB-MJHT");
+    },
+  },
+  {
+    name: "Remove signing's confirmation",
+    file: "settings/signing.tsx",
+    open: async () => {
+      render(
+        <RemoveSigningConfirm
+          accounts={[{ kind: "github", host: "github.com", login: "octocat", forge: "GitHub" }]}
+          onClose={nothing}
+          onRemove={nothing}
+        />,
+      );
+      await screen.findByText(/Commits already signed stay/);
     },
   },
   {

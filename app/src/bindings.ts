@@ -1865,6 +1865,27 @@ export const commands = {
 	 */
 	signingUseEmail: (forge: SigningForge, email: string) => typedError<null, string>(__TAURI_INVOKE("signing_use_email", { forge, email })),
 	/**
+	 *  **What each account holds of the person's purlis keys** (#5632): whether this device's key is
+	 *  there, and the other devices' keys. Read once the card is on, since it reads the key's
+	 *  public half from the Keychain, which the person set to Always Allow at setup.
+	 */
+	signingAccountsKeys: () => typedError<SigningAccountKeys[], string>(__TAURI_INVOKE("signing_accounts_keys")),
+	/**
+	 *  **Another device's purlis key removed from the account on `forge`** (#5632): for a lost or
+	 *  wiped machine. Never this device's own, nor a key the person added themselves.
+	 */
+	signingRemoveOther: (forge: SigningForge, id: string) => typedError<null, string>(__TAURI_INVOKE("signing_remove_other", { forge, id })),
+	/**
+	 *  **Replace key** (#5632, ADR 0116 §7): a new key in place of this Mac's, added to every account
+	 *  that had the old one, and the old one removed there. The card checks again.
+	 */
+	signingReplaceKey: () => typedError<SigningDone[], string>(__TAURI_INVOKE("signing_replace_key")),
+	/**
+	 *  **Remove signing** (#5632, ADR 0116 §7): this Mac's key out of its Keychain, then out of every
+	 *  account it was added to, behind the person's yes to the confirmation that names them.
+	 */
+	signingRemoveEverywhere: () => typedError<SigningDone[], string>(__TAURI_INVOKE("signing_remove_everywhere")),
+	/**
 	 *  **What the Agent identity tab draws**, read fresh. Each row proves itself against GitHub, so
 	 *  it shows what it acts as now.
 	 */
@@ -15767,6 +15788,23 @@ export type SigningAccount = {
 	verifies: boolean,
 };
 
+/**  What an account holds of this person's purlis signing keys, as the card shows it once on. */
+export type SigningAccountKeys = {
+	kind: string,
+	host: string,
+	/**  Whether this device's key is on the account; `None` where the forge would not say. */
+	has_key?: boolean | null,
+	/**
+	 *  The account's purlis keys from the person's other devices, where the sign-in may read
+	 *  them.
+	 */
+	others: SigningOtherKey[],
+	/**  Whether the sign-in may remove a key there: else the keys page does. */
+	may_remove: boolean,
+	/**  The forge's page of the account's keys. */
+	keys_page: string,
+};
+
 /**  How adding the key went. */
 export type SigningAdded = 
 /**  The forge has it now, or had it already. */
@@ -15787,6 +15825,18 @@ export type SigningCheck = {
 	email: string,
 	/**  The repository the commit is in. */
 	repo: string,
+};
+
+/**  What became of one account, after Replace key or Remove signing. */
+export type SigningDone = {
+	kind: string,
+	host: string,
+	login: string,
+	/**  `done`, `not_there` (it never had the key), or `refused`. */
+	outcome: string,
+	/**  The forge's refusal, in a sentence, and its keys page to finish there. */
+	why?: string | null,
+	keys_page: string,
 };
 
 /**  One verified email address of the account, as the Check step offers it. */
@@ -15823,6 +15873,14 @@ export type SigningLane = {
 	ws: string,
 	repo: string,
 	piece: string,
+};
+
+/**  Another of the person's devices' purlis signing keys on an account. */
+export type SigningOtherKey = {
+	/**  The forge's id of it, as text: it removes it. */
+	id: string,
+	/**  `purlis · <device>`. */
+	title: string,
 };
 
 /**  How Sign and retry went for one branch folder. */

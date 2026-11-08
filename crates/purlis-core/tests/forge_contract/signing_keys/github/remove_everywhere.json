@@ -1,0 +1,13 @@
+{
+  "source": "GitHub REST API version 2022-11-28, docs.github.com/en/rest/users/ssh-signing-keys: List SSH signing keys for the authenticated user (this device's among them), then Delete an SSH signing key (204). The key is the test's own, put in for @KEY@.",
+  "exchanges": [
+    {
+      "call": {"endpoint": {"rest": {"method": null, "path": "user/ssh_signing_keys"}}, "fields": [{"typed": ["per_page", "100"]}]},
+      "reply": {"code": 0, "out": "[{\"id\": 17, \"key\": \"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOtherDeviceKeyOtherDeviceKeyOtherDev\", \"title\": \"purlis · laptop\"}, {\"id\": 4242, \"key\": \"@KEY@\", \"title\": \"purlis · studio\"}]", "err": "", "status": 200}
+    },
+    {
+      "call": {"endpoint": {"rest": {"method": "DELETE", "path": "user/ssh_signing_keys/4242"}}, "fields": []},
+      "reply": {"code": 0, "out": "", "err": "", "status": 204}
+    }
+  ]
+}

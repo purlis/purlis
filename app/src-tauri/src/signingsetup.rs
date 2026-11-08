@@ -641,3 +641,231 @@ pub async fn signing_use_email(forge: SigningForge, email: String) -> Result<(),
     })
     .await
 }
+
+// ---------------------------------------------------------------------------------------
+// The card's management: more accounts, other devices, Replace key, Remove signing (#5632)
+// ---------------------------------------------------------------------------------------
+
+/// Another of the person's devices' purlis signing keys on an account.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct SigningOtherKey {
+    /// The forge's id of it, as text: it removes it.
+    pub id: String,
+    /// `purlis · <device>`.
+    pub title: String,
+}
+
+/// What an account holds of this person's purlis signing keys, as the card shows it once on.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct SigningAccountKeys {
+    pub kind: String,
+    pub host: String,
+    /// Whether this device's key is on the account; `None` where the forge would not say.
+    #[specta(optional)]
+    pub has_key: Option<bool>,
+    /// The account's purlis keys from the person's other devices, where the sign-in may read
+    /// them.
+    pub others: Vec<SigningOtherKey>,
+    /// Whether the sign-in may remove a key there: else the keys page does.
+    pub may_remove: bool,
+    /// The forge's page of the account's keys.
+    pub keys_page: String,
+}
+
+/// What became of one account, after Replace key or Remove signing.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct SigningDone {
+    pub kind: String,
+    pub host: String,
+    pub login: String,
+    /// `done`, `not_there` (it never had the key), or `refused`.
+    pub outcome: String,
+    /// The forge's refusal, in a sentence, and its keys page to finish there.
+    #[specta(optional)]
+    pub why: Option<String>,
+    pub keys_page: String,
+}
+
+/// A signed-in account, its forge, and the window's transport to it.
+type Reached = (
+    ForgeAccount,
+    Forge,
+    std::sync::Arc<dyn purlis_core::forge::transport::Transport>,
+);
+
+/// Each signed-in account, with its forge and the window's transport to it.
+fn reached(root: &std::path::Path) -> Result<Vec<Reached>, String> {
+    every_account(root)?
+        .into_iter()
+        .map(|account| {
+            let forge = signingsetup::forge_of(account.kind, &account.host);
+            let sent = transport(&forge)?;
+            Ok((account, forge, sent))
+        })
+        .collect()
+}
+
+/// **What each account holds of the person's purlis keys** (#5632): whether this device's key is
+/// there, and the other devices' keys. Read once the card is on, since it reads the key's
+/// public half from the Keychain, which the person set to Always Allow at setup.
+#[tauri::command]
+#[specta::specta]
+pub async fn signing_accounts_keys() -> Result<Vec<SigningAccountKeys>, String> {
+    blocking(|| {
+        let root = config_root()?;
+        let key = the_key(&root)?;
+        Ok(reached(&root)?
+            .into_iter()
+            .map(|(account, forge, sent)| {
+                let keys_page = signingsetup::manage::keys_page(&forge);
+                let (has_key, others, may_remove) =
+                    match signingkeys::listed_over(sent.as_ref(), &forge) {
+                        Ok(listed) => (
+                            Some(listed.this_device(&key).is_some()),
+                            listed
+                                .other_devices(&key)
+                                .into_iter()
+                                .map(|other| SigningOtherKey {
+                                    id: other.id.to_string(),
+                                    title: other.title.clone(),
+                                })
+                                .collect(),
+                            true,
+                        ),
+                        // The sign-in may not read its own list: the public one says whether
+                        // the key is there, and names no title.
+                        Err(_) => (
+                            signingkeys::listed_publicly_over(
+                                sent.as_ref(),
+                                &forge,
+                                &account.login,
+                            )
+                            .ok()
+                            .map(|listed| listed.this_device(&key).is_some()),
+                            Vec::new(),
+                            false,
+                        ),
+                    };
+                SigningAccountKeys {
+                    kind: account.kind.word().to_string(),
+                    host: account.host,
+                    has_key,
+                    others,
+                    may_remove,
+                    keys_page,
+                }
+            })
+            .collect())
+    })
+    .await
+}
+
+/// **Another device's purlis key removed from the account on `forge`** (#5632): for a lost or
+/// wiped machine. Never this device's own, nor a key the person added themselves.
+#[tauri::command]
+#[specta::specta]
+pub async fn signing_remove_other(forge: SigningForge, id: String) -> Result<(), String> {
+    blocking(move || {
+        let forge = forge.forge()?;
+        let id: u64 = id.parse().map_err(|_| format!("{id} is not a key's id"))?;
+        let root = config_root()?;
+        the_account(&root, &forge)?;
+        let keyring = commitsign::this_builds_keyring(&root);
+        let key = signingsetup::key_kept(&root, keyring.as_ref())?;
+        let sent = transport(&forge)?;
+        signingsetup::manage::remove_other_device(
+            &signingsetup::manage::OnAccount {
+                forge,
+                transport: sent.as_ref(),
+            },
+            key.as_ref(),
+            id,
+        )
+    })
+    .await
+}
+
+/// What became of each account, in the card's words.
+fn said_of(
+    accounts: Vec<(ForgeAccount, Forge)>,
+    outcomes: Vec<signingsetup::manage::Outcome>,
+) -> Vec<SigningDone> {
+    use signingsetup::manage::Outcome;
+    accounts
+        .into_iter()
+        .zip(outcomes)
+        .map(|((account, forge), outcome)| {
+            let (outcome, why) = match outcome {
+                Outcome::Done => ("done", None),
+                Outcome::NotThere => ("not_there", None),
+                Outcome::Refused(why) => ("refused", Some(why)),
+            };
+            SigningDone {
+                kind: account.kind.word().to_string(),
+                keys_page: signingsetup::manage::keys_page(&forge),
+                host: account.host,
+                login: account.login,
+                outcome: outcome.to_string(),
+                why,
+            }
+        })
+        .collect()
+}
+
+/// Runs `then` over every signed-in account, and forgets every Verified this window found: a
+/// key that changed or went is checked again.
+fn on_every_account<T>(
+    then: impl FnOnce(
+        &std::path::Path,
+        &[signingsetup::manage::OnAccount],
+    ) -> Result<(T, Vec<signingsetup::manage::Outcome>), String>,
+) -> Result<(T, Vec<SigningDone>), String> {
+    let root = config_root()?;
+    let reached = reached(&root)?;
+    let on: Vec<signingsetup::manage::OnAccount> = reached
+        .iter()
+        .map(|(_, forge, sent)| signingsetup::manage::OnAccount {
+            forge: forge.clone(),
+            transport: sent.as_ref(),
+        })
+        .collect();
+    let (kept, outcomes) = then(&root, &on)?;
+    *VERIFIED.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    let accounts = reached
+        .into_iter()
+        .map(|(account, forge, _)| (account, forge))
+        .collect();
+    Ok((kept, said_of(accounts, outcomes)))
+}
+
+/// **Replace key** (#5632, ADR 0116 §7): a new key in place of this Mac's, added to every account
+/// that had the old one, and the old one removed there. The card checks again.
+#[tauri::command]
+#[specta::specta]
+pub async fn signing_replace_key() -> Result<Vec<SigningDone>, String> {
+    blocking(|| {
+        on_every_account(|root, on| {
+            let keyring = commitsign::this_builds_keyring(root);
+            signingsetup::manage::replace(root, keyring.as_ref(), on, &signingkeys::title())
+                .map(|(_, done)| ((), done))
+        })
+        .map(|((), done)| done)
+    })
+    .await
+}
+
+/// **Remove signing** (#5632, ADR 0116 §7): this Mac's key out of its Keychain, then out of every
+/// account it was added to, behind the person's yes to the confirmation that names them.
+#[tauri::command]
+#[specta::specta]
+pub async fn signing_remove_everywhere() -> Result<Vec<SigningDone>, String> {
+    blocking(|| {
+        on_every_account(|root, on| {
+            let keyring = commitsign::this_builds_keyring(root);
+            signingsetup::manage::remove_everywhere(root, keyring.as_ref(), on)
+                .map(|done| ((), done))
+        })
+        .map(|((), done)| done)
+    })
+    .await
+}

@@ -9,6 +9,7 @@ import type {
   ForgeAccountRow,
   ForgeDeviceCode,
   SigningAccount,
+  SigningAccountKeys,
   SigningCheck,
   SigningEmails,
   SigningState,
@@ -88,6 +89,26 @@ let listed: boolean;
 let checked: SigningCheck;
 /** The account's verified addresses. */
 let emails: SigningEmails;
+/** What each account holds of the person's keys. */
+let accountsKeys: SigningAccountKeys[];
+
+/** GitHub's account, holding this Mac's key and a laptop's. */
+const HELD: SigningAccountKeys = {
+  kind: "github",
+  host: "github.com",
+  has_key: true,
+  others: [{ id: "17", title: "purlis · laptop" }],
+  may_remove: true,
+  keys_page: "https://github.com/settings/keys",
+};
+
+const done = (outcome: string) => ({
+  kind: "github",
+  host: "github.com",
+  login: "octocat",
+  outcome,
+  keys_page: "https://github.com/settings/keys",
+});
 /** Ends the permission wait in progress. */
 let allow: () => void;
 let refuse: (why: string) => void;
@@ -106,6 +127,7 @@ beforeEach(() => {
     ],
     settings: "https://github.com/settings/emails",
   };
+  accountsKeys = [structuredClone(HELD)];
   allow = () => undefined;
   refuse = () => undefined;
   Object.defineProperty(navigator, "clipboard", {
@@ -150,6 +172,15 @@ beforeEach(() => {
         return checked;
       case "signing_emails":
         return emails;
+      case "signing_accounts_keys":
+        return structuredClone(accountsKeys);
+      case "signing_remove_other":
+        return null;
+      case "signing_replace_key":
+        return [done("done")];
+      case "signing_remove_everywhere":
+        state = { ...state, on: false };
+        return [done("done")];
       case "signing_use_email":
         checked = VERIFIED;
         return null;
@@ -533,5 +564,84 @@ describe("the Signed commits card", () => {
       await screen.findByRole("button", { name: "Check signing on octocat on GitHub" }),
     ).toBeTruthy();
     expect(screen.queryByText("Verified on GitHub ✓")).toBeNull();
+  });
+
+  it("on, offers Add to this account where an account hasn't the key, and opens setup for it", async () => {
+    state = { ...structuredClone(ON), accounts: [ACCOUNT, GITLAB] };
+    accountsKeys = [
+      { ...HELD, others: [] },
+      {
+        kind: "gitlab",
+        host: "gitlab.example.org",
+        has_key: false,
+        others: [],
+        may_remove: true,
+        keys_page: "https://gitlab.example.org/-/user_settings/ssh_keys",
+      },
+    ];
+    render(<Card />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Add to this account: sam on GitLab" }),
+    );
+    const dialog = await theDialog();
+    expect(await within(dialog).findByText("Verified on GitLab ✓")).toBeTruthy();
+    expect(commandsSent("signing_add_key")).toEqual([
+      { cmd: "signing_add_key", args: { forge: ON_GITLAB } },
+    ]);
+  });
+
+  it("lists another device's key and removes it from this one", async () => {
+    state = structuredClone(ON);
+    render(<Card />);
+    const list = await screen.findByRole("list", { name: "Your other devices' signing keys" });
+    expect(list).toHaveTextContent("purlis · laptop");
+    await userEvent.click(
+      within(list).getByRole("button", { name: "Remove purlis · laptop from octocat on GitHub" }),
+    );
+    await waitFor(() =>
+      expect(commandsSent("signing_remove_other")).toEqual([
+        { cmd: "signing_remove_other", args: { forge: ON_GITHUB, id: "17" } },
+      ]),
+    );
+  });
+
+  it("where the sign-in may not remove a key, links to the forge's keys page instead", async () => {
+    state = structuredClone(ON);
+    accountsKeys = [{ ...HELD, may_remove: false }];
+    render(<Card />);
+    await userEvent.click(await screen.findByRole("button", { name: "Remove it on the forge" }));
+    await waitFor(() =>
+      expect(commandsSent("plugin:opener|open_url")[0]?.args).toMatchObject({
+        url: "https://github.com/settings/keys",
+      }),
+    );
+    expect(commandsSent("signing_remove_other")).toEqual([]);
+  });
+
+  it("Remove signing confirms once, naming the accounts and that signed commits stay signed", async () => {
+    state = structuredClone(ON);
+    render(<Card />);
+    await screen.findByRole("list", { name: "Your other devices' signing keys" });
+    await userEvent.click(screen.getByRole("button", { name: "Remove signing" }));
+    const confirm = await screen.findByRole("dialog", { name: "Remove signing from this Mac?" });
+    expect(
+      within(confirm).getByRole("list", { name: "Accounts it is removed from" }),
+    ).toHaveTextContent("octocat on GitHub");
+    expect(confirm).toHaveTextContent("Commits already signed stay as they are");
+    expect(commandsSent("signing_remove_everywhere")).toEqual([]);
+    await userEvent.click(within(confirm).getByRole("button", { name: "Remove signing" }));
+    expect(await screen.findByText("Not set up")).toBeTruthy();
+    expect(commandsSent("signing_remove_everywhere").length).toBe(1);
+  });
+
+  it("Replace key replaces it on every account and asks for a fresh check", async () => {
+    state = {
+      ...structuredClone(ON),
+      accounts: [{ ...ACCOUNT, verified_as: "octocat@example.com" }],
+    };
+    render(<Card />);
+    await userEvent.click(await screen.findByRole("button", { name: "Replace key" }));
+    expect(await screen.findByText(/A new key is in place of the old one/)).toBeTruthy();
+    expect(commandsSent("signing_replace_key").length).toBe(1);
   });
 });
