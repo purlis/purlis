@@ -622,6 +622,37 @@ pub(crate) fn reopened_views(
         .collect())
 }
 
+/// The personas one workspace's chats ran as, as the reopen record keeps them (#3593).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub(crate) struct WorkedIn {
+    pub workspace: String,
+    pub personas: Vec<String>,
+}
+
+/// **Who has worked in each workspace of this project**, kept past their chats and past a
+/// relaunch (#3593): what the Personas view's In this workspace draws with the workspace's session
+/// records and the chats the window sees. Read off this clone's reopen record
+/// ([`purlis_core::reopen::worked`]), off the window's thread, and apart from the panels, so it
+/// costs their 100 ms nothing.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn worked_here(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+) -> Result<Vec<WorkedIn>, String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    crate::off_the_window("reading who worked where", move || {
+        Ok(purlis_core::reopen::worked::worked(&root)
+            .into_iter()
+            .map(|(workspace, personas)| WorkedIn {
+                workspace,
+                personas: personas.into_iter().collect(),
+            })
+            .collect())
+    })
+    .await
+}
+
 /// What view tabs the window has open now, so the record brings them back at the next launch.
 #[tauri::command]
 #[specta::specta]
