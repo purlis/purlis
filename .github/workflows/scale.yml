@@ -126,25 +126,8 @@ jobs:
         id: built
         run: npx tauri build --no-bundle --features e2e --config src-tauri/tauri.e2e.conf.json
         working-directory: app
-      # [DEBUG-5672] temporary: memory before and after a purge.
-      - name: "[DEBUG-5672] memory, then purge"
-        if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          sysctl -n hw.ncpu hw.memsize vm.swapusage; memory_pressure -Q || true; vm_stat | head -12
-          sync; sudo purge; echo purged
-          sysctl -n vm.swapusage; memory_pressure -Q || true; vm_stat | head -12
       - name: The hook, recall and one git standing look
         run: node tools/scale-run.mjs --project "$PURLIS_SCALE_PLANE" --os "$OS_WORD" --out scale-rows.jsonl
-      # [DEBUG-5672] temporary: the same build again at once, without and with a purge first.
-      - name: "[DEBUG-5672] rebuild at once"
-        if: always()
-        shell: bash
-        run: |
-          b() { /usr/bin/time ${{ runner.os == 'macOS' && '-l' || '-v' }} env PURLIS_HOME="$RUNNER_TEMP/dbg-home-$1" target/release/scale-project index --project "$PURLIS_SCALE_PLANE" 2>&1 | grep -Ei 'built_ms|real|user|sys|maximum resident|page reclaims|page faults|involuntary|Elapsed|Major' ; }
-          b 1
-          if [ "$RUNNER_OS" = macOS ]; then sync; sudo purge; memory_pressure -Q || true; fi
-          b 2
       # Each window run is its own app launch: WebdriverIO keeps one app for a run, and the two
       # chat-event runs differ in the app's environment. Each runs even if one before it broke.
       - name: The window on the project, its sidebar answer, watcher setup and idle CPU
