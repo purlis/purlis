@@ -482,6 +482,7 @@ const PLANE_SAVING: PlaneSaving = {
   pushFailed: null,
   live: [WORKSPACE],
   conflicts: [],
+  conflictKeys: {},
   notice: null,
   mode: null,
   modeFrom: "default",
