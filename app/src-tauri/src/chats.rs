@@ -5836,6 +5836,16 @@ impl Chats {
         if let Some(id) = gone.as_ref().and_then(|one| one.chat.identity.id.as_ref()) {
             lock(&self.one_jobs).remove(id);
         }
+        // **A chat closed for good takes the folder kept for its wake line with it** (#5827),
+        // where no other open chat carries it: a restart starts before the chat it replaces
+        // ends, and carries it on.
+        if let Some(kept) = gone.as_ref().and_then(|gone| gone.chat.kept_tmp.clone())
+            && !lock(&self.open)
+                .values()
+                .any(|one| one.chat.kept_tmp.as_deref() == Some(kept.as_str()))
+        {
+            purlis_core::ownwork::kept::remove(Path::new(&kept));
+        }
         // A Try it's scratch chat takes its throwaway piece with it, where no other open chat
         // stands in it (SK-9): a restart starts before the chat it replaces ends.
         if let Some(cwd) = gone.as_ref().and_then(|gone| gone.chat.cwd.clone())
@@ -8165,15 +8175,63 @@ impl Chats {
     /// built and written under the lock every write takes, so a write already on its way (a
     /// program that ended on its own, an operator's click) lands before it or not at all, and
     /// never puts live pids back on disk after it (R2-1).
+    ///
+    /// **A chat that ends with work of its own keeps its own temporary folder** (#5827): the
+    /// folder its confinement made, where its harness writes that work's output, is moved aside
+    /// before the programs end, so what drops the folder as the chat ends (here, or in the session
+    /// host) removes nothing of it, and the record points the chat's pieces at it for its wake
+    /// line. A folder kept at the last quit for a chat that ran since goes now: that run, the one
+    /// its wake line was told to, ends.
     pub fn write_last(&self, write: impl FnOnce(&Record)) {
         self.ending.store(true, Ordering::SeqCst);
         let _writing = lock(&self.writing);
         let mut record = self.record();
+        let tmps: HashMap<u32, std::path::PathBuf> = lock(&self.open)
+            .iter()
+            .filter_map(|(&session, running)| {
+                let tmp = running.confinement.as_ref()?.tmp()?;
+                Some((session, tmp.to_path_buf()))
+            })
+            .collect();
+        let mut ran_since = Vec::new();
         for chat in &mut record.chats {
             chat.pid = None;
             chat.model = None;
+            let Some(number) = chat
+                .number
+                .filter(|number| lock(&self.open).contains_key(number))
+            else {
+                // Not started this launch: what was kept for it waits for its start still.
+                continue;
+            };
+            ran_since.extend(chat.kept_tmp.take());
+            let has_own_work = chat.own_work.is_some() || !chat.own_pieces.is_empty();
+            if let Some(tmp) = tmps.get(&number).filter(|_| has_own_work) {
+                match purlis_core::ownwork::kept::keep(tmp) {
+                    Ok(kept) => {
+                        purlis_core::ownwork::kept::rehome(&mut chat.own_pieces, tmp, &kept);
+                        chat.kept_tmp = Some(kept.display().to_string());
+                    }
+                    Err(why) => tracing::warn!(
+                        "purlis: chat {number}'s temporary folder was not kept for its wake line \
+                         ({why})"
+                    ),
+                }
+            }
         }
         write(&record);
+        for kept in ran_since {
+            purlis_core::ownwork::kept::remove(std::path::Path::new(&kept));
+        }
+    }
+
+    /// **Chat `session`'s own temporary folder**, the one its confinement made (#5675), while it
+    /// is open.
+    #[cfg(test)]
+    pub(crate) fn own_tmp_of(&self, session: u32) -> Option<std::path::PathBuf> {
+        lock(&self.open)
+            .get(&session)
+            .and_then(|running| running.confinement.as_ref()?.tmp().map(Path::to_path_buf))
     }
 
     /// Hands the record as it now is to whoever writes it.

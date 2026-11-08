@@ -8349,3 +8349,45 @@ fn the_ground_check_folds_each_name_once_however_many_pairs_it_compares() {
     let names = denied.len() + ground.len();
     assert!(made <= names * 8, "{made} folds for {names} names");
 }
+
+/// **A chat brought back after a quit may read the folder its last run kept** (#5827): its wake
+/// line names the file the rest of a shell's output is in, in the earlier run's own temporary
+/// folder kept aside ([`crate::ownwork::kept`]). Reading it needs no grant, since reads are
+/// allowed but where denied, and nothing denies a kept folder; writing it stays refused, as
+/// every folder that is not the chat's own is.
+#[test]
+fn a_chat_may_read_the_folder_its_last_run_kept_but_not_write_it() {
+    use purlis_linux_sandbox::profile::{FileOp, Kind, Op, Profile};
+    for os in [Os::MacOs, Os::Linux] {
+        let (plane, denied) = denied_with(None, os);
+        let profile = seatbelt::profile(
+            &denied.paths,
+            &seatbelt::Own::default(),
+            &plane.path().join("workspaces/alpha"),
+            std::path::Path::new("/private/tmp/charter-chat-NeW123"),
+            &[4040],
+            None,
+        )
+        .expect("a profile");
+        let read = Profile::parse(&profile).expect("the Linux sandbox reads it");
+        let output = std::path::Path::new(
+            "/private/tmp/charter-chat-OlD123-kept/claude-501/-proj/conv-1/tasks/b1.output",
+        );
+        let may = |what| {
+            read.allows(&Op::File {
+                what,
+                path: output,
+                kind: Kind::Regular,
+            })
+        };
+
+        assert!(
+            may(FileOp::ReadData),
+            "{os:?}: the kept output is not readable"
+        );
+        assert!(
+            !may(FileOp::WriteData),
+            "{os:?}: the kept output is writable"
+        );
+    }
+}
