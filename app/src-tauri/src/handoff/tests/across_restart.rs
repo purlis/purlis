@@ -1099,3 +1099,219 @@ fn a_chat_whose_own_wake_up_came_due_while_purlis_was_down_is_told_after_the_res
          waited on came due while purlis was down; it was given only {said:#?}"
     );
 }
+
+// ---------------------------------------------------------------------------------------------
+// Ending a chat ends what its harness started (#5749, spec #5743 story 30).
+//
+// Claude Code runs each shell of its model's in a session of its own, so a `run_in_background`
+// shell is no member of the harness's process group: ending that group leaves it running, an
+// orphan nobody sees, and a wake line that says it "ended" would be false. These run a real
+// stand-in harness in a real terminal that starts such a shell, end the chat each way a restart
+// ends one, and look for the shell.
+// ---------------------------------------------------------------------------------------------
+
+/// How long a chat's own work is given to go once the chat is ended.
+#[cfg(unix)]
+const GONE_WITHIN: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// A plane whose profile `work` is a stand-in Claude Code that starts a shell of its own in a
+/// session of its own, as Claude Code starts a background shell, writes that shell's process id
+/// to `runs/shell.<its own pid>`, and stays running.
+#[cfg(unix)]
+fn a_plane_whose_harness_leaves_a_shell() -> Plane {
+    let plane = Plane::new();
+    let runs = plane.root.join("runs");
+    let program = stand_in::claude_code(
+        plane._dir.path(),
+        "claude-with-a-shell",
+        &format!(
+            "#!/bin/sh\n\
+             perl -e 'use POSIX (); POSIX::setsid(); exec @ARGV or die' sleep 600 \
+             </dev/null >/dev/null 2>&1 &\n\
+             echo $! > {runs:?}/.shell.$$ && mv {runs:?}/.shell.$$ {runs:?}/shell.$$\n\
+             sleep 600\n"
+        ),
+    );
+    std::fs::write(
+        plane.root.join(purlis_core::profiles::LOCAL_FILE),
+        format!(
+            "[harness.work]\nkind = \"claude\"\ncommand = [{:?}]\n",
+            program.display().to_string()
+        ),
+    )
+    .expect("the profile");
+    let set = purlis_core::profiles::current(&plane.root);
+    purlis_core::profiletrust::record_launched(
+        &plane.root,
+        "work",
+        &purlis_core::profiletrust::fingerprint(set.get("work").expect("the profile reads")),
+    )
+    .expect("approved");
+    plane
+}
+
+/// The process ids of the shells the stand-ins on `plane` have started so far.
+#[cfg(unix)]
+fn shells_started(plane: &Plane) -> Vec<u32> {
+    let Ok(entries) = std::fs::read_dir(plane.root.join("runs")) else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .filter(|entry| entry.file_name().to_string_lossy().starts_with("shell."))
+        .filter_map(|entry| {
+            std::fs::read_to_string(entry.path())
+                .ok()?
+                .trim()
+                .parse()
+                .ok()
+        })
+        .collect()
+}
+
+/// Waits for the stand-ins on `plane` to have started `count` shells, and answers them.
+#[cfg(unix)]
+fn waits_for_shells(plane: &Plane, count: usize) -> Vec<u32> {
+    let until = std::time::Instant::now() + GONE_WITHIN;
+    loop {
+        let shells = shells_started(plane);
+        if shells.len() >= count || std::time::Instant::now() >= until {
+            assert_eq!(
+                shells.len(),
+                count,
+                "precondition: the harness started its shell"
+            );
+            return shells;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+}
+
+/// Whether process `pid` is running: there, and not a zombie waiting to be reaped.
+#[cfg(unix)]
+fn runs(pid: u32) -> bool {
+    #[cfg(target_os = "linux")]
+    if let Ok(stat) = std::fs::read_to_string(format!("/proc/{pid}/stat")) {
+        let state = stat.rsplit_once(')').map(|(_, rest)| rest.trim_start());
+        return !state.is_some_and(|state| state.starts_with(['Z', 'X']));
+    }
+    // Reparented to the system's first process once its harness goes, and reaped there.
+    purlis_same_user::Parents::started(pid).is_some()
+}
+
+/// Whether `pid` has gone within [`GONE_WITHIN`].
+#[cfg(unix)]
+fn goes(pid: u32) -> bool {
+    let until = std::time::Instant::now() + GONE_WITHIN;
+    while std::time::Instant::now() < until {
+        if !runs(pid) {
+            return true;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    false
+}
+
+/// Kills, as the test ends, each shell the stand-ins on its plane started that still runs, so a
+/// red run leaves nothing behind it.
+#[cfg(unix)]
+struct LeavesNoShell<'a>(&'a Plane);
+
+#[cfg(unix)]
+impl Drop for LeavesNoShell<'_> {
+    fn drop(&mut self) {
+        for pid in shells_started(self.0) {
+            if runs(pid) {
+                drop(stand_in::Ends::group(pid));
+            }
+        }
+    }
+}
+
+/// A chat on `plane`'s stand-in, in a real terminal of this window's, and the shell it started.
+#[cfg(unix)]
+fn a_chat_with_a_shell_of_its_own(plane: &Plane) -> (Planes, PlaneId, Arc<Held>, u32, u32) {
+    let planes = planes();
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let chat = a_chat_on_work(&held, &plane.root);
+    let shell = waits_for_shells(plane, 1)[0];
+    assert!(runs(shell), "precondition: its shell runs");
+    (planes, id, held, chat, shell)
+}
+
+#[cfg(unix)]
+#[test]
+fn a_shell_a_chat_started_in_a_session_of_its_own_ends_when_purlis_quits() {
+    let plane = a_plane_whose_harness_leaves_a_shell();
+    let _cleanup = LeavesNoShell(&plane);
+    let (planes, id, held, _chat, shell) = a_chat_with_a_shell_of_its_own(&plane);
+    let _at_quit = quits(&held);
+
+    bounded("the app that quit, closing its project", move || {
+        drop(held);
+        planes.close(&id).expect("it closes");
+        drop(planes);
+    });
+
+    assert!(
+        goes(shell),
+        "the chat's shell {shell} still runs {GONE_WITHIN:?} after purlis quit"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_shell_a_chat_started_in_a_session_of_its_own_ends_when_the_chat_restarts() {
+    let plane = a_plane_whose_harness_leaves_a_shell();
+    let _cleanup = LeavesNoShell(&plane);
+    let (planes, id, held, chat, shell) = a_chat_with_a_shell_of_its_own(&plane);
+    held.chats().ask_restart(chat).expect("the person asks");
+
+    let started = held
+        .restart_chat(chat, A_SIZE)
+        .expect("it restarts")
+        .expect("now");
+
+    assert_ne!(started, chat);
+    assert!(
+        goes(shell),
+        "the shell {shell} of the run the restart ended still runs {GONE_WITHIN:?} after it"
+    );
+    planes.close(&id).expect("it closes");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_shell_a_chat_started_in_a_session_of_its_own_ends_when_the_next_host_settles_a_crash() {
+    use purlis_host::Run as _;
+    let plane = a_plane_whose_harness_leaves_a_shell();
+    let _cleanup = LeavesNoShell(&plane);
+    let (planes, id, held, chat, shell) = a_chat_with_a_shell_of_its_own(&plane);
+    let program = held
+        .chats()
+        .sessions()
+        .process_id(chat)
+        .expect("its harness runs");
+
+    // What a host that was killed outright left of the chat, as the next host settles it.
+    purlis_host::Terminals.end_what_was_left(&purlis_host::Started {
+        program: "01J9PRGRM00000000000000000".to_owned(),
+        project: "01J9PRJCT00000000000000000".to_owned(),
+        project_path: plane.root.clone(),
+        number: chat,
+        run: None,
+        process: Some(program),
+        process_started: purlis_same_user::Parents::started(program),
+        boot: purlis_host::this_boot(),
+        sandbox: None,
+        ends_strays: true,
+    });
+
+    assert!(
+        goes(shell),
+        "the chat's shell {shell} still runs {GONE_WITHIN:?} after the next host settled what \
+         the crashed one left"
+    );
+    planes.close(&id).expect("it closes");
+}

@@ -1218,6 +1218,15 @@ fn carried_from_its_own_home(
         );
         return false;
     }
+    if let Some(why) = made_before_the_mark(docker, old) {
+        tracing::warn!(
+            "purlis: runner {} is not known to be made after purlis began to keep which runners \
+             a chat ran on without the sandbox ({why}), so its sign-ins were not carried; sign \
+             the profiles in again on pool {pool}",
+            old.name()
+        );
+        return false;
+    }
     if old.made.runner.user() != made.runner.user() {
         tracing::warn!(
             "purlis: runner {} ran as {} and the runner made again as {}, so its sign-ins were \
@@ -1830,6 +1839,15 @@ fn carry_sign_ins(config_root: &Path, docker: &Docker, drained: &Kept) -> bool {
         );
         return false;
     }
+    if let Some(why) = made_before_the_mark(docker, drained) {
+        tracing::warn!(
+            "purlis: runner {} is not known to be made after purlis began to keep which runners \
+             a chat ran on without the sandbox ({why}), so its profiles' sign-ins were not \
+             carried; sign them in again on pool {pool}",
+            drained.name()
+        );
+        return false;
+    }
     if drained.made.runner.user() != to.made.runner.user() {
         tracing::warn!(
             "purlis: runner {} runs as {} and pool {pool}'s runner {} as {}, so its profiles' \
@@ -1858,6 +1876,40 @@ fn carry_sign_ins(config_root: &Path, docker: &Docker, drained: &Kept) -> bool {
             );
             true
         }
+    }
+}
+
+/// **The first purlis whose runners a desktop can mark** ([`crate::runnertaint`]): it keeps a
+/// runner's engine and home with its row, and its runners say what programs their chats run, so
+/// a held chat that ran without the sandbox marks its runner.
+const MARKED_SINCE: (u64, u64, u64) = (0, 5, 0);
+
+/// **Why `drained` is not known to be made after the mark** (ruled 2026-11-08), or `None` where it
+/// is: its row keeps its engine and its home's making, and its image's own purlis, asked from the
+/// image pinned by digest and never from its container, is [`MARKED_SINCE`] or later. A runner
+/// made before could have run a chat without the sandbox that no mark records, so nothing is
+/// carried from it: what cannot be read counts as before.
+fn made_before_the_mark(docker: &Docker, drained: &Kept) -> Option<String> {
+    if drained.engine.is_none() || drained.home_created.is_none() {
+        return Some("its row keeps no engine or home".to_owned());
+    }
+    match docker.image_version_of(&drained.made) {
+        Ok(version) if marked_since(&version) => None,
+        Ok(version) => Some(format!("it runs purlis {version}")),
+        Err(why) => Some(format!("its purlis version could not be read: {why}")),
+    }
+}
+
+/// Whether `version`, as `purlis --version` says it (`0.5.1`, `0.6.0-rc.1`), is
+/// [`MARKED_SINCE`] or later; a version not in that form is not.
+fn marked_since(version: &str) -> bool {
+    let core = version.split(['-', '+']).next().unwrap_or_default();
+    let mut parts = core.split('.').map(str::parse::<u64>);
+    match (parts.next(), parts.next(), parts.next(), parts.next()) {
+        (Some(Ok(major)), Some(Ok(minor)), Some(Ok(patch)), None) => {
+            (major, minor, patch) >= MARKED_SINCE
+        }
+        _ => false,
     }
 }
 

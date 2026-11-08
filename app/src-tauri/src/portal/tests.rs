@@ -573,6 +573,10 @@ fn the_address_is_read_from_what_dbus_launch_prints() {
 struct PrivateBus {
     daemon: std::process::Child,
     address: String,
+    /// Where each service the bus starts writes its pid. What the bus started is its child, so
+    /// it outlives the bus's kill, holding the test's output open (nextest's LEAK, main, run
+    /// 42475446185): each is ended with the bus.
+    said: Vec<std::path::PathBuf>,
     _dir: tempfile::TempDir,
 }
 
@@ -585,12 +589,18 @@ impl PrivateBus {
         let dir = tempfile::tempdir().expect("a directory");
         let services_dir = dir.path().join("services");
         std::fs::create_dir(&services_dir).expect("the services directory");
+        let mut said = Vec::new();
         for (name, program) in services {
+            let pid = dir.path().join(format!("{name}.pid"));
+            // The bus reads `Exec` as a shell would split it, single quotes and all; it runs
+            // no shell itself, so `$$` is the pid of the `sh` that becomes `program`.
+            let exec = format!("/bin/sh -c 'echo $$ > {}; exec {program}'", pid.display());
             std::fs::write(
                 services_dir.join(format!("{name}.service")),
-                format!("[D-BUS Service]\nName={name}\nExec={program}\n"),
+                format!("[D-BUS Service]\nName={name}\nExec={exec}\n"),
             )
             .expect("a service file");
+            said.push(pid);
         }
         let config = dir.path().join("session.conf");
         std::fs::write(
@@ -628,6 +638,7 @@ impl PrivateBus {
         Self {
             daemon,
             address: address.trim().to_owned(),
+            said,
             _dir: dir,
         }
     }
@@ -667,6 +678,9 @@ impl Drop for PrivateBus {
     fn drop(&mut self) {
         let _ = self.daemon.kill();
         let _ = self.daemon.wait();
+        for said in &self.said {
+            drop(stand_in::Ends::named_in(said));
+        }
     }
 }
 

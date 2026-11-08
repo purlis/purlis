@@ -224,6 +224,8 @@ fn left_in(process: u32, started: Option<String>, boot: Option<String>) -> Start
         process_started: started,
         boot,
         sandbox: None,
+        // A chat's harness, whose strays end with it (#5749).
+        ends_strays: true,
     }
 }
 
@@ -259,6 +261,66 @@ fn a_terminals_program_the_last_host_left_running_is_ended_with_its_group() {
     purlis_host::Terminals.end_what_was_left(&left_as(program.id(), started));
 
     assert!(ends_soon(&mut program), "it was left running");
+}
+
+#[test]
+fn what_a_program_the_last_host_left_started_in_a_session_of_its_own_is_ended_with_it() {
+    // #5749: Claude Code's background shell leads a session of its own, out of the group's
+    // reach. The program writes its pid where the test reads it, then stays.
+    use purlis_host::Run as _;
+    use std::os::unix::process::CommandExt;
+    let dir = tempfile::tempdir().unwrap();
+    let written = dir.path().join("shell");
+    let mut program = std::process::Command::new("/bin/sh")
+        .args([
+            "-c",
+            "perl -e 'use POSIX (); POSIX::setsid(); exec @ARGV or die' sleep 600 \
+             </dev/null >/dev/null 2>&1 & echo $! > \"$1.writing\" && mv \"$1.writing\" \"$1\"; \
+             sleep 30",
+            "sh",
+        ])
+        .arg(&written)
+        .process_group(0)
+        .spawn()
+        .expect("a program starts");
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    let shell: i32 = loop {
+        if let Some(pid) = std::fs::read_to_string(&written)
+            .ok()
+            .and_then(|text| text.trim().parse().ok())
+        {
+            break pid;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "it never started its shell"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    let shell = nix::unistd::Pid::from_raw(shell);
+    let started = purlis_same_user::Parents::started(program.id());
+
+    purlis_host::Terminals.end_what_was_left(&left_as(program.id(), started));
+
+    let ended = ends_soon(&mut program);
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    let mut shell_gone = false;
+    while std::time::Instant::now() < deadline {
+        // Reparented to the system's first process, which reaps it: gone once signalling it
+        // finds nobody.
+        if nix::sys::signal::kill(shell, None).is_err() {
+            shell_gone = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    // Nothing left running, whatever happened above.
+    let _ = nix::sys::signal::killpg(shell, nix::sys::signal::Signal::SIGKILL);
+    assert!(ended, "the program was left running");
+    assert!(
+        shell_gone,
+        "its shell in a session of its own was left running"
+    );
 }
 
 #[test]

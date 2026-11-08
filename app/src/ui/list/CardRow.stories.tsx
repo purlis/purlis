@@ -121,7 +121,8 @@ type Story = StoryObj<typeof meta>;
  * and the fix and ← comes back, ↓ moves to the next card, Shift+F10 opens a card's menu and
  * Escape gives the keyboard back. A three-line description shows two lines and an ellipsis, and
  * its tooltip holds the whole of it. Use that cannot be pressed keeps the keyboard and says why.
- * The picture is the first card under the keyboard.
+ * The picture is the first card under the keyboard, its tooltip back after the Esc that took it
+ * down on the way in (WCAG 1.4.13, #5038).
  */
 export const SkillsViewCards: Story = {
   play: async ({ canvas, userEvent }) => {
@@ -194,6 +195,13 @@ export const SkillsViewCards: Story = {
     await expect(canvas.getByRole("status")).toHaveTextContent("Reviewing the change");
     await userEvent.keyboard("{ArrowLeft}{ArrowUp}{ArrowUp}");
     await untilFocused(() => grilling, "Cards: Up walks back to the first card");
+    // Its tooltip, taken down by Esc on the way in, is back with the keyboard (#5038): waited for,
+    // so the picture never catches it on its way.
+    await waitFor(() =>
+      expect(screen.getByRole("tooltip")).toHaveTextContent(
+        "Changed by a chat on 28 Oct. This chat keeps the version you accepted.",
+      ),
+    );
     expectFocusInSight();
   },
 };

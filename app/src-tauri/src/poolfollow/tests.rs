@@ -21,7 +21,10 @@ fn a_machine(config: &std::path::Path) -> Machine {
         &docker,
         format!(
             "#!/bin/sh\necho \"$*\" >> '{}'\ncase \"$1 $2\" in 'container ls') \
-             for a in \"$@\"; do case $a in id=*) echo \"${{a#id=}}\" ;; esac; done ;; esac\n\
+             for a in \"$@\"; do case $a in id=*) echo \"${{a#id=}}\" ;; esac; done ;; \
+             'run --rm') case \"$*\" in *' --version') echo 'purlis 0.5.1 (release profile)' ;; \
+             esac ;; \
+             'info --format') case \"$*\" in *.ID*) echo engine-a ;; esac ;; esac\n\
              exit 0\n",
             config.join("log").display()
         ),
@@ -321,6 +324,17 @@ fn a_draining_runner_is_removed_once_no_chat_is_left_on_it_and_not_before() {
     let config = tempfile::tempdir().unwrap();
     let machine = a_machine(config.path());
     a_pool_draining(&machine);
+    // Made since the mark (ruled 2026-11-08): its row keeps its engine and its home's making.
+    runners::note_locked(
+        &machine.config,
+        "first",
+        |kept| {
+            kept.engine = Some("engine-a".to_owned());
+            kept.home_created = Some("2026-11-08T00:00:00Z".to_owned());
+        },
+        &runners::lock(&machine.config),
+    )
+    .unwrap();
 
     // Chats still run on it: it stays, and the pool says how many it waits on.
     follow_and_drain(&machine, None, &|_| Ok(2), &nothing_held);

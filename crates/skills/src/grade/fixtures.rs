@@ -590,7 +590,7 @@ fn prompt_of(
 
 /// **The trigger tests in `text`**, a `triggers.json`: skill-creator's array of
 /// `{query, should_trigger}`, at most [`MOST_TRIGGER_TESTS`], no query twice.
-fn triggers_of(text: &str) -> Result<Vec<TriggerTest>, Refused> {
+pub(in crate::grade) fn triggers_of(text: &str) -> Result<Vec<TriggerTest>, Refused> {
     const FILE: FixtureFile = FixtureFile::Triggers;
     let doc = json_of(text, FILE)?;
     let list = doc

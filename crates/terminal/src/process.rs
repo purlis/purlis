@@ -97,5 +97,187 @@ pub fn wait_for_group_to_go(leader: rustix::process::Pid, until: std::time::Inst
     });
 }
 
+/// **What a program started that left its process group** (#5749): each process descended
+/// from the program that is in a group other than the program's own. Ending the program's
+/// group does not reach these, and Claude Code puts every shell its model runs in a session of
+/// its own, so a background shell is one: read while the program still runs, and ended with
+/// it, it does not outlive the chat as an orphan nobody sees.
+///
+/// Read once, before the first signal, because a process whose parent has gone is handed to
+/// the system's first process and is nobody's descendant after. Each is signalled only while
+/// the processes listed then still hold its id under the start they were read with, so an id
+/// handed to another process meanwhile is left alone.
+#[cfg(unix)]
+#[derive(Debug, Default)]
+pub struct Strays(Vec<Stray>);
+
+/// One of [`Strays`]: its process, when it started, and whether it leads a group of its own,
+/// which is then ended with it.
+#[cfg(any(unix, test))]
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Stray {
+    pid: u32,
+    started: String,
+    leads: bool,
+}
+
+#[cfg(unix)]
+impl Strays {
+    /// What `leader`, which leads its process group and still runs, has started outside it.
+    /// None where the processes cannot be listed.
+    pub fn of(leader: u32) -> Self {
+        Self(strays_in(&listed(), leader))
+    }
+
+    /// Whether there is none.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Hangs up on each, and on the group of each that leads one.
+    pub fn hang_up(&self) {
+        self.signal(rustix::process::Signal::HUP);
+    }
+
+    /// Kills each, and the group of each that leads one.
+    pub fn kill(&self) {
+        self.signal(rustix::process::Signal::KILL);
+    }
+
+    fn signal(&self, signal: rustix::process::Signal) {
+        use rustix::process::{Pid, kill_process, kill_process_group};
+        if self.0.is_empty() {
+            return;
+        }
+        let now = listed();
+        for stray in self.0.iter().filter(|stray| {
+            now.iter()
+                .any(|row| row.pid == stray.pid && row.started == stray.started)
+        }) {
+            let Some(pid) = i32::try_from(stray.pid)
+                .ok()
+                .filter(|raw| *raw > 1)
+                .and_then(Pid::from_raw)
+            else {
+                continue;
+            };
+            if stray.leads {
+                let _ = kill_process_group(pid, signal);
+            }
+            let _ = kill_process(pid, signal);
+        }
+    }
+}
+
+/// One process as the system lists it: its id, its parent's and its group's, and when it
+/// started, in whichever words the system lists that.
+#[cfg(any(unix, test))]
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Listed {
+    pid: u32,
+    parent: u32,
+    group: u32,
+    started: String,
+}
+
+/// The descendants of `leader` in `table` that are not in `leader`'s group, by process id.
+#[cfg(any(unix, test))]
+fn strays_in(table: &[Listed], leader: u32) -> Vec<Stray> {
+    let mut descendants = std::collections::BTreeMap::new();
+    let mut parents = vec![leader];
+    while let Some(parent) = parents.pop() {
+        for child in table
+            .iter()
+            .filter(|row| row.parent == parent && row.pid != leader)
+        {
+            if descendants.insert(child.pid, child.clone()).is_none() {
+                parents.push(child.pid);
+            }
+        }
+    }
+    descendants
+        .into_values()
+        .filter(|row| row.group != leader)
+        .map(|row| Stray {
+            pid: row.pid,
+            leads: row.group == row.pid,
+            started: row.started,
+        })
+        .collect()
+}
+
+/// Every process running, from each one's own record (`/proc/<pid>/stat`).
+#[cfg(target_os = "linux")]
+fn listed() -> Vec<Listed> {
+    let Ok(entries) = std::fs::read_dir("/proc") else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .filter_map(|entry| {
+            let pid = entry.file_name().to_str()?.parse().ok()?;
+            let stat = std::fs::read_to_string(entry.path().join("stat")).ok()?;
+            listed_in_stat(pid, &stat)
+        })
+        .collect()
+}
+
+/// Process `pid` as its `/proc/<pid>/stat` line says, unless it has exited. The fields are read
+/// after the name's last `)`: state, parent, group, and, seventeen on, its start.
+#[cfg(any(target_os = "linux", test))]
+fn listed_in_stat(pid: u32, stat: &str) -> Option<Listed> {
+    let (_, rest) = stat.rsplit_once(')')?;
+    let mut fields = rest.split_ascii_whitespace();
+    let state = fields.next()?;
+    if matches!(state, "Z" | "X") {
+        return None;
+    }
+    let parent = fields.next()?.parse().ok()?;
+    let group = fields.next()?.parse().ok()?;
+    let started = fields.nth(16)?.to_owned();
+    Some(Listed {
+        pid,
+        parent,
+        group,
+        started,
+    })
+}
+
+/// Every process, as `ps` lists it. macOS has no `/proc`, and its own listing is a call only
+/// `unsafe` reaches; `ps` is run once for each program ended, never in a loop.
+#[cfg(all(unix, not(target_os = "linux")))]
+fn listed() -> Vec<Listed> {
+    let mut ps = std::process::Command::new("/bin/ps");
+    ps.args([
+        "-A", "-o", "pid=", "-o", "ppid=", "-o", "pgid=", "-o", "lstart=",
+    ]);
+    crate::forklock::output(&mut ps)
+        .ok()
+        .filter(|out| out.status.success())
+        .map(|out| listed_by_ps(&String::from_utf8_lossy(&out.stdout)))
+        .unwrap_or_default()
+}
+
+/// The rows of `ps -o pid= -o ppid= -o pgid= -o lstart=`: three numbers, then the start in
+/// words. A line that is not that is passed over.
+#[cfg(any(all(unix, not(target_os = "linux")), test))]
+fn listed_by_ps(text: &str) -> Vec<Listed> {
+    text.lines()
+        .filter_map(|line| {
+            let mut words = line.split_ascii_whitespace();
+            let pid = words.next()?.parse().ok()?;
+            let parent = words.next()?.parse().ok()?;
+            let group = words.next()?.parse().ok()?;
+            let started = words.collect::<Vec<_>>().join(" ");
+            (!started.is_empty()).then_some(Listed {
+                pid,
+                parent,
+                group,
+                started,
+            })
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests;

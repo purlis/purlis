@@ -453,8 +453,22 @@ impl Run for Terminals {
         let Ok(group) = i32::try_from(process) else {
             return;
         };
+        // What it started outside its group (a shell of its own, as Claude Code starts one in
+        // the background) is read while it still runs, and ends with it (#5749).
+        let strays = if left.ends_strays {
+            purlis_terminal::process::Strays::of(process)
+        } else {
+            purlis_terminal::process::Strays::default()
+        };
         let group = nix::unistd::Pid::from_raw(group);
-        if nix::sys::signal::killpg(group, nix::sys::signal::Signal::SIGKILL).is_ok() {
+        // Hung up first, as an end hangs up on them, so a shell's own traps may run.
+        strays.hang_up();
+        let ended = nix::sys::signal::killpg(group, nix::sys::signal::Signal::SIGKILL).is_ok();
+        if !strays.is_empty() {
+            std::thread::sleep(STRAYS_GRACE);
+            strays.kill();
+        }
+        if ended {
             crate::say(&format!(
                 "chat {} of {} was still running after its session host ended, and is ended now",
                 left.number,
@@ -463,6 +477,10 @@ impl Run for Terminals {
         }
     }
 }
+
+/// How long what a left program started outside its group has to go on its hangup before it is
+/// killed: an end's own grace.
+const STRAYS_GRACE: std::time::Duration = std::time::Duration::from_millis(500);
 
 struct Terminal(Arc<Session>);
 
@@ -2401,6 +2419,8 @@ impl Hosting {
         }
         // Where it runs, for a start the host composed: what its project's saver waits on.
         let cwd = spec.cwd.clone();
+        // Whether what it starts outside its group ends with it, kept for a crash's settling.
+        let ends_strays = spec.ends_what_left_its_group;
         // How it runs sandboxed, read from what is started and the confinement that holds it
         // now, never from the start (#2636).
         let sandbox = {
@@ -2482,6 +2502,7 @@ impl Hosting {
                 process_started: running.process_started(),
                 boot: crate::hostrecord::this_boot(),
                 sandbox: Some(sandbox.clone()),
+                ends_strays,
             });
         }
         // A stop thrown while this one was being started: it is listed by now, so either the
