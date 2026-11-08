@@ -11,12 +11,18 @@
 //! person's projects, workspaces, repos, personas and vaults). An error the window did not catch
 //! is sent the same way, with its name for the panic's type and its script's file name for the
 //! place (#5690).
+//!
+//! **A native crash** (#5691) is sent with the same fixed fields, no message and no place (the
+//! process could say neither), and its minidump as the envelope's attachment, which Sentry reads
+//! for the crashing thread's stack. Ruling O9 sends the minidump to the Report intake as it was
+//! written; nothing else ever sees it. The sent list names it by its size and its SHA-256 in
+//! place of its bytes: they are not text, and a list kept 90 days holds no memory of the app's.
 
 use regex::Regex;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
-use super::{Draft, Known, Panic, WindowError, short_place};
+use super::{Draft, Known, NativeCrash, Panic, WindowError, short_place};
 
 /// A Crash report, ready to send.
 pub(super) struct CrashReport {
@@ -118,42 +124,107 @@ impl Fields {
     /// The envelope of these fields, made `at` (now when not known), for the intake at `dsn`.
     fn envelope(self, at: Option<chrono::DateTime<chrono::Utc>>, dsn: &str) -> CrashReport {
         let event_id = uuid::Uuid::new_v4().simple().to_string();
-        let now = chrono::Utc::now();
-        let timestamp = at.unwrap_or(now).format("%Y-%m-%dT%H:%M:%SZ").to_string();
-        let channel = channel();
-        let event = json!({
-            "event_id": event_id,
-            "timestamp": timestamp,
-            "platform": self.platform,
-            "level": "fatal",
-            "release": format!("purlis@{}", crate::adopt::release_version()),
-            "environment": channel,
-            "tags": {"channel": channel},
-            "contexts": {"os": {"name": std::env::consts::OS, "version": os_version()}},
-            "exception": {"values": [{
-                "type": self.kind,
-                "value": self.message,
-                "mechanism": {"type": self.mechanism, "handled": false},
-            }]},
-            "culprit": self.place,
-            // Sentry groups by it, so the counts of repeats name the group they belong to.
-            "fingerprint": [self.fingerprint],
-        })
-        .to_string();
-        let header = json!({
-            "event_id": event_id,
-            "sent_at": now.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
-            "dsn": dsn,
-        });
-        let item =
-            json!({"type": "event", "length": event.len(), "content_type": "application/json"});
+        let mut event = fixed_fields(&event_id, self.platform, at);
+        event["exception"] = json!({"values": [{
+            "type": self.kind,
+            "value": self.message,
+            "mechanism": {"type": self.mechanism, "handled": false},
+        }]});
+        event["culprit"] = json!(self.place);
+        // Sentry groups by it, so the counts of repeats name the group they belong to.
+        event["fingerprint"] = json!([self.fingerprint]);
         CrashReport {
             fingerprint: Some(self.fingerprint),
             title: self.title,
-            bytes: format!("{header}\n{item}\n{event}\n"),
+            bytes: format!("{}{}", header(&event_id, dsn), event_item(&event)),
             event_id,
         }
     }
+}
+
+/// A native crash's Crash report (#5691), ready to send: the envelope is not text, since it
+/// carries the minidump.
+pub(super) struct NativeCrashReport {
+    pub event_id: String,
+    /// What the sent list calls it.
+    pub title: String,
+    /// The envelope, exactly as it is sent.
+    pub envelope: Vec<u8>,
+    /// What the sent list shows: the envelope, with the minidump named in place of its bytes.
+    pub shown: String,
+}
+
+impl NativeCrashReport {
+    /// The Crash report of a native crash, with its minidump, for the intake at `dsn`.
+    pub fn of(crash: &NativeCrash, dsn: &str) -> NativeCrashReport {
+        let event_id = uuid::Uuid::new_v4().simple().to_string();
+        let at = crash
+            .at
+            .and_then(|at| chrono::DateTime::from_timestamp(i64::try_from(at).ok()?, 0));
+        let event = fixed_fields(&event_id, "native", at);
+        let text = format!("{}{}", header(&event_id, dsn), event_item(&event));
+        let attachment = json!({
+            "type": "attachment",
+            "length": crash.minidump.len(),
+            "filename": "purlis.dmp",
+            "attachment_type": "event.minidump",
+        });
+        let mut envelope = format!("{text}{attachment}\n").into_bytes();
+        envelope.extend_from_slice(&crash.minidump);
+        envelope.push(b'\n');
+        let digest = Sha256::digest(&crash.minidump);
+        let digest: String = digest.iter().map(|b| format!("{b:02x}")).collect();
+        NativeCrashReport {
+            title: "purlis crashed".to_string(),
+            envelope,
+            shown: format!(
+                "{text}{attachment}\n[a minidump of {} bytes, sha256 {digest}]\n",
+                crash.minidump.len()
+            ),
+            event_id,
+        }
+    }
+}
+
+/// The fields every Crash report carries, and nothing else: when (`at`, or now), which purlis on
+/// which channel, and which operating system.
+fn fixed_fields(
+    event_id: &str,
+    platform: &str,
+    at: Option<chrono::DateTime<chrono::Utc>>,
+) -> serde_json::Value {
+    let timestamp = at
+        .unwrap_or_else(chrono::Utc::now)
+        .format("%Y-%m-%dT%H:%M:%SZ")
+        .to_string();
+    let channel = channel();
+    json!({
+        "event_id": event_id,
+        "timestamp": timestamp,
+        "platform": platform,
+        "level": "fatal",
+        "release": format!("purlis@{}", crate::adopt::release_version()),
+        "environment": channel,
+        "tags": {"channel": channel},
+        "contexts": {"os": {"name": std::env::consts::OS, "version": os_version()}},
+    })
+}
+
+/// The envelope's header line.
+fn header(event_id: &str, dsn: &str) -> String {
+    let header = json!({
+        "event_id": event_id,
+        "sent_at": chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+        "dsn": dsn,
+    });
+    format!("{header}\n")
+}
+
+/// The event's item: its header line and the event.
+fn event_item(event: &serde_json::Value) -> String {
+    let event = event.to_string();
+    let item = json!({"type": "event", "length": event.len(), "content_type": "application/json"});
+    format!("{item}\n{event}\n")
 }
 
 /// The fingerprint of `parts`: the same crash again in the same version has the same one.

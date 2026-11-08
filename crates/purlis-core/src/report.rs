@@ -64,7 +64,9 @@ use crate::forge::{self, Forge, ForgeError, Kind as ForgeKind};
 
 mod consent;
 mod crash;
+pub mod native;
 pub use consent::{Consent, CrashNotice, Stream};
+pub use native::NativeCrash;
 mod held;
 pub use held::{CameFrom, Held, HeldDrafts, HeldKind};
 pub mod intake;
@@ -773,8 +775,9 @@ pub enum Evidence {
     PurlisFailure(PurlisFailure),
     /// An agent's draft: what a chat wrote with `purlis report`, held for the person's Inbox.
     AgentDraft(AgentDraft),
-    /// A native crash the crash handler recorded. Not built yet.
-    NativeCrash(NotYet),
+    /// A native crash the crash handler kept a minidump of, handed in on the next launch. Only
+    /// ever a Crash report: it is sent to the Report intake alone, never filed on a tracker.
+    NativeCrash(NativeCrash),
     /// An error the window did not catch (#5690): always a Crash report, whoever hands it in.
     WindowError(WindowError),
 }
@@ -1139,9 +1142,13 @@ impl Reports {
             Evidence::WindowError(error) => {
                 crash::CrashReport::of_window_error(error, &self.known, intake.dsn())
             }
+            Evidence::NativeCrash(native) => {
+                return self.send_native(native, intake.as_ref(), root);
+            }
             _ => {
                 return Outcome::Refused(Refusal::Unusable(
-                    "only a panic or a window error is sent as a Crash report".to_string(),
+                    "only a panic, a window error or a native crash is sent as a Crash report"
+                        .to_string(),
                 ));
             }
         };
@@ -1187,6 +1194,46 @@ impl Reports {
                     ))),
                 }
             }
+            Err(intake::Failed::Refused(why)) => Outcome::Refused(Refusal::NotSent(why)),
+        }
+    }
+
+    /// A native crash's Crash report (#5691): its fixed fields and its minidump, sent to the
+    /// Report intake and listed with the minidump named in place of its bytes. It has no
+    /// fingerprint here: where it crashed is known only once the intake reads the minidump with
+    /// the build's symbols, so the intake groups it. With no answer it waits where the crash
+    /// handler left it, not in the sent list, which holds text: [`native::report_waiting`] keeps
+    /// the minidump for the next launch.
+    fn send_native(
+        &self,
+        native: &NativeCrash,
+        intake: &dyn intake::Intake,
+        root: &Path,
+    ) -> Outcome {
+        // The reports that waited go first, so the intake hears them oldest first.
+        self.send_waiting();
+        let crash = crash::NativeCrashReport::of(native, intake.dsn());
+        match intake.send(&crash.envelope, &crash.event_id) {
+            Ok(address) => {
+                // The report has left: a list that cannot be written does not unsend it.
+                let _ = SentList::add(
+                    root,
+                    Sent {
+                        at: now(),
+                        title: crash.title,
+                        to: SentTo::Intake,
+                        address: address.clone(),
+                        bytes: crash.shown,
+                        fingerprint: None,
+                        repeats: 0,
+                        repeats_sent: 0,
+                        unread_draft: false,
+                        waiting: false,
+                    },
+                );
+                Outcome::Sent { address }
+            }
+            Err(intake::Failed::NoAnswer(_)) => Outcome::Queued,
             Err(intake::Failed::Refused(why)) => Outcome::Refused(Refusal::NotSent(why)),
         }
     }
@@ -1469,7 +1516,10 @@ impl Reports {
             Evidence::WindowError(_) => Err(Refused(
                 "an error in the window is sent only as a Crash report".to_string(),
             )),
-            Evidence::NativeCrash(never) => match never {},
+            Evidence::NativeCrash(_) => Err(Refused(
+                "a native crash is sent only to purlis's report service, as a Crash report"
+                    .to_string(),
+            )),
         };
         made.map_err(|Refused(said)| Refusal::Unusable(said))
     }
