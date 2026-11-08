@@ -2878,7 +2878,11 @@ fn a_keep_clears_opencodes_package_and_its_modules() {
     let config = dir.path().join("runner-home/.config");
     let own = config.join("opencode");
     std::fs::create_dir_all(own.join("node_modules/@opencode-ai/plugin")).unwrap();
-    std::fs::write(own.join("node_modules/@opencode-ai/plugin/index.js"), "left").unwrap();
+    std::fs::write(
+        own.join("node_modules/@opencode-ai/plugin/index.js"),
+        "left",
+    )
+    .unwrap();
     std::fs::write(own.join("package.json"), "{\"dependencies\":{}}").unwrap();
     std::fs::write(own.join("opencode.json"), "{}").unwrap();
     let record = MachineProfile {

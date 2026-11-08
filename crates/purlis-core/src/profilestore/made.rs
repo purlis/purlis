@@ -225,7 +225,19 @@ pub const ALLOWED: [Allowed; 3] = [
         folders: &[
             "agent", "agents", "command", "commands", "mode", "modes", "themes",
         ],
-        loaded_unsent: &["plugin", "plugins", "skill", "skills", "tool", "tools"],
+        // `package.json` and `node_modules`: what its plugins and tools import, which opencode
+        // makes again itself as it starts. Claude Code's and Codex's `plugins` folders are not
+        // cleared: each holds its plugins' own data too, which no setting makes again.
+        loaded_unsent: &[
+            "plugin",
+            "plugins",
+            "skill",
+            "skills",
+            "tool",
+            "tools",
+            "package.json",
+            "node_modules",
+        ],
         sent_only: &[],
     },
 ];
