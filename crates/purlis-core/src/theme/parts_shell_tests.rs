@@ -1149,3 +1149,25 @@ fn each_part_drawn_apart_is_declared_in_each_of_its_states_as_titlebar_css_draws
         }
     }
 }
+
+#[test]
+fn an_unavailable_row_keeps_its_faint_words_and_takes_the_rows_corner() {
+    // Its colours stay the faint tier `titlebar.css` draws (#4000); its corner is every row's,
+    // so Classic's 5 reaches it too (#3196).
+    let sheet = sheet_of(json!({
+        "titlebar.row.text": "text.primary",
+        "titlebar.row.corner-radius": 5,
+    }));
+    assert!(
+        sheet.contains(
+            ":where([data-scope=\"titlebar\"][data-part=\"row\"]:not([data-unavailable])) { color: var(--text-primary); }"
+        ),
+        "{sheet}"
+    );
+    assert!(
+        sheet.contains(
+            ":where([data-scope=\"titlebar\"][data-part=\"row\"]) { border-radius: min(5px, 50%); }"
+        ),
+        "{sheet}"
+    );
+}

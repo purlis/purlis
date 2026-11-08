@@ -560,8 +560,8 @@ pub struct Family {
 }
 
 impl Family {
-    /// **The version `joined` came into this family's lists in**: its own `since` where
-    /// [`Family::later`] dates it, else that of what holds it (#3226).
+    /// **The version `joined` came into this family's lists in**, where [`Family::later`] dates
+    /// it (#3226); else 0, and the state's, the property's and the holder's own `since` say it.
     pub fn joined_since(&self, joined: Joined) -> u32 {
         self.later
             .iter()
@@ -782,8 +782,9 @@ pub(super) struct PartState {
     pub(super) part: &'static str,
     /// The root's state that holds whenever this one does: the pointer on the × is on its tab.
     pub(super) within: State,
-    /// What marks the state on the part's own element.
+    /// What marks the state on the part's own element, and how a sentence says it.
     pub(super) marked: &'static str,
+    pub(super) said: &'static str,
     pub(super) fill: &'static str,
     pub(super) words: &'static str,
 }
@@ -794,6 +795,7 @@ pub(super) const PART_STATES: &[PartState] = &[PartState {
     part: "closer",
     within: State::Hover,
     marked: ":hover",
+    said: "under the pointer",
     fill: "surface.hover",
     words: "text.primary",
 }];
@@ -822,7 +824,8 @@ fn holder_of(family: &Family, part: &str) -> Option<usize> {
 
 /// **What a part drawn apart takes no key of**, by family and part (#4000): an unavailable
 /// switcher row stays in the faint tier `titlebar.css` draws it in, which the check holds on the
-/// popover as a mark (`text.faint` on `surface.overlay`), so a theme's row keys never reach it.
+/// popover as a mark (`text.faint` on `surface.overlay`), so a theme's row colours never reach
+/// it ([`targets`]). Its corner does, as every row's (#3196): availability is no shape.
 const APART_EXCEPT: &[(&str, &str, &str)] = &[("titlebar", "row", ":not([data-unavailable])")];
 
 /// The sets of states a part drawn apart is measured in: at rest, each of its own states but
@@ -4119,8 +4122,8 @@ impl Held<'_> {
                         variant,
                         states,
                         format!(
-                            "the {}'s words contrast {floor}:1 with its fill under the pointer",
-                            own.part
+                            "the {}'s words contrast {floor}:1 with its fill {}",
+                            own.part, own.said
                         ),
                         Some(ratio),
                     );
@@ -5145,10 +5148,10 @@ fn written_to(rule: &Rule, property: Prop) -> Option<&'static str> {
 fn targets(rule: &Rule, property: Prop, sized: bool) -> Vec<String> {
     let own = selector(rule, sized);
     let part = rule.family.parts[rule.part].name;
-    // **A part's own state draws its own colours** (#3269): a colour a theme or a fallback sets
-    // for the part never reaches it there, where [`PART_STATES`] says what is drawn; its size and
-    // its corners do, as a state never changes them.
-    if rule.part != 0 && property.in_state() {
+    // **A part's own state draws its own fill and words** (#3269): the fill or the words a theme
+    // or a fallback sets for the part never reach it there, where [`PART_STATES`] says what is
+    // drawn; anything else does, its size and corners as a state never changes them.
+    if rule.part != 0 && matches!(property, Prop::Fill | Prop::Text) {
         let not: String = part_states(rule.family, part)
             .map(|one| format!(":not({})", one.marked))
             .collect();
@@ -5159,6 +5162,17 @@ fn targets(rule: &Rule, property: Prop, sized: bool) -> Vec<String> {
             );
             return vec![own.replace(&at, &format!("{at}{not}"))];
         }
+    }
+    // **What a part drawn apart takes no colour of** ([`APART_EXCEPT`], #4000): an unavailable
+    // switcher row keeps its faint tier, and takes the row's corner like every other (#3196).
+    if property.in_state()
+        && let Some((_, _, not)) = APART_EXCEPT
+            .iter()
+            .find(|(name, one, _)| *name == rule.family.name && *one == part)
+    {
+        // `own` is the part's one `:where(…)`: the exception goes inside it, last.
+        let inside = own.strip_suffix(')').unwrap_or(&own);
+        return vec![format!("{inside}{not})")];
     }
     // **A chat pane's band draws its Notices' ground and words itself** (#3142, #2912): the
     // state washes, never tinted, and the primary tier on them. A theme's Notice colours reach a
@@ -5450,12 +5464,8 @@ fn selector(rule: &Rule, sized: bool) -> String {
             .chain(rule.also.iter().copied())
             .map(|one| rule.family.attribute(one))
             .collect();
-        let except = APART_EXCEPT
-            .iter()
-            .find(|(name, one, _)| *name == rule.family.name && *one == part)
-            .map_or("", |(_, _, not)| *not);
         return format!(
-            ":where([data-scope=\"{}\"][data-part=\"{part}\"]{state}{except})",
+            ":where([data-scope=\"{}\"][data-part=\"{part}\"]{state})",
             rule.family.name
         );
     }
@@ -5816,6 +5826,7 @@ pub(super) fn family_as_of(family: &Family, version: u32) -> Value {
     if !own_states(family).is_empty() {
         said["attributes"] = own_states(family)
             .iter()
+            .filter(|(state, _)| family.joined_since(Joined::State(*state)) <= version)
             .map(|(state, attribute)| (state.name().to_owned(), Value::from(*attribute)))
             .collect::<Map<String, Value>>()
             .into();
