@@ -12428,10 +12428,10 @@ export type PlaneSaving = {
 	 */
 	merge?: SaveMerge | null,
 	/**
-	 *  How the person settles the block in a terminal, when it is a save's replay onto the
-	 *  remote that conflicted (qw382): the git commands, as a sentence; `null` otherwise.
+	 *  Where the block is a save's replay or bring-in that conflicted and no resolve is open: how
+	 *  Resolve settles it, as a sentence (#5824 F7); `null` otherwise.
 	 */
-	byHand?: string | null,
+	toResolve?: string | null,
 	/**
 	 *  What git is stopped part-way in, by kind: `merge`, `rebase`, `am`, `cherry-pick`,
 	 *  `revert`, `bisect`, or `conflicts` for unmerged files alone; `null` when it is not.
@@ -15192,7 +15192,7 @@ export type SaveSettled = {
 /**  A project that could not be fetched while its request is open (#5824 F8). */
 export type SaveStale = {
 	/**  When the first failed fetch of the run was, in seconds since the epoch. */
-	since: number | null,
+	since: number,
 	/**  Why the latest one failed, as a sentence fragment. */
 	why: string,
 };

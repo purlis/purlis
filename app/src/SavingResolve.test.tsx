@@ -76,11 +76,11 @@ describe("SaveConflict", () => {
     render(
       <SaveConflict
         plane={PLANE}
-        saving={standing({ conflicts: ["notes.md"], byHand: "To settle it, run git." })}
+        saving={standing({ conflicts: ["notes.md"], toResolve: "Press Resolve." })}
       />,
     );
 
-    expect(screen.getByRole("status").textContent).toContain("To settle it, run git.");
+    expect(screen.getByRole("status").textContent).toContain("resolve folder beside the project");
     expect(screen.queryByRole("button", { name: "Resolve in a chat" })).toBeNull();
     await userEvent.click(screen.getByRole("button", { name: "Resolve" }));
 

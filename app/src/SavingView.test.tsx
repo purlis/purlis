@@ -412,27 +412,21 @@ describe("SavingView", () => {
     ]);
   });
 
-  it("names where a save's replay conflicts, the commands that settle it, and never a chat", async () => {
-    // qw382: a chat may not rebase the project's root, so offering one sent the person round
-    // to Update and back. The way out is a terminal, with the commands said.
-    const byHand =
-      "To settle it, open a terminal here and run `git fetch`, then `git rebase @{u}`; edit each " +
-      "file git names, `git add` it and run `git rebase --continue`, then Save. `git rebase " +
-      "--abort` puts the project back as it was.";
+  it("names where a save's replay conflicts and offers Resolve, never a terminal's commands", async () => {
+    // #5824 F7: the conflict is settled in a resolve folder beside the project, from Resolve; no
+    // git command is left for the person to type.
     core([
       standing({
         stage: "blocked",
         blocked: "the remote changed the same lines in: notes.md",
         conflicts: ["notes.md"],
-        byHand,
+        toResolve: "Press Resolve in the Saving view to settle it in a resolve folder.",
       }),
     ]);
-    const asked: { plane: string; way: string }[] = [];
-    const listen = (event: Event) => asked.push((event as CustomEvent).detail);
-    window.addEventListener("charter-saving-way-out", listen);
     render(<SavingView plane={PLANE} />);
 
-    expect(await screen.findByText(byHand, { exact: false })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "Resolve" })).toBeTruthy();
+    expect(screen.queryByText(/git rebase/)).toBeNull();
     expect(
       within(screen.getByRole("list", { name: "Where it conflicts" }))
         .getAllByRole("listitem")
@@ -442,10 +436,7 @@ describe("SavingView", () => {
     expect(
       screen.getByText("Blocked: the remote changed the same lines in: notes.md"),
     ).toBeTruthy();
-    await userEvent.click(screen.getByRole("button", { name: "Open terminal here" }));
-    window.removeEventListener("charter-saving-way-out", listen);
-
-    expect(asked).toEqual([{ plane: PLANE, way: "terminal" }]);
+    expect(screen.queryByRole("button", { name: "Open terminal here" })).toBeNull();
   });
 
   it("offers no chat for a rebase stopped part-way, even with every file added", async () => {
@@ -499,7 +490,7 @@ describe("SavingView", () => {
       false,
     ]);
     expect([null, "conflicts"].map(blocked)).toEqual([true, true]);
-    expect(chatMaySettle(standing({ stage: "blocked", byHand: "run git" }))).toBe(false);
+    expect(chatMaySettle(standing({ stage: "blocked", toResolve: "Press Resolve." }))).toBe(false);
   });
 
   it("says a save that stopped earlier is retried by Save, and offers Save", async () => {

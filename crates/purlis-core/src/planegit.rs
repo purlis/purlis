@@ -572,10 +572,10 @@ pub struct Standing {
     /// Each changed file the next save would refuse for what looks like a credential, while
     /// that is why it is blocked ([`SECRET_REFUSED`]); empty otherwise.
     pub secrets: Vec<SecretAt>,
-    /// Whether the save is blocked by the push record of a save's replay onto the remote that
-    /// conflicted, git not being stopped part-way now (qw382): the person settles it with a
-    /// rebase of their own, since a chat may not rebase the plane root.
-    pub rebase_by_hand: bool,
+    /// Whether the save is blocked by the push record of a save's replay or bring-in that
+    /// conflicted, git not being stopped part-way and no resolve open now: the window offers
+    /// Resolve, which settles it in a resolve folder beside the project (#5824 F7, [`TO_RESOLVE`]).
+    pub resolve_offered: bool,
     /// What git is stopped part-way in, by kind (qw382): an operation's
     /// [`gitstate::Operation::kind`], or `conflicts` for unmerged files and no operation.
     /// `None` when it is not. A window decides by it which ways out it offers: a chat may
@@ -636,7 +636,7 @@ pub fn standing(root: &Path) -> Standing {
             conflict_keys: BTreeMap::new(),
             notice: None,
             secrets: Vec::new(),
-            rebase_by_hand: false,
+            resolve_offered: false,
             stopped_by: None,
             merge: None,
             stale: None,
@@ -764,7 +764,7 @@ pub fn standing(root: &Path) -> Standing {
     let stopped = gitstate::stopped(root);
     // The record's conflict is the block only while git is not stopped part-way, which is
     // named first and settled by its own way out.
-    let rebase_by_hand = stopped.is_none()
+    let resolve_offered = stopped.is_none()
         && blocked.is_some()
         && outcome.as_deref() == Some(Outcome::Conflict.word());
     // A resolve open in its folder off to the side (#5824 F7): the root is not stopped, and the
@@ -778,7 +778,7 @@ pub fn standing(root: &Path) -> Standing {
                 .map_or("conflicts", gitstate::Operation::kind)
         })
         .or(resolving.as_ref().map(|_| RESOLVING));
-    let rebase_by_hand = rebase_by_hand && resolving.is_none();
+    let resolve_offered = resolve_offered && resolving.is_none();
     // A step purlis left part-way that a look could not recover says why, in place of git's
     // generic words (#5824 F3).
     let blocked = stopped
@@ -850,7 +850,7 @@ pub fn standing(root: &Path) -> Standing {
         tracked,
         head,
         secrets,
-        rebase_by_hand,
+        resolve_offered,
         stopped_by,
         merge,
         stale,
@@ -2332,8 +2332,9 @@ fn push_head_within(
                     Rebased::Conflict(conflicts) => {
                         // Nothing was started at the root: the replay was made off to the side.
                         say(Say::Warn(
-                        "Committed locally, but rebase hit a conflict — resolve manually, then \
-                         `purlis save`."
+                        "Committed locally, not pushed: the remote changed the same lines. Press \
+                         Resolve in the Saving view to settle it in a resolve folder beside the \
+                         project."
                             .into(),
                     ));
                         let detail = if conflicts.is_empty() {
@@ -4253,7 +4254,7 @@ pub mod resolvefolder;
 mod update;
 pub use merging::{MergeState, Merging, Seen, changed_since};
 pub use prsave::{MergedAsItStands, settled_at, stamp_is_unusable};
-pub use update::{BY_HAND, Left, Moved, Updated, update, update_for_a_chat};
+pub use update::{Left, Moved, TO_RESOLVE, Updated, update, update_for_a_chat};
 
 pub use blockedby::{SecretAt, file_of as blocked_file};
 

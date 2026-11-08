@@ -679,7 +679,7 @@ fn an_update_that_replays_the_projects_own_commits_forgets_the_push_record_about
 }
 
 #[test]
-fn an_update_that_conflicts_keeps_the_push_record_and_names_the_commands_for_a_terminal() {
+fn an_update_that_conflicts_keeps_the_push_record_and_offers_resolve() {
     let project = Project::new();
     project.remote_commits(|root| std::fs::write(root.join("a.md"), "theirs\n").unwrap());
     project.commits("a.md", "mine\n");
@@ -688,24 +688,16 @@ fn an_update_that_conflicts_keeps_the_push_record_and_names_the_commands_for_a_t
     let (got, _) = project.brings_in(true);
 
     assert!(record.exists(), "a real conflict keeps its record");
-    let sentence = got.said("pull request");
-    for command in ["`git fetch`", "`git rebase @{u}`", "`git rebase --abort`"] {
-        assert!(sentence.contains(command), "{sentence}");
-    }
+    assert!(got.said("pull request").contains(TO_RESOLVE));
 }
 
+/// **The conflict sentence sends the person to Resolve** (#5824 F7): the resolve folder settles
+/// it, and no git command is left for a person to type, nor a way back to Update.
 #[test]
-fn the_conflict_sentence_names_every_command_and_sends_nobody_back_to_update() {
+fn the_conflict_sentence_offers_resolve_and_no_command_for_a_terminal() {
     let sentence = Left::Conflict(vec!["a.md".into()]).said("pull request");
-    for command in [
-        "`git fetch`",
-        "`git rebase @{u}`",
-        "`git add`",
-        "`git rebase --continue`",
-        "`git rebase --abort`",
-    ] {
-        assert!(sentence.contains(command), "{sentence}");
-    }
+    assert!(sentence.contains(TO_RESOLVE), "{sentence}");
+    assert!(!sentence.contains("`git"), "{sentence}");
     assert!(!sentence.contains("Update"), "{sentence}");
 }
 

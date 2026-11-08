@@ -295,7 +295,7 @@ export function SavingView({
             <SaveConflict plane={plane} saving={saving} onSaved={onSaved} />
           )}
           {saving.stage === "blocked" &&
-            saving.byHand == null &&
+            saving.toResolve == null &&
             saving.stoppedBy !== "rebase" &&
             saving.stoppedBy !== "merge" &&
             saving.stoppedBy !== "resolve" && (
@@ -932,7 +932,7 @@ const ONLY_GIT_FINISHES = new Set([
 /** Whether a blocked save offers *Resolve in a chat*: never for a save's own replay that
  *  conflicted, nor for a stop only git in a terminal can finish (qw382). */
 export function chatMaySettle(saving: PlaneSaving): boolean {
-  return saving.byHand == null && !ONLY_GIT_FINISHES.has(saving.stoppedBy ?? "");
+  return saving.toResolve == null && !ONLY_GIT_FINISHES.has(saving.stoppedBy ?? "");
 }
 
 /** Whether pressing Save could do anything: files to commit, a blocked save to try again, or

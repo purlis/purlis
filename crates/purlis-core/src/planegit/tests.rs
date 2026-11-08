@@ -2716,11 +2716,11 @@ fn a_conflict_record_that_names_nothing_is_no_block_and_asks_for_a_save() {
     assert_ne!(got.stage, Stage::Blocked, "{got:?}");
     assert_eq!(got.blocked, None);
     assert_eq!(got.push_failed.as_deref(), Some(STOPPED_EARLIER));
-    assert!(!got.rebase_by_hand);
+    assert!(!got.resolve_offered);
 }
 
 #[test]
-fn a_real_conflict_record_names_its_files_and_is_settled_by_hand() {
+fn a_real_conflict_record_names_its_files_and_offers_resolve() {
     let fixture = Fixture::plane();
     fixture.with_a_remote();
     let head = ask(&fixture.root, &["rev-parse", "HEAD"]);
@@ -2742,7 +2742,7 @@ fn a_real_conflict_record_names_its_files_and_is_settled_by_hand() {
         Some("the remote changed the same lines in: a.md")
     );
     assert_eq!(got.conflicts, vec!["a.md".to_string()]);
-    assert!(got.rebase_by_hand);
+    assert!(got.resolve_offered);
 }
 
 /// A rebase of `main` onto a branch that changed README.md the other way, stopped on it.
@@ -2771,7 +2771,7 @@ fn a_rebase_stopped_with_every_file_added_is_still_said_to_be_a_rebase() {
     assert_eq!(got.stage, Stage::Blocked, "{got:?}");
     assert!(got.conflicts.is_empty(), "{got:?}");
     assert_eq!(got.stopped_by, Some("rebase"));
-    assert!(!got.rebase_by_hand);
+    assert!(!got.resolve_offered);
 }
 
 #[test]
@@ -2835,7 +2835,7 @@ fn save_on_a_clean_plane_whose_push_really_conflicts_records_the_files_today() {
         "{said}"
     );
     assert_eq!(got.conflicts, vec!["theirs.md".to_string()]);
-    assert!(got.rebase_by_hand);
+    assert!(got.resolve_offered);
 }
 
 #[test]
@@ -5226,6 +5226,47 @@ fn resolve_stops_on_the_conflict_and_continue_lands_it_once_the_markers_are_gone
         MERGED,
         "{said}"
     );
+}
+
+/// **A conflict a save's retry or an Update meets is settled by Resolve, never in a terminal**
+/// (#5824 F7): the save says to press Resolve, the standing offers it, Update's answer names it,
+/// and no git command for a person to type is said anywhere. Resolve then settles it in its folder.
+#[test]
+fn a_conflict_a_save_or_update_meets_is_settled_by_resolve_never_in_a_terminal() {
+    let (fixture, bare) = a_plane_that_conflicts_with_its_remote();
+
+    let (_, said) = pressed_save(&fixture);
+
+    assert!(said.contains("Press Resolve"), "{said}");
+    let got = standing(&fixture.root);
+    assert!(got.resolve_offered, "{got:?}");
+    let update = update::Left::Conflict(vec!["theirs.md".into()]).said("pull request");
+    for words in [said.as_str(), update.as_str(), TO_RESOLVE] {
+        assert!(!words.contains("git rebase"), "{words}");
+        assert!(!words.contains("--continue"), "{words}");
+    }
+    assert!(update.contains(TO_RESOLVE), "{update}");
+
+    assert_eq!(
+        resolve_start(&fixture),
+        resolve::Settled::Stopped(vec!["theirs.md".into()])
+    );
+    assert!(
+        !standing(&fixture.root).resolve_offered,
+        "Resolve is open, not offered"
+    );
+    std::fs::write(folder(&fixture).join("theirs.md"), "both").unwrap();
+    assert_eq!(
+        resolve_continue(&fixture, &["theirs.md"]),
+        resolve::Settled::Replayed
+    );
+    let (pushed, _) = resolve::push_after(&fixture.root, &mut |_: Say| {});
+    assert_eq!(pushed.map(|res| res.outcome), Some(Outcome::Pushed));
+    assert_eq!(
+        ask(&bare, &["log", "-1", "--format=%s", "main"]).trim(),
+        MERGED
+    );
+    assert_ne!(standing(&fixture.root).stage, Stage::Blocked);
 }
 
 #[test]

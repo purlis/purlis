@@ -1453,7 +1453,7 @@ mod pr_saves {
         assert!(!plane.root.join(".git/MERGE_HEAD").exists(), "{said}");
         let standing = plane.standing();
         assert_eq!(standing.stage, Stage::Blocked, "{said}");
-        assert!(standing.rebase_by_hand, "{said}");
+        assert!(standing.resolve_offered, "{said}");
         let before = plane.head();
 
         // Abort puts it back.

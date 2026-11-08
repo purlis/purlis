@@ -195,7 +195,7 @@ export function SaveConflict({
       </Notice>
     );
   }
-  if (saving.byHand == null) return null;
+  if (saving.toResolve == null) return null;
   const resolve: NoticeAction = {
     label: "Resolve",
     onPress: () => step("start"),
@@ -203,13 +203,14 @@ export function SaveConflict({
   };
   return (
     <Notice
-      cause="saving-rebase-by-hand"
+      cause="saving-resolve-offered"
       tone="trouble"
       fixes={[resolve]}
-      link={terminal}
       under={files || undefined}
     >
-      {`Resolve brings the remote's commits and this project's own together and stops where they conflict, for you or a chat to settle. ${saving.byHand}`}
+      {
+        "Resolve brings the remote's commits and this project's own together in a resolve folder beside the project, for you or a chat to settle. Nothing here stops meanwhile."
+      }
       {outcome}
     </Notice>
   );

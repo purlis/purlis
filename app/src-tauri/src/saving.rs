@@ -164,10 +164,10 @@ pub struct PlaneSaving {
     /// none is open or the mode does not merge it.
     #[specta(optional)]
     pub merge: Option<SaveMerge>,
-    /// How the person settles the block in a terminal, when it is a save's replay onto the
-    /// remote that conflicted (qw382): the git commands, as a sentence; `null` otherwise.
+    /// Where the block is a save's replay or bring-in that conflicted and no resolve is open: how
+    /// Resolve settles it, as a sentence (#5824 F7); `null` otherwise.
     #[specta(optional)]
-    pub by_hand: Option<String>,
+    pub to_resolve: Option<String>,
     /// What git is stopped part-way in, by kind: `merge`, `rebase`, `am`, `cherry-pick`,
     /// `revert`, `bisect`, or `conflicts` for unmerged files alone; `null` when it is not.
     #[specta(optional)]
@@ -220,7 +220,7 @@ pub struct SaveKey {
 #[serde(rename_all = "camelCase")]
 pub struct SaveStale {
     /// When the first failed fetch of the run was, in seconds since the epoch.
-    pub since: f64,
+    pub since: u32,
     /// Why the latest one failed, as a sentence fragment.
     pub why: String,
 }
@@ -340,9 +340,9 @@ pub fn saving_of(root: &Path) -> PlaneSaving {
         .to_owned();
     PlaneSaving {
         remote,
-        by_hand: standing
-            .rebase_by_hand
-            .then(|| planegit::BY_HAND.to_owned()),
+        to_resolve: standing
+            .resolve_offered
+            .then(|| planegit::TO_RESOLVE.to_owned()),
         stopped_by: standing.stopped_by.map(str::to_owned),
         resolving: planegit::resolvefolder::held(root).map(|held| SaveResolving {
             folder: planegit::resolvefolder::path(root).display().to_string(),
@@ -358,7 +358,7 @@ pub fn saving_of(root: &Path) -> PlaneSaving {
                 .collect(),
         }),
         stale: standing.stale.clone().map(|stale| SaveStale {
-            since: stale.since as f64,
+            since: u32::try_from(stale.since).unwrap_or(u32::MAX),
             why: stale.why,
         }),
         merge: standing
