@@ -21,6 +21,7 @@ fn stand_in(script: &str) -> Login {
         args: vec!["-c".to_owned(), script.to_owned()],
         env: Vec::new(),
         cleared: Vec::new(),
+        pin: None,
     }
 }
 

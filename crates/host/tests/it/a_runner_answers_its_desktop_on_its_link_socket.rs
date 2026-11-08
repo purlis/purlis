@@ -203,6 +203,15 @@ async fn hosting_keeping(
                 "/auth/callback?code=c&state=s" => Ok(()),
                 _ => Err("no sign-in is waiting on the runner".to_owned()),
             }),
+            // The runner's own sign-in of `work`, which echoes a code it is typed.
+            signing_in: Arc::new(|_, start| {
+                if start.profile != "work" {
+                    return Err("this runner keeps no such profile for you".to_owned());
+                }
+                let mut command = std::process::Command::new("/bin/sh");
+                command.args(["-c", "echo 'Paste code:'; read code; echo \"got $code\""]);
+                Ok(command)
+            }),
         },
     );
     let host = tokio::spawn(async move {
@@ -466,6 +475,54 @@ async fn the_paired_desktop_hands_the_runner_a_sign_ins_redirect() {
         refused.refusal().map(|refusal| refusal.why.as_str()),
         Some("no sign-in is waiting on the runner")
     );
+}
+
+/// **The paired desktop runs the runner's own sign-in over its link** (1.79): it reads what the
+/// sign-in prints, types its code to it, and hears how it ended; a profile the runner does not
+/// keep for it is not signed in.
+#[tokio::test]
+async fn the_paired_desktop_runs_the_runners_own_sign_in_over_its_link() {
+    use purlis_session_protocol::session::{SignInBy, SignInToStart};
+    let dir = tempfile::tempdir().unwrap();
+    let place = place_in(dir.path());
+    let (runner, desktop) = (identity(RUNNER), identity(DESKTOP));
+    let runner_pinned = pinned_of(&runner);
+    let paired: Paired = Arc::new(Mutex::new(Ok(Some((runner, pinned_of(&desktop))))));
+    let (_stop, _host) = hosting(&place, &paired).await;
+    let linked = link(&place, &desktop, &runner_pinned)
+        .await
+        .expect("the paired desktop is linked");
+    let client = purlis_session_protocol::session::Client::new(linked).0;
+    let start = |profile: &str| SignInToStart {
+        profile: profile.into(),
+        provider: None,
+        by: SignInBy::Driven,
+    };
+
+    let sign_in = client.start_sign_in(start("work")).await.expect("started");
+    client
+        .sign_in_input(sign_in, b"abc#state\n".to_vec())
+        .await
+        .expect("typed");
+    let mut printed = Vec::new();
+    let ended = loop {
+        let (out, _, ended) = client.sign_in_next(sign_in).await.expect("read");
+        printed.extend(out);
+        if let Some(ended) = ended {
+            break ended;
+        }
+    };
+
+    assert_eq!(
+        String::from_utf8_lossy(&printed),
+        "Paste code:\ngot abc#state\n"
+    );
+    assert_eq!(ended.code, Some(0));
+    assert!(client.start_sign_in(start("other")).await.is_err());
+    client
+        .end_sign_in(sign_in)
+        .await
+        .expect("ending one that ended is done");
 }
 
 /// **The paired desktop has the runner keep its profile** (1.43, #2049): the runner is handed the

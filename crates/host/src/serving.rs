@@ -17,6 +17,8 @@ use purlis_session_protocol::session;
 
 use crate::hosting::Hosting;
 use crate::say;
+use crate::signingin::SignIns;
+pub use crate::signingin::SigningIn;
 
 /// Where a host listens and keeps what it mints: its socket, the lock beside it, and the folder
 /// of its scopes' credentials. The window and `purlis serve` name the same place
@@ -96,7 +98,8 @@ pub type Delivering = Arc<dyn Fn(&str) -> Result<(), String> + Send + Sync>;
 /// A runner's pairing, as its host serves it: who it is and whom it admits ([`Answering`]),
 /// how the desktop it admits is taken out of its peers ([`Unpairing`]), how it keeps that
 /// desktop's profiles ([`Keeping`]), forgets them ([`Forgetting`]) and names them ([`Listing`]),
-/// says what it holds of one ([`Holding`]), and how it hands a login that desktop's browser's answer ([`Delivering`]).
+/// says what it holds of one ([`Holding`]), how it hands a login that desktop's browser's answer ([`Delivering`]),
+/// and how it runs its own sign-in of one of that desktop's profiles ([`SigningIn`], 1.79).
 #[derive(Clone)]
 pub struct Pairing {
     pub answering: Answering,
@@ -107,6 +110,7 @@ pub struct Pairing {
     pub listing: Listing,
     pub holding: Holding,
     pub delivering: Delivering,
+    pub signing_in: SigningIn,
 }
 
 /// The lock's file name beside `purlisd.sock`, the socket of a person's own config home.
@@ -247,6 +251,7 @@ async fn answer_links(listener: Listener, pairing: Pairing, hosting: Hosting) {
         let listing = Arc::clone(&pairing.listing);
         let holding = Arc::clone(&pairing.holding);
         let delivering = Arc::clone(&pairing.delivering);
+        let signing_in = Arc::clone(&pairing.signing_in);
         tokio::spawn(async move {
             let chats = Arc::new(hosting.clone());
             match hostlink::answer_local(
@@ -272,6 +277,8 @@ async fn answer_links(listener: Listener, pairing: Pairing, hosting: Hosting) {
                         listing,
                         holding,
                         delivering,
+                        signing_in,
+                        sign_ins: SignIns::default(),
                         unpaired: Arc::clone(&unpaired),
                     };
                     let serving = session::serve(answered.link, paired, None);
@@ -297,7 +304,9 @@ async fn answer_links(listener: Listener, pairing: Pairing, hosting: Hosting) {
 /// settings staged on this link first (`stage_profile_settings`, 1.56, #4081),
 /// `forget_profile` (1.52, #4047), which forgets one, `kept_profiles` (1.57, #4060), which
 /// names the ones kept, `settings_held` (1.61, #4088), which says what it holds of one, and
-/// `sign_in_redirect` (1.59, #4044), which hands a login here its browser's answer.
+/// `sign_in_redirect` (1.59, #4044), which hands a login here its browser's answer, and
+/// `start_sign_in` and the commands of that sign-in (1.79), which run this runner's own sign-in of
+/// one of its profiles, held to the link.
 struct PairedLink {
     hosting: Hosting,
     desktop: Pinned,
@@ -310,6 +319,9 @@ struct PairedLink {
     listing: Listing,
     holding: Holding,
     delivering: Delivering,
+    signing_in: SigningIn,
+    /// The sign-ins this link runs: they end with it.
+    sign_ins: SignIns,
     /// Told once the desktop is unpaired, so its link ends.
     unpaired: Arc<tokio::sync::Notify>,
 }
@@ -525,6 +537,16 @@ impl session::Host for PairedLink {
             session::Command::SettingsHeld { profile, after } => self.held(profile, after).await,
             session::Command::KeptProfiles => self.list().await,
             session::Command::SignInRedirect { target } => self.deliver(target.0).await,
+            session::Command::StartSignIn(start) => {
+                self.sign_ins
+                    .start(&self.signing_in, &self.desktop, start)
+                    .await
+            }
+            session::Command::SignInNext { sign_in } => self.sign_ins.next(sign_in).await,
+            session::Command::SignInInput { sign_in, bytes } => {
+                self.sign_ins.input(sign_in, bytes).await
+            }
+            session::Command::EndSignIn { sign_in } => Ok(self.sign_ins.end(sign_in)),
             session::Command::Unpair => self.unpair().await,
             command => session::Host::call(&self.hosting, command, peer).await,
         }

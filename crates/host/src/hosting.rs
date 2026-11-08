@@ -4235,6 +4235,16 @@ impl session::Host for Hosting {
                       sign-in's redirect"
                     .into(),
             }),
+            // Nor runs a sign-in for one (1.79).
+            Command::StartSignIn(_)
+            | Command::SignInNext { .. }
+            | Command::SignInInput { .. }
+            | Command::EndSignIn { .. } => Err(Refusal {
+                code: session::NOT_ALLOWED.into(),
+                why: "this host is paired with no desktop over this link, so it runs no sign-in \
+                      for one"
+                    .into(),
+            }),
             // The desktop's host relays a window's link to a runner before this host hears of
             // the link (`serving`, 1.33, #2679): a host that hears it relays to no runner.
             Command::RelayTo { .. } => Err(Refusal {

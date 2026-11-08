@@ -821,6 +821,22 @@ pub enum Typed {
     DeviceInOwnTerminal(crate::engine::Size),
 }
 
+/// **How a sign-in the desktop asks for over its link to the runner is run there** (session
+/// protocol 1.79): with pipes, driven by the desktop or in a terminal the runner makes.
+impl From<purlis_session_protocol::session::SignInBy> for Typed {
+    fn from(by: purlis_session_protocol::session::SignInBy) -> Typed {
+        use purlis_session_protocol::session::SignInBy;
+        let size = |columns, rows| crate::engine::Size { columns, rows };
+        match by {
+            SignInBy::Driven => Typed::Driven,
+            SignInBy::InOwnTerminal { cols, rows } => Typed::InOwnTerminal(size(cols, rows)),
+            SignInBy::DeviceInOwnTerminal { cols, rows } => {
+                Typed::DeviceInOwnTerminal(size(cols, rows))
+            }
+        }
+    }
+}
+
 impl Typed {
     /// The flag `docker exec` and `kubectl exec` run it with: `-it` in a terminal the person
     /// drives, `-i` with pipes purlis drives.
@@ -2213,7 +2229,8 @@ pub fn standing_as_installed_by_login(
     }
 }
 
-/// Runs `login`'s `--check`, with `more`: how it exited, and what it said.
+/// Runs `login`'s `--check`, with `more`: how it exited, and what it said; refused where its
+/// pin does not hold once it answered.
 fn check_by_login(
     login: &crate::profilestore::sign_in::Login,
     more: &[&str],
@@ -2246,6 +2263,11 @@ fn check_by_login(
         }
         crate::boundedrun::Unanswered::NotFinished(_) => "it did not answer in time".to_owned(),
     })?;
+    // A cluster runner's, reached by its pod's name, counts only from the pod judged:
+    // read once it answered, so after the exec reached it.
+    if let Some(pin) = &login.pin {
+        pin.holds()?;
+    }
     Ok((
         ran.status.code(),
         String::from_utf8_lossy(&ran.said).into_owned(),
@@ -2971,6 +2993,7 @@ impl Docker {
                 .iter()
                 .map(|name| (*name).to_owned())
                 .collect(),
+            pin: None,
         })
     }
 

@@ -1493,12 +1493,18 @@ impl session::Host for Relay {
                     .into(),
             });
         }
-        // A sign-in's redirect is that desktop's too (#4044): never sent on for a client.
-        if let Command::SignInRedirect { .. } = command {
+        // A sign-in's redirect is that desktop's too (#4044), and so is a sign-in run over the
+        // link (1.79): never sent on for a client.
+        if let Command::SignInRedirect { .. }
+        | Command::StartSignIn(_)
+        | Command::SignInNext { .. }
+        | Command::SignInInput { .. }
+        | Command::EndSignIn { .. } = command
+        {
             return Err(Refusal {
                 code: session::NOT_ALLOWED.into(),
-                why: "a sign-in's redirect goes to a runner on its desktop's own link, never \
-                      through a relaying host"
+                why: "a sign-in goes to a runner on its desktop's own link, never through a \
+                      relaying host"
                     .into(),
             });
         }

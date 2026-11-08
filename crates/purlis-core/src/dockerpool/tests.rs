@@ -3404,6 +3404,7 @@ fn a_standing_is_not_held_to_its_input() {
         ],
         env: Vec::new(),
         cleared: Vec::new(),
+        pin: None,
     };
     assert_eq!(
         standing_by_login(&login, "work"),
@@ -3423,6 +3424,7 @@ fn a_standing_that_prints_too_much_says_the_limit_is_fixed() {
         ],
         env: Vec::new(),
         cleared: Vec::new(),
+        pin: None,
     };
     let said = standing_by_login(&login, "work").unwrap_err();
     assert!(said.contains("printed more"), "{said}");
@@ -3847,6 +3849,7 @@ fn a_login_of(script: &str) -> crate::profilestore::sign_in::Login {
         args: vec!["-c".into(), script.into(), "login".into()],
         env: Vec::new(),
         cleared: Vec::new(),
+        pin: None,
     }
 }
 
@@ -3878,5 +3881,31 @@ fn an_older_runner_that_doesnt_know_the_flag_answers_it_cant_tell_and_fetches_no
         said.lines().count(),
         1,
         "asked once, never the fetching way: {said}"
+    );
+}
+
+/// **A sign-in asked for over the link runs on the runner as its desktop asked** (session
+/// protocol 1.79): driven with pipes, or in a terminal of the size the desktop gave.
+#[test]
+fn a_sign_in_asked_over_the_link_is_run_as_its_desktop_asked() {
+    use purlis_session_protocol::session::SignInBy;
+    let size = crate::engine::Size {
+        columns: 100,
+        rows: 30,
+    };
+    assert_eq!(Typed::from(SignInBy::Driven), Typed::Driven);
+    assert_eq!(
+        Typed::from(SignInBy::InOwnTerminal {
+            cols: 100,
+            rows: 30
+        }),
+        Typed::InOwnTerminal(size)
+    );
+    assert_eq!(
+        Typed::from(SignInBy::DeviceInOwnTerminal {
+            cols: 100,
+            rows: 30
+        }),
+        Typed::DeviceInOwnTerminal(size)
     );
 }

@@ -2803,6 +2803,24 @@ pub fn cluster_sign_in(
     typed: crate::dockerpool::Typed,
 ) -> Result<crate::profilestore::sign_in::Login, String> {
     let (kubectl, namespace, pod) = checked_runner(config_root, kubectl, name, judged)?;
+    // Right before the exec, the uid of the pod it reaches by name; read again once it reached
+    // it, before anything it prints is said or anything is passed to it.
+    let uid = kubectl
+        .pod_uid(&namespace, &pod)
+        .map_err(|why| why.to_string())?;
+    let pin = {
+        let (kubectl, namespace, pod) = (kubectl.clone(), namespace.clone(), pod.clone());
+        crate::profilestore::sign_in::Pin::new(move || match kubectl.pod_uid(&namespace, &pod) {
+            Ok(now) if now == uid => Ok(()),
+            Ok(_) | Err(crate::clusterpool::Refused::NotVouched(_)) => {
+                Err(pod_changed(shown_pod(&namespace, &pod)))
+            }
+            Err(why) => Err(format!(
+                "purlis could not read the runner's pod again as the sign-in reached it, so it \
+                 was stopped: {why}. Try again"
+            )),
+        })
+    };
     let (env, cleared) = kubectl.environment();
     let text = |value: std::ffi::OsString| {
         value
@@ -2817,7 +2835,23 @@ pub fn cluster_sign_in(
             .map(|(name, value)| Ok((text(name)?, text(value)?)))
             .collect::<Result<_, String>>()?,
         cleared: cleared.into_iter().map(text).collect::<Result<_, _>>()?,
+        pin: Some(pin),
     })
+}
+
+/// **What a cluster sign-in that reached another pod than the one judged says**: the pod
+/// of its runner's name was made again between the two reads of it, so whatever ran there is
+/// not the runner purlis confirmed as yours, and nothing of the sign-in counts.
+pub fn pod_changed(pod: String) -> String {
+    format!(
+        "the runner's pod {pod} was made again as the sign-in reached it, so purlis stopped it \
+         and nothing of it counts. Try again"
+    )
+}
+
+/// How a runner's pod is named to the person: `<namespace>/<pod>`.
+fn shown_pod(namespace: &str, pod: &str) -> String {
+    crate::shown::short(&format!("{namespace}/{pod}"))
 }
 
 /// The cluster pool `name`'s kubectl, pointed at its context, and its runner's namespace and pod,

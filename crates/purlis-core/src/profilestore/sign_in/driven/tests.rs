@@ -769,6 +769,78 @@ fn a_login_is_driven_end_to_end() {
     assert_eq!(next(&driving), Event::SignedIn);
 }
 
+/// **A pinned login is checked once, after it printed, before any step is said**: a
+/// cluster runner's pod is read again only once the exec reached it.
+#[cfg(unix)]
+#[test]
+fn a_pinned_login_is_checked_once_after_it_printed_before_any_step_is_said() {
+    let folder = tempfile::tempdir().expect("a folder");
+    let mark = folder.path().join("reached");
+    let mut login = stand_in(
+        ": > \"$MARK\"; printf '%s' \"$PRINTED\"; read code; \
+         [ \"$code\" = 'abc#recorded' ] || exit 3; echo 'Login successful.'",
+    );
+    login
+        .env
+        .push(("MARK".to_owned(), mark.display().to_string()));
+    let checks = Arc::new(Mutex::new(Vec::new()));
+    login.pin = Some(super::super::Pin::new({
+        let (checks, mark) = (Arc::clone(&checks), mark.clone());
+        move || {
+            checks.lock().unwrap().push(mark.exists());
+            Ok(())
+        }
+    }));
+    let driving = drive_with(&login, "claude", None, None, LONGEST, || Standing::SignedIn).unwrap();
+
+    assert_eq!(
+        next(&driving),
+        Event::Open {
+            url: PAGE.to_owned()
+        }
+    );
+    assert_eq!(next(&driving), Event::AskCode);
+    driving.paste("abc#recorded").unwrap();
+    assert_eq!(next(&driving), Event::Checking);
+    assert_eq!(next(&driving), Event::SignedIn);
+    assert_eq!(
+        *checks.lock().unwrap(),
+        [true],
+        "once, after it was reached"
+    );
+}
+
+/// **A login whose pin does not hold fails with why**, says nothing it printed and takes nothing
+///.
+#[cfg(unix)]
+#[test]
+fn a_login_whose_pin_does_not_hold_says_nothing_it_printed_and_takes_nothing() {
+    let mut login = stand_in("printf '%s' \"$PRINTED\"; exec sleep 600");
+    login.pin = Some(super::super::Pin::new(|| {
+        Err("the runner's pod changed".to_owned())
+    }));
+    let driving = drive_with(&login, "claude", None, None, LONGEST, || Standing::SignedIn).unwrap();
+
+    assert_eq!(
+        next(&driving),
+        Event::Failed {
+            why: "the runner's pod changed".to_owned()
+        }
+    );
+    assert!(driving.paste("abc#recorded").is_err());
+}
+
+/// **A pinned login takes nothing before its pin held**, as nothing it printed was read yet.
+#[cfg(unix)]
+#[test]
+fn a_pinned_login_takes_nothing_before_it_was_heard() {
+    let mut login = stand_in("exec sleep 600");
+    login.pin = Some(super::super::Pin::new(|| Ok(())));
+    let driving = in_a_terminal(&login, LONGEST, || Standing::SignedIn).expect("runs");
+
+    assert!(driving.typed("yes\r\n").is_err());
+}
+
 /// **opencode's Copilot login driven end to end**: the stand-in reads the answer to its question
 /// before it goes on, and the code is shown while it waits for GitHub.
 #[cfg(unix)]
@@ -938,6 +1010,7 @@ fn waiting_login(gate: &std::path::Path) -> Login {
             ("GATE".to_owned(), gate.display().to_string()),
         ],
         cleared: Vec::new(),
+        pin: None,
     }
 }
 
@@ -962,10 +1035,13 @@ fn driving_on(port: u16, login: &Login, carry: Carry) -> Driving {
         listen_on: Some(port),
         forward: Mutex::new(Forwarded::Not),
     });
-    run(login, codex(), Some(forwarding), LONGEST, || {
-        Standing::SignedIn
-    })
-    .unwrap()
+    run(
+        start(login).unwrap(),
+        codex(),
+        Some(forwarding),
+        LONGEST,
+        || Standing::SignedIn,
+    )
 }
 
 /// **A login approved in the browser, end to end**: the page is told once this device listens,
@@ -1063,6 +1139,7 @@ fn a_login_that_waits_for_the_browser_needs_a_way_to_carry_its_answer() {
         args: Vec::new(),
         env: Vec::new(),
         cleared: Vec::new(),
+        pin: None,
     };
 
     assert!(drive_with(&login, "codex", None, None, LONGEST, || Standing::SignedIn).is_err());
@@ -1127,6 +1204,7 @@ fn stand_in(script: &str) -> Login {
         args: vec!["-c".to_owned(), script.to_owned()],
         env: vec![("PRINTED".to_owned(), recorded().to_owned())],
         cleared: Vec::new(),
+        pin: None,
     }
 }
 

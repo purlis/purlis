@@ -393,6 +393,65 @@ fn the_line_a_shell_runs_sets_the_folders_and_runs_the_program_it_names() {
     );
 }
 
+/// **A login held to a pin is never typed into a shell**: a shell shows what it prints
+/// before anything could check it.
+#[test]
+fn a_login_held_to_a_pin_is_never_typed_into_a_shell() {
+    let mut login = login_for(&profile("claude"), "/Users/me/.local/bin/claude", None).unwrap();
+    login.pin = Some(Pin::new(|| Ok(())));
+
+    assert_eq!(login.line(), Err(PINNED_IS_NOT_TYPED.to_owned()));
+}
+
+/// **Open in terminal types this machine's own `purlis`, never the runner's sign-in**: the
+/// command checks the pool each time it runs, so a line run again from a shell's history is
+/// checked again, and nothing on it names a runner.
+#[test]
+fn a_pools_sign_in_line_runs_purlis_which_checks_the_pool_each_time() {
+    let unix = crate::sandbox::Os::MacOs;
+    assert_eq!(
+        pool_line(
+            "/Apps/p.app/Contents/MacOS/purlis",
+            "work",
+            "team",
+            None,
+            false,
+            unix
+        ),
+        Ok(
+            "/Apps/p.app/Contents/MacOS/purlis profile sign-in work --pool team --in-terminal\n"
+                .to_owned()
+        )
+    );
+    assert_eq!(
+        pool_line(
+            "/usr/bin/purlis",
+            "open",
+            "team",
+            Some("github-copilot"),
+            true,
+            unix
+        ),
+        Ok(
+            "/usr/bin/purlis profile sign-in open --pool team --in-terminal --provider \
+             github-copilot --way device\n"
+                .to_owned()
+        )
+    );
+    assert!(pool_line("/my apps/purlis", "work", "te'am", None, false, unix).is_err());
+    assert!(
+        pool_line(
+            "/usr/bin/purlis",
+            "work",
+            "team",
+            None,
+            false,
+            crate::sandbox::Os::Windows
+        )
+        .is_err()
+    );
+}
+
 #[test]
 fn a_folder_with_a_space_is_one_word_of_the_line() {
     let mut record = made("codex");

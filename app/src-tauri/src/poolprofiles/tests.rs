@@ -1176,6 +1176,7 @@ fn a_stop_between_two_asks_says_its_reason() {
         args: vec!["-c".to_owned(), "sleep 30".to_owned()],
         env: Vec::new(),
         cleared: Vec::new(),
+        pin: None,
     };
     let driving = driven::drive_with(&login, "claude", None, None, driven::LONGEST, || {
         Standing::SignedOut

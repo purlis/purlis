@@ -341,6 +341,18 @@ fn every_command() -> Vec<Command> {
         Command::SignInRedirect {
             target: session::RedirectTarget("/auth/callback?code=c&state=s".into()),
         },
+        // The runner's own sign-in, run over the link (1.79).
+        Command::StartSignIn(session::SignInToStart {
+            profile: "work".into(),
+            provider: None,
+            by: session::SignInBy::Driven,
+        }),
+        Command::SignInNext { sign_in: 1 },
+        Command::SignInInput {
+            sign_in: 1,
+            bytes: b"code#state\n".to_vec(),
+        },
+        Command::EndSignIn { sign_in: 1 },
         // A browser the person takes over, drives and hands back: the window's alone (1.14).
         Command::TakeOver {
             program: CHAT.into(),
@@ -690,6 +702,10 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "settings_held",
             "kept_profiles",
             "sign_in_redirect",
+            "start_sign_in",
+            "sign_in_next",
+            "sign_in_input",
+            "end_sign_in",
             "take_over",
             "browser_input",
             "size_browser",

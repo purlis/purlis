@@ -71,6 +71,7 @@ async fn a_runner(
         listing: Arc::new(|_| Ok(Vec::new())),
         holding: Arc::new(|_, _, _| Ok((Vec::new(), false))),
         delivering: Arc::new(move |target| callback::deliver_waiting_in(&waiting_in, target)),
+        signing_in: Arc::new(|_, _| Err("no sign-in runs here".to_owned())),
     };
     let place = place.clone();
     tokio::spawn(async move {

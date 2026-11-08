@@ -151,6 +151,12 @@ const SORTED: &[(&str, &str, Group, &str)] = &[
     ),
     (
         "app/src-tauri/src/runnerlinks.rs",
+        "A_SIGN_IN_ENDS_WITHIN",
+        Internal,
+        "how long ending a sign-in over the link waits for the runner to say it ended",
+    ),
+    (
+        "app/src-tauri/src/runnerlinks.rs",
         "ALL_KEPT_WITHIN",
         Internal,
         "purlis's own tuning",

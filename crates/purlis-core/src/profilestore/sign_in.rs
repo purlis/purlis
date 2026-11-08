@@ -547,6 +547,42 @@ pub fn let_go_older(root: &Path, name: &str, seen: Instant) {
         .retain(|w| !(w.root == root && w.profile.name == name && w.raised < seen));
 }
 
+/// **What a login is held to once it has been heard**: a check made once, on the first
+/// thing the login prints, before any of it is said or anything is passed to it. A cluster
+/// runner's sign-in reaches its pod by name, through `kubectl exec`; its pin reads the uid of the
+/// pod of that name again, after the exec has reached it, and holds it to the uid read right
+/// before ([`crate::pools::cluster_sign_in`]). Pods of one name never share a uid, so the same
+/// uid on both sides of the exec's connection proves it reached the pod judged. A refusal ends
+/// the login, with nothing it printed said and nothing passed to it.
+#[derive(Clone)]
+pub struct Pin(std::sync::Arc<dyn Fn() -> Result<(), String> + Send + Sync>);
+
+impl Pin {
+    pub fn new(check: impl Fn() -> Result<(), String> + Send + Sync + 'static) -> Pin {
+        Pin(std::sync::Arc::new(check))
+    }
+
+    /// Whether the login still reaches what it was pinned to: `Err` with why, in words.
+    pub fn holds(&self) -> Result<(), String> {
+        (self.0)()
+    }
+}
+
+impl std::fmt::Debug for Pin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Pin")
+    }
+}
+
+/// Two pins are one where they are the same check.
+impl PartialEq for Pin {
+    fn eq(&self, other: &Pin) -> bool {
+        std::sync::Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for Pin {}
+
 /// A harness's own sign-in, ready to run in a terminal the person drives.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Login {
@@ -558,7 +594,16 @@ pub struct Login {
     pub env: Vec<(String, String)>,
     /// Variables of the terminal's own environment taken away before it runs (`env -u`).
     pub cleared: Vec<String>,
+    /// What it is held to once heard, where it reaches its runner by a name alone ([`Pin`]):
+    /// only what reads its output can hold it, so it is never typed into a shell.
+    pub pin: Option<Pin>,
 }
+
+/// Why a login held to a [`Pin`] is never typed as a line: a shell shows what it prints before
+/// anything could check it.
+pub const PINNED_IS_NOT_TYPED: &str = "this sign-in is checked as it starts, which a line typed \
+     into a shell cannot be, so purlis types no line for it. Run purlis profile sign-in with \
+     --pool in your own terminal instead.";
 
 /// The `env` a typed line runs through, by its path, so no `env` earlier on the shell's `PATH`
 /// is the one that runs.
@@ -585,6 +630,9 @@ impl Login {
                 self.args.join(" ")
             ));
         }
+        if self.pin.is_some() {
+            return Err(PINNED_IS_NOT_TYPED.to_owned());
+        }
         let mut words = vec![ENV.to_owned()];
         for name in &self.cleared {
             words.extend(["-u".to_owned(), name.clone()]);
@@ -592,23 +640,75 @@ impl Login {
         words.extend(self.env.iter().map(|(n, v)| format!("{n}={v}")));
         words.push(self.program.clone());
         words.extend(self.args.iter().cloned());
-        if let Some(bad) = words
-            .iter()
-            .find(|w| w.chars().any(|c| c.is_control() || c == '\'' || c == '\\'))
-        {
-            return Err(format!(
-                "{} has a control character, a quote or a backslash in it, so purlis types no \
-                 sign-in with it. Run purlis profile sign-in in your own terminal instead.",
-                crate::shown::short(bad)
-            ));
-        }
-        let quoted: Vec<String> = words
-            .iter()
-            .map(|w| crate::shellseg::shell_quote(w))
-            .collect();
-        Ok(format!("{}\n", quoted.join(" ")))
+        typed(&words)
     }
 }
+
+/// **`words` as one line a shell runs**, each quoted for the shell, and a line break. A word with
+/// a control character, a quote or a backslash in it is refused, so every shell reads each word as
+/// one, and nothing typed can break the line in two.
+fn typed(words: &[String]) -> Result<String, String> {
+    if let Some(bad) = words
+        .iter()
+        .find(|w| w.chars().any(|c| c.is_control() || c == '\'' || c == '\\'))
+    {
+        return Err(format!(
+            "{} has a control character, a quote or a backslash in it, so purlis types no \
+             sign-in with it. Run purlis profile sign-in in your own terminal instead.",
+            crate::shown::short(bad)
+        ));
+    }
+    let quoted: Vec<String> = words
+        .iter()
+        .map(|w| crate::shellseg::shell_quote(w))
+        .collect();
+    Ok(format!("{}\n", quoted.join(" ")))
+}
+
+/// **The line Open in terminal types to sign `name` in on pool `pool`'s runner**: this machine's
+/// own `purlis` at `binary`, which checks the pool as the window does each time it runs, a line
+/// run again from a shell's history too, and then runs the runner's own sign-in in that terminal
+/// (`purlis profile sign-in --pool --in-terminal`), to `provider`'s plan where one is named, by
+/// the harness's device-code flow with `device`. Nothing of the runner is on the line. None is
+/// typed on Windows, whose shells purlis types no sign-in into.
+pub fn pool_line(
+    binary: &str,
+    name: &str,
+    pool: &str,
+    provider: Option<&str>,
+    device: bool,
+    os: crate::sandbox::Os,
+) -> Result<String, String> {
+    if os == crate::sandbox::Os::Windows {
+        return Err(format!(
+            "purlis types no sign-in into a shell on Windows yet. Run purlis profile sign-in \
+             {name} --pool {pool} --in-terminal in your own terminal."
+        ));
+    }
+    let mut words: Vec<String> = [
+        binary,
+        "profile",
+        "sign-in",
+        name,
+        "--pool",
+        pool,
+        IN_TERMINAL,
+    ]
+    .iter()
+    .map(|word| (*word).to_owned())
+    .collect();
+    if let Some(provider) = provider {
+        words.extend(["--provider".to_owned(), provider.to_owned()]);
+    }
+    if device {
+        words.extend(["--way".to_owned(), "device".to_owned()]);
+    }
+    typed(&words)
+}
+
+/// The flag that has `purlis profile sign-in --pool` run the runner's own sign-in in the terminal
+/// it runs in, for the person to drive.
+pub const IN_TERMINAL: &str = "--in-terminal";
 
 /// The sign-in of `profile`, with `program` as its program, to `provider` where its harness
 /// serves several: one of [`providers`], and none for a harness that serves one; by `way` where
@@ -673,6 +773,7 @@ fn login_for(
         args,
         env: profile.env.clone(),
         cleared: Vec::new(),
+        pin: None,
     })
 }
 
@@ -757,6 +858,7 @@ pub fn logout_of(
         args: words.iter().map(|w| (*w).to_owned()).collect(),
         env: profile.env.clone(),
         cleared: Vec::new(),
+        pin: None,
     })
 }
 

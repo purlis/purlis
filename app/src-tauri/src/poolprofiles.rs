@@ -1571,11 +1571,13 @@ fn config_root() -> Result<PathBuf, String> {
 }
 
 /// **The line a shell here runs to sign `name` in on pool `pool`'s runner** (#2049), to
-/// `provider`'s plan where its harness serves several: the runner's own `purlis profile
-/// sign-in`, through this machine's `docker` with settings of purlis's own, on the engine shown
-/// to be the person's own, in the container as it was made, checked first. Only one of this
-/// machine's profiles that goes to a runner, kept there first, so the runner has it to sign in.
-/// With `device`, by the harness's device-code flow (#4044).
+/// `provider`'s plan where its harness serves several: this machine's own `purlis profile sign-in
+/// --pool --in-terminal`, which checks the pool as this does each time it runs, a line run again
+/// from the shell's history too, and then runs the runner's own sign-in in that terminal
+/// ([`profilestore::sign_in::pool_line`]). Only one of this machine's profiles that goes to a
+/// runner, kept there first, so the runner has it to sign in. With `device`, by the harness's
+/// device-code flow (#4044). The line's own ask of this window is answered by this click
+/// ([`crate::poolsignin_confirm::the_window_typed`]).
 pub fn sign_in_line(
     pool: &str,
     name: &str,
@@ -1596,17 +1598,31 @@ pub fn sign_in_line(
         })?;
     profilestore::sign_in::plan_named(&record.harness, provider)?;
     let kept = onrunner::Kept::of(&record)?;
-    if keep_on_as(Ok(yours.clone()), &config, pool, &kept, Waking::No)?.is_none() {
+    if keep_on_as(Ok(yours), &config, pool, &kept, Waking::No)?.is_none() {
         return Err(format!(
             "Pool {pool}: {OLDER_RUNNER}. No sign-in was typed."
         ));
     }
-    let typed = if device {
-        Typed::DeviceInATerminal
-    } else {
-        Typed::InATerminal
-    };
-    login_on(&yours, &config, pool, name, provider, typed)?.line()
+    let binary = crate::charter_binary().ok_or_else(|| {
+        "purlis could not find its own command beside the app, so no sign-in was typed. \
+         Reinstall purlis, then try again."
+            .to_owned()
+    })?;
+    let binary = binary.to_str().ok_or_else(|| {
+        "the path of purlis's own command is not text a shell can be given, so no sign-in was \
+         typed."
+            .to_owned()
+    })?;
+    let line = profilestore::sign_in::pool_line(
+        binary,
+        name,
+        pool,
+        provider,
+        device,
+        purlis_core::sandbox::Os::this(),
+    )?;
+    crate::poolsignin_confirm::the_window_typed(name, pool);
+    Ok(line)
 }
 
 /// **The line a shell here runs to sign `name` out on pool `pool`'s Docker runner** (#4124), for a
@@ -1687,6 +1703,48 @@ fn login_on(
             )
         }
     }
+}
+
+/// **The runner's own sign-in of `name` on pool `pool`'s runner, by `typed`, started**: on a
+/// cluster pool, over this desktop's own link to the runner, which proves it by its key, where the
+/// runner speaks 1.79 ([`crate::runnerlinks::sign_in_on`]); otherwise as [`login_on`] runs it.
+fn started_on(
+    yours: &Yours,
+    config: &Path,
+    pool: &str,
+    name: &str,
+    provider: Option<&str>,
+    typed: Typed,
+) -> Result<driven::Started, String> {
+    use purlis_session_protocol::session::{SignInBy, SignInToStart};
+    if let Yours::Cluster(judged) = yours {
+        let by = match typed {
+            Typed::Driven => Some(SignInBy::Driven),
+            Typed::InOwnTerminal(size) => Some(SignInBy::InOwnTerminal {
+                cols: size.columns,
+                rows: size.rows,
+            }),
+            Typed::DeviceInOwnTerminal(size) => Some(SignInBy::DeviceInOwnTerminal {
+                cols: size.columns,
+                rows: size.rows,
+            }),
+            Typed::InATerminal | Typed::DeviceInATerminal => None,
+        };
+        if let Some(by) = by {
+            still_yours(config, pool, judged)?;
+            this_desktops_cluster_runner(config, pool, judged)?;
+            let to = to_a_runner(config, pool, Waking::No, yours)?;
+            let start = SignInToStart {
+                profile: name.to_owned(),
+                provider: provider.map(str::to_owned),
+                by,
+            };
+            if let Some(started) = crate::runnerlinks::sign_in_on(&to, start)? {
+                return Ok(started);
+            }
+        }
+    }
+    driven::start(&login_on(yours, config, pool, name, provider, typed)?)
 }
 
 /// **One step of a sign-in on a pool's runner** that purlis drives with no terminal (#4042), as
@@ -1848,7 +1906,11 @@ pub async fn pool_sign_in_start(
         // The pool's limit as it stands: only the wait changes, and every check above stands.
         let longest = purlis_core::runners::longest_login_of(&config, &pool);
         let wait = longest.as_secs() / 60;
-        let login = login_on(&yours, &config, &pool, &name, provider.as_deref(), typed)?;
+        // Only a login purlis follows is started to be driven.
+        if terminal.is_none() {
+            driven::follows(&record.harness, provider.as_deref(), true)?;
+        }
+        let login = started_on(&yours, &config, &pool, &name, provider.as_deref(), typed)?;
         let carry: callback::Carry = {
             let (config, pool, yours) = (config.clone(), pool.clone(), yours.clone());
             Arc::new(move |target: &str| {
@@ -1871,9 +1933,9 @@ pub async fn pool_sign_in_start(
             }
         };
         let driving = Arc::new(match terminal {
-            Some(_) => driven::in_a_terminal(&login, longest, check)?,
-            None => driven::drive_with(
-                &login,
+            Some(_) => driven::in_a_terminal_started(login, longest, check),
+            None => driven::drive_started(
+                login,
                 &record.harness,
                 provider.as_deref(),
                 Some(carry),
