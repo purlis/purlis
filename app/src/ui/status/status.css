@@ -27,9 +27,7 @@ footer[data-scope="status-bar"] {
   padding: 0 var(--space-4);
   font-size: var(--font-size-sm);
   white-space: nowrap;
-  /* Clipped along its length, where the start gives way; not above, where the Notices item's
-     dot sits on its corner, over the bar's top edge (#1922). */
-  overflow: clip visible;
+  overflow: hidden;
   background-color: var(--surface-deep);
   border-block-start: var(--panel-border-width) solid var(--border-subtle);
 }
@@ -300,14 +298,15 @@ footer[data-scope="status-bar"] {
    **A 24px target** (WCAG 2.5.8): unlike a chip's dot, it is a Tab stop of its own, and nothing
    else on the bar reaches it. Its box is 24px, the 16px dot drawn in its middle: a clear border
    of 4px around it, which the dot's fill is clipped inside, and its ring drawn inside that fill.
-   It sits on the item's corner and over the bar's top edge, which the bar does not clip (#1922). Keyed on the dot's parts, never
+   It sits on the item's leading corner, flush with the item's top and whole inside the bar, which
+   keeps no padding above its items since they ring inside themselves (#1922). Keyed on the dot's parts, never
    on `data-kind`, which another status item carries too (the title bar's Updates pill).
    --------------------------------------------------------------------------------------------- */
 
 [data-part^="dot"][data-scope="status-item"] {
   position: absolute;
   z-index: 1;
-  inset-block-start: calc(var(--space-2) * -1);
+  inset-block-start: 0;
   /* No further out than the end's gap, so its clear border never covers the item before. */
   inset-inline-start: calc(var(--space-1) * -1);
   display: grid;

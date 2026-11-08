@@ -13,7 +13,7 @@ control, the title bar's status pills included, keeps its ring outside it.
 - **What it changes:** `ui/status/status.css` rings a `bar` item at `--focus-ring-inset` and the
   bar has no padding above or below. The ring still shows from the keyboard only, at 2 px in
   `focus.ring`, held to 3:1 on the bar's ground, and changes no size. The Notices item's dot
-  sits on the bar's top edge, which the bar clips along its length only.
+  sits flush with the item's top, whole inside the bar as before (D-3648-6).
 - **How it was decided:** #1922 asked for this variant and named it a design-system call. It
   follows the rule the token already states (a strip never clips a ring) and is recorded here for
   the operator to confirm or turn back on review of the pull request.
