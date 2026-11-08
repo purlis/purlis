@@ -1261,16 +1261,17 @@ pub struct BlockReport {
     pub digest: String,
 }
 
-/// The draft for a block of purlis's own `operation` on `kind`, from the chat running `harness`.
+/// The evidence of a block of purlis's own `operation` on `kind`, from the chat running `harness`.
 ///
 /// **Made from the fixed words alone.** The window hands back the two words the Notice was told,
 /// and a word that is not one of [`purlis_core::sandboxblock`]'s is refused, so no text from the
 /// window, or from the chat that sent the block, can reach the draft.
-fn block_draft(
+fn block_evidence(
     operation: &str,
     kind: &str,
     harness: Option<&str>,
-) -> Result<purlis_core::report::Draft, String> {
+) -> Result<purlis_core::report::Evidence, String> {
+    use purlis_core::report::{Evidence, PurlisFailure};
     use purlis_core::sandboxblock::{Block, Kind, Operation};
     let block = Block {
         operation: Operation::of_word(operation)
@@ -1282,9 +1283,12 @@ fn block_draft(
     let harness = harness.and_then(purlis_core::harness::Harness::of_kind);
     // The harness's version as this app last heard it answer, looked up by its kind here and
     // never taken from the window (#1353); the draft takes it only in a version's shape.
-    let version = harness.and_then(purlis_core::sandbox::program::version_heard);
-    purlis_core::report::Draft::of_sandbox_block(&block, harness, version.as_deref())
-        .map_err(|refused| refused.0)
+    let harness_version = harness.and_then(purlis_core::sandbox::program::version_heard);
+    Ok(Evidence::PurlisFailure(PurlisFailure::SandboxBlock {
+        block,
+        harness,
+        harness_version,
+    }))
 }
 
 /// The draft of a Report for a sandbox block of purlis's own (#1338). Nothing is sent: this only
@@ -1296,21 +1300,26 @@ pub fn sandbox_block_report(
     kind: String,
     harness: Option<String>,
 ) -> Result<BlockReport, String> {
-    let draft = block_draft(&operation, &kind, harness.as_deref())?;
-    Ok(BlockReport {
-        repository: purlis_core::report::UPSTREAM.to_owned(),
-        digest: draft.digest(),
-        title: draft.title,
-        body: draft.body,
-    })
+    use purlis_core::report::{Outcome, Refusal, Reports};
+    let evidence = block_evidence(&operation, &kind, harness.as_deref())?;
+    match Reports::here(None).take(evidence, &purlis_core::forge::Caller::window()) {
+        Outcome::Drafted { draft, .. } => Ok(BlockReport {
+            repository: purlis_core::report::UPSTREAM.to_owned(),
+            digest: draft.digest(),
+            title: draft.title,
+            body: draft.body,
+        }),
+        Outcome::Refused(Refusal::Unusable(said)) => Err(said),
+        other => Err(format!("The report was not drafted: {other:?}")),
+    }
 }
 
 /// Files the Report the window showed (#1338), on the person's press and never otherwise: by the
 /// app, as the person, with purlis's own sign-in to GitHub and never `gh` or a token from the
-/// environment ([`purlis_core::report::file`], #806), not by anything inside a chat's sandbox.
-/// Only the draft whose digest is `digest` is filed; one that changed since it was shown is
-/// refused unsent. Answers the new issue's address, or why it was not filed with the link that
-/// files it in a browser.
+/// environment (the Reports module, [`purlis_core::report::Reports::file`], #806), not by
+/// anything inside a chat's sandbox. Only the draft whose digest is `digest` is filed; one that
+/// changed since it was shown is refused unsent. Answers the new issue's address, or why it was
+/// not filed with the link that files it in a browser.
 ///
 /// **The window's alone** (`WINDOW_ONLY`): it files as the person, so no link makes it.
 #[tauri::command]
@@ -1321,42 +1330,40 @@ pub async fn file_sandbox_block_report(
     harness: Option<String>,
     digest: String,
 ) -> Result<String, String> {
-    let draft = shown_draft(&operation, &kind, harness.as_deref(), &digest)?;
     tauri::async_runtime::spawn_blocking(move || {
-        let caller = purlis_core::forge::Caller::window();
-        purlis_core::report::as_the_reporter(&caller)
-            .and_then(|tracker| purlis_core::report::file(tracker.as_ref(), &caller, &draft))
-            .map_err(|why| {
-                let (url, whole) = draft.fallback_url();
-                format!(
-                    "It was not filed: {why}. Open this link to file it in a browser{}: {url}",
-                    if whole {
-                        ""
-                    } else {
-                        ", and paste the body from the draft"
-                    }
-                )
-            })
+        filed(&operation, &kind, harness.as_deref(), &digest)
     })
     .await
     .map_err(|err| format!("The report did not finish: {err}"))?
 }
 
-/// The draft for a block, only if its digest is the one the window showed.
-fn shown_draft(
+/// Files the draft for a block as the person in the window, only if its digest is the one the
+/// window showed, and says what became of it.
+fn filed(
     operation: &str,
     kind: &str,
     harness: Option<&str>,
     digest: &str,
-) -> Result<purlis_core::report::Draft, String> {
-    let draft = block_draft(operation, kind, harness)?;
-    if draft.digest() != digest {
-        return Err(
+) -> Result<String, String> {
+    use purlis_core::report::{Outcome, Refusal, Reports};
+    let evidence = block_evidence(operation, kind, harness)?;
+    match Reports::here(None).file(evidence, &purlis_core::forge::Caller::window(), digest) {
+        Outcome::Sent { address } => Ok(address),
+        Outcome::Refused(Refusal::NotTheShownDraft { .. }) => Err(
             "The draft is not the one that was shown, so nothing was sent. Open Report again."
                 .to_owned(),
-        );
+        ),
+        Outcome::Refused(Refusal::NotFiled { why, link, whole }) => Err(format!(
+            "It was not filed: {why}. Open this link to file it in a browser{}: {link}",
+            if whole {
+                ""
+            } else {
+                ", and paste the body from the draft"
+            }
+        )),
+        Outcome::Refused(Refusal::Unusable(said)) => Err(said),
+        other => Err(format!("The report was not filed: {other:?}")),
     }
-    Ok(draft)
 }
 
 // ---- a block's Allow, and every grant (#1342, #1348) -----------------------------------------

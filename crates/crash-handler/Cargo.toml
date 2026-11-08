@@ -1,0 +1,28 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "purlis-crash-handler"
+description = "The app's out-of-process crash handler (ADR 0083, ruling O9): a companion process that writes a minidump when the app crashes natively, for Reports to send on the next launch"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+# No dependency on purlis-core: the handler is a process of its own, started again from the app's
+# binary, and it only writes a file. Reports reads the file on the next launch.
+[dependencies]
+# The companion process, its socket and the crash handler it attaches, over EmbarkStudios'
+# crash-handler, minidumper and rust-minidump's minidump-writer: pure Rust, a safe API (the
+# workspace denies `unsafe`; crash-handler's own `make_crash_event` is an `unsafe fn`), and
+# macOS, Windows and Linux in one. The stack sentry-rust-minidump and tauri-plugin-sentry use.
+minidumper-child = "0.7"
+uuid = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

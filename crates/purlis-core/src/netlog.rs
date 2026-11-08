@@ -70,6 +70,10 @@ pub enum Feature {
     /// version a trusted manifest names, from Chrome for Testing's bucket. The manifest and its
     /// bundle are the updater's reads.
     BrowserEngine,
+    /// A Crash report sent to purlis's private Report intake (#5689, ADR 0118): Sentry SaaS in
+    /// the EU, the third party ruling O9 names. Its line names the intake's host and the
+    /// envelope endpoint, never the project's id or anything of the report.
+    ReportIntake,
 }
 
 impl Feature {
@@ -77,7 +81,9 @@ impl Feature {
     /// line says Charter only when its address is Charter's too ([`is_charters`]).
     pub fn party(self) -> Party {
         match self {
-            Feature::Forge | Feature::Git | Feature::BrowserEngine => Party::ThirdParty,
+            Feature::Forge | Feature::Git | Feature::BrowserEngine | Feature::ReportIntake => {
+                Party::ThirdParty
+            }
             Feature::Updater | Feature::Report => Party::Charter,
         }
     }
@@ -212,6 +218,8 @@ pub const WORDS: &[&str] = &[
     "license",
     // Its plan probe on gitlab.com: `namespaces/:id`, whose id is a group's or a user's path.
     "namespaces",
+    // The Report intake's endpoint (#5689): Sentry's `api/<project>/envelope/`.
+    "envelope",
 ];
 
 /// The words a forge's API puts before names, and how many name segments follow each: an owner

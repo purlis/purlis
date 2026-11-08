@@ -764,6 +764,12 @@ export type Offer = {
    */
   name?: string;
   /**
+   * Other words that find this row, never drawn (#5688): what a person may call it that its
+   * title does not say, such as "telemetry" for Your settings: Reports. Found as the title's
+   * own words are, never as a name.
+   */
+  also?: readonly string[];
+  /**
    * What this row does that its title cannot fit, for a row whose consequence is worth a
    * second sentence. Drawn beside the row in the palette, and as the tooltip of a button that
    * is only a glyph.
@@ -3997,6 +4003,7 @@ function settingsGroupRows(
       opens(one.id, plane === undefined ? {} : { plane }),
     ),
     note: `On this machine, at ${one.label}.`,
+    also: one.also,
   }));
   if (plane === undefined) return rows;
   // The Skills group only while the Skill studio's flag is on (#4610).
@@ -5549,7 +5556,12 @@ export function inPalette(offers: readonly Offer[]): Offer[] {
 export function matches(query: string, offer: Offer): boolean {
   const want = query.toLowerCase();
   const verb = offer.id.split(":")[0].toLowerCase();
-  return offer.title.toLowerCase().includes(want) || verb.includes(want);
+  return offer.title.toLowerCase().includes(want) || verb.includes(want) || isAlso(want, offer);
+}
+
+/** Whether `want`, lower-cased, is in one of the row's other words ({@link Offer.also}). */
+function isAlso(want: string, offer: Offer): boolean {
+  return (offer.also ?? []).some((word) => word.toLowerCase().includes(want));
 }
 
 /**
@@ -5564,7 +5576,7 @@ function byItsWords(query: string, offer: Offer): boolean {
   const want = query.toLowerCase();
   if (offer.id.split(":")[0].toLowerCase().includes(want)) return true;
   const words = offer.name ? offer.title.split(offer.name).join(" ") : offer.title;
-  return words.toLowerCase().includes(want);
+  return words.toLowerCase().includes(want) || isAlso(want, offer);
 }
 
 /**
