@@ -13768,15 +13768,8 @@ fn keep_blocked_takes_a_chats_grant_back_at_once_while_a_press_is_under_way() {
     let planes = planes_on(&host);
     let id = planes.open(&plane.root);
     let held = planes.held(&id).expect("held");
-    let logs = tempfile::tempdir().expect("a folder for the log");
-    {
-        use purlis_core::eventlog::{ArgsKey, Log, Recorder};
-        held.hooks()
-            .record_into(crate::hooks::Events::here(Recorder::new(
-                Log::open(logs.path(), "DEVICE").expect("a log"),
-                ArgsKey::open(logs.path()).expect("a key"),
-            )));
-    }
+    let (events, _, _, taken) = a_host_stalling_audit(0);
+    held.hooks().record_into(events);
     vault_team_no_persona_is_tagged_for(&plane);
 
     std::thread::scope(|scope| {
@@ -13814,6 +13807,15 @@ fn keep_blocked_takes_a_chats_grant_back_at_once_while_a_press_is_under_way() {
         assert_eq!(
             keeping.join().expect("it ends"),
             Vec::<(u32, String)>::new()
+        );
+        let keys = serde_json::json!(["TOKEN"]);
+        assert_eq!(
+            run_grant_audits(&taken),
+            [
+                ("grant".to_owned(), "chat".to_owned(), keys.clone()),
+                ("revoke".to_owned(), "chat".to_owned(), keys),
+            ],
+            "the grant Keep blocked took back is audited as taken back"
         );
     });
 }
@@ -13873,21 +13875,33 @@ fn a_press_after_keep_blocked_was_pressed_gives_nothing() {
     });
 }
 
-/// An event log on a session host that takes audit `stalled` (its first is 1) and then stops
-/// answering until the sender is used, as one stalled in the middle of a write; the receiver hears
-/// when it has stalled. Every other line is taken at once.
+/// Every audit line a host took: its kind and body.
+type AuditsTaken = std::sync::Arc<std::sync::Mutex<Vec<(String, serde_json::Value)>>>;
+
+/// An event log on a session host that takes audit `stalled` (its first is 1; 0 for none) and
+/// then stops answering until the sender is used, as one stalled in the middle of a write; the
+/// receiver hears when it has stalled. Every other line is taken at once, and every audit listed.
 fn a_host_stalling_audit(
     stalled: usize,
 ) -> (
     crate::hooks::Events,
     std::sync::mpsc::Receiver<()>,
     std::sync::mpsc::Sender<()>,
+    AuditsTaken,
 ) {
+    let taken: AuditsTaken = std::sync::Arc::default();
+    let listed = std::sync::Arc::clone(&taken);
     let (entered, on_it) = std::sync::mpsc::sync_channel(1);
     let (release, released) = std::sync::mpsc::channel::<()>();
     let released = std::sync::Mutex::new(released);
     let seen = std::sync::atomic::AtomicUsize::new(0);
     let events = crate::hooks::Events::in_the_host(move |entry| {
+        if let purlis_core::eventlog::Entry::Audited { kind, body, .. } = &entry {
+            listed
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .push((kind.clone(), body.clone()));
+        }
         if matches!(entry, purlis_core::eventlog::Entry::Audited { .. })
             && seen.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1 == stalled
         {
@@ -13899,7 +13913,24 @@ fn a_host_stalling_audit(
         }
         Ok(())
     });
-    (events, on_it, release)
+    (events, on_it, release, taken)
+}
+
+/// The Run grant audit lines `taken` holds, as `(grant or revoke, level, keys)`.
+fn run_grant_audits(taken: &AuditsTaken) -> Vec<(String, String, serde_json::Value)> {
+    taken
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .iter()
+        .filter(|(kind, _)| kind.starts_with("trust.run_grant."))
+        .map(|(kind, body)| {
+            (
+                kind.trim_start_matches("trust.run_grant.").to_owned(),
+                body["level"].as_str().unwrap_or_default().to_owned(),
+                body["keys"].clone(),
+            )
+        })
+        .collect()
 }
 
 /// #5617: Always allow already past its check, its audit stalled on the session host as Keep
@@ -13912,7 +13943,7 @@ fn always_allow_whose_audit_stalls_as_keep_blocked_is_pressed_writes_nothing() {
     let planes = planes_on(&host);
     let id = planes.open(&plane.root);
     let held = planes.held(&id).expect("held");
-    let (events, stalled, release) = a_host_stalling_audit(1);
+    let (events, stalled, release, taken) = a_host_stalling_audit(1);
     held.hooks().record_into(events);
     vault_team_no_persona_is_tagged_for(&plane);
     let manifest = plane.root.join(purlis_core::plane::MANIFEST);
@@ -13955,6 +13986,16 @@ fn always_allow_whose_audit_stalls_as_keep_blocked_is_pressed_writes_nothing() {
             before,
             "no tool line"
         );
+        let keys = serde_json::json!(["TOKEN"]);
+        assert_eq!(
+            run_grant_audits(&taken),
+            [
+                ("grant".to_owned(), "project".to_owned(), keys.clone()),
+                ("revoke".to_owned(), "project".to_owned(), keys.clone()),
+                ("refuse".to_owned(), "chat".to_owned(), keys),
+            ],
+            "audited as given, then as taken back once, then Keep blocked's own Don't allow"
+        );
         assert_eq!(purlis_core::sandbox::local::granted_vaults(&plane.root), []);
         assert!(held.secret_asks().given_runs().is_empty());
         waits.join().expect("it settles");
@@ -13973,7 +14014,7 @@ fn always_allow_gives_no_vault_once_keep_blocked_is_pressed_during_its_audit() {
     let id = planes.open(&plane.root);
     let held = planes.held(&id).expect("held");
     // The run grant's audit, then the vault's.
-    let (events, stalled, release) = a_host_stalling_audit(2);
+    let (events, stalled, release, taken) = a_host_stalling_audit(2);
     held.hooks().record_into(events);
     vault_team_no_persona_is_tagged_for(&plane);
 
@@ -14007,7 +14048,23 @@ fn always_allow_gives_no_vault_once_keep_blocked_is_pressed_during_its_audit() {
         release.send(()).expect("the host is there");
 
         let pressed = always.join().expect("it ends");
-        assert!(pressed.is_err(), "{pressed:?}");
+        assert!(
+            pressed
+                .as_ref()
+                .is_err_and(|why| why.contains("stays") && why.contains("tools")),
+            "it says the line it wrote stays: {pressed:?}"
+        );
+        let keys = serde_json::json!(["TOKEN"]);
+        assert_eq!(
+            run_grant_audits(&taken),
+            [
+                ("grant".to_owned(), "project".to_owned(), keys.clone()),
+                ("revoke".to_owned(), "chat".to_owned(), keys.clone()),
+                ("refuse".to_owned(), "chat".to_owned(), keys),
+            ],
+            "the line stays, so only the chat's grant is audited as taken back, then Keep \
+             blocked's own Don't allow"
+        );
         let ran = waits.join().expect("it settles");
         assert!(
             !matches!(ran, purlis_core::secrets::ask::run::RunHeld::Allowed),
@@ -14034,7 +14091,7 @@ fn keep_blocked_on_a_runs_notice_holds_while_another_press_waits_on_its_audit() 
     let planes = planes_on(&host);
     let id = planes.open(&plane.root);
     let held = planes.held(&id).expect("held");
-    let (events, stalled, release) = a_host_stalling_audit(1);
+    let (events, stalled, release, taken) = a_host_stalling_audit(1);
     held.hooks().record_into(events);
     vault_team_no_persona_is_tagged_for(&plane);
 
@@ -14088,6 +14145,15 @@ fn keep_blocked_on_a_runs_notice_holds_while_another_press_waits_on_its_audit() 
 
         let allowed = allowing.join().expect("it ends");
         assert!(allowed.is_err(), "{allowed:?}");
+        let audits = run_grant_audits(&taken);
+        assert_eq!(
+            audits
+                .iter()
+                .filter(|(kind, level, _)| kind == "revoke" && level == "chat")
+                .count(),
+            1,
+            "{audits:?}"
+        );
         keeping.join().expect("it ends").expect("kept blocked");
         let ran = its_run.join().expect("it settles");
         assert!(

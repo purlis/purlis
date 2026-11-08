@@ -395,6 +395,14 @@ pub struct GivenRun {
     pub at: u64,
 }
 
+/// What Keep blocked did to the asks (#5617): the asks open on the vault, for the window to answer
+/// Don't allow, and the grants it took back, for the window to audit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KeptBlocked {
+    pub open: Vec<u32>,
+    pub taken_back: Vec<GivenRun>,
+}
+
 /// What an answer did: the chats to nudge, whose command stopped waiting before it, and what each
 /// is told.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -828,13 +836,19 @@ impl Asks {
     /// covered either. The asks open on it already are returned, for the window to answer Don't
     /// allow.
     pub fn keep_vault_blocked(&self, chat: u32, vault: &str) -> Vec<u32> {
+        self.keep_vault_blocked_taking(chat, vault).open
+    }
+
+    /// [`Self::keep_vault_blocked`], answering also the grants it took back (#5617), for the
+    /// window to audit each as taken back, as a grant removed from the Allowed list is.
+    pub fn keep_vault_blocked_taking(&self, chat: u32, vault: &str) -> KeptBlocked {
         let mut inner = self.inner();
         inner.runs.kept_blocked.insert((chat, vault.to_owned()));
-        inner
-            .runs
-            .given
-            .retain(|given| given.bound.chat != chat || given.bound.vault != vault);
-        inner
+        let (taken, kept): (Vec<Given>, Vec<Given>) = std::mem::take(&mut inner.runs.given)
+            .into_iter()
+            .partition(|given| given.bound.chat == chat && given.bound.vault == vault);
+        inner.runs.given = kept;
+        let open = inner
             .runs
             .open
             .iter()
@@ -844,7 +858,19 @@ impl Asks {
                     && asked.open.bound.vault == vault
             })
             .map(|asked| asked.open.id)
-            .collect()
+            .collect();
+        KeptBlocked {
+            open,
+            taken_back: taken
+                .into_iter()
+                .map(|given| GivenRun {
+                    id: given.id,
+                    bound: given.bound,
+                    once: given.once,
+                    at: given.at,
+                })
+                .collect(),
+        }
     }
 
     /// **Records that policy refused a run of `program`** (ADR 0112, #5243): closed words in the

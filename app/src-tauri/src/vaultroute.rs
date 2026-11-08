@@ -731,6 +731,27 @@ pub async fn keep_vault_blocked(
     .await
 }
 
+/// **Audits each Run grant Keep blocked took back** (#5617), as one removed from the Allowed list
+/// is: taken back, at its own level, naming its keys. It was taken back whether or not the audit
+/// is written, so a failure is said in the log.
+pub(crate) fn audit_kept_back(
+    held: &crate::planes::Held,
+    taken_back: &[purlis_core::secrets::ask::run::GivenRun],
+) {
+    for one in taken_back {
+        let audited = held.hooks().record_run_grant(
+            held.root(),
+            one.bound.chat,
+            &purlis_core::secrets::ask::run::Audited::revoked(&one.bound, one.once),
+        );
+        if let Err(unrecorded) = audited {
+            tracing::warn!(
+                "purlis: a Run grant Keep blocked took back was not audited ({unrecorded})"
+            );
+        }
+    }
+}
+
 /// **The person pressed Keep blocked on `vault` for chat `session`** (#5617). Held at once: the
 /// chat's later tries raise nothing and its grants on the vault are taken back, though a press on
 /// another ask holds the answers, its audit perhaps waiting on a stalled session host. A press
@@ -746,7 +767,8 @@ pub(crate) fn keep_blocked_pressed(
 ) -> Vec<(u32, String)> {
     held.vault_refusals().keep_blocked(session, vault);
     // Its asks are answered below, under the answers' lock.
-    let _ = held.secret_asks().keep_vault_blocked(session, vault);
+    let kept = held.secret_asks().keep_vault_blocked_taking(session, vault);
+    audit_kept_back(held, &kept.taken_back);
     let _one = held.run_answers();
     vault_kept_blocked(held, network, session, vault)
 }
@@ -773,7 +795,9 @@ pub(crate) fn vault_kept_blocked(
 ) -> Vec<(u32, String)> {
     held.vault_refusals().keep_blocked(session, vault);
     let mut stayed = Vec::new();
-    for id in held.secret_asks().keep_vault_blocked(session, vault) {
+    let kept = held.secret_asks().keep_vault_blocked_taking(session, vault);
+    audit_kept_back(held, &kept.taken_back);
+    for id in kept.open {
         let answered = crate::secretasks::run_grant_answered(
             held,
             network,

@@ -669,3 +669,32 @@ fn an_answer_that_would_open_a_vault_kept_blocked_for_its_chat_is_refused_and_gi
     answer_open(&asks, RunAnswer::ForChat);
     assert!(asks.covers(&bound(8, &["b"])), "another chat's is its own");
 }
+
+#[test]
+fn keep_blocked_answers_the_grants_it_took_back_for_their_audit() {
+    // Each grant Keep blocked takes back is audited as taken back, as one removed from the
+    // Allowed list is (#5617): it names them, and only that chat's on that vault.
+    let asks = Asks::new(std::path::Path::new("/nowhere"));
+    for chat in [7, 8] {
+        asks.allowed_or_held(
+            RunNeed {
+                not_its_vault: true,
+                ..need(bound(chat, &["a"]))
+            },
+            Duration::ZERO,
+            &mut |_| {},
+        );
+        answer_open(&asks, RunAnswer::ForChat);
+    }
+    let kept = asks.keep_vault_blocked_taking(7, "team");
+    assert!(kept.open.is_empty());
+    assert_eq!(kept.taken_back.len(), 1, "{kept:?}");
+    assert_eq!(kept.taken_back[0].bound.chat, 7);
+    assert!(!kept.taken_back[0].once);
+    assert!(
+        asks.keep_vault_blocked_taking(7, "team")
+            .taken_back
+            .is_empty(),
+        "taken back once"
+    );
+}
