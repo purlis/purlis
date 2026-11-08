@@ -180,6 +180,9 @@ fn an_unlocked_session_is_asked_for_a_workspace_first_and_told_who_it_is() {
     assert!(got[0].starts_with("⬢ **Confirm the workspace before any repo work.**"));
     assert!(got[0].contains("(existing: `alpha`, `beta`)"), "{}", got[0]);
     assert!(got[0].contains("That **locks** the workspace"));
+    // #5722 (i): the person is asked through purlis's own tool, not one harness's.
+    assert!(got[0].contains("`ask_operator`"), "{}", got[0]);
+    assert!(!got[0].contains("AskUserQuestion"), "{}", got[0]);
     let who = &got[1];
     assert!(who.starts_with(
         "⬢ **You are the `ops` persona for this session** — purlis selected it (via \
@@ -754,7 +757,7 @@ fn a_working_tree_git_cannot_read_is_said_not_taken_for_a_clean_one() {
     let said = uncommitted_memory_nudge(&root, &Summaries::Files).unwrap();
     assert!(
         said.starts_with(
-            "⬤ purlis could not read the control plane's working tree, so it cannot say whether \
+            "⬤ purlis could not read the plane's working tree, so it cannot say whether \
              memory is unshared — "
         ),
         "{said}"
@@ -1646,11 +1649,12 @@ fn a_chat_the_app_started_is_told_the_one_route_for_work_that_reports_back() {
              anything that amends a ruling are always passed on, and your own answer is never \
              the person's word. They need no shell; the `purlis dispatch` command does the same, \
              one call at a time. Work that writes, commits, needs its own branch folder or \
-             runs long is a purlis task, through `dispatch`; a harness subagent is for \
+             runs long is a purlis task, through `dispatch`; a harness's helper is for \
              read-only work (searching, reading, reviewing), and from inside one `purlis \
              worktree add`, `commit` and `push` are refused. {} This \
              says where such work goes, not that work should go: what this chat can do itself, \
-             it does.",
+             it does, and it dispatches when the work needs another persona's charter, memory \
+             or vault.",
             crate::handoff::ONE_ROUTE
         ))
     );
@@ -1786,8 +1790,8 @@ fn only_the_exact_mark_the_app_sets_reads_as_a_sandboxed_chat() {
         "`/sandbox exclude`",
         "`excludedCommands`",
         "Start without the sandbox",
-        // D-PE-browser-1: a website login is a declared tool too.
-        "browser-login tool",
+        // D-PE-browser-1, #5722 (a): a website login is the browser login tool.
+        "`browser_login` tool",
         // #3798: git work in a sandboxed chat goes through branch folders purlis cuts.
         "`purlis worktree add <repo> <piece>`",
         "`purlis worktree commit`",
@@ -2086,4 +2090,19 @@ fn the_gate_takes_the_most_recently_used_workspaces_from_the_index_where_there_i
         "{}",
         got[0]
     );
+}
+
+#[test]
+fn the_memory_block_points_to_purlis_remember_for_where_a_fact_goes_and_says_no_rule_itself() {
+    let block = memory_block("newest shown", "steward", &["- [A fact](a.md)".to_owned()]);
+    assert!(block.contains("`purlis recall \"<keywords>\"`"), "{block}");
+    assert!(block.contains("the `purlis-remember` skill"), "{block}");
+    for restated in [
+        "persona_remember",
+        "persona remember",
+        "--shared",
+        "memory_add",
+    ] {
+        assert!(!block.contains(restated), "{restated} in {block}");
+    }
 }

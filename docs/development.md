@@ -14,6 +14,7 @@ made. [CONTRIBUTING.md](../CONTRIBUTING.md) says how a change gets in.
 | `crates/same-user` | Whether a socket's peer, a directory or a file is this user's alone: the one copy of the checks `charterd.sock`, the hook sockets and the client scopes' credentials rest on |
 | `crates/browser-engine` | The engine a browser runs on: a pinned Chrome for Testing, verified against its manifest before it runs, started over an inherited DevTools pipe with no port, in a process group its keeper ends when the host ends |
 | `crates/scale-project` | Developer-only, never shipped: a seeded project at the scale spec's target size (#5486), written through the core's own writers, the index the session host would build on it, and the timing of a git standing look on it. What the nightly scale run measures on |
+| `crates/skill-grader` | Developer-only, never shipped: the CI grader (#5727, #5728, spec #5714). Which built-in skills a change grades, Claude Code, Codex or opencode started headless on their trigger tests as a chat in the window is armed, among the crowd fixture (`ci/skill-grades/crowd`) and bare, and the scores in the run's summary; and `skill-grader optimise`, the description optimiser (#5740), which proposes a built-in's description from its failing tests and grades it. `.github/workflows/skill-grades.yml` runs it once per harness with the `skill-grades` environment's keys, which `ci/skill-grades/wizard.sh` sets up |
 | `crates/persona-statistics` | purlis's first built-in extension, and the executor's first consumer: the persona statistics view (ADR 0041 stage 2). The release build assembles it into the app's resources (`persona-statistics assemble <dir>`), and it links the core's stats code so its numbers are `purlis persona stats`'s |
 | `app/` | The desktop app: React + TypeScript UI |
 | `app/src-tauri` | The app's Rust side: Tauri commands that call the core |
@@ -142,6 +143,69 @@ when it opens a project) and times the hook and `recall` on it: the CLI never wr
 so timed without one they measure the file scan the index replaces. On a project with an index
 already, `scale-project index` sweeps it instead of building it, so its row is a full build only
 on a fresh project. The window's idle minute waits for the host to log that the index is ready.
+
+To grade built-in skills' triggering as `.github/workflows/skill-grades.yml` does on a pull
+request (it calls a model, so it costs money and needs a key of your own; the tests never do).
+A built-in's trigger tests are its `evals/triggers.json`, and its trigger bar, neighbours and a
+source per test are `evals/triggers.sources.md` beside them:
+
+```bash
+cargo build -p purlis-cli -p skill-grader
+npm install --global "@anthropic-ai/claude-code@$(target/debug/skill-grader pin claude-code)"
+mkdir /tmp/grade-plane && (cd /tmp/grade-plane && "$OLDPWD/target/debug/purlis" init --forge github --owner skill-grades)
+ANTHROPIC_API_KEY=… target/debug/skill-grader grade --skills purlis-secrets \
+  --program "$(command -v claude)" \
+  --purlis "$PWD/target/debug/purlis" --cwd /tmp/grade-plane --records /tmp/grade-runs
+```
+
+Codex and opencode the same way, each on its own pin: `--harness codex` with
+`npm install --global "@openai/codex@$(target/debug/skill-grader pin codex)"`, `--program
+"$(command -v codex)"` and `OPENAI_API_KEY` (handed to Codex as `CODEX_API_KEY`), or `--harness
+opencode` with `npm install --global "opencode-ai@$(target/debug/skill-grader pin opencode)"`
+and `ANTHROPIC_API_KEY`. Each is armed by `Harness::state_hooks`, as a chat in the window is.
+
+To improve a built-in's description, the description optimiser (#5740) grades the current one,
+asks Claude Code for a rewrite from the trigger tests that failed, grades the rewrite on a copy
+of the plugin, and prints both descriptions and both scores. It changes no file unless given
+`--write`, which puts that run's proposal in the skill's `SKILL.md`; you decide what is
+committed. It costs two grades and a proposal, on your own keys, handed in by `purlis secret
+exec` so no key is typed or printed (it takes any key out of what it says):
+
+```bash
+purlis secret exec <vault> --env ANTHROPIC_API_KEY=<key> -- \
+  target/debug/skill-grader optimise purlis-secrets \
+  --program "$(command -v claude)" \
+  --purlis "$PWD/target/debug/purlis" --cwd /tmp/grade-plane --records /tmp/optimise-runs
+```
+
+On Codex or opencode, add `--harness` and `--proposer "$(command -v claude)"`; Codex also needs
+`--env OPENAI_API_KEY=<key>`.
+
+### A built-in skill's description: the house style
+
+A harness picks a skill by its description alone, among every other skill the person has, so a
+built-in's description is written as a trigger (spec #5714, Q15 and Q30):
+
+1. **The situation first, in people's words.** Open with when it is for ("When this purlis chat
+   is ending, …"), not with what the skill is.
+2. **The word purlis**, in prose, so a request about purlis finds it and a generic request for
+   another tool does not.
+3. **The phrases people use.** A `Use when asked to …` sentence with the verbs people type
+   ("hand off", "wrap up", "retire", "dispatch"), drawn from the trigger tests that should start it.
+4. **A "Not for" clause per neighbour**: `Not for <their situation> — that is purlis-<name>.`
+   The neighbours are the skills its sources file declares (`Neighbours:` in
+   `evals/triggers.sources.md`), the same list its near-miss tests come from, so the boundary
+   is written once and measured.
+5. **At most 1,024 characters**, where Codex cuts, and plain YAML: no `: ` or ` #` in it.
+
+The shipped-skill check (`crates/purlis-cli/src/main/tests/shipped_skills.rs`) fails a
+description without the word purlis, over 1,024 characters, or whose "Not for" clauses leave out
+a declared neighbour, and a built-in without trigger tests (`evals/triggers.json`), a sources file
+or a trigger bar, so no built-in ships unmeasured. A neighbour purlis does not ship, such as the
+plane's building-purlis-ui skill, is named in the description's prose and its requests are plain
+negatives. The trigger grade measures the rest. A built-in's trigger bar, strict
+(≥95% recall, ≤5% false triggers) or standard (≥85%, ≤5%), is the `Trigger bar:` line of the same
+sources file; moving a skill between bars is a reviewed change.
 
 The window's half (the sidebar answer, the watcher's setup, a minute of idle CPU, and the chat
 events busy chats send the window) is `npm run e2e:scale` in `app/`, on a release `e2e` build:

@@ -1,0 +1,178 @@
+[
+  {
+    "query": "Log in to our staging admin panel with the qa vault and check the orders page loads.",
+    "should_trigger": true
+  },
+  {
+    "query": "Open the shop's test site in a browser and sign in with the login stored in purlis.",
+    "should_trigger": true
+  },
+  {
+    "query": "I need two browsers logged in as different users to test the chat between a buyer and a seller.",
+    "should_trigger": true
+  },
+  {
+    "query": "Use the browser to sign in to the metrics dashboard with the credentials in my ops vault and screenshot it.",
+    "should_trigger": true
+  },
+  {
+    "query": "Run an end-to-end check of the checkout flow on staging; it needs the test account from the vault.",
+    "should_trigger": true
+  },
+  {
+    "query": "Paste the API key from the vault into the payment dashboard's settings field without showing it to me.",
+    "should_trigger": true
+  },
+  {
+    "query": "Fill the 2FA code from the TOTP seed in the vault when the login page asks for it.",
+    "should_trigger": true
+  },
+  {
+    "query": "Verify the new signup page in a real browser while I watch, logged in as the admin fixture account.",
+    "should_trigger": true
+  },
+  {
+    "query": "Get past the sign-in on the internal wiki with my saved login and read the release page.",
+    "should_trigger": true
+  },
+  {
+    "query": "Declare a browser login for the qa persona so it can reach the shop's login page.",
+    "should_trigger": true
+  },
+  {
+    "query": "My recorded browser login points at the old domain; replace its site with the new login page.",
+    "should_trigger": true
+  },
+  {
+    "query": "Open three browsers, each logged in as a different tenant, and compare their dashboards.",
+    "should_trigger": true
+  },
+  {
+    "query": "Download the invoice PDF from the vendor portal after logging in with the finance vault, and save it here.",
+    "should_trigger": true
+  },
+  {
+    "query": "Upload this CSV to the admin import page on staging; you'll need to log in first with the vault login.",
+    "should_trigger": true
+  },
+  {
+    "query": "From my own terminal, log in with Playwright using a secrets file from my vault.",
+    "should_trigger": true
+  },
+  {
+    "query": "Log into the CMS as an editor and as a viewer at the same time to check permissions.",
+    "should_trigger": true
+  },
+  {
+    "query": "Sign in to the cloud console in the purlis browser using the deploy vault's password.",
+    "should_trigger": true
+  },
+  {
+    "query": "Test the password reset flow on staging, signing in with the fixture user from the vault.",
+    "should_trigger": true
+  },
+  {
+    "query": "Log in to the bank sandbox and hand me the browser when it shows the captcha.",
+    "should_trigger": true
+  },
+  {
+    "query": "Put the deploy token from the vault into the CI provider's settings form.",
+    "should_trigger": true
+  },
+  {
+    "query": "Check that a logged-in customer sees the new banner on the account page, using the test login purlis keeps.",
+    "should_trigger": true
+  },
+  {
+    "query": "Several workers need their own logged-in session on the same site; set that up.",
+    "should_trigger": true
+  },
+  {
+    "query": "Run the migration against the staging database using the password in the vault.",
+    "should_trigger": false
+  },
+  {
+    "query": "Call the GitHub API with the token from my vault and list the open pull requests.",
+    "should_trigger": false
+  },
+  {
+    "query": "Store this new payment API key in the payments vault.",
+    "should_trigger": false
+  },
+  {
+    "query": "Use the kubeconfig from the ops vault to check the pods.",
+    "should_trigger": false
+  },
+  {
+    "query": "curl the internal metrics endpoint with the bearer token from the vault.",
+    "should_trigger": false
+  },
+  {
+    "query": "SSH into the build box with the key stored in purlis.",
+    "should_trigger": false
+  },
+  {
+    "query": "Make purlis's window match our brand colours from this screenshot.",
+    "should_trigger": false
+  },
+  {
+    "query": "Check the dark purlis theme I made for contrast problems.",
+    "should_trigger": false
+  },
+  {
+    "query": "Create a purlis theme from this Figma frame.",
+    "should_trigger": false
+  },
+  {
+    "query": "Scrape the public changelog page and summarise what's new.",
+    "should_trigger": false
+  },
+  {
+    "query": "Open the docs site and take a screenshot of its homepage.",
+    "should_trigger": false
+  },
+  {
+    "query": "Write a Playwright test that clicks the signup button on our local dev server.",
+    "should_trigger": false
+  },
+  {
+    "query": "Check whether example.com loads over HTTPS.",
+    "should_trigger": false
+  },
+  {
+    "query": "Fetch this public URL and give me the page title.",
+    "should_trigger": false
+  },
+  {
+    "query": "Fix the flaky unit test in the cart module.",
+    "should_trigger": false
+  },
+  {
+    "query": "Explain how cookies differ from local storage.",
+    "should_trigger": false
+  },
+  {
+    "query": "Write a login form component in React.",
+    "should_trigger": false
+  },
+  {
+    "query": "Why does our OAuth redirect return 400? Read the server code.",
+    "should_trigger": false
+  },
+  {
+    "query": "Refactor the auth middleware to use the new session store.",
+    "should_trigger": false
+  },
+  {
+    "query": "Summarise the last ten commits.",
+    "should_trigger": false
+  },
+  {
+    "query": "Add a password strength meter to the signup page.",
+    "should_trigger": false
+  },
+  {
+    "query": "Draft release notes for version 2.3.",
+    "should_trigger": false
+  }
+]

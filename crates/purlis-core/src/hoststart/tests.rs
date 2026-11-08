@@ -461,3 +461,60 @@ fn a_wrap_that_sets_its_own_tmpdir_names_claude_codes_temp_folder_over_the_armin
         pairs(&[(temp, "/wrap/temp"), ("TMPDIR", "/wrap/temp")])
     );
 }
+
+/// #5736: a Claude Code chat's start measures what Claude Code lists of the person's own skills,
+/// biggest first and none manual-only, which its listing limit counts. Nothing is measured on
+/// another harness.
+#[test]
+fn a_claude_code_chat_s_start_measures_the_person_s_own_catalogue_5736() {
+    let tmp = tempfile::tempdir().unwrap();
+    let plane = tmp.path().join("plane");
+    std::fs::create_dir_all(&plane).unwrap();
+    std::fs::write(plane.join("charter.toml"), "schema = 1\n").unwrap();
+    let own = tmp.path().join("claude-config/skills");
+    let skill = |name: &str, said: &str, manual: bool| {
+        std::fs::create_dir_all(own.join(name)).unwrap();
+        let manual = if manual {
+            "disable-model-invocation: true\n"
+        } else {
+            ""
+        };
+        std::fs::write(
+            own.join(name).join("SKILL.md"),
+            format!("---\nname: {name}\ndescription: {said}\n{manual}---\n"),
+        )
+        .unwrap();
+    };
+    skill("short", "Short.", false);
+    skill("long", &"Long. ".repeat(100), false);
+    skill("quiet", "Only when named.", true);
+    let env = [(
+        "CLAUDE_CONFIG_DIR".to_owned(),
+        tmp.path().join("claude-config").display().to_string(),
+    )];
+    let read = |harness| {
+        ChatSkills::read(false, &plane, Some(harness), Some(&plane), None)
+            .own_measured(Some(harness), Some(&plane), &env)
+            .own
+    };
+
+    let measured = read(Harness::ClaudeCode).expect("measured on Claude Code");
+
+    let named: Vec<&str> = measured
+        .contributors
+        .iter()
+        .map(|one| one.name.as_str())
+        .collect();
+    assert_eq!(named, ["long", "short"], "biggest first, none manual-only");
+    assert_eq!(measured.catalogue.skills, 2);
+    assert_eq!(measured.catalogue.manual, 1);
+    assert_eq!(
+        measured.catalogue.chars,
+        measured
+            .contributors
+            .iter()
+            .map(|one| one.chars)
+            .sum::<usize>()
+    );
+    assert_eq!(read(Harness::Codex), None, "Codex's limit is not handed");
+}

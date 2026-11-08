@@ -1,0 +1,182 @@
+[
+  {
+    "query": "Ask the skills persona which of the two options it prefers and bring its answer back.",
+    "should_trigger": true
+  },
+  {
+    "query": "Dispatch this ticket as a task and wait for its report.",
+    "should_trigger": true
+  },
+  {
+    "query": "Have the reviewer persona review PR 4361 and tell me what it finds.",
+    "should_trigger": true
+  },
+  {
+    "query": "Create a persona for release management.",
+    "should_trigger": true
+  },
+  {
+    "query": "Which persona am I working as right now?",
+    "should_trigger": true
+  },
+  {
+    "query": "Act as the steward for this one: scope the request before any code is written.",
+    "should_trigger": true
+  },
+  {
+    "query": "Which persona should own the CI dashboard work?",
+    "should_trigger": true
+  },
+  {
+    "query": "Run the security audit as a task under the security persona and wait for it.",
+    "should_trigger": true
+  },
+  {
+    "query": "Send this question to the infra persona; I need its answer to continue.",
+    "should_trigger": true
+  },
+  {
+    "query": "List the personas we have and what each is for.",
+    "should_trigger": true
+  },
+  {
+    "query": "Give the frontend persona a charter that says it owns the window's UI.",
+    "should_trigger": true
+  },
+  {
+    "query": "Dispatch three tasks, one per ticket, and collect their reports.",
+    "should_trigger": true
+  },
+  {
+    "query": "What does the steward persona's charter say about scoping?",
+    "should_trigger": true
+  },
+  {
+    "query": "Tell the running task to also run clippy before it reports.",
+    "should_trigger": true
+  },
+  {
+    "query": "Cancel the task that's building the UI guide move; it isn't needed any more.",
+    "should_trigger": true
+  },
+  {
+    "query": "Make a QA persona that inherits from the steward.",
+    "should_trigger": true
+  },
+  {
+    "query": "This needs the ops persona's vault. Dispatch it rather than doing it here.",
+    "should_trigger": true
+  },
+  {
+    "query": "Who asked for this chat, and what are my sibling tasks?",
+    "should_trigger": true
+  },
+  {
+    "query": "Check on the dispatched grader task: has it reported yet?",
+    "should_trigger": true
+  },
+  {
+    "query": "Should this go to another persona, or can I do it myself?",
+    "should_trigger": true
+  },
+  {
+    "query": "Report back to the asking chat that the ticket is done.",
+    "should_trigger": true
+  },
+  {
+    "query": "Is the persona roster healthy? Some personas have no charter.",
+    "should_trigger": true
+  },
+  {
+    "query": "Hand the copy review to the writer persona as a task and wait for its verdict.",
+    "should_trigger": true
+  },
+  {
+    "query": "Move the flaky-test work to a new chat in the git-ci-cd workspace; I'll read it there.",
+    "should_trigger": false
+  },
+  {
+    "query": "Open a chat in another workspace for this bug and write it a brief.",
+    "should_trigger": false
+  },
+  {
+    "query": "Park this idea in its own chat for me to look at later.",
+    "should_trigger": false
+  },
+  {
+    "query": "Start a separate chat for the docs rewrite; I'll follow it myself.",
+    "should_trigger": false
+  },
+  {
+    "query": "Run the deploy with the token from the ops vault.",
+    "should_trigger": false
+  },
+  {
+    "query": "Store this new API key in my persona's vault.",
+    "should_trigger": false
+  },
+  {
+    "query": "Which keys does the shop vault hold?",
+    "should_trigger": false
+  },
+  {
+    "query": "Remove the old qa-legacy persona, but keep what it learned.",
+    "should_trigger": false
+  },
+  {
+    "query": "Retire the volaticloud persona; promote anything worth keeping first.",
+    "should_trigger": false
+  },
+  {
+    "query": "Delete the default workspace.",
+    "should_trigger": false
+  },
+  {
+    "query": "Write a user persona for the onboarding design doc.",
+    "should_trigger": false
+  },
+  {
+    "query": "Generate three customer personas for the marketing site.",
+    "should_trigger": false
+  },
+  {
+    "query": "Add a role column to the users table.",
+    "should_trigger": false
+  },
+  {
+    "query": "Dispatch the redux action when the form submits.",
+    "should_trigger": false
+  },
+  {
+    "query": "Fix the event dispatcher so listeners run in order.",
+    "should_trigger": false
+  },
+  {
+    "query": "Write a charter for the open-source community.",
+    "should_trigger": false
+  },
+  {
+    "query": "What's the difference between a role and a permission in our RBAC code?",
+    "should_trigger": false
+  },
+  {
+    "query": "Run the unit tests and fix what fails.",
+    "should_trigger": false
+  },
+  {
+    "query": "Translate the README into German.",
+    "should_trigger": false
+  },
+  {
+    "query": "Explain this stack trace.",
+    "should_trigger": false
+  },
+  {
+    "query": "Schedule a job that runs every night at 2am.",
+    "should_trigger": false
+  },
+  {
+    "query": "Format the code with prettier.",
+    "should_trigger": false
+  }
+]

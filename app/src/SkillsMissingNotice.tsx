@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useContext, useEffect, useState } from "react";
-import { commands, type PlaneId, type SkillsMissing } from "./bindings";
+import { commands, type ListingCrowded, type PlaneId, type SkillsMissing } from "./bindings";
 import { counted } from "./dispatches";
 import { Notice, NoticeOf } from "./Notice";
 import { SHOW_IN_SKILLS, askChatSkills, skillsMissingPutAway } from "./chatSkillsAsk";
@@ -13,7 +13,10 @@ import { SHOW_IN_SKILLS, askChatSkills, skillsMissingPutAway } from "./chatSkill
  * harness, and a built-in skill purlis has none of, each named as the persona's skills write it;
  * a skill the chat would have loaded that could not be loaded, with why; and one the repo it
  * works in leaves out, with why (SK-53). And a skill of that repo with a name of purlis's own,
- * which the chat's program loads beside purlis's (SK-37). It offers
+ * which the chat's program loads beside purlis's (SK-37). And each skill it gets two differing
+ * copies of, a plane skill and the person's own or a repo's, named as a pair: purlis never picks
+ * a winner (#5737). And a listing that needs more than Claude Code holds, with who takes the
+ * most room (#5736). It offers
  *
  * - **Show in Skills** (S8, #3694): the sidebar Skills view on this chat, where what it started
  *   without sits in Needs you with its fix;
@@ -89,5 +92,30 @@ export function missingSays(chat: string, said: SkillsMissing): string {
     lines.push(
       `${chat} works in a repo with its own copy of ${counted(said.beside_a_built_in.length, "built-in skill", "built-in skills")}, which it gets beside purlis's and may use instead: ${said.beside_a_built_in.join(", ")}.`,
     );
+  if (said.differing.length > 0)
+    lines.push(
+      `${chat} gets two copies of ${counted(said.differing.length, "skill", "skills")} whose content differs, and purlis does not pick one for it: ${said.differing.join(", ")}.`,
+    );
+  if (said.crowded !== null) lines.push(crowdedSays(chat, said.crowded));
   return lines.join(" ");
+}
+
+/**
+ * What the Notice says of a chat whose listing needs more than Claude Code holds (#5736): the two
+ * numbers, who takes the most room, and what to do.
+ */
+function crowdedSays(chat: string, crowded: ListingCrowded): string {
+  const chars = (n: number) => n.toLocaleString("en-US");
+  const biggest = crowded.biggest
+    .map(
+      (one) =>
+        `${one.name} (${one.plugin ? "plugin" : "skill"}, ${counted(one.chars, "character", "characters", chars(one.chars))})`,
+    )
+    .join(", ");
+  const most = biggest === "" ? "" : ` Taking the most room: ${biggest}.`;
+  return (
+    `${chat}'s skills need ${chars(crowded.needs)} characters of Claude Code's skill list and it ` +
+    `holds ${chars(crowded.most)}, so Claude Code drops some descriptions.${most} Turn off a ` +
+    `plugin or skill this project doesn't use to keep them.`
+  );
 }
