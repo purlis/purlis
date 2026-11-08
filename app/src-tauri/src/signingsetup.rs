@@ -1045,4 +1045,73 @@ mod tests {
         };
         assert_eq!(super::shown(unnamed, |_| Some(3)).chat, None);
     }
+
+    /// #5790: lanes refused on GitHub and on GitLab get Set up signing for each forge, each its
+    /// own answer, before signing is on and after (the key may not be on the other forge yet).
+    /// Lanes on one forge keep the one Set up signing.
+    #[test]
+    fn lanes_on_two_forges_offer_setup_for_each() {
+        let root = tempfile::tempdir().unwrap();
+        let lane = |piece: &str, kind: Kind, host: &str| {
+            let folder =
+                purlis_core::worktree::path_for(root.path(), "smart-ide", "purlis", piece).unwrap();
+            std::fs::create_dir_all(folder).unwrap();
+            retry::note_refused(
+                root.path(),
+                Waiting {
+                    kind,
+                    host: host.to_owned(),
+                    ..refused(piece)
+                },
+            )
+            .unwrap();
+        };
+        lane("tab-names", Kind::GitHub, "github.com");
+        lane("empty-tab", Kind::GitLab, "gitlab.example.org");
+        lane("pane-foot", Kind::GitHub, "github.com");
+        let options = |on: bool| -> Vec<(String, String)> {
+            crate::asking::signing_waiting(root.path(), || on)
+                .unwrap()
+                .options
+                .into_iter()
+                .map(|one| (one.id, one.label))
+                .collect()
+        };
+        let pair = |id: &str, label: &str| (id.to_owned(), label.to_owned());
+        assert_eq!(
+            options(false),
+            [
+                pair("set-up:github:github.com", "Set up signing on GitHub"),
+                pair(
+                    "set-up:gitlab:gitlab.example.org",
+                    "Set up signing on GitLab"
+                ),
+                pair("dismiss", "Dismiss"),
+            ]
+        );
+        assert_eq!(
+            options(true),
+            [
+                pair("retry-all", "Sign and retry all 3"),
+                pair("set-up:github:github.com", "Set up signing on GitHub"),
+                pair(
+                    "set-up:gitlab:gitlab.example.org",
+                    "Set up signing on GitLab"
+                ),
+                pair("dismiss", "Dismiss"),
+            ]
+        );
+        // Two GitLabs are told apart by their host.
+        lane("pane-foot", Kind::GitLab, "gitlab.com");
+        let labels: Vec<String> = options(false).into_iter().map(|(_, label)| label).collect();
+        assert_eq!(
+            labels,
+            [
+                "Set up signing on GitHub",
+                "Set up signing on GitLab (gitlab.com)",
+                "Set up signing on GitLab (gitlab.example.org)",
+                "Dismiss",
+            ]
+        );
+    }
 }

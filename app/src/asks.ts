@@ -44,7 +44,12 @@ import { proposeOldKeysRemoval } from "./oldHarnessPlugins";
 import { askOpenRunnerWrite } from "./runnerWriteOpen";
 import { askOpenRunnerDispatch } from "./runnerDispatchOpen";
 import { askProfileSignIn } from "./settings/links";
-import { askSigningSetUp, signAndRetryAll, SIGNING_WAITING_CHANGED } from "./signingAsked";
+import {
+  askSigningSetUp,
+  setUpForgeOf,
+  signAndRetryAll,
+  SIGNING_WAITING_CHANGED,
+} from "./signingAsked";
 import { refusalsAnswered } from "./vaultRefusals";
 
 /**
@@ -410,9 +415,10 @@ export async function answerTaken(
       case "signing": {
         // The lanes a forge refused for unsigned commits (#5633): Set up signing opens the
         // dialog in the project's window, ending in Sign and retry all; once on, Sign and retry
-        // all sends each again; once all went, Dismiss puts it away.
-        if (option === "set-up") {
-          askSigningSetUp(plane);
+        // all sends each again; once all went, Dismiss puts it away. Lanes on more than one
+        // forge are set up a forge at a time, `set-up:<kind>:<host>` (#5790).
+        if (option === "set-up" || setUpForgeOf(option) !== undefined) {
+          askSigningSetUp(plane, setUpForgeOf(option));
           opened = true;
           return { status: "ok" };
         }
