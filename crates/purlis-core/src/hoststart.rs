@@ -678,9 +678,6 @@ pub const NO_HARNESS_BY_ITS_WORDS: &str = "this chat would start without the san
 /// and a window's own launch is in no sandbox of this host's making. A shell is the window's to
 /// start, and a person's own machine is unchanged.
 pub fn launch_by_words_refused(kind: ProgramKind, on_a_runner: bool) -> Result<(), String> {
-    if kind == ProgramKind::Harness || kind != ProgramKind::Harness {
-        return Ok(()); // RED
-    }
     if on_a_runner && kind == ProgramKind::Harness {
         return Err(NO_HARNESS_BY_ITS_WORDS.to_owned());
     }

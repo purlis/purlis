@@ -810,7 +810,7 @@ pub fn profile_refusal(
              the sandbox, so nothing was started. Start it sandboxed, or pick another profile."
         ));
     }
-    if on_a_runner && !sandboxed && harness == Some(Harness::ClaudeCode) /* RED */ {
+    if on_a_runner && !sandboxed {
         return Some(match harness {
             Some(_) => format!(
                 "this chat would start without the sandbox, and on a runner every chat runs \
