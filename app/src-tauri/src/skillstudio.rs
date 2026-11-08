@@ -515,6 +515,9 @@ pub struct StudioHarness {
     /// The project's skills a repo of the workspace leaves out of its chats in that clone, each
     /// with why (SK-53): the core's `HarnessInTheStudio::repo_left_out`.
     pub repo_left_out: Vec<StudioSkill>,
+    /// The project's skills its chats start without because it has the same copy itself, each
+    /// naming the copy kept (#5843): the core's `HarnessInTheStudio::same_left_out`.
+    pub same_left_out: Vec<StudioSkill>,
     /// **What its own catalogue holds** (#3324), in the core's words (`OwnCatalogue::said`),
     /// which `purlis skill list` says too: the skills it finds itself in the person's own
     /// folders and its plugins, listed against its own limit and never counted in purlis's
@@ -1261,6 +1264,12 @@ fn harnesses(
                 skills: one.rows.iter().cloned().map(outside_shown).collect(),
                 repo_left_out: one
                     .repo_left_out
+                    .iter()
+                    .cloned()
+                    .map(outside_shown)
+                    .collect(),
+                same_left_out: one
+                    .same_left_out
                     .iter()
                     .cloned()
                     .map(outside_shown)
