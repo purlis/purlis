@@ -191,3 +191,46 @@ fn a_granted_login_reading_a_link_into_a_vault_its_persona_may_not_use_is_refuse
 
     says_out_of_reach(&why, "qa");
 }
+
+/// A link to another entry of the same vault reaches no new vault, so a fill the person allowed
+/// reads through it, as the press lets it be made.
+#[test]
+fn a_fill_reads_a_link_to_another_entry_of_its_own_vault() {
+    let project = project();
+    let ctx = Ctx::new(project.path(), Env::of(&[]));
+    let team = crate::secrets::cmd::provider(&ctx, "team").unwrap();
+    crate::secrets::links::link(&ctx, &team, "ALIAS", "team", "TOKEN").unwrap();
+    let chat = Asker {
+        confines: None,
+        ..asker(project.path(), Some("qa"))
+    };
+
+    let read = fill_value(&chat, "team", "ALIAS").expect("read");
+
+    assert_eq!(
+        read.map(|value| value.expose().to_owned()).as_deref(),
+        Some(TOKEN)
+    );
+}
+
+/// A key out of reach is neither read nor offered on a run's notice, whatever else it lacks: the
+/// run is refused before anyone is asked for the others.
+#[test]
+fn a_key_out_of_reach_is_never_asked_for_beside_one_a_run_lacks() {
+    let project = project();
+    linked_out(project.path());
+    std::fs::write(project.path().join("other.json"), "{}").unwrap();
+    let chat = asker(project.path(), Some("devops"));
+    let mut want = wanted(project.path(), "team", sh("true"));
+    want.env = vec!["X=MISSING".into(), "Y=ABSENT".into()];
+
+    let fills = fills_missing(&chat, &reading_for(&chat), &want);
+
+    assert_eq!(
+        fills
+            .iter()
+            .map(|fill| fill.key.as_str())
+            .collect::<Vec<_>>(),
+        ["ABSENT"]
+    );
+}

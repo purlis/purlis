@@ -17,8 +17,12 @@ opens for it. The readers judged are:
 - a runner chat's tool, read on the desktop.
 
 A fill and a granted login each count as a reader of their vault, though neither needs the vault
-to be one its persona may use. Such a reader is held to the rule for every link it reads, one
-inside the same vault included: it was allowed one key, not every entry that key may lead to.
+to be one its persona may use. A link to another entry of the same vault reaches no new vault, so
+it is not judged, as the press does not judge it.
+
+A run's keys are all judged before anything is read or asked of the person. A key out of reach is
+never offered on the run's notice, and the run is refused before the person is asked to fill
+another key it lacks.
 
 A link is judged again once its value is read, so a link written between the first judgement and
 the read is seen, and what was read goes unused.

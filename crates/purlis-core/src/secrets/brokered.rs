@@ -774,6 +774,11 @@ fn fills_missing(asker: &Asker, ctx: &Ctx, wanted: &Wanted) -> Vec<super::ask::r
         if fills.iter().any(|fill| fill.key == key) {
             continue;
         }
+        // A link into a vault the persona may not use is neither read nor asked for: its run is
+        // refused (#5795).
+        if read_out_of_reach(ctx, persona, &wanted.vault, &[key]).is_some() {
+            continue;
+        }
         let lacks = cmd::get_value(ctx, &v, key).map(zeroize::Zeroizing::new);
         if lacks
             .as_ref()
@@ -1069,7 +1074,8 @@ fn handed_to_no_granted_program(
 
 /// **Why `persona` may read none of `keys` of `vault`** (#5795, the person's ruling: judge a link
 /// when it is read): one is a link into a vault `persona` may not use, which is whatever
-/// [`authorise`] would not open for it, the link's own vault too. Asked before a value is read for
+/// [`authorise`] would not open for it. A link to another entry of the same vault reaches no new
+/// vault and is not judged, as the press does not judge it ([`read_through_by`]). Asked before a value is read for
 /// a declared tool's run, a run under a Run grant, a browser fill, a login (declared or granted)
 /// and a profile's sign-in, and again once it is read ([`read_judged`]). A fill or a granted login
 /// counts as a reader of its vault, so this covers links made before #5745's press check and a
@@ -1082,6 +1088,9 @@ pub fn read_out_of_reach(ctx: &Ctx, persona: &str, vault: &str, keys: &[&str]) -
     for &key in keys {
         let to = match super::links::of(ctx, vault, key) {
             Ok(None) => continue,
+            // Another entry of the same vault: no new vault is reached, as the press judges it
+            // too ([`read_through_by`]).
+            Ok(Some(to)) if to.vault == vault => continue,
             Ok(Some(to)) => to,
             Err(_) => {
                 return Some(format!(
@@ -3244,6 +3253,19 @@ pub(crate) fn serve_recorded(
         && !may_ask_for_the_vault
     {
         return refuse(&mut *writer, 1, why.clone());
+    }
+    // Every key it hands over that is a link into a vault the persona may not use refuses the
+    // run before anything is read or asked (#5795): no notice for one key, then a refusal for
+    // another. Each read is judged again as it happens, below.
+    if handed.is_none()
+        && let Some(why) = read_out_of_reach(
+            &ctx,
+            persona,
+            &wanted.vault,
+            &keys_named(&wanted).collect::<Vec<_>>(),
+        )
+    {
+        return refuse(&mut *writer, 1, why);
     }
     // A declared tool's run on a vault its persona may not use, that lacks a key too: one notice
     // with its fields and the vault's own Allow (#5242). Lacking none, the app's refused vault's
