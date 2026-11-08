@@ -90,3 +90,24 @@ fn a_turn_s_end_keeps_what_the_start_knew_and_it_does_not_say() {
 fn a_turn_s_end_that_names_nothing_empties_the_record() {
     assert!(at_stop(&[shell("a")], Vec::new()).is_empty());
 }
+
+#[test]
+fn a_wake_up_the_turn_s_end_names_by_its_schedule_keeps_the_time_its_tool_set() {
+    let set = Piece {
+        prompt: Some("/loop check CI".to_owned()),
+        due_at: Some(1_800_000_600),
+        ..Piece::new(Kind::WakeUp, "toolu_01", "CI").expect("a piece")
+    };
+    let listed = Piece {
+        prompt: Some("/loop check CI".to_owned()),
+        schedule: Some("10 3 * * *".to_owned()),
+        due_at: Some(1_800_000_000),
+        ..Piece::new(Kind::WakeUp, "c7", "").expect("a piece")
+    };
+    let now = at_stop(&[set], vec![listed]);
+    assert_eq!(now.len(), 1);
+    assert_eq!(
+        (now[0].id.as_str(), now[0].due_at, now[0].what.as_str()),
+        ("c7", Some(1_800_000_600), "CI")
+    );
+}

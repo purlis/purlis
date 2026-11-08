@@ -6705,7 +6705,22 @@ impl Chats {
                 own.mid_turn = false;
             }
             Heard::Failed => own.mid_turn = false,
-            Heard::Began => own.mid_turn = true,
+            Heard::Began => {
+                own.mid_turn = true;
+                // A wake-up whose time has come has fired, and may be what began this turn: its
+                // harness drops it, and it is not missed (#5751).
+                own.pieces.retain(|piece| {
+                    piece.kind != purlis_core::ownwork::pieces::Kind::WakeUp
+                        || piece.due_at.is_none_or(|due| due > now_at)
+                });
+                if let Some(work) = own.work.as_mut()
+                    && work.wakes_at.is_some_and(|due| due <= now_at)
+                {
+                    work.wakes_at = None;
+                }
+                own.work = own.work.and_then(purlis_core::ownwork::OwnWork::in_flight);
+            }
+            Heard::Idle => own.mid_turn = false,
             Heard::Cleared => *own = Own::default(),
         });
     }
@@ -8401,6 +8416,9 @@ enum Heard {
     Failed,
     /// A turn began.
     Began,
+    /// It sits idle at its prompt: no turn is under way, though none ended with a `Stop` (an
+    /// interrupt fires none).
+    Idle,
     /// `/clear` began a new conversation: nothing of the old one is told to it.
     Cleared,
 }
@@ -8426,6 +8444,7 @@ fn its_own_word(report: &purlis_core::hookwire::Report, now: Option<&str>) -> Op
         Event::Stop => Some(Heard::Ended(report.detail.own_work)),
         Event::StopFailure => Some(Heard::Failed),
         Event::UserPromptSubmit => Some(Heard::Began),
+        Event::Notification if report.detail.idle => Some(Heard::Idle),
         Event::SessionStart if report.detail.started == Started::Cleared => Some(Heard::Cleared),
         _ => None,
     }

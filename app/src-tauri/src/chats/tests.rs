@@ -7263,6 +7263,46 @@ fn a_turn_under_way_is_recorded_from_its_prompt_to_its_end_and_clear_forgets_eve
     chats.heard_own_work(&its_own(Event::Stop, Detail::default()), Some(ID));
     assert!(!last().chats[0].mid_turn, "the turn ended");
 
+    // An interrupt fires no `Stop`: the chat sitting idle at its prompt ends the mark.
+    chats.heard_own_work(
+        &its_own(Event::UserPromptSubmit, Detail::default()),
+        Some(ID),
+    );
+    chats.heard_own_work(
+        &its_own(
+            Event::Notification,
+            Detail {
+                idle: true,
+                ..Detail::default()
+            },
+        ),
+        Some(ID),
+    );
+    assert!(!last().chats[0].mid_turn, "it sits idle");
+
+    // A wake-up whose time came fired, and began a turn: it is no longer on the record.
+    chats.heard_own_output(&said_of_its_own(
+        session,
+        Output::OwnWorkStarted {
+            piece: purlis_core::ownwork::pieces::Piece {
+                due_at: Some(1),
+                ..purlis_core::ownwork::pieces::Piece::new(
+                    purlis_core::ownwork::pieces::Kind::WakeUp,
+                    "w1",
+                    "",
+                )
+                .expect("a piece")
+            },
+        },
+    ));
+    assert_eq!(last().chats[0].own_pieces.len(), 1);
+    chats.heard_own_work(
+        &its_own(Event::UserPromptSubmit, Detail::default()),
+        Some(ID),
+    );
+    assert!(last().chats[0].own_pieces.is_empty(), "it fired");
+    chats.heard_own_work(&its_own(Event::Stop, Detail::default()), Some(ID));
+
     // `/clear` begins a conversation with nothing of the old one's on the record.
     chats.heard_own_work(
         &its_own(Event::UserPromptSubmit, Detail::default()),

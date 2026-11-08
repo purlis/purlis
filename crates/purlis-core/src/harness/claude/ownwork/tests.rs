@@ -392,3 +392,22 @@ fn an_output_file_is_found_under_the_chat_s_own_temporary_folder() {
     assert_eq!(output_file("0b7c-session", "b2", &env), None);
     assert_eq!(output_file("../x", "b1", &env), None);
 }
+
+#[test]
+fn a_wake_up_s_daily_schedule_still_ahead_today_is_not_overdue() {
+    // `ScheduleWakeup`'s entry, as Claude Code writes it: minute and hour of every day. It
+    // matched yesterday too, which says nothing of whether it is due now.
+    let payload = stop(&[], &[("30 15 * * *", false)]);
+    let said = pieces(Some(&payload), now(), 1_000_000, &no_output).expect("pieces");
+    assert_eq!(
+        said[0].due_at,
+        Some(1_000_000 + i64::from(in_secs("15:30")))
+    );
+    let just_now = stop(&[], &[("58 13 * * *", false)]);
+    let said = pieces(Some(&just_now), now(), 1_000_000, &no_output).expect("pieces");
+    assert_eq!(
+        said[0].due_at,
+        Some(1_000_000),
+        "matched two minutes ago: due now"
+    );
+}

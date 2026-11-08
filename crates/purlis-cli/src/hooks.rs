@@ -168,10 +168,10 @@ fn says_nothing(_: &Hook) -> Answer {
 /// call that came back, and of one that failed. The first also hears a background command's
 /// output read back by another tool (#1683), which `sandboxblock` reads only of such a file.
 pub const BLOCKED: &str = "posttooluse-blocked";
+pub const BLOCKED_ON_FAILURE: &str = "posttoolusefailure-blocked";
 
 /// The hook word that hears a tool that only starts own work come back (#5750).
 pub const OWN_WORK: &str = "posttooluse-ownwork";
-pub const BLOCKED_ON_FAILURE: &str = "posttoolusefailure-blocked";
 
 /// What a block word found in a call's result, as the chat is told of it.
 #[derive(Debug, Default)]

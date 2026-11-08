@@ -152,11 +152,21 @@ pub fn started(pieces: &mut Vec<Piece>, piece: Piece) {
 }
 
 /// **The record once a turn's end said `said` is in flight**: exactly what it said, the authority
-/// on what still runs, with what `recorded` knew of each piece and it did not say.
+/// on what still runs, with what `recorded` knew of each piece and it did not say. A piece is
+/// the recorded one of its id; a wake-up is also the recorded wake-up with its prompt, since its
+/// tool's hook knows it by the call that set it and the turn's end by its schedule's id, and
+/// only the first knows when it is due to the second.
 pub fn at_stop(recorded: &[Piece], said: Vec<Piece>) -> Vec<Piece> {
     let mut now: Vec<Piece> = Vec::new();
     for piece in said {
-        let piece = match recorded.iter().find(|one| one.id == piece.id) {
+        let same = |one: &&Piece| {
+            one.id == piece.id
+                || (piece.kind == Kind::WakeUp
+                    && one.kind == Kind::WakeUp
+                    && piece.prompt.is_some()
+                    && one.prompt == piece.prompt)
+        };
+        let piece = match recorded.iter().find(same) {
             Some(known) => Piece {
                 what: if piece.what.is_empty() {
                     known.what.clone()

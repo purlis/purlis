@@ -2583,11 +2583,8 @@ fn hook(name: &str, now: Option<&str>) -> ExitCode {
             hookwire::CHAT_ENV
         );
     }
-    // What the turn ended saying (#1981), before the report, so the app has it as it hears the
-    // turn end: a task that ended its turns without a report is reported from it. The chat's
-    // own run alone, on a line of its own, sent once and never spooled.
-    // And what it left running of its own (#5750), which the record takes as the authority. On
-    // a line of its own, sent once and never spooled, before the report as the message is.
+    // What it left running of its own (#5750), which the record takes as the authority. The
+    // chat's own run alone, on a line of its own, sent once and never spooled, before the report.
     if event == Event::Stop
         && let Some(report) = &report
         && report.agent.is_none()
@@ -2609,6 +2606,9 @@ fn hook(name: &str, now: Option<&str>) -> ExitCode {
         && report.agent.is_none()
         && let Some(turn_output) = turn_output_of(&text)
     {
+        // What the turn ended saying (#1981), before the report, so the app has it as it hears
+        // the turn end: a task that ended its turns without a report is reported from it. The
+        // chat's own run alone, on a line of its own, sent once and never spooled.
         let _ = hookwire::tell_turn_output(
             std::path::Path::new(&socket),
             hookwire::ChatToken::from_env().as_ref(),

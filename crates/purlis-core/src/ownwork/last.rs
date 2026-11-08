@@ -54,16 +54,18 @@ pub fn of(piece: &Piece, conversation: &str) -> Last {
     let Some(path) = piece.output.as_deref() else {
         return Last::Gone;
     };
-    let Some(real) = own_file(Path::new(path), conversation, &piece.id) else {
+    let Some(tail) = own_tail(Path::new(path), conversation, &piece.id) else {
         return Last::Gone;
     };
-    let Some(tail) = tail_of(&real) else {
-        return Last::Gone;
-    };
-    if piece.kind == Kind::Subagent
-        && let Some(message) = last_message(&tail)
-    {
-        return Last::Message(message);
+    if piece.kind == Kind::Subagent {
+        // A transcript is records, not lines to quote: its last message, or that it said none.
+        return last_message(&tail).map_or_else(
+            || Last::Lines {
+                lines: Vec::new(),
+                path: path.to_owned(),
+            },
+            Last::Message,
+        );
     }
     let lines: Vec<String> = tail
         .lines()
@@ -102,6 +104,39 @@ pub fn own_file(path: &Path, conversation: &str, id: &str) -> Option<PathBuf> {
     (meta.is_file() && one_name(&meta)).then_some(real)
 }
 
+/// **The end of `path` where it is the chat's own** ([`own_file`]), judged again on the file as
+/// opened, so nothing swapped in between the check and the read is read: it is opened without
+/// following a link, it must be a regular file of one name, and the path, resolved again once
+/// it is open, must still be the piece's own and still be that same file.
+fn own_tail(path: &Path, conversation: &str, id: &str) -> Option<String> {
+    let real = own_file(path, conversation, id)?;
+    let file = open_no_follow(&real)?;
+    let opened = file.metadata().ok()?;
+    if !opened.is_file() || !one_name(&opened) {
+        return None;
+    }
+    let again = own_file(path, conversation, id)?;
+    if !same_file(&opened, &std::fs::metadata(again).ok()?) {
+        return None;
+    }
+    tail_of(file, opened.len())
+}
+
+#[cfg(unix)]
+fn open_no_follow(path: &Path) -> Option<std::fs::File> {
+    use std::os::unix::fs::OpenOptionsExt;
+    std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(i32::try_from(rustix::fs::OFlags::NOFOLLOW.bits()).ok()?)
+        .open(path)
+        .ok()
+}
+
+#[cfg(not(unix))]
+fn open_no_follow(path: &Path) -> Option<std::fs::File> {
+    std::fs::File::open(path).ok()
+}
+
 #[cfg(unix)]
 fn one_name(meta: &std::fs::Metadata) -> bool {
     std::os::unix::fs::MetadataExt::nlink(meta) == 1
@@ -112,10 +147,20 @@ fn one_name(_meta: &std::fs::Metadata) -> bool {
     true
 }
 
-/// The last [`TAIL_BYTES`] of the file at `path`, from its first whole line, lossily as text.
-fn tail_of(path: &Path) -> Option<String> {
-    let mut file = std::fs::File::open(path).ok()?;
-    let len = file.metadata().ok()?.len();
+#[cfg(unix)]
+fn same_file(one: &std::fs::Metadata, other: &std::fs::Metadata) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    one.dev() == other.dev() && one.ino() == other.ino()
+}
+
+#[cfg(not(unix))]
+fn same_file(_one: &std::fs::Metadata, _other: &std::fs::Metadata) -> bool {
+    true
+}
+
+/// The last [`TAIL_BYTES`] of `file`, `len` bytes long, from its first whole line, lossily as
+/// text.
+fn tail_of(mut file: std::fs::File, len: u64) -> Option<String> {
     let start = len.saturating_sub(TAIL_BYTES);
     file.seek(SeekFrom::Start(start)).ok()?;
     let mut bytes = Vec::new();

@@ -237,6 +237,8 @@ fn fitted(items: &[Item], room: usize) -> String {
         } else if used + item.short.len() + more <= room {
             used += item.short.len() + 2;
             said.push(&item.short);
+        } else if said.is_empty() {
+            return format!("{left} of them, too long to name here");
         } else {
             return format!("{}; and {left} more", said.join("; "));
         }

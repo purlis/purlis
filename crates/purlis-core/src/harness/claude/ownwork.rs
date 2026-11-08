@@ -243,7 +243,10 @@ pub fn pieces(
             .then(|| Cron::parse(&schedule))
             .flatten()
             .and_then(|parsed| {
-                if parsed.fired_lately(now) {
+                // Due now only where it matched in the last few minutes: a wake-up's schedule
+                // (`ScheduleWakeup`'s `M H * * *`) matches every day, so a day's look back
+                // would call one still hours ahead overdue.
+                if parsed.fired_within(now, crate::ownwork::A_WAKE_UP_IS_LATE_AFTER) {
                     Some(epoch)
                 } else {
                     let next = parsed.next_after(now, ONE_SHOT_LOOKS_AHEAD)?;
@@ -280,8 +283,28 @@ pub fn output_file(
     id: &str,
     env: &dyn Fn(&str) -> Option<String>,
 ) -> Option<String> {
-    if !crate::ownwork::pieces::an_id(id)
-        || session.is_empty()
+    output_in(&tasks_folder(session, env)?, id)
+}
+
+/// The file Claude Code keeps the output of task `id` in, in the conversation's `tasks` folder,
+/// where it is there.
+pub fn output_in(tasks: &std::path::Path, id: &str) -> Option<String> {
+    if !crate::ownwork::pieces::an_id(id) {
+        return None;
+    }
+    let file = tasks.join(format!("{id}.output"));
+    file.exists()
+        .then(|| file.to_str().map(str::to_owned))
+        .flatten()
+}
+
+/// **The folder Claude Code keeps conversation `session`'s task output in** ([`output_file`]),
+/// looked for once, so a `Stop` naming many pieces lists the temporary folder once.
+pub fn tasks_folder(
+    session: &str,
+    env: &dyn Fn(&str) -> Option<String>,
+) -> Option<std::path::PathBuf> {
+    if session.is_empty()
         || !session
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || b == b'-')
@@ -299,13 +322,9 @@ pub fn output_file(
             continue;
         };
         for project in projects.flatten() {
-            let file = project
-                .path()
-                .join(session)
-                .join("tasks")
-                .join(format!("{id}.output"));
-            if file.exists() {
-                return file.to_str().map(str::to_owned);
+            let tasks = project.path().join(session).join("tasks");
+            if tasks.is_dir() {
+                return Some(tasks);
             }
         }
     }
@@ -392,11 +411,15 @@ impl Cron {
 
     /// Whether it fired in the minute `now` is in, or in the [`OVERDUE_LOOKS_BACK`] before it.
     fn fired_lately(&self, now: NaiveDateTime) -> bool {
+        self.fired_within(now, OVERDUE_LOOKS_BACK)
+    }
+
+    /// Whether it fired in the minute `now` is in, or in the `back` before it.
+    fn fired_within(&self, now: NaiveDateTime, back: Duration) -> bool {
         let Some(minute) = now.with_second(0).and_then(|at| at.with_nanosecond(0)) else {
             return false;
         };
-        (0..=OVERDUE_LOOKS_BACK.num_minutes())
-            .any(|back| self.matches(minute - Duration::minutes(back)))
+        (0..=back.num_minutes()).any(|ago| self.matches(minute - Duration::minutes(ago)))
     }
 }
 

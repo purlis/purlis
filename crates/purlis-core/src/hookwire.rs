@@ -3096,7 +3096,9 @@ impl Output {
     }
 
     /// **Each piece of own work a `Stop`'s `payload` says is in flight** (#5750), on a chat whose
-    /// harness says so (Claude Code's, by `env`), or none where it says nothing either way.
+    /// harness says so (Claude Code's, by `env`). A `Stop` that names neither list (an older
+    /// Claude Code) says none is: what the record holds was started under it, and nothing
+    /// else would ever retire it. None for a payload that does not parse.
     pub fn of_own_work_in_flight(
         payload: &str,
         env: &dyn Fn(&str) -> Option<String>,
@@ -3105,14 +3107,22 @@ impl Output {
             return None;
         }
         let read = serde_json::from_str::<serde_json::Value>(payload).ok()?;
-        let session = read["session_id"].as_str().unwrap_or_default().to_owned();
+        let session = read["session_id"].as_str().unwrap_or_default();
         let local = chrono::Local::now();
+        // The conversation's task folder, looked for once for every piece (the hook's 50 ms).
+        let tasks = std::cell::OnceCell::new();
         let pieces = crate::harness::claude::ownwork::pieces(
             Some(&read),
             local.naive_local(),
             local.timestamp(),
-            &|id| crate::harness::claude::ownwork::output_file(&session, id, env),
-        )?;
+            &|id| {
+                tasks
+                    .get_or_init(|| crate::harness::claude::ownwork::tasks_folder(session, env))
+                    .as_deref()
+                    .and_then(|folder| crate::harness::claude::ownwork::output_in(folder, id))
+            },
+        )
+        .unwrap_or_default();
         Some(Self::OwnWorkInFlight { pieces })
     }
 

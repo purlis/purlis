@@ -129,3 +129,21 @@ fn a_cron_and_a_wake_up_put_nothing_out() {
     let cron = Piece::new(Kind::Cron, "c1", "").expect("a piece");
     assert_eq!(of(&cron, CONVERSATION), Last::Nothing);
 }
+
+#[test]
+fn a_subagent_whose_transcript_holds_no_message_yet_is_never_quoted_as_lines() {
+    let (_root, at) = a_conversation();
+    let transcript = at.join("subagents").join("agent-a8.jsonl");
+    std::fs::write(
+        &transcript,
+        format!(
+            "{}\n",
+            serde_json::json!({"type": "user", "message": {"content": "go"}})
+        ),
+    )
+    .expect("written");
+    match of(&piece(Kind::Subagent, "a8", &transcript), CONVERSATION) {
+        Last::Lines { lines, .. } => assert!(lines.is_empty(), "{lines:?}"),
+        other => panic!("nothing put out yet, not {other:?}"),
+    }
+}
