@@ -278,7 +278,8 @@ pub fn under(dir: &Path, below: &str) -> String {
     format!("^{}/{below}", escaped(&real(dir).display().to_string()))
 }
 
-/// The rules that keep every [`PLANTED`] name, at any depth below `root`, from being written.
+/// The rules that keep every [`PLANTED`] name, at any depth below `root` and under every spelling,
+/// from being written.
 pub fn planted_rules(root: &Path) -> Result<Vec<String>, &'static str> {
     let root = escaped(&real(root).display().to_string());
     PLANTED
@@ -300,7 +301,9 @@ pub fn planted_rules(root: &Path) -> Result<Vec<String>, &'static str> {
                     body.push('/');
                 }
             }
-            let regex = format!("^{root}/(.*/)?{body}{tail}");
+            // Each letter either case, as Claude Code's own rules hold the names: on a disk that
+            // compares names case-folded, a name spelled another way is the same file.
+            let regex = format!("^{root}/(.*/)?{}{tail}", either_case(&body));
             Ok(format!(
                 "(deny file-write* file-link (regex {}))",
                 string(&regex)?

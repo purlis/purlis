@@ -55,8 +55,8 @@ pub struct Asker {
     /// **Whether the chat's sandbox, as its start compiled it, keeps the chat from writing
     /// anything in the project root's `.git`** ([`crate::sandbox::Confines::roots_git`]): only
     /// then does the app save or update the project for it. False for a chat with no sandbox,
-    /// one whose harness holds that folder by its name alone, and one whose start this app did
-    /// not compile.
+    /// one in a project whose `.git` is not a folder, and one whose start this app did not
+    /// compile.
     pub roots_git_held: bool,
     /// The paths the chat's sandbox keeps it from reading ([`crate::sandbox::Access::ReadWrite`]),
     /// as its start compiled them: a save the app makes for it stages nothing below them.
