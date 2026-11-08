@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794177010773,
+  "lastUpdate": 1794179139881,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -43974,6 +43974,48 @@ window.BENCHMARK_DATA = {
             "value": 99.8231085,
             "unit": "ms",
             "extra": "median of 5 runs: 99.151, 99.576, 99.823, 102.116, 102.829 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "f68c8a1b58b30c6735f873183ff12e2c0825f912",
+          "message": "Restart wake: the asker is told of its tasks within the wake line's bound, and dispatch wait reads the report on disk (#5754, #5818 on main) (#5882)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6XQS9ETN5G731E1E206BQGR\nPurlis-Persona: steward",
+          "timestamp": "2026-11-08T22:33:35Z",
+          "tree_id": "2a040c71176bdd87bee6237aed1ae4565d50537b",
+          "url": "https://github.com/purlis/purlis/commit/f68c8a1b58b30c6735f873183ff12e2c0825f912"
+        },
+        "date": 1794179133792,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6988745,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.676, 0.691, 0.699, 0.704, 0.711 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.608169500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.405, 16.598, 16.608, 16.726, 16.740 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.26192449999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.340, 102.075, 102.262, 102.633, 103.250 ms"
           }
         ]
       }
