@@ -2351,8 +2351,8 @@ export const commands = {
 	 *  **Who has worked in each workspace of this project**, kept past their chats and past a
 	 *  relaunch (#3593): what the Personas view's In this workspace draws with the workspace's session
 	 *  records and the chats the window sees. Read off this clone's reopen record
-	 *  ([`purlis_core::reopen::worked`]), off the window's thread, and apart from the panels, so it
-	 *  costs their 100 ms nothing.
+	 *  ([`purlis_core::reopen::worked::read`]), off the window's thread, and apart from the panels,
+	 *  so it costs their 100 ms nothing.
 	 */
 	workedHere: (plane: PlaneId) => typedError<WorkedIn[], string>(__TAURI_INVOKE("worked_here", { plane })),
 	/**  What view tabs the window has open now, so the record brings them back at the next launch. */

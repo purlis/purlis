@@ -65,7 +65,7 @@ fn a_persona_whose_chat_closed_is_still_one_that_worked_in_its_workspace() {
     .unwrap();
 
     assert_eq!(
-        worked(plane.path()),
+        read(plane.path()),
         named(&[("alpha", &["devops"]), ("beta", &["steward"])])
     );
 }
@@ -85,7 +85,7 @@ fn a_fresh_start_keeps_who_worked_where() {
     )
     .unwrap();
 
-    assert_eq!(worked(plane.path()), named(&[("alpha", &["devops"])]));
+    assert_eq!(read(plane.path()), named(&[("alpha", &["devops"])]));
 }
 
 #[test]
@@ -101,7 +101,7 @@ fn a_chat_on_no_persona_or_outside_every_workspace_is_not_counted() {
     )
     .unwrap();
 
-    assert_eq!(worked(plane.path()), Worked::new());
+    assert_eq!(read(plane.path()), Worked::new());
     let text = fs::read_to_string(path(plane.path())).unwrap();
     assert!(
         !text.contains("\"worked\""),
@@ -122,12 +122,12 @@ fn a_workspace_that_is_gone_is_let_go_of() {
     .unwrap();
 
     fs::remove_dir_all(plane.path().join("workspaces/beta")).unwrap();
-    assert_eq!(worked(plane.path()), named(&[("alpha", &["devops"])]));
+    assert_eq!(read(plane.path()), named(&[("alpha", &["devops"])]));
 
     write(plane.path(), &record(vec![])).unwrap();
     fs::create_dir_all(plane.path().join("workspaces/beta")).unwrap();
     assert_eq!(
-        worked(plane.path()),
+        read(plane.path()),
         named(&[("alpha", &["devops"])]),
         "made again under its name, it starts with nobody"
     );
@@ -140,19 +140,30 @@ fn a_record_that_does_not_read_or_a_name_out_of_rule_is_none_of_it() {
     fs::create_dir_all(file.parent().unwrap()).unwrap();
 
     fs::write(&file, "not json").unwrap();
-    assert_eq!(worked(plane.path()), Worked::new());
+    assert_eq!(read(plane.path()), Worked::new());
 
     fs::write(
         &file,
         r#"{"version": 1, "at": 0, "chats": [], "worked": {"alpha": ["devops", "../x"], "../y": ["ops"]}}"#,
     )
     .unwrap();
-    assert_eq!(worked(plane.path()), named(&[("alpha", &["devops"])]));
+    assert_eq!(read(plane.path()), named(&[("alpha", &["devops"])]));
 
     fs::write(
         &file,
         r#"{"version": 1, "at": 0, "chats": [], "worked": "everyone"}"#,
     )
     .unwrap();
-    assert_eq!(worked(plane.path()), Worked::new());
+    assert_eq!(read(plane.path()), Worked::new());
+
+    fs::write(
+        &file,
+        r#"{"version": 2, "at": 0, "chats": [], "worked": {"alpha": ["devops"]}}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        read(plane.path()),
+        Worked::new(),
+        "a record of another version is ignored whole"
+    );
 }

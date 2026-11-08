@@ -632,8 +632,8 @@ pub(crate) struct WorkedIn {
 /// **Who has worked in each workspace of this project**, kept past their chats and past a
 /// relaunch (#3593): what the Personas view's In this workspace draws with the workspace's session
 /// records and the chats the window sees. Read off this clone's reopen record
-/// ([`purlis_core::reopen::worked`]), off the window's thread, and apart from the panels, so it
-/// costs their 100 ms nothing.
+/// ([`purlis_core::reopen::worked::read`]), off the window's thread, and apart from the panels,
+/// so it costs their 100 ms nothing.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn worked_here(
@@ -642,7 +642,7 @@ pub(crate) async fn worked_here(
 ) -> Result<Vec<WorkedIn>, String> {
     let root = planes.held(&plane)?.root().to_path_buf();
     crate::off_the_window("reading who worked where", move || {
-        Ok(purlis_core::reopen::worked::worked(&root)
+        Ok(purlis_core::reopen::worked::read(&root)
             .into_iter()
             .map(|(workspace, personas)| WorkedIn {
                 workspace,

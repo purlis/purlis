@@ -35,7 +35,7 @@ const MOST_PERSONAS: usize = 64;
 
 /// Who the record in `plane_root` says has worked in each workspace that is still there, or
 /// none where there is no record or it does not read.
-pub fn worked(plane_root: &Path) -> Worked {
+pub fn read(plane_root: &Path) -> Worked {
     let held = held(plane_root);
     still_there(plane_root, held)
 }
@@ -74,17 +74,24 @@ pub(super) fn on_disk(worked: Worked) -> Option<OnDisk> {
 }
 
 /// What the record on disk holds, each name held to its rule and within the bounds; nothing
-/// where there is no record or it does not read.
+/// where there is no record, it does not read, or it is of another version, which the rest of
+/// the record is ignored for whole too. Bounded here as well as in [`still_there`], so a record
+/// written by hand costs no more than a folder's look for each name it may keep.
 fn held(plane_root: &Path) -> Worked {
     let Ok(Some((text, _))) = super::guarded_text(plane_root) else {
         return Worked::new();
     };
     #[derive(serde::Deserialize)]
     struct Only {
+        version: u32,
         #[serde(default, deserialize_with = "super::lenient")]
         worked: Option<OnDisk>,
     }
-    let Ok(Only { worked: Some(held) }) = serde_json::from_str::<Only>(&text) else {
+    let Ok(Only {
+        version: super::VERSION,
+        worked: Some(held),
+    }) = serde_json::from_str::<Only>(&text)
+    else {
         return Worked::new();
     };
     held.into_iter()
