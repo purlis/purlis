@@ -69,10 +69,8 @@ fn raced(walked: &Path, store: &Path, d: &str, x: &str, walk: impl Fn()) {
         }
         for side in [&d, &e] {
             let at = side.join(x);
-            if std::fs::symlink_metadata(&at).is_err() {
-                if std::fs::create_dir(&at).is_ok() {
-                    let _ = std::fs::create_dir_all(at.join("stray"));
-                }
+            if std::fs::symlink_metadata(&at).is_err() && std::fs::create_dir(&at).is_ok() {
+                let _ = std::fs::create_dir_all(at.join("stray"));
             }
         }
         let linked = e.join(x);
