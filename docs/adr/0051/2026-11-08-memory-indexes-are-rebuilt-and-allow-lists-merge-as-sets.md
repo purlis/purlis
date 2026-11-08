@@ -20,8 +20,10 @@ by hand.
 **A list every machine adds to is a set (D4).** `[sandbox] hosts` was one long line that every
 Always allow appended to, so any two machines that each allowed a host conflicted. The keys whose
 lists are sets are named in one place, `purlis_core::tomlmerge::SETS`: `[sandbox] hosts`,
-`[sandbox] browser-sites`, a persona's `[sandbox.personas.<name>] hosts` and
-`[dispatch.grants] <persona>`. Their writers write them one item per line, sorted and once each,
+`[sandbox] browser-sites` and a persona's `[sandbox.personas.<name>] hosts`. `[dispatch.grants]`
+is not one: a grant there is a persona's name or a limited grant's table, and is read in order.
+The project's settings file is merged by any name it has had (`purlis.toml`, `charter.toml`).
+Their writers write them one item per line, sorted and once each,
 keeping every other line and comment of the file, so two machines that each add one usually change
 different lines. Where git's merge still stops on `charter.toml`, the save merges it on the parsed
 TOML: each set comes out as both sides' items less any either side removed since the two parted,

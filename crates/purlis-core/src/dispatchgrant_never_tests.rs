@@ -375,24 +375,24 @@ fn a_star_where_the_asking_persona_goes_grants_nothing() {
 #[test]
 fn any_persona_is_written_into_the_project_s_text_and_taken_out_with_every_other_line_kept() {
     use crate::settings::dispatch::{with, with_any, without, without_any};
-    let before = "schema = 1\n\n[dispatch.grants]\nsteward = [\n    \"devops\",\n]\n";
+    let before = "schema = 1\n\n[dispatch.grants]\nsteward = [\"devops\"]\n";
     let after = with_any(before, "steward").expect("written");
     assert_eq!(
         after,
-        "schema = 1\n\n[dispatch.grants]\nsteward = [\n    \"*\",\n    \"devops\",\n]\n"
+        "schema = 1\n\n[dispatch.grants]\nsteward = [\"devops\", \"*\"]\n"
     );
     assert_eq!(with_any(&after, "steward").as_deref(), Ok(after.as_str()));
     assert_eq!(without_any(&after, "steward").as_deref(), Ok(before));
     // Taking the named pair out leaves any persona, and the other way round.
     assert_eq!(
         without(&after, &pair("steward", "devops")).as_deref(),
-        Ok("schema = 1\n\n[dispatch.grants]\nsteward = [\n    \"*\",\n]\n")
+        Ok("schema = 1\n\n[dispatch.grants]\nsteward = [\"*\"]\n")
     );
     // A pair is still written by its name, and never as a star.
     assert!(
         with("schema = 1\n", &pair("steward", "devops"))
             .expect("written")
-            .ends_with("steward = [\n    \"devops\",\n]\n")
+            .ends_with("steward = [\"devops\"]\n")
     );
     assert!(with_any("schema = 1\n", "*").is_err());
 }
@@ -543,10 +543,7 @@ fn any_persona_for_everyone_is_written_as_a_star_and_is_in_force_for_whoever_set
     let root = project.path();
     allow_any(root, "steward", Level::Project).expect("kept");
     let text = std::fs::read_to_string(crate::names::manifest(root)).expect("the file");
-    assert_eq!(
-        text,
-        "schema = 1\n\n[dispatch.grants]\nsteward = [\n    \"*\",\n]\n"
-    );
+    assert_eq!(text, "schema = 1\n\n[dispatch.grants]\nsteward = [\"*\"]\n");
     let grants = InForce::read(root, Vec::new());
     assert_eq!(grants.project_any, ["steward"]);
     assert_eq!(

@@ -41,10 +41,10 @@
 //! a conflict left in it is theirs. The managed block of `.gitattributes` is set aside the same
 //! way, and the block this build writes is put back.
 //!
-//! `charter.toml` is a person's too, but merged key by key on the parsed TOML
-//! ([`crate::tomlmerge`]): its lists of hosts and grants, which every machine adds to, merge as
-//! sets (#5824 F5), so two machines that each allowed a host do not conflict, and a key only one
-//! side changed takes that side (F6). A key both changed, each its own way, is the person's, and
+//! The project's settings file ([`crate::names::PLANE_MANIFEST`]) is a person's too, but merged
+//! key by key on the parsed TOML ([`crate::tomlmerge`]): its lists of hosts, which every machine
+//! adds to, merge as sets (#5824 F5), so two machines that each allowed a host do not conflict,
+//! and a key only one side changed takes that side (F6). A key both changed, each its own way, is the person's, and
 //! the save names it beside the file.
 //!
 //! # Under a chat's sandbox
@@ -67,9 +67,6 @@ const SET_ASIDE: &str = "purlis sets this line aside while it merges";
 
 /// What stands in for the managed block while a `.gitattributes` is merged, so it keeps its place.
 const RULES_SET_ASIDE: &str = "# purlis sets its merge rules aside while it merges";
-
-/// The project's settings, merged key by key ([`crate::tomlmerge`]).
-const SETTINGS: &str = "charter.toml";
 
 /// When [`bring_in`] makes a commit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -200,7 +197,7 @@ enum Generated {
     Memory(String),
     Charter(String),
     Rules,
-    /// The project's `charter.toml`, whose lists of [`crate::tomlmerge::SETS`] merge as sets.
+    /// The project's settings file, whose lists of [`crate::tomlmerge::SETS`] merge as sets.
     Settings,
 }
 
@@ -223,7 +220,8 @@ fn generated(path: &str) -> Option<Generated> {
     if path == ".gitattributes" {
         return Some(Generated::Rules);
     }
-    if path == SETTINGS {
+    // The project's settings, by any name the manifest has had, merged key by key.
+    if crate::names::PLANE_MANIFEST.recognises(path) {
         return Some(Generated::Settings);
     }
     if path == format!("{}/{}", sessionrecord::DIR, sessionrecord::INDEX) {

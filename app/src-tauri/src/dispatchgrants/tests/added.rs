@@ -298,7 +298,7 @@ fn a_grant_for_everyone_is_written_to_the_project_s_file_and_followed_on_this_ma
     .expect("added");
 
     let file = super::table::file(&world);
-    assert!(file.contains("steward = [\n    \"devops\",\n]"), "{file}");
+    assert!(file.contains("steward = [\"devops\"]"), "{file}");
     assert!(
         file.contains("devops = [{ to = \"steward\", in = \"runners\" }]"),
         "{file}"

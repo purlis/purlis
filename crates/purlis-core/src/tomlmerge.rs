@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **List-shaped settings are sets** (#5824 F5, D4): the keys of `charter.toml` that hold a list
+//! **List-shaped settings are sets** (#5824 F5, D4): the keys of the project's settings file that hold a list
 //! every machine adds to, such as the hosts each Always allow appends, are written one item per
 //! line, sorted and once each ([`as_set`]), and two machines' changes to them are merged as sets
 //! ([`merged`]): both sides' items, less any either side removed since the two parted.
@@ -13,7 +13,7 @@
 
 use std::collections::BTreeSet;
 
-/// **The keys whose lists are sets**, as paths of keys from the top of `charter.toml`; `*` is
+/// **The keys whose lists are sets**, as paths of keys from the top of the settings file; `*` is
 /// any one key. Each holds strings, added to by a grant on one machine and removed by a revoke on
 /// another; their order means nothing.
 pub const SETS: &[&[&str]] = &[
@@ -23,8 +23,7 @@ pub const SETS: &[&[&str]] = &[
     &["sandbox", "browser-sites"],
     // A persona's own hosts (`sandbox::persona::KEY`).
     &["sandbox", "personas", "*", "hosts"],
-    // Who may dispatch to whom (`dispatchgrant::KEY`): asking persona to its targets.
-    &["dispatch", "grants", "*"],
+    // Not `[dispatch.grants]`: a grant there is a name or a limited grant's table, read in order.
 ];
 
 /// Whether the key at `path` holds a set ([`SETS`]).
@@ -71,7 +70,7 @@ fn comments_in(raw: &str) -> String {
         .collect()
 }
 
-/// What merging two sides of `charter.toml` came to.
+/// What merging two sides of the settings file came to.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Merged {
     /// The merged text: this machine's, with the other's changes in.

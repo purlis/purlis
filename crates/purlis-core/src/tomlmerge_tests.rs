@@ -35,20 +35,22 @@ fn the_keys_that_are_sets_are_named_in_one_list() {
     assert!(is_set(&["sandbox", "hosts"]));
     assert!(is_set(&["sandbox", "browser-sites"]));
     assert!(is_set(&["sandbox", "personas", "devops", "hosts"]));
-    assert!(is_set(&["dispatch", "grants", "steward"]));
+    assert!(!is_set(&["dispatch", "grants", "steward"]));
     assert!(!is_set(&["sandbox", "egress"]));
     assert!(!is_set(&["sandbox", "personas", "devops", "tools"]));
 }
 
 #[test]
 fn a_set_both_sides_added_to_keeps_both_and_a_removal_holds() {
-    let base = "[dispatch.grants]\nsteward = [\"devops\", \"qa\"]\n";
-    let ours = "[dispatch.grants]\nsteward = [\"devops\"]\n";
-    let theirs = "[dispatch.grants]\nsteward = [\"devops\", \"qa\", \"writer\"]\n";
+    let base = "[sandbox.personas.devops]\nhosts = [\"a.example\", \"q.example\"]\n";
+    let ours = "[sandbox.personas.devops]\nhosts = [\"a.example\"]\n";
+    let theirs =
+        "[sandbox.personas.devops]\nhosts = [\"a.example\", \"q.example\", \"w.example\"]\n";
     assert_eq!(
         merged(base, ours, theirs).unwrap(),
         Merged::Clean(
-            "[dispatch.grants]\nsteward = [\n    \"devops\",\n    \"writer\",\n]\n".to_owned()
+            "[sandbox.personas.devops]\nhosts = [\n    \"a.example\",\n    \"w.example\",\n]\n"
+                .to_owned()
         )
     );
 }
