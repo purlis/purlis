@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794131699863,
+  "lastUpdate": 1794132981882,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -43386,6 +43386,48 @@ window.BENCHMARK_DATA = {
             "value": 102.14435800000001,
             "unit": "ms",
             "extra": "median of 5 runs: 100.221, 101.802, 102.144, 102.216, 103.138 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "3b5b6345c33249efb51fce2baed4250b132bdc2e",
+          "message": "Stress run: the picker's two-minute wait covers its press and its going (#5586) (#5781)\n\n* e2e: the #5111 guard counts an extra unnamed New chat tab as left open (#5586)\n\nopenedSince never counted a \"New chat\" tab, so a spec that left unnamed\ntabs on the strip passed and the files after it failed. One kept empty\ntab stays the strip's own; any more count. pressClose presses as many\ntabs of a shared name as it is called with.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6TCPXXFRF2NEH8XZ0FKTY7Q\nPurlis-Persona: steward\n\n* e2e: harness-card, harness-declaration, picker and launch.finder close their New chat tabs (#5586)\n\nThe stricter #5111 guard named them: each left one to three unnamed\nNew chat tabs on the strip. Each now closes the tabs it opens in its\nown after, once its chats have ended.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6TCPXXFRF2NEH8XZ0FKTY7Q\nPurlis-Persona: steward\n\n* e2e: pane notices put back, helpers not counted as a second app, stress time budgets reported (#5586)\n\n- pane-notices and pane-warnings expanded the window's pane notices to\n  raise theirs and left them expanded; skill-compat then found its bell\n  open in the single-process stress run. They minimise again in after.\n- appProcessesIn counted the app binary run as a helper (a Linux chat's\n  _sandbox wrap, the engine keeper, git's credential helper, the keyring\n  writer, a branch reader) as a second window; stress failed on Ubuntu\n  with a chat's wrap still closing.\n- stress.e2e.ts: with STRESS_BUDGETS=report (set by stress.yml) a missed\n  time budget is written to logs/stress-budgets-missed.jsonl and shown\n  as a warning and in the job summary, not failed. Its other checks\n  still fail the job. The suite backstop goes from 15 to 30 minutes: the\n  two hundred now take 680 s to open on a macOS runner.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6TCPXXFRF2NEH8XZ0FKTY7Q\nPurlis-Persona: steward\n\n* e2e: the kept empty tab is \"Empty tab\" on main now: tests and comments follow (#5586)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6TCPXXFRF2NEH8XZ0FKTY7Q\nPurlis-Persona: steward\n\n* e2e: the two hundred wait longer for the picker; theme-gallery says what it saw (#5586)\n\nOn a macOS runner the picker took past twenty seconds to offer Start once 190 chats were\nopen (the slowdown is #5615), which ended the stress run before it was measured. The opens\nnow give it two minutes; OPEN_TARGET_BUDGET still judges their time.\n\ntheme-gallery's failure message was written before its wait, so it always said the window\ndrew nothing. It now says the last surface seen, with the window's focus, visibility and theme.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6TCPXXFRF2NEH8XZ0FKTY7Q\nPurlis-Persona: steward\n\n* e2e: stress backstop 60 minutes; theme-gallery says whether the card heard the pointer (#5586)\n\nRun 42363113627: on macOS the two hundred took 1,353 s to open (#5615), so the 30-minute\nbackstop cut off their close. On Ubuntu theme-gallery's message now showed the preview was\nnever drawn (the window stayed on Purlis, focused and visible); it now also says the card's\nhover state, how many such cards there are and where the focus is.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6TCPXXFRF2NEH8XZ0FKTY7Q\nPurlis-Persona: steward\n\n* e2e: theme-gallery moves the driver's pointer to where it points (#5586)\n\nRun 42371114280 showed the card never kept its hover (no data-hovered) in the stress run,\nonly there. react-aria ends a hover at the first pointerover outside the card, and WebKit\nsends one where its pointer last was when the layout under it changes: drawing the card's\ntheme does. After the other specs in one process that pointer was elsewhere in the window,\nso the preview's own redraw put the theme back. The driver's pointer now goes to the card\n(and to the nav when leaving) before the page's events are sent.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6TCPXXFRF2NEH8XZ0FKTY7Q\nPurlis-Persona: steward\n\n* e2e: theme-gallery keeps WebKit's own pointerover/out from the page while it points (#5586)\n\nMoving the driver's pointer to the card was not enough (run 42378443134): the card still never\nkept its hover in the stress run on Ubuntu. react-aria ends a hover at a pointerover outside the\ncard and React at a pointerout from it; WebKit sends its own where its pointer was when the\nlayout under it changes, as a card's theme drawn does, and the card can move from under it. The\nspec's pointer is its own events, so the window now stops trusted pointerover and pointerout\nfrom the first point to the spec's end, and the failure says how many it stopped.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6TCPXXFRF2NEH8XZ0FKTY7Q\nPurlis-Persona: steward\n\n* e2e: theme-gallery's diagnostics do not shadow window (#5586)\n\nThe local named window was referenced inside its own initialiser's callback (TS7022).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6TCPXXFRF2NEH8XZ0FKTY7Q\nPurlis-Persona: steward\n\n* Stress run: the stress spec runs last, after everything the others left open (#5586)\n\nIn name order it ran 82nd of 106, and the specs after it ran in an app slowed by its\ntwo hundred chats (#5615): workspace-explorer failed there on main's macOS run\n42411079922, theme-gallery on Ubuntu before.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6TCPXXFRF2NEH8XZ0FKTY7Q\nPurlis-Persona: steward\n\n* Stress run: the picker's two-minute wait covers its press and its going too (#5586)\n\nMain's stress run 42442984479 failed on macOS at chat 182 of 200: the picker took\nmore than twenty seconds to go, at about 21 s per open that far in (#5615).\nPICKER_WITHIN already covered the picker offering Start; now it also covers the\nbutton becoming clickable and the dialog going.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6TCPXXFRF2NEH8XZ0FKTY7Q\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-08T09:19:58Z",
+          "tree_id": "789fbf37febf245d5037f071f8b6d47df4bb0ce4",
+          "url": "https://github.com/purlis/purlis/commit/3b5b6345c33249efb51fce2baed4250b132bdc2e"
+        },
+        "date": 1794132976750,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5968175,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.538, 0.594, 0.597, 0.599, 0.613 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.189220499999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.103, 16.143, 16.189, 16.317, 16.340 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.9345965,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.557, 100.910, 100.935, 101.258, 101.315 ms"
           }
         ]
       }
