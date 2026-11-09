@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794204363477,
+  "lastUpdate": 1794206547596,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -44352,6 +44352,48 @@ window.BENCHMARK_DATA = {
             "value": 102.610398,
             "unit": "ms",
             "extra": "median of 5 runs: 101.618, 102.569, 102.610, 102.706, 102.723 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "55204831efd43eac2b7f375b69569cd483020b70",
+          "message": "Theme tests: the gallery keeps what it said of a theme, the sweeps ask only what they assert, imports one test a case (#3597) (#5917)\n\n* Theme tests: gallery cards keep what they said of a theme, exact byte-to-linear table, follow_kin's grounds half, per-case import tests (#3597)\n\nA gallery read keeps what each card said of a theme (matched by the whole Theme value) for\nthe next read, and Duplicate finds its card without checking the whole gallery. A colour's\nchannels are read through a 256-entry table built with the same formula. follow_kin is its\ntwo halves, grounds then marks, and the accent-ground grid asks the grounds half. The scrim\nsweep's control breaks all fifteen roles in one check per back. The multi-fixture import\ntests are one test per case, each fixture imported once.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6Z3T04XVK1MY85005GH9B8A\nPurlis-Persona: steward\n\n* Theme tests: review follow-ups (#3597)\n\nThe scrim sweep's control checks each role against every ground a role is measured on over\nthat back, as its comment says. The gallery's card facts and last read are named apart from\ntheme::Checked and parts' Kept, and Duplicate and Card::is share one rule for which card an id\nnames. luminance reads its bytes with check's own byte reader. A changelog fragment says what\nthe gallery does now.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6Z3T04XVK1MY85005GH9B8A\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-09T04:46:05Z",
+          "tree_id": "3948627c038b90c2f9288977028dc1395f2d5e0b",
+          "url": "https://github.com/purlis/purlis/commit/55204831efd43eac2b7f375b69569cd483020b70"
+        },
+        "date": 1794206539993,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.47048650000000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.459, 0.461, 0.470, 0.472, 0.497 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6354135,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.261, 16.300, 16.635, 16.833, 16.887 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.218474,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.138, 101.955, 102.218, 102.239, 102.802 ms"
           }
         ]
       }
