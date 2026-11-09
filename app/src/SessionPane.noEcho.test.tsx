@@ -50,8 +50,6 @@ let outputs: Channel<ArrayBuffer>[] = [];
 let calls: { cmd: string; args: Record<string, unknown> }[] = [];
 let views = 0;
 let index = 0;
-/** Whether the core refuses what is typed, as for a chat whose program stopped reading. */
-let refuse = false;
 
 const send = (chunk: string) =>
   act(() => {
@@ -78,7 +76,6 @@ beforeEach(() => {
   calls = [];
   views = 0;
   index = 0;
-  refuse = false;
   vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
   mockIPC((cmd, args) => {
     calls.push({ cmd, args: args as Record<string, unknown> });
@@ -87,7 +84,6 @@ beforeEach(() => {
       views += 1;
       return { view: views, columns: 80, rows: 24, scrollback: 5000, newline: null };
     }
-    if (cmd === "send_input" && refuse) throw "the program is not reading";
     return null;
   });
 });
@@ -125,17 +121,6 @@ describe("a pane typed into and sent nothing back", () => {
     expect(made[1]).not.toBe(pane);
     // Started while its person types, the new terminal takes their next key.
     expect(made[1].element?.contains(document.activeElement)).toBe(true);
-  });
-
-  it("counts nothing the program refused: a new view cannot help input that never reached it", async () => {
-    refuse = true;
-    const pane = await openPane();
-
-    await typeInto(pane, "ab");
-    await typeInto(pane, "cd");
-    await later(NO_ECHO_MS * 2);
-
-    expect(named("watch_session")).toHaveLength(1);
   });
 
   it("starts an ended chat's terminal again as taking no input", async () => {

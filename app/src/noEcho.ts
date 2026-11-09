@@ -23,8 +23,8 @@
  * screen is sent again. The program, and what is typed to it, are untouched, and the new
  * terminal takes the keyboard the old one had. So a prompt that echoes nothing (a password
  * typed over more than {@link NO_ECHO_MS}), or a program busy that long, may start it again
- * for nothing, and its person loses no key to it. Only input the program took counts. A chat starts again at most once per {@link AT_MOST_EVERY_MS}, should a
- * program truly say nothing to what it is typed.
+ * for nothing, and its person loses no key to it. A chat starts again at most once per
+ * {@link AT_MOST_EVERY_MS}.
  *
  * The root cause in the pacing is not yet pinned (#5478): this is the fallback that keeps the
  * person's chat working while the `[DEBUG-5478]` lines find it.

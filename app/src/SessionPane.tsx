@@ -605,16 +605,8 @@ function startTerminal(plane: PlaneId, session: number, where: HTMLElement): Liv
   );
   const typed = pane.onData((text) => {
     freeze.input(); // [DEBUG-5478]
-    const sending = commands.sendInput(plane, session, text);
-    // Only what reached the program is owed an answer: input refused, or sent while the link is
-    // down, cannot be helped by a new view.
-    void sending.then(
-      (sent) => {
-        if (sent.status === "ok") echo.typed(text);
-      },
-      () => {},
-    );
-    sayIfRefused(sending);
+    echo.typed(text);
+    sayIfRefused(commands.sendInput(plane, session, text));
   });
   // **And what is not text, as the bytes it is** (charter#493): xterm hands a mouse report in
   // the default encoding (`?1000h` without `?1006h`) to `onBinary`, one character per byte.
