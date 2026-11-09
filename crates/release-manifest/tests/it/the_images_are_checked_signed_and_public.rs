@@ -7,9 +7,11 @@
 //! registry as a public package (#4498), and signed keyless; a pull request builds and checks it and pushes nothing.
 //!
 //! What these tests hold both workflows and the images' Dockerfiles to:
-//! - only a green run of the image's gate on a push to this repository's `main` publishes, by
-//!   the same rule as the dev channel's build (`release.yml`'s `plan`); the runner image is
-//!   published only by the release that calls it, with the release's version (#2749);
+//! - only a push to this repository's `main` publishes, through a call from the workflow that
+//!   checked that push (`operator.yml` for the operator, once its checks and kind tests passed;
+//!   `release.yml`, once its gate saw that commit's `ci` green, for the runner image, with the
+//!   release's version, #2749), never another run's end, so the run's own commit is the one
+//!   built and the one its provenance names;
 //! - the workflow grants nothing, the compile holds no write permission, the image jobs may
 //!   write packages and nothing more, and only `index` may mint the OIDC token cosign signs
 //!   with; no job restores a cache, since what it builds is signed;
@@ -36,7 +38,8 @@ use workflow::{Job, job_named, jobs, read, run_lines, step_uses, step_value, wor
 struct Image {
     /// The workflow file.
     file: &'static str,
-    /// The workflow whose green run on a push to `main` publishes the image.
+    /// The workflow whose run of a push to `main` calls this one, once that push is checked, to
+    /// publish the image.
     gate: &'static str,
     /// What a pull request has to change to run the workflow.
     paths: &'static [&'static str],
@@ -51,7 +54,7 @@ struct Image {
 
 const RUNNER: Image = Image {
     file: "runner-image.yml",
-    gate: "ci",
+    gate: "release.yml",
     paths: &[
         "runner-image/**",
         "tools/runner-image-*",
@@ -68,7 +71,7 @@ const RUNNER: Image = Image {
 
 const OPERATOR: Image = Image {
     file: "operator-image.yml",
-    gate: "cluster operator",
+    gate: "operator.yml",
     paths: &[
         "operator/**",
         "rust-toolchain.toml",
@@ -145,29 +148,44 @@ fn triggers(text: &str) -> Vec<&str> {
 #[test]
 fn only_a_green_gate_on_a_push_to_this_repositorys_main_publishes() {
     let release = workflow::release_jobs();
-    let gate = folded_condition(job_named(&release, "plan", "release.yml"));
-    assert!(gate.contains("workflow_run.event == 'push'"), "{gate}");
+    assert_eq!(
+        job_named(&release, "plan", "release.yml").condition(),
+        Some("needs.gate.outputs.green == 'true'")
+    );
     for image in IMAGES.iter().filter(|image| !image.released) {
         let (text, jobs) = workflow(image);
         let on = triggers(&text);
-        let run = format!("workflows: [{}]", image.gate);
-        let after_run: Vec<&&str> = on.iter().skip_while(|l| **l != "workflow_run:").collect();
+        assert!(on.contains(&"workflow_call:"), "{}: {on:?}", image.file);
         assert!(
-            after_run.contains(&&run.as_str()) && after_run.contains(&&"branches: [main]"),
-            "{}: {on:?}",
+            !text.contains("workflow_run"),
+            "{}: started by another run's end",
             image.file
         );
-        let plan = job_named(&jobs, "plan", image.file);
+
+        // The caller: its run of a push to `main`, after its checks and kind tests.
+        let caller = jobs_of(image.gate);
+        let call = caller
+            .iter()
+            .find(|j| {
+                j.body
+                    .iter()
+                    .any(|l| l.trim() == format!("uses: ./.github/workflows/{}", image.file))
+            })
+            .unwrap_or_else(|| panic!("{} never calls {}", image.gate, image.file));
+        assert_eq!(call.needs(), ["checks", "kind"], "{}", image.gate);
         assert_eq!(
-            folded_condition(plan),
-            gate,
-            "{}: published by the dev channel's own rule",
-            image.file
+            call.condition(),
+            Some("github.event_name == 'push' && github.ref == 'refs/heads/main'"),
+            "{}",
+            image.gate
         );
+
+        let plan = job_named(&jobs, "plan", image.file);
+        assert!(folded_condition(plan).is_empty(), "{}", image.file);
         let decide = &plan.steps()[0];
         let script = run_lines(decide).join("\n");
         assert!(
-            script.contains("workflow_run) publish=true; sha=$RUN_SHA ;;"),
+            script.contains("called) publish=true; sha=$GITHUB_SHA ;;"),
             "{script}"
         );
         assert!(
@@ -177,11 +195,13 @@ fn only_a_green_gate_on_a_push_to_this_repositorys_main_publishes() {
         assert_eq!(
             script.matches("publish=true").count(),
             1,
-            "`workflow_run` is the one event that publishes: {script}"
+            "the call from a push to main is the one way in that publishes: {script}"
         );
         assert_eq!(
-            step_value(decide, "env", "RUN_SHA"),
-            Some("${{ github.event.workflow_run.head_sha }}")
+            step_value(decide, "env", "EVENT"),
+            Some(
+                "${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'called' || github.event_name }}"
+            )
         );
         assert_eq!(
             job_named(&jobs, "index", image.file).condition(),
@@ -190,14 +210,18 @@ fn only_a_green_gate_on_a_push_to_this_repositorys_main_publishes() {
     }
 }
 
+/// The jobs of another workflow file.
+fn jobs_of(file: &str) -> Vec<Job> {
+    jobs(&read(&workflows_dir().join(file)))
+}
+
 /// **The runner image is the release's** (#2749, ruled 2026-10-20): `release.yml` calls
 /// `runner-image.yml` for each release it publishes, with its commit and version, and nothing
 /// else publishes it; the image's `purlis` is stamped with that version.
 #[test]
 fn the_runner_image_is_published_only_by_the_release_it_belongs_to() {
     let release = workflow::release_jobs();
-    let gate = folded_condition(job_named(&release, "plan", "release.yml"));
-    let call = job_named(&release, "runner-image", "release.yml");
+    let call = job_named(&release, "runner-image", RUNNER.gate);
     assert_eq!(
         call.condition(),
         Some("needs.plan.outputs.publish == 'true'")
@@ -226,8 +250,16 @@ fn the_runner_image_is_published_only_by_the_release_it_belongs_to() {
     let on = triggers(&text);
     assert!(on.contains(&"workflow_call:"), "{on:?}");
     assert!(!on.contains(&"workflow_run:"), "{on:?}");
+    assert!(
+        !text.contains("workflow_run"),
+        "started by another run's end"
+    );
+    // Called only by a release its gate let build: no condition of its own.
     let plan = job_named(&jobs, "plan", RUNNER.file);
-    assert_eq!(folded_condition(plan), gate, "the release's own rule");
+    assert!(
+        folded_condition(plan).is_empty(),
+        "the release's gate is the rule"
+    );
     let decide = &plan.steps()[0];
     let script = run_lines(decide).join("\n");
     assert!(script.contains("publish=true; sha=$CALLED_SHA"), "{script}");

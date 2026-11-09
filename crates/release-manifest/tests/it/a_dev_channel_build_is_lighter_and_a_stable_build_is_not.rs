@@ -94,7 +94,7 @@ fn both_channels_build_the_app_crate_at_opt_level_1_and_nothing_else_is_overridd
 
 /// The lines of `plan`'s decision for one event: from its `case` arm to the next arm.
 fn arm(lines: &[String], event: &str) -> Vec<String> {
-    const ARMS: [&str; 4] = ["push)", "workflow_run)", "schedule)", "*)"];
+    const ARMS: [&str; 4] = ["push)", "dev)", "schedule)", "*)"];
     let start = lines
         .iter()
         .position(|l| l == event)
@@ -128,10 +128,10 @@ fn plan_gives_each_way_in_its_profile_and_its_bundles() {
         "push)",
         "profile=release; dmg=true; appimage_required=true ;;",
     );
-    // `ci` green on `main`: the dev channel build.
-    has("workflow_run)", "channel=dev; publish=true");
+    // A push to `main`, built once its `ci` went green: the dev channel build.
+    has("dev)", "channel=dev; publish=true");
     has(
-        "workflow_run)",
+        "dev)",
         "profile=dev-release; dmg=false; appimage_required=true ;;",
     );
     // The nightly: the stable build's profile and bundles, published nowhere.
