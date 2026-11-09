@@ -1,0 +1,24 @@
+{
+  "key": "api",
+  "api": 1,
+  "source": "purlis",
+  "error_kinds": [
+    "needs-extension",
+    "not-approved",
+    "timeout",
+    "too-large",
+    "refused",
+    "failed"
+  ],
+  "envelope": {
+    "data": { "data": { "n": 1 }, "at": "2026-11-09T13:32:00Z", "cursor": "c" },
+    "error": { "error": { "kind": "refused" }, "at": "2026-11-09T13:32:00Z" }
+  },
+  "queries": [
+    "purlis.todo_list",
+    "purlis.memory_search",
+    "purlis.session_record_list",
+    "purlis.session_record_read",
+    "purlis.change_status"
+  ]
+}
