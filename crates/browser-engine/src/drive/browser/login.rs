@@ -143,14 +143,23 @@ pub(crate) const FOCUS_FIELD: &str = r"function () {
   if (typeof this.select === 'function') this.select();
 }";
 
-/// The function that says whether the field it runs on has the focus in a document that has
-/// the focus, and is in a document on `origin`, by its address and by the origin the document
-/// itself has (a sandboxed one has none), as [`super::fill::WRITE_FIELD`] checks: a constant.
+/// The function that says whether the field it runs on has the focus in its own document, which
+/// has the focus, and is in a document on `origin`, by its address and by the origin the document
+/// itself has (a sandboxed one has none), as [`super::fill::WRITE_FIELD`] checks: a constant. A
+/// field in a shadow root has the focus where it is its root's focused element, and each host
+/// around it is in turn, up to the document's.
 pub(crate) const FIELD_HAS_FOCUS: &str = r"function (origin) {
-  if (!this.isConnected || this.ownerDocument.location.origin !== origin) return false;
-  const view = this.ownerDocument.defaultView;
+  const own = this.ownerDocument;
+  if (!this.isConnected || own.location.origin !== origin) return false;
+  const view = own.defaultView;
   if (!view || view.origin !== origin) return false;
-  return this === document.activeElement && document.hasFocus();
+  if (!own.hasFocus()) return false;
+  let at = this;
+  for (let root = at.getRootNode(); root !== own; root = at.getRootNode()) {
+    if (!(root instanceof ShadowRoot) || root.activeElement !== at) return false;
+    at = root.host;
+  }
+  return own.activeElement === at;
 }";
 
 /// The function that says how long what the field it runs on holds is, in UTF-16 code units, as
