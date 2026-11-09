@@ -563,3 +563,50 @@ fn a_card_of_a_theme_that_sets_no_parts_of_its_own_says_whose_it_draws() {
         );
     }
 }
+
+#[test]
+fn a_card_says_which_option_value_sets_a_part_key() {
+    let places = Places::new();
+    put(
+        &places.machine(),
+        "pills",
+        &json!({
+            "name": "Pills",
+            "extends": "purlis",
+            "parts": { "button.root.corner-radius": 4 },
+            "options": [{
+                "id": "pills", "kind": "toggle", "label": "Pills", "default": false,
+                "on": { "parts": { "button.root.corner-radius": "full" } }
+            }]
+        }),
+    );
+    let folders = places.folders();
+    let cards = gallery::cards(&shelf(&folders, Reach::Machine, &[]));
+    let pills = cards.iter().find(|one| one.id == "pills").unwrap();
+    let radius: Vec<(&str, &gallery::PartFrom)> = pills
+        .parts
+        .iter()
+        .filter(|one| one.key == "button.root.corner-radius")
+        .map(|one| (one.value.as_str(), &one.from))
+        .collect();
+    let on = pills.options[0]
+        .values
+        .iter()
+        .find(|one| one.id == "on")
+        .unwrap()
+        .label
+        .clone();
+    assert_eq!(
+        radius,
+        [
+            ("4", &gallery::PartFrom::Theme),
+            (
+                "full",
+                &gallery::PartFrom::Option {
+                    option: "Pills".to_owned(),
+                    value: on
+                }
+            ),
+        ]
+    );
+}
