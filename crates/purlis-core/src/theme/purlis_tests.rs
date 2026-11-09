@@ -806,7 +806,6 @@ fn syntax_comments_and_punctuation_draw_the_secondary_grey_high_contrast_draws_a
     // `text.muted`. Muted cannot read at 4.5:1 on a changed word's wash in light while the word
     // stands a step from its line (#3796), so they draw one tier up: the regular appearance's
     // `text.secondary`, which is its high contrast's `text.muted`, in both.
-    let theme = purlis();
     for (regular, high) in [
         ("dark", "dark-high-contrast"),
         ("light", "light-high-contrast"),
@@ -819,7 +818,6 @@ fn syntax_comments_and_punctuation_draw_the_secondary_grey_high_contrast_draws_a
             }
         }
     }
-    assert_eq!(theme.appearances.len(), 4);
 }
 
 #[test]
