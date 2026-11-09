@@ -8812,7 +8812,7 @@ nav.piece-files-head {
   flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
-  font-weight: 600;
+  font-weight: var(--font-weight-strong);
   white-space: nowrap;
   text-overflow: ellipsis;
 }
