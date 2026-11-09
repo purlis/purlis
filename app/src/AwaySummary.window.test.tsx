@@ -766,9 +766,9 @@ describe("the Inbox's updates (#1693)", () => {
 
     const updates = within(await openInbox()).getByRole("region", { name: "Updates" });
     expect(
-      within(updates)
-        .getAllByRole("listitem")
-        .map((row) => row.getAttribute("data-kind")),
+      [...updates.querySelectorAll('[role="row"][data-key]')].map((row) =>
+        row.getAttribute("data-kind"),
+      ),
     ).toEqual(["task-failed", "task-done"]);
   });
 

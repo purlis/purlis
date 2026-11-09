@@ -515,7 +515,7 @@ describe("a window holding more than one project", () => {
     // This project's scope is empty and says what waits wider (qw359): one press lists it.
     expect(await within(inbox).findByText("1 waits in all projects.")).toBeInTheDocument();
     await userEvent.click(within(inbox).getByRole("button", { name: "Show all projects" }));
-    const others = await within(inbox).findByRole("region", {
+    const others = await within(inbox).findByRole("rowgroup", {
       name: "Other projects in this window",
     });
     expect(others).toHaveTextContent("one · 1 waiting on you");
@@ -531,7 +531,7 @@ describe("a window holding more than one project", () => {
     const there = await screen.findByRole("tabpanel", { name: "Asks" });
     await within(there).findByRole("button", { name: "Go to chat one.1" });
     expect(
-      within(there).queryByRole("region", { name: "Other projects in this window" }),
+      within(there).queryByRole("rowgroup", { name: "Other projects in this window" }),
     ).toBeNull();
   });
 

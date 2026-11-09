@@ -193,7 +193,8 @@ const press = userEvent.setup({ advanceTimers: (ms) => vi.advanceTimersByTime(ms
 
 const asksView = () => screen.findByRole("tabpanel", { name: "Asks" });
 /** The chats Asks lists, by the heading of each group. */
-const listed = () => [...document.querySelectorAll(".inbox-chat > h3")].map((h) => h.textContent);
+const listed = () =>
+  [...document.querySelectorAll('.inbox-chat [role="rowheader"]')].map((h) => h.textContent);
 /** The hand on the title bar, by what it counts. */
 const hand = (count: number) =>
   screen.queryAllByRole("button", {
@@ -320,7 +321,7 @@ describe("Snooze all on Asks (#5647)", () => {
     raise(permission(1, "ask-1b", "Run cargo build"));
 
     await waitFor(() => expect(listed()).toEqual(["steward 1"]));
-    const back = screen.getByRole("region", { name: "steward 1" });
+    const back = screen.getByRole("rowgroup", { name: "steward 1" });
     expect(within(back).getByText("Run cargo test")).toBeInTheDocument();
     expect(within(back).getByText("Run cargo build")).toBeInTheDocument();
     expect(

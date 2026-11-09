@@ -27,6 +27,7 @@ import { expect, userEvent, within } from "storybook/test";
 import { expectFocusInSight } from "../../stories.testkit";
 import { Button, ButtonRow, IconButton } from "../button/Button";
 import { TextArea } from "../field/Field";
+import { List } from "../list/List";
 import { Panel } from "../panel/Panel";
 import {
   MessageBody,
@@ -433,6 +434,77 @@ export const ResultReadInPlace: Story = {
     await userEvent.keyboard("{Enter}");
     await expect(read).toHaveAttribute("aria-expanded", "true");
     await expect(canvas.getByText(/a borrowed value/)).toBeVisible();
+    await expectFocusInSight();
+  },
+};
+
+/** Two messages as rows of the list family's list of rows that act (#3123). */
+function InAList() {
+  const [said, setSaid] = useState<string>();
+  return (
+    <Panel variant="side">
+      <div style={{ inlineSize: "320px" }}>
+        <List aria-label="Asks" disallowTypeAhead>
+          {["steward 3", "steward 5"].map((who) => (
+            <MessageRow
+              key={who}
+              as="row"
+              id={who}
+              textValue={who}
+              tone="waiting"
+              icon={<ShieldQuestion />}
+              dismiss={
+                <IconButton
+                  icon={<X />}
+                  size="sm"
+                  variant="quiet"
+                  aria-label={`Dismiss ${who}`}
+                  onPress={() => setSaid(`Dismissed ${who}`)}
+                />
+              }
+            >
+              <MessageTop title={who} time={<time>2m</time>} />
+              <MessageMeta>Asks your permission</MessageMeta>
+              <MessageBody>Run cargo test</MessageBody>
+              <MessageLinks>
+                <Button size="sm" variant="quiet-link" onPress={() => setSaid(`Answer ${who}`)}>
+                  Answer
+                </Button>
+              </MessageLinks>
+            </MessageRow>
+          ))}
+        </List>
+      </div>
+      {said !== undefined && <p role="status">{said}</p>}
+    </Panel>
+  );
+}
+
+/**
+ * **A message as a list's row** (`as="row"`, #3123): the row is the message's own root, drawn
+ * by the message family, with the list's keyboard: one Tab stop on its first row, ↓ to the next,
+ * → through its own link and its ×, Enter presses the one focused. Its ring is drawn inside it,
+ * its mark keeps its tint and its × takes its time's place as it holds the keyboard. The picture
+ * is the second row under the keyboard.
+ */
+export const AsAListRow: Story = {
+  render: () => <InAList />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const [first, second] = canvas.getAllByRole("row");
+    await userEvent.tab();
+    await expect(first).toHaveFocus();
+    await userEvent.keyboard("{ArrowDown}");
+    await expect(second).toHaveFocus();
+    await expectFocusInSight();
+    await userEvent.keyboard("{ArrowRight}");
+    await expect(within(second).getByRole("button", { name: "Answer" })).toHaveFocus();
+    await userEvent.keyboard("{ArrowRight}");
+    await expect(within(second).getByRole("button", { name: "Dismiss steward 5" })).toHaveFocus();
+    await userEvent.keyboard("{Enter}");
+    await expect(canvas.getByRole("status")).toHaveTextContent("Dismissed steward 5");
+    await userEvent.keyboard("{ArrowLeft}{ArrowLeft}");
+    await expect(second).toHaveFocus();
     await expectFocusInSight();
   },
 };

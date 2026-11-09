@@ -1,6 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { askRows } from "./test-inbox";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
@@ -217,8 +218,8 @@ const read = () => new Promise((done) => setTimeout(done, SETTLE_MS + 50));
 
 /** The row of chat `who`'s ask in Asks. */
 const rowOf = (view: HTMLElement, who: string) =>
-  within(view)
-    .getAllByRole("listitem")
+  askRows()
+    .filter((one) => view.contains(one))
     .find(
       (one) =>
         one.classList.contains("inbox-ask") && one.querySelector(".inbox-who")?.textContent === who,
@@ -238,7 +239,9 @@ async function opened(asks: readonly Shown[]) {
     </StrictMode>,
   );
   const view = await screen.findByRole("tabpanel", { name: "Asks" });
-  await waitFor(() => expect(view.querySelectorAll("li.inbox-ask")).toHaveLength(asks.length));
+  await waitFor(() =>
+    expect(view.querySelectorAll('[role="row"].inbox-ask')).toHaveLength(asks.length),
+  );
   return { ...one, view };
 }
 
@@ -297,7 +300,7 @@ describe("the Answer link on an ask (#5651)", () => {
       expect(asked("answer_ask")).toEqual([expect.objectContaining({ option: "deny" })]),
     );
     await waitFor(() => expect(hand(1).length).toBeGreaterThan(0));
-    expect(view.querySelectorAll("li.inbox-ask")).toHaveLength(1);
+    expect(view.querySelectorAll('[role="row"].inbox-ask')).toHaveLength(1);
   });
 
   it("opens a reply box with the keyboard in it, sends on Enter, and the hand's count drops", async () => {
@@ -347,21 +350,24 @@ describe("the Answer link on an ask (#5651)", () => {
     }
   });
 
-  it("works by keyboard alone: ↓ to Answer, Enter opens, Enter in the box sends, and Cancel closes", async () => {
+  it("works by keyboard alone: → to Answer, Enter opens, Enter in the box sends, and Cancel closes (#3123)", async () => {
     const { view, asked } = await opened([QUESTION]);
     const row = rowOf(view, "steward 2");
     row.focus();
 
-    await press.keyboard("{ArrowDown}");
+    // Ruling B (#3123): a row's own controls are reached by →.
+    await press.keyboard("{ArrowRight}");
     const answer = within(row).getByRole("button", { name: "Answer steward 2" });
     expect(answer).toHaveFocus();
     await press.keyboard("{Enter}");
     const box = within(row).getByRole("textbox", { name: "Reply to steward 2" });
     await waitFor(() => expect(box).toHaveFocus());
 
-    // Back to the link, which now reads Cancel, and Enter closes the form.
-    await press.keyboard("{ArrowUp}");
-    await press.keyboard("{ArrowUp}");
+    // Back to the link, which now reads Cancel, and Enter closes the form: Esc gives the
+    // keyboard back to the row, whose first control it is.
+    await press.keyboard("{Escape}");
+    await waitFor(() => expect(row).toHaveFocus());
+    await press.keyboard("{ArrowRight}");
     const cancel = within(row).getByRole("button", { name: "Cancel answering steward 2" });
     expect(cancel).toHaveFocus();
     await press.keyboard("{Enter}");
@@ -385,7 +391,7 @@ describe("a Mine line read in place (#5651)", () => {
   it("opens in place to show why it failed, marks it read and lowers the bell, and Hide closes it", async () => {
     const { asked } = await opened([]);
     const view = await showUpdates();
-    const row = await within(view).findByRole("listitem", { name: "ship the docs: failed" });
+    const row = await within(view).findByRole("row", { name: "ship the docs: failed" });
     await waitFor(() => expect(bell()).toBe(true));
     expect(within(row).queryByText(FAILED.report)).toBeNull();
 
@@ -409,13 +415,13 @@ describe("a Mine line read in place (#5651)", () => {
     expect(asked("settle_inbox_updates")).toHaveLength(1);
   });
 
-  it("opens by keyboard alone, from the line to Read and Enter", async () => {
+  it("opens by keyboard alone, from the line to Read by → and Enter (#3123)", async () => {
     await opened([]);
     const view = await showUpdates();
-    const row = await within(view).findByRole("listitem", { name: "ship the docs: failed" });
+    const row = await within(view).findByRole("row", { name: "ship the docs: failed" });
     row.focus();
 
-    await press.keyboard("{ArrowDown}");
+    await press.keyboard("{ArrowRight}");
     expect(within(row).getByRole("button", { name: "Read ship the docs: failed" })).toHaveFocus();
     await press.keyboard("{Enter}");
 
@@ -425,7 +431,7 @@ describe("a Mine line read in place (#5651)", () => {
   it("marks it read on Go to chat, and lowers the bell", async () => {
     const { asked } = await opened([]);
     const view = await showUpdates();
-    const row = await within(view).findByRole("listitem", { name: "ship the docs: failed" });
+    const row = await within(view).findByRole("row", { name: "ship the docs: failed" });
     await waitFor(() => expect(bell()).toBe(true));
 
     await act(() => press.click(within(row).getByRole("button", { name: /^Go to chat/ })));
