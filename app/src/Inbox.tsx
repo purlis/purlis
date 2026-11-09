@@ -594,7 +594,8 @@ export function Inbox({
         >
           {/* **What an answer said that the person must read** (#5890): Keep blocked on a vault
               the chat's persona already holds does not stop its runs, and says where to. Above
-              whatever waits, until dismissed, since the row it was pressed on has gone. */}
+              whatever waits, until dismissed, since the row it was pressed on has gone. Under every
+              scope, on purpose: it names its chat, and the person who pressed must read it. */}
           {drawsAsks && recent.some((one) => one.said !== undefined) && (
             <NoticeList>
               {recent.map((one) =>

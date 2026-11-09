@@ -13584,7 +13584,7 @@ fn a_chat_refused_after_keep_blocked_cannot_bring_the_vaults_allow_back() {
     run_on_team(&held, &id, chat, "python3");
     assert_eq!(inbox_of_a_run(&held), [AskSource::Vault]);
 
-    crate::vaultroute::vault_kept_blocked(&held, None, chat, "team", None);
+    crate::vaultroute::vault_kept_blocked(&held, None, chat, "team", None, &mut Vec::new());
     assert_eq!(inbox_of_a_run(&held), []);
     run_on_team(&held, &id, chat, "python3");
     assert_eq!(inbox_of_a_run(&held), [], "its next try raises nothing");
@@ -13619,7 +13619,7 @@ fn keep_blocked_closes_a_run_grants_ask_already_open_on_that_vault() {
             std::thread::yield_now();
         }
         run_on_team(&held, &id, chat, "python3");
-        crate::vaultroute::vault_kept_blocked(&held, None, chat, "team", None);
+        crate::vaultroute::vault_kept_blocked(&held, None, chat, "team", None, &mut Vec::new());
         assert_eq!(inbox_of_a_run(&held), []);
         // Answered so the test ends either way; the assert above is what failed if it stayed.
         for open in held.secret_asks().open_runs() {
@@ -13712,7 +13712,8 @@ fn keep_blocked_through_a_vaults_own_ask_says_no_ask_stayed_up() {
             "the vault's own ask is answered first"
         );
 
-        let stayed = crate::vaultroute::keep_blocked_pressed(&held, None, 3, "team", None).stayed;
+        let stayed =
+            crate::vaultroute::keep_blocked_pressed(&held, None, 3, "team", None, &mut Vec::new());
 
         assert_eq!(stayed, Vec::<(u32, String)>::new());
         assert!(held.secret_asks().open_runs().is_empty());
@@ -13982,9 +13983,7 @@ fn keep_blocked_on_a_held_vaults_notice_nudges_its_runs_with_the_held_line_once(
 }
 
 /// #5890, review round 3 of #5934: the reason the person typed for Keep blocked on the refused
-/// vault's Notice reaches the chat, though the line it hears comes by a run it answered. (Was:
-/// chat's persona holds the vault: a run of the chat it answers, whose command stopped waiting, is
-/// nudged with that line too, never "kept blocked", and the chat is told nothing twice.
+/// vault's Notice reaches the chat, though the line it hears comes by a run the press answered.
 #[test]
 fn keep_blocked_on_a_held_vaults_notice_nudges_its_runs_with_the_persons_reason() {
     use purlis_core::secrets::ask::run::Offer;
@@ -14016,6 +14015,88 @@ fn keep_blocked_on_a_held_vaults_notice_nudges_its_runs_with_the_persons_reason(
     let mut need = curl_on_team_not_its(&plane, Offer::Program, &[]);
     need.bound.chat = chat;
     raised_and_left(&held, need);
+    purlis_core::sandbox::local::grant_vault(&plane.root, "team", "ops")
+        .expect("a row of the Allowed list");
+
+    let said =
+        crate::vaultroute::kept_vault_blocked_said(&held, None, chat, "team", Some("not on prod"));
+
+    assert!(
+        said.is_some(),
+        "the person reads that its runs are not stopped"
+    );
+    assert!(
+        held.secret_asks().open_runs().is_empty(),
+        "the run's ask was answered"
+    );
+    assert_eq!(
+        held.vault_refusals().queued_lines_for(chat),
+        [purlis_core::askoutcome::Outcome {
+            about: purlis_core::askoutcome::About::Vault {
+                vault: "team".to_owned(),
+            },
+            answer: purlis_core::askoutcome::Answer::KeptBlockedButHeld {
+                persona: "ops".to_owned(),
+                by: purlis_core::askoutcome::HeldBy::AllowedList,
+                reason: purlis_core::askoutcome::reason(Some("not on prod")),
+            },
+        }
+        .line()],
+        "with the line that says its persona holds the vault, never that it was kept blocked"
+    );
+    assert_eq!(
+        held.vault_refusals().queued_for(chat),
+        1,
+        "the chat is nudged once, at its turn's end"
+    );
+    let told: Vec<_> = words
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|(session, _)| *session == chat)
+        .cloned()
+        .collect();
+    assert_eq!(told, [], "and told nothing twice");
+}
+
+/// #5890, review round 4 of #5934: two runs of one chat, each stopped waiting on the vault, and
+/// Keep blocked on a vault its persona holds: the chat hears the held line once, not once a run.
+#[test]
+fn keep_blocked_on_a_held_vault_with_two_stopped_runs_tells_the_chat_once() {
+    use purlis_core::secrets::ask::run::Offer;
+    let plane = Plane::new().a_persona("ops", "");
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    vault_team_no_persona_is_tagged_for(&plane);
+    let words = words_kept(&held);
+    let chat = held
+        .chats()
+        .start(
+            &Chat {
+                program: "/bin/sh".to_owned(),
+                name: "1".to_owned(),
+                persona: Some("ops".to_owned()),
+                cwd: Some(plane.root.clone()),
+                unsandboxed: true,
+                ..Default::default()
+            },
+            purlis_core::engine::Size {
+                columns: 80,
+                rows: 24,
+            },
+        )
+        .expect("it runs");
+    mid_turn_on_the_board(&held, chat);
+    for (name, program) in [("curl", "/usr/bin/curl"), ("wget", "/usr/bin/wget")] {
+        let mut need = curl_on_team_not_its(&plane, Offer::Program, &[]);
+        need.bound.chat = chat;
+        need.bound.name = name.to_owned();
+        need.bound.program = program.into();
+        need.command = format!("{name} --version");
+        raised_and_left(&held, need);
+    }
     purlis_core::sandbox::local::grant_vault(&plane.root, "team", "ops")
         .expect("a row of the Allowed list");
 
@@ -14139,7 +14220,8 @@ fn always_allow_pressed_as_keep_blocked_lands_leaves_no_tool_line() {
             before,
             "nothing is declared while Keep blocked is answered"
         );
-        let stayed = crate::vaultroute::vault_kept_blocked(&held, None, 3, "team", None).stayed;
+        let stayed =
+            crate::vaultroute::vault_kept_blocked(&held, None, 3, "team", None, &mut Vec::new());
         assert_eq!(stayed, Vec::<(u32, String)>::new());
         drop(keeping);
 
@@ -14194,8 +14276,9 @@ fn keep_blocked_takes_a_chats_grant_back_at_once_while_a_press_is_under_way() {
 
         // A press on another ask is under way, its audit stalled.
         let pressing = held.run_answers(3);
-        let keeping = scope
-            .spawn(|| crate::vaultroute::keep_blocked_pressed(&held, None, 3, "team", None).stayed);
+        let keeping = scope.spawn(|| {
+            crate::vaultroute::keep_blocked_pressed(&held, None, 3, "team", None, &mut Vec::new())
+        });
         let began = std::time::Instant::now();
         while !held.secret_asks().given_runs().is_empty()
             && began.elapsed() < std::time::Duration::from_secs(5)
@@ -14271,7 +14354,7 @@ fn a_press_after_keep_blocked_was_pressed_gives_nothing() {
         assert!(held.secret_asks().given_runs().is_empty());
         let stayed = {
             let _one = held.run_answers(3);
-            crate::vaultroute::vault_kept_blocked(&held, None, 3, "team", None).stayed
+            crate::vaultroute::vault_kept_blocked(&held, None, 3, "team", None, &mut Vec::new())
         };
         assert_eq!(stayed, Vec::<(u32, String)>::new());
         waits.join().expect("it settles");
@@ -14371,8 +14454,9 @@ fn always_allow_whose_audit_stalls_as_keep_blocked_is_pressed_writes_nothing() {
         stalled
             .recv_timeout(std::time::Duration::from_secs(10))
             .expect("its audit stalls");
-        let keeping = scope
-            .spawn(|| crate::vaultroute::keep_blocked_pressed(&held, None, 3, "team", None).stayed);
+        let keeping = scope.spawn(|| {
+            crate::vaultroute::keep_blocked_pressed(&held, None, 3, "team", None, &mut Vec::new())
+        });
         let began = std::time::Instant::now();
         while !held.vault_refusals().kept_blocked(3, "team")
             && began.elapsed() < std::time::Duration::from_secs(5)
@@ -14440,8 +14524,9 @@ fn always_allow_gives_no_vault_once_keep_blocked_is_pressed_during_its_audit() {
         stalled
             .recv_timeout(std::time::Duration::from_secs(10))
             .expect("the vault's audit stalls");
-        let keeping = scope
-            .spawn(|| crate::vaultroute::keep_blocked_pressed(&held, None, 3, "team", None).stayed);
+        let keeping = scope.spawn(|| {
+            crate::vaultroute::keep_blocked_pressed(&held, None, 3, "team", None, &mut Vec::new())
+        });
         let began = std::time::Instant::now();
         while !held.vault_refusals().kept_blocked(3, "team")
             && began.elapsed() < std::time::Duration::from_secs(5)
@@ -14642,7 +14727,7 @@ fn keep_blocked_audits_a_grant_given_ahead_with_its_keys() {
         .expect("allowed ahead");
         waits.join().expect("it settles");
     });
-    crate::vaultroute::keep_blocked_pressed(&held, None, 3, "team", None);
+    crate::vaultroute::keep_blocked_pressed(&held, None, 3, "team", None, &mut Vec::new());
 
     let keys = serde_json::json!(["TOKEN"]);
     assert_eq!(
@@ -14691,6 +14776,7 @@ fn always_allow_is_refused_for_a_key_a_login_came_to_hold_while_its_ask_was_up()
             open.id,
             crate::secretasks::RunGrantPress::Always,
             None,
+            &mut Vec::new(),
         );
         assert!(
             pressed.as_ref().is_err_and(|why| why.contains("browser")),

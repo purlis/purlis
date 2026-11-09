@@ -18,7 +18,9 @@ Keep blocked pressed on it then says what Keep blocked on the refused vault's No
   amendment before, for these two presses only.
 - **One decision per press.** Whether the persona holds the vault is decided once, as the press
   is made, and every run the press answers hears it: a run whose command had stopped waiting is
-  nudged with the same line, never "kept blocked", and no chat is told it twice.
+  nudged with the same line, never "kept blocked", and no chat is told it twice, however many of
+  its runs the press answers. That holds for a run asking to allow its program on that vault too:
+  its own outcome gives way to the one line, since the press was about the vault.
 
 The run that waited is refused as before, and Keep blocked still takes back nothing the persona
 holds.
