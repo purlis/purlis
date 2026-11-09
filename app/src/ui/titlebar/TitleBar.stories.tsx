@@ -479,6 +479,12 @@ export const Reorder: Story = {
     await userEvent.tab({ shift: true });
     await untilFocused(() => arrowedTo, "Reorder: Shift+Tab comes back to the chip arrowed to");
     expectFocusInSight();
+    // The picture is of the strip at rest, as before: out of it again, with no tooltip up.
+    await userEvent.tab();
+    await waitFor(() => expect(strip?.contains(document.activeElement)).toBe(false));
+    await waitFor(() =>
+      expect(document.querySelector('[role="tooltip"][data-scope="tooltip"]')).toBeNull(),
+    );
   },
 };
 
