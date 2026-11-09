@@ -71,6 +71,7 @@
 //! own. The rest of the theme draws as written, and [`Held`] says which floors and which
 //! tokens, for one Notice per theme.
 
+use std::borrow::Cow;
 use std::collections::BTreeSet;
 
 use super::check::{self, PAIRS, Pair, ratio};
@@ -402,50 +403,57 @@ thread_local! {
     static KNOWN: std::cell::RefCell<Known> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
-fn failures(theme: &ResolvedTheme, chromas: &mut Chromas) -> Vec<Failure> {
-    let mut found = Vec::new();
-    // With more contrast asked for, every consent pair is held at its raised floor (#2925), in
-    // a tint as in the theme as written.
-    let failing = |drawn: &ResolvedTheme, tinted: bool, (floor, pair): (Floor, &Pair)| {
-        ratio(drawn, pair)
-            .is_some_and(|ratio| ratio < drawn.least.floor(pair.floor))
-            .then(|| Failure {
-                floor,
+/// The consent pair `(floor, pair)` failing in `drawn`. With more contrast asked for, every
+/// consent pair is held at its raised floor (#2925), in a tint as in the theme as written.
+fn failing(drawn: &ResolvedTheme, tinted: bool, (floor, pair): (Floor, &Pair)) -> Option<Failure> {
+    ratio(drawn, pair)
+        .is_some_and(|ratio| ratio < drawn.least.floor(pair.floor))
+        .then(|| Failure {
+            floor,
+            tinted,
+            tokens: pair.tokens().collect(),
+        })
+}
+
+/// Every consent floor `drawn` breaks as it is, the theme as written or one tint of it, marked
+/// `tinted` for a tint: the contrast floors, the rules the tint holds apart, Allow apart from
+/// the primary and the hot count apart from the plain one.
+fn failures_of(drawn: &ResolvedTheme, tinted: bool) -> Vec<Failure> {
+    let mut found: Vec<Failure> = pairs()
+        .filter_map(|one| failing(drawn, tinted, one))
+        .collect();
+    // Every rule the tint holds apart, as written and under each of the theme's own tints:
+    // the tint holds them itself (`tint::apart_chroma`), and the floors measure them too.
+    // The accent's marks held from the state colours (#4921) are the tint's own care, not a
+    // consent floor: the tint gives them way itself (`tint::signal_chroma_of`).
+    for rule in tint::APART.iter().filter(|rule| !rule.signal) {
+        if apart_of(drawn.value(rule.token), drawn.value(rule.from)) < rule.distance {
+            found.push(Failure {
+                floor: apart_floor(rule),
                 tinted,
-                tokens: pair.tokens().collect(),
-            })
-    };
-    let tints = theme
-        .tint
-        .hues
-        .iter()
-        .map(|one| tint::tinted(theme, one.name));
-    for (at, drawn) in std::iter::once(theme.clone()).chain(tints).enumerate() {
-        let tinted = at != 0;
-        found.extend(pairs().filter_map(|one| failing(&drawn, tinted, one)));
-        // Every rule the tint holds apart, as written and under each of the theme's own tints:
-        // the tint holds them itself (`tint::apart_chroma`), and the floors measure them too.
-        // The accent's marks held from the state colours (#4921) are the tint's own care, not a
-        // consent floor: the tint gives them way itself (`tint::signal_chroma_of`).
-        for rule in tint::APART.iter().filter(|rule| !rule.signal) {
-            if apart_of(drawn.value(rule.token), drawn.value(rule.from)) < rule.distance {
-                found.push(Failure {
-                    floor: apart_floor(rule),
-                    tinted,
-                    tokens: vec![rule.from, rule.token],
-                });
-            }
+                tokens: vec![rule.from, rule.token],
+            });
         }
-        found.extend(allow_near_primary(&drawn, tinted));
-        if BAR_GROUNDS.iter().any(|ground| {
-            counts_near(
-                drawn.value(HOT_COUNT),
-                drawn.value(PLAIN_COUNT),
-                drawn.value(ground),
-            )
-        }) {
-            found.push(hot_count_near(tinted));
-        }
+    }
+    found.extend(allow_near_primary(drawn, tinted));
+    if BAR_GROUNDS.iter().any(|ground| {
+        counts_near(
+            drawn.value(HOT_COUNT),
+            drawn.value(PLAIN_COUNT),
+            drawn.value(ground),
+        )
+    }) {
+        found.push(hot_count_near(tinted));
+    }
+    found
+}
+
+/// Every consent floor a workspace's tint of `theme` breaks: under each of its own tints, and at
+/// each whole degree a workspace's own colour can take.
+fn tinted_failures(theme: &ResolvedTheme, chromas: &mut Chromas) -> Vec<Failure> {
+    let mut found = Vec::new();
+    for one in &theme.tint.hues {
+        found.extend(failures_of(&tint::tinted(theme, one.name), true));
     }
     // The plain count's pill at every whole degree a workspace's own colour can take: its own and
     // its grounds' tokens turned, as `tint::turned_at` draws them, and the hot count, which a tint
@@ -623,15 +631,62 @@ pub(super) fn allow_apart(theme: &ResolvedTheme) -> f64 {
 /// Purlis Classic's values of its appearance for the tokens of the pairs that fail, and what was
 /// put right.
 pub(super) fn hold(theme: &ResolvedTheme) -> (ResolvedTheme, Option<Held>) {
-    // With more contrast asked for, purlis's own values are its own raised (#2925), so a token
-    // put back is put back at the raised floors.
-    let raised;
-    let ours = if theme.least == super::Least::More {
-        raised = super::least::raise(built_in_for(theme.appearance));
-        &raised
-    } else {
-        built_in_for(theme.appearance)
+    let holding = holding(theme, Rounds::All);
+    if holding.floors.is_empty() {
+        return (holding.drawn, None);
+    }
+    let held = Held {
+        theme: theme_name(theme),
+        floors: holding.floors.iter().copied().collect(),
+        tokens: holding.drawn_as_ours(theme),
+        untinted: holding.untinted.iter().copied().collect(),
     };
+    (holding.drawn, Some(held))
+}
+
+/// **The fewest tokens [`hold`] draws as purlis's own or untinted for `theme`**, found without
+/// measuring a tint (#3597): what its rounds take while the theme as written still breaks a
+/// floor. Those rounds decide from the theme as written alone, and a token taken or left
+/// untinted is never given back. Zero when the theme clears every floor as written. An import's
+/// walk skips holding a point this already rules out.
+pub(super) fn held_at_least(theme: &ResolvedTheme) -> usize {
+    let holding = holding(theme, Rounds::WhileWrittenBreaks);
+    holding.drawn_as_ours(theme).len() + holding.untinted.len()
+}
+
+/// How many of [`hold`]'s rounds [`holding`] goes: every one, or only those while the theme as
+/// written still breaks a floor.
+#[derive(Clone, Copy, PartialEq)]
+enum Rounds {
+    All,
+    WhileWrittenBreaks,
+}
+
+/// What holding a theme's floors came to: the theme drawn, the floors it broke, the tokens drawn
+/// as purlis's own and those drawn untinted.
+struct Holding {
+    drawn: ResolvedTheme,
+    floors: BTreeSet<Floor>,
+    taken: BTreeSet<&'static str>,
+    untinted: BTreeSet<&'static str>,
+}
+
+impl Holding {
+    /// The tokens taken that `theme` is drawn without: a token the theme already gave purlis's
+    /// value is not one.
+    fn drawn_as_ours(&self, theme: &ResolvedTheme) -> Vec<&'static str> {
+        self.taken
+            .iter()
+            .copied()
+            .filter(|token| theme.value(token) != self.drawn.value(token))
+            .collect()
+    }
+}
+
+/// [`hold`]'s rounds over `theme`, as many as `rounds` says.
+fn holding(theme: &ResolvedTheme, rounds: Rounds) -> Holding {
+    let ours = ours_for(theme);
+    let ours = ours.as_ref();
     let mut drawn = theme.clone();
     let mut floors = BTreeSet::new();
     let mut taken: BTreeSet<&'static str> = BTreeSet::new();
@@ -640,7 +695,17 @@ pub(super) fn hold(theme: &ResolvedTheme) -> (ResolvedTheme, Option<Held>) {
     // What the theme draws as what it follows falls with it, whichever of the two a floor names.
     let following = drawn_alike(&theme.values);
     loop {
-        let failing = failures(&drawn, &mut chromas);
+        // A round decides from what the theme as written breaks whenever it breaks anything, so
+        // the tints are measured only once it breaks nothing: they are most of what a round
+        // costs (#3597).
+        let written = failures_of(&drawn, false);
+        let failing = if !written.is_empty() {
+            written
+        } else if rounds == Rounds::WhileWrittenBreaks {
+            break;
+        } else {
+            tinted_failures(&drawn, &mut chromas)
+        };
         if failing.is_empty() {
             break;
         }
@@ -658,48 +723,8 @@ pub(super) fn hold(theme: &ResolvedTheme) -> (ResolvedTheme, Option<Held>) {
                 continue;
             }
         }
-        let failing: Vec<&Failure> = if failing.iter().any(|failure| !failure.tinted) {
-            failing.iter().filter(|failure| !failure.tinted).collect()
-        } else {
-            failing.iter().collect()
-        };
-        // Each round decides from what was purlis's before it, so a pair failing in several
-        // tints is one failure and its ground waits for the round after its consent colour.
-        let mut take: BTreeSet<&'static str> = BTreeSet::new();
-        for failure in &failing {
-            floors.insert(failure.floor);
-            let open: Vec<&'static str> = failure
-                .tokens
-                .iter()
-                .copied()
-                .filter(|token| !taken.contains(token))
-                .collect();
-            let consent: Vec<&'static str> = open
-                .iter()
-                .copied()
-                .filter(|token| is_consent(token))
-                .collect();
-            // A selection that hides what it is laid on is put right first: purlis's own
-            // selection is the platform's, so the pair is no longer drawn and its consent colour
-            // and its ground stay as the theme wrote them. Otherwise purlis's own consent colour
-            // first, and the ground too only once that is not enough.
-            let selection: Vec<&'static str> = open
-                .iter()
-                .copied()
-                .filter(|token| token.starts_with("selection."))
-                .collect();
-            take.extend(if !selection.is_empty() {
-                selection
-            } else if failure.floor == Floor::AllowNotPrimary {
-                // The primary's fill first, so Allow stays as plain as Keep blocked; Allow's own
-                // fill only once the primary's is purlis's and that is not enough.
-                open.into_iter().take(1).collect()
-            } else if consent.is_empty() {
-                open
-            } else {
-                consent
-            });
-        }
+        floors.extend(failing.iter().map(|failure| failure.floor));
+        let mut take = taken_for(&failing, &taken);
         // Every token a failing floor names is purlis's already, and a workspace's tint still
         // breaks it: the tint leaves those tokens as they are drawn.
         if take.is_empty() {
@@ -714,31 +739,80 @@ pub(super) fn hold(theme: &ResolvedTheme) -> (ResolvedTheme, Option<Held>) {
             untinted.extend(drawn.tint.leave(&tinted));
             continue;
         }
-        for (token, base) in &following {
-            if take.contains(token) || take.contains(base) {
-                take.extend([*token, *base]);
-            }
-        }
+        with_following(&mut take, &following);
         for token in take {
             drawn.values.insert(token, ours.value(token).to_owned());
             taken.insert(token);
         }
     }
-    if floors.is_empty() {
-        return (drawn, None);
+    Holding {
+        drawn,
+        floors,
+        taken,
+        untinted,
     }
-    // A token the theme already gave purlis's value is not one it is drawn without.
-    let tokens = taken
-        .into_iter()
-        .filter(|token| theme.value(token) != drawn.value(token))
-        .collect();
-    let held = Held {
-        theme: theme_name(theme),
-        floors: floors.into_iter().collect(),
-        tokens,
-        untinted: untinted.into_iter().collect(),
-    };
-    (drawn, Some(held))
+}
+
+/// The tokens one round of [`hold`] draws as purlis's own for `failing`, none of `taken` again.
+/// Each round decides from what was purlis's before it, so a pair failing in several tints is
+/// one failure and its ground waits for the round after its consent colour.
+fn taken_for(failing: &[Failure], taken: &BTreeSet<&'static str>) -> BTreeSet<&'static str> {
+    let mut take: BTreeSet<&'static str> = BTreeSet::new();
+    for failure in failing {
+        let open: Vec<&'static str> = failure
+            .tokens
+            .iter()
+            .copied()
+            .filter(|token| !taken.contains(token))
+            .collect();
+        let consent: Vec<&'static str> = open
+            .iter()
+            .copied()
+            .filter(|token| is_consent(token))
+            .collect();
+        // A selection that hides what it is laid on is put right first: purlis's own
+        // selection is the platform's, so the pair is no longer drawn and its consent colour
+        // and its ground stay as the theme wrote them. Otherwise purlis's own consent colour
+        // first, and the ground too only once that is not enough.
+        let selection: Vec<&'static str> = open
+            .iter()
+            .copied()
+            .filter(|token| token.starts_with("selection."))
+            .collect();
+        take.extend(if !selection.is_empty() {
+            selection
+        } else if failure.floor == Floor::AllowNotPrimary {
+            // The primary's fill first, so Allow stays as plain as Keep blocked; Allow's own
+            // fill only once the primary's is purlis's and that is not enough.
+            open.into_iter().take(1).collect()
+        } else if consent.is_empty() {
+            open
+        } else {
+            consent
+        });
+    }
+    take
+}
+
+/// `take` with what the theme draws as what it follows, whichever of the two a floor names
+/// ([`drawn_alike`]): the one falls with the other.
+fn with_following(take: &mut BTreeSet<&'static str>, following: &[(&'static str, &'static str)]) {
+    for (token, base) in following {
+        if take.contains(token) || take.contains(base) {
+            take.extend([*token, *base]);
+        }
+    }
+}
+
+/// Purlis Classic's values of `theme`'s appearance, which [`hold`] draws a token in its place
+/// in. With more contrast asked for, purlis's own values are its own raised (#2925), so a token
+/// put back is put back at the raised floors.
+fn ours_for(theme: &ResolvedTheme) -> Cow<'static, ResolvedTheme> {
+    if theme.least == super::Least::More {
+        Cow::Owned(super::least::raise(built_in_for(theme.appearance)))
+    } else {
+        Cow::Borrowed(built_in_for(theme.appearance))
+    }
 }
 
 /// What a Notice calls a theme: its name, and its appearance's id when it has several.

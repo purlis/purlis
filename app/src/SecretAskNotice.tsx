@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { KeyRound, Link2, TriangleAlert } from "lucide-react";
 import type { Offered, RunShown, SecretShown, Shown } from "./bindings";
 import type { RunGiven } from "./asks";
@@ -10,6 +10,7 @@ import { Button } from "./ui/button/Button";
 import { Checkbox } from "./ui/choice/Checkbox";
 import { Segment, SegmentedControl } from "./ui/choice/Radio";
 import { TextField } from "./ui/field/Field";
+import { submits as chordSends } from "./ui/field/submitKey";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 import { Select } from "./ui/select/Select";
 import {
@@ -272,8 +273,19 @@ export function SecretAskNotice({
     return `${whom} filled or declined, and the key's name. Never the value.`;
   })();
 
+  // **A start's ask claims the dialog's chord** (#5670): ⌘⏎ anywhere in it fills, as Fill does
+  // (and says what is missing first), and never presses the dialog's Start, which the same ask
+  // would refuse again. Outside it the chord is the dialog's.
+  const claimChord = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!start || !chordSends(event.nativeEvent)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (!event.repeat) press(action, true);
+  };
+
   return (
     <SecretAskBody
+      onKeyDown={start ? claimChord : undefined}
       label={
         // The app's own words only: never `says`, which quotes the chat's purpose.
         secret

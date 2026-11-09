@@ -60,6 +60,7 @@ fn taking_the_offer_turns_the_sandbox_on_and_keeps_every_line_the_operator_wrote
             hosts: vec![],
             certificate_checks: true,
             personas: Default::default(),
+            own_terminal_only: false,
         })
     );
     assert!(!offer_due(project.path()), "asked once");
@@ -98,6 +99,7 @@ fn a_sandbox_table_without_a_mode_gains_the_mode_and_keeps_its_egress() {
             hosts: vec![],
             certificate_checks: true,
             personas: Default::default(),
+            own_terminal_only: false,
         })
     );
 }
@@ -1174,5 +1176,69 @@ fn a_lock_held_on_the_grants_folder_holds_up_no_write() {
         written.recv_timeout(std::time::Duration::from_secs(20)),
         Ok(true),
         "the write waited on the folder"
+    );
+}
+
+/// This machine's file as `text`, for the project at `root`.
+fn machine_file_holding(root: &Path, text: &str) {
+    let file = path(root);
+    std::fs::create_dir_all(file.parent().expect("a folder")).expect("its folder");
+    std::fs::write(&file, text).expect("the file");
+}
+
+/// The judge of a link reads only the vault grants of this machine's file (#5857): a field beside
+/// them that is off its shape is no reason it can't tell.
+#[test]
+fn the_vault_grants_read_while_a_field_beside_them_is_off_its_shape() {
+    let project = a_project("");
+    let root = project.path();
+    machine_file_holding(
+        root,
+        r#"{"hosts_seen": 5, "vaults_mine": [{"vault": "other", "persona": "qa"}]}"#,
+    );
+
+    assert_eq!(
+        try_granted_vaults(root).expect("read"),
+        [VaultGrant {
+            vault: "other".into(),
+            persona: "qa".into(),
+        }]
+    );
+}
+
+/// The vault grants themselves off their shape, or the file not one object, still fail to read:
+/// not known is not none.
+#[test]
+fn the_vault_grants_off_their_shape_do_not_read() {
+    let project = a_project("");
+    let root = project.path();
+    for text in [
+        r#"{"vaults_mine": "every vault"}"#,
+        r#"{"vaults_mine": [{"vault": "other"}]}"#,
+        "[]",
+        "",
+    ] {
+        machine_file_holding(root, text);
+        assert!(try_granted_vaults(root).is_err(), "{text:?} does not read");
+    }
+}
+
+/// What `authorise` allows reads the vault grants as the judge of a link does (#5857): a field
+/// beside them that is off its shape takes none away.
+#[test]
+fn the_vaults_granted_here_hold_while_a_field_beside_them_is_off_its_shape() {
+    let project = a_project("");
+    let root = project.path();
+    machine_file_holding(
+        root,
+        r#"{"hosts_seen": 5, "vaults_mine": [{"vault": "other", "persona": "qa"}]}"#,
+    );
+
+    assert_eq!(
+        granted_vaults(root),
+        [VaultGrant {
+            vault: "other".into(),
+            persona: "qa".into(),
+        }]
     );
 }

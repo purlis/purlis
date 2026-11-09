@@ -603,6 +603,30 @@ fn remove_unregisters_and_fails_on_a_vault_that_is_not_there() {
 }
 
 #[test]
+fn remove_refuses_a_keyring_vault_holding_an_agent_identitys_key_and_keeps_it_registered() {
+    use crate::secrets::keyring;
+    let plane = Plane::new(&[]);
+    plane.register("k", "keyring", json!({}), None);
+    let v = registry::vault(&plane.ctx, "k").unwrap();
+    let key = format!("{}acme", crate::sandbox::tools::mint::RESERVED_PREFIX);
+    keyring::set(&plane.ctx, &v, &key, "remove-value-pem-83").unwrap();
+
+    let mut io = Rec::default();
+    assert_eq!(remove(&plane.ctx, "k", &mut io), 1);
+
+    assert_eq!(
+        io.said(),
+        "err: vault 'k' holds an agent identity's key. Remove the identity in the Agent \
+         identity tab first, then delete the vault."
+    );
+    assert!(
+        registry::vault(&plane.ctx, "k").is_ok(),
+        "unregistered anyway"
+    );
+    assert_eq!(keyring::keys(&plane.ctx, &v).unwrap(), [key]);
+}
+
+#[test]
 fn a_keyring_vault_is_said_to_keep_its_key_names_in_its_index() {
     let plane = Plane::new(&[]);
     let mut io = Rec::default();

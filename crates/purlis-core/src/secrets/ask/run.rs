@@ -521,19 +521,19 @@ impl Runs {
         self.given.iter().position(|given| given.covers(bound))
     }
 
-    /// Takes what covers `bound`, where a grant does: Allow once goes as it is taken.
-    fn take(&mut self, bound: &Bound) -> bool {
-        let Some(at) = self.covers(bound) else {
-            return false;
-        };
-        if self.given[at].once {
+    /// Takes what covers `bound`, where a grant does: Allow once goes as it is taken. Whether it
+    /// was an Allow once, which the Allowed list then no longer lists (#5800).
+    fn take(&mut self, bound: &Bound) -> Option<bool> {
+        let at = self.covers(bound)?;
+        let once = self.given[at].once;
+        if once {
             self.given.remove(at);
         } else if self.given[at].ahead_keys.take().is_some() {
             // The first run fixes how the values are handed: from now on, only those variables.
             self.given[at].bound.env.clone_from(&bound.env);
             self.given[at].bound.file.clone_from(&bound.file);
         }
-        true
+        Some(once)
     }
 
     /// What the app keeps of its open asks across a restart.
@@ -549,6 +549,11 @@ impl Runs {
             waiters: Vec::new(),
             stored: Vec::new(),
         });
+    }
+
+    /// How many grants are held.
+    pub(super) fn given_count(&self) -> usize {
+        self.given.len()
     }
 
     /// Every open ask of a chat in `back`, or none of `gone`'s, stays.
@@ -905,10 +910,18 @@ impl Asks {
     /// refused its run, so no retry may use it (the person's ruling, #5242). A run that only
     /// waited keeps it.
     pub fn drop_once(&self, bound: &Bound) {
-        self.inner()
-            .runs
-            .given
-            .retain(|given| !(given.once && given.bound == *bound));
+        let dropped = {
+            let mut inner = self.inner();
+            let before = inner.runs.given.len();
+            inner
+                .runs
+                .given
+                .retain(|given| !(given.once && given.bound == *bound));
+            inner.runs.given.len() != before
+        };
+        if dropped {
+            self.run_grants_moved();
+        }
     }
 
     /// **Whether the person did not allow `bound`'s program with its vault in its chat**, which
@@ -1353,7 +1366,11 @@ impl Asks {
     /// **Takes what covers `bound`, as its run starts** (#5242): Allow once goes as it is taken, so
     /// it is used by the run it was for and no earlier.
     pub fn granted(&self, bound: &Bound) -> bool {
-        self.inner().runs.take(bound)
+        let taken = self.inner().runs.take(bound);
+        if taken == Some(true) {
+            self.run_grants_moved();
+        }
+        taken.is_some()
     }
 
     /// Records the answer in the chat's trace: names, never a value.
@@ -1391,8 +1408,15 @@ impl Asks {
     }
 
     /// Chat `chat` has closed: what it was given, what it was not, and what it asked go with it.
-    pub(super) fn forget_runs(inner: &mut Inner, chat: u32) {
+    /// Whether it was given any grant, which the Allowed list then no longer lists (#5800).
+    pub(super) fn forget_runs(inner: &mut Inner, chat: u32) -> bool {
+        let held = inner
+            .runs
+            .given
+            .iter()
+            .any(|given| given.bound.chat == chat);
         inner.runs.retain_chats(|one| one != chat);
+        held
     }
 }
 

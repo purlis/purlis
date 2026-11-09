@@ -1911,7 +1911,12 @@ impl Held {
                 .chats
                 .shown_name(open.session)
                 .unwrap_or_else(|| open.name.clone());
-            if waiting.iter().any(|report| report.from == name) {
+            // A task's report names it as purlis's line can carry the name
+            // ([`purlis_core::handback::in_purlis_s_line`]); a handoff's, as it stands.
+            let in_purlis_s_line = purlis_core::handback::in_purlis_s_line(&name);
+            if waiting.iter().any(|report| {
+                report.from == name || (report.task.is_some() && report.from == in_purlis_s_line)
+            }) {
                 self.needs_the_person(
                     open.session,
                     purlis_core::state::Need::ReportUndelivered {
@@ -2547,6 +2552,8 @@ pub struct Planes {
     vault_refused: crate::vaultroute::Teller,
     /// Told each Ask about a chat's browser that ended with the browser (#2015).
     browser_asks_ended: crate::browserneedsyou::Teller,
+    /// Told each time a project's Run grants moved some way the window did not make (#5800).
+    run_grants_moved: crate::sandboxing::RunGrantsMovedTeller,
     /// Told each persona MCP server a chat could not start (qw381).
     mcp_failed: crate::mcpfailed::Teller,
     /// Told each send of a pane's that its chat was not sent (#4734).
@@ -2839,6 +2846,7 @@ impl Planes {
             moves_told: Arc::new(|_, _| {}),
             vault_refused: Arc::new(|_| {}),
             browser_asks_ended: Arc::new(|_| {}),
+            run_grants_moved: Arc::new(|_| {}),
             mcp_failed: Arc::new(|_| {}),
             input_refused: Arc::new(|_| {}),
             browsers_ended: Arc::new(|_| {}),
@@ -3139,6 +3147,16 @@ impl Planes {
         self
     }
 
+    /// Tells `moved` each time a project's Run grants moved some way the window did not make, so
+    /// the Allowed list reads again (#5800).
+    pub fn telling_run_grants_moved(
+        mut self,
+        moved: crate::sandboxing::RunGrantsMovedTeller,
+    ) -> Self {
+        self.run_grants_moved = moved;
+        self
+    }
+
     /// Tells `ended` each Ask about a chat's browser that ended with the browser, so the Inbox
     /// keeps it as an Update (#2015).
     pub fn telling_browser_asks_ended(mut self, ended: crate::browserneedsyou::Teller) -> Self {
@@ -3363,6 +3381,13 @@ impl Planes {
         // effort as a question's steps are (#5078), written in order off the asks' lock (#5509).
         held.secret_asks
             .telling(held.hooks.secret_asks_told(held.root()));
+        // An Allow once its run took or a check dropped, or a closed chat's grants: the Allowed
+        // list lists them, so the window is told (#5800).
+        crate::sandboxing::tell_run_grants_moved(
+            &held.secret_asks,
+            id.clone(),
+            Arc::clone(&self.run_grants_moved),
+        );
         // A handoff from one of this plane's chats is answered by this plane, which is the
         // only one holding the asking chat's record. A `Weak`, because the plane holds the
         // socket that holds this answer: a strong handle would keep a closed plane alive.

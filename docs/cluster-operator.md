@@ -920,10 +920,29 @@ its own, and keep the confinement [above](#what-it-makes) on each container, whi
 from no Secret; of the pinned upstream's other pod and container fields it may set none. A claim
 adds nothing to its pod, and a kept volume is a new one written to by one node. Of a claim's labels
 and annotations the operator adds only its own mark, and changes nothing else there. A claim on a
-purlis pool's warm pool carries no `agents.x-k8s.io/created-by` label, whoever writes it, so a claim
-that holds one is refused its next write until the label is removed. It does not hold
-which image a template names or which storage class a claim's volume is in: the Pool says those. An
-admin editing a policy in place, with its binding left alone, does not move its time in force.
+purlis pool's warm pool carries no `agents.x-k8s.io/created-by` label, and sets no `spec.env`, no
+`spec.lifecycle` and no labels or annotations in `spec.additionalPodMetadata`, whoever writes it
+(`purlis-claims-use-their-pool`): upstream copies `additionalPodMetadata` into the runner's pod. The
+empty `additionalPodMetadata` upstream writes as it adopts a warm runner passes. A claim that holds
+any of these is refused its next write until it is removed. Before upgrading the chart, list the
+claims that would be:
+
+```sh
+kubectl get sandboxclaims.extensions.agents.x-k8s.io --all-namespaces -o json | jq -r '
+  .items[]
+  | select(.metadata.namespace | startswith("purlis-runners-"))
+  | select(.spec.warmPoolRef.name // "" | startswith("purlis-pool-"))
+  | select((.metadata.labels // {} | has("agents.x-k8s.io/created-by"))
+      or (.spec.additionalPodMetadata.labels != null)
+      or (.spec.additionalPodMetadata.annotations != null)
+      or (.spec.lifecycle != null)
+      or (.spec.env != null))
+  | "\(.metadata.namespace)/\(.metadata.name)"'
+```
+
+It does not hold which image a template names or which storage class a claim's volume is in: the
+Pool says those. An admin editing a policy in place, with its binding left alone, does not move its
+time in force.
 
 Upstream's controller holds its own ClusterRoles, in the vendored manifest: it makes and
 removes the runners' pods, services, volume claims and network policies. It holds no Secret

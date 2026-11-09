@@ -42,7 +42,7 @@ use super::oauth::Endpoint;
 use super::pkce::{self, Code, Redirected, State};
 use super::transport::{Call, Field, Method, Reply, Transport};
 use super::{Forge, Kind};
-use crate::sandbox::persona::{Shown, looked_at};
+use crate::sandbox::persona::{Shown, unjudged_in};
 use crate::sandbox::tools::mint;
 use crate::secrets::{Ctx, cmd, registry};
 
@@ -282,7 +282,7 @@ pub fn convert(endpoint: &dyn Endpoint, code: &Code, wanted: &Wanted) -> Result<
     if !(200..300).contains(&answer.status) {
         return Err(format!(
             "GitHub refused to hand over the App (HTTP {}). Its code works once and for an hour. \
-             Start over.",
+             Delete that App on GitHub, close the browser tab, and start over.",
             answer.status
         ));
     }
@@ -784,21 +784,29 @@ fn read_manifest(root: &Path) -> Result<String, String> {
 }
 
 /// **The project's file changed by `edit`**, one writer at a time and whole or not at all.
+/// Answers the text it read and the text it wrote, under the same lock.
 fn rewrite_manifest(
     root: &Path,
     edit: impl FnOnce(&str) -> Result<String, String>,
-) -> Result<(), String> {
+) -> Result<(String, String), String> {
+    let mut texts = None;
     crate::rewrite::update(root, &crate::names::manifest(root), |now| {
-        edit(now.unwrap_or(""))
-            .map(Some)
-            .map_err(std::io::Error::other)
+        let read = now.unwrap_or("");
+        let written = edit(read).map_err(std::io::Error::other)?;
+        texts = Some((read.to_owned(), written.clone()));
+        Ok(Some(written))
     })
-    .map(drop)
-    .map_err(|e| e.to_string())
+    .map_err(|e| e.to_string())?;
+    texts.ok_or_else(|| "The project's settings weren't written. Try again.".to_owned())
 }
 
 /// **Adds App `app`'s line for `personas`** to the project at `root`: what Finish writes (Q11).
 pub fn add_lines(root: &Path, app: &str, personas: &[String]) -> Result<(), String> {
+    added_lines(root, app, personas).map(drop)
+}
+
+/// [`add_lines`], answering the text it read and the text it wrote.
+fn added_lines(root: &Path, app: &str, personas: &[String]) -> Result<(String, String), String> {
     rewrite_manifest(root, |text| with_lines(text, app, personas))
 }
 
@@ -814,15 +822,28 @@ pub fn write_and_allow(
     personas: &[String],
     allow: &mut dyn FnMut(&Shown) -> Result<(), String>,
 ) -> Result<Vec<String>, String> {
-    let before = looked_at(root).unwrap_or_default();
-    add_lines(root, app, personas)?;
-    let after = looked_at(root).unwrap_or_default();
+    let (read, written) = added_lines(root, app, personas)?;
+    allow_as_written(root, personas, &read, &written, allow)
+}
+
+/// **[`write_and_allow`]'s judgement**, from `before`, the project's file as the write read it,
+/// and `written`, the file as it wrote it: never from the file read back, so a line another
+/// writer adds after the write never comes in under the Allow.
+fn allow_as_written(
+    root: &Path,
+    personas: &[String],
+    before: &str,
+    written: &str,
+    allow: &mut dyn FnMut(&Shown) -> Result<(), String>,
+) -> Result<Vec<String>, String> {
+    let before = unjudged_in(root, before);
+    let after = unjudged_in(root, written);
     let mut left = Vec::new();
     for persona in personas {
-        let was = before.iter().find(|(one, _)| one.persona == *persona);
-        let clear = was.is_none_or(|(one, _)| one.allowed() || !one.asks());
-        match after.iter().find(|(one, _)| one.persona == *persona) {
-            Some((now, _))
+        let was = before.iter().find(|one| one.persona == *persona);
+        let clear = was.is_none_or(|one| one.allowed() || !one.asks());
+        match after.iter().find(|one| one.persona == *persona) {
+            Some(now)
                 if clear && !now.default && now.tools.iter().any(|tool| tool.name == "gh") =>
             {
                 allow(now)?;
@@ -1114,7 +1135,7 @@ pub fn remove(ctx: &Ctx, root: &Path, app: &str) -> Result<(), String> {
         _ => Ok(()),
     };
     apptoken::app_removed(root, app, Duration::from_secs(5));
-    let lines_gone = rewrite_manifest(root, |text| without_lines(text, app));
+    let lines_gone = rewrite_manifest(root, |text| without_lines(text, app)).map(drop);
     key_gone
         .and(lines_gone)
         .map_err(|why| format!("Live tokens are gone, and not all of it was removed: {why}"))

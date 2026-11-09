@@ -2774,6 +2774,26 @@ fn alike(theme: &ResolvedTheme, a: &str, b: &str, least: f64) -> bool {
     }
 }
 
+/// **Whether the plain count's `fill` is drawn within `least` of the hot count**, both laid on each
+/// ground `under` it as the screen draws them, as the token floor reads the two (D-4384-4): a
+/// see-through count is the colour it comes out on the bar, not the colour written. Unlaid where
+/// either is not drawn, or nothing is under it.
+fn near_the_hot(theme: &ResolvedTheme, under: &[String], fill: &str, least: f64) -> bool {
+    let hot = super::floors::HOT_COUNT;
+    // Not drawn, or nothing to lay them on: the colours as written.
+    let (Some(plain), Some(hot_drawn), false) =
+        (hex(theme, fill), hex(theme, hot), under.is_empty())
+    else {
+        return alike(theme, fill, hot, least);
+    };
+    under.iter().any(|ground| {
+        let laid = |colour: &str| tint::oklab_of(&onto(colour, ground));
+        laid(plain)
+            .zip(laid(hot_drawn))
+            .is_some_and(|(plain, hot)| tint::distance(plain, hot) < least)
+    })
+}
+
 /// The edge a root draws, or `None` when it draws none: no width, or a transparent colour.
 fn edge(rules: &[Rule], family: &Family, variant: &str, look: &Drawn) -> Option<&'static str> {
     (look.border != TRANSPARENT && has_border(rules, family, variant)).then_some(look.border)
@@ -2904,10 +2924,10 @@ fn unreadable_by(
         0.0
     };
     if let Some(count) = plain_count_at(family)
-        && alike(
+        && near_the_hot(
             theme,
+            &under_part(theme, on, surface, family, count, variant, look),
             look.grounds[count],
-            super::floors::HOT_COUNT,
             super::floors::HOT_COUNT_APART + near_the_hot_count,
         )
     {
@@ -3835,8 +3855,8 @@ fn tints_reach(theme: &ResolvedTheme, set: &str, looks: &[LookOn<'_>]) -> bool {
 fn tints_reach_a_surface(theme: &ResolvedTheme, rules: &[Rule]) -> bool {
     surfaces_set(rules)
         .into_iter()
-        .any(|(surface, _, default, set)| {
-            shows_a_tint(theme, set)
+        .any(|(surface, variant, default, set)| {
+            apart_tints_reach(theme, rules, surface, variant, set)
                 || drawn_on(surface, default, set).any(|family| {
                     let sets = sets_read(rules, family);
                     tints_reach(theme, set, &looks_in(rules, family, &sets))
@@ -4043,21 +4063,9 @@ fn held_on_surfaces(
         {
             continue;
         }
-        let mut broken = apart_broken_on(theme, rules, surface, variant, set, 0.0);
-        if broken.is_none()
-            && shows_a_tint(theme, set)
-            && coarse.iter().any(|one| {
-                apart_broken_on(one, rules, surface, variant, set, NEAR_A_FLOOR).is_some()
-            })
+        if let Some((family, floor, ratio)) =
+            apart_held_on(theme, coarse, drawn_in, rules, surface, variant, set)
         {
-            if drawn_in.len() == 1 {
-                drawn_in.extend(every_tinted(theme));
-            }
-            broken = drawn_in[1..]
-                .iter()
-                .find_map(|one| apart_broken_on(one, rules, surface, variant, set, 0.0));
-        }
-        if let Some((family, floor, ratio)) = broken {
             forget(&mut known, surface);
             Held {
                 family: surface,
@@ -4074,6 +4082,37 @@ fn held_on_surfaces(
         }
     }
     fell.len() > before
+}
+
+/// **What a part drawn apart from its root breaks on `set`**, the fill a theme gives `surface` in
+/// `variant`: as written, then, where a tint can move it ([`apart_tints_reach`]), in each of
+/// `coarse`, and at every degree where one of those comes near a floor. `drawn_in` gains every
+/// tint the first time one is read.
+fn apart_held_on(
+    theme: &ResolvedTheme,
+    coarse: &[ResolvedTheme],
+    drawn_in: &mut Vec<ResolvedTheme>,
+    rules: &[Rule],
+    surface: &Family,
+    variant: &str,
+    set: &'static str,
+) -> Option<(&'static Family, String, f64)> {
+    if let Some(broken) = apart_broken_on(theme, rules, surface, variant, set, 0.0) {
+        return Some(broken);
+    }
+    let near = apart_tints_reach(theme, rules, surface, variant, set)
+        && coarse
+            .iter()
+            .any(|one| apart_broken_on(one, rules, surface, variant, set, NEAR_A_FLOOR).is_some());
+    if !near {
+        return None;
+    }
+    if drawn_in.len() == 1 {
+        drawn_in.extend(every_tinted(theme));
+    }
+    drawn_in[1..]
+        .iter()
+        .find_map(|one| apart_broken_on(one, rules, surface, variant, set, 0.0))
 }
 
 /// **Where the parts drawn apart from their root stand**, by surface and its look, and the
@@ -4096,10 +4135,63 @@ pub(super) fn apart_breaks_on(
         .map(|(family, floor, ratio)| (family.name, floor, ratio))
 }
 
+/// A part drawn apart from its root as it is drawn on a surface, while one of its sets of states
+/// holds.
+struct ApartOn {
+    family: &'static Family,
+    part: &'static str,
+    /// Where the part is in its family's parts.
+    at: usize,
+    fill: &'static str,
+    words: &'static str,
+}
+
+/// **Each part drawn apart from its root that stands on `surface`'s default fill in `variant`**
+/// ([`APART_STANDS_ON`], #4000), in each set of states it is measured in, with its fill and words
+/// as drawn: a theme's rule's, or its own.
+fn apart_on<'r>(
+    rules: &'r [Rule],
+    surface: &'r Family,
+    variant: &'r str,
+) -> impl Iterator<Item = ApartOn> + 'r {
+    let default = (surface.defaults)(variant, &[]).fill;
+    APART_STANDS_ON
+        .iter()
+        .filter(move |(one, look, _)| *one == surface.name && *look == variant)
+        .filter_map(|(_, _, name)| family(name))
+        .flat_map(move |family| {
+            APART
+                .iter()
+                .filter(move |(one, _, _)| *one == family.name)
+                .filter_map(move |(_, part, carried)| {
+                    let at = family.parts.iter().position(|one| one.name == *part)?;
+                    Some((family, *part, at, *carried))
+                })
+                .flat_map(move |(family, part, at, carried)| {
+                    apart_sets(carried).into_iter().filter_map(move |states| {
+                        let own = apart_look_in(family.name, part, &states);
+                        own.under.contains(&default).then(|| {
+                            let fill = set_colour(rules, family, at, &states, Prop::Fill)
+                                .unwrap_or(own.fill);
+                            let words = set_colour(rules, family, at, &states, Prop::Text)
+                                .unwrap_or(own.words);
+                            ApartOn {
+                                family,
+                                part,
+                                at,
+                                fill,
+                                words,
+                            }
+                        })
+                    })
+                })
+        })
+}
+
 /// **What a part drawn apart from its root breaks on `set`**, the fill a theme gives `surface`
-/// in `variant`, where it stands there ([`APART_STANDS_ON`], #4000): its words and fill as drawn,
-/// at rest and in each of its own states, held to their floor on that fill as it is laid over the
-/// surface's own grounds, or within `margin` of it.
+/// in `variant`, where it stands there ([`apart_on`]): its words and fill as drawn, at rest and in
+/// each of its own states, held to their floor on that fill as it is laid over the surface's own
+/// grounds, or within `margin` of it.
 fn apart_broken_on(
     theme: &ResolvedTheme,
     rules: &[Rule],
@@ -4108,36 +4200,41 @@ fn apart_broken_on(
     set: &'static str,
     margin: f64,
 ) -> Option<(&'static Family, String, f64)> {
-    let default = (surface.defaults)(variant, &[]).fill;
     let on = surface_ground(theme, surface, set);
-    for (_, _, name) in APART_STANDS_ON
-        .iter()
-        .filter(|(one, look, _)| *one == surface.name && *look == variant)
-    {
-        let family = family(name)?;
-        for (_, part, carried) in APART.iter().filter(|(one, _, _)| one == name) {
-            let at = family.parts.iter().position(|one| one.name == *part)?;
-            for states in apart_sets(carried) {
-                let own = apart_look_in(name, part, &states);
-                if !own.under.contains(&default) {
-                    continue;
-                }
-                let fill = set_colour(rules, family, at, &states, Prop::Fill).unwrap_or(own.fill);
-                let words = set_colour(rules, family, at, &states, Prop::Text).unwrap_or(own.words);
-                let floor = theme.least.floor(floor_of(family, &family.parts[at]));
-                if let Some(ratio) = lowest(theme, &on, fill, words)
-                    && ratio < floor + margin
-                {
-                    return Some((
-                        family,
-                        format!("the {part}'s words contrast {floor}:1 with its fill"),
-                        ratio,
-                    ));
-                }
-            }
-        }
-    }
-    None
+    apart_on(rules, surface, variant).find_map(|one| {
+        let ApartOn {
+            family,
+            part,
+            at,
+            fill,
+            words,
+        } = one;
+        let floor = theme.least.floor(floor_of(family, &family.parts[at]));
+        let ratio = lowest(theme, &on, fill, words)?;
+        (ratio < floor + margin).then(|| {
+            (
+                family,
+                format!("the {part}'s words contrast {floor}:1 with its fill"),
+                ratio,
+            )
+        })
+    })
+}
+
+/// **Whether a tint can move what a part drawn apart reads on `set`**: the fill lets what is under
+/// it through, or a part standing there draws its fill or its words see-through, its own defaults
+/// included, as [`tints_reach`] has it for a family drawn on the fill (D-4607-4).
+fn apart_tints_reach(
+    theme: &ResolvedTheme,
+    rules: &[Rule],
+    surface: &Family,
+    variant: &str,
+    set: &str,
+) -> bool {
+    let see_through = |token: &str| hex(theme, token).is_some_and(|one| !is_opaque(one));
+    shows_a_tint(theme, set)
+        || apart_on(rules, surface, variant)
+            .any(|one| see_through(one.fill) || see_through(one.words))
 }
 
 /// The states `family` names but disabled, in the order the stylesheet writes them.

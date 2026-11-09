@@ -542,9 +542,27 @@ fn a_claude_code_chats_bare_ssh_takes_its_route_through_the_file_read_before_eac
     assert!(route.is_within(&super::tunnel::routes_folder(&root)));
     let config = std::fs::read_to_string(route.config()).expect("its config");
     assert!(
-        config.contains(&format!("-x 127.0.0.1:{} %h %p", confinement.socks_port())),
+        // Its SOCKS port, through purlis's own proxy where this run finds one (#3536).
+        config.contains(&format!(
+            "ProxyCommand {}\n",
+            super::sshproxy::proxy_command(
+                super::tools::purlis_binary().as_deref(),
+                confinement.socks_port()
+            )
+        )),
         "{config}"
     );
+    // Where a purlis is found (the re-run below names one), the route runs it, never `nc`.
+    if let Some(purlis) = super::tools::purlis_binary() {
+        assert!(
+            config.contains(&format!(
+                "ProxyCommand '{}' _ssh-proxy {} %h %p\n",
+                purlis.display(),
+                confinement.socks_port()
+            )),
+            "{config}"
+        );
+    }
     let super::Form::ClaudeCode(settings) = applied.form_in(Some(&cwd)) else {
         panic!("compiled for Claude Code");
     };
@@ -1052,5 +1070,21 @@ fn a_held_path_is_denied_as_spelled_through_each_link_on_the_way_to_it() {
             home.join("second/hop/inner/auth.json").display()
         )),
         "and to the Edit tool"
+    );
+}
+
+/// a Claude Code chat's ssh route runs the purlis it finds as its proxy (#3536): the test above, re-run with
+/// `PURLIS_BINARY` naming a stand-in, since no purlis sits beside a test binary. Binds the chat's
+/// ports, so it first runs on CI.
+#[test]
+fn a_claude_code_chats_ssh_route_runs_the_purlis_beside_the_app_as_its_proxy() {
+    let dir = tempfile::tempdir().expect("a folder");
+    let purlis = dir.path().join("purlis");
+    std::fs::write(&purlis, "").expect("a stand-in purlis");
+    crate::testrun::rerun(
+        &[
+            "sandbox::claude_tests::a_claude_code_chats_bare_ssh_takes_its_route_through_the_file_read_before_each_command",
+        ],
+        &[("PURLIS_BINARY", purlis.as_os_str())],
     );
 }

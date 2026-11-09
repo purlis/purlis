@@ -56,6 +56,9 @@ pub struct LoginWait {
     pub no_always: Option<String>,
     /// The pool whose runner the chat is on: it isn't waiting, and is told.
     pub pool: Option<String>,
+    /// **The persona whose vaults the login reads**: the one the chat was started as, narrowed or
+    /// not, as the read judges a link (#5831); `proposal.persona` is whose tools Always writes in.
+    pub reads_as: String,
 }
 
 /// What a chat's waiting call hears.
@@ -67,6 +70,22 @@ pub enum Heard {
     Kept(Option<String>),
     /// The chat closed, or it's no longer asked.
     Gone,
+}
+
+/// **What the chat reads where its notice is refused for a key out of reach** (#5831): the read's
+/// own words, unchanged.
+fn as_the_chat_reads_it(why: &str) -> String {
+    why.to_owned()
+}
+
+/// **What the person reads where a press is refused for a key out of reach** (#5831), on the
+/// notice, which stays up as it does for every press refused: nothing was allowed, and the read's
+/// own words, which name the key and the chat's vault alone, told to the person as "you"
+/// (docs/ui-copy.md) where the chat's words say "the person".
+pub(crate) fn refused_at_the_press_said(why: &str) -> String {
+    let why = why.replace("The person can", "You can");
+    let stop = if why.ends_with('.') { "" } else { "." };
+    format!("Nothing was allowed: {why}{stop}")
 }
 
 /// A login the person allowed for a chat: nothing of it is on disk.
@@ -485,7 +504,9 @@ fn asked_about_the_login(
     if held.chats().sandboxed_by_its_host(session) {
         return None;
     }
-    let (_, unconfined) = held.chats().login_asker(held.root(), session)?;
+    let (asker, unconfined) = held.chats().login_asker(held.root(), session)?;
+    // Whose vaults it reads, as the read judges a link: the persona it was started as (#5831).
+    let reads_as = asker.persona.unwrap_or_default();
     // Whose login grants it reads, and whose tools Always writes in: a narrowed chat's are the
     // persona it was narrowed to (the decision of 2026-11-06).
     let persona = held
@@ -536,7 +557,10 @@ fn asked_about_the_login(
     };
     let wait = match judged(
         held.root(),
-        &persona,
+        Whose {
+            grants: &persona,
+            reads_as: &reads_as,
+        },
         login,
         suggested,
         finds,
@@ -557,6 +581,7 @@ fn asked_about_the_login(
             proposal: judged.proposal,
             vault_too: judged.vault_too,
             no_always: judged.no_always,
+            reads_as,
         },
         Err(why) => return no(why),
     };
@@ -710,21 +735,34 @@ struct Judged {
     no_always: Option<String>,
 }
 
+/// **Whose a login is** (#5831): whose tools Always writes in, a narrowed chat's the persona it was
+/// narrowed to, and whose vaults the chat reads, the persona it was started as, as the read judges
+/// a link.
+#[derive(Debug, Clone, Copy)]
+struct Whose<'a> {
+    grants: &'a str,
+    reads_as: &'a str,
+}
+
 /// **Whether a suggestion is one the person is asked about**, and what they're offered: no tool
-/// where policy forbids it, a vault the project has, and one the persona may use or that policy
-/// lets the person allow it.
+/// where policy forbids it, a key no link takes out of the chat's reach, a vault the project has,
+/// and one the persona may use or that policy lets the person allow it.
 ///
 /// Where `persona` declares `login` already (#4996), a suggestion of another site replaces its
 /// site, and one of the very site it has is no ask at all: `None`.
 fn judged(
     root: &Path,
-    persona: &str,
+    whose: Whose<'_>,
     login: &str,
     suggested: &Suggested,
     finds: FindsForm<'_>,
     declared: Option<&Tool>,
     held: &[Tool],
 ) -> Result<Option<Judged>, String> {
+    let Whose {
+        grants: persona,
+        reads_as,
+    } = whose;
     let locks = Locks::of(root);
     if let Some(why) = locks.refuses_tool(persona, login) {
         return Err(why);
@@ -735,6 +773,15 @@ fn judged(
         .map_err(|why| why.message.to_string())?;
     purlis_core::secrets::registry::vault_in(&doc, &suggested.vault)
         .map_err(|why| why.message.to_string())?;
+    if let Some(why) = out_of_reach(
+        &ctx,
+        reads_as,
+        &suggested.vault,
+        suggested.user_key.as_deref(),
+        &suggested.key,
+    ) {
+        return Err(why);
+    }
     let page = loginask::site_of(&suggested.site).map(|(_, page)| page);
     let declared_page = declared
         .and_then(|declared| declared.login.as_ref())
@@ -763,16 +810,50 @@ fn judged(
         Some(declared) if proposal.is_where(declared) => return Ok(None),
         Some(declared) => proposal.replacing(root, declared, held)?,
     };
-    finish(root, &locks, proposal).map(Some)
+    offered_on_the_notice(root, &locks, proposal, reads_as, as_the_chat_reads_it).map(Some)
 }
 
-/// What the person is offered on `proposal`, under `locks`.
-fn finish(root: &Path, locks: &Locks, proposal: Proposal) -> Result<Judged, String> {
+/// **Why `persona`, whose vaults the chat reads, may read neither the login's user key nor its
+/// password** (#5831): one is a link into a vault it may not use, which the read would refuse once
+/// the person had allowed it ([`brokered::read_out_of_reach`], #5795). Judged before the notice is
+/// raised and as it is pressed, so no notice asks for, nor Always writes or grants a vault for, a
+/// login refused.
+fn out_of_reach(
+    ctx: &Ctx,
+    persona: &str,
+    vault: &str,
+    user_key: Option<&str>,
+    key: &str,
+) -> Option<String> {
+    let keys: Vec<&str> = user_key.into_iter().chain([key]).collect();
+    brokered::read_out_of_reach(ctx, persona, vault, &keys)
+}
+
+/// What the person is offered on `proposal`, under `locks`, for a chat whose vaults are
+/// `reads_as`'s; a key out of reach refused in the words `out_of_reach_said` makes of the read's.
+fn offered_on_the_notice(
+    root: &Path,
+    locks: &Locks,
+    proposal: Proposal,
+    reads_as: &str,
+    out_of_reach_said: fn(&str) -> String,
+) -> Result<Judged, String> {
     let ctx = Ctx::new(root, Env::from_process());
     let doc = purlis_core::secrets::registry::load_registry(&ctx)
         .map_err(|why| why.message.to_string())?;
     purlis_core::secrets::registry::vault_in(&doc, &proposal.vault)
         .map_err(|why| why.message.to_string())?;
+    // Judged again as it is drawn or pressed: a link made while the notice waits is seen, and said
+    // as its reader is told it, the chat as it is raised and the person as they press.
+    if let Some(why) = out_of_reach(
+        &ctx,
+        reads_as,
+        &proposal.vault,
+        proposal.user_key.as_deref(),
+        &proposal.key,
+    ) {
+        return Err(out_of_reach_said(&why));
+    }
     let vault_too = brokered::not_tagged(&ctx, Some(&proposal.persona), &proposal.vault).is_some();
     let mut proposal = proposal;
     proposal
@@ -861,6 +942,25 @@ pub struct Asked<'a> {
     pub reason: Option<&'a str>,
 }
 
+/// **Why a press on `wait` is refused, where a key of its login is a link into a vault the chat
+/// may not use** (#5831), judged as the read judges it: [`refused_at_the_press_said`], the press's
+/// error. Nothing is allowed, audited or written, and the notice stays up, as for every press
+/// refused, so the person reads why on it and Keep blocked still ends it.
+fn refused_out_of_reach(root: &Path, wait: &LoginWait) -> Result<(), String> {
+    let ctx = Ctx::new(root, Env::from_process());
+    let drawn = &wait.proposal;
+    let Some(why) = out_of_reach(
+        &ctx,
+        &wait.reads_as,
+        &drawn.vault,
+        drawn.user_key.as_deref(),
+        &drawn.key,
+    ) else {
+        return Ok(());
+    };
+    Err(refused_at_the_press_said(&why))
+}
+
 /// **The person's press** on the login a notice drew. Fails closed: a press on anything but what's
 /// waiting now changes nothing. A site the person typed is followed to its form with `finds`
 /// before anything is allowed on it (#4995).
@@ -890,6 +990,8 @@ pub fn answer(
             if wait.proposal.digest() != shown {
                 return Err(CHANGED.to_owned());
             }
+            // Nothing is followed in a browser for a login refused (#5831).
+            refused_out_of_reach(root, &wait)?;
             Some(wait.proposal.at(root, typed, finds, &grants.held())?)
         }
     };
@@ -914,6 +1016,9 @@ pub fn answer(
             said: said.to_owned(),
         });
     }
+    // Judged as the read judges it (#5831): a key that became a link into a vault the persona may
+    // not use while the notice waited is allowed nothing.
+    refused_out_of_reach(root, &wait)?;
     // A field left empty names no site: it never falls back to the one the chat suggested.
     let moved = match (typed.map(str::trim), followed) {
         (Some(""), _) => {
@@ -965,7 +1070,15 @@ pub fn answer(
             fresh.replacing(root, &declared, &grants.held())?
         }
     };
-    let judged = finish(root, &locks, fresh)?;
+    // A link made since the judge above is refused by `offered_on_the_notice`, in the person's
+    // words as above.
+    let judged = offered_on_the_notice(
+        root,
+        &locks,
+        fresh,
+        &wait.reads_as,
+        refused_at_the_press_said,
+    )?;
     let changed = judged.proposal.digest() != wait.proposal.digest();
     // Always writes a line, and the line is shown before it's written. A warning the notice
     // didn't show is shown before a press counts; one it showed was read.

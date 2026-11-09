@@ -800,3 +800,94 @@ fn every_chats_refusals_are_listed_with_when_each_was_first_heard() {
     let left: Vec<u32> = refusals.every().iter().map(|(chat, ..)| *chat).collect();
     assert_eq!(left, [7]);
 }
+
+// ---- Keep blocked on a vault the persona already holds (#5801) ---------------------------
+
+#[test]
+fn keep_blocked_on_a_vault_the_persona_may_not_use_holds_and_says_nothing_more() {
+    let project = project();
+    assert_eq!(
+        kept_blocked_but_held(project.path(), Some("steward"), "devops"),
+        None
+    );
+    assert_eq!(kept_blocked_but_held(project.path(), None, "devops"), None);
+}
+
+#[test]
+fn keep_blocked_on_a_vault_allowed_for_the_persona_says_its_runs_still_go_and_points_at_the_allowed_list()
+ {
+    let project = project();
+    let root = project.path();
+    let refusals = Refusals::default();
+    let (_, tell) = told();
+    refused(
+        &plane(root),
+        &refusals,
+        &steward_chat(root, 3),
+        false,
+        "devops",
+        &tell,
+    );
+    let heard = Audits::default();
+    let made = allow(root, &refusals, &steward(), "devops", &auditing(&heard), 1);
+    assert!(matches!(made, Ok(Allowed::Made { .. })), "{made:?}");
+
+    let held = kept_blocked_but_held(root, Some("steward"), "devops").expect("held");
+
+    assert_eq!(held.by, purlis_core::askoutcome::HeldBy::AllowedList);
+    assert_eq!(held.persona, "steward");
+    assert_eq!(
+        held.said,
+        "You kept vault devops blocked for this chat, but steward can already use it, so Keep blocked does not stop this \
+         chat's runs on it. Remove it in Settings › Sandbox › Allowed to stop them."
+    );
+}
+
+#[test]
+fn keep_blocked_on_a_vault_tagged_for_the_persona_says_its_runs_still_go_and_names_the_tag() {
+    let project = project();
+    let held = kept_blocked_but_held(project.path(), Some("devops"), "devops").expect("held");
+    assert_eq!(held.by, purlis_core::askoutcome::HeldBy::Tag);
+    assert_eq!(
+        held.said,
+        "You kept vault devops blocked for this chat, but devops can already use it, so Keep blocked does not stop this \
+         chat's runs on it. The project's vaults tag it for devops: change that tag \
+         to stop them."
+    );
+}
+
+#[test]
+fn keep_blocked_on_a_held_vault_a_tool_line_names_says_that_line_too() {
+    let project = project();
+    let root = project.path();
+    std::fs::write(
+        purlis_core::names::manifest(root),
+        "[sandbox]\nmode = \"on\"\n[sandbox.personas.devops]\ntools = { kubectl = { vault = \"devops\", as = \
+         \"KUBECONFIG file\", key = \"kubeconfig\" } }\n",
+    )
+    .unwrap();
+    let held = kept_blocked_but_held(root, Some("devops"), "devops").expect("held");
+    assert!(
+        held.said
+            .ends_with(" devops's tools name it too: remove that tool line to stop its runs."),
+        "{}",
+        held.said
+    );
+}
+
+#[test]
+fn keep_blocked_on_a_vault_both_tagged_and_allowed_points_at_the_tag_which_removing_the_row_leaves()
+{
+    let project = project();
+    let root = project.path();
+    purlis_core::sandbox::local::grant_vault(root, "devops", "devops")
+        .expect("a row of the Allowed list");
+    let held = kept_blocked_but_held(root, Some("devops"), "devops").expect("held");
+    assert_eq!(held.by, purlis_core::askoutcome::HeldBy::Tag);
+    assert_eq!(
+        held.said,
+        "You kept vault devops blocked for this chat, but devops can already use it, so Keep blocked does not stop this \
+         chat's runs on it. The project's vaults tag it for devops: change that tag \
+         to stop them. It is in Settings › Sandbox › Allowed too."
+    );
+}

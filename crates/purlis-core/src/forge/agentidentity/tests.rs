@@ -310,7 +310,12 @@ fn what_github_refuses_and_what_is_not_a_key_keep_nothing() {
         &code("c"),
         &acme(),
     );
-    assert!(refused.unwrap_err().contains("HTTP 404"));
+    let refused = refused.unwrap_err();
+    assert!(refused.contains("HTTP 404"), "{refused}");
+    assert!(
+        refused.contains("Delete that App on GitHub, close the browser tab, and start over."),
+        "{refused}"
+    );
     let mut no_key = app_answer("acme", "Organization");
     no_key["pem"] = "hello".into();
     assert!(convert(&Conversions::say(201, &no_key), &code("c"), &acme()).is_err());
@@ -487,6 +492,50 @@ fn finish_leaves_a_persona_with_more_on_its_list_to_its_own_allow() {
     })
     .unwrap();
     assert_eq!(left, ["dev"]);
+}
+
+#[test]
+fn finish_allows_what_it_wrote_and_never_a_line_on_disk_it_did_not_write() {
+    let before = "[sandbox]\n\n[sandbox.personas.dev]\n";
+    let written = with_lines(before, "Iv23li", &["dev".to_owned()]).unwrap();
+    // The file on disk also holds a host another writer added meanwhile.
+    let on_disk = written.replace(
+        "[sandbox.personas.dev]\n",
+        "[sandbox.personas.dev]\nhosts = [\"other.example\"]\n",
+    );
+    assert_ne!(on_disk, written);
+    let root = a_new_plane(&on_disk);
+    let mut allowed = Vec::new();
+    let left = allow_as_written(
+        root.path(),
+        &["dev".to_owned()],
+        before,
+        &written,
+        &mut |shown| {
+            allowed.push(shown.clone());
+            Ok(())
+        },
+    )
+    .unwrap();
+    assert_eq!(left, Vec::<String>::new());
+    let [shown] = allowed.as_slice() else {
+        panic!("{allowed:?}")
+    };
+    assert!(shown.hosts.is_empty(), "{:?}", shown.hosts);
+    assert!(shown.listed.is_empty(), "{:?}", shown.listed);
+    assert_eq!(
+        shown
+            .tools
+            .iter()
+            .map(|tool| tool.name.as_str())
+            .collect::<Vec<_>>(),
+        ["gh"]
+    );
+    let locks = crate::sandbox::policy::Locks::of(root.path());
+    assert_eq!(
+        Some(shown.digest.clone()),
+        crate::sandbox::persona::digest_in(root.path(), &written, "dev", &locks)
+    );
 }
 
 #[test]

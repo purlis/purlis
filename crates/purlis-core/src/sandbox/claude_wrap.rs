@@ -185,7 +185,7 @@ pub fn wrap(compiled: &Compiled) -> Result<Wrap, Uncompilable> {
     Ok(Wrap {
         os: compiled.os,
         level: compiled.level,
-        held: compiled.held.clone(),
+        held: compiled.wrapped_held(),
         denied: compiled.denied.paths.clone(),
         widened: Box::new(compiled.widened.clone()),
         granted: compiled.writable.clone(),
@@ -352,10 +352,15 @@ fn own(wrap: &Wrap) -> Result<Own, &'static str> {
     }
     // The floor holds `.claude/plugins` by name wherever it is, which a home of that name is.
     if wrap.level == super::Level::Floor {
+        let data = home.join("plugins/data");
         own.after.push(format!(
-            "(allow file-write* (regex {}))",
+            "(allow file-write* (require-all (regex {}) (require-not (vnode-type SYMLINK))))",
             string(&under(home, "plugins/data/.+"))?
         ));
+        // What the floor holds by name everywhere stays held below it: the allow gives back a
+        // plugin's data, never a planted name, a project's state folder or a manifest there.
+        own.after.extend(seatbelt::planted_rules(&data)?);
+        own.after.extend(seatbelt::every_project_rules()?);
         // And still no link made there, after the allow that would let one through.
         own.after.push(format!(
             "(deny file-write-create (require-all (vnode-type SYMLINK) (subpath {})))",
@@ -488,19 +493,17 @@ pub fn keep_mcp_servers(state: &Path, servers: Option<&serde_json::Value>) {
     }
 }
 
-/// Below `dir`, without following a link: every link taken out.
-fn no_links_below(dir: &Path) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let Ok(kind) = entry.file_type() else {
-            continue;
-        };
-        if kind.is_symlink() {
-            let _ = std::fs::remove_file(entry.path());
-        } else if kind.is_dir() {
-            no_links_below(&entry.path());
-        }
+/// Below `dir`, without following a link: every link taken out. It runs in the session host
+/// while another chat on the profile may move folders under it, so it walks by descriptor
+/// ([`super::walk`]): a folder swapped for one holding a link leads nowhere.
+#[cfg(unix)]
+pub(super) fn no_links_below(dir: &Path) {
+    if let Some(at) = super::walk::open(dir, Path::new("")) {
+        super::walk::no_links_below(&at);
     }
 }
+
+/// Nothing is swept where there is no descriptor-relative walk to do it safely; no Claude Code
+/// chat is wrapped there either.
+#[cfg(not(unix))]
+pub(super) fn no_links_below(_dir: &Path) {}

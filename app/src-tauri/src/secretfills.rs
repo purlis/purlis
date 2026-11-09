@@ -100,6 +100,10 @@ pub struct FillWait {
     pub no_always: Option<String>,
     /// The persona needs its vault allowed too: what Always then also does.
     pub vault_too: bool,
+    /// **The persona whose vaults the fill reads**: the one the chat was started as, narrowed or
+    /// not, as the read judges a link (#5831). Its key is judged as this persona again as the
+    /// notice is pressed.
+    pub reads_as: Option<String>,
 }
 
 impl FillWait {
@@ -567,6 +571,10 @@ pub fn asked(
                 line: None,
                 no_always: None,
                 vault_too: false,
+                reads_as: held
+                    .chats()
+                    .persona_of(session)
+                    .and_then(|persona| persona.started_as),
             },
         );
         match heard(held, fills, wait, gone)? {
@@ -978,6 +986,14 @@ pub fn answer(
         Press::Chat => Level::Chat,
         Press::Always => Level::You,
     };
+    // Judged as the read judges it (#5831): a key that became a link into a vault the persona may
+    // not use while the notice waited is allowed nothing, writes no line and grants no vault. The
+    // notice stays up, as for every press refused, and shows the person why.
+    let ctx = Ctx::new(root, Env::from_process());
+    let reads_as = wait.reads_as.as_deref().unwrap_or_default();
+    if let Some(why) = brokered::read_out_of_reach(&ctx, reads_as, &wait.vault, &[&wait.key]) {
+        return Err(crate::loginasks::refused_at_the_press_said(&why));
+    }
     let locks = Locks::of(root);
     if let Some(why) = locks.scope_removed(level) {
         return Err(why);

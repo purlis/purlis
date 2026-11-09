@@ -341,6 +341,44 @@ fn the_whole_line_runs_in_the_wrap_with_its_traffic_and_temp_folder_its_own() {
     assert!(applied.claude_ssh_route(Some(&confinement)).is_none());
 }
 
+/// A start can still be refused after its line is built (its settings' file, its terminal), so
+/// the line readies nothing in the profile's folder: no folder made, no link taken out, no trust
+/// marked. The start readies it once nothing more can refuse it.
+#[test]
+fn a_wrapped_chat_s_line_readies_nothing_until_its_start_is_past_every_refusal() {
+    let place = place(FULL, true);
+    let home = place.home.join("work");
+    std::fs::create_dir_all(&home).expect("its folder");
+    let applied = started(&place, &home);
+    let cwd = place.plane.path().join("w");
+    std::fs::create_dir(&cwd).expect("a folder");
+    let confinement = applied.confine().expect("confined").expect("a proxy");
+    applied
+        .line(
+            Words {
+                program: "/opt/claude".to_owned(),
+                command: Vec::new(),
+                armed: Vec::new(),
+                charters: Vec::new(),
+            },
+            &At {
+                cwd: Some(&cwd),
+                confinement: Some(&confinement),
+                purlis: Some(Path::new("/opt/purlis")),
+                ..At::default()
+            },
+        )
+        .expect("it starts");
+    assert!(!home.join("todos").exists(), "a folder was made");
+    assert!(
+        !home.join(claude_wrap::STATE_FILE).exists(),
+        "the trust was marked"
+    );
+    applied.ready_to_start(&cwd);
+    assert!(home.join("todos").is_dir());
+    assert!(home.join(claude_wrap::STATE_FILE).is_file());
+}
+
 #[test]
 fn a_chat_with_no_config_folder_purlis_can_hold_is_not_started() {
     let place = place(FULL, true);
@@ -427,6 +465,47 @@ fn its_config_folder_is_written_only_where_a_turn_writes_at_either_level() {
         // Its hook socket is reached, and its folder never written.
         assert!(profile.allows(&Op::Connect(Remote::Unix(Some(&socket)))));
         assert!(!writes(&profile, &socket));
+    }
+}
+
+/// Below `plugins/data`, the one place under `plugins` a turn writes, what the floor holds by name
+/// everywhere stays held: the allow that lets a plugin's data be written gives back no planted
+/// name, no link, and at the floor no project's state folder.
+#[test]
+fn below_a_plugin_s_data_folder_every_planted_name_stays_held_at_either_level() {
+    for manifest in [FULL, FLOOR] {
+        let place = place(manifest, true);
+        let home = place.home.join("work");
+        let applied = started(&place, &home);
+        let cwd = super::real(place.plane.path());
+        let tmp = place.home.join("tmp");
+        let socket = place.home.join("run/hooks.sock");
+        let profile = profile_of(&wrap_of(&applied), &cwd, &tmp, &socket);
+        let data = home.join("plugins/data/x");
+        assert!(writes(&profile, &data.join("one")), "{manifest}");
+        for held in [
+            ".git/hooks/pre-commit",
+            ".git/config",
+            ".envrc",
+            ".mcp.json",
+            ".claude/settings.json",
+            ".purlis/app/x",
+        ] {
+            // At the full sandbox a project's state folder is held by what the chat may write,
+            // which is its own project: the floor's rule for every project is the floor's.
+            if manifest == FULL && held.starts_with(".purlis") {
+                continue;
+            }
+            assert!(!writes(&profile, &data.join(held)), "{manifest}: {held}");
+        }
+        assert!(
+            !profile.allows(&Op::File {
+                what: FileOp::Create,
+                path: &data.join("link"),
+                kind: Kind::Symlink,
+            }),
+            "{manifest}"
+        );
     }
 }
 

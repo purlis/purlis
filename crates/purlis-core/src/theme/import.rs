@@ -1358,7 +1358,8 @@ fn toward(
 ///
 /// `None` once they reach `fewer_than`, since a point no better than the best so far is never
 /// taken. Holding the floors is most of what a walk costs (#3597), so it is skipped for a point
-/// whose contrast findings alone already reach `fewer_than`.
+/// whose contrast findings alone already reach `fewer_than`, or do with the fewest tokens the
+/// hold would draw as purlis's own ([`super::floors::held_at_least`]).
 fn findings_for(theme: &ResolvedTheme, token: &'static str, fewer_than: usize) -> Option<usize> {
     let pairs: Vec<&super::check::Pair> = super::check::PAIRS
         .iter()
@@ -1395,7 +1396,11 @@ fn findings_for(theme: &ResolvedTheme, token: &'static str, fewer_than: usize) -
     if found >= fewer_than {
         return None;
     }
-    let held = if FLOORED.contains(&token) || token.starts_with("state.") {
+    let floored = FLOORED.contains(&token) || token.starts_with("state.");
+    if floored && found + super::floors::held_at_least(theme) >= fewer_than {
+        return None;
+    }
+    let held = if floored {
         super::floors::hold(theme)
             .1
             .map_or(0, |held| held.tokens.len() + held.untinted.len())

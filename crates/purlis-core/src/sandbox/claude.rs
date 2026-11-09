@@ -147,7 +147,7 @@ pub struct Settings {
 
 /// The folders above each name of [`super::MAY_LIFT`] in `home`, outermost first, `home` and the
 /// names themselves left out ([`Settings::made_folders`]).
-fn above_what_may_be_lifted(home: &Path) -> Vec<PathBuf> {
+pub(super) fn above_what_may_be_lifted(home: &Path) -> Vec<PathBuf> {
     let mut out: Vec<PathBuf> = Vec::new();
     for name in super::MAY_LIFT {
         let mut at = home.to_path_buf();
@@ -392,6 +392,31 @@ pub(super) fn rules(compiled: &Compiled) -> Settings {
                     edit_rules.push(format!("Edit(/{rule})"));
                     edit_rules.push(format!("Edit(/{rule}/**)"));
                     deny_write.push(rule);
+                }
+            }
+        }
+        // A name lifted for this chat leaves no entry under its folder above, which a held path's
+        // entry pins: held by [`super::PIN`] beside it instead, so that folder is never moved
+        // aside, or swapped for a link, while the chat writes the name. On macOS alone, where a
+        // path that is not there is only held; Claude Code's sandbox on Linux puts something at it.
+        if compiled.os == Os::MacOs
+            && let Some(home) = &compiled.homes.home
+        {
+            for planted in super::PLANTED.iter().filter(|planted| {
+                planted.reach == super::Reach::AndBelow
+                    && !planted.path.contains("**")
+                    && !held(planted)
+            }) {
+                let Some(above) = Path::new(planted.path)
+                    .parent()
+                    .filter(|above| !above.as_os_str().is_empty())
+                else {
+                    continue;
+                };
+                for name in names_for(home) {
+                    let pin = name.join(above).join(super::PIN).display().to_string();
+                    edit_rules.push(format!("Edit(/{pin})"));
+                    deny_write.push(pin);
                 }
             }
         }

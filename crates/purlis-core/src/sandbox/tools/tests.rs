@@ -1416,18 +1416,190 @@ fn an_unallowed_tool_absent_from_the_image_refuses_in_a_sentence() {
         resolved.refusing[0].1.contains("example/team:1, has no gh"),
         "{resolved:?}"
     );
-    assert_eq!(started(None), None, "not on a runner");
-
-    // Another chat of the persona shares the folder: its shim stays.
-    let purlis = outside_temp("unallowed-purlis");
-    let bin = resolved.folder.join("bin");
-    std::fs::create_dir_all(&bin).unwrap();
-    std::fs::write(bin.join("kubectl"), "another chat's shim").unwrap();
-    resolved.write(&purlis).expect("written");
-    assert!(bin.join("gh").exists(), "it says the sentence");
     assert!(
-        bin.join("kubectl").exists(),
-        "another chat's Allow is not its to sweep"
+        resolved.refusing[0]
+            .1
+            .contains("devops's hosts and tools are allowed on the desktop"),
+        "nobody allowed it, and the sentence says that is wanted too: {resolved:?}"
+    );
+    assert_eq!(started(None), None, "not on a runner");
+    let _ = std::fs::remove_dir_all(root);
+    let _ = std::fs::remove_dir_all(system);
+}
+
+/// The persona `devops` declaring `tools`, none of them allowed on this machine.
+fn devops_declaring(
+    tools: Vec<Tool>,
+) -> std::collections::BTreeMap<String, super::super::persona::Grants> {
+    std::collections::BTreeMap::from([(
+        "devops".to_owned(),
+        super::super::persona::Grants {
+            hosts: Vec::new(),
+            tools,
+            browser: None,
+        },
+    )])
+}
+
+/// A chat of `devops` starting on a runner of `example/team:1`, nothing allowed, its programs
+/// found in `search`.
+fn started_on_a_runner(
+    root: &Path,
+    personas: &std::collections::BTreeMap<String, super::super::persona::Grants>,
+    search: &[PathBuf],
+) -> Option<super::Resolved> {
+    super::for_chat_on(
+        root,
+        personas,
+        "devops",
+        &Locks::none(),
+        search,
+        &[],
+        &[],
+        None,
+        Some("example/team:1"),
+    )
+}
+
+/// A runnable program called `name` in `dir` that prints its name and its arguments.
+fn saying_program(dir: &Path, name: &str) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::create_dir_all(dir).expect("dir");
+    let path = dir.join(name);
+    std::fs::write(&path, format!("#!/bin/sh\necho {name} \"$@\"\n")).expect("written");
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).expect("mode");
+    path
+}
+
+/// **A tool nobody allowed, absent as the chat started, runs its program once one has come**
+/// (#4373): it would run as the bare program with no shim, so its refusal does not hide a `gh`
+/// put on `PATH` after the start, and refuses only while there is none.
+#[test]
+fn an_unallowed_tool_s_refusal_runs_a_program_of_its_name_that_came_since() {
+    let root = outside_temp("since-root");
+    let system = outside_temp("since-system");
+    let later = outside_temp("since-later");
+    let resolved = started_on_a_runner(
+        &root,
+        &devops_declaring(vec![gh()]),
+        std::slice::from_ref(&system),
+    )
+    .expect("it has something to say");
+    let written = resolved
+        .write(Path::new("/usr/local/bin/purlis"))
+        .expect("written")
+        .expect("a refusing shim");
+    let run = |path: String| {
+        crate::forklock::output(
+            std::process::Command::new(written.bin.join("gh"))
+                .arg("--version")
+                .env("PATH", path),
+        )
+        .expect("the shim runs")
+    };
+    // No system folder on `PATH`, which may hold a `gh` of its own (a CI runner's does): only
+    // the `grep` the shim reads another shim with.
+    let tools = outside_temp("since-tools");
+    let grep = ["/usr/bin/grep", "/bin/grep"]
+        .into_iter()
+        .find(|at| Path::new(at).exists())
+        .expect("a grep");
+    std::os::unix::fs::symlink(grep, tools.join("grep")).expect("linked");
+    let path = format!(
+        "{}:{}:{}",
+        written.bin.display(),
+        later.display(),
+        tools.display()
+    );
+
+    let before = run(path.clone());
+    assert_eq!(before.status.code(), Some(127), "none yet: {before:?}");
+    assert!(String::from_utf8_lossy(&before.stderr).contains("has no gh"));
+
+    saying_program(&later, "gh");
+    let after = run(path);
+    assert_eq!(after.status.code(), Some(0), "{after:?}");
+    assert_eq!(String::from_utf8_lossy(&after.stdout), "gh --version\n");
+    for dir in [root, system, later, tools] {
+        let _ = std::fs::remove_dir_all(dir);
+    }
+}
+
+/// **An allowed tool absent from the image keeps refusing a program that came since** (#4354): its
+/// start never judged that program, and it would run without the vault's value.
+#[test]
+fn an_allowed_tool_s_refusal_still_refuses_a_program_that_came_since() {
+    let base = outside_temp("allowed-since");
+    let (root, bin, later) = (
+        base.join("project"),
+        base.join("elsewhere"),
+        base.join("later"),
+    );
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::create_dir_all(&bin).unwrap();
+    let written = resolved_for_a_start(&root, std::slice::from_ref(&bin), true)
+        .write(Path::new("/usr/local/bin/purlis"))
+        .expect("written")
+        .expect("a refusing shim");
+    saying_program(&later, "gh");
+    let out = crate::forklock::output(std::process::Command::new(written.bin.join("gh")).env(
+        "PATH",
+        format!(
+            "{}:{}:/usr/bin:/bin",
+            written.bin.display(),
+            later.display()
+        ),
+    ))
+    .expect("the shim runs");
+    assert_eq!(out.status.code(), Some(127), "{out:?}");
+    let _ = std::fs::remove_dir_all(base);
+}
+
+/// **A chat with nothing allowed finds only its own refusals first on its `PATH`** (#4373): the
+/// persona's folder holds the shims another chat's Allow wrote, and they stay there, out of its
+/// way.
+#[test]
+fn a_chat_that_only_refuses_writes_its_shims_apart_from_another_chat_s() {
+    let root = outside_temp("apart-root");
+    let system = outside_temp("apart-system");
+    program(&system, "kubectl");
+    let purlis = Path::new("/usr/local/bin/purlis");
+    // Another chat of devops, whose kubectl is allowed and ready.
+    let another = resolve(
+        &root,
+        "devops",
+        &[kubectl()],
+        &Locks::none(),
+        std::slice::from_ref(&system),
+        &[],
+    )
+    .expect("a tool")
+    .write(purlis)
+    .expect("written")
+    .expect("its shim");
+    assert!(another.bin.join("kubectl").exists());
+
+    let resolved = started_on_a_runner(
+        &root,
+        &devops_declaring(vec![gh(), kubectl()]),
+        std::slice::from_ref(&system),
+    )
+    .expect("it has something to say");
+    assert!(resolved.only_refuses, "{resolved:?}");
+    let written = resolved
+        .write(purlis)
+        .expect("written")
+        .expect("a refusing shim");
+
+    assert!(written.bin.join("gh").exists(), "it says the sentence");
+    assert!(
+        !written.bin.join("kubectl").exists(),
+        "another chat's working shim is not first on this chat's PATH: {}",
+        written.bin.display()
+    );
+    assert!(
+        another.bin.join("kubectl").exists(),
+        "and another chat's shim stays where it is"
     );
     let _ = std::fs::remove_dir_all(root);
     let _ = std::fs::remove_dir_all(system);
@@ -1457,6 +1629,16 @@ fn the_forms_a_run_grant_refuses_by_name_leave_curl_and_the_usual_tools_offered(
         "glab",
         "pg_dump",
         "s3cmd",
+        // #5799: offered, and only their forms that name a command refused
+        "ssh",
+        "scp",
+        "sftp",
+        "rsync",
+        "zip",
+        "mysql",
+        "mariadb",
+        "mysqldump",
+        "mysqladmin",
     ] {
         assert!(!super::not_for_a_run_grant(name), "{name}");
     }

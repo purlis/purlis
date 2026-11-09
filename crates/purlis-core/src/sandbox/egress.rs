@@ -1461,17 +1461,18 @@ impl Drop for HeldLive<'_> {
 }
 
 /// SOCKS's version byte (RFC 1928).
-const SOCKS_VERSION: u8 = 5;
+pub(super) const SOCKS_VERSION: u8 = 5;
 
 /// The one method served: no authentication. A port is one chat's, so nothing a client sends
 /// is asked to say whose it is.
-const NO_AUTH: u8 = 0;
+pub(super) const NO_AUTH: u8 = 0;
 
 /// The method reply that refuses every method offered.
 const NO_METHOD: u8 = 0xff;
 
-/// SOCKS's reply codes the proxy answers with.
-mod reply {
+/// SOCKS's reply codes the proxy answers with, and the route's proxy reads
+/// ([`super::sshproxy`]).
+pub(super) mod reply {
     pub const SUCCEEDED: u8 = 0;
     pub const NOT_ALLOWED: u8 = 2;
     pub const HOST_UNREACHABLE: u8 = 4;
