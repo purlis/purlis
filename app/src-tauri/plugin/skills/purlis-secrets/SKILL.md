@@ -106,8 +106,8 @@ Then wait for them to say it is done, and run your command again. No restart is 
 purlis secret exec <vault> --env NAME=<key> -- <command...>
 ```
 
-In a sandboxed Claude Code chat on Linux, `--env` is refused: hand the value with `--file`
-instead, and point the command at the file the variable names.
+In a Claude Code chat on Linux under Claude Code's own sandbox, `--env` is refused: hand the
+value with `--file` instead, and point the command at the file the variable names.
 
 **As a file** (kubeconfig, certificate, key):
 

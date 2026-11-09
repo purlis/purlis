@@ -1523,10 +1523,11 @@ fn on_linux_a_claude_code_chats_env_hand_over_is_refused_with_the_file_one_to_us
     );
 }
 
-/// Only a Claude Code chat's, and only on Linux: a Codex chat's `--env` there, a Claude Code
-/// chat's `--file` there, and a Claude Code chat's `--env` on macOS each go on as before.
+/// Only a Claude Code chat's on its own sandbox, and only on Linux: a Codex or opencode chat's
+/// `--env` there, a Claude Code chat's purlis wraps whole (as on a runner), a Claude Code chat's
+/// `--file` there, and a Claude Code chat's `--env` on macOS each go on as before.
 #[test]
-fn an_env_hand_over_is_refused_for_a_claude_code_chat_on_linux_alone() {
+fn an_env_hand_over_is_refused_for_a_claude_code_chat_on_its_own_sandbox_on_linux_alone() {
     let project = project();
     let root = project.path().canonicalize().unwrap();
     let base = wanted(&root, "team", sh("true"));
@@ -1536,19 +1537,30 @@ fn an_env_hand_over_is_refused_for_a_claude_code_chat_on_linux_alone() {
     };
     let claude = Some(Harness::ClaudeCode);
     assert_eq!(
-        env_refused(claude, Wrap::Purlis, &by_env),
+        env_refused(claude, false, Wrap::Purlis, &by_env),
         Some(ENV_REFUSED)
     );
-    assert_eq!(
-        env_refused(Some(Harness::Codex), Wrap::Purlis, &by_env),
-        None
-    );
-    assert_eq!(
-        env_refused(Some(Harness::Opencode), Wrap::Purlis, &by_env),
-        None
-    );
-    assert_eq!(env_refused(claude, Wrap::Purlis, &by_file(base)), None);
-    assert_eq!(env_refused(claude, Wrap::Seatbelt, &by_env), None);
+    assert_eq!(env_refused(claude, true, Wrap::Purlis, &by_env), None);
+    for whole in [Some(Harness::Codex), Some(Harness::Opencode)] {
+        assert_eq!(env_refused(whole, true, Wrap::Purlis, &by_env), None);
+    }
+    assert_eq!(env_refused(claude, false, Wrap::Purlis, &by_file(base)), None);
+    assert_eq!(env_refused(claude, false, Wrap::Seatbelt, &by_env), None);
+}
+
+/// What a chat's start records: Claude Code on its own sandbox holds only its commands, and every
+/// harness purlis wraps runs whole inside.
+#[test]
+fn a_chats_record_says_whether_its_harness_runs_whole_inside_its_sandbox() {
+    let project = project();
+    let root = project.path().canonicalize().unwrap();
+    let linux = Machine {
+        os: Os::Linux,
+        ..machine()
+    };
+    assert!(!confines_of(Harness::ClaudeCode, &root, &linux).whole);
+    assert!(confines_of(Harness::ClaudeCode, &root, &linux.clone().on_profile(true)).whole);
+    assert!(confines_of(Harness::Codex, &root, &linux).whole);
 }
 
 /// The credential file and a login's folder are given back after every denial of the profile,

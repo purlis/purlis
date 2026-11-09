@@ -7222,6 +7222,7 @@ pub(crate) fn applied_of(
             wrap: None,
             clones: crate::forge::apptoken::clones_now(root),
             roots_git,
+            whole: harness.adapter().sandbox_holds_what_it_starts() || wrapped,
         }),
         reach: Box::new(compiled.reach.clone()),
         // Claude Code on its own sandbox waits for its program's answer ([`Applied::answered`]).
@@ -7350,6 +7351,11 @@ pub struct Confines {
     /// a folder. `None` for a project whose `.git` is a file or a link, which is not held. Only
     /// where it is set does the app save or update the project for the chat.
     pub roots_git: Option<PathBuf>,
+    /// **Whether the chat's harness runs whole inside its sandbox**, its own process among what
+    /// it holds: Codex and opencode, and a Claude Code chat purlis wraps (#4083, #2037). `false`
+    /// for a Claude Code chat on its own sandbox, which holds only the commands it runs, and for
+    /// a record that does not say ([`Default`]).
+    pub whole: bool,
 }
 
 impl Confines {
