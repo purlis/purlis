@@ -157,25 +157,20 @@ pub fn commit_of(workspace: &Path, folder: &str) -> Commit {
     let path = format!("{DIR}/{folder}");
     let page = format!("{path}/{PAGE}");
     let wait = Duration::from_secs(5);
-    let Some(id) = crate::worktree::git::run(
-        workspace,
-        &["log", "-1", "--format=%h", "--", &path],
-        wait,
-    )
-    .ok()
-    .filter(crate::worktree::git::Run::ok)
-    .map(|run| run.out.trim().to_owned())
-    .filter(|id| !id.is_empty() && id.chars().all(|c| c.is_ascii_hexdigit())) else {
+    let Some(id) =
+        crate::worktree::git::run(workspace, &["log", "-1", "--format=%h", "--", &path], wait)
+            .ok()
+            .filter(crate::worktree::git::Run::ok)
+            .map(|run| run.out.trim().to_owned())
+            .filter(|id| !id.is_empty() && id.chars().all(|c| c.is_ascii_hexdigit()))
+    else {
         return Commit::NotCommitted;
     };
-    let changed_since = crate::worktree::git::run(
-        workspace,
-        &["status", "--porcelain", "--", &page],
-        wait,
-    )
-    .ok()
-    .filter(crate::worktree::git::Run::ok)
-    .is_none_or(|run| !run.out.trim().is_empty());
+    let changed_since =
+        crate::worktree::git::run(workspace, &["status", "--porcelain", "--", &page], wait)
+            .ok()
+            .filter(crate::worktree::git::Run::ok)
+            .is_none_or(|run| !run.out.trim().is_empty());
     Commit::At { id, changed_since }
 }
 
@@ -248,7 +243,9 @@ fn write(at: &Path, text: &str) -> Result<(), String> {
             crate::rewrite::os_words(&e)
         )
     };
-    let dir = at.parent().ok_or_else(|| could_not(std::io::ErrorKind::NotFound.into()))?;
+    let dir = at
+        .parent()
+        .ok_or_else(|| could_not(std::io::ErrorKind::NotFound.into()))?;
     std::fs::create_dir_all(dir).map_err(could_not)?;
     for path in [dir.parent().unwrap_or(dir), dir, at] {
         if std::fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_symlink()) {

@@ -25,6 +25,7 @@ import {
   type ArtifactKeyPressed,
 } from "./artifacts";
 import { artifactDataIn, artifactsIn, useViewChanged } from "./planeChanged";
+import { DiscussButton } from "./artifactDiscuss";
 import { Button } from "./ui/button/Button";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 
@@ -115,6 +116,9 @@ export function ArtifactTab({
             Not generated on this machine
           </span>
         )}
+        {!unpinned && about.said?.missing === null && about.said.too_large === null ? (
+          <DiscussButton plane={plane} workspace={workspace} folder={folder} />
+        ) : null}
       </header>
       {unpinned ? (
         <EmptyState

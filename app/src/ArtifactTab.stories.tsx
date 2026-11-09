@@ -78,6 +78,10 @@ export const Open: Story = {
     const frame = await page.findByTestId("artifact-frame");
     await expect(frame).toHaveAccessibleName("Backlog state");
     await expect(page.getByTestId("artifact-bar")).toHaveTextContent("Pinned by Ada Lovelace");
+    // The bar's Discuss first (#5957), then the page.
+    await userEvent.tab();
+    await expect(page.getByRole("button", { name: "Discuss" })).toHaveFocus();
+    expectFocusInSight();
     await userEvent.tab();
     await expect(frame).toHaveFocus();
     expectFocusInSight();
@@ -141,6 +145,9 @@ export const Waits: Story = {
     const page = within(canvasElement);
     const open = await page.findByRole("button", { name: "Open Backlog state" });
     await expect(page.queryByTestId("artifact-frame")).toBeNull();
+    // The bar's Discuss first (#5957), then Open.
+    await userEvent.tab();
+    await expect(page.getByRole("button", { name: "Discuss" })).toHaveFocus();
     await userEvent.tab();
     await expect(open).toHaveFocus();
     expectFocusInSight();
