@@ -24,6 +24,7 @@ fn machine(os: Os) -> Machine {
         env: crate::secrets::Env::of(&[]),
         home: Some(PathBuf::from("/Users/op")),
         os,
+        on_a_sandbox_only_profile: false,
     }
 }
 
@@ -406,6 +407,7 @@ fn a_chat_on_a_profile_made_here_writes_in_that_profile_and_is_kept_from_opencod
         env: crate::secrets::Env::of(&[(crate::datahome::HOME_VAR, "/Users/op/data")]),
         home: Some(PathBuf::from("/Users/op")),
         os: Os::MacOs,
+        on_a_sandbox_only_profile: false,
     };
     let mut applied = for_start(Harness::Opencode, plane.path(), &machine, &|_| true)
         .expect("starts")
@@ -679,6 +681,7 @@ fn a_chat_whose_directory_holds_opencodes_own_files_is_not_wrapped() {
         env: crate::secrets::Env::of(&[]),
         home: Some(home.clone()),
         os: Os::MacOs,
+        on_a_sandbox_only_profile: false,
     };
     let applied = for_start(Harness::Opencode, plane.path(), &machine, &|_| true)
         .expect("starts")
@@ -876,6 +879,7 @@ mod live {
             env: crate::secrets::Env::of(&[]),
             home: Some(home.path().to_path_buf()),
             os: Os::MacOs,
+            on_a_sandbox_only_profile: false,
         };
         let applied = for_start(Harness::Opencode, plane.path(), &machine, &|_| true)
             .expect("starts")
@@ -961,6 +965,7 @@ mod live {
             env: crate::secrets::Env::of(&[(crate::datahome::HOME_VAR, data_home_named.as_str())]),
             home: Some(home.path().to_path_buf()),
             os: Os::MacOs,
+            on_a_sandbox_only_profile: false,
         };
         let mut applied = for_start(Harness::Opencode, plane.path(), &machine, &|_| true)
             .expect("starts")
@@ -1051,6 +1056,7 @@ mod live {
             env: crate::secrets::Env::of(&[]),
             home: Some(linked_home.clone()),
             os: Os::MacOs,
+            on_a_sandbox_only_profile: false,
         };
         let applied = for_start(Harness::Opencode, plane.path(), &machine, &|_| true)
             .expect("starts")
@@ -1131,6 +1137,7 @@ mod live {
             env: crate::secrets::Env::of(&[]),
             home: Some(home.path().to_path_buf()),
             os: Os::MacOs,
+            on_a_sandbox_only_profile: false,
         };
         let applied = for_start(Harness::Opencode, plane.path(), &machine, &|_| true)
             .expect("starts")
@@ -1206,6 +1213,7 @@ mod live {
             env: crate::secrets::Env::of(&[]),
             home: Some(home.path().to_path_buf()),
             os: Os::MacOs,
+            on_a_sandbox_only_profile: false,
         };
         let applied = for_start(Harness::Opencode, plane.path(), &machine, &|_| true)
             .expect("starts")
@@ -1242,6 +1250,7 @@ mod live {
             env: crate::secrets::Env::of(&[]),
             home: Some(home.path().to_path_buf()),
             os: Os::MacOs,
+            on_a_sandbox_only_profile: false,
         };
         let sockets = tempfile::tempdir().expect("sockets");
         let host = credentials.join("charterd.sock");
@@ -1325,6 +1334,7 @@ mod live {
             env: crate::secrets::Env::of(&[]),
             home: Some(home.path().to_path_buf()),
             os: Os::MacOs,
+            on_a_sandbox_only_profile: false,
         };
         let applied = for_start(Harness::Opencode, plane.path(), &machine, &|_| true)
             .expect("starts")
@@ -1404,6 +1414,7 @@ mod live {
             env: crate::secrets::Env::of(&[]),
             home: Some(home.path().to_path_buf()),
             os: Os::MacOs,
+            on_a_sandbox_only_profile: false,
         };
         let applied = for_start(Harness::Opencode, plane.path(), &machine, &|_| true)
             .expect("starts")
@@ -1444,6 +1455,7 @@ mod live {
             env: crate::secrets::Env::of(&[]),
             home: Some(home.path().to_path_buf()),
             os: Os::MacOs,
+            on_a_sandbox_only_profile: false,
         };
         let applied = for_start(Harness::Opencode, plane.path(), &machine, &|_| true)
             .expect("starts")
@@ -1480,6 +1492,7 @@ mod live {
             env: crate::secrets::Env::of(&[]),
             home: Some(home.path().to_path_buf()),
             os: Os::MacOs,
+            on_a_sandbox_only_profile: false,
         };
         let applied = for_start(Harness::Opencode, plane.path(), &machine, &|_| true)
             .expect("starts")
@@ -1584,6 +1597,7 @@ fn every_harness_denies_a_chat_the_human_scopes_credentials() {
         env: crate::secrets::Env::of(&[]),
         home: Some(home_dir.clone()),
         os: Os::MacOs,
+        on_a_sandbox_only_profile: false,
     };
     let credentials = home_dir.join(".config/charter/charterd");
     assert_eq!(
@@ -1625,6 +1639,7 @@ fn every_harness_denies_the_credentials_under_a_linked_home_by_their_real_path()
         env: crate::secrets::Env::of(&[]),
         home: Some(linked_home.clone()),
         os: Os::MacOs,
+        on_a_sandbox_only_profile: false,
     };
     let path = real_home
         .join(".config/charter/charterd")
@@ -1670,6 +1685,7 @@ fn every_denial_class_is_held_by_every_harness_charter_compiles_for() {
         env: crate::secrets::Env::of(&[]),
         home: Some(home_dir.clone()),
         os: Os::MacOs,
+        on_a_sandbox_only_profile: false,
     };
     let config_dir = home_dir.join(".config/charter");
     let mut held = 0;
@@ -1760,6 +1776,7 @@ mod live_round_three {
             env: crate::secrets::Env::of(&[]),
             home: Some(home.path().to_path_buf()),
             os: Os::MacOs,
+            on_a_sandbox_only_profile: false,
         };
         let applied = for_start(Harness::Opencode, plane.path(), &machine, &|_| true)
             .expect("starts")
@@ -1840,6 +1857,7 @@ mod live_pinned {
             env: crate::secrets::Env::of(&[]),
             home: Some(home.path().to_path_buf()),
             os: Os::MacOs,
+            on_a_sandbox_only_profile: false,
         };
         let applied = for_start(Harness::Opencode, plane.path(), &machine, &|_| true)
             .expect("starts")
@@ -1878,6 +1896,7 @@ fn every_harness_is_kept_from_writing_the_roots_charter_local_toml() {
         env: crate::secrets::Env::of(&[]),
         home: Some(real(home.path())),
         os: Os::MacOs,
+        on_a_sandbox_only_profile: false,
     };
     for harness in Harness::ALL {
         let stated = stated(harness, &root, &root, &machine);
@@ -1905,6 +1924,7 @@ fn a_plane_root_opencode_chat_cannot_write_charter_local_toml() {
         env: crate::secrets::Env::of(&[]),
         home: Some(home.path().to_path_buf()),
         os: Os::MacOs,
+        on_a_sandbox_only_profile: false,
     };
     let applied = for_start(Harness::Opencode, plane.path(), &machine, &|_| true)
         .expect("starts")
@@ -1942,6 +1962,7 @@ fn no_harness_lets_a_sandboxed_chat_write_this_machine_s_sandbox_grants() {
         env: crate::secrets::Env::of(&[]),
         home: Some(home_dir.clone()),
         os: Os::MacOs,
+        on_a_sandbox_only_profile: false,
     };
     let config_root = home_dir.join(".config");
     let grants = crate::machine::dir(&config_root)

@@ -1079,6 +1079,7 @@ fn always_for_a_persona_s_browser_is_kept_where_no_sandboxed_chat_writes() {
         )]),
         home: Some(root.join("home")),
         os: crate::sandbox::Os::MacOs,
+        on_a_sandbox_only_profile: false,
     };
     let denied = crate::sandbox::Denied::of(&root, &machine);
     assert!(
@@ -1221,6 +1222,72 @@ fn the_vault_grants_off_their_shape_do_not_read() {
         machine_file_holding(root, text);
         assert!(try_granted_vaults(root).is_err(), "{text:?} does not read");
     }
+}
+
+/// A write to this machine's file that starts it again keeps its vault grants (#5906): a field off
+/// its shape takes the rest with it, as before, but never the vault grants beside it, so a grant
+/// the window shows is not taken away by the next, unrelated write.
+#[test]
+fn an_unrelated_write_keeps_the_vault_grants_beside_a_field_off_its_shape() {
+    let project = a_project("");
+    let root = project.path();
+    machine_file_holding(
+        root,
+        r#"{"hosts_seen": 5, "vaults_mine": [{"vault": "other", "persona": "qa"}]}"#,
+    );
+
+    count(root, Started::OptedOut).expect("counted");
+    grant_vault(root, "forge", "dev").expect("granted");
+
+    assert_eq!(
+        try_granted_vaults(root).expect("read"),
+        [
+            VaultGrant {
+                vault: "other".into(),
+                persona: "qa".into(),
+            },
+            VaultGrant {
+                vault: "forge".into(),
+                persona: "dev".into(),
+            },
+        ]
+    );
+    assert_eq!(tally(root).opted_out, 1);
+}
+
+/// Only the vault grants outlive a field off its shape (#5906, review of #5934): every other field
+/// starts again with the file, as before, since some only hold beside another (a dispatch grant
+/// beside what this machine knows of its persona, its workspace or the commit it is bound to), and
+/// keeping one without the other would put back in force what the other kept out.
+#[test]
+fn a_field_off_its_shape_takes_every_grant_it_guards_with_it_but_the_vault_grants() {
+    let project = a_project("");
+    let root = project.path();
+    machine_file_holding(
+        root,
+        r#"{"dispatch_known": 5, "dispatch_workspaces": 5, "dispatch_seen_at": 5,
+            "dispatch_any": ["qa"], "dispatch_seen": ["qa -> dev"], "offer": "kept-off",
+            "vaults_mine": [{"vault": "other", "persona": "qa"}]}"#,
+    );
+
+    let before = read(root);
+    count(root, Started::OptedOut).expect("counted");
+    for (what, held) in [("read", before), ("written", read(root))] {
+        assert!(
+            held.dispatch_any.is_empty(),
+            "{what}: {:?}",
+            held.dispatch_any
+        );
+        assert_eq!(held.dispatch_seen, None, "{what}");
+        assert!(held.offer.is_empty(), "{what}: {}", held.offer);
+    }
+    assert_eq!(
+        try_granted_vaults(root).expect("read"),
+        [VaultGrant {
+            vault: "other".into(),
+            persona: "qa".into(),
+        }]
+    );
 }
 
 /// What `authorise` allows reads the vault grants as the judge of a link does (#5857): a field

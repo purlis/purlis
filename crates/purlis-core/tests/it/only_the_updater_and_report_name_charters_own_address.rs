@@ -57,6 +57,13 @@ const ALLOWED: &[(&str, Option<&str>, &str)] = &[
          work-item area, as the person with purlis's sign-in (ADR 0059, #806)",
     ),
     (
+        "crates/purlis-core/src/report/held.rs",
+        None,
+        "a draft held in the Inbox, filed from there on the person's press, or added to an issue \
+         already on Charter's tracker, through the same work-item area as the person with \
+         purlis's sign-in (ADR 0059, #5694)",
+    ),
+    (
         "crates/purlis-cli/src/report.rs",
         None,
         "`charter report`'s command, naming the tracker it would file on",

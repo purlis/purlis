@@ -53,8 +53,39 @@ export function typedIn(given: SecretAskGiven): boolean {
   return given.typed !== undefined && given.typed !== "";
 }
 
-/** How the picker's Secret ask's answer ended (#5137). */
-export type SecretAskEnded = "filled" | "declined" | "refused";
+/** What to press after an answer that did not go through: the same answer again, with the value
+ *  typed again where its box gave it up as it was read (#5670 review, #5902). */
+export function againSaid(typed: boolean, label: string): string {
+  return typed ? `Type the value again and press ${label}.` : `Press ${label} again.`;
+}
+
+/** What the picker's Secret ask says of a refused answer (#5902): the refusal, and, where it read
+ *  a value typed, which its box gave up, to type it again, after the refusal's own mark. Never
+ *  after Not now (`keep`), which stores nothing. */
+export function refusedSaid(
+  refused: string,
+  typed: boolean,
+  option: { id: string; label: string },
+): string {
+  if (!typed || option.id === "keep") return refused;
+  const ended = /[.?!]$/.test(refused) ? refused : `${refused}.`;
+  return `${ended} ${againSaid(true, option.label)}`;
+}
+
+/** **Whether the picker's Secret ask's answer goes unsent** (#5902): with no ask, or while one is
+ *  answered, nothing is sent and nothing said, so `unsent`, never `refused`, which would have the
+ *  dialog read an older line as this answer's. Undefined where it can be sent. */
+export function pickerAnswerUnsent(
+  ask: Shown | undefined,
+  secret: unknown,
+  busy: boolean,
+): "unsent" | undefined {
+  return ask === undefined || secret === undefined || busy ? "unsent" : undefined;
+}
+
+/** How the picker's Secret ask's answer ended (#5137): `refused` with what the core said of it,
+ *  and `unsent` where nothing was sent, so nothing said beside the ask is its answer's (#5902). */
+export type SecretAskEnded = "filled" | "declined" | "refused" | "unsent";
 
 /**
  * **The Secret ask a start was refused on, as the Start dialog fills it** (#5137): the open ask
@@ -582,9 +613,7 @@ export function StartChat({
       .catch((why: unknown) => {
         if (!open.current) return;
         const what = (why instanceof Error ? why.message : String(why)).replace(/\.$/, "");
-        const again = typed
-          ? `Type the value again and press ${option.label}.`
-          : `Press ${option.label} again.`;
+        const again = againSaid(typed && option.id !== "keep", option.label);
         setSaidOfAnswer(true);
         onSaidOf(`purlis could not send your answer: ${what}. ${again}`);
       })

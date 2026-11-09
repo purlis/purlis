@@ -13,6 +13,7 @@
 //! (`purlis_core::skills::verbs`, `history`, `lifecycle`, `graph`). Behind the `skill-studio` flag
 //! until its finish line (#2786).
 
+use crate::clierror::CliError;
 use std::path::Path;
 
 use clap::{Args, Subcommand, ValueEnum};
@@ -870,7 +871,7 @@ fn switched(
     workspace: &str,
     name: &str,
     on: bool,
-) -> Result<Code, String> {
+) -> Result<Code, CliError> {
     match crate::brokered::manifest_refused("skill off/on")
         .map_or_else(|| verbs::switch(cx, workspace, name, on), Err)
     {
@@ -889,21 +890,21 @@ fn switched(
 }
 
 /// The one name a verb's single path takes: clap asks for one at least.
-fn one_of(names: Vec<String>) -> Result<String, String> {
+fn one_of(names: Vec<String>) -> Result<String, CliError> {
     names
         .into_iter()
         .next()
-        .ok_or_else(|| "no skill was named".to_owned())
+        .ok_or_else(|| CliError::internal("no skill was named, where clap asks for one at least"))
 }
 
 /// **A chat's change to skills, proposed to the person** (#5357): nothing is written here. The app
 /// holds it with the other proposed changes, and only the person's Apply in the window makes it.
-fn proposed_from_a_chat(change: SetChange) -> Result<Code, String> {
+fn proposed_from_a_chat(change: SetChange) -> Result<Code, CliError> {
     if let Err(why) = change.checked() {
         voice::err(why);
         return Ok(1);
     }
-    crate::brokered::propose_skill_set(change)
+    Ok(crate::brokered::propose_skill_set(change)?)
 }
 
 /// **The template `skill new` names**, and `with` handed it and the templates to make it from:
@@ -940,7 +941,7 @@ fn drafted_from_a_chat(
     root: &Path,
     built_in: Option<&Path>,
     command: &SkillCommand,
-) -> Option<Result<Code, String>> {
+) -> Option<Result<Code, CliError>> {
     let refused = |why: String| {
         voice::err(esc(&why).to_string());
         Ok(1)
@@ -967,17 +968,22 @@ fn drafted_from_a_chat(
             at,
         } => {
             let level = at.level();
-            let checked = verbs::text_of(root, &level, name).and_then(|(_, was)| {
-                let now = new_text(Some(from), &was)?;
-                let (folder, changed) = verbs::edit_checked(root, &level, name, &was, &now)?;
-                let folder = folder
-                    .strip_prefix(root)
-                    .map_err(|_| format!("{name} is not in this project"))?
-                    .to_path_buf();
-                Ok((folder, changed.then_some(now)))
-            });
+            let checked = verbs::text_of(root, &level, name)
+                .map_err(CliError::from)
+                .and_then(|(_, was)| {
+                    let now = new_text(Some(from), &was)?;
+                    let (folder, changed) = verbs::edit_checked(root, &level, name, &was, &now)?;
+                    let folder = folder
+                        .strip_prefix(root)
+                        .map_err(|_| CliError::from(format!("{name} is not in this project")))?
+                        .to_path_buf();
+                    Ok((folder, changed.then_some(now)))
+                });
             match checked {
-                Err(why) => refused(why),
+                Err(why) => match why.refused() {
+                    Ok(why) => refused(why),
+                    Err(internal) => Err(internal),
+                },
                 Ok((_, None)) => {
                     voice::info(esc(&verbs::unchanged(name)).to_string());
                     Ok(0)
@@ -1035,7 +1041,7 @@ fn made_here(
     cx: &mut verbs::Ctx<'_>,
     change: &SetChange,
     to: Option<&Path>,
-) -> Result<Code, String> {
+) -> Result<Code, CliError> {
     if let Err(why) = change.checked() {
         voice::err(why);
         return Ok(1);
@@ -1083,7 +1089,7 @@ const NO_PLACE_BUT_AT_THE_TERMINAL: &str = "An export of several skills goes onl
 const NOT_ON: &str = "The Skill studio is not turned on on this machine yet. Turn it on in \
                       Settings › You › Previews, or set PURLIS_SKILL_STUDIO=1 to try it here.";
 
-pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
+pub fn run(root: &Path, command: SkillCommand) -> Result<Code, CliError> {
     if !purlis_core::skills::studio_on_here() {
         voice::err(NOT_ON);
         return Ok(1);
@@ -1395,7 +1401,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             let now = match new_text(from.as_deref(), &was) {
                 Ok(now) => now,
                 Err(why) => {
-                    voice::err(why.to_string());
+                    voice::err(why.refused()?);
                     return Ok(1);
                 }
             };
@@ -1508,7 +1514,8 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
         SkillCommand::DeleteNow { .. } => Err(
             "purlis did not ask you first, so nothing was deleted. Run `purlis skill delete-now` \
              again at your terminal."
-                .to_owned(),
+                .to_owned()
+                .into(),
         ),
         SkillCommand::Grant {
             name,
@@ -2111,7 +2118,7 @@ fn lifecycle_set(
     level: &Level,
     name: &str,
     lifecycle: &Lifecycle,
-) -> Result<Code, String> {
+) -> Result<Code, CliError> {
     match lifecycle::set(cx, level, name, lifecycle) {
         Ok(true) => Ok(0),
         Ok(false) => {
@@ -2693,7 +2700,7 @@ fn install(
     settled: &Settled,
     yes: bool,
     level: &Level,
-) -> Result<Code, String> {
+) -> Result<Code, CliError> {
     let root = cx.plane;
     if let Named::These(names) = named
         && names.is_empty()
@@ -2825,7 +2832,7 @@ fn install_from_an_extension(
     grant: &[String],
     settled: &Settled,
     level: &Level,
-) -> Result<Code, String> {
+) -> Result<Code, CliError> {
     let root = cx.plane;
     let listing = matches!(named, Named::These([]));
     if !listing && !interactive() {
@@ -3063,7 +3070,7 @@ fn export(
     to: &Path,
     zip: bool,
     level: &Level,
-) -> Result<Code, String> {
+) -> Result<Code, CliError> {
     let out = source::gather(root, built_in, level, name, source::Purpose::Export)?;
     print!("{}", behind_text(&out));
     if zip {
@@ -3129,7 +3136,7 @@ fn publish(
     name: &str,
     source: &Source,
     level: &Level,
-) -> Result<Code, String> {
+) -> Result<Code, CliError> {
     use std::io::IsTerminal as _;
     let secrets = purlis_core::secrets::Ctx::new(root, purlis_core::secrets::Env::from_process());
     let place = purlis_core::secrets::setup::in_a_chat(&secrets);
@@ -3482,7 +3489,7 @@ fn update_from_an_extension(
     level: &Level,
     name: &str,
     yes: bool,
-) -> Result<Code, String> {
+) -> Result<Code, CliError> {
     let root = cx.plane;
     let executor = Executor::with_built_in(purlis_core::extension::BuiltIn::of_this_program());
     purlis_core::skills::studio::with_studio(&executor, root, |studio| {
@@ -3594,7 +3601,7 @@ fn update_text(update: &source::UpdateReview) -> String {
 }
 
 /// What a verb's answer comes to: 0 where it was done, 1 with its refusal said.
-fn done<T>(answer: Result<T, String>) -> Result<Code, String> {
+fn done<T>(answer: Result<T, String>) -> Result<Code, CliError> {
     match answer {
         Ok(_) => Ok(0),
         Err(why) => {
@@ -3607,7 +3614,7 @@ fn done<T>(answer: Result<T, String>) -> Result<Code, String> {
 
 /// The new text of an edit: `--from`'s file or stdin, or what the person leaves in a copy of
 /// `was` opened in `$VISUAL` or `$EDITOR`.
-fn new_text(from: Option<&Path>, was: &str) -> Result<String, String> {
+fn new_text(from: Option<&Path>, was: &str) -> Result<String, CliError> {
     match from {
         Some(path) if path == Path::new("-") => {
             let mut text = String::new();
@@ -3616,7 +3623,8 @@ fn new_text(from: Option<&Path>, was: &str) -> Result<String, String> {
             Ok(text)
         }
         Some(path) => std::fs::read_to_string(path)
-            .map_err(|why| format!("{} could not be read ({why})", path.display())),
+            .map_err(|why| format!("{} could not be read ({why})", path.display()))
+            .map_err(CliError::from),
         None => {
             let editor = ["VISUAL", "EDITOR"]
                 .iter()
@@ -3637,7 +3645,9 @@ fn new_text(from: Option<&Path>, was: &str) -> Result<String, String> {
                 .create_new(true)
                 .open(&copy)
                 .and_then(|mut file| std::io::Write::write_all(&mut file, was.as_bytes()));
-            made.map_err(|why| format!("no copy could be made to edit ({why})"))?;
+            made.map_err(|why| {
+                CliError::internal(format!("no copy could be made to edit ({why})"))
+            })?;
             let mut words = editor.split_whitespace();
             let program = words.next().unwrap_or_default();
             let status = std::process::Command::new(program)
@@ -3648,9 +3658,11 @@ fn new_text(from: Option<&Path>, was: &str) -> Result<String, String> {
             let _ = std::fs::remove_file(&copy);
             let status = status.map_err(|why| format!("{program} could not be started ({why})"))?;
             if !status.success() {
-                return Err(format!("{program} exited {status}, so nothing was saved"));
+                return Err(format!("{program} exited {status}, so nothing was saved").into());
             }
-            text.map_err(|why| format!("the edited copy could not be read ({why})"))
+            text.map_err(|why| {
+                CliError::internal(format!("the edited copy could not be read ({why})"))
+            })
         }
     }
 }

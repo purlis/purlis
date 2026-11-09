@@ -380,6 +380,7 @@ fn the_persona_mcp_approvals_are_held_where_purlis_home_puts_them() {
         env: crate::secrets::Env::of(&[("PURLIS_HOME", "/srv/purlis-state")]),
         home: Some(std::path::PathBuf::from("/home/op")),
         os: Os::Linux,
+        on_a_sandbox_only_profile: false,
     };
     let denied = Denied::of(plane.path(), &machine);
     assert!(
@@ -1322,6 +1323,7 @@ fn machine_with_state(os: Os, state: Option<&str>) -> Machine {
         env: crate::secrets::Env::of(&env),
         home: Some(std::path::PathBuf::from("/home/op")),
         os,
+        on_a_sandbox_only_profile: false,
     }
 }
 
@@ -2145,6 +2147,35 @@ fn the_forge_preset_adds_the_self_managed_hosts_the_plane_tracks() {
 }
 
 #[test]
+fn the_forge_preset_reaches_github_actions_log_and_artifact_storage_by_name() {
+    // `gh run view --log` and `gh run download` read from these shards one after another
+    // (#5942): the preset names each one GitHub's meta API lists, so nobody is asked per shard.
+    let hosts = hosts_of(&[Preset::Forge], None);
+    for shard in [0, 10, 18, 19, 30, 49, 100, 199] {
+        let host = format!("productionresultssa{shard}.blob.core.windows.net");
+        assert!(
+            super::egress::allows(&hosts, &host),
+            "{host} is GitHub's: {hosts:?}"
+        );
+    }
+    // Never the storage service as a whole: anyone can host a blob there.
+    for host in [
+        "evil.blob.core.windows.net",
+        "productionresultssa20.blob.core.windows.net",
+        "productionresultssa200.blob.core.windows.net",
+        "productionresultssa0.blob.core.windows.net.example.com",
+    ] {
+        assert!(!super::egress::allows(&hosts, host), "{host}: {hosts:?}");
+    }
+    assert!(
+        hosts
+            .iter()
+            .all(|host| !host.ends_with("windows.net") || !host.starts_with('*')),
+        "{hosts:?}"
+    );
+}
+
+#[test]
 fn a_forge_host_that_is_not_a_host_is_never_let_through() {
     let hosts = hosts_of(&[Preset::Forge], Some("[[forge]]\nhost = \"*\"\n"));
     assert!(!hosts.contains(&"*".to_owned()), "{hosts:?}");
@@ -2698,6 +2729,7 @@ fn machine(os: Os) -> Machine {
         env: crate::secrets::Env::of(&[]),
         home: Some(std::path::PathBuf::from("/home/op")),
         os,
+        on_a_sandbox_only_profile: false,
     }
 }
 
@@ -3050,6 +3082,7 @@ fn a_later_letter_s_value_in_the_project_s_cache_home_is_denied() {
         env: crate::secrets::Env::of(&[("XDG_DATA_HOME", "/srv/data")]),
         home: Some(std::path::PathBuf::from("/home/op")),
         os: Os::Linux,
+        on_a_sandbox_only_profile: false,
     };
     let plane = tempfile::tempdir().expect("a plane");
     let cache = caches::root_of(&machine, plane.path()).expect("a data home");
@@ -5149,6 +5182,7 @@ fn mac_with(env: &[(&str, &str)]) -> Machine {
         env: crate::secrets::Env::of(&vars),
         home: Some(StdPathBuf::from("/Users/op")),
         os: Os::MacOs,
+        on_a_sandbox_only_profile: false,
     }
 }
 
@@ -8449,6 +8483,7 @@ fn a_chat_writes_none_of_the_programs_a_cluster_pools_kubectl_runs_nor_their_pac
         env: crate::secrets::Env::of(&[("XDG_CONFIG_HOME", &config.path().display().to_string())]),
         home: Some(std::path::PathBuf::from("/home/op")),
         os: Os::Linux,
+        on_a_sandbox_only_profile: false,
     };
     let plane = tempfile::tempdir().expect("a plane");
     let denied = Denied::of(plane.path(), &machine);
@@ -8553,6 +8588,7 @@ fn a_cluster_pools_program_whose_package_would_be_the_home_or_above_it_is_held_a
         env: crate::secrets::Env::of(&[("XDG_CONFIG_HOME", &config.path().display().to_string())]),
         home: Some(home.clone()),
         os: Os::Linux,
+        on_a_sandbox_only_profile: false,
     };
     let plane = tempfile::tempdir().expect("a plane");
     let denied = Denied::of(plane.path(), &machine);

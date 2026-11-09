@@ -1980,6 +1980,30 @@ pub(crate) enum Wrap {
     Refusing(&'static str),
 }
 
+/// Why a Claude Code chat's `secret exec --env` runs nothing on Linux ([`env_refused`]).
+pub const ENV_REFUSED: &str = "on Linux a Claude Code chat under its own sandbox hands a value \
+                               to a command by file only, so nothing was run: run it again with `--file NAME=key` in \
+                               place of `--env NAME=key`, and the command reads the value from \
+                               the file NAME names. A persona's tool that takes its value as \
+                               `env` is declared with `as = \"NAME file\"` instead";
+
+/// **Why a run handed `--env` values is refused before anything is read**: a Claude Code chat's
+/// on Linux (`wrap` is purlis's own there) on Claude Code's own sandbox, which hands a value by
+/// `--file` alone. A Claude Code chat purlis wraps whole (`whole`, as on a runner), every other
+/// harness and every other system, as before.
+fn env_refused(
+    harness: Option<crate::harness::Harness>,
+    whole: bool,
+    wrap: Wrap,
+    wanted: &Wanted,
+) -> Option<&'static str> {
+    (harness == Some(crate::harness::Harness::ClaudeCode)
+        && !whole
+        && wrap == Wrap::Purlis
+        && !wanted.env.is_empty())
+    .then_some(ENV_REFUSED)
+}
+
 /// **Whether the app runs a sandboxed chat's `secret exec` on this system**: where it has a
 /// sandbox to run the command in, macOS's Seatbelt or purlis's own wrap on Linux (#2342). What
 /// every sentence that names the route asks.
@@ -3234,6 +3258,11 @@ pub(crate) fn serve_recorded(
         );
         return not_answered(writer);
     };
+    // A Claude Code chat on Linux on its own sandbox hands a value by file alone: refused before
+    // anything is read.
+    if let Some(why) = env_refused(asker.harness, confines.whole, wrap, &wanted) {
+        return refuse(&mut *writer, 1, why.to_owned());
+    }
     // What this chat may write is the app's record of it, and no provider's program is run
     // from there (#1516).
     let ctx = ctx.chat(confines, asker.folder.as_deref());

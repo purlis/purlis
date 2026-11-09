@@ -45,6 +45,8 @@ import { PoolMintingNotice } from "./PoolMintingNotice";
 import { HostFailingNotice } from "./HostFailingNotice";
 import { VaultsWaitingNotice } from "./VaultsWaitingNotice";
 import { Notice, NoticeList } from "./Notice";
+import { ReportConsentAsk } from "./ReportConsent";
+import { ReportCrashNotice } from "./ReportCrashNotice";
 import { ForgeSignInEnded } from "./ForgeSignInEnded";
 import { AddDockerPoolHost } from "./AddDockerPool";
 import { ActionResultNotice, ResultsGroup } from "./ActionResultNotice";
@@ -3004,6 +3006,15 @@ function App() {
               ))}
             {/* A browser sign-in a forge ended, with Sign in again (#729). */}
             <ForgeSignInEnded />
+            {/* Whether purlis may send reports, asked once on this machine (#5688), once the
+                launch has settled and while no other question has the window. */}
+            {launch !== undefined && !restoring && !settingsAlone && (
+              <ReportConsentAsk quiet={approving.length > 0 || asking} />
+            )}
+            {/* Asked again once, after the next crash, for someone who chose Not now (#5700). */}
+            <ReportCrashNotice
+              onOpenSettingsAt={(group, setting) => openSettingsAt(group, undefined, setting)}
+            />
             {/* Add a pool… (#2679): Pool setup for a Docker pool in the project in front (#4484),
                 else a dialog, opened from the palette or the Pools group. */}
             <AddDockerPoolHost plane={inFront} onPoolSetup={windowDoes.openPoolSetup} />

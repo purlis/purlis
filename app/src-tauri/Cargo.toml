@@ -100,6 +100,8 @@ notify = "8.2"
 # window's webview, as a PNG. The crates and versions wry already brings in on macOS, with the
 # few more of their features the snapshot and the PNG need, so nothing new is in the tree.
 [target.'cfg(target_os = "macos")'.dependencies]
+# The crash handler, on macOS alone for now (#5691; `nativecrash.rs` says why it is not started yet).
+purlis-crash-handler.workspace = true
 objc2 = "0.6.4"
 block2 = "0.6"
 objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSData", "NSDictionary", "NSError", "NSString", "NSValue"] }

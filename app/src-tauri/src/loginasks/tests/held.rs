@@ -63,10 +63,29 @@ impl Project {
 
     /// A chat that runs as persona qa, whose browser the person allowed.
     fn a_chat(&self) -> u32 {
+        let chat = self.started(None);
+        let persona = self.held.chats().secret_grants_of(chat);
+        assert_eq!(persona.as_deref(), Some("qa"), "its persona");
+        chat
+    }
+
+    /// A chat started as persona qa that a handoff narrowed to `held`'s grants, whose browser the
+    /// person allowed.
+    fn a_chat_narrowed(&self, held: purlis_core::reopen::HeldGrants) -> u32 {
+        let chat = self.started(Some(held.clone()));
+        let persona = self.held.chats().secret_grants_of(chat);
+        assert_eq!(persona, held.persona, "the persona it was narrowed to");
+        chat
+    }
+
+    /// A chat started as persona qa, narrowed to `held`'s grants where it says, whose browser the
+    /// person allowed.
+    fn started(&self, held: Option<purlis_core::reopen::HeldGrants>) -> u32 {
         let chat = Chat {
             program: "/bin/sh".to_owned(),
             name: "1".to_owned(),
             persona: Some("qa".to_owned()),
+            held,
             cwd: Some(self.held.root().to_path_buf()),
             unsandboxed: true,
             ..Default::default()
@@ -82,8 +101,6 @@ impl Project {
         assert!(!self.held.chats().sandboxed_by_its_host(chat), "its host");
         let asker = self.held.chats().login_asker(self.held.root(), chat);
         assert!(asker.is_some(), "who asks for its logins");
-        let persona = self.held.chats().secret_grants_of(chat);
-        assert_eq!(persona.as_deref(), Some("qa"), "its persona");
         chat
     }
 
@@ -160,7 +177,7 @@ fn refusal(answer: Answer) -> String {
 /// has passed, Keep blocked on each login notice as it comes up.
 struct Keeper {
     done: Arc<AtomicBool>,
-    thread: std::thread::JoinHandle<Vec<u32>>,
+    thread: std::thread::JoinHandle<Vec<(u32, String)>>,
 }
 
 impl Keeper {
@@ -191,7 +208,7 @@ impl Keeper {
                         &|_, _| Ok(()),
                     )
                     .expect("the press counts");
-                    came_up.push(wait.session);
+                    came_up.push((wait.session, wait.reads_as.clone()));
                 }
                 std::thread::sleep(Duration::from_millis(5));
             }
@@ -202,9 +219,41 @@ impl Keeper {
 
     /// The chats whose notices they kept blocked, in order.
     fn came_up(self) -> Vec<u32> {
+        self.came_up_reading_as()
+            .into_iter()
+            .map(|(session, _)| session)
+            .collect()
+    }
+
+    /// [`Keeper::came_up`], each with the persona its notice reads vaults as.
+    fn came_up_reading_as(self) -> Vec<(u32, String)> {
         self.done.store(true, Ordering::SeqCst);
         self.thread.join().expect("the person's thread")
     }
+}
+
+/// #5910 (from #5831): a login's notice raised for a chat narrowed to another persona's grants
+/// reads vaults as the persona the chat was started as, the persona its reads use, never the
+/// persona it was narrowed to, which only decides whose grants it reads and whose tools Always
+/// writes in.
+#[test]
+fn a_narrowed_chats_login_notice_reads_as_the_persona_it_was_started_as() {
+    let project = Project::new();
+    let own = project.a_chat();
+    let narrowed = project.a_chat_narrowed(purlis_core::reopen::HeldGrants {
+        persona: Some("devops".to_owned()),
+    });
+    let keeper = Keeper::after(&project, Duration::ZERO);
+    let here = || false;
+
+    for chat in [own, narrowed] {
+        refusal(project.logs_in(chat, "shop-login", "https://shop.example.test/", &here));
+    }
+
+    assert_eq!(
+        keeper.came_up_reading_as(),
+        [(own, "qa".to_owned()), (narrowed, "qa".to_owned())]
+    );
 }
 
 /// The person's ruling of 2026-11-07: two Keep blocked on one chat's logins end the login

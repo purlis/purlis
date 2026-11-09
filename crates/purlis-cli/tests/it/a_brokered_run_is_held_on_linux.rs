@@ -137,6 +137,7 @@ fn a_declared_tool_s_run_is_held_by_the_chat_s_own_profile_on_linux() {
         env: Env::of(&[("PATH", &bin.display().to_string())]),
         home: Some(home.clone()),
         os: Os::Linux,
+        on_a_sandbox_only_profile: false,
     };
     for (level, name, manifest) in LEVELS {
         let root = out.join(name).join("project");
@@ -224,6 +225,7 @@ fn a_tool_declared_under_another_name_runs_under_it_inside_the_wrap() {
         env: Env::of(&[("PATH", &bin.display().to_string())]),
         home: Some(home),
         os: Os::Linux,
+        on_a_sandbox_only_profile: false,
     };
     let (_, _, manifest) = LEVELS[0];
     let root = out.join("project");

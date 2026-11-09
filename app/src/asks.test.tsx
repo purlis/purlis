@@ -568,6 +568,36 @@ describe("answering through the path an ask names", () => {
     expect(result.current).toBeGreaterThan(before);
   });
 
+  it("hands on what Keep blocked on a run's notice says where the persona already holds the vault, as the refused vault's Notice says it (#5890)", async () => {
+    const held =
+      "You kept vault team blocked for this chat, but devops can already use it, so Keep blocked does not stop this chat's runs on it. Remove it in Settings › Sandbox › Allowed to stop them.";
+    sent({ answer_run_grant: { said: held } });
+    const taken = await answerTaken(PLANE, runAsk({ offer: "vault" }, VAULTS_OWN), "keep");
+    expect(taken).toEqual({ refused: undefined, live: false, said: held });
+  });
+
+  it("hands on what Keep blocked on a refused vault says where the persona already holds it, from the Inbox too (#5890)", async () => {
+    const held =
+      "You kept vault devops blocked for this chat, but steward can already use it, so Keep blocked does not stop this chat's runs on it. The project's vaults tag it for steward: change that tag to stop them.";
+    sent({ keep_vault_blocked: { said: held } });
+    const vault = askOfVault({
+      plane: PLANE,
+      session: 7,
+      vault: "devops",
+      persona: "steward",
+      tagged_for: "steward",
+      dispatch_to: null,
+      locked: null,
+    });
+    expect((await answerTaken(PLANE, vault, "keep")).said).toBe(held);
+  });
+
+  it("hands on no sentence where Keep blocked on a run's notice holds", async () => {
+    sent({ answer_run_grant: null });
+    const taken = await answerTaken(PLANE, runAsk({ offer: "vault" }, VAULTS_OWN), "keep");
+    expect(taken.said).toBeUndefined();
+  });
+
   it("sends no Allow for a refused vault whose grant policy locks (#5160)", async () => {
     const calls = sent({ keep_vault_blocked: null });
     const locked = askOfVault({

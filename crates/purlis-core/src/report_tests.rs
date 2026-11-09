@@ -3,6 +3,55 @@
 
 use super::*;
 
+/// What [`Reports::take`] drafts of `evidence` with `known`, from a command, which holds no
+/// sign-in, so nothing is sent; or why it drafted nothing.
+fn take(known: &Known, evidence: Evidence) -> Result<Draft, Refusal> {
+    match Reports::new(known.clone()).take(evidence, &Caller::command()) {
+        Outcome::Drafted { draft, .. } => Ok(draft),
+        Outcome::Refused(refused) => Err(refused),
+        other => panic!("neither drafted nor refused: {other:?}"),
+    }
+}
+
+fn described(kind: Kind, text: &str, title: Option<&str>, known: &Known) -> Result<Draft, Refusal> {
+    take(
+        known,
+        Evidence::PersonDraft {
+            kind,
+            text: text.to_string(),
+            title: title.map(str::to_string),
+        },
+    )
+}
+
+fn of_panic(record: &Panic, words: Option<&str>, known: &Known) -> Result<Draft, Refusal> {
+    take(
+        known,
+        Evidence::Panic {
+            record: record.clone(),
+            words: words.map(str::to_string),
+        },
+    )
+}
+
+fn of_sandbox_block(
+    block: &crate::sandboxblock::Block,
+    harness: Option<crate::harness::Harness>,
+    harness_version: Option<&str>,
+) -> Result<Draft, Refusal> {
+    take(
+        &Known::default(),
+        Evidence::PurlisFailure(PurlisFailure::SandboxBlock {
+            block: *block,
+            ran_as: RanAs {
+                harness,
+                harness_version: harness_version.map(str::to_string),
+                persona: PersonaKind::None,
+            },
+        }),
+    )
+}
+
 /// A token of the shape `token_kind` knows, built at run time so no credential-shaped literal
 /// sits in the source.
 fn a_token() -> String {
@@ -154,7 +203,7 @@ fn a_clone_whose_name_is_no_repos_is_still_masked() {
 
 #[test]
 fn a_described_report_is_titled_by_its_first_line_without_a_heading_marker() {
-    let d = Draft::described(
+    let d = described(
         Kind::Feature,
         "## `charter report` should exist\n\nbody",
         None,
@@ -172,7 +221,7 @@ fn a_described_report_is_titled_by_its_first_line_without_a_heading_marker() {
     );
 
     let long = "word ".repeat(40);
-    let d = Draft::described(Kind::Bug, &long, None, &Known::default()).expect("a draft");
+    let d = described(Kind::Bug, &long, None, &Known::default()).expect("a draft");
     assert!(
         d.title.chars().count() <= TITLE_MAX && d.title.ends_with("word…"),
         "{}",
@@ -182,21 +231,24 @@ fn a_described_report_is_titled_by_its_first_line_without_a_heading_marker() {
 
 #[test]
 fn an_empty_description_is_refused() {
-    let err = Draft::described(Kind::Bug, "  \n ", None, &Known::default()).unwrap_err();
-    assert!(err.0.contains("needs a description"), "{err:?}");
+    let err = described(Kind::Bug, "  \n ", None, &Known::default()).unwrap_err();
+    assert!(
+        matches!(&err, Refusal::Unusable(said) if said.contains("needs a description")),
+        "{err:?}"
+    );
 }
 
 #[test]
 fn the_title_is_scrubbed_too() {
-    let d = Draft::described(Kind::Bug, "x", Some("acme broke"), &known()).expect("a draft");
+    let d = described(Kind::Bug, "x", Some("acme broke"), &known()).expect("a draft");
     assert_eq!(d.title, "[workspace] broke");
 }
 
 #[test]
 fn the_digest_names_exactly_one_draft() {
-    let a = Draft::described(Kind::Bug, "one", None, &Known::default()).unwrap();
-    let b = Draft::described(Kind::Bug, "one", None, &Known::default()).unwrap();
-    let c = Draft::described(Kind::Bug, "one.", None, &Known::default()).unwrap();
+    let a = described(Kind::Bug, "one", None, &Known::default()).unwrap();
+    let b = described(Kind::Bug, "one", None, &Known::default()).unwrap();
+    let c = described(Kind::Bug, "one.", None, &Known::default()).unwrap();
     assert_eq!(a.digest(), b.digest());
     assert_ne!(a.digest(), c.digest());
     assert_eq!(a.digest().len(), 12);
@@ -237,7 +289,7 @@ fn the_newest_panic_in_the_log_is_the_one_read() {
 #[test]
 fn a_panic_becomes_a_bug_with_its_place_and_version_and_nothing_else_of_the_record() {
     let p = latest_panic(LOG).unwrap();
-    let d = Draft::of_panic(&p, Some("I clicked Save"), &known()).expect("a draft");
+    let d = of_panic(&p, Some("I clicked Save"), &known()).expect("a draft");
     assert_eq!(d.kind, Kind::Bug);
     assert_eq!(d.title, "purlis panicked at …/tokio-1.0/src/rt.rs:12:5");
     assert!(
@@ -304,17 +356,17 @@ fn a_home_path_flattened_into_one_directory_name_is_a_home_path() {
 #[test]
 fn a_title_given_by_hand_is_one_line_and_bounded() {
     let long = format!("first\nsecond {}", "word ".repeat(30));
-    let d = Draft::described(Kind::Bug, "x", Some(&long), &Known::default()).unwrap();
+    let d = described(Kind::Bug, "x", Some(&long), &Known::default()).unwrap();
     assert!(!d.title.contains('\n'), "{}", d.title);
     assert!(d.title.chars().count() <= TITLE_MAX, "{}", d.title);
 }
 
 #[test]
 fn a_body_too_long_for_a_link_is_left_out_of_it_to_be_pasted() {
-    let short = Draft::described(Kind::Bug, "short", None, &Known::default()).unwrap();
+    let short = described(Kind::Bug, "short", None, &Known::default()).unwrap();
     let (url, whole) = short.fallback_url();
     assert!(whole && url.contains("&body=short"), "{url}");
-    let long = Draft::described(Kind::Bug, &"x".repeat(9_000), None, &Known::default()).unwrap();
+    let long = described(Kind::Bug, &"x".repeat(9_000), None, &Known::default()).unwrap();
     let (url, whole) = long.fallback_url();
     assert!(
         !whole && !url.contains("&body=") && url.len() <= LINK_MAX,
@@ -389,7 +441,7 @@ fn a_sandbox_block_draft_names_the_operation_the_kind_and_the_versions_and_nothi
             ours: true
         }]
     );
-    let draft = Draft::of_sandbox_block(
+    let draft = of_sandbox_block(
         &blocks[0],
         Some(crate::harness::Harness::ClaudeCode),
         Some("2.1.268"),
@@ -445,7 +497,7 @@ fn a_sandbox_block_draft_with_no_harness_known_says_so() {
         kind: crate::sandboxblock::Kind::Host,
         ours: true,
     };
-    let draft = Draft::of_sandbox_block(&block, None, None).unwrap();
+    let draft = of_sandbox_block(&block, None, None).unwrap();
     assert!(
         draft.body.contains("- **harness:** not known"),
         "{}",
@@ -453,9 +505,7 @@ fn a_sandbox_block_draft_with_no_harness_known_says_so() {
     );
     assert_eq!(
         draft.digest(),
-        Draft::of_sandbox_block(&block, None, None)
-            .unwrap()
-            .digest()
+        of_sandbox_block(&block, None, None).unwrap().digest()
     );
 }
 
@@ -470,7 +520,7 @@ fn a_sandbox_block_draft_names_the_harness_version_only_in_a_versions_shape() {
         ours: true,
     };
     let claude = Some(crate::harness::Harness::ClaudeCode);
-    let draft = Draft::of_sandbox_block(&block, claude, Some("2.1.268")).unwrap();
+    let draft = of_sandbox_block(&block, claude, Some("2.1.268")).unwrap();
     assert!(
         draft.body.contains("- **harness version:** 2.1.268\n"),
         "{}",
@@ -486,11 +536,38 @@ fn a_sandbox_block_draft_names_the_harness_version_only_in_a_versions_shape() {
         Some("v2"),
         Some("1.2.3.4.5.6.7.8.9.10.11.12.13.14.15.16.17"),
     ] {
-        let draft = Draft::of_sandbox_block(&block, claude, said).unwrap();
+        let draft = of_sandbox_block(&block, claude, said).unwrap();
         assert!(
             draft.body.contains("- **harness version:** not known\n"),
             "{said:?}: {}",
             draft.body
         );
     }
+}
+
+#[test]
+fn the_samples_are_what_the_envelope_builders_make_of_a_sample_panic_and_draft() {
+    let samples = samples();
+
+    let event = |envelope: &str| -> serde_json::Value {
+        let lines: Vec<&str> = envelope.lines().collect();
+        assert_eq!(lines.len(), 3, "an envelope of one event: {envelope}");
+        serde_json::from_str(lines[2]).expect("the event")
+    };
+    let crash = event(&samples.crash);
+    assert_eq!(crash["exception"]["values"][0]["type"], "panic");
+    assert_eq!(crash["level"], "fatal");
+    assert_eq!(crash["fingerprint"].as_array().map(Vec::len), Some(1));
+    assert_eq!(crash["tags"]["fingerprint"], crash["fingerprint"][0]);
+    assert!(crash.get("user").is_none() && crash.get("server_name").is_none());
+
+    let draft = event(&samples.draft);
+    assert_eq!(draft["tags"]["written_by"], "agent");
+    assert_eq!(draft["tags"]["reviewed_by_the_person"], false);
+    assert_eq!(draft["tags"]["persona_kind"], "template");
+    let text = draft["message"]["formatted"].as_str().unwrap_or_default();
+    assert!(
+        text.contains("a persona from a purlis template"),
+        "its footer says what the chat ran under: {text}"
+    );
 }

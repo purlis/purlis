@@ -764,3 +764,54 @@ fn a_narrowed_chat_fills_under_the_grants_it_was_narrowed_to() {
     );
     assert_eq!(handed(&hosted).len(), 2, "the narrowed chats' went nowhere");
 }
+
+/// #5910 (from #5831): a fill's notice raised for a chat narrowed to another persona's grants, or
+/// to none, reads vaults as the persona the chat was started as, the persona its reads use: the
+/// persona it was narrowed to only decides whose grants it fills under and whose tools Always
+/// writes in.
+#[test]
+fn a_narrowed_chats_fill_notice_reads_as_the_persona_it_was_started_as() {
+    let project = Project::holding(&the_key_held());
+    let own = project.a_chat();
+    let to_devops = project.a_chat_holding(Some(purlis_core::reopen::HeldGrants {
+        persona: Some("devops".to_owned()),
+    }));
+    let to_none = project.a_chat_holding(Some(purlis_core::reopen::HeldGrants { persona: None }));
+    let (browsers, hosted) = (ChatBrowsers::default(), Arc::new(Hosted::default()));
+    for chat in [own, to_devops, to_none] {
+        opens_a_browser(&browsers, &hosted, chat);
+    }
+    let person = Person::saying(
+        &project,
+        &[
+            Says::Presses(Press::Keep),
+            Says::Presses(Press::Keep),
+            Says::Presses(Press::Keep),
+        ],
+    );
+
+    for chat in [own, to_devops, to_none] {
+        refusal(fills(
+            &project,
+            &browsers,
+            &hosted,
+            chat,
+            FieldKind::OneLine,
+        ));
+    }
+
+    let came_up = person.came_up();
+    let read_as: Vec<(u32, Option<&str>)> = came_up
+        .notices
+        .iter()
+        .map(|notice| (notice.session, notice.reads_as.as_deref()))
+        .collect();
+    assert_eq!(
+        read_as,
+        [
+            (own, Some("qa")),
+            (to_devops, Some("qa")),
+            (to_none, Some("qa"))
+        ]
+    );
+}

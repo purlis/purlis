@@ -245,6 +245,78 @@ fn a_chat_on_a_sandbox_only_profile_never_starts_without_the_sandbox() {
 }
 
 #[test]
+fn on_linux_a_claude_code_chat_on_a_sandbox_only_profile_starts_inside_purlis_s_wrap() {
+    purlis_core::unsteered!();
+    // On a person's own Linux machine, a Claude Code chat on a profile for sandboxed chats only
+    // (#2037) runs whole inside purlis's wrap, as on a runner (#4083); on a profile for every
+    // chat it keeps Claude Code's own sandbox. The picker asks what the start asks.
+    let Some(_data) = in_a_data_home_of_its_own(
+        "a_chat_on_a_profile_made_here_runs_in_its_folder::on_linux_a_claude_code_chat_on_a_sandbox_only_profile_starts_inside_purlis_s_wrap",
+    ) else {
+        return;
+    };
+    let store = Homes::here().expect("the test's data home");
+    profilestore::create_sandbox_only(&store, "sandboxed", "claude", 1).expect("made");
+    let elsewhere = tempfile::tempdir().unwrap();
+    let settings = elsewhere.path().join("claude-settings");
+    fs::create_dir_all(&settings).unwrap();
+    made("every", "claude", "CLAUDE_CONFIG_DIR", &settings);
+    let home = tempfile::tempdir().unwrap();
+    let linux = purlis_core::sandbox::Machine {
+        env: purlis_core::secrets::Env::of(&[]),
+        home: Some(home.path().to_path_buf()),
+        os: purlis_core::sandbox::Os::Linux,
+        on_a_sandbox_only_profile: false,
+    };
+    assert!(!linux.is_a_runner());
+    let plane = project();
+    fs::write(
+        plane.path().join("charter.toml"),
+        "[sandbox]\nmode = \"on\"\n",
+    )
+    .unwrap();
+    let declared = purlis_core::harness_declaration::read(plane.path());
+    let form_on = |name: &str| {
+        let ready = start::ready_on(
+            &start_on(name, plane.path()),
+            plane.path(),
+            &declared,
+            &linux,
+            &|_| true,
+        )
+        .unwrap_or_else(|why| panic!("{name} starts: {why}"));
+        let applied = ready.sandbox.expect("sandboxed");
+        matches!(applied.form(), purlis_core::sandbox::Form::ClaudeWrapped(_))
+    };
+
+    assert!(form_on("sandboxed"), "wrapped by purlis");
+    assert!(!form_on("every"), "Claude Code's own sandbox");
+
+    // The picker compiles each profile as its start does: the wrap needs the kernel alone.
+    let set = purlis_core::profiles::current(plane.path());
+    let landlock_only = |program: &str| program == purlis_core::sandbox::backend::LANDLOCK;
+    let ahead = |name: &str| {
+        start::sandbox_ahead(
+            set.get(name).expect("listed"),
+            plane.path(),
+            &linux,
+            &landlock_only,
+            "",
+            None,
+        )
+        .expect("an answer")
+    };
+    assert!(matches!(
+        ahead("sandboxed"),
+        purlis_core::sandbox::Ahead::Sandboxed
+    ));
+    assert!(
+        matches!(ahead("every"), purlis_core::sandbox::Ahead::Refused { .. }),
+        "Claude Code's own sandbox needs its programs"
+    );
+}
+
+#[test]
 fn a_profile_the_project_declares_under_the_same_name_is_the_one_its_chats_run() {
     purlis_core::unsteered!();
     let Some(_data) = in_a_data_home_of_its_own(

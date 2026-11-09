@@ -351,6 +351,10 @@ fn ready_given(
             fix
         ));
     };
+    // This machine, for a chat on this profile: on Linux a Claude Code chat on a profile for
+    // sandboxed chats only runs inside purlis's own wrap (#2037, [`crate::sandbox::Machine`]).
+    let on_profile = machine.clone().on_profile(profiles::sandbox_only(profile));
+    let machine = &on_profile;
     let persona = match start.persona.as_deref() {
         None => None,
         Some(who) => Some(startable_persona(who, root)?),
@@ -915,7 +919,7 @@ pub struct AheadOnce<'a> {
     has: &'a dyn Fn(&str) -> bool,
     os_release: &'a str,
     probe: Option<&'a crate::sandbox::program::Probe<'a>>,
-    compiled: std::cell::RefCell<Vec<(Harness, Compiled)>>,
+    compiled: std::cell::RefCell<Vec<((Harness, bool), Compiled)>>,
 }
 
 /// What [`crate::sandbox::decide`] answered for one harness, as [`AheadOnce`] keeps it.
@@ -978,26 +982,30 @@ impl<'a> AheadOnce<'a> {
         // leaves the Ask that makes a sandbox-only one (#2037): nothing is offered here that
         // would start it without the sandbox instead.
         Some(crate::sandbox::ahead_decided(
-            self.compiled(harness),
+            self.compiled(harness, profiles::sandbox_only(profile)),
             root,
             self.os_release,
             &check,
         ))
     }
 
-    /// What the compile answers for `harness`, compiled on the first ask.
-    fn compiled(&self, harness: Harness) -> Compiled {
+    /// What the compile answers for `harness` on a profile that is (`sandbox_only`) or is not
+    /// one for sandboxed chats only, as the start compiles it ([`ready_given`]): compiled on the
+    /// first ask.
+    fn compiled(&self, harness: Harness, sandbox_only: bool) -> Compiled {
         if let Some((_, decided)) = self
             .compiled
             .borrow()
             .iter()
-            .find(|(one, _)| *one == harness)
+            .find(|(one, _)| *one == (harness, sandbox_only))
         {
             return decided.clone();
         }
-        let decided =
-            crate::sandbox::decide(harness, self.root, self.machine, self.has, None, None);
-        self.compiled.borrow_mut().push((harness, decided.clone()));
+        let machine = self.machine.clone().on_profile(sandbox_only);
+        let decided = crate::sandbox::decide(harness, self.root, &machine, self.has, None, None);
+        self.compiled
+            .borrow_mut()
+            .push(((harness, sandbox_only), decided.clone()));
         decided
     }
 }

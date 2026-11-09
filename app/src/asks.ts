@@ -324,7 +324,14 @@ export async function answerTaken(
   run?: RunGiven,
   /** Where a Secret ask's value is stored, where the person changed it (#5072, Change). */
   named?: { vault?: string; key?: string },
-): Promise<{ refused: string | undefined; live: boolean; opened?: boolean }> {
+): Promise<{
+  refused: string | undefined;
+  live: boolean;
+  opened?: boolean;
+  /** What the source said of the answer, for the person to read beside it: Keep blocked on a
+   *  vault the chat's persona already holds says it does not stop the chat's runs (#5890). */
+  said?: string;
+}> {
   const path = ask.answer;
   if (path.via === "in-its-pane") return { refused: IN_ITS_CHAT, live: false };
   if (!ask.options.some((one) => one.id === option))
@@ -334,6 +341,15 @@ export async function answerTaken(
     };
   let live = false;
   let opened = false;
+  let said: string | undefined;
+  /** Keeps what a source said of an answer that went through, and answers as it did. */
+  const saying = <T extends { said: string } | null>(
+    done: { status: "ok"; data: T } | { status: "error"; error: string },
+  ): { status: "ok" } | { status: "error"; error: string } => {
+    if (done.status === "error") return done;
+    said = done.data?.said;
+    return { status: "ok" };
+  };
   const sent = async (): Promise<{ status: "ok" } | { status: "error"; error: string }> => {
     switch (path.via) {
       case "hook": {
@@ -535,6 +551,7 @@ export async function answerTaken(
         if (press === undefined) break;
         // An Allow gives a Run grant, and Keep blocked takes the chat's back: the Allowed list
         // reads again either way (#5617).
+        // Keep blocked on a vault the persona holds by now says so, as the vault's Notice does.
         return commands
           .answerRunGrant(
             plane,
@@ -544,6 +561,7 @@ export async function answerTaken(
             run?.links ?? [],
             run?.remember ?? [],
           )
+          .then(saying)
           .finally(runGrantsMoved);
       }
       case "secret":
@@ -582,6 +600,7 @@ export async function answerTaken(
         if (option === "keep")
           return commands
             .keepVaultBlocked(plane, ask.session, path.vault, reason?.trim() || null)
+            .then(saying)
             .finally(() => {
               refusalsAnswered(plane);
               runGrantsMoved();
@@ -643,6 +662,11 @@ export async function answerTaken(
     error: String(err),
   }));
   return answer.status === "ok"
-    ? { refused: undefined, live, ...(opened ? { opened } : {}) }
+    ? {
+        refused: undefined,
+        live,
+        ...(opened ? { opened } : {}),
+        ...(said === undefined ? {} : { said }),
+      }
     : { refused: answer.error, live: false };
 }

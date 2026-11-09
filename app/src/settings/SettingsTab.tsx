@@ -658,7 +658,7 @@ function landsOn(
 
 /**
  * **The groups and settings a filter leaves** (SE-21, V89c): a group whose own label or help
- * holds the words keeps every setting; any other group keeps the settings whose label or help
+ * holds the words, or one of its other words (`also`, #5688), keeps every setting; any other group keeps the settings whose label or help
  * holds them, and is left out when none does. Case is ignored, and so is space around the
  * words; with none, every group is left as it is.
  */
@@ -668,7 +668,7 @@ function narrowed(groups: readonly SettingsGroup[], filter: string): readonly Se
   const holds = (...texts: string[]) =>
     texts.some((text) => text.toLocaleLowerCase().includes(words));
   return groups.flatMap((one) => {
-    if (holds(one.label, one.help)) return [one];
+    if (holds(one.label, one.help, ...(one.also ?? []))) return [one];
     // Where a value is kept is said once in its group's header (DS-8), and still finds it.
     const settings = one.settings.filter((setting) =>
       holds(setting.label, setting.help, (inAFile(setting) && setting.kept) || ""),
@@ -737,9 +737,11 @@ function ShownGroup({
         </OffUnless>
       )
     ) : (
-      <OffUnless key={setting.id} on={liveStillWritten(level, setting.writes)}>
-        <LiveRow setting={setting} />
-      </OffUnless>
+      <ShownWhile key={setting.id} useShown={setting.useShown}>
+        <OffUnless on={liveStillWritten(level, setting.writes)}>
+          <LiveRow setting={setting} />
+        </OffUnless>
+      </ShownWhile>
     );
   return (
     <SettingGroup label={group.label} help={group.help} kept={home?.kept ?? group.kept}>
@@ -781,8 +783,25 @@ function ShownGroup({
   );
 }
 
-function LiveRow({ setting }: { setting: LiveSetting }) {
-  const { control, reset, grouped, error, undo } = setting.useControl();
+/** A row drawn only while its `useShown` says so (#5695): always, without one. Keyed by its
+ *  setting, so the hook is always the same one in a given row. */
+export function ShownWhile({
+  useShown,
+  children,
+}: {
+  useShown?: () => boolean;
+  children: ReactNode;
+}) {
+  return useShown === undefined ? children : <ShownBy useShown={useShown}>{children}</ShownBy>;
+}
+
+function ShownBy({ useShown, children }: { useShown: () => boolean; children: ReactNode }) {
+  return useShown() ? children : null;
+}
+
+/** A live setting's row, badged by the level that holds it, if one does (#5696). */
+export function LiveRow({ setting }: { setting: LiveSetting }) {
+  const { control, reset, grouped, error, undo, heldBy } = setting.useControl();
   return (
     <SettingRow
       setting={setting.id}
@@ -792,6 +811,8 @@ function LiveRow({ setting }: { setting: LiveSetting }) {
       grouped={grouped}
       error={error}
       undo={undo}
+      badge={heldBy}
+      origin={heldBy?.says}
       control={control}
     />
   );

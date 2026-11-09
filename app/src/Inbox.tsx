@@ -35,7 +35,7 @@ import {
   type ScopeCounts,
 } from "./inboxScope";
 import { quietSaid } from "./NeedsYou";
-import { NoticeList, type NoticesClear } from "./Notice";
+import { Notice, NoticeList, type NoticesClear } from "./Notice";
 import {
   DISMISS_ALL,
   DISMISS_ALL_TIP,
@@ -45,7 +45,16 @@ import {
   type DismissHold,
 } from "./dismissHold";
 import { PersonaMark } from "./PersonaMark";
-import { askKey, byChat, noteSeen, ageOf, useAnswered, useAnsweredWhenGone } from "./inboxRules";
+import {
+  askKey,
+  byChat,
+  dismissSaid,
+  MOST_ANSWERED,
+  noteSeen,
+  ageOf,
+  useAnswered,
+  useAnsweredWhenGone,
+} from "./inboxRules";
 import { listedFrom, type UpdateFrom } from "./inboxUpdates";
 import { useAllowedLately } from "./allowedLately";
 import { NoticeWayGuard, useNoticeSettle } from "./noticeSettle";
@@ -58,6 +67,7 @@ import { EmptyState } from "./ui/empty-state/EmptyState";
 import { SnoozeAll, type Snoozing } from "./AsksSnooze";
 
 import { chainSaid, NothingDone } from "./inboxRowParts";
+import { capMarks } from "./combiningMarks";
 import { Ask, Empty, EmptyScope, SCOPE_LABEL, shapeOf, stopIds } from "./InboxAsks";
 import { heldBy, UpdateList, type UpdateRow, type Updates, updateStops } from "./InboxUpdatesList";
 export { chainSaid } from "./inboxRowParts";
@@ -582,13 +592,37 @@ export function Inbox({
               lastOn.current = null;
           }}
         >
+          {/* **What an answer said that the person must read** (#5890): Keep blocked on a vault
+              the chat's persona already holds does not stop its runs, and says where to. Above
+              whatever waits, until dismissed, since the row it was pressed on has gone. Drawn with the
+              asks, under every scope filter, on purpose: it names its chat, and the person who
+              pressed must read it. */}
+          {drawsAsks && recent.some((one) => one.said !== undefined) && (
+            <NoticeList>
+              {recent.map((one) =>
+                one.said === undefined ? null : (
+                  <Notice
+                    key={`${one.at}:${chainSaid(one.chain)}:${one.says}`}
+                    cause={`answer-said:${one.at}:${chainSaid(one.chain)}:${one.says}`}
+                    // As the refused vault's own Notice says the same sentence: news.
+                    tone="news"
+                    onDismiss={() => dismissSaid(plane, one)}
+                  >
+                    <strong>{chainSaid(one.chain)}</strong>
+                    {": "}
+                    {capMarks(one.said).text}
+                  </Notice>
+                ),
+              )}
+            </NoticeList>
+          )}
           {!drawsAsks ? null : asks === undefined ? (
             // Not read yet is not empty; what the window already knows waits wider is offered.
             <EmptyScope said={NOT_READ_YET} wider={wider} onWiden={widen} />
           ) : rows.length === 0 && askingShown.length === 0 && othersShown.length === 0 ? (
             wider === undefined ? (
               <Empty
-                recent={recent}
+                recent={recent.slice(0, MOST_ANSWERED)}
                 allowed={allowedLately}
                 quiet={quiet.length > 0 ? quietSaid(quiet) : undefined}
               />

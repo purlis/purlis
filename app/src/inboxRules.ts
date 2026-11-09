@@ -150,6 +150,10 @@ export type Answered = {
   says: string;
   /** The answer as its button read, or a reply's words. */
   answer: string;
+  /** What the source said of the answer, where it said something the person should read: Keep
+   *  blocked on a vault the chat's persona already holds (#5890). A Notice says it in the Inbox,
+   *  whatever else waits, until the person dismisses it ([`dismissSaid`]). */
+  said?: string;
 };
 
 /** The most answered asks a project's Inbox lists. */
@@ -164,12 +168,36 @@ const answered = new Map<string, readonly Answered[]>();
 const readers = new Set<() => void>();
 const NONE: readonly Answered[] = [];
 
+/** The newest [`MOST_ANSWERED`], and any older one whose sentence the person has not dismissed
+ *  yet: only Dismiss puts that away (review of #5934). */
+const kept = (all: readonly Answered[]): readonly Answered[] =>
+  all.filter((one, at) => at < MOST_ANSWERED || one.said !== undefined);
+
 export function noteAnswered(plane: string, one: Answered): void {
-  answered.set(plane, [one, ...(answered.get(plane) ?? NONE)].slice(0, MOST_ANSWERED));
+  answered.set(plane, kept([one, ...(answered.get(plane) ?? NONE)]));
   for (const changed of readers) changed();
 }
 
-/** What `plane`'s Inbox answered lately, newest first. */
+/** **The person read what an answer said and dismissed it** (#5890): the answer stays listed as
+ *  answered, and its sentence goes. `one` is the answer as [`useAnswered`] gave it. */
+export function dismissSaid(plane: string, one: Answered): void {
+  const now = answered.get(plane) ?? NONE;
+  answered.set(
+    plane,
+    kept(
+      now.map((each) => {
+        if (each !== one) return each;
+        const rest = { ...each };
+        delete rest.said;
+        return rest;
+      }),
+    ),
+  );
+  for (const changed of readers) changed();
+}
+
+/** What `plane`'s Inbox answered lately, newest first: the newest [`MOST_ANSWERED`], and any older
+ *  one whose sentence still stands. */
 export function useAnswered(plane: string): readonly Answered[] {
   return useSyncExternalStore(
     (changed) => {

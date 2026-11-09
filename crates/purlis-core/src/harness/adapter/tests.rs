@@ -140,7 +140,8 @@ fn every_harness_says_its_own_budget_and_what_it_lists_of_a_skill() {
     assert_eq!((codex.per_line, opencode.per_line), (None, None));
 }
 
-/// **The shipped built-ins on Codex leave about 3,000 of its default 8,000 for the plane's skills**
+/// **The shipped built-ins on Codex leave at least [`crate::skills::CODEX_LEFT_FOR_THE_PLANE`] of
+/// its 8,000 for the plane's skills**
 /// (spec #5714's Q38): each listed from where a chat's set lays them out, a skill set's folder
 /// under the app's data directory, whose path (about 140 characters) the briefing names once,
 /// not on every line.
@@ -168,7 +169,12 @@ fn the_built_ins_codex_listing_leaves_room_for_the_planes_skills() {
     let budget = Harness::Codex.skill_budget();
     let spent = purlis_skills::budget::spent(skills.iter().map(|(s, d)| (s, d)), budget);
     let left = budget.chars - spent.chars;
-    assert!(left >= 2_800, "{} of {} left", left, budget.chars);
+    assert!(
+        left >= crate::skills::CODEX_LEFT_FOR_THE_PLANE,
+        "{} of {} left",
+        left,
+        budget.chars
+    );
 }
 
 #[test]

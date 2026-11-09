@@ -138,6 +138,16 @@
             "timeout": 5
           }
         ]
+      },
+      {
+        "matcher": "mcp__purlis__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CHARTER_HOOK_BINARY}\" hook posttoolusefailure-purlis",
+            "timeout": 5
+          }
+        ]
       }
     ],
     "Notification": [

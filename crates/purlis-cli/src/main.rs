@@ -34,6 +34,7 @@ mod brokered;
 mod browsing;
 mod change;
 mod check;
+mod clierror;
 mod curation;
 mod dispatch;
 mod extcmd;
@@ -44,6 +45,7 @@ mod gradelink;
 mod guard;
 mod handoff;
 mod hooks;
+mod internal;
 #[cfg(unix)]
 mod listen;
 mod mcp;
@@ -2522,6 +2524,7 @@ fn hook(name: &str, now: Option<&str>) -> ExitCode {
             .flatten();
         tell_the_host_about_the_tool_call(name, &text, &answered, began.elapsed(), skill);
         let taken = tell_the_host_about_blocks(name, &text);
+        hooks::tell_the_app_what_failed(name, &text);
         // A block word answers nothing of its own, so this is the one line it prints (#1631).
         // And what a git command the sandbox stopped partway left behind (qw349), in the
         // same line: a hook prints one answer. Never of words only read back (#1884).
@@ -3663,7 +3666,7 @@ fn reset_active_after_removal(
     )
 }
 
-fn run(command: Command) -> Result<u8, String> {
+fn run(command: Command) -> Result<u8, clierror::CliError> {
     let here = Here::read()?;
     match command {
         // Answered in `main`, before this: it is the one command whose exit code is not a
@@ -3728,17 +3731,14 @@ fn run(command: Command) -> Result<u8, String> {
             println!("{}", here.plane.root().display());
         }
         Command::Propose { file, from } => {
-            return brokered::propose(here.plane.root(), &file, &from);
+            return Ok(brokered::propose(here.plane.root(), &file, &from)?);
         }
         Command::Workspace(WorkspaceCommand::Current) => {
             // The name alone on stdout, for a script; the rung that decided it on stderr, for
             // the person asking why (#999). Both off ONE resolution, as `status` does, so the
             // reason given is the rung that produced the name.
             if let Some(by) = here.plane_root(None) {
-                return Err(purlis_core::active::plane_root_refusal(
-                    here.plane.root(),
-                    by,
-                ));
+                return Err(purlis_core::active::plane_root_refusal(here.plane.root(), by).into());
             }
             let chosen =
                 purlis_core::active::workspace(&here.asking(None, here.workspace_env.as_deref()));
@@ -3810,7 +3810,9 @@ fn run(command: Command) -> Result<u8, String> {
             return Ok(harness_show(here.plane.root(), &name));
         }
         Command::Workspace(WorkspaceCommand::List) => {
-            let mut names = here.plane.workspaces().map_err(|e| e.to_string())?;
+            let mut names = here.plane.workspaces().map_err(|e| {
+                clierror::CliError::internal(format!("workspaces/ could not be listed: {e}"))
+            })?;
             // The workspace `resolve` TERMINATES on is always listable, whether or not its
             // directory is there: a plane where nobody selected anything resolves to a name
             // this listing did not contain, and the table then marked no row at all
@@ -3853,11 +3855,20 @@ fn run(command: Command) -> Result<u8, String> {
             // A workspace charter does not have is not one this scaffolds: `vision` shows or
             // replaces, and inventing the directory is what made a bad `-w` silent.
             if !ws.dir().is_dir() {
-                return Err(format!("no workspace '{}'", ws.name()));
+                return Err(format!("no workspace '{}'", ws.name()).into());
             }
             match text.as_deref().filter(|t| !t.is_empty()) {
                 Some(text) => {
-                    ws.set_vision(text).map_err(|e| e.to_string())?;
+                    ws.set_vision(text).map_err(|e| {
+                        let why = format!("workspace.md could not be written: {e}");
+                        // A guard's refusal (a read-only plane, a link out of the plane's data)
+                        // is on purpose and exits 1; any other failure is purlis's own (ADR 0120).
+                        if e.kind() == std::io::ErrorKind::PermissionDenied {
+                            clierror::CliError::Refusal(why)
+                        } else {
+                            clierror::CliError::internal(why)
+                        }
+                    })?;
                     voice::ok(format!(
                         "Vision set for '{0}' → workspaces/{0}/workspace.md",
                         ws.name()
@@ -3874,11 +3885,11 @@ fn run(command: Command) -> Result<u8, String> {
         Command::Recall(args) => return memory::recall(&here, args),
         Command::Persona(command) => return memory::persona(&here, command),
         Command::Worktree(command) => return piece::run(&here, command),
-        Command::Check(command) => return check::run(&here, command),
-        Command::Change(command) => return change::run(&here, command),
-        Command::Curation(command) => return curation::run(here.plane.root(), command),
+        Command::Check(command) => return Ok(check::run(&here, command)?),
+        Command::Change(command) => return Ok(change::run(&here, command)?),
+        Command::Curation(command) => return Ok(curation::run(here.plane.root(), command)?),
         Command::Skill(command) => return skill::run(here.plane.root(), command),
-        Command::Session(command) => return session::run(&here, command),
+        Command::Session(command) => return Ok(session::run(&here, command)?),
         Command::Workspace(WorkspaceCommand::Remember {
             text,
             title,
@@ -5286,6 +5297,13 @@ fn main() -> ExitCode {
     // must refuse the tool call, not allow it (#349).
     if is_a_pretooluse_call(&std::env::args_os().collect::<Vec<_>>()) {
         guard::refuse_on_a_crash(tell_the_host_about_a_crash);
+    } else {
+        // A command a chat runs ends a panic as an internal failure, the one exit purlis's own
+        // hook drafts a Report of (#5697). Read from the raw command line, before clap.
+        let first = std::env::args_os()
+            .nth(1)
+            .map(|word| word.to_string_lossy().into_owned());
+        internal::exit_on_a_panic(first.as_deref());
     }
     // Started again by the session host as a browser engine's keeper (#2012): keep its process
     // group and never return, before anything else of the command runs.
@@ -5855,10 +5873,7 @@ fn main() -> ExitCode {
     };
     match run(command) {
         Ok(code) => ExitCode::from(code),
-        Err(message) => {
-            eprintln!("purlis: {message}");
-            ExitCode::FAILURE
-        }
+        Err(failure) => failure.exit(),
     }
 }
 

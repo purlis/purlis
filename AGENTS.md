@@ -169,3 +169,7 @@ Single-context: `CONTEXT.md` and `docs/adr/` at the root. See `docs/agents/domai
 ### Landing a pull request
 
 See `docs/agents/skills/landing-a-pr/SKILL.md`; `tools/land.mjs` does the mechanics.
+
+### The daily Report intake routine
+
+See `docs/agents/skills/report-intake/SKILL.md`; `tools/report-intake.mjs` does the mechanics.

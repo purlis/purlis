@@ -152,7 +152,13 @@ import {
   stopRepoClones,
   useRepoClones,
 } from "./repoClones";
-import { StartChat, type RunsOnInPicker } from "./StartChat";
+import {
+  StartChat,
+  pickerAnswerUnsent,
+  refusedSaid,
+  typedIn,
+  type RunsOnInPicker,
+} from "./StartChat";
 import { withDetails } from "./startDetails";
 import {
   handedSaid,
@@ -261,6 +267,8 @@ import {
   seenAt,
   reasonUpdates,
   arrivedUpdates,
+  reportSentKey,
+  reportSentUpdates,
   resumeUpdates,
   sandboxUpdates,
   smartCloseKey,
@@ -270,6 +278,7 @@ import {
   unreadMine,
 } from "./inboxUpdates";
 import { useInboxOpenTold } from "./askNotices";
+import { ReportDraftNotices, undoAlwaysSend, type SentDraft } from "./ReportDraftNotices";
 import { useAnsweredWhenGone } from "./inboxRules";
 import { usePermissionAsks } from "./permissionAsks";
 import { useDismissals } from "./dismissals";
@@ -4607,11 +4616,14 @@ export const PlaneView = memo(function PlaneView({
    *  the Inbox answers it, so it closes there too, and every list of this project's asks is read
    *  again. Answers how it ended: the picker starts again with what it shows now, never what it
    *  showed at the refusal, and only while it is open. Not now says the core's words for a start
-   *  whose credential was declined. */
+   *  whose credential was declined. A refusal of a value typed says to type it again, since its
+   *  box gave it up as it was read (#5902). With no ask, or one being answered, nothing is sent
+   *  and nothing said: `unsent`, so no older line reads as this answer's (#5902). */
   const answerPickerAsk = useCallback(
     async (option: Offered, given: () => SecretAskGiven): Promise<SecretAskEnded> => {
-      if (pickerAsk === undefined || pickerSecret === undefined || pickerSecretBusy)
-        return "refused";
+      const unsent = pickerAnswerUnsent(pickerAsk, pickerSecret, pickerSecretBusy);
+      if (unsent !== undefined || pickerAsk === undefined || pickerSecret === undefined)
+        return "unsent";
       const { asked } = pickerSecret;
       setPickerSecretBusy(true);
       setPickerSecretSaid(undefined);
@@ -4630,7 +4642,7 @@ export const PlaneView = memo(function PlaneView({
           got.named,
         );
         if (refused !== undefined) {
-          setPickerSecretSaid(refused);
+          setPickerSecretSaid(refusedSaid(refused, typedIn(got), option));
           return "refused";
         }
         setPickerSecret(undefined);
@@ -7665,6 +7677,8 @@ export const PlaneView = memo(function PlaneView({
   /** **Asks about a chat's browser that ended with it** (#2015), as the core told them, for the
    *  Inbox's updates. */
   const [browserAsksEnded, setBrowserAsksEnded] = useState<readonly AskEnded[]>([]);
+  // The report drafts the person filed in this window (#5694): each is an update of its own.
+  const [sentDrafts, setSentDrafts] = useState<readonly SentDraft[]>([]);
   useEffect(() => {
     let gone = false;
     let stop: (() => void) | undefined;
@@ -11113,6 +11127,7 @@ export const PlaneView = memo(function PlaneView({
       ...smartCloseUpdates(stopped, nameOf, at),
       ...reasonUpdates(foundFor, refusals, nameOf, at),
       ...browserAskUpdates(browserAsksEnded, nameOf),
+      ...reportSentUpdates(sentDrafts),
       // A chat another chat started, announced and not looked at yet (#4759).
       ...arrivedUpdates(
         sidebar === undefined
@@ -11125,6 +11140,7 @@ export const PlaneView = memo(function PlaneView({
   }, [
     sidebar,
     browserAsksEnded,
+    sentDrafts,
     finishedTasks,
     nameOf,
     reopened,
@@ -11229,6 +11245,32 @@ export const PlaneView = memo(function PlaneView({
       const refused = away.get(update.key);
       if (update.kind === "refused-away" && refused !== undefined)
         return { update, ...awayRow(refused, (one, how) => onAway?.(plane, one, how), put) };
+      const holding =
+        update.kind === "report-sent"
+          ? sentDrafts.find((one) => reportSentKey(one.id) === update.key && one.holding)
+          : undefined;
+      if (holding !== undefined)
+        return {
+          update,
+          go,
+          read,
+          dismiss: put,
+          // Always send's hold (#5695): Undo sends nothing, and the draft comes back as a card.
+          answers: [
+            {
+              label: "Undo",
+              name: `Undo: don't send ${holding.title}`,
+              title: "Don't send it. The draft comes back for you to read.",
+              press: () =>
+                void undoAlwaysSend(holding.id).then((refused) => {
+                  if (refused === undefined) {
+                    setSentDrafts((was) => was.filter((one) => one.id !== holding.id));
+                    put();
+                  }
+                }),
+            },
+          ],
+        };
       if (update.kind === "smart-close" && update.session !== null) {
         const stoppedChat = update.session;
         return { update, go, dismiss: () => (stoppedFor(stoppedChat, undefined), put()) };
@@ -11288,6 +11330,7 @@ export const PlaneView = memo(function PlaneView({
   }, [
     keptUpdates,
     settleUpdates,
+    sentDrafts,
     finishedTasks,
     awayRefused,
     chatNames,
@@ -11710,6 +11753,20 @@ export const PlaneView = memo(function PlaneView({
         onShowFinished={showFinished}
         onShowInbox={showUpdates}
         onShowChanges={showChangesOf}
+      />
+      {/* What the project's chats drafted with `purlis report`, for the person to read and file
+          (#5694). */}
+      <ReportDraftNotices
+        plane={plane}
+        onGo={(session) => showChat(session)}
+        onSent={(sent) =>
+          setSentDrafts((was) => [...was.filter((one) => one.id !== sent.id), sent])
+        }
+        onUnsent={(id) => {
+          // Undone, or past the day's cap (#5695): it is a draft again, and was never sent.
+          setSentDrafts((was) => was.filter((one) => one.id !== id));
+          settleUpdates([reportSentKey(id)], "dismissed");
+        }}
       />
       {alerts !== undefined && (
         <InboxAlerts

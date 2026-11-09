@@ -62,6 +62,7 @@ describe("filtering the Settings tab by name", () => {
       "Editor",
       "Chats list",
       "Notifications",
+      "Reports",
       "This machine",
       "Browsers",
       "Pools",
@@ -102,6 +103,22 @@ describe("filtering the Settings tab by name", () => {
     expect(inNav()).toEqual(["Text"]);
     expect(screen.getByRole("slider", { name: /window text size/i })).toBeInTheDocument();
     expect(screen.getByRole("slider", { name: /terminal text size/i })).toBeInTheDocument();
+  });
+
+  it("finds Reports by each of its other words, which it never draws (#5688)", async () => {
+    render(<SettingsTab />);
+
+    for (const word of ["reports", "crash", "telemetry", "error reporting"]) {
+      await userEvent.clear(box());
+      await userEvent.type(box(), word);
+
+      expect(inNav(), word).toContain("Reports");
+      await userEvent.click(group("Reports"));
+      expect(shown()).toHaveAccessibleName("Reports");
+      expect(screen.getByRole("radiogroup", { name: "Crash reports" })).toBeInTheDocument();
+      expect(screen.getByRole("radiogroup", { name: "Agent drafts" })).toBeInTheDocument();
+    }
+    expect(screen.queryByText(/telemetry/i)).not.toBeInTheDocument();
   });
 
   it("says in a sentence when nothing matches, and the nav is empty", async () => {
@@ -152,6 +169,7 @@ describe("filtering the Settings tab by name", () => {
       "Editor",
       "Chats list",
       "Notifications",
+      "Reports",
       "This machine",
       "Browsers",
       "Pools",
@@ -178,6 +196,7 @@ describe("filtering the Settings tab by name", () => {
       "Editor",
       "Chats list",
       "Notifications",
+      "Reports",
       "This machine",
       "Browsers",
       "Pools",
@@ -204,9 +223,10 @@ describe("the filtered nav, by keyboard", () => {
     // "wher" is in the window size's help ("anywhere") and Your editor's ("Where"), and in
     // neither group's own label or help: both groups stay, each narrowed to that one setting.
     // This machine's own help has it ("where updates come from"), so it stays whole, and the
-    // Chats list keeps Where you answer (#4565).
+    // Chats list keeps Where you answer (#4565), and Reports its Crash reports ("where it
+    // crashed", #5688).
     await userEvent.type(box(), "wher");
-    expect(inNav()).toEqual(["Text", "Editor", "Chats list", "This machine"]);
+    expect(inNav()).toEqual(["Text", "Editor", "Chats list", "Reports", "This machine"]);
     expect(screen.getByRole("slider", { name: /window text size/i })).toBeInTheDocument();
     expect(screen.queryByRole("slider", { name: /terminal text size/i })).not.toBeInTheDocument();
     group("Text").focus();

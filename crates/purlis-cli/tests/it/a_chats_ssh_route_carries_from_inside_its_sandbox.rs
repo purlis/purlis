@@ -137,6 +137,7 @@ fn a_wrapped_chat(out: &Path) -> (sandbox::Applied, PathBuf) {
         env: purlis_core::secrets::Env::of(&[("PATH", &bin.display().to_string())]),
         home: Some(home),
         os: OS,
+        on_a_sandbox_only_profile: false,
     };
     let decided = sandbox::decide(Harness::Opencode, &root, &machine, &|_| true, None, None)
         .expect("decided")

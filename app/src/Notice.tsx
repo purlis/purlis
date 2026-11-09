@@ -220,6 +220,7 @@ type LineProps = WayOut &
     mark?: "prompt";
     title?: never;
     quiet?: never;
+    from?: never;
   };
 
 /** A card's ways out: a fix, a link or its ×, never a command to copy (#3344). */
@@ -241,6 +242,9 @@ type CardProps = CardWayOut &
     at?: "inbox";
     /** What happened, before its one sentence. */
     title: ReactNode;
+    /** **The chat it came from** (#5694): its name, drawn first in the card's head and named
+     *  by its Go to chat. Data, drawn as text. */
+    from?: string;
     /** **Not a live region**: a copy of a Notice another one already said, as a result kept
      *  under Results is of the result's notice. */
     quiet?: boolean;
@@ -304,6 +308,8 @@ export function Notice(props: NoticeProps) {
     under,
     title,
     quiet,
+    // Only a card names the chat it came from: a line's `from` is `never`.
+    from,
   } = props;
   // A pane's Notice of a chat in no pane is the Notices centre's line (#4759).
   const inCentre = centre !== null && askedAt === "pane";
@@ -376,6 +382,7 @@ export function Notice(props: NoticeProps) {
         tone={tone}
         running={running}
         title={title}
+        from={from}
         label={label}
         persona={persona}
         whose={of ?? undefined}
@@ -426,6 +433,7 @@ export function Notice(props: NoticeProps) {
           {tone === "trouble" && <span className="sr-only">Not done: </span>}
           {tone === "attention" && <span className="sr-only">{NEEDS_A_DECISION}</span>}
           <NoticeTitle>{title}</NoticeTitle>
+          {from !== undefined && <NoticeWhose>{from}: </NoticeWhose>}
           {children}
         </NoticeMessage>
         {onDismiss && (
@@ -590,6 +598,7 @@ function NoticeViewRow({
   tone,
   running,
   title,
+  from,
   label,
   persona,
   whose,
@@ -609,6 +618,7 @@ function NoticeViewRow({
   tone: NoticeTone;
   running: boolean;
   title?: ReactNode;
+  from?: string;
   label?: string;
   persona?: string | null;
   whose?: { whose: string; onGo: () => void };
@@ -697,7 +707,14 @@ function NoticeViewRow({
               </time>
             }
           />
-          {named !== undefined && <MessageMeta>{state}</MessageMeta>}
+          {/* The chat a card came from, first in its meta (#5694). */}
+          {(from !== undefined || named !== undefined) && (
+            <MessageMeta>
+              {from !== undefined && <span>{from}</span>}
+              {from !== undefined && named !== undefined && " · "}
+              {named !== undefined && state}
+            </MessageMeta>
+          )}
           {children !== undefined && (
             <MessageBody>
               <NoticeMessage>{children}</NoticeMessage>
@@ -734,7 +751,13 @@ function NoticeViewRow({
                 <Button
                   size="sm"
                   variant="quiet-link"
-                  aria-label={whose === undefined ? "Go to chat" : `Go to chat ${whose.whose}`}
+                  aria-label={
+                    whose !== undefined
+                      ? `Go to chat ${whose.whose}`
+                      : from !== undefined
+                        ? `Go to chat ${from}`
+                        : "Go to chat"
+                  }
                   onPress={(press) => {
                     if (whose !== undefined) whose.onGo();
                     else if (mayAct(press.target)) toChat?.onPress();

@@ -308,6 +308,7 @@ fn the_answer_is_the_level_decide_starts_the_chat_at() {
         env: crate::secrets::Env::of(&[]),
         home: Some(std::path::PathBuf::from("/home/op")),
         os: crate::sandbox::Os::MacOs,
+        on_a_sandbox_only_profile: false,
     };
     let made_ways = [
         Made::Window,

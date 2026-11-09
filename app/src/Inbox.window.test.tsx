@@ -32,10 +32,11 @@ import { SETTLE_MS } from "./TaskBlocksNotice";
 import { UNDO_MS } from "./undo";
 import { DispatchGrantNotice } from "./DispatchGrantNotice";
 import { askOfVault } from "./test-asks";
-import { forgetInbox, replyBytes } from "./inboxRules";
+import { forgetInbox, MOST_ANSWERED, noteAnswered, replyBytes } from "./inboxRules";
 import { keepInboxScope } from "./inboxScope";
 import { forgetProjectViews } from "./projectViews";
 import { openEveryAnswer } from "./test-inbox";
+import { VAULTS_OWN, runAsk } from "./secretAsk.testkit";
 import type { DispatchPending, InboxUpdate, Shown } from "./bindings";
 
 /**
@@ -582,6 +583,56 @@ describe("answering in place", () => {
     expect(within(recent).getByText("Allow")).toBeTruthy();
     // Read-only: nothing in it can be pressed.
     expect(within(recent).queryAllByRole("button")).toEqual([]);
+  });
+
+  it("says what Keep blocked said, where the persona already holds the vault, in a Notice that stands while other asks wait, until dismissed (#5890)", async () => {
+    const held =
+      "You kept vault team blocked for this chat, but devops can already use it, so Keep blocked does not stop this chat's runs on it. Remove it in Settings › Sandbox › Allowed to stop them.";
+    core({ answer_run_grant: { said: held } });
+    const ask = { ...runAsk({ offer: "vault" }, VAULTS_OWN), chain: ["devops 4"] };
+    const other = permission(3, "01J0A", ["steward 3"]);
+    const { again, props } = draw([ask, other]);
+    await userEvent.click(screen.getByRole("button", { name: "Keep blocked" }));
+    await waitFor(() => expect(props.onAnswered).toHaveBeenCalled());
+    // The run's ask goes; another still waits, so nothing of the Inbox is empty.
+    again([other]);
+
+    const notice = await waitFor(() => {
+      const found = document.querySelector<HTMLElement>('[data-cause^="answer-said:"]');
+      expect(found).not.toBeNull();
+      return found as HTMLElement;
+    });
+    expect(notice).toHaveTextContent("devops 4");
+    expect(notice).toHaveTextContent(held);
+    // Told as the refused vault's own Notice tells it: news, not a decision.
+    expect(notice).not.toHaveTextContent("Needs a decision");
+    // Above whatever waits.
+    const row = screen.getByText("Run cargo test");
+    expect(notice.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "Recently answered" })).toBeNull();
+    // Ten more answers do not put it away: only Dismiss does (review of #5934).
+    act(() => {
+      for (let at = 0; at < MOST_ANSWERED + 1; at += 1)
+        noteAnswered(PLANE, {
+          at: at + 1,
+          chain: ["steward 3"],
+          says: `ask ${at}`,
+          answer: "Allow",
+        });
+    });
+    const still = document.querySelector<HTMLElement>('[data-cause^="answer-said:"]');
+    expect(still).not.toBeNull();
+
+    await userEvent.click(within(still as HTMLElement).getByRole("button", { name: "Dismiss" }));
+    await waitFor(() => expect(document.querySelector('[data-cause^="answer-said:"]')).toBeNull());
+    // The keyboard is not dropped on the page.
+    expect(document.activeElement).not.toBe(document.body);
+    // Once nothing waits, Recently answered lists the newest answers, and the sentence, dismissed,
+    // is said nowhere.
+    again([]);
+    const recent = screen.getByRole("region", { name: "Recently answered" });
+    expect(within(recent).getAllByRole("listitem")).toHaveLength(MOST_ANSWERED);
+    expect(screen.queryByText(held)).toBeNull();
   });
 
   it("opens Delete workspace from a workspace's removal, removes nothing, and notes no answer (qw356)", async () => {

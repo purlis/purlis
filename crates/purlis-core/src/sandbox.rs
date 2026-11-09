@@ -31,6 +31,193 @@ pub enum Preset {
     Toolchains,
 }
 
+/// What the forge preset lists: the forges' own hosts, then the storage GitHub Actions keeps
+/// run logs and artifacts in ([`GITHUB_ACTIONS_RESULTS`]).
+const FORGE: [&str; 7 + GITHUB_ACTIONS_RESULTS.len()] = joined(
+    [
+        "github.com",
+        "api.github.com",
+        "codeload.github.com",
+        "*.githubusercontent.com",
+        "ghcr.io",
+        "gitlab.com",
+        "registry.gitlab.com",
+    ],
+    GITHUB_ACTIONS_RESULTS,
+);
+
+/// **Where GitHub Actions keeps job logs, summaries and artifacts** (#5942): the Azure storage
+/// accounts `gh run view --log` and `gh run download` read from, a different one for each run's
+/// shard. Each is named exactly as GitHub's meta API lists it (`GET https://api.github.com/meta`,
+/// `domains.actions`, read 2026-11-09; the same names are in `domains.actions_inbound.full_domains`
+/// and GitHub's docs on communication between self-hosted runners and GitHub), so the person is
+/// not asked about them one shard at a time.
+///
+/// **Never `*.blob.core.windows.net`**: anyone can make a storage account there, so a wildcard
+/// would let a chat send anything anywhere. A shard GitHub adds later is asked about as any host
+/// is, until it is added here.
+const GITHUB_ACTIONS_RESULTS: [&str; 140] = [
+    "productionresultssa0.blob.core.windows.net",
+    "productionresultssa1.blob.core.windows.net",
+    "productionresultssa2.blob.core.windows.net",
+    "productionresultssa3.blob.core.windows.net",
+    "productionresultssa4.blob.core.windows.net",
+    "productionresultssa5.blob.core.windows.net",
+    "productionresultssa6.blob.core.windows.net",
+    "productionresultssa7.blob.core.windows.net",
+    "productionresultssa8.blob.core.windows.net",
+    "productionresultssa9.blob.core.windows.net",
+    "productionresultssa10.blob.core.windows.net",
+    "productionresultssa11.blob.core.windows.net",
+    "productionresultssa12.blob.core.windows.net",
+    "productionresultssa13.blob.core.windows.net",
+    "productionresultssa14.blob.core.windows.net",
+    "productionresultssa15.blob.core.windows.net",
+    "productionresultssa16.blob.core.windows.net",
+    "productionresultssa17.blob.core.windows.net",
+    "productionresultssa18.blob.core.windows.net",
+    "productionresultssa19.blob.core.windows.net",
+    "productionresultssa30.blob.core.windows.net",
+    "productionresultssa31.blob.core.windows.net",
+    "productionresultssa32.blob.core.windows.net",
+    "productionresultssa33.blob.core.windows.net",
+    "productionresultssa34.blob.core.windows.net",
+    "productionresultssa35.blob.core.windows.net",
+    "productionresultssa36.blob.core.windows.net",
+    "productionresultssa37.blob.core.windows.net",
+    "productionresultssa38.blob.core.windows.net",
+    "productionresultssa39.blob.core.windows.net",
+    "productionresultssa40.blob.core.windows.net",
+    "productionresultssa41.blob.core.windows.net",
+    "productionresultssa42.blob.core.windows.net",
+    "productionresultssa43.blob.core.windows.net",
+    "productionresultssa44.blob.core.windows.net",
+    "productionresultssa45.blob.core.windows.net",
+    "productionresultssa46.blob.core.windows.net",
+    "productionresultssa47.blob.core.windows.net",
+    "productionresultssa48.blob.core.windows.net",
+    "productionresultssa49.blob.core.windows.net",
+    "productionresultssa100.blob.core.windows.net",
+    "productionresultssa101.blob.core.windows.net",
+    "productionresultssa102.blob.core.windows.net",
+    "productionresultssa103.blob.core.windows.net",
+    "productionresultssa104.blob.core.windows.net",
+    "productionresultssa105.blob.core.windows.net",
+    "productionresultssa106.blob.core.windows.net",
+    "productionresultssa107.blob.core.windows.net",
+    "productionresultssa108.blob.core.windows.net",
+    "productionresultssa109.blob.core.windows.net",
+    "productionresultssa110.blob.core.windows.net",
+    "productionresultssa111.blob.core.windows.net",
+    "productionresultssa112.blob.core.windows.net",
+    "productionresultssa113.blob.core.windows.net",
+    "productionresultssa114.blob.core.windows.net",
+    "productionresultssa115.blob.core.windows.net",
+    "productionresultssa116.blob.core.windows.net",
+    "productionresultssa117.blob.core.windows.net",
+    "productionresultssa118.blob.core.windows.net",
+    "productionresultssa119.blob.core.windows.net",
+    "productionresultssa120.blob.core.windows.net",
+    "productionresultssa121.blob.core.windows.net",
+    "productionresultssa122.blob.core.windows.net",
+    "productionresultssa123.blob.core.windows.net",
+    "productionresultssa124.blob.core.windows.net",
+    "productionresultssa125.blob.core.windows.net",
+    "productionresultssa126.blob.core.windows.net",
+    "productionresultssa127.blob.core.windows.net",
+    "productionresultssa128.blob.core.windows.net",
+    "productionresultssa129.blob.core.windows.net",
+    "productionresultssa130.blob.core.windows.net",
+    "productionresultssa131.blob.core.windows.net",
+    "productionresultssa132.blob.core.windows.net",
+    "productionresultssa133.blob.core.windows.net",
+    "productionresultssa134.blob.core.windows.net",
+    "productionresultssa135.blob.core.windows.net",
+    "productionresultssa136.blob.core.windows.net",
+    "productionresultssa137.blob.core.windows.net",
+    "productionresultssa138.blob.core.windows.net",
+    "productionresultssa139.blob.core.windows.net",
+    "productionresultssa140.blob.core.windows.net",
+    "productionresultssa141.blob.core.windows.net",
+    "productionresultssa142.blob.core.windows.net",
+    "productionresultssa143.blob.core.windows.net",
+    "productionresultssa144.blob.core.windows.net",
+    "productionresultssa145.blob.core.windows.net",
+    "productionresultssa146.blob.core.windows.net",
+    "productionresultssa147.blob.core.windows.net",
+    "productionresultssa148.blob.core.windows.net",
+    "productionresultssa149.blob.core.windows.net",
+    "productionresultssa150.blob.core.windows.net",
+    "productionresultssa151.blob.core.windows.net",
+    "productionresultssa152.blob.core.windows.net",
+    "productionresultssa153.blob.core.windows.net",
+    "productionresultssa154.blob.core.windows.net",
+    "productionresultssa155.blob.core.windows.net",
+    "productionresultssa156.blob.core.windows.net",
+    "productionresultssa157.blob.core.windows.net",
+    "productionresultssa158.blob.core.windows.net",
+    "productionresultssa159.blob.core.windows.net",
+    "productionresultssa160.blob.core.windows.net",
+    "productionresultssa161.blob.core.windows.net",
+    "productionresultssa162.blob.core.windows.net",
+    "productionresultssa163.blob.core.windows.net",
+    "productionresultssa164.blob.core.windows.net",
+    "productionresultssa165.blob.core.windows.net",
+    "productionresultssa166.blob.core.windows.net",
+    "productionresultssa167.blob.core.windows.net",
+    "productionresultssa168.blob.core.windows.net",
+    "productionresultssa169.blob.core.windows.net",
+    "productionresultssa170.blob.core.windows.net",
+    "productionresultssa171.blob.core.windows.net",
+    "productionresultssa172.blob.core.windows.net",
+    "productionresultssa173.blob.core.windows.net",
+    "productionresultssa174.blob.core.windows.net",
+    "productionresultssa175.blob.core.windows.net",
+    "productionresultssa176.blob.core.windows.net",
+    "productionresultssa177.blob.core.windows.net",
+    "productionresultssa178.blob.core.windows.net",
+    "productionresultssa179.blob.core.windows.net",
+    "productionresultssa180.blob.core.windows.net",
+    "productionresultssa181.blob.core.windows.net",
+    "productionresultssa182.blob.core.windows.net",
+    "productionresultssa183.blob.core.windows.net",
+    "productionresultssa184.blob.core.windows.net",
+    "productionresultssa185.blob.core.windows.net",
+    "productionresultssa186.blob.core.windows.net",
+    "productionresultssa187.blob.core.windows.net",
+    "productionresultssa188.blob.core.windows.net",
+    "productionresultssa189.blob.core.windows.net",
+    "productionresultssa190.blob.core.windows.net",
+    "productionresultssa191.blob.core.windows.net",
+    "productionresultssa192.blob.core.windows.net",
+    "productionresultssa193.blob.core.windows.net",
+    "productionresultssa194.blob.core.windows.net",
+    "productionresultssa195.blob.core.windows.net",
+    "productionresultssa196.blob.core.windows.net",
+    "productionresultssa197.blob.core.windows.net",
+    "productionresultssa198.blob.core.windows.net",
+    "productionresultssa199.blob.core.windows.net",
+];
+
+/// `head` then `tail`, as one array, at compile time.
+const fn joined<const H: usize, const T: usize, const N: usize>(
+    head: [&'static str; H],
+    tail: [&'static str; T],
+) -> [&'static str; N] {
+    assert!(H + T == N, "the joined list holds both lists");
+    let mut out = [""; N];
+    let mut at = 0;
+    while at < H {
+        out[at] = head[at];
+        at += 1;
+    }
+    while at < N {
+        out[at] = tail[at - H];
+        at += 1;
+    }
+    out
+}
+
 impl Preset {
     /// Every preset, in the order a sentence lists them.
     pub const ALL: [Preset; 3] = [Preset::ModelProviders, Preset::Forge, Preset::Toolchains];
@@ -77,15 +264,7 @@ impl Preset {
                 "models.dev",
                 "openrouter.ai",
             ],
-            Self::Forge => &[
-                "github.com",
-                "api.github.com",
-                "codeload.github.com",
-                "*.githubusercontent.com",
-                "ghcr.io",
-                "gitlab.com",
-                "registry.gitlab.com",
-            ],
+            Self::Forge => &FORGE,
             Self::Toolchains => &[
                 "registry.npmjs.org",
                 "registry.yarnpkg.com",
@@ -1419,6 +1598,11 @@ pub struct Machine {
     pub env: crate::secrets::Env,
     pub home: Option<PathBuf>,
     pub os: Os,
+    /// **Whether the chat this is asked for runs on a profile this machine keeps for sandboxed
+    /// chats only** (#2037): on Linux, a Claude Code chat on one runs inside purlis's own wrap
+    /// ([`Self::purlis_wraps`]). `false` for this machine as such ([`Self::this`]); a start sets
+    /// it for its own profile ([`Self::on_profile`]).
+    pub on_a_sandbox_only_profile: bool,
 }
 
 impl Machine {
@@ -1428,6 +1612,17 @@ impl Machine {
             env: crate::secrets::Env::from_process(),
             home: dirs::home_dir(),
             os: Os::this(),
+            on_a_sandbox_only_profile: false,
+        }
+    }
+
+    /// This machine, for a chat on a profile that is (`sandbox_only`) or is not one this machine
+    /// keeps for sandboxed chats only.
+    #[must_use]
+    pub fn on_profile(self, sandbox_only: bool) -> Self {
+        Self {
+            on_a_sandbox_only_profile: sandbox_only,
+            ..self
         }
     }
 
@@ -1447,11 +1642,16 @@ impl Machine {
     }
 
     /// **Whether a chat of `harness` here starts inside purlis's own Linux wrap**: a harness purlis
-    /// holds whole ([`Os::purlis_wraps`]), and on a runner a Claude Code chat too (#4083), with
-    /// its own sandbox off: a runner has neither what it needs nor a place to make its namespace.
-    /// On a person's own Linux machine a Claude Code chat keeps its own.
+    /// holds whole ([`Os::purlis_wraps`]), and a Claude Code chat too, with its own sandbox off,
+    /// on a runner (#4083), which has neither what that sandbox needs nor a place to make its
+    /// namespace, and on a profile for sandboxed chats only, whose folder no chat outside the
+    /// wrap reads or writes (#2037). On a person's own Linux machine a Claude Code chat on a
+    /// profile for every chat keeps its own.
     pub fn purlis_wraps(&self, harness: Harness) -> bool {
-        self.os.purlis_wraps(harness) || (harness == Harness::ClaudeCode && self.is_a_runner())
+        self.os.purlis_wraps(harness)
+            || (harness == Harness::ClaudeCode
+                && self.os == Os::Linux
+                && (self.on_a_sandbox_only_profile || self.is_a_runner()))
     }
 }
 
@@ -7213,6 +7413,7 @@ pub(crate) fn applied_of(
             wrap: None,
             clones: crate::forge::apptoken::clones_now(root),
             roots_git,
+            whole: harness.adapter().sandbox_holds_what_it_starts() || wrapped,
         }),
         reach: Box::new(compiled.reach.clone()),
         // Claude Code on its own sandbox waits for its program's answer ([`Applied::answered`]).
@@ -7341,6 +7542,11 @@ pub struct Confines {
     /// a folder. `None` for a project whose `.git` is a file or a link, which is not held. Only
     /// where it is set does the app save or update the project for the chat.
     pub roots_git: Option<PathBuf>,
+    /// **Whether the chat's harness runs whole inside its sandbox**, its own process among what
+    /// it holds: Codex and opencode, and a Claude Code chat purlis wraps (#4083, #2037). `false`
+    /// for a Claude Code chat on its own sandbox, which holds only the commands it runs, and for
+    /// a record that does not say ([`Default`]).
+    pub whole: bool,
 }
 
 impl Confines {
