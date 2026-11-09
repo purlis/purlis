@@ -32,7 +32,8 @@
  *   pill never touches the panel the list is joined to.
  * - **The keyboard is React Aria's**: ↑ and ↓ move and stop at the ends, Home and End, typing
  *   finds a row by its `textValue`, Enter and Space choose or run; Escape clears a choice of
- *   many. A list keeps one Tab stop, the row last focused.
+ *   many. A list keeps one Tab stop, the row last focused: Tab or Shift+Tab into it lands on
+ *   that row, never on a control in it, and → reaches its controls (#6033, `backToTheRow`).
  * - **Drag with a way that is not a drag**: `dragAndDropHooks` (`useRowDrag`) lets a row be
  *   dragged out, by the pointer and by the keyboard; whatever a drag does, a row's menu or a
  *   button does too.
@@ -621,6 +622,8 @@ function rowElement(labelledBy?: string, describedBy?: string) {
         const fromWithin = from === null || (from instanceof Node && list?.contains(from) === true);
         if (!keyHeardNow && fromWithin && event.target !== event.currentTarget)
           if (id !== undefined && manager.focusedKey !== id) manager.setFocusedKey(id);
+        if (tabHeardNow && !fromWithin && event.target !== event.currentTarget)
+          backToTheRow(event.target, list, manager);
         element.onFocus?.(event);
       }}
       // A select or a combobox in it hears its own ↑ and ↓, and opens (#5993, `rowKeys.ts`).
@@ -637,19 +640,46 @@ function rowElement(labelledBy?: string, describedBy?: string) {
  * after it, once it has been heard everywhere and its own move (Tab's) is made.
  */
 let keyHeardNow = false;
+/** **Whether that key is Tab**, with Shift or without, whose move the browser makes next. */
+let tabHeardNow = false;
 if (typeof window !== "undefined")
   window.addEventListener(
     "keydown",
-    () => {
+    (event) => {
       keyHeardNow = true;
+      tabHeardNow = event.key === "Tab";
       // A task, never a microtask: for a key the person pressed, the browser runs microtasks
       // after each listener, so one would let go before React has heard the key at all.
       setTimeout(() => {
         keyHeardNow = false;
+        tabHeardNow = false;
       }, 0);
     },
     { capture: true },
   );
+
+/**
+ * **Tab into a list lands on a row, never on a control in it** (#6033, the WAI-ARIA grid's one
+ * Tab stop): Shift+Tab from below lands, the browser's way, on the list's last control, and
+ * React Aria moves the keyboard to the row it keeps (the one the keyboard left, or the last) only
+ * when that control is in another row. So once React Aria has heard the focus, and chosen its row,
+ * a `control` that still has the keyboard gives it to that row; → reaches the row's controls
+ * again from there.
+ */
+function backToTheRow(
+  control: Element,
+  list: Element | null,
+  manager: GridListItemRenderProps["state"]["selectionManager"],
+) {
+  queueMicrotask(() => {
+    const key = manager.focusedKey;
+    if (list === null || key === null || control.ownerDocument.activeElement !== control) return;
+    const row = [...list.querySelectorAll<HTMLElement>('[role="row"]')].find(
+      (one) => one.dataset.key === String(key),
+    );
+    row?.focus();
+  });
+}
 
 /** Runs `then` after each commit of the row it stands in, as part of the row. */
 function Drawn({ then }: { then: () => void }) {
