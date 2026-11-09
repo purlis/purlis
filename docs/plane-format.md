@@ -3017,7 +3017,9 @@ them (#5427, ADR 0078 §7, session protocol 1.78), which the file diff reads as 
 - **Written by:** the person, a chat or a skill (the templates and data files); the pins file
   only by `purlis artifact pin | unpin | reorder` (`crates/purlis-core/src/artifact/`), under a
   lock on the folder, whole by rename.
-- **Read by:** `purlis artifact list`, and the window's activity bar (ADR 0120 §2).
+- **Read by:** `purlis artifact list`, and the window's activity bar (ADR 0120 §2). The app's
+  plane watch watches `artifacts/` and each pinned folder with every folder in it, so an open
+  artifact loads again when its template or its data changes (#5955).
 - **Git:** follows the workspace — un-ignored by the LIVE block's `artifacts` pair, and the
   data files re-ignored by the two lines after it; kept on disk for a LOCAL one.
   `workspaces/*/artifacts/pins.toml` is merged by git's `union` driver (the merge rules).
@@ -3025,6 +3027,12 @@ them (#5427, ADR 0078 §7, session protocol 1.78), which the file diff reads as 
   folder: the names the plane declares for them, so the ignore list and the template's
   fingerprint agree on what is data without reading any file. A template may read them; they
   are inert JSON, never committed.
+- **Freshness** (#5955, `crates/purlis-core/src/artifact/fresh.rs`): when an artifact's data was
+  last updated, which its icon and bar say, is the top-level `"updated"` key of `data.json` when
+  it declares one: an RFC 3339 time, a `YYYY-MM-DD` day (its midnight UTC) or whole seconds
+  since 1970. Else it is the data files' commit time while git holds them as committed, else
+  their newest write time; a folder with no data files is dated by its `index.html`. An icon is
+  dimmed a day after that time.
 - **The pins file**, `artifacts/pins.toml`, TOML:
 
   ```toml

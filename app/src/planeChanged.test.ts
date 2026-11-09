@@ -20,6 +20,8 @@ import {
   SETTINGS,
   SIDEBAR,
   VIEWS,
+  artifactIn,
+  artifactsIn,
 } from "./planeChanged";
 
 /**
@@ -107,6 +109,31 @@ describe("whether a change concerns one view tab", () => {
     expect(concernsAView(told([change("todos", { workspace: "alpha" })]), alpha)).toBe(false);
     expect(concernsAView(told([change("sessions", { workspace: "alpha" })]), alpha)).toBe(false);
     expect(concernsAView(told([change("memory", { persona: "alpha" })]), alpha)).toBe(false);
+  });
+
+  it("reloads an artifact's tab for its own folder's files and data, and nothing beside", () => {
+    const backlog = artifactIn("alpha", "backlog");
+    const at = (workspace: string, path: string) =>
+      told([change("artifacts", { workspace, path: `workspaces/${workspace}/artifacts/${path}` })]);
+    for (const path of ["backlog/index.html", "backlog/data.json", "backlog/data/weeks/45.json"])
+      expect(concernsAView(at("alpha", path), backlog), path).toBe(true);
+    for (const path of ["backlog-old/index.html", "pins.toml", "release/data.json"])
+      expect(concernsAView(at("alpha", path), backlog), path).toBe(false);
+    expect(concernsAView(at("beta", "backlog/index.html"), backlog)).toBe(false);
+    expect(
+      concernsAView(told([change("todos", { workspace: "alpha" })]), backlog),
+      "a todo is no part of it",
+    ).toBe(false);
+  });
+
+  it("reads an artifact's pins again for any change to its workspace's artifacts", () => {
+    const pins = artifactsIn("alpha");
+    const at = (workspace: string) =>
+      told([
+        change("artifacts", { workspace, path: `workspaces/${workspace}/artifacts/pins.toml` }),
+      ]);
+    expect(concernsAView(at("alpha"), pins)).toBe(true);
+    expect(concernsAView(at("beta"), pins)).toBe(false);
   });
 
   it("tells a persona's store from the shared one", () => {

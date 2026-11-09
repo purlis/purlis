@@ -1092,6 +1092,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     "artifact_open",
     "artifact_place",
     "artifact_enter",
+    // Its page loaded again when its folder changed, and drawn in the window's theme (#5955).
+    "artifact_reload",
+    "artifact_theme",
     "artifact_close",
 ];
 

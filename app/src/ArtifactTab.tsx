@@ -5,7 +5,15 @@ import { useEffect, useId, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { ChartLine } from "lucide-react";
 import { commands, type ArtifactAbout, type ArtifactPlace, type PlaneId } from "./bindings";
-import { ARTIFACT_KEY, coveredByAnOverlay, type ArtifactKeyPressed } from "./artifacts";
+import {
+  ARTIFACT_KEY,
+  coveredByAnOverlay,
+  drawnTheme,
+  followDrawnTheme,
+  freshness,
+  type ArtifactKeyPressed,
+} from "./artifacts";
+import { artifactIn, artifactsIn, useViewChanged } from "./planeChanged";
 import { Button } from "./ui/button/Button";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 
@@ -23,6 +31,9 @@ import { EmptyState } from "./ui/empty-state/EmptyState";
  * - **The keyboard**: the frame is a Tab stop named by the artifact's name. Enter puts the
  *   keyboard in the page; Esc there brings it back to the frame, and F6 moves on to the next
  *   region as it does anywhere in the window.
+ * - **Live** (#5955): the page is loaded again when its folder's files or data change, as the
+ *   plane's watch tells every window; it is drawn in the theme the window draws, and in each
+ *   one it draws after; and the bar says when its data was last updated.
  */
 export function ArtifactTab({
   plane,
@@ -55,6 +66,7 @@ export function ArtifactTab({
         <ChartLine className="node-icon" aria-hidden="true" />
         <span className="artifact-bar-name">{name}</span>
         <span className="artifact-bar-by">{pinnedBy(about.said)}</span>
+        <span className="artifact-bar-fresh">{freshness(about.said?.fresh)?.said ?? ""}</span>
       </header>
       {missing !== undefined && missing !== null ? (
         <EmptyState
@@ -87,7 +99,8 @@ function pinnedBy(about: ArtifactAbout | undefined): string {
     : `Pinned by ${about.pinned_by}`;
 }
 
-/** The pin's name and who pinned it, as the core reads them; or why it could not. */
+/** The pin's name, who pinned it and its freshness, as the core reads them, read again when
+ *  the workspace's artifacts change; or why it could not. */
 function useAbout(
   plane: PlaneId,
   workspace: string,
@@ -98,6 +111,7 @@ function useAbout(
   const [read, setRead] = useState<{ of: string; said?: ArtifactAbout; failed?: string }>({
     of: "",
   });
+  const changed = useViewChanged([plane], artifactsIn(workspace));
   useEffect(() => {
     let gone = false;
     commands.artifactAbout(plane, workspace, folder).then(
@@ -112,7 +126,7 @@ function useAbout(
     return () => {
       gone = true;
     };
-  }, [of, plane, workspace, folder]);
+  }, [of, plane, workspace, folder, changed]);
   return read.of === of ? read : {};
 }
 
@@ -184,7 +198,7 @@ function ArtifactFrame({
       height: 1,
       ratio: window.devicePixelRatio || 1,
     };
-    commands.artifactOpen(plane, workspace, folder, first).then(
+    commands.artifactOpen(plane, workspace, folder, first, drawnTheme()).then(
       (answer) => {
         if (answer.status === "error") {
           if (!gone) setFailed(answer.error);
@@ -210,6 +224,27 @@ function ArtifactFrame({
       if (was !== null) void commands.artifactClose(was).catch(() => {});
     };
   }, [plane, workspace, folder]);
+
+  // Its folder's files or data changed: the page is loaded again from them, every window
+  // showing it alike, since each hears the plane's watch (#5955).
+  const changed = useViewChanged([plane], artifactIn(workspace, folder));
+  const reloads = useRef(changed);
+  useEffect(() => {
+    if (changed === reloads.current) return;
+    reloads.current = changed;
+    const now = label.current;
+    if (now !== null) void commands.artifactReload(now).catch(() => {});
+  }, [changed]);
+
+  // The window draws another theme: so does the page (#5955).
+  useEffect(
+    () =>
+      followDrawnTheme((theme) => {
+        const now = label.current;
+        if (now !== null) void commands.artifactTheme(now, theme).catch(() => {});
+      }),
+    [],
+  );
 
   // Esc and F6 pressed in the page come back here (`artifacts.rs`).
   useEffect(() => {

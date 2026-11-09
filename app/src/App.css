@@ -8992,7 +8992,8 @@ nav.piece-files-head {
   text-overflow: ellipsis;
 }
 
-.artifact-bar-by {
+.artifact-bar-by,
+.artifact-bar-fresh {
   flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
