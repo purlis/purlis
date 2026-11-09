@@ -98,7 +98,7 @@ type Story = StoryObj<typeof meta>;
 export const OneRowPerStateOfAChat: Story = {
   play: async ({ canvasElement }) => {
     const rootOf = (name: string) =>
-      [...canvasElement.querySelectorAll<HTMLElement>('[role="treeitem"]')]
+      [...canvasElement.querySelectorAll<HTMLElement>('[role="row"]')]
         .find((one) => one.querySelector(".session")?.textContent === name)
         ?.querySelector<HTMLElement>('[data-scope="chat-mark"][data-part="root"]') ?? null;
     // About 10px: two steps of the theme's space, measured as the theme in force draws them.

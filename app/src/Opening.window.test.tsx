@@ -9,6 +9,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { LaidNode, LaidOut } from "./bindings";
 import { stripNamed } from "./test-strips";
+import { findTree, rowsOf } from "./ui/tree/tree.testkit";
 
 /**
  * **Where things open, against the whole window** (#5289; spec #5288 stories 66 to 71). The rule
@@ -147,13 +148,11 @@ async function drawn(laid: LaidOut, panes: number[]) {
   core(laid);
   render(<App />);
   await waitFor(() => expect(onScreen()).toEqual(panes));
-  return screen.findByRole("tree", { name: "Chats of this project" });
+  return findTree("Chats of this project");
 }
 
 const row = (tree: HTMLElement, name: string) => {
-  const found = within(tree)
-    .getAllByRole("treeitem")
-    .find((one) => one.querySelector(".session")?.textContent === name);
+  const found = rowsOf(tree).find((one) => one.querySelector(".session")?.textContent === name);
   if (found === undefined) throw new Error(`no row is named ${name}`);
   return found;
 };

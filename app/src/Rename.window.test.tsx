@@ -16,6 +16,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { LaidOut, LaidTab, OpenChat } from "./bindings";
 import { stripNamed } from "./test-strips";
+import { rowsOf, treeNamed } from "./ui/tree/tree.testkit";
 
 /**
  * **Rename says what it renames** (#5343, spec #5339), against the whole window: a tab with one
@@ -119,13 +120,13 @@ const theTab = () => within(stripNamed("Tabs")).getAllByRole("tab")[0];
 const tabName = () => theTab().querySelector(".tab-name")?.textContent;
 const heads = () =>
   [...document.querySelectorAll(".pane-head .pane-name")].map((one) => one.textContent);
-const list = () => screen.getByRole("tree", { name: "Chats of this project" });
+const list = () => treeNamed("Chats of this project");
 const rows = () =>
-  within(list())
-    .getAllByRole("treeitem")
-    .map((row) => row.querySelector(".tree-label, .chat-name")?.textContent ?? row.textContent);
+  rowsOf(list()).map(
+    (row) => row.querySelector(".tree-label, .chat-name")?.textContent ?? row.textContent,
+  );
 const rowOf = (session: number) =>
-  list().querySelector<HTMLElement>(`[role="treeitem"][data-session="${session}"]`);
+  list().querySelector<HTMLElement>(`[role="row"][data-session="${session}"]`);
 const theRowOf = (session: number): HTMLElement => {
   const row = rowOf(session);
   if (row === null) throw new Error(`no row for chat ${session}`);

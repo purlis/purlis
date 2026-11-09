@@ -11,6 +11,7 @@ import type { OpenChat } from "./bindings";
 import { stripNamed } from "./test-strips";
 import { aTabForEachChat } from "./laidOut.testkit";
 import { eventually, tipOf } from "./ui/tooltip/tooltip.testkit";
+import { paneMore } from "./menus.testkit";
 
 /**
  * A chat's work link, against the whole window (V60, ADR 0088 §3, §4): **Link to work item…**
@@ -121,7 +122,8 @@ const asked = (asks: Asked[], cmd: string) => asks.filter((one) => one.cmd === c
 /** The chat's one list (#4753), from its pane's ⋯: the list its sidebar row and the palette
  *  have too. A tab's own menu has none of a chat's rows. */
 async function chatList() {
-  await userEvent.click(await screen.findByRole("button", { name: /^More for / }));
+  // The pane's ⋯, not the one on its row in the Chats list (#3198).
+  await userEvent.click(await waitFor(() => paneMore(/^More for /)));
   return screen.findByRole("menu");
 }
 

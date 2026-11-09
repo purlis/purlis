@@ -1360,67 +1360,42 @@ body {
   white-space: normal;
 }
 
-.chats-section li:has(> .task-end-confirm) {
-  flex-wrap: wrap;
-}
-
-.chats-section li > .task-end-confirm {
-  flex-basis: 100%;
-  padding: var(--space-1) var(--space-4) var(--space-2) var(--chats-name-at);
-}
-
-/* **A session at its task limit** (#1498, V100-54): one line under its row, while a dispatch
-   it was refused waits for a slot, with the number and the way to Settings. Under the row and
-   not in it: the row is a button, and a button holds no button.
-
-   **A line under a row starts where the row's name does** (`--chats-name-at`, #1920) and is
-   spaced from the geometry scale, as the row is: the row itself stays the shared row's height
-   (`--ui-row-height`), which a file's row in the Explorer is too. */
-.chats-section li:has(> .at-limit) {
-  flex-wrap: wrap;
-}
-
-.chats-section li > .at-limit {
+/* **What is said under a chat's row** (#1488, #1498, #1617, #1462): its task limit with the way
+   to Settings, its dispatches waiting on memory, what its restart says and the second step of
+   ending it, each a line of the row's `below` (#3198), under its name. */
+.chats-section .chat-below {
   display: flex;
-  flex-basis: 100%;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.chats-section .chat-below > .at-limit {
+  display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
   align-items: center;
-  padding: 0 var(--space-4) var(--space-2) var(--chats-name-at);
 }
 
 /* **A chat row's ⋯** (#4753): the row's own menu, at the row's end. Its room is always kept,
    so a row does not change width as the pointer arrives; it is drawn on hover and while the
    row has the keyboard, and always where there is no hover. Opacity, as the explorer's row
    action, so nothing moves. */
-.chats-section li > .chat-more {
+.chats-section .chat-more {
   display: flex;
   align-items: center;
   flex: none;
   opacity: 0;
 }
 
-.chats-section li:hover > .chat-more,
-.chats-section li:focus-within > .chat-more,
-.chats-section li > .chat-more:has([data-pressed]) {
+.chats-section [role="row"]:is([data-hovered], :focus-within) .chat-more,
+.chats-section .chat-more:has([data-pressed]) {
   opacity: 1;
 }
 
 @media (hover: none) {
-  .chats-section li > .chat-more {
+  .chats-section .chat-more {
     opacity: 1;
   }
-}
-
-/* **What a restart asked for from a row says** (#1462): why it was refused, or why it waits,
-   on one line under the row of a chat with no pane to say it on, as a task limit is. */
-.chats-section li:has(> .restart-said) {
-  flex-wrap: wrap;
-}
-
-.chats-section li > .restart-said {
-  flex-basis: 100%;
-  padding: 0 var(--space-4) var(--space-2) var(--chats-name-at);
 }
 
 .at-limit .at-limit-settings {
@@ -3292,8 +3267,7 @@ body {
 
 /* A chat's row is a `.ui-row`, whose own transparent fill is in a layer above this one: its band
    is drawn on the item that holds it, under the row. */
-.chats-section [data-revealed],
-.chats-section li:has(> .ui-row[data-revealed]) {
+.chats-section [data-revealed] {
   background-color: var(--surface-hover);
   animation: charter-revealed var(--motion-duration-settle) var(--motion-easing-standard);
 }
@@ -3317,12 +3291,16 @@ body {
      size, each a token and for something no role draws: the line the scope switch is on
      (`.chats-top`) and a finished task's refusal (`.finished-task > .trouble`). */
   /* **Where a top-level chat's name starts** (DS-11): the tree's first step, where a parent's
-     twist hangs (`--ui-tree-step`, `--space-5` in `collections.css`), the state mark's column,
+     twist hangs (the tree family's step, `ui/tree/tree.css`), the state mark's column,
      and the row's gap. The filter's text starts here too, and the group headings, so the list
      reads as one column under its filter (`chats-list.e2e.ts` measures it). */
   /* The persona's mark, which the row starts with (#3342): 20px, the prototype's. */
   --chats-mark: calc(var(--space-6) + var(--space-2));
-  --chats-name-at: calc(var(--space-5) + var(--chats-mark) + var(--space-3));
+  /* On the tree family (#3198): the tree's inset, a small row's own, one step and the gap. */
+  --chats-name-at: calc(
+    var(--space-2) + var(--space-3) + var(--space-5) + var(--space-1) + var(--chats-mark) +
+      var(--space-3)
+  );
 }
 
 /* The title, the filter, the scope and the chips stay at the top while the rows scroll under
@@ -3347,36 +3325,22 @@ body {
   justify-content: space-between;
 }
 
-/* **A chat's row is the shared tree row** (DS-3 `.ui-tree-row`, DS-11): its height, its steps,
-   its guides, its twist, its hover, its selected look and the keyboard's ring are all
-   `collections.css`'s. The level is the row's own, so the list stays flat and a row is drawn
-   again only for its own facts.
+/* **A chat's row is the tree family's** (#3198, DS-11): its height, its steps, its guides, its
+   twist, its hover, its selected look and the keyboard's ring are `ui/tree`'s.
 
    **A narrow list cannot afford a step per level** (#1499, #1682): at the sidebar's least width
    four steps of indent leave a row no room for its state. There, every row under another is
-   drawn one step in, whatever its level, which a screen reader is still told. */
-/* On the tree inside the section, never on `.chats-section` itself: a container query matches
-   the container's descendants, never the container, so a cap set there was never drawn. */
+   drawn one step in, whatever its level, which a screen reader is still told. On an element
+   around the tree, never on `.chats-section` itself: a container query matches the container's
+   descendants, never the container. */
 @container chats (max-width: 16rem) {
-  .chats-section .ui-tree {
-    --ui-tree-depth-cap: 1;
+  .chats-section .chats-list {
+    --tree-depth-cap: 1;
   }
 }
 
-/* **A row is one line, and as wide as the list** (#1675, #1499). No row, of a chat or of a
-   finished task, makes the list scroll sideways: what gives way in a narrow sidebar is the
-   name, and never the state. */
-.chats-section .chat {
-  flex: 1 1 0;
-  min-width: 0;
-  font: inherit;
-}
-
-/* **The marks, one size on every row** (DS-11). The state's mark stands first, in a column of
-   its own as wide on every row, and is heard after the name (its markup comes after it). The
-   persona's mark, or a shell's, stands last, at the row's end, one size whatever it holds. */
-.chats-section .chat .ui-row-lead {
-  order: -1;
+/* The persona's mark leads the row, one size on every row (DS-11), in a column of its own. */
+.chats-section .chat [data-part="lead"] {
   justify-content: center;
   inline-size: var(--chats-mark);
 }
@@ -3394,24 +3358,22 @@ body {
   --chat-mark-ground: var(--panel-fill);
 }
 
-.chats-section .chat:hover [data-scope="chat-mark"][data-part="root"] {
+.chats-section .chat[data-hovered] [data-scope="chat-mark"][data-part="root"] {
   --chat-mark-ground: var(--surface-hover);
 }
 
-.chats-section
-  .chat:is([aria-selected="true"], [aria-current]:not([aria-current="false"]))
-  [data-scope="chat-mark"][data-part="root"] {
+.chats-section .chat[data-selected] [data-scope="chat-mark"][data-part="root"] {
   --chat-mark-ground: var(--list-selected);
 }
 
 /* **A chat on screen in another pane of this tab** (#4757; the faint on-screen bar accepted on
    #4582): the selected row's edge, thinner and with no fill, so a press that would jump there is
    told before it is pressed, and the focused pane's row stays the one selected. */
-.chats-section .chat[data-beside]:not([aria-current]:not([aria-current="false"])) {
+.chats-section .chat[data-beside]:not([data-selected]) {
   box-shadow: inset 1px 0 0 var(--list-selected-edge);
 }
 
-.chats-section .chat[data-beside]:not([aria-current]:not([aria-current="false"])):dir(rtl) {
+.chats-section .chat[data-beside]:not([data-selected]):dir(rtl) {
   box-shadow: inset -1px 0 0 var(--list-selected-edge);
 }
 
@@ -3423,14 +3385,12 @@ body {
 /* **A finished row says how it ended by its mark** (#1687, as a chat's row does, #1675): the
    mark first on the line and never giving way, the words the row's to a screen reader and whole
    in its tooltip. */
-.chats-section .finished-name .shown-state {
-  flex: none;
-  order: -1;
+.chats-section .finished-task [data-part="lead"] {
   justify-content: center;
   inline-size: var(--chats-mark);
 }
 
-.chats-section .finished-name .shown-state .shape {
+.chats-section .finished-task .shown-state .shape {
   flex: none;
 }
 
@@ -3552,15 +3512,9 @@ body {
 
 /* A workspace's name over its sessions, where the list is grouped by workspace: **the frame's
    group head** (#3484), drawn by the panel family's rule for it (`ui/panel/panel.css`) on the
-   tree family's `header` part, so a theme that restyles a view's group heads restyles these too.
-   What is the Chats list's own: where its name starts, the room above it, and a long name cut.
-   Not a row of the tree, which stays flat (#1672): each row says its own workspace. */
-.chats-section li.chats-group {
-  margin-block-start: var(--space-2);
-  padding-inline: var(--chats-name-at) var(--space-4);
-}
-
-.chats-section li.chats-group > .chats-group-name {
+   tree family's `header` part of the group's `TreeSection` (#3198). What is the Chats list's own:
+   a long name cut. */
+.chats-section .chats-group .chats-group-name {
   min-inline-size: 0;
   overflow: hidden;
   white-space: nowrap;
@@ -3575,6 +3529,17 @@ body {
   white-space: nowrap;
 }
 
+/* **"Stopping…" gives way before the time** (#3198): at the region's least width a row that says
+   it is stopping cuts the word to an ellipsis, so its time stays whole in the row; the row says
+   it whole in its description. */
+.chats-section .chat .stopping {
+  flex: 0 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 /* **A task question's words at its row's end** (#4564): `asking steward 2 · 1m`. The asker's
    name gives way as the row's name does, so a name with no space to break at never pushes the
    time out of the row; the time stays whole. The trail shrinks by the list family's own
@@ -3587,7 +3552,13 @@ body {
 
 .chats-section .question-who {
   min-inline-size: 0;
+  /* **Never more than a share of the list** (#3198): a row shrinks its words in proportion to
+     what each would take, so a name with no space to break at, taken whole, would leave the
+     chat's own name nothing and push the time out of the row. Held to a share of the list
+     (`chats`, the section's size), the chat's name keeps its share and the time stays whole. */
+  max-inline-size: 30cqi;
   overflow: hidden;
+  white-space: nowrap;
   text-overflow: ellipsis;
 }
 
@@ -3595,11 +3566,6 @@ body {
   flex: none;
   white-space: pre;
 }
-
-/* **Every tree in the window is the shared tree** (#1672, DS-12): `.ui-tree` and its
-   `.ui-tree-row`s in `primitives/collections.css` draw the Chats tree, the explorer, the Changes
-   view and a file tab's files, with their steps, straight guides, selected row and the
-   keyboard's ring. The `.tree` class that drew them before is gone. */
 
 /* The line that says there are none is a secondary line (`ui-text-secondary`): the role's
    colour is what makes it quiet, so `.empty`'s own dimming is not drawn on top of it. */
@@ -3614,128 +3580,46 @@ body {
   display: inline-flex;
 }
 
-/* A row of the Chats section: the row, and the hand of a chat below it (#1448). As wide as the
-   list and no wider (#1499): the row inside it gives way, not the list. */
-.chats-section li {
-  display: flex;
-  gap: var(--space-1);
-  align-items: flex-start;
-  min-width: 0;
-}
-
-/* The hand rolled up from a chat below: a button of its own beside the row, since a press goes
-   to that chat and not to the row's. The button family draws it (#3523); here is its place. */
-.chats-section .rolled-up-at {
-  display: inline-flex;
-  flex: none;
-}
-
-/* **A chat's finished tasks, under its row** (#1485): the rows that stand alone, then the one
-   "Finished (n)" line. A finished task is quieter than a chat, since it is over: its name, the
-   "Finished (n)" line and what is said under it are secondary lines (`ui-text-secondary`,
-   #1920), where a chat's name is a body.
-
-   **A finished task's name and the "Finished (n)" count are the shared tree row** (DS-12,
-   `.ui-row.ui-tree-row` as a chat's row is), at its chat's level (the `li`'s `data-level`): its
-   height, its step, its guides, its hover. So a finished task's mark and name stand in the
-   columns a chat's do (DS-11). Its Brief, Reopen and Clear are small buttons beside it
-   (the family's small `Button`), the row's height. What is said under the line (a refusal, the core's note,
-   the report) stands where the name does, and the item draws the levels' guides on down past
-   it. */
-.chats-section li.finished-tasks,
-.chats-section li.chat-browsers {
-  --finished-depth: min(var(--ui-tree-depth), var(--ui-tree-depth-cap, 4));
-  display: block;
-  background-image: repeating-linear-gradient(
-    to right,
-    var(--tree-guide) 0 1px,
-    transparent 1px var(--ui-tree-step)
-  );
-  background-position: calc(var(--ui-tree-step) / 2) 0;
-  background-size: calc(var(--finished-depth) * var(--ui-tree-step)) 100%;
-  background-repeat: no-repeat;
-}
-
-.chats-section .finished-task > :not(.finished-line) {
-  margin-inline-start: calc(
-    (var(--finished-depth) + 1) * var(--ui-tree-step) + var(--chats-mark) + var(--space-3)
-  );
-}
-
-/* A finished row obeys a chat row's rule (#1499): as wide as the list and no wider. The name
-   gives way with an ellipsis, the state is whole, and Reopen and Clear go under the name where
-   they do not fit beside it. */
-.chats-section .finished-line,
-.chats-section .finished-fold {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0 var(--space-3);
-  min-width: 0;
-}
+/* **A chat's finished tasks, rows under its row** (#1485, #3198): the rows that stand alone,
+   then the one "Finished (n)" row. A finished task is quieter than a chat, since it is over: its
+   name, the "Finished (n)" row and what is said under it are secondary lines
+   (`ui-text-secondary`, #1920), where a chat's name is a body. Its Brief, Reopen and Clear are
+   small buttons at its end (the family's small `Button`). */
 
 /* **Why a finished task was not reopened**: a word that says something is wrong keeps the
    danger colour (`.trouble`), which no role has, so it wears none. It is a line under the
    task's name and is that name's size, the secondary's, by this one rule built from a token. */
-.chats-section .finished-task > .trouble {
+.chats-section .finished-below .trouble {
   font-size: var(--font-size-sm);
 }
 
-/* **A chat's browsers, under its row** (#2024) wear a finished task's name's rules: the shared
-   tree row at the level below the chat's, its mark and name in a chat's row's columns. */
-.chats-section .finished-name,
-.chats-section .chat-browser {
-  color: inherit;
-  font: inherit;
+/* **A finished row obeys a chat row's rule** (#1499): as wide as the list and no wider. Its
+   buttons and a browser's marks never give way, each whole: where they do not fit beside the
+   name they go under it, wrapping within the row's width, so the list never scrolls sideways
+   (`chats-list.e2e.ts` measures it at the region's least width). */
+.chats-section :is(.finished-task, .chat-browser) {
+  flex-wrap: wrap;
 }
 
-.chats-section .chat-browser {
-  display: flex;
-  width: 100%;
+.chats-section :is(.finished-task, .chat-browser) [data-part="trail"] {
+  flex-wrap: wrap;
+  max-inline-size: 100%;
 }
 
-.chats-section .chat-browser-unended {
+.chats-section :is(.finished-task, .chat-browser) [data-part="trail"] > * {
   flex: none;
 }
 
-/* Its mark and its name in a chat's row's columns, and its persona's mark at its end, the
-   size a chat's is (DS-11). */
-.chats-section .finished-name {
-  flex: 1 1 6rem;
-  min-width: 0;
-}
-
-.chats-section .finished-name > svg,
-.chats-section .chat-browser > svg,
-.chats-section .finished-name > .persona-mark {
-  flex: none;
+.chats-section :is(.finished-task, .chat-browser) [data-part="lead"] svg,
+.chats-section .finished-task [data-part="trail"] > :is(svg, .persona-mark) {
   inline-size: var(--space-6);
   block-size: var(--space-6);
-}
-
-.chats-section .finished-name .session,
-.chats-section .chat-browser .session {
-  flex: 1 1 3rem;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.chats-section .finished-count {
-  flex: 1 1 auto;
-  min-width: 0;
 }
 
 .chats-section .finished-note {
   max-width: 28rem;
   margin-block: var(--space-1) var(--space-2);
   white-space: normal;
-}
-
-.chats-section .finished-count svg {
-  width: var(--chats-mark);
-  height: var(--chats-mark);
 }
 
 /* The report, as the task wrote it: plain text that keeps its own line breaks. */
@@ -3750,8 +3634,10 @@ body {
   background: var(--surface-sunken);
 }
 
-.chats-section .finished-report p {
-  margin: 0 0 var(--space-2);
+.chats-section .finished-report {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
 }
 
 .chats-section .finished-report .report-text {

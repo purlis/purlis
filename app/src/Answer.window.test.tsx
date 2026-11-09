@@ -19,6 +19,7 @@ import App from "./App";
 import { noLongerAsking } from "./AnswerPanel";
 import type { OpenChat } from "./bindings";
 import { forgetThisLaunch } from "./regions";
+import { findTree, rowsOf } from "./ui/tree/tree.testkit";
 
 /**
  * **The person answers a task's question from its row in the Chats list** (#1496, #1551),
@@ -149,11 +150,9 @@ function core(asking = true, { question = true, refuse = false } = {}) {
   };
 }
 
-const section = () => screen.findByRole("tree", { name: "Chats of this project" });
+const section = () => findTree("Chats of this project");
 const row = (tree: HTMLElement, name: string) => {
-  const found = within(tree)
-    .getAllByRole("treeitem")
-    .find((one) => one.querySelector(".session")?.textContent === name);
+  const found = rowsOf(tree).find((one) => one.querySelector(".session")?.textContent === name);
   if (found === undefined) throw new Error(`no row is named ${name}`);
   return found;
 };

@@ -420,9 +420,10 @@ describe("the window's tab order", () => {
       "input Filter chats by name, persona, workspace or state",
       "radio Workspace",
       "checkbox needs you",
-      // The project's chats (#1447): ONE stop, the row of the chat in front, which reads as
-      // its name, its persona and its state's word (#1484, #3342), on its one line (#1675).
-      "treeitem steward two steward, running (no detail from Claude Code)",
+      // The project's chats (#1447): ONE stop, the row of the chat in front, a row of the tree
+      // family's (#3198), named by its chat's name; its persona and its state's word (#1484,
+      // #3342) are its description, said after the name, on its one line (#1675).
+      "row steward two",
       // Explorer, Search and Changes are the side's other views, hidden while Chats is open.
       // The handle between it and the centre — `react-resizable-panels`' keyboard resize.
       "separator Resize the left sidebar",

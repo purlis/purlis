@@ -501,3 +501,56 @@ describe("a row's words said from inside it", () => {
     expect(row).not.toHaveAttribute("aria-description");
   });
 });
+
+describe("→ on an open row with controls of its own (#3198)", () => {
+  function Owned() {
+    return (
+      <Tree aria-label="Chats" defaultExpandedKeys={["one", "two"]}>
+        <TreeRow
+          id="one"
+          textValue="one"
+          content={
+            <>
+              <RowLabel>one</RowLabel>
+              <RowTrail>
+                <button type="button" tabIndex={-1}>
+                  Go
+                </button>
+              </RowTrail>
+            </>
+          }
+        >
+          <TreeRow
+            id="one-child"
+            textValue="one's child"
+            content={<RowLabel>one's child</RowLabel>}
+          />
+        </TreeRow>
+        <TreeRow id="two" textValue="two" content={<RowLabel>two</RowLabel>}>
+          <TreeRow
+            id="two-child"
+            textValue="two's child"
+            content={<RowLabel>two's child</RowLabel>}
+          />
+        </TreeRow>
+      </Tree>
+    );
+  }
+
+  it("moves into the row's controls, as the APG treegrid's does, and ↓ goes on to its first child", async () => {
+    render(<Owned />);
+    act(() => screen.getByRole("row", { name: "one" }).focus());
+    await userEvent.keyboard("{ArrowRight}");
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Go" }));
+    act(() => screen.getByRole("row", { name: "one" }).focus());
+    await userEvent.keyboard("{ArrowDown}");
+    expect(document.activeElement).toBe(screen.getByRole("row", { name: "one's child" }));
+  });
+
+  it("moves to the first child of an open row that holds no controls, as before", async () => {
+    render(<Owned />);
+    act(() => screen.getByRole("row", { name: "two" }).focus());
+    await userEvent.keyboard("{ArrowRight}");
+    expect(document.activeElement).toBe(screen.getByRole("row", { name: "two's child" }));
+  });
+});

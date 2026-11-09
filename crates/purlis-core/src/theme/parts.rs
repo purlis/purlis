@@ -3734,7 +3734,16 @@ const STANDS_ON: &[(&str, &[&str])] = &[
     (
         "tree",
         &[
-            "badge", "button", "count", "message", "meter", "notice", "popover", "tooltip",
+            "badge",
+            "button",
+            "chat-mark",
+            "count",
+            "grip",
+            "message",
+            "meter",
+            "notice",
+            "popover",
+            "tooltip",
         ],
     ),
     (

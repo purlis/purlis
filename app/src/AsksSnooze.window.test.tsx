@@ -16,6 +16,7 @@ import { aTabForEachChat } from "./laidOut.testkit";
 import { forgetThisLaunch } from "./regions";
 import { forgetInbox } from "./inboxRules";
 import { forgetProjectViews } from "./projectViews";
+import { findTree } from "./ui/tree/tree.testkit";
 
 /**
  * **Snooze all on Asks** (#5647, spec #5638, ADR 0119), on the real window with the core
@@ -274,7 +275,7 @@ describe("Snooze all on Asks (#5647)", () => {
       await within(view).findByText("2 asks snoozed until their chats ask again."),
     ).toBeInTheDocument();
     // The Chats view reads the board, which still has both chats waiting.
-    const chats = await screen.findByRole("tree", { name: "Chats of this project" });
+    const chats = await findTree("Chats of this project");
     await waitFor(() => expect(within(chats).getAllByText("needs you")).toHaveLength(2));
 
     await press.click(within(view).getByRole("button", { name: "Show them now" }));

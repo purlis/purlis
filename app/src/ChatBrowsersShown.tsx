@@ -1,18 +1,20 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { memo, useRef } from "react";
+import { memo, useRef, type ReactNode } from "react";
 import { Globe } from "lucide-react";
 import type { Catalogued, Offer } from "./actions";
 import type { BrowserDriver, ChatBrowser } from "./bindings";
 import { addressChip, chatBrowserTitle, deviceOf } from "./browsers";
-import { Menued } from "./Menus";
+import { catalogueMenu } from "./Menus";
 import { THUMBNAIL_ACROSS, useBrowserOrigin, useBrowserWatch, useWindowSeen } from "./browserWatch";
 import { useProjectShown } from "./projectShown";
 import { onAMac } from "./tabKeys";
 import { Button } from "./ui/button/Button";
 import { Count } from "./ui/badge/Badge";
 import { Tooltip } from "./ui/tooltip/Tooltip";
+import { RowLabel, RowLead, RowTrail } from "./ui/list/Row";
+import { TreeRow } from "./ui/tree/Tree";
 
 /**
  * **A chat's browsers, where the window draws them besides their view tab** (#2024, spec
@@ -166,52 +168,36 @@ function PaneBrowser({
 }
 
 /**
- * **A chat's browsers under its row in the Chats list** (#2024): one row each, by the name the
- * chat knows it by, pressed to open its view. Not rows of the tree, as a chat's finished tasks
- * are not (`FinishedTasks.tsx`): the arrows stop on the chats, and Tab reaches these.
+ * **A chat's browsers, rows under its row in the Chats tree** (#2024, #3198): one row each, by
+ * the name the chat knows it by, pressed or Enter to open its view. Its chat folds them with
+ * the rest of what is under it. Keyed by the browser's program.
  */
-export const BrowserRows = memo(function BrowserRows({
-  chat,
-  level,
+export function browserRows({
   browsers,
   onOpen,
-  label,
   offers = NO_OFFERS,
   onPress,
   handTo = NO_CHATS,
 }: {
-  /** The chat they are of, by the name its row has. */
-  chat: string;
-  /** The level they are drawn at: one below the chat's own. */
-  level: number;
   browsers: readonly BrowserShown[];
   onOpen: (shown: BrowserShown) => void;
-  /** What the group is called: `Browsers of <chat>` unless said. */
-  label?: string;
   /** The catalogue, for each row's menu (#2022): Pin, Hand to a chat, Stop. */
   offers?: Catalogued;
   onPress?: (offer: Offer) => void;
   /** The open chats a browser no chat uses may be handed to, by number. */
   handTo?: readonly number[];
-}) {
-  if (browsers.length === 0) return null;
-  return (
-    <li role="none" className="chat-browsers" data-level={level}>
-      <div role="group" aria-label={label ?? `Browsers of ${chat}`}>
-        {browsers.map((shown) => (
-          <BrowserRow
-            key={shown.browser.program}
-            shown={shown}
-            onOpen={onOpen}
-            offers={offers}
-            onPress={onPress}
-            handTo={handTo}
-          />
-        ))}
-      </div>
-    </li>
-  );
-});
+}): ReactNode[] {
+  return browsers.map((shown) => (
+    <BrowserRow
+      key={shown.browser.program}
+      shown={shown}
+      onOpen={onOpen}
+      offers={offers}
+      onPress={onPress}
+      handTo={handTo}
+    />
+  ));
+}
 
 /** **One browser's row under its chat** (#2024), with its catalogue menu (#2022): where its
  *  page is on its hover, and who drives it where its agent does not (#2300). */
@@ -230,67 +216,80 @@ function BrowserRow({
 }) {
   const origin = useBrowserOrigin(shown.browser.program);
   const driver = shown.browser.driver;
+  /** Its marks, in words: what a reader hears after its name. */
+  const marks = [
+    shown.browser.was,
+    driver === null ? null : DRIVEN[driver].mark,
+    shown.browser.login === null ? null : "signed in",
+    shown.browser.pinned ? "pinned" : null,
+    shown.browser.unended ? "not ended yet" : null,
+  ].filter((one): one is string => one !== null);
   return (
-    <Menued
-      on={{
-        on: "browser",
-        program: shown.browser.program,
-        handTo,
-        // Its chat's browser timeline, while that chat is open (#2017).
-        ...(shown.browser.was === null && !shown.browser.unended
-          ? { session: shown.browser.session }
-          : {}),
-      }}
-      offers={offers}
-      onPress={onPress ?? (() => undefined)}
-    >
-      {/* The row's one hint says what each of its marks means: a mark inside a row takes no
-          keyboard of its own. */}
-      <Tooltip
-        tip={[
-          ...browserSaid(shown, origin, onAMac()),
-          ...(driver !== null ? [DRIVEN[driver].said] : []),
-          ...(shown.browser.login !== null ? [`Signed in with ${shown.browser.login}`] : []),
-          ...(shown.browser.unended ? [NOT_ENDED_YET] : []),
-          ...(shown.browser.pinned ? [PINNED] : []),
-        ].join("\n")}
-      >
-        <button
-          type="button"
-          className="ui-row ui-tree-row chat-browser"
-          // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
-          tabIndex={0}
-          onClick={() => onOpen(shown)}
-        >
-          <Globe className="node-icon" aria-hidden="true" />
-          <span className="session ui-text-secondary">Browser {shown.browser.name}</span>
-          {/* A pinned one whose chat closed says which chat it was of (#2022). */}
-          {shown.browser.was !== null && (
-            <span className="chat-browser-was ui-text-meta">{shown.browser.was}</span>
-          )}
-          {/* Who drives it, where its agent does not (#2300). */}
-          {driver !== null && (
-            // The person's own hand is the one that matters: strong, as a meta word that counts
-            // is (#3917). Primary at the meta's size is no rank of the scale.
-            <span
-              className={`chat-browser-driver ui-text-meta${driver === "person" ? " ui-text-strong" : ""}`}
-              data-driver={driver}
-            >
-              {DRIVEN[driver].mark}
-            </span>
-          )}
-          {/* Signed in with a login purlis performed (#2022): it goes only to a chat that may
-            log in with it. */}
-          {shown.browser.login !== null && (
-            <span className="chat-browser-login ui-text-meta">signed in</span>
-          )}
-          {shown.browser.pinned && <span className="chat-browser-pinned ui-text-meta">pinned</span>}
-          {/* Could not be ended yet (D-2013-16): its chat no longer uses it. */}
-          {shown.browser.unended && (
-            <span className="chat-browser-unended ui-text-meta">not ended yet</span>
-          )}
-        </button>
-      </Tooltip>
-    </Menued>
+    <TreeRow
+      id={`browser:${shown.browser.program}`}
+      textValue={`Browser ${shown.browser.name}`}
+      className="chat-browser"
+      data-program={shown.browser.program}
+      description={marks.join(", ") || undefined}
+      // The row's one hint says what each of its marks means.
+      tip={[
+        ...browserSaid(shown, origin, onAMac()),
+        ...(driver !== null ? [DRIVEN[driver].said] : []),
+        ...(shown.browser.login !== null ? [`Signed in with ${shown.browser.login}`] : []),
+        ...(shown.browser.unended ? [NOT_ENDED_YET] : []),
+        ...(shown.browser.pinned ? [PINNED] : []),
+      ].join("\n")}
+      menu={catalogueMenu(
+        {
+          on: "browser",
+          program: shown.browser.program,
+          handTo,
+          // Its chat's browser timeline, while that chat is open (#2017).
+          ...(shown.browser.was === null && !shown.browser.unended
+            ? { session: shown.browser.session }
+            : {}),
+        },
+        offers,
+        onPress ?? (() => undefined),
+      )}
+      onAction={() => onOpen(shown)}
+      content={
+        <>
+          <RowLead>
+            <Globe className="node-icon" aria-hidden="true" />
+          </RowLead>
+          <RowLabel className="session ui-text-secondary">Browser {shown.browser.name}</RowLabel>
+          <RowTrail>
+            {/* A pinned one whose chat closed says which chat it was of (#2022). */}
+            {shown.browser.was !== null && (
+              <span className="chat-browser-was ui-text-meta">{shown.browser.was}</span>
+            )}
+            {/* Who drives it, where its agent does not (#2300). */}
+            {driver !== null && (
+              // The person's own hand is the one that matters: strong, as a meta word that
+              // counts is (#3917).
+              <span
+                className={`chat-browser-driver ui-text-meta${driver === "person" ? " ui-text-strong" : ""}`}
+                data-driver={driver}
+              >
+                {DRIVEN[driver].mark}
+              </span>
+            )}
+            {/* Signed in with a login purlis performed (#2022): it goes only to a chat that may
+                log in with it. */}
+            {shown.browser.login !== null && (
+              <span className="chat-browser-login ui-text-meta">signed in</span>
+            )}
+            {shown.browser.pinned && (
+              <span className="chat-browser-pinned ui-text-meta">pinned</span>
+            )}
+            {/* Could not be ended yet (D-2013-16): its chat no longer uses it. */}
+            {shown.browser.unended && (
+              <span className="chat-browser-unended ui-text-meta">not ended yet</span>
+            )}
+          </RowTrail>
+        </>
+      }
+    />
   );
 }

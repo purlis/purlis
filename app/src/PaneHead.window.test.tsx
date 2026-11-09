@@ -20,6 +20,7 @@ import { onTheWire } from "./chatEvents.testkit";
 import { aTabForEachChat } from "./laidOut.testkit";
 import { placementFor } from "./ui/tooltip/Tooltip";
 import { setSkillStudioOn } from "./skillStudio";
+import { findRow, findTree } from "./ui/tree/tree.testkit";
 
 /**
  * **A chat's pane head, against the whole window** (#4760, spec #4750 stories 54, 55, 60 and
@@ -186,8 +187,8 @@ describe("a chat's pane head", () => {
   it("and its row in the Chats list says the same sandbox (#4760)", async () => {
     await aPane();
 
-    const tree = await screen.findByRole("tree", { name: "Chats of this project" });
-    const row = await within(tree).findByRole("treeitem", { name: new RegExp(`^${NAME}`) });
+    const tree = await findTree("Chats of this project");
+    const row = await findRow(tree, new RegExp(`^${NAME}`));
     expect(within(row).getByRole("img", { name: "floor" })).toBeInTheDocument();
   });
 
@@ -321,8 +322,8 @@ describe("a chat wrapping up (#4760)", () => {
 
   it("breathes on its row in the Chats list, and the mark goes when it is cancelled", async () => {
     await aPane();
-    const tree = await screen.findByRole("tree", { name: "Chats of this project" });
-    const row = await within(tree).findByRole("treeitem", { name: new RegExp(`^${NAME}`) });
+    const tree = await findTree("Chats of this project");
+    const row = await findRow(tree, new RegExp(`^${NAME}`));
     expect(row.querySelector('[data-mark="wrapping-up"]')).toBeNull();
 
     await step("sent");

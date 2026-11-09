@@ -176,7 +176,7 @@ describe("starting a chat", () => {
       browser.execute(
         (chat, over) => {
           const row = document.querySelector<HTMLElement>(
-            `[data-testid="chats-section"] [role="treeitem"][data-session="${chat}"]`,
+            `[data-testid="chats-section"] [role="row"].chat[data-session="${chat}"]`,
           );
           row?.dispatchEvent(
             new PointerEvent(over ? "pointerover" : "pointerout", {
@@ -201,7 +201,7 @@ describe("starting a chat", () => {
           const sessions = await browser.execute(() =>
             [
               ...document.querySelectorAll<HTMLElement>(
-                '[data-testid="chats-section"] [role="treeitem"][data-session]',
+                '[data-testid="chats-section"] [role="row"].chat[data-session]',
               ),
             ].map((row) => row.dataset.session ?? ""),
           );

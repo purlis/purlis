@@ -10,6 +10,7 @@ import { setChatsListPrefs } from "./chatsListPrefs";
 import { stateClock } from "./stateClock";
 import { chatsTree, type ListedChat } from "./chatsTree";
 import { DISPATCHES_SHOW, type Offer } from "./actions";
+import { rowNamed, rowsOf, treeNamed } from "./ui/tree/tree.testkit";
 
 afterEach(cleanup);
 
@@ -139,8 +140,8 @@ describe("the Chats view's prototype details (#3484)", () => {
       ["alpha", "2"],
       ["beta", "1"],
     ]);
-    // Still no row of the tree: it counts each workspace's chats on its own.
-    expect(screen.getAllByRole("treeitem")).toHaveLength(3);
+    // A group's name is no row of the tree (#3198): the tree still has its three chats' rows.
+    expect(rowsOf(treeNamed("Chats of this project"))).toHaveLength(3);
   });
 
   it("ends a chat's row with the time it came into its state, quietly", () => {
@@ -164,7 +165,9 @@ describe("the Chats view's prototype details (#3484)", () => {
         </ChatsHere.Provider>,
       );
       const time = (name: string) =>
-        screen.getByRole("treeitem", { name: new RegExp(`^${name}`) }).querySelector(".chat-time");
+        rowNamed(treeNamed("Chats of this project"), new RegExp(`^${name}`)).querySelector(
+          ".chat-time",
+        );
       return { one: time("steward 1"), two: time("steward 2") };
     };
 
@@ -236,18 +239,18 @@ describe("the restarts' status beside the tree (#3886)", () => {
       expect(region.querySelectorAll("p")).toHaveLength(1);
       expect(region.querySelector("p")).toBe(line);
     };
-    const tree = screen.getByRole("tree", { name: "Chats of this project" });
-    const steward = within(tree)
-      .getAllByRole("treeitem")
-      .find((one) => one.querySelector(".session")?.textContent === "steward 1") as HTMLElement;
+    const tree = treeNamed("Chats of this project");
+    const steward = rowsOf(tree).find(
+      (one) => one.querySelector(".session")?.textContent === "steward 1",
+    ) as HTMLElement;
 
     // Folded, and opened again.
     act(() => steward.focus());
     await userEvent.keyboard("{ArrowLeft}");
-    expect(within(tree).getAllByRole("treeitem")).toHaveLength(1);
+    expect(rowsOf(tree)).toHaveLength(1);
     still();
     await userEvent.keyboard("{ArrowRight}");
-    expect(within(tree).getAllByRole("treeitem")).toHaveLength(2);
+    expect(rowsOf(tree)).toHaveLength(2);
     still();
 
     // Filtered away, and the filter cleared.
@@ -277,7 +280,7 @@ describe("the rows of the chats on screen (#4757)", () => {
     );
 
     const rowOf = (session: number) =>
-      document.querySelector<HTMLElement>(`[role="treeitem"][data-session="${session}"]`);
+      document.querySelector<HTMLElement>(`[role="row"][data-session="${session}"]`);
     expect(rowOf(1)).toHaveAttribute("aria-current", "true");
     expect(rowOf(1)).not.toHaveAttribute("data-beside");
     expect(rowOf(3)).toHaveAttribute("data-beside");

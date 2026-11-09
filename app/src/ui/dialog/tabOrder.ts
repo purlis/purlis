@@ -91,7 +91,7 @@ export function entryOf(stop: HTMLElement): HTMLElement {
       '[aria-checked="true"], [aria-selected="true"], [data-state="checked"]',
     ) ??
     stop.querySelector<HTMLElement>(
-      '[role="radio"], [role="tab"], [role="option"], [role="menuitem"], [role="treeitem"], [role="row"]',
+      '[role="radio"], [role="tab"], [role="option"], [role="menuitem"], [role="row"]',
     ) ??
     stop
   );
