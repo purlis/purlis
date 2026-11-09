@@ -28,6 +28,8 @@ use purlis_core::shown;
 use purlis_core::state::Event;
 use purlis_core::workspaces::Plane;
 
+mod artifact;
+
 #[cfg(unix)]
 mod bridge;
 mod brokered;
@@ -54,6 +56,7 @@ mod permission;
 mod piece;
 mod pool;
 mod poolsetup;
+mod queries;
 mod report;
 mod scan;
 mod secret;
@@ -213,6 +216,11 @@ enum Command {
     /// root), never the transcript.
     #[command(subcommand)]
     Session(session::SessionCommand),
+
+    /// Artifacts: pages in a workspace's artifacts/ pinned to the workspace, each an icon on
+    /// its activity bar for everyone who works in it (workspaces/<ws>/artifacts/pins.toml).
+    #[command(subcommand)]
+    Artifact(artifact::ArtifactCommand),
 
     /// Harness profiles: which program a chat runs, and with what environment.
     #[command(subcommand)]
@@ -495,6 +503,14 @@ enum Command {
 
     /// What each version of the app brought: its CHANGELOG.md, newest first.
     News(NewsCommand),
+
+    /// Every query a page, a chat or a script can read through (ADR 0120 §7): each read-only
+    /// tool's id, scope, the release it answers since, what it takes and the shape it answers.
+    Queries {
+        /// The catalogue as JSON: `{"api": 1, "queries": [...]}`.
+        #[arg(long)]
+        json: bool,
+    },
 
     /// Which channel the app updates from. This command does NOT install anything.
     ///
@@ -1368,6 +1384,8 @@ fn read_only_standing(command: &Command) -> ReadOnly {
         | Command::Update { .. }
         | Command::Version { .. }
         | Command::News(_)
+        // The catalogue is compiled in: nothing of a project's is read.
+        | Command::Queries { .. }
         // This machine's pools, in its config home: nothing of a project's.
         | Command::Pool(_)
         // This machine's signing key, in its keychain: nothing of a project's.
@@ -3684,6 +3702,7 @@ fn run(command: Command) -> Result<u8, clierror::CliError> {
         | Command::Init(_)
         | Command::Reinit
         | Command::News(_)
+        | Command::Queries { .. }
         | Command::Theme(_)
         | Command::Stop { .. }
         | Command::Update { .. }
@@ -3896,6 +3915,7 @@ fn run(command: Command) -> Result<u8, clierror::CliError> {
         Command::Curation(command) => return Ok(curation::run(here.plane.root(), command)?),
         Command::Skill(command) => return skill::run(here.plane.root(), command),
         Command::Session(command) => return Ok(session::run(&here, command)?),
+        Command::Artifact(command) => return Ok(artifact::run(&here, command)?),
         Command::Workspace(WorkspaceCommand::Remember {
             text,
             title,
@@ -5747,6 +5767,8 @@ fn main() -> ExitCode {
                 pending: news.pending,
             }));
         }
+        // The catalogue is compiled in, so no project is looked for.
+        Command::Queries { json } => return queries::run(*json),
         Command::Update { to, bump, channel } => {
             let config_root = purlis_core::machine::config_root();
             if let Some(word) = channel {

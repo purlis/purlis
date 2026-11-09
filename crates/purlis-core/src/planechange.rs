@@ -38,6 +38,10 @@ pub enum Kind {
     Workspace,
     /// A workspace's `todos/`.
     Todos,
+    /// A workspace's `artifacts/` (ADR 0120, #5955): its pins file, an artifact's template and
+    /// its data. An open artifact reads again on its own folder's change, and the activity bar's
+    /// group on any of them (its pins, and each icon's freshness).
+    Artifacts,
     /// A memory store: a workspace's `memory/` or a persona's (`_shared` included).
     Memory,
     /// Session records: a workspace's `sessions/`, or the plane root's.
@@ -99,6 +103,7 @@ pub fn classify(root: &Path, path: &Path) -> Option<Change> {
         Some("workspaces") => {
             let kind = match parts.get(2).map(String::as_str) {
                 Some("todos") => Kind::Todos,
+                Some("artifacts") => Kind::Artifacts,
                 Some("memory") => Kind::Memory,
                 Some("sessions") => Kind::Sessions,
                 _ => Kind::Workspace,
@@ -266,6 +271,8 @@ fn answers_of(change: &Change) -> Vec<Answer> {
             Answer::Views,
         ],
         Kind::Todos => vec![Answer::Sidebar, panels(), Answer::Git, Answer::Views],
+        // The template and the pins are committed; the data is not, and moves only the views.
+        Kind::Artifacts => vec![Answer::Git, Answer::Views],
         Kind::Memory => vec![panels(), Answer::Views],
         Kind::Sessions if change.workspace.is_none() => vec![Answer::RootPanels, Answer::Views],
         Kind::Sessions => vec![panels(), Answer::Views],
@@ -756,6 +763,27 @@ mod tests {
     #[test]
     fn how_the_chats_stand_concerns_the_sidebar_and_nothing_else() {
         assert_eq!(answers_to(chats()), vec![Answer::Sidebar]);
+    }
+
+    #[test]
+    fn an_artifact_s_files_and_pins_are_the_artifacts_of_their_workspace() {
+        for path in [
+            "workspaces/alpha/artifacts",
+            "workspaces/alpha/artifacts/pins.toml",
+            "workspaces/alpha/artifacts/backlog/index.html",
+            "workspaces/alpha/artifacts/backlog/data.json",
+            "workspaces/alpha/artifacts/backlog/data/weeks.json",
+        ] {
+            assert_eq!(at(path), change(Kind::Artifacts, Some("alpha"), None, path));
+        }
+    }
+
+    #[test]
+    fn an_artifact_concerns_the_views_and_the_git_standings_and_no_panel() {
+        assert_eq!(
+            answers_to(at("workspaces/alpha/artifacts/backlog/data.json")),
+            vec![Answer::Git, Answer::Views]
+        );
     }
 
     #[test]

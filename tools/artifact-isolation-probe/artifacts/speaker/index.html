@@ -1,0 +1,22 @@
+<!doctype html>
+<!-- Copyright 2026 Purlis. SPDX-License-Identifier: Apache-2.0 -->
+<html><head><meta charset="utf-8" /><title>speaker</title>
+<script>
+  // The page's channel: the port purlis hands a frame, or a native webview's /.purlis/say.
+  let port = null;
+  const queue = [];
+  const framed = window.top !== window;
+  addEventListener("message", (e) => {
+    if (!port && e.data && e.data.purlis === "port" && e.ports[0]) {
+      port = e.ports[0];
+      queue.splice(0).forEach((m) => port.postMessage(m));
+    }
+  });
+  function say(m) {
+    if (port) port.postMessage(m);
+    else if (framed) queue.push(m);
+    else new Image().src = "/.purlis/say?m=" + encodeURIComponent(JSON.stringify(m));
+  }
+</script>
+<script>say("honest");</script>
+</head><body>speaker <iframe src="nested.html"></iframe></body></html>

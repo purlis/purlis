@@ -8857,3 +8857,130 @@ nav.piece-files-head {
   border-inline-start: 2px solid;
   font-size: var(--font-size-sm);
 }
+
+/* **A pinned artifact's group on the left bar** (#5952, ADR 0120 §2): after a divider, below
+   purlis's own icons. The divider is the separator family's, held off the column's edges. */
+.artifact-divider {
+  flex: none;
+  margin-inline: var(--space-3);
+}
+
+/* **A pinned artifact's tab** (#5952): purlis's bar, then the frame the page's own webview is
+   laid over, the rest of the pane. */
+.artifact-bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-3) var(--space-5);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.artifact-bar-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.artifact-bar-by,
+.artifact-bar-fresh {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-quiet);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Where the page is drawn. The webview covers it; while it is put away (a dialog over it), the
+   pane's own fill shows. */
+.artifact-frame {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* **An .html file's private preview** (#5953): the frame of its own webview fills the preview. */
+.piece-page {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* **An artifact icon's slot** (#5953): what a drag moves, holding its icon and nothing else. */
+.artifact-slot {
+  display: contents;
+}
+
+/* **Who a pin reaches**, in Pin to workspace (#5953): its people mark beside the sentence. */
+.pin-reach {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* **Where the page's script stands, on purlis's bar** (#5959, ADR 0120 §4). */
+.artifact-bar-standing {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-quiet);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* **The actions a page offers, on purlis's bar** (#5972, ADR 0120 §8): purlis's buttons, in a
+   row of their own on the bar. */
+.artifact-bar-offers {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+/* **What a failed Regenerate said** (#5962, ADR 0120 §6): on a line of its own under the bar's
+   row, with the tail of the run's output, masked, kept to a few lines that scroll. */
+.artifact-bar:has(.artifact-regenerate-said) {
+  flex-wrap: wrap;
+}
+
+.artifact-regenerate-said {
+  flex: 1 0 100%;
+  min-width: 0;
+  font-size: var(--font-size-sm);
+}
+
+.artifact-regenerate-output {
+  max-height: 8lh;
+  margin: var(--space-2) 0 0;
+  overflow: auto;
+  color: var(--text-quiet);
+  font-family: var(--font-mono);
+  white-space: pre-wrap;
+}
+
+/* **The frame's edge, which the page cannot draw** (#5959, ADR 0120 §3): around the frame the
+   page's webview is laid over, so it stays outside the page. Its colour is where the page's
+   script stands: none or not run, asking, or approved and running. */
+.artifact-edge {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  border: 2px solid var(--border-subtle);
+}
+
+.artifact-edge[data-standing="asks"] {
+  border-color: var(--state-waiting);
+}
+
+.artifact-edge[data-standing="runs"] {
+  border-color: var(--accent-base);
+}
