@@ -12,7 +12,7 @@ import {
 } from "react";
 import { Info, ListFilter } from "lucide-react";
 import { Select } from "../ui/select/Select";
-import { ViewNav } from "../ui/panel/ViewFrame";
+import { ViewNav } from "../ui/panel/ViewNav";
 import { Button } from "../ui/button/Button";
 import { Checkbox, CheckboxGroup, RovingCheckbox } from "../ui/choice/Checkbox";
 import {

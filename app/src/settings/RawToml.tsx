@@ -5,7 +5,7 @@ import { lazy, Suspense, useEffect, useId, useRef, useState } from "react";
 import type { TextEditorHandle } from "../editor/TextEditor";
 import type { Shown } from "./fileControls";
 import { Button } from "../ui/button/Button";
-import { ViewNav } from "../ui/panel/ViewFrame";
+import { ViewNav } from "../ui/panel/ViewNav";
 
 /** The editor, and the merge view a file changed on disk opens: CodeMirror, in a chunk of its
  *  own fetched when a file is first edited, never in the window's main bundle (#987). */
@@ -85,16 +85,16 @@ export function RawLinks({
   editing: string | undefined;
   onEdit: (id: string) => void;
 }) {
-  const as = `Edit as ${files[0]?.as ?? "TOML"}`;
+  const heading = `Edit as ${files[0]?.as ?? "TOML"}`;
   return (
     // The panel family's page navigation (`ViewNav`, #2930), as the groups above it are: one Tab
     // stop, the arrows between the files, and the file on screen `aria-current="page"`.
     <div className="ui-settings-raw">
       <p className="ui-settings-raw-label" aria-hidden="true">
-        {as}
+        {heading}
       </p>
       <ViewNav
-        label={as}
+        label={heading}
         pages={files.map((one) => ({ id: one.id, label: named(one.file) }))}
         page={editing ?? ""}
         onPage={onEdit}

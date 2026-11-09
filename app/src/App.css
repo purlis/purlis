@@ -3268,8 +3268,8 @@ body {
   }
 }
 
-/* A chat's row is a `.ui-row`, whose own transparent fill is in a layer above this one: its band
-   is drawn on the item that holds it, under the row. */
+/* A chat's row is the tree family's, whose own transparent fill is in a layer above this one: its
+   band is drawn on the item that holds it, under the row. */
 .chats-section [data-revealed] {
   background-color: var(--surface-hover);
   animation: charter-revealed var(--motion-duration-settle) var(--motion-easing-standard);
@@ -5335,7 +5335,7 @@ body {
   margin: 0;
 }
 
-/* Load-more: a row of the list (`.ui-row`) rather than a button beside it, so the list ends with
+/* Load-more: a row of the list (the list family's) rather than a button beside it, so the list ends with
    the way to see the rest of it instead of the reader having to look elsewhere for one. */
 .panel-more {
   font: inherit;
@@ -7088,7 +7088,7 @@ nav.piece-files-head {
 }
 
 /* **Edit as TOML** (SE-19, V89d): one link per file at the foot of the nav, set apart from the
-   groups by a hairline, drawn as the nav's own buttons are. */
+   groups by a hairline, the same page navigation as the groups (`ViewNav`, #2930). */
 .ui-settings-raw {
   display: flex;
   flex-direction: column;

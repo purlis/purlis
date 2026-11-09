@@ -151,7 +151,7 @@ theme test's list or an ADR's index:
 | its parts and their tests | `crates/purlis-core/src/theme/parts_<family>.rs`, `parts_<family>_tests.rs` | `build.rs` |
 | its stylesheet | `app/src/ui/<family>/<family>.css` | `styles.css`'s `@families` line |
 | its forced colours | `app/src/ui/<family>/forced-colors.css`, one `@media (forced-colors: active)` block | `styles.css`'s `@forced` line, before `theme/forced-colors.css` |
-| its lint rules | `app/src/ui/<family>/lint.js`: `rules`; `off`, the files a rule is still off in; `rawButtons`, its controls still drawn as a raw `<button>` | `eslint.ui-rules.js`, every rule an error |
+| its lint rules | `app/src/ui/<family>/lint.js`: `rules`; `off`, the files a rule is still off in | `eslint.ui-rules.js`, every rule an error |
 | its lint tests | `app/src/ui/<family>/lint.test.ts`, on `../lint.testkit` | required beside `lint.js` (`ui/lint.test.ts`) |
 | what the theme tests hold it to | `app/src/ui/<family>/theme.testkit.ts`: `faint`, `quiet`, `spreadGrounds`, `classless`, `groundParts`, and `forced` (what its forced sheet draws) | `theme/families.testkit.ts` |
 | what the forced-colours scenario draws and reads | `app/src/ui/<family>/forced-colors.probe.ts`: its controls' markup and, by `data-p`, their computed values with forced colours active | `app/e2e/forcedProbes.ts` (a glob, at load) |

@@ -1307,9 +1307,12 @@ const STATES: State[] = [
     drawn: /The whole file, comments and all/,
     then: async () => {
       await userEvent.click(
-        within(await screen.findByRole("group", { name: "Edit as TOML" })).getByRole("button", {
-          name: "charter.toml",
-        }),
+        within(await screen.findByRole("navigation", { name: "Edit as TOML" })).getByRole(
+          "button",
+          {
+            name: "charter.toml",
+          },
+        ),
       );
     },
   },

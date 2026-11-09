@@ -413,8 +413,8 @@ own `min-width: max-content` beside the class.
 `ToggleButton`. No screen draws a `<button>` of its own for one, and none wears the old
 `.ui-button*` classes: `eslint.config.js` refuses both (`purlis/button-family`, an error). No raw
 `<button>` is let through as another family's control any more (#2930): the last ones, a tab's
-close, the settings nav and its Edit as TOML files, moved onto their families. The rule's
-`otherFamilies` option stays for a family that is added before its controls move.
+close, the settings nav and its Edit as TOML files, moved onto their families, and the rule takes
+no list of roles or classes to let one through.
 
 | Prop | Says |
 | --- | --- |

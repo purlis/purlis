@@ -2021,7 +2021,7 @@ async function fromTheMenuOf(key: string, item: string) {
  *  role what it holds has (a refused tab name's is an alert). */
 const openDialogs = () =>
   document.querySelectorAll(
-    '[role="dialog"], [role="alertdialog"], ' + '[data-scope="popover"][data-part="root"]',
+    '[role="dialog"], [role="alertdialog"], [data-scope="popover"][data-part="root"]',
   );
 
 /**
