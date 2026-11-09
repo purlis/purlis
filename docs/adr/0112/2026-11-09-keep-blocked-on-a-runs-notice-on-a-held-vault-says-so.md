@@ -20,7 +20,9 @@ Keep blocked pressed on it then says what Keep blocked on the refused vault's No
   is made, and every run the press answers hears it: a run whose command had stopped waiting is
   nudged with the same line, never "kept blocked", and no chat is told it twice, however many of
   its runs the press answers. That holds for a run asking to allow its program on that vault too:
-  its own outcome gives way to the one line, since the press was about the vault.
+  its own outcome gives way to the one line, since the press was about the vault. Two presses
+  the person makes at once, on the run's notice and on the refused vault's Notice, may each tell
+  it, as two presses always could: accepted, since it takes two presses.
 
 The run that waited is refused as before, and Keep blocked still takes back nothing the persona
 holds.

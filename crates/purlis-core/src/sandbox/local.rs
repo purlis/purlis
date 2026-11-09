@@ -565,15 +565,19 @@ fn read(root: &Path) -> OnDisk {
 /// back in force what the other kept out (review of #5934). The nevers an earlier build left are
 /// carried as before.
 fn salvaged(text: &str) -> OnDisk {
-    let vaults_mine = serde_json::from_str::<serde_json::Value>(text)
-        .ok()
+    let whole = serde_json::from_str::<serde_json::Value>(text).ok();
+    // Said only of an object with a field off its shape: an empty or cut-short file starts again
+    // quietly, as it always did.
+    if whole.as_ref().is_some_and(serde_json::Value::is_object) {
+        tracing::warn!(
+            "purlis: this machine's sandbox file has a field off its shape; it starts again, \
+             keeping its vault grants"
+        );
+    }
+    let vaults_mine = whole
         .and_then(|held| held.get("vaults_mine").cloned())
         .and_then(|grants| serde_json::from_value(grants).ok())
         .unwrap_or_default();
-    tracing::warn!(
-        "purlis: this machine's sandbox file has a field off its shape; it starts again, keeping \
-         its vault grants"
-    );
     OnDisk {
         vaults_mine,
         // What starts again never takes a never an earlier build left here with it.

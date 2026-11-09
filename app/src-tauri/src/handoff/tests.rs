@@ -14059,6 +14059,59 @@ fn keep_blocked_on_a_held_vaults_notice_nudges_its_runs_with_the_persons_reason(
     assert_eq!(told, [], "and told nothing twice");
 }
 
+/// #5890, review round 5 of #5934: on a run's own notice too, a chat with another run stopped on
+/// the vault hears the held line once, though the press answers both.
+#[test]
+fn keep_blocked_on_a_held_vaults_run_notice_with_another_stopped_run_tells_the_chat_once() {
+    use purlis_core::secrets::ask::run::Offer;
+    let plane = Plane::new().a_persona("ops", "");
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    vault_team_no_persona_is_tagged_for(&plane);
+    let words = words_kept(&held);
+    mid_turn_on_the_board(&held, 3);
+    let vaults = raised_and_left(
+        &held,
+        curl_on_team_not_its(&plane, Offer::Vault { no_allow: None }, &["TOKEN"]),
+    );
+    let mut wget = curl_on_team_not_its(&plane, Offer::Program, &[]);
+    wget.bound.name = "wget".to_owned();
+    wget.bound.program = "/usr/bin/wget".into();
+    wget.command = "wget --version".to_owned();
+    raised_and_left(&held, wget);
+    purlis_core::sandbox::local::grant_vault(&plane.root, "team", "ops")
+        .expect("a row of the Allowed list");
+
+    crate::secretasks::run_grant_given(
+        &held,
+        None,
+        vaults,
+        crate::secretasks::RunGrantPress::Refuse,
+        crate::secretasks::RunGiven::default(),
+    )
+    .expect("kept");
+
+    assert!(
+        held.secret_asks().open_runs().is_empty(),
+        "both asks were answered"
+    );
+    assert_eq!(
+        held.vault_refusals().queued_for(3),
+        1,
+        "one line, at its turn's end"
+    );
+    assert!(
+        words
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|(session, _)| *session != 3),
+        "and nothing more"
+    );
+}
+
 /// #5890, review round 4 of #5934: two runs of one chat, each stopped waiting on the vault, and
 /// Keep blocked on a vault its persona holds: the chat hears the held line once, not once a run.
 #[test]
