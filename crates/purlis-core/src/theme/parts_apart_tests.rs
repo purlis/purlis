@@ -81,13 +81,13 @@ fn a_crumb_whose_words_vanish_under_the_pointer_falls_alone() {
 
 #[test]
 fn a_selected_row_is_measured_on_the_selected_fill_it_is_drawn_on() {
-    // In Purlis Classic light, `syntax.keyword` reads on the popover (5:1) and not on the
-    // selected row's fill (4.1:1): measured on the popover, it would hold.
-    let theme = classic_light(json!({ "titlebar.row.selected.text": "syntax.keyword" }));
+    // In Purlis Classic light, `terminal.ansi.magenta` reads on the popover and not on the
+    // selected row's fill: measured on the popover, it would hold.
+    let theme = classic_light(json!({ "titlebar.row.selected.text": "terminal.ansi.magenta" }));
     assert_eq!(fell(&theme), ["titlebar.row.selected"]);
     // Under the pointer, on the popover, the same words hold, but not on the selected row
     // under the pointer, which they reach too (#4000).
-    let theme = classic_light(json!({ "titlebar.row.hover.text": "syntax.keyword" }));
+    let theme = classic_light(json!({ "titlebar.row.hover.text": "terminal.ansi.magenta" }));
     assert_eq!(fell(&theme), ["titlebar.row.hover+selected"]);
     // And words that read on the selected fill hold there.
     let theme = purlis_dark(json!({ "titlebar.row.selected.text": "text.primary" }));

@@ -4,10 +4,8 @@
 /**
  * **A diff, drawn in every built-in** (#4424): the merge view's line washes and word washes under
  * real syntax colours, so a picture shows whether a changed word still reads and still stands out
- * from its line.
- *
- * The editor is kept out of axe as the Skill studio's story keeps it (#3796). The theme check
- * holds its colours on these washes (`theme/check.rs`).
+ * from its line, and axe holds every word of it at 4.5:1 in every cell (#3796): a changed file
+ * and a new one.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent, waitFor } from "storybook/test";
@@ -37,9 +35,6 @@ const GRAMMAR_ARRIVES = { timeout: 10_000 };
 
 const meta = {
   component: MergeViewer,
-  parameters: {
-    a11y: { context: { exclude: [".cm-editor"] } },
-  },
   args: { path: "wash.ts", base: BASE, head: HEAD, hunks: HUNKS },
   decorators: [
     (Story) => (
@@ -71,5 +66,37 @@ export const WordsChanged: Story = {
     await untilFocused(side("wash.ts, before"), "the side before the change");
     await userEvent.tab();
     await untilFocused(side("wash.ts, after"), "the side after the change");
+  },
+};
+
+/** **A new file** (#3796): every line inserted, on the after side alone, held to axe like a change. */
+export const NewFile: Story = {
+  args: {
+    path: "notes.md",
+    base: "",
+    head: `# Release checklist
+
+1. Run the tests.
+2. Write the changelog entry, then \`npm run fold\`.
+
+> Ask before a release on a Friday.
+`,
+    hunks: [{ oldStart: 0, oldLines: 0, newStart: 1, newLines: 6 }],
+  },
+  play: async ({ canvasElement }) => {
+    // The grammar arrives after the first draw: wait until the heading takes its own colour.
+    await waitFor(() => {
+      const code = canvasElement.querySelector<HTMLElement>(".cm-merge-b .cm-content");
+      const spans = canvasElement.querySelectorAll<HTMLElement>(".cm-merge-b .cm-line span");
+      const heading = [...spans].find((span) => span.textContent?.includes("Release checklist"));
+      if (!code || !heading) throw new Error("the merge view has not drawn its heading");
+      expect(getComputedStyle(heading).color).not.toBe(getComputedStyle(code).color);
+    }, GRAMMAR_ARRIVES);
+    const side = (name: string) => () =>
+      canvasElement.querySelector<HTMLElement>(`[aria-label="${name}"]`);
+    await userEvent.tab();
+    await untilFocused(side("notes.md, before"), "the empty side before the file");
+    await userEvent.tab();
+    await untilFocused(side("notes.md, after"), "the new file");
   },
 };

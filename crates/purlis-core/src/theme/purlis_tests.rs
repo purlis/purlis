@@ -799,19 +799,25 @@ fn light_and_high_contrast_ship_as_its_appearances_and_dark_stays_the_default() 
 }
 
 #[test]
-fn syntax_comments_and_punctuation_draw_the_muted_grey_of_their_appearance() {
-    // High contrast moved every grey up a tier and left these two behind (#3182): in every
-    // appearance they are `text.muted`, so they move with it.
-    for theme in &purlis().appearances {
-        for token in ["syntax.comment", "syntax.punctuation"] {
-            assert_eq!(
-                theme.value(token),
-                theme.value("text.muted"),
-                "{} {token}",
-                theme.id
-            );
+fn syntax_comments_and_punctuation_draw_the_secondary_grey_high_contrast_draws_as_muted() {
+    // High contrast moved every grey up a tier and left these two behind (#3182), so they took
+    // `text.muted`. Muted cannot read at 4.5:1 on a changed word's wash in light while the word
+    // stands a step from its line (#3796), so they draw one tier up: the regular appearance's
+    // `text.secondary`, which is its high contrast's `text.muted`, in both.
+    let theme = purlis();
+    for (regular, high) in [
+        ("dark", "dark-high-contrast"),
+        ("light", "light-high-contrast"),
+    ] {
+        let secondary = appearance(regular).value("text.secondary");
+        assert_eq!(appearance(high).value("text.muted"), secondary, "{high}");
+        for id in [regular, high] {
+            for token in ["syntax.comment", "syntax.punctuation"] {
+                assert_eq!(appearance(id).value(token), secondary, "{id} {token}");
+            }
         }
     }
+    assert_eq!(theme.appearances.len(), 4);
 }
 
 #[test]
