@@ -1921,6 +1921,10 @@ fn rebase_onto(root: &Path, onto: &str, sign: bool, deadline: Duration) -> Rebas
     // One step: it checks out the tree and moves the branch, or refuses having moved nothing.
     // A run with no exit code is out of time only once the deadline has passed: git killed by a
     // signal of somebody else's has no code either.
+    //
+    // Bounded, unlike Resolve's move ([`resolvefolder`]'s `move_root`): this runs unattended, from
+    // a save's retry in hooks and auto-save, where a filter or lock that never answers would hang
+    // `purlis save` for ever (charter-app#242). A reset killed part-way is put back by `update::put_back`.
     let left = deadline.saturating_sub(started.elapsed());
     match git::run(root, &["reset", "-q", "--keep", &tip], left) {
         Ok(run) if run.ok() => Rebased::Replayed,
