@@ -393,6 +393,7 @@ import {
   tabNameOf,
 } from "./tabs";
 import { ArtifactGroup } from "./ArtifactGroup";
+import { PinPage } from "./PinToWorkspace";
 import { artifactOf, artifactView } from "./artifacts";
 import { tileAll, zoomedLayout, zoomFocusedPane } from "./tiling";
 import { recorded } from "./layoutUndo";
@@ -1261,6 +1262,8 @@ export const PlaneView = memo(function PlaneView({
   }>();
   /** The work item each chat works on, by session, as the core answered (V60, ADR 0088). */
   const [workItems, setWorkItems] = useState<Record<number, string>>({});
+  // **Pin to workspace** (#5953): the page it asks about, while its dialog is up.
+  const [pinningPage, setPinningPage] = useState<BranchPath>();
   /** The chat Rename chat… is asking about, in a dialog. */
   const [renamingChat, setRenamingChat] = useState<{
     session: number;
@@ -4171,6 +4174,11 @@ export const PlaneView = memo(function PlaneView({
           ok: true,
           said: `${at.path} is saved with the project. Your next save shares it.`,
         };
+      },
+      // **Pin to workspace** (#5953): its dialog asks first, and pins on the person's answer.
+      pinToWorkspace: async (at: BranchPath): Promise<Ran> => {
+        setPinningPage(at);
+        return { ok: true };
       },
       openInEditor: async (at: BranchPath, line: number): Promise<Ran> => {
         const editor = yourEditor();
@@ -12516,6 +12524,15 @@ export const PlaneView = memo(function PlaneView({
                     onRename={(answer) => void saveTabName(answer)}
                     onClear={clearTabName}
                     onCancel={() => setRenamingTab(undefined)}
+                  />
+                )}
+
+                {pinningPage && (
+                  <PinPage
+                    plane={plane}
+                    workspace={pinningPage.workspace}
+                    page={pinningPage}
+                    onClose={() => setPinningPage(undefined)}
                   />
                 )}
 

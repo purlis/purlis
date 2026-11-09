@@ -454,6 +454,10 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     count: 1,
     why: "Create's refusal, inside the form its Notice's fix opened: " + ACTION,
   },
+  "PinToWorkspace.tsx": {
+    count: 2,
+    why: "Pin to workspace's and Unpin's refusals, beside the answers: " + ACTION,
+  },
   "ProfileApproval.tsx": {
     count: 1,
     why: WARNING,

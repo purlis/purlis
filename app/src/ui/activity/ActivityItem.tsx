@@ -40,6 +40,9 @@ export interface ActivityItemProps extends Omit<
   variant: ActivityVariant;
   /** Its view is open: the `selected` state. */
   selected: boolean;
+  /** **What it opens is out of date** (#5955): an artifact whose data is stale. Its icon is
+   *  drawn in the faint grey; a chosen item keeps the chosen look. Say why in its `tip`. */
+  dimmed?: boolean;
   /** Its view's mark: the `icon` part. Decoration; the item's name is its `aria-label`. */
   icon: ReactNode;
   /** What is drawn at its top right: an {@link ActivityCount}, or nothing. */
@@ -61,6 +64,7 @@ export interface ActivityItemProps extends Omit<
 export function ActivityItem({
   variant,
   selected,
+  dimmed,
   icon,
   count,
   tip,
@@ -93,6 +97,7 @@ export function ActivityItem({
       data-part="item"
       data-variant={variant}
       data-selected={selected || undefined}
+      data-dimmed={dimmed || undefined}
       data-hovered={hovered || undefined}
       data-pressed={pressed || undefined}
       data-focus-visible={keyboard || undefined}

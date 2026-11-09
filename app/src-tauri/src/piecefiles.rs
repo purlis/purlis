@@ -1117,6 +1117,30 @@ pub(crate) fn workspace_tree_of(
     })
 }
 
+/// **One file of the place the window names**, read as its preview reads it (#5953): the plane
+/// root's with no workspace and no repo, a workspace's own with no repo, else a branch's. What
+/// an `.html` file's private preview and its Pin to workspace read.
+pub(crate) fn file_at(
+    plane: &Path,
+    workspace: &str,
+    repo: &str,
+    piece: &Option<String>,
+    path: &str,
+) -> Result<PieceFile, String> {
+    if workspace.is_empty() && repo.is_empty() && piece.is_none() {
+        file_of(&crate::reader(), plane, Branch::plane_root(), path)
+    } else if repo.is_empty() && piece.is_none() {
+        workspace_file_of(plane, workspace, path, &extension_folders()).map(|read| read.file)
+    } else {
+        file_of(
+            &crate::reader(),
+            plane,
+            branch(workspace, repo, piece),
+            path,
+        )
+    }
+}
+
 pub(crate) fn workspace_file_of(
     plane: &Path,
     ws: &str,

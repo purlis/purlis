@@ -357,6 +357,10 @@ function doing(): Doing & { calls: string[] } {
       calls.push(`saveWithTheProject:${at.workspace}:${at.path}`);
       return { ok: true as const };
     }),
+    pinToWorkspace: vi.fn(async (at: BranchPath) => {
+      calls.push(`pinToWorkspace:${at.workspace}/${at.repo}:${at.path}`);
+      return { ok: true as const };
+    }),
     openInEditor: vi.fn(async (at: BranchPath, line: number) => {
       calls.push(`openInEditor:${at.repo}/${at.piece ?? ""}:${at.path},${line}`);
       return { ok: true as const };
@@ -3464,6 +3468,38 @@ describe("a branch's file and folder rows (FM-10)", () => {
     for (const row of rows.filter((one) => one.does.verb === "saveWithTheProject"))
       await perform(row, hands);
     expect(hands.calls).toEqual(["saveWithTheProject:alpha:notes"]);
+  });
+
+  it("offers Pin to workspace on an .html page with a workspace, never elsewhere (#5953)", async () => {
+    const own = { workspace: "alpha", repo: "", piece: null, path: "artifacts/backlog/index.html" };
+    const page = fileRows({ on: "file", at: own, kind: "file" });
+    expect(titles(page).at(-1)).toBe("Pin to workspace…");
+    // A branch's page is copied into the workspace, so it is offered there too.
+    expect(titles(fileRows({ on: "file", at: at("site/Report.HTM"), kind: "file" }))).toContain(
+      "Pin to workspace…",
+    );
+    for (const not of [
+      fileRows({ on: "file", at: at("src/lib.rs"), kind: "file" }),
+      fileRows({ on: "file", at: at("site.html"), kind: "folder" }),
+    ])
+      expect(titles(not)).not.toContain("Pin to workspace…");
+    // A link is never followed, and the plane root is no workspace's: said, not hidden.
+    const refused = [
+      fileRows({ on: "file", at: at("a.html"), kind: "link" }),
+      fileRows({
+        on: "file",
+        at: { workspace: "", repo: "", piece: null, path: "a.html" },
+        kind: "file",
+      }),
+    ].map((rows) => rows.find((row) => row.title === "Pin to workspace…"));
+    for (const row of refused) {
+      expect(row?.available).toBe(false);
+      expect(row?.reason).not.toBe("");
+    }
+    const hands = doing();
+    for (const row of page.filter((one) => one.does.verb === "pinToWorkspace"))
+      await perform(row, hands);
+    expect(hands.calls).toEqual(["pinToWorkspace:alpha/:artifacts/backlog/index.html"]);
   });
 
   it("draws a file row's menu from its own rows, not from the catalogue", () => {
