@@ -2464,7 +2464,10 @@ describe("the start's Secret ask, with what else the dialog offers (#5670 review
   const ask = (
     over: {
       busy?: boolean;
-      onAnswer?: (option: unknown, given: () => unknown) => Promise<"filled" | "refused">;
+      onAnswer?: (
+        option: unknown,
+        given: () => unknown,
+      ) => Promise<"filled" | "refused" | "unsent">;
     } = {},
   ) => ({
     ask: secretAsk({ persona: "steward", vault: "providers", key: "anthropic" }),
@@ -2746,8 +2749,40 @@ describe("the start's Secret ask, with what else the dialog offers (#5670 review
     await act(async () => fail(new Error("the app went away")));
 
     await waitFor(() =>
-      expect(screen.getByRole("alert")).toHaveTextContent("purlis could not send your answer"),
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "purlis could not send your answer: the app went away. Type the value again and press Fill.",
+      ),
     );
+    // Where to answer it again comes first, then what its answer was told (#5902).
+    const said = screen.getByRole("alert").textContent ?? "";
+    const pick = said.indexOf(`Pick ${ONE.profiles[0].name} again to fill anthropic here.`);
+    expect(pick).toBeGreaterThan(-1);
+    expect(pick).toBeLessThan(said.indexOf("purlis could not send your answer"));
+  });
+
+  it("an answer that sent nothing never says an older line as its own once another profile is picked (#5902)", async () => {
+    const OLDER = "purlis could not send your answer: the app went away. Press Fill again.";
+    render(
+      <StartChat
+        options={options({
+          profiles: [ONE.profiles[0], { ...ONE.profiles[0], name: "other", is_default: false }],
+        })}
+        trouble="nothing was started"
+        secretAsk={{
+          ...ask({ onAnswer: () => Promise.resolve("unsent" as const) }),
+          said: OLDER,
+        }}
+        onStart={vi.fn()}
+        onApprove={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Fill" }));
+    await user.click(screen.getByRole("radio", { name: /^other/ }));
+
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Pick "));
+    expect(screen.getByRole("alert")).not.toHaveTextContent(OLDER);
   });
 
   it("a fill that comes back while the window is still busy goes on once it is not", async () => {

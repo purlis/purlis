@@ -53,8 +53,15 @@ export function typedIn(given: SecretAskGiven): boolean {
   return given.typed !== undefined && given.typed !== "";
 }
 
-/** How the picker's Secret ask's answer ended (#5137). */
-export type SecretAskEnded = "filled" | "declined" | "refused";
+/** What to press after an answer that did not go through: the same answer again, with the value
+ *  typed again where its box gave it up as it was read (#5670 review, #5902). */
+export function againSaid(typed: boolean, label: string): string {
+  return typed ? `Type the value again and press ${label}.` : `Press ${label} again.`;
+}
+
+/** How the picker's Secret ask's answer ended (#5137): `refused` with what the core said of it,
+ *  and `unsent` where nothing was sent, so nothing said beside the ask is its answer's (#5902). */
+export type SecretAskEnded = "filled" | "declined" | "refused" | "unsent";
 
 /**
  * **The Secret ask a start was refused on, as the Start dialog fills it** (#5137): the open ask
@@ -582,9 +589,7 @@ export function StartChat({
       .catch((why: unknown) => {
         if (!open.current) return;
         const what = (why instanceof Error ? why.message : String(why)).replace(/\.$/, "");
-        const again = typed
-          ? `Type the value again and press ${option.label}.`
-          : `Press ${option.label} again.`;
+        const again = againSaid(typed, option.label);
         setSaidOfAnswer(true);
         onSaidOf(`purlis could not send your answer: ${what}. ${again}`);
       })

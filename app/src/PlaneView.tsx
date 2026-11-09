@@ -151,7 +151,7 @@ import {
   stopRepoClones,
   useRepoClones,
 } from "./repoClones";
-import { StartChat, type RunsOnInPicker } from "./StartChat";
+import { StartChat, againSaid, typedIn, type RunsOnInPicker } from "./StartChat";
 import { withDetails } from "./startDetails";
 import {
   handedSaid,
@@ -4581,11 +4581,13 @@ export const PlaneView = memo(function PlaneView({
    *  the Inbox answers it, so it closes there too, and every list of this project's asks is read
    *  again. Answers how it ended: the picker starts again with what it shows now, never what it
    *  showed at the refusal, and only while it is open. Not now says the core's words for a start
-   *  whose credential was declined. */
+   *  whose credential was declined. A refusal of a value typed says to type it again, since its
+   *  box gave it up as it was read (#5902). With no ask, or one being answered, nothing is sent
+   *  and nothing said: `unsent`, so no older line reads as this answer's (#5902). */
   const answerPickerAsk = useCallback(
     async (option: Offered, given: () => SecretAskGiven): Promise<SecretAskEnded> => {
       if (pickerAsk === undefined || pickerSecret === undefined || pickerSecretBusy)
-        return "refused";
+        return "unsent";
       const { asked } = pickerSecret;
       setPickerSecretBusy(true);
       setPickerSecretSaid(undefined);
@@ -4604,7 +4606,11 @@ export const PlaneView = memo(function PlaneView({
           got.named,
         );
         if (refused !== undefined) {
-          setPickerSecretSaid(refused);
+          setPickerSecretSaid(
+            typedIn(got)
+              ? `${refused.replace(/\.$/, "")}. ${againSaid(true, option.label)}`
+              : refused,
+          );
           return "refused";
         }
         setPickerSecret(undefined);
