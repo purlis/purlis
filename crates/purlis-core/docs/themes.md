@@ -111,6 +111,25 @@ free-number options.
 ]
 ```
 
+**An option's value may carry component parts** (#2946): a `parts` object beside its `tokens`,
+in a toggle's `on` and in a choice's value, with the same keys, values and bounds as the theme's
+own [`parts`](#component-parts). They are drawn over the theme's parts in every appearance, key by
+key, in the options' order, so a later option's key wins over an earlier one's and over the
+theme's:
+
+```json
+"options": [
+  { "id": "pills", "kind": "toggle", "label": "Round buttons", "default": false,
+    "on": { "parts": { "button.root.corner-radius": "full" } } }
+]
+```
+
+A key purlis does not have is said and left out, and a value outside its bound refuses the theme,
+each naming the option. A part's size is held in both densities in every combination of option
+values that sets parts, and one that does not fit is refused with the values that make it
+(`with short on, roomy on: …`). The floors and the consent rules hold in every combination the
+check measures, as they hold for the theme's own parts.
+
 An option nothing chose draws its default. The person chooses values in Settings › Theme, and a
 project or a LIVE workspace may commit them with its default theme, by each option's id:
 `[theme] options = { accent = "teal" }` in `charter.toml`, `settings.theme.options` in a
@@ -513,12 +532,21 @@ names:
 - Allow is distinguishable from Keep blocked (`secondary`) by its edge, and as plain as Keep
   blocked: in every state it is drawn on Keep blocked's fill;
 - no part draws Allow or danger nearer the primary than the family's defaults draw it in the
-  same theme, measured on what a person reads as the look as it shows on each surface;
+  same theme, measured on what a person reads as the look as it shows on each surface; and Allow
+  or danger in each look it shows (at rest, in each state but disabled and in each set of states
+  that hold at once) is held against the primary in each other look it shows, since a person
+  sees one hovered or focused control beside others at rest (#2994): no pair nearer than the
+  family's defaults bring the two in any pair of their looks. A pair that breaks it names both looks
+  (`Allow never takes the primary look: Allow under the pointer beside the primary at rest`), and
+  the primary falls back in its own look there when Allow's default is not enough;
 - danger's words stay apart from the accent and from the primary's words.
 
 **A theme's tokens alone keep Allow apart from the primary** (#2948): the button family's
-defaults, drawn from the theme's tokens, are measured the same way, at rest and in each state, as
-written and in each of the theme's own tints. A theme whose tokens bring the two together is
+defaults, drawn from the theme's tokens, are measured the same way, Allow in each look it shows
+against the primary in each look it shows (#2994), as written and in each of the theme's own
+tints. A toggle's pressed look is the plain and the ghost button's alone (#3255): the primary, an
+Allow and danger are never pressed as one, so none of them shares it. A theme whose tokens bring
+the two together is
 drawn with purlis's own fill for the primary, and Allow's own fill only when that is not enough,
 under the consent floors' Notice.
 

@@ -175,7 +175,7 @@ pub fn schema() -> Value {
                 "maxItems": MOST_APPEARANCES
             },
             "options": {
-                "description": format!("The theme's options: toggles and choices, each value a layer of token values drawn over every appearance. There are no free-number options. A theme has at most {MOST_COMBINATIONS} combinations of appearance and option values, the appearances times each option's number of values (a toggle has two), and one past that is refused with its count. An option with the id of one in the theme it extends takes its place."),
+                "description": format!("The theme's options: toggles and choices, each value a layer of token values and component parts drawn over every appearance. There are no free-number options. A theme has at most {MOST_COMBINATIONS} combinations of appearance and option values, the appearances times each option's number of values (a toggle has two), and one past that is refused with its count. An option with the id of one in the theme it extends takes its place."),
                 "type": "array",
                 "items": { "$ref": "#/$defs/option" },
                 "maxItems": MOST_OPTIONS
@@ -293,7 +293,8 @@ pub fn schema() -> Value {
     if let (Some(defs), Value::Object(more)) = (schema["$defs"].as_object_mut(), option_defs()) {
         defs.extend(more);
     }
-    // Component parts (#2903): every key the manifest has, and each property's value.
+    // Component parts (#2903): every key the manifest has, and each property's value. An
+    // option's layer (#2946) names the same block.
     if let Some(properties) = schema["properties"].as_object_mut() {
         properties.insert("parts".to_owned(), super::parts::schema());
     }
@@ -309,12 +310,13 @@ fn option_defs() -> Value {
     json!({
         "label": { "type": "string", "minLength": 1, "maxLength": MOST_LABEL },
         "layer": {
-            "description": "Token values drawn over every appearance (tokens), and over one appearance by its id (appearances), after the first.",
+            "description": "Token values drawn over every appearance (tokens), and over one appearance by its id (appearances), after the first; and component parts drawn over the theme's own in every appearance (parts), a later option's key winning.",
             "type": "object",
             "additionalProperties": false,
             "properties": {
                 "tokens": { "$ref": "#/$defs/tokens" },
-                "appearances": { "$ref": "#/$defs/per-appearance" }
+                "appearances": { "$ref": "#/$defs/per-appearance" },
+                "parts": { "$ref": "#/properties/parts" }
             }
         },
         "per-appearance": {
@@ -368,7 +370,8 @@ fn option_defs() -> Value {
                                     "id": { "$ref": "#/$defs/name" },
                                     "label": { "$ref": "#/$defs/label" },
                                     "tokens": { "$ref": "#/$defs/tokens" },
-                                    "appearances": { "$ref": "#/$defs/per-appearance" }
+                                    "appearances": { "$ref": "#/$defs/per-appearance" },
+                                    "parts": { "$ref": "#/properties/parts" }
                                 }
                             }
                         }

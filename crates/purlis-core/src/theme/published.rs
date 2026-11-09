@@ -138,7 +138,10 @@ mod promise {
         for (key, value) in fields {
             let here = format!("{at}/{key}");
             let was = before.and_then(|it| it.get(key));
-            if UNJUDGED.contains(&key.as_str()) && was != Some(value) {
+            // A `oneOf` told apart by the same constants, branch by branch, is judged where it
+            // stands ([`objects`]): each branch is compared as any schema is.
+            let judged = key == "oneOf" && was.is_some_and(|was| apart_alike(was, value));
+            if UNJUDGED.contains(&key.as_str()) && was != Some(value) && !judged {
                 found.push(format!(
                     "{here}: a keyword this check cannot judge; teach \
                      `theme::published::narrowings` whether it narrows"
@@ -287,6 +290,33 @@ mod promise {
             }
         }
         false
+    }
+
+    /// **Whether two `oneOf`s are told apart the same way**: each [`told_apart`], with as many
+    /// branches, and each branch holding the same constants as its counterpart, so a value meets
+    /// the same branch of each and one branch widened in place accepts no value twice.
+    fn apart_alike(was: &Value, now: &Value) -> bool {
+        let constants = |branch: &Value| -> Vec<(String, Value)> {
+            branch
+                .get("properties")
+                .and_then(Value::as_object)
+                .into_iter()
+                .flatten()
+                .filter_map(|(key, one)| Some((key.clone(), one.get("const")?.clone())))
+                .collect()
+        };
+        match (was.as_array(), now.as_array()) {
+            (Some(was_branches), Some(now_branches)) => {
+                told_apart(was)
+                    && told_apart(now)
+                    && was_branches.len() == now_branches.len()
+                    && was_branches
+                        .iter()
+                        .zip(now_branches)
+                        .all(|(one, other)| constants(one) == constants(other))
+            }
+            _ => false,
+        }
     }
 
     fn shown(at: &str) -> &str {
@@ -448,6 +478,19 @@ mod promise {
                         }
                     }
                 },
+                // Branches told apart by the same constants, in the same order, accept what one of
+                // them accepts, as `anyOf`'s do: each may widen in place (#2946).
+                "oneOf" if was.zip(now).is_some_and(|(was, now)| apart_alike(was, now)) => {
+                    let (was, now) = (was.and_then(Value::as_array), now.and_then(Value::as_array));
+                    for (n, (branch, kept)) in was
+                        .into_iter()
+                        .flatten()
+                        .zip(now.into_iter().flatten())
+                        .enumerate()
+                    {
+                        compare(branch, kept, &format!("{here}/{n}"), found);
+                    }
+                }
                 "type" => match (was, now) {
                     (_, None) => {}
                     (None, Some(_)) => found.push(format!("{here}: a new constraint")),

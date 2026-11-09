@@ -163,9 +163,13 @@ name. Inside a state (`hover`, `pressed`, `selected`, `focused`, `disabled`, `op
 refused if it tries. A button stays at least 24px tall with its words fitting, in both densities,
 and a geometry token is held to the same bounds at the value the theme draws it at. Whatever the
 theme changes, Allow (`grants`) keeps its accent edge and Keep blocked's fill, and no part draws
-Allow or danger nearer the primary than the family does: a look that would is drawn as the
-family default. The button, the fields, the tooltip, the dialog, the selects and the choices have
-parts so far: `field`
+Allow or danger nearer the primary than the family does, each in any state beside the primary in
+any state (Allow under the pointer is measured against the primary at rest too): a look that
+would is drawn as the family default. A theme option's value can carry `parts` beside its
+`tokens` (`"on": { "parts": { "button.root.corner-radius": "full" } }`), drawn over the theme's
+parts in the options' order and held to the same bounds and floors in every combination.
+The button, the fields, the tooltip, the dialog, the selects and the choices have parts so far:
+`field`
 (its label, help and error), `text-input` (the one-line box and its glass), `textarea` and
 `tooltip` (its `root`, the surface: colours, edge, corners and shadow, no sizes; and `detail`, an
 icon button's second line), which have no variants, so a key names the part alone
