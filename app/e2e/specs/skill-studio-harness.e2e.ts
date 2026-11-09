@@ -12,7 +12,7 @@ import {
   shownButton,
   tabNames,
 } from "../reach.js";
-import { codexBudgetPinned, studioPage, studioSkill } from "../studio.js";
+import { studioPage, studioSkill } from "../studio.js";
 
 /**
  * **A repo's own skills, and each program's, in the Skill studio** (SK-6, #2769), in the built
@@ -49,11 +49,9 @@ describe("a repo's own skills in the Skill studio", function () {
   const written: string[] = [];
   let manifest = "";
   let manifestWas: string | undefined;
-  let unpin = () => {};
 
   before(async () => {
     const root = await projectRoot();
-    unpin = codexBudgetPinned(root);
     const project = join(root, "skills");
     written.push(writeSkill(project, NAME, "The project's copy."));
     const grant = join(project, `${NAME}.toml`);
@@ -74,7 +72,6 @@ describe("a repo's own skills in the Skill studio", function () {
 
   after(() => {
     for (const path of written) rmSync(path, { recursive: true, force: true });
-    unpin();
     if (manifestWas === undefined) rmSync(manifest, { force: true });
     else writeFileSync(manifest, manifestWas);
   });

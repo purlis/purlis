@@ -3854,9 +3854,14 @@ fn run(command: Command) -> Result<u8, clierror::CliError> {
             match text.as_deref().filter(|t| !t.is_empty()) {
                 Some(text) => {
                     ws.set_vision(text).map_err(|e| {
-                        clierror::CliError::internal(format!(
-                            "workspace.md could not be written: {e}"
-                        ))
+                        let why = format!("workspace.md could not be written: {e}");
+                        // A guard's refusal (a read-only plane, a link out of the plane's data)
+                        // is on purpose and exits 1; any other failure is purlis's own (ADR 0120).
+                        if e.kind() == std::io::ErrorKind::PermissionDenied {
+                            clierror::CliError::Refusal(why)
+                        } else {
+                            clierror::CliError::internal(why)
+                        }
                     })?;
                     voice::ok(format!(
                         "Vision set for '{0}' → workspaces/{0}/workspace.md",

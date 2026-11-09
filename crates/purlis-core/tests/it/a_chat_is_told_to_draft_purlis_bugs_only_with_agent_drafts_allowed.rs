@@ -47,7 +47,6 @@ fn kit(plugin: &Path) -> Kit<'_> {
         judging: false,
         writes_its_piece: false,
         runs_a_shell: false,
-        own: &[],
     }
 }
 

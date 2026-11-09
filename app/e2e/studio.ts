@@ -1,8 +1,6 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { $, browser } from "@wdio/globals";
 
 /**
@@ -125,21 +123,4 @@ export async function studioTab(name: string) {
       }, name),
     { timeout: 20_000, interval: 250, timeoutMsg: `the skill's ${name} tab never showed` },
   );
-}
-
-/**
- * **Gives the project at `root` a Codex skill budget of its own** for a spec about something else,
- * and answers how to put its `charter.toml` back. The built app ships the plugin, whose built-in
- * skills all but spend Codex's 6,000 characters with their paths, so a spec's project skill would
- * otherwise be hidden by the router on Codex, and its page would show that banner in place of the
- * one the spec reads. The budget stays under Codex's 8,000-character listing limit.
- */
-export function codexBudgetPinned(root: string): () => void {
-  const file = join(root, "charter.toml");
-  const was = existsSync(file) ? readFileSync(file, "utf8") : undefined;
-  writeFileSync(file, `${was ?? ""}\n[skills.budget.codex]\nchars = 7900\n`);
-  return () => {
-    if (was === undefined) return;
-    writeFileSync(file, was);
-  };
 }

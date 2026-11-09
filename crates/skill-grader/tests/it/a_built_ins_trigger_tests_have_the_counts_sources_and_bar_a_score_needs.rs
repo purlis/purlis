@@ -78,8 +78,8 @@ fn every_built_in_with_trigger_tests_has_enough_of_them_with_sources_and_near_mi
 
 /// The built-ins spec #5714 holds to the strict bar (decision Q3) that carry tests so far: where a
 /// miss leaks a secret, loses work or loses context, purlis-workspace (Q16), where one
-/// publishes memory, and purlis-permissions (Q19), where one changes security settings.
-/// purlis-report joins with #5699.
+/// publishes memory, purlis-permissions (Q19), where one changes security settings, and
+/// purlis-report (spec #5683, Q20, #5699), where one is a purlis bug nobody reports.
 const STRICT: &[&str] = &[
     "purlis-secrets",
     "purlis-handoff",
@@ -88,6 +88,7 @@ const STRICT: &[&str] = &[
     "purlis-persona",
     "purlis-workspace",
     "purlis-permissions",
+    "purlis-report",
 ];
 
 /// The built-ins spec #5714 holds to the standard bar (decision Q3, #5731): the rest.

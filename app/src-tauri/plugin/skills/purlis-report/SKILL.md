@@ -1,6 +1,6 @@
 ---
 name: purlis-report
-description: When purlis itself misbehaves — a purlis command or tool fails, panics or contradicts its help or docs; purlis blocks its own work; the purlis window shows something false; the person says purlis is broken or slow, or asks "why did it do that"; you are working around purlis; or a purlis skill should have started and did not — draft a report for the person to read and file. When unsure whether it is purlis's, draft. Not for bugs in the person's own project or in the harness itself. Not for allowing a command, host or folder, or a guard or sandbox rule doing what it was set to — that is purlis-permissions. Not for changing a skill's description or its trigger tests — that is purlis-skill-studio.
+description: When purlis itself misbehaves — a purlis command, tool or window fails, is wrong or slow, blocks its own work, or you work around it, or a purlis skill should have started — draft a report for the person. Not for their own project, the harness, permissions (purlis-permissions) or editing a skill (purlis-skill-studio).
 ---
 
 # Drafting a purlis bug report
