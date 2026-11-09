@@ -10,7 +10,7 @@
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
-import { expect, screen, waitFor, within } from "storybook/test";
+import { expect, fireEvent, screen, waitFor, within } from "storybook/test";
 import { CircleDashed, Star } from "lucide-react";
 import { expectFocusInSight, untilFocusInSight, untilFocused } from "../../stories.testkit";
 import { Button } from "../button/Button";
@@ -18,7 +18,8 @@ import { Menu, MenuItem, MenuWords } from "../menu/Menu";
 import { List, ListBox, ListOption, ListRow, ListRowSection, type Selection } from "./List";
 import { ListFilter, noMatchSaid, useListFilter } from "./ListFilter";
 import { AimedList, AimedOption } from "./AimedList";
-import { TextField } from "../field/Field";
+import { TextArea, TextField } from "../field/Field";
+import { Select } from "../select/Select";
 import { RowBelow, RowDescription, RowLabel, RowLead, RowTrail } from "./Row";
 import { Badge } from "../badge/Badge";
 import { TOOLTIP_CLOSE_DELAY } from "../tooltip/Tooltip";
@@ -807,6 +808,195 @@ export const ATextBoxInARow: Story = {
     expectFocusInSight();
     await userEvent.keyboard("{ArrowUp}{ArrowRight}");
     await untilFocused(box, "A text box in a row: the box holds the keyboard for the picture");
+    expectFocusInSight();
+  },
+};
+
+/**
+ * **A key while a text box in a row composes is the input method's** (#5993): Esc that cancels a
+ * composition (Chinese, Japanese, Korean input) leaves the keyboard in the box, and a ↓ that picks
+ * a candidate leaves the list on its row, whether the browser says the key is composing or, as
+ * WebKit does once the composition ends, only by its key code, 229. A keyboard here has no input
+ * method, so the keys are the ones it sends. The picture is the box, still holding the keyboard.
+ */
+export const ComposingInARowsBox: Story = {
+  render: () => <Holding />,
+  play: async ({ canvas, userEvent }) => {
+    const list = canvas.getByRole("grid", { name: "Asks" });
+    const host = within(list).getByRole("row", { name: "Reach registry.npmjs.org" });
+    const box = () => within(host).getByRole("textbox", { name: "Why keep it blocked" });
+    await userEvent.tab();
+    await userEvent.keyboard("{ArrowDown}{ArrowRight}");
+    await untilFocused(box, "Composing: → reaches the box from its row");
+    await userEvent.keyboard("ni hao");
+    fireEvent.keyDown(box(), { key: "Escape", isComposing: true });
+    await untilFocused(box, "Composing: Esc that cancels a composition stays in the box");
+    fireEvent.keyDown(box(), { key: "Escape", keyCode: 229 });
+    await untilFocused(box, "Composing: Esc of key code 229 stays in the box");
+    fireEvent.keyDown(box(), { key: "ArrowDown", keyCode: 229 });
+    await untilFocused(box, "Composing: ↓ that picks a candidate stays in the box");
+    await waitFor(() => expect(box()).toHaveValue("ni hao"));
+    await userEvent.keyboard("{Escape}");
+    await untilFocused(() => host, "Composing: Esc once it is done gives the keyboard to its row");
+    await userEvent.keyboard("{ArrowRight}");
+    await untilFocused(box, "Composing: the box holds the keyboard for the picture");
+    expectFocusInSight();
+  },
+};
+
+const HOW_TO_FILL = [
+  { value: "value", label: "A new value" },
+  { value: "entry", label: "An entry I have" },
+  { value: "skip", label: "Leave it empty" },
+];
+
+/** Three asks, the middle one a secret's, with a select of how to fill it, as an Inbox ask holds. */
+function Choosing() {
+  const [how, setHow] = useState("value");
+  return (
+    <div style={{ inlineSize: "24rem" }}>
+      <List aria-label="Asks" disallowTypeAhead>
+        <ListRow id="build" textValue="Run cargo build">
+          <RowLabel>Run cargo build</RowLabel>
+        </ListRow>
+        <ListRow id="token" textValue="Fill NPM_TOKEN">
+          <RowLabel>Fill NPM_TOKEN</RowLabel>
+          <RowTrail>
+            <Select
+              aria-label="How to fill"
+              size="sm"
+              value={how}
+              options={HOW_TO_FILL}
+              onValueChange={setHow}
+            />
+          </RowTrail>
+        </ListRow>
+        <ListRow id="test" textValue="Run cargo test">
+          <RowLabel>Run cargo test</RowLabel>
+        </ListRow>
+      </List>
+    </div>
+  );
+}
+
+/**
+ * **A select in a row keeps ↑ and ↓** (#5993): ↓ on its button opens its list, where the row
+ * would have gone to the row below, and ↑ opens it at its last option; the arrows choose in it,
+ * Enter takes one, and the keyboard is back on the button. The picture is the button, with what
+ * was chosen.
+ */
+export const ASelectInARow: Story = {
+  render: () => <Choosing />,
+  play: async ({ canvas, userEvent }) => {
+    const list = canvas.getByRole("grid", { name: "Asks" });
+    const token = within(list).getByRole("row", { name: "Fill NPM_TOKEN" });
+    const select = () => within(token).getByRole("button", { name: /How to fill/ });
+    await userEvent.tab();
+    await userEvent.keyboard("{ArrowDown}{ArrowRight}");
+    await untilFocused(select, "A select in a row: → reaches its button from its row");
+    await userEvent.keyboard("{ArrowDown}");
+    const options = await screen.findByRole("listbox");
+    await untilFocused(
+      () => within(options).getByRole("option", { name: "A new value" }),
+      "A select in a row: ↓ opens it on its first option",
+    );
+    await userEvent.keyboard("{ArrowDown}{Enter}");
+    await untilFocused(select, "A select in a row: Enter takes an option, back on its button");
+    await waitFor(() => expect(select()).toHaveTextContent("An entry I have"));
+    await userEvent.keyboard("{ArrowUp}");
+    const again = await screen.findByRole("listbox");
+    await untilFocused(
+      () => within(again).getByRole("option", { name: "Leave it empty" }),
+      "A select in a row: ↑ opens it on its last option",
+    );
+    await userEvent.keyboard("{Escape}");
+    await untilFocused(select, "A select in a row: Esc closes it, back on its button");
+    await userEvent.keyboard("{ArrowLeft}");
+    await untilFocused(() => token, "A select in a row: ← goes back to its row");
+    await userEvent.keyboard("{ArrowDown}");
+    await untilFocused(
+      () => within(list).getByRole("row", { name: "Run cargo test" }),
+      "A select in a row: ↓ on the row goes to the row below",
+    );
+    await userEvent.keyboard("{ArrowUp}{ArrowRight}");
+    await untilFocused(select, "A select in a row: its button holds the keyboard for the picture");
+    expectFocusInSight();
+  },
+};
+
+/** A reply long enough to wrap on to three lines of its box, with no line break in it. */
+const LONG_REPLY =
+  "Yes, publish it to the registry once the tests pass on both runners, and tell me when it is out.";
+
+/** Three asks, the middle one with a reply box narrow enough that its words wrap. */
+function Replying() {
+  const [reply, setReply] = useState(LONG_REPLY);
+  return (
+    <div style={{ inlineSize: "20rem" }}>
+      <List aria-label="Asks" disallowTypeAhead>
+        <ListRow id="build" textValue="Run cargo build">
+          <RowLabel>Run cargo build</RowLabel>
+        </ListRow>
+        <ListRow id="publish" textValue="Publish 0.4.0">
+          <RowLabel>Publish 0.4.0</RowLabel>
+          <TextArea aria-label="Reply" rows={4} value={reply} onChange={setReply} />
+        </ListRow>
+        <ListRow id="test" textValue="Run cargo test">
+          <RowLabel>Run cargo test</RowLabel>
+        </ListRow>
+      </List>
+    </div>
+  );
+}
+
+/**
+ * **↑ and ↓ in a reply that wraps go by the lines it draws** (#5993): with no line break in it,
+ * ↓ from its first line moves the caret to the line its words wrap on to, and ↑ back; ↑ leaves
+ * the box for the row above only from its first line, and ↓ for the row below only from its
+ * last. The picture is the box holding the keyboard, its caret on a line between.
+ */
+export const AWrappedReplyInARow: Story = {
+  render: () => <Replying />,
+  play: async ({ canvas, userEvent }) => {
+    const list = canvas.getByRole("grid", { name: "Asks" });
+    const publish = within(list).getByRole("row", { name: "Publish 0.4.0" });
+    const box = () =>
+      within(publish).getByRole("textbox", { name: "Reply" }) as HTMLTextAreaElement;
+    const caret = () => box().selectionStart;
+    await userEvent.tab();
+    await userEvent.keyboard("{ArrowDown}{ArrowRight}");
+    await untilFocused(box, "A wrapped reply: → reaches the box from its row");
+    // The caret is put at its start by hand: Home and End go to a line's ends, never the box's.
+    box().setSelectionRange(0, 0);
+    await userEvent.keyboard("{ArrowDown}");
+    await untilFocused(box, "A wrapped reply: ↓ from its first line stays in it");
+    await waitFor(() => expect(caret()).toBeGreaterThan(0));
+    await userEvent.keyboard("{ArrowUp}");
+    await untilFocused(box, "A wrapped reply: ↑ from its second line stays in it");
+    await waitFor(() => expect(caret()).toBe(0));
+    await userEvent.keyboard("{ArrowUp}");
+    await untilFocused(
+      () => within(list).getByRole("row", { name: "Run cargo build" }),
+      "A wrapped reply: ↑ from its first line goes to the row above",
+    );
+    await userEvent.keyboard("{ArrowDown}{ArrowRight}");
+    await untilFocused(box, "A wrapped reply: → reaches it again");
+    box().setSelectionRange(LONG_REPLY.length, LONG_REPLY.length);
+    await userEvent.keyboard("{ArrowUp}");
+    await untilFocused(box, "A wrapped reply: ↑ from its last line stays in it");
+    await waitFor(() => expect(caret()).toBeLessThan(LONG_REPLY.length));
+    await userEvent.keyboard("{ArrowDown}");
+    await untilFocused(box, "A wrapped reply: ↓ back on to its last line stays in it");
+    await userEvent.keyboard("{ArrowDown}");
+    await untilFocused(
+      () => within(list).getByRole("row", { name: "Run cargo test" }),
+      "A wrapped reply: ↓ from its last line goes to the row below",
+    );
+    await userEvent.keyboard("{ArrowUp}{ArrowRight}");
+    await untilFocused(box, "A wrapped reply: the box holds the keyboard for the picture");
+    box().setSelectionRange(0, 0);
+    await userEvent.keyboard("{ArrowDown}");
+    await untilFocused(box, "A wrapped reply: its caret on a line between for the picture");
     expectFocusInSight();
   },
 };
