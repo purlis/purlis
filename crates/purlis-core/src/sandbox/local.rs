@@ -1624,7 +1624,7 @@ pub fn folders_moved(root: &Path, moved: impl Fn(&str) -> Option<String>) -> io:
 /// [`try_granted_vaults`] reads them (#5857): a field beside them that is off its shape takes none
 /// away, so what `authorise` allows is what a link's judge read.
 pub fn granted_vaults(root: &Path) -> Vec<VaultGrant> {
-    try_granted_vaults(root).unwrap_or_default()
+    read(root).vaults_mine
 }
 
 /// [`granted_vaults`], or why this machine's file can't be read (#5795): for a judge that must
