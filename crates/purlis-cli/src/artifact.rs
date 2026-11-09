@@ -47,7 +47,7 @@ pub enum ArtifactCommand {
         workspace: Option<String>,
     },
     /// The workspace's pinned artifacts in their order, each with its id, and any whose folder
-    /// cannot be opened here (not pulled yet, or removed) said so.
+    /// cannot be opened here (not pulled yet, removed, or over the size cap) said so.
     List {
         /// The workspace (default: the active one).
         #[arg(short = 'w', long = "workspace")]
@@ -154,6 +154,9 @@ pub fn run(here: &Here, command: ArtifactCommand) -> Result<Code, String> {
                 );
                 if let Some(why) = item.missing {
                     line.push_str(&format!("  (missing: {why})"));
+                }
+                if let Some(why) = item.too_large {
+                    line.push_str(&format!("  (too large: {why})"));
                 }
                 println!("{line}");
             }

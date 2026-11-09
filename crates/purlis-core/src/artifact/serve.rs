@@ -42,14 +42,20 @@ impl Snapshot {
     /// Reads every file of `folder` (a folder [`super::resolve`] answered). A link is never
     /// followed and never served, nor is a name starting with a dot. Its page must be among
     /// what was read.
-    pub fn read(folder: &Path) -> Result<Self, String> {
-        let mut files = BTreeMap::new();
-        read_folder(folder, &mut files).map_err(|e| {
-            format!(
-                "the artifact's folder could not be read ({})",
-                crate::rewrite::os_words(&e)
-            )
-        })?;
+    ///
+    /// **A folder over [`super::SIZE_CAP`] is not read at all**, and the sentence names both
+    /// sizes ([`super::too_large`]): a page is never shown cut short. `folder_name` is how the
+    /// sentence names it.
+    pub fn read(folder: &Path, folder_name: &str) -> Result<Self, String> {
+        let mut tally = Tally::default();
+        walk_folder(folder, &mut tally, true).map_err(|e| unreadable(&e))?;
+        if tally.over {
+            return Err(format!(
+                "{}, so none of it is shown",
+                super::too_large(folder_name, tally.total)
+            ));
+        }
+        let files = tally.files;
         if !files.contains_key(PAGE) {
             return Err(format!("the artifact has no {PAGE}, the page it opens on"));
         }
@@ -160,16 +166,71 @@ pub fn content_type(key: &str) -> &'static str {
 /// How deep a folder [`Snapshot::read`] goes: deeper is not read.
 const DEEPEST: usize = 16;
 
+/// What a walk of an artifact's folder has met: the files it read, when it reads them, and how
+/// many bytes the folder holds. Past [`super::SIZE_CAP`] nothing more is read, only counted, so
+/// a folder of any size costs no more memory than the cap.
+#[derive(Default)]
+struct Tally {
+    files: BTreeMap<String, Vec<u8>>,
+    total: u64,
+    over: bool,
+}
+
+impl Tally {
+    /// Takes the file at `path`, `len` bytes by its metadata: read when `read` and the folder is
+    /// still within the cap, else only counted. A file that grew since its metadata was read
+    /// is counted at what was read.
+    fn take(
+        &mut self,
+        path: String,
+        len: u64,
+        file: impl FnOnce() -> std::io::Result<std::fs::File>,
+        read: bool,
+    ) -> std::io::Result<()> {
+        use std::io::Read as _;
+        if self.over || !read || self.total.saturating_add(len) > super::SIZE_CAP {
+            self.total = self.total.saturating_add(len);
+            self.over = self.total > super::SIZE_CAP;
+            return Ok(());
+        }
+        let room = super::SIZE_CAP - self.total;
+        let mut bytes = Vec::new();
+        file()?.take(room + 1).read_to_end(&mut bytes)?;
+        self.total += bytes.len() as u64;
+        if self.total > super::SIZE_CAP {
+            self.over = true;
+        } else {
+            self.files.insert(path, bytes);
+        }
+        Ok(())
+    }
+}
+
+/// **How many bytes an artifact's folder holds**: every file [`Snapshot::read`] would read, by
+/// its metadata, none of them read.
+pub fn size(folder: &Path) -> Result<u64, String> {
+    let mut tally = Tally::default();
+    walk_folder(folder, &mut tally, false).map_err(|e| unreadable(&e))?;
+    Ok(tally.total)
+}
+
+fn unreadable(e: &std::io::Error) -> String {
+    format!(
+        "the artifact's folder could not be read ({})",
+        crate::rewrite::os_words(e)
+    )
+}
+
 #[cfg(unix)]
-fn read_folder(folder: &Path, files: &mut BTreeMap<String, Vec<u8>>) -> std::io::Result<()> {
+fn walk_folder(folder: &Path, tally: &mut Tally, read: bool) -> std::io::Result<()> {
     use crate::skills::at;
-    use std::io::Read as _;
 
     fn walk(
         dir: &std::os::fd::OwnedFd,
         prefix: &str,
         depth: usize,
-        files: &mut BTreeMap<String, Vec<u8>>,
+        tally: &mut Tally,
+        read: bool,
     ) -> std::io::Result<()> {
         for entry in at::entries(dir)? {
             if entry.name.starts_with('.') {
@@ -179,7 +240,7 @@ fn read_folder(folder: &Path, files: &mut BTreeMap<String, Vec<u8>>) -> std::io:
             match entry.kind {
                 rustix::fs::FileType::Directory if depth < DEEPEST => {
                     let inner = at::folder_in(dir, &entry.name)?;
-                    walk(&inner, &format!("{path}/"), depth + 1, files)?;
+                    walk(&inner, &format!("{path}/"), depth + 1, tally, read)?;
                 }
                 rustix::fs::FileType::RegularFile => {
                     let flags = rustix::fs::OFlags::RDONLY
@@ -191,9 +252,8 @@ fn read_folder(folder: &Path, files: &mut BTreeMap<String, Vec<u8>>) -> std::io:
                         flags,
                         rustix::fs::Mode::empty(),
                     )?;
-                    let mut bytes = Vec::new();
-                    std::fs::File::from(fd).read_to_end(&mut bytes)?;
-                    files.insert(path, bytes);
+                    let len = u64::try_from(rustix::fs::fstat(&fd)?.st_size).unwrap_or(0);
+                    tally.take(path, len, || Ok(std::fs::File::from(fd)), read)?;
                 }
                 // A link, a socket, a device: never read.
                 _ => {}
@@ -202,16 +262,17 @@ fn read_folder(folder: &Path, files: &mut BTreeMap<String, Vec<u8>>) -> std::io:
         Ok(())
     }
 
-    walk(&at::folder(folder)?, "", 0, files)
+    walk(&at::folder(folder)?, "", 0, tally, read)
 }
 
 #[cfg(not(unix))]
-fn read_folder(folder: &Path, files: &mut BTreeMap<String, Vec<u8>>) -> std::io::Result<()> {
+fn walk_folder(folder: &Path, tally: &mut Tally, read: bool) -> std::io::Result<()> {
     fn walk(
         dir: &Path,
         prefix: &str,
         depth: usize,
-        files: &mut BTreeMap<String, Vec<u8>>,
+        tally: &mut Tally,
+        read: bool,
     ) -> std::io::Result<()> {
         for entry in std::fs::read_dir(dir)? {
             let entry = entry?;
@@ -225,20 +286,40 @@ fn read_folder(folder: &Path, files: &mut BTreeMap<String, Vec<u8>>) -> std::io:
             // `file_type` of a directory entry is the entry's own: a link is a link.
             let kind = entry.file_type()?;
             if kind.is_dir() && depth < DEEPEST {
-                walk(&entry.path(), &format!("{path}/"), depth + 1, files)?;
+                walk(&entry.path(), &format!("{path}/"), depth + 1, tally, read)?;
             } else if kind.is_file() {
-                files.insert(path, std::fs::read(entry.path())?);
+                let len = entry.metadata()?.len();
+                let at = entry.path();
+                tally.take(path, len, || std::fs::File::open(at), read)?;
             }
         }
         Ok(())
     }
 
-    walk(folder, "", 0, files)
+    walk(folder, "", 0, tally, read)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_folder_at_the_cap_is_read_and_one_byte_over_is_refused_with_both_sizes() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join(PAGE), "<p>hi</p>").unwrap();
+        let rest = usize::try_from(super::super::SIZE_CAP).unwrap() - "<p>hi</p>".len();
+        std::fs::write(dir.path().join("photo.jpg"), vec![b'x'; rest]).unwrap();
+        assert_eq!(size(dir.path()).unwrap(), super::super::SIZE_CAP);
+        let read = Snapshot::read(dir.path(), "board").unwrap();
+        assert_eq!(read.get("photo.jpg").map(<[u8]>::len), Some(rest));
+
+        std::fs::write(dir.path().join("one.txt"), "x").unwrap();
+        assert_eq!(size(dir.path()).unwrap(), super::super::SIZE_CAP + 1);
+        assert_eq!(
+            Snapshot::read(dir.path(), "board").unwrap_err(),
+            "'board' is 8.0 MB, over the 8.0 MB an artifact may be, so none of it is shown"
+        );
+    }
 
     #[test]
     fn a_path_names_a_key_only_when_it_stays_in_its_folder() {
@@ -307,7 +388,7 @@ mod tests {
         #[cfg(unix)]
         std::os::unix::fs::symlink(dir.path().join("secret.txt"), folder.join("link.txt")).unwrap();
 
-        let read = Snapshot::read(&folder).unwrap();
+        let read = Snapshot::read(&folder, "board").unwrap();
         assert_eq!(
             read.paths().collect::<Vec<_>>(),
             ["img/inside.png", "index.html"]
@@ -322,7 +403,7 @@ mod tests {
     fn a_folder_with_no_page_is_refused() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("other.html"), "x").unwrap();
-        let why = Snapshot::read(dir.path()).unwrap_err();
+        let why = Snapshot::read(dir.path(), "board").unwrap_err();
         assert!(why.contains("index.html"), "{why}");
     }
 
@@ -333,14 +414,23 @@ mod tests {
         std::fs::create_dir(folder.join("data")).unwrap();
         std::fs::write(folder.join("index.html"), "page").unwrap();
         std::fs::write(folder.join("data.json"), "1").unwrap();
-        let first = Snapshot::read(folder).unwrap().fingerprint().to_owned();
+        let first = Snapshot::read(folder, "board")
+            .unwrap()
+            .fingerprint()
+            .to_owned();
 
         std::fs::write(folder.join("data.json"), "2").unwrap();
         std::fs::write(folder.join("data/more.json"), "3").unwrap();
-        assert_eq!(Snapshot::read(folder).unwrap().fingerprint(), first);
+        assert_eq!(
+            Snapshot::read(folder, "board").unwrap().fingerprint(),
+            first
+        );
 
         std::fs::write(folder.join("index.html"), "page!").unwrap();
-        assert_ne!(Snapshot::read(folder).unwrap().fingerprint(), first);
+        assert_ne!(
+            Snapshot::read(folder, "board").unwrap().fingerprint(),
+            first
+        );
     }
 
     #[test]

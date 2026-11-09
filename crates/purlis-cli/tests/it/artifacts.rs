@@ -404,3 +404,82 @@ fn two_people_pinning_at_once_merge_into_one_pins_file() {
         assert!(folders.contains(&folder.to_string()), "{folders:?}");
     }
 }
+
+/// A forge token, built here so no credential-shaped literal sits in the source.
+fn token() -> String {
+    ["ghp", "_0123456789abcdefABCDEFghij"].concat()
+}
+
+#[test]
+fn a_folder_holding_a_secret_even_behind_html_or_percent_encoding_is_not_pinned() {
+    let tail = token()[1..].to_owned();
+    for (file, text) in [
+        (
+            "index.html",
+            format!("<title>Board</title><p>&#x67;{tail}</p>"),
+        ),
+        ("style.css", format!("a{{background:url(x?t=%67{tail})}}")),
+        ("sub/notes.txt", token()),
+    ] {
+        let plane = Plane::new();
+        let at = plane.artifacts().join("board").join(file);
+        std::fs::create_dir_all(at.parent().unwrap()).unwrap();
+        std::fs::write(&at, &text).unwrap();
+
+        let out = plane.purlis(&["artifact", "pin", "board"]);
+
+        assert!(!out.status.success(), "{file}: {}", said(&out));
+        assert!(said(&out).contains(file), "{file}: {}", said(&out));
+        assert!(
+            said(&out).contains("shaped like a secret"),
+            "{file}: {}",
+            said(&out)
+        );
+        assert!(plane.pins().is_empty(), "{file}: nothing is written");
+    }
+}
+
+#[test]
+fn a_secret_in_a_data_file_does_not_stop_a_pin_since_data_is_never_committed() {
+    let plane = Plane::new();
+    std::fs::write(
+        plane.artifacts().join("board/data.json"),
+        format!("\"{}\"", token()),
+    )
+    .unwrap();
+
+    let out = plane.purlis(&["artifact", "pin", "board"]);
+
+    assert!(out.status.success(), "{}", said(&out));
+}
+
+#[test]
+fn a_folder_over_the_size_cap_is_not_pinned_and_a_pin_that_grew_lists_as_too_large() {
+    let plane = Plane::new();
+    let big = plane.artifacts().join("board/photo.jpg");
+    std::fs::write(&big, vec![b'x'; 9 << 20]).unwrap();
+
+    let out = plane.purlis(&["artifact", "pin", "board"]);
+
+    assert!(!out.status.success(), "{}", said(&out));
+    assert!(
+        said(&out).contains("'board' is 9.0 MB, over the 8.0 MB an artifact may be"),
+        "{}",
+        said(&out)
+    );
+    assert!(plane.pins().is_empty(), "nothing is written");
+
+    std::fs::remove_file(&big).unwrap();
+    let out = plane.purlis(&["artifact", "pin", "board"]);
+    assert!(out.status.success(), "{}", said(&out));
+    std::fs::write(&big, vec![b'x'; 9 << 20]).unwrap();
+
+    let listed = plane.listed();
+    assert!(
+        listed[0].ends_with(
+            "(too large: 'board' is 9.0 MB, over the 8.0 MB an artifact may be, so none of it \
+             is shown)"
+        ),
+        "{listed:?}"
+    );
+}

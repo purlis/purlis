@@ -38,12 +38,33 @@ pub const DATA_DIR: &str = "data";
 /// The longest name a pin's icon may carry.
 const NAME_MOST: usize = 60;
 
+/// **The most bytes an artifact's folder may hold** (spec #5948, #5954): every file of it, data
+/// files too, since all of it is read into memory to be served. Below the plane save's
+/// [`crate::planegit::SCAN_LIMIT`], so nothing a pinned folder holds is too big for the secret
+/// scan to read. A folder over it is not pinned, and a pinned one that grew past it is shown as
+/// too large, with both sizes, rather than cut.
+pub const SIZE_CAP: u64 = 8 << 20;
+
+const _: () = assert!(SIZE_CAP < crate::planegit::SCAN_LIMIT as u64);
+
+/// What a folder over [`SIZE_CAP`] is said to be: its size and the cap, both.
+pub fn too_large(folder: &str, size: u64) -> String {
+    format!(
+        "'{}' is {}, over the {} an artifact may be",
+        crate::personas::one_line(folder),
+        crate::browserfiles::bytes_said(size),
+        crate::browserfiles::bytes_said(SIZE_CAP)
+    )
+}
+
 /// One pin as `list` shows it: the pin, and why its folder cannot be opened, if it cannot.
 #[derive(Clone, Debug)]
 pub struct Listed {
     pub pin: Pin,
     /// `None` for a pin whose folder is there and inside `artifacts/`; otherwise the sentence.
     pub missing: Option<String>,
+    /// For a folder that is there but over [`SIZE_CAP`], the sentence naming both sizes.
+    pub too_large: Option<String>,
 }
 
 /// What `pin` asks for. Everything but the folder may be left for purlis to choose.
@@ -92,9 +113,24 @@ pub fn list(workspace: &Path) -> Result<Vec<Listed>, String> {
     Ok(read(workspace)?
         .pins
         .into_iter()
-        .map(|pin| Listed {
-            missing: resolve(workspace, &pin.folder).err(),
-            pin,
+        .map(|pin| {
+            let (missing, over) = match resolve(workspace, &pin.folder) {
+                Err(why) => (Some(why), None),
+                Ok(real) => match serve::size(&real) {
+                    Err(why) => (Some(why), None),
+                    Ok(size) => (
+                        None,
+                        (size > SIZE_CAP).then(|| {
+                            format!("{}, so none of it is shown", too_large(&pin.folder, size))
+                        }),
+                    ),
+                },
+            };
+            Listed {
+                pin,
+                missing,
+                too_large: over,
+            }
         })
         .collect())
 }
@@ -167,11 +203,14 @@ fn folder_refusal(folder: &str) -> Option<String> {
 
 /// Pin artifact folder `request.folder` to the workspace at `workspace` in the plane at `root`.
 ///
-/// The folder is resolved first ([`resolve`]); a refusal writes nothing. Pinning a folder
+/// The folder is resolved first ([`resolve`]), then read whole and scanned ([`scanned`]): a
+/// folder over [`SIZE_CAP`], or one holding something shaped like a secret, is refused. A
+/// refusal writes nothing. Pinning a folder
 /// already pinned with the same command and working folder changes its name or icon; with
 /// another command or working folder it is a new pin, which takes the old one's place.
 pub fn pin(root: &Path, workspace: &Path, request: &Request) -> Result<Pinned, String> {
     let real = resolve(workspace, &request.folder)?;
+    scanned(&real, &request.folder)?;
     let command = request
         .command
         .as_deref()
@@ -241,6 +280,40 @@ pub fn pin(root: &Path, workspace: &Path, request: &Request) -> Result<Pinned, S
         Ok(())
     })?;
     Ok(done.expect("the change ran"))
+}
+
+/// **The secret check of a folder about to be pinned** (#5954): every file of its template read
+/// ([`serve::Snapshot::read`], which refuses a folder over [`SIZE_CAP`] before it reads it) and
+/// asked what the plane save asks of a staged file ([`crate::secretshape::found_as_read`]), so
+/// pinning and saving never disagree. The data files are not asked: they are never committed.
+fn scanned(real: &Path, folder: &str) -> Result<(), String> {
+    let shown = crate::personas::one_line(folder);
+    let size = serve::size(real)?;
+    if size > SIZE_CAP {
+        return Err(format!(
+            "{}, so it is not pinned. Make its folder smaller, then pin it again.",
+            too_large(folder, size)
+        ));
+    }
+    let snapshot = serve::Snapshot::read(real, folder)?;
+    for path in snapshot.paths().filter(|path| !serve::is_data(path)) {
+        let bytes = snapshot.get(path).unwrap_or_default();
+        let text = String::from_utf8_lossy(bytes);
+        let form = crate::secretshape::Structured::of(path);
+        if let Some((line, kind)) = crate::secretshape::found_as_read(form, &text) {
+            let at = line
+                .map(|line| format!(", line {line}"))
+                .unwrap_or_default();
+            return Err(format!(
+                "'{shown}' holds something shaped like a secret ({kind}) in {}{at}, so it is \
+                 not pinned: a pinned page goes wherever its workspace does. Keep the secret in \
+                 the vault (`purlis persona secret set`), take it out of the folder, then pin it \
+                 again.",
+                crate::personas::one_line(path)
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Unpin the pin named by `key` (its id or its folder); its folder stays.
