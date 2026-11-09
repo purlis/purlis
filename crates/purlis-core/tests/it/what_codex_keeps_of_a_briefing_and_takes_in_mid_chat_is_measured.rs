@@ -309,6 +309,7 @@ fn one_turn(here: &Here, codex: &Path, armed: &[String], more: &[&str]) {
 #[test]
 #[ignore = "run by CI's `Codex, measured` step, with PURLIS_CODEX"]
 fn measures_what_codex_keeps_of_a_long_session_start_hook_output() {
+    purlis_core::unsteered!();
     let codex = codex();
     // Lines of 44 to 46 characters: below, at and past the 10,000 seen on the first run of this
     // measurement (9,995 whole, 10,181 cut), then far past it.
@@ -361,6 +362,7 @@ fn once(codex: &Path, text: &str, json: bool, more: &[&str]) -> String {
 #[test]
 #[ignore = "run by CI's `Codex, measured` step, with PURLIS_CODEX"]
 fn measures_whether_codex_keeps_each_session_start_hook_s_output_apart() {
+    purlis_core::unsteered!();
     let codex = codex();
     for sizes in [[160, 160, 160, 160].as_slice(), &[600, 100]] {
         let here = Here::new();
@@ -390,6 +392,7 @@ fn measures_whether_codex_keeps_each_session_start_hook_s_output_apart() {
 #[test]
 #[ignore = "run by CI's `Codex, measured` step, with PURLIS_CODEX"]
 fn measures_how_codex_bounds_its_own_skills_catalogue() {
+    purlis_core::unsteered!();
     let codex = codex();
     for (skills, description) in [(100, 100), (300, 100), (600, 100), (2_000, 20)] {
         let here = Here::new();
@@ -581,6 +584,7 @@ fn listed(answer: &Value) -> Vec<String> {
 #[test]
 #[ignore = "run by CI's `Codex, measured` step, with PURLIS_CODEX"]
 fn measures_what_codex_takes_in_of_a_skill_changed_mid_chat() {
+    purlis_core::unsteered!();
     // One Codex process and one conversation, two turns. Between them: a skill of Codex's own
     // is edited and another added in `$CODEX_HOME/skills`, and what the `SessionStart` hook
     // would answer changes as purlis's briefing would if the plane's skills changed.
