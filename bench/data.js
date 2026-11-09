@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794188545921,
+  "lastUpdate": 1794190701460,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -44142,6 +44142,48 @@ window.BENCHMARK_DATA = {
             "value": 102.0526395,
             "unit": "ms",
             "extra": "median of 5 runs: 101.275, 101.770, 102.053, 102.154, 102.567 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "59b8c3779311aec193f98c86c9445f4d613ccb94",
+          "message": "Sandbox: walks by descriptor, the floor's folders above held names pinned, moved forge and XDG folders held (#5885)\n\n* Sandbox: the session host's walks of a profile's folders go by descriptor\n\nCodex's tidy of its days' sessions and the Claude Code wrap's sweep of\nlinks in its config folder listed a folder, then opened what they found\nin it again by path. A folder swapped in the middle of a walk could lead\neither outside the profile. Both now open each folder relative to the one\nabove it with O_NOFOLLOW and remove each name relative to the folder it\nwas listed in, with race tests that swap folders while they walk.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YKCW4BKGBJWYZ3CVNS49YC\nPurlis-Persona: steward\n\n* Sandbox: gh's and glab's folders named by a relative path are held in the chat's folder\n\ngh and glab read a relative GH_CONFIG_DIR, GLAB_CONFIG_DIR or XDG\nfolder against the folder they run in, so a chat's own runs loaded\nwhatever the chat wrote there. Each such folder is now held against the\nchat's own folder at every level, as one named whole already was; one\nthat is the chat's folder, the project's or above either holds nothing.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YKCW4BKGBJWYZ3CVNS49YC\nPurlis-Persona: steward\n\n* Sandbox: below a wrapped Claude Code's plugin data, the floor's planted names stay held\n\nAt the floor the wrap gives back writes below plugins/data, where Claude\nCode keeps each plugin's data. That allow came after the floor's rules,\nso below it a planted name (.git/hooks, .envrc, .mcp.json and the rest)\nor a project's state folder could be written. The allow now excludes\nlinks, and the planted rules and every project's own rules for that\nfolder follow it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YKCW4BKGBJWYZ3CVNS49YC\nPurlis-Persona: steward\n\n* Sandbox: a wrapped Claude Code's config folder is readied only once its start cannot be refused\n\nBuilding the chat's line made the folders of its config folder, took\nlinks out of them and marked its folder trusted, before checks that can\nstill refuse the start (its settings' file). A refused start now leaves\nthe folder as it was: each start readies it after its last refusal,\njust before it spawns the chat.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YKCW4BKGBJWYZ3CVNS49YC\nPurlis-Persona: steward\n\n* Sandbox: the folders above each held name in the home stay pinned at the floor, lifted or not\n\nAt the floor of a harness purlis wraps, a later-code name of more than\none part in the home (.local/share/dbus-1/services, .kube/kuberc) was\nheld only as a pattern, which pins no folder above it, so a folder\nholding the name could be moved into place. Each is now also held as a\npath in the home, which pins every folder above it, and the folders a\ntool writes below are made before the chat starts, as for Claude Code.\n\nA name lifted for one chat no longer leaves its folder above unpinned:\nan entry beside it, never made, keeps that folder pinned, in a wrap and\nin Claude Code's own sandbox on macOS.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YKCW4BKGBJWYZ3CVNS49YC\nPurlis-Persona: steward\n\n* Sandbox: later-code names moved by XDG_CONFIG_HOME or XDG_DATA_HOME are held where they moved\n\nThe floor held fish's, Neovim's, git's and the other later-code names\nbelow ~/.config and ~/.local/share by those spellings only. Where\nXDG_CONFIG_HOME or XDG_DATA_HOME moves those folders, the programs load\nfrom there, so each name is now held there too, as gh's already was.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YKCW4BKGBJWYZ3CVNS49YC\nPurlis-Persona: steward\n\n* Changelog: the sandbox sweep's fragment\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YKCW4BKGBJWYZ3CVNS49YC\nPurlis-Persona: steward\n\n* Sandbox sweep: rustfmt\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YKCW4BKGBJWYZ3CVNS49YC\nPurlis-Persona: steward\n\n* Sandbox sweep: the lists of folders the floor makes, and the new files' licence lines\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YKCW4BKGBJWYZ3CVNS49YC\nPurlis-Persona: steward\n\n* Sandbox sweep: what the plugin data test asks at the full sandbox, and the climbing XDG folder's list\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YKCW4BKGBJWYZ3CVNS49YC\nPurlis-Persona: steward\n\n* Sandbox sweep: one if in the walk race test\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YKCW4BKGBJWYZ3CVNS49YC\nPurlis-Persona: steward\n\n* Switch-off (to be reverted): every fix in this pull request off, its tests kept\n\nSo CI shows each new test red for its own reason. The next commit\nreverts this one.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YKCW4BKGBJWYZ3CVNS49YC\nPurlis-Persona: steward\n\n* Sandbox sweep: the walk race tests give each walk many names to be led astray at\n\nWith one name a walk spent too little time in the swapped folder for\nthe race to be won on CI. With a hundred days and two hundred folders,\nevery name is a chance.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YKCW4BKGBJWYZ3CVNS49YC\nPurlis-Persona: steward\n\n* Sandbox sweep: the walk race tests hold each side of the swap a while\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YKCW4BKGBJWYZ3CVNS49YC\nPurlis-Persona: steward\n\n* Revert the switch-off: every fix in this pull request on again\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YKCW4BKGBJWYZ3CVNS49YC\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-09T01:43:40Z",
+          "tree_id": "c144d2402e542bd904cbd0be1b0251e948c7cce6",
+          "url": "https://github.com/purlis/purlis/commit/59b8c3779311aec193f98c86c9445f4d613ccb94"
+        },
+        "date": 1794190696901,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5517305,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.545, 0.549, 0.552, 0.554, 0.555 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.429533999999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.256, 16.364, 16.430, 16.462, 16.613 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.0533725,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.124, 101.800, 102.053, 102.122, 102.352 ms"
           }
         ]
       }
