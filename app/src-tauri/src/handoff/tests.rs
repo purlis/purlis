@@ -13875,6 +13875,21 @@ fn keep_blocked_on_a_held_vaults_run_notice_after_its_command_stopped_waiting_nu
 
     assert!(pressed.is_some(), "the person reads what the Notice says");
     assert_eq!(
+        held.vault_refusals().queued_lines_for(3),
+        [purlis_core::askoutcome::Outcome {
+            about: purlis_core::askoutcome::About::Vault {
+                vault: "team".to_owned(),
+            },
+            answer: purlis_core::askoutcome::Answer::KeptBlockedButHeld {
+                persona: "ops".to_owned(),
+                by: purlis_core::askoutcome::HeldBy::AllowedList,
+                reason: None,
+            },
+        }
+        .line()],
+        "with the line that says its persona holds the vault, never that it was kept blocked"
+    );
+    assert_eq!(
         held.vault_refusals().queued_for(3),
         1,
         "the chat is nudged at its turn's end"
@@ -13935,6 +13950,21 @@ fn keep_blocked_on_a_held_vaults_notice_nudges_its_runs_with_the_held_line_once(
     assert!(
         held.secret_asks().open_runs().is_empty(),
         "the run's ask was answered"
+    );
+    assert_eq!(
+        held.vault_refusals().queued_lines_for(chat),
+        [purlis_core::askoutcome::Outcome {
+            about: purlis_core::askoutcome::About::Vault {
+                vault: "team".to_owned(),
+            },
+            answer: purlis_core::askoutcome::Answer::KeptBlockedButHeld {
+                persona: "ops".to_owned(),
+                by: purlis_core::askoutcome::HeldBy::AllowedList,
+                reason: None,
+            },
+        }
+        .line()],
+        "with the line that says its persona holds the vault, never that it was kept blocked"
     );
     assert_eq!(
         held.vault_refusals().queued_for(chat),

@@ -585,18 +585,34 @@ describe("answering in place", () => {
     expect(within(recent).queryAllByRole("button")).toEqual([]);
   });
 
-  it("lists what Keep blocked said beside it under Recently answered, where the persona already holds the vault (#5890)", async () => {
+  it("says what Keep blocked said, where the persona already holds the vault, in a Notice that stands while other asks wait, until dismissed (#5890)", async () => {
     const held =
       "You kept vault team blocked for this chat, but devops can already use it, so Keep blocked does not stop this chat's runs on it. Remove it in Settings › Sandbox › Allowed to stop them.";
     core({ answer_run_grant: { said: held } });
     const ask = { ...runAsk({ offer: "vault" }, VAULTS_OWN), chain: ["devops 4"] };
-    const { again, props } = draw([ask]);
+    const other = permission(3, "01J0A", ["steward 3"]);
+    const { again, props } = draw([ask, other]);
     await userEvent.click(screen.getByRole("button", { name: "Keep blocked" }));
     await waitFor(() => expect(props.onAnswered).toHaveBeenCalled());
+    // The run's ask goes; another still waits, so nothing of the Inbox is empty.
+    again([other]);
+
+    const notice = await waitFor(() => {
+      const found = document.querySelector<HTMLElement>('[data-cause^="answer-said:"]');
+      expect(found).not.toBeNull();
+      return found as HTMLElement;
+    });
+    expect(notice).toHaveTextContent("devops 4");
+    expect(notice).toHaveTextContent(held);
+    expect(screen.queryByRole("region", { name: "Recently answered" })).toBeNull();
+
+    await userEvent.click(within(notice).getByRole("button", { name: "Dismiss" }));
+    await waitFor(() => expect(document.querySelector('[data-cause^="answer-said:"]')).toBeNull());
+    // Once nothing waits, Recently answered lists the answer, and the sentence is not said twice.
     again([]);
     const recent = screen.getByRole("region", { name: "Recently answered" });
     expect(within(recent).getByText("Keep blocked")).toBeTruthy();
-    expect(within(recent).getByText(held)).toBeTruthy();
+    expect(within(recent).queryByText(held)).toBeNull();
   });
 
   it("opens Delete workspace from a workspace's removal, removes nothing, and notes no answer (qw356)", async () => {

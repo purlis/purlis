@@ -206,6 +206,16 @@ impl Refusals {
         self.queued.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
+    /// The lines that wait for chat `session`'s turn to end, in order.
+    #[cfg(test)]
+    pub fn queued_lines_for(&self, session: u32) -> Vec<String> {
+        self.queue()
+            .iter()
+            .filter(|(chat, _)| *chat == session)
+            .map(|(_, line)| line.clone())
+            .collect()
+    }
+
     /// How many lines wait for chat `session`'s turn to end.
     #[cfg(test)]
     pub fn queued_for(&self, session: u32) -> usize {

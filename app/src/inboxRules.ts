@@ -151,7 +151,8 @@ export type Answered = {
   /** The answer as its button read, or a reply's words. */
   answer: string;
   /** What the source said of the answer, where it said something the person should read: Keep
-   *  blocked on a vault the chat's persona already holds (#5890). */
+   *  blocked on a vault the chat's persona already holds (#5890). A Notice says it in the Inbox,
+   *  whatever else waits, until the person dismisses it ([`dismissSaid`]). */
   said?: string;
 };
 
@@ -173,6 +174,22 @@ export function noteAnswered(plane: string, one: Answered): void {
 }
 
 /** What `plane`'s Inbox answered lately, newest first. */
+/** **The person read what an answer said and dismissed it** (#5890): the answer stays listed as
+ *  answered, and its sentence goes. */
+export function dismissSaid(plane: string, at: number): void {
+  const now = answered.get(plane) ?? NONE;
+  answered.set(
+    plane,
+    now.map((one) => {
+      if (one.at !== at || one.said === undefined) return one;
+      const rest = { ...one };
+      delete rest.said;
+      return rest;
+    }),
+  );
+  for (const changed of readers) changed();
+}
+
 export function useAnswered(plane: string): readonly Answered[] {
   return useSyncExternalStore(
     (changed) => {

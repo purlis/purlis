@@ -2750,10 +2750,6 @@ body {
   color: var(--text-secondary);
   overflow-wrap: anywhere;
 }
-/* What the source said of an answer, beside it (#5890): its own line under the answer. */
-.inbox-recent-said {
-  margin: var(--space-1) 0 0;
-}
 
 /* `react-resizable-panels` draws a panel as a box with the class on an inner div, and that
    inner div is what has to fill the box. */

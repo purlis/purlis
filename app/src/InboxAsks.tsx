@@ -1102,9 +1102,6 @@ export function Empty({
                 <span className="ask-says">{capMarks(one.says).text}</span>
                 {" · "}
                 <span className="inbox-recent-answer">{one.answer}</span>
-                {one.said !== undefined && (
-                  <p className="inbox-recent-said">{capMarks(one.said).text}</p>
-                )}
               </li>
             ))}
           </ul>
