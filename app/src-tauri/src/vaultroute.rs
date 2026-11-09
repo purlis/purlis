@@ -416,6 +416,9 @@ pub fn refused(
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct VaultAnswered {
     pub said: String,
+    /// Whether [`Self::said`] sends the person to Settings › Sandbox › Network › Allowed, where a row holds
+    /// the vault for the chat's persona: the Notice that says it then links there (#5939).
+    pub allowed_list: bool,
 }
 
 /// Seconds since 1970, now.
@@ -683,6 +686,7 @@ pub async fn allow_refused_vault(
             Allowed::Already(grant) => {
                 return Ok(VaultAnswered {
                     said: already_said(&grant),
+                    allowed_list: false,
                 });
             }
         };
@@ -707,6 +711,7 @@ pub async fn allow_refused_vault(
         }
         Ok(VaultAnswered {
             said: allowed_said(&grant, told),
+            allowed_list: false,
         })
     })
     .await
@@ -900,6 +905,8 @@ pub(crate) struct KeptButHeld {
     pub by: purlis_core::askoutcome::HeldBy,
     /// What the person reads beside the press.
     pub said: String,
+    /// Whether [`Self::said`] sends the person to Settings › Sandbox › Network › Allowed (#5939).
+    pub allowed_list: bool,
     /// The reason the person typed for the press, if any ([`purlis_core::askoutcome::reason`]):
     /// told with the line by whichever telling reaches the chat (review of #5934).
     pub reason: Option<String>,
@@ -922,7 +929,10 @@ pub(crate) fn told_kept_but_held(
         held.chats()
             .tell_outcome(session, kept_but_held_outcome(vault, &kept));
     }
-    VaultAnswered { said: kept.said }
+    VaultAnswered {
+        said: kept.said,
+        allowed_list: kept.allowed_list,
+    }
 }
 
 /// The one line a chat is told of Keep blocked on `vault`, which its persona holds (#5801).
@@ -977,14 +987,14 @@ pub(crate) fn kept_blocked_but_held(
     );
     said.push_str(&match by {
         HeldBy::AllowedList => {
-            " Remove it in Settings › Sandbox › Allowed to stop them.".to_owned()
+            " Remove it in Settings › Sandbox › Network › Allowed to stop them.".to_owned()
         }
         HeldBy::Tag => {
             format!(" The project's vaults tag it for {persona}: change that tag to stop them.")
         }
     });
     if tagged && allowed {
-        said.push_str(" It is in Settings › Sandbox › Allowed too.");
+        said.push_str(" It is in Settings › Sandbox › Network › Allowed too.");
     }
     if brokered::declares_a_tool_with(root, persona, vault) {
         said.push_str(&format!(
@@ -995,6 +1005,8 @@ pub(crate) fn kept_blocked_but_held(
         persona: persona.to_owned(),
         by,
         said,
+        // As the sentence names it: where the row holds the vault, or holds it beside the tag.
+        allowed_list: by == HeldBy::AllowedList || (tagged && allowed),
         reason: None,
     })
 }

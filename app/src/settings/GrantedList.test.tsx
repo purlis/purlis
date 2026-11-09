@@ -10,7 +10,7 @@ import { commands, type SandboxGrant } from "../bindings";
 import { networkGroup, grantSaid } from "./GrantedList";
 import type { LiveSetting } from "./groups";
 import { RUN_GRANTS_MOVED, runGrantsMoved, useSandboxCommands } from "../sandboxAsked";
-import { SETTINGS_ACTION, type SettingsActionAsk } from "./links";
+import { ALLOWED_LIST, SETTINGS_ACTION, type SettingsActionAsk } from "./links";
 
 /**
  * **Settings › Sandbox › Network › Allowed** (#1348, renamed by #1662): every Allow at every
@@ -559,5 +559,15 @@ describe("a service on this Mac in the Granted list (qw384)", () => {
     expect(grantSaid(PORT)).toBe(
       "Connect to the service on this Mac at port 50795 (Codex and opencode chats; Claude Code chats not yet) · This project on this machine · allowed by you",
     );
+  });
+});
+
+describe("the link to the Allowed list (#5939)", () => {
+  it("names the Network group and its Allowed setting, so the link lands on the list", () => {
+    const group = networkGroup("/home/dev/plane", ".purlis/sandbox.toml");
+    const allowed = group.settings.find((one) => one.id === ALLOWED_LIST.setting);
+
+    expect(ALLOWED_LIST.group).toBe(group.id);
+    expect(allowed?.label).toBe("Allowed");
   });
 });
