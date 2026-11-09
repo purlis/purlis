@@ -154,6 +154,9 @@ export type Answered = {
    *  blocked on a vault the chat's persona already holds (#5890). A Notice says it in the Inbox,
    *  whatever else waits, until the person dismisses it ([`dismissSaid`]). */
   said?: string;
+  /** Whether `said` sends the person to Settings › Sandbox › Allowed: its Notice links there
+   *  (#5939). */
+  allowedList?: true;
 };
 
 /** The most answered asks a project's Inbox lists. */
@@ -189,6 +192,7 @@ export function dismissSaid(plane: string, one: Answered): void {
         if (each !== one) return each;
         const rest = { ...each };
         delete rest.said;
+        delete rest.allowedList;
         return rest;
       }),
     ),

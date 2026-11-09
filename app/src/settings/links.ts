@@ -87,6 +87,20 @@ export function focusedSetting(place: string): void {
  *  Saving view's Notice does (NO-7, #1232), as its ways out send `WAY_OUT`. */
 export const SETTINGS_LINK = "charter-settings-link";
 
+/**
+ * **Settings › Sandbox › Allowed** (#5939): the row of the project's Sandbox network group that
+ * lists what was allowed, where a vault a persona holds by a row of it is removed. Its ids are
+ * `GrantedList`'s `NETWORK` group's, spelled here so a Notice links there without drawing the
+ * settings page in.
+ */
+export const ALLOWED_LIST: SettingsLink = {
+  group: "project.sandbox.network",
+  setting: "project.sandbox.network.allowed",
+};
+
+/** The words of a link to [`ALLOWED_LIST`]. */
+export const OPEN_ALLOWED_LIST = "Open the Allowed list";
+
 /** What a link asked of a project's window: which project, and the link. */
 export type SettingsLinkAsk = { plane: string; link: SettingsLink };
 

@@ -1,6 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { ALLOWED_LIST, askSettingsLink, OPEN_ALLOWED_LIST } from "./settings/links";
 import {
   useCallback,
   useLayoutEffect,
@@ -606,6 +607,16 @@ export function Inbox({
                     cause={`answer-said:${one.at}:${chainSaid(one.chain)}:${one.says}`}
                     // As the refused vault's own Notice says the same sentence: news.
                     tone="news"
+                    // Where the sentence sends the person to the Allowed list, a press goes
+                    // there (#5939); Dismiss stays beside it.
+                    link={
+                      one.allowedList === true
+                        ? {
+                            label: OPEN_ALLOWED_LIST,
+                            onPress: () => askSettingsLink(plane, ALLOWED_LIST),
+                          }
+                        : undefined
+                    }
                     onDismiss={() => dismissSaid(plane, one)}
                   >
                     <strong>{chainSaid(one.chain)}</strong>

@@ -9,9 +9,12 @@ import { useDispatchesHeld } from "./dispatchesHeld";
 import { Notice, NoticeOf, type NoticeAction } from "./Notice";
 import { runGrantsMoved } from "./sandboxAsked";
 import { useVaultRefusals } from "./vaultRefusals";
+import { ALLOWED_LIST, askSettingsLink, OPEN_ALLOWED_LIST } from "./settings/links";
 
 /** What a press answers: the sentence the Notice then says, or nothing for Keep blocked. */
-type Answer = { status: "ok"; data: { said: string } | null } | { status: "error"; error: string };
+type Answer =
+  | { status: "ok"; data: { said: string; allowed_list: boolean } | null }
+  | { status: "error"; error: string };
 
 /**
  * **A vault this chat was refused for its persona, on its tab** (#1430), like a blocked host's:
@@ -104,8 +107,13 @@ export function VaultRefusedNotice({
     );
     return held.filter((one) => listed.has(one.vault));
   }, [asks, held]);
-  /** What the last press answered, and the persona it was for, said until it is put away. */
-  const [answered, setAnswered] = useState<{ persona: string; said: string }>();
+  /** What the last press answered, and the persona it was for, said until it is put away; and
+   *  whether it sends the person to Settings › Sandbox › Allowed, which it then links to (#5939). */
+  const [answered, setAnswered] = useState<{
+    persona: string;
+    said: string;
+    allowedList: boolean;
+  }>();
   const [said, setSaid] = useState<string>();
   const [busy, setBusy] = useState(false);
   const askPersona = useAskPersona();
@@ -128,6 +136,11 @@ export function VaultRefusedNotice({
         tone="news"
         label="Vault"
         persona={answered.persona}
+        link={
+          answered.allowedList
+            ? { label: OPEN_ALLOWED_LIST, onPress: () => askSettingsLink(plane, ALLOWED_LIST) }
+            : undefined
+        }
         onDismiss={() => setAnswered(undefined)}
       >
         {answered.said}
@@ -170,7 +183,8 @@ export function VaultRefusedNotice({
       .then((done) => {
         if (done.status === "error") setSaid(done.error);
         else {
-          if (done.data !== null) setAnswered({ persona, said: done.data.said });
+          if (done.data !== null)
+            setAnswered({ persona, said: done.data.said, allowedList: done.data.allowed_list });
           if (label !== undefined && itsAsk !== undefined) onWay?.(label, itsAsk);
         }
         // Whatever the press answered, the Notice draws what the core holds now (qw385), and
