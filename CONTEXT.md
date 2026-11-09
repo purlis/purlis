@@ -1176,6 +1176,22 @@ a strip always has a pane for a sidebar pick. In a plane with no workspace it sa
 "No workspaces yet" and offers **Create a workspace** (ADR 0043 as amended 2026-11-06).
 _Avoid_: blank tab, empty window
 
+**Artifact**:
+A page a workspace shows to everyone who works in it: an HTML template in the workspace's
+`artifacts/` folder that someone **pinned to the workspace**. Pinning it to the workspace makes
+it one and unpinning ends it; the files stay. Its template is shared through the plane, and the
+data it shows is each person's own, never written to the plane. It opens in a private tab, and
+a part of **Workspace** (ADR 0072, ADR 0120).
+_Avoid_: attachment, dashboard (for the concept), report, artifact (for a CI or release build's
+output, or for a Claude.ai artifact)
+
+**Pin to workspace**:
+A person's deliberate act that gives an **Artifact** an icon on its workspace's activity bar,
+for everyone who works in it. It is kept in the plane and shared by a save, unlike a **Pin**,
+which is one person's and kept on this machine. Any change to what a pin points at is a new pin
+(ADR 0120, amending ADR 0040).
+_Avoid_: share, publish, feature, pin (unqualified, which is the private mark)
+
 **Side**:
 One edge of a project's window: its activity bar, its sidebar beside the editor and its **Panel
 half**, together. Left is navigation, right is what is for you (ADR 0038). A view moves only
