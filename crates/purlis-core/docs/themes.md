@@ -781,7 +781,10 @@ disk.
 appearance it was found in, and its `options` the value of each option it was drawn with (`{}`
 for a theme with none), in the theme's order of its options. Its `kind` is `contrast` (a `pair`,
 its `ratio`, and `under` when the back is a wash laid over another token, and `beneath` when
-that token is a wash laid over another in turn), `ansi` (a terminal colour too close to the
+that token is a wash laid over another in turn; a pair the check only reports, which no
+consent floor, import tier or person's colour acts on, is one of these too: a meter's fills,
+`accent.base`, `state.waiting` and `text.muted`, on its track, `border.subtle`, over
+`surface.base` and over `surface.raised`, at 3:1), `ansi` (a terminal colour too close to the
 terminal's background: `token`, `ratio`, `floor`) or `selected-not-apart` (the selected row
 drawn exactly as `other`), `card-not-apart` (a side view's card row whose fill, `card`, steps
 only `ratio` from the side panel's, `ground`, under the `floor` of 1.05, with no edge that

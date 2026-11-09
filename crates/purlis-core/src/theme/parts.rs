@@ -5230,9 +5230,9 @@ pub(super) struct CardOnSide {
 }
 
 /// What [`CardOnSide`] says of `theme`, where its parts, its own or inherited, choose a card
-/// row's look or a side panel's fill. As a meter's fill on its track is (#3674), a palette alone
-/// is not yet held (#3735): a theme that chooses neither draws its cards on the family's raised
-/// ground, wherever its palette puts it.
+/// row's look or a side panel's fill. For a palette alone it is not yet held, as a meter's fill
+/// on its track is ([`super::check::REPORTED`], #3735): a theme that chooses neither draws its
+/// cards on the family's raised ground, wherever its palette puts it.
 pub(super) fn card_on_side(theme: &ResolvedTheme) -> Option<CardOnSide> {
     let chosen = theme.parts.keys().any(|key| {
         (key.family == "list" && key.variant == Some("card"))
