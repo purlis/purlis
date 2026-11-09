@@ -1393,20 +1393,20 @@ body {
    so a row does not change width as the pointer arrives; it is drawn on hover and while the
    row has the keyboard, and always where there is no hover. Opacity, as the explorer's row
    action, so nothing moves. */
-.chats-section .chat .chat-more {
+.chats-section .chat-more {
   display: flex;
   align-items: center;
   flex: none;
   opacity: 0;
 }
 
-.chats-section .chat:is([data-hovered], :focus-within) .chat-more,
-.chats-section .chat .chat-more:has([data-pressed]) {
+.chats-section [role="row"]:is([data-hovered], :focus-within) .chat-more,
+.chats-section .chat-more:has([data-pressed]) {
   opacity: 1;
 }
 
 @media (hover: none) {
-  .chats-section .chat .chat-more {
+  .chats-section .chat-more {
     opacity: 1;
   }
 }

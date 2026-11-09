@@ -11,6 +11,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { FinishedTask, NotStarted, OpenChat } from "./bindings";
 import { forgetThisLaunch } from "./regions";
+import { findTree, heard, rowAround, rowNamed, rowsOf, treeNamed } from "./ui/tree/tree.testkit";
 
 /**
  * **A task that did not start, against the whole window** (#1497, ruling V100-51): it is a
@@ -173,15 +174,22 @@ function core(
   return { asked: (cmd: string) => asked.filter((one) => one.cmd === cmd).map((one) => one.args) };
 }
 
-const theirs = () => screen.findByRole("group", { name: "Finished tasks of steward 4" });
-/** The finished row named `name`: the button its report opens on. */
-const theRow = (group: HTMLElement, name: string) => {
-  const found = within(group)
-    .getAllByRole("button")
-    .find((one) => one.querySelector(".session")?.textContent === name);
-  if (found === undefined) throw new Error(`no finished row is named ${name}`);
-  return found;
+/**
+ * **The Chats tree, once steward 4's finished tasks are rows of it** (#3198): each a row under
+ * the chat that asked, named by its task, with its report and its buttons in it.
+ */
+const theirs = async () => {
+  const tree = await findTree("Chats of this project");
+  await waitFor(() => expect(finishedRows(tree).length).toBeGreaterThan(0));
+  return tree;
 };
+/** The finished rows the tree draws. */
+const finishedRows = (tree: HTMLElement) =>
+  rowsOf(tree).filter((row) => row.classList.contains("finished-task"));
+/** No finished row is left in the tree. */
+const noneLeft = () => expect(finishedRows(treeNamed("Chats of this project"))).toEqual([]);
+/** The finished row named `name`. */
+const theRow = (tree: HTMLElement, name: string) => rowNamed(tree, name);
 /** The Notices that say a chat did not start, by the chat's id. */
 const banners = () =>
   [...document.querySelectorAll<HTMLElement>('[data-cause^="chat-did-not-start:"]')].map(
@@ -205,14 +213,16 @@ describe("a task that did not start", () => {
 
     // Its own row, in the one word for it, and never behind the Finished count.
     const row = theRow(group, "check prod");
-    expect(row).toHaveTextContent("failed");
+    expect(heard(row)).toContain("failed");
     expect(row.querySelector('[data-shape="cross"]')).not.toBeNull();
-    expect(within(group).getByRole("button", { name: "Finished (1)" })).toBeInTheDocument();
+    expect(rowNamed(group, "Finished (1)")).toBeInTheDocument();
 
     // The reason, whole, without a press: every word of the core's sentence.
     const why = within(group).getByRole("region", { name: "Report of check prod" });
     expect(why).toHaveTextContent(`it did not start: ${WHY}`);
-    expect(row).toHaveAttribute("aria-expanded", "true");
+    // Shown in its row, under its line, and said as the row's description (#3198).
+    expect(rowAround(why)).toBe(row);
+    expect(heard(row)).toContain(`it did not start: ${WHY}`);
 
     // Nothing to resume: Reopen says so where a keyboard reaches it, and does nothing.
     expect(within(group).getByRole("button", { name: "Reopen check prod" })).toHaveAttribute(
@@ -236,9 +246,7 @@ describe("a task that did not start", () => {
     expect(within(group).queryByRole("region", { name: "Report of check prod" })).toBeNull();
 
     await userEvent.click(within(group).getByRole("button", { name: "Clear check prod" }));
-    await waitFor(() =>
-      expect(screen.queryByRole("group", { name: "Finished tasks of steward 4" })).toBeNull(),
-    );
+    await waitFor(noneLeft);
   });
 });
 
@@ -247,7 +255,7 @@ describe("a task the chat that asked tried more than once", () => {
     core([{ ...UNSTARTED, attempts: 3 }]);
     render(<App />);
     const group = await theirs();
-    expect(theRow(group, "check prod")).toHaveTextContent("tried 3 times");
+    expect(heard(theRow(group, "check prod"))).toContain("tried 3 times");
   });
 });
 
@@ -258,7 +266,7 @@ describe("a task a launch could not start again", () => {
     const group = await theirs();
 
     const row = theRow(group, "check staging");
-    expect(row).toHaveTextContent("failed");
+    expect(heard(row)).toContain("failed");
     const why = within(group).getByRole("region", { name: "Report of check staging" });
     expect(why).toHaveTextContent(`it did not start: ${WHY}`);
     // It is not ended, and says so.
@@ -284,9 +292,7 @@ describe("a task a launch could not start again", () => {
       within(group).getByRole("button", { name: "Try to start check staging again" }),
     );
 
-    await waitFor(() =>
-      expect(screen.queryByRole("group", { name: "Finished tasks of steward 4" })).toBeNull(),
-    );
+    await waitFor(noneLeft);
     // The one Retry (#5324): the action the project's row on the rail runs, and not a second.
     expect(world.asked("retry_project")).toEqual([{ plane: PLANE }]);
     expect(world.asked("retry_chat_that_did_not_start")).toEqual([]);
