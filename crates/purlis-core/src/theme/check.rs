@@ -1811,19 +1811,17 @@ fn byte(digits: &str, at: usize) -> f64 {
         .map_or(0.0, f64::from)
 }
 
-/// One channel of a colour, as the linear number WCAG's formula wants.
-fn channel(hex: &str, at: usize) -> f64 {
-    let value = byte(&long(hex), at * 2) / 255.0;
-    if value <= 0.04045 {
-        value / 12.92
-    } else {
-        ((value + 0.055) / 1.055).powf(2.4)
-    }
-}
-
-/// WCAG relative luminance.
+/// WCAG relative luminance: each channel as the linear number WCAG's formula wants.
 pub(super) fn luminance(hex: &str) -> f64 {
-    0.2126 * channel(hex, 0) + 0.7152 * channel(hex, 1) + 0.0722 * channel(hex, 2)
+    let digits = long(hex);
+    let channel = |at: usize| {
+        let byte = digits
+            .get(at..at + 2)
+            .and_then(|two| u8::from_str_radix(two, 16).ok())
+            .unwrap_or(0);
+        super::tint::linear_of(byte)
+    };
+    0.2126 * channel(0) + 0.7152 * channel(2) + 0.0722 * channel(4)
 }
 
 /// WCAG contrast ratio, 1 (identical) to 21 (black on white). Alpha is ignored: a pair whose

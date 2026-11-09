@@ -317,21 +317,30 @@ fn every_built_in_holds_each_syntax_role_on_a_changed_word_and_the_sweep_can_fal
     assert_eq!(syntax_roles().count(), 15);
     for theme in built_ins() {
         for back in ["diff.inserted-text", "diff.deleted-text"] {
+            // The control: the same sweep with every role drawn in its own ground falls on each.
+            // A role is a front only, never a ground another role is measured on, so breaking all
+            // fifteen at once breaks each as breaking it alone would, for one check, not fifteen.
+            let mut broken = theme.clone();
             for front in syntax_roles() {
                 let pair = pair_of(front, back);
                 assert_eq!(pair.floor, 3.0, "{front} on {back}");
+                assert!(
+                    pair.back != front && pair.under != Some(front) && pair.beneath != Some(front)
+                );
                 let cleared = ratio(theme, pair).expect("measured");
                 assert!(
                     cleared >= 3.0,
                     "{} {front} on {back}: {cleared}",
                     theme.name
                 );
-                // The control: the same sweep with the role drawn in its own ground falls.
                 let (_, ground) = drawn(theme, pair).expect("drawn");
-                let mut broken = theme.clone();
                 broken.values.insert(front, ground);
+            }
+            let found = check(&broken).findings;
+            for front in syntax_roles() {
+                let pair = pair_of(front, back);
                 assert!(
-                    check(&broken).findings.iter().any(|one| matches!(
+                    found.iter().any(|one| matches!(
                         one,
                         Finding::Contrast { pair: found, .. } if found == pair
                     )),
