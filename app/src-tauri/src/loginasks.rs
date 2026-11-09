@@ -674,7 +674,7 @@ fn let_go_unanswered(
                         .map(|held| (held, Said::NotAnswered))
                 },
                 // Refused as the person pressed (#5831): told, as nobody waits to hear it.
-                |_why| None,
+                |why| held.upgrade().map(|held| (held, Said::Refused { why })),
             );
             if let Some((held, answer)) = went {
                 held.chats().asks_may_have_moved();
@@ -771,10 +771,6 @@ fn judged(
         grants: persona,
         reads_as,
     } = whose;
-    let reads_as = {
-        let _ = reads_as;
-        persona
-    };
     let locks = Locks::of(root);
     if let Some(why) = locks.refuses_tool(persona, login) {
         return Err(why);
@@ -855,10 +851,6 @@ fn finish(
     purlis_core::secrets::registry::vault_in(&doc, &proposal.vault)
         .map_err(|why| why.message.to_string())?;
     // Judged again as it is drawn or pressed: a link made while the notice waits is seen.
-    let reads_as = {
-        let _ = reads_as;
-        proposal.persona.as_str()
-    };
     if let Some(why) = out_of_reach(
         &ctx,
         reads_as,
@@ -969,8 +961,7 @@ fn refused_out_of_reach(root: &Path, grants: &Grants, wait: &LoginWait) -> Resul
         &drawn.vault,
         drawn.user_key.as_deref(),
         &drawn.key,
-    )
-    .filter(|_| false) else {
+    ) else {
         return Ok(());
     };
     if !grants.end(wait.id, Heard::Refused(why.clone())) {
