@@ -1117,9 +1117,12 @@ pub fn manifests_held(root: &Path, cwd: Option<&Path>) -> Vec<Denial> {
 ///
 /// The folders there now are held by their paths, and every workspace's and persona's, there now
 /// or made later, by a pattern too, a path with a [`ANY_NAME`] part, which Claude Code reads as a glob and purlis's own
-/// wrap as a regular expression ([`seatbelt::denial_rules`]). Where a backend cannot hold a
+/// wrap as a regular expression ([`seatbelt::denial_rules`]). Where a backend does not hold a
 /// pattern, the levels a chat could have made reach no chat while it runs
-/// ([`crate::skills::levels`]). A clone is never named `skills` or `skills.local`
+/// ([`crate::skills::levels`]): Claude Code's own sandbox on Linux is one (#3097, ADR 0099 as
+/// amended 2026-11-09), and its test is
+/// `a_workspace_made_after_a_claude_code_chat_starts_hands_no_chat_its_skills`. A clone is
+/// never named `skills` or `skills.local`
 /// (`repocmd::clone::destination`), so no pattern holds a clone's root.
 pub fn skills_held(root: &Path) -> Vec<Denial> {
     let levels = [purlis_skills::PROJECT_DIR, purlis_skills::LOCAL_DIR];

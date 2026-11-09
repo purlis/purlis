@@ -936,3 +936,58 @@ fn a_chat_the_planes_skills_do_not_reach_is_handed_a_limit_that_holds_the_person
         "the plane holds no skills, so reaching it changes nothing"
     );
 }
+
+/// **#3097 (SK-41): a sandboxed Claude Code start notes the levels there as it is composed**, so
+/// a workspace made while it runs hands no chat its skills, on every system, whatever its own
+/// sandbox makes of the pattern that holds a later level (ADR 0099 as amended 2026-11-09). A
+/// workspace there at its start still reaches chats.
+#[test]
+fn a_sandboxed_claude_code_start_leaves_a_workspace_made_while_it_runs_out_of_every_chat() {
+    purlis_core::unsteered!();
+    let project = Project::on("claude");
+    let root = project.root();
+    // The person has accepted the folders there (the Skill studio's Needs you), as on any
+    // project purlis kept state for before.
+    if let Some((_, folders)) = purlis_core::skills::levels::to_confirm(root) {
+        purlis_core::skills::levels::confirm(root, &folders).expect("accepted");
+    }
+    let start = asking(|start| {
+        start.number = Some(3);
+        start.plane_skills = Some(true);
+    });
+
+    // Its desktop's word on the plane's skills is read from a link's start (#3084).
+    let launch = hoststart::compose(
+        &Starting {
+            root,
+            number: 3,
+            start: &start,
+            reporting: None,
+            started_by: "remote-link",
+            prompt_key: None,
+        },
+        &project.kit(),
+        &Host::default(),
+    )
+    .expect("composed");
+
+    let os = purlis_core::sandbox::Os::this();
+    let args: Vec<std::ffi::OsString> = launch.args.iter().map(Into::into).collect();
+    assert!(
+        matches!(
+            purlis_core::sandbox::ran::applied_to(launch.program.as_ref(), &args, false, os),
+            session::RunSandbox::By(_)
+        ),
+        "a sandboxed start: {:?}",
+        words(&launch)
+    );
+    fs::create_dir_all(root.join("workspaces/later")).unwrap();
+    let made = purlis_core::skills::levels::made_since(root);
+    let why = made(&root.join("workspaces/later")).expect("made while the chat runs");
+    assert!(why.contains("chat 3"), "{why}");
+    assert_eq!(
+        made(&root.join("workspaces/alpha")),
+        None,
+        "there at its start"
+    );
+}
