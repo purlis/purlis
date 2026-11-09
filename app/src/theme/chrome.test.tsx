@@ -39,6 +39,7 @@ import { NoticeList } from "../Notice";
 import { AnswerPanel } from "../AnswerPanel";
 import { ApproveExtension } from "../ApproveExtension";
 import { ApprovePlane } from "../ApprovePlane";
+import { HistoryDialog } from "../ArtifactHistory";
 import { ArtifactLinkDialog } from "../ArtifactLinks";
 import { OfferAsks } from "../ArtifactOffers";
 import { AskPersona } from "../AskPersona";
@@ -90,6 +91,7 @@ import { RemoveFromWorkspace } from "../RemoveFromWorkspace";
 import { RemovePersona } from "../RemovePersona";
 import { RenameChat } from "../RenameChat";
 import { PinToWorkspace, UnpinArtifact } from "../PinToWorkspace";
+import { ProposedPin } from "../ProposedPin";
 import { WorkspaceWriteDialog } from "../WorkspaceWrites";
 import { RenameWorkspace } from "../RenameWorkspace";
 import { AddVision } from "../AddVision";
@@ -1420,6 +1422,51 @@ const DIALOGS: Opened[] = [
     open: async () => {
       render(<ArtifactRegenerate plane="p" workspace="alpha" folder="board" name="Board" />);
       await userEvent.click(await screen.findByRole("button", { name: "Regenerate" }));
+    },
+  },
+  {
+    name: "an artifact's history, its versions read (#5966)",
+    file: "ArtifactHistory.tsx",
+    open: async () => {
+      mockIPC((cmd) =>
+        cmd === "artifact_history"
+          ? {
+              kept_most: 20,
+              versions: [
+                {
+                  id: "data:001700004000-00",
+                  at: "2026-11-09 10:00 UTC",
+                  kind: "regenerated",
+                  by: null,
+                  said: null,
+                },
+              ],
+            }
+          : null,
+      );
+      render(
+        <HistoryDialog
+          plane="p"
+          workspace="alpha"
+          folder="board"
+          name="Board"
+          onClose={nothing}
+          onAsOf={nothing}
+        />,
+      );
+      await screen.findByText(/purlis keeps the data of your last 20 Regenerates/);
+    },
+  },
+  {
+    name: "a chat's proposed pin that cannot be made (#5963)",
+    file: "ProposedPin.tsx",
+    open: async () => {
+      mockIPC((cmd) => {
+        if (cmd === "proposed_pin") throw "that proposal was answered already";
+        return null;
+      });
+      render(<ProposedPin plane="/x/acme" id={4} onClose={nothing} />);
+      await screen.findByRole("alertdialog", { name: "This pin cannot be made" });
     },
   },
   {
