@@ -550,6 +550,7 @@ export function StartChat({
     if (ask === undefined || askBusy || savingLimit) return;
     const key = ask.ask.secret?.key ?? "";
     const forProfile = ask.profile;
+    const onSaidOf = ask.onSaid;
     setFilled(undefined);
     setAnswering(true);
     void ask
@@ -557,6 +558,13 @@ export function StartChat({
       .then((ended) => {
         if (ended === "filled" && open.current)
           setFilled({ key, profile: forProfile, fill: wentOn.current + 1 });
+      })
+      // An answer that never reached the core says so, and the ask can be answered again.
+      .catch((why: unknown) => {
+        if (open.current)
+          onSaidOf(
+            `purlis could not send your answer: ${why instanceof Error ? why.message : String(why)}. Try again.`,
+          );
       })
       .finally(() => setAnswering(false));
   };
@@ -581,7 +589,7 @@ export function StartChat({
   const refusalSaid = ask !== undefined ? ask.said : (trouble ?? filledSaid);
   // The refusal still shown, where its ask waits for a profile no longer picked (#5670 review).
   const askElsewhere =
-    secretAsk !== undefined && ask === undefined && trouble !== undefined
+    secretAsk !== undefined && ask === undefined && trouble !== undefined && !askBusy
       ? `That refusal is for ${secretAsk.profile}: pick it again to fill ${secretAsk.ask.secret?.key ?? "its key"} here.`
       : undefined;
   // Once the details are in, a Start pressed early goes, where it is a plain start; an approval

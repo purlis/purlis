@@ -2622,6 +2622,31 @@ describe("the start's Secret ask, with what else the dialog offers (#5670 review
     expect(screen.getByRole("button", { name: "Fill" })).toHaveAttribute("aria-disabled", "true");
   });
 
+  it("an answer that fails says so, and lets the ask be answered again", async () => {
+    const onSaid = vi.fn();
+    const onAnswer = vi.fn(() => Promise.reject(new Error("the app went away")));
+    render(
+      <StartChat
+        options={options()}
+        trouble="nothing was started"
+        secretAsk={{ ...ask({ onAnswer }), onSaid }}
+        onStart={vi.fn()}
+        onApprove={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText("Value of anthropic"), "fr3sh");
+    await user.click(screen.getByRole("button", { name: "Fill" }));
+
+    await waitFor(() =>
+      expect(onSaid).toHaveBeenCalledWith(
+        "purlis could not send your answer: the app went away. Try again.",
+      ),
+    );
+    expect(screen.getByRole("button", { name: "Fill" })).not.toHaveAttribute("aria-disabled");
+  });
+
   it("a fill that comes back while the window is still busy goes on once it is not", async () => {
     const onStart = vi.fn();
     let answered: (ended: "filled") => void = () => {};

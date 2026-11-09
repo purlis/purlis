@@ -248,6 +248,8 @@ describe("a start missing its profile credential, in the Start dialog (#5137)", 
     await user.click(within(body).getByRole("button", { name: "Fill" }));
     await waitFor(() => expect(of("answer_secret_ask")).toHaveLength(1));
     await user.click(within(dialog).getByRole("radio", { name: /codex/ }));
+    // While the fill is sent, the dialog never asks for it to be filled again.
+    expect(dialog.textContent).not.toContain("That refusal is for");
     release();
 
     expect(await within(dialog).findByText("Filled anthropic for work-key.")).toHaveAttribute(
@@ -316,6 +318,8 @@ describe("a start missing its profile credential, in the Start dialog (#5137)", 
     render(<App />);
 
     const { body } = await startRefused();
+    // A value typed, so a chord that reached the ask's Fill would answer.
+    await userEvent.setup().type(within(body).getByLabelText("Value of anthropic"), "fr3sh");
     const choice = within(body).getAllByRole("radio")[0];
     fireEvent.keyDown(choice, { key: "Enter" });
     fireEvent.keyUp(choice, { key: "Enter" });
