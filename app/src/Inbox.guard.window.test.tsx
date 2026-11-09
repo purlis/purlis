@@ -153,7 +153,13 @@ describe.each(BOTH)("the press-settle guard, pressed by the %s (#3123)", (by) =>
     const there = (asking: Needing[]): Elsewhere => ({ asking, quiet: [], onPress: vi.fn() });
     const { again } = draw([ask], there([away(7)]));
     again([ask], there([away(8), away(7)]));
-    expect(screen.getByRole("region", { name: "steward 8 · infra · ops" })).toBeTruthy();
+    // Below the ask, so no stop above it changed: the case "an elsewhere row joining above" has
+    // no instance on today's Inbox, and this pins why.
+    const joined = screen.getByRole("region", { name: "steward 8 · infra · ops" });
+    expect(
+      screen.getByRole("region", { name: "steward 3" }).compareDocumentPosition(joined) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     await press(allowOf("steward 3"), by);
     expect(answered(calls)).toBe(true);
   });
@@ -189,6 +195,9 @@ describe.each(BOTH)("the press-settle guard, pressed by the %s (#3123)", (by) =>
     // Something above grew without drawing this row again: only where its Allow is says so.
     lower = 48;
     await press(allowOf("steward 4"), by);
+    expect(
+      within(screen.getByRole("region", { name: "steward 4" })).getByRole("status"),
+    ).toHaveTextContent(MOVED_JUST_NOW);
     expect(answered(calls)).toBe(false);
 
     read();
@@ -227,11 +236,12 @@ describe.each(BOTH)("the press-settle guard, pressed by the %s (#3123)", (by) =>
 
 describe("where the keyboard lands after an ask is answered and removed (#3123, #1700)", () => {
   it("lands on the row of the first ask left, never the page", async () => {
-    core();
+    const calls = core();
     const first = permission(3, "01J0A", ["steward 3"]);
     const second = permission(4, "01J0B", ["steward 4"], "Run cargo build");
     const { again } = draw([first, second]);
     await press(allowOf("steward 3"), "keyboard");
+    expect(answered(calls)).toBe(true);
     again([second]);
     const row = document.activeElement as HTMLElement;
     expect(row).not.toBe(document.body);
