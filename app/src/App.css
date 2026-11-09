@@ -303,19 +303,6 @@ body {
   cursor: grabbing;
 }
 
-/* **A LIVE workspace's dot** (`LiveMark`, qw337): right after the name, in the accent colour,
-   with a ring of the same colour so it is not taken for the workspace's own colour mark before
-   the name. The margin is the ring's room. */
-.live-dot {
-  flex: none;
-  width: var(--space-3);
-  height: var(--space-3);
-  margin-inline: var(--space-1);
-  border-radius: var(--radius-full);
-  background: var(--accent-base);
-  box-shadow: 0 0 0 var(--space-1) color-mix(in srgb, var(--accent-base) 35%, transparent);
-}
-
 /* **No strip scrolls. What does not fit is not drawn** — the operator, looking at the
    running app: *"i noticed that tabs now scrollable — instead of automatic expanding in show
    more button."* That reverses what ADR 0039 left open and what stood here, and the amendment

@@ -1723,9 +1723,6 @@ What a tab on the three strips draws, and in what (the operator's asks of 2026-1
   workspace's tab, the project root's and a project's draw it; a project's has the needs-you
   segment alone. On a tab too narrow for its title and its pill, the pill goes first
   (`wholeWays.fitPill`).
-- **Live is a dot** (`.live-dot`): `--space-3` across, in the accent, with a ring of the same
-  colour, right after the name. Named "Live". A row with room (the Explorer, the Saving tab)
-  keeps the glyph.
 - **A pin is a corner mark** (`.pinned`): `--space-1` in from the tab's top corner at the end,
   in the muted text colour, and still a named mark and not a control.
 - **The project root's tab** is a house with a tab's padding (`--space-4`), as wide as what it
