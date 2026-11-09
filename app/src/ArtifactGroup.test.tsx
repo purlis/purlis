@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -92,5 +92,24 @@ describe("the activity bar's artifacts", () => {
     render(<ArtifactGroup plane="p" workspace="alpha" onOpen={() => {}} />);
     await waitFor(() => expect(screen.getAllByRole("button")).toHaveLength(2));
     expect(asked).toEqual([{ plane: "p", workspace: "alpha" }]);
+  });
+
+  it("draws nothing when the core answers no pins at all", async () => {
+    const asked: unknown[] = [];
+    mockIPC((cmd, args) => {
+      if (cmd === "artifact_pins") asked.push(args);
+      return null;
+    });
+    render(
+      <>
+        <p>Beside it</p>
+        <ArtifactGroup plane="p" workspace="alpha" onOpen={() => {}} />
+      </>,
+    );
+    await waitFor(() => expect(asked).toHaveLength(1));
+    // Let the answer land: a throw while drawing it takes the whole tree down with it.
+    await act(async () => {});
+    expect(screen.getByText("Beside it")).toBeInTheDocument();
+    expect(screen.queryByRole("toolbar")).toBeNull();
   });
 });

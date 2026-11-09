@@ -43,7 +43,7 @@ export function ArtifactGroup({
   onOpen: (pin: ArtifactPinShown) => void;
 }) {
   const asked = usePins(plane, given === undefined ? workspace : undefined);
-  const pins = (given ?? asked).slice(0, MOST_DRAWN);
+  const pins = (given ?? asked ?? []).slice(0, MOST_DRAWN);
   const stop = useTabStop(
     current,
     pins.map((pin) => pin.folder),
