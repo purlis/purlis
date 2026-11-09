@@ -20,12 +20,36 @@ pub const HOOK_OUTPUT_CUT: usize = 10_000;
 /// [`HOOK_OUTPUT_CUT`], where after the briefing it was the middle Codex cut.
 pub const SKILLS_WORD: &str = "sessionstart-skills";
 
+/// **The word of the `SessionStart` hook that tells a Codex chat how it works here** (#5935):
+/// the notes of [`crate::briefing::Hook::Notes`] (one route for work, credentials, its sandbox),
+/// after the briefing's, each with its own [`HOOK_OUTPUT_CUT`].
+pub const NOTES_WORD: &str = "sessionstart-notes";
+
+/// **The word of the `SessionStart` hook that tells a Codex chat what others say to it**,
+/// quoted (#5935): where it is working, the extensions' sections and the reports kept for it.
+/// The one of a Codex chat's hooks that may pass [`HOOK_OUTPUT_CUT`], since purlis does not set
+/// how long those are; it is armed last, after the skills.
+pub const QUOTED_WORD: &str = "sessionstart-quoted";
+
+/// **Whether the chat `env` describes is told its briefing in parts**, one hook each
+/// ([`crate::briefing::Hook`], [`NOTES_WORD`], [`QUOTED_WORD`]): a Codex chat, as its start names
+/// it in [`crate::hookwire::HARNESS_ENV`]. Only Codex is armed with those words, and every other
+/// chat is told the whole briefing by `sessionstart`, as before (#5935).
+pub fn briefed_in_parts(env: &dyn Fn(&str) -> Option<String>) -> bool {
+    Harness::of_chat(crate::hookwire::chat_harness(env).as_deref()) == Some(Harness::Codex)
+}
+
 /// **A Codex chat's skill budget, in characters, where nothing sets one**: the built-ins take at
 /// most 5,000 of it, leaving about 3,000 for the plane's own skills (spec #5714's Q37, ADR 0102
 /// as amended 2026-11-08). It was set to what Codex's own catalogue holds where it does not know
 /// its window, which purlis's list never enters; it stays the number ruled, under
 /// [`HOOK_OUTPUT_CUT`] with the listing's opening, so the default never warns.
 const DEFAULT_CHARS: usize = 8_000;
+
+/// How long Codex waits on [`NOTES_WORD`] and on [`QUOTED_WORD`], in seconds: the briefing's own
+/// 5, since each tells what its hook told before, and the quoted waits on the extensions within
+/// the same bound it did there.
+const PART_HOOK_TIMEOUT: u64 = 5;
 
 /// How long Codex waits on [`SKILLS_WORD`], in seconds: the briefing's own 5, since it reads the
 /// same skill set the briefing did.
@@ -635,14 +659,17 @@ fn session_flags(binary: &std::path::Path) -> Vec<String> {
                 })
                 .collect();
             // One key per event, or the last `-c` of it would win: the question hook rides in
-            // the same `PreToolUse` as the guard ([`question_group`]), and the skills hook in the
-            // same `SessionStart` as the briefing, after it ([`skills_group`]).
+            // the same `PreToolUse` as the guard ([`question_group`]), and the briefing's other
+            // parts in the same `SessionStart` as the briefing, after it: its notes, its skills
+            // ([`skills_group`]) and the quoted, each a hook of its own (#5935).
             let mut groups = groups;
             if event == "PreToolUse" {
                 groups.push(question_group(binary));
             }
             if event == "SessionStart" {
+                groups.push(hook_group(binary, NOTES_WORD, PART_HOOK_TIMEOUT, None));
                 groups.push(skills_group(binary));
+                groups.push(hook_group(binary, QUOTED_WORD, PART_HOOK_TIMEOUT, None));
             }
             let value = toml::Value::Array(groups);
             ["-c".to_owned(), format!("hooks.{event}={value}")]

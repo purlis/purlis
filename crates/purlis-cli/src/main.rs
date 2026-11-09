@@ -2492,6 +2492,17 @@ fn hook(name: &str, now: Option<&str>) -> ExitCode {
         hooks::sessionstart_skills(&payload(), now);
         return ExitCode::SUCCESS;
     }
+    // The rest of a Codex chat's briefing, each a `SessionStart` hook's output of its own
+    // (#5935). Neither reports anything, as the skills' does not.
+    if [
+        purlis_core::harness::codex::NOTES_WORD,
+        purlis_core::harness::codex::QUOTED_WORD,
+    ]
+    .contains(&name)
+    {
+        hooks::sessionstart_part(name, &payload(), now);
+        return ExitCode::SUCCESS;
+    }
     let guarded = name == GUARDED_TOOL_HOOK;
     let handler = hooks::handler(name);
     if guarded || handler.is_some() {
