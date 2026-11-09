@@ -293,6 +293,23 @@ describe("the Chats list's words wear text roles (#1920)", () => {
     }
   });
 
+  it("lets a chat row's trail give way where its words may, so a long asker's name never widens the list", () => {
+    // A trail that says who a question waits on gives way with the label (#4564), on the tree
+    // family's trail as it did on the shared row's (#3198). Drawn as `Row` draws it, with the
+    // `data-gives-way` a task's question sets.
+    document.body.insertAdjacentHTML(
+      "beforeend",
+      '<section class="chats-section"><div data-scope="tree" data-part="root" class="chat"><span data-scope="tree" data-part="trail" data-gives-way="" class="giving">x</span></div></section>',
+    );
+    const trail = document.body.querySelector(".giving") as Element;
+    try {
+      expect(drawnWith(trail, "flex")).toBe("0 1 auto");
+      expect(drawnWith(trail, "min-inline-size")).toBe("0");
+    } finally {
+      trail.closest("section")?.remove();
+    }
+  });
+
   it("puts a finished task's buttons under its name where they do not fit, so the list never scrolls sideways", () => {
     const section = draw();
     const row = rowAround(section.querySelector('.finished-task [data-part="label"]'));

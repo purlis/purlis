@@ -388,7 +388,8 @@ describe("the Chats list in a narrow sidebar", () => {
         if (!section || !box) return null;
         const style = getComputedStyle(box);
         const outer = box.getBoundingClientRect();
-        const rows = [...section.querySelectorAll<HTMLElement>('[role="row"][aria-level]')];
+        // Every chat's row: a finished task's may wrap its buttons under its name (#1499).
+        const rows = [...section.querySelectorAll<HTMLElement>('[role="row"][aria-level].chat')];
         // A sidebar view's row height as the theme in force sets it (#3342): the control's
         // height and a step.
         const probe = document.createElement("div");
@@ -460,7 +461,7 @@ describe("the Chats list in a narrow sidebar", () => {
     const rows = await browser.execute(() => {
       const section = document.querySelector('[data-raised="chats-list.e2e"]');
       return [...(section?.querySelectorAll<HTMLElement>(".chat") ?? [])].map((chat) => {
-        const line = chat.querySelector(".ui-row-label")?.getBoundingClientRect();
+        const line = chat.querySelector('[data-part="label"]')?.getBoundingClientRect();
         const mark = chat
           .querySelector('[data-scope="chat-mark"][data-part="root"]')
           ?.getBoundingClientRect();
