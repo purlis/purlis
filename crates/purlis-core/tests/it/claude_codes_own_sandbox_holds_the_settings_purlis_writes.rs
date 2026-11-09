@@ -1136,22 +1136,29 @@ fn two_claude_code_chats_each_write_a_temporary_folder_of_their_own_and_not_the_
     );
 }
 
-/// What a step of [`a_workspace_made_after_a_claude_code_chat_starts_hands_no_chat_its_skills`]
-/// writes, by the name it is answered with: `<name>=written` or `<name>=refused`.
-const WRITE: &str = "w() { if (mkdir -p \"$(dirname \"$1\")\" && printf -- \
-     '---\\nname: made\\ndescription: Made by a chat.\\n---\\n' > \"$1\") 2>/dev/null; \
-     then echo \"$2=written\"; else echo \"$2=refused\"; fi; }\n";
+/// The skill a chat writes in
+/// [`a_workspace_made_after_a_claude_code_chat_starts_hands_no_chat_its_skills`].
+const MADE_SKILL: &str = "---\nname: made\ndescription: Made by a chat.\n---\n";
+
+/// A shell function, `w <path> <name>`, that writes [`MADE_SKILL`] at the path and says
+/// `<name>=written` or `<name>=refused`.
+fn write_function() -> String {
+    format!(
+        "w() {{ if (mkdir -p \"$(dirname \"$1\")\" && printf -- '{}' > \"$1\") 2>/dev/null; \
+         then echo \"$2=written\"; else echo \"$2=refused\"; fi; }}\n",
+        MADE_SKILL.replace('\n', "\\n")
+    )
+}
 
 /// **A workspace made after a Claude Code chat starts hands no chat its skills** (#3097, SK-41;
 /// ADR 0099 as amended 2026-11-09). purlis holds every workspace's skills folder by its path
 /// and by a pattern with one any-name part, `workspaces/*/skills` ([`sandbox::skills_held`]), and
 /// Claude Code reads the pattern itself. What it makes of it is measured here, through its own
-/// sandbox, against a stand-in model whose chat runs two commands: the first writes a skill in
-/// the folder of a workspace there at the start (held by its path), makes a workspace's folder
-/// and writes a skill in it, and makes another's skills folder; the second writes a skill in
-/// that one. What each came to is printed, so CI's log keeps the measurement.
+/// sandbox, against a stand-in model whose chat runs two commands that try to give a workspace
+/// made after the start a skill. Whether the pattern held it is printed, so CI's log keeps the
+/// measurement.
 ///
-/// On macOS the pattern holds both. On Linux, whatever it holds, what keeps such a skill from
+/// On macOS the pattern holds it. On Linux, whatever it holds, what keeps such a skill from
 /// every chat is purlis's record of the levels there at the chat's start
 /// ([`purlis_core::skills::levels`]): each workspace made since reaches no chat while the record
 /// stands, and a workspace there at the start still does. That half runs without Claude Code
@@ -1204,27 +1211,34 @@ fn a_workspace_made_after_a_claude_code_chat_starts_hands_no_chat_its_skills() {
     const CHAT: &str = "01M6YW8CYJ1AVN4BM9SDMZXNTK";
     levels::note(&root, CHAT, "41").expect("the record of the levels there");
     let skill = |workspace: &str| root.join(format!("workspaces/{workspace}/skills/made/SKILL.md"));
-    let [existing, same, later] = [skill("ops"), skill("later"), skill("after")];
+    // A workspace there at the start; one made in the command that writes its skill; and one
+    // made in a command before the one that writes its skill.
+    let [at_start, made_with_it, made_before_it] = [skill("ops"), skill("later"), skill("after")];
     let measured: Option<Vec<String>> = program.as_ref().map(|program| {
         let first = at.join("first.sh");
         let second = at.join("second.sh");
         fs::write(
             &first,
             format!(
-                "{WRITE}w '{}' existing\nw '{}/workspaces/later/notes.md' level\n\
+                "{}w '{}' existing\nw '{}/workspaces/later/notes.md' level\n\
                  w '{}' same-command\n\
                  if mkdir -p '{}/workspaces/after/skills' 2>/dev/null; \
                  then echo later-folder=made; else echo later-folder=refused; fi\n",
-                existing.display(),
+                write_function(),
+                at_start.display(),
                 root.display(),
-                same.display(),
+                made_with_it.display(),
                 root.display(),
             ),
         )
         .expect("the first step");
         fs::write(
             &second,
-            format!("{WRITE}w '{}' later-command\n", later.display()),
+            format!(
+                "{}w '{}' later-command\n",
+                write_function(),
+                made_before_it.display()
+            ),
         )
         .expect("the second step");
         let file = at.join("claude.json");
@@ -1258,12 +1272,15 @@ fn a_workspace_made_after_a_claude_code_chat_starts_hands_no_chat_its_skills() {
     };
     match &measured {
         Some(lines) => {
-            println!(
-                "a mid-path pattern on {os}, Claude Code {}: {}",
-                SUPPORTED.trim(),
-                lines.join(", ")
-            );
             let said = |line: &str| lines.iter().any(|one| one == line);
+            let held = ["same-command", "later-command"]
+                .iter()
+                .all(|case| said(&format!("{case}=refused")));
+            println!(
+                "a mid-path pattern on {os}, Claude Code {}: holds a later workspace: {}",
+                SUPPORTED.trim(),
+                if held { "yes" } else { "no" }
+            );
             assert!(said("existing=refused"), "{os}: {lines:?}");
             assert!(
                 said("level=written"),
@@ -1282,24 +1299,24 @@ fn a_workspace_made_after_a_claude_code_chat_starts_hands_no_chat_its_skills() {
                 }
             }
         }
-        // No Claude Code: the chat's writes as they would land where nothing held them.
+        // No Claude Code, so no sandbox is tried: the chat's writes as they would land where
+        // nothing held them, for the records to answer for.
         None => {
-            for made in [&same, &later] {
-                fs::create_dir_all(made.parent().expect("its folder")).expect("its folder");
-                fs::write(made, "---\nname: made\ndescription: Made by a chat.\n---\n")
-                    .expect("a chat's skill");
+            for file in [&made_with_it, &made_before_it] {
+                fs::create_dir_all(file.parent().expect("its folder")).expect("its folder");
+                fs::write(file, MADE_SKILL).expect("a chat's skill");
             }
         }
     }
     assert!(
-        !existing.exists(),
+        !at_start.exists(),
         "a workspace there at the start keeps its hold"
     );
     // Whatever landed, no chat is handed a skill of a workspace made while the chat ran, and a
     // workspace there at the start still reaches its chats.
-    let made = levels::made_since(&root);
+    let made_since = levels::made_since(&root);
     assert_eq!(
-        made(&root.join("workspaces/ops")),
+        made_since(&root.join("workspaces/ops")),
         None,
         "there at the start"
     );
@@ -1308,10 +1325,8 @@ fn a_workspace_made_after_a_claude_code_chat_starts_hands_no_chat_its_skills() {
     fs::write(&ops, "---\nname: kept\ndescription: There before.\n---\n").expect("a skill");
     for workspace in ["later", "after"] {
         let folder = root.join("workspaces").join(workspace);
-        if !folder.exists() {
-            continue;
-        }
-        let why = made(&folder).unwrap_or_else(|| panic!("{workspace}: reaches chats"));
+        assert!(folder.is_dir(), "{workspace}: the chat made its folder");
+        let why = made_since(&folder).unwrap_or_else(|| panic!("{workspace}: reaches chats"));
         assert!(why.contains("chat 41"), "{workspace}: {why}");
     }
     let names = |workspace: &str| -> Vec<String> {
