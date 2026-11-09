@@ -19,11 +19,13 @@ const DRAWN: Readonly<Partial<Record<Shown["answer"]["via"], string>>> = {
 };
 
 /**
- * **One ask of a chat's browser, on its pane**: the core's line and the core's answers, each
- * sent through the path the ask names (`answerTaken`), as the Inbox's Answer sends it. A grant
- * among them waits for the Notice to settle, as every Notice that grants does.
+ * **One ask of a chat's, on its pane, answered by its own buttons**: the core's line and the
+ * core's answers, each sent through the path the ask names (`answerTaken`), as the Inbox's
+ * Answer sends it. A grant among them waits for the Notice to settle, as every Notice that
+ * grants does. A chat's browser asks are drawn so, and its asks on a pool's runner
+ * (`PoolAskNotice`).
  */
-function OneAsk({
+export function OneAsk({
   plane,
   ask,
   label,
