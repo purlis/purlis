@@ -946,9 +946,30 @@ fn a_sandboxed_claude_code_start_leaves_a_workspace_made_while_it_runs_out_of_ev
     purlis_core::unsteered!();
     let project = Project::on("claude");
     let root = project.root();
-    let start = asking(|start| start.plane_skills = Some(true));
+    // The person has accepted the folders there (the Skill studio's Needs you), as on any
+    // project purlis kept state for before.
+    if let Some((_, folders)) = purlis_core::skills::levels::to_confirm(root) {
+        purlis_core::skills::levels::confirm(root, &folders).expect("accepted");
+    }
+    let start = asking(|start| {
+        start.number = Some(3);
+        start.plane_skills = Some(true);
+    });
 
-    let launch = composed(&project, &start, &Host::default()).expect("composed");
+    // Its desktop's word on the plane's skills is read from a link's start (#3084).
+    let launch = hoststart::compose(
+        &Starting {
+            root,
+            number: 3,
+            start: &start,
+            reporting: None,
+            started_by: "remote-link",
+            prompt_key: None,
+        },
+        &project.kit(),
+        &Host::default(),
+    )
+    .expect("composed");
 
     let os = purlis_core::sandbox::Os::this();
     let args: Vec<std::ffi::OsString> = launch.args.iter().map(Into::into).collect();
