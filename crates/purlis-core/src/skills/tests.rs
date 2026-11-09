@@ -1360,7 +1360,8 @@ fn a_codex_briefing_past_its_limit_lists_every_built_in_skill_first() {
     for name in ["purlis-secrets", "purlis-smart-close", "zz-last"] {
         write(&built_in, name, 100);
     }
-    // Twelve of the plane's, named to sort before every built-in, past Codex's 8,000 together.
+    // Twelve of the plane's, named to sort before every built-in, past the 10,000 bytes Codex
+    // keeps of the skills hook together.
     let handed = tmp.path().join("sets/handed");
     let names: Vec<String> = (0..12).map(|at| format!("a{at:02}")).collect();
     for name in &names {
@@ -1381,7 +1382,7 @@ fn a_codex_briefing_past_its_limit_lists_every_built_in_skill_first() {
 
     let text = briefed(&plane, None, None, &env).expect("listed");
 
-    assert!(text.chars().count() > 8_000, "past Codex's limit");
+    assert!(text.len() > 10_000, "past what Codex keeps");
     let at = |name: &str| {
         text.find(&format!("`{name}`"))
             .unwrap_or_else(|| panic!("{name} listed: {text}"))
