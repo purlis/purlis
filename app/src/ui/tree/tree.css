@@ -81,13 +81,16 @@
    A row, at rest: the list's row, one step in per level.
 
    **Its depth** (`--tree-depth`, its level less one, which `Tree.tsx` sets on it) is drawn at
-   most four steps deep: a side view has no room for more, and `aria-level` still says the whole. **A row
+   most four steps deep: a side view has no room for more, and `aria-level` still says the whole.
+   **A narrow view may draw fewer** (`--tree-depth-cap`, set by the view on an element around the
+   tree and read here with its fallback, so it reaches the rows by inheritance: the Chats list's
+   one step under 16rem, #1682). **A row
    stands one step in further than its depth where twists lead**: that step is where a parent's
    twist hangs, so a row with rows under it and one without start their words at one place.
    --------------------------------------------------------------------------------------------- */
 
 [data-scope="tree"][data-part="root"] {
-  --tree-drawn: min(var(--tree-depth, 0), 4);
+  --tree-drawn: min(var(--tree-depth, 0), var(--tree-depth-cap, 4));
   --tree-pad: var(--space-4);
   position: relative;
   display: flex;
@@ -121,7 +124,7 @@
 /* **What stands under a row while its rows are read** (`TreePending`): React Aria's loading row,
    which the keyboard passes, one step in as a row is, in the quiet tier. */
 [data-scope="tree"][data-part="pending"] {
-  --tree-drawn: min(var(--tree-depth, 0), 4);
+  --tree-drawn: min(var(--tree-depth, 0), var(--tree-depth-cap, 4));
   display: flex;
   align-items: center;
   box-sizing: border-box;

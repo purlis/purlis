@@ -15,7 +15,8 @@
  * - **The WAI-ARIA tree's keys** (APG "Tree View"): one Tab stop, the row last focused; ↑ ↓,
  *   Home and End; → opens a closed row and moves into an open one's first child; ← closes an
  *   open row and moves from a closed one to its parent; typing finds a row by its `textValue`;
- *   Enter runs the row's action. React Aria draws it as a `treegrid` of rows (D-2911-T-1), the
+ *   Enter runs the row's action. On an open row with controls of its own, → moves into them, as
+ *   the APG treegrid's does (#3198). React Aria draws it as a `treegrid` of rows (D-2911-T-1), the
  *   one tree it builds, whose rows may hold their own buttons.
  * - **The twist** (`twist`): a row with rows under it draws its chevron, the twist, in the step
  *   before its words (`"lead"`, R129: a file tree's ▸/▾), or as a toggle of its own at its end
@@ -60,6 +61,7 @@ import {
   TreeSection as AriaTreeSection,
   useDragAndDrop,
   useSlottedContext,
+  type HoverEvent,
   type Key,
   type PressEvent,
   type Selection,
@@ -162,6 +164,18 @@ function firstChildOf(row: HTMLElement): HTMLElement | undefined {
   return next !== undefined && levelOf(next) === levelOf(row) + 1 ? next : undefined;
 }
 
+/**
+ * **Whether a row holds controls of its own** (#3198): a button, a link or a field in it that is
+ * not its twist, which the tree family's grid reaches by → from the row.
+ */
+function holdsControls(row: HTMLElement): boolean {
+  return [
+    ...row.querySelectorAll<HTMLElement>(
+      'button, a[href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+    ),
+  ].some((one) => one.closest('[data-part="twist"], [hidden]') === null && one.slot !== "chevron");
+}
+
 /** The row `row` is under, or none at the top. */
 function parentOf(row: HTMLElement): HTMLElement | undefined {
   const rows = rowsBeside(row);
@@ -176,7 +190,9 @@ function parentOf(row: HTMLElement): HTMLElement | undefined {
  * controls instead (its twist among them): heard before React Aria's own row (a capture handler
  * on an element around the tree runs first).
  *
- * - → on an open row moves to its first child; on a closed one React Aria opens it.
+ * - → on an open row moves to its first child; on a closed one React Aria opens it. **An open
+ *   row with controls of its own** (a chat's hand, its ⋯) is the APG treegrid's: → moves into
+ *   its controls, as on a row with nothing under it, and ↓ goes on to its first child (#3198).
  * - ← on a row at the top that is closed, or has no rows under it, does nothing; anywhere else
  *   React Aria closes it or moves to its parent.
  * - In a tree whose rows never fold, ← on an open row moves to its parent.
@@ -215,7 +231,7 @@ function useTreeKeys(
       event.stopPropagation();
       to?.focus();
     };
-    if (event.key === into && open) go(firstChildOf(row));
+    if (event.key === into && open && !holdsControls(row)) go(firstChildOf(row));
     else if (event.key === out) {
       const parent = parentOf(row);
       if (parent === undefined && (!open || fixed)) go(undefined);
@@ -431,6 +447,38 @@ function HeldOpen() {
   return <span ref={slot?.ref as Ref<HTMLSpanElement>} data-part="held-open" hidden />;
 }
 
+/**
+ * **The keyboard coming to a row and leaving it, heard on the row's element** (#3198): React Aria
+ * draws the row and hands it no focus handler of its owner's, so an element that draws nothing
+ * listens on the row it is in, for the row's own focus and not a control's in it.
+ */
+function FocusHeard({
+  onFocus,
+  onBlur,
+}: {
+  onFocus?: (event: FocusEvent) => void;
+  onBlur?: (event: FocusEvent) => void;
+}) {
+  const heard = useRef({ onFocus, onBlur });
+  useEffect(() => {
+    heard.current = { onFocus, onBlur };
+  });
+  const at = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    const row = at.current?.closest<HTMLElement>('[role="row"]');
+    if (row === null || row === undefined) return;
+    const focus = (event: FocusEvent) => heard.current.onFocus?.(event);
+    const blur = (event: FocusEvent) => heard.current.onBlur?.(event);
+    row.addEventListener("focus", focus);
+    row.addEventListener("blur", blur);
+    return () => {
+      row.removeEventListener("focus", focus);
+      row.removeEventListener("blur", blur);
+    };
+  }, []);
+  return <span ref={at} data-part="focus-heard" hidden />;
+}
+
 export interface TreeRowProps {
   /** Its key among the tree's rows. */
   id: Key;
@@ -474,6 +522,19 @@ export interface TreeRowProps {
   busy?: boolean;
   /** A press on it begins: its modifier keys, before its action runs. */
   onPressStart?: (event: PressEvent) => void;
+  /**
+   * **The pointer comes to rest on it, and leaves** (#3198): what a row's own card is raised and
+   * taken down by (a chat's, `ChatsSection.tsx`), as its `tip` is by the family. Not a touch.
+   */
+  onHoverStart?: (event: HoverEvent) => void;
+  onHoverEnd?: (event: HoverEvent) => void;
+  /**
+   * **The keyboard comes to the row itself, and leaves it**: a row's own card again. Not a
+   * control's in it. React Aria hands a row's element no focus handler of its owner's, so the
+   * row hears its own (`FocusHeard`).
+   */
+  onFocus?: (event: FocusEvent) => void;
+  onBlur?: (event: FocusEvent) => void;
   /** Its context menu: a right-click, Shift+F10 or the menu key opens it. */
   menu?: RowMenu;
   /** What it says that its words do not, beside it: under the pointer, and while the keyboard
@@ -491,6 +552,8 @@ export interface TreeRowProps {
 
 /** **One row of a tree**, with the rows under it as its children. */
 export function TreeRow<T extends object>({
+  onFocus,
+  onBlur,
   content,
   children,
   menu,
@@ -542,6 +605,9 @@ export function TreeRow<T extends object>({
           return (
             <>
               {state.id === stopAt && <TakesTheStop at={state.id} state={state.state} />}
+              {(onFocus !== undefined || onBlur !== undefined) && (
+                <FocusHeard onFocus={onFocus} onBlur={onBlur} />
+              )}
               {twist === "lead" && toggle}
               {rowHolds(content, owned, tipped)(state)}
               {twist === "trail" && toggle}

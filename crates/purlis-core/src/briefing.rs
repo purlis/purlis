@@ -173,23 +173,106 @@ impl Ask<'_> {
     }
 }
 
+/// **Which of a Codex chat's `SessionStart` hooks tells a block** (#5935; ADR 0102 as amended
+/// 2026-11-09). Codex keeps 10,000 bytes of each hook's output and cuts its middle past that
+/// ([`crate::harness::codex::HOOK_OUTPUT_CUT`]), and one briefing in an ordinary workspace
+/// passes it. So a Codex chat is told [`parts`] in three hooks, grouped by what each must keep
+/// whole, beside its skills' hook. Every other harness is told them all in one, in [`parts`]'
+/// order, as before.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Part {
+    /// **Who and where the chat is** (`purlis hook sessionstart`): the gate, the persona and its
+    /// memory digest, the last session record, the todos, the other workspaces, the piece.
+    /// Each of its blocks that grows with the plane shows only its newest few.
+    Briefing,
+    /// **How it works here** ([`crate::harness::codex::NOTES_WORD`]): the one route for work,
+    /// credentials, drafting purlis's own bugs, and its sandbox. Fixed text, so its length is
+    /// purlis's own and never grows with the plane.
+    Notes,
+    /// **Words of others, quoted** ([`crate::harness::codex::QUOTED_WORD`]): the session record
+    /// a chat the Sessions panel's Resume started picks up, up to 8,000 characters of it. The
+    /// hook adds the extensions' sections, the reports kept and where the chat is working.
+    Quoted,
+}
+
 /// `_context_parts(data, piece_note, live=True)`: the blocks, in order, each non-empty.
 pub fn parts(ask: &Ask, piece_note: Option<String>) -> Vec<String> {
+    told(ask, piece_note, None)
+}
+
+/// The blocks of [`parts`] that `part` tells a Codex chat, in [`parts`]' order.
+pub fn parts_of(ask: &Ask, piece_note: Option<String>, part: Part) -> Vec<String> {
+    told(ask, piece_note, Some(part))
+}
+
+/// What the blocks of [`Part::Briefing`] read before any is computed.
+struct Standing {
+    ids: Ids,
+    at_root: Option<active::PlaneRoot>,
+    summaries: Summaries,
+}
+
+/// The blocks of `only` part, or of every part, in [`parts`]' order. Only what a part tells is
+/// read, so each of a Codex chat's hooks reads its own blocks and no other's.
+fn told(ask: &Ask, piece_note: Option<String>, only: Option<Part>) -> Vec<String> {
+    let wants = |part: Part| only.is_none_or(|only| only == part);
+    let standing = wants(Part::Briefing).then(|| {
+        let ids = ask.ids();
+        let at_root = ask.plane_root(&ids);
+        Standing {
+            ids,
+            at_root,
+            summaries: Summaries::of(ask.root),
+        }
+    });
+    // A chat the Sessions panel's Resume started (SI-8d) is told the record it resumes, and
+    // then not the place's last record as well: that line would name a record a second time,
+    // or name another as if it were the one to pick up.
+    let resuming = resuming_note(ask.root, ask.env);
+    let resumes = resuming.is_some();
     let mut parts = Vec::new();
-    let ids = ask.ids();
-    let at_root = ask.plane_root(&ids);
-    let summaries = Summaries::of(ask.root);
-    if let Some(by) = at_root {
+    if let Some(standing) = &standing {
+        parts.extend(who_it_is(ask, standing));
+    }
+    if wants(Part::Notes) {
+        parts.extend(routes(ask));
+    }
+    if let Some(standing) = &standing
+        && let Some(unshared) = uncommitted_memory_nudge(ask.root, &standing.summaries)
+    {
+        parts.push(unshared);
+    }
+    if wants(Part::Quoted) {
+        parts.extend(resuming);
+    }
+    if let Some(standing) = &standing {
+        parts.extend(where_it_is(ask, standing, resumes, piece_note));
+    }
+    if wants(Part::Notes) {
+        parts.extend(sandbox_notes(ask));
+    }
+    // The chat's skills, for a chat whose harness cannot load them, are a hook's output of their
+    // own ([`skills_part`]), never a part of this.
+    parts
+}
+
+/// The gate, the persona, and what the retired persona sub-agent left to say.
+fn who_it_is(ask: &Ask, standing: &Standing) -> Vec<String> {
+    let mut parts = Vec::new();
+    let Standing {
+        ids,
+        at_root,
+        summaries,
+    } = standing;
+    if let Some(by) = *at_root {
         parts.push(plane_root_note(by));
-    } else if let Some(gate) = workspace_confirm_nudge(ask, &ids, &summaries) {
+    } else if let Some(gate) = workspace_confirm_nudge(ask, ids, summaries) {
         parts.push(gate);
     }
     let selected = selected_persona(ask);
     if let Some(name) = selected.name.as_deref() {
         match personagrant::resolve(ask.root, name) {
-            Some(resolved) => {
-                parts.push(identity(ask.root, name, &selected, &resolved, &summaries))
-            }
+            Some(resolved) => parts.push(identity(ask.root, name, &selected, &resolved, summaries)),
             None if !exists(ask.root, name) => {
                 parts.push(stale_persona_note(name, selected.rung.label()))
             }
@@ -200,6 +283,13 @@ pub fn parts(ask: &Ask, piece_note: Option<String>) -> Vec<String> {
     // declares and the chat was not started with. Generated files still in the project are the
     // window's Notice, not the chat's news (#1990).
     parts.extend(retired_notes(ask, selected.name.as_deref()));
+    parts
+}
+
+/// The routes a chat the app started takes: for work that reports back, for a credential, and
+/// for purlis's own bugs.
+fn routes(ask: &Ask) -> Vec<String> {
+    let mut parts = Vec::new();
     // The one route for work that reports back (#1515), for a chat that can take it.
     if let Some(route) = one_route_note(ask.env) {
         parts.push(route);
@@ -212,41 +302,47 @@ pub fn parts(ask: &Ask, piece_note: Option<String>) -> Vec<String> {
     if let Some(report) = report_note(ask.env) {
         parts.push(report.to_owned());
     }
-    if let Some(unshared) = uncommitted_memory_nudge(ask.root, &summaries) {
-        parts.push(unshared);
-    }
-    // A chat the Sessions panel's Resume started (SI-8d) is told the record it resumes, and
-    // then not the place's last record as well: that line would name a record a second time,
-    // or name another as if it were the one to pick up.
-    let resuming = resuming_note(ask.root, ask.env);
-    let resumes = resuming.is_some();
-    if let Some(resuming) = resuming {
-        parts.push(resuming);
-    }
+    parts
+}
+
+/// The last session record, unless the chat `resumes` one, the todos, the other workspaces,
+/// where its files go, the piece, and a hidden `AGENTS.md`.
+fn where_it_is(
+    ask: &Ask,
+    standing: &Standing,
+    resumes: bool,
+    piece_note: Option<String>,
+) -> Vec<String> {
+    let mut parts = Vec::new();
+    let Standing {
+        ids,
+        at_root,
+        summaries,
+    } = standing;
     if at_root.is_some() {
         if let Some(last) =
             last_session_note(ask.root, &active::Place::PlaneRoot).filter(|_| !resumes)
         {
             parts.push(last);
         }
-        if let Some(all) = workspaces_to_manage(ask, &summaries) {
+        if let Some(all) = workspaces_to_manage(ask, summaries) {
             parts.push(all);
         }
         if matches!(summaries, Summaries::Building) {
             parts.push(INDEX_BUILDING.to_owned());
         }
     } else {
-        let workspace = ask.workspace(&ids);
+        let workspace = ask.workspace(ids);
         if let Some(last) =
             last_session_note(ask.root, &active::Place::Workspace(workspace.clone()))
                 .filter(|_| !resumes)
         {
             parts.push(last);
         }
-        if let Some(todo) = todo_digest(ask, &workspace, &summaries) {
+        if let Some(todo) = todo_digest(ask, &workspace, summaries) {
             parts.push(todo);
         }
-        if let Some(neighbours) = other_workspaces_digest(ask, &workspace, &summaries) {
+        if let Some(neighbours) = other_workspaces_digest(ask, &workspace, summaries) {
             parts.push(neighbours);
         }
         if matches!(summaries, Summaries::Building) {
@@ -260,8 +356,14 @@ pub fn parts(ask: &Ask, piece_note: Option<String>) -> Vec<String> {
     if let Some(hidden) = hidden_agents_md_note(ask) {
         parts.push(hidden);
     }
-    // How a sandboxed chat gets unblocked here (#1342): only for a chat the app started under
-    // a sandbox, which is the one place the variable is set.
+    parts
+}
+
+/// How a sandboxed chat gets unblocked here (#1342): only for a chat the app started under a
+/// sandbox, which is the one place the variable is set. Or, for a chat the app started without
+/// one where the plane has it in force, that it runs without.
+fn sandbox_notes(ask: &Ask) -> Vec<String> {
+    let mut parts = Vec::new();
     if let Some(note) = sandboxed_note(ask.env) {
         parts.push(note.to_owned());
         // And how it commits where its own git cannot (#1055): in a branch folder.
@@ -271,8 +373,6 @@ pub fn parts(ask: &Ask, piece_note: Option<String>) -> Vec<String> {
     } else if let Some(note) = unsandboxed_note(ask.root, ask.env) {
         parts.push(note.to_owned());
     }
-    // The chat's skills, for a chat whose harness cannot load them, are a hook's output of their
-    // own ([`skills_part`]), never a part of this.
     parts
 }
 

@@ -27,6 +27,7 @@ import { stripNamed } from "./test-strips";
 import { findResult } from "./actionResult.testkit";
 import { aTabForEachChat } from "./laidOut.testkit";
 import { PANE_NOTICES } from "./paneNoticesPref";
+import { findTree, keysOn, rowNamed, rowsOf } from "./ui/tree/tree.testkit";
 
 /**
  * **What a task changed, against the whole window** (#1511): Changes on a finished task's row
@@ -270,7 +271,24 @@ function core({
   };
 }
 
-const theirs = () => screen.findByRole("group", { name: "Finished tasks of steward 4" });
+/**
+ * **The Chats tree, with steward 4's finished tasks drawn as its rows** (#3198): a done one is
+ * under its "Finished (n)" row, which is opened as the person opens it, by →.
+ */
+async function theirs(): Promise<HTMLElement> {
+  const tree = await findTree("Chats of this project");
+  const fold = await waitFor(() => {
+    const found = rowsOf(tree).find((row) => row.classList.contains("finished-count"));
+    const alone = rowsOf(tree).some((row) => row.classList.contains("finished-task"));
+    if (found === undefined && !alone) throw new Error("no finished row is drawn yet");
+    return found;
+  });
+  if (fold !== undefined && fold.getAttribute("aria-expanded") === "false") {
+    await keysOn(fold, "{ArrowRight}");
+    await waitFor(() => expect(fold).toHaveAttribute("aria-expanded", "true"));
+  }
+  return tree;
+}
 
 /** Opens the Changes tab of `task` from its finished row, as the person does. */
 async function openChangesOf(label: string) {
@@ -353,10 +371,7 @@ describe("what a task changed", () => {
     core();
     render(<App />);
     const group = await theirs();
-    const row = within(group)
-      .getAllByRole("button")
-      .find((one) => one.querySelector(".session")?.textContent === "fix the queue");
-    if (row === undefined) throw new Error("no finished row is named fix the queue");
+    const row = rowNamed(group, "fix the queue");
     await userEvent.click(row);
 
     await userEvent.click(within(group).getByRole("button", { name: "Changed:" }));

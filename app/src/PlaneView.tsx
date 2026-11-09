@@ -13468,7 +13468,7 @@ function giveViewTheKeyboard(view: ViewId): void {
     ? document.querySelector<HTMLElement>(`${panel} input[type="search"]`)
     : // A tree of the tree family is its own stop until a row has had the keyboard (#2911).
       (document.querySelector<HTMLElement>(
-        `${panel} :is([role="tree"] [tabindex="0"], [role="treegrid"][tabindex="0"], [role="treegrid"] [tabindex="0"])`,
+        `${panel} :is([role="treegrid"][tabindex="0"], [role="treegrid"] [tabindex="0"])`,
       ) ??
       // The Inbox's first ask, past the scope switch above its list (qw359).
       document.querySelector<HTMLElement>(`${panel} .inbox-list [tabindex="0"]`) ??

@@ -257,10 +257,14 @@ the command line, for that session alone, and writes nothing into any config fol
   startup, and records the answer in its own `[hooks.state]`, so one binary path is asked
   about once, not once a chat. Codex has no way to take a skills directory for one session,
   so the chat is started with `PURLIS_SKILLS_DIR` naming the bundle's `skills/`, and a
-  second `SessionStart` hook, `purlis hook sessionstart-skills`, lists purlis's skills with the
-  path to each `SKILL.md` (ADR 0063). It is a hook of its own because Codex keeps 10,000
-  bytes of each hook's output and cuts the middle (measured on codex-cli 0.147.0, ADR
-  0102 as amended 2026-11-09). A running Codex chat takes in no change to purlis's skills
+  `SessionStart` hook of their own, `purlis hook sessionstart-skills`, lists purlis's skills
+  with the path to each `SKILL.md` (ADR 0063). Codex keeps 10,000 bytes of each hook's output
+  and cuts the middle (measured on codex-cli 0.147.0, ADR 0102 as amended 2026-11-09), so a
+  Codex chat's whole briefing comes in four `SessionStart` hooks, in this order:
+  `sessionstart` (who and where the chat is), `sessionstart-notes` (how it works here),
+  `sessionstart-skills`, and `sessionstart-quoted` (the session record it resumes, the
+  extensions' sections, the reports kept for it and where it is working). The last may pass
+  10,000 bytes, since its words are other parties'. A running Codex chat takes in no change to purlis's skills
   until it restarts (measured, ADR 0099 as amended 2026-11-09).
 - **opencode** gets purlis's shim, named in `OPENCODE_CONFIG_CONTENT` with a folder of
   purlis's skills as its option: the shim carries every hook, and adds that directory to the

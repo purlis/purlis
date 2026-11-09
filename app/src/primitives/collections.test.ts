@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * **The shared list row and tree row** (DS-3, #1835): a row's height and a tree's indent come
- * from the core tokens, the selected row is drawn selected and no other is, and a parent's twist
- * is drawn and a leaf's is not. The table is the table family's (`ui/table`, #2911).
+ * **The shared list row** (DS-3, #1835): a row's height comes from the core tokens, and the
+ * selected row is drawn selected and no other is. The table and the tree are their families'
+ * (`ui/table`, `ui/tree`, #2911, #3198).
  *
  * vitest does not apply stylesheets, so this reads `collections.css` off disk. What a rule draws
  * is asked of the DOM itself: the markup a view would write is put in the document and
@@ -200,155 +200,12 @@ describe("the list row", () => {
   });
 });
 
-describe("the tree row", () => {
-  it("steps in by a token, one step per level", () => {
-    expect(value(rule(".ui-tree").body, "--ui-tree-step")).toBe("var(--space-5)");
-    expect(value(rule(".ui-tree-row").body, "padding-inline-start")).toBe(
-      "calc((var(--ui-tree-drawn) + 1) * var(--ui-tree-step))",
-    );
-  });
-
-  it("draws a row no deeper than the cap a narrow view sets around the tree (DS-11)", () => {
-    // The depth drawn is the row's depth, or the view's cap where that is less; with no cap,
-    // the deepest drawn is five levels' four steps, as before.
-    expect(value(rule(".ui-tree-row").body, "--ui-tree-drawn")).toBe(
-      "min(var(--ui-tree-depth), var(--ui-tree-depth-cap, 4))",
-    );
-    // The cap is never set by this sheet, so a view's, set on an element around the tree,
-    // reaches every row by inheritance and contends with no rule here.
-    expect(css).not.toMatch(/--ui-tree-depth-cap\s*:/);
-    // The guides and the twist are drawn at the depth drawn, not the level's.
-    expect(value(rule(".ui-tree-row").body, "background-size")).toBe(
-      "calc(var(--ui-tree-drawn) * var(--ui-tree-step)) 100%",
-    );
-    expect(value(rule(".ui-tree-twist").body, "inset-inline-start")).toBe(
-      "calc(var(--ui-tree-drawn) * var(--ui-tree-step))",
-    );
-  });
-
-  it.each([
-    [1, "0"],
-    [2, "1"],
-    [3, "2"],
-    [4, "3"],
-    [5, "4"],
-    [9, "4"],
-  ])("puts a row at level %i at depth %s, flat or nested", (level, depth) => {
-    const body = draw(`
-      <ul class="ui-tree" role="tree">
-        <li class="ui-row ui-tree-row" role="treeitem" aria-level="${level}" id="flat">a</li>
-        <li class="ui-row ui-tree-row" data-level="${level}" id="data">b</li>
-        <li role="treeitem" aria-level="${level}"><div class="ui-row ui-tree-row" id="nested">c</div></li>
-      </ul>`);
-    for (const id of ["flat", "data"]) {
-      expect(resolved(body.querySelector(`#${id}`) as Element, "--ui-tree-depth"), id).toBe(depth);
-    }
-    // Nested: the level is on the treeitem, and the row inherits the depth it sets.
-    const nested = body.querySelector("#nested") as Element;
-    expect(resolved(nested, "--ui-tree-depth")).toBeUndefined();
-    expect(resolved(nested.parentElement as Element, "--ui-tree-depth")).toBe(depth);
-  });
-
-  it("draws the twist only on a row with children, and it takes no room", () => {
-    const body = draw(`
-      <ul class="ui-tree" role="tree">
-        <li class="ui-row ui-tree-row" role="treeitem" aria-level="1" aria-expanded="false" id="parent">
-          <button class="ui-tree-twist" tabindex="-1"></button><span class="ui-row-label">p</span>
-        </li>
-        <li class="ui-row ui-tree-row" role="treeitem" aria-level="1" id="leaf">
-          <button class="ui-tree-twist" tabindex="-1"></button><span class="ui-row-label">l</span>
-        </li>
-        <li role="treeitem" aria-level="1" aria-expanded="true" id="open">
-          <div class="ui-row ui-tree-row"><span class="ui-tree-twist"></span>o</div>
-          <ul role="group">
-            <li role="treeitem" aria-level="2" id="child">
-              <div class="ui-row ui-tree-row"><span class="ui-tree-twist"></span>c</div>
-            </li>
-          </ul>
-        </li>
-      </ul>`);
-    const twist = (id: string) => body.querySelector(`#${id} .ui-tree-twist`) as Element;
-    expect(resolved(twist("parent"), "display")).toBe("inline-flex");
-    expect(resolved(twist("open"), "display")).toBe("inline-flex");
-    expect(resolved(twist("leaf"), "display")).toBe("none");
-    // A leaf inside an open parent is still a leaf.
-    expect(resolved(twist("child"), "display")).toBe("none");
-    // It hangs in the step before the name, so names line up with no empty twist on a leaf.
-    expect(resolved(twist("parent"), "position")).toBe("absolute");
-    expect(resolved(twist("parent"), "inline-size")).toBe("var(--ui-tree-step)");
-    expect(resolved(twist("parent"), "inset-inline-start")).toBe(
-      "calc(var(--ui-tree-drawn) * var(--ui-tree-step))",
-    );
-    expect(resolved(twist("open"), "transform")).toBe("rotate(90deg)");
-    expect(resolved(twist("parent"), "transform")).toBeUndefined();
-  });
-
-  it("centres the twist on the row's line: a box of its own size, held by its margins (qw358)", () => {
-    // The operator's screenshot: every folder's chevron stood above its name. The explorer gave
-    // the class to the icon itself, an element with a size of its own, and between two insets
-    // such an element keeps its size and sits at the first one. So the box's height is said.
-    const body = draw(`
-      <ul class="ui-tree" role="tree">
-        <li class="ui-row ui-tree-row" role="treeitem" aria-level="1" aria-expanded="false" id="boxed">
-          <span class="ui-tree-twist"><svg></svg></span><span class="ui-row-label">p</span>
-        </li>
-        <li class="ui-row ui-tree-row" role="treeitem" aria-level="3" aria-expanded="true" id="bare">
-          <svg class="ui-tree-twist"></svg><span class="ui-row-label">q</span>
-        </li>
-      </ul>`);
-    for (const id of ["boxed", "bare"]) {
-      const row = body.querySelector(`#${id}`) as Element;
-      const twist = row.querySelector(".ui-tree-twist") as Element;
-      // The row is one flex line with its parts centred on it.
-      expect(resolved(row, "display"), id).toBe("flex");
-      expect(resolved(row, "align-items"), id).toBe("center");
-      // The twist: one step wide and one row high, both tokens, centred between the row's edges.
-      expect(resolved(twist, "inline-size"), id).toBe("var(--ui-tree-step)");
-      expect(resolved(twist, "block-size"), id).toBe("var(--ui-row-height)");
-      expect(resolved(twist, "inset-block"), id).toBe("0");
-      expect(resolved(twist, "margin-block"), id).toBe("auto");
-      // And what it holds is in its middle, both ways.
-      expect(resolved(twist, "align-items"), id).toBe("center");
-      expect(resolved(twist, "justify-content"), id).toBe("center");
-    }
-    // The chevron in the box is one step square, whatever the text's size beside it.
-    const icon = body.querySelector("#boxed .ui-tree-twist > svg") as Element;
-    expect(resolved(icon, "inline-size")).toBe("var(--ui-tree-step)");
-    expect(resolved(icon, "block-size")).toBe("var(--ui-tree-step)");
-    // Nothing nudges it: no baseline, and no offset written by hand.
-    for (const one of all.filter(({ selector }) => selector.includes(".ui-tree-twist"))) {
-      expect(one.body, one.selector).not.toMatch(/vertical-align|translate|(?:^|[;\s])top\s*:/);
-      expect(value(one.body, "margin-block-start"), one.selector).toBeUndefined();
-    }
-    expect(value(rule(".ui-row").body, "--ui-row-height")).toBe("var(--size-chrome)");
-  });
-
-  it("is a list row too: one height and one selection", () => {
-    const body = draw(`
-      <ul class="ui-tree" role="tree">
-        <li class="ui-row ui-tree-row" role="treeitem" aria-level="2" aria-selected="true">a</li>
-      </ul>`);
-    const row = body.querySelector("li") as Element;
-    expect(resolved(row, "min-block-size")).toBe("var(--ui-row-height)");
-    expect(resolved(row, "background-color")).toBe("var(--list-selected)");
-    expect(resolved(row, "padding-inline-start")).toBe(
-      "calc((var(--ui-tree-drawn) + 1) * var(--ui-tree-step))",
-    );
-  });
-});
-
 describe("docs/ui-primitives.md", () => {
   const doc = readFileSync(join(process.cwd(), "..", "docs", "ui-primitives.md"), "utf8");
-  it.each([
-    "ui-list",
-    "ui-row",
-    "ui-row-lead",
-    "ui-row-label",
-    "ui-row-trail",
-    "ui-tree",
-    "ui-tree-row",
-    "ui-tree-twist",
-  ])("documents .%s", (name) => {
-    expect(new RegExp(`\\.${name}\\b(?!-)`).test(doc), `.${name} is not in the doc`).toBe(true);
-  });
+  it.each(["ui-list", "ui-row", "ui-row-lead", "ui-row-label", "ui-row-trail"])(
+    "documents .%s",
+    (name) => {
+      expect(new RegExp(`\\.${name}\\b(?!-)`).test(doc), `.${name} is not in the doc`).toBe(true);
+    },
+  );
 });

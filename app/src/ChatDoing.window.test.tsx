@@ -10,7 +10,6 @@ import {
   render as renderBare,
   screen,
   waitFor,
-  within,
 } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
@@ -23,6 +22,7 @@ import { tipOf } from "./ui/tooltip/tooltip.testkit";
 import { heard } from "./frame.testkit";
 import { onTheWire } from "./chatEvents.testkit";
 import { CHAT_EVENTS } from "./chatEvents";
+import { findTree, rowsOf, treeNamed } from "./ui/tree/tree.testkit";
 
 /**
  * **What a working chat is doing, in its row's card, against the whole window** (#1493,
@@ -221,13 +221,13 @@ function core(open: Filed[], first: ChatDoing[] = []) {
 /** The list, with every workspace's chats on it: these read chats in alpha and beta at once,
  *  which the list shows on the person's word (#1655). */
 const section = async () => {
-  const tree = await screen.findByRole("tree", { name: "Chats of this project" });
+  const tree = await findTree("Chats of this project");
   const every = screen.getByRole("radio", { name: "All" });
   if (!(every as HTMLInputElement).checked) fireEvent.click(every);
   return tree;
 };
-const theTree = () => screen.getByRole("tree", { name: "Chats of this project" });
-const rows = () => within(theTree()).getAllByRole("treeitem");
+const theTree = () => treeNamed("Chats of this project");
+const rows = () => rowsOf(theTree());
 const row = (name: string) => {
   const found = rows().find((one) => one.querySelector(".session")?.textContent === name);
   if (found === undefined) throw new Error(`no row is named ${name}`);
@@ -415,7 +415,7 @@ describe("a working chat's card says what it is doing (#1493, #1675)", () => {
     expect(names.map(made)).toEqual(before);
     expect(theTree().querySelector(".chat-doing, .line.two")).toBeNull();
     // Nothing is added beside a row either: the list has the same items.
-    expect(theTree().querySelectorAll('li[role="none"]')).toHaveLength(4);
+    expect(rowsOf(theTree())).toHaveLength(4);
   });
 
   it("starts from what the core holds when the window opens in the middle of a turn", async () => {

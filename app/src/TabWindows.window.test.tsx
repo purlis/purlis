@@ -24,6 +24,7 @@ import type { Fixing } from "./bindings";
 import { tellFixStarted } from "./saving";
 import { askHarnessSetup } from "./harnessSetup";
 import { askSkillChat } from "./skillDraftAsks";
+import { rowsOf, treeNamed } from "./ui/tree/tree.testkit";
 
 /**
  * **Tab windows, as the window draws them** (#4768): a tab torn off into a bare window of its
@@ -370,9 +371,9 @@ describe("the project window of a project with a tab window (#4768)", () => {
 
 /** The sidebar's row of chat `session`. */
 const row = (session: number) => {
-  const found = within(screen.getByRole("tree", { name: "Chats of this project" }))
-    .getAllByRole("treeitem")
-    .find((one) => one.querySelector(".session")?.textContent === String(session));
+  const found = rowsOf(treeNamed("Chats of this project")).find(
+    (one) => one.querySelector(".session")?.textContent === String(session),
+  );
   if (found === undefined) throw new Error(`no row is chat ${session}`);
   return found;
 };

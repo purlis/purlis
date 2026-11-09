@@ -1,0 +1,128 @@
+[
+  {
+    "id": "e5000000000000000000000000000005",
+    "eventID": "e5000000000000000000000000000005",
+    "groupID": "7005",
+    "dateCreated": "2026-11-09T07:31:20Z",
+    "title": "The Changes tab shows a branch as merged that is not",
+    "message": "The Changes tab shows a branch as merged that is not\n\n**What the agent was doing:**\n\n…",
+    "platform": "other",
+    "culprit": "The Changes tab shows a branch as merged that is not",
+    "tags": [
+      {
+        "key": "channel",
+        "value": "stable"
+      },
+      {
+        "key": "edited_by_the_person",
+        "value": "false"
+      },
+      {
+        "key": "environment",
+        "value": "stable"
+      },
+      {
+        "key": "follows",
+        "value": "e4000000000000000000000000000004"
+      },
+      {
+        "key": "level",
+        "value": "info"
+      },
+      {
+        "key": "release",
+        "value": "purlis@0.42.1"
+      },
+      {
+        "key": "reviewed_by_the_person",
+        "value": "false"
+      },
+      {
+        "key": "written_by",
+        "value": "agent"
+      }
+    ],
+    "context": {},
+    "user": null
+  },
+  {
+    "id": "e6000000000000000000000000000006",
+    "eventID": "e6000000000000000000000000000006",
+    "groupID": "7006",
+    "dateCreated": "2026-11-09T09:12:00Z",
+    "title": "purlis worktree commit stages files outside the paths it was given",
+    "message": "purlis worktree commit stages files outside the paths it was given\n\n…",
+    "platform": "other",
+    "culprit": "purlis worktree commit stages files outside the paths it was given",
+    "tags": [
+      {
+        "key": "channel",
+        "value": "stable"
+      },
+      {
+        "key": "edited_by_the_person",
+        "value": "true"
+      },
+      {
+        "key": "environment",
+        "value": "stable"
+      },
+      {
+        "key": "kind",
+        "value": "bug"
+      },
+      {
+        "key": "level",
+        "value": "info"
+      },
+      {
+        "key": "release",
+        "value": "purlis@0.42.1"
+      },
+      {
+        "key": "reviewed_by_the_person",
+        "value": "true"
+      },
+      {
+        "key": "written_by",
+        "value": "agent"
+      }
+    ],
+    "context": {},
+    "user": null
+  },
+  {
+    "id": "e7000000000000000000000000000007",
+    "eventID": "e7000000000000000000000000000007",
+    "groupID": "7001",
+    "dateCreated": "2026-11-08T21:00:00Z",
+    "title": "purlis panicked at src/plane.rs:12:5",
+    "message": "",
+    "platform": "native",
+    "culprit": "src/plane.rs:12:5",
+    "tags": [
+      {
+        "key": "channel",
+        "value": "stable"
+      },
+      {
+        "key": "environment",
+        "value": "stable"
+      },
+      {
+        "key": "fingerprint",
+        "value": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a"
+      },
+      {
+        "key": "level",
+        "value": "fatal"
+      },
+      {
+        "key": "release",
+        "value": "purlis@0.42.0"
+      }
+    ],
+    "context": {},
+    "user": null
+  }
+]

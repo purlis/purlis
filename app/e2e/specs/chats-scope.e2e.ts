@@ -65,7 +65,7 @@ async function listed(): Promise<number[]> {
   return browser.execute(() =>
     [
       ...document.querySelectorAll(
-        '[data-testid="chats-section"] [role="tree"] [role="treeitem"][data-session]',
+        '[data-testid="chats-section"] [role="treegrid"] [role="row"].chat[data-session]',
       ),
     ].map((row) => Number(row.getAttribute("data-session"))),
   );

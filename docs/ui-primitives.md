@@ -358,8 +358,8 @@ component: each view keeps its own markup and keys, as ADR 0037 asks, and the cl
 specificity and `:hover` are taken into account.
 
 **The sizes are component tokens**, each an alias of a core token and declared in the class it
-sizes: `--ui-row-height` is `--size-chrome`, `--ui-row-pad` is `--space-4`, `--ui-row-gap` is
-`--space-3` and `--ui-tree-step` is `--space-5`. To change a part, change its alias. A theme
+sizes: `--ui-row-height` is `--size-chrome`, `--ui-row-pad` is `--space-4` and `--ui-row-gap` is
+`--space-3`. To change a part, change its alias. A theme
 never sees these.
 
 ### Table
@@ -367,7 +367,7 @@ never sees these.
 **A table is the table family's** since #2911: [The table family](#the-table-family) below
 draws it from the same geometry, keyed on its parts' attributes where `.ui-table`,
 `.ui-table-fixed`, `.ui-table-stacks`, `.ui-table-room`, `.ui-num`, `.ui-cell-actions` and
-`.ui-table-tip` were (`collections.css` keeps the list and tree rows only). A column's short
+`.ui-table-tip` were (`collections.css` keeps the list row only). A column's short
 words with their whole words in a tooltip, once `settings/ColumnHeading.tsx`, are the family's
 `ControlColumn` (`whole`, `about`). **Short headings live in the window** (#1859, after
 D-1841-1): a column's short words are the table's own (`SHORT` in `settings/dispatch.tsx`), and
@@ -378,70 +378,34 @@ short words.
 
 **A list's row is the list family's** since #2911: [The list family](#the-list-family) below
 draws it, from the same geometry, with its slots (`RowLead`, `RowLabel`, `RowDescription`,
-`RowTrail`) where `.ui-row-lead`, `.ui-row-label` and `.ui-row-trail` were. `.ui-row` is left only
-under a tree's row (`.ui-row.ui-tree-row`), which the tree family takes next.
+`RowTrail`) where `.ui-row-lead`, `.ui-row-label` and `.ui-row-trail` were. `.ui-row` is left to
+the views not on a family yet.
 
 ### Tree row
 
 **A tree is the tree family's** since #2911: [The tree family](#the-tree-family) below draws the
-Changes view, every file tree (a file tab's, the Explorer's *Files* and a branch's cockpit) and
-the Explorer's *Repos and branches*. The Chats list, still drawn by hand, keeps the shared tree
-row below until it moves (#3198); `purlis/tree-family` is off for its files alone.
+Changes view, every file tree (a file tab's, the Explorer's *Files* and a branch's cockpit), the
+Explorer's *Repos and branches* and, last, the Chats list (#3198). The shared tree row
+(`.ui-tree`, `.ui-tree-row`, `.ui-tree-twist` and `--ui-tree-*`) is deleted from
+`collections.css`, which keeps the list row's classes alone.
 
-```html
-<ul class="ui-tree" role="tree">
-  <li class="ui-row ui-tree-row" role="treeitem" aria-level="1" aria-expanded="true">
-    <span class="ui-tree-twist" aria-hidden="true"><ChevronRight /></span>
-    <span class="ui-row-label">A parent</span>
-  </li>
-  <li class="ui-row ui-tree-row" role="treeitem" aria-level="2">
-    <span class="ui-row-label">A leaf: no twist, and its name lines up</span>
-  </li>
-</ul>
-```
+**The Chats list on the tree family** (#3198). A chat is a `TreeRow` named by its name (what
+typing finds), whose description says its persona and state, its marks' words and what its lines
+under it say (`RowHeard`, `useRowDescription`, so a chat moving draws no row). Under it, as its
+rows, are its browsers (#2024), the chats it asked for and its finished tasks (#1485), so it
+folds them all; the done ones fold into a **Finished (n)** row of their own, with Clear finished
+at its end and in its menu. The hand of a chat below that needs you, the ⋯, the at-limit line's
+Dispatch settings and a task's second step of ending stand in the row, each reached by → from
+it. Space (open a task beside), F2 (rename) and Delete (stop a task) are the tree's `onRowKey`,
+heard before React Aria's own keys. Its one Tab stop is the chat in front (`stopAt`, said
+`current`) until the keyboard has been in, then the row it was last on. A workspace's sessions,
+where they are grouped, are a `TreeSection` under the frame's group head. A top-level chat's name
+starts one tree step, one mark and one gap in (`--chats-name-at`), and the filter's text starts at
+the same place. What the filter hides and why a key did nothing are said beside the view's title.
 
-- **`.ui-tree`** is the container. A tree row is a list row with **`.ui-tree-row`** as well, so
-  it has the same height, slots, selection and focus ring.
-- **Indentation is in token steps.** The level is `aria-level` (or `data-level` in a flat tree
-  that is not an ARIA tree), either on the row or on the treeitem that holds it, so a nested tree
-  (`role="group"` inside the treeitem) and a flat one both work. Level 1 is depth 0, and each
-  level is one `--ui-tree-step` (12px) further in. Levels deeper than 5 are drawn at 5: a sidebar
-  has no room for more, and `aria-level` still announces the real level. Each level above a row
-  draws a `tree.guide` hairline, as `.tree` does.
-- **A narrow view may draw fewer levels.** `--ui-tree-depth-cap`, set by the view on an element
-  around the tree and never on a row, is the deepest depth drawn: the Chats view sets it to 1
-  under 16rem, so every row under another stands one step in (#1682). The row, its guides and
-  its twist are drawn at `--ui-tree-drawn`, the lesser of the depth and the cap. The cap is read
-  with a fallback and set nowhere in `collections.css`, so it reaches the rows by inheritance and
-  no rule in the components layer contends with it.
-- **The twist is drawn only on a row with children.** A row with children has `aria-expanded`,
-  on itself or on the treeitem that holds it. **`.ui-tree-twist`** is hidden on any other row, so
-  a leaf that renders one by mistake shows nothing. The twist hangs in the step before the name
-  (each row stands one step further in than its depth) and takes no room in the row. A parent
-  and a leaf therefore start their names at the same place, and no row draws an empty twist to
-  line them up. Use one chevron pointing at the name: it turns down when `aria-expanded="true"`,
-  and is mirrored in right-to-left text.
-- **The twist is a box, in the middle of the row.** It is one step wide and one row high
-  (`--ui-tree-step` by `--ui-row-height`), held between the row's block edges by its auto
-  margins, with the chevron, one step square, in its middle. Write it as the `<span>` above with
-  the icon inside it, and never give the class to the icon itself. Nothing else places it: no
-  baseline, no offset. A row taller than one row keeps its chevron on its middle line.
-
-**The Chats list is drawn with these classes** (DS-11, #1843). Each chat is a `<button
-class="chat ui-row ui-tree-row" role="treeitem">` in a flat `.ui-tree`. Its name is the label and
-comes first in the markup, so the row is heard by its name; the state's mark is the lead, drawn
-first on the row; the persona's mark (or a shell's), a folded row's count and "Stopping…" are the
-trail. The twist is a `<span>` inside the row, since a button cannot hold a button, and its press
-folds the row without opening the chat. A top-level chat's name starts one tree step, one mark
-and one gap in (`--chats-name-at`), and the filter's text starts at the same place, behind a
-glass in the marks' column. `chats-list.e2e.ts` measures the two against each other. What the
-filter hides and why a key did nothing are said beside the view's title, so the list has no
-empty line under its filter.
-
-**Every tree and list in the main views is on these classes** (DS-12, #1844): the explorer,
-a file tab's tree and the Changes view are `.ui-tree` with `.ui-tree-row`s (the `.tree` class is
-deleted); a finished task's name and its "Finished (n)" line are tree rows at their chat's level;
-the panel lists, the memory archive, Search's hits and the opener's recent projects were
+**Every tree and list in the main views was on these classes** (DS-12, #1844), and is its
+family's now: the explorer, a file tab's tree, the Changes view and the Chats list are the tree
+family's (the `.tree` class is deleted); the panel lists, the memory archive, Search's hits and the opener's recent projects were
 `.ui-row`s and are the list family's now; the vault's, Dispatches' and Saving's tables are the
 table family's.
 A tree whose levels are nested groups gives each row its `aria-level`, and puts the children's
@@ -1391,19 +1355,21 @@ Two members, by what a cell holds:
 amendment](adr/0104/2026-10-25-the-tree-family.md)), on React Aria's `Tree`. No screen says a
 tree's role (`tree`, `treeitem`, `treegrid`), wears the shared tree's old classes (`.ui-tree`,
 `.ui-tree-row`, `.ui-tree-twist`) or its `data-scope`: `eslint.config.js` refuses them
-(`purlis/tree-family`, an error), off by file only for the trees still drawn by hand.
+(`purlis/tree-family`, an error), with no file let off: the Chats list was the last tree drawn
+by hand (#3198).
 
 | Member | What it is |
 | --- | --- |
 | `Tree` | **A tree**: rows that may hold rows under them. `expandedKeys` and `onExpandedChange` say which are open (a folder is read when it opens); `selectionMode` lets rows be chosen where a press chooses (a file tab's file, `toggle`, so the arrows never open a file); `onAction` runs one; `twist` puts the twist before a row's words (`"lead"`, the default, R129) or at its end (`"trail"`, #2799 rule 1); `fixed` is a tree that never folds (the Changes view): every row open, no twist, nothing to press; `draggable` drags a row out with what it `carries`, by the pointer and by its drag button; `choosesMany` says its owner chooses several rows at once (#1151's picks); `onRowKey` takes a key before the tree does (Shift and the arrows picking); `stopAt` is the row the tree's one Tab stop is on until the keyboard has been in (the place the next chat starts, the file a tab shows) |
-| `TreeRow` | **One row**, with the rows under it as its children: `content` is its slots (the list's `RowLead`, `RowLabel`, `RowDescription`, `RowTrail`, in the tree's scope), `textValue` what typing finds it by **and its name to a reader**, so the whole of what it says (a file's name, then its marks' words); `hasChildItems` for a folder not read yet (it holds a row that is never drawn until the owner's arrive); `menu` and `tip` as a list's row; `unavailable` for a row that keeps the keyboard to say why it cannot run (a file purlis will not open); `chosen` for a row its owner chooses while a press still runs it; `carries` what a drag of it carries; `onPressStart` to hear a press's modifier keys before its action runs; `current` for the current one of its kind (`aria-current`, drawn as chosen: where the next chat starts); `alwaysOpen` for a row whose rows never fold (a workspace's own) |
+| `TreeRow` | **One row**, with the rows under it as its children: `content` is its slots (the list's `RowLead`, `RowLabel`, `RowDescription`, `RowTrail`, in the tree's scope), `textValue` what typing finds it by **and its name to a reader**, so the whole of what it says (a file's name, then its marks' words); `hasChildItems` for a folder not read yet (it holds a row that is never drawn until the owner's arrive); `menu` and `tip` as a list's row; `onHoverStart`, `onHoverEnd`, `onFocus` and `onBlur` for what a row raises itself beside the family's `tip` (a chat's card, #3198; the row hears its own focus, which React Aria hands it none of); `unavailable` for a row that keeps the keyboard to say why it cannot run (a file purlis will not open); `chosen` for a row its owner chooses while a press still runs it; `carries` what a drag of it carries; `onPressStart` to hear a press's modifier keys before its action runs; `current` for the current one of its kind (`aria-current`, drawn as chosen: where the next chat starts); `alwaysOpen` for a row whose rows never fold (a workspace's own) |
 | `TreeLine` | **A line that is not a row to act on**, in its place among the rows: "Reading…", why a folder could not be read, "12 more not shown", a path the branch names and does not read. In the quiet tier; the arrows read it, and it holds nothing to press, drag or pick |
 | `TreeSection` | A group of rows under its name (`header`) |
 
 - **The keys are the WAI-ARIA tree's**: one Tab stop, the row last focused (the tree itself until
   a row has had the keyboard, which hands it to its first row or its chosen one); ↑ ↓, Home and
-  End; → opens a closed row and moves into an open one's first child; ← closes an open row and
-  moves from a closed one to its parent; typing finds a row; Enter runs it; Shift+F10 or the menu
+  End; → opens a closed row and moves into an open one's first child, or, on a row with
+  controls of its own (a chat's hand and ⋯), into those, as the APG treegrid's → does, ↓ going on
+  to the child (#3198); ← closes an open row and moves from a closed one to its parent; typing finds a row; Enter runs it; Shift+F10 or the menu
   key opens its menu. In a tree that never folds, ← on an open row moves to its parent.
 - **A row is the list's row** (`ui/list/list.css` draws its slots in every collection's scope):
   the pill under the pointer, the wash and edge when chosen, the ring inside it, the secondary
@@ -2389,9 +2355,9 @@ model and a select-on-`mousedown` this window's strips do not have:
   same keys, and nothing folds, since a fold would be a press in a view that is only read. Its
   rows are `treeitem`s that take the keyboard and run nothing; the repo's context menu opens
   from a focused row on Shift+F10, as on any menued row.
-- **On the plane root's tab, Files is the whole project's** (issue 1916): the same `.ui-tree`
+- **On the plane root's tab, Files is the whole project's** (issue 1916): the same tree
   and rows as a branch's files, read through the window's own `plane_tree`. A workspace's repo
-  is one `.ui-tree-row` with the workspace's mark (`Folders`), its folder's name and
+  is one row with the workspace's mark (`Folders`), its folder's name and
   _workspace <name>_ in `ui-text-secondary`, and pressing it selects that workspace's tab; it has no
   twist, because it never opens there. These rows have no menu and are not dragged.
 - **Explorer is two sections, and each tree is its own Tab stop** (#1677): _Repos and
@@ -2587,11 +2553,9 @@ component library gets added on.
   belongs to the three tablists that are the axis (ADR 0036), and to the one tree that really
   selects, a file tab's, whose selected file is what the tab previews; a spot is the current
   item of a list. Radix has no tree or listbox primitive, and native buttons are not hand-rolled markup.
-- **Every tree is drawn by the shared tree row** (#1672, DS-12): `.ui-tree` on its
-  `role="tree"` element and `.ui-row.ui-tree-row` on each row, which draw its levels, its
+- **Every tree is drawn by the tree family** (#1672, DS-12, #2911, #3198): its levels, its
   straight guides, the selected row (`aria-current` or `aria-selected`, in `list.selected` with
-  an edge) and the keyboard's ring. A class, not a component, so this rule needs no amendment; a
-  new tree draws nothing of its own.
+  an edge) and the keyboard's ring are `ui/tree`'s; a new tree draws nothing of its own.
   `docs/design-system.md` has the tokens and why.
 - **No region has a toggle button, on the status line or anywhere** (qw357, 2026-10-13). They
   were `aria-pressed` icons on the status line from purlis #193 until the operator called them

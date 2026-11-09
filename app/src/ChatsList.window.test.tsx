@@ -26,6 +26,7 @@ import { aBatchOf } from "./chatEvents.testkit";
 import { CHAT_EVENTS } from "./chatEvents";
 import { aTabForEachChat } from "./laidOut.testkit";
 import { measuring } from "./stripRoom.testkit";
+import { findTree, keysOn, queryTree, rowsOf, treeNamed } from "./ui/tree/tree.testkit";
 
 /**
  * **The Chats list at fifty chats, against the whole window** (#1499, V100-47 to V100-50): the
@@ -290,12 +291,12 @@ function core(open: Filed[], ended: FinishedTask[] = []) {
 /** The list, with every workspace's chats on it: these read chats in alpha and beta at once,
  *  which the list shows on the person's word (#1655). */
 const section = async () => {
-  const tree = await screen.findByRole("tree", { name: "Chats of this project" });
+  const tree = await findTree("Chats of this project");
   const every = screen.getByRole("radio", { name: "All" });
   if (!(every as HTMLInputElement).checked) fireEvent.click(every);
   return tree;
 };
-const theTree = () => screen.getByRole("tree", { name: "Chats of this project" });
+const theTree = () => treeNamed("Chats of this project");
 /** The list the pointer rests over: the tree and what holds it. */
 const list = () => {
   const found = theTree().closest<HTMLElement>(".chats-list");
@@ -305,16 +306,14 @@ const list = () => {
 
 /** Each row of the section as `level name`, top to bottom. */
 const shape = () =>
-  within(theTree())
-    .getAllByRole("treeitem")
-    .map(
-      (row) => `${row.getAttribute("aria-level")} ${row.querySelector(".session")?.textContent}`,
-    );
+  rowsOf(theTree()).map(
+    (row) => `${row.getAttribute("aria-level")} ${row.querySelector(".session")?.textContent}`,
+  );
 
 const row = (name: string) => {
-  const found = within(theTree())
-    .getAllByRole("treeitem")
-    .find((one) => one.querySelector(".session")?.textContent === name);
+  const found = rowsOf(theTree()).find(
+    (one) => one.querySelector(".session")?.textContent === name,
+  );
   if (found === undefined) throw new Error(`no row is named ${name}`);
   return found;
 };
@@ -577,8 +576,9 @@ describe("the order of the Chats list (V100-47)", () => {
     expect(
       [...theTree().querySelectorAll(".chats-group-name")].map((one) => one.textContent),
     ).toEqual(["alpha", "beta"]);
-    // The names over them are not rows: the tree still counts three sessions.
-    expect(place("steward 3")).toBe("3/3");
+    // The names over them are each a group's (#3198): a session is counted among its group's.
+    expect(place("steward 2")).toBe("1/2");
+    expect(place("steward 3")).toBe("1/1");
   });
 });
 
@@ -672,7 +672,7 @@ describe("the folds the Chats list makes by itself (V100-48)", () => {
     expect(shape()).toEqual(["1 steward 1", "2 devops 2", "2 devops 3"]);
 
     // Folded by the person, the row counts what it hides, and its card says how each ended.
-    fireEvent.keyDown(row("steward 1"), { key: "ArrowLeft" });
+    await keysOn(row("steward 1"), "{ArrowLeft}");
     expect(row("steward 1")).toHaveAttribute("aria-expanded", "false");
     expect(folded("steward 1")).toBe("2");
     expect((await cardOf(row("steward 1"))).facts.Tasks).toBe("1 failed · 1 done");
@@ -693,7 +693,7 @@ describe("the folds the Chats list makes by itself (V100-48)", () => {
   it("keeps a fold set by hand when it would have opened the session by itself", async () => {
     const { move } = await up();
 
-    fireEvent.keyDown(row("steward 1"), { key: "ArrowLeft" });
+    await keysOn(row("steward 1"), "{ArrowLeft}");
     expect(row("steward 1")).toHaveAttribute("aria-expanded", "false");
     move(2, "done");
     move(3, "done");
@@ -705,7 +705,7 @@ describe("the folds the Chats list makes by itself (V100-48)", () => {
 
   it("takes a fold set by hand off once, when a task under it comes to need the person (#1675)", async () => {
     const { move } = await up();
-    fireEvent.keyDown(row("steward 1"), { key: "ArrowLeft" });
+    await keysOn(row("steward 1"), "{ArrowLeft}");
     move(2, "done");
 
     move(3, "waiting", [3]);
@@ -716,8 +716,8 @@ describe("the folds the Chats list makes by itself (V100-48)", () => {
 
   it("keeps a session opened by hand open when it would have folded it by itself", async () => {
     const { move } = await up();
-    fireEvent.keyDown(row("steward 1"), { key: "ArrowLeft" });
-    fireEvent.keyDown(row("steward 1"), { key: "ArrowRight" });
+    await keysOn(row("steward 1"), "{ArrowLeft}");
+    await keysOn(row("steward 1"), "{ArrowRight}");
 
     move(2, "done");
     move(3, "done");
@@ -740,13 +740,12 @@ describe("the folds the Chats list makes by itself (V100-48)", () => {
     await waitFor(() => expect(folded("steward 1")).toBe("5"));
     expect(row("steward 1")).toHaveAttribute("aria-expanded", "false");
     expect((await cardOf(row("steward 1"))).facts.Tasks).toBe("5 done");
-    expect(screen.queryByRole("group", { name: "Finished tasks of steward 1" })).toBeNull();
+    expect(shape()).toEqual(["1 steward 1"]);
 
     // Opened by hand, the finished tasks are under it, and the row counts nothing: they are
-    // its rows now. Its card says the same as it did folded.
-    fireEvent.keyDown(row("steward 1"), { key: "ArrowRight" });
-    const group = await screen.findByRole("group", { name: "Finished tasks of steward 1" });
-    expect(within(group).getByRole("button", { name: "Finished (5)" })).toBeTruthy();
+    // its rows now, folded into one (#3198). Its card says the same as it did folded.
+    await keysOn(row("steward 1"), "{ArrowRight}");
+    await waitFor(() => expect(shape()).toEqual(["1 steward 1", "2 Finished (5)"]));
     expect(row("steward 1").querySelector(".task-count")).toBeNull();
     expect((await cardOf(row("steward 1"))).facts.Tasks).toBe("5 done");
     // One source: the folded marks the row drew before are gone.
@@ -761,10 +760,10 @@ describe("the folds the Chats list makes by itself (V100-48)", () => {
     render(<App />);
     await section();
 
-    expect(await screen.findByRole("group", { name: "Finished tasks of steward 1" })).toBeTruthy();
+    await waitFor(() => expect(shape()).toEqual(["1 steward 1", "2 check b", "2 Finished (1)"]));
     expect(row("steward 1")).toHaveAttribute("aria-expanded", "true");
     // Folded by hand, it counts both, and its card says both ends, the failure first.
-    fireEvent.keyDown(row("steward 1"), { key: "ArrowLeft" });
+    await keysOn(row("steward 1"), "{ArrowLeft}");
     expect(folded("steward 1")).toBe("2");
     expect((await cardOf(row("steward 1"))).facts.Tasks).toBe("1 failed · 1 done");
   });
@@ -874,7 +873,7 @@ describe("the filter over the Chats list (V100-49)", () => {
     // session above it is hidden with it. No hand for it is drawn anywhere in the list.
     move(2, "waiting", [2]);
 
-    expect(screen.queryByRole("tree", { name: "Chats of this project" })).toBeNull();
+    expect(queryTree("Chats of this project")).toBeNull();
     expect(hiddenSaid()).toBe(
       "live check talk needs you, and the filter hides it. No chat matches the filter.",
     );
@@ -894,21 +893,19 @@ describe("the filter over the Chats list (V100-49)", () => {
     ]);
     render(<App />);
     await section();
-    await waitFor(() => expect(shape()).toHaveLength(4));
+    // Four chats, and the rows of what each folded or left open finished (#3198).
+    await waitFor(() => expect(shape()).toHaveLength(6));
 
     await typed("failed");
 
-    expect(shape()).toEqual(["1 release notes"]);
-    const group = await screen.findByRole("group", { name: "Finished tasks of release notes" });
-    expect(group.textContent).toContain("check staging");
-    // Only what was asked for: the done one beside it is not drawn, nor is its fold.
-    expect(within(group).queryByRole("button", { name: /^Finished/ })).toBeNull();
-    expect(screen.queryByRole("group", { name: "Finished tasks of steward 4" })).toBeNull();
+    // Only what was asked for, under the chat that asked: the done one beside it is not drawn,
+    // nor is its fold, nor steward 4's.
+    await waitFor(() => expect(shape()).toEqual(["1 release notes", "2 check staging"]));
   });
 
   it("opens every row above what it found, whatever fold was set by hand, and puts the fold back", async () => {
     await up();
-    fireEvent.keyDown(row("steward 1"), { key: "ArrowLeft" });
+    await keysOn(row("steward 1"), "{ArrowLeft}");
     expect(shape()).toEqual(["1 steward 1", "1 release notes", "1 steward 4"]);
 
     await typed("talk");
@@ -918,9 +915,9 @@ describe("the filter over the Chats list (V100-49)", () => {
     expect(shape()).toEqual(["1 steward 1", "2 live check talk"]);
     expect(hiddenSaid()).toBe("The filter hides 2 of 4 chats.");
     // A fold set while the filter is on is obeyed, for as long as the filter is.
-    fireEvent.keyDown(row("steward 1"), { key: "ArrowLeft" });
+    await keysOn(row("steward 1"), "{ArrowLeft}");
     expect(shape()).toEqual(["1 steward 1"]);
-    fireEvent.keyDown(row("steward 1"), { key: "ArrowRight" });
+    await keysOn(row("steward 1"), "{ArrowRight}");
 
     await userEvent.clear(box());
 
@@ -1000,9 +997,13 @@ describe("a row of the Chats list (V100-19, V100-50)", () => {
     expect(theTree().querySelector(".line.two")).toBeNull();
     const first = row("steward 1");
     // The persona's mark leads the row, with the state on it (#3342).
-    expect(first.querySelector('.ui-row-lead [data-part="who"] .persona-mark')).not.toBeNull();
-    expect(first.querySelector(".ui-row-label")?.textContent).toBe("steward 1");
-    expect(first.querySelector('.ui-row-lead [data-part="word"]')?.textContent).toBe("working");
+    expect(
+      first.querySelector('[data-part="lead"] [data-part="who"] .persona-mark'),
+    ).not.toBeNull();
+    expect(first.querySelector('[data-part="label"]')?.textContent).toBe("steward 1");
+    expect(first.querySelector('[data-part="lead"] [data-part="word"]')?.textContent).toBe(
+      "working",
+    );
     expect((await cardOf(row("steward 1"))).facts.Workspace).toBe("alpha");
   });
 
@@ -1049,8 +1050,7 @@ describe("a row of the Chats list (V100-19, V100-50)", () => {
 
     expect(theTree().querySelector(".no-tab")).toBeNull();
     expect(theTree().textContent).not.toMatch(/no tab/i);
-    for (const one of within(theTree()).getAllByRole("treeitem"))
-      expect(tipOf(one) ?? "").not.toMatch(/tab/i);
+    for (const one of rowsOf(theTree())) expect(tipOf(one) ?? "").not.toMatch(/tab/i);
   });
 });
 
@@ -1255,8 +1255,7 @@ describe("a chat's tab and its row say one state word (#4935)", () => {
 
     move(1, "running");
 
-    const name = within(theTree()).getAllByRole("treeitem")[0].querySelector(".session")
-      ?.textContent as string;
+    const name = rowsOf(theTree())[0].querySelector(".session")?.textContent as string;
     await waitFor(() => expect(word(name)).toBeTruthy());
     expect(tabSays(name)).toBe(word(name));
   });
@@ -1427,7 +1426,7 @@ describe("the keys of a row (#1499)", () => {
 });
 
 describe("a chat moving, with fifty sessions and their tasks listed (SC-3)", () => {
-  it("draws no row for a move that changes no order and no fold, and rows for one that does", async () => {
+  it("draws no row for a move, even one that changes the order (#3198)", async () => {
     const { move } = core([
       ...Array.from({ length: 50 }, (_, at) => chat(at + 1, at % 2 === 0 ? "alpha" : "beta")),
       ...Array.from({ length: 50 }, (_, at) =>
@@ -1458,14 +1457,12 @@ describe("a chat moving, with fifty sessions and their tasks listed (SC-3)", () 
     move(40, "waiting");
 
     expect(shape().at(-2)).toBe("1 steward 40");
-    // Exactly the rows whose place changed are drawn again, once each: session 40 and the
-    // ten it moved past. No task's row, and no session's above where 40 stood.
-    expect([...drawn.rows].sort((a, b) => a - b)).toEqual(
-      Array.from({ length: 11 }, (_, at) => at + 40),
-    );
+    // No row is drawn again: the tree moves session 40 and its task below the ten it moved
+    // past, each row as it was (#3198). A row's place is the tree's to say, not the row's.
+    expect(drawn.rows).toEqual([]);
   });
 
-  it("draws, for a word typed in the filter, the rows it leaves and none of the ones it hides", async () => {
+  it("draws no row for a word typed in the filter: the rows it leaves stand as they were", async () => {
     core([
       ...Array.from({ length: 50 }, (_, at) => chat(at + 1, at % 2 === 0 ? "alpha" : "beta")),
       ...Array.from({ length: 50 }, (_, at) =>
@@ -1482,9 +1479,9 @@ describe("a chat moving, with fifty sessions and their tasks listed (SC-3)", () 
     fireEvent.change(box(), { target: { value: "devops 60" } });
 
     expect(shape()).toEqual(["1 steward 10", "2 devops 60"]);
-    // The two rows it leaves are drawn again, once each. The ninety-eight that left draw
-    // nothing.
-    expect([...drawn.rows].sort((a, b) => a - b)).toEqual([10, 60]);
+    // No row is drawn again (#3198): the two it leaves are as they were, and the ninety-eight
+    // that left draw nothing.
+    expect(drawn.rows).toEqual([]);
   });
 });
 

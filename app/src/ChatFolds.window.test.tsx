@@ -2,15 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
-import { userEvent } from "@testing-library/user-event";
+import { cleanup, render, waitFor } from "@testing-library/react";
 import { ChatsSection } from "./ChatsSection";
 import { ChatsHere, fixedChats } from "./chatState";
 import { chatsTree, type ListedChat } from "./chatsTree";
 import { facetsOf } from "./projectViews";
 import { forgetThisLaunch } from "./regions";
 import { GLOBAL } from "./windowprefs";
-import { getByTip } from "./ui/tooltip/tooltip.testkit";
+import { keysOn, rowNamed, rowsOf, treeNamed } from "./ui/tree/tree.testkit";
 
 /**
  * **The Chats list's folds across a relaunch** (#1687): a fold set by hand is kept by the
@@ -65,10 +64,13 @@ function draw(steward: number, task: number) {
   );
 }
 
+/** The chat's row named `name`. */
+const chatRow = (name: string) => rowNamed(treeNamed("Chats of this project"), name);
+
 const names = () =>
-  within(screen.getByRole("tree"))
-    .queryAllByRole("treeitem")
-    .map((one) => one.querySelector(".session")?.textContent);
+  rowsOf(treeNamed("Chats of this project")).map(
+    (one) => one.querySelector(".session")?.textContent,
+  );
 
 beforeEach(forgetThisLaunch);
 afterEach(() => {
@@ -80,7 +82,7 @@ describe("the Chats list's folds (#1687)", () => {
   it("come back after a relaunch on the same chats under their new numbers", async () => {
     const first = draw(1, 2);
     expect(names()).toEqual(["steward 1", "devops 2"]);
-    await userEvent.click(getByTip("Fold the chats under steward 1"));
+    await keysOn(chatRow("steward 1"), "{ArrowLeft}");
     expect(names()).toEqual(["steward 1"]);
     // What the window writes for the project, read back from the file at the next launch.
     const written = facetsOf(PLANE);
@@ -100,7 +102,7 @@ describe("the Chats list's folds (#1687)", () => {
     draw(7, 8);
 
     await waitFor(() => expect(names()).toEqual(["steward 7"]));
-    await userEvent.click(getByTip("Show the chats under steward 7"));
+    await keysOn(chatRow("steward 7"), "{ArrowRight}");
     expect(names()).toEqual(["steward 7", "devops 8"]);
   });
 });

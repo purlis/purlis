@@ -29,6 +29,7 @@ import { stripNamed } from "./test-strips";
 import { forgetInboxOpen, inboxOpenAtLaunch } from "./test-inbox";
 import { onTheWire } from "./chatEvents.testkit";
 import { aTabForEachChat } from "./laidOut.testkit";
+import { findTree, rowsOf } from "./ui/tree/tree.testkit";
 
 /** The core says the chat moved, and the window draws it: the chat stores tell their readers
  *  once a frame (`heldStore.ts`), and this test reads the result on the next line. */
@@ -431,19 +432,15 @@ describe("Restart chat on a chat's tab", () => {
 });
 
 describe("Restart chat on a task's row in the Chats list, for a task with no tab (#1462)", () => {
-  const section = () => screen.findByRole("tree", { name: "Chats of this project" });
+  const section = () => findTree("Chats of this project");
   const row = async (name: string) => {
     const tree = await section();
     await waitFor(() =>
-      expect(
-        within(tree)
-          .getAllByRole("treeitem")
-          .some((one) => one.querySelector(".session")?.textContent === name),
-      ).toBe(true),
+      expect(rowsOf(tree).some((one) => one.querySelector(".session")?.textContent === name)).toBe(
+        true,
+      ),
     );
-    const found = within(tree)
-      .getAllByRole("treeitem")
-      .find((one) => one.querySelector(".session")?.textContent === name);
+    const found = rowsOf(tree).find((one) => one.querySelector(".session")?.textContent === name);
     if (found === undefined) throw new Error(`no row is named ${name}`);
     return found;
   };

@@ -15,7 +15,7 @@ import {
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
-import { askToEnd, chatList } from "./menus.testkit";
+import { askToEnd, chatList, paneMore } from "./menus.testkit";
 import type {
   ChatBlocked,
   DispatchPending,
@@ -39,6 +39,7 @@ import { forgetInboxOpen, inboxAwayAtLaunch } from "./test-inbox";
 import { findResult } from "./actionResult.testkit";
 import { heard } from "./frame.testkit";
 import { onTheWire } from "./chatEvents.testkit";
+import { findRow, findTree, rowsOf } from "./ui/tree/tree.testkit";
 
 /**
  * **A task opens in the pane it returns to** (#1486), against the whole window: pressing a task
@@ -489,17 +490,28 @@ function core(open: Listed[], atLaunch: LaidOut = tabbed(open)) {
   };
 }
 
-const section = () => screen.findByRole("tree", { name: "Chats of this project" });
+const section = () => findTree("Chats of this project");
 
+/** A chat's row, by its name: not a finished task's of the same name (#3198). */
 const row = (tree: HTMLElement, name: string) => {
-  const found = within(tree)
-    .getAllByRole("treeitem")
+  const found = rowsOf(tree)
+    .filter((one) => one.classList.contains("chat"))
     .find((one) => one.querySelector(".session")?.textContent === name);
   if (found === undefined) throw new Error(`no row is named ${name}`);
   return found;
 };
 
-const rows = (tree: HTMLElement) => within(tree).getAllByRole("treeitem");
+const rows = (tree: HTMLElement) => rowsOf(tree);
+
+/** The finished tasks' rows named `name`, once one is drawn: rows of the tree (#3198). */
+const finishedRowsNamed = (name: string) =>
+  waitFor(async () => {
+    const found = rowsOf(await section()).filter(
+      (one) => one.classList.contains("finished-task") && one.getAttribute("aria-label") === name,
+    );
+    if (found.length === 0) throw new Error(`no finished row is named ${name}`);
+    return found;
+  });
 
 const strip = () => stripNamed("Tabs");
 const tabNames = () =>
@@ -949,17 +961,17 @@ describe("a shown task that ends", () => {
 
     // One vocabulary: the pane, the breadcrumb and the finished row say the same state, and
     // the core's own word is beside it where the row draws it.
-    const group = await screen.findByRole("group", { name: "Finished tasks of steward 1" });
-    const onRow = within(group)
-      .getAllByRole("button")
-      .find((one) => one.querySelector(".session")?.textContent === "sweep");
+    const [onRow] = await finishedRowsNamed("sweep");
     const says = (on: Element | undefined) => ({
       word: on?.querySelector(".shown-state .word")?.textContent,
       shape: on?.querySelector(".shown-state .shape")?.getAttribute("data-shape"),
-      more: on?.querySelector(".outcome")?.textContent?.trim(),
     });
-    expect(says(onRow)).toEqual({ word: "failed", shape: "cross", more: "blocked" });
+    expect(says(onRow)).toEqual({ word: "failed", shape: "cross" });
+    // The core's own word, after the state's in what the row says beside its name (#3198), as
+    // the pane draws it beside its state.
+    expect(onRow.getAttribute("aria-description")).toBe("failed, blocked");
     expect(says(pane)).toEqual(says(onRow));
+    expect(pane.querySelector(".outcome")?.textContent?.trim()).toBe("blocked");
     expect(crumbsSay()).toBe("steward 1 › sweep · failed");
     // Its way back is its finished row's Reopen, which that row offers.
     expect(within(pane).getByRole("button", { name: "Resume" })).toBeTruthy();
@@ -979,7 +991,7 @@ describe("a shown task that ends", () => {
     });
     finished.push(earlier);
     await rowsChanged();
-    const group = await screen.findByRole("group", { name: "Finished tasks of steward 1" });
+    await finishedRowsNamed("sweep");
     await userEvent.click(row(tree, "sweep"));
     await waitFor(() => expect(onScreen()).toEqual([5]));
 
@@ -1008,7 +1020,7 @@ describe("a shown task that ends", () => {
     await waitFor(() =>
       expect(within(pane).queryByRole("region", { name: "Report from sweep" })).toBeNull(),
     );
-    expect(within(group).getAllByRole("button", { name: /sweep/ }).length).toBeGreaterThan(0);
+    expect((await finishedRowsNamed("sweep")).length).toBeGreaterThan(0);
     expect(pane.textContent).not.toContain("The earlier sweep failed.");
     expect(crumbsSay()).not.toContain("failed");
   });
@@ -1023,7 +1035,8 @@ describe("a shown task that ends", () => {
     await ended(5);
 
     const pane = await band();
-    await screen.findByRole("group", { name: "Finished tasks of steward 1" });
+    // Done, so folded into its chat's "Finished (1)" row (#3198).
+    await findRow(await section(), "Finished (1)");
     expect(within(pane).queryByRole("region", { name: "Report from sweep" })).toBeNull();
     expect(pane.textContent).not.toContain("Not this pane's.");
   });
@@ -1284,7 +1297,8 @@ describe("a task that needs you and is not on screen", () => {
     const { tree, move } = await drawn(withTasks());
     await move(7, "waiting", 10, [7]);
 
-    const hand = row(tree, "steward 1").closest("li")?.querySelector<HTMLElement>(".rolled-up");
+    // A control of steward 1's row (#3198).
+    const hand = row(tree, "steward 1").querySelector<HTMLElement>(".rolled-up");
     if (!hand) throw new Error("steward 1 wears no hand for the task below it");
     await userEvent.click(hand);
 
@@ -1565,7 +1579,7 @@ describe("closing, while a tab shows a task", () => {
     // The two ways a person ends a task (#1488) are its list's rows, in its ⋯ (#4760): no
     // button on screen ends the task.
     expect(ending).toEqual([]);
-    await userEvent.click(screen.getByRole("button", { name: /^More for talk/ }));
+    await userEvent.click(paneMore(/^More for talk/));
     const list = await screen.findByRole("menu");
     expect(within(list).getByRole("menuitem", { name: /^Stop and get its report/ })).toBeTruthy();
     expect(within(list).getByRole("menuitem", { name: /^Close now/ })).toBeTruthy();
@@ -1652,15 +1666,15 @@ describe("a handoff is a session of its own (#1492, V100-69)", () => {
     ]);
     // Nothing is under the chat it came from: that row has nothing to fold or to sum up.
     expect(row(tree, "steward 1").getAttribute("aria-expanded")).toBeNull();
-    expect(row(tree, "steward 1").closest("li")?.querySelector(".ui-tree-twist")).toBeNull();
+    expect(row(tree, "steward 1").querySelector('[data-part="twist"]')).toBeNull();
     expect(row(tree, "steward 1").querySelector(".below-summary")).toBeNull();
 
     await move(3, "waiting", 10, [3]);
 
     expect(within(row(tree, "drop commons")).getByText("needs you")).toBeTruthy();
     // The chat it came from is not waiting for anybody, on its row or on its tab.
-    expect(row(tree, "steward 1").closest("li")?.querySelector("button.rolled-up")).toBeNull();
-    expect(row(tree, "steward 1").getAttribute("aria-description")).toBeNull();
+    expect(row(tree, "steward 1").querySelector("button.rolled-up")).toBeNull();
+    expect(row(tree, "steward 1").getAttribute("aria-description")).not.toContain("needs you");
     expect(handOn("steward 1")).toBeNull();
     // Nor does that chat's tab offer it as one of its own chats.
     expect(within(tab("steward 1")).queryByText(/drop commons/)).toBeNull();

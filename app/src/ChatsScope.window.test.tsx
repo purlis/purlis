@@ -7,6 +7,7 @@ import { ChatsSection } from "./ChatsSection";
 import { ChatsHere, fixedChats, moved, nothingKnown, type ChatStates } from "./chatState";
 import { chatsTree, type ListedChat } from "./chatsTree";
 import { forgetThisLaunch } from "./regions";
+import { rowsOf, treeNamed } from "./ui/tree/tree.testkit";
 
 /**
  * **The switch: a chat isn't a tab** (#4758): a tab holds no chats of its own to list, so the
@@ -66,13 +67,11 @@ function board(queue: number[] = []): ChatStates {
   );
 }
 
-const theList = () => screen.getByRole("tree");
+const theList = () => treeNamed("Chats of this project");
 const shape = () =>
-  within(theList())
-    .queryAllByRole("treeitem")
-    .map(
-      (one) => `${one.getAttribute("aria-level")} ${one.querySelector(".session")?.textContent}`,
-    );
+  rowsOf(theList()).map(
+    (one) => `${one.getAttribute("aria-level")} ${one.querySelector(".session")?.textContent}`,
+  );
 const scopeOn = () =>
   within(screen.getByRole("radiogroup", { name: "Show the chats of" }))
     .getAllByRole("radio")

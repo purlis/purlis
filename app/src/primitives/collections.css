@@ -1,7 +1,7 @@
 /* Copyright 2026 Purlis */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* **The shared list row and tree row** (ADR 0094 §4, DS-3 #1835): one look for each, made
+/* **The shared list row** (ADR 0094 §4, DS-3 #1835): one look, made
    only from the core geometry (`theme/geometry.css`) and a theme's colours. `docs/ui-primitives.md`
    says how to draw each one, and `collections.test.ts` holds the rules below.
 
@@ -16,9 +16,7 @@
    List row: `.ui-list` holds `.ui-row`s; a row is a lead, a label and a trail.
    --------------------------------------------------------------------------------------------- */
 
-.ui-list,
-.ui-tree,
-.ui-tree [role="group"] {
+.ui-list {
   margin: 0;
   padding: 0;
   list-style: none;
@@ -109,104 +107,4 @@
 .ui-row:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: var(--focus-ring-inset);
-}
-
-/* ---------------------------------------------------------------------------------------------
-   Tree row: `.ui-row.ui-tree-row` inside `.ui-tree`; its level is `aria-level` or `data-level`
-   on the row or on the treeitem that holds it.
-   --------------------------------------------------------------------------------------------- */
-
-.ui-tree {
-  --ui-tree-step: var(--space-5);
-  --ui-tree-depth: 0;
-}
-
-/* **Indentation in token steps**: level 1 is depth 0, each level one `--ui-tree-step` more, and
-   deeper than five is drawn at five (a sidebar has no room for more; `aria-level` still says
-   it). The deepest first, so each rule below it wins for its own level. */
-.ui-tree :is([aria-level], [data-level]) {
-  --ui-tree-depth: 4;
-}
-.ui-tree :is([aria-level="1"], [data-level="1"]) {
-  --ui-tree-depth: 0;
-}
-.ui-tree :is([aria-level="2"], [data-level="2"]) {
-  --ui-tree-depth: 1;
-}
-.ui-tree :is([aria-level="3"], [data-level="3"]) {
-  --ui-tree-depth: 2;
-}
-.ui-tree :is([aria-level="4"], [data-level="4"]) {
-  --ui-tree-depth: 3;
-}
-
-/* A row stands one step in further than its depth: that step is where a parent's twist hangs,
-   so a row with children and one without start their names at the same place, and no row draws
-   an empty twist to make them line up. Each level above draws one guide, VS Code's.
-
-   **A view may draw fewer levels** where it is narrow: `--ui-tree-depth-cap`, set by the view
-   on an element around the tree (never on a row, so no rule here contends with it), is the
-   deepest depth drawn. `--ui-tree-drawn` is the depth the row is drawn at; its twist reads it
-   too. */
-.ui-tree-row {
-  --ui-tree-drawn: min(var(--ui-tree-depth), var(--ui-tree-depth-cap, 4));
-  padding-inline-start: calc((var(--ui-tree-drawn) + 1) * var(--ui-tree-step));
-  background-image: repeating-linear-gradient(
-    to right,
-    var(--tree-guide) 0 1px,
-    transparent 1px var(--ui-tree-step)
-  );
-  background-position: calc(var(--ui-tree-step) / 2) 0;
-  background-size: calc(var(--ui-tree-drawn) * var(--ui-tree-step)) 100%;
-  background-repeat: no-repeat;
-}
-
-/* **The twist only where a row has children**: a row with children says so with
-   `aria-expanded`, on itself or on the treeitem that holds it, and only there is the twist drawn.
-   It hangs in the step before the name and takes no room in the row.
-
-   **A box of its own size, in the middle of the row's line** (qw358): one step wide and one row
-   high, held between the row's two block edges by its auto margins, with its chevron in its
-   middle. Its height is said, never left to the insets: an element that brings its own size (an
-   icon given this class with no box around it) keeps that size between two insets and sits at
-   the first, which drew every folder's chevron above its name. */
-.ui-tree-twist {
-  display: none;
-  position: absolute;
-  inset-block: 0;
-  inset-inline-start: calc(var(--ui-tree-drawn) * var(--ui-tree-step));
-  box-sizing: border-box;
-  inline-size: var(--ui-tree-step);
-  block-size: var(--ui-row-height);
-  margin-block: auto;
-  align-items: center;
-  justify-content: center;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  appearance: none;
-  color: var(--text-faint);
-  background-color: transparent;
-}
-
-.ui-tree-row[aria-expanded] > .ui-tree-twist,
-[aria-expanded] > .ui-tree-row > .ui-tree-twist {
-  display: inline-flex;
-}
-
-/* The chevron is one step square, whatever the size of the text beside it. */
-.ui-tree-twist > svg {
-  flex: none;
-  inline-size: var(--ui-tree-step);
-  block-size: var(--ui-tree-step);
-}
-
-/* One chevron, pointing at the name while closed and down while open. */
-.ui-tree-twist:dir(rtl) {
-  transform: scaleX(-1);
-}
-
-.ui-tree-row[aria-expanded="true"] > .ui-tree-twist,
-[aria-expanded="true"] > .ui-tree-row > .ui-tree-twist {
-  transform: rotate(90deg);
 }

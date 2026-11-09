@@ -21,6 +21,8 @@ import { forgetKeyboard } from "./paneKeyboard";
 import { forgetThisLaunch } from "./regions";
 import { stripNamed } from "./test-strips";
 import { aTabForEachChat } from "./laidOut.testkit";
+import { findTree, rowAround, rowsOf } from "./ui/tree/tree.testkit";
+import { paneMore } from "./menus.testkit";
 
 /**
  * **The person ends a task with Stop and get its report or Close now** (#1488, V100-5,
@@ -252,12 +254,10 @@ function core(
   };
 }
 
-const section = () => screen.findByRole("tree", { name: "Chats of this project" });
+const section = () => findTree("Chats of this project");
 
 const row = (tree: HTMLElement, name: string) => {
-  const found = within(tree)
-    .getAllByRole("treeitem")
-    .find((one) => one.querySelector(".session")?.textContent === name);
+  const found = rowsOf(tree).find((one) => one.querySelector(".session")?.textContent === name);
   if (found === undefined) throw new Error(`no row is named ${name}`);
   return found;
 };
@@ -289,7 +289,7 @@ async function drawn(
   const held = core(endings, sweepHasATab, sweepRunsOn, another);
   render(<App />);
   const tree = await section();
-  await waitFor(() => expect(within(tree).getAllByRole("treeitem")).toHaveLength(another ? 5 : 4));
+  await waitFor(() => expect(rowsOf(tree)).toHaveLength(another ? 5 : 4));
   return { ...held, tree };
 }
 
@@ -356,7 +356,7 @@ describe("the second step, for a task that is not in the middle of a turn", () =
 
     const step = await second("Stop sweep and get its report?");
     // On its row, in the list, and no dialog: nothing else in the window is taken away.
-    expect(row(tree, "sweep").closest("li")).toContainElement(step);
+    expect(rowAround(step)).toBe(row(tree, "sweep"));
     expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(
       within(step)
@@ -790,7 +790,7 @@ describe("Delete on a task's row", () => {
 describe("a task's two ways to end, while a pane shows it (#4760)", () => {
   /** Opens the ⋯ of the pane that shows `talk`, its one list. */
   async function itsMore() {
-    await userEvent.click(screen.getByRole("button", { name: /^More for talk/ }));
+    await userEvent.click(paneMore(/^More for talk/));
     return screen.findByRole("menu");
   }
 
@@ -1034,9 +1034,13 @@ describe("what its row says afterwards", () => {
       // No ending control is left: there is nothing to end.
       expect(screen.queryByRole("group", { name: "End this task" })).toBeNull();
       // Its finished row, under the session that asked: a row of its own, not in a fold.
-      const list = await screen.findByRole("group", { name: "Finished tasks of steward 1" });
-      expect(list.querySelector(".shown-state .word")?.textContent).toBe(word);
-      expect(within(list).queryByRole("button", { name: /^Finished \(/ })).toBeNull();
+      const done = await waitFor(() => {
+        const one = rowsOf(tree).find((each) => each.classList.contains("finished-task"));
+        if (one === undefined) throw new Error("no finished row is drawn");
+        return one;
+      });
+      expect(done.querySelector(".shown-state .word")?.textContent).toBe(word);
+      expect(rowsOf(tree).some((each) => each.classList.contains("finished-count"))).toBe(false);
     },
   );
 });

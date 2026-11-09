@@ -51,7 +51,9 @@ describe("a chat's row and its mark", () => {
 
   it("finds the rules it is about", () => {
     const named = drawn.map((rule) => rule.selectors);
-    expect(named).toContain(".chats-section .chat");
+    // A chat's row is the tree family's (#3198): the Chats list's own rules about it are its
+    // mark's column and its grounds.
+    expect(named).toContain('.chats-section .chat [data-part="lead"]');
   });
 
   it("is dimmed in its colour, never by a layer of its own", () => {

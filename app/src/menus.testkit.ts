@@ -3,6 +3,7 @@
 
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
+import { findTree, rowAround } from "./ui/tree/tree.testkit";
 
 /**
  * **A menu's rows, found as a person finds them: by their name, through the submenus that lead
@@ -82,9 +83,9 @@ export async function pressMenuPath(...path: (string | RegExp)[]): Promise<void>
  * tab has it whole, and a tab's own menu has none of a chat's rows.
  */
 export async function chatList(name: string): Promise<HTMLElement> {
-  const tree = await screen.findByRole("tree", { name: "Chats of this project" });
+  const tree = await findTree("Chats of this project");
   const row = await waitFor(() => {
-    const found = Array.from(tree.querySelectorAll<HTMLElement>('[role="treeitem"]')).find(
+    const found = Array.from(tree.querySelectorAll<HTMLElement>('[role="row"]')).find(
       (one) => one.querySelector(".session")?.textContent === name,
     );
     if (found === undefined) throw new Error(`no row is named ${name}`);
@@ -95,12 +96,30 @@ export async function chatList(name: string): Promise<HTMLElement> {
 }
 
 /**
+ * **Chat `name`'s ⋯ on its pane's head**, where a pane shows it: the buttons named `More for
+ * <name>` that are not its row's in the Chats tree (#3198, whose row's ⋯ is a control of the
+ * row's), first the pane's.
+ */
+export function panesMore(name: string | RegExp): HTMLElement[] {
+  return screen
+    .queryAllByRole("button", { name: typeof name === "string" ? `More for ${name}` : name })
+    .filter((one) => rowAround(one) === null);
+}
+
+/** The one ⋯ on a pane's head for chat `name`. */
+export function paneMore(name: string | RegExp): HTMLElement {
+  const found = panesMore(name);
+  if (found.length !== 1) throw new Error(`${found.length} panes have a ⋯ for ${String(name)}`);
+  return found[0];
+}
+
+/**
  * **Asks to end chat `name`** the one way there is (#4753, #4756): End… on its one list. A close
  * ends nothing. Answers the question End… asks, once it is up.
  */
 export async function askToEnd(name: string): Promise<HTMLElement> {
   // Its pane's ⋯ where it is on screen, and its row's menu where it is not.
-  const more = screen.queryAllByRole("button", { name: `More for ${name}` });
+  const more = panesMore(name);
   if (more.length > 0) await userEvent.click(more[0]);
   const list = more.length > 0 ? await screen.findByRole("menu") : await chatList(name);
   await userEvent.click(within(list).getByRole("menuitem", { name: "End…" }));

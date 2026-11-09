@@ -27,6 +27,7 @@ import { hoverPlacementOf, hoverTipOf } from "./ui/tooltip/tooltip.testkit";
 import { heard } from "./frame.testkit";
 import { onTheWire } from "./chatEvents.testkit";
 import { aTabForEachChat } from "./laidOut.testkit";
+import { findTree, rowsOf } from "./ui/tree/tree.testkit";
 
 /**
  * **A chat's tab wears a chip of its tasks, which opens the menu to switch between them**
@@ -300,8 +301,10 @@ function core(open: Listed[], finished: FinishedTask[] = []) {
   };
 }
 
-const section = () => screen.findByRole("tree", { name: "Chats of this project" });
-const treeRows = (tree: HTMLElement) => within(tree).getAllByRole("treeitem");
+const section = () => findTree("Chats of this project");
+/** The chats' rows of the tree: not their finished tasks', which are rows too (#3198). */
+const treeRows = (tree: HTMLElement) =>
+  rowsOf(tree).filter((one) => one.classList.contains("chat"));
 const treeRow = (tree: HTMLElement, name: string) => {
   const found = treeRows(tree).find((one) => one.querySelector(".session")?.textContent === name);
   if (found === undefined) throw new Error(`no row is named ${name}`);
