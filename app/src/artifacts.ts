@@ -13,6 +13,7 @@
  * parts the two.
  */
 import type { ArtifactFresh, ArtifactTheme } from "./bindings";
+import type { About } from "./planeChanged";
 import type { ViewRef } from "./tabs";
 import { property, TOKENS } from "./theme/theme";
 
@@ -119,4 +120,36 @@ function ago(ms: number): string {
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return say(hours, "hour");
   return say(Math.floor(hours / 24), "day");
+}
+
+/**
+ * **What every window of a plane hears when an artifact's approval changed on this machine**
+ * (`artifacts.rs`, #5959): each tab of it loads its page again, under its new standing.
+ */
+export const APPROVALS_CHANGED = "artifact-approvals-changed";
+
+/** Which artifact's approval changed. */
+export type ArtifactApprovalChanged = { workspace: string; folder: string };
+
+/** Whether `heard` is of the artifact folder `folder` of workspace `workspace`. */
+export function approvalOf(
+  heard: ArtifactApprovalChanged,
+  workspace: string,
+  folder: string,
+): boolean {
+  return heard.workspace === workspace && heard.folder === folder;
+}
+
+/**
+ * **A change to the template of artifact folder `folder` of workspace `workspace`** (ADR 0120
+ * §4): any file of its folder but its data (`data.json`, `data/`), which never asks again. Its
+ * page is torn down and opened again, without its script until approved anew.
+ */
+export function templateOf(workspace: string, folder: string): About {
+  const inside = `workspaces/${workspace}/artifacts/${folder}/`;
+  return (change) => {
+    if (!change.path.startsWith(inside)) return false;
+    const key = change.path.slice(inside.length);
+    return key !== "data.json" && !key.startsWith("data/");
+  };
 }

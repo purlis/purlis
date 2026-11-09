@@ -1096,6 +1096,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     "artifact_reload",
     "artifact_theme",
     "artifact_close",
+    // Approving an artifact's script (#5959, ADR 0120 §4): the person's press in its bar, of
+    // what their own window was served. No link may approve on their behalf.
+    "artifact_approve",
 ];
 
 /// **The commands of who may dispatch to whom**, by name (spec #1483): every one is on

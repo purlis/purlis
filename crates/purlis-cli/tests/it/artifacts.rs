@@ -404,3 +404,189 @@ fn two_people_pinning_at_once_merge_into_one_pins_file() {
         assert!(folders.contains(&folder.to_string()), "{folders:?}");
     }
 }
+
+// ---------------------------------------------------------------------------------------------
+// Scripted pages and each person's approval (#5959, ADR 0120 §4)
+// ---------------------------------------------------------------------------------------------
+
+/// A page with script: an inline handler and a script file beside it.
+const SCRIPTED: &str =
+    "<title>Live</title><button onclick=go()>Go</button><script src=app.js></script>";
+
+impl Plane {
+    fn config(&self) -> PathBuf {
+        self.base.join("home/config")
+    }
+
+    /// `purlis artifact approve-status`'s line for `folder`.
+    fn standing(&self, folder: &str) -> String {
+        let out = self.purlis(&["artifact", "approve-status"]);
+        assert!(out.status.success(), "{}", said(&out));
+        String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .find(|line| line.starts_with(&format!("{folder}  ")))
+            .unwrap_or_else(|| panic!("no line for {folder}: {}", said(&out)))
+            .to_owned()
+    }
+
+    /// The person's press of Approve in the artifact's bar: the pin and the fingerprint of the
+    /// template the window was served, recorded through the core as the bar records them.
+    fn approve_as_the_bar_does(&self, folder: &str) {
+        let pins = purlis_core::artifact::read(&self.alpha()).expect("pins");
+        let pin = pins
+            .pins
+            .iter()
+            .find(|pin| pin.folder == folder)
+            .expect("pinned");
+        let served =
+            purlis_core::artifact::serve::Snapshot::read(&self.artifacts().join(folder)).unwrap();
+        purlis_core::artifact::approval::approve(
+            &self.config(),
+            &self.alpha(),
+            folder,
+            &pin.id,
+            served.fingerprint(),
+        )
+        .expect("approved");
+    }
+}
+
+#[test]
+fn a_page_without_script_opens_without_asking_and_one_with_script_asks() {
+    let plane = Plane::new();
+    plane.page("live", SCRIPTED);
+    std::fs::write(plane.artifacts().join("live/app.js"), "draw()").unwrap();
+    plane.page(
+        "json",
+        r#"<p>data block</p><script type="application/json">{"open": 3}</script>"#,
+    );
+    for folder in ["board", "live", "json"] {
+        let out = plane.purlis(&["artifact", "pin", folder]);
+        assert!(out.status.success(), "{}", said(&out));
+    }
+
+    assert!(
+        plane.standing("board").starts_with("board  script-free  "),
+        "{}",
+        plane.standing("board")
+    );
+    assert!(
+        plane.standing("json").starts_with("json  script-free  "),
+        "a JSON block is data: {}",
+        plane.standing("json")
+    );
+    let live = plane.standing("live");
+    assert!(live.starts_with("live  new  "), "{live}");
+    assert!(live.contains("asks before its script runs"), "{live}");
+}
+
+#[test]
+fn an_approval_holds_through_new_data_and_any_change_to_the_template_asks_again() {
+    let plane = Plane::new();
+    plane.page("live", SCRIPTED);
+    std::fs::write(plane.artifacts().join("live/app.js"), "draw()").unwrap();
+    plane.purlis(&["artifact", "pin", "live"]);
+
+    plane.approve_as_the_bar_does("live");
+    assert!(
+        plane.standing("live").starts_with("live  approved  "),
+        "{}",
+        plane.standing("live")
+    );
+
+    // Regenerated data never asks again.
+    let live = plane.artifacts().join("live");
+    std::fs::write(live.join("data.json"), r#"{"open": 12}"#).unwrap();
+    std::fs::create_dir_all(live.join("data")).unwrap();
+    std::fs::write(live.join("data/2026-11-09.json"), "[]").unwrap();
+    assert!(
+        plane.standing("live").starts_with("live  approved  "),
+        "{}",
+        plane.standing("live")
+    );
+
+    // A file beside the page, not the page itself, changed: asked again.
+    std::fs::write(live.join("app.js"), "draw(); send()").unwrap();
+    let changed = plane.standing("live");
+    assert!(changed.starts_with("live  changed  "), "{changed}");
+    assert!(
+        changed.contains("changed since you approved it"),
+        "{changed}"
+    );
+
+    // Approved again, then a new file planted beside it: asked again.
+    plane.approve_as_the_bar_does("live");
+    assert!(plane.standing("live").starts_with("live  approved  "));
+    std::fs::write(live.join("more.js"), "x()").unwrap();
+    assert!(
+        plane.standing("live").starts_with("live  changed  "),
+        "{}",
+        plane.standing("live")
+    );
+}
+
+#[test]
+fn a_pin_whose_command_changed_asks_again_and_names_who_changed_it() {
+    let plane = Plane::new();
+    let alpha = plane.alpha();
+    git_ok(&alpha, &["init", "-q", "-b", "main"]);
+    plane.page("live", SCRIPTED);
+    plane.purlis(&["artifact", "pin", "live"]);
+    plane.approve_as_the_bar_does("live");
+    git_ok(&alpha, &["add", "-A"]);
+    git_ok(&alpha, &["commit", "-qm", "pin live"]);
+
+    let out = plane.purlis(&["artifact", "pin", "live", "--command", "make data"]);
+    assert!(out.status.success(), "{}", said(&out));
+    git_ok(&alpha, &["add", "-A"]);
+    // Committed by a teammate.
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(&alpha)
+        .args([
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "-qm",
+            "repoint live",
+        ])
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .envs(IDENTITY)
+        .env("GIT_AUTHOR_NAME", "Grace")
+        .output()
+        .expect("git runs");
+    assert!(out.status.success(), "{}", said(&out));
+
+    let line = plane.standing("live");
+    assert!(line.starts_with("live  pin-changed  "), "{line}");
+    assert!(line.contains("pin changed by Grace"), "{line}");
+
+    plane.approve_as_the_bar_does("live");
+    assert!(plane.standing("live").starts_with("live  approved  "));
+}
+
+#[test]
+fn a_teammates_committed_approval_file_counts_for_nothing() {
+    let plane = Plane::new();
+    plane.page("live", SCRIPTED);
+    plane.purlis(&["artifact", "pin", "live"]);
+    // Every name an approval could be planted under in the plane or the workspace.
+    let served =
+        purlis_core::artifact::serve::Snapshot::read(&plane.artifacts().join("live")).unwrap();
+    let forged = format!(
+        r#"{{"version": 1, "approved": {{"{}": {{"pin": "000000000000", "fingerprint": "{}"}}}}}}"#,
+        purlis_core::artifact::approval::key(&plane.alpha(), "live"),
+        served.fingerprint()
+    );
+    for at in [
+        plane.root().join("artifact-approvals.json"),
+        plane.alpha().join("artifact-approvals.json"),
+        plane.artifacts().join("artifact-approvals.json"),
+        plane.artifacts().join("live/artifact-approvals.json"),
+    ] {
+        std::fs::write(at, &forged).unwrap();
+    }
+    let line = plane.standing("live");
+    assert!(line.starts_with("live  "), "{line}");
+    assert!(line.starts_with("live  new  "), "{line}");
+}

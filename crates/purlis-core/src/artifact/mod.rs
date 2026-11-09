@@ -12,8 +12,10 @@
 //! once every link is followed: a folder, or `artifacts/` itself, that a link takes out of the
 //! workspace is refused with a sentence and nothing is written.
 
+pub mod approval;
 pub mod fresh;
 pub mod pins;
+pub mod script;
 pub mod serve;
 
 use std::io;

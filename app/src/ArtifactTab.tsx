@@ -4,16 +4,26 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { ChartLine } from "lucide-react";
-import { commands, type ArtifactAbout, type ArtifactPlace, type PlaneId } from "./bindings";
 import {
+  commands,
+  type ArtifactAbout,
+  type ArtifactOpened,
+  type ArtifactPlace,
+  type PlaneId,
+} from "./bindings";
+import {
+  APPROVALS_CHANGED,
   ARTIFACT_KEY,
+  approvalOf,
   coveredByAnOverlay,
   drawnTheme,
   followDrawnTheme,
   freshness,
+  templateOf,
+  type ArtifactApprovalChanged,
   type ArtifactKeyPressed,
 } from "./artifacts";
-import { artifactIn, artifactsIn, useViewChanged } from "./planeChanged";
+import { artifactDataIn, artifactsIn, useViewChanged } from "./planeChanged";
 import { Button } from "./ui/button/Button";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 
@@ -31,9 +41,14 @@ import { EmptyState } from "./ui/empty-state/EmptyState";
  * - **The keyboard**: the frame is a Tab stop named by the artifact's name. Enter puts the
  *   keyboard in the page; Esc there brings it back to the frame, and F6 moves on to the next
  *   region as it does anywhere in the window.
- * - **Live** (#5955): the page is loaded again when its folder's files or data change, as the
- *   plane's watch tells every window; it is drawn in the theme the window draws, and in each
- *   one it draws after; and the bar says when its data was last updated.
+ * - **Script runs only once approved, and only from this bar** (ADR 0120 §4, #5959): a page with
+ *   script is shown without it, and the bar says so and offers Approve script. The frame's edge,
+ *   which the page cannot draw, shows where it stands. An approval in any window, or a change to
+ *   its template, tears the page down and opens it again under its new standing.
+ * - **Live** (#5955): the page is loaded again in place when its data changes, as the plane's
+ *   watch tells every window, and keeps where it was scrolled; it is drawn in the theme the
+ *   window draws, and in each one it draws after; and the bar says when its data was last
+ *   updated.
  */
 export function ArtifactTab({
   plane,
@@ -56,6 +71,10 @@ export function ArtifactTab({
   const about = useAbout(plane, workspace, folder);
   const name = about.said?.name ?? title;
   const missing = about.said?.missing ?? about.failed;
+  const [opened, setOpened] = useState<ArtifactOpened | null>(null);
+  // Each change of either loads the page again: the old webview closes before the new one opens.
+  const approvals = useApprovalsHeard(workspace, folder);
+  const template = useViewChanged([plane], templateOf(workspace, folder));
   return (
     <section
       className="view-pane view-alone artifact-tab"
@@ -67,6 +86,7 @@ export function ArtifactTab({
         <span className="artifact-bar-name">{name}</span>
         <span className="artifact-bar-by">{pinnedBy(about.said)}</span>
         <span className="artifact-bar-fresh">{freshness(about.said?.fresh)?.said ?? ""}</span>
+        {opened === null ? null : <ScriptStanding opened={opened} />}
       </header>
       {missing !== undefined && missing !== null ? (
         <EmptyState
@@ -85,10 +105,103 @@ export function ArtifactTab({
           testid="artifact-waits"
         />
       ) : about.said === undefined ? null : (
-        <ArtifactFrame plane={plane} workspace={workspace} folder={folder} name={name} />
+        <div className="artifact-edge" data-standing={edgeOf(opened)} data-testid="artifact-edge">
+          <ArtifactFrame
+            key={`${approvals}:${template}`}
+            plane={plane}
+            workspace={workspace}
+            folder={folder}
+            name={name}
+            onOpened={setOpened}
+          />
+        </div>
       )}
     </section>
   );
+}
+
+/** What the frame's edge shows: whether the page's script runs, is asked about, or there is none. */
+function edgeOf(opened: ArtifactOpened | null): "plain" | "asks" | "runs" {
+  if (opened === null) return "plain";
+  if (opened.standing === "approved") return "runs";
+  if (ASKS.includes(opened.standing)) return "asks";
+  return "plain";
+}
+
+/** The standings in which the bar asks the person to approve the page's script. */
+const ASKS = ["new", "changed", "pin-changed"];
+
+/** What the bar says of the page's script, and its one way to approve it. */
+function ScriptStanding({ opened }: { opened: ArtifactOpened }) {
+  const [failed, setFailed] = useState<string | null>(null);
+  const said = standingSaid(opened);
+  if (said === null) return null;
+  const approve = () => {
+    setFailed(null);
+    commands.artifactApprove(opened.label).then(
+      (answer) => {
+        if (answer.status === "error") setFailed(answer.error);
+      },
+      (why: unknown) => setFailed(String(why)),
+    );
+  };
+  return (
+    <>
+      <span className="artifact-bar-standing" data-testid="artifact-standing">
+        {failed ?? said}
+      </span>
+      {ASKS.includes(opened.standing) ? (
+        <Button variant="grants" size="sm" onPress={approve}>
+          Approve script
+        </Button>
+      ) : null}
+    </>
+  );
+}
+
+/** The bar's sentence for where the page's script stands, or nothing for a page with none. */
+function standingSaid(opened: ArtifactOpened): string | null {
+  switch (opened.standing) {
+    case "approved":
+      return "Script approved on this machine";
+    case "new":
+      return "Has script, shown without it until you approve it";
+    case "changed":
+      return "Its template changed since you approved it, so it is shown without its script";
+    case "pin-changed":
+      return `${opened.changed_by ?? "Someone"} changed its pin since you approved it, so it is shown without its script`;
+    case "not-here":
+      return "Shown without its script: scripted artifacts do not run on this system yet";
+    default:
+      return null;
+  }
+}
+
+/** How many times this machine's approval of this artifact changed, as any window heard it. */
+function useApprovalsHeard(workspace: string, folder: string): number {
+  const [heard, setHeard] = useState(0);
+  useEffect(() => {
+    let stop: (() => void) | undefined;
+    let gone = false;
+    listen<ArtifactApprovalChanged>(APPROVALS_CHANGED, (event) => {
+      if (approvalOf(event.payload, workspace, folder)) setHeard((n) => n + 1);
+    }).then(
+      (unlisten) => {
+        if (gone) unlisten();
+        else stop = unlisten;
+      },
+      () => {},
+    );
+    return () => {
+      gone = true;
+      try {
+        stop?.();
+      } catch {
+        // The window's event bridge went first: nothing is listening any more.
+      }
+    };
+  }, [workspace, folder]);
+  return heard;
 }
 
 /** What the bar says of who pinned it. */
@@ -164,16 +277,24 @@ function ArtifactFrame({
   workspace,
   folder,
   name,
+  onOpened,
 }: {
   plane: PlaneId;
   workspace: string;
   folder: string;
   name: string;
+  /** Where the page it opened stands, or nothing once it is gone. */
+  onOpened: (opened: ArtifactOpened | null) => void;
 }) {
   const frame = useRef<HTMLDivElement>(null);
   const label = useRef<string | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
   const hint = useId();
+  // Read when the page opens or goes, not listened under: a new callback must not reopen it.
+  const opened = useRef(onOpened);
+  useEffect(() => {
+    opened.current = onOpened;
+  });
 
   // The webview, made once for this frame's life and closed as it goes.
   useEffect(() => {
@@ -205,11 +326,12 @@ function ArtifactFrame({
           return;
         }
         if (gone) {
-          void commands.artifactClose(answer.data).catch(() => {});
+          void commands.artifactClose(answer.data.label).catch(() => {});
           return;
         }
-        label.current = answer.data;
+        label.current = answer.data.label;
         shown = first;
+        opened.current(answer.data);
         follow();
       },
       (why: unknown) => {
@@ -221,19 +343,30 @@ function ArtifactFrame({
       cancelAnimationFrame(tick);
       const was = label.current;
       label.current = null;
-      if (was !== null) void commands.artifactClose(was).catch(() => {});
+      if (was !== null) {
+        void commands.artifactClose(was).catch(() => {});
+        opened.current(null);
+      }
     };
   }, [plane, workspace, folder]);
 
-  // Its folder's files or data changed: the page is loaded again from them, every window
-  // showing it alike, since each hears the plane's watch (#5955).
-  const changed = useViewChanged([plane], artifactIn(workspace, folder));
+  // Its data changed: the page is loaded again in place, where it was scrolled, every window
+  // showing it alike, since each hears the plane's watch (#5955). The core reads where it
+  // stands again with it, which the bar says. A change to its template is the tab's: it opens
+  // the page again under its new standing (#5959).
+  const changed = useViewChanged([plane], artifactDataIn(workspace, folder));
   const reloads = useRef(changed);
   useEffect(() => {
     if (changed === reloads.current) return;
     reloads.current = changed;
     const now = label.current;
-    if (now !== null) void commands.artifactReload(now).catch(() => {});
+    if (now === null) return;
+    commands.artifactReload(now).then(
+      (answer) => {
+        if (answer.status === "ok" && label.current === now) opened.current(answer.data);
+      },
+      () => {},
+    );
   }, [changed]);
 
   // The window draws another theme: so does the page (#5955).

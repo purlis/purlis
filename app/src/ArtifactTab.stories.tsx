@@ -10,7 +10,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent, within } from "storybook/test";
 import { mockIPC } from "@tauri-apps/api/mocks";
-import type { ArtifactAbout, ArtifactFresh, ArtifactPinShown } from "./bindings";
+import type { ArtifactAbout, ArtifactFresh, ArtifactOpened, ArtifactPinShown } from "./bindings";
 import { ArtifactGroup } from "./ArtifactGroup";
 import { ArtifactTab } from "./ArtifactTab";
 import { expectFocusInSight } from "./stories.testkit";
@@ -31,10 +31,11 @@ const updated = (hours: number): ArtifactFresh => {
   return { at, stale_at: at + 24 * HOUR, source: "declared" };
 };
 
-function answers(about: ArtifactAbout) {
+function answers(about: ArtifactAbout, opened: Partial<ArtifactOpened> = {}) {
   mockIPC((cmd) => {
     if (cmd === "artifact_about") return about;
-    if (cmd === "artifact_open") return "artifact-1";
+    if (cmd === "artifact_open")
+      return { label: "artifact-1", standing: "script-free", changed_by: null, ...opened };
     if (cmd.startsWith("artifact_")) return null;
     return new Promise(() => {});
   });
@@ -73,6 +74,44 @@ export const Open: Story = {
     await userEvent.tab();
     await expect(frame).toHaveFocus();
     expectFocusInSight();
+  },
+};
+
+/** A page with script, never approved here: shown without it, and the bar asks (#5959). */
+export const AsksForScript: Story = {
+  beforeEach: () => answers(ABOUT, { standing: "new" }),
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement);
+    const approve = await page.findByRole("button", { name: "Approve script" });
+    await expect(page.getByTestId("artifact-edge")).toHaveAttribute("data-standing", "asks");
+    await userEvent.tab();
+    await expect(approve).toHaveFocus();
+    expectFocusInSight();
+  },
+};
+
+/** Its pin changed since it was approved: the bar names who changed it, and asks again. */
+export const PinChanged: Story = {
+  beforeEach: () => answers(ABOUT, { standing: "pin-changed", changed_by: "Grace Hopper" }),
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement);
+    await expect(
+      await page.findByText(
+        "Grace Hopper changed its pin since you approved it, so it is shown without its script",
+      ),
+    ).toBeInTheDocument();
+    await expect(page.getByRole("button", { name: "Approve script" })).toBeInTheDocument();
+  },
+};
+
+/** Approved here: its script runs, and the edge says so. Nothing to press. */
+export const ScriptApproved: Story = {
+  beforeEach: () => answers(ABOUT, { standing: "approved" }),
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement);
+    await expect(await page.findByText("Script approved on this machine")).toBeInTheDocument();
+    await expect(page.getByTestId("artifact-edge")).toHaveAttribute("data-standing", "runs");
+    await expect(page.queryByRole("button", { name: "Approve script" })).toBeNull();
   },
 };
 
