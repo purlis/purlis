@@ -946,6 +946,27 @@ fn the_floor_keeps_the_projects_certificate_checks() {
     );
 }
 
+#[test]
+fn the_floor_keeps_the_projects_own_terminal_only() {
+    let (_dir, root) = project();
+    let machine = machine_with(Path::new("/opt/none"));
+    assert!(
+        !Compiled::floor(&root, &machine, &grant::Grants::default())
+            .widened
+            .own_terminal_only
+    );
+    std::fs::write(
+        root.join("charter.toml"),
+        "[sandbox]\nown-terminal-only = true\n",
+    )
+    .expect("charter.toml");
+    assert!(
+        Compiled::floor(&root, &machine, &grant::Grants::default())
+            .widened
+            .own_terminal_only
+    );
+}
+
 /// qw384's services on this Mac reach a chat at the floor as at the full sandbox: the one port
 /// a person allowed, through the proxy and in the wrap's profile, and no other.
 #[test]

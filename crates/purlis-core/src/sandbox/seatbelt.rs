@@ -389,6 +389,8 @@ pub fn widen(own: &mut Own, widened: &super::Widened) -> Result<(), &'static str
     if widened.trust {
         own.after.push(TRUST.to_owned());
     }
+    own.after
+        .extend(own_terminal_only_rules(widened.own_terminal_only));
     // What a person allowed this chat (D-sock-1): each socket by the path the kernel names it
     // by, connect only, and each service by its whole name, never a prefix.
     for socket in &widened.sockets {
@@ -1037,6 +1039,22 @@ fn terminal_rules() -> String {
          (allow file-read-data file-write* {own})\n\
          (allow file-ioctl {own})\n"
     )
+}
+
+/// **The stricter terminal rule** a project turns on with `own-terminal-only`
+/// ([`super::OWN_TERMINAL_ONLY`]): every terminal of this Mac denied, whatever its mode, and the
+/// chat's own ([`OWN_TERMINAL`]) given back. Among the last rules of a profile, so no allow of a
+/// terminal before it (the [`DEVICES`] a chat writes, the terminals [`terminal_rules`] leaves it)
+/// opens one again. A chat then makes no terminal of its own: `/dev/ptmx` still opens, but the
+/// terminal it hands out does not. Seatbelt's rule only, as [`terminal_rules`] is.
+fn own_terminal_only_rules(on: bool) -> Vec<String> {
+    if !on || !cfg!(target_os = "macos") {
+        return Vec::new();
+    }
+    vec![
+        "(deny file-read-data file-write* file-ioctl (regex #\"^/dev/ttys[0-9]+$\"))".to_owned(),
+        format!("(allow file-read-data file-write* file-ioctl (literal {OWN_TERMINAL:?}))"),
+    ]
 }
 
 /// The variables that point a wrapped chat's traffic at charter's egress proxy. Both cases,
