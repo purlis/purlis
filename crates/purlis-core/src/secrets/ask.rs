@@ -19,8 +19,9 @@
 //!   chat learns must not tell it where a value lives.
 //! - **The command waits until just before its harness would kill it** ([`holds_for`]): three
 //!   quarters of the harness's own command timeout. A quick answer is invisible to the chat. A
-//!   slow one ends the command with `waiting on you for <vault>/<key>; retry once answered`; the
-//!   ask stays open, and the chat is nudged when it is answered ([`Answered::nudge`]).
+//!   slow one ends the command saying the ask is still answerable in Asks (✋) in the purlis
+//!   window ([`crate::askwait::still_answerable_said`]); the ask stays open, and the chat is
+//!   nudged when it is answered ([`Answered::nudge`]).
 //! - **One ask per vault and key** in a project, whichever chats miss it: a second chat joins
 //!   the open ask, which says how many wait ([`Open::waiting`]), and one fill settles them all.
 //! - **Every read purlis makes for a chat asks alike** (#5074): a brokered run's, through
@@ -540,11 +541,12 @@ fn cannot_receive_said(vault: &str, key: &str) -> String {
     )
 }
 
-/// What a chat whose command stopped waiting hears.
-fn still_open_said(vault: &str, key: &str) -> String {
+/// What a chat whose command stopped waiting hears: the ask stays open where it was asked.
+fn still_open_said(root: &Path, vault: &str, key: &str) -> String {
     format!(
-        "waiting on you for {}; retry once answered",
-        vault_and_key(vault, key)
+        "waiting on you for {}; {}; retry once answered",
+        vault_and_key(vault, key),
+        crate::askwait::still_answerable_said(root)
     )
 }
 
@@ -565,17 +567,22 @@ fn unconfirmed_said(vault: &str, key: &str) -> String {
 }
 
 /// What a command is told as it starts to wait. Never the entry a link reads.
-fn asked_said(vault: &str, key: &str, reason: Option<&Reason>, within: Duration) -> String {
+fn asked_said(
+    root: &Path,
+    vault: &str,
+    key: &str,
+    reason: Option<&Reason>,
+    within: Duration,
+) -> String {
     let why = match reason {
         None => "which the vault doesn't hold",
         Some(Reason::Replace { .. }) => "whose value you said doesn't work",
         Some(Reason::BrokenLink { .. }) => "a linked entry whose entry is gone",
     };
     format!(
-        "purlis asked the person in its window for {}, {why}: this command waits for their \
-         answer for up to {} seconds",
+        "purlis asked the person for {}, {why}; {}",
         vault_and_key(vault, key),
-        within.as_secs()
+        crate::askwait::waiting_said(root, within)
     )
 }
 
@@ -964,7 +971,13 @@ impl Asks {
             drop(inner);
             (answered, n)
         };
-        say(&asked_said(&vault, &key, said_why.as_ref(), within));
+        say(&asked_said(
+            &self.root,
+            &vault,
+            &key,
+            said_why.as_ref(),
+            within,
+        ));
         let settled_as = |settled: Settled| match settled {
             Settled::Filled { vault, key } => Held::Filled { vault, key },
             Settled::Declined => Held::Declined {
@@ -1012,7 +1025,7 @@ impl Asks {
             // Its chat closed meanwhile, or the hold ran out: the ask stays open, and the chat
             // is nudged when it is answered.
             crate::askwait::Ended::Closed | crate::askwait::Ended::NotAnswered => Held::StillOpen {
-                line: still_open_said(&vault, &key),
+                line: still_open_said(&self.root, &vault, &key),
             },
             crate::askwait::Ended::AskerGone => Held::CallerGone {
                 line: caller_gone_said(&vault, &key),
@@ -1651,8 +1664,8 @@ pub const DECLINED_BY_THE_PERSON: &str = "the person";
 
 impl Said {
     /// What the command prints of it, and the status it ends with: 0 filled, 1 declined, and
-    /// [`super::brokered::WAITING_ON_THE_PERSON`] still open.
-    pub fn line(&self) -> (String, i32) {
+    /// [`super::brokered::WAITING_ON_THE_PERSON`] still open, answerable in the project at `root`.
+    pub fn line(&self, root: &Path) -> (String, i32) {
         match self {
             // It promises only what works (#5244): a program no tool of the persona's is asked
             // about as it runs.
@@ -1705,7 +1718,7 @@ impl Said {
                 1,
             ),
             Self::Pending { vault, key } => (
-                still_open_said(vault, key),
+                still_open_said(root, vault, key),
                 super::brokered::WAITING_ON_THE_PERSON,
             ),
         }
@@ -1980,11 +1993,20 @@ const ASKER_WAITS_PAST_THE_HOLD: Duration = Duration::from_secs(15);
 /// ask**: its harness's command timeout, and [`ASKER_WAITS_PAST_THE_HOLD`] more, so the app's
 /// pending, sent at [`holds_for`] that harness, always arrives first.
 fn asker_waits(env: &dyn Fn(&str) -> Option<String>) -> Duration {
+    command_timeout(asker_harness(env)) + ASKER_WAITS_PAST_THE_HOLD
+}
+
+/// The harness of the chat a command runs in, by its start's environment `env`.
+fn asker_harness(env: &dyn Fn(&str) -> Option<String>) -> Option<Harness> {
     // A start names the harness by the registry's name (`claude-code`), read as the app reads
     // it: by the kind's word alone it was no harness, and held to the shortest wait (#5192).
-    let harness =
-        crate::hookwire::chat_harness(env).and_then(|name| Harness::of_registry_or_kind(&name));
-    command_timeout(harness) + ASKER_WAITS_PAST_THE_HOLD
+    crate::hookwire::chat_harness(env).and_then(|name| Harness::of_registry_or_kind(&name))
+}
+
+/// **How long the app holds a Secret ask of the chat a command runs in** ([`holds_for`]), by
+/// its start's environment `env`: what `purlis secret ask` says it waits for (#6008).
+fn asker_holds(env: &dyn Fn(&str) -> Option<String>) -> Duration {
+    holds_for(asker_harness(env))
 }
 
 /// **What `purlis secret ask` and the `secret_ask` tool both send** (#5072): the
@@ -1998,6 +2020,7 @@ pub fn ask_the_window(
     vault: Option<&str>,
     replace: Option<&str>,
     program: Option<&str>,
+    waits: &mut dyn FnMut(&str),
 ) -> Result<Said, String> {
     use crate::hookwire::{Answer, Ask, Asking, ChatToken, NOTHING_ANSWERS, UNKNOWN_LINE};
     let env = |name: &str| ctx.env.get(name);
@@ -2024,6 +2047,8 @@ pub fn ask_the_window(
         replace: replace.map(str::to_owned),
         program: program.map(str::to_owned),
     }));
+    // Said once the ask is on its way, so nothing is said of a wait that never was (#6008).
+    waits(&crate::askwait::waiting_said(&ctx.root, asker_holds(&env)));
     match asking.ask(&line, asker_waits(&env)) {
         Ok(Answer::Secret(said)) => Ok(said),
         Ok(Answer::No { why }) if why == NOTHING_ANSWERS || why == UNKNOWN_LINE => {
@@ -2049,6 +2074,7 @@ pub fn ask_the_window(
     _vault: Option<&str>,
     _replace: Option<&str>,
     _program: Option<&str>,
+    _waits: &mut dyn FnMut(&str),
 ) -> Result<Said, String> {
     Err(
         "a secret ask is answered in purlis's window, which a chat on this system has no \

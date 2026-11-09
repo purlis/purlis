@@ -5,6 +5,7 @@
 //! a secret fill's and the Secret ask a fill raises all wait here: for an answer, at most as
 //! long as they may, looking every [`LOOKS_AGAIN`] whether the call that waits is still there.
 
+use std::path::Path;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
@@ -55,5 +56,73 @@ pub fn waited<H>(
                 };
             }
         }
+    }
+}
+
+/// **Where the person answers what a command of the project at `root` waits on** (#6008, ADR
+/// 0121 decision 16): the Asks view, behind the ✋, in the window that has that project open,
+/// named as its tab is (the last segment of its folder, `app/src/projectName.ts`).
+pub fn answered_in(root: &Path) -> String {
+    let name = root.file_name().map_or_else(
+        || root.display().to_string(),
+        |name| name.to_string_lossy().into_owned(),
+    );
+    format!(
+        "Asks (\u{270b}) in the purlis window, project {}",
+        crate::shown::short(&name)
+    )
+}
+
+/// **What a command says as it starts to wait on the person** for at most `within`, in the
+/// project at `root` (#6008, ADR 0121 decision 16). Every such command says it in these words.
+pub fn waiting_said(root: &Path, within: Duration) -> String {
+    let secs = within.as_secs();
+    let how_long = if secs >= 120 && secs % 60 == 0 {
+        format!("{} minutes", secs / 60)
+    } else {
+        format!("{secs} seconds")
+    };
+    format!(
+        "waiting for the person: {}, for up to {how_long}",
+        answered_in(root)
+    )
+}
+
+/// **What a command that stopped waiting says of an ask that stays open** (#6008, ADR 0121
+/// decision 15): the person may still answer it where it waited.
+pub fn still_answerable_said(root: &Path) -> String {
+    format!("the ask is still answerable in {}", answered_in(root))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_wait_names_the_asks_view_the_project_and_how_long() {
+        let root = Path::new("/home/one/smart-ide");
+        assert_eq!(
+            waiting_said(root, Duration::from_secs(90)),
+            "waiting for the person: Asks (\u{270b}) in the purlis window, project smart-ide, \
+             for up to 90 seconds"
+        );
+        assert_eq!(
+            waiting_said(root, Duration::from_secs(15 * 60)),
+            "waiting for the person: Asks (\u{270b}) in the purlis window, project smart-ide, \
+             for up to 15 minutes"
+        );
+        assert_eq!(
+            still_answerable_said(root),
+            "the ask is still answerable in Asks (\u{270b}) in the purlis window, project \
+             smart-ide"
+        );
+    }
+
+    #[test]
+    fn a_project_at_the_root_of_the_disk_is_named_whole() {
+        assert_eq!(
+            answered_in(Path::new("/")),
+            "Asks (\u{270b}) in the purlis window, project /"
+        );
     }
 }
