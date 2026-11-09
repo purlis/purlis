@@ -980,6 +980,37 @@ pub fn names_what_may_be_lifted(path: &Path) -> bool {
     })
 }
 
+/// A name below a folder that pins it while the name itself is lifted: never a file of anyone's,
+/// and never made, only held, so every folder above it stays pinned as an entry ([`planted_home_pins`]).
+pub const PIN: &str = ".purlis-pinned";
+
+/// **Each later-code name of more than one part in `home`**, as the home spells it: every
+/// [`PLANTED`] name held with what is below it, but one that holds `**`. A pattern held at any
+/// depth names no folder above it, so a folder holding the name could be moved into place under
+/// the home; a path held pins each folder above it. A name lifted for the chat (`lifted`) is held
+/// by [`PIN`] beside it instead, so its folder above stays pinned while the chat writes the name.
+pub fn planted_home_pins(home: &Path, lifted: &[PathBuf]) -> Vec<PathBuf> {
+    PLANTED
+        .iter()
+        .filter(|planted| {
+            planted.reach == Reach::AndBelow
+                && !planted.path.contains("**")
+                && planted.path.contains('/')
+        })
+        .filter_map(|planted| {
+            let at = home.join(planted.path);
+            let is_lifted = lifted
+                .iter()
+                .any(|one| *one == at || real(one) == real(&at));
+            if is_lifted {
+                Some(at.parent()?.join(PIN))
+            } else {
+                Some(at)
+            }
+        })
+        .collect()
+}
+
 /// The project's manifests, under both names (RN-2a): `purlis.toml`, which turns the sandbox
 /// on, and `purlis.local.toml`, what the machine adds to the project and purlis reads at every
 /// later start (the variables passed to chats, plugins and extensions).
@@ -1652,7 +1683,16 @@ impl Denied {
         // …and gh's and glab's own folders where the person's environment moves them: the
         // settings, extensions and aliases their next run loads, as it does from `~/.config/gh`
         // ([`PLANTED`]), which names only the folders at their usual place.
-        for folder in forge_folders_moved(root, machine) {
+        // So too every other later-code name below `~/.config` or `~/.local/share`, where
+        // `$XDG_CONFIG_HOME` or `$XDG_DATA_HOME` moves it: fish, Neovim, git, systemd and the
+        // rest load from there.
+        let mut moved = forge_folders_moved(root, machine);
+        for folder in xdg_later_code_moved(root, machine) {
+            if !moved.contains(&folder) {
+                moved.push(folder);
+            }
+        }
+        for folder in moved {
             paths.push(Denial {
                 class: Class::LaterCode,
                 path: folder,
@@ -2398,6 +2438,101 @@ fn podman_folders(machine: &Machine) -> Vec<(PathBuf, Reach)> {
     for folder in folders {
         if !out.iter().any(|(one, _)| *one == folder) {
             out.push((folder, Reach::AndBelow));
+        }
+    }
+    out
+}
+
+/// **Each later-code name below `~/.config` or `~/.local/share` where `machine`'s environment
+/// moves those folders**: every [`PLANTED`] name there, at `$XDG_CONFIG_HOME` or `$XDG_DATA_HOME`
+/// in its place, which the programs that load it read instead. A variable that names no absolute
+/// folder, or names the usual one, names nothing; a folder that is the home or above it, or holds
+/// the project at `root`, is never one, as for gh's ([`forge_folders_moved`]).
+fn xdg_later_code_moved(root: &Path, machine: &Machine) -> Vec<PathBuf> {
+    let Some(home) = machine.home.as_deref() else {
+        return Vec::new();
+    };
+    let named = |name: &str| {
+        machine
+            .env
+            .get(name)
+            .map(PathBuf::from)
+            .filter(|folder| folder.is_absolute())
+    };
+    let moves = [
+        (".config/", named("XDG_CONFIG_HOME"), home.join(".config")),
+        (
+            ".local/share/",
+            named("XDG_DATA_HOME"),
+            home.join(".local/share"),
+        ),
+    ];
+    let holds_the_work = |folder: &Path| root.starts_with(folder) || home.starts_with(folder);
+    let mut out: Vec<PathBuf> = Vec::new();
+    for (usual, moved, usual_folder) in moves {
+        let Some(moved) = moved.filter(|moved| *moved != usual_folder) else {
+            continue;
+        };
+        for planted in PLANTED
+            .iter()
+            .filter(|planted| !planted.path.contains("**"))
+        {
+            let Some(rest) = planted.path.strip_prefix(usual) else {
+                continue;
+            };
+            let folder = moved.join(rest);
+            if !out.contains(&folder) && !holds_the_work(&folder) {
+                out.push(folder);
+            }
+        }
+    }
+    out
+}
+
+/// **gh's and glab's folders where `machine`'s environment names them by a relative path**:
+/// the variables [`forge_folders_moved`] reads, each that names a relative folder, as it is
+/// written. gh and glab take such a value against the folder they run in, so it is held against
+/// each chat's own ([`Applied::forge_folders_here`]).
+fn forge_folders_relative(machine: &Machine) -> Vec<PathBuf> {
+    let named = |name: &str| {
+        machine
+            .env
+            .get(name)
+            .filter(|value| !value.is_empty())
+            .map(PathBuf::from)
+            .filter(|folder| folder.is_relative())
+    };
+    let mut out: Vec<PathBuf> = Vec::new();
+    let relative = named("GH_CONFIG_DIR")
+        .into_iter()
+        .chain(named("GLAB_CONFIG_DIR"))
+        .chain(
+            named("XDG_CONFIG_HOME")
+                .into_iter()
+                .flat_map(|config| [config.join("gh"), config.join("glab-cli")]),
+        )
+        .chain(named("XDG_DATA_HOME").map(|data| data.join("gh")));
+    for folder in relative {
+        if !out.contains(&folder) {
+            out.push(folder);
+        }
+    }
+    out
+}
+
+/// `path` with each `.` dropped and each `..` taking the name before it away, by its words alone:
+/// the path a program that joins a relative value to its folder opens, where nothing on the way
+/// is a link, as a chat's own folder is not.
+fn lexically(path: &Path) -> PathBuf {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    for part in path.components() {
+        match part {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                out.pop();
+            }
+            other => out.push(other),
         }
     }
     out
@@ -3808,6 +3943,25 @@ impl Compiled {
         }
     }
 
+    /// **What a wrap purlis builds holds at the floor** ([`seatbelt::floor_profile`], read as the
+    /// Linux wrap reads it too): [`Self::held`], and each later-code name of more than one part in
+    /// the home ([`planted_home_pins`]), so every folder above it there is pinned as an entry and no
+    /// folder holding it is moved into place. Not for Claude Code's own sandbox, whose rules name
+    /// those paths themselves.
+    pub fn wrapped_held(&self) -> Vec<PathBuf> {
+        let mut held = self.held.clone();
+        if self.level == Level::Floor
+            && let Some(home) = &self.homes.home
+        {
+            for path in planted_home_pins(home, &self.widened.lifted) {
+                if !held.contains(&path) {
+                    held.push(path);
+                }
+            }
+        }
+        held
+    }
+
     /// Whether every class a service holds here is held for `harness`'s chat on this system.
     ///
     /// **The credential store is held by the store itself on macOS** (ruling V90a): charter
@@ -4054,6 +4208,9 @@ pub struct Applied {
     older: Option<(String, ClaudeCodeVersion)>,
     /// The shared folders of the home a chat at the floor finds made ([`usual_home_folders`]).
     usual_folders: Vec<PathBuf>,
+    /// gh's and glab's folders as the person's environment names them by a relative path, which
+    /// each is held at against the chat's own folder ([`forge_folders_relative`]).
+    forge_relative: Vec<PathBuf>,
     /// The persona's tools for this chat (#1407), written as its line is decided.
     tools: Option<Box<tools::Resolved>>,
     /// purlis's own program the wrap starts the chat under on Linux, as it was checked and held
@@ -4496,6 +4653,17 @@ impl Applied {
         }
     }
 
+    /// **What the chat's start readies outside the sandbox, once nothing more can refuse it**: a
+    /// wrapped Claude Code's config folder ([`claude_wrap::prepare`]), for a chat in `cwd`. Called
+    /// by each start after its line and every later check (its settings' file), just before it
+    /// spawns the chat, so a start refused after its line was built marks nothing trusted and
+    /// changes nothing in the folder. Nothing for any other form.
+    pub fn ready_to_start(&self, cwd: &Path) {
+        if let Form::ClaudeWrapped(wrap) = &*self.form {
+            claude_wrap::prepare(wrap, cwd);
+        }
+    }
+
     /// The form as compiled for the project, before the manifests of a chat's own folders are
     /// added: what a chat is handed is [`Self::form_in`] its folder.
     pub fn form(&self) -> &Form {
@@ -4630,6 +4798,7 @@ impl Applied {
             .into_iter()
             .chain(git_the_app_writes(&self.root, cwd))
             .chain(self.later_code_by_path(cwd))
+            .chain(self.forge_folders_here(cwd))
             .filter(|denial| !self.denied.contains(denial))
             .collect()
     }
@@ -4655,6 +4824,27 @@ impl Applied {
                 named: None,
                 reach: Reach::AndBelow,
                 any_case: false,
+            })
+            .collect()
+    }
+
+    /// gh's and glab's folders that the person's environment names by a relative path, held at
+    /// the chat's own folder `cwd` (else the project's), where gh and glab run in it read them: as
+    /// [`forge_folders_moved`] holds those named whole. One that is the chat's folder, the
+    /// project's or above either holds nothing, as there.
+    fn forge_folders_here(&self, cwd: Option<&Path>) -> Vec<Denial> {
+        let here = cwd.unwrap_or(&self.root);
+        self.forge_relative
+            .iter()
+            .map(|folder| lexically(&here.join(folder)))
+            .filter(|folder| !here.starts_with(folder) && !self.root.starts_with(folder))
+            .map(|path| Denial {
+                class: Class::LaterCode,
+                path,
+                access: Access::Write,
+                named: None,
+                reach: Reach::AndBelow,
+                any_case: self.os == Os::MacOs,
             })
             .collect()
     }
@@ -6902,6 +7092,7 @@ pub(crate) fn applied_of(
         through_proxy: harness != Harness::ClaudeCode || wrapped,
         older: None,
         usual_folders: usual_home_folders(compiled.level, machine),
+        forge_relative: forge_folders_relative(machine),
         tools: None,
         wrap: None,
     })
@@ -6922,10 +7113,15 @@ fn usual_home_folders(level: Level, machine: &Machine) -> Vec<PathBuf> {
     let homes = Homes::of(machine);
     let mut out: Vec<PathBuf> = Vec::new();
     let usual = [home.join(".local/share"), home.join(".config")];
+    // And the folders above each name a person may lift, which the floor pins as entries
+    // ([`Compiled::wrapped_held`], and Claude Code's own rules): a tool's first run, and a lift,
+    // write below them.
+    let above = claude::above_what_may_be_lifted(home);
     for folder in usual
         .iter()
         .chain(homes.data.iter())
         .chain(homes.config.iter())
+        .chain(above.iter())
     {
         let plain = folder
             .components()
@@ -7782,6 +7978,8 @@ pub mod sshproxy;
 pub mod team;
 pub mod tools;
 pub mod tunnel;
+#[cfg(unix)]
+mod walk;
 pub mod wrapper;
 
 #[cfg(test)]
@@ -7794,6 +7992,8 @@ mod claude_wrap_tests;
 mod codex_tests;
 #[cfg(test)]
 mod floor_tests;
+#[cfg(test)]
+mod forge_moved_tests;
 #[cfg(all(test, unix))]
 mod git_held_tests;
 #[cfg(test)]
@@ -7812,3 +8012,5 @@ mod sshproxy_tests;
 mod tests;
 #[cfg(test)]
 mod tunnel_tests;
+#[cfg(all(test, unix))]
+mod walks_tests;
