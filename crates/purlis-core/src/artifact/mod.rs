@@ -15,6 +15,7 @@
 pub mod approval;
 pub mod calls;
 pub mod data;
+pub mod discuss;
 pub mod fresh;
 pub mod links;
 pub mod offers;

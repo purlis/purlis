@@ -26,6 +26,7 @@ mod alerts;
 mod arrived;
 mod artifact_links;
 mod artifacts;
+mod artifactdiscuss;
 mod asking;
 mod asknotify;
 mod askoutcome;
