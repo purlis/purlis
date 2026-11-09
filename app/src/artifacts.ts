@@ -62,3 +62,45 @@ const OVERLAYS = [
   '[data-scope="popover"]',
   '[data-scope="dialog"][data-part="modal"]',
 ].join(",");
+
+/** The most icons an artifact group draws (ADR 0120 §2); more go to its show-more (#5953). */
+export const MOST_DRAWN = 8;
+
+/**
+ * **The pins an artifact group draws, and the ones past them** (#5953): at most
+ * {@link MOST_DRAWN} drawn, in order; every pin past them, which a merge can bring, kept for
+ * the group's show-more, so none is ever dropped.
+ */
+export function drawnAndMore<T>(pins: readonly T[]): { drawn: T[]; more: T[] } {
+  return { drawn: pins.slice(0, MOST_DRAWN), more: pins.slice(MOST_DRAWN) };
+}
+
+/** **The order after pin `id` moves one place** (`-1` up, `1` down), or nothing at an end. */
+export function movedBy(ids: readonly string[], id: string, by: -1 | 1): string[] | undefined {
+  const from = ids.indexOf(id);
+  const to = from + by;
+  if (from < 0 || to < 0 || to >= ids.length) return undefined;
+  const order = [...ids];
+  [order[from], order[to]] = [order[to], order[from]];
+  return order;
+}
+
+/** **The order after pin `moved` is dropped on pin `onto`**: where it landed, or nothing. */
+export function pinOrderAfterDrop(
+  ids: readonly string[],
+  moved: string,
+  onto: string,
+): string[] | undefined {
+  const from = ids.indexOf(moved);
+  const to = ids.indexOf(onto);
+  if (from < 0 || to < 0 || from === to) return undefined;
+  const order = ids.filter((one) => one !== moved);
+  order.splice(to, 0, moved);
+  return order;
+}
+
+/** What every window hears when a window changed a workspace's pins (`artifacts.rs`). */
+export const ARTIFACT_PINS_MOVED = "artifact-pins-moved";
+
+/** Which workspace's pins changed. */
+export type ArtifactPinsMoved = { plane: string; workspace: string };

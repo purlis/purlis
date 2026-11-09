@@ -36,7 +36,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Markdown, { type Components } from "react-markdown";
 import { Group, Panel, type Layout } from "react-resizable-panels";
 import { Separator } from "../ui/panel/Separator";
-import { FileText, LoaderCircle, Pause, Play } from "lucide-react";
+import { FileText, LoaderCircle, Pause, Play, Users } from "lucide-react";
 import { EmptyState } from "../ui/empty-state/EmptyState";
 import { ExternalLink } from "../ReleaseNotes";
 import {
@@ -55,7 +55,8 @@ import {
   pieceFileView,
   type Place,
 } from "../pieceViews";
-import { REVEAL_SAID, type Does, type Offer } from "../actions";
+import { REVEAL_SAID, isPage, pinToWorkspaceRow, type Does, type Offer } from "../actions";
+import { ArtifactFrame } from "../ArtifactTab";
 import { Badge } from "../ui/badge/Badge";
 import type { ViewRef } from "../tabs";
 import { BranchTree } from "./BranchTree";
@@ -548,6 +549,7 @@ export function Shown({
   onLine,
   onLines,
   source = false,
+  pageAt,
 }: {
   path: string;
   read: FileRead;
@@ -556,6 +558,8 @@ export function Shown({
   onLines?: (lines: Lines | undefined) => void;
   /** Markdown's source rather than the rendering. */
   source?: boolean;
+  /** Where the file is, for an `.html` page rendered privately (#5953). None: its text. */
+  pageAt?: { plane: PlaneId; cut: Place };
 }) {
   const name = path.slice(path.lastIndexOf("/") + 1);
   const svgDraws = useSvgDraws();
@@ -569,6 +573,8 @@ export function Shown({
         return <EmptyState mark={LoaderCircle} headline={`Reading ${path}…`} variant="panel" />;
       if (svgDraws === true && isSvg(path) && !source)
         return <SvgPreview key={path} name={name} text={read.text} />;
+      if (pageAt !== undefined && isPage(path) && !source)
+        return <PagePreview key={path} plane={pageAt.plane} cut={pageAt.cut} path={path} />;
       return isMarkdown(path) && !source ? (
         <article className="piece-markdown release-notes" data-testid="piece-markdown">
           <Markdown skipHtml components={MARKDOWN}>
@@ -648,13 +654,14 @@ export function PieceFileTab({
         {/* The tab is the file's name: the path alone, quiet (#3147). */}
         <ToolbarFile path={path} named={false} />
         <span className="piece-files-actions">
-          <SourceToggle path={path} read={read} source={source} onSource={setSource} />
+          <SourceToggle path={path} read={read} source={source} onSource={setSource} pages />
           {ofABranch && <ToYourEditor plane={plane} cut={cut} path={path} line={at.line} />}
           {ofABranch && <CopyAndReveal plane={plane} cut={cut} path={path} />}
           {changed !== undefined && onOpenView !== undefined && (
             <ShowWhatChanged cut={cut} path={path} onOpenView={onOpenView} />
           )}
           {ofABranch && <ToAChat plane={plane} cut={cut} path={path} lines={selection.lines} />}
+          <PinPageButton cut={cut} path={path} read={read} onPress={onPress} />
         </span>
         {kept !== undefined && kept.path === path && (
           <KeptBy workspace={cut.workspace} kept={kept} onPress={onPress} />
@@ -667,6 +674,7 @@ export function PieceFileTab({
         onLine={at.moved}
         onLines={selection.selected}
         source={source}
+        pageAt={{ plane, cut }}
       />
     </div>
   );
@@ -701,14 +709,20 @@ export function SourceToggle({
   read,
   source,
   onSource,
+  pages = false,
 }: {
   path: string;
   read: FileRead;
   source: boolean;
   onSource: (source: boolean) => void;
+  /** Whether an `.html` page is rendered here, so its text is a press away too (#5953). */
+  pages?: boolean;
 }) {
   const svgDraws = useSvgDraws();
-  if (read.kind !== "text" || !(isMarkdown(path) || (isSvg(path) && svgDraws === true)))
+  if (
+    read.kind !== "text" ||
+    !(isMarkdown(path) || (pages && isPage(path)) || (isSvg(path) && svgDraws === true))
+  )
     return null;
   return (
     <ToggleButton size="sm" isSelected={source} onPress={() => onSource(!source)}>
@@ -820,6 +834,7 @@ export function PieceFilesTab({
                     read={read}
                     source={showsSource}
                     onSource={(on) => setSource({ path: picked, on })}
+                    pages
                   />
                   <ToYourEditor plane={plane} cut={cut} path={picked} line={at.line} />
                   <CopyAndReveal plane={plane} cut={cut} path={picked} />
@@ -835,9 +850,11 @@ export function PieceFilesTab({
                     <ShowWhatChanged cut={cut} path={picked} onOpenView={onOpenView} />
                   )}
                   <ToAChat plane={plane} cut={cut} path={picked} lines={selection.lines} />
+                  <PinPageButton cut={cut} path={picked} read={read} onPress={onPress} />
                 </span>
               </header>
               <Shown
+                pageAt={{ plane, cut }}
                 path={picked}
                 read={read}
                 line={line}
@@ -850,5 +867,56 @@ export function PieceFilesTab({
         </section>
       </Panel>
     </Group>
+  );
+}
+
+/**
+ * **An `.html` page, rendered privately** (#5953, spec story 15): the page alone, in a native
+ * webview of its own with no grant, no network and no script, as a pinned artifact is
+ * (`ArtifactTab`). Nothing is pinned by showing it; its text is under Source.
+ */
+function PagePreview({ plane, cut, path }: { plane: PlaneId; cut: Place; path: string }) {
+  const name = path.slice(path.lastIndexOf("/") + 1);
+  const page = { workspace: cut.workspace, repo: cut.repo, piece: cut.piece, path };
+  return (
+    <div className="piece-page" data-testid="piece-page">
+      <ArtifactFrame
+        name={name}
+        opens={`${plane}\u0000${cut.workspace}\u0000${cut.repo}\u0000${cut.piece ?? ""}\u0000${path}`}
+        open={(first) => commands.artifactPreviewOpen(plane, page, first)}
+      />
+    </div>
+  );
+}
+
+/**
+ * **Pin to workspace…, beside an `.html` page** (#5953): the row its menu carries
+ * (`pinToWorkspaceRow`), as a button. People, not a pin, mark it: it is the team's pin, never a
+ * tab's own.
+ */
+function PinPageButton({
+  cut,
+  path,
+  read,
+  onPress,
+}: {
+  cut: Place;
+  path: string;
+  read: FileRead;
+  onPress?: (offer: Offer) => void;
+}) {
+  if (onPress === undefined || read.kind !== "text" || !isPage(path)) return null;
+  const row = pinToWorkspaceRow({ ...cut, path });
+  return (
+    <Button
+      size="sm"
+      isDisabled={!row.available}
+      tooltip={row.available ? undefined : row.reason}
+      onPress={() => onPress(row)}
+      data-pin-to-workspace=""
+    >
+      <Users aria-hidden="true" />
+      {row.title}
+    </Button>
   );
 }

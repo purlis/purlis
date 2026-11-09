@@ -2143,6 +2143,7 @@ function App() {
       copyPath: async () => nowhere(),
       revealPath: async () => nowhere(),
       saveWithTheProject: async () => nowhere(),
+      pinToWorkspace: async () => nowhere(),
       openInEditor: async () => nowhere(),
       shellInFolder: () => undefined,
       startChatHere: async () => nowhere(),

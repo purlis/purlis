@@ -32,6 +32,11 @@ export const commands = {
 	artifactPlace: __WINDOW_ONLY_RESULT,
 	artifactEnter: __WINDOW_ONLY_RESULT,
 	artifactClose: __WINDOW_ONLY_RESULT,
+	artifactPinAsk: __WINDOW_ONLY_RESULT,
+	artifactPin: __WINDOW_ONLY_RESULT,
+	artifactUnpin: __WINDOW_ONLY_RESULT,
+	artifactReorder: __WINDOW_ONLY_RESULT,
+	artifactPreviewOpen: __WINDOW_ONLY_RESULT,
 	/**  What the window says about this launch and the session bus: nothing, on a launch with it. */
 	sessionBus: () => __TAURI_INVOKE<{
 	/**  The line it draws: why there is no bus, and what is off for the run. */
@@ -3078,6 +3083,53 @@ export type ArtifactAbout = {
 	missing: string | null,
 };
 
+/**
+ *  **An `.html` file the window shows** (#5953): the place it is in, as the file preview names
+ *  it, and its path there. The plane root is no workspace and no repo; a workspace's own files
+ *  are a workspace and no repo.
+ */
+export type ArtifactPage = {
+	workspace: string,
+	repo: string,
+	piece: string | null,
+	path: string,
+};
+
+/**
+ *  **What the person answered Pin to workspace with** (#5953): the folder the ask offered, and
+ *  the name and icon they chose.
+ */
+export type ArtifactPinAnswer = {
+	folder: string,
+	name: string,
+	icon: string,
+};
+
+/**  **What the Pin to workspace dialog offers** for a page (#5953). */
+export type ArtifactPinAsk = {
+	/**
+	 *  Whether the workspace is LIVE: everyone in the project sees the pin once it is saved.
+	 *  A LOCAL workspace's pin stays on this machine.
+	 */
+	live: boolean,
+	/**
+	 *  The folder of `artifacts/` the pin names: the page's own, or the free one it is
+	 *  copied into.
+	 */
+	folder: string,
+	/**
+	 *  Whether the page is copied into `folder` as its `index.html` (it is not in
+	 *  `artifacts/` yet).
+	 */
+	copied: boolean,
+	/**  The name offered: the pin's, or the page's title, or the folder's name. */
+	name: string,
+	/**  The icon offered: the pin's, or the default. */
+	icon: string,
+	/**  Whether the folder is pinned already: pinning it again changes its name or icon. */
+	pinned: boolean,
+};
+
 /**  One pin, as the activity bar's artifact group draws it. */
 export type ArtifactPinShown = {
 	id: string,
@@ -3087,6 +3139,8 @@ export type ArtifactPinShown = {
 	icon: string,
 	/**  Why its folder cannot be opened, when it cannot. */
 	missing: string | null,
+	/**  Whether its workspace is LIVE: unpinning it takes it off everyone's bar (#5953). */
+	live: boolean,
 };
 
 /**

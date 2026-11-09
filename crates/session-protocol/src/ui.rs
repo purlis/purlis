@@ -1093,6 +1093,13 @@ pub const WINDOW_ONLY: &[&str] = &[
     "artifact_place",
     "artifact_enter",
     "artifact_close",
+    // Managing pins from the window (#5953): only the person's press pins, unpins or reorders,
+    // and an .html file's private preview is a webview of the window's own.
+    "artifact_pin_ask",
+    "artifact_pin",
+    "artifact_unpin",
+    "artifact_reorder",
+    "artifact_preview_open",
 ];
 
 /// **The commands of who may dispatch to whom**, by name (spec #1483): every one is on

@@ -263,6 +263,8 @@ pub struct ArtifactPinShown {
     pub icon: String,
     /// Why its folder cannot be opened, when it cannot.
     pub missing: Option<String>,
+    /// Whether its workspace is LIVE: unpinning it takes it off everyone's bar (#5953).
+    pub live: bool,
 }
 
 /// What an artifact tab's bar says about it before anything runs.
@@ -301,8 +303,10 @@ pub async fn artifact_pins(
     plane: PlaneId,
     workspace: String,
 ) -> Result<Vec<ArtifactPinShown>, String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
     let at = workspace_of(&planes, &plane, &workspace)?;
     blocking(move || {
+        let live = purlis_core::wscmd::live_workspaces(&root).contains(&workspace);
         Ok(artifact::list(&at)?
             .into_iter()
             .map(|listed| ArtifactPinShown {
@@ -311,6 +315,7 @@ pub async fn artifact_pins(
                 name: listed.pin.name,
                 icon: listed.pin.icon,
                 missing: listed.missing,
+                live,
             })
             .collect())
     })
@@ -376,6 +381,278 @@ pub async fn artifact_open(
         ))
     })
     .await?;
+    lay(&window, &artifacts, host, snapshot, place)
+}
+
+/// What every window hears when a window changed a workspace's pins (#5953): which plane and
+/// workspace, so each artifact group of it reads them again at once.
+pub(crate) const ARTIFACT_PINS_MOVED: &str = "artifact-pins-moved";
+
+/// What [`ARTIFACT_PINS_MOVED`] carries.
+#[derive(Debug, Clone, Serialize, specta::Type)]
+pub struct ArtifactPinsMoved {
+    pub plane: PlaneId,
+    pub workspace: String,
+}
+
+/// **An `.html` file the window shows** (#5953): the place it is in, as the file preview names
+/// it, and its path there. The plane root is no workspace and no repo; a workspace's own files
+/// are a workspace and no repo.
+#[derive(Debug, Clone, Deserialize, specta::Type)]
+pub struct ArtifactPage {
+    pub workspace: String,
+    pub repo: String,
+    pub piece: Option<String>,
+    pub path: String,
+}
+
+/// **What the Pin to workspace dialog offers** for a page (#5953).
+#[derive(Debug, Clone, Serialize, specta::Type)]
+pub struct ArtifactPinAsk {
+    /// Whether the workspace is LIVE: everyone in the project sees the pin once it is saved.
+    /// A LOCAL workspace's pin stays on this machine.
+    pub live: bool,
+    /// The folder of `artifacts/` the pin names: the page's own, or the free one it is
+    /// copied into.
+    pub folder: String,
+    /// Whether the page is copied into `folder` as its `index.html` (it is not in
+    /// `artifacts/` yet).
+    pub copied: bool,
+    /// The name offered: the pin's, or the page's title, or the folder's name.
+    pub name: String,
+    /// The icon offered: the pin's, or the default.
+    pub icon: String,
+    /// Whether the folder is pinned already: pinning it again changes its name or icon.
+    pub pinned: bool,
+}
+
+/// The folder of `artifacts/` that `page` already is the page of, in workspace `workspace`:
+/// `artifacts/<folder>/index.html` of the workspace's own files.
+fn own_folder(workspace: &str, page: &ArtifactPage) -> Option<String> {
+    if page.workspace != workspace || !page.repo.is_empty() || page.piece.is_some() {
+        return None;
+    }
+    let rest = page.path.strip_prefix(&format!("{}/", artifact::DIR))?;
+    let folder = rest.strip_suffix(&format!("/{}", artifact::PAGE))?;
+    (!folder.is_empty() && !folder.contains('/')).then(|| folder.to_owned())
+}
+
+/// The text of `page`, read as the file preview reads it; refused for anything but text.
+fn page_text(root: &std::path::Path, page: &ArtifactPage) -> Result<String, String> {
+    let name = purlis_core::personas::one_line(&page.path);
+    match crate::piecefiles::file_at(root, &page.workspace, &page.repo, &page.piece, &page.path)? {
+        crate::piecefiles::PieceFile::Text { text } => Ok(text),
+        crate::piecefiles::PieceFile::TooLarge { .. } => Err(format!(
+            "{name} is past what the preview reads (2 MiB), so it is not pinned"
+        )),
+        _ => Err(format!("{name} is not a text file, so it is not a page")),
+    }
+}
+
+/// [`ArtifactPinAsk`], read from disk.
+fn pin_ask(
+    root: &std::path::Path,
+    at: &std::path::Path,
+    workspace: &str,
+    page: &ArtifactPage,
+) -> Result<ArtifactPinAsk, String> {
+    let live = purlis_core::wscmd::live_workspaces(root).contains(workspace);
+    if let Some(folder) = own_folder(workspace, page) {
+        let real = artifact::resolve(at, &folder)?;
+        let pinned = artifact::read(at)?
+            .pins
+            .into_iter()
+            .find(|pin| pin.folder == folder);
+        let text = std::fs::read_to_string(real.join(artifact::PAGE)).unwrap_or_default();
+        return Ok(ArtifactPinAsk {
+            live,
+            name: pinned.as_ref().map_or_else(
+                || artifact::suggested_name(&text, &folder),
+                |pin| pin.name.clone(),
+            ),
+            icon: pinned
+                .as_ref()
+                .map_or_else(|| artifact::DEFAULT_ICON.to_owned(), |pin| pin.icon.clone()),
+            pinned: pinned.is_some(),
+            folder,
+            copied: false,
+        });
+    }
+    let text = page_text(root, page)?;
+    let stem = page
+        .path
+        .rsplit('/')
+        .next()
+        .unwrap_or_default()
+        .trim_end_matches(".html")
+        .trim_end_matches(".htm");
+    let name = artifact::suggested_name(&text, stem);
+    Ok(ArtifactPinAsk {
+        live,
+        folder: artifact::free_folder(at, &name),
+        copied: true,
+        name,
+        icon: artifact::DEFAULT_ICON.to_owned(),
+        pinned: false,
+    })
+}
+
+/// **What Pin to workspace offers for `page`** in workspace `workspace` (#5953): whether the
+/// workspace is LIVE, the folder it is pinned as, and a name and icon to start from.
+#[tauri::command]
+#[specta::specta]
+pub async fn artifact_pin_ask(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    workspace: String,
+    page: ArtifactPage,
+) -> Result<ArtifactPinAsk, String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    let at = workspace_of(&planes, &plane, &workspace)?;
+    blocking(move || pin_ask(&root, &at, &workspace, &page)).await
+}
+
+/// Tells every window that workspace `workspace`'s pins changed.
+fn moved<R: Runtime>(app: &tauri::AppHandle<R>, plane: PlaneId, workspace: String) {
+    let _ = app.emit(ARTIFACT_PINS_MOVED, ArtifactPinsMoved { plane, workspace });
+}
+
+fn shown(pin: artifact::Pin, live: bool) -> ArtifactPinShown {
+    ArtifactPinShown {
+        id: pin.id,
+        folder: pin.folder,
+        name: pin.name,
+        icon: pin.icon,
+        missing: None,
+        live,
+    }
+}
+
+/// **What the person answered Pin to workspace with** (#5953): the folder the ask offered, and
+/// the name and icon they chose.
+#[derive(Debug, Clone, Deserialize, specta::Type)]
+pub struct ArtifactPinAnswer {
+    pub folder: String,
+    pub name: String,
+    pub icon: String,
+}
+
+/// **Pins `page` to workspace `workspace`** as `folder`, named `name` with icon `icon`
+/// (#5953): the person's answer to Pin to workspace. A page not in `artifacts/` yet is copied
+/// into `folder` first, never over a folder that is there. Written to the pins file, which the
+/// project's next save shares; nothing is committed here.
+#[tauri::command]
+#[specta::specta]
+pub async fn artifact_pin(
+    app: tauri::AppHandle,
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    workspace: String,
+    page: ArtifactPage,
+    answer: ArtifactPinAnswer,
+) -> Result<ArtifactPinShown, String> {
+    let ArtifactPinAnswer { folder, name, icon } = answer;
+    let root = planes.held(&plane)?.root().to_path_buf();
+    let at = workspace_of(&planes, &plane, &workspace)?;
+    let ws = workspace.clone();
+    let (pinned, live) = blocking(move || {
+        let live = purlis_core::wscmd::live_workspaces(&root).contains(&ws);
+        if own_folder(&ws, &page).as_deref() != Some(folder.as_str()) {
+            artifact::adopt(&root, &at, &folder, &page_text(&root, &page)?)?;
+        }
+        let request = artifact::Request {
+            folder,
+            name: Some(name),
+            icon: Some(icon),
+            ..artifact::Request::default()
+        };
+        let pin = match artifact::pin(&root, &at, &request)? {
+            artifact::Pinned::New(pin) | artifact::Pinned::Updated(pin) => pin,
+            artifact::Pinned::Replaced { new, .. } => new,
+        };
+        Ok((pin, live))
+    })
+    .await?;
+    moved(&app, plane, workspace);
+    Ok(shown(pinned, live))
+}
+
+/// **Unpins pin `id` from workspace `workspace`** (#5953): it leaves the activity bar, for
+/// everyone once the project is saved, and its folder stays.
+#[tauri::command]
+#[specta::specta]
+pub async fn artifact_unpin(
+    app: tauri::AppHandle,
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    workspace: String,
+    id: String,
+) -> Result<(), String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    let at = workspace_of(&planes, &plane, &workspace)?;
+    blocking(move || artifact::unpin(&root, &at, &id).map(|_| ())).await?;
+    moved(&app, plane, workspace);
+    Ok(())
+}
+
+/// **Puts workspace `workspace`'s pins in the order `ids` gives** (#5953): a drag or a Move
+/// on the activity bar. A pin `ids` leaves out keeps its place after them.
+#[tauri::command]
+#[specta::specta]
+pub async fn artifact_reorder(
+    app: tauri::AppHandle,
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    workspace: String,
+    ids: Vec<String>,
+) -> Result<(), String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    let at = workspace_of(&planes, &plane, &workspace)?;
+    blocking(move || artifact::reorder(&root, &at, &ids).map(|_| ())).await?;
+    moved(&app, plane, workspace);
+    Ok(())
+}
+
+/// **Opens an `.html` file's private preview over its frame** (#5953, spec story 15): the page
+/// alone, read once, served from an origin of its own under the same CSP as an artifact's, with
+/// no script and nothing beside it. Nothing is pinned and nothing is written.
+#[tauri::command]
+#[specta::specta]
+pub async fn artifact_preview_open(
+    window: tauri::Window,
+    planes: tauri::State<'_, Planes>,
+    artifacts: tauri::State<'_, Artifacts>,
+    plane: PlaneId,
+    page: ArtifactPage,
+    place: ArtifactPlace,
+) -> Result<String, String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    let (host, snapshot) = blocking(move || {
+        let text = page_text(&root, &page)?;
+        let host = serve::origin_host(
+            &root,
+            &format!(
+                "preview\u{0}{}\u{0}{}\u{0}{}\u{0}{}",
+                page.workspace,
+                page.repo,
+                page.piece.as_deref().unwrap_or(""),
+                page.path
+            ),
+        );
+        Ok((host, serve::Snapshot::page(text.into_bytes())))
+    })
+    .await?;
+    lay(&window, &artifacts, host, snapshot, place)
+}
+
+/// Makes the webview of what `snapshot` serves from `host`, at `place` in `window`: its label.
+fn lay(
+    window: &tauri::Window,
+    artifacts: &Artifacts,
+    host: String,
+    snapshot: serve::Snapshot,
+    place: ArtifactPlace,
+) -> Result<String, String> {
     let label = label(artifacts.made.fetch_add(1, Ordering::Relaxed) + 1);
     let own = origin(&host);
     artifacts.served().insert(
@@ -511,6 +788,34 @@ mod tests {
 
     fn at(host: &str, path: &str) -> String {
         format!("{}{path}", origin(host))
+    }
+
+    fn page(workspace: &str, repo: &str, piece: Option<&str>, path: &str) -> ArtifactPage {
+        ArtifactPage {
+            workspace: workspace.to_owned(),
+            repo: repo.to_owned(),
+            piece: piece.map(str::to_owned),
+            path: path.to_owned(),
+        }
+    }
+
+    #[test]
+    fn only_a_folder_s_index_html_in_the_workspace_s_own_artifacts_is_pinned_where_it_is() {
+        let own = page("alpha", "", None, "artifacts/backlog/index.html");
+        assert_eq!(own_folder("alpha", &own).as_deref(), Some("backlog"));
+        // Pinned to another workspace, it is copied there.
+        assert_eq!(own_folder("beta", &own), None);
+        for elsewhere in [
+            page("alpha", "", None, "artifacts/backlog/other.html"),
+            page("alpha", "", None, "artifacts/a/b/index.html"),
+            page("alpha", "", None, "artifacts//index.html"),
+            page("alpha", "", None, "notes/index.html"),
+            page("alpha", "web", None, "artifacts/backlog/index.html"),
+            page("alpha", "web", Some("fix"), "artifacts/backlog/index.html"),
+            page("", "", None, "artifacts/backlog/index.html"),
+        ] {
+            assert_eq!(own_folder("alpha", &elsewhere), None, "{elsewhere:?}");
+        }
     }
 
     #[test]

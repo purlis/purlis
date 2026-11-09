@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { ChartLine } from "lucide-react";
 import { commands, type ArtifactAbout, type ArtifactPlace, type PlaneId } from "./bindings";
@@ -73,7 +73,11 @@ export function ArtifactTab({
           testid="artifact-waits"
         />
       ) : about.said === undefined ? null : (
-        <ArtifactFrame plane={plane} workspace={workspace} folder={folder} name={name} />
+        <ArtifactFrame
+          name={name}
+          opens={`${plane}\u0000${workspace}\u0000${folder}`}
+          open={(first) => commands.artifactOpen(plane, workspace, folder, first)}
+        />
       )}
     </section>
   );
@@ -143,19 +147,28 @@ function same(one: ArtifactPlace | null, other: ArtifactPlace | null): boolean {
 
 /**
  * **The frame the page's webview is laid over**: made when this mounts, moved with it each
- * frame it moves, put away while it is not to be seen, and closed when it goes.
+ * frame it moves, put away while it is not to be seen, and closed when it goes. A pinned
+ * artifact's and an `.html` file's private preview (#5953) differ only in what `open` asks.
  */
-function ArtifactFrame({
-  plane,
-  workspace,
-  folder,
+export function ArtifactFrame({
   name,
+  opens,
+  open,
 }: {
-  plane: PlaneId;
-  workspace: string;
-  folder: string;
   name: string;
+  /** What `open` opens, as a key: the webview is made again only when it changes. */
+  opens: string;
+  /** Makes the webview at its first place: its label, or why not. */
+  open: (
+    first: ArtifactPlace,
+  ) => Promise<{ status: "ok"; data: string } | { status: "error"; error: string }>;
 }) {
+  // The latest `open`, read when the webview is made: a new function for the same page opens
+  // nothing new.
+  const asks = useRef(open);
+  useLayoutEffect(() => {
+    asks.current = open;
+  });
   const frame = useRef<HTMLDivElement>(null);
   const label = useRef<string | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
@@ -184,7 +197,7 @@ function ArtifactFrame({
       height: 1,
       ratio: window.devicePixelRatio || 1,
     };
-    commands.artifactOpen(plane, workspace, folder, first).then(
+    asks.current(first).then(
       (answer) => {
         if (answer.status === "error") {
           if (!gone) setFailed(answer.error);
@@ -209,7 +222,7 @@ function ArtifactFrame({
       label.current = null;
       if (was !== null) void commands.artifactClose(was).catch(() => {});
     };
-  }, [plane, workspace, folder]);
+  }, [opens]);
 
   // Esc and F6 pressed in the page come back here (`artifacts.rs`).
   useEffect(() => {

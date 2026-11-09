@@ -57,6 +57,14 @@ impl Snapshot {
         Ok(Self { files, fingerprint })
     }
 
+    /// **One page alone**, as an `.html` file's private preview serves it (#5953): its bytes
+    /// as the folder's page and nothing beside it, so nothing it names loads.
+    pub fn page(bytes: Vec<u8>) -> Self {
+        let files = BTreeMap::from([(PAGE.to_string(), bytes)]);
+        let fingerprint = fingerprint(&files);
+        Self { files, fingerprint }
+    }
+
     /// The bytes read for `key`, a path inside the folder as [`key`] gives it.
     pub fn get(&self, key: &str) -> Option<&[u8]> {
         self.files.get(key).map(Vec::as_slice)
@@ -239,6 +247,18 @@ fn read_folder(folder: &Path, files: &mut BTreeMap<String, Vec<u8>>) -> std::io:
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_page_alone_is_served_as_its_page_and_nothing_beside_it() {
+        let alone = Snapshot::page(b"<h1>hi</h1>".to_vec());
+        assert_eq!(alone.get(&key("/").unwrap()), Some(&b"<h1>hi</h1>"[..]));
+        assert_eq!(alone.paths().collect::<Vec<_>>(), [PAGE]);
+        assert_eq!(alone.get(&key("/style.css").unwrap()), None);
+        assert_ne!(
+            alone.fingerprint(),
+            Snapshot::page(b"<h1>other</h1>".to_vec()).fingerprint()
+        );
+    }
 
     #[test]
     fn a_path_names_a_key_only_when_it_stays_in_its_folder() {
