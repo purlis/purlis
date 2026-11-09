@@ -582,6 +582,43 @@ fn what_the_person_pastes_stays_out_of_later_answers() {
 }
 
 #[test]
+fn what_the_person_pastes_with_the_middle_button_stays_out_of_later_answers() {
+    let (browser, engine) = browser();
+    browser.take_over();
+    let aim = aim_now(&browser);
+    // Letting go of the middle button pastes the primary selection into the focused field.
+    engine.on(|sent, engine| {
+        if sent.method == "Input.dispatchMouseEvent"
+            && sent.params["type"] == "mouseReleased"
+            && sent.params["button"] == "middle"
+        {
+            super::super::lock(&engine.model).value = "Kq7#x".into();
+        }
+        None
+    });
+    let middle = |kind| PersonInput::Mouse {
+        aim: aim.clone(),
+        kind,
+        x: 12.0,
+        y: 12.0,
+        button: MouseButton::Middle,
+        clicks: 1,
+        modifiers: 0,
+        delta_x: 0.0,
+        delta_y: 0.0,
+    };
+
+    browser.person_input(&middle(MouseKind::Pressed)).unwrap();
+    browser.person_input(&middle(MouseKind::Released)).unwrap();
+    the_page_says(&engine, "PAGE-1", "You entered Kq7#x");
+    browser.hand_back();
+
+    let text = snapshot(&browser, 1);
+    assert!(text.contains("You entered"), "{text}");
+    assert!(!text.contains("Kq7#x"), "{text}");
+}
+
+#[test]
 fn what_the_person_typed_in_pieces_stays_out_of_later_answers_whole() {
     let (browser, engine) = browser();
     browser.take_over();
