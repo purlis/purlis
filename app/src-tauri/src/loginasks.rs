@@ -735,15 +735,6 @@ fn judged(
         .map_err(|why| why.message.to_string())?;
     purlis_core::secrets::registry::vault_in(&doc, &suggested.vault)
         .map_err(|why| why.message.to_string())?;
-    if let Some(why) = out_of_reach(
-        &ctx,
-        persona,
-        &suggested.vault,
-        suggested.user_key.as_deref(),
-        &suggested.key,
-    ) {
-        return Err(why);
-    }
     let page = loginask::site_of(&suggested.site).map(|(_, page)| page);
     let declared_page = declared
         .and_then(|declared| declared.login.as_ref())
@@ -775,21 +766,6 @@ fn judged(
     finish(root, &locks, proposal).map(Some)
 }
 
-/// **Why `persona` may read neither the login's user key nor its password** (#5831): one is a link
-/// into a vault it may not use, which the read would refuse once the person had allowed it
-/// ([`brokered::read_out_of_reach`], #5795). Judged before the notice is raised and as it is
-/// pressed, so no notice asks for, nor Always writes or grants a vault for, a login refused.
-fn out_of_reach(
-    ctx: &Ctx,
-    persona: &str,
-    vault: &str,
-    user_key: Option<&str>,
-    key: &str,
-) -> Option<String> {
-    let keys: Vec<&str> = user_key.into_iter().chain([key]).collect();
-    brokered::read_out_of_reach(ctx, persona, vault, &keys)
-}
-
 /// What the person is offered on `proposal`, under `locks`.
 fn finish(root: &Path, locks: &Locks, proposal: Proposal) -> Result<Judged, String> {
     let ctx = Ctx::new(root, Env::from_process());
@@ -797,16 +773,6 @@ fn finish(root: &Path, locks: &Locks, proposal: Proposal) -> Result<Judged, Stri
         .map_err(|why| why.message.to_string())?;
     purlis_core::secrets::registry::vault_in(&doc, &proposal.vault)
         .map_err(|why| why.message.to_string())?;
-    // Judged again as it is drawn or pressed: a link made while the notice waits is seen.
-    if let Some(why) = out_of_reach(
-        &ctx,
-        &proposal.persona,
-        &proposal.vault,
-        proposal.user_key.as_deref(),
-        &proposal.key,
-    ) {
-        return Err(why);
-    }
     let vault_too = brokered::not_tagged(&ctx, Some(&proposal.persona), &proposal.vault).is_some();
     let mut proposal = proposal;
     proposal

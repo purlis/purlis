@@ -1164,8 +1164,10 @@ fn a_notice_nobody_waits_on_goes_unanswered_after_its_time_unless_answered() {
 
 // ---- A login's keys are judged before its notice (#5831) ----
 
-/// `qa/password` linked to `prod/password`: an entry of a vault `qa` may not use.
+/// `qa/password` linked to `prod/password`: an entry of a vault `qa` may not use. Vault qa's own
+/// value under `password` goes first, as a link never replaces one.
 fn linked_out_of_reach(root: &Path) {
+    std::fs::write(root.join("q.json"), r#"{"username":"u"}"#).expect("vault qa");
     std::fs::write(root.join("p.json"), r#"{"password":"n0t-yours"}"#).expect("vault prod");
     let ctx = Ctx::new(root, Env::from_process());
     let qa = purlis_core::secrets::cmd::provider(&ctx, "qa").expect("vault qa");
