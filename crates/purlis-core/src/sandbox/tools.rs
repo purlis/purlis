@@ -1994,7 +1994,7 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "mariadb-secure-installation",
     "mariabackup",
     "mariadb-backup",
-    // and the last of them (#5931, #5929's second review): `mysql_plugin` starts the server its
+    // and more of them (#5931, #5929's second review): `mysql_plugin` starts the server its
     // `-m` or `-b` finds with the plugins its `-p` names, and runs the program its
     // `--my-print-defaults` names; `mysql_upgrade` runs the client and `mysqlcheck` with the files
     // of settings and plugins it is handed. Percona's backup tools and MariaDB's `mbstream` are
@@ -2012,6 +2012,18 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "xbcloud_osenv",
     "xbcrypt",
     "mbstream",
+    // The server itself, whose `-b` names the folder its plugins load from and whose
+    // `--early-plugin-load` names one, the router, whose configuration names its plugins' folder,
+    // and the keyring migration, which loads components from a folder it is told (#5990's
+    // second review). The tools' row reads none of those forms. (`mysqld-debug` is `mysqld`'s
+    // flavour, by its first part.)
+    "mysqld",
+    "mariadbd",
+    "mysqlrouter",
+    "mysqlrouter_plugin_info",
+    "mysqlrouter_passwd",
+    "mysqlrouter_keyring",
+    "mysql_migrate_keyring",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused
