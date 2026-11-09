@@ -1102,3 +1102,35 @@ fn an_element_whose_only_text_kept_out_is_whole_inside_one_it_holds_is_not_paint
         "{painted:?}"
     );
 }
+
+#[test]
+fn an_svg_use_is_painted_where_its_document_holds_a_text_kept_out_laid_out_nowhere() {
+    let mut page = Document::new("PAGE-1");
+    let svg = page.element(140, None, "svg");
+    let defs = page.push(Node {
+        backend: 141,
+        parent: Some(svg),
+        kind: ELEMENT_NODE,
+        name: "defs".into(),
+        ..Node::default()
+    });
+    let text = page.push(Node {
+        backend: 142,
+        parent: Some(defs),
+        kind: ELEMENT_NODE,
+        name: "text".into(),
+        ..Node::default()
+    });
+    page.push(Node {
+        backend: 143,
+        parent: Some(text),
+        kind: TEXT_NODE,
+        name: "#text".into(),
+        value: "You said open sesame".into(),
+        ..Node::default()
+    });
+    page.element(144, Some(svg), "use");
+
+    assert_eq!(painted(&page, &["open sesame"]), vec![144]);
+    assert_eq!(painted(&page, &["other words"]), Vec::<i64>::new());
+}

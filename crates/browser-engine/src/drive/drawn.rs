@@ -10,7 +10,9 @@
 //!   (hidden from the tree, drawn by the page's style, deeper than a snapshot reads, split over
 //!   elements), and every field, button or drop-down whose value, options or labels hold one;
 //! - every frame whose document this read does not hold, unless it is read in a session of its
-//!   own.
+//!   own;
+//! - every SVG `use` a document lays out once any text of it holds a text kept out, laid out or
+//!   not: what a `use` draws is laid out nowhere the read reaches.
 //!
 //! On a page whose site a text was kept out on ([`Drawn::pictured`]), it also paints over every canvas,
 //! image, video and embedded object, and every element drawn with an image or a paint script:
@@ -350,6 +352,29 @@ fn read_document(
         under[at] = parent(at).is_some_and(|up| holders.contains(&up) || under[up]);
         if under[at] && drew[at] {
             paint(at, out);
+        }
+    }
+    // An SVG `use` draws a copy of what it points at, which may be laid out nowhere else (a text
+    // inside `defs`): once any text of the document holds a text kept out, laid out or not,
+    // every `use` it lays out is painted.
+    let mut uses = Vec::new();
+    for at in 0..count {
+        if shown.contains(&at) && name(at)? == "USE" {
+            uses.push(at);
+        }
+    }
+    if !uses.is_empty() {
+        let mut any = !holders.is_empty();
+        for value in &values {
+            if any {
+                break;
+            }
+            any = holds(string(*value)?);
+        }
+        if any {
+            for at in uses {
+                paint(at, out);
+            }
         }
     }
     // What a field, a button or a drop-down shows is its value or its options, not text laid
