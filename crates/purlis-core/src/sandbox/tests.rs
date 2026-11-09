@@ -3393,10 +3393,20 @@ fn a_claude_code_chat_is_not_started_where_a_held_git_folder_has_glob_characters
     let plane = plane_saying(ON);
     std::fs::create_dir_all(plane.path().join("plain/.git/objects")).expect("a git folder");
     std::fs::create_dir_all(plane.path().join("plain/.git/refs")).expect("its refs");
-    std::fs::write(plane.path().join("plain/.git/HEAD"), "ref: refs/heads/main\n").expect("HEAD");
+    std::fs::write(
+        plane.path().join("plain/.git/HEAD"),
+        "ref: refs/heads/main\n",
+    )
+    .expect("HEAD");
     std::fs::write(plane.path().join("plain/.git/config"), "").expect("config");
     assert!(
-        for_start(Harness::ClaudeCode, plane.path(), &machine(Os::MacOs), &|_| true).is_ok()
+        for_start(
+            Harness::ClaudeCode,
+            plane.path(),
+            &machine(Os::MacOs),
+            &|_| true
+        )
+        .is_ok()
     );
 }
 
