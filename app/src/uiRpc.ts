@@ -26,6 +26,12 @@ export const commands = {
 	 */
 	relaunch: string | null,
 } | null>("first_frame"),
+	artifactPins: __WINDOW_ONLY_RESULT,
+	artifactAbout: __WINDOW_ONLY_RESULT,
+	artifactOpen: __WINDOW_ONLY_RESULT,
+	artifactPlace: __WINDOW_ONLY_RESULT,
+	artifactEnter: __WINDOW_ONLY_RESULT,
+	artifactClose: __WINDOW_ONLY_RESULT,
 	/**  What the window says about this launch and the session bus: nothing, on a launch with it. */
 	sessionBus: () => __TAURI_INVOKE<{
 	/**  The line it draws: why there is no bus, and what is off for the run. */
@@ -3061,6 +3067,38 @@ export type ArchivedMemory = {
 	body: string,
 	/**  Plane-relative, with `/`. */
 	path: string,
+};
+
+/**  What an artifact tab's bar says about it before anything runs. */
+export type ArtifactAbout = {
+	name: string,
+	/**  Who pinned it, from the plane's history; none before the pin is saved. */
+	pinned_by: string | null,
+	/**  Why it cannot be opened, when it cannot. */
+	missing: string | null,
+};
+
+/**  One pin, as the activity bar's artifact group draws it. */
+export type ArtifactPinShown = {
+	id: string,
+	folder: string,
+	name: string,
+	/**  One of purlis's icons (`PERSONA_ICONS`). */
+	icon: string,
+	/**  Why its folder cannot be opened, when it cannot. */
+	missing: string | null,
+};
+
+/**
+ *  Where an artifact's frame is in the window: CSS pixels of the window's page, and the page's
+ *  `devicePixelRatio`, which takes its zoom into account where the window's scale would not.
+ */
+export type ArtifactPlace = {
+	x: number | null,
+	y: number | null,
+	width: number | null,
+	height: number | null,
+	ratio: number | null,
 };
 
 /**

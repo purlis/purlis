@@ -25,6 +25,34 @@ export const commands = {
 	 */
 	relaunch: string | null,
 } | null>("first_frame"),
+	/**  **The workspace's pinned artifacts, in their order**: the activity bar's artifact group. */
+	artifactPins: (plane: PlaneId, workspace: string) => typedError<ArtifactPinShown[], string>(__TAURI_INVOKE("artifact_pins", { plane, workspace })),
+	/**
+	 *  **What an artifact tab's bar names**: the pin's name and who pinned it. Runs nothing of the
+	 *  page's, so a tab that waits for a press asks it too.
+	 */
+	artifactAbout: (plane: PlaneId, workspace: string, folder: string) => typedError<ArtifactAbout, string>(__TAURI_INVOKE("artifact_about", { plane, workspace, folder })),
+	/**
+	 *  **Opens a pinned artifact over its tab's frame**: the folder read once, a webview of its own
+	 *  made at `place` in the asking window, and its label answered. Nothing is focused: the
+	 *  keyboard stays where the person has it.
+	 */
+	artifactOpen: (plane: PlaneId, workspace: string, folder: string, place: ArtifactPlace) => typedError<string, string>(__TAURI_INVOKE("artifact_open", { plane, workspace, folder, place })),
+	/**
+	 *  **Moves an artifact's webview to its frame's place**, or hides it (`None`): its tab went
+	 *  behind another, or something purlis draws is over its frame.
+	 */
+	artifactPlace: (label: string, place: {
+	x: number | null,
+	y: number | null,
+	width: number | null,
+	height: number | null,
+	ratio: number | null,
+} | null) => typedError<null, string>(__TAURI_INVOKE("artifact_place", { label, place })),
+	/**  **Puts the keyboard in an artifact's page**: the person entered its frame. */
+	artifactEnter: (label: string) => typedError<null, string>(__TAURI_INVOKE("artifact_enter", { label })),
+	/**  **Closes an artifact's webview**: its tab closed, or its frame went. */
+	artifactClose: (label: string) => typedError<null, string>(__TAURI_INVOKE("artifact_close", { label })),
 	/**  What the window says about this launch and the session bus: nothing, on a launch with it. */
 	sessionBus: () => __TAURI_INVOKE<{
 	/**  The line it draws: why there is no bus, and what is off for the run. */
@@ -5914,6 +5942,38 @@ export type ArchivedMemory = {
 	body: string,
 	/**  Plane-relative, with `/`. */
 	path: string,
+};
+
+/**  What an artifact tab's bar says about it before anything runs. */
+export type ArtifactAbout = {
+	name: string,
+	/**  Who pinned it, from the plane's history; none before the pin is saved. */
+	pinned_by: string | null,
+	/**  Why it cannot be opened, when it cannot. */
+	missing: string | null,
+};
+
+/**  One pin, as the activity bar's artifact group draws it. */
+export type ArtifactPinShown = {
+	id: string,
+	folder: string,
+	name: string,
+	/**  One of purlis's icons (`PERSONA_ICONS`). */
+	icon: string,
+	/**  Why its folder cannot be opened, when it cannot. */
+	missing: string | null,
+};
+
+/**
+ *  Where an artifact's frame is in the window: CSS pixels of the window's page, and the page's
+ *  `devicePixelRatio`, which takes its zoom into account where the window's scale would not.
+ */
+export type ArtifactPlace = {
+	x: number | null,
+	y: number | null,
+	width: number | null,
+	height: number | null,
+	ratio: number | null,
 };
 
 /**

@@ -392,6 +392,8 @@ import {
   namedForFirstPanes,
   tabNameOf,
 } from "./tabs";
+import { ArtifactGroup } from "./ArtifactGroup";
+import { artifactOf, artifactView } from "./artifacts";
 import { tileAll, zoomedLayout, zoomFocusedPane } from "./tiling";
 import { recorded } from "./layoutUndo";
 import { heardOffers, offersInForce, viewOpened } from "./offerStore";
@@ -3216,6 +3218,16 @@ export const PlaneView = memo(function PlaneView({
    *  outside every workspace is not a workspace on the plane, so there is no directory to
    *  read and every region says so rather than drawing another workspace's answer. */
   const ofWorkspace = focused === OUTSIDE ? undefined : focused;
+  // **The artifact whose tab is in front, of this workspace** (#5952): its icon is drawn chosen.
+  const artifactInFront = (() => {
+    if (tabs.inFront === undefined || tabs.byId[tabs.inFront] === undefined) return undefined;
+    const front = tabs.byId[tabs.inFront];
+    const shown = contentsOf(tabs, front.id).find((one) => one.pane === front.focused)?.content;
+    const artifact = shown?.kind === "view" ? artifactOf(shown.view) : undefined;
+    return artifact !== undefined && artifact.workspace === ofWorkspace
+      ? artifact.folder
+      : undefined;
+  })();
   /**
    * **What this project has on in the focused workspace** (charter-app#253, #280, ADR 0048): the
    * core's answer for this plane's two files and the workspace's `workspace.json`, over this
@@ -11815,6 +11827,20 @@ export const PlaneView = memo(function PlaneView({
                 onSplit={splitHalves}
                 // F6 between the regions (P-13, #1741) is the project in front's, as its side keys are.
                 keyboard={inFront}
+                // **The workspace's pinned artifacts** (#5952, ADR 0120 §2): their own group on the
+                // left bar, below purlis's icons; a press opens the artifact's tab or brings it
+                // forward.
+                artifacts={
+                  <ArtifactGroup
+                    plane={plane}
+                    workspace={ofWorkspace}
+                    current={artifactInFront}
+                    onOpen={(pin) => {
+                      if (ofWorkspace !== undefined)
+                        showView(artifactView(ofWorkspace, pin.folder), pin.name);
+                    }}
+                  />
+                }
                 // Skills while the Skill studio's preview is on (#3266).
                 previews={previews}
                 /* **The navigation region's views** (ADR 0038 as amended 2026-10-10, #1673): Chats and

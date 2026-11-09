@@ -189,8 +189,25 @@ mod tests {
 
     /// Invokes `command` from `window`, as the app's own page would.
     fn invoke(window: &tauri::WebviewWindow<MockRuntime>, command: &str) -> Result<(), String> {
+        invoke_from(window, command)
+    }
+
+    /// A webview laid in a window beside its own, as an artifact's is (`artifacts.rs`).
+    struct Child(tauri::Webview<MockRuntime>);
+
+    impl AsRef<tauri::Webview<MockRuntime>> for Child {
+        fn as_ref(&self) -> &tauri::Webview<MockRuntime> {
+            &self.0
+        }
+    }
+
+    /// Invokes `command` from any webview, a child webview laid in a window among them.
+    fn invoke_from<W: AsRef<tauri::Webview<MockRuntime>>>(
+        webview: &W,
+        command: &str,
+    ) -> Result<(), String> {
         tauri::test::get_ipc_response(
-            window,
+            webview,
             InvokeRequest {
                 cmd: command.into(),
                 callback: tauri::ipc::CallbackFn(0),
@@ -366,15 +383,69 @@ mod tests {
     }
 
     #[test]
+    fn an_artifact_s_webview_laid_in_a_charter_window_may_invoke_nothing() {
+        // #5952, ADR 0120 §3 test 1: an artifact's page is a child webview of the window it is
+        // drawn in, and a capability that named windows would reach it there. The capabilities
+        // name charter's webviews, so it holds an empty grant: no app command, the vault's
+        // values among them, and none of Tauri's own.
+        let app = app();
+        for host in [WINDOW.to_owned(), split_label(3)] {
+            let held = window(&app, &host);
+            // The window's own webview is still granted, with a child beside it.
+            let child = held
+                .as_ref()
+                .window()
+                .add_child(
+                    tauri::webview::WebviewBuilder::new(
+                        crate::artifacts::label(1 + host.len() as u64),
+                        tauri::WebviewUrl::default(),
+                    ),
+                    tauri::LogicalPosition::new(0, 0),
+                    tauri::LogicalSize::new(10, 10),
+                )
+                .expect("a child webview");
+            let child = Child(child);
+            assert!(invoke(&held, "open_planes").is_ok(), "{host}");
+            let allowed: Vec<_> = every_listed()
+                .into_iter()
+                .filter(|command| invoke_from(&child, command).is_ok())
+                .collect();
+            assert!(
+                allowed.is_empty(),
+                "an artifact in {host} may invoke {allowed:?}"
+            );
+            for core in [
+                "plugin:event|listen",
+                "plugin:event|emit",
+                "plugin:window|title",
+                "plugin:webview|get_all_webviews",
+                "plugin:window|start_dragging",
+            ] {
+                assert!(
+                    invoke_from(&child, core).is_err(),
+                    "an artifact in {host} may invoke {core}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn every_capability_grants_the_main_window_and_the_split_windows_alike() {
         // The two capability files are one decision: a split window gets exactly what the main
         // window gets. One naming a window the other does not would be a window with half the
         // app, or a vault's values granted somewhere the ordinary commands are not.
         for capability in capability_files() {
+            // By webview, never by window: a window's grant would reach the artifact webviews
+            // laid in it (#5952).
             assert_eq!(
-                capability["windows"],
+                capability["webviews"],
                 serde_json::json!([WINDOW, SPLIT_GLOB]),
                 "{}",
+                capability["identifier"]
+            );
+            assert!(
+                capability.get("windows").is_none(),
+                "{} grants by window",
                 capability["identifier"]
             );
         }
@@ -453,11 +524,11 @@ mod tests {
         let capability = &granting[0];
         assert_eq!(capability["identifier"], VAULT_VALUES);
         assert_eq!(
-            capability["windows"],
+            capability["webviews"],
             serde_json::json!([WINDOW, SPLIT_GLOB])
         );
         assert!(
-            capability.get("webviews").is_none() && capability.get("remote").is_none(),
+            capability.get("windows").is_none() && capability.get("remote").is_none(),
             "the vault-values capability reaches past charter's own windows: {capability}"
         );
         assert_eq!(grants(capability), [VAULT_VALUES]);

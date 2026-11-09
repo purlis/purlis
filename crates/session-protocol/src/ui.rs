@@ -1085,6 +1085,14 @@ pub const WINDOW_ONLY: &[&str] = &[
     // holds, for a bug report the person copies from About in their own window. The report
     // carries the slow-answer log, which is the window's alone, so the facts beside it are too.
     "diagnostics_here",
+    // A pinned artifact in its tab (#5952, ADR 0120): a native webview of the window's own,
+    // laid over the tab's frame. Nothing a link serves can hold one, so only the window asks.
+    "artifact_pins",
+    "artifact_about",
+    "artifact_open",
+    "artifact_place",
+    "artifact_enter",
+    "artifact_close",
 ];
 
 /// **The commands of who may dispatch to whom**, by name (spec #1483): every one is on

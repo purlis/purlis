@@ -80,6 +80,12 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     count: 1,
     why: READING,
   },
+  // Why a pinned artifact cannot be opened (#5952): its folder gone, or its read refused. Read
+  // once as the tab opens; closing and pressing its icon again is the retry.
+  "ArtifactTab.tsx": {
+    count: 2,
+    why: READ_ONCE,
+  },
   "About.tsx": {
     count: 2,
     why:

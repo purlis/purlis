@@ -38,6 +38,12 @@ macro_rules! app_commands {
         $then! {
             value_free: [
                 first_frame,
+                artifacts::artifact_pins,
+                artifacts::artifact_about,
+                artifacts::artifact_open,
+                artifacts::artifact_place,
+                artifacts::artifact_enter,
+                artifacts::artifact_close,
                 portal::session_bus,
                 portal::restart_on_the_session_bus,
                 vaultswaiting::vaults_to_move,

@@ -13,6 +13,7 @@
 //! workspace is refused with a sentence and nothing is written.
 
 pub mod pins;
+pub mod serve;
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -345,6 +346,36 @@ fn cwd_refusal(cwd: &str) -> Option<String> {
     })
 }
 
+/// **Who pinned pin `id`**, by the plane's history (ADR 0120 §1: the bar names who pinned it,
+/// from git history): the author of the first commit whose pins file gained the id. `None` when
+/// no commit holds it yet (pinned here and not saved, or a workspace git does not keep).
+pub fn pinned_by(workspace: &Path, id: &str) -> Option<String> {
+    let path = format!("{DIR}/{PINS}");
+    let quoted = format!("\"{id}\"");
+    let run = crate::worktree::git::run(
+        workspace,
+        &[
+            "log",
+            "--reverse",
+            "--format=%an",
+            "-S",
+            &quoted,
+            "--",
+            &path,
+        ],
+        std::time::Duration::from_secs(5),
+    )
+    .ok()?;
+    if !run.ok() {
+        return None;
+    }
+    run.out
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .map(crate::personas::one_line)
+}
+
 /// The page's `<title>`, as a pin's name: its first one, whitespace folded, cut to
 /// [`NAME_MOST`] characters. None when it has none.
 fn title_of(page: &Path) -> Option<String> {
@@ -382,6 +413,48 @@ mod tests {
         assert_eq!(title_of(&page).unwrap().len(), NAME_MOST);
         std::fs::write(&page, "<title> </title>").unwrap();
         assert_eq!(title_of(&page), None);
+    }
+
+    #[test]
+    fn who_pinned_is_the_author_of_the_commit_that_added_the_pin_and_none_before_it_is_saved() {
+        use crate::testgit::run as git;
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path();
+        std::fs::create_dir_all(ws.join(DIR)).unwrap();
+        assert!(git(ws, &["init", "-q"]).ok());
+        let pins = ws.join(DIR).join(PINS);
+        std::fs::write(&pins, "version = 1\npin = [\n{ id = \"abc123\" },\n]\n").unwrap();
+        assert_eq!(pinned_by(ws, "abc123"), None, "not committed yet");
+
+        let commit = |who: &str, message: &str| {
+            assert!(
+                git(
+                    ws,
+                    &[
+                        "-c",
+                        &format!("user.name={who}"),
+                        "-c",
+                        "user.email=x@example.com",
+                        "commit",
+                        "-qam",
+                        message,
+                    ]
+                )
+                .ok()
+            );
+        };
+        assert!(git(ws, &["add", "-A"]).ok());
+        commit("Ada", "pin");
+        std::fs::write(
+            &pins,
+            "version = 1\npin = [\n{ id = \"abc123\" },\n{ id = \"def456\" },\n]\n",
+        )
+        .unwrap();
+        commit("Grace", "another pin");
+
+        assert_eq!(pinned_by(ws, "abc123").as_deref(), Some("Ada"));
+        assert_eq!(pinned_by(ws, "def456").as_deref(), Some("Grace"));
+        assert_eq!(pinned_by(ws, "nothere"), None);
     }
 
     #[test]

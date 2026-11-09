@@ -8963,3 +8963,48 @@ nav.piece-files-head {
   border-inline-start: 2px solid;
   font-size: var(--font-size-sm);
 }
+
+/* **A pinned artifact's group on the left bar** (#5952, ADR 0120 §2): after a divider, below
+   purlis's own icons. The divider is the separator family's, held off the column's edges. */
+.artifact-divider {
+  flex: none;
+  margin-inline: var(--space-3);
+}
+
+/* **A pinned artifact's tab** (#5952): purlis's bar, then the frame the page's own webview is
+   laid over, the rest of the pane. */
+.artifact-bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-3) var(--space-5);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.artifact-bar-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.artifact-bar-by {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-quiet);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Where the page is drawn. The webview covers it; while it is put away (a dialog over it), the
+   pane's own fill shows. */
+.artifact-frame {
+  flex: 1 1 auto;
+  min-height: 0;
+}

@@ -433,7 +433,7 @@ pub fn window_focused(app: &tauri::AppHandle, focused: bool) {
         let app = app.clone();
         watches.shown_when(move || {
             use tauri::Manager as _;
-            app.webview_windows().values().any(|window| {
+            app.windows().values().any(|window| {
                 window.is_visible().unwrap_or(false) && !window.is_minimized().unwrap_or(false)
             })
         });
