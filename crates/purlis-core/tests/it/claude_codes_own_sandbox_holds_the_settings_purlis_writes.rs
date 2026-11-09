@@ -1060,7 +1060,8 @@ fn a_held_file_the_host_rewrites_by_a_rename_while_the_chat_runs_stays_held() {
         fs::write(&file, settings.to_string()).expect("the settings");
         let screened = purlis_core::harness::claude::project::screen_with(Some(&root), None);
         let config = root.join("repo/.git/config");
-        let (ready, go) = (tmp.join("probe-ready"), tmp.join("probe-go"));
+        // In the project, which the chat writes at both levels; its own temp folder is not `tmp`.
+        let (ready, go) = (root.join("probe-ready"), root.join("probe-go"));
         // As a script of its own, as every probe here is run: Claude Code's own check of a
         // command reads a loop typed whole as one it cannot judge.
         let script = at.join("rename-probe.sh");
