@@ -31,19 +31,30 @@ type Shown = {
   ring: boolean;
 };
 
-/** Reads where the keyboard is and whether a person can see it there. */
+/**
+ * Reads where the keyboard is and whether a person can see it there.
+ *
+ * **A ring is what the keyboard ADDS**: an outline or a shadow drawn while the control has the
+ * keyboard and not without it, so a shadow a control wears at rest is no ring. It is looked for
+ * on the control and on the few boxes around it, since a family may draw its ring on its root (a
+ * text box draws it on the field around the input, `ui/field/field.css`). Each is read with the
+ * keyboard and again without it, two frames after the blur, so a ring React draws from its own
+ * state has gone before it is read; then the keyboard is put back.
+ */
 async function whatTheKeyboardShows(): Promise<Shown> {
-  return browser.execute(() => {
+  return browser.executeAsync((done: (shown: Shown) => void) => {
     const on = document.activeElement;
-    if (!(on instanceof HTMLElement) || on === document.body)
-      return {
+    if (!(on instanceof HTMLElement) || on === document.body) {
+      done({
         lost: true,
         what: on?.tagName ?? "nothing",
         onScreen: false,
         uncovered: false,
         focusVisible: false,
         ring: false,
-      };
+      });
+      return;
+    }
     const label = on.getAttribute("aria-label") ?? on.textContent ?? "";
     const what = `${on.getAttribute("role") ?? on.tagName.toLowerCase()} ${JSON.stringify(label.trim().slice(0, 40))}`;
     const box = on.getBoundingClientRect();
@@ -66,25 +77,33 @@ async function whatTheKeyboardShows(): Promise<Shown> {
         const hit = document.elementFromPoint(x, y);
         return hit !== null && (hit === on || on.contains(hit));
       });
-    // A ring is what the keyboard ADDS: the control's outline or shadow while it has the
-    // keyboard, against the same control without it. A shadow it wears at rest is no ring.
-    const drawn = () => {
-      const css = getComputedStyle(on);
-      const outline =
-        css.outlineStyle !== "none" && Number.parseFloat(css.outlineWidth) > 0
-          ? `${css.outlineStyle} ${css.outlineWidth} ${css.outlineColor}`
-          : "none";
-      return { outline, shadow: css.boxShadow };
-    };
     const focusVisible = on.matches(":focus-visible");
+    // The control and the three boxes around it.
+    const boxes: Element[] = [on];
+    for (let at = on.parentElement; at !== null && boxes.length < 4; at = at.parentElement)
+      boxes.push(at);
+    const drawn = () =>
+      boxes.map((one) => {
+        const css = getComputedStyle(one);
+        const outline =
+          css.outlineStyle !== "none" && Number.parseFloat(css.outlineWidth) > 0
+            ? `${css.outlineStyle} ${css.outlineWidth} ${css.outlineColor}`
+            : "none";
+        return { outline, shadow: css.boxShadow };
+      });
+    const frames = (then: () => void) => requestAnimationFrame(() => requestAnimationFrame(then));
     const held = drawn();
     on.blur();
-    const rest = drawn();
-    on.focus({ preventScroll: true });
-    const ring =
-      (held.outline !== "none" && held.outline !== rest.outline) ||
-      (held.shadow !== "none" && held.shadow !== rest.shadow);
-    return { lost: false, what, onScreen, uncovered, focusVisible, ring };
+    frames(() => {
+      const rest = drawn();
+      on.focus({ preventScroll: true });
+      const ring = held.some(
+        (one, at) =>
+          (one.outline !== "none" && one.outline !== rest[at].outline) ||
+          (one.shadow !== "none" && one.shadow !== rest[at].shadow),
+      );
+      frames(() => done({ lost: false, what, onScreen, uncovered, focusVisible, ring }));
+    });
   });
 }
 
