@@ -10,12 +10,21 @@
 // already filed, and renders the day's summary. It writes nothing anywhere: it prints a plan,
 // and the steward applies it after triage (`docs/agents/skills/report-intake/SKILL.md`).
 //
-//   node tools/report-intake.mjs plan [--since-hours 26] [--weeks 4]
+//   purlis secret list sentry | node tools/report-intake.mjs has-token
+//   node tools/report-intake.mjs url [--weeks 4]
+//   node tools/report-intake.mjs next <headers-file>
+//   node tools/report-intake.mjs plan --from <dir> [--since-hours 26] [--weeks 4]
 //
-// **The token** is `SENTRY_INTAKE_TOKEN`, put there by
-// `purlis secret exec sentry --env SENTRY_INTAKE_TOKEN=intake-read-token -- …`. It is never
-// printed, never written, and sent only to the intake's own host. Without it, this says to run
-// the Sentry setup wizard (#5687) and exits 2, so the routine is a no-op until the token exists.
+// **It never sees the token.** purlis hands a vault's value to no program that runs what it is
+// told, `node` among them (ADR 0112, D-PE-ruling-2), so curl fetches the pages:
+// `purlis secret exec sentry --env SENTRY_INTAKE_TOKEN=intake-read-token -- curl … --variable
+// %SENTRY_INTAKE_TOKEN --expand-header "Authorization: Bearer {{SENTRY_INTAKE_TOKEN}}" -D
+// page-<n>.headers -o page-<n>.json <url>` (curl 8.3.0 or later), the skill holding the exact
+// loop. This prints each address curl is given, and only on the intake's own host, so the token
+// goes nowhere else; reads each saved page's status, saying to run the Sentry setup wizard's token
+// step (#5687) where the token was refused; and plans from the saved pages. `has-token` reads
+// `purlis secret list sentry` and, where the token is not there, says to run the wizard and exits
+// 2, so the routine is a no-op until the token exists. At most `MAX_PAGES` pages are fetched.
 //
 // **No store of its own.** An event is handled once an issue or comment labelled `reported`
 // carries its id in a marker this writes (`<!-- purlis-intake … -->`); "new" is an event of the
@@ -28,6 +37,8 @@
 // `tools/report-intake.test.mjs` (`node --test tools/`).
 
 import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
@@ -288,38 +299,102 @@ export function nextPage(link) {
   return null;
 }
 
-/** The most pages read in one run: a flood stops here rather than running the routine for an hour. */
+/** The most pages fetched in one run: a flood stops here rather than running the routine for an hour. */
 export const MAX_PAGES = 20;
 
+/** `url` when it is on the intake's own host, the only one the token is sent to; else it throws. */
+export function onIntakeHost(url) {
+  const origin = new URL(url).origin;
+  if (origin !== INTAKE.api) throw new Error(`refused to send the token to ${origin}`);
+  return url;
+}
+
+/** The first page of the project's events of the last `hours`. */
+export function firstPage(hours) {
+  return `${INTAKE.api}/api/0/projects/${INTAKE.org}/${INTAKE.project}/events/?full=true&statsPeriod=${hours}h`;
+}
+
 /**
- * The project's events of the last `hours`, every page, through `fetcher` (a `fetch`). The token
- * goes only to the intake's own host. A refused token throws {@link REFUSED_TOKEN}.
+ * A response's status and `Link` header from what `curl -D` saved. curl saves every response it
+ * read (a proxy's `CONNECT` answer first), so the last one is the server's.
  */
-export async function fetchEvents({ token, hours, fetcher = fetch }) {
-  let url = `${INTAKE.api}/api/0/projects/${INTAKE.org}/${INTAKE.project}/events/?full=true&statsPeriod=${hours}h`;
+export function responseOf(headers) {
+  const blocks = headers.replace(/\r/g, "").split(/\n(?=HTTP\/)/);
+  const last = blocks[blocks.length - 1];
+  const status = Number(last.match(/^HTTP\/[\d.]+ (\d{3})/)?.[1]);
+  if (!status) throw new Error("no HTTP status in the saved headers: was the page fetched?");
+  const link = last.match(/^link:[ \t]*(.*)$/im)?.[1] ?? null;
+  return { status, link };
+}
+
+/** Throws what to tell the steward when the intake did not answer a page with its events. */
+function checkStatus(status) {
+  if (status === 401 || status === 403) throw new Error(REFUSED_TOKEN(status));
+  if (status < 200 || status > 299) throw new Error(`The Report intake answered HTTP ${status} for its events.`);
+}
+
+/**
+ * The next page to fetch after the one whose saved headers are `headers`, on the intake's host
+ * only, or null when that page was the last. A refused token throws {@link REFUSED_TOKEN}.
+ */
+export function nextPageOf(headers) {
+  const { status, link } = responseOf(headers);
+  checkStatus(status);
+  const next = nextPage(link);
+  return next && onIntakeHost(next);
+}
+
+/**
+ * The events of the pages the steward saved in `dir`: `page-<n>.headers` (curl's `-D`) and
+ * `page-<n>.json` (its `-o`), from 1 up, in order. A refused token throws {@link REFUSED_TOKEN}.
+ */
+export function readPages(dir) {
+  if (!existsSync(join(dir, "page-1.headers"))) throw new Error(`no fetched pages in ${dir}: page-1.headers is missing`);
   const events = [];
-  for (let page = 0; url && page < MAX_PAGES; page += 1) {
-    if (new URL(url).origin !== INTAKE.api) throw new Error(`refused to send the token to ${new URL(url).origin}`);
-    const response = await fetcher(url, { headers: { Authorization: `Bearer ${token}` } });
-    if (response.status === 401 || response.status === 403) throw new Error(REFUSED_TOKEN(response.status));
-    if (!response.ok) throw new Error(`The Report intake answered HTTP ${response.status} for its events.`);
-    events.push(...(await response.json()));
-    url = nextPage(response.headers.get("link"));
+  for (let n = 1; existsSync(join(dir, `page-${n}.headers`)); n += 1) {
+    checkStatus(responseOf(readFileSync(join(dir, `page-${n}.headers`), "utf8")).status);
+    events.push(...JSON.parse(readFileSync(join(dir, `page-${n}.json`), "utf8")));
   }
   return events;
 }
 
-/** `argv` as options: `--since-hours` (default 26) and `--weeks` (default 4), both whole and positive. */
+/** Whether `purlis secret list <vault>`'s answer, a key a line, lists the read token. */
+export function hasToken(listed) {
+  return listed.split(/\r?\n/).some((line) => line.trim() === TOKEN.key);
+}
+
+const USAGE = [
+  "usage: node tools/report-intake.mjs has-token < <purlis secret list sentry>",
+  "       node tools/report-intake.mjs url [--weeks 4]",
+  "       node tools/report-intake.mjs next <headers-file>",
+  "       node tools/report-intake.mjs plan --from <dir> [--since-hours 26] [--weeks 4]",
+].join("\n");
+
+/** `argv` as options: `--since-hours` (default 26) and `--weeks` (default 4), both whole and positive, and `--from`. */
 export function parseArgs(argv) {
-  const options = { command: argv[0], sinceHours: 26, weeks: 4 };
-  for (let i = 1; i < argv.length; i += 2) {
-    const value = Number(argv[i + 1]);
-    if (!Number.isInteger(value) || value <= 0) throw new Error(`${argv[i]} wants a whole number above 0`);
-    if (argv[i] === "--since-hours") options.sinceHours = value;
-    else if (argv[i] === "--weeks") options.weeks = value;
-    else throw new Error(`unknown option ${argv[i]}`);
+  const [command, ...rest] = argv;
+  const options = { command, sinceHours: 26, weeks: 4 };
+  if (command === "next") {
+    if (rest.length !== 1) throw new Error(USAGE);
+    return { command, headers: rest[0] };
   }
-  if (options.command !== "plan") throw new Error("usage: node tools/report-intake.mjs plan [--since-hours 26] [--weeks 4]");
+  if (command === "has-token" && rest.length === 0) return { command };
+  if (command !== "plan" && command !== "url") throw new Error(USAGE);
+  for (let i = 0; i < rest.length; i += 2) {
+    if (rest[i] === "--from" && command === "plan") {
+      if (!rest[i + 1]) throw new Error("--from wants the folder the pages were saved in");
+      options.from = rest[i + 1];
+      continue;
+    }
+    const value = Number(rest[i + 1]);
+    if (rest[i] === "--weeks" || (rest[i] === "--since-hours" && command === "plan")) {
+      if (!Number.isInteger(value) || value <= 0) throw new Error(`${rest[i]} wants a whole number above 0`);
+      options[rest[i] === "--weeks" ? "weeks" : "sinceHours"] = value;
+    } else {
+      throw new Error(`unknown option ${rest[i]}`);
+    }
+  }
+  if (command === "plan" && !options.from) throw new Error(USAGE);
   return options;
 }
 
@@ -333,15 +408,24 @@ function reportedIssues() {
   return JSON.parse(out);
 }
 
-async function main() {
+function main() {
   const options = parseArgs(process.argv.slice(2));
-  const token = process.env[TOKEN.env];
-  if (!token) {
+  if (options.command === "has-token") {
+    if (hasToken(readFileSync(0, "utf8"))) return;
     process.stderr.write(`${MISSING_TOKEN}\n`);
     process.exit(2);
   }
+  if (options.command === "url") {
+    process.stdout.write(`${firstPage(options.weeks * 7 * 24)}\n`);
+    return;
+  }
+  if (options.command === "next") {
+    const next = nextPageOf(readFileSync(options.headers, "utf8"));
+    if (next) process.stdout.write(`${next}\n`);
+    return;
+  }
   const now = new Date();
-  const recent = (await fetchEvents({ token, hours: options.weeks * 7 * 24 })).map(reportOf);
+  const recent = readPages(options.from).map(reportOf);
   const since = now.getTime() - options.sinceHours * 3_600_000;
   const fresh = recent.filter((report) => Date.parse(report.at) >= since);
   const steps = plan(fresh, reportedIssues());
@@ -349,8 +433,10 @@ async function main() {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  main().catch((error) => {
+  try {
+    main();
+  } catch (error) {
     process.stderr.write(`${error.message}\n`);
     process.exit(1);
-  });
+  }
 }

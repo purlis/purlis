@@ -4,37 +4,73 @@ title: The daily Report intake routine
 description: Promote the day's Report intake events (purlis's private Sentry EU project) to purlis/purlis issues labelled `reported`, add duplicates to the issues they repeat, triage what was filed, and post the daily summary. Use when the steward's Report intake curation action opens a chat, or when asked to run the report intake routine.
 ---
 
-The steward runs this once a day (#5701, spec #5683, ADR 0118). `node tools/report-intake.mjs plan`
-does the deterministic part: it reads the intake, groups duplicates by the device's fingerprint
-and Sentry's own grouping, decides file or add, and renders the summary. Its header comment says
-how. This skill is the judgement around it. Each step ends on its **done** line.
+The steward runs this once a day (#5701, spec #5683, ADR 0118). `tools/report-intake.mjs` does
+the deterministic part, and curl does the fetching. The tool says which pages to fetch. It reads the
+pages curl saved, groups duplicates by the device's fingerprint and Sentry's own grouping, decides
+whether to file or add, and renders the summary. Its header comment says how. This skill is the
+judgement around it. Each step ends on its **done** line.
+
+**The tool never sees the token.** purlis hands a vault's value to no program that runs what it is
+told, so `node` cannot be given it (ADR 0112, D-PE-ruling-2). curl is on purlis's reviewed list,
+and from 8.3.0 it puts the token in its header itself, with no shell between.
 
 Work in a purlis clone of the `smart-ide` workspace on an up-to-date `main`.
 
 ## 1. Token
 
 ```bash
-purlis secret list sentry
+purlis secret list sentry | node tools/report-intake.mjs has-token
 ```
 
-If `intake-read-token` is not listed, the intake is not set up yet. Run
-`node tools/report-intake.mjs plan`, which says so and exits 2, post that message as the day's
-summary (step 5), and stop. Nothing is read and nothing is filed. Never ask for the token's value,
-print it, or put it on a command line. The Sentry setup wizard (#5687) stores it.
+If it exits 2, the intake is not set up yet. Post the message it printed as the day's summary
+(step 5) and stop. Nothing is read and nothing is filed. Never ask for the token's value, print it,
+or put it on a command line. The Sentry setup wizard (#5687) stores it.
 
-**Done:** the key is listed, or the routine has stopped with the wizard's message.
+**Done:** it exited 0, or the routine has stopped with the wizard's message.
 
-## 2. Plan
+## 2. Fetch, then plan
+
+Fetch every page of the intake's events for the last four weeks with curl, at most 20 pages, then
+plan from the saved pages:
 
 ```bash
-purlis secret exec sentry --env SENTRY_INTAKE_TOKEN=intake-read-token -- \
-  node tools/report-intake.mjs plan > "$TMPDIR/intake-plan.json"
+dir=$(mktemp -d "$TMPDIR/intake.XXXXXX")
+url=$(node tools/report-intake.mjs url) && ok=1 n=1
+while [ -n "$url" ] && [ "$n" -le 20 ]; do
+  purlis secret exec sentry --env SENTRY_INTAKE_TOKEN=intake-read-token -- \
+    curl -sS --proto =https --max-time 60 \
+      --variable %SENTRY_INTAKE_TOKEN \
+      --expand-header "Authorization: Bearer {{SENTRY_INTAKE_TOKEN}}" \
+      -D "$dir/page-$n.headers" -o "$dir/page-$n.json" "$url" || { ok=0; break; }
+  url=$(node tools/report-intake.mjs next "$dir/page-$n.headers") || { ok=0; break; }
+  n=$((n + 1))
+done
+[ "$ok" = 1 ] && node tools/report-intake.mjs plan --from "$dir" > "$TMPDIR/intake-plan.json"
+echo "pages: $((n - 1)), ok: $ok, more left: ${url:+yes}"
 ```
+
+Run it exactly as written. Each piece keeps the token away from anything but the intake:
+
+- `url` and `next` print an address on `https://de.sentry.io` alone, and refuse any other host.
+- curl does not follow redirects without `-L`, and `--proto =https` keeps it on https.
+- curl reads the token from its variable. Nothing on the command line holds it.
+- `next` prints nothing after the last page (the `Link` header's `rel="next"` with
+  `results="false"`), which ends the loop. Where 20 pages were read and `more left` says yes,
+  the plan covers the oldest 20 pages' events alone: say so in the summary.
+
+**The first run asks the person.** The steward holds no tool for curl with vault `sentry`, so the
+first `purlis secret exec` raises one notice: the vault, the key, and an Allow for curl. Ask the
+person for **Allow for this chat**, which covers every page of the loop. **Always allow** would
+commit a `curl` tool line to the steward, and every curl a steward chat runs would then be handed
+the token. Where the sandbox refuses `de.sentry.io`, ask for that host the same way.
+
+**If it ends with `ok: 0`**, or the plan fails, nothing was planned. If `next` says the token was
+refused (HTTP 401 or 403, naming the wizard's token step, #5687), post that message as the summary
+and stop. For any other error, post what it says and stop, and do not plan from a part of the pages.
 
 `steps` holds one entry for each distinct group of new reports, and `summary` holds the day's
 Markdown. An event that a `reported` issue or comment already names is never planned again, so
-running the routine twice in one day is safe. If the plan says the token was refused, post that
-as the summary and stop.
+running the routine twice in one day is safe.
 
 **Done:** the plan is written, and you know how many steps it has.
 

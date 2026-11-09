@@ -2,33 +2,39 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // The steward's daily Report intake routine (#5701), read from recorded answers of Sentry's
-// project events API (`tools/report-intake-fixtures/`, `full=true`) and of
+// project events API as curl saved them (`tools/report-intake-fixtures/`, `full=true`) and of
 // `gh issue list --label reported`. Run with `node --test tools/`.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import {
-  INTAKE,
   MISSING_TOKEN,
-  fetchEvents,
+  firstPage,
   group,
+  hasToken,
   isoWeek,
   markersIn,
   nextPage,
+  nextPageOf,
   parseArgs,
   plan,
+  readPages,
   reportOf,
   summary,
   weekly,
 } from "./report-intake.mjs";
 
-const fixture = (name) =>
-  JSON.parse(readFileSync(new URL(`./report-intake-fixtures/${name}`, import.meta.url), "utf8"));
+const fixtures = fileURLToPath(new URL("./report-intake-fixtures/", import.meta.url));
+const fixture = (name) => JSON.parse(readFileSync(join(fixtures, name), "utf8"));
+const saved = (name) => readFileSync(join(fixtures, name), "utf8");
+const tool = fileURLToPath(new URL("./report-intake.mjs", import.meta.url));
 
-const reports = fixture("events.json").map(reportOf);
+const reports = readPages(join(fixtures, "pages")).map(reportOf);
 const issues = fixture("reported-issues.json");
 const byAction = (steps, action) => steps.filter((step) => step.action === action);
 
@@ -113,43 +119,48 @@ test("weeks are ISO weeks, a year's first days belonging to the week of their Th
   assert.equal(isoWeek("2024-12-30T12:00:00Z"), "2025-W01");
 });
 
-const answer = (status, body, link) => ({
-  status,
-  ok: status >= 200 && status < 300,
-  headers: { get: (name) => (name === "link" ? link : null) },
-  json: async () => body,
-});
-
-test("every page of events is read, with the token sent to the intake's EU host only", async () => {
-  const base = `${INTAKE.api}/api/0/projects/purlis/purlis-app/events/`;
-  const asked = [];
-  const pages = [
-    answer(200, fixture("events.json").slice(0, 4), `<${base}?&cursor=0:0:1>; rel="previous"; results="false"; cursor="0:0:1", <${base}?&cursor=0:100:0>; rel="next"; results="true"; cursor="0:100:0"`),
-    answer(200, fixture("events.json").slice(4), `<${base}?&cursor=0:100:1>; rel="previous"; results="true"; cursor="0:100:1", <${base}?&cursor=0:200:0>; rel="next"; results="false"; cursor="0:200:0"`),
-  ];
-  const events = await fetchEvents({
-    token: "t0ken",
-    hours: 26,
-    fetcher: async (url, init) => {
-      asked.push({ url, auth: init.headers.Authorization });
-      return pages.shift();
-    },
-  });
+test("every page curl saved is read in order, the proxy's CONNECT answer before a page's own read past", () => {
+  const events = readPages(join(fixtures, "pages"));
   assert.equal(events.length, 7);
-  assert.equal(asked[0].url, `${base}?full=true&statsPeriod=26h`);
-  assert.ok(asked.every(({ url, auth }) => url.startsWith("https://de.sentry.io/") && auth === "Bearer t0ken"));
-});
-
-test("a refused token says to run the wizard's token step again, without the token", async () => {
-  await assert.rejects(
-    fetchEvents({ token: "t0ken", hours: 26, fetcher: async () => answer(401, fixture("refused.json")) }),
-    (error) => /HTTP 401/.test(error.message) && /#5687/.test(error.message) && !error.message.includes("t0ken"),
+  assert.deepEqual(
+    events.map((event) => event.eventID.slice(0, 2)),
+    ["e1", "e2", "e3", "e4", "e5", "e6", "e7"],
   );
 });
 
-test("a next page on another host is refused, so the token never leaves for it", async () => {
-  await assert.rejects(
-    fetchEvents({ token: "t0ken", hours: 26, fetcher: async () => answer(200, [], `<https://evil.example/x>; rel="next"; results="true"`) }),
+test("the first page asks for the whole window of weeks, on the intake's EU host", () => {
+  assert.equal(firstPage(4 * 7 * 24), "https://de.sentry.io/api/0/projects/purlis/purlis-app/events/?full=true&statsPeriod=672h");
+  const run = spawnSync(process.execPath, [tool, "url", "--weeks", "1"], { encoding: "utf8" });
+  assert.equal(run.status, 0);
+  assert.equal(run.stdout, "https://de.sentry.io/api/0/projects/purlis/purlis-app/events/?full=true&statsPeriod=168h\n");
+});
+
+test("the next page is the Link header's next with results, and none after the last page", () => {
+  assert.equal(
+    nextPageOf(saved("pages/page-1.headers")),
+    "https://de.sentry.io/api/0/projects/purlis/purlis-app/events/?full=true&statsPeriod=672h&cursor=0:100:0",
+  );
+  assert.equal(nextPageOf(saved("pages/page-2.headers")), null);
+  assert.equal(nextPageOf("HTTP/1.1 200 OK\nLink: <https://de.sentry.io/b>; rel=\"next\"; results=\"true\"\n\n"), "https://de.sentry.io/b", "HTTP/1.1 spells it Link");
+  const run = spawnSync(process.execPath, [tool, "next", join(fixtures, "pages/page-1.headers")], { encoding: "utf8" });
+  assert.equal(run.status, 0);
+  assert.match(run.stdout, /cursor=0:100:0\n$/);
+  const last = spawnSync(process.execPath, [tool, "next", join(fixtures, "pages/page-2.headers")], { encoding: "utf8" });
+  assert.deepEqual([last.status, last.stdout], [0, ""], "no address, so the fetch loop ends");
+});
+
+test("a refused token says to run the wizard's token step again, at the next page and at the plan", () => {
+  const refused = (error) => /HTTP 401/.test(error.message) && /#5687/.test(error.message);
+  assert.throws(() => nextPageOf(saved("refused/page-1.headers")), refused);
+  assert.throws(() => readPages(join(fixtures, "refused")), refused);
+  const run = spawnSync(process.execPath, [tool, "next", join(fixtures, "refused/page-1.headers")], { encoding: "utf8" });
+  assert.equal(run.status, 1);
+  assert.equal(run.stdout, "", "no address, so curl is not run again with a refused token");
+});
+
+test("a next page on another host is refused, so the token never leaves for it", () => {
+  assert.throws(
+    () => nextPageOf('HTTP/2 200\nlink: <https://evil.example/x>; rel="next"; results="true"\n\n'),
     /refused to send the token to https:\/\/evil\.example/,
   );
 });
@@ -159,23 +170,36 @@ test("the last page is the one whose next link has no results", () => {
   assert.equal(nextPage(null), null);
 });
 
+test("a plan from a folder no page was saved in says so rather than planning nothing", () => {
+  const empty = mkdtempSync(join(tmpdir(), "report-intake-"));
+  try {
+    assert.throws(() => readPages(empty), /no fetched pages/);
+  } finally {
+    rmSync(empty, { recursive: true });
+  }
+});
+
 test("a missing token says to run the Sentry setup wizard (#5687), exits 2 and reads nothing", () => {
-  const env = { ...process.env };
-  delete env.SENTRY_INTAKE_TOKEN;
-  const run = spawnSync(process.execPath, [fileURLToPath(new URL("./report-intake.mjs", import.meta.url)), "plan"], {
-    encoding: "utf8",
-    env,
-  });
+  assert.equal(hasToken("intake-read-token\n"), true);
+  assert.equal(hasToken("other-token\nintake-read-token-old\n"), false);
+  const run = spawnSync(process.execPath, [tool, "has-token"], { encoding: "utf8", input: "other-token\n" });
   assert.equal(run.status, 2);
   assert.equal(run.stdout, "");
   assert.equal(run.stderr, `${MISSING_TOKEN}\n`);
   assert.match(run.stderr, /vault `sentry` has no `intake-read-token`/);
   assert.match(run.stderr, /Sentry setup wizard \(#5687\)/);
+  const listed = spawnSync(process.execPath, [tool, "has-token"], { encoding: "utf8", input: "intake-read-token\n" });
+  assert.deepEqual([listed.status, listed.stdout, listed.stderr], [0, "", ""]);
 });
 
-test("options are whole numbers above 0, and only plan is a command", () => {
-  assert.deepEqual(parseArgs(["plan"]), { command: "plan", sinceHours: 26, weeks: 4 });
-  assert.deepEqual(parseArgs(["plan", "--since-hours", "48", "--weeks", "8"]), { command: "plan", sinceHours: 48, weeks: 8 });
-  assert.throws(() => parseArgs(["plan", "--weeks", "0"]), /whole number/);
+test("options are whole numbers above 0, plan reads saved pages, and only the four commands run", () => {
+  assert.deepEqual(parseArgs(["plan", "--from", "d"]), { command: "plan", from: "d", sinceHours: 26, weeks: 4 });
+  assert.deepEqual(parseArgs(["plan", "--from", "d", "--since-hours", "48", "--weeks", "8"]), { command: "plan", from: "d", sinceHours: 48, weeks: 8 });
+  assert.deepEqual(parseArgs(["url", "--weeks", "2"]), { command: "url", sinceHours: 26, weeks: 2 });
+  assert.deepEqual(parseArgs(["next", "h"]), { command: "next", headers: "h" });
+  assert.deepEqual(parseArgs(["has-token"]), { command: "has-token" });
+  assert.throws(() => parseArgs(["plan", "--from", "d", "--weeks", "0"]), /whole number/);
+  assert.throws(() => parseArgs(["plan"]), /usage/, "a plan never fetches, so it wants the saved pages");
+  assert.throws(() => parseArgs(["url", "--since-hours", "4"]), /unknown option/);
   assert.throws(() => parseArgs(["file"]), /usage/);
 });
