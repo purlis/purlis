@@ -403,6 +403,14 @@ pub fn delete_set(
             tracked: is_tracked,
         });
     }
+    // An org's project audits the removal of each skill installed from a source (SK-11), once
+    // every one is checked and before the first is touched.
+    for one in &planned {
+        if let Some(audited) = source::policy::removal(plane, &one.member.level, &one.member.name) {
+            cx.audited(&audited)
+                .map_err(|why| format!("{why}, so nothing was deleted"))?;
+        }
+    }
     let source_file = match remove_source {
         Some(remote) => source::listed::shared_file_of(plane, remote)?,
         None => None,

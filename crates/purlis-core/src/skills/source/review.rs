@@ -813,9 +813,32 @@ pub fn review(
     names: &[String],
     level: &Level,
 ) -> Result<Review, String> {
-    Ok(fetch(plane, source, None)?
+    let fetched = fetch(plane, source, None)?;
+    let review = fetched
         .review_with(names, &met_at(plane, level))?
-        .marked(plane, level))
+        .marked(plane, level);
+    held_to_policy(plane, &fetched, &review)?;
+    Ok(review)
+}
+
+/// **Refused where the org's controls refuse any skill of `review`** of what `fetched` holds
+/// ([`super::policy`]): so the review says why before anything is accepted.
+fn held_to_policy(plane: &Path, fetched: &Fetched, review: &Review) -> Result<(), String> {
+    super::policy::hold(
+        plane,
+        &Origin::Git(fetched.source.remote.clone()),
+        review.skills.iter().map(|one| one.name.as_str()),
+        &Pin::Commit(fetched.commit.clone()),
+        || super::SkillSource::made(fetched),
+    )
+}
+
+/// [`held_to_policy`] of a set's review, where it is one.
+fn set_held_to_policy(plane: &Path, fetched: &Fetched, set: &SetReview) -> Result<(), String> {
+    match set {
+        SetReview::Review { review, .. } => held_to_policy(plane, fetched, review),
+        _ => Ok(()),
+    }
 }
 
 /// **The review of installing `names` from `source` together at `level`** (#4024), at its newest
@@ -831,7 +854,7 @@ pub fn review_set(
     let fetched = fetch(plane, source, None)?;
     let (found, _) = fetched.skills()?;
     let installed = lock::every(plane).0;
-    Ok(fetched
+    let set = fetched
         .set_review(
             &found,
             names,
@@ -842,7 +865,9 @@ pub fn review_set(
             },
             &met_at(plane, level),
         )?
-        .marked(plane, level))
+        .marked(plane, level);
+    set_held_to_policy(plane, &fetched, &set)?;
+    Ok(set)
 }
 
 /// **The review of installing every skill of `source` not installed from it yet** (#4024,
@@ -859,9 +884,11 @@ pub fn review_all(plane: &Path, source: &Source, level: &Level) -> Result<SetRev
         .map(|skill| skill.name.clone())
         .collect();
     // Those it names are installed nowhere from this source, so none is there already.
-    Ok(fetched
+    let set = fetched
         .set_review(&found, &names, &|_| false, &met_at(plane, level))?
-        .marked(plane, level))
+        .marked(plane, level);
+    set_held_to_policy(plane, &fetched, &set)?;
+    Ok(set)
 }
 
 impl SetReview {

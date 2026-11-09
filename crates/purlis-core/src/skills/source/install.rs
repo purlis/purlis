@@ -234,6 +234,11 @@ pub(super) fn install_from(
              installed: review it again"
         ));
     }
+    // The org's controls, asked again of what is installed now (SK-11).
+    super::policy::hold(plane, origin, names.iter().map(String::as_str), pin, || {
+        source.made()
+    })
+    .map_err(|why| format!("{why}, so nothing was installed"))?;
     let held = lock::read(plane, kept)?;
     let parts = level_parts(level)?;
     let mut copies = Vec::new();
@@ -269,6 +274,14 @@ pub(super) fn install_from(
         };
         copies.push((skill, name.clone(), files, recorded, renamed.is_some()));
     }
+    cx.audited(&super::policy::Audited::new(
+        super::policy::Act::Install,
+        level,
+        copies.iter().map(|one| one.1.clone()).collect(),
+        origin,
+        pin,
+    ))
+    .map_err(|why| format!("{why}, so nothing was installed"))?;
     let mut written = Written::none(plane, parts.clone());
     let mut lock = held.lock.clone();
     // An entry whose skill is gone was a deleted skill's (#5331), and the new copy takes its

@@ -67,6 +67,7 @@ fn saved(root: &Path, from: &str, to: &str) {
             built_in: None,
             by: By::Window,
             say: &mut say,
+            audit: None,
         },
         &level,
         "deploy",

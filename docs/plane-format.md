@@ -206,6 +206,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`skills.local/` — the project's local skills](#skillslocal--the-projects-local-skills)
   - [`skills.lock` — the project's installed skills](#skillslock--the-projects-installed-skills)
   - [`[[skill_sources]]` — the sources a project browses](#skill_sources--the-sources-a-project-browses)
+  - [`[skill_policy]` — the org's controls over skill sources](#skill_policy--the-orgs-controls-over-skill-sources)
   - [`skills.local.lock` — the installs at local levels](#skillslocallock--the-installs-at-local-levels)
   - [`$TMPDIR/purlis-skill-source-<random>/` — a fetched skill source](#tmpdirpurlis-skill-source-random--a-fetched-skill-source)
   - [`workspaces/<ws>/skills/` and `personas/<name>/skills/` — workspace and persona skills](#workspaceswsskills-and-personasnameskills--workspace-and-persona-skills)
@@ -1711,6 +1712,35 @@ of that name at that level replaces it.
 | `vault` | string | optional, with `key` | The vault a private source signs in with. Read from `charter.local.toml` only. | experimental | ADR 0100 §5 |
 | `key` | string | optional, with `vault` | The entry in that vault holding the token. Never the token. | experimental | ADR 0100 §5 |
 | `user` | string | optional, default `x-access-token` | The user name sent beside the token, for a forge that wants one. | experimental | ADR 0100 §5 |
+
+### `[skill_policy]` — the org's controls over skill sources
+
+- **Format:** one TOML table in `charter.toml`, keys below and no other.
+- **Status:** **purlis only** (SK-11, #2774; ADR 0100 §6, amended 2026-11-09), **experimental**
+  while the `skill-studio` flag is on.
+- **Tier:** Plane — in `charter.toml`, committed. It is never read from `charter.local.toml`: a
+  table there refuses every install and update until it is taken out, so one machine cannot
+  loosen what the team set.
+- **Written by:** a person, by hand or through a reviewed change to `charter.toml`. purlis never
+  writes it.
+- **Read by:** `purlis_core::skills::source::policy::of`, with a real TOML parser and these keys
+  alone, failing closed: a table that cannot be read refuses every install and update, and says
+  so in one sentence. **A project whose `charter.toml` holds the table is an org's**: its
+  installs and updates are held to it at the review (so the review says why), and again at the
+  install or update itself; and every install, update and removal of a skill installed from a
+  source is recorded in this machine's event log as `skill.install`, `skill.update` or
+  `skill.remove` (level, skills, source, commit; never a folder of this machine or a URL's
+  query) before it is made. Only the window writes that log, so on such a project
+  `purlis skill install | update | rm` of an installed skill is refused and names the Skill
+  studio.
+- **Git:** as `charter.toml`.
+
+| Key | Type | Required / default | Meaning | Status | Source |
+|---|---|---|---|---|---|
+| `allow` | array of tables | optional; absent = every source not blocked | The sources and skills that may be installed. Each is `{ source = "<url>" }` or `{ extension = "<id>" }`, with `skill = "<name>"` for that one skill alone. A URL matches without a trailing `/` or `.git`, and with any case in its scheme and host. Given, anything it does not cover is refused, a skill brought along included. | experimental | ADR 0100 §6 |
+| `block` | array of tables | optional, default none | The same shape. A block wins over an allow. | experimental | ADR 0100 §6 |
+| `min_age_days` | integer | optional, default `7` | How old a commit must be, by its committer time, to be installed or updated to. `0` turns the age off. A source that cannot say when (an extension's revision) is refused while it is on. | experimental | ADR 0100 §6 |
+| `min_age_exempt` | array of strings | optional, default none | Full commits (or an extension's revisions) installed younger all the same: the one way past the age, as a reviewed change of the team's file. | experimental | ADR 0100 §6 |
 
 ### `skills.local.lock` — the installs at local levels
 

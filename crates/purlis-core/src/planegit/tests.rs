@@ -6084,6 +6084,7 @@ fn skill_change(root: &Path, change: impl FnOnce(&mut crate::skills::verbs::Ctx<
         built_in: None,
         by: crate::skills::verbs::By::Command,
         say: &mut say,
+        audit: None,
     });
     said
 }

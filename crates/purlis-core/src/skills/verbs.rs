@@ -179,7 +179,15 @@ pub struct Ctx<'a> {
     pub built_in: Option<&'a Path>,
     pub by: By,
     pub say: Sink<'a>,
+    /// **Where an org's project audits its skill supply** (SK-11, [`super::source::policy`]):
+    /// the window's event log. `None` where nothing writes it, and then such a project's
+    /// installs, updates and removals are refused.
+    pub audit: Option<Audit<'a>>,
 }
+
+/// What audits one install, update or removal, made durable before it answers, or why it
+/// could not be.
+pub type Audit<'a> = &'a mut dyn FnMut(&super::source::policy::Audited) -> Result<(), String>;
 
 /// The plane's workspaces, by name.
 fn workspaces(plane: &Path) -> Vec<String> {
@@ -308,6 +316,23 @@ impl Ctx<'_> {
     /// another name (a restore, an install) asks, and says in its own words.
     pub fn reserved(&self, name: &str) -> bool {
         super::name_reserved(name)
+    }
+
+    /// **Audits `audited` where the project is an org's** ([`super::source::policy`]), before
+    /// the change is made: refused where the project's controls cannot be read, or nothing here
+    /// writes the audit. Nothing is written for a project without controls.
+    pub(in crate::skills) fn audited(
+        &mut self,
+        audited: &super::source::policy::Audited,
+    ) -> Result<(), String> {
+        if super::source::policy::of(self.plane)?.is_none() {
+            return Ok(());
+        }
+        match self.audit.as_mut() {
+            Some(audit) => audit(audited)
+                .map_err(|why| format!("it could not be recorded in the audit's log ({why})")),
+            None => Err(super::source::policy::NOT_AUDITED_HERE.to_owned()),
+        }
     }
 
     /// Says `line` as a warning.
@@ -1525,18 +1550,22 @@ pub fn delete(cx: &mut Ctx<'_>, level: &Level, name: &str) -> Result<Kept, Strin
     let folder_rel = rel(plane, &folder);
     let toml_rel = rel(plane, &beside(&folder));
     let paths = [folder_rel.clone(), toml_rel.clone()];
-    if tracked(plane, &folder_rel) {
-        if !pending_in(plane, &[&folder_rel, &toml_rel])?.is_empty() {
-            return Err(format!(
-                "{name} holds changes that are not committed yet, and those could not be \
-                 restored: save them first, then delete it"
-            ));
-        }
-        if crate::planegit::paths_unsaved(plane, &paths).is_none() {
-            let deleted = deleted_by_git(cx, level, name, &folder_rel, &toml_rel)?;
-            after_edit_dropped(cx, level, name);
-            return Ok(deleted);
-        }
+    let is_tracked = tracked(plane, &folder_rel);
+    if is_tracked && !pending_in(plane, &[&folder_rel, &toml_rel])?.is_empty() {
+        return Err(format!(
+            "{name} holds changes that are not committed yet, and those could not be \
+             restored: save them first, then delete it"
+        ));
+    }
+    // An org's project audits the removal of a skill installed from a source (SK-11).
+    if let Some(audited) = super::source::policy::removal(plane, level, name) {
+        cx.audited(&audited)
+            .map_err(|why| format!("{why}, so {name} was not deleted"))?;
+    }
+    if is_tracked && crate::planegit::paths_unsaved(plane, &paths).is_none() {
+        let deleted = deleted_by_git(cx, level, name, &folder_rel, &toml_rel)?;
+        after_edit_dropped(cx, level, name);
+        return Ok(deleted);
     }
     let kept = keep_here(plane, level, &folder).map_err(|unmoved| match unmoved {
         Unmoved::Nothing(why) => format!("{name} was not deleted: {why}"),
@@ -1801,6 +1830,7 @@ fn finished_or_undone(cx: &mut Ctx<'_>, level: &Level, folder: &str) -> Option<E
         built_in: cx.built_in,
         by: cx.by,
         say: &mut quiet,
+        audit: None,
     };
     Some(
         match removal_committed(&mut inner, &name, &folder_rel, &toml_rel, &specs) {

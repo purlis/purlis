@@ -12,7 +12,7 @@ use purlis_core::skills::verbs::{self, set};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
-use crate::skillchange::{SkillGrant, SkillLevel, SkillPinner, flag_on, heard};
+use crate::skillchange::{SkillGrant, SkillLevel, SkillPinner, flag_on, heard, heard_audited};
 use crate::skillhistory::SkillLifecycle;
 use crate::skillsources::{SkillSource, SourceRemote};
 
@@ -247,7 +247,7 @@ pub(crate) async fn skill_set_delete(
         let members: Vec<set::Member> = members.iter().map(SkillSetMember::core).collect();
         let remote = remove_source.as_ref().map(SourceRemote::core);
         let mut gone = Vec::new();
-        let said = heard(held.root(), |cx| {
+        let said = heard_audited(&held, |cx| {
             gone = set::delete_set(cx, &members, from.as_deref(), remote.as_ref())?;
             Ok(())
         })?;
@@ -586,7 +586,7 @@ pub(crate) async fn skill_set_update(
             )?;
         }
         let mut undo = None;
-        let said = heard(root, |cx| {
+        let said = heard_audited(&held, |cx| {
             undo = Some(set_update::update_set(cx, &set)?);
             Ok(())
         })?;

@@ -69,6 +69,7 @@ fn on<T>(
         built_in,
         by: By::Command,
         say: &mut say,
+        audit: None,
     });
     (answer, lines)
 }

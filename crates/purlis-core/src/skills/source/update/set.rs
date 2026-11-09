@@ -214,6 +214,10 @@ pub fn update_set(cx: &mut Ctx<'_>, set: &[Updating]) -> Result<Undo, String> {
         }
     }
     let locks = moved_locks(plane, &planned)?;
+    for one in &planned {
+        cx.audited(&one.audited())
+            .map_err(|why| format!("{why}, so no skill was updated"))?;
+    }
     let mut wrote: Vec<Wrote> = Vec::new();
     for one in &planned {
         match write_planned(plane, one) {

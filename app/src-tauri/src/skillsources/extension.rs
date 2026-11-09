@@ -27,7 +27,7 @@ use super::{
     InstallReview, InstallSetReview, OfferedSkill, Reviewed, SkillRename, SourceBrowse,
     SourceCommit, UpdateReview, esc, update_shown,
 };
-use crate::skillchange::{SkillChanged, SkillGrant, SkillLevel, flag_on, heard};
+use crate::skillchange::{SkillChanged, SkillGrant, SkillLevel, flag_on, heard_audited};
 
 /// **An extension's skill source**, as the studio lists one: the extension's id, the name it
 /// gives itself, and how many skills are installed from it here.
@@ -332,7 +332,7 @@ pub(crate) async fn skill_extension_install(
         let read = self::held(&what)?;
         let accepted = accepted_at_revision(&reviewed)?;
         let grant: Option<purlis_core::skills::Grant> = grant.map(Into::into);
-        let changed = heard(root, |cx| {
+        let changed = heard_audited(&held, |cx| {
             ext::install(
                 cx,
                 &read,
@@ -450,7 +450,7 @@ pub(crate) async fn skill_extension_update(
         still_a_source(&executor, root, read.extension())?;
         let accepted = accepted_at_revision(&reviewed)?;
         let grant: Option<purlis_core::skills::Grant> = grant.map(Into::into);
-        let changed = heard(root, |cx| {
+        let changed = heard_audited(&held, |cx| {
             ext::update(cx, &read, &at, &name, &accepted, grant.as_ref())
         })?;
         release(&what);

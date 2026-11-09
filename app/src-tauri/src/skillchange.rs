@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 
 use purlis_core::repocmd::Say;
+use purlis_core::skills::source::policy::Audited;
 use purlis_core::skills::studio::Templates;
 use purlis_core::skills::verbs::{self, By, Level, Whose};
 use purlis_core::skills::{Grant, SkillTemplate as Offers, Template, TemplateId};
@@ -238,6 +239,26 @@ pub(crate) fn heard<T>(
     root: &std::path::Path,
     change: impl FnOnce(&mut verbs::Ctx<'_>) -> Result<T, String>,
 ) -> Result<SkillChanged, String> {
+    heard_with(root, None::<fn(&Audited) -> Result<(), String>>, change)
+}
+
+/// [`heard`] for an install, an update or a removal of the project `held` (SK-11, #2774):
+/// where its shared settings hold `[skill_policy]`, the change is audited in this machine's
+/// event log before it is made, and refused where the log is not open.
+pub(crate) fn heard_audited<T>(
+    held: &crate::planes::Held,
+    change: impl FnOnce(&mut verbs::Ctx<'_>) -> Result<T, String>,
+) -> Result<SkillChanged, String> {
+    let root = held.root();
+    let audit = |one: &Audited| held.hooks().record_skill_change(root, one);
+    heard_with(root, Some(audit), change)
+}
+
+fn heard_with<T>(
+    root: &std::path::Path,
+    mut audit: Option<impl FnMut(&Audited) -> Result<(), String>>,
+    change: impl FnOnce(&mut verbs::Ctx<'_>) -> Result<T, String>,
+) -> Result<SkillChanged, String> {
     let mut notes = Vec::new();
     let mut say = |line: Say| match line {
         Say::Info(text) | Say::Warn(text) | Say::Fail(text) => notes.push(text.to_string()),
@@ -249,6 +270,9 @@ pub(crate) fn heard<T>(
         built_in: built_in.as_deref(),
         by: By::Window,
         say: &mut say,
+        audit: audit
+            .as_mut()
+            .map(|audit| audit as &mut dyn FnMut(&Audited) -> Result<(), String>),
     })?;
     Ok(SkillChanged { notes })
 }
@@ -595,7 +619,7 @@ pub(crate) async fn skill_delete(
     let held = planes.held(&plane)?;
     crate::off_the_window("deleting the skill", move || {
         flag_on()?;
-        heard(held.root(), |cx| verbs::delete(cx, &(&level).into(), &name))
+        heard_audited(&held, |cx| verbs::delete(cx, &(&level).into(), &name))
     })
     .await
 }
@@ -640,6 +664,7 @@ pub(crate) fn cut_short(root: &std::path::Path) -> DeletesCutShort {
         built_in: built_in.as_deref(),
         by: By::Window,
         say: &mut say,
+        audit: None,
     });
     // The skills this machine kept deleted past their time (SK-33).
     verbs::expire_now(root);

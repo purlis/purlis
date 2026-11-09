@@ -3254,6 +3254,26 @@ impl Hooks {
         )
     }
 
+    /// **Audits an install, an update or a removal of skills on an org's project** (SK-11,
+    /// #2774) in the host's event log, made durable before it answers. Refused where this
+    /// machine has no event log open: on such a project no skill changes unrecorded.
+    pub fn record_skill_change(
+        &self,
+        root: &Path,
+        audited: &purlis_core::skills::source::policy::Audited,
+    ) -> Result<(), String> {
+        self.audit(
+            root,
+            None,
+            audited.kind(),
+            audited.body(),
+            (
+                "changed",
+                "skill install, update and removal on this project",
+            ),
+        )
+    }
+
     /// **Audits a dispatch grant or revoke** (#1437) in the host's event log, under chat
     /// `number` where it was allowed from one, and made durable before it answers. Refused
     /// where this machine has no event log open: a grant nobody recorded is never made.
