@@ -310,6 +310,23 @@ describe("the Chats list's words wear text roles (#1920)", () => {
     }
   });
 
+  it("lets a stopping row's word give way before its time", async () => {
+    // A stopping chat's trail gives way (#3198), and in it the word shrinks and the time does not.
+    document.body.insertAdjacentHTML(
+      "beforeend",
+      '<section class="chats-section"><div class="chat"><span class="stopping">Stopping…</span><span class="chat-time">10:42</span></div></section>',
+    );
+    const word = document.body.querySelector(".stopping") as Element;
+    const time = document.body.querySelector(".chat-time") as Element;
+    try {
+      expect(drawnWith(word, "flex")).toBe("0 1 auto");
+      expect(drawnWith(word, "text-overflow")).toBe("ellipsis");
+      expect(drawnWith(time, "flex")).toBe("none");
+    } finally {
+      word.closest("section")?.remove();
+    }
+  });
+
   it("holds who a question waits on to a share of the list, so the chat's name and the time keep theirs", () => {
     document.body.insertAdjacentHTML(
       "beforeend",

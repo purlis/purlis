@@ -1559,7 +1559,8 @@ function ChatRowDrawn({
   /** The rows under it: its browsers, the chats it asked for, and its finished tasks. */
   children?: ReactNode;
 }) {
-  /** Its question's words may give way at the row's end (#4564): the trail shrinks for them. */
+  /** Its question's words may give way at the row's end (#4564), as "Stopping…" may: the trail
+   *  shrinks for them. */
   const questioned = useQuestionStanding(session) !== undefined;
   /** The row itself: what its card stands beside, and what takes the keyboard back when the
    *  second step is answered Keep. */
@@ -1719,7 +1720,9 @@ function ChatRowDrawn({
           {/* Cut short where the row is narrow; whole in the card, and to a screen reader,
               which is told the row's name. */}
           <RowLabel className="session ui-text-body">{name}</RowLabel>
-          <RowTrail data-gives-way={questioned || undefined}>
+          {/* Its words at its end may give way, a question's (#4564) and "Stopping…" (#3198):
+              the time and the marks stay whole, so a narrow row keeps its time in it. */}
+          <RowTrail data-gives-way={questioned || stopping || undefined}>
             {open === false && (
               <>
                 <TasksFolded session={session} />
