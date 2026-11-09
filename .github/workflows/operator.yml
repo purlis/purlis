@@ -43,6 +43,10 @@ on:
       # A short task's runner of its own, from its claim to its release (#4569).
       - crates/purlis-core/src/codelink*
       - app/src-tauri/src/behaviour/tests/fresh_runner.rs
+      - app/src-tauri/src/behaviour/tests/on_a_cluster_pool.rs
+      - tests/parity/**
+      - tests/fixtures/harness-versions/claude-code/**
+      - crates/purlis-core/src/sandbox/claude_wrap*
       - app/src-tauri/src/behaviour.rs
       - app/src-tauri/src/chats.rs
       - app/src-tauri/src/chats/**
@@ -80,6 +84,10 @@ on:
       # A short task's runner of its own, from its claim to its release (#4569).
       - crates/purlis-core/src/codelink*
       - app/src-tauri/src/behaviour/tests/fresh_runner.rs
+      - app/src-tauri/src/behaviour/tests/on_a_cluster_pool.rs
+      - tests/parity/**
+      - tests/fixtures/harness-versions/claude-code/**
+      - crates/purlis-core/src/sandbox/claude_wrap*
       - app/src-tauri/src/behaviour.rs
       - app/src-tauri/src/chats.rs
       - app/src-tauri/src/chats/**

@@ -6,7 +6,8 @@
 # the repo's fake harness and `purlis` added at the folder this job's build keeps them in. A
 # behaviour names its chat's program by that path (`app/src-tauri/src/behaviour.rs`), so the same
 # behaviour runs unchanged on this machine and on the runner. Built and used by the `parity` job of
-# `.github/workflows/ci.yml` alone, and pushed nowhere but a registry of that job's own.
+# `.github/workflows/ci.yml`, and by `operator/e2e/kind.sh` for a cluster pool's runner pod (#4083),
+# and pushed nowhere but a registry of that run's own.
 
 # The runner image of this build, as the job tagged it.
 ARG RUNNER
