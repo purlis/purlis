@@ -5992,6 +5992,11 @@ export type ArtifactOpened = {
 	standing: string,
 	/**  Who made the pin it now has, for `pin-changed`, from the plane's history. */
 	changed_by: string | null,
+	/**
+	 *  Whether the data its page declared was generated on this machine (#5961): false when it
+	 *  declares data files and none is here, which the bar says.
+	 */
+	generated: boolean,
 };
 
 /**  One pin, as the activity bar's artifact group draws it. */

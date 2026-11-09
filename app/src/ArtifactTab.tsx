@@ -47,6 +47,9 @@ import { EmptyState } from "./ui/empty-state/EmptyState";
  *   script is shown without it, and the bar says so and offers Approve script. The frame's edge,
  *   which the page cannot draw, shows where it stands. An approval in any window, or a change to
  *   its template, tears the page down and opens it again under its new standing.
+ * - **Its data is each person's** (ADR 0120 §1, #5961): a page that declares data files of
+ *   which none is on this machine still renders, and the bar says it was not generated here.
+ *   The page reads its data itself, through the port purlis hands each load (`artifacts.rs`).
  */
 export function ArtifactTab({
   plane,
@@ -98,6 +101,11 @@ export function ArtifactTab({
         <span className="artifact-bar-name">{name}</span>
         <span className="artifact-bar-by">{pinnedBy(about.said)}</span>
         {opened === null ? null : <ScriptStanding opened={opened} />}
+        {opened === null || opened.generated ? null : (
+          <span className="artifact-bar-standing" data-testid="artifact-data">
+            Not generated on this machine
+          </span>
+        )}
       </header>
       {opened === null ? null : <ArtifactLinks label={opened.label} />}
       {unpinned ? (
