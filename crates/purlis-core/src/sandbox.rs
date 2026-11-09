@@ -1762,9 +1762,9 @@ impl Denied {
 
 /// **The programs every cluster pool's kubectl runs, held for no chat to write** (#3292): each
 /// as named, every link on the way and its real file, each with the folder it is in, and the
-/// package its real file belongs to ([`package_root`]) with all that is in it, but for a package
-/// that holds the project at `root` or is inside it, which the chat writes, as
-/// [`Compiled::hold_programs`] leaves it, and for one that is the home or a folder above it,
+/// package its real file belongs to ([`package_root`]) with all that is in it, inside the
+/// project at `root` too, but for a package that is the project or holds it, which the chat
+/// writes, and for one that is the home or a folder above it,
 /// which an add refuses now but one from before that refusal may have kept.
 fn cluster_programs_held(root: &Path, machine: &Machine) -> Vec<Denial> {
     let Some(config_root) = crate::machine::rooted(
@@ -1795,7 +1795,9 @@ fn cluster_programs_held(root: &Path, machine: &Machine) -> Vec<Denial> {
             hold(folder.to_path_buf(), Reach::Itself);
         }
         hold(program, Reach::Itself);
-        let around_project = project.starts_with(&package) || package.starts_with(&project);
+        // A package inside the project is held as any other is: the chat writes the rest of its
+        // project. One that is the project or holds it is held by its program alone.
+        let around_project = project.starts_with(&package);
         // A row an add from before this check kept: never the home or a folder above it.
         let around_home = home.as_ref().is_some_and(|home| home.starts_with(&package));
         if !around_project && !around_home && package.parent().is_some() {

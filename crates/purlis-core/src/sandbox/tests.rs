@@ -8302,6 +8302,53 @@ fn a_chat_writes_none_of_the_programs_a_cluster_pools_kubectl_runs_nor_their_pac
     );
 }
 
+/// A pool's plugin whose package is a folder inside the chat's project is held with all below
+/// it, as one anywhere else is: the chat writes the rest of its project, never that package.
+#[cfg(unix)]
+#[test]
+fn a_cluster_pools_program_whose_package_is_inside_the_project_is_held_with_its_package() {
+    let config = tempfile::tempdir().expect("a config home");
+    let plane = tempfile::tempdir().expect("a plane");
+    let project = super::real(plane.path());
+    let package = project.join("tools").join("kube");
+    std::fs::create_dir_all(&package).expect("a package");
+    let plugin = package.join("plugin");
+    std::fs::write(&plugin, "#!/bin/sh\n").expect("a plugin");
+    let folder =
+        purlis_same_user::PrivateDirectory::open(&crate::machine::dir(config.path())).unwrap();
+    let file = serde_json::json!({ "version": 1, "runners": [], "pools": [{
+        "name": "team", "kind": "cluster", "kubeconfig": "/home/op/.kube/config",
+        "context": "team", "pool": "default", "namespace": "ada",
+        "operatorKey": format!("ed25519:{}", "ab".repeat(32)),
+        "cluster": "3e9a4b2c-7d10-4f5e-8a6b-9c0d1e2f3a4b",
+        "holds": [plugin.display().to_string()],
+    }]});
+    folder
+        .replace_file(crate::machine::RUNNERS_FILE, file.to_string().as_bytes())
+        .unwrap();
+    let machine = Machine {
+        env: crate::secrets::Env::of(&[("XDG_CONFIG_HOME", &config.path().display().to_string())]),
+        home: None,
+        os: Os::Linux,
+    };
+    let denied = Denied::of(&project, &machine);
+    let held = |path: &std::path::Path, reach: Reach| {
+        denied.paths.iter().any(|it| {
+            it.class == Class::LaterCode
+                && it.access == Access::Write
+                && it.path == path
+                && it.reach == reach
+        })
+    };
+    assert!(held(&plugin, Reach::Itself), "{:?}", denied.paths);
+    assert!(held(&package, Reach::AndBelow), "{:?}", denied.paths);
+    assert!(
+        !denied.paths.iter().any(|it| it.path == project),
+        "the project itself is the chat's: {:?}",
+        denied.paths
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn a_cluster_pools_program_whose_package_would_be_the_home_or_above_it_is_held_alone() {
