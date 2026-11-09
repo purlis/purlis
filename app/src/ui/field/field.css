@@ -112,7 +112,7 @@
   display: flex;
   box-sizing: border-box;
   min-inline-size: 0;
-  border: 1px solid var(--border-control);
+  border: 1px solid var(--border-input);
   border-radius: var(--radius-control);
   color: var(--text-primary);
   background-color: var(--surface-sunken);
@@ -276,8 +276,8 @@
 
 /* A value the field refuses: the danger colour on its edge, beside the words that say why. The
    edge is the box's own, the `invalid` state of its root (#3323): a box that can be refused keeps
-   its edge's width, so a theme whose controls draw no edge at rest (Purlis, a transparent
-   `border.control`, #2912) still marks it, in its `invalid.border-colour` or this default. */
+   its edge's width, so a theme whose boxes draw no edge at rest (a transparent `border.input`)
+   still marks it, in its `invalid.border-colour` or this default. */
 :is([data-scope="text-input"], [data-scope="textarea"])[data-part="root"][data-invalid] {
   border-color: var(--danger-base);
 }

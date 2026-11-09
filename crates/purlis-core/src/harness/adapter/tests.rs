@@ -126,7 +126,7 @@ fn every_harness_says_its_own_budget_and_what_it_lists_of_a_skill() {
     assert_eq!((claude.skills, claude.chars), (60, 15_000));
     // Every built-in's description together is at most 5,000 (spec #5714's Q37), so Codex's and
     // opencode's defaults keep them all and about 3,000 for the plane's own skills. Codex's is
-    // exactly the listing it holds where it does not know its window, so it never warns.
+    // under what it keeps of the skills hook, so it never warns.
     assert_eq!((codex.skills, codex.chars), (30, 8_000));
     assert_eq!((opencode.skills, opencode.chars), (30, 8_000));
     assert_eq!(claude.per_description, Some(1_536));
@@ -187,8 +187,10 @@ fn only_a_budget_past_codexs_own_limit_warns_and_it_says_what_codex_would_drop()
     };
     let said = codex.skill_limit_past(raised).expect("a warning");
     assert!(said.contains("15,000"), "{said}");
-    assert!(said.contains("8,000"), "{said}");
-    assert!(said.contains("leaves skills out"), "{said}");
+    // What Codex keeps of a hook's output (codex-cli 0.147.0, measured; ADR 0102 as amended
+    // 2026-11-09), and the skills it loses past it.
+    assert!(said.contains("10,000"), "{said}");
+    assert!(said.contains("cuts the skills in the middle"), "{said}");
     assert!(!said.contains("  "), "{said}");
     // opencode has no limit, and purlis hands Claude Code the one the budget needs.
     let huge = crate::skills::Budget {

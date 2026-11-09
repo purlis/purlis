@@ -162,6 +162,7 @@
   --color-border-subtle: var(--border-subtle);
   --color-border-strong: var(--border-strong);
   --color-border-control: var(--border-control);
+  --color-border-input: var(--border-input);
   --color-accent-base: var(--accent-base);
   --color-accent-surface: var(--accent-surface);
   --color-accent-wash: var(--accent-wash);

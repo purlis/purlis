@@ -30,13 +30,16 @@
  *   grids, tables and trees, not tabs (D-3042-3).
  */
 import {
+  useCallback,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
   type ComponentPropsWithoutRef,
   type FocusEvent,
   type KeyboardEvent,
+  type ReactElement,
   type ReactNode,
   type Ref,
 } from "react";
@@ -119,32 +122,27 @@ export function useTabStrip({
 }
 
 /**
- * **The row that holds a strip's cells**, where the keyboard along its tabs is heard, and its
- * tablist: an empty element first inside it, laid over it (`.strip-tablist`), which owns the
- * tabs by their element ids (`ids`, in the order they are drawn) and nothing else (#1204).
+ * **What the element that holds a strip's cells wears, and its tablist's own attributes**: the
+ * keyboard along its tabs, heard on the row, and the tablist's role, name and orientation. A
+ * family whose container is drawn by its own wrapper (the rail's column, an activity bar's group)
+ * spreads `row` on that container and `tablist` on its tablist element; a strip of cells draws
+ * both through {@link TabStripRow}.
  *
  * Only the keys that move along the strip are React Aria's, and only pressed on one of its
  * tabs: a `×` or a chip beside a tab keeps its own arrows, Tab goes on to the next stop in the
  * document (the `+` among them), and a key a tab has taken (a lifted tab's arrows) is its own.
- * `className` places it, as the strip's own rules do (`.tabs`); never a look.
  */
-export function TabStripRow({
+export function useTabStripRow({
   strip,
   name,
-  ids,
   orientation = "horizontal",
   ref,
-  children,
-  ...rest
-}: Omit<ComponentPropsWithoutRef<"div">, "role"> & {
+}: {
   strip: TabStrip;
   /** The tablist's accessible name. */
   name: string;
-  ids: readonly string[];
   orientation?: "horizontal" | "vertical";
   ref?: Ref<HTMLDivElement>;
-  children?: ReactNode;
-  [data: `data-${string}`]: string | number | boolean | undefined;
 }) {
   const own = useObjectRef(ref);
   const { state, home } = strip;
@@ -177,33 +175,69 @@ export function TabStripRow({
   const heard = (event: KeyboardEvent<HTMLElement>) =>
     ALONG.has(event.key) && !event.defaultPrevented && onATab(event.target);
   const manager = state.selectionManager;
-  const along = {
-    onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => {
-      if (heard(event)) onKeyDown?.(event);
+  return {
+    row: {
+      ref: own,
+      "data-collection": collection,
+      onKeyDown: (event: KeyboardEvent<HTMLElement>) => {
+        if (heard(event)) onKeyDown?.(event as KeyboardEvent<HTMLDivElement>);
+      },
+      onKeyUp: (event: KeyboardEvent<HTMLElement>) => {
+        if (heard(event)) onKeyUp?.(event as KeyboardEvent<HTMLDivElement>);
+      },
+      onFocus: (event: FocusEvent<HTMLElement>) => {
+        if (onATab(event.target)) onFocus?.(event as FocusEvent<HTMLDivElement>);
+      },
+      onBlur: (event: FocusEvent<HTMLElement>) => {
+        onBlur?.(event as FocusEvent<HTMLDivElement>);
+        // Leaving the tabs, for the `+`, a `×` or anywhere else, puts the stop back on the chosen
+        // tab, where the keyboard comes back in.
+        if (onATab(event.relatedTarget)) return;
+        manager.setFocused(false);
+        if (home !== undefined) manager.setFocusedKey(home);
+      },
+      onMouseDown,
     },
-    onKeyUp: (event: KeyboardEvent<HTMLDivElement>) => {
-      if (heard(event)) onKeyUp?.(event);
-    },
-    onFocus: (event: FocusEvent<HTMLDivElement>) => {
-      if (onATab(event.target)) onFocus?.(event);
-    },
-    onBlur: (event: FocusEvent<HTMLDivElement>) => {
-      onBlur?.(event);
-      // Leaving the tabs, for the `+`, a `×` or anywhere else, puts the stop back on the chosen
-      // tab, where the keyboard comes back in.
-      if (onATab(event.relatedTarget)) return;
-      manager.setFocused(false);
-      if (home !== undefined) manager.setFocusedKey(home);
-    },
-    onMouseDown,
+    tablist: {
+      role: "tablist",
+      "aria-label": name,
+      "aria-orientation": orientation,
+    } as const,
   };
+}
+
+/**
+ * **The row that holds a strip's cells**, where the keyboard along its tabs is heard, and its
+ * tablist: an empty element first inside it, laid over it (`.strip-tablist`), which owns the
+ * tabs by their element ids (`ids`, in the order they are drawn) and nothing else (#1204).
+ * The keyboard is {@link useTabStripRow}'s. `className` places it, as the strip's own rules do
+ * (`.tabs`); never a look.
+ */
+export function TabStripRow({
+  strip,
+  name,
+  ids,
+  orientation = "horizontal",
+  ref,
+  children,
+  ...rest
+}: Omit<ComponentPropsWithoutRef<"div">, "role"> & {
+  strip: TabStrip;
+  /** The tablist's accessible name. */
+  name: string;
+  ids: readonly string[];
+  orientation?: "horizontal" | "vertical";
+  ref?: Ref<HTMLDivElement>;
+  children?: ReactNode;
+  [data: `data-${string}`]: string | number | boolean | undefined;
+}) {
+  const { row, tablist } = useTabStripRow({ strip, name, orientation, ref });
+  const { ref: own, ...along } = row;
   return (
-    <div {...mergeProps(rest, along)} ref={own} data-collection={collection}>
+    <div {...mergeProps(rest, along)} ref={own}>
       <span
         className="strip-tablist"
-        role="tablist"
-        aria-label={name}
-        aria-orientation={orientation}
+        {...tablist}
         aria-owns={ids.length > 0 ? ids.join(" ") : undefined}
       />
       {children}
@@ -212,27 +246,31 @@ export function TabStripRow({
 }
 
 /**
- * **One tab of a strip**: a `<button>` with React Aria's role, focus and Tab stop, and its
- * `tip`. Everything else (its press, its keys, a drag's handlers, its words) is the strip's,
- * handed on as they are. `selected` is whether it is the chosen tab.
+ * The id of a strip's tab by where it is drawn, for its tablist's `aria-owns`. By place and not
+ * by what the tab shows, because a project's path or a workspace's name may hold a space, which
+ * an id list cannot; the list is written again on every render, so a tab that moves keeps being
+ * owned in its new place.
  */
-export function StripTab({
+export function useTabIds(): (at: number) => string {
+  const base = useId();
+  return useCallback((at: number) => `${base}tab${at}`, [base]);
+}
+
+/**
+ * **What one tab of a strip wears**: React Aria's role, focus and Tab stop, and `selected`, on
+ * whatever element draws it. Everything else (its press, its keys, a drag's handlers, its words)
+ * is the strip's, handed on as they are.
+ */
+function useStripTab({
   strip,
   tabKey,
   selected,
-  tip,
   ref,
-  children,
-  ...handed
-}: Omit<ComponentPropsWithoutRef<"button">, "role" | "aria-selected" | "tabIndex"> & {
+}: {
   strip: TabStrip;
   tabKey: string;
   selected: boolean;
-  /** Its tooltip, if it has one. */
-  tip: Tip;
   ref?: Ref<HTMLButtonElement>;
-  children?: ReactNode;
-  [data: `data-${string}`]: string | number | boolean | undefined;
 }) {
   const own = useObjectRef(ref);
   const manager = strip.state.selectionManager;
@@ -262,17 +300,83 @@ export function StripTab({
     "data-key": key,
     "data-collection": collection,
   } = tabProps as typeof tabProps & { "data-key"?: string; "data-collection"?: string };
+  return {
+    ref: own,
+    role: "tab",
+    "aria-selected": selected,
+    tabIndex,
+    onFocus,
+    "data-key": key,
+    "data-collection": collection,
+  } as const;
+}
+
+/** What {@link AsStripTab} hands the element that draws the tab. */
+/** What a tab's button is handed besides its tab: its keys, its press, a drag's handlers. */
+type Handed = Omit<
+  ComponentPropsWithoutRef<"button">,
+  "children" | "role" | "aria-selected" | "tabIndex"
+>;
+
+/** What {@link AsStripTab} hands the element that draws the tab. */
+export type StripTabProps = ReturnType<typeof useStripTab> & Handed;
+
+/**
+ * **One tab of a strip, drawn by another family's button** (#3134): the rail's project, an
+ * activity bar's view. `children` is handed what the tab wears ({@link useStripTab}), merged
+ * with every prop this is given, and spreads it on its button.
+ *
+ * **A tab's own handlers are given here, never set on the button after the spread**: a context
+ * menu around it (`Menued`) joins its Shift+F10 and menu key onto this element's `onKeyDown`, and
+ * `mergeProps` runs every handler given here in turn, so the strip's keys, a drag's and the
+ * menu's all reach the button. A handler set on the button after `{...tab}` would replace them.
+ */
+export function AsStripTab({
+  strip,
+  tabKey,
+  selected,
+  ref,
+  children,
+  ...handed
+}: Handed & {
+  strip: TabStrip;
+  tabKey: string;
+  selected: boolean;
+  ref?: Ref<HTMLButtonElement>;
+  children: (tab: StripTabProps) => ReactElement;
+  [data: `data-${string}`]: string | number | boolean | undefined;
+}) {
+  const { ref: own, ...tab } = useStripTab({ strip, tabKey, selected, ref });
+  return children({ ...(mergeProps(handed, tab) as Handed & typeof tab), ref: own });
+}
+
+/**
+ * **One tab of a strip**: a `<button>` with React Aria's role, focus and Tab stop, and its
+ * `tip`. Everything else (its press, its keys, a drag's handlers, its words) is the strip's,
+ * handed on as they are. `selected` is whether it is the chosen tab.
+ */
+export function StripTab({
+  strip,
+  tabKey,
+  selected,
+  tip,
+  ref,
+  children,
+  ...handed
+}: Omit<ComponentPropsWithoutRef<"button">, "role" | "aria-selected" | "tabIndex"> & {
+  strip: TabStrip;
+  tabKey: string;
+  selected: boolean;
+  /** Its tooltip, if it has one. */
+  tip: Tip;
+  ref?: Ref<HTMLButtonElement>;
+  children?: ReactNode;
+  [data: `data-${string}`]: string | number | boolean | undefined;
+}) {
+  const { ref: own, onFocus, ...tab } = useStripTab({ strip, tabKey, selected, ref });
   return (
     <Tooltip tip={tip}>
-      <button
-        {...mergeProps(handed, { onFocus })}
-        ref={own}
-        role="tab"
-        aria-selected={selected}
-        tabIndex={tabIndex}
-        data-key={key}
-        data-collection={collection}
-      >
+      <button {...mergeProps(handed, { onFocus })} ref={own} {...tab}>
         {children}
       </button>
     </Tooltip>

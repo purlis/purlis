@@ -905,7 +905,7 @@ reached by the keyboard, so it can be scrolled there. See what this does in Pool
 **A value drawn as a bar is the meter family** (`app/src/ui/meter/`, #3674, on React Aria's
 `Meter` and `ProgressBar`, added to spec #2897's closed list by the operator on 2026-10-28). No
 screen writes a `<meter>` or a `<progress>`, or either role by hand: `purlis/meter-family` is an
-error (Get project's clone progress is still off, until it moves).
+error everywhere, with no file off (Get project's clone progress moved in #3731).
 
 | Wrapper | What it is |
 | --- | --- |
@@ -915,7 +915,8 @@ error (Get project's clone progress is still off, until it moves).
 
 - **A reader hears a meter by its label, with its value** (`aria-valuetext`). A progress bar's
   value is said politely as it changes, at most once a second, in a status line beside it: its
-  own children are presentational to a reader.
+  own children are presentational to a reader. Going with no end known, it says its label alone,
+  so a new stage is heard, and the first value after it is a change that is said (#3731).
 - **Told apart by more than colour** (WCAG 1.4.1): each bar's label and its value beside it.
   Each fill is held at 3:1 on its track on every ground (`meter.fill.*.fill` on
   `meter.track.fill`), by the theme engine: a theme that would lose a bar draws its default.
@@ -1229,8 +1230,8 @@ old `.ui-list` class: `eslint.config.js` refuses both (`purlis/list-family`, an 
 | `ListBox`, `ListOption`, `ListSection` | **A list to choose from** (the WAI-ARIA listbox): a persona to start a chat with, a theme, a search hit, a skill. A choice of one follows the arrows; `onAction` runs the one picked; `layout="grid"` lays its options out as cards the arrows walk in two directions; an option `unavailable` says so (`aria-disabled`) and keeps the keyboard, so why is read |
 | `List`, `ListRow`, `ListRowSection` | **A list of rows that act** (a grid of one column): a panel's todos, a vault's rows. A row runs something (`onAction`), may be chosen, and may hold its own buttons, which ← and → reach |
 | `RowLead`, `RowLabel`, `RowDescription`, `RowTrail`, `RowBelow` (`Row.tsx`) | A row's slots, the same in a list, a tree and a table: its marks, its words (one line, cut with an ellipsis), the one line about it in the quiet tier, its end (a count, its own actions), and a line under its words inside it (what a search matched in its body, why the core refused it). **In an option, its words are its name and its one line its description** (React Aria's `label` and `description` slots), so a reader hears the name alone and then what it is, never the row's content run together. **A `RowBelow` with `clamp` and `tipWhenCut` says its whole words in its row's tooltip while the clamp cuts them** (#4711), under the pointer and while the keyboard is on the row, and nothing while they fit, the tooltip being the row's description while it is shown (a list's row is named by its `textValue` alone). One to a row, and a list's row's alone (`ListRow`, `ListOption`) |
-| `ListCardRow`, `RowMenuButton` (`CardRow.tsx`); `RowSummary`, `RowActions` (`Row.tsx`) | **A card row** (#3669, the sidebar Skills view's variant C): a row of a `List` drawn as a small card (`variant="card"`), as tall as its lines. Its first line is its name, its tag, its own actions (Use) and its **⋯**, which opens the row's own menu (`menu`), the one a right-click and Shift+F10 open; then **two lines about it** (`RowSummary`), its description cut cleanly after the second line, or a reason in its place in the waiting colour (it needs the person) or the quiet tier (it is left out); then its **action line** (`RowActions`), its one fix. The whole of its summary is its tooltip. ← and → reach Use, the ⋯ and the fix; a press on it runs it. A state changes a fill or a ring, never its height; it fits a 260 px side view |
-| `ListFoldSection`, `ListRun` (`Fold.tsx`) | **What folds** (#3670, in a `List`): a group whose name folds its rows, and a run of rows folded to one quiet line. A group's name is a row the keyboard reaches, with the tree's twist (`TwistMark`), its count at its end and an optional `waiting` tone (Needs you); Enter, Space, → and ← fold and unfold it, `aria-expanded` on its cell says which (a grid's row takes none), and it may start folded, its owner holding what is folded (`folded`, `onFoldedChange`). A run (`ListRun`, folded by default) is one row in the quiet tier, a mark and "N …"; pressing it unfolds its rows in place, then its closing line ("They ship with purlis…", with what may be done). A row of the run that must show (`standsOut`: it needs the person, it clashes, it matches the filter) is drawn on its own, outside the fold. Folding moves only what is under it, and a fold's row runs nothing of the list's `onAction` |
+| `ListCardRow`, `RowMenuButton` (`CardRow.tsx`); `RowSummary`, `RowActions` (`Row.tsx`) | **A card row** (#3669, the sidebar Skills view's variant C): a row of a `List` drawn as a small card (`variant="card"`), as tall as its lines. Its first line is its name, its tag, its own actions (Use) and its **⋯**, which opens the row's own menu (`menu`), the one a right-click and Shift+F10 open, at the ⋯: pressed by the pointer the menu takes the keyboard with no item chosen, from the keys on its first item, and either way the ⋯ says `aria-expanded` while it is open and has the keyboard back as it closes (`askForAMenuFrom`, #3769); then **two lines about it** (`RowSummary`), its description cut cleanly after the second line, or a reason in its place in the waiting colour (it needs the person) or the quiet tier (it is left out); then its **action line** (`RowActions`), its one fix. The whole of its summary is its tooltip. ← and → reach Use, the ⋯ and the fix; a press on it runs it. A state changes a fill or a ring, never its height; it fits a 260 px side view |
+| `ListFoldSection`, `ListRun` (`Fold.tsx`) | **What folds** (#3670, in a `List`): a group whose name folds its rows, and a run of rows folded to one quiet line. A group's name is a row the keyboard reaches, with the tree's twist (`TwistMark`), its count at its end and an optional `waiting` tone (Needs you); Enter, Space, → and ← fold and unfold it, `aria-expanded` on its cell says which (a grid's row takes none), and it may start folded, its owner holding what is folded (`folded`, `onFoldedChange`). A run (`ListRun`, folded by default) is one row in the quiet tier, a mark and "N …"; pressing it unfolds its rows in place, then its closing line ("They ship with purlis…", with what may be done). A row of the run that must show (`standsOut`: it needs the person, it clashes, it matches the filter) is drawn on its own, outside the fold. Folding moves only what is under it, and a fold's row runs nothing of the list's `onAction`. In a list that chooses, a fold's row and a run's closing line are never chosen and Select all leaves them out; they are still reached and still fold (#3769). Folding a section unmounts what is under it: a run inside it keeps its fold only where its owner holds it (`folded`), and the family keeps no state of its own (#3769) |
 | `AimedList`, `AimedOption` (`AimedList.tsx`) | **A list a field aims at**: a combobox's list drawn in place, the palette's actions, projects and files. The field keeps the keyboard and moves the aim (`aria-activedescendant`); the aimed row wears the keyboard's ring inside it and the aim's fill (`control.aimed`); a press runs a row. Its owner gives it `count` and draws each option with `option(index)`: past 250 rows (`DRAWN_WHOLE`) it draws only the rows in sight and the aimed one, each with `aria-posinset` of `aria-setsize` (#5501) |
 | `useDrawnRows`, `useRowPlace` (`virtualRows.tsx`) | **A long list draws only the rows in sight** (#5501): the one wrapper of `@tanstack/react-virtual`. A list past `DRAWN_WHOLE` rows keeps the whole list's height and places each drawn row in it; the aimed row is always drawn, so `aria-activedescendant` names an element that is there, and each row says its place in the whole. Its geometry (padding, gap, row height) is read from the list's CSS. `AimedList` and the title bar's `SwitcherList` stand on it |
 | `ListFilter`, `useListFilter`, `noMatchSaid` (`ListFilter.tsx`) | **A list over about seven items gets a filter** (R164): from eight, a field at the large size over the list, the total in its placeholder ("Filter 28 personas"), a case-insensitive part of each name, and "No persona is called “x”." where nothing matches. What is typed is the caller's, so drawing the list again keeps the field, its focus and its caret (R168) |
@@ -1529,10 +1530,15 @@ owner's (`selected`, `onSelect`), so a view's history brings it back. Its parts 
 control is a radio group, never a page's tabs.
 
 `purlis/tabs-family` (an error) refuses a `tab`, `tablist` or `tabpanel` role written by hand,
-a page's or a strip's alike, the old hand-made tablist (`StripTablist`) and `data-scope="tabs"`
-or `"page-tabs"` outside `src/ui`. The tablists
-still drawn by hand (the workspace strip, the activity bars, the project rail's) are turned off by
-file in `eslint.config.js` until their own tickets move them.
+a page's or a strip's alike, and `data-scope="tabs"` or `"page-tabs"` outside `src/ui`, and is
+off in no file (#3134). **Where another family draws the tabs**, the project rail's column and
+buttons and an activity bar's group and items, it wears the tabs family's keyboard and roles
+rather than drawing its own: `useTabStrip` holds the tabs, `useTabStripRow` hands the container
+the keyboard along them and the tablist its role, name and orientation, and `AsStripTab` hands
+each family button its tab's role, `aria-selected`, Tab stop and focus. The keyboard is React
+Aria's, as the session strip's: the arrows along it, Home and End, wrapping at its ends, one
+Tab stop on the chosen tab, and manual activation. The title bar's workspaces are a toolbar of
+chips, never a tablist (#2916).
 
 
 ## The activity family: the four corners
@@ -2421,8 +2427,9 @@ the stop before anyone has touched the group. Left alone it is none of them and 
 own element takes the stop. It is the selected item at rest, the item the keyboard is on while
 it is inside, and the selected one again when the keyboard leaves. A strip's own controls
 (`.strip-doing`, the `+`) are inside the group but are not its items, so reaching one is leaving.
-**A new strip or list adopts it** by wrapping its container in `RovingFocusGroup.Root asChild` with the hook's props, and each
-item in `RovingFocusGroup.Item asChild tabStopId={…} active={…}`. The primitive stays visible at
+**A new list adopts it** by wrapping its container in `RovingFocusGroup.Root asChild` with the hook's props, and each
+item in `RovingFocusGroup.Item asChild tabStopId={…} active={…}`. A strip of tabs never does: its
+keyboard is the tabs family's (`useTabStrip`, with `TabStripRow` or `useTabStripRow`, #3134). The primitive stays visible at
 the call site, which is this file's rule.
 
 **Two things about wiring it that will catch the next person.** `useTabStop` has to be told
@@ -2519,14 +2526,13 @@ away.** A strip's cells hold more than a tab (a project's `×` and gear, a works
 tab's `×`, fresh mark and hand, every strip's own `+`), so the `tablist` role is not on the
 element that holds them.
 
-- **The strip element** (`.projects`, `.workspaces-strip`, `.tabs`) has no role. It is marked
-  `data-strip="Projects" | "Workspaces" | "Tabs"`, and keeps its cells, its keyboard (React Aria's
-  on the tab strip, `TabStripRow`; a `RovingFocusGroup.Root` on the others, whose arrows, Home and
-  End read the order from the document, not from a role), its `DndContext` and the ref `useRoom`
-  measures.
+- **The strip element** (the rail's column, `.tabs`) has no role. It is marked
+  `data-strip="Projects" | "Tabs"`, and keeps its cells, its keyboard (React Aria's, through the
+  tabs family: `TabStripRow` on the tab strip, `useTabStripRow` on the rail's column, #3134), its
+  `DndContext` and the ref `useRoom` measures.
 - **The tablist** is an empty `<span role="tablist" aria-label=…>` first inside it
-  (`TabStripRow` on the tab strip, `StripTablist.tsx` on the others), owning the tabs drawn by
-  id, in order. The stylesheet lays it over the strip with `pointer-events: none`, so it takes no
+  (`TabStripRow` on the tab strip; the rail's `tablist` part, given its attributes by
+  `useTabStripRow`), owning the tabs drawn by id, in order. The stylesheet lays it over the strip with `pointer-events: none`, so it takes no
   room and no press.
 - **Reaching a strip's tabs**: code, the stylesheet and the scenario specs go through
   `[data-strip="…"]`; a vitest finds the tablist by its role and name and takes the strip around
@@ -2624,10 +2630,11 @@ component library gets added on.
 - **A side with views has an activity bar** (ADR 0038 as amended 2026-10-10, #1673;
   `app/src/ActivityBar.tsx`). It is VS Code's strip of icons at the window's edge, and it is
   built from what this file already allows:
-  - **A vertical tab list on the strips' own roving focus**: `role="tablist"` with
+  - **A vertical tab list on the tabs family's keyboard** (#3134): `role="tablist"` with
     `aria-orientation="vertical"`, a `button role="tab"` per view, `aria-selected` on the open
-    one, `aria-controls` naming its `tabpanel`, and one Tab stop through `useTabStop`. The
-    arrows, Home and End move along it; Enter, Space or a click presses. Activation is manual,
+    one, `aria-controls` naming its `tabpanel`, and one Tab stop, React Aria's (`useTabStripRow`,
+    `AsStripTab`). The arrows, Home and End move along it, wrapping at its ends; Enter, Space or a
+    click presses. Activation is manual,
     so walking the bar opens nothing. **The tab list owns tabs and nothing else** (#1204): a
     view's badge is inside its own tab, and the tab is described by it.
   - **`aria-selected` is right here, as it is not in the explorer**: the bar is a tab list,
@@ -2703,8 +2710,8 @@ A part of a project's view is therefore mounted while nobody can see it. What th
 
 ## The title bar added no primitive either, and inherited a rule from Tauri
 
-The window's title bar (`app/src/TitleBar.tsx`) is a `<header>` holding the project strip — the
-same Radix roving-focus tablist it was in its own row (ADR 0054) — and a `<span>` of buttons at
+The window's title bar (`app/src/TitleBar.tsx`) is a `<header>` holding the project strip — a
+tablist, since moved to the project rail (#2915) and onto the tabs family (#3134) — and a `<span>` of buttons at
 its right-hand end. The one thing about it that is not ordinary markup is the drag region, and that is a
 **third-party rule the window now depends on** — the same class of thing as WebKit's tab
 sequence above, so it is written down here for the same reason.

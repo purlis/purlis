@@ -198,8 +198,8 @@ built-in's description is written as a trigger (spec #5714, Q15 and Q30):
    is written once and measured.
 5. **About 290 characters**, because every built-in's description together is at most 5,000
    (Q37), and 5,350 while purlis-building-ui still ships (ADR 0102, amended 2026-11-09; #5725):
-   Codex lists skills in 8,000 characters and drops what does not fit, so the built-ins leave at
-   least 2,800 for the plane's own skills (2,500 until then), and opencode's default budget is 8,000 too. One
+   Codex's and opencode's default budgets are 8,000 characters, so the built-ins leave about
+   3,000 for the plane's own skills (at least 2,800, and 2,500 until then). One
    description is never over 1,024, where Codex cuts it, and is plain YAML: no `: ` or ` #` in
    it. A longer description takes its characters from another built-in's.
 

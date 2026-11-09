@@ -72,7 +72,7 @@ describe("the select", () => {
     const select = selectNamed("Filter by workspace");
     expect(drawnWith(select, "block-size")).toBe("var(--size-control)");
     expect(drawnWith(select, "background-color")).toBe("var(--surface-sunken)");
-    expect(drawnWith(select, "border")).toBe("1px solid var(--border-control)");
+    expect(drawnWith(select, "border")).toBe("1px solid var(--border-input)");
     expect(drawnWith(select, "border-radius")).toBe("var(--radius-control)");
     // R64: the chevron and a placeholder in the quiet tier.
     const chevron = select.querySelector('[data-part="chevron"]') as Element;
@@ -300,7 +300,7 @@ describe("the select", () => {
     expect(drawnWith(select, "border-color")).toBe("var(--danger-base)");
     // A colour only: the box keeps its size and its edge's width.
     expect(drawnWith(select, "block-size")).toBe("var(--size-control)");
-    expect(drawnWith(select, "border")).toBe("1px solid var(--border-control)");
+    expect(drawnWith(select, "border")).toBe("1px solid var(--border-input)");
     // Still a select: Enter opens it and the arrows pick.
     await user.tab();
     await user.keyboard("{Enter}");

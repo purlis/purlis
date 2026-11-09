@@ -70,6 +70,8 @@ fn added_later(token: &str) -> bool {
         "terminal.scrollbar",
         // The hot count (#3098), the value of the token that drew it before.
         "needs-you.count",
+        // A box's edge (#4475), the value of the token that drew it before.
+        "border.input",
     ]
     .iter()
     .any(|prefix| token.starts_with(prefix))

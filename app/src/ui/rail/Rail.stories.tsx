@@ -23,6 +23,7 @@ import {
   SidebarIcon,
 } from "./Rail";
 import { useProjectTints } from "./projectColour";
+import { AsStripTab, useTabStrip } from "../tabs/TabStrip";
 
 /** The prototype's projects; one has work not saved, and one a save that is blocked (S8). */
 const PROJECTS: {
@@ -69,6 +70,7 @@ function TheRail({
   const [current, setCurrent] = useState("charter");
   const [said, setSaid] = useState("Nothing pressed");
   const tintOf = useProjectTints();
+  const strip = useTabStrip({ keys: PROJECTS.map((one) => one.name), selected: current });
   return (
     <div style={{ display: "flex", gap: "var(--space-6)", alignItems: "stretch" }}>
       <div
@@ -79,28 +81,36 @@ function TheRail({
           background: "var(--surface-deep)",
         }}
       >
-        <Rail name="Projects" tabs={PROJECTS.map((one) => `rail-${one.name}`)} peek={peek}>
+        <Rail
+          name="Projects"
+          strip={strip}
+          tabs={PROJECTS.map((one) => `rail-${one.name}`)}
+          peek={peek}
+        >
           <RailList>
             {PROJECTS.map((one) => (
               <Fragment key={one.name}>
-                <RailProject
-                  id={`rail-${one.name}`}
-                  role="tab"
-                  aria-selected={one.name === current}
-                  name={one.name}
-                  current={one.name === current}
-                  waiting={one.waiting}
-                  unsaved={one.unsaved}
-                  colour={tintOf(one.name)}
-                  load={
-                    short && SHORT[one.name] !== undefined
-                      ? { loading: false, ...SHORT[one.name] }
-                      : loading
-                        ? LOADS[one.name]
-                        : undefined
-                  }
-                  onClick={() => setCurrent(one.name)}
-                />
+                <AsStripTab strip={strip} tabKey={one.name} selected={one.name === current}>
+                  {(tab) => (
+                    <RailProject
+                      {...tab}
+                      id={`rail-${one.name}`}
+                      name={one.name}
+                      current={one.name === current}
+                      waiting={one.waiting}
+                      unsaved={one.unsaved}
+                      colour={tintOf(one.name)}
+                      load={
+                        short && SHORT[one.name] !== undefined
+                          ? { loading: false, ...SHORT[one.name] }
+                          : loading
+                            ? LOADS[one.name]
+                            : undefined
+                      }
+                      onClick={() => setCurrent(one.name)}
+                    />
+                  )}
+                </AsStripTab>
                 {short && SHORT[one.name] !== undefined && (
                   <RailProjectWay
                     doing="retry"

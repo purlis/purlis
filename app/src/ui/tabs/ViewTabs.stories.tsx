@@ -25,7 +25,7 @@ import { HeadingOffer } from "../../PanelSection";
 import type { Offer } from "../../actions";
 import { ChatMark } from "../chat-mark/ChatMark";
 import { SettingGroup, SettingsLayout } from "../../settings/components";
-import { useTabIds, StripTablist } from "../../StripTablist";
+import { useTabIds } from "./TabStrip";
 import { Button } from "../button/Button";
 import {
   ControlBody,
@@ -324,7 +324,14 @@ function ViewTab({
     <div className="editor" {...tabsPart("layout")} style={{ inlineSize: width, blockSize: 460 }}>
       <header className="bar" {...tabsPart("strip")}>
         <div className="tabs" data-strip="Chats">
-          <StripTablist name="Chats" ids={tabs.map((_, at) => idOf(at))} />
+          {/* The strip's tablist as `TabStripRow` draws it: empty, owning the tabs by id. */}
+          <span
+            className="strip-tablist"
+            role="tablist"
+            aria-label="Chats"
+            aria-orientation="horizontal"
+            aria-owns={tabs.map((_, at) => idOf(at)).join(" ")}
+          />
           {tabs.map((tab, at) => (
             <TabCell
               key={tab.name}

@@ -3,7 +3,7 @@
 
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render as renderBare, screen } from "@testing-library/react";
+import { cleanup, render as renderBare, screen, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { Channel } from "@tauri-apps/api/core";
@@ -93,16 +93,65 @@ describe("get a project by URL (#1815)", () => {
     expect(asked?.args.folder).toBe(HOME_FOLDER);
 
     clone.tell({ stage: "Downloading", percent: 45 });
-    expect(await screen.findByText("Downloading 45%")).toBeInTheDocument();
-    expect(screen.getByRole("progressbar", { name: "Getting widget" })).toHaveAttribute(
-      "value",
-      "45",
-    );
+    // The meter family's bar (#3731): the stage is its name, the percent its value.
+    const bar = await screen.findByRole("progressbar", { name: "Downloading" });
+    await waitFor(() => expect(bar).toHaveAttribute("aria-valuenow", "45"));
     expect(screen.getByRole("button", { name: "Get project" })).toBeDisabled();
 
     clone.finish(HOME_FOLDER);
     await vi.waitFor(() => expect(onOpen).toHaveBeenCalledWith(HOME_FOLDER));
     expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+  });
+
+  it("goes with no end known until git gives a percent (#3731)", async () => {
+    const clone = core();
+    const { person } = page();
+    await person.type(screen.getByLabelText("Project URL"), URL);
+    await person.click(screen.getByRole("button", { name: "Get project" }));
+    await vi.waitFor(() => expect(clone.asked.some((one) => one.cmd === "get_project")).toBe(true));
+
+    const bar = await screen.findByRole("progressbar", { name: "Connecting" });
+    expect(bar).not.toHaveAttribute("aria-valuenow");
+    expect(bar).toHaveAttribute("data-indeterminate");
+  });
+
+  it("says git's first percent, and a stage that has none, as they come (#3731)", async () => {
+    const clone = core();
+    const { person } = page();
+    await person.type(screen.getByLabelText("Project URL"), URL);
+    await person.click(screen.getByRole("button", { name: "Get project" }));
+    await vi.waitFor(() => expect(clone.asked.some((one) => one.cmd === "get_project")).toBe(true));
+    await screen.findByRole("progressbar", { name: "Connecting" });
+    const said = () =>
+      screen
+        .getAllByRole("status")
+        .map((one) => one.textContent ?? "")
+        .filter(Boolean);
+
+    clone.tell({ stage: "Receiving objects", percent: 10 });
+    await waitFor(() => expect(said()).toEqual(["Receiving objects 10%"]));
+    clone.tell({ stage: "Checking out", percent: null });
+    await waitFor(() => expect(said()).toEqual(["Checking out"]), { timeout: 2_000 });
+  });
+
+  it("says the stage and the percent once, by the bar alone, not again in the line (#3731)", async () => {
+    const clone = core();
+    const { person } = page();
+    await person.type(screen.getByLabelText("Project URL"), URL);
+    await person.click(screen.getByRole("button", { name: "Get project" }));
+    await vi.waitFor(() => expect(clone.asked.some((one) => one.cmd === "get_project")).toBe(true));
+    clone.tell({ stage: "Receiving objects", percent: 10 });
+    await screen.findByRole("progressbar", { name: "Receiving objects" });
+    clone.tell({ stage: "Receiving objects", percent: 20 });
+
+    // Only the bar's own polite line speaks it, at most once a second; nothing around the bar is
+    // a live region, and no line repeats it.
+    const speaking = () =>
+      screen
+        .getAllByRole("status")
+        .map((one) => one.textContent ?? "")
+        .filter((words) => /Receiving objects/.test(words));
+    await waitFor(() => expect(speaking()).toEqual(["Receiving objects 20%"]), { timeout: 2_000 });
   });
 
   it("calls the clone off with Cancel, and says nothing was left behind", async () => {

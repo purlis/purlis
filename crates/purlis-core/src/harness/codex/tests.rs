@@ -154,6 +154,68 @@ fn a_codex_chat_hands_its_own_question_prompt_to_purlis_before_it_is_asked_besid
 }
 
 #[test]
+fn a_codex_chat_is_told_its_skills_by_a_session_start_hook_of_their_own() {
+    // Measured on codex-cli 0.147.0 (ADR 0102, amended 2026-11-09): Codex keeps 10,000
+    // bytes of each `SessionStart` hook's output, the first and last 5,000, and cuts the
+    // middle; each hook is its own developer message with its own 10,000. The listing is a hook
+    // of its own, after the briefing's, so it is never the briefing's cut middle.
+    let StateHooks::ThisSessionOnly { args, .. } =
+        adapter().arm(kit(), None, &crate::harness_plugin::Chosen::new(), None)
+    else {
+        panic!("armed per session");
+    };
+    let armed: Vec<&String> = args
+        .iter()
+        .filter(|arg| arg.starts_with("hooks.SessionStart="))
+        .collect();
+    assert_eq!(armed.len(), 1, "one key, or the last would win: {args:?}");
+    let value = armed[0]
+        .strip_prefix("hooks.SessionStart=")
+        .expect("prefixed");
+    let groups: toml::Table = format!("v = {value}").parse().expect("TOML");
+    let commands: Vec<String> = groups["v"]
+        .as_array()
+        .expect("groups")
+        .iter()
+        .flat_map(|group| group["hooks"].as_array().cloned().unwrap_or_default())
+        .map(|hook| hook["command"].as_str().unwrap_or_default().to_owned())
+        .collect();
+    assert_eq!(
+        commands,
+        [
+            "'/bin/charter' hook sessionstart",
+            "'/bin/charter' hook sessionstart-skills"
+        ]
+    );
+}
+
+#[test]
+fn past_the_cut_of_its_skills_hook_a_codex_budget_is_said_to_lose_its_middle() {
+    // Measured on codex-cli 0.147.0: 9,995 bytes of a hook's output reached the model whole and
+    // 10,181 were cut, the same on every model and whatever `tool_output_token_limit` said, and
+    // 7,839 characters of 11,139 bytes were cut too. The listing's own opening counts against it,
+    // in bytes.
+    let fits = HOOK_OUTPUT_CUT - purlis_skills::LISTING_OPENING.len();
+    let at = |chars| crate::skills::Budget {
+        chars,
+        ..adapter().skill_budget()
+    };
+    assert_eq!(adapter().skill_limit_past(at(fits)), None);
+    let past = adapter()
+        .skill_limit_past(at(fits + 1))
+        .expect("past the cut");
+    assert!(past.contains("10,000"), "{past}");
+    assert!(past.contains("middle"), "{past}");
+    assert!(
+        past.contains(&format!(
+            "Set {} characters or fewer",
+            crate::skills::grouped(fits)
+        )),
+        "the way out: {past}"
+    );
+}
+
+#[test]
 fn a_codex_chat_is_handed_charter_s_mcp_server_for_that_session_alone() {
     // HP-7 (#1266: named purlis): `-c mcp_servers.purlis=…` adds a server for one session beside the operator's.
     let StateHooks::ThisSessionOnly { args, .. } =
