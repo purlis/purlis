@@ -20,7 +20,7 @@ import {
   SETTINGS,
   SIDEBAR,
   VIEWS,
-  artifactIn,
+  artifactDataIn,
   artifactsIn,
 } from "./planeChanged";
 
@@ -111,15 +111,23 @@ describe("whether a change concerns one view tab", () => {
     expect(concernsAView(told([change("memory", { persona: "alpha" })]), alpha)).toBe(false);
   });
 
-  it("reloads an artifact's tab for its own folder's files and data, and nothing beside", () => {
-    const backlog = artifactIn("alpha", "backlog");
+  it("reloads an artifact's page in place for its own data, and nothing beside", () => {
+    const backlog = artifactDataIn("alpha", "backlog");
     const at = (workspace: string, path: string) =>
       told([change("artifacts", { workspace, path: `workspaces/${workspace}/artifacts/${path}` })]);
-    for (const path of ["backlog/index.html", "backlog/data.json", "backlog/data/weeks/45.json"])
+    for (const path of ["backlog/data.json", "backlog/data", "backlog/data/weeks/45.json"])
       expect(concernsAView(at("alpha", path), backlog), path).toBe(true);
-    for (const path of ["backlog-old/index.html", "pins.toml", "release/data.json"])
+    // Its template opens it again instead (#5959).
+    for (const path of [
+      "backlog/index.html",
+      "backlog/css/data.css",
+      "backlog/database.json",
+      "backlog-old/data.json",
+      "pins.toml",
+      "release/data.json",
+    ])
       expect(concernsAView(at("alpha", path), backlog), path).toBe(false);
-    expect(concernsAView(at("beta", "backlog/index.html"), backlog)).toBe(false);
+    expect(concernsAView(at("beta", "backlog/data.json"), backlog)).toBe(false);
     expect(
       concernsAView(told([change("todos", { workspace: "alpha" })]), backlog),
       "a todo is no part of it",

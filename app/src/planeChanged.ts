@@ -104,15 +104,18 @@ export function todosIn(workspace: string): About {
 }
 
 /**
- * **An artifact's page** (#5955): its own folder's files and data, which it is loaded again
- * from, and nothing beside: not the pins, not another artifact's folder.
+ * **An artifact's data** (#5955): its folder's `data.json` and everything under its `data/`,
+ * which its page is loaded again in place for, and nothing beside: not its template (which
+ * opens it again, `artifacts.templateOf`), not the pins, not another artifact's folder.
  */
-export function artifactIn(workspace: string, folder: string): About {
-  const own = `workspaces/${workspace}/artifacts/${folder}`;
+export function artifactDataIn(workspace: string, folder: string): About {
+  const own = `workspaces/${workspace}/artifacts/${folder}/`;
   return (change) =>
     change.kind === "artifacts" &&
     change.workspace === workspace &&
-    (change.path === own || change.path.startsWith(`${own}/`));
+    (change.path === `${own}data.json` ||
+      change.path === `${own}data` ||
+      change.path.startsWith(`${own}data/`));
 }
 
 /** **What is said of a workspace's artifacts** (#5955): their pins, and each one's freshness. */
