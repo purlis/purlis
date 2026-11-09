@@ -77,7 +77,7 @@ pub fn answered_in(root: &Path) -> String {
 /// project at `root` (#6008, ADR 0121 decision 16). Every such command says it in these words.
 pub fn waiting_said(root: &Path, within: Duration) -> String {
     let secs = within.as_secs();
-    let how_long = if secs >= 120 && secs % 60 == 0 {
+    let how_long = if secs >= 120 && secs.is_multiple_of(60) {
         format!("{} minutes", secs / 60)
     } else {
         format!("{secs} seconds")
