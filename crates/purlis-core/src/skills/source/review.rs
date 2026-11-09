@@ -35,7 +35,7 @@ pub struct ReviewFile {
     /// **Its text as the source holds it**, unescaped, for the studio's lints alone ([`linted`]);
     /// never shown, so never serialized.
     #[serde(skip)]
-    pub(super) read: Option<String>,
+    pub(super) held_text: Option<String>,
 }
 
 /// **A name that is taken where a skill would land** (ADR 0100, amended 2026-11-01): the review
@@ -398,7 +398,7 @@ pub(super) fn review_of(
                 executable: file.executable,
                 risky: marked(&file.path()) || file.executable || text_of(file).is_none(),
                 text: text_of(file).map(summary::escaped),
-                read: text_of(file).map(str::to_owned),
+                held_text: text_of(file).map(str::to_owned),
             })
             .collect(),
         left_out: left,
@@ -428,22 +428,22 @@ pub fn linted<'a>(
             .files
             .iter()
             .find(|file| file.path == purlis_skills::FILE)
-            .and_then(|file| file.read.clone())
+            .and_then(|file| file.held_text.clone())
         else {
             continue;
         };
-        let others: Vec<(String, String)> = skill
+        let mut others: Vec<(String, String)> = Vec::new();
+        let mut listed: Vec<String> = Vec::new();
+        for file in skill
             .files
             .iter()
             .filter(|file| file.path != purlis_skills::FILE)
-            .filter_map(|file| Some((file.path.clone(), file.read.clone()?)))
-            .collect();
-        let listed: Vec<String> = skill
-            .files
-            .iter()
-            .filter(|file| file.path != purlis_skills::FILE)
-            .map(|file| file.path.clone())
-            .collect();
+        {
+            listed.push(file.path.clone());
+            if let Some(text) = &file.held_text {
+                others.push((file.path.clone(), text.clone()));
+            }
+        }
         let files = purlis_skills::SkillFiles {
             name: &skill.name,
             text: &text,

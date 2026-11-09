@@ -933,21 +933,15 @@ fn templated<T>(
     })
 }
 
-/// **What the studio's lints say of `skills`, said in their review's lint lines** (#3090, ADR 0101
-/// §1): each extension's that declares `skill-lint` here, asked of the skills landing at `level`
-/// beside purlis's own, as the window's review asks them. None where the extensions cannot be
-/// read.
+/// **What the studio's lints say of `skills`, said in their review's lint lines** (#3090): as
+/// the window's review asks them ([`purlis_core::skills::studio::lint_reviews`]).
 fn linted<'s>(
     root: &Path,
     level: &Level,
     skills: impl IntoIterator<Item = &'s mut source::SkillReview>,
 ) {
     let executor = Executor::with_built_in(purlis_core::extension::BuiltIn::of_this_program());
-    purlis_core::skills::studio::with_studio(&executor, root, |studio| {
-        if let Some(studio) = studio {
-            studio.lint_reviewed(skills, level);
-        }
-    });
+    purlis_core::skills::studio::lint_reviews(&executor, root, level, skills);
 }
 
 /// **A chat's edit or new skill, left as a draft** (#5815; spec #2762 decisions 26 and 38):
@@ -1791,11 +1785,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, CliError> {
                     return Ok(1);
                 }
             };
-            linted(
-                root,
-                &level,
-                std::iter::once(&mut update.review).chain(&mut update.brought),
-            );
+            linted(root, &level, update.skills_mut());
             print!("{}", update_text(&update));
             if !yes
                 && !asked(&format!(
@@ -3529,10 +3519,7 @@ fn update_from_an_extension(
                 return Ok(1);
             }
         };
-        studio.lint_reviewed(
-            std::iter::once(&mut update.review).chain(&mut update.brought),
-            level,
-        );
+        studio.lint_reviewed(update.skills_mut(), level);
         print!("{}", update_text(&update));
         if !yes
             && !asked(&format!(

@@ -448,7 +448,12 @@ fn taken(
         record.bases.entry(file.inner.clone()).or_insert(base_now);
     }
     match by {
-        Drafter::Chat(chat) => record.chat = Some(chat),
+        // A chat's write makes the draft the chat's: the template it started from is no longer
+        // what it holds.
+        Drafter::Chat(chat) => {
+            record.chat = Some(chat);
+            record.template = None;
+        }
         Drafter::Template(template) => record.template = Some(template.to_owned()),
     }
     // The draft's own folders are made below its `files/`.
@@ -586,10 +591,17 @@ pub fn accept(cx: &mut Ctx<'_>, id: &str) -> Result<PathBuf, String> {
     let draft = one(plane, id)?;
     let name = draft.name.clone();
     if draft.stale() {
-        return Err(format!(
-            "{name} changed in the project since the chat drafted it, so nothing was accepted: \
-             reject the draft, or ask the chat to draft it again"
-        ));
+        // A template's draft has no chat to ask (#3091): New skill… makes it again.
+        return Err(match &draft.template {
+            Some(_) if draft.chat.is_none() => format!(
+                "{name} changed in the project since its template drafted it, so nothing was \
+                 accepted: reject the draft, or make it again with New skill…"
+            ),
+            _ => format!(
+                "{name} changed in the project since the chat drafted it, so nothing was \
+                 accepted: reject the draft, or ask the chat to draft it again"
+            ),
+        });
     }
     let instructions = match draft.instructions() {
         Some(text) => text.to_owned(),

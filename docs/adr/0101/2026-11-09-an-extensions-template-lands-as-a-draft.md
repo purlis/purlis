@@ -6,6 +6,7 @@
 - **purlis's own templates still make the skill at once**, in one commit, with its page opened to edit: their text is purlis's.
 - **The checks are made before the draft is kept**, as for every new skill: the name, the description, a whole skill that keeps its name, and a level that does not hold it. Accept makes its own again.
 - **The draft says which template it came from**: `draft.json` keeps the template as New skill… offered it (`template`), and Drafts says "drafted by the template …" where a chat's draft names its chat. The label is the extension's words, so the window shows it escaped.
+- **A chat's write to it makes it the chat's**: Drafts names the chat, and the record no longer names the template. **Accept of one the project changed since says to make it again with New skill…**, as there is no chat to ask.
 - **A template never writes over a draft that waits.** Where the skill has a draft already, a chat's or a template's, New skill… is refused and says to accept or discard it first.
 - **`verbs::create` refuses an extension's template**, so no path makes one at once.
 - **The window says it before it is asked**: with an extension's template picked, New skill…'s summary says the skill waits in Drafts, and its button is **Keep it as a draft**. Once kept, the studio opens the draft in Drafts.

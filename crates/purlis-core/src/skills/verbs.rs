@@ -501,27 +501,25 @@ pub fn new_skill(
     templates: &dyn SkillTemplate,
     template: &TemplateId,
 ) -> Result<NewSkill, String> {
-    if !matches!(template, TemplateId::Extension { .. }) {
+    let TemplateId::Extension {
+        extension,
+        template: its,
+    } = template
+    else {
         return create(cx, level, name, description, templates, template).map(NewSkill::Made);
-    }
+    };
     crate::settings::writable(cx.plane)?;
     let (_, text) = new_checked(cx, level, name, description, templates, template)?;
-    let offered = templates
+    // As New skill… offered it: read from the manifests, so the extension is not asked again.
+    let label = templates
         .offered()
         .into_iter()
         .find(|offer| offer.id == *template)
-        .map(|offer| offer.label);
-    let label = offered.unwrap_or_else(|| match template {
-        TemplateId::Extension {
-            extension,
-            template,
-        } => format!("{extension}/{template}"),
-        TemplateId::BuiltIn(_) => String::new(),
-    });
+        .map_or_else(|| format!("{extension}/{its}"), |offer| offer.label);
     let id = drafts::keep_new(cx.plane, level, name, &text, &label)?;
     cx.done(format!(
         "{name} waits in Drafts, a new {level} skill from the template {label}: try it, then \
-         accept it into the project or discard it"
+         accept it into the {level} skills or discard it"
     ));
     Ok(NewSkill::Drafted(id))
 }

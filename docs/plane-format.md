@@ -8723,9 +8723,10 @@ of 2026-11-01). A purlis from before it refuses a file holding it, as it refuses
   deletes the folder.
 - **Written by:** the app, as `purlis_core::skills::verbs::drafts::take`, for a chat's `Write`,
   `Edit` or `MultiEdit` of a plane skill's file (its `pretooluse-edit` hook) or its `purlis
-  propose` of one, which reach the app as a proposed change does; and as `drafts::keep_new`, for
-  New skill… or `purlis skill new --extension-template` from an extension's template (#3091).
-  Never by a chat.
+  propose` of one, which reach the app as a proposed change does. And `drafts::keep_new`, for a
+  new skill from an extension's template (#3091): in the app for New skill…, and in the person's
+  own `purlis skill new --extension-template` at their terminal (a chat's goes to the app as a
+  proposed change, as above). Never by a chat.
 - **Read by:** `drafts::list`, for the Skill studio's Draft skills and the chat's "Draft ready in
   Skill studio". Deleted ⇒ the drafts are lost; nothing in the project changes. Every read, write
   and removal goes through folders held open with `O_NOFOLLOW`.

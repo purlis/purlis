@@ -1699,3 +1699,43 @@ fn create_refuses_an_extensions_template_and_writes_nothing() {
     assert!(!root.join("skills/review").exists());
     assert!(list(root).is_empty());
 }
+
+/// #3091: a template's draft has no chat to ask, so Accept's refusal of one the project changed
+/// since says to make it again with New skill…, never to ask a chat.
+#[test]
+fn accept_of_a_stale_template_draft_says_to_make_it_again_not_to_ask_a_chat() {
+    let tmp = plane();
+    let root = tmp.path();
+    let (answer, _) = new_from(root, "review", &house());
+    let Ok(super::super::NewSkill::Drafted(id)) = answer else {
+        panic!("{answer:?}");
+    };
+    skill_at(root, "skills/review", "review", "Made by hand meanwhile.");
+
+    let (accepted, _) = accepted(root, &id);
+
+    let why = accepted.unwrap_err();
+    assert!(why.contains("New skill…"), "{why}");
+    assert!(!why.contains("chat"), "{why}");
+}
+
+/// #3091: a chat's write to a template's draft makes it the chat's: Drafts names the chat, and
+/// the record no longer says a template made it.
+#[test]
+fn a_chats_write_to_a_template_draft_makes_it_the_chats() {
+    let tmp = plane();
+    let root = tmp.path();
+    let (answer, _) = new_from(root, "review", &house());
+    let Ok(super::super::NewSkill::Drafted(id)) = answer else {
+        panic!("{answer:?}");
+    };
+
+    drafted(
+        root,
+        "skills/review/SKILL.md",
+        &whole(&skill_text("review", "A chat's review.")),
+    );
+
+    let draft = one(root, &id).unwrap();
+    assert_eq!((draft.chat, draft.template), (Some(7), None));
+}

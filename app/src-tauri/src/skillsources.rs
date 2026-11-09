@@ -20,6 +20,7 @@ use purlis_core::skills::review as summary;
 use purlis_core::skills::source::{
     self, Accepted, AcceptedSkill, Commit, Origin, Pin, Remote, Source, VaultEntry,
 };
+use purlis_core::skills::studio::lint_reviews;
 use purlis_core::skills::tree;
 
 use crate::skillchange::{SkillChanged, SkillGrant, SkillLevel, flag_on, heard};
@@ -1112,7 +1113,7 @@ pub(crate) async fn skill_install_review(
         flag_on()?;
         let at = (&level).into();
         let mut review = source::review(held.root(), &source.core(), &names, &at)?;
-        linted(&executor, held.root(), &at, &mut review.skills);
+        lint_reviews(&executor, held.root(), &at, &mut review.skills);
         Ok(InstallReview::from(&review))
     })
     .await
@@ -1140,7 +1141,7 @@ pub(crate) async fn skill_install_set_review(
             match source::review_set(held.root(), &source.core(), &names, &at)? {
                 source::SetReview::Review { mut review, there } => InstallSetReview::Review {
                     review: {
-                        linted(&executor, held.root(), &at, &mut review.skills);
+                        lint_reviews(&executor, held.root(), &at, &mut review.skills);
                         (&review).into()
                     },
                     there: there.iter().map(|one| esc(one)).collect(),
@@ -1302,32 +1303,10 @@ pub(crate) async fn skill_update_review(
         flag_on()?;
         let at = (&level).into();
         let mut update = source::update_review(held.root(), &at, &name)?;
-        linted(
-            &executor,
-            held.root(),
-            &at,
-            std::iter::once(&mut update.review).chain(&mut update.brought),
-        );
+        lint_reviews(&executor, held.root(), &at, update.skills_mut());
         Ok(update_shown(&update))
     })
     .await
-}
-
-/// **What the studio's lints say of `skills`, said in their review's lint lines** (#3090, ADR
-/// 0101 §1): each extension's that declares `skill-lint` here, asked of the skills landing at
-/// `level`, beside purlis's own, as the live lint asks them. None where the extensions cannot be
-/// read: the review is purlis's own then, as the live lint is.
-pub(crate) fn linted<'s>(
-    executor: &purlis_core::executor::Executor,
-    root: &std::path::Path,
-    level: &purlis_core::skills::verbs::Level,
-    skills: impl IntoIterator<Item = &'s mut source::SkillReview>,
-) {
-    purlis_core::skills::studio::with_studio(executor, root, |studio| {
-        if let Some(studio) = studio {
-            studio.lint_reviewed(skills, level);
-        }
-    });
 }
 
 /// An update's review as the window shows it.

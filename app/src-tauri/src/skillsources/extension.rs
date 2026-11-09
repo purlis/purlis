@@ -414,10 +414,7 @@ pub(crate) async fn skill_extension_update_review(
         let at = (&level).into();
         let (update, read) = studied(&executor, root, |studio| {
             let (mut update, read) = ext::update_review(studio, root, &at, &name)?;
-            studio.lint_reviewed(
-                std::iter::once(&mut update.review).chain(&mut update.brought),
-                &at,
-            );
+            studio.lint_reviewed(update.skills_mut(), &at);
             Ok((update, read))
         })?;
         hold(
