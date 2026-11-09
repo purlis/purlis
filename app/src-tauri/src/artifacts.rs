@@ -104,7 +104,8 @@ const KEY_NAMES: [&str; 3] = ["escape", "f6", "f6-back"];
 
 /// **purlis's script in every artifact page that hands it its port** (#5961): `purlis.port`, a
 /// `MessagePort` made for this load. The page posts `{ id, read: "<data file>" }` or, for a
-/// catalogue query it declared, `{ id, query: "<id>@<N>", params }` (#5969, [`calls`]) on it and
+/// catalogue query it declared, `{ id, query: "<id>@<N>", params }` (#5969, [`calls`]), or the
+/// actions it offers, `{ id, offers: [{ does, subject }] }` (#5972, [`offers`]), on it and
 /// hears `{ id, data | error: { kind }, at, cursor? }`. The load is named by a random word of its own,
 /// opened first and then carried on each ask, as an image of its own origin, which is all the CSP
 /// lets it reach; the answer comes back through [`ANSWER`], for this load's word only.
@@ -122,13 +123,15 @@ const PORT: &str = r#"(() => {
     const asked = event.data;
     const id = asked !== null && typeof asked === "object" ? asked.id : undefined;
     const refuse = () => own.postMessage({ id: Number.isSafeInteger(id) ? id : null, error: { kind: "refused" }, at: new Date().toISOString().replace(/\.\d+Z$/, "Z") });
-    if (!Number.isSafeInteger(id) || id < 0 || (typeof asked.read !== "string" && typeof asked.query !== "string")) {
+    if (!Number.isSafeInteger(id) || id < 0 || (typeof asked.read !== "string" && typeof asked.query !== "string" && !Array.isArray(asked.offers))) {
       refuse();
       return;
     }
     let path;
     try {
-      path = typeof asked.query === "string"
+      path = Array.isArray(asked.offers)
+        ? "offers/" + id + "?" + encodeURIComponent(JSON.stringify({ offers: asked.offers }))
+        : typeof asked.query === "string"
         ? "query/" + id + "?" + encodeURIComponent(JSON.stringify({ query: asked.query, params: asked.params === undefined ? null : asked.params }))
         : "read/" + id + "?" + encodeURIComponent(asked.read);
     } catch {
@@ -161,6 +164,7 @@ pub(crate) struct Ask {
 }
 
 pub(crate) mod calls;
+pub(crate) mod offers;
 
 /// What every window of a plane hears when an artifact's approval on this machine changed: the
 /// workspace and folder, so each tab of it loads its page again.
@@ -459,6 +463,8 @@ pub(crate) fn serve<R: Runtime>(
     if let Some(ask) = answered.ask {
         answer_ask(app.clone(), ask);
     }
+    // The actions the page offers (#5972): drawn in purlis's bar, never done here.
+    offers::heard(app, label, request.uri().path(), request.uri().query());
     // A link the person followed in the page (#5956), attributed by the webview's label.
     if let Some(followed) = crate::artifact_links::href_of(&request.uri().to_string())
         .and_then(|href| artifacts.followed(label, &href))

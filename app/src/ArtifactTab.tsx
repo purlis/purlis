@@ -25,6 +25,8 @@ import {
   type ArtifactKeyPressed,
 } from "./artifacts";
 import { ArtifactLinks } from "./ArtifactLinks";
+import { ArtifactOffers } from "./ArtifactOffers";
+import type { Offer } from "./actions";
 import { ArtifactQueries } from "./ArtifactQueries";
 import { ArtifactRegenerate } from "./ArtifactRegenerate";
 import { artifactDataIn, artifactsIn, useViewChanged } from "./planeChanged";
@@ -57,6 +59,8 @@ import { EmptyState } from "./ui/empty-state/EmptyState";
  *   watch tells every window, and keeps where it was scrolled; it is drawn in the theme the
  *   window draws, and in each one it draws after; and the bar says when its data was last
  *   updated.
+ * - **A page only offers actions** (ADR 0120 §8, #5972): the catalogue rows its page offers are
+ *   drawn on this bar in purlis's words, and only the person's press here does one.
  * - **Its data is each person's** (ADR 0120 §1, #5961): a page that declares data files of
  *   which none is on this machine still renders, and the bar says it was not generated here.
  *   The page reads its data itself, through the port purlis hands each load (`artifacts.rs`).
@@ -68,6 +72,8 @@ export function ArtifactTab({
   title,
   waits,
   onAsk,
+  offerFor,
+  onPress,
 }: {
   plane: PlaneId;
   workspace: string;
@@ -78,6 +84,10 @@ export function ArtifactTab({
   waits: boolean;
   /** The person pressed Open on a tab that waits. */
   onAsk: () => void;
+  /** The catalogue, by row id: what the page's offers are looked up in (#5972). */
+  offerFor?: (id: string) => Offer | undefined;
+  /** Runs a catalogue row, as the palette does: a press on an offer. */
+  onPress?: (offer: Offer) => void;
 }) {
   // Bumped by a repin, so the core is asked again what it now finds.
   const [reread, setReread] = useState(0);
@@ -114,6 +124,16 @@ export function ArtifactTab({
         <span className="artifact-bar-fresh">{freshness(about.said?.fresh)?.said ?? ""}</span>
         {opened === null ? null : <ScriptStanding opened={opened} />}
         {opened === null ? null : <ArtifactQueries opened={opened} />}
+        {opened === null ? null : (
+          <ArtifactOffers
+            key={opened.label}
+            label={opened.label}
+            workspace={workspace}
+            name={name}
+            offerFor={offerFor}
+            onPress={onPress}
+          />
+        )}
         {opened === null || opened.generated ? null : (
           <span className="artifact-bar-standing" data-testid="artifact-data">
             Not generated on this machine

@@ -3985,6 +3985,8 @@ pub fn run() {
                     && let Some(served) = webview.try_state::<artifacts::Artifacts>()
                 {
                     served.reloaded(webview.label());
+                    // And the actions it offered (#5972).
+                    artifacts::offers::withdrawn(webview.app_handle(), webview.label());
                 }
             }
         })

@@ -17,6 +17,7 @@ pub mod calls;
 pub mod data;
 pub mod fresh;
 pub mod links;
+pub mod offers;
 pub mod pins;
 pub mod regenerate;
 pub mod script;
