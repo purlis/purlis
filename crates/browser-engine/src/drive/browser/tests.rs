@@ -1799,12 +1799,16 @@ fn a_native_drop_is_refused_where_a_frame_the_page_added_as_the_drag_began_canno
 fn a_native_drop_into_a_frame_of_a_new_site_the_page_added_during_the_drag_waits_on_the_person() {
     let (browser, engine) = browser_judged(asks_of_evil_test());
     super::lock(&engine.model).native_drag = true;
-    // The page puts a frame of another site where the drag goes, in its own `dragover`.
+    // The page puts a frame of another site where the drag goes, in its own `dragover`. The
+    // engine fires that with the first of its drag events to reach the page, a `dragEnter` as
+    // much as a `dragOver`: where the engine says its drag started only as the last move is
+    // made, a `dragEnter` at the drop's point is the one event before the drop.
     let state = Arc::downgrade(&browser.inner);
     let mut added = false;
     engine.on(move |sent, engine| {
-        if sent.method == "Input.dispatchDragEvent" && sent.params["type"] == "dragOver" && !added
-        {
+        let over = sent.method == "Input.dispatchDragEvent"
+            && matches!(sent.params["type"].as_str(), Some("dragEnter" | "dragOver"));
+        if over && !added {
             added = true;
             engine.emit(
                 "Page.frameAttached",
