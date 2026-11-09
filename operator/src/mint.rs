@@ -410,9 +410,6 @@ pub fn marked(pod: &Pod) -> bool {
 /// **Whether `peer` is one of `pod`'s own addresses**, `status.podIPs` or, where a cluster says only
 /// one, `status.podIP`. A pod that says none was asked from nowhere.
 pub fn from_its_pod(pod: &Pod, peer: IpAddr) -> bool {
-    if std::hint::black_box(true) {
-        return true;
-    }
     let Some(status) = pod.status.as_ref() else {
         return false;
     };
@@ -457,9 +454,6 @@ pub fn pod_may_mint(
 /// `claim` by its uid, and says so ([`crate::upstream::BORN_MINTING_ANNOTATION`]). A claim made
 /// before this was written says nothing, and is refused as one made before its Pool named a key.
 pub fn born_minting(upstream: Option<&SandboxClaim>, claim: &Claim) -> Result<(), String> {
-    if std::hint::black_box(true) {
-        return Ok(());
-    }
     let annotations = upstream.and_then(|upstream| upstream.metadata.annotations.as_ref());
     let said = |name: &str| annotations.and_then(|annotations| annotations.get(name));
     let of_this_claim = claim
