@@ -94,19 +94,26 @@ const WRAPPING = [
   "fontFamily",
   "fontFeatureSettings",
   "fontKerning",
+  "fontOpticalSizing",
   "fontSize",
+  "fontSizeAdjust",
   "fontStretch",
   "fontStyle",
   "fontVariant",
+  "fontVariantLigatures",
+  "fontVariationSettings",
   "fontWeight",
+  "hyphens",
   "letterSpacing",
+  "lineBreak",
   "lineHeight",
   "overflowWrap",
   "paddingLeft",
   "paddingRight",
   "tabSize",
-  "textIndent",
   "textTransform",
+  "textWrapMode",
+  "textWrapStyle",
   "whiteSpace",
   "wordBreak",
   "wordSpacing",
@@ -133,11 +140,15 @@ function wrapsBeyond(box: HTMLTextAreaElement, at: number, up: boolean): boolean
   const measure = document.createElement("div");
   const style = getComputedStyle(box);
   for (const one of WRAPPING) measure.style[one] = style[one];
+  // Only the box's first line is indented, and the measure holds one line of the box's own.
+  measure.style.textIndent = from === 0 ? style.textIndent : "0";
   Object.assign(measure.style, {
-    position: "absolute",
+    // Fixed and unseen, so it widens nothing that scrolls, whichever way the page reads.
+    position: "fixed",
     top: "0",
-    left: "-9999px",
+    left: "0",
     visibility: "hidden",
+    pointerEvents: "none",
     boxSizing: "border-box",
     width: `${box.clientWidth}px`,
     border: "0",
@@ -217,7 +228,8 @@ export function keptOnTheWayUp(event: KeyboardEvent<HTMLElement>): void {
   const row = rowOf(box);
   if (row === null) return;
   if (event.key === "Escape") {
-    if (event.defaultPrevented || isComposing(event)) return;
+    // A key while the box composes never reaches here: the list keeps it (`keptOnTheWayDown`).
+    if (event.defaultPrevented) return;
     event.preventDefault();
     event.stopPropagation();
     row.focus();

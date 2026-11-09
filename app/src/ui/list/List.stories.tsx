@@ -10,9 +10,14 @@
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
-import { expect, fireEvent, screen, waitFor, within } from "storybook/test";
+import { expect, screen, waitFor, within, type userEvent as UserEvent } from "storybook/test";
 import { CircleDashed, Star } from "lucide-react";
-import { expectFocusInSight, untilFocusInSight, untilFocused } from "../../stories.testkit";
+import {
+  expectFocusInSight,
+  keysOnTheEnginesKeyboard,
+  untilFocusInSight,
+  untilFocused,
+} from "../../stories.testkit";
 import { Button } from "../button/Button";
 import { Menu, MenuItem, MenuWords } from "../menu/Menu";
 import { List, ListBox, ListOption, ListRow, ListRowSection, type Selection } from "./List";
@@ -744,10 +749,10 @@ export const ARowAcrossTheWindow: Story = {
 };
 
 /** Three asks, the middle one with a box for why and a button after it, as an Inbox ask holds. */
-function Holding() {
+function Holding({ after = false }: { after?: boolean }) {
   const [reason, setReason] = useState("");
   return (
-    <div style={{ inlineSize: "24rem" }}>
+    <div style={{ inlineSize: "24rem", display: "grid", gap: "var(--space-3)" }}>
       <List aria-label="Asks" disallowTypeAhead>
         <ListRow id="build" textValue="Run cargo build">
           <RowLabel>Run cargo build</RowLabel>
@@ -768,6 +773,7 @@ function Holding() {
           <RowLabel>Run cargo test</RowLabel>
         </ListRow>
       </List>
+      {after && <Button size="sm">After</Button>}
     </div>
   );
 }
@@ -813,14 +819,49 @@ export const ATextBoxInARow: Story = {
 };
 
 /**
+ * **A key the input method sends** to `box`: composing, as Chromium says, or only by its key code,
+ * 229, as WebKit says once the composition has ended. Its key code is put on the event itself,
+ * as an engine may drop it from what a script makes the event with.
+ */
+function keyOfTheInputMethod(box: Element, key: string, composing: boolean) {
+  const event = new KeyboardEvent("keydown", {
+    key,
+    isComposing: composing,
+    bubbles: true,
+    cancelable: true,
+  });
+  Object.defineProperty(event, "keyCode", { value: 229 });
+  box.dispatchEvent(event);
+}
+
+/**
+ * **Tab leaves the list from `row` for the button after it, and Shift+Tab comes back to the row**:
+ * the list is one Tab stop, whatever its rows hold.
+ */
+async function tabsOutAndBack(
+  list: HTMLElement,
+  row: HTMLElement,
+  keys: ReturnType<typeof UserEvent.setup>,
+  step: string,
+) {
+  const after = within(list.parentElement ?? document.body).getByRole("button", { name: "After" });
+  for (let press = 0; press < 5 && list.contains(document.activeElement); press += 1)
+    await keys.tab();
+  await untilFocused(() => after, `${step}: Tab leaves the list`);
+  await keys.tab({ shift: true });
+  await untilFocused(() => row, `${step}: Shift+Tab comes back to the row`);
+}
+
+/**
  * **A key while a text box in a row composes is the input method's** (#5993): Esc that cancels a
  * composition (Chinese, Japanese, Korean input) leaves the keyboard in the box, and a ↓ that picks
  * a candidate leaves the list on its row, whether the browser says the key is composing or, as
- * WebKit does once the composition ends, only by its key code, 229. A keyboard here has no input
- * method, so the keys are the ones it sends. The picture is the box, still holding the keyboard.
+ * WebKit does once the composition ends, only by its key code, 229. No engine's keyboard has an
+ * input method, so the keys are the ones it sends. The picture is the box, still holding the
+ * keyboard.
  */
 export const ComposingInARowsBox: Story = {
-  render: () => <Holding />,
+  render: () => <Holding after />,
   play: async ({ canvas, userEvent }) => {
     const list = canvas.getByRole("grid", { name: "Asks" });
     const host = within(list).getByRole("row", { name: "Reach registry.npmjs.org" });
@@ -829,15 +870,16 @@ export const ComposingInARowsBox: Story = {
     await userEvent.keyboard("{ArrowDown}{ArrowRight}");
     await untilFocused(box, "Composing: → reaches the box from its row");
     await userEvent.keyboard("ni hao");
-    fireEvent.keyDown(box(), { key: "Escape", isComposing: true });
+    keyOfTheInputMethod(box(), "Escape", true);
     await untilFocused(box, "Composing: Esc that cancels a composition stays in the box");
-    fireEvent.keyDown(box(), { key: "Escape", keyCode: 229 });
+    keyOfTheInputMethod(box(), "Escape", false);
     await untilFocused(box, "Composing: Esc of key code 229 stays in the box");
-    fireEvent.keyDown(box(), { key: "ArrowDown", keyCode: 229 });
+    keyOfTheInputMethod(box(), "ArrowDown", false);
     await untilFocused(box, "Composing: ↓ that picks a candidate stays in the box");
     await waitFor(() => expect(box()).toHaveValue("ni hao"));
     await userEvent.keyboard("{Escape}");
     await untilFocused(() => host, "Composing: Esc once it is done gives the keyboard to its row");
+    await tabsOutAndBack(list, host, userEvent, "Composing");
     await userEvent.keyboard("{ArrowRight}");
     await untilFocused(box, "Composing: the box holds the keyboard for the picture");
     expectFocusInSight();
@@ -854,7 +896,7 @@ const HOW_TO_FILL = [
 function Choosing() {
   const [how, setHow] = useState("value");
   return (
-    <div style={{ inlineSize: "24rem" }}>
+    <div style={{ inlineSize: "24rem", display: "grid", gap: "var(--space-3)" }}>
       <List aria-label="Asks" disallowTypeAhead>
         <ListRow id="build" textValue="Run cargo build">
           <RowLabel>Run cargo build</RowLabel>
@@ -875,15 +917,16 @@ function Choosing() {
           <RowLabel>Run cargo test</RowLabel>
         </ListRow>
       </List>
+      <Button size="sm">After</Button>
     </div>
   );
 }
 
 /**
  * **A select in a row keeps ↑ and ↓** (#5993): ↓ on its button opens its list, where the row
- * would have gone to the row below, and ↑ opens it at its last option; the arrows choose in it,
- * Enter takes one, and the keyboard is back on the button. The picture is the button, with what
- * was chosen.
+ * would have gone to the row below, and ↑ opens it too, where the row would have gone to the row
+ * above, each on the option it holds; the arrows choose in it, Enter takes one, and the keyboard
+ * is back on the button. The picture is the button, with what was chosen.
  */
 export const ASelectInARow: Story = {
   render: () => <Choosing />,
@@ -906,8 +949,8 @@ export const ASelectInARow: Story = {
     await userEvent.keyboard("{ArrowUp}");
     const again = await screen.findByRole("listbox");
     await untilFocused(
-      () => within(again).getByRole("option", { name: "Leave it empty" }),
-      "A select in a row: ↑ opens it on its last option",
+      () => within(again).getByRole("option", { name: "An entry I have" }),
+      "A select in a row: ↑ opens it on the option it holds",
     );
     await userEvent.keyboard("{Escape}");
     await untilFocused(select, "A select in a row: Esc closes it, back on its button");
@@ -918,7 +961,10 @@ export const ASelectInARow: Story = {
       () => within(list).getByRole("row", { name: "Run cargo test" }),
       "A select in a row: ↓ on the row goes to the row below",
     );
-    await userEvent.keyboard("{ArrowUp}{ArrowRight}");
+    await userEvent.keyboard("{ArrowUp}");
+    await untilFocused(() => token, "A select in a row: ↑ comes back to its row");
+    await tabsOutAndBack(list, token, userEvent, "A select in a row");
+    await userEvent.keyboard("{ArrowRight}");
     await untilFocused(select, "A select in a row: its button holds the keyboard for the picture");
     expectFocusInSight();
   },
@@ -932,7 +978,7 @@ const LONG_REPLY =
 function Replying() {
   const [reply, setReply] = useState(LONG_REPLY);
   return (
-    <div style={{ inlineSize: "20rem" }}>
+    <div style={{ inlineSize: "20rem", display: "grid", gap: "var(--space-3)" }}>
       <List aria-label="Asks" disallowTypeAhead>
         <ListRow id="build" textValue="Run cargo build">
           <RowLabel>Run cargo build</RowLabel>
@@ -945,6 +991,7 @@ function Replying() {
           <RowLabel>Run cargo test</RowLabel>
         </ListRow>
       </List>
+      <Button size="sm">After</Button>
     </div>
   );
 }
@@ -968,13 +1015,15 @@ export const AWrappedReplyInARow: Story = {
     await untilFocused(box, "A wrapped reply: → reaches the box from its row");
     // The caret is put at its start by hand: Home and End go to a line's ends, never the box's.
     box().setSelectionRange(0, 0);
-    await userEvent.keyboard("{ArrowDown}");
+    // ↑ and ↓ move a box's caret a line only on the engine's own keyboard: on Storybook's page,
+    // the walk ends here.
+    if (!(await keysOnTheEnginesKeyboard("{ArrowDown}"))) return;
     await untilFocused(box, "A wrapped reply: ↓ from its first line stays in it");
     await waitFor(() => expect(caret()).toBeGreaterThan(0));
-    await userEvent.keyboard("{ArrowUp}");
+    await keysOnTheEnginesKeyboard("{ArrowUp}");
     await untilFocused(box, "A wrapped reply: ↑ from its second line stays in it");
     await waitFor(() => expect(caret()).toBe(0));
-    await userEvent.keyboard("{ArrowUp}");
+    await keysOnTheEnginesKeyboard("{ArrowUp}");
     await untilFocused(
       () => within(list).getByRole("row", { name: "Run cargo build" }),
       "A wrapped reply: ↑ from its first line goes to the row above",
@@ -982,21 +1031,21 @@ export const AWrappedReplyInARow: Story = {
     await userEvent.keyboard("{ArrowDown}{ArrowRight}");
     await untilFocused(box, "A wrapped reply: → reaches it again");
     box().setSelectionRange(LONG_REPLY.length, LONG_REPLY.length);
-    await userEvent.keyboard("{ArrowUp}");
+    await keysOnTheEnginesKeyboard("{ArrowUp}");
     await untilFocused(box, "A wrapped reply: ↑ from its last line stays in it");
     await waitFor(() => expect(caret()).toBeLessThan(LONG_REPLY.length));
-    await userEvent.keyboard("{ArrowDown}");
+    await keysOnTheEnginesKeyboard("{ArrowDown}");
     await untilFocused(box, "A wrapped reply: ↓ back on to its last line stays in it");
-    await userEvent.keyboard("{ArrowDown}");
-    await untilFocused(
-      () => within(list).getByRole("row", { name: "Run cargo test" }),
-      "A wrapped reply: ↓ from its last line goes to the row below",
-    );
+    await keysOnTheEnginesKeyboard("{ArrowDown}");
+    const test = within(list).getByRole("row", { name: "Run cargo test" });
+    await untilFocused(() => test, "A wrapped reply: ↓ from its last line goes to the row below");
+    await tabsOutAndBack(list, test, userEvent, "A wrapped reply");
     await userEvent.keyboard("{ArrowUp}{ArrowRight}");
     await untilFocused(box, "A wrapped reply: the box holds the keyboard for the picture");
     box().setSelectionRange(0, 0);
-    await userEvent.keyboard("{ArrowDown}");
+    await keysOnTheEnginesKeyboard("{ArrowDown}");
     await untilFocused(box, "A wrapped reply: its caret on a line between for the picture");
+    await waitFor(() => expect(caret()).toBeGreaterThan(0));
     expectFocusInSight();
   },
 };

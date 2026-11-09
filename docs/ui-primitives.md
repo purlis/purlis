@@ -1241,8 +1241,8 @@ old `.ui-list` class: `eslint.config.js` refuses both (`purlis/list-family`, an 
   so Enter runs no row), and ⌘A selects its words; ↑ and ↓ move its caret between a box's lines,
   the lines it draws (a line its words wrap on to as much as one after a line break, measured
   unseen in a copy of the box laid out as it is, #5993), and go to the row above or below from its
-  first or last line or from a box of one line; Tab
-  moves on to the row's next control while it has one; Esc gives the keyboard back to its row,
+  first or last line or from a box of one line; Tab moves on to the row's next control while it
+  has one; Esc gives the keyboard back to its row,
   keeping what was typed, and Esc on the row is the list's (`onEscape`). **While it composes**
   (Chinese, Japanese, Korean input), every key is the input method's alone (#5993): composing, or
   key code 229 (WebKit's Esc once the composition ends), the list keeps it from the row and from
