@@ -3177,9 +3177,8 @@ pub(crate) fn serve_recorded(
 ) {
     // Counted as soon as the run is served: a chat that ends from here on keeps no GitHub App
     // token minted for it (#3808).
-    let ends_seen = asker
-        .ends_seen
-        .unwrap_or_else(crate::forge::apptoken::ends_so_far);
+    let _ = asker.ends_seen;
+    let ends_seen = crate::forge::apptoken::ends_so_far();
     // A runner's journal names the program, never a vault (#2838): the refusal's words name
     // vaults, so a service logs neither.
     let program = wanted
