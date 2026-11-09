@@ -5493,8 +5493,11 @@ set = { PURLIS_HARNESS = "codex" }
   run: a Claude Code chat's harness runs outside its sandbox, so this folder, which a chat may
   write, is never on its `PATH` (`Applied::ssh_route`); its route is the one below.
 - **What it says:** every ssh connection leaves through the chat's SOCKS port
-  (`ProxyCommand /usr/bin/nc -X 5 -x 127.0.0.1:<port> %h %p`), shares no master connection,
-  and then reads the person's own `~/.ssh/config`. `bin/ssh` runs `/usr/bin/ssh -F` with it;
+  (`ProxyCommand '<purlis>' _ssh-proxy <port> %h %p`, the `purlis` binary as its own SOCKS5
+  client, #3536; where no `purlis` binary is found, a `ProxyCommand` that carries nothing and
+  says why), shares no master connection, and then reads the person's own `~/.ssh/config`. It
+  runs no `nc`: OpenBSD netcat's `-X 5 -x`, which it ran before, is refused by Fedora's and
+  RHEL's ncat. `bin/ssh` runs `/usr/bin/ssh -F` with it;
   the chat's `PATH` starts with `bin/`, and its `GIT_SSH_COMMAND` names that `ssh`. No key,
   agent or value is in either file.
 
