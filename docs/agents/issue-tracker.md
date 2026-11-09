@@ -21,6 +21,7 @@ Set the milestone whenever a skill files a ready issue or takes `needs-triage` o
 - **None fits:** set the closest existing milestone anyway, so the issue is never left without one. Then suggest the change: ask the maintainer when one is there, otherwise say it in a comment on the issue.
   - **Two or more issues share a theme, or there is a new spec:** suggest a new milestone named for their outcome, listing its issues. Only the maintainer creates one.
   - **A single issue:** the closest existing milestone is the answer. Don't create a milestone for one issue.
+- **Closed issues too:** a milestone's progress counts its closed issues, so work closed without a milestone is never counted. An issue closed as completed keeps or gets the milestone it would have had while open, by the rules above. An issue closed as not planned or as a duplicate gets none.
 
 ## Pull requests as a triage surface
 
