@@ -1,0 +1,246 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { userEvent } from "@testing-library/user-event";
+import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
+import { Inbox, MOVED_JUST_NOW } from "./Inbox";
+import type { Needing } from "./NeedsYou";
+import type { Elsewhere } from "./InboxElsewhere";
+import { SETTLE_MS } from "./TaskBlocksNotice";
+import { forgetInbox } from "./inboxRules";
+import { keepInboxScope } from "./inboxScope";
+import { forgetProjectViews } from "./projectViews";
+import { openEveryAnswer } from "./test-inbox";
+import type { Shown } from "./bindings";
+
+/**
+ * **The press-settle guard, characterised** (#3123, #1693, #1695, #3167): an Allow in the Inbox
+ * does nothing when it is pressed within {@link SETTLE_MS} of its row moving or changing under
+ * the pointer or the keyboard, and says why. Written against the Inbox as it stood on Radix
+ * roving focus, and held unchanged across its move onto the list family, so whatever draws the
+ * rows, the guard decides as it did. Each case is pressed both ways: with the pointer and with
+ * Enter on the focused Allow.
+ */
+
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date", "performance"] });
+});
+
+afterEach(() => {
+  cleanup();
+  clearMocks();
+  forgetInbox();
+  forgetProjectViews();
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
+
+/** The person reads what is drawn for longer than an Allow waits. */
+const read = () => act(() => vi.advanceTimersByTime(SETTLE_MS + 1));
+
+const PLANE = "/home/dev/plane";
+
+const permission = (
+  session: number,
+  ask: string,
+  chain: string[],
+  says = "Run cargo test",
+  allow = "Allow",
+) =>
+  ({
+    session,
+    ask,
+    says,
+    options: [
+      { id: "allow", label: allow, allows: true },
+      { id: "deny", label: "Deny", allows: false },
+    ],
+    source: "permission",
+    chain,
+    answer: { via: "hook" },
+  }) satisfies Shown;
+
+/** A chat waiting in another window, listed in the Inbox under All projects (#1695). */
+const away = (session: number): Needing => ({
+  plane: "/home/dev/ops",
+  project: "ops",
+  session,
+  name: `steward ${session}`,
+  workspace: "infra",
+  go: {
+    id: `needs.show:${session}`,
+    title: `Show steward ${session}`,
+    available: true,
+    reason: "",
+    does: { verb: "showChat", session },
+    name: `steward ${session}`,
+  },
+  ignore: {
+    id: `needs.ignore:${session}`,
+    title: `Ignore steward ${session} until it asks again`,
+    available: true,
+    reason: "",
+    does: { verb: "ignoreNeedsYou", session },
+    name: `steward ${session}`,
+  },
+});
+
+/** A core that records what the window sends. */
+function core() {
+  const calls: { cmd: string; args: Record<string, unknown> }[] = [];
+  mockIPC((cmd, args) => {
+    calls.push({ cmd, args: args as Record<string, unknown> });
+    return null;
+  });
+  return calls;
+}
+
+const answered = (calls: { cmd: string }[]) => calls.some(({ cmd }) => cmd === "answer_ask");
+
+/** Draws the Inbox with every Answer open, and reads it. */
+function draw(asks: readonly Shown[], elsewhere?: Elsewhere) {
+  const props = { plane: PLANE, asks, onGo: vi.fn(), onLeave: vi.fn(), elsewhere };
+  const drawn = render(<Inbox {...props} />);
+  openEveryAnswer();
+  read();
+  return {
+    again: (next: readonly Shown[], there: Elsewhere | undefined = elsewhere) => {
+      drawn.rerender(<Inbox {...props} asks={next} elsewhere={there} />);
+      openEveryAnswer();
+    },
+  };
+}
+
+/** The Allow in a chat's group. */
+const allowOf = (chat: string, name = "Allow") =>
+  within(screen.getByRole("region", { name: chat })).getByRole("button", { name });
+
+/** Presses `way` as the person would: with the pointer, or with Enter on it. */
+async function press(way: HTMLElement, by: "pointer" | "keyboard") {
+  if (by === "pointer") await userEvent.click(way);
+  else {
+    act(() => way.focus());
+    await userEvent.keyboard("{Enter}");
+  }
+}
+
+const BOTH = ["pointer", "keyboard"] as const;
+
+describe.each(BOTH)("the press-settle guard, pressed by the %s (#3123)", (by) => {
+  it("allows nothing on a row an ask joining above it just moved, and allows once it is read", async () => {
+    const calls = core();
+    const first = permission(3, "01J0A", ["steward 3"]);
+    const later = permission(4, "01J0B", ["steward 4"], "Run cargo build");
+    const { again } = draw([first, later]);
+    again([first, permission(3, "01J0C", ["steward 3"], "Run cargo fmt"), later]);
+    await press(allowOf("steward 4"), by);
+    expect(
+      within(screen.getByRole("region", { name: "steward 4" })).getByRole("status"),
+    ).toHaveTextContent(MOVED_JUST_NOW);
+    expect(answered(calls)).toBe(false);
+
+    read();
+    await press(allowOf("steward 4"), by);
+    expect(answered(calls)).toBe(true);
+  });
+
+  it("lets an Allow through when a chat elsewhere joins, which is listed below every ask", async () => {
+    keepInboxScope(PLANE, "all");
+    const calls = core();
+    const ask = permission(3, "01J0A", ["steward 3"]);
+    const there = (asking: Needing[]): Elsewhere => ({ asking, quiet: [], onPress: vi.fn() });
+    const { again } = draw([ask], there([away(7)]));
+    again([ask], there([away(8), away(7)]));
+    expect(screen.getByRole("region", { name: "steward 8 · infra · ops" })).toBeTruthy();
+    await press(allowOf("steward 3"), by);
+    expect(answered(calls)).toBe(true);
+  });
+
+  it("allows nothing on an ask whose words changed, though it kept its place", async () => {
+    const calls = core();
+    const ask = permission(3, "01J0A", ["steward 3"]);
+    const { again } = draw([ask]);
+    again([{ ...ask, says: "Run cargo publish" }]);
+    await press(allowOf("steward 3"), by);
+    expect(screen.getByRole("status")).toHaveTextContent(MOVED_JUST_NOW);
+    expect(answered(calls)).toBe(false);
+  });
+
+  it("allows nothing on an answer whose own words changed", async () => {
+    const calls = core();
+    const ask = permission(3, "01J0A", ["steward 3"]);
+    const { again } = draw([ask]);
+    again([permission(3, "01J0A", ["steward 3"], "Run cargo test", "Allow always")]);
+    await press(allowOf("steward 3", "Allow always"), by);
+    expect(screen.getByRole("status")).toHaveTextContent(MOVED_JUST_NOW);
+    expect(answered(calls)).toBe(false);
+  });
+
+  it("allows nothing just after something above grew, though no row above it changed (#3167)", async () => {
+    const calls = core();
+    // jsdom lays nothing out: every box stands at `lower` on screen.
+    let lower = 0;
+    vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(() =>
+      DOMRect.fromRect({ x: 0, y: lower, width: 100, height: 30 }),
+    );
+    draw([permission(3, "01J0A", ["steward 3"]), permission(4, "01J0B", ["steward 4"])]);
+    // Something above grew without drawing this row again: only where its Allow is says so.
+    lower = 48;
+    await press(allowOf("steward 4"), by);
+    expect(answered(calls)).toBe(false);
+
+    read();
+    await press(allowOf("steward 4"), by);
+    expect(answered(calls)).toBe(true);
+  });
+
+  it("allows nothing pressed just after the ask was drawn, says so, and allows once read", async () => {
+    const calls = core();
+    render(
+      <Inbox
+        plane={PLANE}
+        asks={[permission(3, "01J0A", ["steward 3"])]}
+        onGo={vi.fn()}
+        onLeave={vi.fn()}
+      />,
+    );
+    openEveryAnswer();
+    await press(screen.getByRole("button", { name: "Allow" }), by);
+    expect(screen.getByRole("status")).toHaveTextContent(MOVED_JUST_NOW);
+    expect(answered(calls)).toBe(false);
+
+    read();
+    await press(screen.getByRole("button", { name: "Allow" }), by);
+    expect(answered(calls)).toBe(true);
+  });
+
+  it("never holds a Deny", async () => {
+    const calls = core();
+    const { again } = draw([permission(4, "01J0B", ["steward 4"])]);
+    again([permission(3, "01J0A", ["steward 3"]), permission(4, "01J0B", ["steward 4"])]);
+    await press(allowOf("steward 4", "Deny"), by);
+    expect(answered(calls)).toBe(true);
+  });
+});
+
+describe("where the keyboard lands after an ask is answered and removed (#3123, #1700)", () => {
+  it("lands on the row of the first ask left, never the page", async () => {
+    core();
+    const first = permission(3, "01J0A", ["steward 3"]);
+    const second = permission(4, "01J0B", ["steward 4"], "Run cargo build");
+    const { again } = draw([first, second]);
+    await press(allowOf("steward 3"), "keyboard");
+    again([second]);
+    const row = document.activeElement as HTMLElement;
+    expect(row).not.toBe(document.body);
+    expect(
+      within(screen.getByRole("region", { name: "steward 4" })).getByText("Run cargo build"),
+    ).toBeTruthy();
+    expect(screen.getByRole("region", { name: "steward 4" }).contains(row)).toBe(true);
+    // The row itself, not one of its buttons: an answer is never one key away by accident.
+    expect(row.tagName).not.toBe("BUTTON");
+    expect(row).toHaveTextContent("Run cargo build");
+  });
+});
