@@ -369,8 +369,7 @@ pub fn config_root_in(env: &dyn Fn(&str) -> Option<String>) -> Option<PathBuf> {
 }
 
 /// [`config_root_in`] for a reader asked at every chat's start that only reads what is there: it
-/// never holds the fence, so a fenced test build reads a config home outside its fence as none,
-/// as [`crate::skills::studio_on_here`] does.
+/// never holds the fence, so a fenced test build reads a config home outside its fence as none.
 pub fn config_root_read_in(env: &dyn Fn(&str) -> Option<String>) -> Option<PathBuf> {
     rooted(
         env(HOME_VAR).map(Into::into),
