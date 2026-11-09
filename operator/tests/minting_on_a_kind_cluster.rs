@@ -229,6 +229,9 @@ impl Drop for Forward {
 /// does a runner's, while the proof is still made here.
 struct Relay;
 
+/// What each run of [`Relay`]'s pod side wrote to its error stream.
+static RELAY_SAID: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
 impl Relay {
     fn start(namespace: &str, pod: &str, address: &str) -> Relay {
         let listener =
@@ -260,11 +263,25 @@ fn relay_one(mut asker: std::net::TcpStream, namespace: &str, pod: &str, script:
         .args(["bash", "-c", script])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .spawn()
     else {
+        RELAY_SAID
+            .lock()
+            .expect("the relay's record")
+            .push("kubectl did not start".to_owned());
         return;
     };
+    // What the pod's side said, kept for a test that finds no answer.
+    if let Some(mut said) = run.stderr.take() {
+        std::thread::spawn(move || {
+            let mut text = String::new();
+            let _ = std::io::Read::read_to_string(&mut said, &mut text);
+            if !text.trim().is_empty() {
+                RELAY_SAID.lock().expect("the relay's record").push(text);
+            }
+        });
+    }
     let (Some(mut into), Some(mut out), Ok(mut back)) =
         (run.stdin.take(), run.stdout.take(), asker.try_clone())
     else {
@@ -873,20 +890,45 @@ async fn a_vouched_runner_gets_a_token_covering_exactly_the_intersection_and_eve
     })
     .await;
     // From here on this test asks from inside the runner's pod, as the runner would.
+    // Whether the port answers into the pod at all: a TLS server answers a line that is not TLS.
+    let probe = exec(
+        &runner_ns,
+        &pod,
+        "runner",
+        &[
+            "timeout",
+            "10",
+            "bash",
+            "-c",
+            &format!(
+                "exec 3<>/dev/tcp/{address}/{} || exit 1; printf 'hello\\r\\n\\r\\n' >&3; head -c 64 <&3 | od -An -tx1 | head -2",
+                mint::PORT
+            ),
+        ],
+    );
+    let probed = format!(
+        "status {:?}, out {:?}, err {:?}",
+        probe.status.code(),
+        String::from_utf8_lossy(&probe.stdout),
+        String::from_utf8_lossy(&probe.stderr)
+    );
+    eprintln!("the port, asked from inside the runner's pod: {probed}");
     let _relay = Relay::start(&runner_ns, &pod, &address);
     ASKING_AT.store(RELAYED, Ordering::SeqCst);
-    eventually(
-        "the port to answer from the runner's pod",
-        Duration::from_secs(30),
-        || {
-            let pin = pin.clone();
-            async move {
-                let (status, _) = post(&pin, CHALLENGE_PATH, &json!({}));
-                (status == 200).then_some(())
-            }
-        },
-    )
-    .await;
+    let start = Instant::now();
+    loop {
+        let (status, said) = post(&pin, CHALLENGE_PATH, &json!({}));
+        if status == 200 {
+            break;
+        }
+        assert!(
+            start.elapsed() < Duration::from_secs(120),
+            "the port did not answer from the runner's pod: last {status} {said}; the pod's side \
+             said {:?}; asked directly from the pod: {probed}",
+            RELAY_SAID.lock().expect("the relay's record")
+        );
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
 
     // A certificate of any other key is not the operator's: curl refuses it.
     let wrong = post(
