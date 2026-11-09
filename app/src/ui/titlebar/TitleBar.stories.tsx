@@ -469,6 +469,13 @@ export const Reorder: Story = {
     );
     // The keyboard walks the new order: the stop is still the current chip, now second.
     await walkTheStrip(userEvent, bar, "Reorder", -1);
+    // Back to the strip's stop, the current chip, from which Tab leaves the strip: the arrows move
+    // the keyboard and leave the stop where it was (`PinnedStrip`).
+    await userEvent.keyboard("{ArrowRight}");
+    await untilFocused(
+      () => chipsOf(bar).find((one) => one.hasAttribute("aria-current")) ?? null,
+      "Reorder: back on the strip's stop",
+    );
     await userEvent.tab();
     // Tab leaves the strip, one stop for all its chips (nothing follows the bar in this story, so
     // the keyboard comes round to the bar's start).
