@@ -54,6 +54,9 @@ import { EmptyState } from "./ui/empty-state/EmptyState";
  *   watch tells every window, and keeps where it was scrolled; it is drawn in the theme the
  *   window draws, and in each one it draws after; and the bar says when its data was last
  *   updated.
+ * - **Its data is each person's** (ADR 0120 §1, #5961): a page that declares data files of
+ *   which none is on this machine still renders, and the bar says it was not generated here.
+ *   The page reads its data itself, through the port purlis hands each load (`artifacts.rs`).
  */
 export function ArtifactTab({
   plane,
@@ -107,6 +110,11 @@ export function ArtifactTab({
         <span className="artifact-bar-by">{pinnedBy(about.said)}</span>
         <span className="artifact-bar-fresh">{freshness(about.said?.fresh)?.said ?? ""}</span>
         {opened === null ? null : <ScriptStanding opened={opened} />}
+        {opened === null || opened.generated ? null : (
+          <span className="artifact-bar-standing" data-testid="artifact-data">
+            Not generated on this machine
+          </span>
+        )}
       </header>
       {unpinned ? (
         <EmptyState

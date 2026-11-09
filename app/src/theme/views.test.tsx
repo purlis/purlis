@@ -1386,7 +1386,7 @@ const STATES: State[] = [
         missing: "there is no folder 'backlog-state' in artifacts/",
       },
     },
-    drawn: /there is no folder/,
+    drawn: /There is no folder/,
   },
   {
     name: "Devices, while they are read",

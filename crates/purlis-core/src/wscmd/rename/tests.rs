@@ -90,6 +90,24 @@ fn a_plane() -> Plane {
     std::fs::write(root.join("workspaces/.default"), "alpha\n").unwrap();
     crate::wscmd::set_live(&root, "alpha", true).unwrap();
 
+    // A pinned artifact with script (ADR 0120), approved on this machine below.
+    let board = root.join("workspaces/alpha/artifacts/board");
+    std::fs::create_dir_all(&board).unwrap();
+    std::fs::write(
+        board.join("index.html"),
+        "<h1>Board</h1><script>draw()</script>",
+    )
+    .unwrap();
+    crate::artifact::pin(
+        &root,
+        &root.join("workspaces/alpha"),
+        &crate::artifact::Request {
+            folder: "board".into(),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
     // A clone, a piece cut from it, and a worktree Claude Code keeps inside it.
     let svc = root.join("workspaces/alpha/svc");
     repo(&svc);
@@ -186,12 +204,32 @@ fn a_plane() -> Plane {
         store.pin_workspace(&root, "alpha", true).unwrap();
     })
     .unwrap();
+    let shown = crate::artifact::serve::Snapshot::read(&board, "board").unwrap();
+    crate::artifact::approval::approve(
+        &config,
+        &root.join("workspaces/alpha"),
+        "board",
+        &board_pin(&root, "alpha"),
+        shown.fingerprint(),
+    )
+    .unwrap();
 
     Plane {
         _dir: dir,
         root,
         config,
     }
+}
+
+/// The id of workspace `ws`'s pin on its `board` artifact.
+fn board_pin(root: &Path, ws: &str) -> String {
+    crate::artifact::read(&root.join("workspaces").join(ws))
+        .unwrap()
+        .pins
+        .into_iter()
+        .find(|pin| pin.folder == "board")
+        .unwrap()
+        .id
 }
 
 fn repo_plane(root: &Path) {
@@ -353,6 +391,15 @@ fn everything_follows(plane: &Plane) {
         "the rewritten record was not vouched for"
     );
 
+    // Its artifact: still pinned, and still approved on this machine under its new name.
+    let pin = board_pin(root, "beta");
+    let shown =
+        crate::artifact::serve::Snapshot::read(&ws.join("artifacts/board"), "board").unwrap();
+    assert_eq!(
+        crate::artifact::approval::standing(Some(&plane.config), &ws, "board", &pin, &shown),
+        crate::artifact::approval::Standing::Approved
+    );
+
     // The journal is gone, and the plane was saved once with the move in it.
     assert!(!journal_path(root).exists());
     assert_eq!(
@@ -413,6 +460,7 @@ fn a_rename_killed_at_any_step_leaves_one_name_working_and_the_same_command_fini
         Step::Links,
         Step::Reopen,
         Step::Pins,
+        Step::Approvals,
     ] {
         let plane = a_plane();
         CRASH_AFTER.with(|at| at.set(Some(step)));

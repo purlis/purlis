@@ -36,7 +36,13 @@ function answers(about: ArtifactAbout, opened: Partial<ArtifactOpened> = {}) {
   mockIPC((cmd) => {
     if (cmd === "artifact_about") return about;
     if (cmd === "artifact_open")
-      return { label: "artifact-1", standing: "script-free", changed_by: null, ...opened };
+      return {
+        label: "artifact-1",
+        standing: "script-free",
+        changed_by: null,
+        generated: true,
+        ...opened,
+      };
     if (cmd.startsWith("artifact_")) return null;
     return new Promise(() => {});
   });

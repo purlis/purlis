@@ -263,4 +263,23 @@ describe("the activity bar's artifacts", () => {
     );
     await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
   });
+
+  it("draws nothing when the core answers no pins at all", async () => {
+    const asked: unknown[] = [];
+    mockIPC((cmd, args) => {
+      if (cmd === "artifact_pins") asked.push(args);
+      return null;
+    });
+    render(
+      <>
+        <p>Beside it</p>
+        <ArtifactGroup plane="p" workspace="alpha" onOpen={() => {}} />
+      </>,
+    );
+    await waitFor(() => expect(asked).toHaveLength(1));
+    // Let the answer land: a throw while drawing it takes the whole tree down with it.
+    await act(async () => {});
+    expect(screen.getByText("Beside it")).toBeInTheDocument();
+    expect(screen.queryByRole("toolbar")).toBeNull();
+  });
 });

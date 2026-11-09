@@ -217,6 +217,41 @@ pub fn forget(config_root: &Path, workspace: &Path, folder: &str) -> Result<bool
     Ok(had)
 }
 
+/// **Carries every approval of the workspace that was at `from` to where it is now, `to`**: a
+/// rename keeps its approvals (#5960), where a fork, a copy elsewhere, asks again. Only an
+/// entry recorded at exactly `from` moves, so a workspace whose name merely begins with the
+/// old one's keeps its own. How many moved; none writes nothing, so a rename finished twice,
+/// or of a workspace nobody approved anything in, creates no record.
+pub fn moved(config_root: &Path, from: &Path, to: &Path) -> Result<usize, String> {
+    let from = from.to_string_lossy();
+    let at_from = |entry: &Value| {
+        entry.get("workspace").and_then(Value::as_str) == Some(&*from)
+            && entry.get("folder").and_then(Value::as_str).is_some()
+    };
+    if !entries(config_root).values().any(at_from) {
+        return Ok(0);
+    }
+    let real = to.canonicalize().unwrap_or_else(|_| to.to_path_buf());
+    let mut count = 0;
+    change(config_root, |entries| {
+        let keys: Vec<String> = entries
+            .iter()
+            .filter(|(_, entry)| at_from(entry))
+            .map(|(key, _)| key.clone())
+            .collect();
+        for old in keys {
+            let Some(mut entry) = entries.remove(&old) else {
+                continue;
+            };
+            let folder = entry["folder"].as_str().unwrap_or_default().to_owned();
+            entry["workspace"] = Value::String(real.to_string_lossy().into_owned());
+            entries.insert(key(&real, &folder), entry);
+            count += 1;
+        }
+    })?;
+    Ok(count)
+}
+
 /// Reads the record's entries, changes them, and writes the record whole, private to the
 /// person. A record that cannot be read is written afresh: what it held is lost, which only
 /// asks again.
@@ -436,6 +471,51 @@ mod tests {
             standing(Some(&here.config), &here.workspace, "other", PIN, &shown),
             Standing::Approved
         );
+    }
+
+    #[test]
+    fn a_renamed_workspace_keeps_its_approvals_and_no_other_workspace_s_move() {
+        let here = Here::new();
+        here.approve(PIN);
+        // A workspace whose name begins with the renamed one's is another workspace.
+        let other = here.workspace.with_file_name("alphabet");
+        std::fs::create_dir_all(other.join("artifacts/board")).unwrap();
+        std::fs::write(
+            other.join("artifacts/board/index.html"),
+            "<script>x()</script>",
+        )
+        .unwrap();
+        let others = Snapshot::read(&other.join("artifacts/board"), "board").unwrap();
+        approve(&here.config, &other, "board", PIN, others.fingerprint()).unwrap();
+
+        let renamed = here.workspace.with_file_name("beta");
+        std::fs::rename(&here.workspace, &renamed).unwrap();
+        assert_eq!(moved(&here.config, &here.workspace, &renamed).unwrap(), 1);
+
+        let snapshot = Snapshot::read(&renamed.join("artifacts/board"), "board").unwrap();
+        assert_eq!(
+            standing(Some(&here.config), &renamed, "board", PIN, &snapshot),
+            Standing::Approved
+        );
+        assert_eq!(
+            standing(Some(&here.config), &other, "board", PIN, &others),
+            Standing::Approved
+        );
+        let text = std::fs::read_to_string(path(&here.config)).unwrap();
+        assert!(!text.contains("\"alpha\""), "{text}");
+        assert!(!text.contains("/alpha\""), "{text}");
+
+        // Finished once, a second run has nothing to move.
+        assert_eq!(moved(&here.config, &here.workspace, &renamed).unwrap(), 0);
+    }
+
+    #[test]
+    fn a_rename_with_nothing_approved_writes_no_record() {
+        let here = Here::new();
+        let renamed = here.workspace.with_file_name("beta");
+        std::fs::rename(&here.workspace, &renamed).unwrap();
+        assert_eq!(moved(&here.config, &here.workspace, &renamed).unwrap(), 0);
+        assert!(!path(&here.config).exists());
     }
 
     #[test]
