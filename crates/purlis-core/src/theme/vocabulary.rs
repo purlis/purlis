@@ -496,7 +496,7 @@ fn follow_marks(
     accent: &str,
     followed: &mut Vec<(&'static str, &'static str)>,
 ) {
-    // And the accent's marks, a link and the first chart colour (#5157).
+    // What is drawn in the accent, then its marks: a link and the first chart colour (#5157).
     for token in DRAWN_IN_THE_ACCENT
         .into_iter()
         .chain(super::tint::SIGNAL_MARKS)

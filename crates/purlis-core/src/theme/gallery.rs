@@ -122,7 +122,7 @@ impl Card {
     /// **Whether this is the card `id` of the level `level`**: a theme folder's card is told
     /// from another of its name by its level, where one is named.
     pub fn is(&self, id: &str, level: Option<Reach>) -> bool {
-        self.id == id && (level.is_none() || self.level() == level)
+        names(&self.id, &self.from, id, level)
     }
 }
 
@@ -142,9 +142,9 @@ pub struct Shelf<'a> {
 /// them.
 ///
 /// What a card says of a theme it draws is worked out once for each theme as it reads: a theme
-/// the last gallery read drew exactly as it draws now is said again from then ([`Kept`]).
+/// the last gallery read drew exactly as it draws now is said again from then ([`LastRead`]).
 pub fn cards(shelf: &Shelf<'_>) -> Vec<Card> {
-    let mut kept = Kept::taken();
+    let mut kept = LastRead::taken();
     let cards = shelved(shelf)
         .into_iter()
         .map(|(id, from, resolved)| card(id, from, &resolved, &mut kept))
@@ -348,6 +348,11 @@ pub fn folder_of(shelf: &Shelf<'_>, id: &str, level: Option<Reach>) -> Option<Pa
         .then_some(path)
 }
 
+/// Whether the card `card_id` from `from` is the one `id` of `level` names ([`Card::is`]).
+fn names(card_id: &str, from: &From, id: &str, level: Option<Reach>) -> bool {
+    card_id == id && (level.is_none() || level_of(from) == level)
+}
+
 /// The level of a theme folder from `from`; `None` for one that is no folder.
 fn level_of(from: &From) -> Option<Reach> {
     match from {
@@ -369,7 +374,7 @@ fn from_level(level: Reach) -> From {
 
 /// The card for `resolved`, the theme `id` from `from`; what it says of the theme it draws is
 /// taken from `kept` when it was worked out for that theme before.
-fn card(id: String, from: From, resolved: &Resolved, kept: &mut Kept) -> Card {
+fn card(id: String, from: From, resolved: &Resolved, kept: &mut LastRead) -> Card {
     let said: Vec<String> = resolved
         .complaints
         .iter()
@@ -397,7 +402,7 @@ fn card(id: String, from: From, resolved: &Resolved, kept: &mut Kept) -> Card {
         };
     }
     let theme = &resolved.theme;
-    let Checked {
+    let CardFacts {
         warnings,
         floors,
         follows,
@@ -446,13 +451,13 @@ fn is_duplicable(from: &From, resolved: &Resolved) -> bool {
 /// consent floors its appearances break, and what following the system does with it. The theme
 /// check is most of what reading a gallery costs.
 #[derive(Debug, Clone)]
-struct Checked {
+struct CardFacts {
     warnings: Vec<String>,
     floors: Vec<String>,
     follows: Option<String>,
 }
 
-impl Checked {
+impl CardFacts {
     fn of(theme: &Theme) -> Self {
         Self {
             warnings: super::warnings_said(theme, &check_every(theme)),
@@ -470,15 +475,15 @@ impl Checked {
 /// theme that is new or draws otherwise: the window reads its gallery again on every choice,
 /// and the built-in themes are in every one. A theme is matched by all it is (`Theme`'s `==`),
 /// so a match draws exactly what was checked. Only the last read's themes are kept.
-static LAST: Mutex<Vec<(Theme, Checked)>> = Mutex::new(Vec::new());
+static LAST: Mutex<Vec<(Theme, CardFacts)>> = Mutex::new(Vec::new());
 
 /// One read's use of [`LAST`]: the themes it found there and those it checked.
-struct Kept {
-    before: Vec<(Theme, Checked)>,
-    now: Vec<(Theme, Checked)>,
+struct LastRead {
+    before: Vec<(Theme, CardFacts)>,
+    now: Vec<(Theme, CardFacts)>,
 }
 
-impl Kept {
+impl LastRead {
     /// Takes what the last read kept; a read alongside this one starts from nothing.
     fn taken() -> Self {
         let before = std::mem::take(&mut *LAST.lock().unwrap_or_else(PoisonError::into_inner));
@@ -489,13 +494,13 @@ impl Kept {
     }
 
     /// What a card says of `theme`: kept, or worked out now.
-    fn of(&mut self, theme: &Theme) -> Checked {
+    fn of(&mut self, theme: &Theme) -> CardFacts {
         if let Some((_, checked)) = self.now.iter().find(|(one, _)| one == theme) {
             return checked.clone();
         }
         let checked = match self.before.iter().position(|(one, _)| one == theme) {
             Some(at) => self.before.swap_remove(at).1,
-            None => Checked::of(theme),
+            None => CardFacts::of(theme),
         };
         self.now.push((theme.clone(), checked.clone()));
         checked
@@ -540,7 +545,7 @@ pub fn duplicate(
     // Found as [`cards`] finds it, without checking every theme of the gallery.
     let (card_id, from, resolved) = shelved(shelf)
         .into_iter()
-        .find(|(one, from, _)| one == id && (level.is_none() || level_of(from) == level))
+        .find(|(one, from, _)| names(one, from, id, level))
         .ok_or_else(|| format!("there is no theme {id} here, so nothing was made"))?;
     let name = named(&card_id, &resolved);
     if !is_duplicable(&from, &resolved) {

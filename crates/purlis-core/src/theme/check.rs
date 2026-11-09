@@ -1805,22 +1805,21 @@ pub(super) fn long(hex: &str) -> String {
 }
 
 fn byte(digits: &str, at: usize) -> f64 {
+    f64::from(byte_of(digits, at))
+}
+
+/// The byte two hex digits at `at` of `digits` write; 0 where there are none.
+fn byte_of(digits: &str, at: usize) -> u8 {
     digits
         .get(at..at + 2)
         .and_then(|two| u8::from_str_radix(two, 16).ok())
-        .map_or(0.0, f64::from)
+        .unwrap_or(0)
 }
 
 /// WCAG relative luminance: each channel as the linear number WCAG's formula wants.
 pub(super) fn luminance(hex: &str) -> f64 {
     let digits = long(hex);
-    let channel = |at: usize| {
-        let byte = digits
-            .get(at..at + 2)
-            .and_then(|two| u8::from_str_radix(two, 16).ok())
-            .unwrap_or(0);
-        super::tint::linear_of(byte)
-    };
+    let channel = |at: usize| super::tint::linear_of(byte_of(&digits, at));
     0.2126 * channel(0) + 0.7152 * channel(2) + 0.0722 * channel(4)
 }
 

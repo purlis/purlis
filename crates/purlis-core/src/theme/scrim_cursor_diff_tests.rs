@@ -321,12 +321,18 @@ fn every_built_in_holds_each_syntax_role_on_a_changed_word_and_the_sweep_can_fal
             // A role is a front only, never a ground another role is measured on, so breaking all
             // fifteen at once breaks each as breaking it alone would, for one check, not fifteen.
             let mut broken = theme.clone();
+            let grounds: Vec<&str> = syntax_roles()
+                .map(|front| pair_of(front, back))
+                .flat_map(|pair| [Some(pair.back), pair.under, pair.beneath])
+                .flatten()
+                .collect();
             for front in syntax_roles() {
+                assert!(
+                    !grounds.contains(&front),
+                    "{front} is a ground a role is measured on over {back}"
+                );
                 let pair = pair_of(front, back);
                 assert_eq!(pair.floor, 3.0, "{front} on {back}");
-                assert!(
-                    pair.back != front && pair.under != Some(front) && pair.beneath != Some(front)
-                );
                 let cleared = ratio(theme, pair).expect("measured");
                 assert!(
                     cleared >= 3.0,
