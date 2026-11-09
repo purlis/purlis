@@ -4771,3 +4771,97 @@ async fn a_runner_namespace_enforces_restricted_pod_security_and_its_runner_is_a
         .await;
     scratch.end().await;
 }
+
+/// What the operator makes for a Claim it holds as applied server-side from the first: no entry
+/// of its field manager on any of them records an `Update`, so a later apply that leaves a field
+/// out takes it out.
+#[tokio::test]
+#[ignore = "needs a kind cluster: operator/e2e/kind.sh"]
+async fn what_the_operator_makes_it_holds_as_applied() {
+    use k8s_openapi::api::networking::v1::NetworkPolicy;
+    use k8s_openapi::api::rbac::v1::RoleBinding;
+    use kube::Resource;
+    use purlis_cluster_operator::FIELD_MANAGER;
+    use purlis_cluster_operator::upstream::{
+        SandboxClaim, SandboxTemplate, SandboxWarmPool, name_for,
+    };
+    let client = Client::try_default().await.expect("the cluster");
+    let scratch = Scratch::new(&client, "e2e-applied").await;
+    let pools = Api::<Pool>::all(client.clone());
+    let pool = Pool::new("e2e-applied", PoolSpec::new(runner_image()));
+    pools
+        .patch(
+            "e2e-applied",
+            &PatchParams::apply("e2e").force(),
+            &Patch::Apply(&pool),
+        )
+        .await
+        .expect("the pool");
+    let claims = claims_in(&client, &scratch.name);
+    claims
+        .create(&PostParams::default(), &claim("applied-1", "e2e-applied"))
+        .await
+        .expect("the claim");
+    eventually("the claim is ready", Duration::from_secs(300), || async {
+        let claim = claims.get("applied-1").await.ok()?;
+        (ready_of(&claim)?.0 == "True").then_some(())
+    })
+    .await;
+
+    fn updates_of<K: Resource>(what: &str, object: &K) -> Vec<String> {
+        object
+            .meta()
+            .managed_fields
+            .iter()
+            .flatten()
+            .filter(|entry| {
+                entry.manager.as_deref() == Some(FIELD_MANAGER)
+                    && entry.operation.as_deref() == Some("Update")
+                    && entry.subresource.as_deref().unwrap_or_default().is_empty()
+            })
+            .map(|entry| format!("{what}: {entry:?}"))
+            .collect()
+    }
+    let object = name_for("e2e-applied");
+    let runner = runners();
+    let mut updates = Vec::new();
+    updates.extend(updates_of(
+        "template",
+        &Api::<SandboxTemplate>::namespaced(client.clone(), &runner)
+            .get(&object)
+            .await
+            .expect("the template"),
+    ));
+    updates.extend(updates_of(
+        "warm pool",
+        &Api::<SandboxWarmPool>::namespaced(client.clone(), &runner)
+            .get(&object)
+            .await
+            .expect("the warm pool"),
+    ));
+    updates.extend(updates_of(
+        "upstream claim",
+        &Api::<SandboxClaim>::namespaced(client.clone(), &runner)
+            .get("applied-1")
+            .await
+            .expect("the upstream claim"),
+    ));
+    updates.extend(updates_of(
+        "role binding",
+        &Api::<RoleBinding>::namespaced(client.clone(), &runner)
+            .get(purlis_cluster_operator::person::OWNER_ROLE)
+            .await
+            .expect("the role binding"),
+    ));
+    updates.extend(updates_of(
+        "policy on egress",
+        &Api::<NetworkPolicy>::namespaced(client.clone(), &runner)
+            .get(purlis_cluster_operator::person::DENY_EGRESS_POLICY)
+            .await
+            .expect("the policy on egress"),
+    ));
+    assert!(updates.is_empty(), "{updates:#?}");
+
+    let _ = pools.delete("e2e-applied", &DeleteParams::default()).await;
+    scratch.end().await;
+}
