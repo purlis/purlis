@@ -36,7 +36,7 @@
 //! waiting was told to wait for the answer. Its command passed the mask before it was raised
 //! ([`crate::secrets::brokered`]), so it is written as it is. A grant does not: it is asked again.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::time::Duration;
 
@@ -577,6 +577,7 @@ impl Runs {
 /// What a chat hears as its command starts to wait: what it was asked about, but which keys a
 /// vault its persona may not use lacks, which it is not told.
 fn asked_said(
+    root: &Path,
     bound: &Bound,
     offer: &Offer,
     keys: &[String],
@@ -598,9 +599,8 @@ fn asked_said(
         Offer::Fill { .. } => format!("to fill {} in vault {}", keys.join(", "), bound.vault),
     };
     format!(
-        "purlis asked the person in its window {what}: this command waits for their answer for \
-         up to {} seconds",
-        within.as_secs()
+        "purlis asked the person {what}; {}",
+        crate::askwait::waiting_said(root, within)
     )
 }
 
@@ -627,13 +627,14 @@ fn declined_all_said(bound: &Bound, keys: &[String]) -> String {
     }
 }
 
-/// What a chat hears whose command stopped waiting.
-fn still_open_said(bound: &Bound) -> String {
+/// What a chat hears whose command stopped waiting: the ask stays open where it was asked.
+fn still_open_said(root: &Path, bound: &Bound) -> String {
     format!(
-        "waiting on the person to allow {} with vault {}; you will be told their answer, so run \
-         this command again only then",
+        "waiting on the person to allow {} with vault {}; {}; you will be told their answer, so \
+         run this command again only then",
         bound.program_name(),
-        bound.vault
+        bound.vault,
+        crate::askwait::still_answerable_said(root)
     )
 }
 
@@ -793,7 +794,14 @@ impl Asks {
             };
             (answered, n, id)
         };
-        say(&asked_said(&bound, &offer, &keys, not_its_vault, within));
+        say(&asked_said(
+            &self.root,
+            &bound,
+            &offer,
+            &keys,
+            not_its_vault,
+            within,
+        ));
         let settled_as = |settled: RunSettled| match settled {
             RunSettled::Allowed => RunHeld::Allowed,
             RunSettled::Filled => RunHeld::Filled,
@@ -813,7 +821,7 @@ impl Asks {
         match answered.recv_timeout(within) {
             Ok(settled) => settled_as(settled),
             Err(mpsc::RecvTimeoutError::Disconnected) => RunHeld::StillOpen {
-                line: still_open_said(&bound),
+                line: still_open_said(&self.root, &bound),
             },
             Err(mpsc::RecvTimeoutError::Timeout) => {
                 let mut inner = self.inner();
@@ -831,7 +839,7 @@ impl Asks {
                     return settled_as(settled);
                 }
                 RunHeld::StillOpen {
-                    line: still_open_said(&bound),
+                    line: still_open_said(&self.root, &bound),
                 }
             }
         }

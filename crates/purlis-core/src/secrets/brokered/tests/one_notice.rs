@@ -696,7 +696,7 @@ fn a_program_refused_in_this_chat_named_ahead_is_refused_at_once() {
         "{said:?}"
     );
     assert_eq!(notices(&asks), 0, "nothing asked");
-    let (line, code) = said.line();
+    let (line, code) = said.line(root);
     assert_eq!(code, 1);
     assert!(line.contains("did not allow curl"), "{line}");
 }
@@ -704,11 +704,12 @@ fn a_program_refused_in_this_chat_named_ahead_is_refused_at_once() {
 #[test]
 fn no_filled_answer_sends_the_chat_to_a_refusal() {
     use crate::secrets::ask::Said;
+    let root = std::path::Path::new("/p");
     let filled = Said::Filled {
         vault: "team".into(),
         key: "TOKEN".into(),
     };
-    let (line, code) = filled.line();
+    let (line, code) = filled.line(root);
     assert_eq!(code, 0);
     assert!(
         line.contains("the person is asked to allow it"),
@@ -720,16 +721,16 @@ fn no_filled_answer_sends_the_chat_to_a_refusal() {
         program: "curl".into(),
     };
     assert!(
-        allowed.line().0.contains("allowed curl"),
+        allowed.line(root).0.contains("allowed curl"),
         "{:?}",
-        allowed.line()
+        allowed.line(root)
     );
     let not = Said::FilledNotAllowed {
         vault: "team".into(),
         key: "TOKEN".into(),
         program: "curl".into(),
     };
-    let (line, code) = not.line();
+    let (line, code) = not.line(root);
     assert_eq!(code, 1);
     assert!(
         line.contains("did not allow curl") && line.contains("filled"),

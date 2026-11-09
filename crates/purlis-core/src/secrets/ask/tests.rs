@@ -111,7 +111,10 @@ fn a_broker_miss_raises_one_secret_ask_naming_the_chat_persona_vault_and_key() {
     assert_eq!(
         held,
         Held::StillOpen {
-            line: "waiting on you for team/MISSING; retry once answered".into()
+            line: format!(
+                "waiting on you for team/MISSING; {}; retry once answered",
+                crate::askwait::still_answerable_said(project.path())
+            )
         }
     );
     assert!(
@@ -579,7 +582,10 @@ fn a_read_of_a_missing_key_that_is_declined_or_unanswered_says_so_and_reads_noth
         .unwrap_err();
     assert_eq!(
         unanswered.to_string(),
-        "waiting on you for team/MISSING; retry once answered"
+        format!(
+            "waiting on you for team/MISSING; {}; retry once answered",
+            crate::askwait::still_answerable_said(project.path())
+        )
     );
     let id = asks.open()[0].id;
     asks.answer(&ctx(project.path()), id, Answer::Decline, window())
@@ -977,11 +983,14 @@ fn a_chats_ask_goes_to_its_personas_vault_with_its_purpose_as_one_line_and_waits
         "the chat's words, on one line"
     );
     assert_eq!(open[0].tool, None);
-    let (told, code) = said.unwrap().line();
+    let (told, code) = said.unwrap().line(project.path());
     assert_eq!(code, super::super::brokered::WAITING_ON_THE_PERSON);
     assert_eq!(
         told,
-        "waiting on you for team/STRIPE_KEY; retry once answered"
+        format!(
+            "waiting on you for team/STRIPE_KEY; {}; retry once answered",
+            crate::askwait::still_answerable_said(project.path())
+        )
     );
 }
 
@@ -1106,7 +1115,7 @@ fn a_declined_ask_is_said_as_declined_and_the_chat_is_not_asked_again() {
                 reason: DECLINED_BY_THE_PERSON.into()
             }
         );
-        assert_eq!(said.line().1, 1);
+        assert_eq!(said.line(Path::new("/p")).1, 1);
     });
     assert!(matches!(
         raised_now(root, &asks, &line(7, "STRIPE", None)),
@@ -1285,7 +1294,7 @@ fn no_value_is_in_what_a_chat_hears_or_the_trace() {
         let said = chat.join().unwrap().unwrap();
         let wire = serde_json::to_string(&crate::hookwire::Answer::Secret(said.clone())).unwrap();
         assert!(
-            !wire.contains(VALUE) && !said.line().0.contains(VALUE),
+            !wire.contains(VALUE) && !said.line(Path::new("/p")).0.contains(VALUE),
             "{wire}"
         );
     });
@@ -2611,4 +2620,34 @@ fn a_replace_ask_keeps_its_reason_across_a_restart() {
     };
     assert!(before[0].reason.is_some());
     assert_eq!(Asks::kept(project.path()).open(), before);
+}
+
+#[test]
+fn a_secret_ask_that_waits_says_where_the_person_answers_and_that_it_stays_answerable() {
+    let project = project();
+    let name = project
+        .path()
+        .file_name()
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_owned();
+    let asks = Asks::new(project.path());
+    let (held, said) = held_for_nothing(&asks, need(7, "MISSING"));
+    assert_eq!(
+        said,
+        [format!(
+            "purlis asked the person for team/MISSING, which the vault doesn't hold; waiting for \
+             the person: Asks (✋) in the purlis window, project {name}, for up to 0 seconds"
+        )]
+    );
+    assert_eq!(
+        held,
+        Held::StillOpen {
+            line: format!(
+                "waiting on you for team/MISSING; the ask is still answerable in Asks (✋) in \
+                 the purlis window, project {name}; retry once answered"
+            )
+        }
+    );
 }

@@ -5714,7 +5714,10 @@ fn a_run_missing_its_key_that_nobody_answers_in_time_ends_waiting_on_the_person(
     assert_eq!(
         frames.last(),
         Some(&Frame::Refused {
-            why: "waiting on you for team/MISSING; retry once answered".into(),
+            why: format!(
+                "waiting on you for team/MISSING; {}; retry once answered",
+                crate::askwait::still_answerable_said(project.path())
+            ),
             code: WAITING_ON_THE_PERSON
         }),
         "{frames:?}"
@@ -5841,7 +5844,10 @@ fn a_browser_login_missing_its_password_that_nobody_answers_in_time_waits_on_the
     let asker = a_login_missing_its_password(project.path());
     let why = login_asking(&asker, &asks, Duration::ZERO).unwrap_err();
     assert!(
-        why.contains("waiting on you for team/SHOP_PASS; retry once answered"),
+        why.contains(&format!(
+            "waiting on you for team/SHOP_PASS; {}; retry once answered",
+            crate::askwait::still_answerable_said(project.path())
+        )),
         "{why}"
     );
     assert_eq!(asks.open().len(), 1, "the ask stays open");
