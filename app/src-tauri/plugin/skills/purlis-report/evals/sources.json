@@ -1,0 +1,211 @@
+{
+  "tier": "strict",
+  "neighbours": [
+    "purlis-skill-studio",
+    "purlis-permissions"
+  ],
+  "prompts": [
+    {
+      "query": "purlis quit again the moment I pressed Cmd+V to paste a merge request link into the chat. That's the third time today.",
+      "source": "Session record 2026-11-05, the paste crash on macOS 27 (#5004): the app quit on Cmd+V of a merge request link, three times in a day. Case 4."
+    },
+    {
+      "query": "I relaunched purlis and only one of my three projects came back; the other chats are just gone from the list.",
+      "source": "Session record 2026-11-03, the restore at launch (#4980, #4986): only one of three projects came back. Case 3."
+    },
+    {
+      "query": "I pressed Retry on the chats that didn't restore and it just sits there. Nothing happens.",
+      "source": "Session record 2026-11-03, the restore at launch, its Open part: Retry seemed stuck. Case 4."
+    },
+    {
+      "query": "Why does purlis take four minutes to open with about thirty chats?",
+      "source": "Session record 2026-11-03, the 3–5 minute launch wait with about thirty chats. Case 4 (\"this is slow\")."
+    },
+    {
+      "query": "This chat's terminal froze half-drawn. Typing and clicking do nothing, but the chat is clearly still running.",
+      "source": "Session record, #5478: a chat's terminal frozen half-drawn while the chat runs. Case 3."
+    },
+    {
+      "query": "Moving the chat to my Docker pool fails with 'git could not stage the uncommitted work: unknown option: --attr-source'.",
+      "source": "Session record, moving a chat to a Docker pool fails at `--attr-source`: the error as the person saw it. Case 1."
+    },
+    {
+      "query": "The skill I installed from source says 'Unknown skill' every time it tries to load its sibling skill.",
+      "source": "Session record 2026-11-01, an installed skill gets \"Unknown skill\" for its siblings (#4510, a purlis fix). Case 1."
+    },
+    {
+      "query": "I clicked Ask a chat to write outcome evals on the Grades tab and no chat ever opened.",
+      "source": "Session record 2026-11-02, Ask a chat never opened a chat (#4714, a prompt over the paste limit). Case 3."
+    },
+    {
+      "query": "purlis worktree done failed with 'could not write the piece log for workspace' from inside the task.",
+      "source": "Steward memory, gotchas of 2026-11-03: `purlis worktree done` fails from a task's sandbox on the piece log. Case 1."
+    },
+    {
+      "query": "purlis worktree commit --all said it committed, but none of my new files are in the commit.",
+      "source": "Steward memory 2026-11-08: `purlis worktree commit --all` leaves new files out with no warning. Case 1."
+    },
+    {
+      "query": "The sandbox refused the branch folder purlis worktree add just cut for this task, so I'll clone the repo into my scratchpad and work there instead.",
+      "source": "Steward memory, lane stall lesson 2026-11-08: the sandbox refused the piece `purlis worktree add` cut; the agent works around it. Cases 2 and 5."
+    },
+    {
+      "query": "git reset --hard in this purlis branch folder failed halfway on the vault fixtures, so I'll do a mixed reset and check the rest out by hand.",
+      "source": "Shared memory 2026-11-02: `git reset --hard` in a sandboxed purlis branch folder fails on vault fixtures; the agent works around it. Case 5."
+    },
+    {
+      "query": "Every dispatch call now answers 'the purlis app did not answer', so I'll just do the other lanes' work myself in this chat.",
+      "source": "Steward memory 2026-11-08: dispatch answers \"the purlis app did not answer\"; the agent does the work by hand. Cases 1 and 5."
+    },
+    {
+      "query": "The window says this lane is waiting on its own work, but the run it's waiting on was killed by the restart 45 minutes ago.",
+      "source": "Steward memory 2026-11-05: a lane shown waiting on a background run the restart killed. Case 3."
+    },
+    {
+      "query": "I lowered my sandbox level to off and this chat still runs sandboxed. Nothing says why.",
+      "source": "Session record, #5207: a chat stays sandboxed after the person lowered their level, and nothing says why. Cases 3 and 4."
+    },
+    {
+      "query": "The needs-you bell went away even though I never answered the question. A background turn seems to have cleared it.",
+      "source": "Session record, #4562: a background turn cleared a wait the person had not answered. Case 3."
+    },
+    {
+      "query": "After I split the pane, both halves show the wrong chat names.",
+      "source": "Session record, #5283: wrong names after a pane split. Case 3."
+    },
+    {
+      "query": "Since I moved a pane there's a dashed line across the top of the purlis window that won't go away.",
+      "source": "Session record, #5284: a dashed line across the window's top after a pane move. Case 3."
+    },
+    {
+      "query": "purlis opened with no theme at all, everything unstyled, right after the extensions failed to load.",
+      "source": "Session record, #4822: no theme drawn when extensions fail at launch. Case 3."
+    },
+    {
+      "query": "Why did purlis open that chat in the other pane and not the one I had focused?",
+      "source": "Session record 2026-11-04, #5108: a press goes to another pane than the focused one; \"why did it do that\". Case 4."
+    },
+    {
+      "query": "You should have used the purlis-handoff skill for that instead of writing the brief yourself.",
+      "source": "Spec #5683 story 27 and decisions.md Q4: \"you should have used the X skill\". Case 6."
+    },
+    {
+      "query": "I said 'store this token in the vault' and you never loaded purlis-secrets. You pasted it into .env instead.",
+      "source": "Spec #5683 story 27: the person names the skill that should have started, after the agent did its work another way. Case 6; plausible phrasing."
+    },
+    {
+      "query": "Why didn't the smart close skill start when I said close this chat with a record? You wrote it by hand.",
+      "source": "Spec #5683 story 27: the agent realises it did by hand what a purlis skill does. Case 6; plausible phrasing."
+    },
+    {
+      "query": "purlis persona recall says --query is not a flag, but the purlis-persona skill tells me to use it.",
+      "source": "Skill text case 1 (\"does something its help or docs say it does not\"); plausible phrasing."
+    },
+    {
+      "query": "Write trigger tests for purlis-handoff so it starts when someone says 'hand this off to a new chat'.",
+      "source": "Writing a built-in's trigger tests, which purlis-skill-studio's description claims.",
+      "belongs_to": "purlis-skill-studio"
+    },
+    {
+      "query": "purlis-secrets missed two of its trigger tests on Codex; rewrite its description so it starts on those.",
+      "source": "Rewriting a description after a missed trigger test; a skill that did not start, but the ask is the edit, not a report.",
+      "belongs_to": "purlis-skill-studio"
+    },
+    {
+      "query": "Improve the deploy skill from its last runs and grades.",
+      "source": "\"improve it from its runs and grades\", from its description.",
+      "belongs_to": "purlis-skill-studio"
+    },
+    {
+      "query": "Draft a new skill for our release checklist in the project's skills folder.",
+      "source": "Drafting a new skill in a skills folder, from its description.",
+      "belongs_to": "purlis-skill-studio"
+    },
+    {
+      "query": "Add ten more near-miss queries to purlis-report's triggers.json.",
+      "source": "Editing this skill's own triggers.json (purlis-report's description: \"Not for changing a skill's description or its trigger tests\").",
+      "belongs_to": "purlis-skill-studio"
+    },
+    {
+      "query": "Stop asking me before every cargo test in this chat; just allow it.",
+      "source": "The harness keeps asking before a command, from its description.",
+      "belongs_to": "purlis-permissions"
+    },
+    {
+      "query": "The sandbox blocked crates.io. Allow that host for this chat.",
+      "source": "Allowing a host the sandbox blocked, from its description.",
+      "belongs_to": "purlis-permissions"
+    },
+    {
+      "query": "Why was purlis worktree update refused? It said the update has to run alone in its call.",
+      "source": "A purlis guard refusing on purpose; this session's own refusal of `purlis worktree update` beside another command (2026-11-08). Spec #5683 story 21: a refusal on purpose is not a bug.",
+      "belongs_to": "purlis-permissions"
+    },
+    {
+      "query": "Let this chat write to ~/Library/Caches/ms-playwright; the sandbox keeps refusing it.",
+      "source": "Allowing a folder the sandbox refuses, from its description.",
+      "belongs_to": "purlis-permissions"
+    },
+    {
+      "query": "List the guard rules purlis has for git push.",
+      "source": "Listing purlis's permission rules, from its description.",
+      "belongs_to": "purlis-permissions"
+    },
+    {
+      "query": "My React component re-renders on every keystroke. Find out why.",
+      "source": "Skill text \"in your project\": a bug in the person's own code. Plausible phrasing."
+    },
+    {
+      "query": "The integration test in our payments service fails with a 500 on refund.",
+      "source": "Skill text \"in your project\": the person's failing test. Plausible phrasing."
+    },
+    {
+      "query": "cargo build fails in my crate with a borrow checker error on line 88.",
+      "source": "Skill text \"in your project\": the person's build. Plausible phrasing."
+    },
+    {
+      "query": "Our app crashes when a user pastes a long URL into the search box.",
+      "source": "Skill text \"in your project\": a paste crash in the person's own app, worded like test 1."
+    },
+    {
+      "query": "The login page of our site got slow after the last deploy. Profile it.",
+      "source": "Skill text \"in your project\": \"slow\" about the person's own site, worded like test 4."
+    },
+    {
+      "query": "Why did my migration drop the users table? I wrote it last week.",
+      "source": "Skill text \"in your project\": \"why did it do that\" about the person's own code, worded like test 20."
+    },
+    {
+      "query": "Claude Code's /compact hangs and never returns, even in a plain terminal without purlis.",
+      "source": "Skill text \"the harness's own\": a Claude Code bug outside purlis. Plausible phrasing."
+    },
+    {
+      "query": "In plain Codex outside purlis, Esc no longer interrupts the model.",
+      "source": "Skill text \"the harness's own\": a Codex bug outside purlis. Plausible phrasing."
+    },
+    {
+      "query": "opencode's own model picker forgets my choice every time I restart it, purlis or not.",
+      "source": "Skill text \"the harness's own\": an opencode bug that happens with or without purlis. Plausible phrasing."
+    },
+    {
+      "query": "I typed purlis worktre add and it says unknown command. Oh, typo. What's the right spelling?",
+      "source": "Skill text \"the person's own mistake\": a typo in a purlis command. Plausible phrasing."
+    },
+    {
+      "query": "I pointed this workspace at the wrong repo path by mistake. How do I change it?",
+      "source": "Skill text \"the person's own mistake\": a wrong path the person set. Plausible phrasing."
+    },
+    {
+      "query": "I picked the high-contrast theme earlier and now I'd like the normal one back.",
+      "source": "Skill text \"the person's own mistake\": a setting they chose. Plausible phrasing."
+    },
+    {
+      "query": "git push failed because I forgot to set the upstream on my branch.",
+      "source": "Skill text \"the person's own mistake\": a git step the person forgot. Plausible phrasing."
+    },
+    {
+      "query": "Move this machine to the dev channel of purlis.",
+      "source": "Plausible phrasing: a purlis request with no fault in it (purlis-upgrade's kind)."
+    }
+  ]
+}

@@ -3134,6 +3134,7 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             Ask::Prompt(_) => 18,
             Ask::Secret(_) => 19,
             Ask::ProposeSkillSet(_) => 20,
+            Ask::ReportDraft(_) => 21,
         }
     }
     let asks = vec![
@@ -3262,10 +3263,20 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
                 }],
             },
         })),
+        // A report a chat drafted (#5694): held for the person, never sent.
+        Ask::ReportDraft(Box::new(purlis_core::hookwire::ReportDraftAsk {
+            chat,
+            feature: false,
+            text: "purlis worktree update refused a clean branch".to_owned(),
+            title: None,
+            call: None,
+            caught: None,
+            adds: None,
+        })),
     ];
     let mut kinds: Vec<usize> = asks.iter().map(kind).collect();
     kinds.dedup();
-    assert_eq!(kinds, (0..=20).collect::<Vec<_>>(), "one of every kind");
+    assert_eq!(kinds, (0..=21).collect::<Vec<_>>(), "one of every kind");
     asks
 }
 

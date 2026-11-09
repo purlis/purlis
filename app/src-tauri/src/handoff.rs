@@ -373,6 +373,9 @@ pub fn answer(
         // and a change; the app writes nothing for it, and holds it for the person on the tab
         // of the chat whose token the line carries.
         Ask::Propose(proposal) => crate::proposals::asked(held, &proposal),
+        // A report a chat drafted (#5694): no ticket, for the proposal's reason. Nothing is
+        // sent for it; it is held for the person's Inbox, with their yes to Agent drafts.
+        Ask::ReportDraft(draft) => crate::reportdrafts::asked(held, &draft),
         // A proposed value for a pool's limit (#4284): no ticket, for the removal's reason. The
         // app writes nothing for it, and holds it for the person.
         Ask::ProposeLimit(proposal) => crate::proposals::asked_limit(held, &proposal),

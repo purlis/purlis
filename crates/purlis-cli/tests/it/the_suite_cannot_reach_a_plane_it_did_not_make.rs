@@ -145,10 +145,17 @@ fn the_fence_is_in_the_binary_these_tests_run_and_not_only_in_the_test() {
 
     let out = asking_for_the_root(&fence, &fence, Some(&outside));
 
+    // A panic of a `purlis` command exits 70, as an internal failure does (ADR 0120), so the
+    // fence's panic is told from any other by its own words, not by its code.
     assert_eq!(
         out.status.code(),
-        Some(101),
+        Some(i32::from(purlis_core::caught::INTERNAL_EXIT)),
         "a fenced binary ends on a panic, and this one ended some other way:\n{}",
+        err(&out)
+    );
+    assert!(
+        err(&out).contains("a fenced build refused"),
+        "the binary panicked, but not at the fence:\n{}",
         err(&out)
     );
 }

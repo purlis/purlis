@@ -311,7 +311,9 @@ fn no_release_job_that_holds_a_key_or_publishes_restores_a_cache() {
             "runner-image",
             "runner-image-signature",
             "provenance",
-            "publish"
+            "publish",
+            // Holds the Report intake's upload token (#5692).
+            "symbols"
         ],
         "{names:?}"
     );

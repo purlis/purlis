@@ -476,6 +476,63 @@ export const commands = {
 	/**  Keeps where the person is in the guided steps, for the next launch. The window's alone. */
 	keepOnboardingProgress: (progress: OnboardingProgress) => typedError<null, string>(__TAURI_INVOKE("keep_onboarding_progress", { progress })),
 	/**
+	 *  What this machine keeps of the person's answers about reports: nothing answered and not yet
+	 *  asked on a machine with no config home, or a file purlis cannot read. On a blocking thread.
+	 */
+	reportConsent: () => typedError<ReportConsent, string>(__TAURI_INVOKE("report_consent")),
+	/**  Keeps the person's answers about reports, replacing what was kept. The window's alone. */
+	keepReportConsent: (consent: ReportConsent) => typedError<null, string>(__TAURI_INVOKE("keep_report_consent", { consent })),
+	/**
+	 *  Every report this machine sent in the last 90 days, newest first, each with its exact bytes:
+	 *  the sent list Settings › You › Reports shows. Empty on a machine with no config home.
+	 */
+	reportsSent: () => typedError<SentReport[], string>(__TAURI_INVOKE("reports_sent")),
+	/**
+	 *  **The bytes each kind of report sends**, made by the core's own envelope builders from a
+	 *  sample panic and a sample draft (`purlis_core::report::samples`), so what the window shows
+	 *  before the first report is what a real one sends. Nothing is sent.
+	 */
+	reportSamples: () => typedError<ReportSamples, string>(__TAURI_INVOKE("report_samples")),
+	/**
+	 *  **The project's report drafts**, oldest first: what its chats drafted and the person has not
+	 *  filed or dismissed. None on a machine with no config home.
+	 */
+	reportDrafts: (plane: PlaneId) => typedError<ReportDraft[], string>(__TAURI_INVOKE("report_drafts", { plane })),
+	/**
+	 *  **The person's own words in place of a draft's**: kept, and answered with the draft as it
+	 *  now reads, its new digest with it.
+	 */
+	editReportDraft: (id: string, title: string, body: string) => typedError<ReportDraft, string>(__TAURI_INVOKE("edit_report_draft", { id, title, body })),
+	/**
+	 *  **Files a draft, as the person**, only if `digest` is the one its card showed: on
+	 *  purlis/purlis as them where they are signed in to GitHub, after the duplicate search unless
+	 *  `how` says otherwise, and to purlis's report service where they are not. The sent list
+	 *  records it, and the draft leaves the Inbox.
+	 */
+	fileReportDraft: (id: string, digest: string, how: FileHow) => typedError<DraftFiled, string>(__TAURI_INVOKE("file_report_draft", { id, digest, how })),
+	/**  **Lets a draft go, unsent.** */
+	dismissReportDraft: (id: string) => typedError<null, string>(__TAURI_INVOKE("dismiss_report_draft", { id })),
+	/**
+	 *  **Always send, on a draft** (#5695): held to send to purlis's report service, unread, with
+	 *  Undo until the hold ends. The window asks for the standing yes first, the first time.
+	 */
+	alwaysSendReportDraft: (id: string) => typedError<ReportDraft, string>(__TAURI_INVOKE("always_send_report_draft", { id })),
+	/**  **Undo, within the hold** (#5695): the draft is not sent, and waits in the Inbox. */
+	undoReportDraft: (id: string) => typedError<ReportDraft, string>(__TAURI_INVOKE("undo_report_draft", { id })),
+	/**
+	 *  **Whether the project lets its members send drafts without asking** (#5696, spec #5683,
+	 *  Q12): `[reports].always_send` in its shared settings file, which the team sees, on unless
+	 *  that file turns it off. Settings › You › Reports holds Always send off while it is off.
+	 */
+	membersMayAlwaysSend: (plane: PlaneId) => typedError<boolean, string>(__TAURI_INVOKE("members_may_always_send", { plane })),
+	/**
+	 *  Hands an error the window did not catch to the core's Reports, as a panic is handed: whether
+	 *  it may go, what of it goes and where are the core's to say, so without a yes to Crash reports
+	 *  nothing leaves. Answered at once; the send is on a thread of its own, so the window never
+	 *  waits on the network. The window's alone.
+	 */
+	reportWindowError: (error: WindowErrorSeen) => typedError<null, string>(__TAURI_INVOKE("report_window_error", { error })),
+	/**
 	 *  The project's sandbox, for the offer notice and Settings.
 	 * 
 	 *  Off the window's thread (#1949): it reads the project's manifests and the administrator's
@@ -583,10 +640,10 @@ export const commands = {
 	/**
 	 *  Files the Report the window showed (#1338), on the person's press and never otherwise: by the
 	 *  app, as the person, with purlis's own sign-in to GitHub and never `gh` or a token from the
-	 *  environment ([`purlis_core::report::file`], #806), not by anything inside a chat's sandbox.
-	 *  Only the draft whose digest is `digest` is filed; one that changed since it was shown is
-	 *  refused unsent. Answers the new issue's address, or why it was not filed with the link that
-	 *  files it in a browser.
+	 *  environment (the Reports module, [`purlis_core::report::Reports::file`], #806), not by
+	 *  anything inside a chat's sandbox. Only the draft whose digest is `digest` is filed; one that
+	 *  changed since it was shown is refused unsent. Answers the new issue's address, or why it was
+	 *  not filed with the link that files it in a browser.
 	 * 
 	 *  **The window's alone** (`WINDOW_ONLY`): it files as the person, so no link makes it.
 	 */
@@ -5448,6 +5505,8 @@ export const POOL_MINTS_WITHOUT_ASKING = "pool-mints-without-asking" as const;
 
 export const PROJECT_READY = "project-ready" as const;
 
+export const REPORT_DRAFTS_CHANGED = "report-drafts-changed" as const;
+
 export const ROUTER_GRADE = "router-grade" as const;
 
 export const SESSION_BUS_ANSWERS = "session-bus://answers" as const;
@@ -7464,6 +7523,13 @@ export type CommandDoes =
 /**  Runs one of its actions, on nothing in particular. */
 { kind: "run"; action: RowAction };
 
+/**  The crash Notice's state (#5700), as the window names it. */
+export type CrashNoticeSaid = 
+/**  A crash was caught after Not now: the Notice is raised. */
+"due" | 
+/**  The Notice was dismissed or answered: never raised again. */
+"settled";
+
 /**  What the person asked to create. */
 export type CreateOnForge = {
 	forge: ForgeWord,
@@ -8348,6 +8414,15 @@ export type Doing = {
 	over: boolean,
 };
 
+/**  What became of a draft the person filed. */
+export type DraftFiled = 
+/**  It left, to `to`, and where it was kept. */
+{ kind: "sent"; to: ReportDestination; address: string; title: string } | 
+/**  Not sent yet: the Report intake gave no answer, and it waits on this machine to send. */
+{ kind: "queued"; title: string } | 
+/**  Issues that may already cover it: nothing was filed. */
+{ kind: "duplicates"; issues: PossibleDuplicate[] };
+
 /**
  *  **What a draft's grade measured of one kind of fixture**: each arm's rate in points, and the
  *  draft's difference from what it is weighed against, which the core leaves out where that arm
@@ -8736,6 +8811,15 @@ export type FileDiff =
 { kind: "binary" } | 
 /**  A side past the largest file the preview draws (2 MiB), by its size in bytes. */
 { kind: "too-large"; bytes: number };
+
+/**  How the person files a draft. */
+export type FileHow = 
+/**  Search for duplicates first. */
+{ how: "check" } | 
+/**  File it as a new issue. */
+{ how: "new" } | 
+/**  Add it to this issue instead. */
+{ how: "add-to"; issue: number };
 
 /**
  *  Where ⌘P and ⌘⇧F look: for ⌘P the scope follows the window's focus, and Tab widens it; the
@@ -13057,6 +13141,15 @@ export type PoolsShown = {
 	clusters?: ClusterPoolRow[] | null,
 };
 
+/**  One issue a draft may duplicate. */
+export type PossibleDuplicate = {
+	number: number,
+	title: string,
+	/**  `open` or `closed`. */
+	state: string,
+	url: string,
+};
+
 /**
  *  The project's presets as they changed (`sandbox::local::PresetsChange`): each named as the
  *  window names it.
@@ -14078,6 +14171,71 @@ export type RepoStates_Serialize = {
 	 *  listing rather than repeated on every row.
 	 */
 	cache_refused: string | null,
+};
+
+/**
+ *  The person's answers: `None` is unanswered, which purlis reads as no. `asked` is whether the
+ *  first-run question was answered, by Save or by Not now.
+ */
+export type ReportConsent = {
+	crash_reports: boolean | null,
+	agent_drafts: boolean | null,
+	/**
+	 *  Always send (#5695): drafts go to purlis's report service unread, held first with Undo.
+	 *  Meant only while Agent drafts is allowed.
+	 */
+	always_send: boolean | null,
+	asked: boolean,
+	/**
+	 *  Whether purlis asks again after a crash (#5700): `due` once a crash was caught after Not
+	 *  now, `settled` once its Notice was dismissed or answered, `None` while neither.
+	 */
+	crash_notice: CrashNoticeSaid | null,
+};
+
+/**
+ *  **Where a report went**, by the names the core's sent list keeps (`purlis_core::report::
+ *  SentTo`'s serde names): the one mapping of it the window reads, for a draft filed and for
+ *  the sent list alike.
+ */
+export type ReportDestination = 
+/**  purlis's private Report intake (ADR 0118). */
+"intake" | 
+/**  purlis/purlis on GitHub, as the person. */
+"github";
+
+/**  A draft held for the project's Inbox, as the window draws its card. */
+export type ReportDraft = {
+	id: string,
+	/**  When it was held, UTC, RFC 3339 to the second. */
+	at: string,
+	feature: boolean,
+	title: string,
+	body: string,
+	/**  The call that failed and its exit, where named, and the versions. */
+	line: string,
+	/**  What the scrub took out, by category. */
+	scrubbed: string[],
+	/**  The chat it came from, by its name, and its number while it means one. */
+	chat: string,
+	session: number | null,
+	/**  The person changed its words. */
+	edited: boolean,
+	/**  What File must name for exactly these words to be filed. */
+	digest: string,
+	/**
+	 *  When Always send sends it (#5695), UTC, RFC 3339: shown as "Sent a report" with Undo
+	 *  until then, not as a card. `None` waits for the person.
+	 */
+	sends_at: string | null,
+};
+
+/**  What each kind of report sends, as "See exactly what's sent" shows it (#5688, Q13). */
+export type ReportSamples = {
+	/**  A Crash report of a sample panic, exactly as it would leave. */
+	crash: string,
+	/**  A Report draft an agent wrote, exactly as Always send would send it. */
+	draft: string,
 };
 
 /**
@@ -15488,6 +15646,27 @@ export type SeenBlock = {
 	what: GrantWhat,
 	/**  The host or folder shown for this task. */
 	target: string,
+};
+
+/**
+ *  One report this machine sent (#5689): its title, where it went, when, and exactly the bytes
+ *  that left.
+ */
+export type SentReport = {
+	/**  When it left, UTC, RFC 3339 to the second. */
+	at: string,
+	title: string,
+	/**  Where it went: the window says it in its own words. */
+	to: ReportDestination,
+	/**  Where the destination kept it. */
+	address: string,
+	/**  Exactly what was sent. */
+	bytes: string,
+	/**
+	 *  Not sent yet (#5693): the report service could not be reached, and it waits on this
+	 *  machine; `at` is when it was made, `address` is empty, and `bytes` is what will go.
+	 */
+	waiting: boolean,
 };
 
 /**  One session record, as the palette and the Sessions panel name it. */
@@ -18446,7 +18625,9 @@ export type UpdateKind =
  *  A chat another chat started arrived in no pane, and was announced (#4759): a handoff,
  *  or a task that can't report asks.
  */
-"arrived";
+"arrived" | 
+/**  The person filed a report a chat drafted (#5694). */
+"report-sent";
 
 /**  An update the window derived from its source, to be noted. */
 export type UpdateNoted = {
@@ -18940,6 +19121,22 @@ export type WindowDraft = {
 	 *  Review and allow on it, waits until the draft is reverted, and the strip says so.
 	 */
 	kept_refused: boolean,
+};
+
+/**
+ *  An error the window did not catch (#5690), as its JavaScript saw it: thrown and not caught, or
+ *  a promise rejected with nobody to handle it.
+ */
+export type WindowErrorSeen = {
+	/**  The error's name (`TypeError`), or the window's word for a reason that is no error. */
+	name: string,
+	message: string,
+	/**  The address of the script it was thrown in, when the window knows it. */
+	source: string | null,
+	line: number | null,
+	column: number | null,
+	/**  A promise rejected with nobody to handle it, rather than an error thrown. */
+	rejection: boolean,
 };
 
 /**  One face of a font. */

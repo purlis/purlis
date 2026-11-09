@@ -3621,6 +3621,7 @@ const STANDS_ON: &[(&str, &[&str])] = &[
             "checkbox",
             "count",
             "field",
+            "list",
             "meter",
             "option-card",
             "popover",

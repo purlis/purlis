@@ -121,10 +121,7 @@ impl ServerHandler for Server {
                 tokio::task::spawn_blocking(move || crate::browsing::tool(&name, &args))
                     .await
                     .unwrap_or_else(|e| {
-                        (
-                            Err(format!("the tool failed inside purlis: {e}")),
-                            Vec::new(),
-                        )
+                        (Err(purlis_core::caught::tool_failed_inside(e)), Vec::new())
                     });
             return Ok(done_with(said, attached));
         }
@@ -136,10 +133,7 @@ impl ServerHandler for Server {
                 tokio::task::spawn_blocking(move || crate::themepreview::tool(&args))
                     .await
                     .unwrap_or_else(|e| {
-                        (
-                            Err(format!("the tool failed inside purlis: {e}")),
-                            Vec::new(),
-                        )
+                        (Err(purlis_core::caught::tool_failed_inside(e)), Vec::new())
                     });
             return Ok(done_with(said, attached));
         }
@@ -190,12 +184,7 @@ impl ServerHandler for Server {
         if name == chattools::PERSONA_WHERE {
             let (said, attached) = tokio::task::spawn_blocking(crate::whereworking::tool)
                 .await
-                .unwrap_or_else(|e| {
-                    (
-                        Err(format!("the tool failed inside purlis: {e}")),
-                        Vec::new(),
-                    )
-                });
+                .unwrap_or_else(|e| (Err(purlis_core::caught::tool_failed_inside(e)), Vec::new()));
             return Ok(done_with(said, attached));
         }
         if name == chattools::DISPATCH {
@@ -230,7 +219,8 @@ impl ServerHandler for Server {
         }
         if name == chattools::DISPATCH_LIST {
             return Ok(done(
-                blocking(|| crate::dispatch::list().map_err(|why| in_the_chat(&why))).await,
+                blocking(|| crate::dispatch::list().map_err(|why| in_the_chat(&why.for_a_tool())))
+                    .await,
             ));
         }
         if name == chattools::DISPATCH_READ {
@@ -243,7 +233,7 @@ impl ServerHandler for Server {
         // function, so the tool and the command cannot answer one ask two ways.
         if let Some(run) = task_tool(name) {
             return Ok(done(
-                blocking(move || run(&args).map_err(|why| in_the_chat(&why))).await,
+                blocking(move || run(&args).map_err(|why| in_the_chat(&why.for_a_tool()))).await,
             ));
         }
         let name = name.to_owned();
@@ -394,7 +384,7 @@ async fn blocking(
 ) -> Result<String, String> {
     tokio::task::spawn_blocking(body)
         .await
-        .unwrap_or_else(|e| Err(format!("the tool failed inside purlis: {e}")))
+        .unwrap_or_else(|e| Err(purlis_core::caught::tool_failed_inside(e)))
 }
 
 /// `session_record`: the one operation `purlis session record` run in the chat performs
@@ -579,19 +569,21 @@ fn dispatch(args: &serde_json::Map<String, serde_json::Value>) -> Result<String,
 /// `purlis dispatch read` prints it ([`crate::dispatch::read`]).
 fn dispatch_read(args: &serde_json::Map<String, serde_json::Value>) -> Result<String, String> {
     let chat = chattools::dispatch_read_args(args)?;
-    crate::dispatch::read(chat).map_err(|why| in_the_chat(&why))
+    crate::dispatch::read(chat).map_err(|why| in_the_chat(&why.for_a_tool()))
 }
 
 /// `dispatch_report`: the one operation `purlis dispatch report` performs
 /// ([`crate::dispatch::report`]).
 fn dispatch_report(args: &serde_json::Map<String, serde_json::Value>) -> Result<String, String> {
     let (outcome, text, changed) = chattools::dispatch_report_args(args)?;
-    crate::dispatch::report(&outcome, &text, changed.as_deref()).map_err(|why| in_the_chat(&why))
+    crate::dispatch::report(&outcome, &text, changed.as_deref())
+        .map_err(|why| in_the_chat(&why.for_a_tool()))
 }
 
 /// What a tool about the chat's own tasks, or a task's to its asker, runs (#3786): the
 /// function the matching `purlis dispatch` subcommand runs, with the tool's arguments.
-type TaskTool = fn(&serde_json::Map<String, serde_json::Value>) -> Result<String, String>;
+type TaskTool =
+    fn(&serde_json::Map<String, serde_json::Value>) -> Result<String, crate::clierror::CliError>;
 
 /// The [`TaskTool`] named `name`, or `None` for any other tool.
 fn task_tool(name: &str) -> Option<TaskTool> {
