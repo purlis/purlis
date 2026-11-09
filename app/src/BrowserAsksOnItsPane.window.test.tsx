@@ -20,7 +20,7 @@ import { forgetInboxOpen, inboxAwayAtLaunch } from "./test-inbox";
 import { forgetInbox } from "./inboxRules";
 
 /**
- * **A chat's browser asks the person on the chat's own pane** (#5995 placeholder), against the
+ * **A chat's browser asks the person on the chat's own pane** (#5985), against the
  * whole window. A chat's first browser call asks what its browser may reach, and a site new to
  * the project its browser was sent to asks to be let on. Both wait on the person, and the chat
  * waits on them: so the chat's pane draws each, with the core's own answers, as it draws every
