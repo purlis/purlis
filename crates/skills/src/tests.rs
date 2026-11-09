@@ -2212,3 +2212,46 @@ fn a_named_workspace_made_while_a_chat_ran_hands_its_skill_to_no_chat() {
         )]
     );
 }
+
+#[test]
+fn naming_another_workspaces_skill_twice_reads_it_once() {
+    let plane = Plane::new();
+    skill(&plane.workspace("ops"), "deploy", &whole("deploy"));
+
+    let set = plane.as_persona(
+        Some("smart-ide"),
+        "steward",
+        &["workspaces/ops:deploy", "workspaces/ops:deploy"],
+        None,
+        None,
+    );
+
+    assert_eq!(effective(&set), [("deploy", Origin::Workspace, false)]);
+    assert!(set.left_out.is_empty(), "{:?}", set.left_out);
+}
+
+#[test]
+fn a_named_workspace_skill_whose_folder_is_no_whole_skill_says_what_it_lacks() {
+    let plane = Plane::new();
+    std::fs::create_dir_all(plane.workspace("ops").join("deploy")).unwrap();
+    std::fs::create_dir_all(plane.workspace("ops").join("other")).unwrap();
+
+    let set = plane.as_persona(
+        Some("smart-ide"),
+        "steward",
+        &["workspaces/ops:deploy"],
+        None,
+        None,
+    );
+
+    assert_eq!(
+        left_out(&set),
+        [(
+            "deploy",
+            Origin::Workspace,
+            false,
+            "not a skill: its folder has no SKILL.md".to_owned()
+        )],
+        "the named folder alone, and never \"no skill of this name\""
+    );
+}

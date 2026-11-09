@@ -384,6 +384,19 @@ pub enum Reason {
 }
 
 impl Reason {
+    /// **Whether it says a skill the chat's persona names is not there** (SK-5, SK-5a): not on
+    /// this machine, no built-in skill, no such workspace, or no such skill in it. What
+    /// `persona lint` warns of, and a row writes as the persona's list does.
+    pub fn named_and_not_there(&self) -> bool {
+        matches!(
+            self,
+            Self::NotOnThisMachine
+                | Self::NoSuchBuiltIn
+                | Self::NoSuchWorkspace
+                | Self::NotInItsWorkspace
+        )
+    }
+
     /// **Whether a repo of the chat's clone is why** (SK-53, #3213): a narrower repo copy took
     /// the name ([`Self::HiddenByRepo`], decision 51), or purlis could not read a skills folder
     /// of the clone whole ([`Self::RepoUnread`]). A plane skill left out so is one only a chat in
@@ -1195,14 +1208,15 @@ fn named_workspaces(
     chat: &Chat<'_>,
     route: Route,
 ) {
-    for reference in chat.names {
+    for (at, reference) in chat.names.iter().enumerate() {
         let Reference::Workspace { workspace, name } = reference else {
             continue;
         };
-        if chat.workspace == Some(workspace.as_str()) {
+        // The chat's own workspace is read as its level, and an entry written twice once.
+        if chat.workspace == Some(workspace.as_str()) || chat.names[..at].contains(reference) {
             continue;
         }
-        let owner = plane.join(WORKSPACES_DIR).join(workspace);
+        let owner = workspace_dir(plane, workspace);
         let made = made_since(machine, &owner);
         for local in [true, false] {
             let Some(dir) = level_dir(plane, &Whose::Workspace(workspace.clone()), local) else {
@@ -1227,6 +1241,11 @@ fn named_workspaces(
             );
         }
     }
+}
+
+/// The folder of the workspace `workspace` in the plane at `plane`.
+fn workspace_dir(plane: &Path, workspace: &str) -> PathBuf {
+    plane.join(WORKSPACES_DIR).join(workspace)
 }
 
 /// Why the levels of the workspace or persona folder `owner` reach no chat, where `machine`
@@ -1281,9 +1300,9 @@ fn named_elsewhere(
             let Some(plane) = plane else {
                 continue;
             };
-            let owner = plane.join(WORKSPACES_DIR).join(workspace);
+            let owner = workspace_dir(plane, workspace);
             let in_owner = |folder: &Path| folder.starts_with(&owner);
-            let copied = set
+            let seen = set
                 .effective
                 .iter()
                 .any(|e| e.skill.name == *name && in_owner(folder_of_skill(&e.skill)))
@@ -1291,10 +1310,10 @@ fn named_elsewhere(
                     .left_out
                     .iter()
                     .any(|l| (l.name == *name && in_owner(&l.folder)) || l.name == said);
-            if copied {
+            if seen {
                 continue;
             }
-            let there = std::fs::symlink_metadata(&owner).is_ok_and(|meta| meta.is_dir());
+            let there = owner.is_dir();
             set.left_out.push(LeftOut {
                 name: said,
                 origin: Origin::Workspace,
@@ -1401,9 +1420,10 @@ fn widest_first(left_out: &mut [LeftOut]) {
 
 /// Every folder in `dir`, one level's, into `set`: each whole skill the chat gets, unless a
 /// skill of its name is already in the set or `held` says why not; every other folder left out
-/// with its reason. With `only`, the skill of that name alone, and no other folder of the level
-/// is listed at all (another workspace's skill a persona names, SK-5a). Folders are taken in the order of their names, so a tie inside one level
-/// always goes the same way.
+/// with its reason. With `only`, the skill of that name alone, or a folder of that name that is no
+/// whole skill, and no other folder of the level is listed at all (another workspace's skill a
+/// persona names, SK-5a). Folders are taken in the order of their names, so a tie inside one
+/// level always goes the same way.
 ///
 /// `dir` is under `root`, the folder it is reached from without following a link
 /// ([`read::scan`]): the plane's root, or the bundle's plugin folder for the built-in skills.
@@ -1424,7 +1444,12 @@ fn level(
         let skill = match folder {
             Ok(skill) if only.is_some_and(|only| only != skill.name) => continue,
             Ok(skill) => skill,
-            Err(_) if only.is_some() => continue,
+            // A folder that is no whole skill is the named one only by its folder's name.
+            Err((folder, _))
+                if only.is_some_and(|only| folder.file_name() != Some(only.as_ref())) =>
+            {
+                continue;
+            }
             Err((folder, missing)) => {
                 set.left_out.push(LeftOut {
                     name: folder

@@ -3557,7 +3557,15 @@ fn the_studio_as_the_persona_lists_another_workspaces_skill_it_names_with_its_le
 
     let list = studio_list(None, &plane, Some("smart-ide"), Some("steward"), &env);
 
-    type Shown<'a> = (&'a str, Origin, &'a str, bool, &'a str, String, Option<&'a str>);
+    type Shown<'a> = (
+        &'a str,
+        Origin,
+        &'a str,
+        bool,
+        &'a str,
+        String,
+        Option<&'a str>,
+    );
     let rows: Vec<Shown<'_>> = list
         .rows
         .iter()

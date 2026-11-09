@@ -63,16 +63,11 @@ pub(crate) fn unresolved(
         }
         // A reference the set leaves out is listed as its `skills:` list writes it.
         let written = reference.to_string();
-        let Some(left) = set.left_out.iter().find(|left| {
-            left.name == written
-                && matches!(
-                    left.reason,
-                    Reason::NotOnThisMachine
-                        | Reason::NoSuchBuiltIn
-                        | Reason::NoSuchWorkspace
-                        | Reason::NotInItsWorkspace
-                )
-        }) else {
+        let Some(left) = set
+            .left_out
+            .iter()
+            .find(|left| left.name == written && left.reason.named_and_not_there())
+        else {
             continue;
         };
         if let Reference::Named(name) = &reference

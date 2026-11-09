@@ -519,7 +519,7 @@ impl<'a> Linter<'a> {
                 ),
                 (Reference::Workspace { workspace, .. }, Reason::NoSuchWorkspace) => (
                     format!(
-                        "the project has no workspace {}",
+                        "the project has no workspace `{}`",
                         crate::personas::one_line(workspace)
                     )
                     .into(),
@@ -527,7 +527,7 @@ impl<'a> Linter<'a> {
                 ),
                 (Reference::Workspace { workspace, .. }, _) => (
                     format!(
-                        "the workspace {} has no skill of this name",
+                        "the workspace `{}` has no skill of this name",
                         crate::personas::one_line(workspace)
                     )
                     .into(),

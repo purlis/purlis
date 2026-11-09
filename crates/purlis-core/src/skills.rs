@@ -3861,10 +3861,7 @@ fn rows_of(set: &SkillSet, plane: &Path, names: &[Reference], reading: Reading) 
             // A left-out copy a persona names is the reference itself (`purlis:<name>` for a
             // built-in one there is none of, `workspaces/<ws>:<name>` for another workspace's
             // that is not there); every other copy is named by its own name.
-            let written = if matches!(
-                l.reason,
-                Reason::NoSuchBuiltIn | Reason::NoSuchWorkspace | Reason::NotInItsWorkspace
-            ) {
+            let written = if l.reason.named_and_not_there() {
                 l.name.clone()
             } else {
                 written(l.origin, &l.name, &l.folder)

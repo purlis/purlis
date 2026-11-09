@@ -1769,7 +1769,8 @@ of that name at that level replaces it.
 - **Read by:** `purlis_skills::skill_set`: a workspace's `skills/` and `skills.local/`, for a
   chat in that workspace and for the studio filtered to it. Its `skills.local/` is read under
   the same git rule as the plane root's. For a chat as a persona that names one of its skills
-  by its workspace, that skill's folder alone, in either. A persona's `skills/` and `skills.local/`, for every
+  by its workspace, that skill's folder alone, in either.
+  A persona's `skills/` and `skills.local/`, for every
   chat as that persona, in any workspace and at the root, and for the studio filtered to it
   (#2768). Its `skills.local/` is read under the same git rule. A flat `personas/<name>.md`
   persona has no folder, so no skills of its own.

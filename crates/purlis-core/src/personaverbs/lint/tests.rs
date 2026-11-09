@@ -752,13 +752,13 @@ fn a_skills_entry_naming_a_workspace_or_a_workspace_skill_that_is_not_there_is_a
             ),
             (
                 Level::Warn,
-                "`skills:` names workspaces/gone:triage: the project has no workspace gone, so \
+                "`skills:` names workspaces/gone:triage: the project has no workspace `gone`, so \
                  its chats start without it. Fix the workspace's name: `purlis workspace list` \
                  lists them"
             ),
             (
                 Level::Warn,
-                "`skills:` names workspaces/ws:nope: the workspace ws has no skill of this name, \
+                "`skills:` names workspaces/ws:nope: the workspace `ws` has no skill of this name, \
                  so its chats start without it. Make the skill there, or fix the name"
             ),
         ]

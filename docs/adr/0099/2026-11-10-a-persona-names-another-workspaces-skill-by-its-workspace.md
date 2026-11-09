@@ -25,9 +25,10 @@ A chat's own workspace copy that the named copy hides is left out with the same 
 
 ## Where it shows
 
-The Skill studio as the persona, and `purlis skill list`, list the copy with its level and the workspace's name (`workspace ops`, `StudioRow::level_label`). It is written as the persona's line writes it (`workspaces/ops:deploy`), and the studio's Add and Remove take it so (`skills::persona::change`). Two things are not built yet:
+The Skill studio as the persona, and `purlis skill list`, list the copy with its level and the workspace's name (`workspace ops`, `StudioRow::level_label`). It is written as the persona's line writes it (`workspaces/ops:deploy`), and Remove takes it out. Naming one is done on the persona's line: another workspace's skills have no row in the studio as the persona until one is named, so there is none to press Add on. `skills::persona::change` takes the entry as written. Three things are not built yet:
 
 - A missing one is not on the chat's tab's Notice.
 - A run of the skill is not told apart from a copy of the same name in the chat's own workspace.
+- The studio's Add does not offer another workspace's skills.
 
 Both are follow-ups, named in the pull request.
