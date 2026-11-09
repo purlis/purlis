@@ -143,7 +143,7 @@ impl Kept {
         self.texts.iter().map(|kept| kept.text.as_str()).collect()
     }
 
-    /// Every text a group of boxes holds together: taken out also with any spaces or dashes
+    /// Every text a group of boxes holds together: taken out also with any separators
     /// between its characters.
     pub(crate) fn loose(&self) -> Vec<&str> {
         self.texts

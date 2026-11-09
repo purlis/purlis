@@ -80,7 +80,7 @@ fn folded(c: char) -> impl Iterator<Item = char> {
 }
 
 /// What is taken out of an answer: texts kept out in each of their [`forms`], and the texts groups
-/// of boxes hold together, matched also with any spaces or dashes between their characters. Wiped
+/// of boxes hold together, matched also with any separators between their characters. Wiped
 /// as it goes.
 #[derive(Clone)]
 pub(crate) struct Scrub {
@@ -296,9 +296,14 @@ fn read_one_layer(read: &[Read]) -> Option<Vec<Read>> {
     changed.then_some(out)
 }
 
-/// Characters a page may put between the characters of a code: spaces and dashes.
+/// Characters a page may put between the characters of a code: spaces, dashes, dots, slashes
+/// and bullets.
 fn separates(c: char) -> bool {
-    c.is_whitespace() || matches!(c, '-' | '\u{2010}'..='\u{2015}' | '\u{2212}')
+    c.is_whitespace()
+        || matches!(
+            c,
+            '-' | '.' | '/' | '\u{b7}' | '\u{2022}' | '\u{2010}'..='\u{2015}' | '\u{2212}'
+        )
 }
 
 /// Where a match of `needle` that begins at `start` of `read` ends, ignoring case, and with
@@ -433,7 +438,7 @@ pub(crate) fn holds_any(text: &str, blanked: &[&str]) -> bool {
     holds_in_a_reading(text, &needles, false, Within::USUAL)
 }
 
-/// Whether any reading of `text` holds any of `loose`, ignoring case and any spaces or dashes
+/// Whether any reading of `text` holds any of `loose`, ignoring case and any separators
 /// between its characters.
 pub(crate) fn holds_loosely(text: &str, loose: &[&str]) -> bool {
     holds_in_a_reading(text, &loose_needles(loose), true, Within::USUAL)

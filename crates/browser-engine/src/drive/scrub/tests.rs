@@ -178,6 +178,51 @@ fn a_code_from_boxes_goes_with_any_separators_also_when_they_are_escaped() {
 }
 
 #[test]
+fn a_code_from_boxes_goes_with_dots_slashes_and_bullets_between_its_characters() {
+    let mut kept = Kept::default();
+    let first = crate::drive::tree::NodeKey {
+        frame: "f".to_owned(),
+        backend: 1,
+    };
+    kept.group(&first, &["739214"]);
+    let scrub = Scrub::of(&kept);
+    for spelled in [
+        "739.214",
+        "7.3.9.2.1.4",
+        "739/214",
+        "739\u{b7}214",
+        "7 \u{2022} 3 \u{2022} 9 \u{2022} 2 \u{2022} 1 \u{2022} 4",
+        "739%2E214",
+        "739%2F214",
+        "739%C2%B7214",
+    ] {
+        assert_eq!(scrub.text(spelled), "(blanked)", "{spelled}");
+    }
+}
+
+#[test]
+fn a_dot_a_code_from_boxes_holds_goes_as_any_separator_does() {
+    let mut kept = Kept::default();
+    let first = crate::drive::tree::NodeKey {
+        frame: "f".to_owned(),
+        backend: 1,
+    };
+    kept.group(&first, &["ab.cd"]);
+    let scrub = Scrub::of(&kept);
+    for spelled in ["x ab.cd y", "x a.b..cd y", "x abcd y", "x ab-cd y"] {
+        assert_eq!(scrub.text(spelled), "x (blanked) y", "{spelled}");
+    }
+}
+
+#[test]
+fn a_dot_in_a_kept_text_is_matched_as_itself() {
+    let scrub = scrub_of(&["pass.word"]);
+    assert_eq!(scrub.text("x pass.word y"), "x (blanked) y");
+    assert_eq!(scrub.text("x password y"), "x password y");
+    assert_eq!(scrub.text("x pass/word y"), "x pass/word y");
+}
+
+#[test]
 fn an_escape_that_stands_for_nothing_is_read_as_written() {
     let scrub = scrub_of(&["100%zz"]);
     assert_eq!(scrub.text("a 100%zz b"), "a (blanked) b");
