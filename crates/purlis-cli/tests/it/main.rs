@@ -71,6 +71,7 @@ mod every_command_charter_names_is_one_it_has;
 mod every_memory_write_a_shipped_text_teaches_names_its_scope;
 mod every_shipped_skill_passes_the_built_in_checks;
 mod every_test_starts_the_binary_unsteered;
+mod extension_artifacts;
 mod extension_commands;
 mod extensions;
 mod first_task_script;

@@ -13,6 +13,7 @@ use clap::Subcommand;
 use purlis_core::artifact::{self, Pin, Pinned, Request};
 
 use crate::Here;
+use crate::artifact_templates as templates;
 use crate::memory::Code;
 use crate::voice;
 
@@ -25,7 +26,13 @@ pub enum ArtifactCommand {
     /// command or working folder makes it a new pin.
     Pin {
         /// The folder's name inside the workspace's artifacts/.
-        folder: String,
+        #[arg(required_unless_present = "template", conflicts_with = "template")]
+        folder: Option<String>,
+        /// An extension's template to pin instead, as <extension-id>.<name> (`purlis artifact
+        /// templates` lists them): copied into artifacts/<extension-id>.<name>/, then pinned as
+        /// any folder is.
+        #[arg(long, conflicts_with_all = ["command", "cwd"])]
+        template: Option<String>,
         /// The icon's name (default: the page's <title>, else the folder's name).
         #[arg(long)]
         name: Option<String>,
@@ -38,6 +45,14 @@ pub enum ArtifactCommand {
         /// The command's working folder, relative to the workspace.
         #[arg(long, requires = "command")]
         cwd: Option<String>,
+        /// The workspace (default: the active one).
+        #[arg(short = 'w', long = "workspace")]
+        workspace: Option<String>,
+    },
+    /// The artifact templates this machine's extensions offer: each one's id (what
+    /// `pin --template` takes), its title, its icon and its extension. Only an extension
+    /// approved here, unchanged since, and on in the workspace offers one.
+    Templates {
         /// The workspace (default: the active one).
         #[arg(short = 'w', long = "workspace")]
         workspace: Option<String>,
@@ -195,6 +210,7 @@ pub fn run(here: &Here, command: ArtifactCommand) -> Result<Code, String> {
     match command {
         ArtifactCommand::Pin {
             folder,
+            template,
             name,
             icon,
             command,
@@ -202,8 +218,11 @@ pub fn run(here: &Here, command: ArtifactCommand) -> Result<Code, String> {
             workspace,
         } => {
             let ws = here.workspace(workspace.as_deref())?;
+            if let Some(template) = template {
+                return Ok(templates::pin(here, &ws, &template, name, icon));
+            }
             let request = Request {
-                folder,
+                folder: folder.unwrap_or_default(),
                 name,
                 icon,
                 command,
@@ -241,6 +260,10 @@ pub fn run(here: &Here, command: ArtifactCommand) -> Result<Code, String> {
                 Err(why) => return refused(&why),
             }
             Ok(0)
+        }
+        ArtifactCommand::Templates { workspace } => {
+            let ws = here.workspace(workspace.as_deref())?;
+            Ok(templates::list(here, &ws))
         }
         ArtifactCommand::Unpin { pin, workspace } => {
             let ws = here.workspace(workspace.as_deref())?;

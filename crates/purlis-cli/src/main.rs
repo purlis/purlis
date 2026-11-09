@@ -29,6 +29,7 @@ use purlis_core::state::Event;
 use purlis_core::workspaces::Plane;
 
 mod artifact;
+mod artifact_templates;
 
 #[cfg(unix)]
 mod bridge;

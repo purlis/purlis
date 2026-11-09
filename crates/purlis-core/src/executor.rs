@@ -154,7 +154,11 @@ use crate::skills::grade;
 /// - **7** (#5971, ADR 0120 §9) — a query's question: `query`, holding the query's `name`, the
 ///   `workspace` it reads (`null` for a plane-scoped one) and its `params`, answered `data` and,
 ///   when there is a next page, `cursor` ([`Executor::query`]).
-pub const PROTOCOL: u32 = 7;
+/// - **8** (#5973, ADR 0120 §9) — no request or answer changes: it is the version a manifest names
+///   to declare `contributes.artifacts`, templates purlis reads from the extension's own folder
+///   and never asks its program about ([`crate::extension::artifacts`]). A program that declares
+///   them is asked everything else in 7's words.
+pub const PROTOCOL: u32 = 8;
 
 /// The most of a check's output a Check reporter is handed (#5410). A check's output is a log,
 /// and past this it is one no converter needs whole: refused rather than cut, since a cut log
