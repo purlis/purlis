@@ -22,6 +22,7 @@ import {
   type ForgeRow,
   type ForgeWord,
   type FoundFile,
+  type ArtifactFound,
   type GoneProject,
   type OpenedRepo,
   type PlaneId,
@@ -381,6 +382,15 @@ function App() {
     path: string;
     /** A jump to a line (a search hit, FM-8): the branch's file tab lands on it. */
     line?: number;
+    at: number;
+  }>();
+  /**
+   * The last artifact the palette found and was asked to open (#5968): its project, its
+   * workspace and folder, and a count. That project's own `PlaneView` opens its tab.
+   */
+  const [artifactAsk, setArtifactAsk] = useState<{
+    plane: PlaneId;
+    found: ArtifactFound;
     at: number;
   }>();
   /**
@@ -2145,6 +2155,7 @@ function App() {
       copyPath: async () => nowhere(),
       revealPath: async () => nowhere(),
       saveWithTheProject: async () => nowhere(),
+      pinToWorkspace: async () => nowhere(),
       openInEditor: async () => nowhere(),
       shellInFolder: () => undefined,
       startChatHere: async () => nowhere(),
@@ -2269,6 +2280,20 @@ function App() {
             },
           },
     [branchInFront, inFront, planes.length],
+  );
+
+  /** The pinned artifacts the palette finds (#5968): the project in front's. */
+  const paletteArtifacts = useMemo(
+    () => ({
+      plane: inFront,
+      onOpen: (found: ArtifactFound) => {
+        if (inFront === undefined) return;
+        const plane = inFront;
+        setShowing({ at: "plane", plane });
+        setArtifactAsk((was) => ({ plane, found, at: (was?.at ?? 0) + 1 }));
+      },
+    }),
+    [inFront],
   );
 
   const switcherRows = useMemo(() => {
@@ -3107,6 +3132,7 @@ function App() {
               firstChatAsked={firstChat?.plane === plane ? firstChat : undefined}
               shellAsked={shellAsk?.plane === plane ? shellAsk : undefined}
               fileAsked={fileAsk?.plane === plane ? fileAsk : undefined}
+              artifactAsked={artifactAsk?.plane === plane ? artifactAsk : undefined}
               closeAsked={closeAsk?.plane === plane ? closeAsk : undefined}
               onAsking={onAsking}
               awayRefused={awayRefusals.held[plane]}
@@ -3189,6 +3215,7 @@ function App() {
         offers={paletteOffers ?? openerOffers}
         projects={{ rows: switcherRows, asked: switcherAsk }}
         files={files}
+        artifacts={paletteArtifacts}
         said={said}
         onSettings={followSaid}
         onRun={saying?.run ?? run}

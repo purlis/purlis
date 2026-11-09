@@ -25,6 +25,123 @@ export const commands = {
 	 */
 	relaunch: string | null,
 } | null>("first_frame"),
+	/**  **The workspace's pinned artifacts, in their order**: the activity bar's artifact group. */
+	artifactPins: (plane: PlaneId, workspace: string) => typedError<ArtifactPinShown[], string>(__TAURI_INVOKE("artifact_pins", { plane, workspace })),
+	/**
+	 *  **What an artifact tab's bar names**: the pin's name and who pinned it. Runs nothing of the
+	 *  page's, so a tab that waits for a press asks it too.
+	 */
+	artifactAbout: (plane: PlaneId, workspace: string, folder: string) => typedError<ArtifactAbout, string>(__TAURI_INVOKE("artifact_about", { plane, workspace, folder })),
+	/**
+	 *  **Opens a pinned artifact over its tab's frame**: the folder read once, where it stands on
+	 *  this machine read with it (its script runs only when approved), a webview of its own made
+	 *  at `place` in the asking window, and its label answered. Nothing is focused: the keyboard
+	 *  stays where the person has it.
+	 */
+	artifactOpen: (plane: PlaneId, workspace: string, folder: string, place: ArtifactPlace, theme: ArtifactTheme) => typedError<ArtifactOpened, string>(__TAURI_INVOKE("artifact_open", { plane, workspace, folder, place, theme })),
+	/**
+	 *  **Moves an artifact's webview to its frame's place**, or hides it (`None`): its tab went
+	 *  behind another, or something purlis draws is over its frame.
+	 */
+	artifactPlace: (label: string, place: {
+	x: number | null,
+	y: number | null,
+	width: number | null,
+	height: number | null,
+	ratio: number | null,
+} | null) => typedError<null, string>(__TAURI_INVOKE("artifact_place", { label, place })),
+	/**  **Puts the keyboard in an artifact's page**: the person entered its frame. */
+	artifactEnter: (label: string) => typedError<null, string>(__TAURI_INVOKE("artifact_enter", { label })),
+	/**
+	 *  **Loads an artifact's page again from its folder as it is now** (#5955): the window heard
+	 *  that its data changed. The folder is read again with where it stands on this machine, which
+	 *  is answered for the bar, and the page is put back where it was scrolled. A folder that cannot
+	 *  be read leaves the page as it was, and says why.
+	 */
+	artifactReload: (label: string) => typedError<ArtifactOpened, string>(__TAURI_INVOKE("artifact_reload", { label })),
+	/**
+	 *  **Draws an artifact's page in the theme the window draws now** (#5955): its sheet is
+	 *  written again, and the page asks for it again when it changed.
+	 */
+	artifactTheme: (label: string, theme: ArtifactTheme) => typedError<null, string>(__TAURI_INVOKE("artifact_theme", { label, theme })),
+	/**  **Closes an artifact's webview**: its tab closed, or its frame went. */
+	artifactClose: (label: string) => typedError<null, string>(__TAURI_INVOKE("artifact_close", { label })),
+	/**
+	 *  **What Pin to workspace offers for `page`** in workspace `workspace` (#5953): whether the
+	 *  workspace is LIVE, the folder it is pinned as, and a name and icon to start from.
+	 */
+	artifactPinAsk: (plane: PlaneId, workspace: string, page: ArtifactPage) => typedError<ArtifactPinAsk, string>(__TAURI_INVOKE("artifact_pin_ask", { plane, workspace, page })),
+	/**
+	 *  **Pins `page` to workspace `workspace`** as `folder`, named `name` with icon `icon`
+	 *  (#5953): the person's answer to Pin to workspace. A page not in `artifacts/` yet is copied
+	 *  into `folder` first, never over a folder that is there. Written to the pins file, which the
+	 *  project's next save shares; nothing is committed here.
+	 */
+	artifactPin: (plane: PlaneId, workspace: string, page: ArtifactPage, answer: ArtifactPinAnswer) => typedError<ArtifactPinShown, string>(__TAURI_INVOKE("artifact_pin", { plane, workspace, page, answer })),
+	/**
+	 *  **Puts workspace `workspace`'s pins in the order `ids` gives** (#5953): a drag or a Move
+	 *  on the activity bar. A pin `ids` leaves out keeps its place after them.
+	 */
+	artifactReorder: (plane: PlaneId, workspace: string, ids: string[]) => typedError<null, string>(__TAURI_INVOKE("artifact_reorder", { plane, workspace, ids })),
+	/**
+	 *  **Opens an `.html` file's private preview over its frame** (#5953, spec story 15): the page
+	 *  alone, read once, served from an origin of its own under the same CSP as an artifact's, with
+	 *  no script and nothing beside it. Nothing is pinned and nothing is written.
+	 */
+	artifactPreviewOpen: (plane: PlaneId, page: ArtifactPage, place: ArtifactPlace, theme: ArtifactTheme) => typedError<ArtifactOpened, string>(__TAURI_INVOKE("artifact_preview_open", { plane, page, place, theme })),
+	/**
+	 *  **Repin**: pins artifact folder `folder` again as it is pinned, its name, icon, command and
+	 *  working folder kept, so the folder is checked anew (there, inside `artifacts/`, within the
+	 *  size cap, nothing shaped like a secret). The way out of a missing or too-large artifact once
+	 *  its folder is back or smaller; the refusal's sentence when it is not.
+	 */
+	artifactRepin: (plane: PlaneId, workspace: string, folder: string) => typedError<null, string>(__TAURI_INVOKE("artifact_repin", { plane, workspace, folder })),
+	/**
+	 *  **Unpin**: takes artifact folder `folder`'s pin off the workspace; its files stay. A missing
+	 *  or too-large artifact's tab asks it (#5954), and so does Unpin from workspace in a pin's menu
+	 *  on the activity bar (#5953); every window hears that the pins moved.
+	 */
+	artifactUnpin: (plane: PlaneId, workspace: string, folder: string) => typedError<null, string>(__TAURI_INVOKE("artifact_unpin", { plane, workspace, folder })),
+	/**
+	 *  **The person's approval of an artifact's script, pressed in its tab's bar** (ADR 0120 §4):
+	 *  of exactly the pin and the template webview `label` was served, read here and never taken
+	 *  from the window, so a change since it was served is not approved by this press. Every window
+	 *  of the plane hears it ([`APPROVALS_CHANGED`]) and loads the page again, now with its script.
+	 *  Window-only: nothing a link serves, and no command a chat runs, can approve.
+	 */
+	artifactApprove: (label: string) => typedError<null, string>(__TAURI_INVOKE("artifact_approve", { label })),
+	/**
+	 *  **Grants an approved artifact its plane-scoped queries** (ADR 0120 §7, #5969): a grant of its
+	 *  own, from the person's press in purlis's bar, of exactly the pin and template their window
+	 *  was served. A new approval of the folder drops it.
+	 */
+	artifactGrantPlane: (label: string) => typedError<null, string>(__TAURI_INVOKE("artifact_grant_plane", { label })),
+	/**  **What Regenerate would run for artifact `folder`, and whether a press asks first.** */
+	artifactRegenerateAbout: (plane: PlaneId, workspace: string, folder: string) => typedError<ArtifactRegenerate, string>(__TAURI_INVOKE("artifact_regenerate_about", { plane, workspace, folder })),
+	/**
+	 *  **The person's yes to the code Regenerate runs**, pressed in the bar's prompt: of exactly
+	 *  `fingerprint`, the one they were shown. The code is resolved again here, and a yes to code
+	 *  that moved since is refused, so it is shown again.
+	 */
+	artifactRegenerateApprove: (plane: PlaneId, workspace: string, folder: string, fingerprint: string) => typedError<null, string>(__TAURI_INVOKE("artifact_regenerate_approve", { plane, workspace, folder, fingerprint })),
+	/**  **Runs artifact `folder`'s command in the session host, and puts its data in place.** */
+	artifactRegenerate: (plane: PlaneId, workspace: string, folder: string) => typedError<ArtifactRegenerated, string>(__TAURI_INVOKE("artifact_regenerate", { plane, workspace, folder })),
+	/**
+	 *  **The person's answer to a link an artifact's page followed**, pressed in the window's
+	 *  dialog: opens in the browser the link artifact webview `label` reported, never a URL the
+	 *  window names, and with `always`, keeps its host on this machine first.
+	 */
+	artifactLinkOpen: (label: string, always: boolean) => typedError<null, string>(__TAURI_INVOKE("artifact_link_open", { label, always })),
+	/**
+	 *  **The pinned artifacts of project `plane`, in every workspace, that say any word of
+	 *  `query`**, best first: at most [`MOST`].
+	 */
+	artifactSearch: (plane: PlaneId, query: string) => typedError<ArtifactFound[], string>(__TAURI_INVOKE("artifact_search", { plane, query })),
+	/**
+	 *  **Discuss** the artifact pinned from `folder` in `workspace`: a chat opened with the page's
+	 *  quote referenced and one line about it typed, unsent.
+	 */
+	artifactDiscuss: (plane: PlaneId, workspace: string, folder: string, columns: number, rows: number) => typedError<StartedHere, StartRefused>(__TAURI_INVOKE("artifact_discuss", { plane, workspace, folder, columns, rows })),
 	/**  What the window says about this launch and the session bus: nothing, on a launch with it. */
 	sessionBus: () => __TAURI_INVOKE<{
 	/**  The line it draws: why there is no bus, and what is off for the run. */
@@ -5979,6 +6096,186 @@ export type ArchivedMemory = {
 	path: string,
 };
 
+/**  What an artifact tab's bar says about it before anything runs. */
+export type ArtifactAbout = {
+	name: string,
+	/**  Who pinned it, from the plane's history; none before the pin is saved. */
+	pinned_by: string | null,
+	/**  Why it cannot be opened, when it cannot. */
+	missing: string | null,
+	/**  Its folder is over the size cap: the sentence naming both sizes. */
+	too_large: string | null,
+	/**  When its data was last updated, when that can be read. */
+	fresh: ArtifactFresh | null,
+};
+
+/**  One artifact found, as the palette draws it and the window opens it. */
+export type ArtifactFound = {
+	/**  The workspace it is pinned to. */
+	workspace: string,
+	/**  Its folder in the workspace's `artifacts/`: with the workspace, what its tab is keyed by. */
+	folder: string,
+	/**  The pin's name. */
+	name: string,
+};
+
+/**  **When an artifact's data was last updated** (#5955, `purlis_core::artifact::fresh`). */
+export type ArtifactFresh = {
+	/**  Milliseconds since 1970. */
+	at: number | null,
+	/**  When it is drawn stale, in milliseconds since 1970. */
+	stale_at: number | null,
+	/**  Where the time was read: `declared` by the data, `committed` or `written`. */
+	source: string,
+};
+
+/**
+ *  What [`artifact_open`] answers: the webview's label, and where the artifact stands on this
+ *  machine, which its tab's bar says.
+ */
+export type ArtifactOpened = {
+	label: string,
+	/**
+	 *  `script-free`, `approved`, `new`, `changed`, `pin-changed` or `not-here`
+	 *  ([`Standing::as_str`]).
+	 */
+	standing: string,
+	/**  Who made the pin it now has, for `pin-changed`, from the plane's history. */
+	changed_by: string | null,
+	/**
+	 *  Whether the data its page declared was generated on this machine (#5961): false when it
+	 *  declares data files and none is here, which the bar says.
+	 */
+	generated: boolean,
+	/**  The catalogue queries its page declared it calls, as its approval lists them (#5969). */
+	queries: ArtifactQuery[],
+	/**  Whether it may call its plane-scoped queries: a grant of its own (#5969). */
+	plane_granted: boolean,
+};
+
+/**
+ *  **An `.html` file the window shows** (#5953): the place it is in, as the file preview names
+ *  it, and its path there. The plane root is no workspace and no repo; a workspace's own files
+ *  are a workspace and no repo.
+ */
+export type ArtifactPage = {
+	workspace: string,
+	repo: string,
+	piece: string | null,
+	path: string,
+};
+
+/**
+ *  **What the person answered Pin to workspace with** (#5953): the folder the ask offered, and
+ *  the name and icon they chose.
+ */
+export type ArtifactPinAnswer = {
+	folder: string,
+	name: string,
+	icon: string,
+};
+
+/**  **What the Pin to workspace dialog offers** for a page (#5953). */
+export type ArtifactPinAsk = {
+	/**
+	 *  Whether the workspace is LIVE: everyone in the project sees the pin once it is saved.
+	 *  A LOCAL workspace's pin stays on this machine.
+	 */
+	live: boolean,
+	/**
+	 *  The folder of `artifacts/` the pin names: the page's own, or the free one it is
+	 *  copied into.
+	 */
+	folder: string,
+	/**
+	 *  Whether the page is copied into `folder` as its `index.html` (it is not in
+	 *  `artifacts/` yet).
+	 */
+	copied: boolean,
+	/**  The name offered: the pin's, or the page's title, or the folder's name. */
+	name: string,
+	/**  The icon offered: the pin's, or the default. */
+	icon: string,
+	/**  Whether the folder is pinned already: pinning it again changes its name or icon. */
+	pinned: boolean,
+};
+
+/**  One pin, as the activity bar's artifact group draws it. */
+export type ArtifactPinShown = {
+	id: string,
+	folder: string,
+	name: string,
+	/**  One of purlis's icons (`PERSONA_ICONS`). */
+	icon: string,
+	/**  Why its folder cannot be opened, when it cannot. */
+	missing: string | null,
+	/**  Whether its workspace is LIVE: unpinning it takes it off everyone's bar (#5953). */
+	live: boolean,
+	/**  Its folder is over the size cap: the sentence naming both sizes. */
+	too_large: string | null,
+	/**  When its data was last updated, when that can be read. */
+	fresh: ArtifactFresh | null,
+};
+
+/**
+ *  Where an artifact's frame is in the window: CSS pixels of the window's page, and the page's
+ *  `devicePixelRatio`, which takes its zoom into account where the window's scale would not.
+ */
+export type ArtifactPlace = {
+	x: number | null,
+	y: number | null,
+	width: number | null,
+	height: number | null,
+	ratio: number | null,
+};
+
+/**  One query a page declared, as its approval lists it in the bar. */
+export type ArtifactQuery = {
+	/**  `<id>@<N>`. */
+	id: string,
+	/**  `workspace` or `plane`. */
+	scope: string,
+	/**  Each declared parameter that widens what it reads, as `<name>: <what it then reads>`. */
+	widens: string[],
+	/**  That the id is deprecated or replaced, which the bar warns of. */
+	warning: string | null,
+};
+
+/**  What an artifact's bar says of its Regenerate before anything runs. */
+export type ArtifactRegenerate = {
+	/**  Whether the pin names a command at all; none draws no Regenerate. */
+	has_command: boolean,
+	/**  Why it cannot run here, when it cannot: the sentence the bar shows. */
+	refused: string | null,
+	/**  `approved`, `new`, `changed` or `pin-changed`, when it resolved. */
+	standing: string | null,
+	/**  The folder of code a yes approves, as the prompt names it. */
+	code: string | null,
+	/**  That code's fingerprint, handed back with the yes. */
+	fingerprint: string | null,
+	/**  When the data in place was last good, UTC, as the bar shows it. */
+	last_good: string | null,
+};
+
+/**  How a press of Regenerate ended. */
+export type ArtifactRegenerated = {
+	/**  The data files written, when it succeeded. */
+	written: string[],
+	/**  What went wrong and that the data before it stands, with its date, when it failed. */
+	failed: string | null,
+	/**  The tail of the run's output, secrets masked, when it failed and said anything. */
+	output: string | null,
+};
+
+/**
+ *  **The theme the window draws, handed to an artifact's page** (#5955): its appearance
+ *  (`dark` or `light`) and its colour tokens' values, by token (`surface.base`).
+ */
+export type ArtifactTheme = {
+	appearance: string,
+	values: { [key in string]: string },
+};
+
 /**
  *  The trust ask: what this plane will put in force, in the words the operator reads.
  * 
@@ -6812,7 +7109,7 @@ export type CertificateCheck = {
  *  What one changed path is part of, as the window's readers divide the plane
  *  ([`purlis_core::planechange::Kind`], which this mirrors for the bindings).
  */
-export type ChangeKind = "project" | "harness" | "workspace" | "todos" | "memory" | "sessions" | "persona" | "skills" | "git" | "chats";
+export type ChangeKind = "project" | "harness" | "workspace" | "todos" | "artifacts" | "memory" | "sessions" | "persona" | "skills" | "git" | "chats";
 
 /**
  *  Where one change's member list is in a changes view, sent with its blocks

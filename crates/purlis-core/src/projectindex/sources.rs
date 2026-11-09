@@ -5,7 +5,9 @@
 //!
 //! Each source is one folder `memstore::read_files` lists: a workspace's `memory/`, `sessions/`
 //! and `todos/`, the root's `sessions/`, each persona's `memory/` and each folder of its `refs/`,
-//! and the shared store's `memory/` and `refs/`. A row keeps the source it was listed from, so a
+//! and the shared store's `memory/` and `refs/`; and each workspace's `artifacts/`, whose pinned
+//! artifacts [`crate::artifact::search`] lists through the pin's gate. A row keeps the source it
+//! was listed from, so a
 //! query names the sources its caller may read and nothing else answers.
 
 use std::path::{Path, PathBuf};
@@ -27,6 +29,9 @@ pub enum Kind {
     Sessions,
     /// A workspace's open todos, `workspaces/<ws>/todos/`.
     Todos,
+    /// A workspace's pinned artifacts, `workspaces/<ws>/artifacts/` (ADR 0120, #5968): one row
+    /// per pin, read by [`crate::artifact::search`], never by `memstore::read_files`.
+    Artifacts,
 }
 
 impl Kind {
@@ -38,6 +43,7 @@ impl Kind {
             Self::Refs => "refs",
             Self::Sessions => "sessions",
             Self::Todos => "todos",
+            Self::Artifacts => "artifacts",
         }
     }
 
@@ -49,6 +55,7 @@ impl Kind {
             "refs" => Self::Refs,
             "sessions" => Self::Sessions,
             "todos" => Self::Todos,
+            "artifacts" => Self::Artifacts,
             _ => return None,
         })
     }
@@ -62,6 +69,7 @@ impl Kind {
             Self::Refs => 'r',
             Self::Sessions => 'e',
             Self::Todos => 't',
+            Self::Artifacts => 'a',
         }
     }
 }
@@ -78,6 +86,7 @@ pub(crate) fn rank(kind: Kind, owner: &str) -> i64 {
         Kind::Refs => 4,
         Kind::Sessions => 6,
         Kind::Todos => 7,
+        Kind::Artifacts => 8,
     }
 }
 
@@ -175,6 +184,7 @@ pub(crate) fn every(root: &Path) -> Vec<Source> {
         push(Kind::Workspace, name, dir.join("memory"));
         push(Kind::Sessions, name, dir.join("sessions"));
         push(Kind::Todos, name, dir.join("todos"));
+        push(Kind::Artifacts, name, dir.join(crate::artifact::DIR));
     }
     push(Kind::Sessions, "", root.join("sessions"));
     let personas = root.join("personas");

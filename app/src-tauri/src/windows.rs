@@ -117,7 +117,7 @@ pub fn emit_for_plane<R: Runtime, S: Serialize + Clone>(
 /// that is being destroyed and may still be listed while it is.
 fn labels<R: Runtime>(app: &AppHandle<R>, going: Option<&str>) -> Vec<String> {
     let mut labels: Vec<String> = app
-        .webview_windows()
+        .windows()
         .into_keys()
         .filter(|label| is_charter_window(label) && Some(label.as_str()) != going)
         .collect();
@@ -140,7 +140,7 @@ fn remember<R: Runtime>(app: &AppHandle<R>) {
 /// Brings a window back: shown, unminimised, and in front. Each step can fail on its own and
 /// none is worth refusing to continue over.
 pub fn raise<R: Runtime>(app: &AppHandle<R>, label: &str) {
-    if let Some(window) = app.get_webview_window(label) {
+    if let Some(window) = app.get_window(label) {
         let _ = window.unminimize();
         let _ = window.show();
         let _ = window.set_focus();
@@ -224,7 +224,7 @@ pub async fn move_projects(
     let made = to.is_none();
     let to = match to {
         Some(to) if to == from => return Err("Those projects are already in this window.".into()),
-        Some(to) if is_charter_window(&to) && app.get_webview_window(&to).is_some() => to,
+        Some(to) if is_charter_window(&to) && app.get_window(&to).is_some() => to,
         Some(to) => return Err(format!("purlis has no window called {to}.")),
         None => showing.fresh_label(),
     };
@@ -359,7 +359,7 @@ pub fn close_requested<R: Runtime>(window: &tauri::Window<R>, api: &tauri::Close
     }
     if hand_back(app, window.label())
         && !app
-            .get_webview_window(MAIN)
+            .get_window(MAIN)
             .is_some_and(|main| main.is_visible().unwrap_or(false))
     {
         raise(app, MAIN);

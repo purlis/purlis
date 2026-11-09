@@ -198,6 +198,8 @@ fn a_harness_lists_charter_s_tools() {
             "dispatch_note",
             "dispatch_ask",
             "ask_operator",
+            // The MCP twin of `purlis queries`, added on purpose (#5969).
+            "queries",
             // A real browser the session host runs (#2013).
             "browser_open",
             "browser_navigate",
@@ -1222,4 +1224,25 @@ fn a_grades_chat_is_listed_and_answered_the_tools_that_only_read() {
             "{writes} answered a grade's chat: {called}"
         );
     }
+}
+
+#[test]
+fn the_queries_tool_is_the_mcp_twin_of_purlis_queries_and_marked_read_only() {
+    let p = project();
+    let mut server = Server::start(p.path(), "alpha");
+    server.initialize(false);
+    let listed = server.request("tools/list", json!({}));
+    let tool = listed["result"]["tools"]
+        .as_array()
+        .expect("tools")
+        .iter()
+        .find(|tool| tool["name"] == "queries")
+        .expect("queries is listed")
+        .clone();
+    assert_eq!(tool["annotations"]["readOnlyHint"], true, "{tool}");
+
+    let said = server.call("queries", json!({}));
+    assert_ne!(said["isError"], true, "{said}");
+    let listing: Value = serde_json::from_str(&text(&said)).expect("JSON");
+    assert_eq!(listing, purlis_core::catalogue::listing());
 }

@@ -93,6 +93,9 @@ export const SAID = {
   addToChat: "Add to a chat's context",
   // A LIVE workspace's own file or folder (#5377).
   saveWithTheProject: "Save with the project",
+  // An .html file's row and preview (#5953): the team's pin, never the private Pin of a tab, so
+  // it names the workspace and asks first.
+  pinToWorkspace: "Pin to workspace…",
   removeFolder: "Remove folder",
   discardAnyway: "Discard that work and remove anyway",
   // A chat's Branch ▸ (#4851): the words of `command-table.md` rows 24 and 25.

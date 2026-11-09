@@ -265,13 +265,10 @@ fn skills_reach_here() -> bool {
 
 /// **Every tool this server can list**, before a chat's place narrows it: the skill tools reach
 /// only where skills do, and a grade's chat lists only the ones that read. The shipped skills
-/// are held to it, so a skill never names a tool no chat is handed (#5721).
+/// are held to it, so a skill never names a tool no chat is handed (#5721). It is the one tool
+/// catalogue's ([`purlis_core::catalogue`]), whose read-only entries are also page queries.
 pub(crate) fn every_tool() -> impl Iterator<Item = &'static chattools::Tool> {
-    chattools::TOOLS
-        .iter()
-        .chain(purlis_core::browsertools::TOOLS.iter())
-        .chain(purlis_core::themepreview::TOOLS.iter())
-        .chain(purlis_core::skilltools::TOOLS.iter())
+    purlis_core::catalogue::every_tool()
 }
 
 /// The first line of [`instructions`], the same for every chat.

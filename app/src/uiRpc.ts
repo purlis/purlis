@@ -26,6 +26,32 @@ export const commands = {
 	 */
 	relaunch: string | null,
 } | null>("first_frame"),
+	artifactPins: __WINDOW_ONLY_RESULT,
+	artifactAbout: __WINDOW_ONLY_RESULT,
+	artifactOpen: __WINDOW_ONLY_RESULT,
+	artifactPlace: __WINDOW_ONLY_RESULT,
+	artifactEnter: __WINDOW_ONLY_RESULT,
+	artifactReload: __WINDOW_ONLY_RESULT,
+	artifactTheme: __WINDOW_ONLY_RESULT,
+	artifactClose: __WINDOW_ONLY_RESULT,
+	artifactPinAsk: __WINDOW_ONLY_RESULT,
+	artifactPin: __WINDOW_ONLY_RESULT,
+	artifactReorder: __WINDOW_ONLY_RESULT,
+	artifactPreviewOpen: __WINDOW_ONLY_RESULT,
+	artifactRepin: __WINDOW_ONLY_RESULT,
+	artifactUnpin: __WINDOW_ONLY_RESULT,
+	artifactApprove: __WINDOW_ONLY_RESULT,
+	artifactGrantPlane: __WINDOW_ONLY_RESULT,
+	artifactRegenerateAbout: __WINDOW_ONLY_RESULT,
+	artifactRegenerateApprove: __WINDOW_ONLY_RESULT,
+	artifactRegenerate: __WINDOW_ONLY_RESULT,
+	artifactLinkOpen: __WINDOW_ONLY_RESULT,
+	/**
+	 *  **The pinned artifacts of project `plane`, in every workspace, that say any word of
+	 *  `query`**, best first: at most [`MOST`].
+	 */
+	artifactSearch: (plane: PlaneId, query: string) => typedError<ArtifactFound[], string>(__TAURI_INVOKE("artifact_search", { plane, query })),
+	artifactDiscuss: __WINDOW_ONLY_START_REFUSED,
 	/**  What the window says about this launch and the session bus: nothing, on a launch with it. */
 	sessionBus: () => __TAURI_INVOKE<{
 	/**  The line it draws: why there is no bus, and what is off for the run. */
@@ -3077,6 +3103,186 @@ export type ArchivedMemory = {
 	path: string,
 };
 
+/**  What an artifact tab's bar says about it before anything runs. */
+export type ArtifactAbout = {
+	name: string,
+	/**  Who pinned it, from the plane's history; none before the pin is saved. */
+	pinned_by: string | null,
+	/**  Why it cannot be opened, when it cannot. */
+	missing: string | null,
+	/**  Its folder is over the size cap: the sentence naming both sizes. */
+	too_large: string | null,
+	/**  When its data was last updated, when that can be read. */
+	fresh: ArtifactFresh | null,
+};
+
+/**  One artifact found, as the palette draws it and the window opens it. */
+export type ArtifactFound = {
+	/**  The workspace it is pinned to. */
+	workspace: string,
+	/**  Its folder in the workspace's `artifacts/`: with the workspace, what its tab is keyed by. */
+	folder: string,
+	/**  The pin's name. */
+	name: string,
+};
+
+/**  **When an artifact's data was last updated** (#5955, `purlis_core::artifact::fresh`). */
+export type ArtifactFresh = {
+	/**  Milliseconds since 1970. */
+	at: number | null,
+	/**  When it is drawn stale, in milliseconds since 1970. */
+	stale_at: number | null,
+	/**  Where the time was read: `declared` by the data, `committed` or `written`. */
+	source: string,
+};
+
+/**
+ *  What [`artifact_open`] answers: the webview's label, and where the artifact stands on this
+ *  machine, which its tab's bar says.
+ */
+export type ArtifactOpened = {
+	label: string,
+	/**
+	 *  `script-free`, `approved`, `new`, `changed`, `pin-changed` or `not-here`
+	 *  ([`Standing::as_str`]).
+	 */
+	standing: string,
+	/**  Who made the pin it now has, for `pin-changed`, from the plane's history. */
+	changed_by: string | null,
+	/**
+	 *  Whether the data its page declared was generated on this machine (#5961): false when it
+	 *  declares data files and none is here, which the bar says.
+	 */
+	generated: boolean,
+	/**  The catalogue queries its page declared it calls, as its approval lists them (#5969). */
+	queries: ArtifactQuery[],
+	/**  Whether it may call its plane-scoped queries: a grant of its own (#5969). */
+	plane_granted: boolean,
+};
+
+/**
+ *  **An `.html` file the window shows** (#5953): the place it is in, as the file preview names
+ *  it, and its path there. The plane root is no workspace and no repo; a workspace's own files
+ *  are a workspace and no repo.
+ */
+export type ArtifactPage = {
+	workspace: string,
+	repo: string,
+	piece: string | null,
+	path: string,
+};
+
+/**
+ *  **What the person answered Pin to workspace with** (#5953): the folder the ask offered, and
+ *  the name and icon they chose.
+ */
+export type ArtifactPinAnswer = {
+	folder: string,
+	name: string,
+	icon: string,
+};
+
+/**  **What the Pin to workspace dialog offers** for a page (#5953). */
+export type ArtifactPinAsk = {
+	/**
+	 *  Whether the workspace is LIVE: everyone in the project sees the pin once it is saved.
+	 *  A LOCAL workspace's pin stays on this machine.
+	 */
+	live: boolean,
+	/**
+	 *  The folder of `artifacts/` the pin names: the page's own, or the free one it is
+	 *  copied into.
+	 */
+	folder: string,
+	/**
+	 *  Whether the page is copied into `folder` as its `index.html` (it is not in
+	 *  `artifacts/` yet).
+	 */
+	copied: boolean,
+	/**  The name offered: the pin's, or the page's title, or the folder's name. */
+	name: string,
+	/**  The icon offered: the pin's, or the default. */
+	icon: string,
+	/**  Whether the folder is pinned already: pinning it again changes its name or icon. */
+	pinned: boolean,
+};
+
+/**  One pin, as the activity bar's artifact group draws it. */
+export type ArtifactPinShown = {
+	id: string,
+	folder: string,
+	name: string,
+	/**  One of purlis's icons (`PERSONA_ICONS`). */
+	icon: string,
+	/**  Why its folder cannot be opened, when it cannot. */
+	missing: string | null,
+	/**  Whether its workspace is LIVE: unpinning it takes it off everyone's bar (#5953). */
+	live: boolean,
+	/**  Its folder is over the size cap: the sentence naming both sizes. */
+	too_large: string | null,
+	/**  When its data was last updated, when that can be read. */
+	fresh: ArtifactFresh | null,
+};
+
+/**
+ *  Where an artifact's frame is in the window: CSS pixels of the window's page, and the page's
+ *  `devicePixelRatio`, which takes its zoom into account where the window's scale would not.
+ */
+export type ArtifactPlace = {
+	x: number | null,
+	y: number | null,
+	width: number | null,
+	height: number | null,
+	ratio: number | null,
+};
+
+/**  One query a page declared, as its approval lists it in the bar. */
+export type ArtifactQuery = {
+	/**  `<id>@<N>`. */
+	id: string,
+	/**  `workspace` or `plane`. */
+	scope: string,
+	/**  Each declared parameter that widens what it reads, as `<name>: <what it then reads>`. */
+	widens: string[],
+	/**  That the id is deprecated or replaced, which the bar warns of. */
+	warning: string | null,
+};
+
+/**  What an artifact's bar says of its Regenerate before anything runs. */
+export type ArtifactRegenerate = {
+	/**  Whether the pin names a command at all; none draws no Regenerate. */
+	has_command: boolean,
+	/**  Why it cannot run here, when it cannot: the sentence the bar shows. */
+	refused: string | null,
+	/**  `approved`, `new`, `changed` or `pin-changed`, when it resolved. */
+	standing: string | null,
+	/**  The folder of code a yes approves, as the prompt names it. */
+	code: string | null,
+	/**  That code's fingerprint, handed back with the yes. */
+	fingerprint: string | null,
+	/**  When the data in place was last good, UTC, as the bar shows it. */
+	last_good: string | null,
+};
+
+/**  How a press of Regenerate ended. */
+export type ArtifactRegenerated = {
+	/**  The data files written, when it succeeded. */
+	written: string[],
+	/**  What went wrong and that the data before it stands, with its date, when it failed. */
+	failed: string | null,
+	/**  The tail of the run's output, secrets masked, when it failed and said anything. */
+	output: string | null,
+};
+
+/**
+ *  **The theme the window draws, handed to an artifact's page** (#5955): its appearance
+ *  (`dark` or `light`) and its colour tokens' values, by token (`surface.base`).
+ */
+export type ArtifactTheme = {
+	appearance: string,
+	values: { [key in string]: string },
+};
+
 /**
  *  The trust ask: what this plane will put in force, in the words the operator reads.
  * 
@@ -3910,7 +4116,7 @@ export type CertificateCheck = {
  *  What one changed path is part of, as the window's readers divide the plane
  *  ([`purlis_core::planechange::Kind`], which this mirrors for the bindings).
  */
-export type ChangeKind = "project" | "harness" | "workspace" | "todos" | "memory" | "sessions" | "persona" | "skills" | "git" | "chats";
+export type ChangeKind = "project" | "harness" | "workspace" | "todos" | "artifacts" | "memory" | "sessions" | "persona" | "skills" | "git" | "chats";
 
 /**
  *  Where one change's member list is in a changes view, sent with its blocks
