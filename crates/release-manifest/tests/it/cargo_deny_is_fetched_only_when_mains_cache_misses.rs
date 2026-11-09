@@ -77,13 +77,10 @@ fn the_cache_is_keyed_on_the_version_and_its_digest_and_restored_first() {
         .iter()
         .find_map(|line| line.trim().strip_prefix("key:"))
         .expect("the restore names a key");
-    assert!(
-        key.contains("DENY_VERSION") || key.contains("version"),
-        "the key holds the version: {key}"
-    );
-    assert!(
-        key.contains("DENY_SHA256") || key.contains("sha256"),
-        "the key holds the digest: {key}"
+    assert_eq!(
+        key.trim(),
+        "cargo-deny-${{ inputs.version }}-${{ inputs.sha256 }}",
+        "the key is the version and its digest, and nothing a run changes"
     );
     let at = |step: &[String]| steps.iter().position(|one| one == step);
     assert!(
@@ -140,5 +137,54 @@ fn only_main_saves_the_cache_and_only_once_its_digest_was_checked() {
     assert!(
         at(step_running(&steps, "sha256sum --check")) < at(save),
         "nothing is saved before its digest is checked"
+    );
+}
+
+/// The one file the restore, the fetch, the check and the save each name: `~/.cache/cargo-deny`
+/// and the tarball in it.
+#[test]
+fn the_restore_the_fetch_the_check_and_the_save_name_one_file() {
+    let steps = action();
+    for cached in [
+        step_using(&steps, "actions/cache/restore@"),
+        step_using(&steps, "actions/cache/save@"),
+    ] {
+        let path = cached
+            .iter()
+            .find_map(|line| line.trim().strip_prefix("path:").map(str::trim))
+            .expect("a cache step names its path");
+        assert_eq!(path, "~/.cache/cargo-deny");
+    }
+    let fetch = step_running(&steps, "gh release download");
+    assert!(
+        fetch
+            .iter()
+            .any(|line| line.contains("-O ~/.cache/cargo-deny/deny.tgz ")),
+        "the fetch writes the cached tarball: {fetch:?}"
+    );
+    let check = step_running(&steps, "sha256sum --check");
+    for read in [
+        "  $HOME/.cache/cargo-deny/deny.tgz\"",
+        "tar -xzf ~/.cache/cargo-deny/deny.tgz ",
+    ] {
+        assert!(
+            check.iter().any(|line| line.contains(read)),
+            "the check and the unpacking read the cached tarball ({read}): {check:?}"
+        );
+    }
+}
+
+/// `operator` runs on a pull request only for the paths it names, the local actions it uses
+/// among them, so a change to the action is checked where it is used (round 1 of #5990).
+#[test]
+fn a_change_to_the_action_runs_the_operator_workflow() {
+    let text = read(&workflows_dir().join("operator.yml"));
+    let named = text
+        .lines()
+        .filter(|line| line.trim() == "- .github/actions/cargo-deny/**")
+        .count();
+    assert_eq!(
+        named, 2,
+        "operator.yml's pull_request and push paths name the action"
     );
 }

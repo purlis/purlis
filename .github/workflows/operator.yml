@@ -27,6 +27,7 @@ on:
       - rust-toolchain.toml
       - .github/actions/rust-toolchain/**
       - .github/actions/helm/**
+      - .github/actions/cargo-deny/**
       - tools/operator-install*
       - tools/guide-commands*
       - .github/workflows/operator.yml
@@ -69,6 +70,7 @@ on:
       - rust-toolchain.toml
       - .github/actions/rust-toolchain/**
       - .github/actions/helm/**
+      - .github/actions/cargo-deny/**
       - tools/operator-install*
       - .github/workflows/operator.yml
       # The desktop's side of a cluster runner, which the kind run checks too (#2056).

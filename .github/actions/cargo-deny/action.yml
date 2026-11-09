@@ -11,6 +11,10 @@
 # download is. A pull request restores what `main` saved and saves nothing, as the Rust, npm and
 # Linux packages caches do: the repository's caches are capped at 10 GB.
 #
+# Only a tarball that passed the check is saved. Were a saved one ever to fail it, every run
+# would go red on the check until the entry is deleted: `gh cache delete cargo-deny-<version>-
+# <sha256> -R purlis/purlis`, after which main's next run saves it again.
+#
 # On a miss it is fetched through the API (`gh release download`), not the github.com download
 # link: that link answers 5xx for hours while the API still serves (#5787, #5792, #5797 left the
 # merge queue on it), as the forge programs' fetch does.
