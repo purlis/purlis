@@ -418,14 +418,14 @@ export function Ask({
     // A login's notice drawn anew has to be read anew (#4595).
     ask.answer.via === "browser-login" || ask.answer.via === "secret-fill" ? ask.answer.shown : "",
   ].join("\n");
-  const { drawn, tooSoon, looked } = useSettledPlace<HTMLElement>(here);
+  const { drawn, tooSoon, readPlaces } = useSettledPlace<HTMLElement>(here);
   /** **The keyboard goes into the form its Answer opens** (#5651): onto its box, or its first
    *  answer. A task's box takes it itself once its question is read (`useAnswerQuestion`). */
   const focusForm = useRef(false);
   /** After each drawing of its row (the list family draws it a commit after this, #3123): where
    *  its answers stand is read, and a form its Answer just opened takes the keyboard. */
   const drawnNow = () => {
-    looked();
+    readPlaces();
     if (!open || !focusForm.current) return;
     const form = document.getElementById(`${id}-form`);
     if (form === null) return;

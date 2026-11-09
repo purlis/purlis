@@ -44,10 +44,10 @@ export function useSettledPlace<T extends HTMLElement>(here: string) {
   const tooSoon = () => placedAt() - Math.max(placed.at, movedAt()) < SETTLE_MS;
   /** Reads where its answers stand now: after each drawing of its row, which the list family
    *  draws a commit after this hook's own render (`ListRowDrawn`'s `onDrawn`, #3123). */
-  const looked = () => {
+  const readPlaces = () => {
     movedAt();
   };
-  return { drawn, tooSoon, looked };
+  return { drawn, tooSoon, readPlaces };
 }
 
 /**

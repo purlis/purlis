@@ -1024,6 +1024,14 @@ screen writes `data-scope="message"`: `purlis/message-family` is an error.
 - **Drawn by its parts** (ADR 0103): `root`, `mark`, `main`, `top`, `title`, `time`, `meta`,
   `body`, `links`, `form` and `dismiss`, in `message.css`; a theme's parts reach the same
   attributes (`message.*`, the next release's manifest version).
+- **As a list's row** (`as="row"`, #3123): Asks and Updates draw each line as a row of the list
+  family's list of rows that act (`ListRowDrawn`), whose element is the message's own root. The
+  list gives it a row's role, its keyboard (↑ ↓ between rows, ← → through its own links, answers,
+  boxes and ×) and React Aria's states; it is named by `aria-labelledby` where given, else by its
+  `textValue`; `onDrawn` hears each drawing of it once it is in the document. React Aria holds its
+  parts in a cell drawn `display: contents`, so every rule that reaches a part as the root's child
+  reaches it through that cell too; the keyboard's ring on the row itself is drawn inside it, in
+  the window's focus ring tokens, as a list's row draws its own, beside the hover fill.
 
 ## The pane foot family
 

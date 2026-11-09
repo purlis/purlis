@@ -221,7 +221,7 @@ function UpdateItem({ row, above }: { row: UpdateRow; above: string }) {
   const here = [above, more ?? "", ...answers.map(({ name, title }) => `${name}\t${title}`)].join(
     "\n",
   );
-  const { drawn, tooSoon, looked } = useSettledPlace<HTMLElement>(here);
+  const { drawn, tooSoon, readPlaces } = useSettledPlace<HTMLElement>(here);
   /** An answer that allows something, pressed too soon after the update was drawn or moved,
    *  is not sent: what is under the pointer may not be what the person read. */
   const press = (answer: UpdateAnswer) => {
@@ -251,7 +251,7 @@ function UpdateItem({ row, above }: { row: UpdateRow; above: string }) {
       icon={<KindIcon kind={kind} />}
       read={update.read}
       ref={drawn}
-      onDrawn={looked}
+      onDrawn={readPlaces}
       className="inbox-update"
       data-kind={update.kind}
       aria-label={about}

@@ -50,7 +50,9 @@ async function othersSaid(): Promise<{ says: string; go: string }[]> {
       [...document.querySelectorAll<HTMLElement>(`${others} > [role="row"][data-key]`)].map(
         (line) => ({
           says: line.querySelector(".ask-says")?.textContent?.trim() ?? "",
-          go: line.querySelector("button")?.getAttribute("aria-label") ?? "",
+          // Its control, by the name it is heard by, never by its tag.
+          go:
+            line.querySelector('[aria-label^="Go to project "]')?.getAttribute("aria-label") ?? "",
         }),
       ),
     OTHERS,
@@ -155,7 +157,9 @@ describe("the Inbox of one project, about another that waits", function () {
 
     await browser.execute(
       (others: string) =>
-        document.querySelector<HTMLElement>(`${others} [role="row"] button`)?.click(),
+        document
+          .querySelector<HTMLElement>(`${others} [role="row"] [aria-label^="Go to project "]`)
+          ?.click(),
       OTHERS,
     );
     await browser.waitUntil(async () => (await inFront()) === first, {

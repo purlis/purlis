@@ -56,13 +56,21 @@ type MessageElement = "li" | "div" | "article" | "row";
  */
 function useFocusInside(given: Ref<HTMLElement> | undefined) {
   const [inside, setInside] = useState(false);
+  // A ref's cleanup takes the listeners off again (React 19), so a ref handed anew never adds a
+  // second pair.
   const heard = useCallback((element: HTMLElement | null) => {
     if (element === null) return;
-    element.addEventListener("focusin", () => setInside(true));
-    element.addEventListener("focusout", (event) => {
+    const came = () => setInside(true);
+    const went = (event: FocusEvent) => {
       const to = event.relatedTarget;
       setInside(to instanceof Node && element.contains(to));
-    });
+    };
+    element.addEventListener("focusin", came);
+    element.addEventListener("focusout", went);
+    return () => {
+      element.removeEventListener("focusin", came);
+      element.removeEventListener("focusout", went);
+    };
   }, []);
   const attach = useMemo(() => mergeRefs<HTMLElement>(heard, given ?? null), [heard, given]);
   return { inside, attach };
