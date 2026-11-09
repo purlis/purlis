@@ -1252,9 +1252,21 @@ impl OnTheRunner {
              && cat port",
             fake = fake_harness().display(),
         ));
-        said.trim()
+        let port: u16 = said
+            .trim()
             .parse()
-            .unwrap_or_else(|_| panic!("the stand-in model says its port: {said:?}"))
+            .unwrap_or_else(|_| panic!("the stand-in model says its port: {said:?}"));
+        // Still there once the exec that started it has ended, so a chat that cannot reach it
+        // is told apart from one whose stand-in went with its exec.
+        let up = self.prints(&format!(
+            "if bash -c 'exec 3<>/dev/tcp/127.0.0.1/{port}' 2>/dev/null; then echo up; else echo down; cat \"$HOME/.parity/serve.err\"; fi"
+        ));
+        assert_eq!(
+            up.trim(),
+            "up",
+            "the stand-in model outlives the exec that started it"
+        );
+        port
     }
 
     /// **The runner adopted its own default `~/.claude` in place** (ADR 0095 §2), as a machine
@@ -4170,7 +4182,8 @@ fn a_real_claude_code_chat_on_a_runner_is_held(target: &Target, on: ClaudeFolder
     let model = if runner.is_a_pod() {
         "export PURLIS_PROBES=\"$TMPDIR/probes.sh\" said=\"$HOME/.parity/said\"\n\
          until [ -s \"$HOME/.parity/port\" ]; do sleep 0.1; done\n\
-         export ANTHROPIC_BASE_URL=\"http://127.0.0.1:$(cat \"$HOME/.parity/port\")\""
+         export ANTHROPIC_BASE_URL=\"http://127.0.0.1:$(cat \"$HOME/.parity/port\")\"\n\
+         if bash -c \"exec 3<>/dev/tcp/127.0.0.1/$(cat \"$HOME/.parity/port\")\" 2>/dev/null; then echo 'MODEL reached.'; else echo 'MODEL unreached.'; fi"
             .to_owned()
     } else {
         format!(
