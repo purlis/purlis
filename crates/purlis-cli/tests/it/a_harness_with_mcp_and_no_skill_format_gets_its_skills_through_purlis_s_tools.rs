@@ -115,6 +115,24 @@ impl Model {
 
 #[test]
 fn a_harness_purlis_has_no_adapter_for_finds_and_loads_a_skill_over_mcp_and_the_load_opens_a_run() {
+    finds_and_loads_a_skill_over_mcp(Duration::ZERO);
+}
+
+/// **A host slower than the load's hook waits still sees the load open one run** (#5913): the
+/// hook waits a quarter of a second for the host to take its line, then spools it and the load
+/// answers (ADR 0075 §7), so the host may still be recording the line when the answer arrives.
+/// Half a second is past that wait and inside the second a drain waits for a copy the host is
+/// recording, the order that once read no run at all.
+#[test]
+fn a_load_answered_before_the_host_took_its_line_still_opens_one_run() {
+    finds_and_loads_a_skill_over_mcp(Duration::from_millis(500));
+}
+
+/// How long the model waits for an answer.
+const PATIENCE: Duration = Duration::from_secs(30);
+
+/// The fallback route end to end, with a host that takes `host_takes` to hear a tool line.
+fn finds_and_loads_a_skill_over_mcp(host_takes: Duration) {
     let p = project();
     let root = p.path().canonicalize().expect("the project");
     // The host, listening as the app does.
@@ -137,6 +155,7 @@ fn a_harness_purlis_has_no_adapter_for_finds_and_loads_a_skill_over_mcp_and_the_
         saved: Box::new(|_| {}),
         refused: Box::new(|_| Ok(())),
         tool: Box::new(move |call| {
+            std::thread::sleep(host_takes);
             let _ = into.lock().unwrap().send(call);
             Ok(())
         }),
@@ -170,9 +189,7 @@ fn a_harness_purlis_has_no_adapter_for_finds_and_loads_a_skill_over_mcp_and_the_
         .spawn()
         .expect("the fake harness starts");
     let (stream, _) = relayed.accept().expect("the harness relays its server");
-    stream
-        .set_read_timeout(Some(Duration::from_secs(30)))
-        .expect("a deadline");
+    stream.set_read_timeout(Some(PATIENCE)).expect("a deadline");
     let mut model = Model {
         out: stream.try_clone().expect("the socket twice"),
         lines: BufReader::new(stream).lines(),
