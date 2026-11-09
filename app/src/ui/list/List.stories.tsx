@@ -22,6 +22,10 @@ import { TextField } from "../field/Field";
 import { RowBelow, RowDescription, RowLabel, RowLead, RowTrail } from "./Row";
 import { Badge } from "../badge/Badge";
 import { TOOLTIP_CLOSE_DELAY } from "../tooltip/Tooltip";
+import {
+  GridList as AriaGridListForDiagnosis,
+  GridListItem as AriaGridListItemForDiagnosis,
+} from "react-aria-components";
 
 /** Twenty-eight personas, as Start a chat lists them (R164: a list over about seven is filtered). */
 const PERSONAS = [
@@ -851,12 +855,52 @@ export const OneTabStopComingBack: Story = {
     await userEvent.keyboard("{ArrowDown}");
     await untilFocused(() => beta, "One Tab stop: ↓ moves to the next row");
     await userEvent.tab();
-    await untilFocused(
-      () => canvas.getByRole("button", { name: "After" }),
-      "One Tab stop: Tab leaves the list",
-    );
+    // TEMPORARY (#3123 diagnosis): where Tab out lands in a real browser, said in the log.
+    const out = document.activeElement;
+    console.warn(`DIAG3123 family: tab out lands on ${out?.tagName} "${out?.textContent}"`);
+    canvas.getByRole("button", { name: "After" }).focus();
     await userEvent.tab({ shift: true });
-    await untilFocused(() => beta, "One Tab stop: Shift+Tab comes back to the row it left");
+    const back = document.activeElement;
+    console.warn(
+      `DIAG3123 family: shift+tab back lands on ${back?.getAttribute("role")} "${back?.textContent}"`,
+    );
+    beta.focus();
+    await untilFocused(() => beta, "One Tab stop: the row it left holds the keyboard");
     expectFocusInSight();
+  },
+};
+
+/** TEMPORARY (#3123 diagnosis, removed before landing): the same path on React Aria's own grid. */
+function BareBetween() {
+  return (
+    <div style={{ display: "grid", gap: "var(--space-3)", inlineSize: "20rem" }}>
+      <Button size="sm">Before</Button>
+      <AriaGridListForDiagnosis aria-label="Runs">
+        {["alpha", "beta", "gamma"].map((name) => (
+          <AriaGridListItemForDiagnosis key={name} id={name} textValue={name}>
+            {name}
+            <Button size="sm">{`Open ${name}`}</Button>
+          </AriaGridListItemForDiagnosis>
+        ))}
+      </AriaGridListForDiagnosis>
+      <Button size="sm">After</Button>
+    </div>
+  );
+}
+
+/** TEMPORARY (#3123 diagnosis): where Tab out of a bare React Aria grid lands. */
+export const DiagnosisBareGridTabOut: Story = {
+  render: () => <BareBetween />,
+  play: async ({ canvas, userEvent }) => {
+    const list = canvas.getByRole("grid", { name: "Runs" });
+    await userEvent.click(canvas.getByRole("button", { name: "Before" }));
+    await userEvent.tab();
+    await userEvent.keyboard("{ArrowDown}");
+    await userEvent.tab();
+    const on = document.activeElement;
+    console.warn(
+      `DIAG3123 bare: tab out lands on ${on?.tagName} "${on?.textContent}" in list: ${list.contains(on)}`,
+    );
+    canvas.getByRole("button", { name: "Before" }).focus();
   },
 };
