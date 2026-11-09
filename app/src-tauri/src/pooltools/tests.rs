@@ -1279,3 +1279,20 @@ fn a_runner_chats_gate_as_wired_refuses_a_key_out_of_reach_before_anything_is_as
     assert!(asks.open().is_empty(), "no Secret ask");
     assert!(tools.waiting().is_empty(), "no Allow");
 }
+
+#[test]
+fn the_asker_of_a_run_is_told_where_the_person_answers_and_for_how_long() {
+    let said = asked_said(
+        "kubectl",
+        "builds",
+        Path::new("/home/one/smart-ide"),
+        Duration::from_secs(15 * 60),
+    );
+    assert!(
+        said.contains(
+            "waiting for the person: Asks (\u{270b}) in the purlis window, project smart-ide, for \
+             up to 15 minutes"
+        ),
+        "{said}"
+    );
+}
