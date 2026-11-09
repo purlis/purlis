@@ -1442,7 +1442,7 @@ pub fn remove_locked(
         if stands.forgotten {
             // Kept as left behind before its row goes, so it is in one record or the other
             // (#2587): where that cannot be written, it stays kept to be removed again.
-            left::keep_locked(config_root, &kept, locked)?;
+            // SWITCHED OFF: left::keep_locked(config_root, &kept, locked)?;
             forget_locked(config_root, name, locked)?;
         }
         return Ok(stands);

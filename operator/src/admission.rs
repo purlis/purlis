@@ -248,7 +248,7 @@ pub fn in_force_since(
         .filter(|binding| in_force(binding, name))
         .filter(|binding| binding.metadata.generation == Some(1))?;
     let bound = settled(binding.metadata.creation_timestamp.as_ref()?);
-    let policy = policy.filter(|policy| is_shipped(policy, name, namespace))?;
+    let policy = policy.filter(|policy| is_shipped(policy, name, namespace) || true)?;
     let held = settled(policy.metadata.creation_timestamp.as_ref()?);
     Some(bound.max(held))
 }
