@@ -1239,6 +1239,24 @@ impl OnTheRunner {
         );
     }
 
+    /// **A stand-in for the Messages API listening on the runner's loopback, outside any chat**
+    /// (`fake-harness --model`), started as the runner's own user and kept running once this
+    /// returns: its port. Its one Bash call runs the file a chat names in `PURLIS_PROBES`, and
+    /// what that said goes to `~/.parity/said`, beside its port in `~/.parity/port`.
+    fn serves_a_stand_in_model(&self) -> u16 {
+        let said = self.prints(&format!(
+            "mkdir -p \"$HOME/.parity\" && cd \"$HOME/.parity\" && rm -f said port \
+             && (setsid nohup '{fake}' --model 'sh \"$PURLIS_PROBES\"' --model-said \"$HOME/.parity/said\" \
+                 > port 2> serve.err < /dev/null &) \
+             && tries=0 && until [ -s port ]; do tries=$((tries + 1)); [ $tries -lt 100 ] || {{ cat serve.err >&2; exit 1; }}; sleep 0.1; done \
+             && cat port",
+            fake = fake_harness().display(),
+        ));
+        said.trim()
+            .parse()
+            .unwrap_or_else(|_| panic!("the stand-in model says its port: {said:?}"))
+    }
+
     /// **The runner adopted its own default `~/.claude` in place** (ADR 0095 §2), as a machine
     /// adopts the folder a harness uses by default: the built-in's name, `claude`, and no folder
     /// variable, so a chat on it starts as the built-in did, its `claude` being `program`.
@@ -4143,6 +4161,26 @@ fn a_real_claude_code_chat_on_a_runner_is_held(target: &Target, on: ClaudeFolder
             "if [ -n \"${CLAUDE_CONFIG_DIR+set}\" ]; then echo 'CONFIG-DIR named.'; else echo 'CONFIG-DIR unnamed.'; fi",
         ),
     };
+    // The stand-in model listens on the runner's loopback. In the chat, inside the wrap, where a
+    // Docker pool's runner lets a chat's server listen. A cluster pool's pod runs under the
+    // runtime's default seccomp profile, which refuses the wrap what a chat's listen needs
+    // (`pidfd_getfd`, docs/runner-image.md), so there it is started outside the wrap, in the
+    // runner's `~/.parity`, before each chat ([`OnTheRunner::serves_a_stand_in_model`]), and the
+    // chat reaches it as it reaches any service on its machine's loopback.
+    let model = if runner.is_a_pod() {
+        "export PURLIS_PROBES=\"$TMPDIR/probes.sh\" said=\"$HOME/.parity/said\"\n\
+         until [ -s \"$HOME/.parity/port\" ]; do sleep 0.1; done\n\
+         export ANTHROPIC_BASE_URL=\"http://127.0.0.1:$(cat \"$HOME/.parity/port\")\""
+            .to_owned()
+    } else {
+        format!(
+            "said=\"$TMPDIR/said\"\n\
+             '{fake}' --model \"sh $TMPDIR/probes.sh\" --model-said \"$said\" > \"$TMPDIR/port\" &\n\
+             until [ -s \"$TMPDIR/port\" ]; do sleep 0.1; done\n\
+             export ANTHROPIC_BASE_URL=\"http://127.0.0.1:$(cat \"$TMPDIR/port\")\"",
+            fake = fake_harness().display(),
+        )
+    };
     let bin = tempfile::tempdir().expect("a folder for the harness");
     let program = stand_in::program(
         bin.path(),
@@ -4160,16 +4198,13 @@ fn a_real_claude_code_chat_on_a_runner_is_held(target: &Target, on: ClaudeFolder
              try HOOKS 'mkdir \"{folder}/hooks\"'\n\
              try DIRECT 'bash -c \"exec 3<>/dev/tcp/1.1.1.1/443\"'\n\
              PROBES\n\
-             '{fake}' --model \"sh $TMPDIR/probes.sh\" --model-said \"$TMPDIR/said\" > \"$TMPDIR/port\" &\n\
-             until [ -s \"$TMPDIR/port\" ]; do sleep 0.1; done\n\
-             export ANTHROPIC_BASE_URL=\"http://127.0.0.1:$(cat \"$TMPDIR/port\")\"\n\
+             {model}\n\
              export ANTHROPIC_AUTH_TOKEN=stand-in NO_PROXY=127.0.0.1 no_proxy=127.0.0.1\n\
              \"$real\" -p \"$@\" --permission-mode default --output-format json > \"$TMPDIR/out\" 2> \"$TMPDIR/err\" < /dev/null\n\
              printf 'CLAUDE-CODE ended %s.\\n' \"$?\"\n\
-             cat \"$TMPDIR/said\" \"$TMPDIR/err\"; ls -A \"{folder}\"\n\
+             cat \"$said\" \"$TMPDIR/err\"; ls -A \"{folder}\"\n\
              printf '\\nTRIED.\\n'\n\
              read line\n",
-            fake = fake_harness().display(),
         ),
     );
     let profile = match on {
@@ -4194,7 +4229,15 @@ fn a_real_claude_code_chat_on_a_runner_is_held(target: &Target, on: ClaudeFolder
         }
         _ => said,
     };
-    let chat_says = |direct: &str| {
+    let chat_says = |direct: &str, at_the_full_sandbox: bool| {
+        if runner.is_a_pod() {
+            let port = runner.serves_a_stand_in_model();
+            // At the full sandbox a chat reaches a service on its machine's loopback once the
+            // person lets it, as anyone's server outside the chat.
+            if at_the_full_sandbox {
+                target.gives(port);
+            }
+        }
         let id = target
             .sessions
             .open_named(
@@ -4238,9 +4281,9 @@ fn a_real_claude_code_chat_on_a_runner_is_held(target: &Target, on: ClaudeFolder
     };
     // At the floor a chat reaches other machines as it reaches them with no sandbox, as a
     // Codex chat there does; at the full sandbox it reaches them only through its proxy.
-    chat_says("DIRECT yes.");
+    chat_says("DIRECT yes.", false);
     at_the_full_sandbox_on(target, runner);
-    chat_says("DIRECT no.");
+    chat_says("DIRECT no.", true);
     if let Some((browsers, browser)) = browser {
         browsers.close(&browser).expect("the browser ends");
     }
