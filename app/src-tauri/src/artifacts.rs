@@ -444,7 +444,20 @@ pub async fn artifact_open(
         ))
     })
     .await?;
-    lay(&window, &artifacts, host, snapshot, place)
+    let of = Of {
+        plane,
+        workspace,
+        dir,
+        folder,
+        pin,
+        standing,
+    };
+    let label = lay(&window, &artifacts, host, snapshot, of, place)?;
+    Ok(ArtifactOpened {
+        label,
+        standing: standing.as_str().to_owned(),
+        changed_by,
+    })
 }
 
 /// What every window hears when a window changed a workspace's pins (#5953): which plane and
@@ -688,8 +701,10 @@ pub async fn artifact_preview_open(
     plane: PlaneId,
     page: ArtifactPage,
     place: ArtifactPlace,
-) -> Result<String, String> {
+) -> Result<ArtifactOpened, String> {
     let root = planes.held(&plane)?.root().to_path_buf();
+    let dir = root.clone();
+    let workspace = page.workspace.clone();
     let (host, snapshot) = blocking(move || {
         let text = page_text(&root, &page)?;
         let host = serve::origin_host(
@@ -705,7 +720,21 @@ pub async fn artifact_preview_open(
         Ok((host, serve::Snapshot::page(text.into_bytes())))
     })
     .await?;
-    lay(&window, &artifacts, host, snapshot, place)
+    // No pin and no folder: rendered script-free whatever it holds, and asking nothing, so no
+    // press in any bar can approve a preview's script.
+    let of = Of {
+        plane,
+        workspace,
+        dir,
+        folder: String::new(),
+        pin: String::new(),
+        standing: Standing::NotHere,
+    };
+    Ok(ArtifactOpened {
+        label: lay(&window, &artifacts, host, snapshot, of, place)?,
+        standing: Standing::NotHere.as_str().to_owned(),
+        changed_by: None,
+    })
 }
 
 /// Makes the webview of what `snapshot` serves from `host`, at `place` in `window`: its label.
@@ -714,6 +743,7 @@ fn lay(
     artifacts: &Artifacts,
     host: String,
     snapshot: serve::Snapshot,
+    of: Of,
     place: ArtifactPlace,
 ) -> Result<String, String> {
     let label = label(artifacts.made.fetch_add(1, Ordering::Relaxed) + 1);
@@ -724,14 +754,7 @@ fn lay(
             window: window.label().to_owned(),
             host,
             snapshot,
-            of: Of {
-                plane,
-                workspace,
-                dir,
-                folder,
-                pin,
-                standing,
-            },
+            of,
         },
     );
     let url: tauri::Url = format!("{own}/")
@@ -752,11 +775,7 @@ fn lay(
         artifacts.served().remove(&label);
         return Err(format!("purlis could not draw the artifact: {why}"));
     }
-    Ok(ArtifactOpened {
-        label,
-        standing: standing.as_str().to_owned(),
-        changed_by,
-    })
+    Ok(label)
 }
 
 /// **The person's approval of an artifact's script, pressed in its tab's bar** (ADR 0120 §4):

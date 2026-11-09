@@ -69,7 +69,12 @@ impl Snapshot {
     pub fn page(bytes: Vec<u8>) -> Self {
         let files = BTreeMap::from([(PAGE.to_string(), bytes)]);
         let fingerprint = fingerprint(&files);
-        Self { files, fingerprint }
+        let script = holds_script(&files);
+        Self {
+            files,
+            fingerprint,
+            script,
+        }
     }
 
     /// The bytes read for `key`, a path inside the folder as [`key`] gives it.
