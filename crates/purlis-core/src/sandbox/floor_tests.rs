@@ -1827,6 +1827,7 @@ fn machine_on(os: Os, home: &Path) -> Machine {
         env: crate::secrets::Env::of(&[("PATH", "/opt/none")]),
         home: Some(home.to_path_buf()),
         os,
+        on_a_sandbox_only_profile: false,
     }
 }
 

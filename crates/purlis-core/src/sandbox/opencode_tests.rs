@@ -24,6 +24,7 @@ fn machine(os: Os) -> Machine {
         env: crate::secrets::Env::of(&[]),
         home: Some(PathBuf::from("/Users/op")),
         os,
+        on_a_sandbox_only_profile: false,
     }
 }
 

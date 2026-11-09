@@ -525,6 +525,7 @@ fn compiled_with(project: &Project, os: Os, chat: &Grants) -> Compiled {
             env: crate::secrets::Env::of(&[]),
             home: Some(project.home.clone()),
             os,
+            on_a_sandbox_only_profile: false,
         },
         None,
         chat,

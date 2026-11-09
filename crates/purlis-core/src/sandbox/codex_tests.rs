@@ -25,6 +25,7 @@ fn machine_at(home: &Path, os: Os) -> Machine {
         env: crate::secrets::Env::of(&[]),
         home: Some(home.to_path_buf()),
         os,
+        on_a_sandbox_only_profile: false,
     }
 }
 

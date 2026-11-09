@@ -3615,6 +3615,7 @@ fn a_system_with_no_backend_checks_no_folder_for_a_sandbox_it_never_applies() {
         env: purlis_core::secrets::Env::of(&[]),
         home: None,
         os,
+        on_a_sandbox_only_profile: false,
     };
     let linked = plane.path().join("workspaces");
 

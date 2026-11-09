@@ -1323,6 +1323,7 @@ fn machine_with_state(os: Os, state: Option<&str>) -> Machine {
         env: crate::secrets::Env::of(&env),
         home: Some(std::path::PathBuf::from("/home/op")),
         os,
+        on_a_sandbox_only_profile: false,
     }
 }
 
@@ -2663,6 +2664,7 @@ fn machine(os: Os) -> Machine {
         env: crate::secrets::Env::of(&[]),
         home: Some(std::path::PathBuf::from("/home/op")),
         os,
+        on_a_sandbox_only_profile: false,
     }
 }
 
