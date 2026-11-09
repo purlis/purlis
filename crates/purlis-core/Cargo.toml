@@ -222,6 +222,10 @@ uuid = { version = "1.26.1", features = ["v4"] }
 # arguments the way a shell splits words, with no shell. Both already in this workspace's
 # lockfile, so they add no crate to the tree.
 percent-encoding = "2"
+# Whether an artifact's template holds script a browser runs (#5959, ADR 0120 §4): its pages
+# read by the HTML tokenizer browsers' parsing is specified by, never by matching text. Servo's,
+# MIT OR Apache-2.0, already in this workspace's lockfile through the webview's crates.
+html5ever = "0.39"
 shell-words = "1"
 # The ids ADR 0066 gives devices, chats, runs and events: ULIDs, whose time part sorts them and
 # dates an event without a timestamp field. The standard crate for them.

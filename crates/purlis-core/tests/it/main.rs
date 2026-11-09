@@ -161,6 +161,7 @@ mod a_worktree_keeps_the_work_in_it;
 mod a_writing_chat_gets_a_branch_of_its_own;
 mod an_always_send_draft_goes_only_to_the_report_intake;
 mod an_archived_memory_is_listed_from_its_own_store;
+mod an_artifacts_text_is_found_through_the_search_index;
 mod an_ask_rule_never_weakens_a_deny;
 mod an_issue_body_is_always_sent_as_a_literal;
 mod an_operators_rule_reads_every_spelling_of_its_program;

@@ -104,6 +104,26 @@ export function todosIn(workspace: string): About {
 }
 
 /**
+ * **An artifact's data** (#5955): its folder's `data.json` and everything under its `data/`,
+ * which its page is loaded again in place for, and nothing beside: not its template (which
+ * opens it again, `artifacts.templateOf`), not the pins, not another artifact's folder.
+ */
+export function artifactDataIn(workspace: string, folder: string): About {
+  const own = `workspaces/${workspace}/artifacts/${folder}/`;
+  return (change) =>
+    change.kind === "artifacts" &&
+    change.workspace === workspace &&
+    (change.path === `${own}data.json` ||
+      change.path === `${own}data` ||
+      change.path.startsWith(`${own}data/`));
+}
+
+/** **What is said of a workspace's artifacts** (#5955): their pins, and each one's freshness. */
+export function artifactsIn(workspace: string): About {
+  return (change) => change.kind === "artifacts" && change.workspace === workspace;
+}
+
+/**
  * A session record's tab, by the record's plane-relative path (`sessions.sessionView`): its
  * place's `sessions/` — a workspace's, the plane root's — and its workspace's own folder. A
  * record kept under a persona follows that persona's folder, which is all the core says of it
