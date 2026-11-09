@@ -140,6 +140,8 @@ function core(asks: Shown[]) {
         cmd === "take_over_browser"
       )
         sent.push({ cmd, args });
+      // Take over opens the browser's view, which watches it: one that never answers.
+      if (cmd === "watch_browser") return new Promise(() => {});
       return null;
     },
     { shouldMockEvents: true },
