@@ -151,7 +151,13 @@ import {
   stopRepoClones,
   useRepoClones,
 } from "./repoClones";
-import { StartChat, againSaid, typedIn, type RunsOnInPicker } from "./StartChat";
+import {
+  StartChat,
+  pickerAnswerUnsent,
+  refusedSaid,
+  typedIn,
+  type RunsOnInPicker,
+} from "./StartChat";
 import { withDetails } from "./startDetails";
 import {
   handedSaid,
@@ -4586,7 +4592,8 @@ export const PlaneView = memo(function PlaneView({
    *  and nothing said: `unsent`, so no older line reads as this answer's (#5902). */
   const answerPickerAsk = useCallback(
     async (option: Offered, given: () => SecretAskGiven): Promise<SecretAskEnded> => {
-      if (pickerAsk === undefined || pickerSecret === undefined || pickerSecretBusy)
+      const unsent = pickerAnswerUnsent(pickerAsk, pickerSecret, pickerSecretBusy);
+      if (unsent !== undefined || pickerAsk === undefined || pickerSecret === undefined)
         return "unsent";
       const { asked } = pickerSecret;
       setPickerSecretBusy(true);
@@ -4606,11 +4613,7 @@ export const PlaneView = memo(function PlaneView({
           got.named,
         );
         if (refused !== undefined) {
-          setPickerSecretSaid(
-            typedIn(got)
-              ? `${refused.replace(/\.$/, "")}. ${againSaid(true, option.label)}`
-              : refused,
-          );
+          setPickerSecretSaid(refusedSaid(refused, typedIn(got), option.label));
           return "refused";
         }
         setPickerSecret(undefined);

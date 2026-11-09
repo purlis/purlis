@@ -59,6 +59,25 @@ export function againSaid(typed: boolean, label: string): string {
   return typed ? `Type the value again and press ${label}.` : `Press ${label} again.`;
 }
 
+/** What the picker's Secret ask says of a refused answer (#5902): the refusal, and, where it read
+ *  a value typed, which its box gave up, to type it again, after the refusal's own mark. */
+export function refusedSaid(refused: string, typed: boolean, label: string): string {
+  if (!typed) return refused;
+  const ended = /[.?!]$/.test(refused) ? refused : `${refused}.`;
+  return `${ended} ${againSaid(true, label)}`;
+}
+
+/** **Whether the picker's Secret ask's answer goes unsent** (#5902): with no ask, or while one is
+ *  answered, nothing is sent and nothing said, so `unsent`, never `refused`, which would have the
+ *  dialog read an older line as this answer's. Undefined where it can be sent. */
+export function pickerAnswerUnsent(
+  ask: Shown | undefined,
+  secret: unknown,
+  busy: boolean,
+): "unsent" | undefined {
+  return ask === undefined || secret === undefined || busy ? "unsent" : undefined;
+}
+
 /** How the picker's Secret ask's answer ended (#5137): `refused` with what the core said of it,
  *  and `unsent` where nothing was sent, so nothing said beside the ask is its answer's (#5902). */
 export type SecretAskEnded = "filled" | "declined" | "refused" | "unsent";

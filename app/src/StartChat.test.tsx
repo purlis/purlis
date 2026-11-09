@@ -7,7 +7,13 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { useState } from "react";
 import { userEvent } from "@testing-library/user-event";
 import type { StartOptions, StartRunsOn } from "./bindings";
-import { StartChat, typedIn, type RunsOnInPicker } from "./StartChat";
+import {
+  StartChat,
+  pickerAnswerUnsent,
+  refusedSaid,
+  typedIn,
+  type RunsOnInPicker,
+} from "./StartChat";
 import { profileCommand, profilePage } from "./settings/profileAddress";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { ChatsHere, fixedChats } from "./chatState";
@@ -2821,5 +2827,29 @@ describe("whether a send read a typed value (#5670 review)", () => {
     expect(typedIn({ picked: { vault: "providers", key: "anthropic" } })).toBe(false);
     expect(typedIn({ typed: "" })).toBe(false);
     expect(typedIn({})).toBe(false);
+  });
+});
+
+describe("the picker's Secret ask's answer, as PlaneView sends it (#5902)", () => {
+  it("sends nothing, and says nothing, with no ask or while one is being answered", () => {
+    const shown = secretAsk({ persona: "devops", vault: "providers", key: "anthropic" });
+    expect(pickerAnswerUnsent(undefined, {}, false)).toBe("unsent");
+    expect(pickerAnswerUnsent(shown, undefined, false)).toBe("unsent");
+    expect(pickerAnswerUnsent(shown, {}, true)).toBe("unsent");
+    expect(pickerAnswerUnsent(shown, {}, false)).toBeUndefined();
+  });
+
+  it("says to type a refused typed value again, after the refusal's own mark", () => {
+    const locked = "the vault providers is locked: unlock it, then fill again";
+    expect(refusedSaid(locked, true, "Fill")).toBe(
+      `${locked}. Type the value again and press Fill.`,
+    );
+    expect(refusedSaid(`${locked}.`, true, "Fill")).toBe(
+      `${locked}. Type the value again and press Fill.`,
+    );
+    expect(refusedSaid("Is the vault unlocked?", true, "Fill")).toBe(
+      "Is the vault unlocked? Type the value again and press Fill.",
+    );
+    expect(refusedSaid(locked, false, "Fill")).toBe(locked);
   });
 });
