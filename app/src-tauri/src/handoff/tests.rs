@@ -13981,6 +13981,85 @@ fn keep_blocked_on_a_held_vaults_notice_nudges_its_runs_with_the_held_line_once(
     assert_eq!(told, [], "and told nothing twice");
 }
 
+/// #5890, review round 3 of #5934: the reason the person typed for Keep blocked on the refused
+/// vault's Notice reaches the chat, though the line it hears comes by a run it answered. (Was:
+/// chat's persona holds the vault: a run of the chat it answers, whose command stopped waiting, is
+/// nudged with that line too, never "kept blocked", and the chat is told nothing twice.
+#[test]
+fn keep_blocked_on_a_held_vaults_notice_nudges_its_runs_with_the_persons_reason() {
+    use purlis_core::secrets::ask::run::Offer;
+    let plane = Plane::new().a_persona("ops", "");
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    vault_team_no_persona_is_tagged_for(&plane);
+    let words = words_kept(&held);
+    let chat = held
+        .chats()
+        .start(
+            &Chat {
+                program: "/bin/sh".to_owned(),
+                name: "1".to_owned(),
+                persona: Some("ops".to_owned()),
+                cwd: Some(plane.root.clone()),
+                unsandboxed: true,
+                ..Default::default()
+            },
+            purlis_core::engine::Size {
+                columns: 80,
+                rows: 24,
+            },
+        )
+        .expect("it runs");
+    mid_turn_on_the_board(&held, chat);
+    let mut need = curl_on_team_not_its(&plane, Offer::Program, &[]);
+    need.bound.chat = chat;
+    raised_and_left(&held, need);
+    purlis_core::sandbox::local::grant_vault(&plane.root, "team", "ops")
+        .expect("a row of the Allowed list");
+
+    let said =
+        crate::vaultroute::kept_vault_blocked_said(&held, None, chat, "team", Some("not on prod"));
+
+    assert!(
+        said.is_some(),
+        "the person reads that its runs are not stopped"
+    );
+    assert!(
+        held.secret_asks().open_runs().is_empty(),
+        "the run's ask was answered"
+    );
+    assert_eq!(
+        held.vault_refusals().queued_lines_for(chat),
+        [purlis_core::askoutcome::Outcome {
+            about: purlis_core::askoutcome::About::Vault {
+                vault: "team".to_owned(),
+            },
+            answer: purlis_core::askoutcome::Answer::KeptBlockedButHeld {
+                persona: "ops".to_owned(),
+                by: purlis_core::askoutcome::HeldBy::AllowedList,
+                reason: purlis_core::askoutcome::reason(Some("not on prod")),
+            },
+        }
+        .line()],
+        "with the line that says its persona holds the vault, never that it was kept blocked"
+    );
+    assert_eq!(
+        held.vault_refusals().queued_for(chat),
+        1,
+        "the chat is nudged once, at its turn's end"
+    );
+    let told: Vec<_> = words
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|(session, _)| *session == chat)
+        .cloned()
+        .collect();
+    assert_eq!(told, [], "and told nothing twice");
+}
+
 /// #5890: Keep blocked on a run's own notice, on a vault its persona may not use, says nothing more
 /// than it did: the press answers no sentence, and the chat is told it was kept blocked.
 #[test]

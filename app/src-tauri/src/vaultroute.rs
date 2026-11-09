@@ -762,7 +762,12 @@ pub(crate) fn kept_vault_blocked_said(
         .into_iter()
         .find(|open| open.session == session)
         .and_then(|open| open.persona);
-    let kept = kept_blocked_but_held(held.root(), persona.as_deref(), vault);
+    // The person's reason goes with the decision, so a run it answers tells it too (#5934).
+    let kept =
+        kept_blocked_but_held(held.root(), persona.as_deref(), vault).map(|kept| KeptButHeld {
+            reason: purlis_core::askoutcome::reason(reason),
+            ..kept
+        });
     let back = keep_blocked_pressed(held, network, session, vault, kept.as_ref());
     if let Some(kept) = kept {
         return Some(told_kept_but_held(
@@ -770,7 +775,6 @@ pub(crate) fn kept_vault_blocked_said(
             session,
             vault,
             kept,
-            reason,
             back.told.contains(&session),
         ));
     }
@@ -903,25 +907,27 @@ pub(crate) struct KeptButHeld {
     pub by: purlis_core::askoutcome::HeldBy,
     /// What the person reads beside the press.
     pub said: String,
+    /// The reason the person typed for the press, if any ([`purlis_core::askoutcome::reason`]):
+    /// told with the line by whichever telling reaches the chat (review of #5934).
+    pub reason: Option<String>,
 }
 
 /// **Tells chat `session` that Keep blocked on `vault` holds nothing**, since its persona already
 /// holds it (#5801), and answers what the person reads beside the press: the one telling of Keep
 /// blocked on the refused vault's Notice and on a run's own notice alike (#5890). Its next turn
 /// hears that its persona may use the vault and not to use it unless the person says to, with
-/// `reason`, what the person typed for it, if anything.
+/// [`KeptButHeld::reason`], what the person typed for it, if anything.
 pub(crate) fn told_kept_but_held(
     held: &crate::planes::Held,
     session: u32,
     vault: &str,
     kept: KeptButHeld,
-    reason: Option<&str>,
     told_already: bool,
 ) -> VaultAnswered {
     // A chat a run of it was told this, now or at its turn's end, is not told it twice.
     if !told_already {
         held.chats()
-            .tell_outcome(session, kept_but_held_outcome(vault, &kept, reason));
+            .tell_outcome(session, kept_but_held_outcome(vault, &kept));
     }
     VaultAnswered { said: kept.said }
 }
@@ -930,7 +936,6 @@ pub(crate) fn told_kept_but_held(
 pub(crate) fn kept_but_held_outcome(
     vault: &str,
     kept: &KeptButHeld,
-    reason: Option<&str>,
 ) -> purlis_core::askoutcome::Outcome {
     purlis_core::askoutcome::Outcome {
         about: purlis_core::askoutcome::About::Vault {
@@ -939,7 +944,7 @@ pub(crate) fn kept_but_held_outcome(
         answer: purlis_core::askoutcome::Answer::KeptBlockedButHeld {
             persona: kept.persona.clone(),
             by: kept.by,
-            reason: purlis_core::askoutcome::reason(reason),
+            reason: kept.reason.clone(),
         },
     }
 }
@@ -997,6 +1002,7 @@ pub(crate) fn kept_blocked_but_held(
         persona: persona.to_owned(),
         by,
         said,
+        reason: None,
     })
 }
 

@@ -49,6 +49,7 @@ import {
   askKey,
   byChat,
   dismissSaid,
+  MOST_ANSWERED,
   noteSeen,
   ageOf,
   useAnswered,
@@ -599,10 +600,11 @@ export function Inbox({
               {recent.map((one) =>
                 one.said === undefined ? null : (
                   <Notice
-                    key={one.at}
-                    cause={`answer-said:${one.at}`}
-                    tone="attention"
-                    onDismiss={() => dismissSaid(plane, one.at)}
+                    key={`${one.at}:${chainSaid(one.chain)}:${one.says}`}
+                    cause={`answer-said:${one.at}:${chainSaid(one.chain)}:${one.says}`}
+                    // As the refused vault's own Notice says the same sentence: news.
+                    tone="news"
+                    onDismiss={() => dismissSaid(plane, one)}
                   >
                     <strong>{chainSaid(one.chain)}</strong>
                     {": "}
@@ -618,7 +620,7 @@ export function Inbox({
           ) : rows.length === 0 && askingShown.length === 0 && othersShown.length === 0 ? (
             wider === undefined ? (
               <Empty
-                recent={recent}
+                recent={recent.slice(0, MOST_ANSWERED)}
                 allowed={allowedLately}
                 quiet={quiet.length > 0 ? quietSaid(quiet) : undefined}
               />

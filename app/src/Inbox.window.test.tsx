@@ -32,7 +32,7 @@ import { SETTLE_MS } from "./TaskBlocksNotice";
 import { UNDO_MS } from "./undo";
 import { DispatchGrantNotice } from "./DispatchGrantNotice";
 import { askOfVault } from "./test-asks";
-import { forgetInbox, replyBytes } from "./inboxRules";
+import { forgetInbox, MOST_ANSWERED, noteAnswered, replyBytes } from "./inboxRules";
 import { keepInboxScope } from "./inboxScope";
 import { forgetProjectViews } from "./projectViews";
 import { openEveryAnswer } from "./test-inbox";
@@ -604,15 +604,35 @@ describe("answering in place", () => {
     });
     expect(notice).toHaveTextContent("devops 4");
     expect(notice).toHaveTextContent(held);
+    // Told as the refused vault's own Notice tells it: news, not a decision.
+    expect(notice).not.toHaveTextContent("Needs a decision");
+    // Above whatever waits.
+    const row = screen.getByText("Run cargo test");
+    expect(notice.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.queryByRole("region", { name: "Recently answered" })).toBeNull();
+    // Ten more answers do not put it away: only Dismiss does (review of #5934).
+    act(() => {
+      for (let at = 0; at < MOST_ANSWERED + 1; at += 1)
+        noteAnswered(PLANE, {
+          at: at + 1,
+          chain: ["steward 3"],
+          says: `ask ${at}`,
+          answer: "Allow",
+        });
+    });
+    const still = document.querySelector<HTMLElement>('[data-cause^="answer-said:"]');
+    expect(still).not.toBeNull();
 
-    await userEvent.click(within(notice).getByRole("button", { name: "Dismiss" }));
+    await userEvent.click(within(still as HTMLElement).getByRole("button", { name: "Dismiss" }));
     await waitFor(() => expect(document.querySelector('[data-cause^="answer-said:"]')).toBeNull());
-    // Once nothing waits, Recently answered lists the answer, and the sentence is not said twice.
+    // The keyboard is not dropped on the page.
+    expect(document.activeElement).not.toBe(document.body);
+    // Once nothing waits, Recently answered lists the newest answers, and the sentence, dismissed,
+    // is said nowhere.
     again([]);
     const recent = screen.getByRole("region", { name: "Recently answered" });
-    expect(within(recent).getByText("Keep blocked")).toBeTruthy();
-    expect(within(recent).queryByText(held)).toBeNull();
+    expect(within(recent).getAllByRole("listitem")).toHaveLength(MOST_ANSWERED);
+    expect(screen.queryByText(held)).toBeNull();
   });
 
   it("opens Delete workspace from a workspace's removal, removes nothing, and notes no answer (qw356)", async () => {

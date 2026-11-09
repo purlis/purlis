@@ -275,7 +275,6 @@ pub fn run_grant_given(
             open.bound.chat,
             &open.bound.vault,
             kept,
-            None,
             told.contains(&open.bound.chat),
         )
     }))
@@ -634,7 +633,7 @@ fn run_grant_carried_out(
     let mut told_held = Vec::new();
     match held_by.filter(|_| answer == RunAnswer::Refuse) {
         Some(kept) => {
-            let outcome = crate::vaultroute::kept_but_held_outcome(&open.bound.vault, kept, None);
+            let outcome = crate::vaultroute::kept_but_held_outcome(&open.bound.vault, kept);
             told_each(held, &answered.nudge, &outcome);
             told_held.extend(answered.nudge.iter().copied());
         }
