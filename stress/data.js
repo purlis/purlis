@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794203812146,
+  "lastUpdate": 1794203867363,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -17984,6 +17984,42 @@ window.BENCHMARK_DATA = {
             "value": 981.7,
             "unit": "MB",
             "extra": "median of 6 samples: 947.8, 961.6, 975.1, 988.4, 988.7, 1066.1 MB; window 677.3 MB, session host 304.7 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "f2f3fee88e762cee90a08d377e02350e30927787",
+          "message": "Theme import: a hold measures the tints only once the theme as written clears the floors, and a walk skips a hold its as-written rounds rule out (#3597) (#5903)\n\nA hold's round decides from what the theme as written breaks whenever it\nbreaks anything, so the tint sweeps (each workspace tint and every whole\ndegree) are now measured only in a round where it breaks nothing. The same\nloop, stopped there, gives the fewest tokens a hold draws as purlis's own;\nan import's walk skips the full hold for a point that count already rules\nout. Every answer is the same: the theme suite passes unchanged.\n\nLocal debug, same machine, back to back: theme:: summed 822 -> 548 s,\nslowest theme test 72 -> 18.5 s, theme::import_tests 272 -> 81 s.\n\nRefs #3597\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6YXMT5TZQ20XF0A79DW6KRG\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-09T02:21:20Z",
+          "tree_id": "aaa0b8b1521abef22828eaa37bdb12d4e3b0b5cd",
+          "url": "https://github.com/purlis/purlis/commit/f2f3fee88e762cee90a08d377e02350e30927787"
+        },
+        "date": 1794203861706,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 2315.2,
+            "unit": "MB",
+            "extra": "median of 3 samples: 2012.1, 2315.2, 2664 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 986.6,
+            "unit": "MB",
+            "extra": "median of 6 samples: 946.6, 962.3, 981.6, 991.6, 992, 1061.5 MB; window 671 MB, session host 314.2 MB"
           }
         ]
       }
