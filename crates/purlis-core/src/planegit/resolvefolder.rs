@@ -1037,10 +1037,11 @@ enum When {
 fn said_unreplayed(stopped: replay::Unreplayed, when: When) -> String {
     use replay::Unreplayed;
     match (when, stopped) {
-        (When::Starting, Unreplayed::Conflict(files)) => format!(
-            "Nothing was started: this project's own commits conflict with the remote's in {}.",
-            files.join(", ")
-        ),
+        // Resolve cuts a resolve folder for a conflict before it says any stop: the
+        // `Err(replay::Unreplayed::Conflict(_)) => {}` arm of [`start_fetched`] comes first.
+        (When::Starting, Unreplayed::Conflict(_)) => {
+            unreachable!("Resolve cuts a folder for a replay's conflict and never says it")
+        }
         (When::Starting, Unreplayed::Unsigned(signer)) => {
             format!("Nothing was started: a replayed commit could not be signed: {signer}.")
         }
