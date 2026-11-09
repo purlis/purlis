@@ -133,7 +133,8 @@ pub enum SkillCommand {
         )]
         template: TemplateArg,
         /// Start from a template an extension offers instead: the extension's id, then the
-        /// template's.
+        /// template's. What it answers is kept as a draft in the Skill studio, for you to try
+        /// and accept, never made at once.
         #[arg(long, num_args = 2, value_names = ["EXTENSION", "TEMPLATE"])]
         extension_template: Option<Vec<String>>,
         #[command(flatten)]
@@ -1396,7 +1397,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, CliError> {
             template,
             &extension_template,
             |templates, template| {
-                verbs::create(
+                verbs::new_skill(
                     &mut cx,
                     &at.level(),
                     &name,

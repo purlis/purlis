@@ -1528,3 +1528,174 @@ fn a_shell_evals_temp_folder_is_short_enough_for_claude_code_to_hand_its_command
         commands.display()
     );
 }
+
+/// **An extension's template, standing in** (#3091): beside purlis's own, a whole skill that
+/// keeps its name.
+struct House;
+
+const HOUSE: &str = "Review · House";
+
+fn house() -> purlis_skills::change::TemplateId {
+    purlis_skills::change::TemplateId::Extension {
+        extension: "house".to_owned(),
+        template: "review".to_owned(),
+    }
+}
+
+impl purlis_skills::change::SkillTemplate for House {
+    fn offered(&self) -> Vec<purlis_skills::change::Offer> {
+        let mut out = purlis_skills::change::BuiltInTemplates.offered();
+        out.push(purlis_skills::change::Offer {
+            id: house(),
+            label: HOUSE.to_owned(),
+            about: "The house's review steps.".to_owned(),
+        });
+        out
+    }
+
+    fn text(
+        &self,
+        id: &purlis_skills::change::TemplateId,
+        name: &str,
+        description: &str,
+    ) -> Result<String, String> {
+        if *id == house() {
+            Ok(format!(
+                "---\nname: {name}\ndescription: {description}\n---\n\nThe house's steps.\n"
+            ))
+        } else {
+            purlis_skills::change::BuiltInTemplates.text(id, name, description)
+        }
+    }
+}
+
+/// New skill… from `template`, as the window asks it, and every line it said.
+fn new_from(
+    root: &Path,
+    name: &str,
+    template: &purlis_skills::change::TemplateId,
+) -> (Result<super::super::NewSkill, String>, Vec<Say>) {
+    let mut lines = Vec::new();
+    let mut say = |line: Say| lines.push(line);
+    let answer = super::super::new_skill(
+        &mut Ctx {
+            plane: root,
+            built_in: None,
+            by: super::super::By::Window,
+            say: &mut say,
+        },
+        &Level::project(),
+        name,
+        "Reviews a pull request against the house checklist.",
+        &House,
+        template,
+    );
+    (answer, lines)
+}
+
+/// #3091 (ADR 0101 §1): an extension's template is a third party's text, so the skill it makes
+/// lands as a draft the person tries and accepts, never in the project at once. The draft is a
+/// new skill, says the template it came from, and no chat wrote it; Accept then makes it in one
+/// commit, as a chat's draft is.
+#[test]
+fn an_extensions_template_lands_as_a_draft_the_person_accepts() {
+    let tmp = plane();
+    let root = tmp.path();
+    let before = head_of(root);
+
+    let (answer, _) = new_from(root, "review", &house());
+
+    let Ok(super::super::NewSkill::Drafted(id)) = answer else {
+        panic!("{answer:?}");
+    };
+    assert!(!root.join("skills/review").exists());
+    assert_eq!(head_of(root), before);
+    let draft = one(root, &id).unwrap();
+    assert_eq!(draft.name, "review");
+    assert_eq!(
+        (draft.new, draft.chat, draft.template.as_deref()),
+        (true, None, Some(HOUSE))
+    );
+    let paths: Vec<&str> = draft.files.iter().map(|file| file.path.as_str()).collect();
+    assert_eq!(paths, ["SKILL.md"]);
+    assert!(draft.files[0].after.contains("The house's steps."));
+
+    let (accepted, _) = accepted(root, &id);
+    accepted.unwrap();
+    assert!(
+        std::fs::read_to_string(root.join("skills/review/SKILL.md"))
+            .unwrap()
+            .contains("The house's steps.")
+    );
+    assert_eq!(last_commit(root).1, ["skills/review/SKILL.md"]);
+}
+
+/// #3091: purlis's own templates still make the skill at once, in one commit, as New skill…'s
+/// Write it yourself says.
+#[test]
+fn purlis_s_own_template_still_makes_the_skill_at_once() {
+    let tmp = plane();
+    let root = tmp.path();
+
+    let (answer, _) = new_from(
+        root,
+        "review",
+        &purlis_skills::change::TemplateId::BuiltIn(purlis_skills::change::Template::Blank),
+    );
+
+    assert!(
+        matches!(answer, Ok(super::super::NewSkill::Made(_))),
+        "{answer:?}"
+    );
+    assert!(root.join("skills/review/SKILL.md").exists());
+    assert!(list(root).is_empty());
+}
+
+/// #3091: a template never writes over a draft that waits for the person: New skill… is refused
+/// with what to do, and the chat's draft is as it was.
+#[test]
+fn an_extensions_template_never_writes_over_a_draft_that_waits() {
+    let tmp = plane();
+    let root = tmp.path();
+    let id = drafted(
+        root,
+        "skills/review/SKILL.md",
+        &whole(&skill_text("review", "A chat's review.")),
+    );
+
+    let (answer, _) = new_from(root, "review", &house());
+
+    let why = answer.unwrap_err();
+    assert!(why.contains("Drafts"), "{why}");
+    let draft = one(root, &id).unwrap();
+    assert_eq!((draft.chat, draft.template), (Some(7), None));
+    assert!(draft.files[0].after.contains("A chat's review."));
+}
+
+/// #3091: [`super::super::create`] never writes what an extension's template answers, so no
+/// way round New skill… makes one without the person's Accept.
+#[test]
+fn create_refuses_an_extensions_template_and_writes_nothing() {
+    let tmp = plane();
+    let root = tmp.path();
+    let mut lines = Vec::new();
+    let mut say = |line: Say| lines.push(line);
+
+    let answer = super::super::create(
+        &mut Ctx {
+            plane: root,
+            built_in: None,
+            by: super::super::By::Window,
+            say: &mut say,
+        },
+        &Level::project(),
+        "review",
+        "Reviews a pull request against the house checklist.",
+        &House,
+        &house(),
+    );
+
+    assert!(answer.is_err(), "{answer:?}");
+    assert!(!root.join("skills/review").exists());
+    assert!(list(root).is_empty());
+}

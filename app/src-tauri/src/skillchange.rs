@@ -389,7 +389,16 @@ fn findings(
         .collect()
 }
 
-/// **Makes a skill** from `template` at `level`.
+/// **What New skill… did** (#3091): its notes, and the draft it kept where an extension's
+/// template made it, which the studio opens in Drafts; `null` where the skill was made.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct SkillMade {
+    pub notes: Vec<String>,
+    pub draft: Option<String>,
+}
+
+/// **Makes a skill** from `template` at `level`: at once from one of purlis's own templates, as a
+/// draft the person accepts from an extension's (#3091, ADR 0101 §1).
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_new(
@@ -400,21 +409,30 @@ pub(crate) async fn skill_new(
     name: String,
     description: String,
     template: SkillTemplateId,
-) -> Result<SkillChanged, String> {
+) -> Result<SkillMade, String> {
     let held = planes.held(&plane)?;
     let executor = views.executor();
     crate::off_the_window("making the skill", move || {
         flag_on()?;
         purlis_core::skills::studio::with_studio(&executor, held.root(), |studio| {
-            heard(held.root(), |cx| {
-                verbs::create(
+            let mut drafted = None;
+            let changed = heard(held.root(), |cx| {
+                let made = verbs::new_skill(
                     cx,
                     &(&level).into(),
                     &name,
                     &description,
                     &Templates { studio },
                     &template.clone().into(),
-                )
+                )?;
+                if let verbs::NewSkill::Drafted(id) = made {
+                    drafted = Some(id);
+                }
+                Ok(())
+            })?;
+            Ok(SkillMade {
+                notes: changed.notes,
+                draft: drafted,
             })
         })
     })
