@@ -323,7 +323,7 @@ impl Artifacts {
                     (StatusCode::NO_CONTENT, Vec::new(), "text/plain")
                 } else {
                     match serve::key(path)
-                        .and_then(|key| Some((one.snapshot.get(&key)?.to_vec(), key)))
+                        .and_then(|key| Some((one.snapshot.served(&key)?.to_vec(), key)))
                     {
                         Some((bytes, key)) => (StatusCode::OK, bytes, serve::content_type(&key)),
                         None => (StatusCode::NOT_FOUND, Vec::new(), "text/plain"),
@@ -368,11 +368,15 @@ impl Artifacts {
             .map(|one| (one.of.clone(), one.snapshot.clone(), one.declared.clone()))
     }
 
-    /// Whether artifact webview `label` may go to `url`: within its own origin only.
+    /// Whether artifact webview `label` may go to `url`: within its own origin only, and never
+    /// to a data file ([`serve::is_data`]), which is no document of the template.
     pub(crate) fn may_navigate(&self, label: &str, url: &tauri::Url) -> bool {
-        self.served()
-            .get(label)
-            .is_some_and(|one| url.as_str().starts_with(&format!("{}/", origin(&one.host))))
+        let data = serve::key(url.path()).is_some_and(|key| serve::is_data(&key));
+        !data
+            && self
+                .served()
+                .get(label)
+                .is_some_and(|one| url.as_str().starts_with(&format!("{}/", origin(&one.host))))
     }
 
     /// **The link `href` a person followed in artifact webview `label`'s page** (#5956): its
@@ -1713,6 +1717,44 @@ mod tests {
         assert!(!artifacts.may_navigate("main", &url(&at("aaa", "/"))));
     }
 
+    /// The exploit of the review of #5978: data is outside the approval, so a page planted
+    /// there (`git add -f data/details.html`, or a Regenerate writing it) must never load as a
+    /// document of an approved template, where its script would run with the page's port.
+    #[test]
+    fn a_data_file_is_never_served_or_navigated_to_even_when_the_template_is_approved() {
+        let artifacts = served(&[("artifact-1", "main", "aaa")]);
+        let planted = "<script>parent.purlis.port.read('x')</script>";
+        artifacts.served().get_mut("artifact-1").unwrap().snapshot = snapshot(&[
+            (
+                "index.html",
+                "<a href='data/details.html'>details</a><script>1</script>",
+            ),
+            ("data/details.html", planted),
+            ("data/chart.svg", "<svg onload='x()'/>"),
+            ("data.json", "{}"),
+        ]);
+        standing_of(&artifacts, "artifact-1", Standing::Approved);
+        let url = |text: &str| tauri::Url::parse(text).unwrap();
+        for path in [
+            "/data/details.html",
+            "/data/chart.svg",
+            "/data%2fdetails.html",
+            "/data.json",
+        ] {
+            let answered = artifacts.answer("artifact-1", &get(&at("aaa", path)));
+            assert_eq!(answered.response.status(), StatusCode::NOT_FOUND, "{path}");
+            assert!(answered.response.body().is_empty(), "{path}");
+            assert!(
+                !artifacts.may_navigate("artifact-1", &url(&at("aaa", path))),
+                "{path}"
+            );
+        }
+        // The template itself is still served, and still runs.
+        let page = artifacts.answer("artifact-1", &get(&at("aaa", "/")));
+        assert_eq!(page.response.status(), StatusCode::OK);
+        assert!(artifacts.may_navigate("artifact-1", &url(&at("aaa", "/index.html"))));
+    }
+
     #[test]
     fn a_window_that_goes_takes_only_its_own_artifacts_with_it() {
         let artifacts = served(&[
@@ -2035,6 +2077,7 @@ mod tests {
             "<h1>9 open</h1>",
         )
         .unwrap();
+        std::fs::write(dir.path().join("artifacts/page/style.css"), "h1 {}").unwrap();
         std::fs::write(dir.path().join("artifacts/page/data.json"), "{}").unwrap();
         assert_eq!(
             served_page(&artifacts),
@@ -2045,8 +2088,11 @@ mod tests {
         artifacts.read_again("artifact-1", "main", None).unwrap();
 
         assert_eq!(served_page(&artifacts), b"<h1>9 open</h1>");
+        let style = artifacts.answer("artifact-1", &get(&at("aaa", "/style.css")));
+        assert_eq!(style.response.status(), StatusCode::OK);
+        // Its data is read on its port, never served as a file of the folder.
         let data = artifacts.answer("artifact-1", &get(&at("aaa", "/data.json")));
-        assert_eq!(data.response.status(), StatusCode::OK);
+        assert_eq!(data.response.status(), StatusCode::NOT_FOUND);
     }
 
     #[test]
