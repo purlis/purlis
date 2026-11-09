@@ -28,7 +28,7 @@ fn a_line_of_commits_is_replayed_onto_the_remotes_with_nothing_at_the_root_moved
         LONG,
     );
 
-    let Replayed::Onto(tip) = replayed else {
+    let Ok(tip) = replayed else {
         panic!("{replayed:?}");
     };
     // Nothing at the root moved: HEAD, the index and the work tree are as they were.
@@ -66,7 +66,7 @@ fn a_commit_the_remote_already_has_or_that_comes_to_nothing_is_dropped() {
     write(&two.theirs, "same.md", "both wrote this\n");
     two.land_theirs("same on both");
 
-    let Replayed::Onto(tip) = replay(
+    let Ok(tip) = replay(
         &two.mine,
         "HEAD",
         "refs/remotes/origin/release",
@@ -103,7 +103,10 @@ fn a_conflict_stops_the_replay_naming_the_files_and_nothing_moves() {
         LONG,
     );
 
-    assert_eq!(replayed, Replayed::Conflict(vec!["shared.md".to_owned()]));
+    assert_eq!(
+        replayed,
+        Err(Unreplayed::Conflict(vec!["shared.md".to_owned()]))
+    );
     assert_eq!(two.head(), before);
     assert_eq!(run(&two.mine, &["status", "--porcelain"]), "");
     assert!(crate::gitstate::stopped(&two.mine).is_none());
@@ -125,7 +128,7 @@ fn nothing_of_its_own_replays_onto_the_remotes_own_commit() {
 
     assert_eq!(
         replayed,
-        Replayed::Onto(run(
+        Ok(run(
             &two.mine,
             &["rev-parse", "refs/remotes/origin/release"]
         ))

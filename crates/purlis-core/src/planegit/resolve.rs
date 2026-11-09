@@ -17,41 +17,13 @@
 
 use std::path::Path;
 
+pub use super::resolvefolder::{
+    Chosen, Conflicts, HeldKey, Resolving, Settled, Side, held, markers_in, path as folder,
+    said_by_hand,
+};
 use super::{Claim, PushResult, changed_paths, git, rebase_in_progress, resolvefolder, tail};
 use crate::gitstate;
 use crate::repocmd::Sink;
-
-/// How a press of Resolve, Continue, Skip or Abort ended.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Settled {
-    /// This machine's commits and the remote's are one line now. What is left is the push
-    /// ([`push_after`]).
-    Replayed,
-    /// These files conflict, and a resolve folder holds them for the person or a chat.
-    Stopped(Vec<String>),
-    /// What is settled brings nothing the remote lacks: Skip drops this machine's side, as a
-    /// replay drops a commit left empty.
-    Empty,
-    /// The resolve folder, or a stop an older build left at the root, is gone, and nothing else
-    /// changed.
-    Aborted,
-    /// Nothing was changed, and why, as a sentence for the person.
-    Refused(String),
-}
-
-/// The files of a conflict, by who may settle them.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Conflicts {
-    /// Files git marked the conflict in, still unsettled: a person's or a chat's to edit.
-    pub marked: Vec<String>,
-    /// Files git could not mark the conflict in, still unsettled: a binary file, a file one
-    /// side deleted, a link or a submodule. The person settles each in a terminal, by choosing
-    /// a side and staging it.
-    pub by_hand: Vec<String>,
-    /// The settings file, where both sides changed keys each their own way (#5852): the person
-    /// chooses each key's value in the window, and no marker is ever written into it.
-    pub keyed: Vec<String>,
-}
 
 /// What Continue says of a stop an older purlis left at the root.
 const AT_THE_ROOT: &str = "A rebase or merge is stopped in the project itself, from before \
@@ -67,13 +39,8 @@ pub fn start(root: &Path, say: Sink) -> Settled {
 
 /// **Continue**: commit what is settled in the resolve folder and move the project onto it.
 /// `shown` are the files the window showed; `keys` the person's choice for each settings key
-/// both sides changed ([`resolvefolder::Chosen`]).
-pub fn carry_on(
-    root: &Path,
-    shown: &[String],
-    keys: &[resolvefolder::Chosen],
-    say: Sink,
-) -> Settled {
+/// both sides changed ([`Chosen`]).
+pub fn carry_on(root: &Path, shown: &[String], keys: &[Chosen], say: Sink) -> Settled {
     if resolvefolder::held(root).is_none() && stopped_at_the_root(root) {
         return Settled::Refused(AT_THE_ROOT.into());
     }
@@ -170,15 +137,6 @@ pub fn held_from_chats(root: &Path, files: &[String]) -> Vec<String> {
         .filter(|path| crate::rootupdate::path_is_denied(path, root))
         .cloned()
         .collect()
-}
-
-/// Whether `text` has a line that starts with one of git's conflict markers: the opener, the
-/// closer, or the common ancestor's (`diff3`, `zdiff3`). The separator alone is not one, since
-/// a Markdown heading is underlined the same way.
-pub fn markers_in(text: &[u8]) -> bool {
-    text.split(|b| *b == b'\n').any(|line| {
-        line.starts_with(b"<<<<<<<") || line.starts_with(b">>>>>>>") || line.starts_with(b"|||||||")
-    })
 }
 
 #[cfg(test)]

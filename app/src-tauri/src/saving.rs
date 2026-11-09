@@ -344,8 +344,8 @@ pub fn saving_of(root: &Path) -> PlaneSaving {
             .resolve_offered
             .then(|| planegit::TO_RESOLVE.to_owned()),
         stopped_by: standing.stopped_by.map(str::to_owned),
-        resolving: planegit::resolvefolder::held(root).map(|held| SaveResolving {
-            folder: planegit::resolvefolder::path(root).display().to_string(),
+        resolving: planegit::resolve::held(root).map(|held| SaveResolving {
+            folder: planegit::resolve::folder(root).display().to_string(),
             keys: held
                 .keys
                 .into_iter()
@@ -562,12 +562,16 @@ pub fn settle(
 ) -> Result<SaveSettled, String> {
     use planegit::resolve::{self, Settled};
     let mut lines: Vec<String> = Vec::new();
-    let chosen: Vec<planegit::resolvefolder::Chosen> = keys
+    let chosen: Vec<planegit::resolve::Chosen> = keys
         .iter()
-        .map(|key| planegit::resolvefolder::Chosen {
+        .map(|key| planegit::resolve::Chosen {
             file: key.file.clone(),
             key: key.key.clone(),
-            theirs: key.theirs,
+            side: if key.theirs {
+                planegit::resolve::Side::Theirs
+            } else {
+                planegit::resolve::Side::Ours
+            },
         })
         .collect();
     let settled = {
@@ -593,7 +597,7 @@ pub fn settle(
             format!(
                 "The files below conflict. Settle them in the resolve folder {}, in a chat or \
                  by hand, then Continue. Abort removes the folder and changes nothing here.",
-                planegit::resolvefolder::path(root).display()
+                planegit::resolve::folder(root).display()
             ),
             files,
         ),

@@ -117,22 +117,18 @@ pub async fn resolve_save_in_a_chat(
 fn resolve_request(held: &Arc<Held>, size: Size) -> Result<Fixing, String> {
     let _one = ONE_AT_A_TIME.lock().unwrap_or_else(PoisonError::into_inner);
     let root = held.root().to_path_buf();
-    let Some(found) = planegit::resolvefolder::conflicts(&root)
-        .filter(|found| !(found.marked.is_empty() && found.by_hand.is_empty()))
-    else {
+    let found = planegit::resolve::conflicts(&root);
+    if found.marked.is_empty() && found.by_hand.is_empty() {
         return Err(
             "No resolve is open on a conflict in this project, so there is nothing for a chat \
              to settle."
                 .into(),
         );
-    };
-    let folder = planegit::resolvefolder::path(&root);
+    }
+    let folder = planegit::resolve::folder(&root);
     // A conflict git could not mark is never handed to a chat: the person settles it.
     if !found.by_hand.is_empty() {
-        return Err(planegit::resolvefolder::said_by_hand(
-            &folder,
-            &found.by_hand,
-        ));
+        return Err(planegit::resolve::said_by_hand(&folder, &found.by_hand));
     }
     let held_back = planegit::resolve::held_from_chats(&root, &found.marked);
     if !held_back.is_empty() {
@@ -146,7 +142,7 @@ fn resolve_request(held: &Arc<Held>, size: Size) -> Result<Fixing, String> {
                 .join(", ")
         ));
     }
-    let (remote, own) = planegit::resolvefolder::sides(&root)
+    let (remote, own) = planegit::resolve::sides(&root)
         .ok_or("purlis cannot tell which commits the conflict is between")?;
     let relative = folder
         .strip_prefix(&root)

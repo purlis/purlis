@@ -25,62 +25,58 @@ use std::time::{Duration, Instant};
 
 use super::{bringin, git, is_object_name, line_of, tail};
 
-/// How a replay ended.
+/// Why a replay made no line to move onto. Nothing moved.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum Replayed {
-    /// Every commit is made: the last one, to move onto (`onto` itself where none was left).
-    Onto(String),
-    /// A commit's change conflicts with what it is replayed onto, in these files. Nothing moved.
+pub(super) enum Unreplayed {
+    /// A commit's change conflicts with what it is replayed onto, in these files.
     Conflict(Vec<String>),
     /// Asked to sign, git could not write a commit: the signer's words.
     Unsigned(String),
     /// Still running at the deadline.
     OutOfTime,
-    /// git could not do it, in its words. Nothing moved.
+    /// git could not do it, in its words.
     Failed(String),
 }
 
 /// **Replay `head`'s own commits onto `onto`**, off to the side, giving up at `deadline`. `head`
-/// and `onto` are anything git reads as a commit.
+/// and `onto` are anything git reads as a commit. `Ok` is the last commit made, to move onto
+/// (`onto` itself where none was left).
 pub(super) fn replay(
     root: &Path,
     head: &str,
     onto: &str,
     sign: bool,
     deadline: Duration,
-) -> Replayed {
+) -> Result<String, Unreplayed> {
     let started = Instant::now();
     let Some(onto_id) = commit_id(root, onto) else {
-        return Replayed::Failed(format!("{onto} is not a commit here"));
+        return Err(Unreplayed::Failed(format!("{onto} is not a commit here")));
     };
-    let picks = match picked(root, head, &onto_id) {
-        Ok(picks) => picks,
-        Err(said) => return Replayed::Failed(said),
-    };
+    let picks = picked(root, head, &onto_id).map_err(Unreplayed::Failed)?;
     let mut at = onto_id;
     for pick in picks {
         if started.elapsed() >= deadline {
-            return Replayed::OutOfTime;
+            return Err(Unreplayed::OutOfTime);
         }
         let parent = match line_of(root, &["rev-parse", "--verify", "-q", &format!("{pick}^")]) {
             Some(parent) => parent,
-            None => return Replayed::Failed(format!("{pick} has no parent to replay it from")),
+            None => {
+                return Err(Unreplayed::Failed(format!(
+                    "{pick} has no parent to replay it from"
+                )));
+            }
         };
-        let tree = match merged(root, &parent, &at, &pick) {
-            Ok(Merged::Tree(tree)) => tree,
-            Ok(Merged::Conflict(files)) => return Replayed::Conflict(files),
-            Err(said) => return Replayed::Failed(said),
+        let tree = match merged(root, &parent, &at, &pick).map_err(Unreplayed::Failed)? {
+            Merged::Tree(tree) => tree,
+            Merged::Conflict(files) => return Err(Unreplayed::Conflict(files)),
         };
         // Nothing left to change: dropped, as a rebase drops it.
         if line_of(root, &["rev-parse", &format!("{at}^{{tree}}")]).as_deref() == Some(&tree) {
             continue;
         }
-        at = match written(root, &pick, &tree, &at, sign, deadline) {
-            Ok(commit) => commit,
-            Err(ended) => return ended,
-        };
+        at = written(root, &pick, &tree, &at, sign, deadline)?;
     }
-    Replayed::Onto(at)
+    Ok(at)
 }
 
 /// The commit `rev` names, or `None`.
@@ -148,7 +144,7 @@ fn written(
     parent: &str,
     sign: bool,
     deadline: Duration,
-) -> Result<String, Replayed> {
+) -> Result<String, Unreplayed> {
     let read = git::run(
         root,
         &[
@@ -163,12 +159,12 @@ fn written(
     )
     .ok()
     .filter(git::Run::ok)
-    .ok_or_else(|| Replayed::Failed(format!("{pick} could not be read")))?;
+    .ok_or_else(|| Unreplayed::Failed(format!("{pick} could not be read")))?;
     let mut fields = read.out.splitn(4, '\0');
     let (Some(name), Some(email), Some(date), Some(message)) =
         (fields.next(), fields.next(), fields.next(), fields.next())
     else {
-        return Err(Replayed::Failed(format!("{pick} could not be read")));
+        return Err(Unreplayed::Failed(format!("{pick} could not be read")));
     };
     let author = bringin::Author { name, email, date };
     bringin::commit_tree_as(
@@ -181,9 +177,9 @@ fn written(
         deadline,
     )
     .map_err(|unmade| match unmade {
-        bringin::Unmade::Unsigned(said) => Replayed::Unsigned(said),
-        bringin::Unmade::OutOfTime => Replayed::OutOfTime,
-        bringin::Unmade::Failed(said) => Replayed::Failed(said),
+        bringin::Unmade::Unsigned(said) => Unreplayed::Unsigned(said),
+        bringin::Unmade::OutOfTime => Unreplayed::OutOfTime,
+        bringin::Unmade::Failed(said) => Unreplayed::Failed(said),
     })
 }
 

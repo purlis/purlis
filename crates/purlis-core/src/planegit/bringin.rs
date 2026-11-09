@@ -841,7 +841,8 @@ pub(super) fn commit_tree_as(
             }
         }
         Ok(run) if run.code.is_none() => Err(Unmade::OutOfTime),
-        // `commit-tree` says the signer failed in its own words, with or without git's line.
+        // `commit-tree` says the signer failed in its own words, with or without git's line,
+        // in English: every git call runs with `LC_ALL=C` (`worktree::git`, #5886).
         Ok(run)
             if sign
                 && (run.err.contains(super::UNWRITTEN) || run.err.contains("failed to sign")) =>

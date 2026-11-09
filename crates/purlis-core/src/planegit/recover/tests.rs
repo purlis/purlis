@@ -4,10 +4,46 @@
 //! Recovering a root left part-way, against real git: two clones of one plane, a rebase cut off
 //! between two picks, and what a chat wrote after it.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use super::*;
 use crate::planegit::tests::twoclones::{Two, commit, read, run, write};
+
+/// A step under way at a root, for as long as it is held: the marker is removed when it drops.
+///
+/// No step this build runs at a root is multi-step any more (#5855): a replay and a resolve are
+/// made off to the side, and the root moves with one `reset --keep`. So nothing marks one; the
+/// tests write the marker a build from before that left, which recovery still reads.
+#[derive(Debug)]
+struct Marked {
+    path: PathBuf,
+}
+
+impl Drop for Marked {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
+/// Write the marker for `op` at `root`, going `onto` from `base`. `None` where the root is on
+/// no branch or the marker could not be written: the step then runs unmarked, as it did before.
+fn mark(root: &Path, op: Op, onto: &str, base: &str) -> Option<Marked> {
+    let marker = Marker {
+        op,
+        branch: line_of(root, &["symbolic-ref", "-q", "HEAD"])?,
+        orig_head: head(root)?,
+        onto: onto.to_owned(),
+        base: base.to_owned(),
+        stop_head: None,
+        result: None,
+        pid: std::process::id(),
+    };
+    let git_dir = git_dir_of(root);
+    marker.write(&git_dir)?;
+    Some(Marked {
+        path: git_dir.join(MARKER),
+    })
+}
 
 const SHARED: &str = "one\ntwo\nthree\nfour\nfive\n";
 

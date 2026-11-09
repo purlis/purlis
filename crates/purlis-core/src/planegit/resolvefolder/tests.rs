@@ -435,7 +435,7 @@ fn a_charter_toml_key_conflict_is_settled_in_the_resolve_folder_with_no_marker()
     let theirs = Chosen {
         file: "charter.toml".into(),
         key: "sandbox.mode".into(),
-        theirs: true,
+        side: Side::Theirs,
     };
     assert_eq!(
         carry_on(&two.mine, &[], &[theirs], &mut said),

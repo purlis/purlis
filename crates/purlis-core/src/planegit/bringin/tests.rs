@@ -729,7 +729,7 @@ fn continue_settles_a_key_conflict_in_charter_toml_that_a_save_named() {
     let ours = folder::Chosen {
         file: "charter.toml".into(),
         key: "sandbox.mode".into(),
-        theirs: false,
+        side: folder::Side::Ours,
     };
 
     assert_eq!(
