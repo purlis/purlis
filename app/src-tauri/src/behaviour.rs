@@ -4242,14 +4242,12 @@ fn a_real_claude_code_chat_on_a_runner_is_held(target: &Target, on: ClaudeFolder
         }
         _ => said,
     };
-    let chat_says = |direct: &str, at_the_full_sandbox: bool| {
+    let chat_says = |direct: &str| {
         if runner.is_a_pod() {
             let port = runner.serves_a_stand_in_model();
-            // At the full sandbox a chat reaches a service on its machine's loopback once the
-            // person lets it, as anyone's server outside the chat.
-            if at_the_full_sandbox {
-                target.gives(port);
-            }
+            // A chat reaches a service on its machine's loopback, at every level, once the
+            // person lets it (#2445), as anyone's server outside the chat.
+            target.gives(port);
         }
         let id = target
             .sessions
@@ -4265,6 +4263,9 @@ fn a_real_claude_code_chat_on_a_runner_is_held(target: &Target, on: ClaudeFolder
             .expect("the sandboxed chat starts on the runner")
             .number;
         let pane = Pane::on(target, id);
+        if runner.is_a_pod() {
+            pane.shows("MODEL reached.");
+        }
         pane.shows("TRIED.");
         pane.shows("CLAUDE-CODE ended 0.");
         pane.shows(match on {
@@ -4294,9 +4295,19 @@ fn a_real_claude_code_chat_on_a_runner_is_held(target: &Target, on: ClaudeFolder
     };
     // At the floor a chat reaches other machines as it reaches them with no sandbox, as a
     // Codex chat there does; at the full sandbox it reaches them only through its proxy.
-    chat_says("DIRECT yes.", false);
+    if runner.is_a_pod() {
+        // The project reaches the runner with its first chat, and a port is given in the
+        // project as the runner holds it.
+        let id = target
+            .sessions
+            .open(None, &a_shell("printf 'HELD.'; read line"), &|_| {})
+            .expect("a chat starts on the runner");
+        Pane::on(target, id).shows("HELD.");
+        target.sessions.close(id).expect("it closes");
+    }
+    chat_says("DIRECT yes.");
     at_the_full_sandbox_on(target, runner);
-    chat_says("DIRECT no.", true);
+    chat_says("DIRECT no.");
     if let Some((browsers, browser)) = browser {
         browsers.close(&browser).expect("the browser ends");
     }
