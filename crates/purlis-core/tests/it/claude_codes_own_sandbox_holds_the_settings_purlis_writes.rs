@@ -1061,15 +1061,23 @@ fn a_held_file_the_host_rewrites_by_a_rename_while_the_chat_runs_stays_held() {
         let screened = purlis_core::harness::claude::project::screen_with(Some(&root), None);
         let config = root.join("repo/.git/config");
         let (ready, go) = (tmp.join("probe-ready"), tmp.join("probe-go"));
-        let command = format!(
-            ": > '{ready}'; i=0; while [ ! -e '{go}' ] && [ $i -lt 120 ]; do sleep 1; \
-             i=$((i+1)); done; if [ ! -e '{go}' ]; then echo 'rename-probe: no go'; \
-             elif printf '\\n[probe]\\n\\twritten = yes\\n' >> '{config}' 2>/dev/null; then \
-             echo 'rename-probe: written'; else echo 'rename-probe: refused'; fi",
-            ready = ready.display(),
-            go = go.display(),
-            config = config.display(),
-        );
+        // As a script of its own, as every probe here is run: Claude Code's own check of a
+        // command reads a loop typed whole as one it cannot judge.
+        let script = at.join("rename-probe.sh");
+        fs::write(
+            &script,
+            format!(
+                ": > '{ready}'\ni=0\nwhile [ ! -e '{go}' ] && [ $i -lt 120 ]; do sleep 1; \
+                 i=$((i+1)); done\nif [ ! -e '{go}' ]; then echo 'rename-probe: no go'\n\
+                 elif printf '\\n[probe]\\n\\twritten = yes\\n' >> '{config}' 2>/dev/null; \
+                 then echo 'rename-probe: written'\nelse echo 'rename-probe: refused'\nfi\n",
+                ready = ready.display(),
+                go = go.display(),
+                config = config.display(),
+            ),
+        )
+        .expect("the probe's script");
+        let command = format!("/bin/sh '{}'", script.display());
         // The host's git, outside the sandbox: a lockfile renamed over the config once the
         // chat's command runs.
         let host = {
@@ -1102,7 +1110,10 @@ fn a_held_file_the_host_rewrites_by_a_rename_while_the_chat_runs_stays_held() {
             &what,
             command,
         );
-        assert!(host.join().expect("the host's rename"), "{what}: never ready:\n{said}");
+        assert!(
+            host.join().expect("the host's rename"),
+            "{what}: never ready:\n{said}"
+        );
         let config_now = fs::read_to_string(&config).expect("the config");
         assert!(config_now.contains("host@example.com"), "{config_now}");
         assert!(
