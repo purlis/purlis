@@ -128,7 +128,7 @@ fn a_load_answered_before_the_host_took_its_line_still_opens_one_run() {
     finds_and_loads_a_skill_over_mcp(Duration::from_millis(500));
 }
 
-/// How long the model waits for an answer.
+/// How long the test waits for the server's answer, or for the load's run to reach the host.
 const PATIENCE: Duration = Duration::from_secs(30);
 
 /// The fallback route end to end, with a host that takes `host_takes` to hear a tool line.
@@ -240,12 +240,19 @@ fn finds_and_loads_a_skill_over_mcp(host_takes: Duration) {
     );
     assert!(loaded.ends_with("Run ship.sh.\n"), "{loaded}");
 
-    // The load's run, on the line a tool hook sends, from inside the chat.
-    let mut told: Vec<ToolCall> = heard.try_iter().collect();
-    told.extend(support::spooled_running(&hooks, CHAT, |line| match line {
+    // The load's run, on the line a tool hook sends, from inside the chat (#5913). The load
+    // answers once the host took the line, or once its hook stopped waiting and spooled it, so
+    // the line is in one of two places: the spool, drained first, or the host's hearing. A
+    // copy the host is still recording is waited for by the drain and not handed on (#952),
+    // and the host has heard it by then; a copy the drain hands on is the line, and the host
+    // hearing it late is not a second run, so it is not waited for.
+    let mut told: Vec<ToolCall> = support::spooled_running(&hooks, CHAT, |line| match line {
         spool::Spooled::Tool(call) => Some(call),
         _ => None,
-    }));
+    });
+    if told.is_empty() {
+        told.extend(heard.recv_timeout(PATIENCE).ok());
+    }
     assert_eq!(told.len(), 1, "{told:?}");
     let line = &told[0];
     assert_eq!(line.chat, CHAT);
