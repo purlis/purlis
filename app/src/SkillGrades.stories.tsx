@@ -22,7 +22,7 @@ import {
 import { inWorkspace, skillRowId, type GradingAt } from "./skillStudio";
 import { skill, studio } from "./skillsListing.testkit";
 import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
-import { expectFocusInSight, untilFocusInSight, untilFocusWithin } from "./stories.testkit";
+import { expectFocusInSight, untilFocusInSight, tabInto } from "./stories.testkit";
 import type {
   GradeRow,
   GradeScorecard,
@@ -377,20 +377,6 @@ const meta = {
 
 export default meta;
 type Story = StoryObj<typeof meta>;
-
-/**
- * Tab, until the keyboard is inside `target`, at most `steps` times. Always ends in
- * `untilFocusWithin`, landed or not, so the frame React Aria scrolls the focused cell into sight
- * on is drawn before a check reads where the focus is (#4103, #4672).
- */
-async function tabInto(target: () => Element | null, steps = 60): Promise<void> {
-  for (let step = 0; step < steps; step++) {
-    const into = target();
-    if (into !== null && into.contains(document.activeElement)) break;
-    await userEvent.tab();
-  }
-  await untilFocusWithin(target, "the keyboard reaches it by Tab");
-}
 
 /** deploy's grades, the latest of which ran its outcome evals too. */
 const BOTH: GradeRow[] = GRADES.map((one, at) =>

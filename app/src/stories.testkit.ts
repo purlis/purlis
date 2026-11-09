@@ -435,12 +435,22 @@ function describe(element: Element): string {
   return name ? `the ${role} "${name}"` : `a ${role}`;
 }
 
-/** Tab, until the keyboard is inside `target`, at most `steps` times. */
-export async function tabInto(target: () => Element | null, steps = 30): Promise<void> {
+/**
+ * **Tab, until the keyboard is inside `target`**, at most `steps` times. Each press is read on
+ * the frame after it: a table's cell takes the keyboard first and hands it to the control inside
+ * it on that frame (React Aria's `useGridCell`), and WebKit can draw that frame late in a busy
+ * run. Read at once, the keyboard still on the cell looked short of `target`, and one more Tab
+ * took it past the table and round the page; arriving again from out of sight, WebKit centred
+ * the cell instead of bringing it to the nearer edge, and the picture was scrolled off its
+ * baseline (#4098, SkillGrades › Grades). Ends in `untilFocusWithin`, landed or not, so the frame
+ * that brings the focus into sight is drawn before a check reads where it is (#4103, #4672).
+ */
+export async function tabInto(target: () => Element | null, steps = 60): Promise<void> {
   for (let step = 0; step < steps; step++) {
     const into = target();
-    if (into !== null && into.contains(document.activeElement)) return;
+    if (into !== null && into.contains(document.activeElement)) break;
     await userEvent.tab();
+    await nextFrame();
   }
   await untilFocusWithin(target, "the keyboard reaches it by Tab");
 }
