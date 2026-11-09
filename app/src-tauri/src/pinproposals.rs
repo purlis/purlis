@@ -375,6 +375,7 @@ pub async fn pin_proposed(
                         live,
                         too_large: None,
                         fresh: None,
+                        badge: None,
                     },
                     workspace,
                 ))

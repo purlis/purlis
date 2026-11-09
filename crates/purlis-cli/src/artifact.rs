@@ -221,6 +221,14 @@ pub fn run(here: &Here, command: ArtifactCommand) -> Result<Code, String> {
             // A chat proposes; only the person pins (#5963, ADR 0120 §1). Which chat it is, and so
             // which workspace, is the app's record of it, never a flag: `-w` names nothing here.
             if !crate::skill::at_the_persons_terminal(root) {
+                // A template is copied into the workspace before it is pinned: no chat does that
+                // either, so it is the person's to pin from the window or their terminal.
+                let Some(folder) = folder else {
+                    return refused(
+                        "a chat pins no extension template, so nothing was pinned: ask the person \
+                         to pin it with `purlis artifact pin --template` at their terminal",
+                    );
+                };
                 let proposed = purlis_core::artifact::proposal::Proposed {
                     folder,
                     name,
