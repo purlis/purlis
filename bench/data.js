@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794256542014,
+  "lastUpdate": 1794258801561,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -45150,6 +45150,48 @@ window.BENCHMARK_DATA = {
             "value": 102.805683,
             "unit": "ms",
             "extra": "median of 5 runs: 101.572, 101.655, 102.806, 102.884, 103.600 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "301ae8a3619937b569b9b08979a5bbc539bb81f1",
+          "message": "Contract: remove Radix and the old ad-hoc styles (#2930) (#6024)\n\n* Drop what Radix left behind: its popper's arrive animation, the checks that allowed it, and three packages nothing imports (#2930)\n\nThe popover family draws its own arrive (ui/popover/popover.css), so the App.css rule hung off\n[data-radix-popper-content-wrapper] matched nothing. The complaints testkit's --radix- wiring\nallowance, chrome.test's and e2e/covers.ts's popper wrapper selector go with it, and\n@radix-ui/react-checkbox, -radio-group and -switch leave package.json and the lockfile.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M70M4AWH3991GD2R8VYVGGC2\nPurlis-Persona: steward\n\n* The whole Explorer's section fold is the disclosure family's, and the old row set is deleted (#2930)\n\nThe last button wearing .ui-row, Repos and branches' folding head in the whole Explorer, is now\na Disclosure (ui/disclosure) at heading level 2: the same button, aria-expanded and\naria-controls, Enter and Space, a folded tree kept mounted and hidden, held first by\nExplorerSectionFold.test.tsx. With nothing left wearing it, primitives/collections.css and its\ntest go, the list family's rawButtons for ui-row goes, and the controls and overlays guards no\nlonger take ui-row or ui-tree-row as a native button's look. The Grip and Popover stories draw\ntheir rows with the button family.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M70M4AWH3991GD2R8VYVGGC2\nPurlis-Persona: steward\n\n* Hold the whole Explorer's section fold as a keyboard and a screen reader meet it (#2930)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M70M4AWH3991GD2R8VYVGGC2\nPurlis-Persona: steward\n\n* A tab's close is the tabs family's TabCloser, not a raw button let through by ui-tabs-control (#2930)\n\nThe × (and a task's own tab's −) is now React Aria's Button through the shared press, with the\ntabs family's closer part: the same name, glyph, data-minimise, Tab stop on the front tab only\n(#5341), and a background tab's press that leaves the keyboard where it was (#5445), held first\nby TabCloser.test.tsx. Its tooltip is the family's: the row's words, the note under them. The\ntabs family's rawButtons and the controls allowance's StripMarks entry go; tests and scenarios\nfind it by its part, not by .closer.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M70M4AWH3991GD2R8VYVGGC2\nPurlis-Persona: steward\n\n* Hold a tab's close as the keyboard, the pointer and a screen reader meet it (#2930)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M70M4AWH3991GD2R8VYVGGC2\nPurlis-Persona: steward\n\n* Settings' nav and its Edit as TOML files are the panel family's page navigation (#2930)\n\nSettingsLayout's groups and RawLinks' files were raw buttons, the nav under Radix's roving focus\nand let through the button lint by ui-settings-nav-item and ui-settings-raw-file. Both are now\nViewNav (ui/panel/ViewFrame): one Tab stop, the arrows, Home and End, Enter, Space or a press,\nthe stop back on the current group once the keyboard leaves (held first in SettingsTab.test), and\naria-current=\"page\" where it was \"true\". The files' group is a navigation named Edit as TOML.\nViewPage gains sub, drawn set in (a harness profile's page), and a page with no count names\nitself by its name alone. The eslint UNFAMILIED list and rawButtons plumbing, the last\ncontrols allowance entries and the nav's hand-drawn CSS go.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M70M4AWH3991GD2R8VYVGGC2\nPurlis-Persona: steward\n\n* Changelog: Settings' nav on the page navigation, a tab's close tooltip (#2930)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M70M4AWH3991GD2R8VYVGGC2\nPurlis-Persona: steward\n\n* Radix leaves: react-roving-focus and roving.ts go, and a guard keeps it gone (#2930)\n\nWith the Inbox on the list grid (#5995) and Settings' nav on ViewNav, nothing imports\n@radix-ui/react-roving-focus or useTabStop. The package leaves package.json, and the lockfile is\nmain's with every @radix-ui entry taken out (the first commit's offline uninstall had dropped\n@emnapi entries too, which put npm ci out of sync). radixGone.guard.test.ts fails on a Radix\nimport anywhere the window is built from and on a Radix dependency; projectShown's guard no\nlonger lists Radix kinds. ui-primitives.md and design-system.md say Radix is gone.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M70M4AWH3991GD2R8VYVGGC2\nPurlis-Persona: steward\n\n* Review: no raw button is let through by role or class, the stories draw TabCloser, ViewNav loads alone (#2930)\n\nThe button family's lint drops its otherFamilies option: nothing passed it once UNFAMILIED and\nrawButtons went, so it was an exemption kept for nobody. The tabs and pane band stories draw a\ntab's close with TabCloser, so the stories' keyboard, axe and pictures hold the real one.\nViewNav moves to ui/panel/ViewNav.tsx (re-exported from ViewFrame): Settings' pieces importing\nthe whole view frame had pulled keys/contexts and actions into the theme specimen, which\nSpecimen.test refuses. Stale .ui-row comments, a Radix focus-guard selector, the views test's\nEdit as TOML query and component-stories.md's rawButtons line follow.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M70M4AWH3991GD2R8VYVGGC2\nPurlis-Persona: steward\n\n* Story baselines from run 42680672256: Settings and the view frame's navigation, Grip and Popover rows on the button family (#2930)\n\nDrawn by this pull request's stories run and pulled with tools/story-baselines-pull.mjs. Main's\nstale Classic List > A Text Box In A Row pictures are left out (#6026 carries them).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M70M4AWH3991GD2R8VYVGGC2\nPurlis-Persona: steward\n\n* Scenarios find Edit as TOML's files in its navigation, through one helper (#2930)\n\nThe files moved from a role=group labelled by its paragraph onto ViewNav, a navigation named\nEdit as TOML, so settings-editors and merge-keyboard looked for a group that is no longer drawn\n(\"Edit as TOML offered no charter.toml\" in WebKitGTK). Their two copies of openRawFile become\none in e2e/settingsTab.ts, which reads the navigation by its name.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M70M4AWH3991GD2R8VYVGGC2\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-09T20:23:48Z",
+          "tree_id": "ab8c8acc98be6e3232fa05f6d9f8983cdf327a33",
+          "url": "https://github.com/purlis/purlis/commit/301ae8a3619937b569b9b08979a5bbc539bb81f1"
+        },
+        "date": 1794258795797,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.32534199999999996,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.320, 0.323, 0.325, 0.329, 0.340 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6845455,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.414, 16.636, 16.685, 16.687, 16.709 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.2992275,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.150, 101.282, 101.299, 101.966, 102.009 ms"
           }
         ]
       }
