@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794251095696,
+  "lastUpdate": 1794253927348,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -45066,6 +45066,48 @@ window.BENCHMARK_DATA = {
             "value": 101.667395,
             "unit": "ms",
             "extra": "median of 5 runs: 100.728, 100.981, 101.667, 101.916, 102.089 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "3b3bdf586aa098b33de38893b0da7164bc7258fa",
+          "message": "The ✋ counts every open project's Blocking asks; the Dock badge; Asks opens on all projects (#5999) (#6028)\n\nThe right bar's ✋ counted the project in front alone. It now counts every\nopen project's asks, in this window and the others, and says those outside\nthe project in front as \"+N elsewhere\" (ADR 0121 decision 4). The Dock badge\nshows the same total through Tauri's setBadgeCount, and nothing at 0. Asks\nopens on All projects; This project and This workspace narrow the list and\nnever the ✋. A chat whose every ask is snoozed is no longer told to the other\nwindows, whose ✋ counted it.\n\nBrought onto main from #6023 (da6010d42): the Inbox moved onto the list\nfamily meanwhile (#3123), so the tests ask for its chat and project groups\nas rowgroups (chatGroup), and InboxElsewhere keeps main's herePlaces.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M70NT4M0BRRWFQ9BXF29P0H1\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-09T19:17:59Z",
+          "tree_id": "ad376e93d5dc3e60aba20e7578f3500a682fa575",
+          "url": "https://github.com/purlis/purlis/commit/3b3bdf586aa098b33de38893b0da7164bc7258fa"
+        },
+        "date": 1794253920548,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.545159,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.544, 0.544, 0.545, 0.550, 0.553 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.057717500000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.005, 16.049, 16.058, 16.222, 16.324 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.94062600000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.502, 101.379, 101.941, 102.110, 103.651 ms"
           }
         ]
       }
