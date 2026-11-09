@@ -747,29 +747,13 @@ jobs:
         run: echo "::notice::nothing Rust reads has changed; the licences and advisories are not checked"
       - if: needs.changes.outputs.rust != 'false'
         uses: ./.github/actions/rust-toolchain
-      # cargo-deny itself, the version `EmbarkStudios/cargo-deny-action` v2.1.1 runs, checked
-      # against its published SHA-256. Run here rather than in that action's container so its
-      # findings can be read: each is an annotation on `Cargo.lock` (qw390), the one place a
-      # failure shows without the job's log. Fetched through the API (`gh release download`),
-      # not the github.com download link: that link answers 5xx for hours while the API still
-      # serves (#5787, #5792, #5797 left the merge queue on it), as the forge programs' fetch does.
+      # cargo-deny itself, checked against its published SHA-256, from main's cache or its
+      # release (`.github/actions/cargo-deny`, #5936). Run here rather than in
+      # `EmbarkStudios/cargo-deny-action`'s container so its findings can be read: each is an
+      # annotation on `Cargo.lock` (qw390), the one place a failure shows without the job's log.
       - name: Install cargo-deny
         if: needs.changes.outputs.rust != 'false'
-        env:
-          DENY_VERSION: "0.20.2"
-          DENY_SHA256: "9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f"
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          name="cargo-deny-$DENY_VERSION-x86_64-unknown-linux-musl"
-          for try in 1 2 3 4; do
-            gh release download "$DENY_VERSION" -R EmbarkStudios/cargo-deny \
-              -p "$name.tar.gz" -O /tmp/deny.tgz --clobber && break
-            [ "$try" = 4 ] && exit 1
-            sleep $((try * 15))
-          done
-          echo "$DENY_SHA256  /tmp/deny.tgz" | sha256sum --check --strict
-          tar -xzf /tmp/deny.tgz -C /tmp
-          install -m 0755 "/tmp/$name/cargo-deny" "$HOME/.cargo/bin/cargo-deny"
+        uses: ./.github/actions/cargo-deny
       - name: cargo deny check
         if: needs.changes.outputs.rust != 'false'
         run: |
