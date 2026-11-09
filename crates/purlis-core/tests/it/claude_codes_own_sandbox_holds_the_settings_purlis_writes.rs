@@ -168,34 +168,83 @@ struct StandIn {
 impl StandIn {
     /// The text of each `tool_result` for the stand-in's call in `body`, if there is one.
     fn result_in(body: &Value) -> Option<String> {
-        let messages = body["messages"].as_array()?;
-        let mut found = None;
-        for block in messages
-            .iter()
-            .filter_map(|message| message["content"].as_array())
-            .flatten()
-        {
-            if block["type"] != "tool_result" || block["tool_use_id"] != CALL {
-                continue;
-            }
-            let text = match &block["content"] {
-                Value::String(text) => text.clone(),
-                Value::Array(parts) => parts
-                    .iter()
-                    .filter_map(|part| part["text"].as_str())
-                    .collect::<Vec<_>>()
-                    .join("\n"),
-                other => other.to_string(),
-            };
-            found = Some(text);
-        }
-        found
+        result_of(body, CALL)
     }
 
     fn offers_bash(body: &Value) -> bool {
         body["tools"]
             .as_array()
             .is_some_and(|tools| tools.iter().any(|tool| tool["name"] == "Bash"))
+    }
+}
+
+/// The text of the last `tool_result` for the call `id` in `body`, if there is one.
+fn result_of(body: &Value, id: &str) -> Option<String> {
+    let messages = body["messages"].as_array()?;
+    let mut found = None;
+    for block in messages
+        .iter()
+        .filter_map(|message| message["content"].as_array())
+        .flatten()
+    {
+        if block["type"] != "tool_result" || block["tool_use_id"] != id {
+            continue;
+        }
+        let text = match &block["content"] {
+            Value::String(text) => text.clone(),
+            Value::Array(parts) => parts
+                .iter()
+                .filter_map(|part| part["text"].as_str())
+                .collect::<Vec<_>>()
+                .join("\n"),
+            other => other.to_string(),
+        };
+        found = Some(text);
+    }
+    found
+}
+
+/// A stand-in for the Messages API that makes one Bash call per command of `commands`, in
+/// turn, each once the one before it has its result, and then ends. What each call's result said
+/// is kept in `results`, in the commands' order.
+struct Steps {
+    commands: Vec<String>,
+    results: Arc<Mutex<Vec<String>>>,
+}
+
+impl Steps {
+    fn call(step: usize) -> String {
+        format!("toolu_step_{step}")
+    }
+}
+
+impl Respond for Steps {
+    fn respond(&self, request: &Request) -> ResponseTemplate {
+        let body: Value = serde_json::from_slice(&request.body).unwrap_or(Value::Null);
+        let model = body["model"].as_str().unwrap_or("stand-in").to_owned();
+        let stream = body["stream"] == true;
+        let said: Vec<String> = (0..self.commands.len())
+            .map_while(|step| result_of(&body, &Self::call(step)))
+            .collect();
+        let next = said.len();
+        if next > 0 {
+            *self.results.lock().expect("results") = said;
+        }
+        let Some(command) = self
+            .commands
+            .get(next)
+            .filter(|_| StandIn::offers_bash(&body))
+        else {
+            let done = json!({ "type": "text", "text": "done" });
+            return answer(&model, &done, "end_turn", stream);
+        };
+        let call = json!({
+            "type": "tool_use",
+            "id": Self::call(next),
+            "name": "Bash",
+            "input": { "command": command, "description": "Run a step of the probes" },
+        });
+        answer(&model, &call, "tool_use", stream)
     }
 }
 
@@ -378,12 +427,80 @@ fn ran_with(
     command: String,
     env: &[(&str, &Path)],
 ) -> String {
+    let results = Arc::new(Mutex::new(Vec::new()));
+    let stand_in = StandIn {
+        command,
+        results: results.clone(),
+    };
+    let (status, said) = started(
+        program, home, tmp, root, settings, sources, what, env, stand_in,
+    );
+    let results = results.lock().expect("results").clone();
+    let Some(result) = results.last() else {
+        panic!("{what}: the Bash call's result never reached the stand-in ({status}):\n{said}");
+    };
+    result.clone()
+}
+
+/// Claude Code at `program`, started in `root` with the settings at `settings` against a
+/// stand-in model making one Bash call per command of `commands`, in turn: what each call's
+/// result said, in their order.
+#[allow(clippy::too_many_arguments)]
+fn ran_steps(
+    program: &Path,
+    home: &Path,
+    tmp: &Path,
+    root: &Path,
+    settings: &Path,
+    sources: &[String],
+    what: &str,
+    commands: Vec<String>,
+) -> Vec<String> {
+    let results = Arc::new(Mutex::new(Vec::new()));
+    let wanted = commands.len();
+    let stand_in = Steps {
+        commands,
+        results: results.clone(),
+    };
+    let (status, said) = started(
+        program,
+        home,
+        tmp,
+        root,
+        settings,
+        sources,
+        what,
+        &[],
+        stand_in,
+    );
+    let results = results.lock().expect("results").clone();
+    assert_eq!(
+        results.len(),
+        wanted,
+        "{what}: not every Bash call's result reached the stand-in ({status}):\n{said}\n{results:?}"
+    );
+    results
+}
+
+/// Claude Code at `program`, started in `root` with the settings at `settings` and `env` besides,
+/// against `stand_in` for its model: how it ended, and what it wrote to its output.
+#[allow(clippy::too_many_arguments)]
+fn started(
+    program: &Path,
+    home: &Path,
+    tmp: &Path,
+    root: &Path,
+    settings: &Path,
+    sources: &[String],
+    what: &str,
+    env: &[(&str, &Path)],
+    stand_in: impl Respond + 'static,
+) -> (std::process::ExitStatus, String) {
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .expect("a runtime");
     let server = rt.block_on(MockServer::start());
-    let results = Arc::new(Mutex::new(Vec::new()));
     rt.block_on(async {
         Mock::given(method("POST"))
             .and(path("/v1/messages/count_tokens"))
@@ -392,10 +509,7 @@ fn ran_with(
             .await;
         Mock::given(method("POST"))
             .and(path("/v1/messages"))
-            .respond_with(StandIn {
-                command,
-                results: results.clone(),
-            })
+            .respond_with(stand_in)
             .mount(&server)
             .await;
     });
@@ -437,12 +551,7 @@ fn ran_with(
         }
         std::thread::sleep(Duration::from_millis(200));
     };
-    let said = fs::read_to_string(&log).unwrap_or_default();
-    let results = results.lock().expect("results").clone();
-    let Some(result) = results.last() else {
-        panic!("{what}: the Bash call's result never reached the stand-in ({status}):\n{said}");
-    };
-    result.clone()
+    (status, fs::read_to_string(&log).unwrap_or_default())
 }
 
 #[test]
@@ -1025,4 +1134,219 @@ fn two_claude_code_chats_each_write_a_temporary_folder_of_their_own_and_not_the_
         "{:?} stayed once its chat ended",
         temps[0]
     );
+}
+
+/// What a step of [`a_workspace_made_after_a_claude_code_chat_starts_hands_no_chat_its_skills`]
+/// writes, by the name it is answered with: `<name>=written` or `<name>=refused`.
+const WRITE: &str = "w() { if (mkdir -p \"$(dirname \"$1\")\" && printf -- \
+     '---\\nname: made\\ndescription: Made by a chat.\\n---\\n' > \"$1\") 2>/dev/null; \
+     then echo \"$2=written\"; else echo \"$2=refused\"; fi; }\n";
+
+/// **A workspace made after a Claude Code chat starts hands no chat its skills** (#3097, SK-41;
+/// ADR 0099 as amended 2026-11-09). purlis holds every workspace's skills folder by its path
+/// and by a pattern with one any-name part, `workspaces/*/skills` ([`sandbox::skills_held`]), and
+/// Claude Code reads the pattern itself. What it makes of it is measured here, through its own
+/// sandbox, against a stand-in model whose chat runs two commands: the first writes a skill in
+/// the folder of a workspace there at the start (held by its path), makes a workspace's folder
+/// and writes a skill in it, and makes another's skills folder; the second writes a skill in
+/// that one. What each came to is printed, so CI's log keeps the measurement.
+///
+/// On macOS the pattern holds both. On Linux, whatever it holds, what keeps such a skill from
+/// every chat is purlis's record of the levels there at the chat's start
+/// ([`purlis_core::skills::levels`]): each workspace made since reaches no chat while the record
+/// stands, and a workspace there at the start still does. That half runs without Claude Code
+/// too, with the chat's writes made by the test.
+#[test]
+fn a_workspace_made_after_a_claude_code_chat_starts_hands_no_chat_its_skills() {
+    purlis_core::unsteered!();
+    use purlis_core::skills::{self, PlaneSkills, levels};
+    let program = std::env::var_os("PURLIS_CLAUDE_CODE").map(PathBuf::from);
+    let scratch = tempfile::tempdir().expect("a folder");
+    let at = scratch.path().canonicalize().expect("a real folder");
+    let home = at.join("home");
+    let bin = at.join("bin");
+    let root = at.join("project");
+    let tmp = at.join("tmp");
+    for folder in [
+        &home.join(".claude"),
+        &bin,
+        &tmp,
+        &root.join("workspaces/ops"),
+    ] {
+        fs::create_dir_all(folder).expect("a folder");
+    }
+    // A sandboxed project whose skills reach its chats whatever this machine's flag says.
+    fs::write(
+        root.join("purlis.toml"),
+        "[sandbox]\nmode = \"on\"\negress = [\"model-providers\", \"forge\"]\n\n\
+         [[requires]]\nfeature = \"project-skills\"\nsince = \"0.1.0\"\n",
+    )
+    .expect("the manifest");
+    git(&root, &["init", "-q", "-b", "main"]);
+    let machine = Machine {
+        env: purlis_core::secrets::Env::of(&[("PATH", &bin.display().to_string())]),
+        home: Some(home.clone()),
+        os: Os::this(),
+    };
+    let (level, settings) = settings_for(&root, &machine);
+    assert_eq!(level, Level::Full);
+    let pattern = root
+        .join("workspaces")
+        .join(sandbox::ANY_NAME)
+        .join("skills");
+    assert!(
+        settings["sandbox"]["filesystem"]["denyWrite"]
+            .as_array()
+            .is_some_and(|denied| denied.contains(&json!(pattern.display().to_string()))),
+        "the pattern is in what Claude Code is handed: {settings}"
+    );
+    // What a sandboxed start notes before the chat runs (`hoststart::compose_ready`).
+    const CHAT: &str = "01M6YW8CYJ1AVN4BM9SDMZXNTK";
+    levels::note(&root, CHAT, "41").expect("the record of the levels there");
+    let skill = |workspace: &str| root.join(format!("workspaces/{workspace}/skills/made/SKILL.md"));
+    let [existing, same, later] = [skill("ops"), skill("later"), skill("after")];
+    let measured: Option<Vec<String>> = program.as_ref().map(|program| {
+        let first = at.join("first.sh");
+        let second = at.join("second.sh");
+        fs::write(
+            &first,
+            format!(
+                "{WRITE}w '{}' existing\nw '{}/workspaces/later/notes.md' level\n\
+                 w '{}' same-command\n\
+                 if mkdir -p '{}/workspaces/after/skills' 2>/dev/null; \
+                 then echo later-folder=made; else echo later-folder=refused; fi\n",
+                existing.display(),
+                root.display(),
+                same.display(),
+                root.display(),
+            ),
+        )
+        .expect("the first step");
+        fs::write(
+            &second,
+            format!("{WRITE}w '{}' later-command\n", later.display()),
+        )
+        .expect("the second step");
+        let file = at.join("claude.json");
+        fs::write(&file, settings.to_string()).expect("the settings");
+        let screened = purlis_core::harness::claude::project::screen_with(Some(&root), None);
+        // Scripts the calls run, as the probes are run: Claude Code's own permission check
+        // reads a command's words, and a write it sees to a held path is not run at all.
+        let said = ran_steps(
+            program,
+            &home,
+            &tmp,
+            &root,
+            &file,
+            &screened.setting_sources(),
+            "a later workspace",
+            vec![
+                format!("/bin/sh '{}'", first.display()),
+                format!("/bin/sh '{}'", second.display()),
+            ],
+        );
+        said.iter()
+            .flat_map(|step| step.lines())
+            .map(|line| line.trim().to_owned())
+            .filter(|line| line.contains('='))
+            .collect()
+    });
+    let os = if cfg!(target_os = "macos") {
+        "macOS"
+    } else {
+        "Linux"
+    };
+    match &measured {
+        Some(lines) => {
+            println!(
+                "a mid-path pattern on {os}, Claude Code {}: {}",
+                SUPPORTED.trim(),
+                lines.join(", ")
+            );
+            let said = |line: &str| lines.iter().any(|one| one == line);
+            assert!(said("existing=refused"), "{os}: {lines:?}");
+            assert!(
+                said("level=written"),
+                "a workspace's folder is made: {lines:?}"
+            );
+            if cfg!(target_os = "macos") {
+                for line in [
+                    "same-command=refused",
+                    "later-folder=refused",
+                    "later-command=refused",
+                ] {
+                    assert!(
+                        said(line),
+                        "{os}: the pattern holds a later workspace: {lines:?}"
+                    );
+                }
+            }
+        }
+        // No Claude Code: the chat's writes as they would land where nothing held them.
+        None => {
+            for made in [&same, &later] {
+                fs::create_dir_all(made.parent().expect("its folder")).expect("its folder");
+                fs::write(made, "---\nname: made\ndescription: Made by a chat.\n---\n")
+                    .expect("a chat's skill");
+            }
+        }
+    }
+    assert!(
+        !existing.exists(),
+        "a workspace there at the start keeps its hold"
+    );
+    // Whatever landed, no chat is handed a skill of a workspace made while the chat ran, and a
+    // workspace there at the start still reaches its chats.
+    let made = levels::made_since(&root);
+    assert_eq!(
+        made(&root.join("workspaces/ops")),
+        None,
+        "there at the start"
+    );
+    let ops = root.join("workspaces/ops/skills/kept/SKILL.md");
+    fs::create_dir_all(ops.parent().expect("its folder")).expect("its folder");
+    fs::write(&ops, "---\nname: kept\ndescription: There before.\n---\n").expect("a skill");
+    for workspace in ["later", "after"] {
+        let folder = root.join("workspaces").join(workspace);
+        if !folder.exists() {
+            continue;
+        }
+        let why = made(&folder).unwrap_or_else(|| panic!("{workspace}: reaches chats"));
+        assert!(why.contains("chat 41"), "{workspace}: {why}");
+    }
+    let names = |workspace: &str| -> Vec<String> {
+        let set = skills::for_chat(
+            purlis_core::harness::Kit {
+                binary: Path::new("/bin/purlis"),
+                plugin: None,
+                persona: None,
+                skills: Some(PlaneSkills {
+                    plane: &root,
+                    workspace: Some(workspace),
+                    repo: &[],
+                    own: &[],
+                    routed: None,
+                }),
+                graded: false,
+                judging: false,
+                writes_its_piece: false,
+                runs_a_shell: false,
+                own: &[],
+                laid_out: None,
+            },
+            Harness::ClaudeCode,
+        );
+        set.effective
+            .iter()
+            .map(|one| one.skill.name.clone())
+            .collect()
+    };
+    assert_eq!(names("ops"), ["kept"], "a workspace there at the start");
+    for workspace in ["later", "after"] {
+        assert!(
+            names(workspace).is_empty(),
+            "{workspace} on {os}: {:?}",
+            names(workspace)
+        );
+    }
 }
