@@ -40,6 +40,7 @@ import { AnswerPanel } from "../AnswerPanel";
 import { ApproveExtension } from "../ApproveExtension";
 import { ApprovePlane } from "../ApprovePlane";
 import { ArtifactLinkDialog } from "../ArtifactLinks";
+import { OfferAsks } from "../ArtifactOffers";
 import { AskPersona } from "../AskPersona";
 import { UseSkill } from "../UseSkill";
 import type { LandQuestion, PlaneId, StudioSkill, VaultContents } from "../bindings";
@@ -1450,6 +1451,27 @@ const DIALOGS: Opened[] = [
             refused:
               "purlis opens only https links from an artifact, so it will not open this file: link",
           }}
+          onClose={nothing}
+        />,
+      ),
+  },
+  {
+    name: "a delete an artifact's page offered, asking first",
+    file: "ArtifactOffers.tsx",
+    open: async () =>
+      render(
+        <OfferAsks
+          offer={{
+            id: "todo.delete:old-one",
+            title: "Delete done todo Old one",
+            available: true,
+            reason: "",
+            does: { verb: "forgetDoneTodo", workspace: "alpha", slug: "old-one" },
+            note: "Deletes it from alpha's done todos with nothing journalled. There is no undo.",
+          }}
+          answer="Delete"
+          name="Todo board"
+          onAnswer={nothing}
           onClose={nothing}
         />,
       ),
