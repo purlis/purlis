@@ -138,7 +138,7 @@ const part = (row: HTMLElement, name: string) =>
   row.querySelector<HTMLElement>(`[data-scope="message"][data-part="${name}"]`);
 
 describe("every line of the Inbox's views is a row, without a border (#5649)", () => {
-  it("draws Asks as rows, each in the waiting state, its chat its title and its age at the right", () => {
+  it("draws Asks as rows, each in the waiting state, its question or its chat its title and its age at the right", () => {
     draw("asks");
     const listed = rows();
     expect(listed).toHaveLength(2);
@@ -149,8 +149,9 @@ describe("every line of the Inbox's views is a row, without a border (#5649)", (
       expect(part(row, "mark")?.querySelector("svg")).not.toBeNull();
       expect(part(row, "time")).not.toBeNull();
     }
+    // A decision's title is its question (#5998); a chat waiting on a reply's is the chat.
     expect(listed.map((row) => part(row, "title")?.textContent)).toEqual([
-      "steward 3",
+      "Allow this action?",
       "steward 6",
     ]);
   });

@@ -12880,6 +12880,182 @@ fn a_run_the_gate_asks_about_is_one_ask_in_the_inbox_and_dont_allow_leaves_none(
     assert_eq!(inbox_of_a_run(&held), [], "and trying again raises nothing");
 }
 
+/// A workspace's branch folder in `plane`, as a task chat's worktree is: where #5998's chat ran.
+fn a_workspace_branch_folder(plane: &Plane) -> PathBuf {
+    let branch = plane
+        .root
+        .join("workspaces")
+        .join("alpha")
+        .join(".worktrees")
+        .join("repo")
+        .join("a-branch");
+    std::fs::create_dir_all(&branch).expect("a branch folder");
+    branch
+}
+
+/// [`planes_on`], keeping each list of asks the window is told, as `lib.rs`'s `telling_asks`
+/// emits it.
+fn planes_telling_asks(host: &Pretend) -> (Planes, Arc<Mutex<Vec<crate::asking::Asking>>>) {
+    let told: Arc<Mutex<Vec<crate::asking::Asking>>> = Arc::default();
+    let planes = {
+        let told = Arc::clone(&told);
+        let host = host.clone();
+        planes()
+            .telling_asks(Arc::new(move |asking| {
+                told.lock().expect("told").push(asking);
+            }))
+            .running_sessions_on(Arc::new(move |_, _: &std::path::Path| {
+                Box::new(host.clone())
+            }))
+    };
+    (planes, told)
+}
+
+/// The planes the window was told about since `told` was last emptied.
+fn planes_told(told: &Mutex<Vec<crate::asking::Asking>>) -> Vec<PlaneId> {
+    told.lock()
+        .expect("told")
+        .iter()
+        .map(|one| one.plane.clone())
+        .collect()
+}
+
+/// #5998: a run grant raised by `run_brokered` for a sandboxed chat started in a workspace's
+/// branch folder is listed by what `asks_waiting` reads for the window's plane, and the window is
+/// told while the run still waits. Starts a sandboxed chat, so it needs `sandbox-exec` (or the
+/// Linux wrap) to run its stand-in, which a sandboxed chat of purlis's own cannot nest.
+#[cfg(unix)]
+#[test]
+fn a_run_asked_about_from_a_workspace_branch_folder_is_listed_for_the_window_and_told() {
+    use crate::asking::AskSource;
+    use purlis_core::harness::asks::{Admitted, Answerer};
+    use purlis_core::secrets::ask::run::RunAnswer;
+    let plane = Plane::new().a_persona("ops", "");
+    vault_team_no_persona_is_tagged_for(&plane);
+    let branch = a_workspace_branch_folder(&plane);
+    let host = Pretend::default();
+    let (planes, told) = planes_telling_asks(&host);
+    // The window's plane: the id it holds, and asks `asks_waiting` for.
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let chat = a_chat_as(&held, &plane.root, Some("ops"), &branch);
+    told.lock().expect("told").clear();
+
+    std::thread::scope(|scope| {
+        let run = scope.spawn(|| run_on_team(&held, &id, chat, "curl"));
+        let open = loop {
+            if let Some(open) = held.secret_asks().open_runs().into_iter().next() {
+                break open;
+            }
+            assert!(!run.is_finished(), "the run ended without asking");
+            std::thread::yield_now();
+        };
+        let window = planes.held(&id).expect("the window's plane");
+        assert_eq!(
+            inbox_of_a_run(&window),
+            [AskSource::RunGrant],
+            "listed for the window's plane"
+        );
+        assert!(
+            planes_told(&told).contains(&id),
+            "the window is told about its plane while the run waits: {:?}",
+            planes_told(&told)
+        );
+        let by = Answerer::admitted(Admitted::LocalUi).expect("the window");
+        held.secret_asks()
+            .answer_run(open.id, RunAnswer::Refuse, by)
+            .expect("answered");
+        run.join().expect("it ends");
+    });
+}
+
+/// #5998, with no chat started: a run grant raised on the window's plane, told the way
+/// `run_brokered` tells it (`Chats::asks_may_have_moved`, which a browser's held-back sites take
+/// too), is listed by what `asks_waiting` reads for that plane, and the window is told about that
+/// plane while the run still waits.
+#[test]
+fn a_run_grant_held_on_the_window_s_plane_is_listed_there_and_the_window_is_told() {
+    use crate::asking::AskSource;
+    use purlis_core::harness::asks::{Admitted, Answerer};
+    use purlis_core::secrets::ask::run::{Bound, Hosts, Offer, RunAnswer, RunHeld, RunNeed};
+    let plane = Plane::new();
+    let branch = a_workspace_branch_folder(&plane);
+    let host = Pretend::default();
+    let (planes, told) = planes_telling_asks(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    told.lock().expect("told").clear();
+    let need = RunNeed {
+        ahead: false,
+        fills: Vec::new(),
+        offer: Offer::Program,
+        not_its_vault: false,
+        bound: Bound {
+            chat: 212,
+            name: "curl".to_owned(),
+            program: PathBuf::from("/usr/bin/curl"),
+            vault: "sentry".to_owned(),
+            env: vec!["TOKEN=TOKEN".to_owned()],
+            file: Vec::new(),
+            cwd: branch,
+            args: vec!["https://example.com/".to_owned()],
+        },
+        persona: "steward".to_owned(),
+        hosts: Hosts::Every,
+        caution: None,
+        command: "curl https://example.com/".to_owned(),
+    };
+
+    std::thread::scope(|scope| {
+        let run = scope.spawn(|| {
+            held.secret_asks().allowed_or_held(
+                need,
+                std::time::Duration::from_secs(60),
+                &mut |_| {
+                    held.chats().asks_may_have_moved();
+                },
+            )
+        });
+        let open = loop {
+            if let Some(open) = held.secret_asks().open_runs().into_iter().next() {
+                break open;
+            }
+            assert!(!run.is_finished(), "the run ended without asking");
+            std::thread::yield_now();
+        };
+        let window = planes.held(&id).expect("the window's plane");
+        let listed = crate::asking::every_ask(&window);
+        assert_eq!(listed.plane, id);
+        assert_eq!(
+            listed
+                .asks
+                .iter()
+                .filter(|ask| ask.source == AskSource::RunGrant)
+                .map(|ask| ask.session)
+                .collect::<Vec<_>>(),
+            [212],
+            "listed for the window's plane"
+        );
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while !planes_told(&told).contains(&id) {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the window is told about its plane while the run waits: {:?}",
+                planes_told(&told)
+            );
+            std::thread::yield_now();
+        }
+        let by = Answerer::admitted(Admitted::LocalUi).expect("the window");
+        held.secret_asks()
+            .answer_run(open.id, RunAnswer::Refuse, by)
+            .expect("answered");
+        assert!(matches!(
+            run.join().expect("it ends"),
+            RunHeld::Refused { .. }
+        ));
+    });
+}
+
 /// #5242: a run on a vault its persona may not use that lacks its key is one notice, with the key's
 /// field and the program's Allow, and no vault ask beside it. Allow once with the value typed
 /// stores it there and lets the run go on.

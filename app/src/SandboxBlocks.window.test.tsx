@@ -1006,8 +1006,7 @@ describe("a refused host answered in the Inbox (#1692)", () => {
       ...(onAMac() ? { metaKey: true } : { ctrlKey: true }),
     });
     const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
-    // Its answers are behind its Answer link (#5651).
-    fireEvent.click(await within(inbox).findByRole("button", { name: /^Answer / }));
+    // Its answers stand on its row (#5998).
     const allow = await within(inbox).findByRole("button", { name: "Allow for this chat" });
     // An Allow in the Inbox waits for its row to settle (#1695): the person reads it first.
     await settled();
@@ -1043,8 +1042,7 @@ describe("a refused host answered in the Inbox (#1692)", () => {
       ...(onAMac() ? { metaKey: true } : { ctrlKey: true }),
     });
     const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
-    // Its answers are behind its Answer link (#5651).
-    fireEvent.click(await within(inbox).findByRole("button", { name: /^Answer / }));
+    // Its answers stand on its row (#5998).
     const allow = await within(inbox).findByRole("button", { name: "Allow for this chat" });
     // An Allow in the Inbox waits for its row to settle (#1695): the person reads it first.
     await settled();
@@ -1072,10 +1070,11 @@ describe("a refused host answered in the Inbox (#1692)", () => {
       ...(onAMac() ? { metaKey: true } : { ctrlKey: true }),
     });
     const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
-    // Its answers are behind its Answer link (#5651).
-    fireEvent.click(await within(inbox).findByRole("button", { name: /^Answer / }));
+    // Its answers stand on its row (#5998).
     const keep = await within(inbox).findByRole("button", { name: "Keep blocked" });
     held = false;
+    // Once to open why it is kept blocked, once to keep it blocked with nothing said (#5998).
+    await userEvent.click(keep);
     await userEvent.click(keep);
 
     await waitFor(() =>
@@ -1100,8 +1099,7 @@ describe("a refused host answered in the Inbox (#1692)", () => {
       ...(onAMac() ? { metaKey: true } : { ctrlKey: true }),
     });
     const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
-    // Its answers are behind its Answer link (#5651).
-    fireEvent.click(await within(inbox).findByRole("button", { name: /^Answer / }));
+    // Its answers stand on its row (#5998).
     await within(inbox).findByRole("button", { name: "Keep blocked" });
 
     held = false;
@@ -1129,8 +1127,7 @@ describe("a refused host answered in the Inbox (#1692)", () => {
         ...(onAMac() ? { metaKey: true } : { ctrlKey: true }),
       });
       const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
-      // Its answers are behind its Answer link (#5651).
-      fireEvent.click(await within(inbox).findByRole("button", { name: /^Answer / }));
+      // Its answers stand on its row (#5998).
       await within(inbox).findByRole("button", { name: "Keep blocked" });
       expect(within(inbox).queryByRole("region", { name: "Recently answered" })).toBeNull();
 
